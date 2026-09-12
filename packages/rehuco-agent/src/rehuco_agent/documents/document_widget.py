@@ -32,13 +32,14 @@ from .checksum_actions import ChecksumActions
 from .checksum_view import ChecksumView
 from .conversion_backup_actions import ConversionBackupActions
 from .document_fields import VIEWER_DESCRIPTION_TAB, build_document_form
+from .files_view import FilesView
 from .name_suggestion_model import NameSuggestionModel
 from .rehu_document_model import RehuDocumentModel
 from .save_or_prompt_retry import save_or_prompt_retry
 from .source_views import OnDiskView, SavePreviewView
 
 STATE_VERSION_KEY: Final = "version"
-STATE_VERSION: Final = 7
+STATE_VERSION: Final = 8
 """Schema version of :meth:`DocumentWidget.save_state`'s blob. The dock layout is keyed by dock
 object name, so any change to the docks (names, count, which tabs exist) makes an older blob
 incompatible: QtAds's ``restoreState`` would accept it and silently hide the current docks. Bump this
@@ -57,7 +58,11 @@ Bumped to 7 when the single ``viewer:Viewer`` dock was split into ``viewer:Main 
 ``viewer:Description View`` (#299) -- the sharpest case the version exists for: a v6 blob names a dock
 that no longer exists and neither of the ones that replaced it, so every document's saved layout and the
 saved default layout are dropped on first open and rebuilt from the as-built one. That reset is accepted,
-not worked around."""
+not worked around.
+
+Bumped to 8 when the Files sub-dock was added (#266) -- the ordinary case again: a v7 blob knows nothing
+of that dock, so ``restoreState`` would restore cleanly and leave it in whatever default state QtAds
+invents for an unknown dock rather than the deliberately-hidden-by-default one this widget builds."""
 
 STATE_DOCK_MANAGER_KEY: Final = "dock_manager"
 STATE_STASHED_SIZES_KEY: Final = "stashed_sizes"
@@ -77,14 +82,16 @@ UPGRADE_ICON_RESOURCE: Final = ":/icons/rehu_upgrade.svg"
 SAVE_PREVIEW_ICON_RESOURCE: Final = ":/icons/document_save_preview.svg"
 ON_DISK_ICON_RESOURCE: Final = ":/icons/document_on_disk.svg"
 CHECKSUM_ICON_RESOURCE: Final = ":/icons/document_checksum.svg"
+FILES_ICON_RESOURCE: Final = ":/icons/document_file_browser.svg"
 DEFAULT_LAYOUT_ICON_RESOURCE: Final = ":/icons/document_default_layout.svg"
 
 SAVE_PREVIEW_DOCK_NAME: Final = "save_preview"
 ON_DISK_DOCK_NAME: Final = "on_disk"
 LOG_DOCK_NAME: Final = "log"
 CHECKSUM_DOCK_NAME: Final = "checksums"
-"""Object names of the read-only inspection docks (#111), this resource's own log (#200) and its
-per-file checksum table (#244);
+FILES_DOCK_NAME: Final = "files"
+"""Object names of the read-only inspection docks (#111), this resource's own log (#200), its
+per-file checksum table (#244) and its own folder (#266);
 namespaced apart from the ``viewer:``/``editor:`` docks, and the keys `restore_state` restores their
 hidden-by-default visibility under."""
 
@@ -92,8 +99,9 @@ SAVE_PREVIEW_DOCK_TITLE: Final = "Save Preview"
 ON_DISK_DOCK_TITLE: Final = "On Disk"
 LOG_DOCK_TITLE: Final = "Log"
 CHECKSUM_DOCK_TITLE: Final = "Checksums"
+FILES_DOCK_TITLE: Final = "Files"
 """Tab titles of the read-only inspection docks (#111) -- the live model serialization (what a Save would
-write) and the verbatim on-disk file -- and of this resource's own log (#200)."""
+write) and the verbatim on-disk file -- of this resource's own log (#200), and of its own folder (#266)."""
 
 UPGRADE_MESSAGE: Final = "This document uses an older format — click the <i>Upgrade</i> button to bring it up to date."
 """The upgrade offer's inline banner message (#89, [[data-model#schema-version]]); names the toolbar
@@ -176,6 +184,16 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
     would lazily create a stray bar that swallows the message); it bubbles up to ``DocumentsDock`` and on
     to the genuine top-level window instead."""
 
+    record_activated: Signal = Signal(object)
+    """Relays another resource's record, double-clicked in this document's Files sub-dock (#266), up to
+    the window that knows how to open one.
+
+    The same ``DocumentWidget`` -> ``DocumentsDock`` -> ``MainWindow`` hop :attr:`status_message` makes,
+    and for the same reason: opening a resource is the window's act -- it resolves the path, reveals the
+    documents area and remembers the file in ``Open recents`` -- so a sub-dock three managers down
+    reports rather than reaches. Typed as plain ``object`` (Python-object marshalling) for the reason
+    ``DocumentsDock``'s own object-typed signals document."""
+
     def __init__(  # pylint: disable=too-many-statements
         self,
         model: RehuDocumentModel,
@@ -189,6 +207,12 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         self.__image_viewer: ImageLightbox | None = None
         """This document's maximized image viewer while one is open (#160), so becoming the current
         document can hand it the keyboard -- see :meth:`take_focus`."""
+
+        self.__viewer_follows_curation = True
+        """Whether an open maximized viewer is showing the **curated** set, and so is re-pointed when
+        that set changes (#161) -- as opposed to a folder's images from the Files sub-dock (#266), which
+        a curation edit says nothing about. Without this, unchecking a screenshot while a folder viewer
+        was up would silently swap its whole set for the strip's."""
 
         self.__curated_images: list[Path] = []
         """This document's current curated screenshot set ([[data-model#image-meanings]]), kept in step
@@ -342,6 +366,10 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             # surface for enqueuing runs, and a widget built with no queue has nothing to enqueue onto
             self.__checksum_dock = self.__add_checksum_dock(model, self.__checksums)
 
+        # unlike the checksum dock, this one exists whatever the document was built with: a folder is a
+        # folder with no queue in sight, and only the one row that enqueues a verify goes quiet (#266)
+        self.__files_dock: Final = self.__add_files_dock(model, self.__checksums)
+
         # unlike the checksum pair, these need no queue: both operations are a handful of renames over
         # one directory, run inline the way `RehuDocumentModel.convert` -- their exact mirror -- is
         # (#193). Built before the first __banner_rows call below, which asks what they found.
@@ -393,6 +421,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         inspection_docks = (self.__save_preview_dock, self.__on_disk_dock, self.__log_dock)
         if self.__checksum_dock is not None:
             inspection_docks = (*inspection_docks, self.__checksum_dock)
+        inspection_docks = (*inspection_docks, self.__files_dock)
         for dock in (*self.__viewer_docks.values(), *self.__editor_docks.values(), *inspection_docks):
             toolbar.addAction(dock.toggleViewAction())
         toolbar.addSeparator()  # between the dock toggles above and the default-layout action below
@@ -868,12 +897,41 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
 
         :param path: the screenshot the user clicked in the strip.
         """
+        self.__viewer_follows_curation = True
+        self.__open_image_viewer(self.__curated_images, path)
+
+    def __on_folder_images_activated(self, images: object, clicked: object) -> None:
+        """Open an image double-clicked in the Files sub-dock, against its whole folder (#266).
+
+        Deliberately **not** :attr:`__curated_images`: the browser is a view of the folder, so what it
+        opens is every image sitting there -- a screenshot curated out of the lightbox, and a
+        neighbouring resource's, included ([[data-model#image-meanings]]). The set arrives with the
+        activation rather than being recomputed here, since the browser is the thing that knows which
+        folder is on screen.
+
+        :param images: the folder's image paths, in the order the browser draws them.
+        :param clicked: the one to open first.
+        """
+        if isinstance(images, list) and isinstance(clicked, Path):
+            self.__viewer_follows_curation = False
+            self.__open_image_viewer(images, clicked)
+
+    def __open_image_viewer(self, images: list[Path], path: Path) -> None:
+        """Open ``path`` maximized against ``images``, on whichever surface the settings ask for.
+
+        Shared by the two activation routes -- the viewer strip's curated set (#161) and the Files
+        sub-dock's folder (#266) -- so where a maximized image opens, what it is parented to and how it
+        is tracked are decided once rather than per caller.
+
+        :param images: the set the viewer navigates.
+        :param path: where in that set to start.
+        """
         settings = shared_image_viewer_settings()
         # resolved here, not at construction: a document that has never shown a row follows whatever
         # the shared setting says right now, including a change applied while it sat open (#161)
         strip_visible = settings.strip_visible if self.__image_strip_visible is None else self.__image_strip_visible
         viewer = ImageLightbox(
-            self.__curated_images,
+            images,
             path,
             settings.mode,
             self,
@@ -897,7 +955,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         :param images: the field's whole current screenshot set, in strip order.
         """
         self.__curated_images = list(images)
-        if self.__image_viewer is not None:
+        if self.__image_viewer is not None and self.__viewer_follows_curation:
             self.__image_viewer.set_images(self.__curated_images)
 
     def __on_strip_visible_changed(self, visible: bool) -> None:
@@ -1133,6 +1191,34 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             CHECKSUM_DOCK_NAME, CHECKSUM_DOCK_TITLE, CHECKSUM_ICON_RESOURCE, ChecksumView(model, actions, self)
         )
         return dock
+
+    def __add_files_dock(self, model: RehuDocumentModel, checksums: ChecksumActions | None) -> QtAds.CDockWidget:
+        """Build this resource's own folder browser, stacked with the inspection docks and hidden (#266).
+
+        The same shape and the same place as the #111 pair: hidden by default, its toggle on this
+        document's own toolbar. Three of its four activations leave this dock -- a verify goes to the
+        document's own checksum actions, a maximized image to :meth:`__on_folder_images_activated`, and
+        another resource's record on up through :attr:`record_activated` -- because the browser knows
+        what a file *is* and none of what to do about it.
+
+        Refreshed when a checksum run of this document's finishes, the seam ``ChecksumView`` already
+        listens on: the browser's checksum column is a view of that record, and a verify launched from
+        the browser itself has to become visible in it when it lands.
+
+        :param model: the view-model whose folder the browser shows.
+        :param checksums: this document's checksum actions, whose *Verify All* the record's row calls,
+            or ``None`` where there is no queue to enqueue one on.
+        :returns: the dock, hidden.
+        """
+        # the *action*'s trigger rather than the method behind it: a disabled QAction triggers nothing,
+        # so the row honours exactly the enablement the toolbar's Verify does instead of enqueuing a run
+        # the toolbar would have refused
+        view = FilesView(model, self, verify=None if checksums is None else checksums.verify_action.trigger)
+        view.record_activated.connect(self.record_activated)
+        view.images_activated.connect(self.__on_folder_images_activated)
+        if checksums is not None:
+            checksums.record_changed.connect(view.refresh)
+        return self.__add_hidden_inspection_dock(FILES_DOCK_NAME, FILES_DOCK_TITLE, FILES_ICON_RESOURCE, view)
 
     def __on_log_scope_changed(self, path: Path | None) -> None:
         """Re-scope this resource's log surface when its path changes (#52's landmine, for a log).

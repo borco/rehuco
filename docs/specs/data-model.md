@@ -98,7 +98,9 @@ Two patterns for what a `.rehu` describes:
 - **Coexistence**: a directory may end up containing both a directory-scoped `info.rehu` and one or more file-scoped
   `*.rehu` entries (normally this shouldn't happen — it's meant to be one or the other). Rather than forbid this
   outright, the app caches and displays all such entries and flags the situation with a warning, leaving resolution to
-  the user.
+  the user. Such a directory is also where a reader actually *sees* the situation: the files sub-dock
+  ([[plugins#files-subdock]]) lists every record in the folder and makes each of the others openable, so resolving it
+  starts from the same surface that shows it.
 - **The rule is stated once and every layer reads it** (#250). *Which* filenames mean *this record describes its
   directory* is one predicate — `is_directory_scoped` — asked by the content walk, the content-image walk, the rename
   plan, every job label and the agent's tab title. It used to be spelled out at each of those eight places, all of them
@@ -219,7 +221,11 @@ What a **reference-images** resource's content *is* was settled by #197: content
 
 - **A `.checksum` is a record of verification over time, not a manifest** (#203) — per content file: which hash, when
   it was last checked, and what the answer was. That is what lets a sweep skip what was checked recently (#242), and
-  it is not expressible in any format an external checker reads, so `cfv` interop is dropped deliberately. It is JSON,
+  it is not expressible in any format an external checker reads, so `cfv` interop is dropped deliberately. The record
+  is **read** by one more surface than the runs: the files sub-dock reports it per file
+  ([[plugins#files-subdock]]), and its *checked recently* glyph is defined as *what a verify would skip* — which is why
+  the staleness rule is one shared predicate rather than arithmetic each caller repeats, since a second copy is how
+  that glyph would come to promise something a run does not honour. It is JSON,
   sits beside the `.rehu` under the same stem (`info.rehu` → `info.checksum`), and carries its own `version` for the
   migration chain to climb:
 

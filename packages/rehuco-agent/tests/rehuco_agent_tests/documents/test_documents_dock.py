@@ -366,6 +366,31 @@ def test_status_message_relays_from_a_document_widget(mocker: MockerFixture, qtb
     assert relayed == ["https://example.com/alice"]
 
 
+def test_an_open_request_relays_from_a_document_widget(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Another resource double-clicked in a document's Files sub-dock is relayed up rather than opened
+    here (#266), even though :meth:`open_document` is right there: opening is more than making a dock,
+    and a second route that did only the middle step would be a second definition of *open*.
+
+    **Test steps:**
+
+    * open a document and connect a spy to the dock's ``open_requested``
+    * emit the widget's own ``record_activated``
+    * verify the dock relayed the path on and opened nothing itself
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.open_document(FAKE_PATH)
+    neighbour = FAKE_PATH.parent / "other.rehu"
+
+    relayed: list[object] = []
+    dock.open_requested.connect(relayed.append)
+    widget.record_activated.emit(neighbour)
+
+    assert relayed == [neighbour]
+    assert len(dock.open_document_widgets()) == 1
+
+
 def test_closing_a_dock_removes_it(mocker: MockerFixture, qtbot: QtBot) -> None:
     """Requesting to close a document's dock removes it from the dock map.
 

@@ -8,9 +8,10 @@ from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QStyleOptionViewItem
 from rehuco_core import JobState, JobStatus
 
+from ..svg_icon_cache import SvgIconCache
 from .task_queue_model import TaskQueueModel
 from .task_row_delegate import ModelIndex, TaskRowDelegate
-from .task_status_icons import StatusIconCache, status_icon
+from .task_status_icons import status_icon
 
 STATUS_ICON_SIZE: Final = 16
 """How big a status glyph is drawn, in pixels -- the size the app's other 16px icon slots use, and the
@@ -51,7 +52,7 @@ class TaskStateDelegate(TaskRowDelegate):
 
     def __init__(self, parent: QObject | None = None, *, state_colors: Mapping[JobState, QColor] | None = None) -> None:
         super().__init__(parent, state_colors=state_colors)
-        self.__icons: Final = StatusIconCache()
+        self.__icons: Final = SvgIconCache()
 
     @override
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: ModelIndex) -> None:

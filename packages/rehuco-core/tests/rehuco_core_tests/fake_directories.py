@@ -9,6 +9,7 @@ directory holds rather than arranging for one to hold it.
 """
 
 from collections.abc import Iterator
+from types import SimpleNamespace
 from typing import Final
 
 
@@ -20,11 +21,24 @@ class FakeDirEntry:
     what reading the directory returned.
     """
 
-    def __init__(self, name: str, *, directory: bool = False, regular: bool = True, link: bool = False) -> None:
+    def __init__(  # pylint: disable=too-many-arguments
+        self,
+        name: str,
+        *,
+        directory: bool = False,
+        regular: bool = True,
+        link: bool = False,
+        size: int = 0,
+        mtime: float = 0.0,
+        unstattable: bool = False,
+    ) -> None:
         self.name: Final = name
         self.__directory: Final = directory
         self.__regular: Final = regular
         self.__link: Final = link
+        self.__size: Final = size
+        self.__mtime: Final = mtime
+        self.__unstattable: Final = unstattable
 
     def is_dir(self, *, follow_symlinks: bool = True) -> bool:
         """Whether the test declared this entry a directory -- through the link only when asked to.
@@ -39,6 +53,20 @@ class FakeDirEntry:
         """Whether the test declared this entry a regular file (through the link, per the default)."""
         del follow_symlinks
         return self.__regular
+
+    def stat(self, *, follow_symlinks: bool = True) -> SimpleNamespace:
+        """The entry's declared size and modification time, the way a listing's cached ``stat`` answers.
+
+        Only the two fields the file-kind classification reports (#266); a real ``os.stat_result`` has
+        no public constructor worth standing in for.
+
+        :raises OSError: when the test declared the entry unstattable -- a file deleted between the
+            listing and the question, or one on a share that answered the listing and then went away.
+        """
+        del follow_symlinks
+        if self.__unstattable:
+            raise OSError(f"cannot stat {self.name}")
+        return SimpleNamespace(st_size=self.__size, st_mtime=self.__mtime)
 
 
 class FakeScandir:

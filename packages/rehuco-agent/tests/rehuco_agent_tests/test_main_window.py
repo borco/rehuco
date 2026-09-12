@@ -768,6 +768,50 @@ def test_open_file_resolves_and_delegates_to_the_documents_dock(mocker: MockerFi
     open_document.assert_called_once_with(Path("a.rehu").resolve())
 
 
+def test_an_open_request_from_a_documents_files_dock_takes_the_ordinary_open_route(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """Another resource double-clicked in a document's Files sub-dock arrives here rather than being
+    opened where it was clicked (#266), so it gets the same resolve, the same reveal of the documents
+    area and the same ``Open recents`` entry as an open from the menu.
+
+    **Test steps:**
+
+    * construct a ``MainWindow`` with the dock's own open mocked
+    * emit the documents dock's ``open_requested``
+    * verify it went through ``open_path`` and reached the dock's open
+    """
+    open_document = mocker.patch("rehuco_agent.main_window.DocumentsDock.open_document")
+    window = MainWindow()
+    qtbot.addWidget(window)
+    documents_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    neighbour = Path("a.rehu").resolve()
+
+    documents_dock.open_requested.emit(neighbour)
+
+    open_document.assert_called_once_with(neighbour)
+
+
+def test_an_open_request_carrying_anything_else_opens_nothing(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The relay is typed ``object`` so a Python ``Path`` survives the hop from a sub-dock three
+    managers down, which leaves the type to be established here -- and opening whatever arrived would
+    hand a non-path to a resolve that raises on one.
+
+    **Test steps:**
+
+    * emit the documents dock's ``open_requested`` with something that is not a path
+    * verify nothing was opened
+    """
+    open_document = mocker.patch("rehuco_agent.main_window.DocumentsDock.open_document")
+    window = MainWindow()
+    qtbot.addWidget(window)
+    documents_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    documents_dock.open_requested.emit("a.rehu")
+
+    open_document.assert_not_called()
+
+
 def test_open_folder_resolves_and_delegates_to_the_documents_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
     """``open_folder`` resolves its path and hands it to the documents dock (#43).
 

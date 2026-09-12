@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg width="100%" height="100%" viewBox="0 0 72 72" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:serif="http://www.serif.com/" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;">
+    <rect id="file_browser_rehu" x="0" y="-0" width="72" height="72" style="fill:none;"/>
+    <g>
+        <path d="M66,18L66,54C66,60.623 60.623,66 54,66L18,66C11.377,66 6,60.623 6,54L6,18C6,11.377 11.377,6 18,6L54,6C60.623,6 66,11.377 66,18ZM62,18C62,13.585 58.415,10 54,10L18,10C13.585,10 10,13.585 10,18L10,54C10,58.415 13.585,62 18,62L54,62C58.415,62 62,58.415 62,54L62,18Z"/>
+        <path d="M55.5,24C55.5,25.656 54.156,27 52.5,27L18,27C16.344,27 15,25.656 15,24C15,22.344 16.344,21 18,21L52.5,21C54.156,21 55.5,22.344 55.5,24Z" style="fill-opacity:0.2;"/>
+        <path d="M42,36C42,37.656 40.656,39 39,39L18,39C16.344,39 15,37.656 15,36C15,34.344 16.344,33 18,33L39,33C40.656,33 42,34.344 42,36Z" style="fill-opacity:0.2;"/>
+        <path d="M48.75,48C48.75,49.656 47.406,51 45.75,51L18,51C16.344,51 15,49.656 15,48C15,46.344 16.344,45 18,45L45.75,45C47.406,45 48.75,46.344 48.75,48Z"/>
+    </g>
+</svg>

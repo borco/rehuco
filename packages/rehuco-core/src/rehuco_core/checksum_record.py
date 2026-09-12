@@ -35,7 +35,7 @@ generate or a verify does with the entries is :mod:`rehuco_core.rehu_checksums`'
 import json
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Final, Literal
 
@@ -70,6 +70,14 @@ report state rather than a resting one, since a sweep adopts such a file
 read; it costs itself, is carried through untouched, and its neighbours still verify. ``malformed`` is
 only ever *reported*, never written into an entry: writing anything into an entry this build cannot
 read is what carrying it through byte-for-byte exists to avoid."""
+
+MATCHED_STATUS: Final = "matched"
+"""The one :data:`ChecksumStatus` value a surface reasons about by name -- *this file was hashed and the
+record's hash agreed*.
+
+Every other value is *not that*, which is the only distinction the agent's file browser draws when it
+picks between its ok and bad glyphs ([[plugins#files-subdock]], #266); the words themselves stay the
+record's, spelled once here rather than quoted at each caller."""
 
 HEX_DIGEST_PATTERN: Final = re.compile(r"[0-9a-fA-F]+")
 """What a recorded hash must look like -- hex, either case (a value seeded from a legacy ``.sfv`` may be
@@ -275,6 +283,29 @@ def parse_verified(value: Any) -> datetime | None:
     except ValueError:
         return None
     return stamp if stamp.tzinfo is not None else stamp.replace(tzinfo=UTC)
+
+
+def is_checksum_fresh(entry: ChecksumEntry | None, stale_after: timedelta | None, now: datetime) -> bool:
+    """Whether ``stale_after`` says this entry was verified recently enough to leave alone.
+
+    ``None`` -- no window -- means nothing is fresh: *force*, spelled as the absence of a skip rather
+    than as a second flag ([[data-model#checksums]], #203).
+
+    **The one answer to "would a new check do nothing"**, so a run's own skip
+    (:class:`~rehuco_core.rehu_checksums.ChecksumRun`) and a surface that *claims* a file is current
+    cannot disagree: the file browser's ok/bad glyphs mean exactly *Verify Old would skip this*, and its
+    stale pair means exactly *it would not* ([[plugins#files-subdock]], #266). Asked of the parsed entry
+    rather than of a raw one, since a malformed entry has no readable stamp and is never fresh.
+
+    :param entry: the parsed entry, or ``None`` -- no entry at all, or one this build cannot read.
+    :param stale_after: the staleness window; ``None`` makes nothing fresh.
+    :param now: the moment to measure against, injected rather than read here so a run measures every
+        entry against one instant and a test needs no clock.
+    :returns: whether the entry was verified within the window.
+    """
+    if stale_after is None or entry is None or entry.verified is None:
+        return False
+    return now - entry.verified < stale_after
 
 
 def verified_stamp(moment: datetime) -> str:
