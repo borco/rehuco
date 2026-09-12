@@ -1,0 +1,3524 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Distributed resource management system for tutorials and reference images">
+      
+      
+      
+        <link rel="canonical" href="https://borco.github.io/rehuco/specs/appendices/task-queue/">
+      
+      
+        <link rel="prev" href="../settings-pages/">
+      
+      
+        <link rel="next" href="../testing/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Task Queue - rehuco</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../../stylesheets/extra.css">
+    
+      <link rel="stylesheet" href="../../../assets/mkdocs_puml/puml.css">
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#task-queue-serial-work-cooperative-stops-and-lifetime" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="rehuco" class="md-header__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            rehuco
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Task Queue
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../../how-it-works/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Design Specs
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../implementation-plan/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Implementation Plan
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../changelog/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Changelog
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../license/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  License
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="rehuco" class="md-nav__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    rehuco
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Specs
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design Specs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-it-works/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    How It Works
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../nodes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Node Communication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../discovery-trust-access/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Discovery & Trust
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sync/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sync & Conflicts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../multiplicity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multiplicity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../mounts-and-storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mounts & Storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../instances-and-dedup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Identity & Dedup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../borrowing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Borrowing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../offline-editing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Offline Editing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plugins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../requirements/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Requirements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../acquisition-tooling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acquisition Tooling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../packaging-deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Packaging & Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../field-schema/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Field Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference-images/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference Images
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_19" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../diagrams/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagrams
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2_19" id="__nav_2_19_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_19_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_19">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Diagrams
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../diagrams/activity-open-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Activity: Open a Path
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../diagrams/component-decomposition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Component: Containment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../diagrams/sequence-open-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sequence: Open a Path
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_20" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2_20" id="__nav_2_20_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Appendices
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_20_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2_20">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Appendices
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../briefcase-packaging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Briefcase Packaging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../code-conventions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Conventions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../continuous-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Continuous Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../logging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Logging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../open-questions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open Questions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../post-mortem/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Post-Mortem
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../project-management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../qt-ads/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QtAds
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../release-runbook/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Runbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../settings-pages/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Settings Pages
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Queue
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Queue
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-it-lives-in-rehuco-core-and-knows-nothing-about-qt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. It lives in rehuco-core, and knows nothing about Qt
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1. It lives in rehuco-core, and knows nothing about Qt">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#11-what-an-observer-is-told" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1 What an observer is told
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-serial-by-construction-not-by-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Serial by construction, not by configuration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-the-engine-schedules-the-job-stops-itself" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. The engine schedules; the job stops itself
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. The engine schedules; the job stops itself">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#31-a-paused-job-returns-it-is-not-parked" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.1 A paused job returns; it is not parked
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#32-the-job-class-is-the-unit-of-responsibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.2 The job class is the unit of responsibility
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#33-one-pause-concept-and-requests-kept-apart-from-states" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.3 One pause concept, and requests kept apart from states
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#34-reordering-applies-to-what-has-not-started" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.4 Reordering applies to what has not started
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-a-failure-costs-its-job-and-nothing-else" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. A failure costs its job and nothing else
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. A failure costs its job and nothing else">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41-a-failure-is-kept-because-it-is-the-thing-worth-acting-on" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 A failure is kept, because it is the thing worth acting on
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-the-callers-context-travels-to-the-worker" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. The caller's context travels to the worker
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-the-queue-survives-a-restart-for-the-jobs-that-opt-in" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. The queue survives a restart, for the jobs that opt in
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. The queue survives a restart, for the jobs that opt in">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#61-a-second-protocol-not-a-wider-one" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.1 A second protocol, not a wider one
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#62-what-is-written-and-when" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.2 What is written, and when
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#63-what-happens-on-the-way-back" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.3 What happens on the way back
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#64-the-first-jobs-and-what-they-showed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.4 The first jobs, and what they showed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-teardown-is-a-courtesy-with-a-deadline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Teardown is a courtesy with a deadline
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-the-dock-is-a-pure-view-and-re-snapshots-rather-than-replays" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. The dock is a pure view, and re-snapshots rather than replays
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../theming_and_styling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Theming & Styling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../windows-dev-launcher/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Windows Dev Launcher
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_21" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../history/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    History
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2_21" id="__nav_2_21_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_21_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_21">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    History
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/ibocator/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ibocator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalog3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutcatalog 3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalogpy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalogpy2/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy2
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalogpy3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalog4/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog4
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalog5/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog5
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/resource-hub/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Resource Hub
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/daz3d-personal-database/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Daz3D Personal Database
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/pyside-ibo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    pyside-ibo (shared library)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../implementation-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Implementation Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../changelog/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Changelog
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../changelog/rehuco-agent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../changelog/rehuco-core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../changelog/rehuco-node/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-node
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../changelog/borco-core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    borco-core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../changelog/borco-pyside/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    borco-pyside
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../license/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    License
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-it-lives-in-rehuco-core-and-knows-nothing-about-qt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. It lives in rehuco-core, and knows nothing about Qt
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1. It lives in rehuco-core, and knows nothing about Qt">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#11-what-an-observer-is-told" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1 What an observer is told
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-serial-by-construction-not-by-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Serial by construction, not by configuration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-the-engine-schedules-the-job-stops-itself" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. The engine schedules; the job stops itself
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. The engine schedules; the job stops itself">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#31-a-paused-job-returns-it-is-not-parked" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.1 A paused job returns; it is not parked
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#32-the-job-class-is-the-unit-of-responsibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.2 The job class is the unit of responsibility
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#33-one-pause-concept-and-requests-kept-apart-from-states" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.3 One pause concept, and requests kept apart from states
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#34-reordering-applies-to-what-has-not-started" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.4 Reordering applies to what has not started
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-a-failure-costs-its-job-and-nothing-else" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. A failure costs its job and nothing else
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. A failure costs its job and nothing else">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41-a-failure-is-kept-because-it-is-the-thing-worth-acting-on" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 A failure is kept, because it is the thing worth acting on
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-the-callers-context-travels-to-the-worker" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. The caller's context travels to the worker
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-the-queue-survives-a-restart-for-the-jobs-that-opt-in" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. The queue survives a restart, for the jobs that opt in
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. The queue survives a restart, for the jobs that opt in">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#61-a-second-protocol-not-a-wider-one" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.1 A second protocol, not a wider one
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#62-what-is-written-and-when" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.2 What is written, and when
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#63-what-happens-on-the-way-back" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.3 What happens on the way back
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#64-the-first-jobs-and-what-they-showed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.4 The first jobs, and what they showed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-teardown-is-a-courtesy-with-a-deadline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Teardown is a courtesy with a deadline
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-the-dock-is-a-pure-view-and-re-snapshots-rather-than-replays" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. The dock is a pure view, and re-snapshots rather than replays
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="task-queue-serial-work-cooperative-stops-and-lifetime">Task Queue — Serial Work, Cooperative Stops, and Lifetime</h1>
+<p><span class="slug-ref">[[[appendices.task-queue]]]</span></p>
+<h2 id="overview">Overview</h2>
+<p><span class="slug-ref">[[[appendices.task-queue#overview]]]</span></p>
+<ul>
+<li><a href="https://github.com/borco/rehuco/issues/201">#201: feat: task queue engine — serialized background jobs with pause/resume/cancel/reorder</a></li>
+<li><a href="https://github.com/borco/rehuco/issues/237">#237: feat: per-job pause via a job cursor — plus explicit removal and retry</a></li>
+<li><a href="https://github.com/borco/rehuco/issues/238">#238: feat: queue persistence — a job registry, serializable jobs, and validation on start</a></li>
+<li><a href="https://github.com/borco/rehuco/issues/202">#202: feat: task queue dock — the visible queue, its context menu, and per-job controls</a></li>
+</ul>
+<p>How slow work gets off the interactive path: checksum runs, directory scans, copies, bulk conversions,
+and later a node's swarm chatter (<span class="slug-ref">[[nodes#readiness-per-op]]</span>). The component itself is named in
+<span class="slug-ref">[[architecture-design#components]]</span>; this page covers the engine in <code>rehuco_core/tasks/</code>, the agent's
+queue file over it, and now the dock that shows both (§8) — and the decisions behind all three.</p>
+<p>The one sentence the whole design falls out of is the component's own: <em>"multi-selecting serializes the
+work rather than running it all at once."</em></p>
+<h2 id="1-it-lives-in-rehuco-core-and-knows-nothing-about-qt">1. It lives in <code>rehuco-core</code>, and knows nothing about Qt</h2>
+<p><span class="slug-ref">[[[appendices.task-queue#home]]]</span></p>
+<p><code>borco-pyside</code> was the obvious alternative — the logging stack lives there, and a queue is the same
+<em>kind</em> of thing. Three reasons it is here instead:</p>
+<ul>
+<li><strong>The queue's contract is written in rehuco's own specification.</strong> A component described in
+  <span class="slug-ref">[[architecture-design#components]]</span>, scheduled in <span class="slug-ref">[[implementation-plan]]</span>, and referred to by name from
+  five other specs is not generic infrastructure that happens to be useful here. <code>borco-core</code> acquired
+  its guest status by being given rehuco's code early, and <span class="slug-ref">[[packaging-deployment#three-packages]]</span> says
+  plainly that nothing rehuco should assume the <code>borco-*</code> packages stay in this repo.</li>
+<li><strong>The node runs jobs too.</strong> <span class="slug-ref">[[architecture-design#components]]</span> gives the node <em>"watches folder roots,
+  serves <code>.rehu</code> data over REST, participates in the swarm, </em><em>runs jobs</em><em>"</em> — headless, on machines with
+  no display. A Qt-based engine could never be one of its pieces, and
+  <span class="slug-ref">[[packaging-deployment#three-packages]]</span> rejected extras precisely so that "the node has no GUI
+  dependencies" stays structural rather than carefully-maintained.</li>
+<li><strong>It is what makes the engine testable.</strong> Concurrency is the whole risk here; being able to test
+  ordering, pausing, cancellation and teardown with no <code>QApplication</code> and no event loop is worth more
+  than the one adapter class the split costs.</li>
+</ul>
+<h3 id="11-what-an-observer-is-told">1.1 What an observer is told</h3>
+<p><span class="slug-ref">[[[appendices.task-queue#observation]]]</span></p>
+<p><strong>A GUI observer is the piece that buffers and marshals</strong>, exactly as the log bridge does for records
+(<span class="slug-ref">[[appendices.logging#batching]]</span>). The engine deliberately does none of it: it calls its listeners
+synchronously, on whichever thread the change happened on, the same contract <code>logging</code> gives a handler.
+A queue in front of a queue would be one more place for records — and rows — to be lost.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>This means a job hashing a large tree calls <code>job_updated</code> once per file, on the worker thread. The
+coalescing that turns that into one repaint belongs to the observer, which is the only layer that
+knows what a repaint costs. The engine reporting less would be the engine deciding for it.</p>
+</div>
+<h2 id="2-serial-by-construction-not-by-configuration">2. Serial by construction, not by configuration</h2>
+<p><span class="slug-ref">[[[appendices.task-queue#serial]]]</span></p>
+<p>One worker thread, one job in flight, and <strong>no number to raise</strong>. Ten checksum jobs against one disk are
+slower run together than run in turn, so serialization is the specified behavior rather than a starting
+value — and a <code>maxConcurrency</code> setting would be an invitation to break it.</p>
+<p><code>QThreadPool</code> with a count of one was considered and rejected on three counts: serial would become a
+setting; a submitted <code>QRunnable</code> is no longer the queue's to reorder, so the pending list would have to
+be kept outside the pool anyway; and the global pool is already shared with other background work, so
+its count is not this queue's to own. A <code>QThread</code> with a worker object moved onto it was rejected for
+forcing jobs to be <code>QObject</code>s, which contradicts <em>the engine knows none of them</em>.</p>
+<p><strong>Whether a bounded parallel lane is ever allowed</strong> is recorded here as answered <em>no, for now</em>, since the
+issue asked for a decision rather than an assumption. If one is ever wanted — a network lane alongside a
+disk lane — it is a <strong>second queue over a different resource</strong>, never a concurrency count on this one.
+Two queues make the resource each is protecting explicit; one queue with a number makes it invisible.</p>
+<h2 id="3-the-engine-schedules-the-job-stops-itself">3. The engine schedules; the job stops itself</h2>
+<p><span class="slug-ref">[[[appendices.task-queue#jobs]]]</span></p>
+<p>A job is a <code>Protocol</code>. The engine orders jobs, runs one at a time, and records outcomes; <strong>everything
+about stopping belongs to the job</strong>. Asking a running job to pause or cancel is a call <em>into</em> it —
+<code>pause()</code>, <code>cancel()</code>, <code>resume()</code> — and it holds the request and acts on it wherever its own work
+divides.</p>
+<p><strong>Stopping is cooperative, because the alternative is unsafe.</strong> A thread cannot be killed: a job
+halfway through a rename, holding a file handle, has to be allowed to unwind. So a stop is a request
+the job honors at a checkpoint it chose, and the engine learns the outcome only when <code>run()</code> returns
+or raises.</p>
+<p>An earlier design kept the request in the engine and handed the job a <code>control.checkpoint()</code> that
+raised. It was replaced because of one question it could not answer: <strong>can this stop still be taken
+back?</strong> A cancel that has merely been recorded is retractable; a cancel the job has read and begun
+undoing work on is not — and that distinction lives entirely inside the job. An engine holding the flag
+cannot tell the two apart, so it must either refuse every retraction or risk telling a job that is
+mid-rollback to carry on. Moving the state into the job makes the question answerable by the only
+party that knows: <code>resume()</code> returns whether it was in time.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Three methods are therefore called <strong>on a different thread from <code>run()</code></strong>, and only ever on the one
+job that is running. A job that keeps mutable stop state owns its own locking — which is why
+<code>TaskJobBase</code> exists and why most jobs should inherit it rather than implement the protocol. It is
+the same eleven lines every time, and this reverses the earlier <em>"a plain object rather than a
+subclass"</em>: that was right when a job owed two members and is not right now that it owes six.</p>
+</div>
+<h3 id="31-a-paused-job-returns-it-is-not-parked">3.1 A paused job returns; it is not parked</h3>
+<p><span class="slug-ref">[[[appendices.task-queue#cursor]]]</span></p>
+<p>Pausing the running job must park it <strong>and let the next one start</strong>, and resuming must <em>continue</em> it
+rather than start it over. The obvious reading is that the paused job's Python stack has to be kept
+alive — a thread each, a run token handed between them, a rewritten worker loop. That was the first
+design and it was <strong>rejected</strong> after reading DownThemAll's manager, which holds no continuation in
+memory at all: its <code>resume()</code> simply puts the item back in the queue, and byte-level resumption is
+delegated to HTTP range requests.</p>
+<p><strong>A cursor does the same job here.</strong> A job asked to pause <em>returns</em> from <code>run()</code>; on resume, <code>run()</code> is
+called again and the job picks up from whatever it kept. There is no stack to hold, so:</p>
+<ul>
+<li><strong>The single worker thread and its loop are unchanged.</strong> No run token, no thread per paused job, no
+  N-thread shutdown join. §2 is untouched, which is the clearest evidence this was the right call.</li>
+<li><strong>In-session pause and across-restart resume are the same mechanism</strong> — both re-enter <code>run()</code>. That is
+  what makes them one feature instead of two.</li>
+<li><strong>The cost is paid selectively.</strong> A job with nothing kept starts over, which is honest and costs
+  nothing to implement; a job that wants better implements it. Nothing is imposed on every future client.</li>
+</ul>
+<p>The rejected alternative would have held a Python stack and every open file handle per paused job, to
+buy granularity finer than a checkpoint that nothing had asked for.</p>
+<h3 id="32-the-job-class-is-the-unit-of-responsibility">3.2 The job class is the unit of responsibility</h3>
+<p><span class="slug-ref">[[[appendices.task-queue#job-responsibility]]]</span></p>
+<p>How a cursor is shaped, where it is kept, what <code>run()</code> does on re-entry, when a stop takes effect, and
+what a job undoes when it stops part-way are <strong>one class's business</strong>. The engine never sees a cursor
+and has no opinion about one, and it does not hold the stop request either — both would put it in the
+middle of something it cannot be right about. Stated as a rule because it is what keeps the protocol
+from growing: <strong>a new kind of resumable work is a new class, not a new engine feature.</strong></p>
+<p>This is why <code>JobControl</code> has exactly one method. Progress is the only thing the engine genuinely needs
+from a running job, because it cannot observe it and a view cannot draw without it. Everything else a
+job might want to say, it says by returning or raising.</p>
+<p>Exactly one bit crosses that boundary, and it is named for a <em>consequence</em> rather than a mechanism:
+<code>resumes_where_it_stopped</code>. Nothing outside the class may assume there is a cursor at all, and the only
+question a surface has a legitimate interest in is <em>will pausing this cost the work done so far?</em> — so
+a dock can say so before someone pauses a forty-minute sweep that will start again.</p>
+<p><strong>Starting over is a supported answer, not a defect.</strong> A verify job that records only which manifest it
+checks against is correct, and pausing it is <em>wasteful</em> rather than <em>wrong</em>. Requiring every job to
+resume in place before it could be paused would be exactly the constraint-on-every-client this design
+keeps refusing.</p>
+<p>A second bit crosses on the same terms, and for the same reason: <strong><code>progress_unit</code>, what this job's
+<code>report</code> counts</strong> (<a href="https://github.com/borco/rehuco/issues/248">#248</a>). <code>done</code> and <code>total</code> are bare
+numbers, so a run hashing four gigabytes and a sweep over forty resources are one pair of integers to
+everything downstream; a surface handed both has to guess, and draws one of them wrong. The job is what
+knows, so the job says — once, at enqueue, like everything else here.</p>
+<p>It is a <strong>unit, not a rendering</strong>. Core says what is being counted and nothing about how wide a bar is,
+what a byte count is spelled as, or whether anything is drawn at all — §1 would be violated by any of
+the three, and the engine would gain a formatting dependency it has no use for. <code>""</code> is the honest
+answer for a job whose progress is one step, and it means <em>draw nothing</em>: a bar jumping from empty to
+full says less than the state column beside it. Which unit names exist is deliberately open rather than
+a closed set, so a job this package never heard of can declare its own; §8 says what a surface does
+with one it does not recognize.</p>
+<p>Two more declarations are read beside these at enqueue: <code>source</code>, the <code>.rehu</code> this job is about — the job's
+own declaration, so there is one answer and nothing to keep in step — and <code>safely_interruptible</code>,
+whether stopping it part-way leaves nothing behind. That last is <strong>distinct from <em>revertible</em></strong>: a
+conversion undoes itself on failure (<span class="slug-ref">[[acquisition-tooling#convert-mechanics]]</span>) and is still not safely
+interruptible, because it has touched the directory. The undo is the job's own, exactly as the cursor
+is; the engine only ever <em>asks</em>, and never learns what unwinding means.</p>
+<p><strong><code>source</code> is the one declaration that is re-read</strong> (<a href="https://github.com/borco/rehuco/issues/241">#241</a>).
+Every other answer is fixed at enqueue, because one that changed while the job ran would rewrite a row
+somebody is looking at. <code>source</code> is not that kind of answer: it names <em>where the work is</em> rather than
+describing the work, and a rename moves that while the job runs. A row still naming the old folder would
+send a reader somewhere that no longer exists — so <code>resync_sources()</code> re-reads every job's source and
+announces the ones that moved. Whoever performed the rename calls it; the queue does not go looking, and
+never learns what a rename coordinator is.</p>
+<p>That re-read <strong>overlaps <code>run</code></strong>, unlike everything else here, so a job whose source can move must answer
+from something safe to read on another thread. That is what a <code>ResourceLocation</code> is for, and why such a
+job holds one instead of a path.</p>
+<h3 id="33-one-pause-concept-and-requests-kept-apart-from-states">3.3 One pause concept, and requests kept apart from states</h3>
+<p><span class="slug-ref">[[[appendices.task-queue#pause-concept]]]</span></p>
+<p><code>pause()</code> asks <strong>every unfinished job</strong> to pause; the per-job pair asks one. There is no separate queue-wide flag, and dispatch consults per-job state only — which
+is what lets pausing one job leave the rest running, and lets a job enqueued afterwards start
+immediately. <code>queue.paused</code> is a <strong>derived convenience</strong> meaning <em>there is unfinished work and all of
+it is paused</em>; it gates nothing, and it is false on a queue holding nothing unfinished, since a
+vacuous truth would read as <em>the queue is held</em>.</p>
+<p><strong>One request slot, not two flags.</strong> A job is asked for at most one thing at a time and the latest
+instruction replaces the one before it: asking a cancelling job to pause <em>downgrades</em> the request,
+asking a pausing job to cancel escalates it. Two independent booleans could express <em>cancel and pause</em>,
+which is not a state anything can act on and not a state a dock can draw. What was asked is carried on
+the status as <code>stop_requested</code>, a fact separate from the state, so a watcher can be honest before the
+job has obeyed.</p>
+<p>Three consequences, all visible from outside:</p>
+<ul>
+<li><strong>A job that never looks at its request cannot be interrupted.</strong> It runs to completion, and is
+  reported <code>done</code> — reversing <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/201" title="GitHub Issue: borco/rehuco #201">#201</a>'s <em>"a cancelled job must never read as done"</em>. The request was not
+  acted on and the work genuinely finished; reporting it <code>cancelled</code> would describe an intention rather
+  than an outcome. Nothing is lost, because the request is on the status.</li>
+<li><strong>A stop does not stop anything the moment it is asked.</strong> The running job keeps running until it
+  yields. That is why <code>paused</code> is a state of the <em>job</em>: a job that has not acted yet is genuinely still
+  running, and collapsing the two would hide the difference from the person watching.</li>
+<li><strong>A stop can be taken back until the job has looked at it.</strong> <code>resume()</code> on a running job asks, and
+  the job answers: <em>not yet acted on</em> means it carries on as though nothing was asked, which is what
+  makes Cancel-then-Resume a recoverable mis-click rather than a lost job. <em>Already stopping</em> means no
+  — and it is the job that knows, because reading its request is an acknowledgement and a job reads it
+  in order to start tidying up.</li>
+<li><strong>A refusal after a pause still costs only a re-entry, and the engine spends it.</strong> The job's raise
+  and the engine's recording of it are two moments with the job's own cleanup between them; a resume in
+  that gap is refused, but a pause that far along has destroyed nothing, so the job is re-queued when
+  the outcome lands. A refusal after a <em>cancel</em> stands: the job may already have undone work, and Retry
+  is the honest recovery. Likewise a cancel arriving in that gap wins over a pause already unwinding —
+  recorded onto a parked job it would be stranded, since nothing ever picks a paused job up.</li>
+</ul>
+<p><strong>The bulk <code>resume()</code> never un-cancels anything.</strong> It is the inverse of the bulk <code>pause()</code> and touches
+only jobs whose pending request is a pause; retracting a cancel is something you ask of one row.
+Sweeping a multi-selection and resurrecting a job the user cancelled ten minutes ago would be a
+surprise, and the per-job call is exactly as easy to reach.</p>
+<p><code>SCHEDULED</code> is deliberately <strong>not</strong> a state: queued and scheduled are the same concept — a job waiting
+its turn — and a resumed job is <code>QUEUED</code> like any other. There is likewise <strong>no force-start</strong>. The
+queue runs exactly one job at a time, so its order already <em>is</em> the answer to "what runs next":
+resuming a multi-selection schedules them all and the topmost starts, and to run a specific job now you
+move it to the top. Forcing would have to mean running two things at once, which is the one thing this
+component is specified not to do.</p>
+<h3 id="34-reordering-applies-to-what-has-not-started">3.4 Reordering applies to what has not started</h3>
+<p><span class="slug-ref">[[[appendices.task-queue#reorder]]]</span></p>
+<p>A queued <strong>or paused</strong> job moves: neither is executing, both are still waiting their turn, and refusing
+to move one of them would be an arbitrary difference between two jobs that are equally not running. A
+running job cannot be made to have started later than it did, and a finished one has no position left
+to matter. A move aimed above the running job is <strong>clamped rather than refused</strong>: the request is
+honest, only its index reaches too far, and placing a job ahead of the one already running would
+promise an order the queue cannot deliver.</p>
+<h2 id="4-a-failure-costs-its-job-and-nothing-else">4. A failure costs its job and nothing else</h2>
+<p><span class="slug-ref">[[[appendices.task-queue#failure]]]</span></p>
+<p>An exception escaping a job is caught, recorded on that job as <code>failed</code> with its type and message, and
+<strong>written to the log with its traceback</strong> — then the next job starts. A queue that stopped on the first
+failure would strand every job behind it, which for a bulk conversion means one unreadable file halting
+a run of thousands.</p>
+<p>The log is deliberately where the detail lives (<span class="slug-ref">[[appendices.logging#what-is-logged]]</span>): a status carries
+the sentence, the log carries the traceback, and a job's records land under the scope it was enqueued in
+(below), so a failure while working on a document is readable in <em>that document's</em> log.</p>
+<h3 id="41-a-failure-is-kept-because-it-is-the-thing-worth-acting-on">4.1 A failure is kept, because it is the thing worth acting on</h3>
+<p><span class="slug-ref">[[[appendices.task-queue#kept]]]</span></p>
+<p><strong>Jobs leave the queue only when told to. Nothing sweeps.</strong> A failed or cancelled job is usually
+retryable — a verify that ran before its generate fails for a reason that stops being true, and the fix
+is to run it again — so dropping it would throw away exactly the row a reader came back for. <code>remove</code>
+is the only way out, and <code>retry</code> puts a finished job back to <code>queued</code>, clears its error and progress,
+and runs it <strong>from the top</strong>: clearing what the job kept is the whole difference between Retry and
+Resume.</p>
+<p>Re-entering a job blindly is safe because a job that changes anything guards its own re-entry — a
+conversion refuses to start over a leftover backup (<span class="slug-ref">[[acquisition-tooling#convert-mechanics]]</span>) rather
+than trust the caller not to ask twice.</p>
+<p>Removing the <em>running</em> job is the sharp edge. Cancellation is cooperative, so a detached job may still
+be inside <code>run()</code> for a checkpoint or two; the engine <strong>drops its terminal notification</strong>, because
+telling a listener that a row it deleted has just been cancelled would announce a job that, as far as
+anyone watching is concerned, no longer exists.</p>
+<h2 id="5-the-callers-context-travels-to-the-worker">5. The caller's context travels to the worker</h2>
+<p><span class="slug-ref">[[[appendices.task-queue#scopes]]]</span></p>
+<p><span class="slug-ref">[[appendices.logging#scopes]]</span> states the obligation this component owes and names it directly: <em>"Any
+component that runs work on another thread on a caller's behalf — the task queue above all — owes its
+jobs that capture, or their records land under nothing and the resource's own log stays empty while work
+is being done on it."</em></p>
+<p>So the caller's <code>contextvars</code> context is copied at <strong>enqueue</strong> — not at start, which happens on the
+worker where the caller's context is already gone — and the job is run inside it. <code>copy_context</code> is
+generic: the engine never learns what is in a context, only that the caller's belongs to the work. That
+is also what keeps this out of <code>borco-pyside</code>'s reach and leaves <code>rehuco-core</code> importing nothing new.</p>
+<p><strong>The job adds a scope of its own, inside the caller's.</strong> Running the job, the engine opens a <strong>job scope</strong> — the
+job's serial — nested inside the captured context, so every record the job logs carries the document it was
+enqueued for <em>and</em> the job that made it (<span class="slug-ref">[[appendices.logging#scopes]]</span>). That is what lets one record be read
+three ways (<span class="slug-ref">[[appendices.logging#surfaces]]</span>): from the Tasks dock, by selecting the row; from the document's own
+log; and from the window's. The engine still learns nothing about what a scope means — a serial is one more
+opaque key, opened with the same <code>LogScope.open</code> any caller uses.</p>
+<h2 id="6-the-queue-survives-a-restart-for-the-jobs-that-opt-in">6. The queue survives a restart, for the jobs that opt in</h2>
+<p><span class="slug-ref">[[[appendices.task-queue#lifetime]]]</span></p>
+<ul>
+<li><a href="https://github.com/borco/rehuco/issues/238">#238: feat: queue persistence — a job registry, serializable jobs, and validation on start</a></li>
+</ul>
+<p>The queue is <strong>written to disk</strong>, and behaves like a download manager's: close the app, reopen it, the
+list is still there. Nobody has to remember what they had planned, and nobody is held hostage by a
+running queue at shutdown.</p>
+<p><strong>This reverses what this section said until <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/238" title="GitHub Issue: borco/rehuco #238">#238</a></strong>, and the reversal is recorded with both halves so
+the trade stays visible. The old text rejected persistence because it <em>"would make every job a
+registered kind plus serializable arguments — a constraint on every future client, bought for the
+resumption of one interrupted sweep."</em> The <strong>cost</strong> it named is real and is now accepted — but only by
+the jobs that opt in. The <strong>benefit</strong> was misjudged: it is not the resumption of one sweep, it is not
+losing planned work and not being unable to quit.</p>
+<h3 id="61-a-second-protocol-not-a-wider-one">6.1 A second protocol, not a wider one</h3>
+<p><code>TaskJob</code> is unchanged. <code>PersistableTaskJob</code> extends it with <code>kind</code>, <code>validate()</code>, and the
+<code>capture_state()</code> / <code>restore_state()</code> pair. <strong>A job satisfying only <code>TaskJob</code> is legal</strong> — it is simply
+not saved — and <code>JobStatus.persistable</code> says so on every row, so a surface can mark what is about to be
+lost rather than let it vanish at quit. That opt-out has to survive: a silent close depends on knowing
+whether a prompt is owed.</p>
+<p><code>capture_state()</code>/<code>restore_state()</code> rather than a payload property plus a <code>from_payload</code> classmethod:
+the pair is symmetric, and it is the same pair §3.1's cursor already implies — so <strong>in-session pause and
+across-restart resume stay one concept</strong> instead of becoming two. It costs the registry a factory per
+kind, which is what the classmethod would have saved.</p>
+<p><code>capture_state()</code> is specified as <strong>called only when the job is not running</strong>, so it never reads state
+that is mutating on the worker thread. The engine keeps the last state it captured, so a queue written
+<em>while</em> a job runs still holds that job — as of the last moment it could safely be asked.</p>
+<p><strong><code>kind</code> is a stable string, not a class path.</strong> A class path bakes today's module layout into the
+user's saved queue, and this repo has already moved its packages once (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/157" title="GitHub Issue: borco/rehuco #157">#157</a>). <code>TaskJobRegistry</code> is the
+indirection that turns a rename into a one-line map change instead of an unreadable file. It hands out
+restored jobs through one call rather than a blank instance plus a separate restore, because a job that
+has been built but not restored is an invalid object; an unknown kind answers <code>None</code>, matching
+<code>PluginRegistry.resolve</code>'s house style rather than raising. Registration belongs to whoever owns the
+job.</p>
+<p><strong>The job class is the unit of responsibility</strong> (§3.2, and it governs here too): how a job captures
+itself, what that state holds, and how it picks up on reconstruction are one class's business. The
+registry, the queue and the file know only <code>kind</code> and an opaque blob, and nothing in between inspects
+one — the class that wrote a state is the class that reads it.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The constraint the old §6 warned about is genuine, and whoever writes the first persistable job pays
+it: the state may hold only what survives a round trip through JSON, and <code>kind</code> is a promise that
+cannot be casually renamed.</p>
+</div>
+<h3 id="62-what-is-written-and-when">6.2 What is written, and when</h3>
+<p><strong>Everything persistable is written, including <code>done</code>, <code>failed</code> and <code>cancelled</code>.</strong> Since jobs leave only
+when removed (§4.1), dropping the finished ones at quit would be exactly the implicit removal that rule
+exists to prevent — and it would take the retryable failures with it. Each item carries <code>kind</code>, the
+captured state, the label, the state it was in, and the reason it failed.</p>
+<p><strong>Progress is written for a job that declares <code>resumes_where_it_stopped</code>, and only for that job.</strong> Such
+a job genuinely is as far along as its bar says, because whatever it needs to carry on is in the state
+it captured. A job that starts over comes back at zero, because restoring a bar the first checkpoint is
+about to reset would be a lie with a witness. Note that nothing here asks <em>how</em> a job resumes, only
+whether it says it does.</p>
+<p><strong>Written on structural change, never on progress.</strong> Enqueue, remove, reorder, retry, state transitions,
+shutdown — O(jobs), not O(work units), so a five thousand file checksum sweep writes about twice rather
+than five thousand times. What is being avoided is <strong><code>fsync</code> latency on the worker thread</strong>, not SSD
+wear: the file is tens of KB and endurance is a non-issue, but an atomic write is a durability barrier
+by design (~0.1–1 ms on SSD, 5–15 ms on spinning disk, worse on an SMB mount) and the page cache cannot
+absorb it.</p>
+<p>The file is <strong>JSON beside the settings file</strong> — <code>task-queue.json</code> in the settings directory, written
+through <code>borco_core.atomic_write_text</code>. Not <code>QSettings</code>, whose flat key space would spell an opaque job
+state as <code>tasks/3/state/paths/7</code>. A corrupt or unreadable file logs and starts empty; it never blocks
+startup.</p>
+<h3 id="63-what-happens-on-the-way-back">6.3 What happens on the way back</h3>
+<p><strong><code>validate()</code> runs before <em>every</em> start, not only after a restore.</strong> One rule then covers both the
+restored-resource-is-gone case and the deleted-while-queued one. A non-<code>None</code> return puts the job in
+<code>failed</code> with that sentence as its error — no seventh state — and because a failed job is kept and
+retryable (§4.1), the recovery is to fix the cause and press Retry.</p>
+<p><strong>Unfinished jobs come back <code>paused</code>; finished ones keep their state.</strong> So a restarted app comes up with
+everything held, while a <strong>newly added job runs immediately</strong>, because eligibility is per-job and
+nothing else is eligible. Which state unfinished work returns in is an argument rather than a decision
+the engine makes, so a <em>resume tasks on restart</em> setting has somewhere to stand; likewise the load path
+is a plain list the surface filters, not a sealed <code>queue.load_from(path)</code>.</p>
+<p><strong>An unknown <code>kind</code> is dropped with a logged warning and a count</strong>, not an error: a queue file from a
+newer build, or one naming a removed feature, must not stop the app starting. The same is true of a
+record that is not shaped like one at all, since what arrives came off a disk anyone can edit.</p>
+<p><strong><code>restore</code> is refused on a queue that already holds jobs, or one that has been shut down.</strong> It is a
+startup operation; making it merge invites a subtler question about identity and order that nobody has
+asked.</p>
+<p><strong>A rebuilt job has no window to be handed anything, which is why the rename coordinator is
+process-wide</strong> (<a href="https://github.com/borco/rehuco/issues/204">#204</a>). The registry's factory takes no
+arguments by design — a job is rebuilt from its own saved state and nothing else — so a job that needs a
+collaborator can only reach one that the <em>process</em> has. <code>DEFAULT_RENAME_COORDINATOR</code> is that, for the
+same reason <code>DEFAULT_TASK_JOB_REGISTRY</code> is one: there is a single filesystem and a single answer to <em>is a
+rename waiting</em>, and a job reading through a coordinator nobody renames through would hold a directory
+open against the very rename it exists to stand aside for (§3.2, <a href="https://github.com/borco/rehuco/issues/241">#241</a>).</p>
+<h3 id="64-the-first-jobs-and-what-they-showed">6.4 The first jobs, and what they showed</h3>
+<p><span class="slug-ref">[[[appendices.task-queue#first-jobs]]]</span></p>
+<ul>
+<li><a href="https://github.com/borco/rehuco/issues/204">#204: feat: checksum actions — generate/verify from the app as task-queue jobs</a></li>
+<li><a href="https://github.com/borco/rehuco/issues/242">#242: feat: periodic checksum sweep — verify a catalog recursively, skipping what was checked recently</a></li>
+</ul>
+<p><code>ChecksumJob</code> and its two subclasses are the first real clients, and they exercise the protocol exactly as
+§3.2 predicted: they are <strong>safely interruptible</strong> (the record is written once, at the end, atomically, so a
+stop leaves the previous one untouched) and they <strong>start over</strong> on resume — the <em>supported answer, not a
+defect</em> the section describes.</p>
+<p>One thing they needed that the engine deliberately does not provide: <strong>a run's findings</strong>. <code>JobControl</code>
+carries progress and nothing else, and a status carries an outcome — so the surface that <em>built</em> the job
+reads the report off it once it has finished, which is the same discipline <code>capture_state</code> is under. The
+engine stays free of a payload type it would have to know the shape of.</p>
+<p><code>SweepChecksumsJob</code> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/242" title="GitHub Issue: borco/rehuco #242">#242</a>) is the third, and it is what §3.1 was written for — <strong>a job whose cursor is its
+own output</strong>. It keeps nothing at all: re-entering <code>run</code> walks the folder again and skips every resource the
+last pass finished, because that pass wrote each record's dates as it went. Two things fell out of building
+it that were not obvious in the abstract:</p>
+<ul>
+<li><strong><code>resumes_where_it_stopped</code> had to become a property.</strong> It is true with a staleness window and false
+  without one, since a window of zero leaves nothing fresh and the sweep genuinely starts over. The bit
+  exists so a surface can say what pausing costs; one that claimed the work was kept at exactly the setting
+  where pausing is expensive would be worse than not having it.</li>
+<li><strong>The sweep counts a different unit.</strong> <code>JobControl.report</code> is unit-free (§5), and this is the client that
+  proves it was right to be: a catalog's byte total is not knowable without <code>stat</code>-ing everything first, so
+  the sweep reports resources against resources while its own per-resource verifies count bytes. Nothing in
+  the engine had to change — but leaving the numbers <em>undeclared</em> was the gap
+  <a href="https://github.com/borco/rehuco/issues/248">#248</a> closed: the row's label was the only thing telling a
+  reader which of the two it was looking at, and a delegate given <code>3/5</code> cannot know. Each of these jobs now
+  declares its <code>progress_unit</code>, which is the smallest thing that had to cross (§3.2).</li>
+</ul>
+<h2 id="7-teardown-is-a-courtesy-with-a-deadline">7. Teardown is a courtesy with a deadline</h2>
+<p><span class="slug-ref">[[[appendices.task-queue#teardown]]]</span></p>
+<p>Shutting the queue down cancels everything and joins the worker with a timeout. Shutdown is terminal: a
+queue that has been shut down refuses further work rather than accepting jobs that will never run.
+Nothing has to be released first — §3.1 means no job is ever parked waiting on the queue, so a paused
+job is simply an unfinished one, cancelled where it stands.</p>
+<p><strong>Cancelling is the wrong verb for quitting with work outstanding</strong>, though, which is why it is not the
+only thing here. The app must be closeable without anyone having to remember what they had planned, so
+the exit sequence is <em>pause, wait, save, shut down</em>: <code>pause()</code> asks every unfinished job to stop,
+<code>wait_until_idle()</code> waits for the running one to unwind to <code>paused</code> — at which point it has kept
+whatever it needs to carry on — and only then is there a queue worth writing down. Waiting is a
+separate call rather than part of <code>pause()</code> because pausing from a dock must never block the thread
+drawing the dock; where the waiting happens is the caller's decision. <code>wait_until_idle</code> <strong>reports</strong>
+rather than hangs, so a job ignoring its checkpoints leaves the caller to choose between saving what it
+has and waiting longer.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The <em>save</em> in that sequence is §6: the engine hands over what to write, and the surface that owns the
+file writes it.</p>
+</div>
+<p>The worker is also a <strong>daemon</strong> thread, and that is what actually guarantees the process exits: a job
+that ignores its checkpoints cannot be joined, so the wait is the chance a cooperative job gets to close
+what it opened, not the mechanism that lets the app quit. A job outliving the wait is logged as a
+warning rather than waited on forever — the failure this exists to prevent is a window that will not
+close, and a log line is a better answer to <em>"why did quitting take a moment"</em> than a hang.</p>
+<h2 id="8-the-dock-is-a-pure-view-and-re-snapshots-rather-than-replays">8. The dock is a pure view, and re-snapshots rather than replays</h2>
+<p><span class="slug-ref">[[[appendices.task-queue#dock]]]</span></p>
+<ul>
+<li><a href="https://github.com/borco/rehuco/issues/202">#202: feat: task queue dock — the visible queue, its context menu, and per-job controls</a></li>
+</ul>
+<p><code>rehuco_agent.tasks.TaskQueueModel</code>/<code>TaskQueueWidget</code> are what a reader sees; every decision here is
+about <em>drawing</em> the engine's state, never about deciding it. No control here changes its own state —
+each calls into the queue and waits for the engine to say what happened.</p>
+<p><strong>The observer re-snapshots rather than replays</strong> (§1.1). The engine's five listener methods all
+collapse to <em>something changed</em>; on the next GUI-thread turn, the model takes a fresh <code>queue.jobs()</code> and
+diffs it against what it is holding. Per-serial last-wins coalescing — the cheap way to replay — is
+unsound the moment a reorder or removal interleaves with an update, and keeping it correct needs an
+ordered op-log that coalesces almost nothing. Re-snapshotting is correct by construction: the model is
+always exactly the queue at a recent instant. Removals and insertions are drawn as row operations, so a
+bulk enqueue of thousands of jobs costs one insertion rather than one per row; an actual reorder — rare,
+and only ever from an explicit Top/Up/Down/Bottom click, never from progress — is a full model reset,
+trading its row-level animation for a diff that cannot be gotten subtly wrong.</p>
+<p><strong>Marshalling is a nested <code>Marshaller(QObject)</code> with one payload-free signal on an explicit
+<code>QueuedConnection</code></strong>, the same shape <code>LogBridge</code> uses for records. Explicit-queued is load-bearing: a
+control clicked on the GUI thread re-enters a listener method synchronously and must still take the
+queued path, which is what makes "the view follows the engine, not its own optimistic guess" mechanical
+rather than a discipline someone has to remember.</p>
+<p><strong>Reorder is buttons only, no drag-and-drop.</strong> Qt's internal-move drag-and-drop needs the <em>model</em> to
+perform the move, contradicting a pure view; the engine clamps an out-of-range move, so a drop would
+visibly spring back; and buttons are the only usable gesture at thousands of rows.</p>
+<p><strong>The dock is a nested dock shell, and carries the selected job's log.</strong> Like a document dock
+(<span class="slug-ref">[[plugins#dock-shell]]</span>), the Tasks dock hosts its own dock manager: the queue table in one sub-dock and a <strong>Log</strong>
+sub-dock beside it — the same log widget the window and every document host
+(<span class="slug-ref">[[appendices.logging#surfaces]]</span>), attached to the scope of whichever row is selected (§5) and to nothing when none
+is. Selecting a job is how its records are reached from here; a job that logged nothing shows an empty surface, which
+is the truth about it. The sub-dock is hidden by default and stays hidden until asked, so the table alone is what a
+reader who only wants progress sees.</p>
+<p><strong>The third column is <code>Info</code>, and each job decides how its own progress reads there</strong>
+(<a href="https://github.com/borco/rehuco/issues/248">#248</a>). Core declares the unit (§3.2) and the agent holds a
+renderer per unit — humanized bytes for a checksum run, <code>12 / 40 resources</code> for a sweep — so the cell can
+hold a byte count, a resource count, a failure reason, or nothing at all. <em>Progress</em> named one of those
+four, which is why the column is not called that; <em>Notes</em> was the alternative and reads as something a
+user wrote, where this is machine-reported. A unit no renderer is registered for falls back to the bare
+<code>done/total</code>, because a job declaring one this build never heard of still has honest figures.</p>
+<p><strong>Two things draw an empty cell, and a zero is neither of them.</strong> A job that declares no unit never had
+a figure to show; and a job that <em>counted nothing and had nothing to count</em> — a verify whose files were
+all checked recently, a sweep over a folder holding no resources — reports <code>(0, 0)</code> honestly, where
+<code>0B</code> would read as <em>this ran and moved zero bytes</em> rather than <em>there was nothing here to do</em>. What such
+a run established is the log's to say (<code>"nothing to check"</code>), not a table cell's. A zero against a
+<strong>real</strong> total is not this case and still draws: <code>0 / 40 resources</code> is a job with forty resources ahead
+of it, which is worth a reader's attention.</p>
+<p><strong>The bar and its figure sit side by side, never on top of each other.</strong> The figure keeps a fixed
+100px slot at the cell's right edge, right-aligned so two rows' numbers line up, and the bar takes what
+is left. Text centred <em>on</em> a bar was tried first and is worse than either half suggests: the color that
+reads over the filled part is the wrong one over the empty part, so one end always loses its text — and
+no single pen fixes it, because the surface under the text moves as the job runs. Two areas, each with
+one background, is the whole fix. It is also where DownThemAll ends up from the other direction: its bar
+has a column and its figures have columns of their own, and nothing is ever written over the bar. The
+slot is fixed rather than fitted to the text so a running row's digits do not walk left and right as
+they change; the largest catalogs' resource counts are the one figure that elides.</p>
+<p><strong>The bar is drawn by this delegate, not by the style.</strong> <code>CE_ProgressBar</code> draws a groove that is opaque
+under some styles — Fusion fills the whole cell with one — so it covered the selection fill and state
+tint <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/251" title="GitHub Issue: borco/rehuco #251">#251</a> had just painted, and it fills the cell's full height, which is what forced the figure on top
+of it in the first place. A rounded groove at the row's ink and a chunk in the <strong>state's own color</strong> —
+the same value that tints the row and colors the status glyph — costs twenty lines and buys a cell whose
+every pixel this delegate decided, identical on all three platforms. It is the same rule as <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/251" title="GitHub Issue: borco/rehuco #251">#251</a>'s,
+applied to the one cell that had escaped it: <strong>this table paints its own background, and a style-drawn
+box over the top is not a cell this table controls.</strong></p>
+<p><strong>The state column is icons, no words.</strong> Eight glyphs cover every reading it ever had — the six states,
+plus <em>pausing</em> and <em>cancelling</em> for a job that has been asked to stop and has not reached its checkpoint
+(§3.3). Each takes the state's own color, so a row and its glyph are one signal seen twice; <code>PAUSED</code>,
+which <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/251" title="GitHub Issue: borco/rehuco #251">#251</a> leaves untinted, draws in the row's own ink for the same reason it draws no tint. Losing the
+words is what lets the column shrink to the width of its own header and gives the eye something to scan
+a long queue by, and the sentence is not gone: <code>state_text</code> still writes it, the model still answers it
+as the display role, and it leads the row's tooltip — which is what an icon-only cell owes a reader who
+has not learned the glyphs yet.</p>
+<p><strong>A failed job's reason draws in that column too</strong>, elided, with the full string as the row's tooltip —
+it carries nothing useful for a failed row, and a fourth column would be blank on nearly every row.
+<code>done &gt; total</code> clamps the bar to full while the numbers underneath still disagree, since the engine
+clamps nothing.</p>
+<p><strong>There is no busy bar, and that is a reversal.</strong> Until <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/248" title="GitHub Issue: borco/rehuco #248">#248</a> a <code>total</code> of <code>None</code> or <code>0</code> drew
+<code>QStyleOptionProgressBar</code> with <code>maximum = 0</code>, on the reasoning that an honest <em>indeterminate</em> beats a bar
+stalled at either extreme. That was right about the alternatives and wrong about the medium: Qt's busy
+indicator is an <strong>animation</strong>, and a delegate repaints only when its row's data changes, so it never runs
+and the cell paints as garbage. A bar is drawn only where there is a fraction to draw; every other case
+is text, or nothing. This is recorded rather than merely deleted so the next reader does not restore it.</p>
+<p><strong>No force-start</strong>, matching §3.3: the queue runs exactly one job at a time, so its order already is the
+answer to <em>what runs next</em>. Resuming a multi-selection schedules them all and the topmost starts; to run
+a specific job now, move it to the top and resume it.</p>
+<p><strong>Pausing informs, it never blocks.</strong> The dock reads one bit — <code>JobStatus.resumes_where_it_stopped</code> —
+and knows nothing about <em>how</em> any job resumes; that is the job class's own business (§3.2). A row that
+does not resume where it stopped says so on its tooltip and on the Pause action. Starting over is
+<em>wasteful, not wrong</em>, so there is no prompt: pausing destroys time, not data, and a modal on every pause
+of a cheap job would be worse than the thing it warns about. Cancel is the one action that prompts, and
+once per batch rather than once per row.</p>
+<p><strong>Resume is offered for a paused job, and for a running job with a stop pending.</strong> <code>resume_job</code> answers
+whether the stop was still retractable, so Cancel-then-Resume is a recoverable mis-click while the job
+has not yet looked at the request. A <code>False</code> answer is not shown as a failure — the row simply carries on
+to its real outcome, no prompt and no optimistic redraw.</p>
+<p><strong>The bulk clears are the dock's own sweeps, not an engine feature.</strong> <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/237" title="GitHub Issue: borco/rehuco #237">#237</a> deleted <code>clear_finished()</code>
+because deciding <em>which</em> jobs a sweep drops is a view's business: <em>Clear done jobs</em> and <em>Clear failed
+jobs</em> filter <code>queue.jobs()</code> and call <code>queue.remove(*serials)</code>; <em>Clear all jobs</em> cancels whatever is
+unfinished first. There is no <em>clear cancelled jobs on restart</em> — a cancelled job was stopped on purpose
+and is the one most likely to be retried, and <em>Clear all jobs</em> already covers a clean slate.</p>
+<p><strong>Three restart-time settings, all off by default</strong> (<code>Settings &gt; Tasks</code>, <code>TasksSettings</code>): <em>clear done
+tasks</em>, <em>clear failed tasks</em>, and <em>resume tasks</em>. The two clears are <strong>applied at load, before
+<code>restore()</code></strong> — a setting turned on after the app was last closed is honoured on the very next start
+rather than the one after, since deciding at quit would make the checkbox appear not to work until the
+second restart, and the dropped jobs never enter the queue at all, so there is no <code>jobs_removed</code> churn
+and no flash of rows vanishing as the window opens. <em>Resume tasks on restart</em> decides which of the two
+legal restored states (§6.3) unfinished work comes back in: <code>queued</code>, so the topmost starts immediately,
+or the default <code>paused</code>.</p>
+<p><strong>The bulk pair mirrors its own calls, not <code>queue.paused</code>.</strong> That property is a <em>derived convenience</em>
+meaning <strong>every</strong> unfinished job is held (§3.3), so one job paused beside one still running makes it
+<code>False</code> — and gating Resume All on it would disable a resume the engine would happily perform. Each
+control therefore reads the predicate its own call uses: Pause All is offered while any unfinished job
+has not been asked, Resume All while any job is paused or pausing.</p>
+<p><strong>Closing the app runs the exit sequence from §7</strong> — <code>pause()</code>, <code>wait_until_idle()</code>, the store's <code>save()</code>,
+the model's <code>detach()</code>, then <code>shutdown()</code> — before the outer dock layout is captured, so a floating queue
+dock's visibility is never written mid-teardown. The observer detaches <em>before</em> <code>shutdown()</code>: shutdown
+synchronously emits <code>job_updated</code> for each job it cancels, and each would otherwise schedule a wake-up
+whose dispatch runs against a model whose widget is already being torn down.</p>
+<p><strong>Quitting is silent unless it would actually cost something.</strong> If every unfinished job is
+<code>safely_interruptible</code> <em>and</em> <code>persistable</code>, the queue is written and the app quits with no prompt — being
+asked every time is exactly the friction persistence exists to remove. A prompt appears only for the two
+ways work is genuinely lost, each read off the job's own declaration: one that cannot be stopped
+part-way without leaving something behind, and one that is not saved and so is dropped rather than
+restored — which is what <code>JobStatus.persistable</code> is on every row for (§6.1). <strong>"Wait for them to finish"
+is never offered</strong>: a modal blocking on an unbounded disk walk is a window that will not close, so the
+only answers are to quit anyway or to go back and deal with the work.</p>
+<p><strong>Out of scope, filed separately:</strong> a status-bar indicator for the queue running while the dock is
+hidden (<a href="https://github.com/borco/rehuco/issues/239">#239</a>) — it needs an <code>addPermanentWidget</code> seam this
+dock does not have and no existing precedent to follow.</p>
+<p><strong>A rename is never refused because a job is running</strong> (<a href="https://github.com/borco/rehuco/issues/241">#241</a>).
+<a href="https://github.com/borco/rehuco/issues/240">#240</a> briefly locked the location editor while an unfinished
+job's <code>source</code> sat among the paths a rename would move; on a deep sweep that is minutes to hours of not
+being able to rename a folder, and with several people using the app potentially never. It is reversed
+rather than tuned: jobs cooperate with a rename instead of blocking it, which is <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/241" title="GitHub Issue: borco/rehuco #241">#241</a>'s whole subject.
+Scheduling the rename as a job that runs once the scan releases is the same failure in a different shape
+and is rejected for the same reason.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../settings-pages/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Settings Pages">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Settings Pages
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../testing/" class="md-footer__link md-footer__link--next" aria-label="Next: Testing">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Testing
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.tracking", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "search.share", "content.code.copy", "content.code.annotate", "content.tabs.link"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="../../../javascripts/diagram-open.js"></script>
+      
+        <script src="../../../assets/mkdocs_puml/puml.js"></script>
+      
+    
+  </body>
+</html>
