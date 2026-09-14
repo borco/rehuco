@@ -10,6 +10,7 @@ from PySide6.QtCore import QObject, Qt
 from PySide6.QtWidgets import QApplication
 from pytest import fixture
 from pytest_mock import MockerFixture
+from pytestqt.qtbot import QtBot
 
 # mirrors test_theme_manager.py's own icon/SVG constants exactly -- kept as a separate copy rather
 # than a shared import, since the two test modules are otherwise unrelated.
@@ -26,10 +27,18 @@ SVG: bytes = (
 
 
 @fixture(autouse=True)
-def mock_set_color_scheme(mocker: MockerFixture) -> None:
+def mock_set_color_scheme(qtbot: QtBot, mocker: MockerFixture) -> None:
     """Prevent every ``ThemeModel`` built in this module from touching the real, process-wide
     ``QStyleHints`` scheme -- each test only cares about the model/menu's own state.
+
+    Takes ``qtbot`` purely to ensure a ``QApplication`` exists, the way this package's other Qt
+    fixtures do. No test here asks for one itself, and `ThemeMenu` builds real ``QAction``s: without
+    an application that is a **native access violation**, not a Python error. It only ever passed
+    because some earlier test in the same process had built one -- so running this module alone
+    crashed, and so did whichever xdist worker happened to be handed it first (#279 reshuffled the
+    schedule and made that happen).
     """
+    del qtbot
     mocker.patch.object(QApplication.styleHints(), "setColorScheme")
 
 
