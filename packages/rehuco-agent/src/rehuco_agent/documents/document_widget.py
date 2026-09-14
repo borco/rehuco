@@ -12,7 +12,7 @@ from typing import Any, Final
 import cbor2
 import PySide6QtAds as QtAds
 from borco_pyside.logging import LogWidget
-from borco_pyside.qtads import QtAdsFocusTracker
+from borco_pyside.qtads import QtAdsAutoHideButtonSuppressor, QtAdsFocusTracker
 from borco_pyside.theming import ActionIconThemeHandler
 from borco_pyside.widgets import MessageBanner, MessageBannerRow, MessageBannerSeverity
 from PySide6.QtCore import QByteArray, Qt, Signal
@@ -263,6 +263,11 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         self.__tracker: Final = QtAdsFocusTracker(
             self.__dock_manager, close_glyph=TAB_CLOSE_GLYPH, stylesheet_host=stylesheet_host
         )
+        # pinning stays the main window's affordance (#279): a viewer or editor collapsed into a
+        # sidebar of its own would put a third sidebar behind the two the window already has. The pin
+        # button comes from a process-wide flag, so it is suppressed per manager rather than cleared
+        # per dock. Nothing holds onto it -- it parents itself to the manager it suppresses.
+        QtAdsAutoHideButtonSuppressor(self.__dock_manager)
         self.__stashed_sizes: Final[dict[str, list[int]]] = {}
         self.__restoring_layout = False
 

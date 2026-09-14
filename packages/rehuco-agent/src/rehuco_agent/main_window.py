@@ -51,6 +51,7 @@ from .documents.rehu_document_model import path_label
 from .documents.save_or_prompt_retry import save_or_prompt_retry
 from .main_window_ui import Ui_MainWindow
 from .settings.checksum_settings import shared_checksum_settings
+from .settings.docks_settings import SIDE_BAR_LOCATIONS, shared_docks_settings
 from .settings.document_session_settings import DocumentSessionSettings
 from .settings.excluded_files_settings import shared_excluded_files_settings
 from .settings.identity_settings import shared_identity_settings
@@ -66,6 +67,7 @@ from .settings.theme_settings import ThemeSettings
 from .settings.tray_settings import shared_tray_settings
 from .settings.ui.checksums_page import ChecksumsPage
 from .settings.ui.descriptions_page import DescriptionsPage
+from .settings.ui.docks_page import DocksPage
 from .settings.ui.files_page import FilesPage
 from .settings.ui.identity_page import IdentityPage
 from .settings.ui.images_display_page import ImagesDisplayPage
@@ -664,6 +666,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """
         self.__settings_dialog.add_page("Checksums", ChecksumsPage())
         self.__settings_dialog.add_page("Descriptions", DescriptionsPage())
+        self.__settings_dialog.add_page("Docks", DocksPage())
         self.__settings_dialog.add_page("Files", FilesPage())
         self.__settings_dialog.add_page("Identity", IdentityPage())
         self.__settings_dialog.add_page("Images", "Display", ImagesDisplayPage())
@@ -762,7 +765,22 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # __init__'s later CDockManager.restoreState() call freely re-docks or repositions it if
         # there's anything actually saved
         settings_dock.place_floating()
+        # pinnable like the window's other three docks (#279). Set here rather than widened into
+        # `DockableDialog`'s own feature set: that framework's other consumers are dialogs on
+        # managers with no window sidebars to pin into, and this one is a main dock that happens to
+        # be built through it.
+        settings_dock.dock.setFeature(QtAds.CDockWidget.DockWidgetFeature.DockWidgetPinnable, True)
         self.__dialog_manager.register(settings_dock)
+        # not Final, for the same reason the three docks above are not: assigned from
+        # __setup_docking_system rather than __init__
+        self.__main_docks = (
+            self.__documents_dock_widget,
+            self.__log_dock,
+            self.__task_queue_dock,
+            settings_dock.dock,
+        )
+        self.__apply_pin_side()
+        shared_docks_settings().pin_side_changed.connect(self.__apply_pin_side)  # type: ignore[attr-defined]
         # settings_action stands in for toggle_action in File (a plain menu row, unlike the
         # toolbar button toggle_action was built for) -- see the companion parameter's docstring
         # for why that needs a second, differently-themed action rather than reusing toggle_action
@@ -790,6 +808,27 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__ui.action_bar.addAction(self.__task_queue_dock.toggleViewAction())
         self.__ui.action_bar.addAction(settings_dock.toggle_action)
 
+    def __apply_pin_side(self) -> None:
+        """Point every main dock's pin button at the border the Docks settings page names (#279).
+
+        Run once as the docks are built and again on every ``pin_side_changed``, which is what makes
+        the page's Apply visible without a restart -- the save-drop-actions rule every settings page
+        follows.
+
+        **A dock already pinned stays where it is** until it is pinned again: QtAds reads the
+        preferred location when a pin *happens*, and moving a slid-out dock to another border under
+        the user's cursor would be a change they did not ask this setting for.
+
+        **Naming a sidebar wins over this setting**, as it must -- a drag dropped on one border said
+        which, where the pin button has no side to be told but this one. Verified through
+        ``CDockManager.addAutoHideDockWidget(location, dock)``, the entry point a drop overlay calls
+        with the border it was dropped on: the dock lands there and this preference is left untouched
+        for its next button-driven pin.
+        """
+        location = SIDE_BAR_LOCATIONS[shared_docks_settings().pin_side]
+        for dock in self.__main_docks:
+            dock.setPreferredAutoHideSideBarLocation(location)
+
     def __add_documents_dock(self) -> QtAds.CDockWidget:
         """Build the documents area's own dock on the outer manager, open and filling the window (#268).
 
@@ -802,7 +841,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         whole container, so a fresh layout still opens with documents filling the window and the two
         bottom docks (hidden) splitting off below it.
 
-        Closable, movable, floatable and focusable -- the same feature set the Log and Tasks pair
+        Closable, movable, floatable, focusable and pinnable -- the same feature set the Log and Tasks pair
         carries, and the reason :meth:`__reveal_documents_dock` exists: a dock the user can put away is
         a dock an open has to bring back.
 
@@ -822,6 +861,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             | features.DockWidgetMovable
             | features.DockWidgetFloatable
             | features.DockWidgetFocusable
+            | features.DockWidgetPinnable
         )
         dock.setWidget(self.__documents_dock)
         self.__dock_manager.addDockWidget(QtAds.CenterDockWidgetArea, dock)
@@ -947,6 +987,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             | features.DockWidgetMovable
             | features.DockWidgetFloatable
             | features.DockWidgetFocusable
+            | features.DockWidgetPinnable
         )
         dock.setWidget(self.__log_widget)
         self.__dock_manager.addDockWidget(QtAds.BottomDockWidgetArea, dock)
@@ -996,6 +1037,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             | features.DockWidgetMovable
             | features.DockWidgetFloatable
             | features.DockWidgetFocusable
+            | features.DockWidgetPinnable
         )
         dock.setWidget(self.__task_queue_widget)
         self.__dock_manager.addDockWidget(QtAds.BottomDockWidgetArea, dock)

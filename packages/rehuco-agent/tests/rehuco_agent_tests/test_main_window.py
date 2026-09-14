@@ -6,12 +6,13 @@
 # pylint: disable=too-many-lines
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from datetime import timedelta
 from pathlib import Path
 from threading import Event
 from typing import Any, Final
 
+import PySide6QtAds as QtAds
 from borco_pyside.dialogs import DockableDialogManager
 from borco_pyside.logging import LogWidget
 from borco_pyside.logging.log_model import MESSAGE_COLUMN
@@ -34,11 +35,13 @@ from rehuco_agent.documents.recycle_bin_deleter import RecycleBinDeleter
 from rehuco_agent.main_window import (
     DOCUMENTS_DOCK_OBJECT_NAME,
     LOG_DOCK_OBJECT_NAME,
+    LOG_DOCK_TITLE,
     SETTINGS_DIALOG_OBJECT_NAME,
     TASK_QUEUE_DOCK_OBJECT_NAME,
     MainWindow,
 )
 from rehuco_agent.settings.checksum_settings import shared_checksum_settings
+from rehuco_agent.settings.docks_settings import DockPinSide, shared_docks_settings
 from rehuco_agent.settings.document_session_settings import DocumentSessionSettings
 from rehuco_agent.settings.identity_settings import shared_identity_settings
 from rehuco_agent.settings.image_viewer_settings import PREVIEWS_VISIBLE_KEY, shared_image_viewer_settings
@@ -50,6 +53,7 @@ from rehuco_agent.settings.tasks_settings import TasksSettings
 from rehuco_agent.settings.tray_settings import shared_tray_settings
 from rehuco_agent.settings.ui.checksums_page import ChecksumsPage
 from rehuco_agent.settings.ui.descriptions_page import DescriptionsPage
+from rehuco_agent.settings.ui.docks_page import DocksPage
 from rehuco_agent.settings.ui.files_page import FilesPage
 from rehuco_agent.settings.ui.identity_page import IdentityPage
 from rehuco_agent.settings.ui.images_display_page import ImagesDisplayPage
@@ -468,6 +472,7 @@ def test_the_category_tree_is_one_flat_alphabetical_list(qtbot: QtBot) -> None:
     assert set(titles) >= {
         "Checksums",
         "Descriptions",
+        "Docks",
         "Files",
         "Identity",
         "Images",
@@ -504,6 +509,27 @@ def test_registers_the_checksums_page(qtbot: QtBot) -> None:
 
     model = settings_dialog._SettingsDialog__model  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     assert [model.item(row).text() for row in range(model.rowCount())].count("Checksums") == 1
+
+
+def test_registers_the_docks_page(qtbot: QtBot) -> None:
+    """The Docks page (#279) is registered into the settings dialog, once.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * verify the page stack holds a `DocksPage` and the category tree lists it exactly once
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    stacked = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
+    pages = [area.widget() for area in stacked if isinstance(area, QScrollArea)]
+    assert any(isinstance(page, DocksPage) for page in pages)
+
+    model = settings_dialog._SettingsDialog__model  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert [model.item(row).text() for row in range(model.rowCount())].count("Docks") == 1
 
 
 def test_registers_the_screenshot_patterns_page(qtbot: QtBot) -> None:
@@ -4817,6 +4843,332 @@ def test_the_tasks_dock_s_nested_layout_is_restored_on_start(mocker: MockerFixtu
     widget = task_queue_dock(window).widget()
     log_dock = widget._TaskQueueWidget__log_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert log_dock.isClosed() is False
+
+
+# endregion
+
+
+# region pinned docks (#279)
+
+MAIN_DOCK_NAMES: Final = (
+    DOCUMENTS_DOCK_OBJECT_NAME,
+    LOG_DOCK_OBJECT_NAME,
+    TASK_QUEUE_DOCK_OBJECT_NAME,
+    SETTINGS_DIALOG_OBJECT_NAME,
+)
+"""The window's four own docks -- the set pinning is an affordance of."""
+
+PIN_BUTTON_WAIT: Final = 10_000
+"""How long a wait for the pin-button suppressor is given. Generous on purpose: the suppressor's hide
+is deferred by one turn of the event loop, and the first wait in a Qt test can spend seconds draining
+a backlog of ``deleteLater`` calls left by earlier tests, so the gate has to outlast that rather than
+the work it is actually waiting for."""
+
+
+@fixture(autouse=True)
+def auto_hide_flags() -> Iterator[None]:
+    """Turn QtAds' pinning on for the duration of one test, and put the flags back afterwards.
+
+    The flags are a `CDockManager` **static**, normally set in ``Application.show_main_window`` --
+    which these tests never run -- and leaving them on would decide the behaviour of every later test
+    in the session. New areas honour a flag set after the first manager was built (verified), so this
+    needs no session-wide ordering.
+    """
+    previous = QtAds.CDockManager.autoHideConfigFlags()
+    flags = QtAds.CDockManager.eAutoHideFlag
+    QtAds.CDockManager.setAutoHideConfigFlags(flags.DefaultAutoHideConfig | flags.AutoHideShowOnMouseOver)
+    yield
+    QtAds.CDockManager.setAutoHideConfigFlags(previous)
+
+
+def main_dock(window: MainWindow, name: str) -> Any:
+    """Find one of the window's own docks on the outer manager by object name.
+
+    :param window: the window to read.
+    :param name: the dock's object name.
+    :returns: the dock.
+    """
+    dock_manager = window._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    return dock_manager.findDockWidget(name)
+
+
+def test_every_main_dock_is_pinnable(qtbot: QtBot) -> None:
+    """All four of the window's own docks can be collapsed into a sidebar (#279).
+
+    The Settings dock is the one worth naming: it is built through `DockableDialog`, whose generic
+    feature set carries no pinning, so the window turns the one flag on itself.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * verify each of the four docks carries ``DockWidgetPinnable``
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    pinnable = QtAds.CDockWidget.DockWidgetFeature.DockWidgetPinnable
+
+    assert [bool(main_dock(window, name).features() & pinnable) for name in MAIN_DOCK_NAMES] == [True] * 4
+
+
+def test_the_main_docks_pin_to_the_configured_side(qtbot: QtBot) -> None:
+    """Each dock's pin button is pointed at the border the Docks settings page names (#279).
+
+    **Test steps:**
+
+    * point the shared docks settings at the right-hand side
+    * construct a real ``MainWindow``
+    * verify every main dock's preferred sidebar is that one
+    """
+    shared_docks_settings().pin_side = DockPinSide.RIGHT
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    sides = [main_dock(window, name).preferredAutoHideSideBarLocation() for name in MAIN_DOCK_NAMES]
+    assert sides == [QtAds.SideBarRight] * 4
+
+
+def test_applying_a_new_side_re_points_the_open_docks(qtbot: QtBot) -> None:
+    """Saving the Docks page moves the pin button's target without a restart (#279).
+
+    **Test steps:**
+
+    * construct a real ``MainWindow`` on the default (left) side
+    * change the shared setting to the bottom
+    * verify every main dock's preferred sidebar followed
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    shared_docks_settings().pin_side = DockPinSide.BOTTOM
+
+    sides = [main_dock(window, name).preferredAutoHideSideBarLocation() for name in MAIN_DOCK_NAMES]
+    assert sides == [QtAds.SideBarBottom] * 4
+
+
+def test_an_already_pinned_dock_stays_where_it_is(qtbot: QtBot) -> None:
+    """A new side decides the *next* pin, not one the user is already looking at (#279).
+
+    **Test steps:**
+
+    * construct a real ``MainWindow`` and pin the Log dock to the default side
+    * change the shared setting to the bottom
+    * verify the pinned dock is still on the left, while its preferred side moved
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    log = log_dock(window)
+    log.toggleView(True)
+    log.setAutoHide(True)
+
+    shared_docks_settings().pin_side = DockPinSide.BOTTOM
+
+    assert log.autoHideLocation() == QtAds.SideBarLeft
+    assert log.preferredAutoHideSideBarLocation() == QtAds.SideBarBottom
+
+
+def test_a_named_sidebar_wins_over_the_configured_side(qtbot: QtBot) -> None:
+    """Dropping a dock on one border pins it there, whatever the setting says (#279).
+
+    Exercised through ``CDockManager.addAutoHideDockWidget(location, dock)`` -- the entry point a
+    drop overlay calls with the border it was dropped on -- rather than a synthesized mouse drag,
+    which offscreen cannot deliver. The preference is left alone, so the *next* pin from the button
+    still honours the setting.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow`` on the default (left) side and reveal the Log dock
+    * pin it into the right-hand sidebar by name
+    * verify it landed on the right, and its preferred side is still the left
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    log = log_dock(window)
+    log.toggleView(True)
+    dock_manager = window._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    dock_manager.addAutoHideDockWidget(QtAds.SideBarRight, log)
+
+    assert log.autoHideLocation() == QtAds.SideBarRight
+    assert log.preferredAutoHideSideBarLocation() == QtAds.SideBarLeft
+
+
+def test_pinning_the_log_dock_puts_it_in_the_sidebar(qtbot: QtBot) -> None:
+    """Pinning collapses a dock into a sidebar tab naming it (#279).
+
+    **Test steps:**
+
+    * construct a real ``MainWindow`` and reveal the Log dock
+    * pin it
+    * verify the configured sidebar holds one tab, titled after the dock
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    log = log_dock(window)
+    log.toggleView(True)
+
+    log.setAutoHide(True)
+
+    dock_manager = window._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    side_bar = dock_manager.autoHideSideBar(QtAds.SideBarLeft)
+    assert log.isAutoHide()
+    assert side_bar.count() == 1
+    assert side_bar.tab(0).text() == LOG_DOCK_TITLE
+
+
+def test_a_pinned_dock_still_reads_as_open(qtbot: QtBot) -> None:
+    """A pinned dock is put away, not closed -- so the ``View`` menu must still tick it (#279, #79).
+
+    Both readings are asserted, because both are consulted: the dock's own ``isClosed()`` and the
+    toggle action's checked state, which is what the menu companion mirrors.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``, reveal the Log dock and pin it
+    * verify it reads as not closed, and its toggle action stays checked
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    log = log_dock(window)
+    log.toggleView(True)
+
+    log.setAutoHide(True)
+
+    assert log.isClosed() is False
+    assert log.toggleViewAction().isChecked() is True
+
+
+def test_toggling_a_pinned_dock_off_and_on_leaves_it_pinned(qtbot: QtBot) -> None:
+    """The toolbar toggle puts a pinned dock away and brings it back **still pinned** (#279).
+
+    Which is what the toggle should do: it answers "is this dock in play", and pinning is where a
+    dock in play sits -- so hiding one is not a decision to un-pin it. Asserted rather than assumed,
+    because the toggle action is QtAds' own and its reading of a pinned dock is the thing #279 had to
+    check ([[appendices.qt-ads#auto-hide-toggle-view]]).
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``, reveal the Log dock and pin it
+    * trigger its toggle action twice, letting the queued work between them run
+    * verify it is back, still pinned to the same sidebar, and its tab is there again
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    log = log_dock(window)
+    log.toggleView(True)
+    log.setAutoHide(True)
+    action = log.toggleViewAction()
+
+    action.trigger()
+    QApplication.processEvents()
+    action.trigger()
+    QApplication.processEvents()
+
+    dock_manager = window._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert log.isClosed() is False
+    assert log.isAutoHide() is True
+    assert log.autoHideLocation() == QtAds.SideBarLeft
+    assert dock_manager.autoHideSideBar(QtAds.SideBarLeft).count() == 1
+
+
+def test_opening_a_file_slides_a_collapsed_pinned_documents_dock_out(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """An open reaches a document even when the Documents dock is pinned and collapsed (#279, #268).
+
+    #268's guarantee is that any open *shows* the dock. A pinned dock collapsed into its sidebar tab
+    is as invisible as a closed one, and the reveal's ``toggleView(True)`` is QtAds' own -- so whether
+    it expands an auto-hide container, rather than treating a not-closed dock as already shown, is
+    exactly what this pins.
+
+    **Test steps:**
+
+    * construct ``MainWindow``, pin its Documents dock and collapse the sidebar container
+    * ``open_file`` with a mocked ``DocumentsDock.open_document``
+    * verify the dock is still pinned, and its auto-hide container is expanded (no longer hidden)
+
+    ``isHidden()``, not ``isVisible()``: the window is never shown here, like every ``MainWindow``
+    test, and under an unshown ancestor ``isVisible()`` is false whatever the container is doing.
+    """
+    mocker.patch("rehuco_agent.main_window.DocumentsDock.open_document")
+    window = MainWindow()
+    qtbot.addWidget(window)
+    docs = documents_dock_widget(window)
+    docs.setAutoHide(True)
+    QApplication.processEvents()
+    docs.autoHideDockContainer().collapseView(True)
+    QApplication.processEvents()
+    assert docs.autoHideDockContainer().isHidden() is True
+
+    window.open_file("a.rehu")
+    QApplication.processEvents()
+
+    assert docs.isAutoHide() is True
+    assert docs.autoHideDockContainer().isHidden() is False
+
+
+def test_a_pinned_layout_survives_a_restart(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Which docks are pinned, and where, is part of the saved outer layout (#279).
+
+    **Test steps:**
+
+    * pin one window's Log dock and capture its outer layout through ``closeEvent``
+    * seed ``MainWindowSettings.load`` with that blob and construct a second window
+    * verify the Log dock comes back pinned to the same sidebar
+    """
+    source = MainWindow()
+    qtbot.addWidget(source)
+    source_log = log_dock(source)
+    source_log.toggleView(True)
+    source_log.setAutoHide(True)
+    source.closeEvent(QCloseEvent())
+    source_settings = source._MainWindow__window_settings  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    saved = source_settings.outer_docks_state
+
+    def fake_load(self: MainWindowSettings, settings: object) -> None:
+        del settings
+        self.outer_docks_state = saved
+
+    mocker.patch.object(MainWindowSettings, "load", fake_load)
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    restored = log_dock(window)
+    assert restored.isAutoHide() is True
+    assert restored.autoHideLocation() == QtAds.SideBarLeft
+
+
+def test_the_tasks_shells_sub_docks_are_not_pinnable(qtbot: QtBot) -> None:
+    """Pinning stays a main-window affordance: a nested shell's sub-docks carry no pin button (#279).
+
+    The nested manager's button comes from the same process-wide flag as the window's own, so this is
+    what `QtAdsAutoHideButtonSuppressor` is installed for -- and the main Tasks dock's own button
+    staying put is asserted beside it, since a suppressor that reached too far would look identical
+    otherwise.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow`` and reveal the Tasks dock and its Log sub-dock
+    * verify both sub-dock areas' pin buttons end up hidden
+    * verify the Tasks dock's own area still has one
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    tasks = task_queue_dock(window)
+    tasks.toggleView(True)
+    widget = tasks.widget()
+    inner = widget._TaskQueueWidget__dock_manager  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    widget._TaskQueueWidget__log_dock.toggleView(True)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    qtbot.waitUntil(
+        lambda: (
+            len(inner.openedDockAreas()) == 2
+            and all(area.titleBarButton(QtAds.TitleBarButtonAutoHide).isHidden() for area in inner.openedDockAreas())
+        ),
+        timeout=PIN_BUTTON_WAIT,
+    )
+
+    assert not tasks.dockAreaWidget().titleBarButton(QtAds.TitleBarButtonAutoHide).isHidden()
 
 
 # endregion

@@ -40,6 +40,53 @@ TitleBarButtonTabsMenu: TitleBarButton
 tab in an area, for areas with more tabs than fit the available width -- but present regardless of
 tab count, including a lone tab (verified empirically)."""
 
+TitleBarButtonAutoHide: TitleBarButton
+"""The pin button (shown when `CDockManager.DockAreaHasAutoHideButton` is set) collapsing the area's
+current dock into one of the window's sidebars. Shown regardless of whether that dock carries
+`DockWidgetPinnable` -- that feature gates the drag and the context-menu route instead -- which is why
+suppressing the button for one manager takes `~borco_pyside.qtads.QtAdsAutoHideButtonSuppressor`
+rather than a feature flag (#279)."""
+
+class SideBarLocation:
+    """Which of a `CDockManager`'s four borders a pinned (auto-hidden) dock collapses into."""
+
+SideBarNone: SideBarLocation
+"""No sidebar -- what `CDockWidget.autoHideLocation` reports for a dock that is not pinned."""
+
+SideBarLeft: SideBarLocation
+"""The window's left border -- this app's default pin side (#279)."""
+
+SideBarRight: SideBarLocation
+"""The window's right border."""
+
+SideBarTop: SideBarLocation
+"""The window's top border."""
+
+SideBarBottom: SideBarLocation
+"""The window's bottom border."""
+
+class CAutoHideTab(QWidget):
+    """The sidebar tab standing in for a pinned dock, showing the dock's icon and/or its title
+    rotated along the border."""
+
+class CAutoHideDockContainer(QWidget):
+    """The panel a pinned dock slides out into over the layout. Hidden while collapsed to its sidebar
+    tab -- so ``isVisible()`` is the collapsed/expanded reading -- and ``toggleView(True)`` on the dock
+    expands it (verified, #279), which is what lets an open reach a collapsed Documents dock."""
+
+    def collapseView(self, enable: bool) -> None:
+        """Collapse this container back to its sidebar tab (`enable`), or slide it out."""
+
+class CAutoHideSideBar(QWidget):
+    """One of a `CDockManager`'s four sidebars, holding the `CAutoHideTab`s of the docks pinned to
+    that border."""
+
+    def count(self) -> int:
+        """How many pinned docks this sidebar holds."""
+
+    def tab(self, index: int) -> CAutoHideTab:
+        """The tab at `index`, in sidebar order."""
+
 class CTitleBarButton(QToolButton):
     """One button in a `CDockAreaWidget`'s title bar (e.g. the tabs-menu dropdown)."""
 
@@ -130,6 +177,14 @@ class CDockWidget(QWidget):
         """Hides this dock's own tab, e.g. for a lone central-widget dock with nothing to tab
         against."""
 
+        DockWidgetPinnable: CDockWidget.DockWidgetFeature
+        """Lets this dock be pinned (auto-hidden) into one of the window's sidebars -- by a drag, or by
+        the area title bar's "Pin Group" context-menu action, both of which upstream gates on it. It
+        gates **neither the area's pin button nor `setAutoHide`**: both work on a dock without it
+        (verified, #279), which is why keeping the button off one manager takes
+        `~borco_pyside.qtads.QtAdsAutoHideButtonSuppressor`, while keeping the drag and the menu off
+        takes nothing more than not setting this ([[appendices.qt-ads#pinnable-is-not-a-lever]])."""
+
         def __or__(self, other: CDockWidget.DockWidgetFeature) -> CDockWidget.DockWidgetFeature:
             """Combine two features into one selector, mirroring the C++ enum's `|` operator."""
 
@@ -143,6 +198,7 @@ class CDockWidget(QWidget):
     DockWidgetDeleteOnClose: DockWidgetFeature
     CustomCloseHandling: DockWidgetFeature
     NoTab: DockWidgetFeature
+    DockWidgetPinnable: DockWidgetFeature
 
     @overload
     def __init__(self, title: str, parent: QWidget | None = None) -> None:
@@ -187,6 +243,29 @@ class CDockWidget(QWidget):
 
     def setWidget(self, widget: QWidget) -> None:
         """Set the content widget this dock displays."""
+
+    def setAutoHide(self, enable: bool, location: SideBarLocation = ...) -> None:
+        """Pin this dock into a sidebar (`enable`), or dock it back into the layout.
+
+        Without `location`, pins to `preferredAutoHideSideBarLocation`. A pinned dock is **not**
+        closed -- `isClosed()` stays false and `toggleViewAction()` stays checked, so a View menu
+        reading either one reads a pinned dock as open (verified, #279)."""
+
+    def autoHideDockContainer(self) -> CAutoHideDockContainer | None:
+        """The slide-out container holding this dock while it is pinned, or `None` while it is not."""
+
+    def isAutoHide(self) -> bool:
+        """Whether this dock is currently pinned into a sidebar rather than docked in the layout."""
+
+    def autoHideLocation(self) -> SideBarLocation:
+        """Which sidebar this dock is pinned into, or `SideBarNone` while it is not pinned."""
+
+    def setPreferredAutoHideSideBarLocation(self, location: SideBarLocation) -> None:
+        """Which sidebar this dock's *next* pin lands in -- consulted by the area's pin button in
+        place of the dock's geometry. Re-setting it leaves an already-pinned dock where it is."""
+
+    def preferredAutoHideSideBarLocation(self) -> SideBarLocation:
+        """The sidebar this dock's next pin will land in."""
 
     def takeWidget(self) -> QWidget:
         """Remove and return this dock's content widget **without deleting it**, so a caller replacing
@@ -263,6 +342,33 @@ class CDockManager(QWidget):
     DockAreaHasTabsMenuButton: eConfigFlag
     MiddleMouseButtonClosesTab: eConfigFlag
 
+    class eAutoHideFlag:
+        """One global auto-hide (pinning) toggle, OR'd together and passed to
+        `setAutoHideConfigFlags`. Only the flags `rehuco-agent` actually needs are declared here (see
+        this stub's module docstring)."""
+
+        DefaultAutoHideConfig: CDockManager.eAutoHideFlag
+        """QtAds' own recommended set, and the base this app builds on: pinning enabled, a pin button
+        on each dock area, a minimize button on a slid-out dock, and collapse on a click outside it
+        (verified against the installed binding -- see [[appendices.qt-ads#auto-hide-flags]])."""
+
+        AutoHideShowOnMouseOver: CDockManager.eAutoHideFlag
+        """Slides a pinned dock out on hovering its sidebar tab, not only on clicking it."""
+
+        AutoHideSideBarsIconOnly: CDockManager.eAutoHideFlag
+        """Shows only each sidebar tab's icon, dropping its title -- which needs every pinnable dock
+        to carry a `setIcon`, or the tab says nothing at all
+        ([[appendices.qt-ads#auto-hide-icon-only]]). Not set by this app."""
+
+        def __or__(self, other: CDockManager.eAutoHideFlag) -> CDockManager.eAutoHideFlag:
+            """Combine two flags into one selector, mirroring the C++ enum's `|` (Qt flag)
+            operator."""
+
+    # promoted onto CDockManager itself too, like eConfigFlag's members:
+    DefaultAutoHideConfig: eAutoHideFlag
+    AutoHideShowOnMouseOver: eAutoHideFlag
+    AutoHideSideBarsIconOnly: eAutoHideFlag
+
     class ColorSchemeMode:
         """Which of QtAds' four bundled stylesheets a manager applies to itself (ADS 5.0)."""
 
@@ -299,6 +405,43 @@ class CDockManager(QWidget):
         """Turn on every `eConfigFlag` OR'd into `flags` (all others off) for every `CDockManager`
         in the process. Must be called before the first `CDockManager` is constructed to take
         effect."""
+
+    @staticmethod
+    def setAutoHideConfigFlags(flags: eAutoHideFlag) -> None:
+        """Turn on every `eAutoHideFlag` OR'd into `flags` (all others off) for every `CDockManager`
+        in the process. Like `setConfigFlags`, must be called before the first `CDockManager` is
+        constructed to take effect -- and, being process-wide, reaches nested managers too
+        ([[appendices.qt-ads#auto-hide-flags]])."""
+
+    @staticmethod
+    def autoHideConfigFlags() -> eAutoHideFlag:
+        """The process-wide auto-hide flags currently in force -- for a test that turns pinning on
+        for its own duration and has to put back whatever it found."""
+
+    def openedDockAreas(self) -> list[CDockAreaWidget]:
+        """Every currently-open (visible) dock area of this manager, in no guaranteed order."""
+
+    def addAutoHideDockWidget(self, location: SideBarLocation, dock_widget: CDockWidget) -> CAutoHideTab:
+        """Pin `dock_widget` into the sidebar at `location`, whatever its
+        `preferredAutoHideSideBarLocation` says -- the entry point a drag dropped on one of the
+        window's borders goes through, and the reason a named side beats the preference (#279).
+
+        :returns: the sidebar tab now standing in for it.
+        """
+
+    def autoHideSideBar(self, location: SideBarLocation) -> CAutoHideSideBar:
+        """This manager's sidebar at `location` -- the strip of tabs standing in for the docks pinned
+        to that border."""
+
+    dockAreaViewToggled: Signal
+    """Emitted ``(area, open)`` whenever one of this manager's areas is shown or hidden -- including a
+    dock revealed by ``CDockWidget.toggleView``, which moves a container's visible-area count and so
+    re-shows its title-bar buttons ([[appendices.qt-ads#tabs-menu-per-manager]])."""
+
+    dockAreaCreated: Signal
+    """Emitted with a `CDockAreaWidget` just after this manager creates it. Per-instance: an outer
+    manager's connection never fires for a nested manager's areas, which is what makes per-manager
+    title-bar-button suppression possible at all ([[appendices.qt-ads#tabs-menu-per-manager]])."""
 
     def addDockWidget(
         self,

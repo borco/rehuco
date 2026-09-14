@@ -7,7 +7,7 @@ from typing import Final
 
 import PySide6QtAds as QtAds
 from borco_core.logging import LogScope
-from borco_pyside.qtads import QtAdsFocusTracker
+from borco_pyside.qtads import QtAdsAutoHideButtonSuppressor, QtAdsFocusTracker
 from PySide6.QtCore import QByteArray, Signal
 from PySide6.QtWidgets import QMainWindow, QMessageBox, QWidget
 from rehuco_core import (
@@ -133,6 +133,11 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
             self.__dock_manager, close_glyph=TAB_CLOSE_GLYPH, stylesheet_host=stylesheet_host
         )
         self.__tracker.current_dock_changed.connect(self.__on_current_dock_changed)
+        # pinning is the main window's affordance, not a document tab's (#279): the sidebars a pinned
+        # dock collapses into belong to the window, and the pin button QtAds puts on every area is
+        # governed by a process-wide flag no per-dock feature can narrow. Nothing holds onto it --
+        # it parents itself to the manager it suppresses.
+        QtAdsAutoHideButtonSuppressor(self.__dock_manager)
 
     def open_document(self, path: Path, *, state: bytes | None = None) -> DocumentWidget:
         """Open ``path`` in a new dock, or focus its dock if already open.

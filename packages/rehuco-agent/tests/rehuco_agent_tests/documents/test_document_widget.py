@@ -3774,3 +3774,49 @@ def test_a_curation_edit_does_not_re_point_a_folder_viewer(widget: DocumentWidge
 
 
 # endregion
+
+
+# region pinning is the window's, not a document's (#279)
+
+
+@fixture
+def auto_hide_flags() -> Iterator[None]:
+    """Turn QtAds' pinning on for the duration of one test, and put the flags back afterwards.
+
+    Not autouse, unlike this module's other fixtures: the flags are a `CDockManager` **static** and
+    leaving them on would decide the behaviour of every later test in the session, so only the tests
+    that need the button QtAds only creates under them ask for it.
+    """
+    previous = QtAds.CDockManager.autoHideConfigFlags()
+    QtAds.CDockManager.setAutoHideConfigFlags(QtAds.CDockManager.eAutoHideFlag.DefaultAutoHideConfig)
+    yield
+    QtAds.CDockManager.setAutoHideConfigFlags(previous)
+
+
+def test_a_documents_own_sub_docks_carry_no_pin_button(
+    widget: DocumentWidget, auto_hide_flags: None, qtbot: QtBot
+) -> None:
+    """A viewer or editor cannot be pinned -- the sidebars belong to the main window (#279).
+
+    QtAds puts the pin button on every area of every manager from one process-wide flag, so keeping
+    it off this nested one takes `QtAdsAutoHideButtonSuppressor`, installed at construction. Asserted
+    here rather than only in its own unit tests because the wiring is what can go missing.
+
+    **Test steps:**
+
+    * build a `DocumentWidget` with pinning turned on for the process
+    * verify every one of its own dock areas ends up with a hidden pin button
+    """
+    del auto_hide_flags
+    manager = widget._DocumentWidget__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    qtbot.waitUntil(
+        lambda: (
+            bool(manager.openedDockAreas())
+            and all(area.titleBarButton(QtAds.TitleBarButtonAutoHide).isHidden() for area in manager.openedDockAreas())
+        ),
+        timeout=10_000,
+    )
+
+
+# endregion

@@ -79,7 +79,8 @@ and a tree that can be scrolled out of its own viewport.
 [[[appendices.settings-pages#category-groups]]]
 
 **Today the tree is a flat list, in alphabetical order, with one group** (#277, #294, #298):
-"Checksums" (`ChecksumsPage`, #242), "Descriptions" (`DescriptionsPage`), "Files" (`FilesPage`, #226,
+"Checksums" (`ChecksumsPage`, #242), "Descriptions" (`DescriptionsPage`), "Docks" (`DocksPage`, #279),
+"Files" (`FilesPage`, #226,
 #291, #298), "Identity" (`IdentityPage`, #99), "Images" (a group, below), "Logs" (`LogsPage`, #200),
 "Session" (`SessionPage`, #65), "System Integration", "Tasks" (`TasksPage`, #202) and "Videos"
 (`VideosPage`, #225). "Images" nests three children: "Display" (`ImagesDisplayPage`), "Sidecar

@@ -478,3 +478,111 @@ available) -- and *is* bound as of `5.0.0.2` (confirmed the same way against the
 Not adopted: pinning the mode already solves the problem this section is about, and switching levers
 now would trade a working, tested fix for an untested one on the strength of a binding gap that has
 since closed.
+
+## 10. Auto-hide (pinning): what the flags carry, and what a feature flag cannot do
+
+[[[appendices.qt-ads#auto-hide-flags]]]
+
+**Question (#279):** QtAds can pin a dock into one of a container's four sidebars — a tab on the
+border, sliding out over the layout and collapsing again. Turning that on for the main window's own
+docks raised three things the API surface alone answers wrongly.
+
+**`DefaultAutoHideConfig` is bound, and already carries most of what a caller would add.** It is not
+listed by `dir(CDockManager.eAutoHideFlag)` but *is* in its `__members__` and resolves as an
+attribute, both on the flag enum and promoted onto `CDockManager` itself — the
+[[appendices.qt-ads#verify-bindings-live]] check applied to a preset rather than a method. Its value
+is 1283: `AutoHideFeatureEnabled | DockAreaHasAutoHideButton | AutoHideHasMinimizeButton |
+AutoHideCloseOnOutsideMouseClick`. So a caller spelling out "collapse on an outside click" is
+restating the default, and only `AutoHideShowOnMouseOver` (hover to peek) is a genuine addition.
+
+**The flags are `CDockManager` statics**, like `eConfigFlag` — set before the first manager, shared
+by every manager in the process, nested ones included. Set *after* one exists they still reach areas
+created later (verified), which is what lets a test turn pinning on for its own duration.
+
+### 10.1 `DockWidgetPinnable` gates neither the button nor the pin
+
+[[[appendices.qt-ads#pinnable-is-not-a-lever]]]
+
+**Symptom:** clearing `DockWidgetPinnable` on a dock changes nothing. Its area still shows the pin
+button, and `CDockWidget.setAutoHide(True)` on it still pins it into a sidebar — verified directly
+against the installed binding, on a dock whose feature mask deliberately omitted the flag.
+
+What shows the button is the `DockAreaHasAutoHideButton` **config flag** alone. So "pinning, but only
+for the outer window" cannot be expressed per dock: it needs the per-manager reactive re-hiding of
+[[appendices.qt-ads#tabs-menu-per-manager]], which is what `QtAdsAutoHideButtonSuppressor`
+(`borco_pyside.qtads`) packages.
+
+**The feature is not useless, though — it gates the other two ways in.** Upstream's
+`FloatingDragPreview.cpp` offers the sidebar drop zones only when the dragged content is pinnable
+(`if (isContentPinnable()) AllowedContainerAreas |= AutoHideDockAreas`), and `DockAreaTitleBar.cpp`
+enables the title bar's "Pin Group" context-menu action only for a pinnable area — while it creates the
+button on the config flag alone, which is the asymmetry measured above. So a nested manager whose docks
+simply never carry `DockWidgetPinnable` (every sub-dock in rehuco-agent) is closed to the drag and the
+menu for free, and the suppressor only has to close the button.
+
+**And that section's signal pair is not enough.** It names `dockAreaCreated` and `dockWidgetRemoved`,
+which is what a container's visible-area count moving through one needs for adds and removals — but a
+*reveal* moves it too. A shell whose sub-docks start hidden (rehuco-agent's Tasks dock, #276) got its
+pin buttons back on the first `toggleView(True)`, measured. The suppressor therefore also hooks
+`dockAreaViewToggled`, `dockWidgetAdded` and `stateRestored`, each through the same zero-delay
+`QTimer`.
+
+### 10.2 An icon-only sidebar needs icons the app may not have
+
+[[[appendices.qt-ads#auto-hide-icon-only]]]
+
+`AutoHideSideBarsIconOnly` drops each sidebar tab's title in favour of the dock's **own** icon —
+`CDockWidget.setIcon`, not the icon on whatever `QAction` a toolbar uses to toggle that dock. An app
+whose dock icons live only on its actions (as rehuco-agent's did) gets sidebar tabs with no glyph and
+no text. Left off for that reason; a rotated title says what the dock is with nothing to set up.
+
+### 10.3 A pinned dock reads as open, and stays pinned through its toggle action
+
+[[[appendices.qt-ads#auto-hide-toggle-view]]]
+
+The reading a `View` menu needs turns out to need no special case at all (verified in a real window,
+shown and unshown alike):
+
+| | `isClosed()` | `toggleViewAction().isChecked()` | `isAutoHide()` |
+| --- | --- | --- | --- |
+| pinned | `False` | `True` | `True` |
+| toggled off while pinned | `True` | `False` | `True` |
+| toggled on again | `False` | `True` | **`True`** |
+
+So a pinned dock is *put away, not closed*, and the toggle keeps it pinned across a hide and a show —
+it comes back as a sidebar tab, slid out, rather than re-docked into the layout. A menu or toolbar
+action mirroring `toggleViewAction`'s checked state is therefore already correct for pinned docks.
+
+(A minimal manager built outside an application shell was seen to un-pin on the second toggle instead.
+That is not what the app does, and the app is what was measured here — worth knowing only so a probe
+disagreeing with a real window is not mistaken for a regression.)
+
+### 10.4 A named sidebar beats the preferred one
+
+[[[appendices.qt-ads#auto-hide-preferred-side]]]
+
+`CDockWidget.setPreferredAutoHideSideBarLocation` decides where the area's **pin button** sends a
+dock, and re-setting it leaves an already-pinned dock where it is. A drag dropped on a particular
+border goes through `CDockManager.addAutoHideDockWidget(location, dock)` instead: the dock lands on
+the named side and the preference is left untouched for its next button-driven pin (verified through
+that entry point — a synthesized mouse drag is not deliverable offscreen).
+
+Pin state — which docks, and which sidebar — is part of `CDockManager.saveState()` and comes back
+from `restoreState()`, so it needs no persistence of its own; what it needs is a layout-state version
+bump, since a blob written before sidebars existed describes every dock as docked-or-closed.
+
+### 10.5 The sidebars need no application QSS
+
+[[[appendices.qt-ads#auto-hide-styling]]]
+
+Both shipped sheets already style the new chrome — `default.css` and `default_dark.css` each carry 6
+`ads--CAutoHideSideBar` selectors and 27 `ads--CAutoHideTab` ones — and
+[[appendices.qt-ads#stylesheet-reload]]'s pinned colour scheme is what loads the right one of the two.
+So pinning adds no unstyled element and needed no rule of its own.
+
+Worth knowing for the next visual check: **a theme switch cannot be observed under
+`QT_QPA_PLATFORM=offscreen`**. Neither `QStyleHints.setColorScheme` nor driving the app's own
+`ThemeModel` moves it — `colorScheme()` stays `Unknown` and both grabs come back pixel-identical — so
+the light/dark reading of any new chrome has to be done on a real platform plugin. (The offscreen
+plugin also renders every glyph as tofu here, which a grab taken for layout can ignore and one taken
+for legibility cannot.)
