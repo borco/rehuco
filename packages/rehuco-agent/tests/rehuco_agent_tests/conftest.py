@@ -29,7 +29,6 @@ from rehuco_agent.settings import (
     checksum_settings,
     default_layout_settings,
     description_editor_settings,
-    docks_settings,
     excluded_files_settings,
     identity_settings,
     image_viewer_settings,
@@ -44,7 +43,6 @@ from rehuco_agent.settings import (
 from rehuco_agent.settings.checksum_settings import shared_checksum_settings
 from rehuco_agent.settings.default_layout_settings import shared_default_layout_settings
 from rehuco_agent.settings.description_editor_settings import shared_description_editor_settings
-from rehuco_agent.settings.docks_settings import shared_docks_settings
 from rehuco_agent.settings.excluded_files_settings import shared_excluded_files_settings
 from rehuco_agent.settings.identity_settings import shared_identity_settings
 from rehuco_agent.settings.image_viewer_settings import shared_image_viewer_settings
@@ -54,7 +52,7 @@ from rehuco_agent.settings.reference_images_settings import shared_reference_ima
 from rehuco_agent.settings.screenshot_deletion_settings import shared_screenshot_deletion_settings
 from rehuco_agent.settings.screenshot_patterns_settings import shared_screenshot_patterns_settings
 from rehuco_agent.settings.tray_settings import shared_tray_settings
-from rehuco_agent.settings.ui import checksums_page, docks_page, settings_dialog, tasks_page, tray_block
+from rehuco_agent.settings.ui import checksums_page, settings_dialog, tasks_page, tray_block
 from rehuco_agent.settings.videos_settings import shared_videos_settings
 from rehuco_core import DEFAULT_DELETER_PROVIDER
 
@@ -428,28 +426,6 @@ def isolate_shared_videos_settings(mocker: MockerFixture) -> Iterator[None]:
     mocker.patch.object(videos_settings, "persistent_settings", return_value=FakeSettings())
     yield
     shared_videos_settings.cache_clear()
-
-
-@fixture(autouse=True)
-def isolate_shared_docks_settings(mocker: MockerFixture) -> Iterator[None]:
-    """Isolate every test from the process-wide `DocksSettings` singleton (#279).
-
-    Same rationale as :func:`isolate_shared_markdown_rendering_settings`: whichever test first builds
-    a ``MainWindow`` would otherwise pin an instance loaded from the developer's real on-disk settings
-    for the rest of the session -- and decide, from that file, which border every later test's docks
-    The page's own import site is patched too, the same way the default-layout fixture patches
-    ``document_widget``'s: `DocksPage`'s Save calls ``settings.save(persistent_settings())`` through
-    ``docks_page``'s import, so an unpatched one would write the developer's real settings file from
-    any test that applies that page.
-
-    Tests that specifically exercise the docks settings patch ``persistent_settings`` themselves.
-    """
-    shared_docks_settings.cache_clear()
-    fake = FakeSettings()
-    mocker.patch.object(docks_settings, "persistent_settings", return_value=fake)
-    mocker.patch.object(docks_page, "persistent_settings", return_value=fake)
-    yield
-    shared_docks_settings.cache_clear()
 
 
 @fixture(autouse=True)

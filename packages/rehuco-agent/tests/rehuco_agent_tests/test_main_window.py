@@ -16,6 +16,7 @@ import PySide6QtAds as QtAds
 from borco_pyside.dialogs import DockableDialogManager
 from borco_pyside.logging import LogWidget
 from borco_pyside.logging.log_model import MESSAGE_COLUMN
+from borco_pyside.qtads.qtads_pin_side_handler import DEFAULT_PIN_SIDE, PIN_SIDE_KEY
 from PySide6.QtCore import QByteArray, QModelIndex, Qt
 from PySide6.QtGui import QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
@@ -33,6 +34,7 @@ from pytestqt.qtbot import QtBot
 from rehuco_agent.app_logging import shared_log_bridge
 from rehuco_agent.documents.recycle_bin_deleter import RecycleBinDeleter
 from rehuco_agent.main_window import (
+    DOCK_PIN_SIDES_GROUP,
     DOCUMENTS_DOCK_OBJECT_NAME,
     LOG_DOCK_OBJECT_NAME,
     LOG_DOCK_TITLE,
@@ -41,7 +43,6 @@ from rehuco_agent.main_window import (
     MainWindow,
 )
 from rehuco_agent.settings.checksum_settings import shared_checksum_settings
-from rehuco_agent.settings.docks_settings import DockPinSide, shared_docks_settings
 from rehuco_agent.settings.document_session_settings import DocumentSessionSettings
 from rehuco_agent.settings.identity_settings import shared_identity_settings
 from rehuco_agent.settings.image_viewer_settings import PREVIEWS_VISIBLE_KEY, shared_image_viewer_settings
@@ -53,7 +54,6 @@ from rehuco_agent.settings.tasks_settings import TasksSettings
 from rehuco_agent.settings.tray_settings import shared_tray_settings
 from rehuco_agent.settings.ui.checksums_page import ChecksumsPage
 from rehuco_agent.settings.ui.descriptions_page import DescriptionsPage
-from rehuco_agent.settings.ui.docks_page import DocksPage
 from rehuco_agent.settings.ui.files_page import FilesPage
 from rehuco_agent.settings.ui.identity_page import IdentityPage
 from rehuco_agent.settings.ui.images_display_page import ImagesDisplayPage
@@ -472,7 +472,6 @@ def test_the_category_tree_is_one_flat_alphabetical_list(qtbot: QtBot) -> None:
     assert set(titles) >= {
         "Checksums",
         "Descriptions",
-        "Docks",
         "Files",
         "Identity",
         "Images",
@@ -509,27 +508,6 @@ def test_registers_the_checksums_page(qtbot: QtBot) -> None:
 
     model = settings_dialog._SettingsDialog__model  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     assert [model.item(row).text() for row in range(model.rowCount())].count("Checksums") == 1
-
-
-def test_registers_the_docks_page(qtbot: QtBot) -> None:
-    """The Docks page (#279) is registered into the settings dialog, once.
-
-    **Test steps:**
-
-    * construct a real ``MainWindow``
-    * verify the page stack holds a `DocksPage` and the category tree lists it exactly once
-    """
-    window = MainWindow()
-    qtbot.addWidget(window)
-
-    settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    stacked = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
-    pages = [area.widget() for area in stacked if isinstance(area, QScrollArea)]
-    assert any(isinstance(page, DocksPage) for page in pages)
-
-    model = settings_dialog._SettingsDialog__model  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    assert [model.item(row).text() for row in range(model.rowCount())].count("Docks") == 1
 
 
 def test_registers_the_screenshot_patterns_page(qtbot: QtBot) -> None:
@@ -4911,50 +4889,115 @@ def test_every_main_dock_is_pinnable(qtbot: QtBot) -> None:
     assert [bool(main_dock(window, name).features() & pinnable) for name in MAIN_DOCK_NAMES] == [True] * 4
 
 
-def test_the_main_docks_pin_to_the_configured_side(qtbot: QtBot) -> None:
-    """Each dock's pin button is pointed at the border the Docks settings page names (#279).
+def dict_backed_settings(settings: Any) -> dict[str, Any]:
+    """Give the mocked ``persistent_settings()`` real, group-aware storage for one test.
+
+    :func:`mock_persistent_settings` hands back a ``MagicMock`` whose ``value`` returns the default it
+    was asked for -- right for the windows that must not read anything, and useless for a test about
+    something *surviving* a save and a load. This wires the four calls that matter onto one dict,
+    honouring ``beginGroup`` so each dock's key stays its own (without it every handler would write the
+    same bare ``pin_side`` and the test would pass for the wrong reason).
+
+    :param settings: the ``QSettings`` stand-in to wire up -- ``mock_persistent_settings.return_value``.
+    :returns: the backing dict, for asserting on what was written.
+    """
+    store: dict[str, Any] = {}
+    state = {"group": ""}
+    settings.beginGroup.side_effect = lambda name: state.__setitem__("group", f"{name}/")
+    settings.endGroup.side_effect = lambda: state.__setitem__("group", "")
+    settings.setValue.side_effect = lambda key, value: store.__setitem__(state["group"] + key, value)
+    settings.remove.side_effect = lambda key: store.pop(state["group"] + key, None)
+    settings.value.side_effect = lambda key, default=None, type=None: store.get(  # noqa: A002
+        state["group"] + key, default
+    )
+    return store
+
+
+def test_every_main_dock_starts_on_the_default_sidebar(qtbot: QtBot) -> None:
+    """A dock nobody has pinned yet sends its first pin to :data:`DEFAULT_PIN_SIDE` (#279).
 
     **Test steps:**
 
-    * point the shared docks settings at the right-hand side
-    * construct a real ``MainWindow``
-    * verify every main dock's preferred sidebar is that one
+    * construct a real ``MainWindow`` with nothing remembered
+    * verify every main dock's preferred sidebar is the default one
     """
-    shared_docks_settings().pin_side = DockPinSide.RIGHT
-
     window = MainWindow()
     qtbot.addWidget(window)
 
     sides = [main_dock(window, name).preferredAutoHideSideBarLocation() for name in MAIN_DOCK_NAMES]
-    assert sides == [QtAds.SideBarRight] * 4
+
+    assert sides == [DEFAULT_PIN_SIDE] * 4
 
 
-def test_applying_a_new_side_re_points_the_open_docks(qtbot: QtBot) -> None:
-    """Saving the Docks page moves the pin button's target without a restart (#279).
+def test_a_dock_dropped_on_a_sidebar_pins_back_there(qtbot: QtBot) -> None:
+    """Unpinning and re-pinning returns a dock to where the user last put it, not to the default (#279).
+
+    The bug this memory exists for. Exercised through
+    ``CDockManager.addAutoHideDockWidget(location, dock)`` -- the entry point a drop overlay calls with
+    the border it was dropped on -- rather than a synthesized mouse drag, which offscreen cannot
+    deliver. QtAds writes back none of this itself: the preferred side it would otherwise keep is the
+    default, and the button reads only that.
 
     **Test steps:**
 
-    * construct a real ``MainWindow`` on the default (left) side
-    * change the shared setting to the bottom
-    * verify every main dock's preferred sidebar followed
+    * construct a real ``MainWindow`` and drop the Log dock on the right-hand sidebar
+    * unpin it, then pin it again the way its title-bar button does
+    * verify it landed on the right both times
     """
     window = MainWindow()
     qtbot.addWidget(window)
+    log = log_dock(window)
+    log.toggleView(True)
+    dock_manager = window._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    dock_manager.addAutoHideDockWidget(QtAds.SideBarRight, log)
+    assert log.autoHideLocation() == QtAds.SideBarRight
 
-    shared_docks_settings().pin_side = DockPinSide.BOTTOM
+    log.setAutoHide(False)
+    log.setAutoHide(True)
 
-    sides = [main_dock(window, name).preferredAutoHideSideBarLocation() for name in MAIN_DOCK_NAMES]
-    assert sides == [QtAds.SideBarBottom] * 4
+    assert log.autoHideLocation() == QtAds.SideBarRight
 
 
-def test_an_already_pinned_dock_stays_where_it_is(qtbot: QtBot) -> None:
-    """A new side decides the *next* pin, not one the user is already looking at (#279).
+def test_the_remembered_side_survives_a_restart(qtbot: QtBot, mock_persistent_settings: Any) -> None:
+    """Where a dock was last pinned is written on close and picked up by the next window (#279).
+
+    Asserted with the dock left **unpinned** at close, which is the case the saved layout cannot cover
+    on its own: a blob that records no pin says nothing about where the next one should go.
 
     **Test steps:**
 
-    * construct a real ``MainWindow`` and pin the Log dock to the default side
-    * change the shared setting to the bottom
-    * verify the pinned dock is still on the left, while its preferred side moved
+    * back the settings stand-in with real storage
+    * pin one window's Log dock to the right, unpin it, and close the window
+    * construct a second window against the same storage
+    * verify its Log dock pins to the right without being told
+    """
+    store = dict_backed_settings(mock_persistent_settings.return_value)
+    source = MainWindow()
+    qtbot.addWidget(source)
+    source_log = log_dock(source)
+    source_log.toggleView(True)
+    source_manager = source._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    source_manager.addAutoHideDockWidget(QtAds.SideBarRight, source_log)
+    source_log.setAutoHide(False)
+    source.closeEvent(QCloseEvent())
+    assert store[f"{DOCK_PIN_SIDES_GROUP}/{LOG_DOCK_OBJECT_NAME}/{PIN_SIDE_KEY}"] == "right"
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert log_dock(window).preferredAutoHideSideBarLocation() == QtAds.SideBarRight
+
+
+def test_a_dock_nobody_pinned_stores_no_side(qtbot: QtBot, mock_persistent_settings: Any) -> None:
+    """A dock nobody has pinned writes no key at all, rather than today's default (#279).
+
+    What keeps :data:`DEFAULT_PIN_SIDE` the authority for such a dock: a stored ``left`` would read as
+    a choice the user made, and a later change to that constant would reach fresh installs only.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``, pin only the Log dock, and close it
+    * verify the Log dock's side was written and the Tasks dock's key was removed
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -4962,36 +5005,13 @@ def test_an_already_pinned_dock_stays_where_it_is(qtbot: QtBot) -> None:
     log.toggleView(True)
     log.setAutoHide(True)
 
-    shared_docks_settings().pin_side = DockPinSide.BOTTOM
+    window.closeEvent(QCloseEvent())
 
-    assert log.autoHideLocation() == QtAds.SideBarLeft
-    assert log.preferredAutoHideSideBarLocation() == QtAds.SideBarBottom
-
-
-def test_a_named_sidebar_wins_over_the_configured_side(qtbot: QtBot) -> None:
-    """Dropping a dock on one border pins it there, whatever the setting says (#279).
-
-    Exercised through ``CDockManager.addAutoHideDockWidget(location, dock)`` -- the entry point a
-    drop overlay calls with the border it was dropped on -- rather than a synthesized mouse drag,
-    which offscreen cannot deliver. The preference is left alone, so the *next* pin from the button
-    still honours the setting.
-
-    **Test steps:**
-
-    * construct a real ``MainWindow`` on the default (left) side and reveal the Log dock
-    * pin it into the right-hand sidebar by name
-    * verify it landed on the right, and its preferred side is still the left
-    """
-    window = MainWindow()
-    qtbot.addWidget(window)
-    log = log_dock(window)
-    log.toggleView(True)
-    dock_manager = window._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-
-    dock_manager.addAutoHideDockWidget(QtAds.SideBarRight, log)
-
-    assert log.autoHideLocation() == QtAds.SideBarRight
-    assert log.preferredAutoHideSideBarLocation() == QtAds.SideBarLeft
+    settings = mock_persistent_settings.return_value
+    written = {call.args[0] for call in settings.setValue.call_args_list}
+    removed = {call.args[0] for call in settings.remove.call_args_list}
+    assert PIN_SIDE_KEY in written
+    assert PIN_SIDE_KEY in removed
 
 
 def test_pinning_the_log_dock_puts_it_in_the_sidebar(qtbot: QtBot) -> None:

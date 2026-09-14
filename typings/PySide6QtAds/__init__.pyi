@@ -77,6 +77,14 @@ class CAutoHideDockContainer(QWidget):
     def collapseView(self, enable: bool) -> None:
         """Collapse this container back to its sidebar tab (`enable`), or slide it out."""
 
+    def dockWidget(self) -> CDockWidget:
+        """The pinned dock this container holds."""
+
+    def sideBarLocation(self) -> SideBarLocation:
+        """Which sidebar this container's tab sits in -- the side the dock was actually pinned to,
+        which is *not* written back to its `preferredAutoHideSideBarLocation`
+        ([[appendices.qt-ads#auto-hide-preferred-side]])."""
+
 class CAutoHideSideBar(QWidget):
     """One of a `CDockManager`'s four sidebars, holding the `CAutoHideTab`s of the docks pinned to
     that border."""
@@ -243,6 +251,11 @@ class CDockWidget(QWidget):
 
     def setWidget(self, widget: QWidget) -> None:
         """Set the content widget this dock displays."""
+
+    def dockManager(self) -> CDockManager:
+        """The manager this dock is associated with -- the two-argument constructor's, or the one that
+        adopted it. `None` only for a dock built standalone and never added, which is why callers that
+        require a manager read it unguarded."""
 
     def setAutoHide(self, enable: bool, location: SideBarLocation = ...) -> None:
         """Pin this dock into a sidebar (`enable`), or dock it back into the layout.
@@ -432,6 +445,12 @@ class CDockManager(QWidget):
     def autoHideSideBar(self, location: SideBarLocation) -> CAutoHideSideBar:
         """This manager's sidebar at `location` -- the strip of tabs standing in for the docks pinned
         to that border."""
+
+    autoHideWidgetCreated: Signal
+    """Emitted with the `CAutoHideDockContainer` QtAds has just built for a dock being pinned. Fires on
+    every route into a sidebar -- a drop on a border, the area's pin button, `CDockWidget.setAutoHide`,
+    a drag of an already-pinned dock between sidebars, and a `restoreState` bringing a pinned dock back
+    (all verified) -- which is what makes it the one hook a remembered pin side needs."""
 
     dockAreaViewToggled: Signal
     """Emitted ``(area, open)`` whenever one of this manager's areas is shown or hidden -- including a

@@ -557,19 +557,42 @@ action mirroring `toggleViewAction`'s checked state is therefore already correct
 That is not what the app does, and the app is what was measured here — worth knowing only so a probe
 disagreeing with a real window is not mistaken for a regression.)
 
-### 10.4 A named sidebar beats the preferred one
+### 10.4 Nothing writes back where a dock was actually pinned
 
 [[[appendices.qt-ads#auto-hide-preferred-side]]]
 
-`CDockWidget.setPreferredAutoHideSideBarLocation` decides where the area's **pin button** sends a
-dock, and re-setting it leaves an already-pinned dock where it is. A drag dropped on a particular
-border goes through `CDockManager.addAutoHideDockWidget(location, dock)` instead: the dock lands on
-the named side and the preference is left untouched for its next button-driven pin (verified through
-that entry point — a synthesized mouse drag is not deliverable offscreen).
+`CDockWidget.setPreferredAutoHideSideBarLocation` is the **only** thing a dock area's pin button reads,
+and **QtAds never updates it**. A drag dropped on a particular border goes through
+`CDockManager.addAutoHideDockWidget(location, dock)`, which pins the dock to the named side and leaves
+the preference alone; so does a `restoreState()` bringing a pinned dock back. Re-setting the preference,
+for its part, leaves an already-pinned dock where it is — it decides the *next* pin, not the current one.
+
+**So a dock does not remember where the user put it.** Drag one onto the right sidebar, unpin it, press
+its pin button: it goes back to whatever the preference still says. Reproduced end to end before it was
+believed, since the API reads as though the preference tracked the dock.
+
+**The fix is one signal.** `CDockManager.autoHideWidgetCreated` fires with the `CAutoHideDockContainer`
+QtAds has just built, and that container names both its `dockWidget()` and the `sideBarLocation()` it
+landed in. It fires on **every** route into a sidebar — verified for a drop, the pin button,
+`setAutoHide(True, location)`, a drag of an already-pinned dock straight from one sidebar to another
+(a second container, no unpin in between), and a layout restore. Writing that side straight back with
+`setPreferredAutoHideSideBarLocation` is the whole of it, and it leaves no second copy of the side to
+fall out of step: the dock's own preference *is* the memory.
+`borco_pyside.qtads.QtAdsPinSideHandler` packages that, plus persistence per dock.
+
+**`SideBarLocation` is ordered `Top=0, Left=1, Right=2, Bottom=3, None=4`** — `SideBarNone` is the
+member an *unpinned* dock's `autoHideLocation()` reports, and it is the enum's last value, not its
+first. Worth stating because the zero value being a real side (Top) makes a falsy-means-unset reading
+silently wrong.
 
 Pin state — which docks, and which sidebar — is part of `CDockManager.saveState()` and comes back
-from `restoreState()`, so it needs no persistence of its own; what it needs is a layout-state version
-bump, since a blob written before sidebars existed describes every dock as docked-or-closed.
+from `restoreState()`, so a dock left *pinned* needs no persistence of its own; what that needs is a
+layout-state version bump, since a blob written before sidebars existed describes every dock as
+docked-or-closed. A dock left **unpinned** is the case the layout cannot cover: the blob records no
+pin, and so says nothing about where the next one should go — which is why the remembered side is
+stored separately, and why a dock nobody has ever pinned stores nothing at all rather than the
+current default (a stored default would read as a choice the user made, and outlive a later change to
+the constant).
 
 ### 10.5 The sidebars need no application QSS
 

@@ -2,11 +2,13 @@
 
 from .qtads_auto_hide_button_suppressor import QtAdsAutoHideButtonSuppressor
 from .qtads_focus_tracker import QtAdsFocusTracker
+from .qtads_pin_side_handler import QtAdsPinSideHandler
 from .qtads_widgets import tab_close_button, tab_label
 
 __all__ = [
     "QtAdsAutoHideButtonSuppressor",
     "QtAdsFocusTracker",
+    "QtAdsPinSideHandler",
     "tab_close_button",
     "tab_label",
 ]
