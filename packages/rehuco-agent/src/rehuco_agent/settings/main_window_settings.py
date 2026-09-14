@@ -14,7 +14,7 @@ TOOLBARS_STATE_KEY: Final = "toolbars_state"
 LOG_WIDGET_STATE_KEY: Final = "log_widget_state"
 TASK_QUEUE_STATE_KEY: Final = "task_queue_state"
 
-OUTER_DOCKS_STATE_VERSION: Final = 4
+OUTER_DOCKS_STATE_VERSION: Final = 5
 """Schema version of :attr:`MainWindowSettings.outer_docks_state`. The outer dock set (the Documents
 dock plus its sibling docks and dockable dialogs, e.g. #47's settings dock) is keyed by dock object
 name, so any change to that set makes an older blob incompatible: ``CDockManager.restoreState``
@@ -32,7 +32,13 @@ Bumped to 4 when the documents area stopped being the manager's central widget a
 hideable **Documents** dock (#268). This one is not merely a dock the older layout does not mention: a
 v3 blob describes a *central* area, a structure QtAds reconstructs before it places anything around it,
 so restoring one into a shell that has no central widget is not a dock left in an invented state but a
-layout rebuilt around a hole. Discarded once, and rebuilt from the window's own default."""
+layout rebuilt around a hole. Discarded once, and rebuilt from the window's own default.
+
+Bumped to 5 when the four main docks became pinnable (#279). A v4 blob knows nothing of the four
+sidebars a pinned dock collapses into -- it was written by a build that had none -- so restoring one
+describes each dock as docked-or-closed and nothing else. Discarded rather than restored sidebar-less,
+for the reason the whole guard exists: a layout QtAds accepts and quietly under-describes is worse
+than the default one the window builds for itself."""
 
 TOOLBARS_STATE_VERSION: Final = 2
 """Version passed to Qt's own ``QMainWindow.saveState``/``restoreState`` (the toolbar-area/floating

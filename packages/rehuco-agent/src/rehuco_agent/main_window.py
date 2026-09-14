@@ -14,6 +14,7 @@ import PySide6QtAds as QtAds
 from borco_core.logging import LogScope
 from borco_pyside.dialogs import DockableDialog, DockableDialogManager
 from borco_pyside.logging import LogWidget
+from borco_pyside.qtads import QtAdsPinSideHandler
 from borco_pyside.theming import ActionIconThemeHandler, ThemeManager, ThemeMenu, ThemeModel
 from PySide6.QtCore import QByteArray
 from PySide6.QtGui import QAction, QCloseEvent, QIcon, QShowEvent
@@ -82,6 +83,11 @@ from .tray_icon import TrayIcon
 LOG: Final = logging.getLogger(__name__)
 
 SETTINGS_DIALOG_OBJECT_NAME: Final = "settings_dialog"
+DOCK_PIN_SIDES_GROUP: Final = "dock_pin_sides"
+"""Settings group holding one remembered pin side per main dock, keyed by its object name
+(#279). Each dock's side is written by its own `QtAdsPinSideHandler`; a dock nobody has pinned
+has no key here at all, so `DEFAULT_PIN_SIDE` keeps deciding where its first pin goes."""
+
 SETTINGS_ICON_RESOURCE: Final = ":/icons/app_settings.svg"
 
 DOCUMENTS_DOCK_OBJECT_NAME: Final = "documents_dock"
@@ -762,7 +768,29 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # __init__'s later CDockManager.restoreState() call freely re-docks or repositions it if
         # there's anything actually saved
         settings_dock.place_floating()
+        # pinnable like the window's other three docks (#279). Set here rather than widened into
+        # `DockableDialog`'s own feature set: that framework's other consumers are dialogs on
+        # managers with no window sidebars to pin into, and this one is a main dock that happens to
+        # be built through it.
+        settings_dock.dock.setFeature(QtAds.CDockWidget.DockWidgetFeature.DockWidgetPinnable, True)
         self.__dialog_manager.register(settings_dock)
+        # not Final, for the same reason the three docks above are not: assigned from
+        # __setup_docking_system rather than __init__
+        self.__main_docks = (
+            self.__documents_dock_widget,
+            self.__log_dock,
+            self.__task_queue_dock,
+            settings_dock.dock,
+        )
+        # one per dock, each remembering where that dock was last pinned -- QtAds updates none of
+        # this itself, so a dock dropped on the right sidebar would otherwise pin back to the default
+        # forever (#279). Built here, before __init__'s restoreState, so a restored pin is caught too;
+        # loaded immediately, so a dock left *unpinned* at quit still knows its side.
+        self.__pin_side_handlers = tuple(
+            QtAdsPinSideHandler(dock, f"{DOCK_PIN_SIDES_GROUP}/{dock.objectName()}") for dock in self.__main_docks
+        )
+        for handler in self.__pin_side_handlers:
+            handler.load(persistent_settings())
         # settings_action stands in for toggle_action in File (a plain menu row, unlike the
         # toolbar button toggle_action was built for) -- see the companion parameter's docstring
         # for why that needs a second, differently-themed action rather than reusing toggle_action
@@ -802,7 +830,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         whole container, so a fresh layout still opens with documents filling the window and the two
         bottom docks (hidden) splitting off below it.
 
-        Closable, movable, floatable and focusable -- the same feature set the Log and Tasks pair
+        Closable, movable, floatable, focusable and pinnable -- the same feature set the Log and Tasks pair
         carries, and the reason :meth:`__reveal_documents_dock` exists: a dock the user can put away is
         a dock an open has to bring back.
 
@@ -822,6 +850,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             | features.DockWidgetMovable
             | features.DockWidgetFloatable
             | features.DockWidgetFocusable
+            | features.DockWidgetPinnable
         )
         dock.setWidget(self.__documents_dock)
         self.__dock_manager.addDockWidget(QtAds.CenterDockWidgetArea, dock)
@@ -947,6 +976,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             | features.DockWidgetMovable
             | features.DockWidgetFloatable
             | features.DockWidgetFocusable
+            | features.DockWidgetPinnable
         )
         dock.setWidget(self.__log_widget)
         self.__dock_manager.addDockWidget(QtAds.BottomDockWidgetArea, dock)
@@ -996,6 +1026,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             | features.DockWidgetMovable
             | features.DockWidgetFloatable
             | features.DockWidgetFocusable
+            | features.DockWidgetPinnable
         )
         dock.setWidget(self.__task_queue_widget)
         self.__dock_manager.addDockWidget(QtAds.BottomDockWidgetArea, dock)
@@ -1142,6 +1173,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__dialog_manager.enforce_restore_on_start()
         self.__save_window_state()
         self.__dialog_manager.save_all(persistent_settings())
+        # same moment, same shape: where each main dock was last pinned, so the next launch
+        # sends its pin button back there rather than to the default (#279)
+        for handler in self.__pin_side_handlers:
+            handler.save(persistent_settings())
         self.__save_session()
         self.__settings_dialog.save_filter_state()
         self.__recent_files.save(persistent_settings())

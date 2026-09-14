@@ -2431,3 +2431,52 @@ def test_restore_session_restores_the_outer_dock_layout(mocker: MockerFixture, q
 
 
 # endregion
+
+
+# region pinning is the window's, not a document tab's (#279)
+
+
+@fixture
+def auto_hide_flags() -> Iterator[None]:
+    """Turn QtAds' pinning on for the duration of one test, and put the flags back afterwards.
+
+    Not autouse: the flags are a `CDockManager` **static**, and leaving them on would decide the
+    behaviour of every later test in the session -- so only the test that needs the button QtAds only
+    creates under them asks for it.
+    """
+    previous = QtAds.CDockManager.autoHideConfigFlags()
+    QtAds.CDockManager.setAutoHideConfigFlags(QtAds.CDockManager.eAutoHideFlag.DefaultAutoHideConfig)
+    yield
+    QtAds.CDockManager.setAutoHideConfigFlags(previous)
+
+
+def test_a_document_tab_carries_no_pin_button(mocker: MockerFixture, auto_hide_flags: None, qtbot: QtBot) -> None:
+    """A document tab cannot be pinned into this area's own sidebars (#279).
+
+    The middle of the three nested managers: the window's Documents dock is pinnable, and a document's
+    own viewer/editor split is covered beside `DocumentWidget`, but the area holding the document tabs
+    themselves is a manager of its own and needs its own `QtAdsAutoHideButtonSuppressor`.
+
+    **Test steps:**
+
+    * open a document with pinning turned on for the process
+    * verify the area holding its tab ends up with a hidden pin button
+    """
+    del auto_hide_flags
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    manager = dock._DocumentsDock__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    dock.open_document(FAKE_PATH)
+
+    qtbot.waitUntil(
+        lambda: (
+            bool(manager.openedDockAreas())
+            and all(area.titleBarButton(QtAds.TitleBarButtonAutoHide).isHidden() for area in manager.openedDockAreas())
+        ),
+        timeout=10_000,
+    )
+
+
+# endregion

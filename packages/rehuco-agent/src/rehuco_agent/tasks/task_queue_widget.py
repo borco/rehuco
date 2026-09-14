@@ -8,7 +8,7 @@ from typing import Any, Final, cast
 import cbor2
 import PySide6QtAds as QtAds
 from borco_pyside.logging import LogWidget
-from borco_pyside.qtads import QtAdsFocusTracker
+from borco_pyside.qtads import QtAdsAutoHideButtonSuppressor, QtAdsFocusTracker
 from borco_pyside.theming import ActionIconThemeHandler
 from PySide6.QtCore import QByteArray, QItemSelectionModel, QPoint
 from PySide6.QtGui import QColor
@@ -186,6 +186,9 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
         # together and there is no state here to read back off it (the current sub-dock of a two-dock
         # shell is not worth persisting, unlike a document's split)
         QtAdsFocusTracker(self.__dock_manager, close_glyph=TAB_CLOSE_GLYPH, stylesheet_host=stylesheet_host)
+        # same for the pin button, and for the same reason (#279): pinning belongs to the window's own
+        # docks, and this shell's two sub-docks live inside one of them
+        QtAdsAutoHideButtonSuppressor(self.__dock_manager)
         self.__add_queue_dock()
         self.__log_dock: Final = self.__add_log_dock()
 

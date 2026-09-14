@@ -131,16 +131,27 @@ class Application(QApplication):
         """
         if self.__main_window is None:
             # must run before this process's first CDockManager, whichever window ends up
-            # constructing it -- config flags only take effect if set before then. Set here
+            # constructing it -- neither flag set below takes effect if set after. Set here
             # rather than in any one window's own __init__: show_main_window() is currently the
             # earliest point that builds a window at all, and the only one reached solely by the
             # primary instance -- if some other QtAds-based window is ever built before
-            # MainWindow, move this call ahead of that construction instead.
+            # MainWindow, move these calls ahead of that construction instead.
             config_flags = QtAds.CDockManager.eConfigFlag
             QtAds.CDockManager.setConfigFlags(
                 config_flags.AllTabsHaveCloseButton
                 | config_flags.DockAreaHasTabsMenuButton
                 | config_flags.MiddleMouseButtonClosesTab
+            )
+            # pinning (#279), under the same before-the-first-manager rule. DefaultAutoHideConfig is
+            # QtAds' own recommended set -- pinning enabled, a pin button on each dock area, a
+            # minimize button on a slid-out dock, and collapse on a click outside it -- so only the
+            # hover-to-peek addition is spelled out. AutoHideSideBarsIconOnly is deliberately absent:
+            # it drops each sidebar tab's title in favour of the dock's icon, and no dock here sets
+            # one, so it would leave the sidebar saying nothing at all
+            # ([[appendices.qt-ads#auto-hide-icon-only]]).
+            auto_hide_flags = QtAds.CDockManager.eAutoHideFlag
+            QtAds.CDockManager.setAutoHideConfigFlags(
+                auto_hide_flags.DefaultAutoHideConfig | auto_hide_flags.AutoHideShowOnMouseOver
             )
             self.__main_window = MainWindow()
         self.__main_window.raise_and_activate()
