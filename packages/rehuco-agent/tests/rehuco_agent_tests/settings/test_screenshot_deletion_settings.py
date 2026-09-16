@@ -11,6 +11,7 @@ from pytest import fixture
 from pytest_mock import MockerFixture
 from rehuco_agent.settings import screenshot_deletion_settings
 from rehuco_agent.settings.screenshot_deletion_settings import (
+    DEFAULT_PERMANENTLY_DELETE_IF_UNREACHABLE,
     DEFAULT_USE_RECYCLE_BIN,
     ScreenshotDeletionSettings,
     shared_screenshot_deletion_settings,
@@ -71,10 +72,14 @@ def test_a_fresh_instance_defaults_to_the_recycle_bin() -> None:
     **Test steps:**
 
     * build a settings object without loading anything
-    * verify it defaults to using the Recycle Bin
+    * verify it defaults to using the Recycle Bin, and not skipping the question (#301)
     """
-    assert ScreenshotDeletionSettings().use_recycle_bin is DEFAULT_USE_RECYCLE_BIN
+    settings = ScreenshotDeletionSettings()
+
+    assert settings.use_recycle_bin is DEFAULT_USE_RECYCLE_BIN
     assert DEFAULT_USE_RECYCLE_BIN is True
+    assert settings.permanently_delete_if_unreachable is DEFAULT_PERMANENTLY_DELETE_IF_UNREACHABLE
+    assert DEFAULT_PERMANENTLY_DELETE_IF_UNREACHABLE is False
 
 
 def test_load_falls_back_to_the_default_on_a_fresh_install(settings: FakeSettings) -> None:
@@ -83,12 +88,13 @@ def test_load_falls_back_to_the_default_on_a_fresh_install(settings: FakeSetting
     **Test steps:**
 
     * load a settings object from empty storage
-    * verify it holds the default
+    * verify it holds the default for both choices
     """
     loaded = ScreenshotDeletionSettings()
     loaded.load(settings)  # type: ignore[arg-type]
 
     assert loaded.use_recycle_bin is DEFAULT_USE_RECYCLE_BIN
+    assert loaded.permanently_delete_if_unreachable is DEFAULT_PERMANENTLY_DELETE_IF_UNREACHABLE
 
 
 def test_the_choice_round_trips_through_storage(settings: FakeSettings) -> None:
@@ -96,17 +102,18 @@ def test_the_choice_round_trips_through_storage(settings: FakeSettings) -> None:
 
     **Test steps:**
 
-    * save a settings object with the Recycle Bin turned off
+    * save a settings object with the Recycle Bin turned off and the override on
     * load a second object from the same storage
-    * verify it holds the same choice
+    * verify it holds the same choices
     """
-    saved = ScreenshotDeletionSettings(use_recycle_bin=False)
+    saved = ScreenshotDeletionSettings(use_recycle_bin=False, permanently_delete_if_unreachable=True)
     saved.save(settings)  # type: ignore[arg-type]
 
     loaded = ScreenshotDeletionSettings()
     loaded.load(settings)  # type: ignore[arg-type]
 
     assert loaded.use_recycle_bin is False
+    assert loaded.permanently_delete_if_unreachable is True
 
 
 # endregion

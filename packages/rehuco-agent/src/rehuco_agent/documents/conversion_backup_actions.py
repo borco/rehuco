@@ -24,9 +24,10 @@ from borco_core.logging import LogScope
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import QMessageBox, QWidget
-from rehuco_core import ConversionBackups, conversion_backups, discard_conversion_backups
+from rehuco_core import ConversionBackups, NoTrashBinError, conversion_backups, discard_conversion_backups
 
-from .recycle_bin_deleter import configured_deleter
+from ..asking_deleter import AskingDeleter
+from ..recycle_bin_deleter import configured_deleter
 from .rehu_document_model import RehuDocumentModel
 
 LOG: Final = logging.getLogger(__name__)
@@ -158,7 +159,18 @@ class ConversionBackupActions(QObject):
             return
         with LogScope.open(backups.rehu_path):
             try:
-                discarded = discard_conversion_backups(backups.rehu_path, deleter=configured_deleter())
+                discarded = discard_conversion_backups(
+                    backups.rehu_path,
+                    deleter=AskingDeleter(configured_deleter(), parent=self.__parent, files=backups.backups),
+                )
+            except NoTrashBinError as error:
+                LOG.warning(
+                    "Could not move a backup beside %s to the Recycle Bin / Trash; left in place: %s",
+                    backups.rehu_path,
+                    error,
+                )
+                self.refresh()
+                return
             except OSError as error:
                 LOG.error("Could not discard the backups beside %s: %s", backups.rehu_path, error)
                 self.__report(DISCARD_FAILED_TITLE, str(error))

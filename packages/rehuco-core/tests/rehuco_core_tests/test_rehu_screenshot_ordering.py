@@ -6,7 +6,14 @@ from typing import Final
 import pytest
 from pytest import fixture
 from pytest_mock import MockerFixture
-from rehuco_core import UnlinkDeleter, delete_screenshot, plan_screenshot_renumbering, renumber_screenshots
+from rehuco_core import (
+    NoTrashBinError,
+    OverridableDeleter,
+    UnlinkDeleter,
+    delete_screenshot,
+    plan_screenshot_renumbering,
+    renumber_screenshots,
+)
 from rehuco_core.rehu_screenshot_ordering import TEMP_SUFFIX
 
 DIRECTORY: Final = Path("/fake/tutorial")
@@ -345,6 +352,73 @@ def test_unlink_deleter_unlinks_directly(mocker: MockerFixture) -> None:
     UnlinkDeleter().delete(DIRECTORY / "info00.jpg")
 
     unlink.assert_called_once_with(DIRECTORY / "info00.jpg")
+
+
+# endregion
+
+# region OverridableDeleter (#301)
+
+
+class RefusingDeleter:  # pylint: disable=too-few-public-methods
+    """A :class:`~rehuco_core.Deleter` that always refuses with `~rehuco_core.NoTrashBinError`."""
+
+    def delete(self, path: Path) -> None:
+        """Refuse to delete ``path``."""
+        raise NoTrashBinError(f"no bin for {path.parent}")
+
+
+def test_overridable_deleter_propagates_a_refusal_when_unset() -> None:
+    """Absent the override, a refusal from the wrapped deleter is a refusal from this one too.
+
+    **Test steps:**
+
+    * delete through an `OverridableDeleter` with the flag off, wrapping a refusing deleter
+    * verify `NoTrashBinError` propagates
+    """
+    deleter = OverridableDeleter(RefusingDeleter(), delete_permanently_if_unreachable=False)
+
+    with pytest.raises(NoTrashBinError):
+        deleter.delete(DIRECTORY / "info00.jpg")
+
+
+def test_overridable_deleter_deletes_permanently_when_set(mocker: MockerFixture) -> None:
+    """With the override on, a refusal falls back to a permanent delete instead of propagating.
+
+    **Test steps:**
+
+    * delete through an `OverridableDeleter` with the flag on, wrapping a refusing deleter
+    * verify ``Path.unlink`` was called on it, and nothing was raised
+    """
+    unlink = mocker.patch.object(Path, "unlink", autospec=True)
+    deleter = OverridableDeleter(RefusingDeleter(), delete_permanently_if_unreachable=True)
+
+    deleter.delete(DIRECTORY / "info00.jpg")
+
+    unlink.assert_called_once_with(DIRECTORY / "info00.jpg")
+
+
+class LockedDeleter:  # pylint: disable=too-few-public-methods
+    """A :class:`~rehuco_core.Deleter` that always fails with a plain ``OSError`` -- a genuine failure,
+    not a missing bin."""
+
+    def delete(self, path: Path) -> None:
+        """Refuse to delete ``path``."""
+        raise OSError(f"locked: {path}")
+
+
+@pytest.mark.parametrize("delete_permanently_if_unreachable", [False, True])
+def test_overridable_deleter_never_catches_a_genuine_os_error(delete_permanently_if_unreachable: bool) -> None:
+    """A refusal that is not `NoTrashBinError` is never this class's to resolve, override or not.
+
+    **Test steps:**
+
+    * delete through an `OverridableDeleter` wrapping a deleter that raises a plain ``OSError``
+    * verify it propagates unchanged, regardless of the flag
+    """
+    deleter = OverridableDeleter(LockedDeleter(), delete_permanently_if_unreachable=delete_permanently_if_unreachable)
+
+    with pytest.raises(OSError, match="locked"):
+        deleter.delete(DIRECTORY / "info00.jpg")
 
 
 # endregion

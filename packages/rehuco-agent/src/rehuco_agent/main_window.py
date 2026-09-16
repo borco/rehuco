@@ -46,11 +46,11 @@ from .dialogs.import_legacy_catalog_wizard import ImportLegacyCatalogWizard
 from .documents.confirm_and_save_dirty import confirm_and_save_dirty
 from .documents.document_widget import DocumentWidget
 from .documents.documents_dock import DocumentsDock
-from .documents.recycle_bin_deleter import configured_deleter
 from .documents.rehu_document_menu_entry import RehuDocumentMenuEntry
 from .documents.rehu_document_model import path_label
 from .documents.save_or_prompt_retry import save_or_prompt_retry
 from .main_window_ui import Ui_MainWindow
+from .recycle_bin_deleter import configured_deleter
 from .settings.checksum_settings import shared_checksum_settings
 from .settings.document_session_settings import DocumentSessionSettings
 from .settings.excluded_files_settings import shared_excluded_files_settings

@@ -15,13 +15,13 @@ from typing import Final
 import pytest
 from borco_pyside.recycle_bin import NoRecycleBinError
 from pytest_mock import MockerFixture
-from rehuco_agent.documents.recycle_bin_deleter import RecycleBinDeleter, configured_deleter
+from rehuco_agent.recycle_bin_deleter import RecycleBinDeleter, configured_deleter
 from rehuco_agent.settings.screenshot_deletion_settings import shared_screenshot_deletion_settings
 from rehuco_core import DEFAULT_DELETER, NoTrashBinError
 
 PATH: Final = Path("/fake/tutorial/info00.jpg")
 
-RECYCLE_BIN: Final = "rehuco_agent.documents.recycle_bin_deleter.recycle_bin"
+RECYCLE_BIN: Final = "rehuco_agent.recycle_bin_deleter.recycle_bin"
 """Where the shared `~borco_pyside.recycle_bin.RecycleBin` accessor is patched -- imported by name into
 this module, the same seam every other caller of it would mock."""
 

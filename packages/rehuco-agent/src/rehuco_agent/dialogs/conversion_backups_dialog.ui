@@ -128,6 +128,13 @@
     </widget>
    </item>
    <item>
+    <widget class="QCheckBox" name="permanent_delete_check_box">
+     <property name="text">
+      <string>Delete permanently if the Recycle Bin is not available</string>
+     </property>
+    </widget>
+   </item>
+   <item>
     <layout class="QHBoxLayout" name="button_layout">
      <item>
       <widget class="QPushButton" name="discard_button">

@@ -1,0 +1,290 @@
+"""Tests for AskingDeleter: the interactive `~rehuco_core.Deleter` wrapper that offers a permanent
+delete for a file the Recycle Bin cannot take (#301).
+
+`QMessageBox.question`/`.critical` are mocked, the same house pattern `test_image_selector.py` already
+uses for the images dock's own version of this question -- the one this class replaces.
+"""
+
+from pathlib import Path
+from typing import Final
+
+import pytest
+from PySide6.QtWidgets import QMessageBox
+from pytest_mock import MockerFixture
+from rehuco_agent.asking_deleter import AskingDeleter
+from rehuco_agent.settings.screenshot_deletion_settings import shared_screenshot_deletion_settings
+from rehuco_core import NoTrashBinError
+
+PATH: Final = Path("/fake/tutorial/info00.jpg")
+OTHER_PATH: Final = Path("/fake/tutorial/info01.jpg")
+
+QUESTION: Final = "rehuco_agent.asking_deleter.QMessageBox.question"
+CRITICAL: Final = "rehuco_agent.asking_deleter.QMessageBox.critical"
+
+
+class RefusingDeleter:  # pylint: disable=too-few-public-methods
+    """A :class:`~rehuco_core.Deleter` that always refuses with `~rehuco_core.NoTrashBinError`."""
+
+    def delete(self, path: Path) -> None:
+        """Refuse to delete ``path``."""
+        raise NoTrashBinError(f"no bin for {path.parent}")
+
+
+class RecordingDeleter:  # pylint: disable=too-few-public-methods
+    """A :class:`~rehuco_core.Deleter` that records what it was asked to delete."""
+
+    def __init__(self) -> None:
+        self.deleted: list[Path] = []
+
+    def delete(self, path: Path) -> None:
+        """Record ``path`` rather than raising or touching disk."""
+        self.deleted.append(path)
+
+
+class LockedDeleter:  # pylint: disable=too-few-public-methods
+    """A :class:`~rehuco_core.Deleter` that always fails with a plain ``OSError`` -- a genuine failure,
+    not a missing bin."""
+
+    def delete(self, path: Path) -> None:
+        """Refuse to delete ``path``."""
+        raise OSError(f"locked: {path}")
+
+
+def test_success_passes_through_untouched() -> None:
+    """A delete that does not refuse never involves the question at all.
+
+    **Test steps:**
+
+    * delete through an `AskingDeleter` wrapping a recording deleter
+    * verify the inner deleter, and only it, was asked
+    """
+    inner = RecordingDeleter()
+
+    AskingDeleter(inner).delete(PATH)
+
+    assert inner.deleted == [PATH]
+
+
+def test_yes_deletes_the_current_file_permanently(mocker: MockerFixture) -> None:
+    """Answering Yes deletes the one file asked about, and the call succeeds.
+
+    **Test steps:**
+
+    * answer Yes to a refusal
+    * delete through an `AskingDeleter` wrapping a refusing deleter
+    * verify the permanent deleter was used and nothing was raised
+    """
+    mocker.patch(QUESTION, return_value=QMessageBox.StandardButton.Yes)
+    unlink = mocker.patch.object(Path, "unlink", autospec=True)
+
+    AskingDeleter(RefusingDeleter()).delete(PATH)
+
+    unlink.assert_called_once_with(PATH)
+
+
+def test_no_re_raises_for_the_current_file(mocker: MockerFixture) -> None:
+    """Answering No leaves the refusal exactly as it came, for the caller's own handling.
+
+    **Test steps:**
+
+    * answer No to a refusal
+    * delete through an `AskingDeleter` wrapping a refusing deleter
+    * verify `NoTrashBinError` propagates
+    """
+    mocker.patch(QUESTION, return_value=QMessageBox.StandardButton.No)
+
+    with pytest.raises(NoTrashBinError):
+        AskingDeleter(RefusingDeleter()).delete(PATH)
+
+
+def test_the_question_lists_every_file_the_operation_will_delete(mocker: MockerFixture) -> None:
+    """The answer is given knowing its whole reach: the question names every file, not just the one
+    that happened to be refused first.
+
+    **Test steps:**
+
+    * delete through an `AskingDeleter` built with a two-file operation
+    * verify the question names the count and both files
+    """
+    question = mocker.patch(QUESTION, return_value=QMessageBox.StandardButton.No)
+
+    with pytest.raises(NoTrashBinError):
+        AskingDeleter(RefusingDeleter(), files=(PATH, OTHER_PATH)).delete(PATH)
+
+    text = question.call_args[0][2]
+    assert "2 files" in text
+    assert PATH.name in text
+    assert OTHER_PATH.name in text
+
+
+def test_a_single_file_operation_names_the_file(mocker: MockerFixture) -> None:
+    """One file is named outright rather than counted.
+
+    **Test steps:**
+
+    * delete through an `AskingDeleter` built with no file list
+    * verify the question names the refused file and no count
+    """
+    question = mocker.patch(QUESTION, return_value=QMessageBox.StandardButton.No)
+
+    with pytest.raises(NoTrashBinError):
+        AskingDeleter(RefusingDeleter()).delete(PATH)
+
+    text = question.call_args[0][2]
+    assert PATH.name in text
+    assert "files" not in text
+
+
+def test_a_yes_answers_every_later_refusal_without_asking_again(mocker: MockerFixture) -> None:
+    """A bin's reach is the location's, and an operation's files share one: Yes once is Yes for all.
+
+    **Test steps:**
+
+    * answer Yes once, then delete a second refused file through the same instance
+    * verify the question was asked only once, and both files were deleted permanently
+    """
+    question = mocker.patch(QUESTION, return_value=QMessageBox.StandardButton.Yes)
+    unlink = mocker.patch.object(Path, "unlink", autospec=True)
+    deleter = AskingDeleter(RefusingDeleter(), files=(PATH, OTHER_PATH))
+
+    deleter.delete(PATH)
+    deleter.delete(OTHER_PATH)
+
+    assert question.call_count == 1
+    assert unlink.call_args_list == [mocker.call(PATH), mocker.call(OTHER_PATH)]
+
+
+def test_a_no_answers_every_later_refusal_without_asking_again(mocker: MockerFixture) -> None:
+    """Declining once is not asked again on the next file either -- the same answer, for the same
+    reason, would only be a second dialog.
+
+    **Test steps:**
+
+    * answer No once, then delete a second refused file through the same instance
+    * verify both refusals propagated and the question was asked only once
+    """
+    question = mocker.patch(QUESTION, return_value=QMessageBox.StandardButton.No)
+    deleter = AskingDeleter(RefusingDeleter(), files=(PATH, OTHER_PATH))
+
+    with pytest.raises(NoTrashBinError):
+        deleter.delete(PATH)
+    with pytest.raises(NoTrashBinError):
+        deleter.delete(OTHER_PATH)
+
+    assert question.call_count == 1
+
+
+def test_the_setting_skips_asking_entirely(mocker: MockerFixture) -> None:
+    """With **Delete permanently, without asking, when the Recycle Bin is not available** on, a refusal
+    never reaches the question, on any file.
+
+    **Test steps:**
+
+    * turn the setting on
+    * delete two different refused files through one `AskingDeleter`
+    * verify the question was never asked, and both files were deleted permanently
+    """
+    shared_screenshot_deletion_settings().permanently_delete_if_unreachable = True
+    question = mocker.patch(QUESTION)
+    unlink = mocker.patch.object(Path, "unlink", autospec=True)
+    deleter = AskingDeleter(RefusingDeleter())
+
+    deleter.delete(PATH)
+    deleter.delete(OTHER_PATH)
+
+    question.assert_not_called()
+    assert unlink.call_args_list == [mocker.call(PATH), mocker.call(OTHER_PATH)]
+
+
+def test_the_setting_off_asks_as_usual(mocker: MockerFixture) -> None:
+    """The setting defaults off, so a refusal is asked about the ordinary way.
+
+    **Test steps:**
+
+    * delete through an `AskingDeleter` with the setting at its default
+    * verify the question was asked
+    """
+    question = mocker.patch(QUESTION, return_value=QMessageBox.StandardButton.No)
+
+    with pytest.raises(NoTrashBinError):
+        AskingDeleter(RefusingDeleter()).delete(PATH)
+
+    question.assert_called_once()
+
+
+def test_a_genuine_os_error_is_not_reported_by_default(mocker: MockerFixture) -> None:
+    """`report_delete_failures` off (the default) leaves a real failure to the caller's own handling.
+
+    **Test steps:**
+
+    * delete through an `AskingDeleter` wrapping a deleter that raises a plain ``OSError``
+    * verify it propagates, and no message box was shown
+    """
+    critical = mocker.patch(CRITICAL)
+
+    with pytest.raises(OSError, match="locked"):
+        AskingDeleter(LockedDeleter()).delete(PATH)
+
+    critical.assert_not_called()
+
+
+def test_a_genuine_os_error_is_reported_when_asked_to(mocker: MockerFixture) -> None:
+    """`report_delete_failures` on (the images dock) shows the failure by name, then still re-raises.
+
+    **Test steps:**
+
+    * delete through an `AskingDeleter` wrapping a deleter that raises a plain ``OSError``, reporting on
+    * verify a message box named the file, and the error still propagated
+    """
+    critical = mocker.patch(CRITICAL)
+
+    with pytest.raises(OSError, match="locked"):
+        AskingDeleter(LockedDeleter(), report_delete_failures=True).delete(PATH)
+
+    critical.assert_called_once()
+    assert PATH.name in critical.call_args[0][2]
+
+
+def test_a_failed_permanent_fallback_is_reported_too(mocker: MockerFixture) -> None:
+    """Answering Yes and then having the permanent delete itself fail is a real failure, and reported
+    like any other -- the fallback runs outside the refusal's handler for exactly this reason.
+
+    **Test steps:**
+
+    * answer Yes to a refusal, with the permanent delete refusing in its own right
+    * delete through an `AskingDeleter` with reporting on
+    * verify a message box named the file, and the error still propagated
+    """
+    mocker.patch(QUESTION, return_value=QMessageBox.StandardButton.Yes)
+    mocker.patch.object(Path, "unlink", autospec=True, side_effect=PermissionError("read-only"))
+    critical = mocker.patch(CRITICAL)
+
+    with pytest.raises(PermissionError):
+        AskingDeleter(RefusingDeleter(), report_delete_failures=True).delete(PATH)
+
+    critical.assert_called_once()
+    assert PATH.name in critical.call_args[0][2]
+
+
+def test_a_file_already_gone_is_re_raised_but_never_reported(mocker: MockerFixture) -> None:
+    """A file that vanished between the scan and the click is a rescan, not a failure: re-raised for
+    the caller's rebuild, with no box even when reporting is on.
+
+    **Test steps:**
+
+    * delete through an `AskingDeleter` wrapping a deleter that raises ``FileNotFoundError``, reporting on
+    * verify it propagates and no message box was shown
+    """
+    critical = mocker.patch(CRITICAL)
+
+    class VanishedDeleter:  # pylint: disable=too-few-public-methods
+        """A `~rehuco_core.Deleter` whose file is already gone."""
+
+        def delete(self, path: Path) -> None:
+            """Report ``path`` as already gone."""
+            raise FileNotFoundError(path)
+
+    with pytest.raises(FileNotFoundError):
+        AskingDeleter(VanishedDeleter(), report_delete_failures=True).delete(PATH)
+
+    critical.assert_not_called()

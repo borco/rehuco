@@ -24,6 +24,7 @@ from rehuco_core import (
     JobState,
     JobStatus,
     NoTrashBinError,
+    OverridableDeleter,
     TaskJobRegistry,
     TaskQueue,
     TcBackupsJob,
@@ -124,6 +125,14 @@ def fixture_present(mocker: MockerFixture) -> None:
 
 
 # pylint: enable=duplicate-code
+
+
+class RefusingDeleter:  # pylint: disable=too-few-public-methods
+    """A :class:`~rehuco_core.Deleter` that always refuses with `~rehuco_core.NoTrashBinError` (#301)."""
+
+    def delete(self, path: Path) -> None:
+        """Refuse to delete ``path``."""
+        raise NoTrashBinError(f"no bin for {path.parent}")
 
 
 # endregion
@@ -250,20 +259,23 @@ def test_a_job_with_no_resource_at_all_refuses() -> None:
 def test_a_discard_hands_its_resource_to_the_operation(
     mocker: MockerFixture, control: FakeControl, present: None
 ) -> None:
-    """The path is the whole of what :func:`~rehuco_core.discard_conversion_backups` is given -- there is
-    no choice for this job to carry.
+    """The path is the whole of what this job's own construction contributes beyond the resource -- the
+    deleter is always the resolved provider's, wrapped so the job's own override (#301) can apply.
 
     **Test steps:**
 
     * run a discard with the underlying callable mocked
-    * check the path arrived and only start and finish were reported
+    * check the path arrived, the deleter is an `~rehuco_core.OverridableDeleter`, and only start and
+      finish were reported
     """
     del present
     discard = mocker.patch("rehuco_core.tc_backups_jobs.discard_conversion_backups", return_value=DISCARDED)
 
     DiscardBackupsJob(REHU_PATH).run(control)  # pyright: ignore[reportArgumentType]
 
-    discard.assert_called_once_with(REHU_PATH, deleter=DEFAULT_DELETER)
+    args, kwargs = discard.call_args
+    assert args == (REHU_PATH,)
+    assert isinstance(kwargs["deleter"], OverridableDeleter)
     assert control.reports == [(0, 1), (1, 1)]
 
 
@@ -276,16 +288,18 @@ def test_a_discard_resolves_its_deleter_from_the_provider_when_it_runs(
     **Test steps:**
 
     * install a provider answering a recording deleter, then run a discard built with only its path
-    * check the operation was handed the provider's deleter
+    * check the operation was handed a deleter that delegates to the provider's
     """
     del present
-    deleter = mocker.Mock()
-    mocker.patch.object(DEFAULT_DELETER_PROVIDER, "resolve", return_value=deleter)
+    resolved = mocker.Mock()
+    mocker.patch.object(DEFAULT_DELETER_PROVIDER, "resolve", return_value=resolved)
     discard = mocker.patch("rehuco_core.tc_backups_jobs.discard_conversion_backups", return_value=DISCARDED)
 
     DiscardBackupsJob(REHU_PATH).run(control)  # pyright: ignore[reportArgumentType]
 
-    discard.assert_called_once_with(REHU_PATH, deleter=deleter)
+    deleter = discard.call_args.kwargs["deleter"]
+    deleter.delete(DIRECTORY / "info.tc.orig")
+    resolved.delete.assert_called_once_with(DIRECTORY / "info.tc.orig")
 
 
 def test_the_provider_resets_to_the_plain_unlink(mocker: MockerFixture) -> None:
@@ -316,22 +330,24 @@ def test_a_restored_discard_resolves_the_same_deleter_as_a_fresh_one(
     * run it and check the operation was handed the provider's deleter, not the core default
     """
     del present
-    deleter = mocker.Mock()
-    mocker.patch.object(DEFAULT_DELETER_PROVIDER, "resolve", return_value=deleter)
+    resolved = mocker.Mock()
+    mocker.patch.object(DEFAULT_DELETER_PROVIDER, "resolve", return_value=resolved)
     discard = mocker.patch("rehuco_core.tc_backups_jobs.discard_conversion_backups", return_value=DISCARDED)
     restored = DEFAULT_TASK_JOB_REGISTRY.create(TC_DISCARD_KIND, DiscardBackupsJob(REHU_PATH).capture_state())
     assert restored is not None
 
     restored.run(control)  # pyright: ignore[reportArgumentType]
 
-    discard.assert_called_once_with(REHU_PATH, deleter=deleter)
+    deleter = discard.call_args.kwargs["deleter"]
+    deleter.delete(DIRECTORY / "info.tc.orig")
+    resolved.delete.assert_called_once_with(DIRECTORY / "info.tc.orig")
 
 
 def test_a_discard_that_cannot_reach_a_bin_fails_and_leaves_the_backups(
     mocker: MockerFixture, control: FakeControl, present: None
 ) -> None:
-    """No window means no fallback to offer -- the failure is the whole of what a `NoTrashBinError`
-    does here (#298).
+    """No window means no fallback to offer absent the override -- unset, the failure is the whole of
+    what a `NoTrashBinError` does here (#298, #301).
 
     **Test steps:**
 
@@ -349,6 +365,61 @@ def test_a_discard_that_cannot_reach_a_bin_fails_and_leaves_the_backups(
         job.run(control)  # pyright: ignore[reportArgumentType]
 
     assert job.discarded is None
+
+
+def test_a_discard_without_the_override_still_fails_on_a_refusal(
+    mocker: MockerFixture, control: FakeControl, present: None
+) -> None:
+    """Unset, the job's own override (#301) changes nothing about a refusal from the resolved deleter.
+
+    **Test steps:**
+
+    * install a provider answering a deleter that always refuses, run a discard with the override unset
+    * check it propagates, and nothing was recorded as deleted
+    """
+    del present
+    mocker.patch.object(DEFAULT_DELETER_PROVIDER, "resolve", return_value=RefusingDeleter())
+
+    def discard(rehu_path: Path, *, deleter: object) -> tuple[Path, ...]:
+        del rehu_path
+        deleter.delete(DIRECTORY / "info.tc.orig")  # type: ignore[attr-defined]
+        return DISCARDED
+
+    mocker.patch("rehuco_core.tc_backups_jobs.discard_conversion_backups", side_effect=discard)
+    job = DiscardBackupsJob(REHU_PATH)
+
+    with raises(NoTrashBinError):
+        job.run(control)  # pyright: ignore[reportArgumentType]
+
+    assert job.discarded is None
+
+
+def test_a_discard_with_the_override_falls_back_to_a_permanent_delete(
+    mocker: MockerFixture, control: FakeControl, present: None
+) -> None:
+    """Set, the job's own override (#301) turns a refusal from the resolved deleter into a permanent
+    delete rather than a failed job.
+
+    **Test steps:**
+
+    * install a provider answering a deleter that always refuses, run a discard with the override set
+    * check it completes rather than raising
+    """
+    del present
+    mocker.patch.object(Path, "unlink", autospec=True)
+    mocker.patch.object(DEFAULT_DELETER_PROVIDER, "resolve", return_value=RefusingDeleter())
+
+    def discard(rehu_path: Path, *, deleter: object) -> tuple[Path, ...]:
+        del rehu_path
+        deleter.delete(DIRECTORY / "info.tc.orig")  # type: ignore[attr-defined]
+        return DISCARDED
+
+    mocker.patch("rehuco_core.tc_backups_jobs.discard_conversion_backups", side_effect=discard)
+    job = DiscardBackupsJob(REHU_PATH, delete_permanently_if_unreachable=True)
+
+    job.run(control)  # pyright: ignore[reportArgumentType]
+
+    assert job.discarded == DISCARDED
 
 
 def test_a_finished_discard_holds_what_it_deleted(mocker: MockerFixture, control: FakeControl, present: None) -> None:
@@ -379,32 +450,67 @@ def test_a_finished_discard_holds_what_it_deleted(mocker: MockerFixture, control
 # region Being written down
 
 
-def test_a_job_writes_down_only_its_resource() -> None:
-    """The operation carries no choice, so the path is the whole state.
+def test_a_job_writes_down_its_resource_and_its_override() -> None:
+    """The path and the permanent-delete override (#301) are the whole state.
 
     **Test steps:**
 
     * capture the job
-    * check the state is the path, as text
+    * check the state is the path, as text, and the override, unset by default
     """
-    assert DiscardBackupsJob(REHU_PATH).capture_state() == {"path": str(REHU_PATH)}
+    assert DiscardBackupsJob(REHU_PATH).capture_state() == {
+        "path": str(REHU_PATH),
+        "delete_permanently_if_unreachable": False,
+    }
 
 
-def test_a_restored_job_is_the_job_that_was_queued() -> None:
-    """A capture/restore round trip preserves the resource, and the label is re-derived from it.
+def test_a_job_writes_down_the_override_when_it_is_set() -> None:
+    """A job enqueued with the override carries it into its own captured state.
 
     **Test steps:**
 
-    * restore a fresh job from another's captured state
-    * check what it will run over, and what it is called
+    * capture a job built with the override on
+    * check the state's flag matches
     """
-    captured = DiscardBackupsJob(REHU_PATH).capture_state()
+    assert DiscardBackupsJob(REHU_PATH, delete_permanently_if_unreachable=True).capture_state() == {
+        "path": str(REHU_PATH),
+        "delete_permanently_if_unreachable": True,
+    }
+
+
+def test_a_restored_job_is_the_job_that_was_queued() -> None:
+    """A capture/restore round trip preserves the resource and the override, and the label is
+    re-derived from the resource.
+
+    **Test steps:**
+
+    * restore a fresh job from another's captured state, built with the override on
+    * check what it will run over, what it is called, and that the override survived
+    """
+    captured = DiscardBackupsJob(REHU_PATH, delete_permanently_if_unreachable=True).capture_state()
     restored = DiscardBackupsJob()
 
     restored.restore_state(captured)
 
     assert restored.source == REHU_PATH
     assert restored.label == "Discard backups - sculpting"
+    assert restored.delete_permanently_if_unreachable is True
+
+
+def test_a_state_predating_the_override_restores_it_as_unset() -> None:
+    """A queue saved before this feature existed has no key for it, and a restored item keeps today's
+    behaviour rather than refusing to load.
+
+    **Test steps:**
+
+    * restore from a state carrying only the path
+    * check the override defaults to ``False``
+    """
+    restored = DiscardBackupsJob()
+
+    restored.restore_state({"path": str(REHU_PATH)})
+
+    assert restored.delete_permanently_if_unreachable is False
 
 
 @mark.parametrize("state", [{}, {"path": ""}, {"path": 5}], ids=["no path", "empty path", "path is not a string"])

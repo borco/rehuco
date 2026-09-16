@@ -60,6 +60,16 @@
         </property>
        </widget>
       </item>
+      <item>
+       <widget class="QCheckBox" name="permanently_delete_if_unreachable_check_box">
+        <property name="text">
+         <string>Delete permanently, without asking, when the Recycle Bin is not available</string>
+        </property>
+        <property name="toolTip">
+         <string>Skip the per-file question Convert, Discard Originals, the inline Discard action and the images editor would otherwise ask when the Recycle Bin cannot be reached, and delete outright instead.</string>
+        </property>
+       </widget>
+      </item>
      </layout>
     </widget>
    </item>
