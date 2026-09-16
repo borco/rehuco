@@ -61,6 +61,9 @@ class FilesPage(QWidget):
         self.__ui.structural_patterns_label.setText(self.__structural_summary())
         self.__ui.patterns_editor.defaults = EXCLUDED_FILE_PATTERNS
         apply_item_action_icons(self.__ui.patterns_editor)
+        self.__ui.use_recycle_bin_check_box.toggled.connect(
+            self.__ui.permanently_delete_if_unreachable_check_box.setEnabled
+        )
 
         self.drop_changes()
 
@@ -72,8 +75,11 @@ class FilesPage(QWidget):
         they're made* is on, the dialog commits any dirty page, and a save here reloads the editor from
         what normalization kept, which would tear a freshly inserted row out from under its open cell.
         """
+        deletion = shared_screenshot_deletion_settings()
         return (
-            self.__ui.use_recycle_bin_check_box.isChecked() != shared_screenshot_deletion_settings().use_recycle_bin
+            self.__ui.use_recycle_bin_check_box.isChecked() != deletion.use_recycle_bin
+            or self.__ui.permanently_delete_if_unreachable_check_box.isChecked()
+            != deletion.permanently_delete_if_unreachable
             or normalize_patterns(self.__ui.patterns_editor.values)
             != shared_excluded_files_settings().excluded_file_patterns
         )
@@ -88,6 +94,7 @@ class FilesPage(QWidget):
         """
         deletion = shared_screenshot_deletion_settings()
         deletion.use_recycle_bin = self.__ui.use_recycle_bin_check_box.isChecked()
+        deletion.permanently_delete_if_unreachable = self.__ui.permanently_delete_if_unreachable_check_box.isChecked()
         deletion.save(persistent_settings())
 
         excluded = shared_excluded_files_settings()
@@ -97,7 +104,10 @@ class FilesPage(QWidget):
 
     def drop_changes(self) -> None:
         """Discard both staged choices, re-seeding each widget from its own settings object."""
-        self.__ui.use_recycle_bin_check_box.setChecked(shared_screenshot_deletion_settings().use_recycle_bin)
+        deletion = shared_screenshot_deletion_settings()
+        self.__ui.use_recycle_bin_check_box.setChecked(deletion.use_recycle_bin)
+        self.__ui.permanently_delete_if_unreachable_check_box.setChecked(deletion.permanently_delete_if_unreachable)
+        self.__ui.permanently_delete_if_unreachable_check_box.setEnabled(deletion.use_recycle_bin)
         self.__ui.patterns_editor.values = shared_excluded_files_settings().excluded_file_patterns
 
     def __structural_summary(self) -> str:

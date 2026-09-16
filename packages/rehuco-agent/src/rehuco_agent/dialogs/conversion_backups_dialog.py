@@ -27,7 +27,7 @@ it names the resource count and the byte total rather than asking a reflexive ye
 import logging
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Final, override
+from typing import Any, Final, override
 
 from borco_core.logging import LogScope
 from PySide6.QtCore import QByteArray, QObject, Qt, QThread, Signal
@@ -504,7 +504,11 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
         selected = self.__model.checked_rows()
         if not selected or not self.__confirm_discard(selected):
             return
-        self.__enqueue(DiscardBackupsJob, selected)
+        self.__enqueue(
+            DiscardBackupsJob,
+            selected,
+            delete_permanently_if_unreachable=self.__ui.permanent_delete_check_box.isChecked(),
+        )
 
     def __confirm_discard(self, rows: Sequence[ConversionBackupsRow]) -> bool:
         """Ask before discarding, naming the count and the bytes rather than asking a bare yes/no.
@@ -531,20 +535,22 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
         )
         return answer == QMessageBox.StandardButton.Yes
 
-    def __enqueue(self, job_class: type[TcBackupsJob], rows: Sequence[ConversionBackupsRow]) -> None:
+    def __enqueue(self, job_class: type[TcBackupsJob], rows: Sequence[ConversionBackupsRow], **job_kwargs: Any) -> None:
         """Put one job per resource on the queue, inside that resource's own log scope.
 
         The queue copies the caller's context at enqueue and runs the job in it
         ([[appendices.task-queue#scopes]]), which is what makes the detail behind a failed row readable
         on the resource it is about.
 
-        Nothing about *how* a discard deletes is handed over here: a `DiscardBackupsJob` resolves its
-        deleter when it runs, from the process-wide provider the window installs, so a job rebuilt from
-        the saved queue after a restart honours the Recycle Bin setting exactly as one enqueued here
-        does (#298).
+        Nothing about *how* a discard deletes is handed over here beyond ``job_kwargs``: a
+        `DiscardBackupsJob` resolves its deleter when it runs, from the process-wide provider the window
+        installs, so a job rebuilt from the saved queue after a restart honours the Recycle Bin setting
+        exactly as one enqueued here does (#298); the permanent-delete override (#301) is the one
+        per-batch decision that *is* carried, since there is no window to ask again once it runs.
 
         :param job_class: which operation to queue.
         :param rows: the resources to run it over.
+        :param job_kwargs: extra keyword arguments forwarded to every ``job_class(row.path, ...)``.
         """
         self.__jobs.clear()
         self.__seen.clear()
@@ -553,7 +559,7 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
         self.__running_total = len(rows)
         for row in rows:
             self.__model.set_row_outcome(row.path, "pending")
-            job = job_class(row.path)
+            job = job_class(row.path, **job_kwargs)
             with LogScope.open(row.path):
                 serial = self.__queue.enqueue(job)
             self.__jobs[serial] = job  # pylint: disable=unsupported-assignment-operation

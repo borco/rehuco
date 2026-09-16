@@ -37,6 +37,7 @@ from pytest import fixture, raises
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.app_logging import LOG_VIEW_ICON_RESOURCE, shared_log_bridge
+from rehuco_agent.asking_deleter import AskingDeleter
 from rehuco_agent.documents.document_fields import EDITOR_MAIN_TAB, VIEWER_DESCRIPTION_TAB, VIEWER_MAIN_TAB
 from rehuco_agent.documents.document_widget import (
     APPLY_DEFAULT_LAYOUT_TOOLTIP,
@@ -723,14 +724,19 @@ def test_convert_action_with_no_existing_target_calls_model_convert(
     * mock ``model.convert`` (the target path genuinely doesn't exist on this machine, so no
       ``Path.exists`` mocking is needed)
     * trigger the "keep backups" convert action
-    * verify ``model.convert`` was called with ``keep_backups=True, overwrite=False``
+    * verify ``model.convert`` was called with ``keep_backups=True, overwrite=False`` and a fresh
+      `~rehuco_agent.asking_deleter.AskingDeleter` (#301)
     """
     convert = mocker.patch.object(legacy_model, "convert")
     keep_backups = legacy_widget._DocumentWidget__convert_keep_backups_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     keep_backups.trigger()
 
-    convert.assert_called_once_with(keep_backups=True, overwrite=False)
+    convert.assert_called_once()
+    kwargs = convert.call_args.kwargs
+    assert kwargs["keep_backups"] is True
+    assert kwargs["overwrite"] is False
+    assert isinstance(kwargs["deleter"], AskingDeleter)
 
 
 def test_convert_action_prompts_before_overwriting_and_cancels_on_no(
@@ -773,7 +779,10 @@ def test_convert_action_prompts_before_overwriting_and_proceeds_on_yes(
 
     discard.trigger()
 
-    convert.assert_called_once_with(keep_backups=False, overwrite=True)
+    convert.assert_called_once()
+    kwargs = convert.call_args.kwargs
+    assert kwargs["keep_backups"] is False
+    assert kwargs["overwrite"] is True
 
 
 def test_convert_action_shows_a_critical_dialog_on_failure(

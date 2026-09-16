@@ -23,7 +23,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Final
 
-from .rehu_screenshot_ordering import DEFAULT_DELETER, Deleter
+from .rehu_screenshot_ordering import DEFAULT_DELETER, Deleter, OverridableDeleter
 from .resource_scoping import resource_name
 from .tasks import DEFAULT_TASK_JOB_REGISTRY, JobControl, TaskJobBase
 from .tc_conversion_backups import discard_conversion_backups
@@ -37,6 +37,9 @@ into a user's queue file, never casually renamed."""
 STATE_PATH_KEY: Final = "path"
 """The key these jobs write themselves down under, read back by this module and nothing else
 ([[appendices.task-queue#lifetime]])."""
+
+STATE_DELETE_PERMANENTLY_KEY: Final = "delete_permanently_if_unreachable"
+"""The key :class:`DiscardBackupsJob` writes its override under (#301)."""
 
 
 class DeleterProvider:
@@ -208,9 +211,19 @@ class DiscardBackupsJob(TcBackupsJob):
     kind = TC_DISCARD_KIND
     verb = "Discard backups"
 
-    def __init__(self, rehu_path: Path | None = None, *, label: str | None = None) -> None:
+    def __init__(
+        self,
+        rehu_path: Path | None = None,
+        *,
+        label: str | None = None,
+        delete_permanently_if_unreachable: bool = False,
+    ) -> None:
         super().__init__(rehu_path, label=label)
         self.__discarded: tuple[Path, ...] | None = None
+        self.delete_permanently_if_unreachable = delete_permanently_if_unreachable
+        """Whether a backup the resolved deleter cannot reach a bin for is deleted permanently instead
+        of failing this job (#301) -- a person's per-batch decision, carried by the job rather than a
+        second source alongside :data:`DEFAULT_DELETER_PROVIDER`."""
 
     @property
     def discarded(self) -> tuple[Path, ...] | None:
@@ -228,17 +241,36 @@ class DiscardBackupsJob(TcBackupsJob):
         super().reset()
         self.__discarded = None
 
+    def capture_state(self) -> dict[str, Any]:
+        """See :meth:`TcBackupsJob.capture_state` -- adds :attr:`delete_permanently_if_unreachable`."""
+        state = super().capture_state()
+        state[STATE_DELETE_PERMANENTLY_KEY] = self.delete_permanently_if_unreachable
+        return state
+
+    def restore_state(self, state: dict[str, Any]) -> None:
+        """See :meth:`TcBackupsJob.restore_state` -- adds :attr:`delete_permanently_if_unreachable`.
+
+        Read defensively, matching :meth:`~rehuco_core.TcImportJob.restore_state`'s discipline: a queue
+        saved before this override existed has no key, and restores as ``False``.
+        """
+        super().restore_state(state)
+        self.delete_permanently_if_unreachable = bool(state.get(STATE_DELETE_PERMANENTLY_KEY, False))
+
     def perform(self, rehu_path: Path) -> None:
         """See :meth:`TcBackupsJob.perform` -- :func:`~rehuco_core.discard_conversion_backups`.
 
         :param rehu_path: the converted resource's ``.rehu`` file.
         :raises NoTrashBinError: the deleter :data:`DEFAULT_DELETER_PROVIDER` resolved could not reach
-            a bin for one of the backups; see :func:`~rehuco_core.discard_conversion_backups`.
-            :meth:`TcBackupsJob.run` turns this into a failed status carrying the message, same as any
-            other `OSError` -- there is no window here to offer the permanent-delete fallback the images
-            dock offers for the same error (#291).
+            a bin for one of the backups, and :attr:`delete_permanently_if_unreachable` is unset; see
+            :func:`~rehuco_core.discard_conversion_backups`. :meth:`TcBackupsJob.run` turns this into a
+            failed status carrying the message, same as any other `OSError` -- there is no window here
+            to offer the permanent-delete fallback the images dock offers for the same error (#291).
         """
-        self.__discarded = discard_conversion_backups(rehu_path, deleter=DEFAULT_DELETER_PROVIDER.resolve())
+        deleter = OverridableDeleter(
+            DEFAULT_DELETER_PROVIDER.resolve(),
+            delete_permanently_if_unreachable=self.delete_permanently_if_unreachable,
+        )
+        self.__discarded = discard_conversion_backups(rehu_path, deleter=deleter)
 
 
 DEFAULT_TASK_JOB_REGISTRY.register(TC_DISCARD_KIND, DiscardBackupsJob)

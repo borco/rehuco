@@ -15,10 +15,16 @@ from .persistent_settings import persistent_settings
 
 GROUP: Final = "screenshot_deletion"
 USE_RECYCLE_BIN_KEY: Final = "use_recycle_bin"
+PERMANENTLY_DELETE_IF_UNREACHABLE_KEY: Final = "permanently_delete_if_unreachable"
 
 DEFAULT_USE_RECYCLE_BIN: Final = True
 """Whether a fresh install (no ``.ini`` yet) sends a deleted screenshot to the Recycle Bin / Trash. On:
 the safer default -- a permanent delete is the deliberate exception (#291), not the everyday case."""
+
+DEFAULT_PERMANENTLY_DELETE_IF_UNREACHABLE: Final = False
+"""Whether a fresh install skips the per-file question and deletes permanently outright when the
+Recycle Bin cannot be reached. Off: asking first is the safer default (#301), same reasoning as
+:data:`DEFAULT_USE_RECYCLE_BIN`."""
 
 
 @dataclass
@@ -27,7 +33,7 @@ class ScreenshotDeletionSettings:
     Trash, or unlinks it outright (#291, #298).
 
     Named and first written for the images dock's delete alone, but
-    `~rehuco_agent.documents.recycle_bin_deleter.configured_deleter` -- the one place
+    `~rehuco_agent.recycle_bin_deleter.configured_deleter` -- the one place
     :attr:`use_recycle_bin` is actually read -- is now also what a legacy-``.tc`` conversion's discarded
     backup and both conversion-backups discard surfaces resolve into a `RecycleBinDeleter` or
     `~rehuco_core.DEFAULT_DELETER`, absent a caller's own explicit choice.
@@ -36,6 +42,11 @@ class ScreenshotDeletionSettings:
     use_recycle_bin: bool = DEFAULT_USE_RECYCLE_BIN
     """Whether a deleted screenshot goes to the Recycle Bin / Trash rather than being unlinked outright."""
 
+    permanently_delete_if_unreachable: bool = DEFAULT_PERMANENTLY_DELETE_IF_UNREACHABLE
+    """Whether an interactive delete skips asking and deletes permanently outright when the Recycle Bin
+    cannot be reached, rather than offering the choice per file (#301). Meaningless while
+    :attr:`use_recycle_bin` is off -- every delete is already permanent then."""
+
     def load(self, settings: QSettings) -> None:
         """Replace the current choice with what's in persistent storage.
 
@@ -43,6 +54,10 @@ class ScreenshotDeletionSettings:
         """
         settings.beginGroup(GROUP)
         self.use_recycle_bin = cast(bool, settings.value(USE_RECYCLE_BIN_KEY, DEFAULT_USE_RECYCLE_BIN, type=bool))
+        self.permanently_delete_if_unreachable = cast(
+            bool,
+            settings.value(PERMANENTLY_DELETE_IF_UNREACHABLE_KEY, DEFAULT_PERMANENTLY_DELETE_IF_UNREACHABLE, type=bool),
+        )
         settings.endGroup()
 
     def save(self, settings: QSettings) -> None:
@@ -52,6 +67,7 @@ class ScreenshotDeletionSettings:
         """
         settings.beginGroup(GROUP)
         settings.setValue(USE_RECYCLE_BIN_KEY, self.use_recycle_bin)
+        settings.setValue(PERMANENTLY_DELETE_IF_UNREACHABLE_KEY, self.permanently_delete_if_unreachable)
         settings.endGroup()
 
 

@@ -13,9 +13,10 @@ from PySide6.QtWidgets import QMessageBox
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
+from rehuco_agent.asking_deleter import AskingDeleter
 from rehuco_agent.documents.conversion_backup_actions import ConversionBackupActions
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_core import ConversionBackups, RehuDocument
+from rehuco_core import ConversionBackups, NoTrashBinError, RehuDocument
 
 DIRECTORY: Final = Path("/fake/library/sculpting")
 INFO_PATH: Final = DIRECTORY / "info.rehu"
@@ -274,7 +275,9 @@ def test_discarding_asks_first_and_names_what_it_frees(
 
     assert "14.0 MB" in question_of(answer_yes)
     assert "cannot be undone" in question_of(answer_yes)
-    discard.assert_called_once_with(INFO_PATH, deleter=deleter)
+    args, kwargs = discard.call_args
+    assert args == (INFO_PATH,)
+    assert isinstance(kwargs["deleter"], AskingDeleter)
 
 
 def test_a_declined_discard_changes_nothing(
@@ -350,6 +353,31 @@ def test_discarding_a_resource_with_no_backups_does_nothing(
 
     discard.assert_not_called()
     answer_yes.assert_not_called()
+
+
+def test_a_declined_bin_refusal_logs_instead_of_reporting_a_failure(
+    actions: ConversionBackupActions, answer_yes: Any, mocker: MockerFixture, caplog: Any
+) -> None:
+    """A `NoTrashBinError` reaching here can only mean the asking deleter already asked and the answer
+    was No (#301, exercised in ``test_asking_deleter.py``) -- the outcome reads like convert's: a logged
+    warning, no ``Discard Failed`` box on top of the question already answered.
+
+    **Test steps:**
+
+    * discard where the underlying operation is refused with `NoTrashBinError`
+    * verify no failure box was shown beyond the initial "discard at all" confirmation, and a warning
+      naming the resource was logged
+    """
+    mocker.patch(
+        f"{ACTIONS_MODULE}.discard_conversion_backups",
+        side_effect=NoTrashBinError(f"No Recycle Bin is available for {DIRECTORY}"),
+    )
+
+    with caplog.at_level("WARNING", logger=ACTIONS_MODULE):
+        actions.discard()
+
+    assert answer_yes.call_count == 1
+    assert any("left in place" in record.message for record in caplog.records)
 
 
 # endregion

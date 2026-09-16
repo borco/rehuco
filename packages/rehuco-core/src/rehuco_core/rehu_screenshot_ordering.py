@@ -104,6 +104,34 @@ DEFAULT_DELETER: Final = UnlinkDeleter()
 is what gives the agent that one to inject instead."""
 
 
+class OverridableDeleter:  # pylint: disable=too-few-public-methods
+    """Wraps another :class:`Deleter`, turning its `NoTrashBinError` into a permanent delete when told
+    to -- for a caller that already knows, with no one to ask, what a refusal should become (#301: the
+    queued conversion-backups discard, which carries a per-job override rather than prompting).
+
+    :param inner: the deleter tried first.
+    :param delete_permanently_if_unreachable: whether a `NoTrashBinError` from ``inner`` should fall back
+        to a permanent delete rather than propagate.
+    """
+
+    def __init__(self, inner: Deleter, *, delete_permanently_if_unreachable: bool) -> None:
+        self.__inner: Final = inner
+        self.__delete_permanently: Final = delete_permanently_if_unreachable
+
+    def delete(self, path: Path) -> None:
+        """Remove ``path`` through `inner`, falling back to a permanent delete on a refusal if told to.
+
+        :param path: the file to delete.
+        :raises NoTrashBinError: `inner` refused and this instance was not told to delete permanently.
+        """
+        try:
+            self.__inner.delete(path)
+        except NoTrashBinError:
+            if not self.__delete_permanently:
+                raise
+            DEFAULT_DELETER.delete(path)
+
+
 def delete_screenshot(path: Path, deleter: Deleter = DEFAULT_DELETER) -> None:
     """Delete one screenshot through ``deleter``.
 

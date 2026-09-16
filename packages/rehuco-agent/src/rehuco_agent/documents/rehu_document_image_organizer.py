@@ -12,9 +12,9 @@ from typing import TYPE_CHECKING, Final
 
 from rehuco_core import Deleter, convert_screenshot, delete_screenshot, renumber_screenshots
 
+from ..recycle_bin_deleter import configured_deleter
 from ..settings.screenshot_deletion_settings import shared_screenshot_deletion_settings
 from ..settings.screenshot_patterns_settings import shared_screenshot_patterns_settings
-from .recycle_bin_deleter import configured_deleter
 
 if TYPE_CHECKING:
     from .rehu_document_model import RehuDocumentModel

@@ -32,7 +32,6 @@ from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.app_logging import shared_log_bridge
-from rehuco_agent.documents.recycle_bin_deleter import RecycleBinDeleter
 from rehuco_agent.main_window import (
     DOCK_PIN_SIDES_GROUP,
     DOCUMENTS_DOCK_OBJECT_NAME,
@@ -42,6 +41,7 @@ from rehuco_agent.main_window import (
     TASK_QUEUE_DOCK_OBJECT_NAME,
     MainWindow,
 )
+from rehuco_agent.recycle_bin_deleter import RecycleBinDeleter
 from rehuco_agent.settings.checksum_settings import shared_checksum_settings
 from rehuco_agent.settings.document_session_settings import DocumentSessionSettings
 from rehuco_agent.settings.identity_settings import shared_identity_settings

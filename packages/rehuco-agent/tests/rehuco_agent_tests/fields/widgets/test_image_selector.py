@@ -7,6 +7,7 @@
 
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 from borco_pyside.widgets import ActionButtonColumn
 from PySide6.QtCore import QModelIndex, Qt
@@ -19,6 +20,7 @@ from PySide6.QtWidgets import (
     QTreeView,
     QWidget,
 )
+from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.fields.image_scanner import AfterConversion, ScreenshotSet
@@ -79,9 +81,6 @@ class FakeResource:
         """Set to make every rearrangement refuse, standing in for a disk that would not take it."""
         self.deletes_to_trash = False
         """What :attr:`deletes_to_trash` (`ImageOrganizer`) answers -- the confirm dialog's own read."""
-        self.no_trash_bin: NoTrashBinError | None = None
-        """Set to make an un-deleter'd :meth:`remove` refuse with this, standing in for a location
-        with no Recycle Bin (#291) -- an explicit ``deleter`` (the caller's own fallback) bypasses it."""
         self.outcomes: dict[str, AfterConversion] | None = None
         """What :meth:`after_conversion` answers (`ImageScanner`, #293) -- ``None`` (a `.rehu`, the
         default every test but its own gets) hides the *After conversion* column."""
@@ -137,15 +136,20 @@ class FakeResource:
     def remove(self, path: Path, remaining: Sequence[Path], deleter: Deleter | None = None) -> dict[str, str]:
         """Drop ``path`` and renumber the survivors (`ImageOrganizer`).
 
+        Calls ``deleter.delete(path)`` when one is given, the same as the real organizer -- so a test
+        drives the no-bin behaviour (#301) through a real `~rehuco_core.Deleter` double rather than this
+        class special-casing it, exercising `delete_screenshot`'s actual `AskingDeleter` and the
+        real `QMessageBox` prompt it shows.
+
         :param path: the screenshot deleted.
         :param remaining: the survivors, in the order wanted.
-        :param deleter: an explicit override, bypassing :attr:`no_trash_bin` (#291).
+        :param deleter: how ``path`` is actually removed -- `~ImageSelector.delete_screenshot` always
+            hands one in; ``None`` only when a test calls this directly.
         :returns: what was renamed.
-        :raises OSError: when the test declared this resource unwritable.
-        :raises NoTrashBinError: when the test declared no bin reachable and ``deleter`` is ``None``.
+        :raises OSError: when the test declared this resource unwritable, or ``deleter`` refused.
         """
-        if deleter is None and self.no_trash_bin is not None:
-            raise self.no_trash_bin
+        if deleter is not None:
+            deleter.delete(path)
         renames = self.__renumber(remaining)
         self.removed.append(path.name)
         return renames
@@ -162,6 +166,46 @@ class FakeResource:
         renames = plan_screenshot_renumbering(STEM, ordered)
         self.names = [renames.get(path.name, path.name) for path in ordered]
         return renames
+
+
+class NoOpDeleter:  # pylint: disable=too-few-public-methods
+    """A harmless `~rehuco_core.Deleter` that does nothing -- this module's default stand-in for
+    `configured_deleter`'s real chain (#301), so an ordinary delete never reaches the real Recycle
+    Bin machinery. A test exercising the no-bin behaviour overrides `fake_configured_deleter`'s
+    return value with :class:`RefusingDeleter` or :class:`LockedDeleter` instead."""
+
+    def delete(self, path: Path) -> None:
+        """Do nothing."""
+
+
+class RefusingDeleter:  # pylint: disable=too-few-public-methods
+    """A `~rehuco_core.Deleter` that always refuses with `~rehuco_core.NoTrashBinError` (#301)."""
+
+    def delete(self, path: Path) -> None:
+        """Refuse to delete ``path``."""
+        raise NoTrashBinError(f"no bin for {path.parent}")
+
+
+class LockedDeleter:  # pylint: disable=too-few-public-methods
+    """A `~rehuco_core.Deleter` that always fails with a plain ``OSError`` -- a genuine failure, not a
+    missing bin (#301)."""
+
+    def delete(self, path: Path) -> None:
+        """Refuse to delete ``path``."""
+        raise OSError(f"locked: {path}")
+
+
+@fixture(autouse=True)
+def fake_configured_deleter(mocker: MockerFixture) -> Any:
+    """`ImageSelector.delete_screenshot` always wraps `configured_deleter`'s answer in an
+    `AskingDeleter` (#301); patched here to a harmless no-op by default, so an ordinary delete in this
+    module never reaches the real Recycle Bin machinery.
+
+    :param mocker: pytest-mock fixture.
+    :returns: the patched accessor -- a test exercising the no-bin behaviour sets ``.return_value`` to
+        :class:`RefusingDeleter` or :class:`LockedDeleter`.
+    """
+    return mocker.patch("rehuco_agent.fields.widgets.image_selector.configured_deleter", return_value=NoOpDeleter())
 
 
 def seeded(qtbot: QtBot, resource: FakeResource, hidden: list[str] | None = None) -> ImageSelector:
@@ -1254,19 +1298,22 @@ def test_the_confirm_text_says_permanent_when_the_organizer_does_not_use_a_bin(
     assert "Recycle Bin" not in text
 
 
-def test_no_bin_reachable_offers_a_permanent_delete_for_that_one_action(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """Refused rather than silently falling through to a permanent delete -- the user is asked (#291).
+def test_no_bin_reachable_offers_a_permanent_delete_for_that_one_action(
+    mocker: MockerFixture, qtbot: QtBot, fake_configured_deleter: Any
+) -> None:
+    """Refused rather than silently falling through to a permanent delete -- the user is asked, through
+    the shared `AskingDeleter` every interactive surface now asks through (#291, #301).
 
     **Test steps:**
 
-    * make the resource refuse an un-deleter'd remove with `NoTrashBinError`
+    * make the configured deleter refuse with `NoTrashBinError`
     * confirm both prompts (the delete, then the permanent-delete offer) and delete a screenshot
-    * verify it was removed anyway -- through the retry, not the first attempt -- and that the rows
-      agree with the disk, since the refused first attempt had already reported a removal
+    * verify it was removed, in one pass, and the rows agree with the disk
     """
     mocker.patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes)
+    mocker.patch.object(Path, "unlink", autospec=True)
+    fake_configured_deleter.return_value = RefusingDeleter()
     resource = FakeResource(["info00.jpg", "info01.jpg"])
-    resource.no_trash_bin = NoTrashBinError("no bin for /fake")
     selector = seeded(qtbot, resource)
 
     selector.delete_screenshot(0)
@@ -1275,12 +1322,14 @@ def test_no_bin_reachable_offers_a_permanent_delete_for_that_one_action(mocker: 
     assert row_names(selector) == resource.names == ["info00.jpg"]
 
 
-def test_declining_the_permanent_delete_offer_leaves_the_resource_alone(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """Declining the fallback offer is as final as declining the first confirm (#291).
+def test_declining_the_permanent_delete_offer_leaves_the_resource_alone(
+    mocker: MockerFixture, qtbot: QtBot, fake_configured_deleter: Any
+) -> None:
+    """Declining the fallback offer is as final as declining the first confirm (#291, #301).
 
     **Test steps:**
 
-    * make the resource refuse an un-deleter'd remove with `NoTrashBinError`
+    * make the configured deleter refuse with `NoTrashBinError`
     * confirm the delete but decline the permanent-delete offer that follows
     * verify nothing was removed and the rows still agree with the disk
     """
@@ -1289,14 +1338,73 @@ def test_declining_the_permanent_delete_offer_leaves_the_resource_alone(mocker: 
         "question",
         side_effect=[QMessageBox.StandardButton.Yes, QMessageBox.StandardButton.No],
     )
+    fake_configured_deleter.return_value = RefusingDeleter()
     resource = FakeResource(["info00.jpg", "info01.jpg"])
-    resource.no_trash_bin = NoTrashBinError("no bin for /fake")
     selector = seeded(qtbot, resource)
 
     selector.delete_screenshot(0)
 
     assert not resource.removed
     assert row_names(selector) == resource.names == ["info00.jpg", "info01.jpg"]
+
+
+def test_a_locked_file_is_reported_by_name_and_nothing_is_removed(
+    mocker: MockerFixture, qtbot: QtBot, fake_configured_deleter: Any
+) -> None:
+    """A real delete failure -- not a missing bin -- is the one case #300 left the dock unable to tell
+    apart from the renumbering failure that follows it; the asking deleter now reports it itself before
+    re-raising, so the dock's own rebuild has only to rebuild (#301).
+
+    **Test steps:**
+
+    * make the configured deleter fail with a plain ``OSError`` for a locked file
+    * confirm the delete
+    * verify a message box named the file, nothing was removed, and the rows still agree with the disk
+    """
+    mocker.patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes)
+    critical = mocker.patch.object(QMessageBox, "critical")
+    fake_configured_deleter.return_value = LockedDeleter()
+    resource = FakeResource(["info00.jpg", "info01.jpg"])
+    selector = seeded(qtbot, resource)
+
+    selector.delete_screenshot(0)
+
+    critical.assert_called_once()
+    assert "info00.jpg" in critical.call_args[0][2]
+    assert not resource.removed
+    assert row_names(selector) == resource.names == ["info00.jpg", "info01.jpg"]
+
+
+def test_the_ask_fires_safely_inside_the_removal_transaction(
+    mocker: MockerFixture, qtbot: QtBot, fake_configured_deleter: Any
+) -> None:
+    """The ask now fires between ``beginRemoveRows``/``endRemoveRows`` rather than after a
+    rebuild-from-disk (#301) -- a real nested event loop, not a mock that never actually re-enters, is
+    what proves the model tolerates one mid-transaction.
+
+    **Test steps:**
+
+    * make the configured deleter refuse, and answer the question by actually processing pending Qt
+      events before returning Yes
+    * delete a screenshot
+    * verify it was removed cleanly, with rows and disk agreeing
+    """
+    fake_configured_deleter.return_value = RefusingDeleter()
+    mocker.patch.object(Path, "unlink", autospec=True)
+
+    def confirm_after_spinning(*args: object, **kwargs: object) -> QMessageBox.StandardButton:
+        del args, kwargs
+        qtbot.wait(0)
+        return QMessageBox.StandardButton.Yes
+
+    mocker.patch.object(QMessageBox, "question", side_effect=confirm_after_spinning)
+    resource = FakeResource(["info00.jpg", "info01.jpg"])
+    selector = seeded(qtbot, resource)
+
+    selector.delete_screenshot(0)
+
+    assert resource.removed == ["info00.jpg"]
+    assert row_names(selector) == resource.names == ["info00.jpg"]
 
 
 def test_deleting_leaves_the_row_that_took_its_place_current(mocker: MockerFixture, qtbot: QtBot) -> None:

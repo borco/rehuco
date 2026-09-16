@@ -1418,6 +1418,32 @@ def test_convert_passes_keep_backups_and_overwrite_through(mocker: MockerFixture
     )
 
 
+def test_convert_prefers_an_explicit_deleter_over_the_configured_one(mocker: MockerFixture) -> None:
+    """An explicit ``deleter`` (#301: the document widget's own `AskingDeleter`) overrides
+    `configured_deleter`, rather than being layered under it.
+
+    **Test steps:**
+
+    * build a model over a legacy ``.tc``-backed document
+    * mock ``convert_tc`` and ``configured_deleter``
+    * call ``model.convert`` with an explicit deleter
+    * verify ``convert_tc`` received it, and ``configured_deleter`` was never asked
+    """
+    tc_path = Path("/fake/info.tc")
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, tc_path, legacy_tc=True))
+    mock_convert = mocker.patch(
+        "rehuco_agent.documents.rehu_document_model.convert_tc",
+        return_value=RehuDocument({"type": "Tutorial"}, tc_path.with_suffix(".rehu")),
+    )
+    configured = mocker.patch("rehuco_agent.documents.rehu_document_model.configured_deleter")
+    explicit_deleter = mocker.Mock()
+
+    model.convert(keep_backups=False, deleter=explicit_deleter)
+
+    assert mock_convert.call_args.kwargs["deleter"] is explicit_deleter
+    configured.assert_not_called()
+
+
 def test_convert_raises_for_a_non_legacy_document(mocker: MockerFixture, model: RehuDocumentModel) -> None:
     """convert() refuses to run on a document that isn't a legacy ``.tc`` mapping.
 

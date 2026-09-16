@@ -22,6 +22,7 @@ from rehuco_core import (
     FORMAT_VERSION_KEY,
     USERS_KEY,
     AuthorEntry,
+    Deleter,
     LockReason,
     RehuDocument,
     RenameCoordinator,
@@ -35,9 +36,9 @@ from rehuco_core import (
 
 from ..fields.field import Field, FieldBinding
 from ..fields.unknown_field import UnknownField
+from ..recycle_bin_deleter import configured_deleter
 from ..settings.excluded_files_settings import shared_excluded_files_settings
 from ..settings.screenshot_patterns_settings import shared_screenshot_patterns_settings
-from .recycle_bin_deleter import configured_deleter
 from .rehu_document_image_scanner import RehuDocumentImageScanner
 from .tc_conversion_outcomes import scan_after_conversion
 
@@ -726,7 +727,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.__recompute_upgradable()
         self.__log_document_state()
 
-    def convert(self, *, keep_backups: bool, overwrite: bool = False) -> None:
+    def convert(self, *, keep_backups: bool, overwrite: bool = False, deleter: Deleter | None = None) -> None:
         """Convert this locked, legacy ``.tc``-backed document into a real ``.rehu`` in place
         ([[acquisition-tooling#tc-to-rehu]]).
 
@@ -745,6 +746,8 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
         :param keep_backups: whether to keep ``.orig`` backups of the ``.tc`` and legacy screenshots.
         :param overwrite: whether an already-converted ``.rehu`` at the target path may be replaced.
+        :param deleter: how a discarded backup is actually removed; ``None`` leaves that choice to
+            `~rehuco_agent.recycle_bin_deleter.configured_deleter` (#301).
         :raises ValueError: this document isn't :attr:`~RehuDocument.legacy_tc`, or has no path.
         :raises OSError: propagated from :func:`rehuco_core.convert_tc` (``FileExistsError`` for an
             unconfirmed overwrite or a stale backup; any other ``OSError`` from the underlying file
@@ -766,7 +769,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
                 username=self.__document.username,
                 excluded_patterns=shared_excluded_files_settings().excluded_file_patterns,
                 screenshot_name_patterns=shared_screenshot_patterns_settings().screenshot_name_patterns,
-                deleter=configured_deleter(),
+                deleter=deleter if deleter is not None else configured_deleter(),
             )
             LOG.info("Converted to %s", self.__document.path)
         self.__seed_from_document()

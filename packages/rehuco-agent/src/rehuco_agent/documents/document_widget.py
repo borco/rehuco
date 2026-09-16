@@ -18,12 +18,14 @@ from borco_pyside.widgets import MessageBanner, MessageBannerRow, MessageBannerS
 from PySide6.QtCore import QByteArray, Qt, Signal
 from PySide6.QtGui import QAction, QIcon, QKeySequence
 from PySide6.QtWidgets import QMainWindow, QMenu, QMessageBox, QVBoxLayout, QWidget
-from rehuco_core import TaskQueue
+from rehuco_core import TaskQueue, backup_path, originals_to_back_up
 
 from ..app_logging import LOG_VIEW_ICON_RESOURCE, build_log_widget, shared_log_bridge
+from ..asking_deleter import AskingDeleter
 from ..fields import FieldsTab, StatefulWidget
 from ..fields.widgets import ImageLightbox
 from ..glyphs import TAB_CLOSE_GLYPH
+from ..recycle_bin_deleter import configured_deleter
 from ..settings.default_layout_settings import shared_default_layout_settings
 from ..settings.image_viewer_settings import shared_image_viewer_settings
 from ..settings.logs_settings import shared_logs_settings
@@ -1042,8 +1044,15 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             if answer != buttons.Yes:
                 return
             overwrite = True
+        # what a discard would actually delete: the .orig siblings a conversion parks the originals
+        # under, so the question can name them rather than the files they came from
+        backups = [backup_path(original) for original in originals_to_back_up(path, target)] if path and target else []
         try:
-            self.__model.convert(keep_backups=keep_backups, overwrite=overwrite)
+            self.__model.convert(
+                keep_backups=keep_backups,
+                overwrite=overwrite,
+                deleter=AskingDeleter(configured_deleter(), parent=self, files=backups),
+            )
         except OSError as exc:
             QMessageBox.critical(self, "Conversion Failed", f"Could not convert the document:\n\n{exc}")
 

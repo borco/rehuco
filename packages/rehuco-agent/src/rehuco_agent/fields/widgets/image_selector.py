@@ -49,9 +49,11 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from rehuco_core import DEFAULT_DELETER, Deleter, NoTrashBinError
+from rehuco_core import Deleter
 
+from ...asking_deleter import AskingDeleter
 from ...item_action_icons import apply_action_column_icons
+from ...recycle_bin_deleter import configured_deleter
 from ..image_organizer import ImageOrganizer
 from ..image_scanner import AfterConversion, ImageScanner, ScreenshotSet
 
@@ -497,8 +499,9 @@ class ScreenshotListModel(QAbstractTableModel):
         ``endRemoveRows``, for the reason :meth:`move_row` spells out.
 
         :param row: the row to delete.
-        :param deleter: overrides the organizer's own configured default (#291), e.g. a permanent
-            retry after a `~rehuco_core.NoTrashBinError`; ``None`` leaves that choice to it.
+        :param deleter: overrides the organizer's own configured default (#291) -- `delete_screenshot`
+            hands in an `~rehuco_agent.asking_deleter.AskingDeleter`, which asks in place of raising when the
+            configured one refuses (#301); ``None`` leaves that choice to the organizer.
         :returns: whether it was deleted.
         :raises OSError: if the delete or the renumbering failed; see :meth:`move_row`.
         """
@@ -921,7 +924,8 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
             return
         if not self.__confirmed_delete(paths[at], numbered=self.__list_model.is_numbered(at)):
             return
-        if self.__rearranged(lambda: self.__remove_with_fallback(at)):
+        deleter = AskingDeleter(configured_deleter(), parent=self, files=(paths[at],), report_delete_failures=True)
+        if self.__rearranged(lambda: self.__list_model.remove_row(at, deleter=deleter)):
             self.set_current_index(min(at, len(paths) - 2))
 
     def convert_screenshot(self, at: int) -> None:
@@ -969,35 +973,6 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
     def __on_convert(self) -> None:
         """Convert the current row -- what the Convert button and its action trigger."""
         self.convert_screenshot(self.current_index)
-
-    def __remove_with_fallback(self, at: int) -> bool:
-        """Delete row ``at``, offering a permanent delete when `~rehuco_core.NoTrashBinError` refuses
-        it (#291) -- caught here rather than by :meth:`__rearranged`, whose generic rebuild would
-        otherwise swallow the choice this one refusal is meant to offer.
-
-        Any other `OSError` -- a locked file, permission denied, or the renumbering step that follows
-        the delete refusing in its own right -- is left to :meth:`__rearranged`'s generic handling:
-        `~rehuco_agent.documents.RehuDocumentImageOrganizer.remove` raises the same plain `OSError` for
-        either failure, so there is no way to tell "the delete itself failed" from "the rename after it
-        did" at this call site, and treating them differently would need a real distinguishing exception,
-        not a broader ``except`` here.
-
-        :param at: the row to delete.
-        :returns: whether it was deleted, permanently or otherwise.
-        """
-        try:
-            return self.__list_model.remove_row(at)
-        except NoTrashBinError as error:
-            # the model has already reported the row removed by the time the deleter refused, so the
-            # view is reset from disk first -- before the question, and whichever way it is answered:
-            # a retry must not stack a second removal on a row still there, and a decline is not the
-            # generic failure :meth:`__rearranged` would otherwise have rebuilt after
-            self.__rebuild(self.hidden_filenames())
-            title = "No Recycle Bin available"
-            text = f"{error}<br><br>Delete the file permanently instead? This cannot be undone."
-            if not self.__confirmed(title, text):
-                return False
-            return self.__list_model.remove_row(at, deleter=DEFAULT_DELETER)
 
     def __confirmed_delete(self, path: Path, *, numbered: bool) -> bool:
         """Ask before deleting ``path``, saying which of the two outcomes it will have (#291).

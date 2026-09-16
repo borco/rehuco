@@ -21,11 +21,13 @@ from rehuco_agent.dialogs.conversion_backups_dialog import NOTHING_RETAINED, Con
 from rehuco_agent.dialogs.conversion_backups_table_model import TIE_BREAK_FLAG
 from rehuco_agent.settings.conversion_backups_dialog_settings import ConversionBackupsDialogSettings
 from rehuco_core import (
+    DEFAULT_DELETER_PROVIDER,
     FINISHED_JOB_STATES,
     ConversionBackups,
     ConversionBackupsTreeScan,
     JobState,
     JobStatus,
+    NoTrashBinError,
     TaskQueue,
 )
 
@@ -669,6 +671,92 @@ def test_a_declined_discard_enqueues_nothing(
     discard.assert_not_called()
     assert not queue.jobs()
     assert all(row.outcome is None for row in dialog.model.rows())
+
+
+class RefusingDeleter:  # pylint: disable=too-few-public-methods
+    """A :class:`~rehuco_core.Deleter` that always refuses with `~rehuco_core.NoTrashBinError`."""
+
+    def delete(self, path: Path) -> None:
+        """Refuse to delete ``path``."""
+        raise NoTrashBinError(f"no bin for {path.parent}")
+
+
+def test_the_checkbox_unchecked_leaves_a_refusal_failing(
+    qtbot: QtBot, dialog: ConversionBackupsDialog, answer_yes: Any, mocker: MockerFixture
+) -> None:
+    """Unchecked (the default), the override (#301) is off, so a resolved deleter's refusal still fails
+    that resource's job, as before.
+
+    **Test steps:**
+
+    * install a provider whose deleter always refuses
+    * discard the whole selection with the override checkbox left unchecked
+    * verify every row failed
+    """
+    del answer_yes
+    mocker.patch.object(DEFAULT_DELETER_PROVIDER, "resolve", return_value=RefusingDeleter())
+
+    def discard(rehu_path: Path, *, deleter: object) -> tuple[Path, ...]:
+        deleter.delete(rehu_path.parent / "info.tc.orig")  # type: ignore[attr-defined]
+        return ()
+
+    mocker.patch(f"{JOBS_MODULE}.discard_conversion_backups", side_effect=discard)
+
+    ui_of(dialog).discard_button.click()
+    wait_for_outcomes(qtbot, dialog)
+
+    assert {row.outcome for row in dialog.model.rows()} == {"failed"}
+
+
+def test_the_checkbox_checked_threads_the_override_into_every_enqueued_job(
+    qtbot: QtBot, dialog: ConversionBackupsDialog, answer_yes: Any, mocker: MockerFixture
+) -> None:
+    """Checked, the override (#301) is carried by every job the batch enqueues, so a refusal falls back
+    to a permanent delete instead of failing that resource.
+
+    **Test steps:**
+
+    * check the override checkbox
+    * install a provider whose deleter always refuses
+    * discard the whole selection
+    * verify every row discarded rather than failed
+    """
+    del answer_yes
+    mocker.patch.object(Path, "unlink", autospec=True)
+    mocker.patch.object(DEFAULT_DELETER_PROVIDER, "resolve", return_value=RefusingDeleter())
+
+    def discard(rehu_path: Path, *, deleter: object) -> tuple[Path, ...]:
+        deleter.delete(rehu_path.parent / "info.tc.orig")  # type: ignore[attr-defined]
+        return ()
+
+    mocker.patch(f"{JOBS_MODULE}.discard_conversion_backups", side_effect=discard)
+    ui_of(dialog).permanent_delete_check_box.setChecked(True)
+
+    ui_of(dialog).discard_button.click()
+    wait_for_outcomes(qtbot, dialog)
+
+    assert {row.outcome for row in dialog.model.rows()} == {"discarded"}
+
+
+def test_the_checkbox_is_not_remembered_across_dialogs(
+    qtbot: QtBot, dialog: ConversionBackupsDialog, queue: TaskQueue, scan: Any, present: None
+) -> None:
+    """The override authorises one batch, not a standing preference (#301), so a fresh dialog never
+    inherits an earlier one's tick.
+
+    **Test steps:**
+
+    * check the override checkbox on one dialog
+    * build a second dialog over the same queue
+    * verify its checkbox starts unchecked
+    """
+    del scan, present
+    ui_of(dialog).permanent_delete_check_box.setChecked(True)
+
+    other = ConversionBackupsDialog(queue)
+    qtbot.addWidget(other)
+
+    assert ui_of(other).permanent_delete_check_box.isChecked() is False
 
 
 def test_each_resource_is_its_own_job(

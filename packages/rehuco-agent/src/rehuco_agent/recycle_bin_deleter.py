@@ -5,6 +5,9 @@ The agent's own `rehuco_core.Deleter`: `~borco_pyside.recycle_bin.RecycleBin` --
 seam #265 left for it (`RehuDocumentImageOrganizer`), translating
 `~borco_pyside.recycle_bin.NoRecycleBinError` into the vocabulary `rehuco_core` shares with every other
 `Deleter` consumer (#300).
+
+Top-level rather than under ``documents``: the images dock (``fields/widgets``) needs it too (#301), and
+the field toolkit may not import ``documents`` ([[plugins#field-toolkit]]).
 """
 
 from pathlib import Path
@@ -12,7 +15,7 @@ from pathlib import Path
 from borco_pyside.recycle_bin import NoRecycleBinError, recycle_bin
 from rehuco_core import DEFAULT_DELETER, Deleter, NoTrashBinError
 
-from ..settings.screenshot_deletion_settings import shared_screenshot_deletion_settings
+from .settings.screenshot_deletion_settings import shared_screenshot_deletion_settings
 
 
 class RecycleBinDeleter:  # pylint: disable=too-few-public-methods
