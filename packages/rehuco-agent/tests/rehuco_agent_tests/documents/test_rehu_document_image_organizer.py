@@ -86,7 +86,8 @@ def test_remove_defaults_to_the_recycle_bin_when_the_setting_is_on(
     * verify ``send2trash`` -- not a plain unlink -- was asked to move it
     """
     del renumber
-    send2trash = mocker.patch("rehuco_agent.documents.recycle_bin_deleter.send2trash")
+    mocker.patch("borco_pyside.recycle_bin.sys.platform", "linux")  # skip the Windows-only capability check
+    send2trash = mocker.patch("borco_pyside.recycle_bin.send2trash")
     unlink = mocker.patch.object(Path, "unlink")
     organizer = RehuDocumentImageOrganizer(model_at(DIRECTORY / "info.rehu"))
 
@@ -107,7 +108,7 @@ def test_remove_unlinks_when_the_recycle_bin_setting_is_off(mocker: MockerFixtur
     """
     del renumber
     shared_screenshot_deletion_settings().use_recycle_bin = False
-    send2trash = mocker.patch("rehuco_agent.documents.recycle_bin_deleter.send2trash")
+    send2trash = mocker.patch("borco_pyside.recycle_bin.send2trash")
     unlink = mocker.patch.object(Path, "unlink")
     organizer = RehuDocumentImageOrganizer(model_at(DIRECTORY / "info.rehu"))
 
@@ -145,7 +146,7 @@ def test_an_explicit_deleter_overrides_the_setting(mocker: MockerFixture, renumb
     * verify the explicit deleter ran and neither ``send2trash`` nor the setting's own choice did
     """
     del renumber
-    send2trash = mocker.patch("rehuco_agent.documents.recycle_bin_deleter.send2trash")
+    send2trash = mocker.patch("borco_pyside.recycle_bin.send2trash")
     unlink = mocker.patch.object(Path, "unlink")
     organizer = RehuDocumentImageOrganizer(model_at(DIRECTORY / "info.rehu"))
 

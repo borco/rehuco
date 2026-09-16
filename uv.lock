@@ -137,6 +137,7 @@ dependencies = [
     { name = "colorama" },
     { name = "pyside6-essentials" },
     { name = "pyside6-qtads" },
+    { name = "send2trash" },
 ]
 
 [package.dev-dependencies]
@@ -150,6 +151,7 @@ requires-dist = [
     { name = "colorama", specifier = ">=0.4.6" },
     { name = "pyside6-essentials", specifier = ">=6.9" },
     { name = "pyside6-qtads", specifier = ">=5.0.0.2" },
+    { name = "send2trash", specifier = ">=1.8.3" },
 ]
 
 [package.metadata.requires-dev]
@@ -1305,7 +1307,6 @@ dependencies = [
     { name = "pyside6-scintilla" },
     { name = "python-dateutil" },
     { name = "rehuco-core" },
-    { name = "send2trash" },
     { name = "unidecode" },
 ]
 
@@ -1324,7 +1325,6 @@ requires-dist = [
     { name = "pyside6-scintilla", specifier = ">=5.6.3.7" },
     { name = "python-dateutil", specifier = ">=2.9.0" },
     { name = "rehuco-core", editable = "packages/rehuco-core" },
-    { name = "send2trash", specifier = ">=1.8.3" },
     { name = "unidecode", specifier = ">=1.4.0" },
 ]
 

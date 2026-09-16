@@ -36,6 +36,7 @@ dependencies = [
     # [[appendices.qt-ads#libxkbcommon-race]]), which is a real win for the AppImage's bundled size,
     # not just the crash workaround.
     "pyside6-qtads>=5.0.0.2",
+    "send2trash>=1.8.3",
 ]
 
 [project.urls]

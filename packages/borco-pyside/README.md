@@ -31,6 +31,9 @@ Currently provides:
   `platforms.windows.window_activation`).
 - **`borco_pyside.qtads`** — generic helpers for `pyside6-qtads` (QtAds): `QtAdsFocusTracker`,
   `tab_close_button`, `tab_label`.
+- **`borco_pyside.recycle_bin`** — moving a file to the Recycle Bin / Trash through `send2trash`, behind
+  one `RecycleBin` singleton; refuses with `NoRecycleBinError` when no bin is reachable for the path
+  (on Windows, decided per drive up front via `SHQueryRecycleBinW`) rather than deleting permanently.
 - **`borco_pyside.theming`** — theme switching, SVG recoloring, and themed action icons: `ThemeManager`,
   `ThemeMenu`, `ThemeModel`, `ActionIconThemeHandler`.
 - **`borco_pyside.widgets`** — reusable widgets: `ItemListEditor`, `MessageBanner`, `Rating`,

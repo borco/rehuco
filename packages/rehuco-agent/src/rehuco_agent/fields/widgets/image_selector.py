@@ -975,6 +975,13 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
         it (#291) -- caught here rather than by :meth:`__rearranged`, whose generic rebuild would
         otherwise swallow the choice this one refusal is meant to offer.
 
+        Any other `OSError` -- a locked file, permission denied, or the renumbering step that follows
+        the delete refusing in its own right -- is left to :meth:`__rearranged`'s generic handling:
+        `~rehuco_agent.documents.RehuDocumentImageOrganizer.remove` raises the same plain `OSError` for
+        either failure, so there is no way to tell "the delete itself failed" from "the rename after it
+        did" at this call site, and treating them differently would need a real distinguishing exception,
+        not a broader ``except`` here.
+
         :param at: the row to delete.
         :returns: whether it was deleted, permanently or otherwise.
         """
