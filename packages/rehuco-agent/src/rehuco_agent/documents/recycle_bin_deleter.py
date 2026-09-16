@@ -1,17 +1,16 @@
 """Moves a deleted screenshot to the Recycle Bin / Trash instead of unlinking it outright (#291).
 
-The agent's own `rehuco_core.Deleter`: ``send2trash`` is a GUI-facing dependency `rehuco_core` stays
-free of, so this is the concrete side of the seam #265 left for it (`RehuDocumentImageOrganizer`).
-Where no bin is reachable for a path -- a Windows SMB share, the mounted NAS
-([[mounts-and-storage#offline-mounts]]) -- ``send2trash`` raises, and this refuses by raising
-`~rehuco_core.NoTrashBinError` rather than falling back to a silent permanent delete: the caller is
-the one who gets to offer that, for the one action it was asked for.
+The agent's own `rehuco_core.Deleter`: `~borco_pyside.recycle_bin.RecycleBin` -- a GUI-facing dependency
+`rehuco_core` stays free of -- carries the actual `send2trash` mechanics; this is the concrete side of the
+seam #265 left for it (`RehuDocumentImageOrganizer`), translating
+`~borco_pyside.recycle_bin.NoRecycleBinError` into the vocabulary `rehuco_core` shares with every other
+`Deleter` consumer (#300).
 """
 
 from pathlib import Path
 
+from borco_pyside.recycle_bin import NoRecycleBinError, recycle_bin
 from rehuco_core import DEFAULT_DELETER, Deleter, NoTrashBinError
-from send2trash import send2trash
 
 from ..settings.screenshot_deletion_settings import shared_screenshot_deletion_settings
 
@@ -28,11 +27,9 @@ class RecycleBinDeleter:  # pylint: disable=too-few-public-methods
         :raises NoTrashBinError: no bin is reachable for ``path`` -- ``path`` is left untouched.
         """
         try:
-            send2trash(str(path))
-        except FileNotFoundError:
-            raise
-        except OSError as error:
-            raise NoTrashBinError(f"No Recycle Bin is available for {path.parent}") from error
+            recycle_bin().add(path)
+        except NoRecycleBinError as error:
+            raise NoTrashBinError(str(error)) from error
 
 
 def configured_deleter() -> Deleter:

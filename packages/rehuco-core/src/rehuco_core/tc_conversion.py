@@ -19,7 +19,7 @@ from .plugins import DEFAULT_UNKNOWN_USERNAME
 from .rehu_content_files import ContentUnreachableError, content_size_on_disk
 from .rehu_document import RehuDocument
 from .rehu_format import CORE_BLOCK_KEY
-from .rehu_screenshot_ordering import DEFAULT_DELETER, Deleter, NoTrashBinError
+from .rehu_screenshot_ordering import DEFAULT_DELETER, Deleter
 from .tc_conversion_backups import backup_path, restore_backup
 from .tc_description import rewrite_description_images
 from .tc_document import TcDocument
@@ -87,9 +87,8 @@ def convert_tc(
     :param excluded_patterns: filename globs the walk measuring ``current_size`` leaves out (#226),
         resolved by the caller -- core never reads a setting.
     :param deleter: how a discarded ``.orig`` backup is actually removed when ``keep_backups`` is
-        ``False``; defaults to a plain unlink (#298). A `~rehuco_core.NoTrashBinError` it raises is
-        logged and swallowed rather than undoing an otherwise-successful conversion -- see
-        :meth:`TcConverter.convert`.
+        ``False``; defaults to a plain unlink (#298). An ``OSError`` it raises is logged and swallowed
+        rather than undoing an otherwise-successful conversion -- see :meth:`TcConverter.convert`.
     :returns: the fresh, unlocked document, already saved at the target path.
     :raises FileExistsError: the target ``.rehu`` exists and ``overwrite`` is ``False``; or a
         ``.orig`` backup sibling already exists for something about to be backed up.
@@ -152,8 +151,8 @@ class TcConverter:  # pylint: disable=too-few-public-methods
     def convert(self) -> RehuDocument:
         """Run the full plan-then-replace sequence.
 
-        A `~rehuco_core.NoTrashBinError` from the discard at the end (:meth:`__delete_backups`) never
-        reaches here -- see there -- so this always returns once the write phase itself has succeeded.
+        An ``OSError`` from the discard at the end (:meth:`__delete_backups`) never reaches here -- see
+        there -- so this always returns once the write phase itself has succeeded.
 
         :returns: the fresh, unlocked document, already saved at the target ``.rehu`` path.
         :raises FileExistsError: see :func:`convert_tc`.
@@ -315,10 +314,11 @@ class TcConverter:  # pylint: disable=too-few-public-methods
 
         Tolerates a backup already gone (a rename here backs onto a plain ``.unlink(missing_ok=True)``
         before #298, so a `Deleter` without that option is given the same tolerance explicitly). A
-        backup the deleter cannot reach at all (`NoTrashBinError`) is logged and left in place rather
-        than raised out of an otherwise-successful conversion: this is cleanup, not the conversion
-        itself, the same distinction :meth:`__undo` draws for the mid-conversion rollback's own plain
-        unlink.
+        backup the deleter cannot actually remove -- unreachable bin, locked, permission denied -- is
+        logged and left in place rather than raised out of an otherwise-successful conversion: this is
+        cleanup, not the conversion itself, the same distinction :meth:`__undo` draws for the
+        mid-conversion rollback's own plain unlink (#300 widened this from `NoTrashBinError` alone, so a
+        merely locked backup gets the same tolerance as a genuinely unreachable bin).
 
         :param backups: this conversion's ``{original: backup}`` map.
         """
@@ -327,5 +327,5 @@ class TcConverter:  # pylint: disable=too-few-public-methods
                 self.__deleter.delete(backup)
             except FileNotFoundError:
                 pass
-            except NoTrashBinError:
-                LOG.warning("Could not move %s to the Recycle Bin / Trash; left in place.", backup)
+            except OSError as error:
+                LOG.warning("Could not move %s to the Recycle Bin / Trash; left in place: %s", backup, error)

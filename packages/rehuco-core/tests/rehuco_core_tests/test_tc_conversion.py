@@ -312,6 +312,30 @@ def test_a_deleter_that_cannot_reach_a_bin_leaves_the_backup_and_still_returns(m
     assert isinstance(document, RehuDocument)
 
 
+def test_a_deleter_that_hits_a_real_failure_also_leaves_the_backup_and_still_returns(mocker: MockerFixture) -> None:
+    """A locked backup, or one permission denies, gets the same tolerance as a genuinely unreachable
+    bin (#300): `__delete_backups` widened its catch from `NoTrashBinError` alone to any `OSError`, so
+    this is cleanup either way, not the conversion.
+
+    **Test steps:**
+
+    * convert with ``keep_backups=False`` and a deleter that always raises a plain ``PermissionError``
+    * verify the conversion still returns its document rather than raising
+    """
+    mock_environment(mocker)
+
+    class LockedDeleter:  # pylint: disable=too-few-public-methods
+        """A `~rehuco_core.Deleter` that fails on a real cause, not a missing bin."""
+
+        def delete(self, path: Path) -> None:
+            """Refuse ``path`` the way a locked file refuses deletion."""
+            raise PermissionError(f"{path} is locked by another program")
+
+    document = convert_tc(TC_PATH, keep_backups=False, deleter=LockedDeleter())
+
+    assert isinstance(document, RehuDocument)
+
+
 def test_a_backup_already_gone_is_tolerated(mocker: MockerFixture) -> None:
     """A backup that vanished under the conversion is not an error: the plain unlink this replaced
     passed ``missing_ok=True``, and a `Deleter` has no such option to pass (#298).
