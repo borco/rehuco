@@ -249,8 +249,63 @@ class CDockWidget(QWidget):
     def setFeature(self, feature: DockWidgetFeature, on: bool) -> None:
         """Turn a single `DockWidgetFeature` on or off, leaving the others untouched."""
 
-    def setWidget(self, widget: QWidget) -> None:
-        """Set the content widget this dock displays."""
+    class eInsertMode:
+        """How `setWidget` inserts the content widget -- directly, or wrapped in a `QScrollArea`."""
+
+        AutoScrollArea: CDockWidget.eInsertMode
+        """Wraps the widget in a `QScrollArea` unless it is already a `QAbstractScrollArea` (e.g. a
+        bare `QTableView`), which is inserted directly. The default."""
+
+        ForceScrollArea: CDockWidget.eInsertMode
+        """Documented upstream as always wrapping in a `QScrollArea`, even a `QAbstractScrollArea`
+        content widget -- not reproduced against this binding (a `QTableView` still came in unwrapped,
+        same as `AutoScrollArea`); verify before relying on the distinction."""
+
+        ForceNoScrollArea: CDockWidget.eInsertMode
+        """Never wraps the widget -- inserted directly, so a composite that already manages its own
+        scrolling end-to-end (e.g. a table with a pinned header and a pinned summary label below it)
+        doesn't get an outer scrollbar that drags the whole thing, header and summary included."""
+
+    # the enum's members are also promoted onto CDockWidget itself, mirroring DockWidgetFeature above
+    # (verified at runtime): both `QtAds.CDockWidget.eInsertMode.ForceNoScrollArea` and
+    # `QtAds.CDockWidget.ForceNoScrollArea` resolve.
+    AutoScrollArea: eInsertMode
+    ForceScrollArea: eInsertMode
+    ForceNoScrollArea: eInsertMode
+
+    def setWidget(self, widget: QWidget, insert_mode: eInsertMode = ...) -> None:
+        """Set the content widget this dock displays, per `insert_mode` (default `AutoScrollArea`)."""
+
+    class eMinimumSizeHintMode:
+        """What `minimumSizeHint()` reports -- a splitter honours this when deciding how far the user
+        can shrink the dock, so it is what makes a floor on a dock's size actually stick."""
+
+        MinimumSizeHintFromDockWidget: CDockWidget.eMinimumSizeHintMode
+        """A small hardcoded hint that ignores the content entirely -- QtAds's default, chosen so a
+        dock is never blocked from being squeezed down."""
+
+        MinimumSizeHintFromContent: CDockWidget.eMinimumSizeHintMode
+        """Derived from the content widget's own `minimumSizeHint()`, not its `sizeHint()` (measured: a
+        `QTableView` whose `sizeHint()` is 192px reported 70px here -- its `minimumSizeHint()`)."""
+
+        MinimumSizeHintFromDockWidgetMinimumSize: CDockWidget.eMinimumSizeHintMode
+        """The dock widget's own `minimumSize()`."""
+
+        MinimumSizeHintFromContentMinimumSize: CDockWidget.eMinimumSizeHintMode
+        """The content widget's own `minimumSize()` -- set that (e.g. `setMinimumHeight`) and pick this
+        mode to give a dock a size floor a splitter drag can't cross."""
+
+    # the enum's members are also promoted onto CDockWidget itself, mirroring DockWidgetFeature above
+    # (verified at runtime): both `QtAds.CDockWidget.eMinimumSizeHintMode.MinimumSizeHintFromContentMinimumSize`
+    # and `QtAds.CDockWidget.MinimumSizeHintFromContentMinimumSize` resolve.
+    MinimumSizeHintFromDockWidget: eMinimumSizeHintMode
+    MinimumSizeHintFromContent: eMinimumSizeHintMode
+    MinimumSizeHintFromDockWidgetMinimumSize: eMinimumSizeHintMode
+    MinimumSizeHintFromContentMinimumSize: eMinimumSizeHintMode
+
+    def setMinimumSizeHintMode(self, mode: eMinimumSizeHintMode) -> None:
+        """Choose what `minimumSizeHint()` reports (default `MinimumSizeHintFromDockWidget`), which is
+        what a containing splitter actually honours when the user drags a handle."""
 
     def dockManager(self) -> CDockManager:
         """The manager this dock is associated with -- the two-argument constructor's, or the one that

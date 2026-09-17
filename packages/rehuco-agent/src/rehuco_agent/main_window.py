@@ -44,7 +44,7 @@ from .archives import ARCHIVE_EXTENSIONS
 from .dialogs.conversion_backups_dialog import ConversionBackupsDialog
 from .dialogs.import_legacy_catalog_wizard import ImportLegacyCatalogWizard
 from .documents.confirm_and_save_dirty import confirm_and_save_dirty
-from .documents.document_widget import DocumentWidget
+from .documents.document_widget import LOG_DOCK_MIN_HEIGHT, DocumentWidget
 from .documents.documents_dock import DocumentsDock
 from .documents.rehu_document_menu_entry import RehuDocumentMenuEntry
 from .documents.rehu_document_model import path_label
@@ -1032,7 +1032,9 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             | features.DockWidgetFocusable
             | features.DockWidgetPinnable
         )
-        dock.setWidget(self.__log_widget)
+        dock.setWidget(self.__log_widget, QtAds.CDockWidget.eInsertMode.ForceNoScrollArea)
+        self.__log_widget.setMinimumHeight(LOG_DOCK_MIN_HEIGHT)
+        dock.setMinimumSizeHintMode(QtAds.CDockWidget.eMinimumSizeHintMode.MinimumSizeHintFromContentMinimumSize)
         self.__dock_manager.addDockWidget(QtAds.BottomDockWidgetArea, dock)
         dock.toggleView(False)
         return dock
