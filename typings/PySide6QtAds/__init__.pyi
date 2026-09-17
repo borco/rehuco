@@ -276,6 +276,37 @@ class CDockWidget(QWidget):
     def setWidget(self, widget: QWidget, insert_mode: eInsertMode = ...) -> None:
         """Set the content widget this dock displays, per `insert_mode` (default `AutoScrollArea`)."""
 
+    class eMinimumSizeHintMode:
+        """What `minimumSizeHint()` reports -- a splitter honours this when deciding how far the user
+        can shrink the dock, so it is what makes a floor on a dock's size actually stick."""
+
+        MinimumSizeHintFromDockWidget: CDockWidget.eMinimumSizeHintMode
+        """A small hardcoded hint that ignores the content entirely -- QtAds's default, chosen so a
+        dock is never blocked from being squeezed down."""
+
+        MinimumSizeHintFromContent: CDockWidget.eMinimumSizeHintMode
+        """Derived from the content widget's own `minimumSizeHint()`, not its `sizeHint()` (measured: a
+        `QTableView` whose `sizeHint()` is 192px reported 70px here -- its `minimumSizeHint()`)."""
+
+        MinimumSizeHintFromDockWidgetMinimumSize: CDockWidget.eMinimumSizeHintMode
+        """The dock widget's own `minimumSize()`."""
+
+        MinimumSizeHintFromContentMinimumSize: CDockWidget.eMinimumSizeHintMode
+        """The content widget's own `minimumSize()` -- set that (e.g. `setMinimumHeight`) and pick this
+        mode to give a dock a size floor a splitter drag can't cross."""
+
+    # the enum's members are also promoted onto CDockWidget itself, mirroring DockWidgetFeature above
+    # (verified at runtime): both `QtAds.CDockWidget.eMinimumSizeHintMode.MinimumSizeHintFromContentMinimumSize`
+    # and `QtAds.CDockWidget.MinimumSizeHintFromContentMinimumSize` resolve.
+    MinimumSizeHintFromDockWidget: eMinimumSizeHintMode
+    MinimumSizeHintFromContent: eMinimumSizeHintMode
+    MinimumSizeHintFromDockWidgetMinimumSize: eMinimumSizeHintMode
+    MinimumSizeHintFromContentMinimumSize: eMinimumSizeHintMode
+
+    def setMinimumSizeHintMode(self, mode: eMinimumSizeHintMode) -> None:
+        """Choose what `minimumSizeHint()` reports (default `MinimumSizeHintFromDockWidget`), which is
+        what a containing splitter actually honours when the user drags a handle."""
+
     def dockManager(self) -> CDockManager:
         """The manager this dock is associated with -- the two-argument constructor's, or the one that
         adopted it. `None` only for a dock built standalone and never added, which is why callers that

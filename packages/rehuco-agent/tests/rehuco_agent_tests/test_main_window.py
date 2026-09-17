@@ -32,6 +32,7 @@ from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.app_logging import shared_log_bridge
+from rehuco_agent.documents.document_widget import LOG_DOCK_MIN_HEIGHT
 from rehuco_agent.main_window import (
     DOCK_PIN_SIDES_GROUP,
     DOCUMENTS_DOCK_OBJECT_NAME,
@@ -3829,6 +3830,22 @@ def test_the_log_dock_hosts_its_widget_directly_not_in_a_scroll_area(qtbot: QtBo
     dock = log_dock(window)
 
     assert dock.widget().parentWidget() is dock
+
+
+def test_the_log_dock_has_a_minimum_height_a_splitter_drag_cant_cross(qtbot: QtBot) -> None:
+    """A squeezed log dock still reads, rather than shrinking to a sliver.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * verify the dock's own minimum size hint reports the configured floor
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    dock = log_dock(window)
+
+    assert dock.minimumSizeHint().height() == LOG_DOCK_MIN_HEIGHT
 
 
 def test_the_log_dock_starts_hidden(qtbot: QtBot) -> None:

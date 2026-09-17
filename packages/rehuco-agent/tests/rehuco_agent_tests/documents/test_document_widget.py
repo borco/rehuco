@@ -38,12 +38,21 @@ from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.app_logging import LOG_VIEW_ICON_RESOURCE, shared_log_bridge
 from rehuco_agent.asking_deleter import AskingDeleter
-from rehuco_agent.documents.document_fields import EDITOR_MAIN_TAB, VIEWER_DESCRIPTION_TAB, VIEWER_MAIN_TAB
+from rehuco_agent.documents.document_fields import (
+    EDITOR_IMAGES_TAB,
+    EDITOR_MAIN_TAB,
+    VIEWER_DESCRIPTION_TAB,
+    VIEWER_MAIN_TAB,
+)
 from rehuco_agent.documents.document_widget import (
     APPLY_DEFAULT_LAYOUT_TOOLTIP,
+    CHECKSUM_DOCK_MIN_HEIGHT,
     CHECKSUM_ICON_RESOURCE,
     DEFAULT_LAYOUT_ICON_RESOURCE,
+    FILES_DOCK_MIN_HEIGHT,
     FILES_ICON_RESOURCE,
+    IMAGES_DOCK_MIN_HEIGHT,
+    LOG_DOCK_MIN_HEIGHT,
     ON_DISK_ICON_RESOURCE,
     RESET_DEFAULT_LAYOUT_LABEL,
     SAVE_DEFAULT_LAYOUT_LABEL,
@@ -1165,6 +1174,21 @@ def test_a_document_opens_as_a_reader_with_every_editor_hidden(widget: DocumentW
     assert not any(dock.toggleViewAction().isChecked() for dock in editors.values())
 
 
+def test_the_images_editor_dock_has_a_minimum_height_a_splitter_drag_cant_cross(widget: DocumentWidget) -> None:
+    """A squeezed Images editor dock still reads, rather than shrinking to a sliver -- unlike the other
+    editor/viewer tabs, which keep QtAds's own (near-zero) default.
+
+    **Test steps:**
+
+    * verify the Images tab's own minimum size hint reports the configured floor
+    * verify a sibling tab (Main Editor) keeps no floor of its own
+    """
+    editors = widget._DocumentWidget__editor_docks  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    assert editors[EDITOR_IMAGES_TAB].minimumSizeHint().height() == IMAGES_DOCK_MIN_HEIGHT
+    assert editors[EDITOR_MAIN_TAB].minimumSizeHint().height() != IMAGES_DOCK_MIN_HEIGHT
+
+
 def test_inspection_docks_exist_and_start_hidden(widget: DocumentWidget) -> None:
     """Both inspection docks (Save Preview, On Disk) are built, but hidden by default -- a first-run
     layout shows every other dock but these (#111).
@@ -1954,6 +1978,23 @@ def test_switching_type_rebuilds_the_docks_with_the_abandoned_block_flagged(
 
     tooltips = flagged_tooltips(widget)
     assert tooltips["{'users': {'admin': {'rating': 4}}, 'format_version': 2}"] == PROVENANCE_ABANDONED_TYPE
+
+
+def test_switching_type_keeps_the_images_editor_docks_minimum_height(
+    widget: DocumentWidget, model: RehuDocumentModel
+) -> None:
+    """A type switch rebuilds every editor tab's content widget from scratch, which would silently drop
+    the Images tab's floor if `__swap_dock_contents` didn't reapply it.
+
+    **Test steps:**
+
+    * switch the type, rebuilding the editor docks
+    * verify the Images tab's dock still reports the configured floor
+    """
+    model.resource_type = "reference_images"
+
+    editors = widget._DocumentWidget__editor_docks  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert editors[EDITOR_IMAGES_TAB].minimumSizeHint().height() == IMAGES_DOCK_MIN_HEIGHT
 
 
 def test_a_rebuilt_unknown_field_row_stays_reactive_after_a_round_trip_switch(qtbot: QtBot) -> None:
@@ -2823,6 +2864,16 @@ def test_the_log_dock_hosts_its_widget_directly_not_in_a_scroll_area(widget: Doc
     assert log_dock(widget).widget().parentWidget() is log_dock(widget)
 
 
+def test_the_log_dock_has_a_minimum_height_a_splitter_drag_cant_cross(widget: DocumentWidget) -> None:
+    """A squeezed log dock still reads, rather than shrinking to a sliver.
+
+    **Test steps:**
+
+    * verify the dock's own minimum size hint reports the configured floor
+    """
+    assert log_dock(widget).minimumSizeHint().height() == LOG_DOCK_MIN_HEIGHT
+
+
 def test_adding_the_log_dock_leaves_the_main_viewer_current(widget: DocumentWidget) -> None:
     """The main viewer stays the current tab, though the log dock was stacked in after it (#200).
 
@@ -3294,6 +3345,28 @@ def test_the_checksum_dock_hosts_its_view_directly_not_in_a_scroll_area(qtbot: Q
         queue.shutdown()
 
 
+def test_the_checksum_dock_has_a_minimum_height_a_splitter_drag_cant_cross(
+    qtbot: QtBot, model: RehuDocumentModel
+) -> None:
+    """A squeezed checksum dock still reads, rather than shrinking to a sliver.
+
+    **Test steps:**
+
+    * build a widget over a real queue
+    * verify the dock's own minimum size hint reports the configured floor
+    """
+    queue = TaskQueue()
+    widget = DocumentWidget(model, task_queue=queue)
+    qtbot.addWidget(widget)
+    try:
+        dock = widget._DocumentWidget__checksum_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+        assert dock is not None
+        assert dock.minimumSizeHint().height() == CHECKSUM_DOCK_MIN_HEIGHT
+    finally:
+        widget.detach()
+        queue.shutdown()
+
+
 # endregion
 
 
@@ -3732,6 +3805,16 @@ def test_the_files_dock_hosts_its_view_directly_not_in_a_scroll_area(widget: Doc
     * verify the dock's content is parented directly on the dock, with no scroll area between them
     """
     assert files_dock(widget).widget().parentWidget() is files_dock(widget)
+
+
+def test_the_files_dock_has_a_minimum_height_a_splitter_drag_cant_cross(widget: DocumentWidget) -> None:
+    """A squeezed Files dock still reads, rather than shrinking to a sliver.
+
+    **Test steps:**
+
+    * verify the dock's own minimum size hint reports the configured floor
+    """
+    assert files_dock(widget).minimumSizeHint().height() == FILES_DOCK_MIN_HEIGHT
 
 
 def test_another_resource_activated_in_the_browser_is_relayed_out(qtbot: QtBot, widget: DocumentWidget) -> None:
