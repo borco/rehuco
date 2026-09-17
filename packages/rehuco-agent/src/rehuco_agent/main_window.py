@@ -14,7 +14,7 @@ import PySide6QtAds as QtAds
 from borco_core.logging import LogScope
 from borco_pyside.dialogs import DockableDialog, DockableDialogManager
 from borco_pyside.logging import LogWidget
-from borco_pyside.qtads import QtAdsPinSideHandler
+from borco_pyside.qtads import QtAdsFloatingShowGuard, QtAdsPinSideHandler
 from borco_pyside.theming import ActionIconThemeHandler, ThemeManager, ThemeMenu, ThemeModel
 from PySide6.QtCore import QByteArray
 from PySide6.QtGui import QAction, QCloseEvent, QIcon, QShowEvent
@@ -159,9 +159,11 @@ THEME_DARK_ICON: Final = ":/icons/theme_dark.svg"
 class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
     """The single top-level window: a `CDockManager` holding a **Documents** dock around
     :class:`DocumentsDock`, with a settings dock (#47) registered on the same outer manager -- not
-    merged into `DocumentsDock`'s own nested one. Floating-first by default (see
-    `DockableDialog.place_floating`), so it starts as its own independent window rather than
-    pre-split into the documents area; a saved layout freely re-docks or repositions it.
+    merged into `DocumentsDock`'s own nested one. Floating by default (see
+    `DockableDialog.place_floating`), so a fresh install shows it as its own independent window
+    rather than pre-split into the documents area -- reached as a *fallback* though, after a saved
+    layout was offered the dock and refused, since floating it up front is what left an empty
+    container to flash before this window (#306).
 
     Dock-in-dock (a `CDockManager` inside the Documents dock's `DocumentsDock`, itself inside this
     window's own `CDockManager`) leaves room for a future resource browser to dock alongside the
@@ -187,8 +189,15 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # not Final: __on_tray_enabled_changed creates/tears it down live as the setting changes
         self.__tray_icon: TrayIcon | None = None
         # the floating dock windows hidden alongside this one by hide_to_tray, waiting for
-        # raise_and_activate to put them back; empty whenever the window is not hidden to tray
+        # raise_and_activate to put them back -- either hidden by hide_to_tray, or held back by
+        # __init__ so a restored floating dialog does not reach the screen before this window does
+        # (#306). Empty at every other time.
         self.__floating_docks_hidden_with_window: Final[list[QtAds.CFloatingDockContainer]] = []
+        # armed for the whole of __init__ and released at the end of it, so nothing this window owns
+        # can put a top-level window on screen while the window itself is not up: the layout restore
+        # below shows a dock saved as floating-and-open the moment it applies the blob, and merely
+        # hiding it again afterwards leaves a real, painted flash (#47, #306)
+        floating_show_guard = QtAdsFloatingShowGuard()
         shared_tray_settings().enabled_changed.connect(self.__on_tray_enabled_changed)  # type: ignore[attr-defined]
         self.__on_tray_enabled_changed(shared_tray_settings().enabled)
 
@@ -284,15 +293,35 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # visibility (#47, #55). Skipped when empty (no session saved yet): CDockManager.restoreState()
         # would return False anyway, but only after Qt's qUncompress() logs a spurious "Input data is
         # corrupted" warning to stderr for the invalid-as-qCompress empty buffer.
-        # not Final: showEvent sets it the first time it seeds. A layout that actually restored already
-        # carries the user's own splitter sizes, so seeding a default over it is exactly what must not
-        # happen -- the restore's own verdict is what decides, not merely whether a blob was present
-        # (a stale or corrupted one is refused, and then there *is* nothing but the as-built layout).
-        self.__bottom_dock_heights_seeded = False
+        # A layout that actually restored already carries the user's own splitter sizes, so seeding a
+        # default over it is exactly what must not happen -- the restore's own verdict is what decides, not
+        # merely whether a blob was present (a stale or corrupted one is refused, and then there *is*
+        # nothing but the as-built layout).
+        #
+        # That one verdict drives two things, which is why it is a local: the seeding flag below,
+        # and the settings dialog's floating-first fallback (#306) -- moving either off it would
+        # silently move the other. It has to be the verdict rather than "was a blob present", because
+        # a structurally-refused blob is only discovered by making the call.
+        restored = False
         if self.__window_settings.outer_docks_state:
-            self.__bottom_dock_heights_seeded = bool(
-                self.__dock_manager.restoreState(QByteArray(self.__window_settings.outer_docks_state))
-            )
+            restored = bool(self.__dock_manager.restoreState(QByteArray(self.__window_settings.outer_docks_state)))
+        # not Final: showEvent sets it the first time it seeds
+        self.__bottom_dock_heights_seeded = restored
+        if not restored:
+            # nothing usable was saved, so nothing moved the settings dock out of the Documents area
+            # it was tabbed into -- give it the floating-first placement a fresh install is owed
+            # (__setup_docking_system). After restore_all above, not before, so restoreState keeps the
+            # last word on visibility (#55); place_floating is what keeps a closed dock closed across
+            # the move.
+            self.__settings_dock.place_floating()
+        # a layout describing the settings dialog as floating *and open* is restored by showing its
+        # container there and then, before this window exists on screen -- the guard kept that off
+        # the screen; released here, it hands the container back hidden, to wait for
+        # raise_and_activate, which shows it above this window instead of ahead of it (#47, #306)
+        self.__floating_docks_hidden_with_window.extend(floating_show_guard.release())
+        # and anything else already on screen as construction ends waits the same way -- nothing
+        # should be, every show during __init__ having been guarded, so this is belt over braces
+        self.__defer_visible_floating_docks()
 
     def __on_document_focus_changed(self, widget: DocumentWidget | None) -> None:
         """Reflect the newly-focused document's label in the window title, or the base title if none,
@@ -768,16 +797,37 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         settings_dock = DockableDialog(
             self.__dock_manager, SETTINGS_DIALOG_OBJECT_NAME, "Settings", self.__settings_dialog
         )
-        # floating-first, not docking-first: the fallback placement for "nothing saved yet" --
-        # __init__'s later CDockManager.restoreState() call freely re-docks or repositions it if
-        # there's anything actually saved
-        settings_dock.place_floating()
+        # docked-first, transiently: tabbed into the Documents area now, and floated by __init__ only
+        # if the saved layout it then restores is refused. Not `place_floating()` here, which is what
+        # left an abandoned, empty `CFloatingDockContainer` to flash before this window on any launch
+        # whose saved layout put this dock in a *sidebar* -- the one restore path QtAds does not retire
+        # the container it took the dock out of ([[appendices.qt-ads#auto-hide-abandoned-float]], #306).
+        # Placing it *somewhere* is not optional: an unplaced dock is never registered with the manager,
+        # so restoreState silently skips it and the dialog vanishes.
+        #
+        # The Documents area rather than a bottom one: __seed_bottom_dock_heights toggles the Log and
+        # Tasks docks open and closed, and a visible tab in either would keep that pane alive through
+        # the toggle-off and change what it measures. Its area is non-None here (the dock is added by
+        # __add_documents_dock above and never removed) -- passing None would fall back to "add to the
+        # container", giving the root splitter a fourth pane and breaking that same method's "pane 0 is
+        # Documents". QtAds makes the last-added dock its area's current tab, so "Settings" is briefly
+        # in front of "Documents" -- nothing shows either (this window is not shown until __init__
+        # returns) and restore_all, restoreState and the fallback float each overwrite it, so the
+        # transient tab is not UI anyone sees or intended.
+        self.__dock_manager.addDockWidget(
+            QtAds.CenterDockWidgetArea, settings_dock.dock, self.__documents_dock_widget.dockAreaWidget()
+        )
         # pinnable like the window's other three docks (#279). Set here rather than widened into
         # `DockableDialog`'s own feature set: that framework's other consumers are dialogs on
         # managers with no window sidebars to pin into, and this one is a main dock that happens to
         # be built through it.
         settings_dock.dock.setFeature(QtAds.CDockWidget.DockWidgetFeature.DockWidgetPinnable, True)
         self.__dialog_manager.register(settings_dock)
+        # held onto because __init__ needs the wrapper back to run the
+        # floating fallback: `DockableDialogManager` deliberately has no lookup-by-name, and the dock
+        # alone (which __main_docks below does hold) cannot re-place itself. Not Final, for the same
+        # reason the three docks above are not: assigned from __setup_docking_system, not __init__.
+        self.__settings_dock = settings_dock
         # not Final, for the same reason the three docks above are not: assigned from
         # __setup_docking_system rather than __init__
         self.__main_docks = (
@@ -1407,14 +1457,24 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         the plain ``show()`` branch is what a forwarded open lands on, exactly like `TrayIcon` itself
         raising it from its menu.
 
-        Every floating dock window :meth:`hide_to_tray` put away comes back with it, before this
-        window takes the foreground -- so the main window ends up the active one, with the dialogs
-        it owns restored above it rather than stealing the activation on the way up.
+        Every floating dock window put away for it comes back with
+        it, before this window takes the foreground -- so the main window ends up the active one, with
+        the dialogs it owns restored above it rather than stealing the activation on the way up. That
+        covers what :meth:`hide_to_tray` took down, what the startup layout restore brought up too
+        early, and what QtAds shows from inside the ``show()`` itself: a container it parked while the
+        window was unshown, which ``CDockManager::showEvent`` brings up while the window is still
+        showing its *children* -- ahead of its own native window, measured on a real plugin (#306).
+        Which is why **this, not a plain ``show()``, is the app's way onto the screen**:
+        `Application.show_main_window` and `TrayIcon` both come through here.
         """
+        # armed around the show only, so a floating window legitimately on screen already (a forwarded
+        # open while the app is up) is not touched -- only what this show itself brings up too early
+        floating_show_guard = QtAdsFloatingShowGuard()
         if self.isMinimized():
             self.showNormal()
         else:
             self.show()
+        self.__floating_docks_hidden_with_window.extend(floating_show_guard.release())
         for container in self.__floating_docks_hidden_with_window:
             container.show()
         self.__floating_docks_hidden_with_window.clear()
@@ -1443,11 +1503,28 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         (`DockableDialog.save_settings` reads that same flag) rather than recording the tray's own
         bookkeeping as the user's choice.
         """
+        self.__defer_visible_floating_docks()
+        self.hide()
+
+    def __defer_visible_floating_docks(self) -> None:
+        """Put every currently-visible floating dock window away, for :meth:`raise_and_activate` to
+        bring back once this window itself is up.
+
+        Two callers: :meth:`hide_to_tray` on the way down, and ``__init__`` on the way up, where it
+        runs after `QtAdsFloatingShowGuard` has already handed back everything shown during
+        construction -- so there it should find nothing, and is the belt over those braces: whatever
+        is on screen as construction ends waits for the window the same way (#47, #306). Not called
+        from :meth:`raise_and_activate`, which defers only what its own guard caught: a floating window
+        legitimately on screen when a forwarded open raises this one must not blink.
+
+        Found from this window rather than from one manager, so the documents dock's own nested
+        manager is covered too, and hidden rather than closed -- see :meth:`hide_to_tray` for why that
+        distinction is what keeps the round trip honest.
+        """
         for container in self.findChildren(QtAds.CFloatingDockContainer):
             if container.isVisible():
                 self.__floating_docks_hidden_with_window.append(container)
                 container.hide()
-        self.hide()
 
     def request_quit(self) -> None:
         """Ask this window to close as an explicit quit (#205) -- the one thing that overrides tray

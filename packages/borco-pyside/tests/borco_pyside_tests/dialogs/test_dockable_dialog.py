@@ -116,6 +116,73 @@ def test_place_floating_stays_hidden_until_the_manager_is_shown(qtbot: QtBot, ma
     assert container.isVisible()
 
 
+def test_place_floating_keeps_a_closed_placed_dock_closed(qtbot: QtBot, manager: QtAds.CDockManager) -> None:
+    """Floating a dock that is already placed and **closed** leaves it closed -- placement decides
+    nothing about visibility.
+
+    Guards a QtAds behaviour, not a preference: ``addDockWidgetFloating`` reopens a closed dock it
+    moves ([[appendices.qt-ads#auto-hide-abandoned-float]]), so without the correction a caller that
+    floats as a fallback *after* restoring visibility would pop the dialog open on a launch that had
+    decided against it.
+
+    **Test steps:**
+
+    * build a dialog, add its dock to an area, and close it
+    * call ``place_floating``
+    * verify it is still closed, and in a floating container
+    * show the manager and verify that container stays invisible
+
+    ``floatingDockContainer()``, not ``isFloating()``: a closed dock reports ``isFloating() is False``
+    even inside a floating container, since QtAds wants the container to have an *open* top-level dock.
+    """
+    dialog = DockableDialog(manager, "some_dialog", "Some Dialog", QLabel())
+    manager.addDockWidget(QtAds.CenterDockWidgetArea, dialog.dock)
+    dialog.dock.toggleView(False)
+
+    dialog.place_floating()
+
+    container = dialog.dock.floatingDockContainer()
+    assert dialog.dock.isClosed()
+    assert container is not None
+
+    manager.show()
+    qtbot.waitExposed(manager)
+
+    assert not container.isVisible()
+
+
+def test_place_floating_gives_a_re_placed_dock_a_usable_size(manager: QtAds.CDockManager) -> None:
+    """A dock floated out of an area gets a window sized from its own content, not from the area.
+
+    The second QtAds trap behind the correction: ``addDockWidgetFloating`` sizes the new container from
+    the dock's *current* size, which for one **tabbed beside another dock** in a never-shown window is
+    a degenerate 100x15 that survives the show ([[appendices.qt-ads#auto-hide-abandoned-float]]). The
+    second dock is what makes the case real: alone in its area the dock keeps a plain ``QWidget``'s
+    640x480 default and the bug does not show.
+
+    **Test steps:**
+
+    * build a dialog around content with a real minimum size, and tab its dock beside another
+    * call ``place_floating``
+    * verify the floating container is at least as big as that content asked for
+    """
+    neighbour = QtAds.CDockWidget(manager, "Neighbour")
+    neighbour.setObjectName("neighbour")
+    neighbour.setWidget(QLabel("neighbour"))
+    manager.addDockWidget(QtAds.CenterDockWidgetArea, neighbour)
+    content = QLabel("hello")
+    content.setMinimumSize(420, 300)
+    dialog = DockableDialog(manager, "some_dialog", "Some Dialog", content)
+    manager.addDockWidget(QtAds.CenterDockWidgetArea, dialog.dock, neighbour.dockAreaWidget())
+
+    dialog.place_floating()
+
+    container = dialog.dock.floatingDockContainer()
+    assert container is not None
+    assert container.width() >= 420
+    assert container.height() >= 300
+
+
 def test_save_settings_reflects_current_visibility_and_checkbox(manager: QtAds.CDockManager) -> None:
     """``save_settings`` captures the dock's current open/closed state and the checkbox value.
 

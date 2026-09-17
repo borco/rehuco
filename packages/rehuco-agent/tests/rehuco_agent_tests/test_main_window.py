@@ -13,11 +13,11 @@ from threading import Event
 from typing import Any, Final
 
 import PySide6QtAds as QtAds
-from borco_pyside.dialogs import DockableDialogManager
+from borco_pyside.dialogs import DockableDialogManager, DockableDialogSettings
 from borco_pyside.logging import LogWidget
 from borco_pyside.logging.log_model import MESSAGE_COLUMN
 from borco_pyside.qtads.qtads_pin_side_handler import DEFAULT_PIN_SIDE, PIN_SIDE_KEY
-from PySide6.QtCore import QByteArray, QModelIndex, Qt
+from PySide6.QtCore import QByteArray, QEvent, QModelIndex, QObject, QSize, Qt
 from PySide6.QtGui import QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
@@ -105,6 +105,14 @@ call an effect missing."""
 UNSAVED_CHANGES_DIALOG: Final = "rehuco_agent.documents.confirm_and_save_dirty.UnsavedChangesDialog"
 """Where the close guard's batch dialog is looked up -- the shared seam ``closeEvent`` reaches it
 through (#176), not this module, so that is where these tests patch it."""
+
+SETTINGS_DIALOG_MIN_FLOAT_SIZE: Final = QSize(400, 200)
+"""The floor a floated Settings window has to clear to count as usable (#306).
+
+Deliberately far below what it actually measures (720x363 offscreen) and far above the degenerate
+100x15 QtAds hands a dock floated straight out of a tabbed area
+([[appendices.qt-ads#auto-hide-abandoned-float]]) -- this answers "is the window usable at all", not
+"is it this size", so it does not have to move when the dialog's content does."""
 
 
 @fixture(autouse=True)
@@ -199,16 +207,22 @@ def test_installs_a_settings_dock_on_the_outer_manager(qtbot: QtBot) -> None:
     assert settings_dock.dockAreaWidget() is not None
 
 
-def test_settings_dock_is_placed_floating_by_default(qtbot: QtBot) -> None:
-    """With nothing saved yet, the settings dock defaults to floating -- not docked/split into the
+def test_settings_dock_ends_up_floating_with_nothing_saved(qtbot: QtBot) -> None:
+    """With nothing saved yet, the settings dock ends up floating -- not docked/split into the
     documents area -- so a fresh install shows it as a normal, independent app window (#47).
+
+    It is *placed* docked and floated by ``__init__`` as the fallback for a layout that did not
+    restore (#306), so this pins the outcome rather than the initial placement. The size is asserted
+    beside it because that fallback is the one route where QtAds sizes the new window from a dock
+    already tabbed into an area, which is a degenerate 100x15 uncorrected
+    ([[appendices.qt-ads#auto-hide-abandoned-float]]) -- and no other test here would notice.
 
     **Test steps:**
 
     * construct a real ``MainWindow`` and find the settings dock -- ``__init__``'s
       ``dialog_manager.restore_all()`` (#55) closes it by default since nothing is persisted, so
       reopen it to inspect its placement
-    * verify it reports itself as floating
+    * verify it reports itself as floating, in a window big enough to use
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -219,6 +233,10 @@ def test_settings_dock_is_placed_floating_by_default(qtbot: QtBot) -> None:
     assert settings_dock is not None
     settings_dock.toggleView(True)
     assert settings_dock.isFloating()
+    container = settings_dock.floatingDockContainer()
+    assert container is not None
+    assert container.width() >= SETTINGS_DIALOG_MIN_FLOAT_SIZE.width()
+    assert container.height() >= SETTINGS_DIALOG_MIN_FLOAT_SIZE.height()
 
 
 def test_the_outer_manager_alone_carries_the_dock_stylesheet(qtbot: QtBot) -> None:
@@ -2178,7 +2196,8 @@ def test_quitting_from_the_tray_with_a_dirty_document_runs_the_save_prompt(mocke
 def float_open_settings_dialog(window: MainWindow) -> Any:
     """Open the settings dialog as its own floating window, and return that container.
 
-    The dialog is placed floating by default (#47), so opening it is all it takes -- but the
+    A window with nothing saved ends up with the dialog floating (#47, #306), so opening it is all it
+    takes -- but the
     container is read back through the dock rather than assumed, so these tests fail loudly if that
     default ever changes rather than silently asserting about ``None``.
     """
@@ -3585,6 +3604,40 @@ def test_an_unusable_saved_layout_leaves_the_documents_dock_open(mocker: MockerF
     dock = documents_dock_widget(window)
     assert not dock.isClosed()
     assert dock.dockAreaWidget() is not None
+
+
+def test_an_unusable_saved_layout_still_floats_the_settings_dialog(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A saved layout that cannot be applied leaves the Settings dialog floating -- the fallback
+    placement a fresh install gets, reached here one step later (#306).
+
+    The startup path #306's fix could most easily have lost. The dialog is docked into the Documents
+    area up front and floated only once the restore has had its chance, so *which* of the two the user
+    ends up with hangs on the restore's own verdict -- and a refused blob is only discovered by making
+    the call, which is why the verdict rather than "was a blob present" is what decides.
+
+    **Test steps:**
+
+    * seed ``MainWindowSettings.load`` with a blob that is not a dock layout at all
+    * construct a ``MainWindow``
+    * verify the Settings dock is in a floating container, and the Documents area is back to one tab
+    """
+
+    def fake_load(self: MainWindowSettings, settings: object) -> None:
+        del settings
+        self.outer_docks_state = b"not a dock layout"
+
+    mocker.patch.object(MainWindowSettings, "load", fake_load)
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    dock_manager = window._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    settings_dock = dock_manager.findDockWidget(SETTINGS_DIALOG_OBJECT_NAME)
+    assert settings_dock is not None
+    # not isFloating(), which reads False for a *closed* dock however it is placed -- and restore_all
+    # closes this one, nothing being persisted under the mocked settings
+    assert settings_dock.floatingDockContainer() is not None
+    assert documents_dock_widget(window).dockAreaWidget().dockWidget(1) is None
 
 
 def splitter_sizes(window: MainWindow) -> list[int]:
@@ -5222,6 +5275,216 @@ def test_the_tasks_shells_sub_docks_are_not_pinnable(qtbot: QtBot) -> None:
     )
 
     assert not tasks.dockAreaWidget().titleBarButton(QtAds.TitleBarButtonAutoHide).isHidden()
+
+
+def pinned_settings_layout(window: MainWindow, open_dock: bool) -> bytes:
+    """Pin ``window``'s Settings dock into the main container's left sidebar and return the layout
+    that saves (#306).
+
+    ``addAutoHideDockWidget``, not ``dock.setAutoHide(True)``: the latter pins into the dock's own
+    ``dockContainer()``, which for a floating dock is that floating window's sidebar rather than the
+    main window's -- the wrong container entirely, and not the one the bug needs.
+
+    ``__save_window_state()`` rather than ``closeEvent``, which runs ``enforce_restore_on_start``
+    first: with the mocked settings leaving "Restore on start" unchecked, that would write the dock
+    into the blob as *closed* and there would be no open-in-a-sidebar case left to restore.
+
+    :param window: the window to pin and read.
+    :param open_dock: whether the dock is left open (pinned and in play) or closed afterwards.
+    :returns: the saved outer dock layout.
+    """
+    dock_manager = window._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    dock = main_dock(window, SETTINGS_DIALOG_OBJECT_NAME)
+    dock.toggleView(True)
+    dock_manager.addAutoHideDockWidget(QtAds.SideBarLeft, dock)
+    QApplication.processEvents()
+    dock.toggleView(open_dock)
+    window._MainWindow__save_window_state()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    return window._MainWindow__window_settings.outer_docks_state  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_restoring_a_sidebar_pinned_settings_dialog_creates_no_floating_window(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """A launch whose saved layout pins the Settings dialog to a sidebar builds no floating container
+    at all -- the empty window that used to flash ahead of the main window (#306).
+
+    The dock is placed **docked** and floated only as the fallback for a layout that did not restore,
+    precisely so that nothing exists for QtAds' sidebar restore path to abandon: it is the one path
+    that does not retire the container it took the dock out of, and the leftover then passes
+    ``CDockManager::showEvent``'s own guard because it still holds one stale open area
+    ([[appendices.qt-ads#auto-hide-abandoned-float]]).
+
+    Asserted as *never created* rather than *not visible*, which is both stronger and what lets this
+    keep the module's never-``show()`` rule. Through ``findChildren`` rather than
+    ``dockManager().floatingWidgets()``: the manager has already dropped the container Qt still
+    parents, so the manager's own list can be blind to the thing under test.
+
+    **Test steps:**
+
+    * pin one window's Settings dock into the left sidebar and capture the layout it saves
+    * seed ``MainWindowSettings.load`` with that blob and construct a second window
+    * verify the second window holds no floating container, and its Settings dock is pinned
+    """
+    first = MainWindow()
+    qtbot.addWidget(first)
+    saved = pinned_settings_layout(first, open_dock=True)
+
+    def fake_load(self: MainWindowSettings, settings: object) -> None:
+        del settings
+        self.outer_docks_state = saved
+
+    mocker.patch.object(MainWindowSettings, "load", fake_load)
+
+    second = MainWindow()
+    qtbot.addWidget(second)
+
+    assert second.findChildren(QtAds.CFloatingDockContainer) == []
+    assert main_dock(second, SETTINGS_DIALOG_OBJECT_NAME).isAutoHide() is True
+
+
+def test_a_closed_pinned_settings_dialog_restores_closed_and_pinned(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A Settings dialog saved pinned *and* put away comes back both -- with still no floating
+    container built along the way (#306, #55).
+
+    The intersection of the two: #55's guarantee is that the layout restore has the last word on
+    visibility, and #306's is that a sidebar placement leaves no window behind. A fix for one that
+    floated the dock whenever it read as closed would satisfy neither.
+
+    **Test steps:**
+
+    * pin one window's Settings dock into the left sidebar, toggle it off, and capture the layout
+    * seed ``MainWindowSettings.load`` with that blob and construct a second window
+    * verify the second window's dock is closed, still pinned, and built no floating container
+    """
+    first = MainWindow()
+    qtbot.addWidget(first)
+    saved = pinned_settings_layout(first, open_dock=False)
+
+    def fake_load(self: MainWindowSettings, settings: object) -> None:
+        del settings
+        self.outer_docks_state = saved
+
+    mocker.patch.object(MainWindowSettings, "load", fake_load)
+
+    second = MainWindow()
+    qtbot.addWidget(second)
+
+    restored = main_dock(second, SETTINGS_DIALOG_OBJECT_NAME)
+    assert restored.isClosed() is True
+    assert restored.isAutoHide() is True
+    assert second.findChildren(QtAds.CFloatingDockContainer) == []
+
+
+def test_a_floating_settings_dialog_waits_for_the_main_window(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A Settings dialog saved *floating and open* does not reach the screen before the window that
+    owns it -- it comes up with :meth:`MainWindow.raise_and_activate`, above it (#47, #306).
+
+    The sibling of the sidebar case, and the one no amount of placement fixes: here the layout is
+    right and the dock genuinely belongs in a window of its own, but
+    ``CDockManager.restoreState`` shows that window the instant it applies the blob, and the restore
+    has to run during ``__init__`` for the layout to land at all (#55). So the container is held back
+    instead -- by `QtAdsFloatingShowGuard` while it is being created, which is what stops the native
+    window ever being mapped, then on the same list ``hide_to_tray`` uses.
+
+    Asserted through ``raise_and_activate`` rather than ``show()`` because that is how the app itself
+    comes up (`Application.show_main_window`, `TrayIcon`), and it is what puts the dialogs back.
+
+    **Test steps:**
+
+    * open one window's Settings dialog (floating by default) with "Restore on start" checked, and
+      capture the layout it saves
+    * seed ``MainWindowSettings.load`` with that blob and construct a second window
+    * verify its container exists but is not visible, and is queued for the window's own show
+    * ``raise_and_activate`` and verify the dialog is now up
+    """
+    first = MainWindow()
+    qtbot.addWidget(first)
+    first_dock = main_dock(first, SETTINGS_DIALOG_OBJECT_NAME)
+    first_dock.toggleView(True)
+    first_dock.widget().restore_on_start = True
+    assert first_dock.isFloating()
+    first._MainWindow__save_window_state()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    saved = first._MainWindow__window_settings.outer_docks_state  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    def fake_load(self: MainWindowSettings, settings: object) -> None:
+        del settings
+        self.outer_docks_state = saved
+
+    mocker.patch.object(MainWindowSettings, "load", fake_load)
+
+    second = MainWindow()
+    qtbot.addWidget(second)
+
+    container = main_dock(second, SETTINGS_DIALOG_OBJECT_NAME).floatingDockContainer()
+    deferred = second._MainWindow__floating_docks_hidden_with_window  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert container is not None
+    assert container.isVisible() is False
+    assert deferred == [container]
+
+    second.raise_and_activate()
+
+    assert container.isVisible() is True
+    assert deferred == []
+
+
+def test_the_fallback_float_also_waits_for_the_main_window(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A dialog saved open whose layout was refused takes the floating-first fallback -- and still
+    comes up after the main window, not from inside its ``show()`` (#306).
+
+    The one path where the fallback runs on an *open* dock. QtAds parks a dock floated under an unshown
+    manager and shows it from ``CDockManager::showEvent`` -- which fires while the owning window is
+    still showing its children, ahead of its own native window (measured on a real plugin). So the
+    guard is armed around ``raise_and_activate``'s show as well, not only around construction.
+
+    Asserted on the order of top-level ``Show`` events, telling a guarded show (attribute set, nothing
+    mapped) from a real one: the first *unguarded* show of the container has to come after the
+    window's. Offscreen never paints, so the event order is what there is to assert.
+
+    **Test steps:**
+
+    * seed a refused layout blob, and dialog settings saying open with "Restore on start" checked
+    * construct a ``MainWindow`` under a spy recording every top-level ``Show`` and whether it was guarded
+    * ``raise_and_activate`` and verify the container's first real show follows the window's
+    """
+
+    def fake_load(self: MainWindowSettings, settings: object) -> None:
+        del settings
+        self.outer_docks_state = b"not a dock layout"
+
+    def fake_dialog_load(self: DockableDialogSettings, settings: object, group: str) -> None:
+        del settings, group
+        self.visible = True
+        self.restore_on_start = True
+
+    mocker.patch.object(MainWindowSettings, "load", fake_load)
+    mocker.patch.object(DockableDialogSettings, "load", fake_dialog_load)
+    shows: list[tuple[str, bool]] = []
+
+    class ShowSpy(QObject):
+        """Records each top-level ``Show`` with whether the guard had already marked it off-screen."""
+
+        def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+            if event.type() == QEvent.Type.Show and isinstance(watched, QWidget) and watched.isWindow():
+                shows.append((type(watched).__name__, watched.testAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen)))
+            return False
+
+    spy = ShowSpy()
+    app = QApplication.instance()
+    assert app is not None
+    app.installEventFilter(spy)
+    try:
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.raise_and_activate()
+    finally:
+        app.removeEventFilter(spy)
+
+    container = main_dock(window, SETTINGS_DIALOG_OBJECT_NAME).floatingDockContainer()
+    assert container is not None
+    assert container.isVisible() is True
+    real_shows = [name for name, guarded in shows if not guarded]
+    assert real_shows.index("MainWindow") < real_shows.index("CFloatingDockContainer")
 
 
 # endregion
