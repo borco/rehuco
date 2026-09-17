@@ -246,6 +246,52 @@ def test_group_box_title_is_part_of_a_frames_text(qtbot: QtBot) -> None:
     assert frame.isVisibleTo(page) is True
 
 
+def test_a_list_editors_button_captions_do_not_match_the_frame(qtbot: QtBot) -> None:
+    """A frame whose only match would be a list editor's own button captions is not shown for it (#302)
+    -- ``StringListEditor``'s Insert/Edit/Delete/Reset and Top/Up/Down/Bottom buttons are not this
+    frame's captions, they are the same on every list editor.
+
+    **Test steps:**
+
+    * build a page whose one frame holds nothing but a `StringListEditor`
+    * filter by one of the editor's button captions ("delete")
+    * verify the frame is hidden
+    """
+    page = QWidget()
+    qtbot.addWidget(page)
+    layout = QVBoxLayout(page)
+    frame = QFrame(page)
+    frame_layout = QVBoxLayout(frame)
+    frame_layout.addWidget(StringListEditor(frame))
+    layout.addWidget(frame)
+    frame_filter = SettingsFrameFilter(page, "Markdown Rendering")
+
+    frame_filter.apply("delete", show_full_on_title_match=False)
+
+    assert frame.isVisibleTo(page) is False
+
+
+def test_a_list_editors_frame_still_matches_its_own_real_caption(qtbot: QtBot) -> None:
+    """Excluding a list editor's button captions leaves the frame's own labels and group-box title
+    still searchable (#302).
+
+    **Test steps:**
+
+    * build a page with a labeled frame that also holds a `StringListEditor`
+    * filter by the frame's own label text
+    * verify the frame is shown
+    """
+    page, (frame,) = make_page(qtbot, [["Excluded Patterns"]])
+    frame_layout = frame.layout()
+    assert frame_layout is not None
+    frame_layout.addWidget(StringListEditor(frame))
+    frame_filter = SettingsFrameFilter(page, "Markdown Rendering")
+
+    frame_filter.apply("excluded", show_full_on_title_match=False)
+
+    assert frame.isVisibleTo(page) is True
+
+
 def test_field_labels_gathers_each_frames_caption_text(qtbot: QtBot) -> None:
     """``field_labels`` returns one gathered (lowercased) caption string per frame, for the tree filter.
 

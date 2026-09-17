@@ -1,6 +1,6 @@
 """Frame-level filtering for one settings page: show only the QFrames whose text matches (#67)."""
 
-from borco_pyside.widgets import ItemListEditor
+from borco_pyside.widgets import ActionButtonColumn, ItemListEditor
 from PySide6.QtCore import QAbstractListModel, QModelIndex, Qt
 from PySide6.QtWidgets import QAbstractButton, QFrame, QGroupBox, QLabel, QLineEdit, QPlainTextEdit, QSpinBox, QWidget
 
@@ -195,11 +195,16 @@ class SettingsFrameFilter:
     def __frame_text(frame: QFrame) -> str:
         """The lowercased, space-joined user-visible caption text of every widget inside ``frame``.
 
+        A widget carrying `ActionButtonColumn.NOT_A_CAPTION_PROPERTY` is skipped -- its `text()` mirrors a
+        `QAction` shared by every list editor (#302), not a caption particular to this frame.
+
         :param frame: the frame to gather searchable text from.
         :returns: the concatenated captions, lowercased for case-insensitive matching.
         """
         parts: list[str] = []
         for widget in frame.findChildren(QWidget):
+            if widget.property(ActionButtonColumn.NOT_A_CAPTION_PROPERTY):
+                continue
             if isinstance(widget, QLabel | QAbstractButton):
                 parts.append(widget.text())
             elif isinstance(widget, QGroupBox):
