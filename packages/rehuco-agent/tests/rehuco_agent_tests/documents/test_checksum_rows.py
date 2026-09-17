@@ -7,7 +7,7 @@ reader.
 """
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 from threading import Event
 from types import SimpleNamespace
@@ -31,6 +31,7 @@ from rehuco_agent.documents.checksum_rows import (
     tally_rows,
     tally_text,
 )
+from rehuco_agent.documents.files_rows import CHECKSUM_STATE_TOOLTIPS, FileChecksumState
 from rehuco_core import SCREENSHOT_NAME_PATTERNS
 
 
@@ -90,6 +91,12 @@ Far above anything the read needs and far below a suite that looks hung, so a wa
 genuine failure rather than a slow runner -- the same meaning `tests/concurrency.py` gives it core-side."""
 
 STAMP: Final = "2026-08-05T12:00:00Z"
+
+STALE_AFTER: Final = timedelta(days=30)
+NOW: Final = datetime(2026, 9, 12, 12, 0, tzinfo=UTC)
+"""The freshness window and instant every read in this module is judged against (#303) -- what makes a
+``matched``/``mismatched`` entry resolve to a state at all is `test_files_rows.py`'s own subject, so
+these tests take one fixed answer as given rather than varying it."""
 
 
 # pylint: disable=duplicate-code
@@ -214,7 +221,7 @@ def test_a_covered_file_and_an_uncovered_one_both_appear(disk: FakeDisk) -> None
     """
     disk.put_record([entry(VIDEO, verified=STAMP, status="matched")])
 
-    rows = read_checksum_rows(INFO_PATH, PATTERNS, RULES)
+    rows = read_checksum_rows(INFO_PATH, PATTERNS, RULES, STALE_AFTER, NOW)
 
     by_name = {row.name: row for row in rows.rows}
     assert set(by_name) == {VIDEO, ARCHIVE}
@@ -232,7 +239,7 @@ def test_a_resource_with_no_record_shows_every_content_file(disk: FakeDisk) -> N
     * check both content files are listed, unchecked, and nothing is wrong
     """
     del disk
-    rows = read_checksum_rows(INFO_PATH, PATTERNS, RULES)
+    rows = read_checksum_rows(INFO_PATH, PATTERNS, RULES, STALE_AFTER, NOW)
 
     assert {row.name for row in rows.rows} == {VIDEO, ARCHIVE}
     assert all(row.status == "" for row in rows.rows)
@@ -249,7 +256,7 @@ def test_the_bookkeeping_is_never_a_row(disk: FakeDisk) -> None:
     * check no bookkeeping name is among them
     """
     del disk
-    rows = read_checksum_rows(INFO_PATH, PATTERNS, RULES)
+    rows = read_checksum_rows(INFO_PATH, PATTERNS, RULES, STALE_AFTER, NOW)
 
     assert {"info.rehu", "info00.jpg", "info.checksum", "Thumbs.db"}.isdisjoint({row.name for row in rows.rows})
 
@@ -265,7 +272,7 @@ def test_a_recorded_entry_outside_the_content_still_shows(disk: FakeDisk) -> Non
     """
     disk.put_record([entry("Thumbs.db", verified=STAMP, status="mismatched")])
 
-    rows = read_checksum_rows(INFO_PATH, PATTERNS, RULES)
+    rows = read_checksum_rows(INFO_PATH, PATTERNS, RULES, STALE_AFTER, NOW)
 
     assert {row.name: row.status for row in rows.rows}["Thumbs.db"] == "mismatched"
 
@@ -280,7 +287,7 @@ def test_an_unreachable_resource_is_not_an_empty_one(disk: FakeDisk) -> None:
     """
     disk.offline.add(DIRECTORY)
 
-    rows = read_checksum_rows(INFO_PATH, PATTERNS, RULES)
+    rows = read_checksum_rows(INFO_PATH, PATTERNS, RULES, STALE_AFTER, NOW)
 
     assert not rows.reachable
     assert not rows.rows
@@ -293,14 +300,16 @@ def test_a_record_this_build_cannot_read_still_lists_the_files(disk: FakeDisk) -
 
     * put a record that is not JSON at all
     * read the rows
-    * check the content files are listed unchecked and the failure is reported
+    * check the content files are listed unchecked, with no glyph claimed, and the failure is reported
     """
     disk.put(RECORD_PATH, b"not json")
 
-    rows = read_checksum_rows(INFO_PATH, PATTERNS, RULES)
+    rows = read_checksum_rows(INFO_PATH, PATTERNS, RULES, STALE_AFTER, NOW)
 
     assert {row.name for row in rows.rows} == {VIDEO, ARCHIVE}
     assert all(row.status == "" for row in rows.rows)
+    # NONE rather than MISSING: an unreadable record is not a record with no hash in it (#303)
+    assert all(row.checksum_state is FileChecksumState.NONE for row in rows.rows)
     assert rows.error
 
 
@@ -315,7 +324,7 @@ def test_an_entry_this_build_cannot_name_is_not_a_row(disk: FakeDisk) -> None:
     """
     disk.put_record([{"crc32": "deadbeef"}, entry(VIDEO, verified=STAMP, status="matched")])
 
-    rows = read_checksum_rows(INFO_PATH, PATTERNS, RULES)
+    rows = read_checksum_rows(INFO_PATH, PATTERNS, RULES, STALE_AFTER, NOW)
 
     assert {row.name for row in rows.rows} == {VIDEO, ARCHIVE}
 
@@ -326,69 +335,78 @@ def test_an_entry_this_build_cannot_name_is_not_a_row(disk: FakeDisk) -> None:
 # region The table
 
 
-def test_the_table_draws_the_path_the_status_and_a_local_date() -> None:
-    """The record stores UTC; the table shows local time (#244).
+def test_the_table_draws_the_path_and_a_local_date() -> None:
+    """The record stores UTC; the table shows local time (#244). The Status column draws no text of its
+    own -- its glyph is the delegate's (#303).
 
     **Test steps:**
 
     * put one recorded row in the model
-    * check each column's text, the date rendered in local time
+    * check the path and date columns' text, and that Status draws nothing
     """
     stamp = datetime(2026, 8, 5, 12, 0, tzinfo=UTC)
     model = ChecksumTableModel()
-    model.set_rows((ChecksumRow(VIDEO, "matched", stamp),))
+    model.set_rows((ChecksumRow(VIDEO, "matched", stamp, FileChecksumState.OK),))
 
     assert model.index(0, PATH_COLUMN).data() == VIDEO
-    assert model.index(0, STATUS_COLUMN).data() == "matched"
+    assert model.index(0, STATUS_COLUMN).data() == ""
     assert model.index(0, DATE_COLUMN).data() == stamp.astimezone().strftime("%Y-%m-%d %H:%M")
 
 
-def test_an_unchecked_row_draws_two_empty_cells() -> None:
-    """*Not checked yet* is two empty cells, which is the only honest thing to draw (#244).
+def test_an_unchecked_row_draws_no_date_and_the_missing_glyphs_tooltip() -> None:
+    """*Not checked yet* is an empty date and the missing glyph's own tooltip (#244, #303).
 
     **Test steps:**
 
     * put one uncovered row in the model
-    * check its status and date are empty and its path is not
+    * check its date is empty and its Status tooltip names the missing state
     """
     model = ChecksumTableModel()
     model.set_rows((ChecksumRow(ARCHIVE),))
 
     assert model.index(0, PATH_COLUMN).data() == ARCHIVE
-    assert model.index(0, STATUS_COLUMN).data() == ""
     assert model.index(0, DATE_COLUMN).data() == ""
+    assert (
+        model.index(0, STATUS_COLUMN).data(Qt.ItemDataRole.ToolTipRole)
+        == CHECKSUM_STATE_TOOLTIPS[FileChecksumState.MISSING]
+    )
 
 
-def test_sorting_renumbers_the_rows_rather_than_carrying_them() -> None:
-    """The row number is the vertical header, so it always numbers what is on screen (#244).
+def test_sorting_by_status_orders_by_the_resolved_state() -> None:
+    """The Status column sorts on the resolved state, not the raw recorded text (#244, #303) -- what the
+    column now draws is the state, and ``"bad"`` sorts before ``"missing"`` before ``"ok"``.
 
     **Test steps:**
 
-    * sort three rows by status, descending then ascending
-    * check the drawn order changes and the numbering stays 1..N either way
+    * sort three rows carrying three different states, descending then ascending
+    * check the drawn order follows the state's own value each way
     """
     model = ChecksumTableModel()
     model.set_rows(
         (
-            ChecksumRow("a.mp4", "matched"),
-            ChecksumRow("b.mp4", "mismatched"),
-            ChecksumRow("c.mp4", "missing"),
+            ChecksumRow("a.mp4", "matched", checksum_state=FileChecksumState.OK),
+            ChecksumRow("b.mp4", "mismatched", checksum_state=FileChecksumState.BAD),
+            ChecksumRow("c.mp4", "missing", checksum_state=FileChecksumState.MISSING),
         )
     )
     proxy = ChecksumSortProxy()
     proxy.setSourceModel(model)
 
     proxy.sort(STATUS_COLUMN, Qt.SortOrder.DescendingOrder)
-    descending = [proxy.index(row, PATH_COLUMN).data() for row in range(proxy.rowCount())]
-    numbers = [proxy.headerData(row, Qt.Orientation.Vertical) for row in range(proxy.rowCount())]
 
-    assert descending == ["c.mp4", "b.mp4", "a.mp4"]
-    assert numbers == [1, 2, 3]
+    assert [proxy.index(row, PATH_COLUMN).data() for row in range(proxy.rowCount())] == [
+        "a.mp4",
+        "c.mp4",
+        "b.mp4",
+    ]
 
     proxy.sort(STATUS_COLUMN, Qt.SortOrder.AscendingOrder)
 
-    assert [proxy.index(row, PATH_COLUMN).data() for row in range(proxy.rowCount())] == ["a.mp4", "b.mp4", "c.mp4"]
-    assert [proxy.headerData(row, Qt.Orientation.Vertical) for row in range(proxy.rowCount())] == [1, 2, 3]
+    assert [proxy.index(row, PATH_COLUMN).data() for row in range(proxy.rowCount())] == [
+        "b.mp4",
+        "c.mp4",
+        "a.mp4",
+    ]
 
 
 def test_dates_sort_chronologically_rather_than_lexically() -> None:
@@ -501,7 +519,7 @@ def test_a_read_that_raises_reports_rather_than_leaving_the_dock_waiting(qtbot: 
     delivered: list[ChecksumRows] = []
     loader.loaded.connect(delivered.append)
 
-    loader.start(INFO_PATH, PATTERNS, RULES)
+    loader.start(INFO_PATH, PATTERNS, RULES, STALE_AFTER)
 
     qtbot.waitUntil(lambda: bool(delivered), timeout=5000)
     assert delivered[0].error == "the walk fell over"
@@ -537,9 +555,9 @@ def test_a_superseded_read_is_dropped_rather_than_drawn(qtbot: QtBot, mocker: Mo
     # the first read has to still be *out* when the second start supersedes it: two starts back to
     # back leave a window in which the pool thread finishes the first and delivers it before the
     # second start ever runs, which is a legitimate delivery and asserts nothing about generations
-    loader.start(INFO_PATH, PATTERNS, RULES)
+    loader.start(INFO_PATH, PATTERNS, RULES, STALE_AFTER)
     assert reached.wait(SETTLE)
-    loader.start(INFO_PATH, PATTERNS, RULES)
+    loader.start(INFO_PATH, PATTERNS, RULES, STALE_AFTER)
     release.set()
 
     qtbot.waitUntil(lambda: bool(delivered), timeout=5000)
@@ -548,17 +566,24 @@ def test_a_superseded_read_is_dropped_rather_than_drawn(qtbot: QtBot, mocker: Mo
 
 
 def test_a_cell_names_its_file_on_hover() -> None:
-    """A path column narrower than its longest path is the normal case, so the row says which file.
+    """A path column narrower than its longest path is the normal case, so the row says which file; the
+    Status column's tooltip is the glyph's meaning instead, the same as the file browser's own
+    checksum column (#303).
 
     **Test steps:**
 
-    * ask a cell for its tooltip, and for a role this model has no answer to
-    * check the first is the file's name whichever column was asked, and the second is nothing
+    * ask the Path and Checked cells for their tooltip, and the Status cell for its own
+    * check the first two are the file's name, the third is the state's meaning, and asking for a role
+        this model has no answer to gives nothing
     """
     model = ChecksumTableModel()
-    model.set_rows((ChecksumRow(ARCHIVE, "matched"),))
+    model.set_rows((ChecksumRow(ARCHIVE, "matched", checksum_state=FileChecksumState.OK),))
 
-    assert model.index(0, STATUS_COLUMN).data(Qt.ItemDataRole.ToolTipRole) == ARCHIVE
+    assert model.index(0, PATH_COLUMN).data(Qt.ItemDataRole.ToolTipRole) == ARCHIVE
+    assert model.index(0, DATE_COLUMN).data(Qt.ItemDataRole.ToolTipRole) == ARCHIVE
+    assert (
+        model.index(0, STATUS_COLUMN).data(Qt.ItemDataRole.ToolTipRole) == CHECKSUM_STATE_TOOLTIPS[FileChecksumState.OK]
+    )
     assert model.index(0, STATUS_COLUMN).data(Qt.ItemDataRole.DecorationRole) is None
 
 
@@ -574,16 +599,17 @@ def test_an_invalid_index_answers_nothing() -> None:
 
 
 def test_the_headers_name_the_columns_and_nothing_else() -> None:
-    """The source model titles the columns; the row numbers are the proxy's (#244).
+    """The source model titles the columns; there is no vertical header (#244, #303).
 
     **Test steps:**
 
     * ask for each header
-    * check the titles come back and the vertical header does not
+    * check the titles come back, Status' is empty, and the vertical header answers nothing
     """
     model = ChecksumTableModel()
 
     assert model.headerData(PATH_COLUMN, Qt.Orientation.Horizontal) == "File"
+    assert model.headerData(STATUS_COLUMN, Qt.Orientation.Horizontal) == ""
     assert model.headerData(0, Qt.Orientation.Vertical) is None
     assert model.headerData(99, Qt.Orientation.Horizontal) is None
 
@@ -632,6 +658,6 @@ def test_a_walk_that_answers_after_its_dock_is_gone_reports_into_nothing(mocker:
 
     # generation 0 is the one a loader that has never been started is on, so this read is
     # current rather than superseded -- otherwise it returns before it ever tries to report
-    run(INFO_PATH, PATTERNS, RULES, 0)
+    run(INFO_PATH, PATTERNS, RULES, STALE_AFTER, NOW, 0)
 
     assert not delivered

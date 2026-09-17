@@ -34,7 +34,8 @@ class ActionIconThemeHandler(QObject):
     :param icon: path (Qt resource or filesystem) to the source SVG, drawn for the light theme's
         unchecked (normal) state. Must be genuinely monochrome, in the narrow sense
         :func:`~borco_pyside.theming.recolor_svg` actually requires -- a multi-color source loses its
-        color distinctions rather than being preserved.
+        color distinctions rather than being preserved. A glyph that is deliberately colored does not
+        belong here at all: give the action :func:`~borco_pyside.theming.as_drawn_icon` instead.
     :param parent: optional Qt parent; defaults to ``action`` itself.
     :param flat: ``action`` itself lives in a context with no ``Highlight``-colored backdrop behind
         its icon the way a toolbar's checked button chrome has -- e.g. a ``View`` menu's theme

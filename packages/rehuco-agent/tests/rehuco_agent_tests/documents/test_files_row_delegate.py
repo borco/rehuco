@@ -442,12 +442,14 @@ def test_every_file_type_draws_a_glyph(delegate: FilesRowDelegate, palette: QPal
         FileChecksumState.BAD,
         FileChecksumState.OLD_OK,
         FileChecksumState.OLD_BAD,
+        FileChecksumState.UNEXPECTED,
+        FileChecksumState.MALFORMED,
     ],
 )
 def test_every_checksum_verdict_draws_a_glyph(
     delegate: FilesRowDelegate, palette: QPalette, state: FileChecksumState
 ) -> None:
-    """The five the column can report, each drawn -- a verdict with no glyph would read as no verdict.
+    """The seven the column can report, each drawn -- a verdict with no glyph would read as no verdict.
 
     **Test steps:**
 

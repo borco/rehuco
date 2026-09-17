@@ -8,7 +8,7 @@ from .svg_recolor import recolor_svg, recolored_svg_icon
 from .theme_manager import ThemeManager
 from .theme_menu import ThemeMenu
 from .theme_model import ThemeModel
-from .utils import read_resource_bytes
+from .utils import as_drawn_icon, read_resource_bytes
 
 __all__ = [
     "ActionIconThemeHandler",
@@ -18,6 +18,7 @@ __all__ = [
     "ThemeManager",
     "ThemeMenu",
     "ThemeModel",
+    "as_drawn_icon",
     "glyph_icon",
     "read_resource_bytes",
     "recolor_svg",

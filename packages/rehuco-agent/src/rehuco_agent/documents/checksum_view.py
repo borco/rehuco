@@ -6,10 +6,13 @@ into a log line, and deciding which of them is a legitimate repack and accepting
 loop #203's targeted generate was built for. This is the surface that loop needs: the files, their
 answers, and a selection.
 
-**The toolbar only checks; changing the record needs a selection.** That is the rule the two menus
-encode, and it is what makes the toolbar safe to click -- nothing reachable from it can overwrite a hash
-or drop an entry. *Verify Old* and *Verify All* are the whole of it; *Generate Selection* and *Delete
-Missing* live in the context menu, behind a selection that is itself the deliberate act.
+**The document toolbar only checks; changing the record needs a selection.** That is the rule the
+context menu encodes, and it is what makes the document's own toolbar safe to click -- nothing reachable
+from it can overwrite a hash or drop an entry. *Verify Old* and *Verify All* are the whole of it;
+*Generate Selection* and *Delete Missing* live only in this dock's context menu, behind a selection that
+is itself the deliberate act. This dock carries no toolbar of its own (#303): the two checking actions
+already live one level up, always visible, and repeating them here would spend a row of height saying
+what is already on screen.
 
 **Every action is greyed while the resource is unreachable**, decided at the enumeration rather than
 from the rows: the record lives beside the files and shares their fate, so a mount that is away makes
@@ -21,17 +24,21 @@ say.
 from collections.abc import Sequence
 from typing import Final, cast, override
 
-from borco_pyside.theming import ActionIconThemeHandler
+from borco_pyside.theming import ActionIconThemeHandler, as_drawn_icon
 from PySide6.QtCore import QItemSelectionModel, QPoint
 from PySide6.QtGui import QAction, QShowEvent
-from PySide6.QtWidgets import QMenu, QToolBar, QWidget
+from PySide6.QtWidgets import QHeaderView, QMenu, QWidget
 
+from ..settings.checksum_settings import shared_checksum_settings
 from ..settings.excluded_files_settings import shared_excluded_files_settings
 from ..settings.screenshot_patterns_settings import shared_screenshot_patterns_settings
 from .checksum_actions import GENERATE_ICON_RESOURCE, VERIFY_ICON_RESOURCE, ChecksumActions
+from .checksum_row_delegate import ChecksumRowDelegate
 from .checksum_rows import (
+    DATE_COLUMN,
     MISSING_STATUS,
     PATH_COLUMN,
+    STATUS_COLUMN,
     ChecksumRows,
     ChecksumRowsLoader,
     ChecksumSortProxy,
@@ -40,6 +47,7 @@ from .checksum_rows import (
     tally_text,
 )
 from .checksum_view_ui import Ui_ChecksumView
+from .files_row_delegate import CHECKSUM_COLUMN_WIDTH
 from .rehu_document_model import RehuDocumentModel
 
 DELETE_ICON_RESOURCE: Final = ":/icons/items_delete.svg"
@@ -68,7 +76,7 @@ NO_PATH_SUMMARY: Final = "This document has not been saved yet, so it has no fil
 # the count, the same reason ChecksumActions carries this disable
 # pylint: disable-next=too-many-instance-attributes
 class ChecksumView(QWidget):
-    """The per-file checksum table, its toolbar and its context menu (#244).
+    """The per-file checksum table and its context menu (#244).
 
     A pure view over the record: it re-reads and redraws, and every action calls into
     :class:`~rehuco_agent.documents.checksum_actions.ChecksumActions`, which enqueues. Nothing here
@@ -99,13 +107,22 @@ class ChecksumView(QWidget):
         self.__proxy: Final = ChecksumSortProxy(self)
         self.__proxy.setSourceModel(self.__rows)
         self.__ui.file_view.setModel(self.__proxy)
+        self.__ui.file_view.setItemDelegate(ChecksumRowDelegate(self))
+        # the **File** column takes whatever the others leave, matching the file browser (#303) --
+        # `Status` and `Checked` are sized to their contents, not the other way round
+        header = self.__ui.file_view.horizontalHeader()
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(PATH_COLUMN, QHeaderView.ResizeMode.Stretch)
+        for column in (STATUS_COLUMN, DATE_COLUMN):
+            header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
+        header.setMinimumSectionSize(CHECKSUM_COLUMN_WIDTH)
         # selectionModel() is None only before a model is set (setModel just did)
         self.__selection: Final = cast(QItemSelectionModel, self.__ui.file_view.selectionModel())
 
         self.__loader: Final = ChecksumRowsLoader(self)
         self.__loader.loaded.connect(self.__show)
 
-        self.__setup_toolbar()
+        self.__setup_actions()
         self.__setup_context_menu()
         self.__selection.selectionChanged.connect(self.__update_enablement)
         actions.record_changed.connect(self.refresh)
@@ -142,6 +159,7 @@ class ChecksumView(QWidget):
             path,
             shared_excluded_files_settings().excluded_file_patterns,
             shared_screenshot_patterns_settings().screenshot_name_patterns,
+            shared_checksum_settings().stale_after,
         )
 
     @override
@@ -179,32 +197,26 @@ class ChecksumView(QWidget):
 
     # endregion
 
-    # region Toolbar and context menu
+    # region Actions and context menu
 
-    def __setup_toolbar(self) -> None:
-        """Put the two checking actions on the dock's own toolbar.
+    def __setup_actions(self) -> None:
+        """Theme and wire this dock's own selection-scoped actions.
 
-        The very same ``QAction`` objects the document toolbar carries -- Qt allows one action in
-        several widgets -- so the two surfaces cannot drift apart, because there is nothing to keep in
-        step (#244).
-
-        Generate rides along for the same reason it is on the document toolbar: it is visible **only**
-        while the resource has no record, where there is no recorded hash for it to overwrite, and
-        without it a dock opened on a never-checksummed resource would list its files under a greyed
-        toolbar with nothing to press.
+        No toolbar of its own (#303): the two checking actions this used to carry alongside them
+        already live one level up, on the document toolbar, always visible -- the very same ``QAction``
+        objects (Qt allows one action in several widgets), so the two surfaces could never have drifted
+        apart in the first place. These three reach the reader only through the context menu below,
+        which is where a selection-scoped action belongs: it is about the rows under the cursor.
         """
-        toolbar = QToolBar(self)
-        toolbar.addAction(self.__actions.verify_old_action)
-        toolbar.addAction(self.__actions.generate_action)
-        self.__ui.main_layout.insertWidget(0, toolbar)
-
         ui = self.__ui
         for action, icon in (
             (ui.verify_selection_action, VERIFY_ICON_RESOURCE),
-            (ui.generate_selection_action, GENERATE_ICON_RESOURCE),
             (ui.delete_missing_action, DELETE_ICON_RESOURCE),
         ):
             ActionIconThemeHandler(action, icon)
+        # as-drawn, not themed: same reason as `ChecksumActions.generate_action` -- this is the same
+        # deliberately red glyph, and the two must not disagree under a theme change
+        ui.generate_selection_action.setIcon(as_drawn_icon(GENERATE_ICON_RESOURCE))
         ui.verify_selection_action.triggered.connect(lambda: self.__actions.verify_selection(self.selected_names()))
         ui.generate_selection_action.triggered.connect(lambda: self.__actions.generate_selection(self.selected_names()))
         ui.delete_missing_action.triggered.connect(self.__delete_missing)
@@ -216,8 +228,9 @@ class ChecksumView(QWidget):
     def __show_context_menu(self, position: QPoint) -> None:
         """Offer the selection-scoped actions, and the two checking ones under them.
 
-        The checking pair is repeated here deliberately: the toolbar is not the only route to them, and
-        a reader who has just selected a row should not have to travel back up to check the resource.
+        The checking pair is repeated here deliberately: the document toolbar is not the only route to
+        them, and a reader who has just selected a row should not have to travel back up to check the
+        resource.
 
         :param position: where the click landed, in the viewport's coordinates.
         """
@@ -292,7 +305,7 @@ class ChecksumView(QWidget):
 
     @property
     def proxy(self) -> ChecksumSortProxy:
-        """The sorting proxy the table draws through, and what numbers its rows."""
+        """The sorting proxy the table draws through."""
         return self.__proxy
 
     @property

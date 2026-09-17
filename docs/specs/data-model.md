@@ -521,21 +521,26 @@ What a **reference-images** resource's content *is* was settled by #197: content
   three eight-gigabyte videos, and a bar that moves three times in twenty minutes says nothing.
 
 - **The per-file surface is a dock on the document** (#244), hidden by default beside the two inspection docks
-  (#111): one row per file, holding the path as the record spells it, the recorded status, and when that status was
-  recorded — the record's UTC rendered in local time, which is not what anyone wants to read off a table. It exists
+  (#111): one row per file, holding the path as the record spells it, the recorded status as a glyph, and when that
+  status was recorded — the record's UTC rendered in local time, which is not what anyone wants to read off a table.
+  It reads the way the files sub-dock does ([[plugins#files-subdock]], #303): a titleless glyph column drawn from the
+  **same** state set and the same icons, columns sized to what they draw with the path taking the rest, and no
+  numbered rows. It exists
   because a verify over two hundred videos reports three mismatches into a log line, and deciding which of them is a
   legitimate repack and accepting *just that one* is the loop the targeted generate was built for. Six decisions:
   - **Rows come from the record *and* from the content enumeration.** An entry shows its status and date; a content
     file the record does not cover shows its path with both cells empty, which is what *not checked yet* honestly
     looks like — and is what makes the dock worth opening on a resource that has never been checksummed.
-  - **The row number is the vertical header, not a column**, so it always numbers what is on screen: sorting by
-    status renumbers `1..N` instead of carrying stale numbers down the view. A summary line under the table —
-    `214 files · 210 matched · 2 mismatched · 1 not recorded` — answers *how many of what*, which the numbering
-    cannot.
-  - **The toolbar only checks; changing the record needs a selection.** *Verify Old* (the staleness window, named on
-    the action's own label) and *Verify All* (`stale_after=None`, force) are the whole of the toolbar; *Verify
-    Selection*, *Generate Selection* and *Delete Missing* live behind a right-click, where the selection is itself
-    the deliberate act — so none of them needs a confirmation, and the accept-a-change loop stays unprompted.
+  - **No row numbers.** A summary line under the table — `214 files · 210 matched · 2 mismatched · 1 not
+    recorded` — answers *how many of what*, and *how many* with it, without costing a column or a header on every
+    row (#303).
+  - **The document toolbar only checks; changing the record needs a selection.** *Verify Old* (the staleness
+    window, named on the action's own label) and *Verify All* (`stale_after=None`, force) live on the document's
+    toolbar, one level up and always visible — the dock carries no toolbar of its own, since repeating those two
+    would spend a row of height saying what is already on screen (#303). *Verify Selection*, *Generate Selection*
+    and *Delete Missing* live behind a right-click, where the selection is itself the deliberate act — so none of
+    them needs a confirmation, and the accept-a-change loop stays unprompted; the checking pair is repeated there
+    too, so a reader who has just selected a row need not travel back up.
   - **There is no blanket re-baseline over a record that already exists.** It would record whatever is on disk as
     correct, including bytes a verify has just called `mismatched` — corruption laundered into a record that then
     looks clean forever, which is the outcome the migration rule already forbids from the other direction.
