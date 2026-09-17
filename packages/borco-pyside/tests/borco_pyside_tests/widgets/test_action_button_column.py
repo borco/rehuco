@@ -123,6 +123,26 @@ def test_add_action_button_takes_an_action_built_elsewhere(qtbot: QtBot) -> None
     assert buttons(column) == [button]
 
 
+def test_every_button_carries_the_not_a_caption_property(qtbot: QtBot) -> None:
+    """A generic caption scan (`SettingsFrameFilter`, #302) needs a way to tell a button's mirrored
+    action text apart from a page's own captions -- the property this asserts is that way.
+
+    **Test steps:**
+
+    * add an action via ``add_action`` and another via ``add_action_button``
+    * verify both buttons carry the property, set to ``True``
+    """
+    column = ActionButtonColumn()
+    qtbot.addWidget(column)
+    column.add_action("First", "Do the first thing")
+    column.add_action_button(QAction("Elsewhere", column))
+
+    assert [button.property(ActionButtonColumn.NOT_A_CAPTION_PROPERTY) for button in buttons(column)] == [
+        True,
+        True,
+    ]
+
+
 def test_the_column_never_stretches_past_its_buttons(qtbot: QtBot) -> None:
     """It sits beside a list, so extra height would push its first button off the list's first row.
 

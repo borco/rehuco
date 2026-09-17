@@ -28,6 +28,11 @@ class ActionButtonColumn(QWidget):
     :param parent: optional Qt parent.
     """
 
+    NOT_A_CAPTION_PROPERTY: Final = "not_a_caption"
+    """Dynamic property set on every button this column adds, so a generic caption-gathering scan
+    (e.g. `SettingsFrameFilter`) can tell the button's `text()` is an action label mirrored onto it,
+    not a page caption, without needing to know this column or `QAction` exist."""
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.__layout: Final = QVBoxLayout(self)
@@ -71,6 +76,7 @@ class ActionButtonColumn(QWidget):
         """
         button = QToolButton(self)
         button.setDefaultAction(action)
+        button.setProperty(self.NOT_A_CAPTION_PROPERTY, True)
         button.setVisible(action.isVisible())
         # visibleChanged() carries no argument -- it says only that isVisible() changed, not to what --
         # so the slot has to read it back rather than being handed it directly
