@@ -6,6 +6,22 @@ from PySide6.QtCore import QFile, QIODevice, QRect, QSize, Qt
 from PySide6.QtGui import QIcon, QIconEngine, QPainter, QPixmap
 
 
+def as_drawn_icon(path: str) -> QIcon:
+    """Build a ``QIcon`` straight from ``path``, exactly as drawn -- no recolor, no palette subscription.
+
+    The opt-out :func:`~borco_pyside.theming.recolor_svg`'s own docstring calls for: a genuinely
+    multi-color source collapses to one flat color under it, so a glyph that is deliberately colored
+    (e.g. a red action icon among an otherwise monochrome set) must never reach
+    :class:`~borco_pyside.theming.ActionIconThemeHandler` at all. Unlike that handler's icon, this one
+    is built once and never rebuilt on a theme change -- the whole point being that nothing here reads
+    the palette.
+
+    :param path: the icon to load, Qt resource or filesystem.
+    :returns: the icon, unrecolored.
+    """
+    return QIcon(path)
+
+
 def read_resource_bytes(path: str) -> bytes:
     """Read ``path`` (Qt resource or filesystem) fully into memory.
 

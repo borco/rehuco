@@ -43,6 +43,7 @@ from PySide6.QtCore import (
 from rehuco_core import (
     CHECKSUM_FILES_KEY,
     MATCHED_STATUS,
+    ChecksumEntry,
     ChecksumRecordError,
     DirectoryClassifier,
     DirectoryEntry,
@@ -108,8 +109,7 @@ class FileChecksumState(StrEnum):
     """Hashed, matched, and checked recently enough that a *Verify Old* would skip it."""
 
     BAD = "bad"
-    """Hashed recently and **did not** match -- or rested at some other verdict this build cannot call a
-    match ([[data-model#checksums]]'s ``mismatched``/``unexpected``/``malformed``)."""
+    """Hashed recently and **did not** match."""
 
     OLD_OK = "old_ok"
     """Matched when it was last checked, but that was long enough ago that a check would run again."""
@@ -119,16 +119,42 @@ class FileChecksumState(StrEnum):
     :data:`OLD_OK` is what makes the column say *a fresh check would tell you something* rather than
     conflating never-checked with checked-long-ago."""
 
+    UNEXPECTED = "unexpected"
+    """The record's entry for this file rests at [[data-model#checksums]]'s ``unexpected`` -- a report
+    state rather than a resting one, ordinarily rewritten to ``matched`` the moment a sweep adopts the
+    file. An entry actually resting here was written by something other than this build's own runs, and
+    is rare enough to be worth telling apart from a genuine mismatch (#303). Carries no ``verified``
+    stamp worth aging, so there is no ``old_`` pair."""
+
+    MALFORMED = "malformed"
+    """The entry's hash sits under a key this build cannot read (#303). Distinct from
+    ``unexpected``/``mismatched``: this build has made **no claim at all** about the bytes and never
+    re-hashes them -- drawing it as a mismatch would assert a check that never happened, and drawing it
+    as :data:`MISSING` would invite a generate that overwrites a neighbour's entry. Never actually
+    written by this build ([[data-model#checksums]]), so an entry resting here came from elsewhere.
+    Carries no ``verified`` stamp either, so there is no ``old_`` pair."""
+
+
+UNEXPECTED_STATUS: Final = "unexpected"
+MALFORMED_STATUS: Final = "malformed"
+"""The two raw record statuses :func:`checksum_state_for` resolves before falling back to the
+matched/fresh split -- mirroring :mod:`~rehuco_agent.documents.checksum_rows`'s own
+:data:`~rehuco_agent.documents.checksum_rows.MISSING_STATUS`."""
 
 CHECKSUM_STATE_ICONS: Final[dict[FileChecksumState, str]] = {
-    FileChecksumState.MISSING: ":/icons/file_checksum_missing.svg",
-    FileChecksumState.OK: ":/icons/file_checksum_ok.svg",
-    FileChecksumState.BAD: ":/icons/file_checksum_bad.svg",
-    FileChecksumState.OLD_OK: ":/icons/file_checksum_old_ok.svg",
-    FileChecksumState.OLD_BAD: ":/icons/file_checksum_old_bad.svg",
+    FileChecksumState.MISSING: ":/icons/checksum_missing.svg",
+    FileChecksumState.OK: ":/icons/checksum_ok.svg",
+    FileChecksumState.BAD: ":/icons/checksum_bad.svg",
+    FileChecksumState.OLD_OK: ":/icons/checksum_old_ok.svg",
+    FileChecksumState.OLD_BAD: ":/icons/checksum_old_bad.svg",
+    FileChecksumState.UNEXPECTED: ":/icons/checksum_unexpected.svg",
+    FileChecksumState.MALFORMED: ":/icons/checksum_malformed.svg",
 }
 """:data:`FileChecksumState.NONE` is absent rather than mapped to a blank glyph -- an empty cell is the
-absence of a drawing, not a drawing of nothing."""
+absence of a drawing, not a drawing of nothing.
+
+Shared by the file browser and the checksum dock (#303): one entry resolves to one state
+(:func:`checksum_state_for`), so a file's verdict reads the same glyph wherever it is drawn."""
 
 CHECKSUM_STATE_TOOLTIPS: Final[dict[FileChecksumState, str]] = {
     FileChecksumState.MISSING: "No checksum recorded for this file.",
@@ -136,6 +162,8 @@ CHECKSUM_STATE_TOOLTIPS: Final[dict[FileChecksumState, str]] = {
     FileChecksumState.BAD: "Checksum did not match when it was last checked.",
     FileChecksumState.OLD_OK: "Checksum matched, but the check is old.",
     FileChecksumState.OLD_BAD: "Checksum did not match, and the check is old.",
+    FileChecksumState.UNEXPECTED: "Found on disk with no recorded hash, and reported rather than adopted.",
+    FileChecksumState.MALFORMED: "This entry's hash is under a key this build cannot read.",
 }
 """What each glyph means, in a sentence -- what makes an icon-only column readable on first meeting."""
 
@@ -264,6 +292,28 @@ class FilesRows:
     record_error: str = ""
 
 
+def checksum_state_for(entry: ChecksumEntry, stale_after: timedelta, now: datetime) -> FileChecksumState:
+    """What one record entry says about a file, resolved to the one glyph state it draws (#266, #303).
+
+    Shared by the file browser and the checksum dock, so an entry's verdict cannot read one way in one
+    dock and another way in the other -- there is nothing here for either surface to decide on its own.
+
+    :param entry: the parsed record entry.
+    :param stale_after: the staleness window a run would use, so *fresh* here means what it means there.
+    :param now: the instant to measure freshness against, so every entry in one read is judged against
+        one moment.
+    :returns: the state.
+    """
+    if entry.status == UNEXPECTED_STATUS:
+        return FileChecksumState.UNEXPECTED
+    if entry.status == MALFORMED_STATUS:
+        return FileChecksumState.MALFORMED
+    matched = entry.status == MATCHED_STATUS
+    if is_checksum_fresh(entry, stale_after, now):
+        return FileChecksumState.OK if matched else FileChecksumState.BAD
+    return FileChecksumState.OLD_OK if matched else FileChecksumState.OLD_BAD
+
+
 class FileChecksumStates:
     """This resource's ``.checksum`` record, asked one filename at a time (#266).
 
@@ -325,11 +375,7 @@ class FileChecksumStates:
                 # an entry this build cannot read says nothing about the file, which leaves the row at
                 # MISSING -- the same thing a record with no entry for it says, and equally true
                 continue
-            matched = entry.status == MATCHED_STATUS
-            if is_checksum_fresh(entry, stale_after, now):
-                states[entry.name] = FileChecksumState.OK if matched else FileChecksumState.BAD
-            else:
-                states[entry.name] = FileChecksumState.OLD_OK if matched else FileChecksumState.OLD_BAD
+            states[entry.name] = checksum_state_for(entry, stale_after, now)
         return FileChecksumStates(states)
 
 

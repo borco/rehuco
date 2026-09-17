@@ -321,15 +321,20 @@ a file **is** and none of what to do about it:
 
 Anything else is handed to the system's default handler.
 
-**The checksum column reports what *this* record claims, and nothing else.** Five verdicts and an empty cell: nothing
-at all for the record, a sidecar, a folder, or content another record covers — this record makes no claim there, which
-is different from a claim of ignorance, and reading the neighbour's record to answer for it would make a glyph mean
-*somebody verified this*. Content this record holds no hash for says so (whether the resource has no `.checksum` at
-all or that record skips the file — both are *nothing is recorded about these bytes*, and the remedy for both is the
-same generate). The remaining four are matched-or-not crossed with fresh-or-stale, and the fresh/stale split is the
-**run's own** staleness rule rather than an opinion formed in the GUI: a *current* glyph means exactly *a verify
-would skip this file*, and a *stale* one means exactly *it would not*. One `.checksum` read per refresh, whatever the
-folder holds.
+**The checksum column reports what *this* record claims, and nothing else.** Seven verdicts and an empty cell: nothing
+at all for the record, a sidecar, a folder, content another record covers, or every file at all when this record
+cannot be read — this record makes no claim there, which is different from a claim of ignorance, and reading the
+neighbour's record to answer for it would make a glyph mean *somebody verified this*. Content this record holds no
+hash for says so (whether the resource has no `.checksum` at all or that record skips the file — both are *nothing is
+recorded about these bytes*, and the remedy for both is the same generate). Four are matched-or-not crossed with
+fresh-or-stale, and the fresh/stale split is the **run's own** staleness rule rather than an opinion formed in the
+GUI: a *current* glyph means exactly *a verify would skip this file*, and a *stale* one means exactly *it would not*.
+The last two are entries resting at `unexpected` and at `malformed` (#303), each its own glyph with no stale pair:
+`unexpected` is a report state a sweep ordinarily rewrites, so an entry resting there was written by something other
+than this app's runs, and `malformed` means this build has made **no claim** about the bytes — drawing it as a
+mismatch would assert a check that never happened, and drawing it as missing would invite a generate that overwrites
+a neighbour's entry. **The mapping from an entry to a glyph is one function** the checksum dock (#244) reads too, so a
+file's verdict looks the same in both. One `.checksum` read per refresh, whatever the folder holds.
 
 It **refreshes when shown and on demand** — `F5` and a refresh button, each refreshing only this sub-dock — plus at the
 two seams that change what it is a view *of*: the document's path moving (a convert, a completed rename) and one of its

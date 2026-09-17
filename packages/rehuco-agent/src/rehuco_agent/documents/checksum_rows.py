@@ -19,7 +19,7 @@ back through a queued signal.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Final, override
 
@@ -43,6 +43,8 @@ from rehuco_core import (
     parse_checksum_entry,
 )
 
+from .files_rows import CHECKSUM_STATE_TOOLTIPS, FileChecksumState, checksum_state_for
+
 type ModelIndex = QModelIndex | QPersistentModelIndex
 """What Qt hands a model method; the persistent form arrives from a view holding onto an index."""
 
@@ -50,12 +52,13 @@ PATH_COLUMN: Final = 0
 STATUS_COLUMN: Final = 1
 DATE_COLUMN: Final = 2
 COLUMN_COUNT: Final = 3
-COLUMN_TITLES: Final = ("File", "Status", "Checked")
+COLUMN_TITLES: Final = ("File", "", "Checked")
 """The three columns the table draws.
 
-The issue's fourth, ``#``, is deliberately **not** one of them: it is the vertical header
-(:meth:`ChecksumSortProxy.headerData`), so it numbers what is on screen rather than sorting with the
-data and carrying stale numbers down the view. Counting the files at a glance is what it is for."""
+The Status column's title is **empty** on purpose, the same reason
+:data:`~rehuco_agent.documents.files_rows.COLUMN_TITLES` is for the file browser's own checksum column:
+it holds one 16px glyph, and a word above it would set the column's width to the word rather than to
+the glyph. What each glyph means is on its tooltip (#303)."""
 
 MISSING_STATUS: Final = "missing"
 """The one status a surface has to reason about by name (#244).
@@ -82,11 +85,15 @@ class ChecksumRow:
         step with the first.
     :param verified: when that status was recorded, or ``None`` -- never checked, or a stamp the record
         reader could not make sense of, which reads as *never* for the same reason it does there.
+    :param checksum_state: what the Status column draws for this row -- the same
+        :class:`~rehuco_agent.documents.files_rows.FileChecksumState` the file browser resolves an entry
+        to (#303), so a file's verdict reads the same glyph in both docks.
     """
 
     name: str
     status: str = ""
     verified: datetime | None = None
+    checksum_state: FileChecksumState = FileChecksumState.MISSING
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,6 +119,8 @@ def read_checksum_rows(
     rehu_path: Path,
     excluded_patterns: tuple[str, ...],
     screenshot_name_patterns: tuple[ScreenshotNamePattern, ...],
+    stale_after: timedelta,
+    now: datetime,
 ) -> ChecksumRows:
     """Read one resource's record and enumerate its content, merged into rows (#244).
 
@@ -124,6 +133,10 @@ def read_checksum_rows(
         caller the way every other core call takes them.
     :param screenshot_name_patterns: the naming rules a ``.tc``'s screenshots are recognized by (#53),
         resolved by the caller the same way.
+    :param stale_after: the staleness window a run would use, so a row's state matches what
+        *Verify Old* would actually do with it (#303).
+    :param now: the instant to measure freshness against, so every row of one read is judged against
+        one moment.
     :returns: the rows, and whether the resource was reachable at all.
     """
     enumeration = enumerate_content_files(rehu_path, excluded_patterns, screenshot_name_patterns)
@@ -135,7 +148,13 @@ def read_checksum_rows(
     except FileNotFoundError:
         record = None
     except (OSError, ChecksumRecordError) as error:
-        return ChecksumRows(rows=tuple(ChecksumRow(name) for name in content), error=str(error))
+        # NONE, not MISSING: the record exists and could not be read, so this build knows nothing about
+        # these bytes -- a `missing` glyph would claim there is no hash and invite a generate over one.
+        # The same answer the file browser gives for an unreadable record (#303)
+        return ChecksumRows(
+            rows=tuple(ChecksumRow(name, checksum_state=FileChecksumState.NONE) for name in content),
+            error=str(error),
+        )
     rows: list[ChecksumRow] = []
     if record is not None:
         # an entry this build cannot name is left out: a row that cannot say which file it is about is
@@ -143,9 +162,10 @@ def read_checksum_rows(
         for raw in record[CHECKSUM_FILES_KEY]:
             entry = parse_checksum_entry(raw)
             if entry is not None:
-                rows.append(ChecksumRow(entry.name, entry.status or "", entry.verified))
+                state = checksum_state_for(entry, stale_after, now)
+                rows.append(ChecksumRow(entry.name, entry.status or "", entry.verified, state))
     recorded = {row.name for row in rows}
-    rows.extend(ChecksumRow(name) for name in content if name not in recorded)
+    rows.extend(ChecksumRow(name, checksum_state=FileChecksumState.MISSING) for name in content if name not in recorded)
     return ChecksumRows(rows=tuple(rows))
 
 
@@ -181,24 +201,31 @@ class ChecksumRowsLoader(QObject):
         rehu_path: Path,
         excluded_patterns: tuple[str, ...],
         screenshot_name_patterns: tuple[ScreenshotNamePattern, ...],
+        stale_after: timedelta,
     ) -> None:
         """Read ``rehu_path``'s rows on a pool thread and emit :attr:`loaded` with them.
 
         :param rehu_path: the resource's ``.rehu`` file.
         :param excluded_patterns: the filename globs the content walk leaves out (#226).
         :param screenshot_name_patterns: the naming rules a ``.tc``'s screenshots are recognized by (#53).
+        :param stale_after: the staleness window a run would use (#303).
         """
         self.__generation += 1
         generation = self.__generation
+        # taken here, on the GUI thread, so every row of one read is judged against one moment -- and a
+        # frozen clock in a test needs no reach into the pool (the same reason FilesRowsLoader.start does)
+        now = datetime.now(tz=UTC)
         QThreadPool.globalInstance().start(
-            lambda: self.__run(rehu_path, excluded_patterns, screenshot_name_patterns, generation)
+            lambda: self.__run(rehu_path, excluded_patterns, screenshot_name_patterns, stale_after, now, generation)
         )
 
-    def __run(
+    def __run(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
         rehu_path: Path,
         excluded_patterns: tuple[str, ...],
         screenshot_name_patterns: tuple[ScreenshotNamePattern, ...],
+        stale_after: timedelta,
+        now: datetime,
         generation: int,
     ) -> None:
         """Do the read on the worker thread and report it, raise or no raise.
@@ -215,10 +242,12 @@ class ChecksumRowsLoader(QObject):
         :param rehu_path: the resource's ``.rehu`` file.
         :param excluded_patterns: the filename globs the content walk leaves out.
         :param screenshot_name_patterns: the naming rules a ``.tc``'s screenshots are recognized by.
+        :param stale_after: the staleness window a run would use.
+        :param now: the instant to measure freshness against.
         :param generation: which request this is, so a superseded answer can be dropped.
         """
         try:
-            rows = read_checksum_rows(rehu_path, excluded_patterns, screenshot_name_patterns)
+            rows = read_checksum_rows(rehu_path, excluded_patterns, screenshot_name_patterns, stale_after, now)
         except Exception as error:  # pylint: disable=broad-exception-caught
             rows = ChecksumRows(error=str(error))
         if generation != self.__generation:
@@ -246,6 +275,11 @@ class ChecksumTableModel(QAbstractTableModel):
 
     SORT_ROLE: Final = Qt.ItemDataRole.UserRole
     """The role :class:`ChecksumSortProxy` sorts on -- the underlying value, never the drawn text."""
+
+    ROW_ROLE: Final = Qt.ItemDataRole.UserRole + 1
+    """The whole :class:`ChecksumRow`, for the delegate that draws its Status glyph -- the same role
+    :class:`~rehuco_agent.documents.files_rows.FilesTableModel.ROW_ROLE` serves the file browser's own
+    delegate (#303)."""
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -289,26 +323,32 @@ class ChecksumTableModel(QAbstractTableModel):
         if not index.isValid():
             return None
         row = self.__rows[index.row()]
+        if role == ChecksumTableModel.ROW_ROLE:
+            return row
         if role == Qt.ItemDataRole.DisplayRole:
             return ChecksumTableModel.__display(row, index.column())
         if role == ChecksumTableModel.SORT_ROLE:
             return ChecksumTableModel.__sort_key(row, index.column())
         if role == Qt.ItemDataRole.ToolTipRole:
-            return row.name
+            return ChecksumTableModel.__tooltip(row, index.column())
         return None
 
     @staticmethod
     def __display(row: ChecksumRow, column: int) -> str:
         """One cell's drawn text.
 
+        The Status column draws **none**: its glyph is
+        :class:`~rehuco_agent.documents.checksum_row_delegate.ChecksumRowDelegate`'s, and a cell
+        answering text here would size the column for a word nobody sees (#303).
+
         :param row: the row.
         :param column: which column.
-        :returns: the text, ``""`` where there is nothing recorded to draw.
+        :returns: the text, ``""`` where there is nothing to draw.
         """
         if column == PATH_COLUMN:
             return row.name
         if column == STATUS_COLUMN:
-            return row.status
+            return ""
         return "" if row.verified is None else row.verified.astimezone().strftime(DATE_FORMAT)
 
     @staticmethod
@@ -316,7 +356,10 @@ class ChecksumTableModel(QAbstractTableModel):
         """One cell's sort value.
 
         A never-checked row sorts as a stamp older than any real one rather than as ``""``, so the rows
-        with nothing recorded gather at one end instead of interleaving with formatted dates.
+        with nothing recorded gather at one end instead of interleaving with formatted dates. The Status
+        column sorts on the resolved :attr:`~ChecksumRow.checksum_state` rather than the raw text, the
+        same as :meth:`~rehuco_agent.documents.files_rows.FilesTableModel.__sort_key` does for its own
+        checksum column -- what the column now draws is the state, not the status.
 
         :param row: the row.
         :param column: which column.
@@ -325,12 +368,24 @@ class ChecksumTableModel(QAbstractTableModel):
         if column == PATH_COLUMN:
             return row.name
         if column == STATUS_COLUMN:
-            return row.status
+            return row.checksum_state.value
         return "" if row.verified is None else row.verified.isoformat()
+
+    @staticmethod
+    def __tooltip(row: ChecksumRow, column: int) -> str:
+        """One cell's tooltip -- the Status glyph's meaning, and the full name elsewhere.
+
+        :param row: the row.
+        :param column: which column.
+        :returns: the tooltip.
+        """
+        if column == STATUS_COLUMN:
+            return CHECKSUM_STATE_TOOLTIPS.get(row.checksum_state, "")
+        return row.name
 
     @override
     def headerData(self, section: int, orientation: Qt.Orientation, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
-        """The column titles; the row numbers are :class:`ChecksumSortProxy`'s.
+        """The column titles; there is no vertical header (#303).
 
         :param section: the column or row.
         :param orientation: which header.
@@ -343,15 +398,15 @@ class ChecksumTableModel(QAbstractTableModel):
 
 
 class ChecksumSortProxy(QSortFilterProxyModel):
-    """Sorts the table, and numbers the rows it draws (#244).
-
-    **The row number is the vertical header rather than a column**, and it is computed here rather than
-    in the source model, which is the whole point: the proxy's section numbers follow the *view's*
-    order, so sorting by status renumbers ``1..N`` instead of carrying the previous numbering down the
-    view. A ``#`` column would sort with the data and stop answering the one question it exists for.
+    """Sorts the table (#244).
 
     A proxy rather than sorting in place, so a selection survives a sort: Qt maps persistent indexes
-    through it, where a source-side reset would drop the selection every time a header was clicked.
+    through it, where a source-side reset would drop the selection every time a header was clicked --
+    the same reason :class:`~rehuco_agent.documents.files_rows.FilesSortProxy` is one.
+
+    No row-number column and no numbered vertical header, matching the file browser (#303): the count
+    is already in the summary line under the table (:func:`tally_text`), which answers *how many*
+    without costing a column, or a header, on every row.
 
     :param parent: optional Qt parent.
     """
@@ -360,26 +415,13 @@ class ChecksumSortProxy(QSortFilterProxyModel):
         super().__init__(parent)
         self.setSortRole(ChecksumTableModel.SORT_ROLE)
 
-    @override
-    def headerData(self, section: int, orientation: Qt.Orientation, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
-        """The vertical header's ``1..N``, and the source's own titles across the top.
-
-        :param section: the column or row.
-        :param orientation: which header.
-        :param role: what is being asked for.
-        :returns: the row's position for the vertical header, else whatever the source says.
-        """
-        if orientation is Qt.Orientation.Vertical:
-            return section + 1 if role == Qt.ItemDataRole.DisplayRole else None
-        return super().headerData(section, orientation, role)
-
 
 @dataclass(frozen=True, slots=True)
 class ChecksumTally:
     """How many files, and how many of what -- the summary line under the table (#244).
 
-    The row numbers answer *how many*; this answers *how many of what*, which is the question a verify
-    actually raises.
+    The one place a reader still gets *how many* now that the table draws no row numbers (#303); this
+    answers *how many of what*, which is the question a verify actually raises.
 
     :param total: how many rows the table holds.
     :param statuses: how many rows carry each recorded status.

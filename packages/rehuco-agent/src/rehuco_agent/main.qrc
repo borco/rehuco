@@ -7,7 +7,14 @@
         <file alias="icons/banner_error.svg">../../../../design/icons/banner_error.svg</file>
         <file alias="icons/banner_info.svg">../../../../design/icons/banner_info.svg</file>
         <file alias="icons/banner_warning.svg">../../../../design/icons/banner_warning.svg</file>
+        <file alias="icons/checksum_bad.svg">../../../../design/icons/checksum_bad.svg</file>
         <file alias="icons/checksum_generate.svg">../../../../design/icons/checksum_generate.svg</file>
+        <file alias="icons/checksum_malformed.svg">../../../../design/icons/checksum_malformed.svg</file>
+        <file alias="icons/checksum_missing.svg">../../../../design/icons/checksum_missing.svg</file>
+        <file alias="icons/checksum_ok.svg">../../../../design/icons/checksum_ok.svg</file>
+        <file alias="icons/checksum_old_bad.svg">../../../../design/icons/checksum_old_bad.svg</file>
+        <file alias="icons/checksum_old_ok.svg">../../../../design/icons/checksum_old_ok.svg</file>
+        <file alias="icons/checksum_unexpected.svg">../../../../design/icons/checksum_unexpected.svg</file>
         <file alias="icons/checksum_verify.svg">../../../../design/icons/checksum_verify.svg</file>
         <file alias="icons/document_checksum.svg">../../../../design/icons/document_checksum.svg</file>
         <file alias="icons/document_default_layout.svg">../../../../design/icons/document_default_layout.svg</file>
@@ -36,11 +43,6 @@
         <file alias="icons/file_browser_image.svg">../../../../design/icons/file_browser_image.svg</file>
         <file alias="icons/file_browser_rehu.svg">../../../../design/icons/file_browser_rehu.svg</file>
         <file alias="icons/file_browser_video.svg">../../../../design/icons/file_browser_video.svg</file>
-        <file alias="icons/file_checksum_bad.svg">../../../../design/icons/file_checksum_bad.svg</file>
-        <file alias="icons/file_checksum_missing.svg">../../../../design/icons/file_checksum_missing.svg</file>
-        <file alias="icons/file_checksum_ok.svg">../../../../design/icons/file_checksum_ok.svg</file>
-        <file alias="icons/file_checksum_old_bad.svg">../../../../design/icons/file_checksum_old_bad.svg</file>
-        <file alias="icons/file_checksum_old_ok.svg">../../../../design/icons/file_checksum_old_ok.svg</file>
         <file alias="icons/image_previews.svg">../../../../design/icons/image_previews.svg</file>
         <file alias="icons/items_add.svg">../../../../design/icons/items_add.svg</file>
         <file alias="icons/items_bottom.svg">../../../../design/icons/items_bottom.svg</file>

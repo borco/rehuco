@@ -75,9 +75,9 @@ MATCHED_STATUS: Final = "matched"
 """The one :data:`ChecksumStatus` value a surface reasons about by name -- *this file was hashed and the
 record's hash agreed*.
 
-Every other value is *not that*, which is the only distinction the agent's file browser draws when it
-picks between its ok and bad glyphs ([[plugins#files-subdock]], #266); the words themselves stay the
-record's, spelled once here rather than quoted at each caller."""
+Every other value is *not that* -- the split the agent's checksum glyphs turn on, once ``unexpected``
+and ``malformed`` have been told apart ([[plugins#files-subdock]], #266, #303); the words themselves stay
+the record's, spelled once here rather than quoted at each caller."""
 
 HEX_DIGEST_PATTERN: Final = re.compile(r"[0-9a-fA-F]+")
 """What a recorded hash must look like -- hex, either case (a value seeded from a legacy ``.sfv`` may be

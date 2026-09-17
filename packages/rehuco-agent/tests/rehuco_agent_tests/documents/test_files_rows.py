@@ -338,7 +338,7 @@ def test_the_parent_row_appears_only_below_the_root_and_is_always_enabled(mocker
 def test_each_row_carries_what_this_record_claims_about_it(
     mocker: MockerFixture, name: str, state: FileChecksumState
 ) -> None:
-    """Five verdicts and an empty cell, and the empty one is the point: this record makes no claim about
+    """Seven verdicts and an empty cell, and the empty one is the point: this record makes no claim about
         a sidecar, a folder or another resource's content, which is different from claiming ignorance.
 
     An **ignored** file gets an empty cell rather than the missing glyph: a junk name is not this
@@ -387,6 +387,35 @@ def test_a_dateless_entry_is_never_current(mocker: MockerFixture) -> None:
     mock_record(mocker, [{"name": "notes.pdf", "xxh3": "0" * 16, "status": "matched"}])
 
     assert read(mocker)["notes.pdf"].checksum_state is FileChecksumState.OLD_OK
+
+
+def test_an_unexpected_entry_is_not_folded_into_bad(mocker: MockerFixture) -> None:
+    """``unexpected`` is a report state, not a mismatch, and the two must not draw the same glyph (#303).
+
+    **Test steps:**
+
+    * record an entry resting at ``unexpected``
+    * verify it reads as its own state rather than BAD
+    """
+    mock_listing(mocker)
+    mock_record(mocker, [entry("notes.pdf", status="unexpected")])
+
+    assert read(mocker)["notes.pdf"].checksum_state is FileChecksumState.UNEXPECTED
+
+
+def test_a_malformed_entry_is_not_folded_into_bad(mocker: MockerFixture) -> None:
+    """``malformed`` means this build made no claim about the bytes at all, which is a different thing
+    from a check that ran and disagreed (#303).
+
+    **Test steps:**
+
+    * record an entry resting at ``malformed``
+    * verify it reads as its own state rather than BAD
+    """
+    mock_listing(mocker)
+    mock_record(mocker, [entry("notes.pdf", status="malformed")])
+
+    assert read(mocker)["notes.pdf"].checksum_state is FileChecksumState.MALFORMED
 
 
 def test_a_row_in_a_subfolder_is_looked_up_by_its_record_relative_name(mocker: MockerFixture) -> None:

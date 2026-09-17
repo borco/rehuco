@@ -24,6 +24,7 @@ from rehuco_agent.documents.checksum_view import (
     UNREACHABLE_SUMMARY,
     ChecksumView,
 )
+from rehuco_agent.documents.files_rows import FileChecksumState
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_core import ChecksumReport, RehuDocument, TaskQueue
 
@@ -189,18 +190,30 @@ def test_an_unreachable_resource_says_so_rather_than_drawing_an_empty_table(
     assert not ui.delete_missing_action.isEnabled()
 
 
-def test_sorting_by_status_renumbers_the_rows(view: ChecksumView) -> None:
-    """The vertical header numbers what is on screen, whatever the sort (#244).
+def test_sorting_by_status_orders_by_the_resolved_state(qtbot: QtBot, view: ChecksumView, rows: Any) -> None:
+    """The Status column sorts on the resolved state, not the raw recorded text (#244, #303), and there
+    is no vertical header left to number anything.
 
     **Test steps:**
 
-    * sort by status
-    * check the drawn order changed and the numbering is still 1..N
+    * arrange three rows carrying three different states and refresh
+    * sort by status, ascending
+    * check the drawn order follows the state's own value, and the vertical header answers nothing
     """
+    rows.return_value = ChecksumRows(
+        rows=(
+            ChecksumRow(VIDEO, "matched", checksum_state=FileChecksumState.OK),
+            ChecksumRow(ARCHIVE, "missing", checksum_state=FileChecksumState.MISSING),
+            ChecksumRow("notes.txt", "mismatched", checksum_state=FileChecksumState.BAD),
+        )
+    )
+    view.refresh()
+    settle(qtbot, view)
+
     view.proxy.sort(STATUS_COLUMN, Qt.SortOrder.AscendingOrder)
 
-    assert drawn(view, STATUS_COLUMN) == ["", "matched", "missing"]
-    assert [view.proxy.headerData(row, Qt.Orientation.Vertical) for row in range(view.proxy.rowCount())] == [1, 2, 3]
+    assert drawn(view) == ["notes.txt", ARCHIVE, VIDEO]
+    assert view.proxy.headerData(0, Qt.Orientation.Vertical) is None
 
 
 # endregion

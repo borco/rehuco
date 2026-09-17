@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Final
 
 from borco_core.logging import LogScope
-from borco_pyside.theming import ActionIconThemeHandler
+from borco_pyside.theming import ActionIconThemeHandler, as_drawn_icon
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QMenu
@@ -177,7 +177,9 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
 
         self.__generate_action: Final = QAction("Generate &Checksums", self)
         self.__generate_action.setToolTip(GENERATE_TOOLTIP)
-        ActionIconThemeHandler(self.__generate_action, GENERATE_ICON_RESOURCE)
+        # as-drawn, not themed: the asset is deliberately red, and ActionIconThemeHandler's recolor
+        # would collapse it to the palette's flat text color like every other action icon (#303)
+        self.__generate_action.setIcon(as_drawn_icon(GENERATE_ICON_RESOURCE))
         self.__generate_action.triggered.connect(self.generate)
 
         self.__verify_action: Final = QAction(VERIFY_ALL_LABEL, self)
