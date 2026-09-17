@@ -26,7 +26,7 @@ import PySide6QtAds as QtAds
 from borco_core.logging import LOG_SCOPE_ATTRIBUTE
 from borco_pyside.logging import LogWidget
 from borco_pyside.logging.log_model import MESSAGE_COLUMN
-from borco_pyside.theming import ActionIconThemeHandler, read_resource_bytes
+from borco_pyside.theming import themed_svg_icon
 from PySide6.QtCore import QItemSelectionModel, QPoint, Qt
 from PySide6.QtWidgets import QMessageBox, QToolBar
 from pytest import fixture, mark
@@ -1272,12 +1272,11 @@ def test_the_log_sub_dock_toggle_carries_the_log_view_icon(widget: TaskQueueWidg
 
     **Test steps:**
 
-    * find the ``ActionIconThemeHandler`` instances parented to the toggle action
-    * verify one was built from the log icon's SVG bytes
+    * compare the toggle action's icon against the shared themed icon for the log SVG
+    * verify they are the very same icon
     """
-    handlers = log_dock_of(widget).toggleViewAction().findChildren(ActionIconThemeHandler)
-    svgs = {handler._ActionIconThemeHandler__svg for handler in handlers}  # type: ignore[attr-defined]  # pylint: disable=protected-access
-    assert read_resource_bytes(LOG_VIEW_ICON_RESOURCE) in svgs
+    action = log_dock_of(widget).toggleViewAction()
+    assert action.icon().cacheKey() == themed_svg_icon(LOG_VIEW_ICON_RESOURCE).cacheKey()
 
 
 def test_the_toggle_shows_the_hidden_sub_dock(widget: TaskQueueWidget) -> None:

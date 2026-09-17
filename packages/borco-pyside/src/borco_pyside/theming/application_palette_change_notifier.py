@@ -20,10 +20,12 @@ class ApplicationPaletteChangeNotifier(QObject):
 
     * **One switch, one emit.** Qt fires ``ApplicationPaletteChange`` *several times* for a single
       theme switch (measured: four times on Windows, all carrying the identical new palette). The old
-      ``paletteChanged`` signal fired once; matching that matters because each emit rebuilds every
-      themed icon (an SVG re-render). :meth:`eventFilter` coalesces by :meth:`QPalette.cacheKey`,
-      emitting only when the palette actually differs from the last one emitted for -- so the repeated
-      events collapse back to a single rebuild per switch.
+      ``paletteChanged`` signal fired once; matching that matters because a listener acts on every
+      emit (QtAds' stylesheet re-pinning, a widget re-styling itself). :meth:`eventFilter` coalesces
+      by :meth:`QPalette.cacheKey`, emitting only when the palette actually differs from the last one
+      emitted for -- so the repeated events collapse back to a single reaction per switch. Themed
+      icons are deliberately *not* listeners: they read the palette as they paint
+      (:mod:`~borco_pyside.theming.themed_icons`), so nothing about them is left to a signal.
     * **One filter, not one per listener.** An app-wide filter is invoked for *every* event, so its
       cost is paid by the whole application. Each listener installing its own filter would make that
       cost O(listeners); instead all listeners share this **single** notifier (one per
@@ -70,7 +72,7 @@ class ApplicationPaletteChangeNotifier(QObject):
         # `watched is app` early-outs cheaply for the flood of events aimed at other objects. On an
         # ApplicationPaletteChange, coalesce by cacheKey: Qt fires this event several times per switch
         # (all with the same new palette), so emit only when the palette genuinely differs from the
-        # last one emitted for -- collapsing the repeats to a single rebuild, as `paletteChanged` did.
+        # last one emitted for -- collapsing the repeats to a single emit, as `paletteChanged` did.
         if watched is self.__app and event.type() == QEvent.Type.ApplicationPaletteChange:
             key = self.__app.palette().cacheKey()
             if key != self.__last_palette_key:

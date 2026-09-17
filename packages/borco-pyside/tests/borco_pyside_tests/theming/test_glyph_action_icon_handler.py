@@ -1,7 +1,6 @@
 """Tests for GlyphActionIconThemeHandler."""
 
 from borco_pyside.theming.glyph_action_icon_handler import GlyphActionIconThemeHandler
-from borco_pyside.theming.glyph_icon import glyph_icon
 from PySide6.QtCore import QObject
 from PySide6.QtGui import QAction, QColor, QPalette
 from PySide6.QtWidgets import QApplication
@@ -42,34 +41,35 @@ def test_construction_builds_the_icon_from_the_given_palette_role(make_action: Q
     assert pixmap.toImage().pixelColor(8, 8).name() == expected.name()
 
 
-def test_palette_change_rebuilds_the_icon(make_action: QAction, real_font_family: str, mocker: MockerFixture) -> None:
-    """A real app-wide palette change rebuilds the icon in the new color.
+def test_the_icon_follows_a_palette_change_with_nothing_told_to_rebuild(
+    make_action: QAction, real_font_family: str
+) -> None:
+    """The glyph recolors itself on a palette change, with no rebuild and no signal reaching it.
+
+    The glyph half of #304: this handler carried the same exposure as the SVG one, holding an icon
+    that was only correct as long as a ``palette_changed`` subscription kept arriving. Nothing here
+    is notified -- the handler is destroyed outright before the palette changes.
 
     **Test steps:**
 
-    * spy on glyph_icon
-    * construct a handler (builds the icon once)
+    * construct a handler, then delete it so nothing is left subscribed to anything
     * change the app's palette for real (Text to a new color)
-    * verify the icon was rebuilt and reflects the new color
+    * verify the icon renders in the new color anyway
     """
-    build_spy = mocker.patch(
-        "borco_pyside.theming.glyph_action_icon_handler.glyph_icon",
-        wraps=glyph_icon,
-    )
-    GlyphActionIconThemeHandler(make_action, STAR_GLYPH, real_font_family)
-    assert build_spy.call_count == 1
+    handler = GlyphActionIconThemeHandler(make_action, STAR_GLYPH, real_font_family)
+    handler.setParent(None)
+    del handler
 
     # pylint: disable=duplicate-code
     app = QApplication.instance()
     assert isinstance(app, QApplication)
     original_palette = app.palette()
     try:
-        palette = app.palette()
+        palette = QPalette(original_palette)
         palette.setColor(QPalette.ColorRole.Text, QColor("lime"))
         app.setPalette(palette)
         # pylint: enable=duplicate-code
 
-        assert build_spy.call_count == 2
         pixmap = make_action.icon().pixmap(16, 16)
         assert pixmap.toImage().pixelColor(8, 8).name() == "#00ff00"
     finally:

@@ -3494,6 +3494,39 @@ def test_restoring_the_session_reveals_the_documents_dock(mocker: MockerFixture,
     assert calls == ["reveal", "restore_session"]
 
 
+def test_the_saved_theme_is_applied_before_the_session_is_restored(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The saved theme is applied before any restored document is built (#304).
+
+    The other order built every restored document's chrome against a palette that was about to be
+    replaced, leaving each one to catch up through a ``palette_changed`` round-trip afterwards -- the
+    fragility that #304's stale toolbar glyphs grew out of. Constructing ``ThemeModel`` is what applies
+    the theme, so its ``setColorScheme`` call has to land before ``DocumentsDock.restore_session``.
+
+    **Test steps:**
+
+    * record the order in which ``QStyleHints.setColorScheme`` and ``DocumentsDock.restore_session``
+      are called
+    * construct a ``MainWindow``
+    * verify the session was restored, and the theme was applied first
+    """
+    calls: list[str] = []
+    mocker.patch.object(
+        QApplication.styleHints(),
+        "setColorScheme",
+        side_effect=lambda _scheme: calls.append("theme"),
+    )
+    mocker.patch(
+        "rehuco_agent.main_window.DocumentsDock.restore_session",
+        side_effect=lambda _session: calls.append("restore_session"),
+    )
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert "restore_session" in calls
+    assert calls.index("theme") < calls.index("restore_session")
+
+
 def test_a_documents_dock_left_closed_stays_closed_after_a_restart(mocker: MockerFixture, qtbot: QtBot) -> None:
     """A Documents dock closed when the window closed is closed again on the next launch -- it rides
     the outer dock layout like every other dock, and the layout restore has the last word over the
