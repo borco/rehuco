@@ -28,7 +28,7 @@ import PySide6QtAds as QtAds
 from borco_core.logging import LOG_SCOPE_ATTRIBUTE, LogScope
 from borco_pyside.logging import LogEntry, LogWidget
 from borco_pyside.logging.log_model import MESSAGE_COLUMN
-from borco_pyside.theming import ActionIconThemeHandler, read_resource_bytes
+from borco_pyside.theming import themed_svg_icon
 from borco_pyside.widgets import FlowLayout, MessageBanner
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence, QPixmap
@@ -1183,16 +1183,19 @@ def test_inspection_dock_toggles_carry_their_own_icons(widget: DocumentWidget) -
 
     **Test steps:**
 
-    * for each dock, find the ``ActionIconThemeHandler`` instances parented to its toggle action
-    * verify one was built from that dock's own icon SVG bytes
+    * for each dock, compare its toggle action's icon against the shared themed icon for that SVG
+    * verify they are the very same icon, and that the two docks' icons differ from each other
     """
-    for dock, icon in (
+    icons = {}
+    for dock, resource in (
         (save_preview_dock(widget), SAVE_PREVIEW_ICON_RESOURCE),
         (on_disk_dock(widget), ON_DISK_ICON_RESOURCE),
     ):
-        handlers = dock.toggleViewAction().findChildren(ActionIconThemeHandler)
-        svgs = {handler._ActionIconThemeHandler__svg for handler in handlers}  # type: ignore[attr-defined]  # pylint: disable=protected-access
-        assert read_resource_bytes(icon) in svgs
+        icon = dock.toggleViewAction().icon()
+        assert icon.cacheKey() == themed_svg_icon(resource).cacheKey()
+        icons[resource] = icon.cacheKey()
+
+    assert len(set(icons.values())) == 2, "each dock must be themed from its own SVG, not a shared one"
 
 
 def test_inspection_dock_toggles_are_on_the_toolbar(widget: DocumentWidget) -> None:
@@ -2790,12 +2793,11 @@ def test_the_log_dock_toggle_carries_the_log_view_icon(widget: DocumentWidget) -
 
     **Test steps:**
 
-    * find the ``ActionIconThemeHandler`` instances parented to the toggle action
-    * verify one was built from the log icon's SVG bytes
+    * compare the toggle action's icon against the shared themed icon for the log SVG
+    * verify they are the very same icon
     """
-    handlers = log_dock(widget).toggleViewAction().findChildren(ActionIconThemeHandler)
-    svgs = {handler._ActionIconThemeHandler__svg for handler in handlers}  # type: ignore[attr-defined]  # pylint: disable=protected-access
-    assert read_resource_bytes(LOG_VIEW_ICON_RESOURCE) in svgs
+    action = log_dock(widget).toggleViewAction()
+    assert action.icon().cacheKey() == themed_svg_icon(LOG_VIEW_ICON_RESOURCE).cacheKey()
 
 
 def test_the_log_dock_toggle_is_on_the_toolbar(widget: DocumentWidget) -> None:
@@ -3253,9 +3255,8 @@ def test_the_checksum_dock_toggle_carries_its_own_icon(qtbot: QtBot, model: Rehu
     try:
         dock = widget._DocumentWidget__checksum_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
         assert dock is not None
-        handlers = dock.toggleViewAction().findChildren(ActionIconThemeHandler)
-        svgs = {handler._ActionIconThemeHandler__svg for handler in handlers}  # type: ignore[attr-defined]  # pylint: disable=protected-access
-        assert read_resource_bytes(CHECKSUM_ICON_RESOURCE) in svgs
+        icon = dock.toggleViewAction().icon()
+        assert icon.cacheKey() == themed_svg_icon(CHECKSUM_ICON_RESOURCE).cacheKey()
     finally:
         widget.detach()
         queue.shutdown()
@@ -3280,9 +3281,7 @@ def test_apply_default_layout_action_is_on_the_toolbar_with_its_icon_and_tooltip
     toolbar = widget.findChildren(QToolBar)[0]
     assert action in toolbar.actions()
     assert action.toolTip() == APPLY_DEFAULT_LAYOUT_TOOLTIP
-    handlers = action.findChildren(ActionIconThemeHandler)
-    svgs = {handler._ActionIconThemeHandler__svg for handler in handlers}  # type: ignore[attr-defined]  # pylint: disable=protected-access
-    assert read_resource_bytes(DEFAULT_LAYOUT_ICON_RESOURCE) in svgs
+    assert action.icon().cacheKey() == themed_svg_icon(DEFAULT_LAYOUT_ICON_RESOURCE).cacheKey()
 
 
 def test_apply_default_layout_actions_toolbar_separator_precedes_it(widget: DocumentWidget) -> None:
@@ -3689,9 +3688,7 @@ def test_the_files_dock_toggle_is_on_the_toolbar_with_its_own_icon(widget: Docum
 
     assert action in toolbar.actions()
 
-    handlers = action.findChildren(ActionIconThemeHandler)
-    svgs = {handler._ActionIconThemeHandler__svg for handler in handlers}  # type: ignore[attr-defined]  # pylint: disable=protected-access
-    assert read_resource_bytes(FILES_ICON_RESOURCE) in svgs
+    assert action.icon().cacheKey() == themed_svg_icon(FILES_ICON_RESOURCE).cacheKey()
 
 
 def test_another_resource_activated_in_the_browser_is_relayed_out(qtbot: QtBot, widget: DocumentWidget) -> None:

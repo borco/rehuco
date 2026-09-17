@@ -4,8 +4,10 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any, Final
 
+from borco_pyside.theming import CheckedToolButtonChrome, ThemedIcons
 from PySide6.QtCore import QCoreApplication, QEvent
-from PySide6.QtGui import QAction, QFontDatabase
+from PySide6.QtGui import QAction, QColor, QFontDatabase, QPalette
+from PySide6.QtWidgets import QApplication
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -26,6 +28,59 @@ color needs a genuinely solid shape, not an outline whose interior stays transpa
 > avoids it. **Any test asserting on text width must size itself from its own
 > ``fontMetrics()``**, never from a constant -- see ``test_task_row_delegate.py``'s elision test,
 > which this silently broke."""
+
+
+@fixture(autouse=True)
+def fresh_icon_caches(qtbot: QtBot) -> Iterator[None]:
+    """Empty the shared icon and chrome caches around every test in this package.
+
+    Both caches live on, or are keyed by, the process-wide ``QApplication``, so without this a test
+    that mocks what ``"icon.svg"`` reads back is served the *previous* test's SVG, and one that drives
+    the palette by hand pins a measured chrome color for every later test sharing that palette. Torn
+    down as well as set up, so a test here never leaks a mocked SVG into another package's tests.
+
+    :param qtbot: pytest-qt bot, ensuring a QApplication exists for the caches to hang off.
+    """
+    app = QApplication.instance()
+    assert isinstance(app, QApplication)
+    del qtbot
+
+    def empty() -> None:
+        ThemedIcons.for_application(app).clear()
+        CheckedToolButtonChrome.colors.clear()
+
+    empty()
+    yield
+    empty()
+
+
+@fixture
+def drive_palette(qtbot: QtBot) -> Iterator[Callable[..., QPalette]]:
+    """Provide a factory that sets the app palette's button colors, restoring the original after.
+
+    The palette is driven directly rather than through ``QStyleHints.setColorScheme``, because a
+    theme switch cannot be observed under the offscreen platform at all -- ``colorScheme()`` stays
+    ``Unknown`` and both captures come back identical. Setting ``Button``/``Window`` is enough: it is
+    what a style derives its checked tool-button chrome from, which is what
+    :class:`~borco_pyside.theming.CheckedToolButtonChrome` measures.
+
+    :param qtbot: pytest-qt bot, ensuring a QApplication exists.
+    :returns: a factory ``(button: str, window: str) -> QPalette`` applying and returning the palette.
+    """
+    del qtbot
+    app = QApplication.instance()
+    assert isinstance(app, QApplication)
+    original = app.palette()
+
+    def factory(button: str, window: str) -> QPalette:
+        palette = QPalette(original)
+        palette.setColor(QPalette.ColorRole.Button, QColor(button))
+        palette.setColor(QPalette.ColorRole.Window, QColor(window))
+        app.setPalette(palette)
+        return palette
+
+    yield factory
+    app.setPalette(original)
 
 
 @fixture

@@ -3,6 +3,7 @@
 from pathlib import Path
 from typing import ClassVar, Final, override
 
+from borco_pyside.theming import perceived_brightness
 from PySide6.QtCore import QEvent, QRect, QSize, Qt
 from PySide6.QtGui import (
     QAction,
@@ -258,7 +259,7 @@ class RehuDocumentMenuEntry(QWidget):
         )
         # perceived brightness, not lightness(): a saturated mid blue reads far darker than its
         # max/min average suggests, and it is legibility against it being decided here
-        brightness = (0.299 * highlight.red() + 0.587 * highlight.green() + 0.114 * highlight.blue()) / 255
+        brightness = perceived_brightness(highlight)
         role = QPalette.ColorRole.Text if brightness > 0.5 else QPalette.ColorRole.HighlightedText
 
         RehuDocumentMenuEntry.row_styles[key] = (text_left, role)  # pylint: disable=unsupported-assignment-operation

@@ -13,8 +13,8 @@ def as_drawn_icon(path: str) -> QIcon:
     multi-color source collapses to one flat color under it, so a glyph that is deliberately colored
     (e.g. a red action icon among an otherwise monochrome set) must never reach
     :class:`~borco_pyside.theming.ActionIconThemeHandler` at all. Unlike that handler's icon, this one
-    is built once and never rebuilt on a theme change -- the whole point being that nothing here reads
-    the palette.
+    never reads the palette, as it paints or at any other time -- it draws exactly the colors its
+    source carries, in every theme.
 
     :param path: the icon to load, Qt resource or filesystem.
     :returns: the icon, unrecolored.

@@ -259,19 +259,23 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__recent_files: Final = RecentFilesSettings()
         self.__recent_files.load(persistent_settings())
 
+        self.__theme_settings: Final = ThemeSettings()
+        self.__theme_settings.load(persistent_settings())
+
+        # the shared source of truth for both views below (#57) -- neither ever reads
+        # QApplication.styleHints().colorScheme() itself, which reports the *resolved* appearance
+        # and can't distinguish "explicitly Light" from "Default, currently resolving to Light".
+        # Constructed *before* the session is restored below because constructing it is what applies
+        # the saved theme: restoring first would build every restored document's chrome against a
+        # palette about to be replaced, leaving it to catch up afterwards (#304).
+        self.__theme_model: Final = ThemeModel(self.__theme_settings.mode)
+
         self.__session: Final = DocumentSessionSettings()
         self.__session.load(persistent_settings())
         self.__restore_session_if_enabled()
 
         self.__dialog_manager.restore_all(persistent_settings())
 
-        self.__theme_settings: Final = ThemeSettings()
-        self.__theme_settings.load(persistent_settings())
-
-        # the shared source of truth for both views below (#57) -- neither ever reads
-        # QApplication.styleHints().colorScheme() itself, which reports the *resolved* appearance
-        # and can't distinguish "explicitly Light" from "Default, currently resolving to Light"
-        self.__theme_model: Final = ThemeModel(self.__theme_settings.mode)
         self.__setup_view_menu()
 
         # must be called after restoring the geometry and the session (open documents) so
