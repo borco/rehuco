@@ -29,7 +29,9 @@ class DockableDialog:
     floating-first, not docking-first, so a fresh install with nothing in settings yet shows a
     normal, independent app window rather than pre-split into the caller's layout), or place
     :attr:`dock` via ``addDockWidget``/``setCentralWidget`` directly for a caller that wants
-    docked-first instead.
+    docked-first instead -- possibly both, docking it now and calling :meth:`place_floating` later as
+    the fallback for a restore that was refused, which is what a caller with a saved layout to move it
+    wants (see that method).
 
     :param dock_manager: the manager this dialog's dock is associated with.
     :param object_name: this dock's ``objectName`` -- its identity for `CDockManager` persistence and
@@ -65,8 +67,18 @@ class DockableDialog:
         return self.__dock
 
     def place_floating(self) -> None:
-        """Place this dialog's dock as its own floating top-level window -- the framework's default
-        initial placement (floating-first, not docking-first).
+        """Place this dialog's dock as its own floating top-level window -- the framework's
+        floating-first placement: a fresh dock's initial one, and the fallback a caller reaches for
+        when a saved layout it tried to restore was refused.
+
+        Re-placing an already-placed dock is supported, and decides nothing about visibility: a dock
+        currently closed is still closed afterwards. That takes two corrections on top of
+        ``addDockWidgetFloating``, which **reopens** a closed dock it moves, and sizes the new
+        container from the dock's *current* size -- a degenerate ~100x15 for one tabbed into a
+        never-shown window, and it survives the show. So a dock that was already placed is resized
+        first, to the *content frame's* ``sizeHint()`` -- the dock's own undershoots it (432x289
+        against 438x341, measured), and its ``minimumSizeHint()`` is a useless 60x40 -- and closed
+        again after.
 
         Confirmed empirically not to jump the gun on a not-yet-shown top-level window: unlike
         ``CDockManager.restoreState()`` recreating a previously-floating dock (which forces its
@@ -77,11 +89,17 @@ class DockableDialog:
         hidden until its top-level ancestor is shown. Safe to call during setup, before the owning
         window is ever shown.
 
-        A later ``CDockManager.restoreState()`` call (if there's anything saved) freely re-docks or
-        repositions this dock regardless of this initial placement -- this is only the fallback for
-        "nothing saved yet".
+        A ``CDockManager.restoreState()`` call freely re-docks or repositions this dock regardless of
+        where it was placed, so a caller with something saved should restore first and call this only
+        if that restore was refused.
         """
+        was_placed = self.__dock.dockAreaWidget() is not None
+        was_closed = was_placed and self.__dock.isClosed()
+        if was_placed:
+            self.__dock.resize(self.__frame.sizeHint())
         self.__dock_manager.addDockWidgetFloating(self.__dock)
+        if was_closed:
+            self.__dock.toggleView(False)
 
     @property
     def content(self) -> QWidget:

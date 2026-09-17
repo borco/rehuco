@@ -609,3 +609,90 @@ Worth knowing for the next visual check: **a theme switch cannot be observed und
 the light/dark reading of any new chrome has to be done on a real platform plugin. (The offscreen
 plugin also renders every glyph as tofu here, which a grab taken for layout can ignore and one taken
 for legibility cannot.)
+
+### 10.6 `restoreState` abandons the floating container a pinned dock came out of
+
+[[[appendices.qt-ads#auto-hide-abandoned-float]]]
+
+A dock placed with `addDockWidgetFloating` and then moved by a `restoreState()` whose blob puts it in an
+**auto-hide sidebar** leaves its old `CFloatingDockContainer` alive. On the owning window's first show it
+appears as a blank window — 640x480, the never-laid-out `QWidget` default the dock was floated at — and
+vanishes a moment later when the real window paints over it. A blob placing the same dock in a dock area,
+or in a floating window of its own, is reconciled correctly; the sidebar is the one restore path that is
+not.
+
+**Why QtAds' own guard misses it.** `CDockManager::showEvent` shows every floating widget it still holds
+as uninitialised, skipping those with no open dock areas. This one reports `hasOpenDockAreas() == True`
+with `dockAreaCount() == 1`: a *stale* area, not an empty container. Both numbers are worth recording,
+because the guard reads as though it should have caught this and the reason it does not is exactly that
+the container is not empty.
+
+**The manager has already dropped it**, so `dockManager().floatingWidgets()` can be blind to precisely
+the thing under test. Any probe or assertion has to go through `findChildren(CFloatingDockContainer)` on
+the owning window — which is also how `MainWindow.hide_to_tray` reaches floating docks, for the same
+reason.
+
+**The fix is placement, not cleanup.** Dock such a dock into an area up front and float it only as the
+fallback for a layout that did not restore, so no floating container exists when `restoreState` runs and
+there is nothing to abandon. Deleting the container afterwards would be chasing one instance of a general
+rule: nothing guarantees QtAds retires a container a restore emptied. Placing the dock *somewhere* is not
+optional — an unplaced dock is never registered with the manager, and `restoreState` silently skips it.
+
+**Two traps come with the fallback**, both of the same class as 10.3's "a pinned dock reads as open" —
+QtAds state that does not survive an operation one would expect it to. `addDockWidgetFloating`:
+
+- **reopens a closed dock it moves** (`isClosed()` goes `True` → `False`), so a caller that has already
+  decided the dock should be closed has to close it again afterwards. Doing so *is* enough: the guard
+  above then suppresses the container on show, since a closed dock leaves no open area behind.
+- **sizes the new container from the dock's current size** — `640x480` for a dock that was never placed,
+  but a degenerate `100x15` for one tabbed into a never-shown window, and it survives the show at about
+  `100x40` even with content whose `minimumSize` is larger. Resizing the dock before the call is what
+  gives it a usable window — but **to its content widget's `sizeHint()`, not its own**, which
+  undershoots it (`432x289` against the content's `438x341`, measured on the same dock);
+  `minimumSizeHint()` is a useless `60x40` either way.
+
+And while a dock is closed, `isFloating()` returns `False` even inside a floating container — it wants
+the container to have an *open* top-level dock widget. Read `floatingDockContainer() is not None`
+instead, or a test of the closed-and-floating case asserts the opposite of what it means.
+
+## 11. `restoreState` puts a floating dock on screen before its owner exists
+
+[[[appendices.qt-ads#restore-shows-floating]]]
+
+`CDockManager.addDockWidgetFloating` and `CDockManager.restoreState` disagree about a floating
+container's first show, and only the first of them is careful. `addDockWidgetFloating` checks whether
+the manager is visible and, when it is not, parks the new container in QtAds' own
+uninitialised-floating-widgets list for `CDockManager::showEvent` to show later. `restoreState` does
+not: a blob describing a dock as floating **and open** has its container shown the moment the blob is
+applied. A window that restores its layout during construction — which it must, since restoring after
+the first show visibly resettles a layout the user is already looking at — therefore puts that dialog
+on screen, alone, a moment before itself.
+
+**Hiding it again on the next line is not a fix.** The native window is created, mapped *and painted*
+synchronously inside that `show()`: measured on a real platform plugin, a `Paint` for the container
+arrives between its `Show` and the following `Hide`, with no turn of the event loop in between. So the
+hide shortens the flash instead of removing it — and under `QT_QPA_PLATFORM=offscreen` the paint never
+happens at all, so an offscreen probe reports the problem as already solved. This is one to measure on
+a real plugin or not at all.
+
+**What removes it is `WA_DontShowOnScreen`.** `QWidgetPrivate::show_sys` — the step that creates and
+maps the native window — returns early for a widget carrying that attribute, and Qt delivers
+`QEvent::Show` to the widget *before* calling it. An application-wide event filter that sets the
+attribute while handling that event therefore leaves the container "shown" as far as Qt's bookkeeping
+is concerned, with nothing ever presented; the container's `Paint` before the owning window's
+disappears. `borco_pyside.qtads.QtAdsFloatingShowGuard` packages that, armed for the duration of a
+window's construction.
+
+Releasing them again is where this bites back. A held container is *visible* to Qt but unmapped, so an
+ordinary `show()` on it does nothing — it has to be **hidden first, then cleared of the attribute,
+then shown**, in that order. Hiding one that is already hidden was seen to crash the process
+(segfault, not an exception), so exactly one hide has to happen — the guard's release does it, gated
+on the container still being visible, and hands the containers back for the caller's own
+"show these once I am up" list.
+
+**And it has to be armed around the owner's `show()` as well**, not only its construction.
+`addDockWidgetFloating` on an unshown manager parks the container, and `CDockManager::showEvent`
+then shows it — but that event fires while the owning top-level is still showing its *children*,
+before its own native window maps, so a parked container's `Show` and `Paint` still land ahead of
+the window's. Measured on a real plugin with a refused layout blob and a dialog saved open: the one
+path where the floating-first fallback runs on an open dock. Guarding the `show()` catches that too.
