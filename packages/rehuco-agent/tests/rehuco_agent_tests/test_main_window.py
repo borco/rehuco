@@ -3814,6 +3814,23 @@ def test_installs_a_log_dock_on_the_outer_manager(qtbot: QtBot) -> None:
     assert window.log_widget is dock.widget()
 
 
+def test_the_log_dock_hosts_its_widget_directly_not_in_a_scroll_area(qtbot: QtBot) -> None:
+    """The log dock's own table already manages its header and rows -- an outer scroll area would drag
+    that header along with the rows instead (#305).
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * verify the dock's content is parented directly on the dock, with no scroll area between them
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    dock = log_dock(window)
+
+    assert dock.widget().parentWidget() is dock
+
+
 def test_the_log_dock_starts_hidden(qtbot: QtBot) -> None:
     """A first run shows the resource being edited, not a log of having opened it (#200).
 

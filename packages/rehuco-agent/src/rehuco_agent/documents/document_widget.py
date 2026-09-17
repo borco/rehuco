@@ -1181,7 +1181,11 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         """
         settings = shared_logs_settings()
         dock = self.__add_hidden_inspection_dock(
-            LOG_DOCK_NAME, LOG_DOCK_TITLE, LOG_VIEW_ICON_RESOURCE, self.__log_widget
+            LOG_DOCK_NAME,
+            LOG_DOCK_TITLE,
+            LOG_VIEW_ICON_RESOURCE,
+            self.__log_widget,
+            insert_mode=QtAds.CDockWidget.eInsertMode.ForceNoScrollArea,
         )
         self.__log_scope = model.path
         if self.__log_scope is not None:
@@ -1202,7 +1206,11 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         :returns: the dock, hidden.
         """
         dock = self.__add_hidden_inspection_dock(
-            CHECKSUM_DOCK_NAME, CHECKSUM_DOCK_TITLE, CHECKSUM_ICON_RESOURCE, ChecksumView(model, actions, self)
+            CHECKSUM_DOCK_NAME,
+            CHECKSUM_DOCK_TITLE,
+            CHECKSUM_ICON_RESOURCE,
+            ChecksumView(model, actions, self),
+            insert_mode=QtAds.CDockWidget.eInsertMode.ForceNoScrollArea,
         )
         return dock
 
@@ -1232,7 +1240,13 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         view.images_activated.connect(self.__on_folder_images_activated)
         if checksums is not None:
             checksums.record_changed.connect(view.refresh)
-        return self.__add_hidden_inspection_dock(FILES_DOCK_NAME, FILES_DOCK_TITLE, FILES_ICON_RESOURCE, view)
+        return self.__add_hidden_inspection_dock(
+            FILES_DOCK_NAME,
+            FILES_DOCK_TITLE,
+            FILES_ICON_RESOURCE,
+            view,
+            insert_mode=QtAds.CDockWidget.eInsertMode.ForceNoScrollArea,
+        )
 
     def __on_log_scope_changed(self, path: Path | None) -> None:
         """Re-scope this resource's log surface when its path changes (#52's landmine, for a log).
@@ -1273,7 +1287,14 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         """This resource's own log surface (#200) -- the log of the records made about it."""
         return self.__log_widget
 
-    def __add_hidden_inspection_dock(self, name: str, title: str, icon: str, content: QWidget) -> QtAds.CDockWidget:
+    def __add_hidden_inspection_dock(
+        self,
+        name: str,
+        title: str,
+        icon: str,
+        content: QWidget,
+        insert_mode: QtAds.CDockWidget.eInsertMode = QtAds.CDockWidget.eInsertMode.AutoScrollArea,
+    ) -> QtAds.CDockWidget:
         """Build one inspection dock, theme its toggle from ``icon``, stack it into the Description
         View's area, and start it hidden (#111).
 
@@ -1281,11 +1302,14 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         :param title: the dock's tab title.
         :param icon: the SVG resource its toggle action is themed from.
         :param content: the view widget the dock hosts.
+        :param insert_mode: how ``content`` is inserted into the dock (#305) -- ``ForceNoScrollArea``
+            for a view that already manages its own scrolling end-to-end, so QtAds doesn't wrap it in an
+            outer scroll area that drags its header and summary along with the rows.
         :returns: the built dock, hidden.
         """
         neighbour = self.__description_view_dock()
         area = neighbour.dockAreaWidget() if neighbour is not None else None
-        dock = self.__make_dock(name, title, content)
+        dock = self.__make_dock(name, title, content, insert_mode)
         if area is not None:
             self.__dock_manager.addDockWidget(QtAds.CenterDockWidgetArea, dock, area)
         else:
@@ -1301,7 +1325,13 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             neighbour.setAsCurrentTab()
         return dock
 
-    def __make_dock(self, name: str, title: str, widget: QWidget) -> QtAds.CDockWidget:
+    def __make_dock(
+        self,
+        name: str,
+        title: str,
+        widget: QWidget,
+        insert_mode: QtAds.CDockWidget.eInsertMode = QtAds.CDockWidget.eInsertMode.AutoScrollArea,
+    ) -> QtAds.CDockWidget:
         dock = QtAds.CDockWidget(self.__dock_manager, title)
         dock.setObjectName(name)
         dock_features = QtAds.CDockWidget.DockWidgetFeature
@@ -1311,7 +1341,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             | dock_features.DockWidgetForceCloseWithArea
             | dock_features.DockWidgetMovable
         )
-        dock.setWidget(widget)
+        dock.setWidget(widget, insert_mode)
         dock.viewToggled.connect(lambda visible: self.__on_view_toggled(dock, visible))
         return dock
 

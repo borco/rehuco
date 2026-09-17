@@ -249,8 +249,32 @@ class CDockWidget(QWidget):
     def setFeature(self, feature: DockWidgetFeature, on: bool) -> None:
         """Turn a single `DockWidgetFeature` on or off, leaving the others untouched."""
 
-    def setWidget(self, widget: QWidget) -> None:
-        """Set the content widget this dock displays."""
+    class eInsertMode:
+        """How `setWidget` inserts the content widget -- directly, or wrapped in a `QScrollArea`."""
+
+        AutoScrollArea: CDockWidget.eInsertMode
+        """Wraps the widget in a `QScrollArea` unless it is already a `QAbstractScrollArea` (e.g. a
+        bare `QTableView`), which is inserted directly. The default."""
+
+        ForceScrollArea: CDockWidget.eInsertMode
+        """Documented upstream as always wrapping in a `QScrollArea`, even a `QAbstractScrollArea`
+        content widget -- not reproduced against this binding (a `QTableView` still came in unwrapped,
+        same as `AutoScrollArea`); verify before relying on the distinction."""
+
+        ForceNoScrollArea: CDockWidget.eInsertMode
+        """Never wraps the widget -- inserted directly, so a composite that already manages its own
+        scrolling end-to-end (e.g. a table with a pinned header and a pinned summary label below it)
+        doesn't get an outer scrollbar that drags the whole thing, header and summary included."""
+
+    # the enum's members are also promoted onto CDockWidget itself, mirroring DockWidgetFeature above
+    # (verified at runtime): both `QtAds.CDockWidget.eInsertMode.ForceNoScrollArea` and
+    # `QtAds.CDockWidget.ForceNoScrollArea` resolve.
+    AutoScrollArea: eInsertMode
+    ForceScrollArea: eInsertMode
+    ForceNoScrollArea: eInsertMode
+
+    def setWidget(self, widget: QWidget, insert_mode: eInsertMode = ...) -> None:
+        """Set the content widget this dock displays, per `insert_mode` (default `AutoScrollArea`)."""
 
     def dockManager(self) -> CDockManager:
         """The manager this dock is associated with -- the two-argument constructor's, or the one that

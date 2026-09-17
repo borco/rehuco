@@ -1032,7 +1032,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             | features.DockWidgetFocusable
             | features.DockWidgetPinnable
         )
-        dock.setWidget(self.__log_widget)
+        dock.setWidget(self.__log_widget, QtAds.CDockWidget.eInsertMode.ForceNoScrollArea)
         self.__dock_manager.addDockWidget(QtAds.BottomDockWidgetArea, dock)
         dock.toggleView(False)
         return dock

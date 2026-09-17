@@ -2812,6 +2812,17 @@ def test_the_log_dock_toggle_is_on_the_toolbar(widget: DocumentWidget) -> None:
     assert log_dock(widget).toggleViewAction() in actions
 
 
+def test_the_log_dock_hosts_its_widget_directly_not_in_a_scroll_area(widget: DocumentWidget) -> None:
+    """The log dock's own table already manages its header and rows -- an outer scroll area would drag
+    that header along with the rows instead (#305).
+
+    **Test steps:**
+
+    * verify the dock's content is parented directly on the dock, with no scroll area between them
+    """
+    assert log_dock(widget).widget().parentWidget() is log_dock(widget)
+
+
 def test_adding_the_log_dock_leaves_the_main_viewer_current(widget: DocumentWidget) -> None:
     """The main viewer stays the current tab, though the log dock was stacked in after it (#200).
 
@@ -3262,6 +3273,27 @@ def test_the_checksum_dock_toggle_carries_its_own_icon(qtbot: QtBot, model: Rehu
         queue.shutdown()
 
 
+def test_the_checksum_dock_hosts_its_view_directly_not_in_a_scroll_area(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """The checksum dock's own table already manages its header and rows -- an outer scroll area would
+    drag that header and the summary label along with the rows instead (#305).
+
+    **Test steps:**
+
+    * build a widget over a real queue
+    * verify the dock's content is parented directly on the dock, with no scroll area between them
+    """
+    queue = TaskQueue()
+    widget = DocumentWidget(model, task_queue=queue)
+    qtbot.addWidget(widget)
+    try:
+        dock = widget._DocumentWidget__checksum_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+        assert dock is not None
+        assert dock.widget().parentWidget() is dock
+    finally:
+        widget.detach()
+        queue.shutdown()
+
+
 # endregion
 
 
@@ -3689,6 +3721,17 @@ def test_the_files_dock_toggle_is_on_the_toolbar_with_its_own_icon(widget: Docum
     assert action in toolbar.actions()
 
     assert action.icon().cacheKey() == themed_svg_icon(FILES_ICON_RESOURCE).cacheKey()
+
+
+def test_the_files_dock_hosts_its_view_directly_not_in_a_scroll_area(widget: DocumentWidget) -> None:
+    """The Files dock's own table already manages its header and rows -- an outer scroll area would
+    drag that header and the summary label along with the rows instead (#305).
+
+    **Test steps:**
+
+    * verify the dock's content is parented directly on the dock, with no scroll area between them
+    """
+    assert files_dock(widget).widget().parentWidget() is files_dock(widget)
 
 
 def test_another_resource_activated_in_the_browser_is_relayed_out(qtbot: QtBot, widget: DocumentWidget) -> None:
