@@ -14,9 +14,9 @@ TOOLBARS_STATE_KEY: Final = "toolbars_state"
 LOG_WIDGET_STATE_KEY: Final = "log_widget_state"
 TASK_QUEUE_STATE_KEY: Final = "task_queue_state"
 
-OUTER_DOCKS_STATE_VERSION: Final = 5
+OUTER_DOCKS_STATE_VERSION: Final = 6
 """Schema version of :attr:`MainWindowSettings.outer_docks_state`. The outer dock set (the Documents
-dock plus its sibling docks and dockable dialogs, e.g. #47's settings dock) is keyed by dock object
+dock and its three sibling docks -- Log, Tasks and Settings) is keyed by dock object
 name, so any change to that set makes an older blob incompatible: ``CDockManager.restoreState``
 would accept it and silently hide docks not present in the saved layout. Bump this whenever the
 outer dock set changes; :meth:`MainWindowSettings.load` discards a blob whose version differs,
@@ -38,7 +38,16 @@ Bumped to 5 when the four main docks became pinnable (#279). A v4 blob knows not
 sidebars a pinned dock collapses into -- it was written by a build that had none -- so restoring one
 describes each dock as docked-or-closed and nothing else. Discarded rather than restored sidebar-less,
 for the reason the whole guard exists: a layout QtAds accepts and quietly under-describes is worse
-than the default one the window builds for itself."""
+than the default one the window builds for itself.
+
+Bumped to 6 when the Settings dock became a plain `CDockWidget`, closed and tabbed beside Documents
+(#307). The one bump so far with the dock set and every object name unchanged: a v5 blob is structurally
+this layout, and QtAds would restore it without complaint. It is discarded anyway because of what it
+says about Settings -- the build before #307 floated that dock *by default* and its "Restore on start"
+checkbox saved it closed, so every install that never touched it carries a blob placing Settings in a
+floating window nobody chose. Restoring that would keep the whole installed base on the placement the
+release removed, and only fresh installs would ever see the new one. The guard's job is to refuse a blob
+that describes the wrong layout; this one describes the previous build's default."""
 
 TOOLBARS_STATE_VERSION: Final = 2
 """Version passed to Qt's own ``QMainWindow.saveState``/``restoreState`` (the toolbar-area/floating
@@ -60,8 +69,8 @@ class MainWindowSettings:
     """The window's ``saveGeometry()`` blob, or empty before any session has been saved."""
 
     outer_docks_state: bytes = field(default=b"")
-    """The outer ``CDockManager``'s ``saveState()`` blob (the Documents dock + its sibling docks and
-    dockable dialogs, #47), or empty before any session has been saved or after an incompatible
+    """The outer ``CDockManager``'s ``saveState()`` blob (the Documents dock and its three siblings --
+    Log, Tasks and Settings), or empty before any session has been saved or after an incompatible
     :data:`OUTER_DOCKS_STATE_VERSION`."""
 
     toolbars_state: bytes = field(default=b"")
