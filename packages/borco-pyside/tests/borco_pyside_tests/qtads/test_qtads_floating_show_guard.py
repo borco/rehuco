@@ -6,8 +6,9 @@ from typing import Final
 import PySide6QtAds as QtAds
 from borco_pyside.qtads import QtAdsFloatingShowGuard
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QLabel
+from PySide6.QtWidgets import QApplication, QLabel
 from pytest import fixture
+from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 
 DONT_SHOW: Final = Qt.WidgetAttribute.WA_DontShowOnScreen
@@ -112,3 +113,51 @@ def test_a_container_shown_after_the_release_is_left_alone(shown_manager: QtAds.
     assert container is not None
     assert container.testAttribute(DONT_SHOW) is False
     assert not guard.release()
+
+
+def test_a_container_hidden_before_the_release_is_not_hidden_again(
+    shown_manager: QtAds.CDockManager, mocker: MockerFixture
+) -> None:
+    """``release`` hides a held container only while it is still visible -- a second ``hide()`` on one
+    already hidden was seen to crash the process, so the release checks rather than hides blindly.
+
+    **Test steps:**
+
+    * arm a guard, float a dock on a shown manager, and hide its container by hand
+    * release the guard with ``hide`` spied on
+    * verify the container was not hidden again, and still comes back with the attribute cleared
+    """
+    guard = QtAdsFloatingShowGuard()
+    dock = floating_dock(shown_manager, "guarded")
+    container = dock.floatingDockContainer()
+    assert container is not None
+    container.hide()
+    hide = mocker.spy(container, "hide")
+
+    assert guard.release() == (container,)
+
+    hide.assert_not_called()
+    assert container.testAttribute(DONT_SHOW) is False
+
+
+def test_without_an_application_the_guard_is_inert(mocker: MockerFixture) -> None:
+    """A guard built while ``QApplication.instance()`` is ``None`` installs nothing and releases nothing.
+
+    Reached only when a guard is constructed before the application exists; the filter is
+    application-wide, so with no application there is nothing to arm -- and nothing to disarm either.
+
+    **Test steps:**
+
+    * make ``QApplication.instance`` report no application, and watch the filter API
+    * build and release a guard
+    * verify no filter was installed or removed, and the release hands back nothing
+    """
+    mocker.patch.object(QApplication, "instance", return_value=None)
+    install = mocker.patch.object(QApplication, "installEventFilter")
+    remove = mocker.patch.object(QApplication, "removeEventFilter")
+
+    guard = QtAdsFloatingShowGuard()
+
+    assert not guard.release()
+    install.assert_not_called()
+    remove.assert_not_called()
