@@ -74,7 +74,7 @@ from rehuco_agent.fields.widgets import (
     ImageStrip,
     ImageViewerMode,
     PathEditor,
-    SingleChoiceComboBox,
+    SingleChoiceRadioButtons,
     TypeBadge,
 )
 from rehuco_agent.fields.widgets.image_lightbox import STRIP_TOGGLE_BUTTON_NAME
@@ -1923,15 +1923,15 @@ def test_repeated_type_switches_leave_exactly_one_live_suggestion_model(qtbot: Q
     assert fired == [True]  # exactly one live model reacted, not one per rebuild
 
 
-def type_combo(widget: DocumentWidget) -> SingleChoiceComboBox:
-    """Return the widget's editor-dock type selector combo.
+def type_radio_buttons(widget: DocumentWidget) -> SingleChoiceRadioButtons:
+    """Return the widget's editor-dock type selector radio group.
 
     :param widget: the document widget to inspect.
-    :returns: the type field's editor combo.
+    :returns: the type field's editor radio group.
     """
-    combos = find_on_surfaces(widget, SingleChoiceComboBox)
-    assert len(combos) == 1
-    return combos[0]
+    groups = find_on_surfaces(widget, SingleChoiceRadioButtons)
+    assert len(groups) == 1
+    return groups[0]
 
 
 def flagged_tooltips(widget: DocumentWidget) -> dict[str, str]:
@@ -2040,20 +2040,120 @@ def test_a_rebuilt_unknown_field_row_stays_reactive_after_a_round_trip_switch(qt
     assert all(label.isHidden() for label in unknown_labels)
 
 
-def test_switching_type_updates_the_combo_selection(qtbot: QtBot, block_model: RehuDocumentModel) -> None:
-    """After a switch, the rebuilt type combo shows the newly-selected type ([[plugins#plugin-blocks]], #83).
+def test_switching_type_updates_the_radio_selection(qtbot: QtBot, block_model: RehuDocumentModel) -> None:
+    """After a switch, the rebuilt type radio group shows the newly-selected type
+    ([[plugins#plugin-blocks]], #83, #310).
 
     **Test steps:**
 
     * build a widget over a tutorial document and switch its type
-    * verify the (rebuilt) combo's selected value is the new type
+    * verify the (rebuilt) radio group's selected value is the new type
     """
     widget = DocumentWidget(block_model)
     qtbot.addWidget(widget)
 
     block_model.resource_type = "reference_images"
 
-    assert type_combo(widget).value == "reference_images"
+    assert type_radio_buttons(widget).value == "reference_images"
+
+
+def test_switching_type_refocuses_the_rebuilt_main_editor_when_it_had_focus(
+    qtbot: QtBot, block_model: RehuDocumentModel, mocker: MockerFixture
+) -> None:
+    """A type switch is driven from a control on Main Editor, which this rebuild then deletes out from
+    under the click -- Qt's own focus reassignment for the widget that just lost it would otherwise land
+    on whatever it finds first across the whole window, often a completely unrelated dock (#310). When
+    focus was on Main Editor before the switch, it is explicitly handed back into the rebuilt grid.
+
+    **Test steps:**
+
+    * build a widget and fake ``QApplication.focusWidget()`` as a descendant of the outgoing Main
+      Editor's content widget
+    * switch the type
+    * verify the rebuilt Main Editor's first focusable descendant was handed focus
+    """
+    widget = DocumentWidget(block_model)
+    qtbot.addWidget(widget)
+    outgoing_main_editor = widget._DocumentWidget__editor_docks[EDITOR_MAIN_TAB].widget()  # type: ignore[attr-defined]  # pylint: disable=protected-access,no-member
+    mocker.patch(
+        "rehuco_agent.documents.document_widget.QApplication.focusWidget",
+        return_value=outgoing_main_editor.findChildren(QWidget)[0],
+    )
+    focus_first_child = mocker.patch.object(widget, "_DocumentWidget__focus_first_child")
+
+    block_model.resource_type = "reference_images"
+
+    rebuilt_main_editor = widget._DocumentWidget__editor_docks[EDITOR_MAIN_TAB].widget()  # type: ignore[attr-defined]  # pylint: disable=protected-access,no-member
+    focus_first_child.assert_called_once_with(rebuilt_main_editor)
+
+
+def test_switching_type_leaves_focus_alone_when_it_was_elsewhere(
+    qtbot: QtBot, block_model: RehuDocumentModel, mocker: MockerFixture
+) -> None:
+    """A type switch triggered while focus sits outside Main Editor (or nowhere) must not steal it in --
+    the fix only puts focus *back* where it already was, never redirects it there (#310).
+
+    **Test steps:**
+
+    * build a widget and fake ``QApplication.focusWidget()`` as ``None``
+    * switch the type
+    * verify the rebuilt Main Editor was not handed focus
+    """
+    widget = DocumentWidget(block_model)
+    qtbot.addWidget(widget)
+    mocker.patch("rehuco_agent.documents.document_widget.QApplication.focusWidget", return_value=None)
+    focus_first_child = mocker.patch.object(widget, "_DocumentWidget__focus_first_child")
+
+    block_model.resource_type = "reference_images"
+
+    focus_first_child.assert_not_called()
+
+
+def test_focus_first_child_skips_unfocusable_widgets_for_the_first_focusable_one(
+    qtbot: QtBot, mocker: MockerFixture
+) -> None:
+    """The refocus helper hands focus to the first descendant that *can* take it, walking past
+    ``NoFocus`` widgets such as labels, and stops there (#310).
+
+    **Test steps:**
+
+    * build a container holding a label, then two line edits
+    * run the helper over it
+    * verify only the first line edit was handed focus, with the "other" reason
+    """
+    container = QWidget()
+    qtbot.addWidget(container)
+    label = QLabel("Type", container)
+    first = QLineEdit(container)
+    second = QLineEdit(container)
+    label_focus = mocker.patch.object(label, "setFocus")
+    first_focus = mocker.patch.object(first, "setFocus")
+    second_focus = mocker.patch.object(second, "setFocus")
+
+    DocumentWidget._DocumentWidget__focus_first_child(container)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    first_focus.assert_called_once_with(Qt.FocusReason.OtherFocusReason)
+    label_focus.assert_not_called()
+    second_focus.assert_not_called()
+
+
+def test_focus_first_child_does_nothing_without_a_focusable_widget(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """A container with nothing focusable in it is left alone -- no error, no focus call (#310).
+
+    **Test steps:**
+
+    * build a container holding only a label
+    * run the helper over it
+    * verify the label was not handed focus
+    """
+    container = QWidget()
+    qtbot.addWidget(container)
+    label = QLabel("Type", container)
+    label_focus = mocker.patch.object(label, "setFocus")
+
+    DocumentWidget._DocumentWidget__focus_first_child(container)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    label_focus.assert_not_called()
 
 
 def test_switching_type_preserves_the_path_field_expand_state(qtbot: QtBot, block_model: RehuDocumentModel) -> None:
@@ -2160,7 +2260,7 @@ def test_switching_type_then_reverting_does_not_fire_into_deleted_widgets(qtbot:
     model.revert()
 
     assert model.resource_type == "tutorial"
-    assert type_combo(widget).value == "tutorial"
+    assert type_radio_buttons(widget).value == "tutorial"
 
 
 def test_reverting_a_type_switch_drops_the_stale_inactive_block_row(qtbot: QtBot, mocker: MockerFixture) -> None:
@@ -2206,7 +2306,7 @@ def test_reverting_a_type_switch_drops_the_stale_inactive_block_row(qtbot: QtBot
     model.revert()
     qtbot.wait(1)
 
-    assert type_combo(widget).value == "tutorial"
+    assert type_radio_buttons(widget).value == "tutorial"
     assert not flagged_tooltips(widget)
 
 
@@ -2219,7 +2319,7 @@ def test_switching_type_re_locks_the_rebuilt_editors_when_the_model_is_locked(
     **Test steps:**
 
     * build a widget, then simulate a lock and switch the type
-    * verify the rebuilt type combo (on the main editor) is disabled
+    * verify the rebuilt type radio group (on the main editor) is disabled
     """
     widget = DocumentWidget(block_model)
     qtbot.addWidget(widget)
@@ -2227,7 +2327,7 @@ def test_switching_type_re_locks_the_rebuilt_editors_when_the_model_is_locked(
 
     block_model.resource_type = "reference_images"
 
-    assert type_combo(widget).isEnabled() is False
+    assert type_radio_buttons(widget).isEnabled() is False
 
 
 # endregion

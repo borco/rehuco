@@ -7,7 +7,7 @@
 from pathlib import Path
 from typing import cast
 
-from PySide6.QtWidgets import QGridLayout, QLabel, QToolButton, QWidget
+from PySide6.QtWidgets import QGridLayout, QLabel, QRadioButton, QToolButton, QWidget
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -28,6 +28,7 @@ from rehuco_agent.fields import (
     PROVENANCE_PLUGIN_ABSENT,
 )
 from rehuco_agent.fields.fields_form import CONTENT_COLUMN, LABEL_COLUMN, MISC_COLUMN
+from rehuco_agent.fields.type_field import NO_TYPE_LABEL
 from rehuco_agent.fields.widgets import (
     ContentCountEdit,
     DurationEdit,
@@ -35,7 +36,7 @@ from rehuco_agent.fields.widgets import (
     ImageStrip,
     MarkdownView,
     MeasuredValueEdit,
-    SingleChoiceComboBox,
+    SingleChoiceRadioButtons,
     SizeMeasurementEdit,
 )
 from rehuco_agent.fields.widgets.content_count_edit import APPLY_TOOLTIP, COMPUTE_TOOLTIP
@@ -313,15 +314,17 @@ def test_the_description_viewer_fills_the_height_its_strip_leaves(qtbot: QtBot, 
     assert container.findChild(MarkdownView) is not None
 
 
-def test_the_type_is_a_combo_in_the_editor_and_nothing_in_the_viewer(qtbot: QtBot, model: RehuDocumentModel) -> None:
-    """The type is edited by a combo on the main editor; the viewer shows nothing for it -- the colored
-    badge it used to show there now lives on `DocumentWidget`'s own toolbar, driven from the model
-    directly rather than through this field (#309, [[plugins#plugin-blocks]], #83).
+def test_the_type_is_a_radio_group_in_the_editor_and_nothing_in_the_viewer(
+    qtbot: QtBot, model: RehuDocumentModel
+) -> None:
+    """The type is edited by a radio group on the main editor; the viewer shows nothing for it -- the
+    colored badge it used to show there now lives on `DocumentWidget`'s own toolbar, driven from the
+    model directly rather than through this field (#309, [[plugins#plugin-blocks]], #83, #310).
 
     **Test steps:**
 
     * build both surfaces
-    * verify the editor holds the type combo, and the viewer holds no combo
+    * verify the editor holds the type radio group, and the viewer holds no radio group
     """
     form = build_document_form(model, NameSuggestionModel(model))
     editor = form.make_editor(model)[EDITOR_MAIN_TAB]
@@ -329,8 +332,68 @@ def test_the_type_is_a_combo_in_the_editor_and_nothing_in_the_viewer(qtbot: QtBo
     qtbot.addWidget(editor)
     qtbot.addWidget(viewer)
 
-    assert editor.findChildren(SingleChoiceComboBox)
-    assert not viewer.findChildren(SingleChoiceComboBox)
+    assert editor.findChildren(SingleChoiceRadioButtons)
+    assert not viewer.findChildren(SingleChoiceRadioButtons)
+
+
+def type_radios(grid: QWidget) -> dict[str, QRadioButton]:
+    """The Main Editor grid's type radio buttons keyed by their label.
+
+    :param grid: the Main Editor grid to inspect.
+    :returns: a ``label -> QRadioButton`` map.
+    """
+    return {
+        button.text(): button for button in grid.findChildren(SingleChoiceRadioButtons)[0].findChildren(QRadioButton)
+    }
+
+
+def test_a_bare_unresolved_type_is_offered_checked_but_disabled(qtbot: QtBot) -> None:
+    """A document whose type names no installed plugin and carries no block is still shown as that type
+    -- checked -- but the radio is disabled: leaving it is one-way, there is no block to switch back
+    into, while the installed types stay pickable (#310, [[plugins#plugin-blocks]]).
+
+    **Test steps:**
+
+    * build the main editor over a document typed ``audiopack`` with no ``audiopack`` block
+    * verify its radio is checked yet disabled, and an installed type's radio is enabled
+    """
+    grid = main_editor(qtbot, typed_model("audiopack"))
+
+    radios = type_radios(grid)
+    assert radios["Audiopack"].isChecked() is True
+    assert radios["Audiopack"].isEnabled() is False
+    assert radios["Tutorial"].isEnabled() is True
+
+
+def test_a_carried_foreign_block_type_stays_pickable(qtbot: QtBot) -> None:
+    """A not-installed type the document *carries* a block for is a resurrection target
+    ([[plugins#plugin-blocks]]'s worked example), so its radio is checked and enabled, not greyed like a
+    bare one (#310).
+
+    **Test steps:**
+
+    * build the main editor over a document typed ``audiopack`` that also holds an ``audiopack`` block
+    * verify its radio is checked and enabled
+    """
+    grid = main_editor(qtbot, typed_model("audiopack", {"audiopack": {"x": 1}}))
+
+    assert type_radios(grid)["Audiopack"].isChecked() is True
+    assert type_radios(grid)["Audiopack"].isEnabled() is True
+
+
+def test_a_type_less_document_shows_its_placeholder_checked_and_plain(qtbot: QtBot) -> None:
+    """A brand-new document's empty type is offered as the checked placeholder radio, enabled -- it is
+    the document's starting point, not a missing plugin, so it is not greyed (#310).
+
+    **Test steps:**
+
+    * build the main editor over a type-less document
+    * verify the placeholder radio is checked and enabled
+    """
+    grid = main_editor(qtbot, typed_model(""))
+
+    assert type_radios(grid)[NO_TYPE_LABEL].isChecked() is True
+    assert type_radios(grid)[NO_TYPE_LABEL].isEnabled() is True
 
 
 def test_a_type_switch_flags_the_abandoned_block_apart_from_a_foreign_one(qtbot: QtBot) -> None:
