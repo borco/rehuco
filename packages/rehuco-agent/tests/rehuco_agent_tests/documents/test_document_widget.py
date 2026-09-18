@@ -29,7 +29,7 @@ from borco_core.logging import LOG_SCOPE_ATTRIBUTE, LogScope
 from borco_pyside.logging import LogEntry, LogWidget
 from borco_pyside.logging.log_model import MESSAGE_COLUMN
 from borco_pyside.theming import themed_svg_icon
-from borco_pyside.widgets import FlowLayout, MessageBanner
+from borco_pyside.widgets import FlowLayout, MessageBanner, ToolBarStretch
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence, QPixmap
 from PySide6.QtWidgets import QLabel, QLineEdit, QMenu, QMessageBox, QToolBar, QToolButton, QTreeView, QWidget
@@ -3389,18 +3389,26 @@ def test_apply_default_layout_action_is_on_the_toolbar_with_its_icon_and_tooltip
     assert action.icon().cacheKey() == themed_svg_icon(DEFAULT_LAYOUT_ICON_RESOURCE).cacheKey()
 
 
-def test_apply_default_layout_actions_toolbar_separator_precedes_it(widget: DocumentWidget) -> None:
-    """The apply action is separated from the dock toggles ahead of it (#62).
+def test_apply_default_layout_action_closes_the_toolbar_behind_the_dock_toggles(widget: DocumentWidget) -> None:
+    """The apply action is the toolbar's last action, pushed to the far end by a stretch, and the dock
+    toggles sit behind a separator ahead of it (#62; #311 moved the toggles behind the document
+    actions and the layout button to the end).
 
     **Test steps:**
 
     * build a plain widget
-    * verify the toolbar action immediately before the apply action is a separator
+    * verify the apply action is last, and the item before it is a ``ToolBarStretch``
+    * verify the run between the separator and the stretch is dock toggles -- checkable, nothing else
     """
     action = widget._DocumentWidget__apply_default_layout_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
     toolbar = widget.findChildren(QToolBar)[0]
     actions = toolbar.actions()
-    assert actions[actions.index(action) - 1].isSeparator()
+    assert actions[-1] is action
+    assert isinstance(toolbar.widgetForAction(actions[-2]), ToolBarStretch)
+    separator_index = next(index for index, entry in enumerate(actions) if entry.isSeparator())
+    toggles = actions[separator_index + 1 : -2]
+    assert toggles, "the dock toggles are expected between the separator and the stretch"
+    assert all(toggle.isCheckable() for toggle in toggles)
 
 
 def test_apply_default_layout_action_carries_the_save_and_reset_entries_as_its_menu(widget: DocumentWidget) -> None:

@@ -201,7 +201,7 @@ One widget, hosted three times: the window's own **Log** dock, a **Log** dock in
 **Log** sub-dock in the Tasks dock, attached to whichever job is selected ([[appendices.task-queue#dock]]).
 All three are hidden by default and share the same icon — they are the same kind of thing about different
 subjects, which is what the surrounding toolbar already says. The app-wide one is toggled from the
-action bar (between the theme and settings buttons) and from `View`; a resource's from its own view
+action bar (the top group, with the Documents and Tasks toggles) and from `View`; a resource's from its own view
 toolbar, beside the inspection docks; the Tasks dock's from its own. A job's records are therefore reachable three
 ways — the Tasks dock and its row, the document the job was enqueued from, and the window — because a record carries
 every scope that was open when it was written ([[appendices.logging#scopes]]).
