@@ -15,6 +15,7 @@ from borco_core.logging import LogScope
 from borco_pyside.logging import LogWidget
 from borco_pyside.qtads import QtAdsFloatingShowGuard, QtAdsPinSideHandler
 from borco_pyside.theming import ActionIconThemeHandler, ThemeManager, ThemeMenu, ThemeModel
+from borco_pyside.widgets import ToolBarStretch
 from PySide6.QtCore import QByteArray
 from PySide6.QtGui import QAction, QCloseEvent, QIcon, QShowEvent
 from PySide6.QtWidgets import (
@@ -23,9 +24,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMenu,
     QMessageBox,
-    QSizePolicy,
     QSystemTrayIcon,
-    QWidget,
     QWidgetAction,
 )
 from rehuco_core import (
@@ -821,16 +820,16 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__ui.file_menu.addSeparator()
         self.__ui.file_menu.addAction(self.__ui.quit_action)
 
-        # QToolBar has no dedicated stretch item -- an expanding QWidget is the standard stand-in,
-        # pushing theme/settings to the bottom of the vertical action_bar (#59)
-        spacer = QWidget()
-        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.__ui.action_bar.addWidget(spacer)
-        self.__ui.action_bar.addAction(self.__ui.theme_action)
-        self.__ui.action_bar.addAction(self.__ui.image_previews_toggle_action)
+        # the dock toggles lead the vertical action_bar, so the surfaces of the current work are the
+        # first thing on it (#311). Settings is a dock too (#307) but reads as the app's preferences
+        # rather than a surface of the current work, so it stays with the bottom group.
         self.__ui.action_bar.addAction(self.__documents_dock_widget.toggleViewAction())
         self.__ui.action_bar.addAction(self.__log_dock.toggleViewAction())
         self.__ui.action_bar.addAction(self.__task_queue_dock.toggleViewAction())
+        # pushes theme/settings to the bottom of the vertical action_bar (#59)
+        self.__ui.action_bar.addWidget(ToolBarStretch())
+        self.__ui.action_bar.addAction(self.__ui.theme_action)
+        self.__ui.action_bar.addAction(self.__ui.image_previews_toggle_action)
         self.__ui.action_bar.addAction(settings_dock.toggleViewAction())
 
     def __add_documents_dock(self) -> QtAds.CDockWidget:

@@ -33,6 +33,7 @@ from .rating import Rating
 from .rich_text_view import RichTextView
 from .string_item_list_model import StringItemListModel
 from .string_list_editor import StringListEditor
+from .tool_bar_stretch import ToolBarStretch
 from .unbounded_spin_box import UnboundedSpinBox
 from .wrapping_check_box import WrappingCheckBox
 from .wrapping_label import WrappingLabel
@@ -67,6 +68,7 @@ __all__ = [
     "RichTextView",
     "StringItemListModel",
     "StringListEditor",
+    "ToolBarStretch",
     "UnboundedSpinBox",
     "WrappingCheckBox",
     "WrappingLabel",

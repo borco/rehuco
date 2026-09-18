@@ -14,7 +14,7 @@ import PySide6QtAds as QtAds
 from borco_pyside.logging import LogWidget
 from borco_pyside.qtads import QtAdsAutoHideButtonSuppressor, QtAdsFocusTracker
 from borco_pyside.theming import ActionIconThemeHandler
-from borco_pyside.widgets import MessageBanner, MessageBannerRow, MessageBannerSeverity
+from borco_pyside.widgets import MessageBanner, MessageBannerRow, MessageBannerSeverity, ToolBarStretch
 from PySide6.QtCore import QByteArray, Qt, Signal
 from PySide6.QtGui import QAction, QIcon, QKeySequence
 from PySide6.QtWidgets import QMainWindow, QMenu, QMessageBox, QVBoxLayout, QWidget
@@ -435,13 +435,18 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             # visible only while there is no record for it to overwrite (#244)
             toolbar.addAction(self.__checksums.verify_old_action)
             toolbar.addAction(self.__checksums.generate_action)
+        # the dock toggles follow the document's own actions behind a separator, so the bar reads
+        # "act on the document | show or hide its docks" (#311)
+        toolbar.addSeparator()
         inspection_docks = (self.__save_preview_dock, self.__on_disk_dock, self.__log_dock)
         if self.__checksum_dock is not None:
             inspection_docks = (*inspection_docks, self.__checksum_dock)
         inspection_docks = (*inspection_docks, self.__files_dock)
         for dock in (*self.__viewer_docks.values(), *self.__editor_docks.values(), *inspection_docks):
             toolbar.addAction(dock.toggleViewAction())
-        toolbar.addSeparator()  # between the dock toggles above and the default-layout action below
+        # the layout button sits at the far end on its own, away from everything that acts on the
+        # document or its docks (#311)
+        toolbar.addWidget(ToolBarStretch())
         toolbar.addAction(self.__apply_default_layout_action)
 
         # captured once, right after every dock exists and before any restore_state call could run --

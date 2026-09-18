@@ -3251,14 +3251,15 @@ def test_the_documents_dock_starts_open_and_closable(qtbot: QtBot) -> None:
 
 
 def test_the_documents_dock_toggle_leads_the_app_dock_toggles_on_the_action_bar(qtbot: QtBot) -> None:
-    """The three app-dock toggles sit between the theme action and the settings dock's toggle, in the
-    order Documents, Log, Tasks (#268 added the first one ahead of #200's and #202's).
+    """The three app-dock toggles lead the action bar, ahead of the theme action, in the order
+    Documents, Log, Tasks (#268 added the first one ahead of #200's and #202's; #311 moved the group
+    to the top).
 
     **Test steps:**
 
     * construct a real ``MainWindow``
     * read the action bar's actions in order
-    * verify all three sit between theme and settings, documents before log before tasks
+    * verify all three precede theme, documents before log before tasks, and settings stays last
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -3270,9 +3271,9 @@ def test_the_documents_dock_toggle_leads_the_app_dock_toggles_on_the_action_bar(
     documents_toggle = documents_dock_widget(window).toggleViewAction()
     log_toggle = log_dock(window).toggleViewAction()
 
-    assert actions.index(ui.theme_action) < actions.index(documents_toggle)
     assert actions.index(documents_toggle) < actions.index(log_toggle)
-    assert actions.index(log_toggle) < actions.index(settings_dock.toggleViewAction())
+    assert actions.index(log_toggle) < actions.index(ui.theme_action)
+    assert actions.index(ui.theme_action) < actions.index(settings_dock.toggleViewAction())
 
 
 def test_the_documents_dock_toggle_carries_a_themed_icon(qtbot: QtBot) -> None:
@@ -3835,15 +3836,16 @@ def test_the_log_dock_starts_hidden(qtbot: QtBot) -> None:
     assert not dock.toggleViewAction().isChecked()
 
 
-def test_the_log_dock_toggle_sits_between_theme_and_settings_on_the_action_bar(qtbot: QtBot) -> None:
-    """The log and task queue toggles are on the action bar, between the theme action and the settings
-    dock's toggle -- in that order (#202 added the second one alongside the log's).
+def test_the_log_dock_toggle_sits_ahead_of_theme_and_settings_on_the_action_bar(qtbot: QtBot) -> None:
+    """The log and task queue toggles are on the action bar ahead of the theme action, and the
+    settings dock's toggle closes the bar -- log before tasks (#202 added the second one alongside the
+    log's; #311 moved both above theme).
 
     **Test steps:**
 
     * construct a real ``MainWindow``
     * read the action bar's actions in order
-    * verify both app-dock toggles sit between theme and settings, log before tasks
+    * verify both app-dock toggles precede theme, log before tasks, and settings stays last
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -3855,9 +3857,9 @@ def test_the_log_dock_toggle_sits_between_theme_and_settings_on_the_action_bar(q
     log_toggle = log_dock(window).toggleViewAction()
     tasks_toggle = task_queue_dock(window).toggleViewAction()
 
-    assert actions.index(ui.theme_action) < actions.index(log_toggle)
     assert actions.index(log_toggle) < actions.index(tasks_toggle)
-    assert actions.index(tasks_toggle) < actions.index(settings_dock.toggleViewAction())
+    assert actions.index(tasks_toggle) < actions.index(ui.theme_action)
+    assert actions.index(ui.theme_action) < actions.index(settings_dock.toggleViewAction())
 
 
 def test_the_log_dock_toggle_carries_a_themed_icon(qtbot: QtBot) -> None:
@@ -4394,13 +4396,13 @@ def test_toggling_image_previews_off_hides_every_open_documents_strip(qtbot: QtB
 
 def test_the_image_previews_toggle_button_sits_right_below_theme_on_the_action_bar(qtbot: QtBot) -> None:
     """``image_previews_toggle_action`` -- the toolbar primary -- sits directly after ``theme_action``,
-    ahead of the log toggle (#71).
+    in the bottom group below the log toggle (#71; #311 moved the dock toggles above both).
 
     **Test steps:**
 
     * construct a real ``MainWindow``
     * read the action bar's actions in order
-    * verify the toggle sits between theme and the log dock's own toggle
+    * verify the toggle sits after theme, and the log dock's own toggle precedes both
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -4408,8 +4410,8 @@ def test_the_image_previews_toggle_button_sits_right_below_theme_on_the_action_b
 
     actions = ui.action_bar.actions()
 
+    assert actions.index(log_dock(window).toggleViewAction()) < actions.index(ui.theme_action)
     assert actions.index(ui.theme_action) < actions.index(ui.image_previews_toggle_action)
-    assert actions.index(ui.image_previews_toggle_action) < actions.index(log_dock(window).toggleViewAction())
 
 
 def test_the_image_previews_toggle_button_carries_a_themed_icon(qtbot: QtBot) -> None:
