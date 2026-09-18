@@ -17,7 +17,7 @@ from borco_pyside.theming import ActionIconThemeHandler
 from borco_pyside.widgets import MessageBanner, MessageBannerRow, MessageBannerSeverity, ToolBarStretch
 from PySide6.QtCore import QByteArray, Qt, Signal
 from PySide6.QtGui import QAction, QIcon, QKeySequence
-from PySide6.QtWidgets import QMainWindow, QMenu, QMessageBox, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QMainWindow, QMenu, QMessageBox, QVBoxLayout, QWidget
 from rehuco_core import TaskQueue, backup_path, originals_to_back_up
 
 from ..app_logging import LOG_VIEW_ICON_RESOURCE, build_log_widget, shared_log_bridge
@@ -34,7 +34,7 @@ from ..settings.persistent_settings import persistent_settings
 from .checksum_actions import ChecksumActions
 from .checksum_view import ChecksumView
 from .conversion_backup_actions import ConversionBackupActions
-from .document_fields import EDITOR_IMAGES_TAB, VIEWER_DESCRIPTION_TAB, build_document_form
+from .document_fields import EDITOR_IMAGES_TAB, EDITOR_MAIN_TAB, VIEWER_DESCRIPTION_TAB, build_document_form
 from .files_view import FilesView
 from .name_suggestion_model import NameSuggestionModel
 from .rehu_document_model import RehuDocumentModel
@@ -761,7 +761,22 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         captured name is looked up defensively rather than assumed present, so a future type-specific
         stateful widget that disappears across a switch drops its state instead of crashing. The editors
         are re-locked to match the model, since a rebuilt grid starts enabled.
+
+        The switch is itself driven from a control on Main Editor (the type field), which this method
+        then deletes out from under the user's own click -- and Qt's automatic focus reassignment for a
+        keyboard focus that just lost its widget searches the *whole* top-level window's focus chain,
+        landing on whatever it finds first, often a completely unrelated dock (Log, Documents, ...). The
+        focus tracker (`QtAdsFocusTracker`) faithfully follows real Qt focus, so that dock then visibly
+        picks up the "current" highlight -- distracting, since nothing the user did asked to leave Main
+        Editor (#310). Capturing whether focus was on Main Editor *before* the swap, and handing it back
+        into the rebuilt grid afterwards, keeps it there instead of leaving Qt to pick a new home for it.
         """
+        focus_widget = QApplication.focusWidget()
+        refocus_main_editor = (
+            EDITOR_MAIN_TAB in self.__editor_docks
+            and focus_widget is not None
+            and self.__editor_docks[EDITOR_MAIN_TAB].widget().isAncestorOf(focus_widget)  # pylint: disable=no-member
+        )
         saved_state = {name: widget.save_state() for name, widget in self.__stateful_widgets().items()}
         # sever the outgoing form's long-lived-signal connections *before* its widgets are swapped out and
         # destroyed -- deterministically, while its fields are still alive -- so no stale lambda fires into
@@ -781,6 +796,23 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             widget = rebuilt.get(name)
             if widget is not None:
                 widget.restore_state(state)
+        if refocus_main_editor:
+            self.__focus_first_child(self.__editor_docks[EDITOR_MAIN_TAB].widget())  # pylint: disable=no-member
+
+    @staticmethod
+    def __focus_first_child(widget: QWidget) -> None:
+        """Give keyboard focus to the first focusable descendant of ``widget``, if any (#310).
+
+        How :meth:`__rebuild_field_docks` hands focus back into the rebuilt Main Editor grid once it
+        exists -- generic over whatever field happens to lead the grid, rather than reaching for one
+        field's own widget type.
+
+        :param widget: the container to search.
+        """
+        for child in widget.findChildren(QWidget):
+            if child.focusPolicy() != Qt.FocusPolicy.NoFocus:
+                child.setFocus(Qt.FocusReason.OtherFocusReason)
+                return
 
     def __swap_dock_contents(
         self,
@@ -792,7 +824,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
 
         The old content is taken out (not deleted by ``setWidget``) and ``deleteLater``-d, so its
         editors' connections to the model are torn down after the current signal unwinds -- deferred, not
-        immediate, since the very combo that triggered this rebuild is one of the widgets being replaced.
+        immediate, since the very type selector that triggered this rebuild is one of the widgets being replaced.
         Every existing dock's tab is in ``grids`` (the tab set is fixed across a switch -- the leading
         fields keep every surface populated), so the grid is looked up directly rather than skipped.
 

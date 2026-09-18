@@ -287,17 +287,25 @@ def build_document_form(
     registry = registry or FieldRegistry()
 
     # the current type is ensured present in the offered list even when it names no installed plugin and
-    # carries no block (a bare, unresolved type), so the combo always shows the document's actual type
+    # carries no block (a bare, unresolved type), so the selector always shows the document's actual type
     # rather than silently snapping to another; ``available_types`` already covers every resurrectable
     # block key ([[plugins#plugin-blocks]], #83)
     type_choices = model.available_types()
+    # a current type naming no installed plugin is still offered so the row shows what the document
+    # *is*, but disabled: leaving it behind is one-way, there is no block to switch back into (#310).
+    # The empty type is not that case -- a fresh document's placeholder, shown checked and plain, not
+    # greyed as though something were missing
+    type_disabled_choices: tuple[str, ...] = ()
     if model.resource_type not in type_choices:
         type_choices = [model.resource_type, *type_choices]
+        if model.resource_type:
+            type_disabled_choices = (model.resource_type,)
     plugins = model.document.plugins
     type_field = TypeField(
         TYPE_FIELD_NAME,
         "Type",
         type_choices,
+        type_disabled_choices,
         viewer_tab=VIEWER_MAIN_TAB,
         editor_tab=EDITOR_MAIN_TAB,
     )

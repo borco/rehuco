@@ -24,6 +24,7 @@ from .memberships_editor import CollectionsEditor, LearningPathsEditor, Membersh
 from .path_editor import PathEditor
 from .rating_slider import RatingSlider
 from .single_choice_combo_box import SingleChoiceComboBox
+from .single_choice_radio_buttons import SingleChoiceRadioButtons
 from .size_measurement_edit import SizeMeasurementEdit
 from .type_badge import TypeBadge
 from .value_readout import ValueReadout
@@ -58,6 +59,7 @@ __all__ = [
     "PathEditor",
     "RatingSlider",
     "SingleChoiceComboBox",
+    "SingleChoiceRadioButtons",
     "TypeBadge",
     "ValueReadout",
 ]
