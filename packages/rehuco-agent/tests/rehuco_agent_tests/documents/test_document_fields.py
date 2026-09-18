@@ -37,7 +37,6 @@ from rehuco_agent.fields.widgets import (
     MeasuredValueEdit,
     SingleChoiceComboBox,
     SizeMeasurementEdit,
-    TypeBadge,
 )
 from rehuco_agent.fields.widgets.content_count_edit import APPLY_TOOLTIP, COMPUTE_TOOLTIP
 from rehuco_agent.fields.widgets.duration_measurement_edit import COMPUTE_TOOLTIP as DURATION_COMPUTE_TOOLTIP
@@ -273,8 +272,8 @@ def test_the_viewer_splits_the_strip_and_the_description_off_the_record_fields(
 
     * build the viewer surfaces over the sample model
     * verify exactly the two viewer tabs are emitted, main view first
-    * verify the description view holds the strip and the Markdown view, and no type badge
-    * verify the main view holds the badge, and neither the strip nor the description
+    * verify the description view holds the strip and the Markdown view
+    * verify the main view holds neither the strip nor the description
     """
     grids = build_document_form(model, NameSuggestionModel(model)).make_viewer(model)
     for grid in grids.values():
@@ -285,10 +284,8 @@ def test_the_viewer_splits_the_strip_and_the_description_off_the_record_fields(
     description = grids[VIEWER_DESCRIPTION_TAB]
     assert description.findChild(ImageStrip) is not None
     assert description.findChild(MarkdownView) is not None
-    assert description.findChild(TypeBadge) is None
 
     main = grids[VIEWER_MAIN_TAB]
-    assert main.findChild(TypeBadge) is not None
     assert main.findChild(ImageStrip) is None
     assert main.findChild(MarkdownView) is None
 
@@ -316,18 +313,15 @@ def test_the_description_viewer_fills_the_height_its_strip_leaves(qtbot: QtBot, 
     assert container.findChild(MarkdownView) is not None
 
 
-def test_the_type_is_a_combo_in_the_editor_and_a_badge_in_the_viewer(qtbot: QtBot, model: RehuDocumentModel) -> None:
-    """The type is edited by a combo on the main editor and shown as a colored badge in the viewer
-    ([[plugins#plugin-blocks]], #83).
-
-    The combo (the control) is editor-only; the viewer presents the type read-only as a badge painted
-    with the plugin's declared color.
+def test_the_type_is_a_combo_in_the_editor_and_nothing_in_the_viewer(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """The type is edited by a combo on the main editor; the viewer shows nothing for it -- the colored
+    badge it used to show there now lives on `DocumentWidget`'s own toolbar, driven from the model
+    directly rather than through this field (#309, [[plugins#plugin-blocks]], #83).
 
     **Test steps:**
 
     * build both surfaces
-    * verify the editor holds the type combo (and the viewer does not)
-    * verify the viewer holds a type badge showing the tutorial type in its plugin color
+    * verify the editor holds the type combo, and the viewer holds no combo
     """
     form = build_document_form(model, NameSuggestionModel(model))
     editor = form.make_editor(model)[EDITOR_MAIN_TAB]
@@ -337,12 +331,6 @@ def test_the_type_is_a_combo_in_the_editor_and_a_badge_in_the_viewer(qtbot: QtBo
 
     assert editor.findChildren(SingleChoiceComboBox)
     assert not viewer.findChildren(SingleChoiceComboBox)
-
-    badge = viewer.findChild(TypeBadge)
-    assert badge is not None
-    assert badge.text() == "Tutorial"
-    tutorial_color = TUTORIAL_PLUGIN.color
-    assert tutorial_color is not None and tutorial_color in badge.styleSheet()
 
 
 def test_a_type_switch_flags_the_abandoned_block_apart_from_a_foreign_one(qtbot: QtBot) -> None:

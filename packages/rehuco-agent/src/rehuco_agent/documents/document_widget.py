@@ -23,7 +23,8 @@ from rehuco_core import TaskQueue, backup_path, originals_to_back_up
 from ..app_logging import LOG_VIEW_ICON_RESOURCE, build_log_widget, shared_log_bridge
 from ..asking_deleter import AskingDeleter
 from ..fields import FieldsTab, StatefulWidget
-from ..fields.widgets import ImageLightbox
+from ..fields.type_field import type_label
+from ..fields.widgets import ImageLightbox, TypeBadge
 from ..glyphs import TAB_CLOSE_GLYPH
 from ..recycle_bin_deleter import configured_deleter
 from ..settings.default_layout_settings import shared_default_layout_settings
@@ -422,6 +423,12 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         self.__apply_default_layout_action.setMenu(self.__default_layout_menu)
 
         toolbar = self.addToolBar("View")
+        # the resource's type badge leads the toolbar (#309): first in add order, not merely first in
+        # visual position, so a QToolBar squeezed for room (a restored split layout's narrower pane,
+        # #309's own follow-up bug) drops the trailing dock-toggle/layout actions into its overflow
+        # menu before ever touching this one -- a passive, unclickable badge dropped into that menu
+        # would be undiscoverable, unlike an action a reader would think to click.
+        toolbar.addWidget(self.__build_type_badge(model))
         toolbar.addAction(self.__revert_action)
         toolbar.addAction(self.__save_action)
         toolbar.addAction(self.__upgrade_action)
@@ -448,6 +455,10 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         # document or its docks (#311)
         toolbar.addWidget(ToolBarStretch())
         toolbar.addAction(self.__apply_default_layout_action)
+        # matched to the toolbar's own icon size, not a sibling button's full height (which also
+        # carries the button's own hit-area margin around the glyph) -- a chip as tall as the icon
+        # button itself reads oversized next to it
+        toolbar.widgetForAction(toolbar.actions()[0]).setFixedHeight(toolbar.iconSize().height())
 
         # captured once, right after every dock exists and before any restore_state call could run --
         # what "Apply default layout" falls back to (:meth:`apply_default_layout`) while no usable
@@ -1196,6 +1207,26 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             ON_DISK_DOCK_NAME, ON_DISK_DOCK_TITLE, ON_DISK_ICON_RESOURCE, OnDiskView(model, self)
         )
         return save_preview, on_disk
+
+    @staticmethod
+    def __build_type_badge(model: RehuDocumentModel) -> TypeBadge:
+        """Build the resource's type badge, bound to ``model`` so it outlives every form rebuild (#309).
+
+        Painted with the colors the resource's plugin declares for itself, resolved through the registry
+        each time so a `convert_tc` swap of ``model.document`` is picked up -- an undeclared color (or a
+        not-installed type) falls back to the theme's selection color ([[plugins#plugin-blocks]], #83).
+        Driven from the model rather than a field binding, which a type switch's form rebuild destroys.
+
+        :param model: the view-model whose type the badge shows.
+        :returns: the badge, seeded to the model's current type and kept live.
+        """
+        badge = TypeBadge(
+            lambda type_key: (model.document.plugins.color(type_key), model.document.plugins.text_color(type_key)),
+            type_label,
+        )
+        badge.on_type(model.resource_type)
+        model.resource_type_changed.connect(badge.on_type)  # type: ignore[attr-defined]
+        return badge
 
     def __add_log_dock(self, model: RehuDocumentModel) -> QtAds.CDockWidget:
         """Build **this resource's own** log dock, stacked with the inspection docks and hidden (#200).
