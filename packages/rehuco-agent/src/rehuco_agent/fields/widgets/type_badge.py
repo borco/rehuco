@@ -5,14 +5,15 @@ from typing import Final, override
 
 from PySide6.QtCore import QEvent
 from PySide6.QtGui import QPalette
-from PySide6.QtWidgets import QLabel, QWidget
+from PySide6.QtWidgets import QLabel, QSizePolicy, QWidget
 
 
 class TypeBadge(QLabel):
     """A small, colored chip naming the document's resource type ([[plugins#plugin-blocks]], #83).
 
     The Qt-widget counterpart of the predecessor's top-right viewer badge: a filled rectangle with a
-    smaller font, shown in the viewer's top-right corner. Its colors are whatever the resource's
+    smaller font, leading the document's own toolbar (#309) so the type reads whichever docks are
+    open, or with the Main View closed altogether. Its colors are whatever the resource's
     **plugin declares** (:attr:`~rehuco_core.PluginSpec.color` / ``text_color``, resolved through
     ``colors_for``): a declared color is fixed, and an **undeclared** one falls back to the theme's
     selection colors -- the palette ``Highlight`` background and ``HighlightedText`` text, the
@@ -21,9 +22,10 @@ class TypeBadge(QLabel):
     pins it. Re-styles on a palette (theme) change, so any color left to the palette tracks a live theme
     toggle.
 
-    :meth:`on_type` is the reactive **slot**: bound to it, ``binding.changed`` updates the chip, and --
-    because it is a bound method of this widget -- Qt drops the connection automatically when the badge
-    is destroyed (a document-form rebuild on a type switch), rather than firing into a deleted widget.
+    :meth:`on_type` is the reactive **slot**: bound to it, the model's ``resource_type_changed`` updates
+    the chip -- the model rather than a field binding, since the toolbar is built once and outlives every
+    form rebuild a type switch causes, which would destroy a field-bound badge along with its row. Being
+    a bound method of this widget, Qt drops the connection with the badge when its document closes.
 
     :param colors_for: resolves a type key to its badge ``(background, text)`` colors, each a hex string
         or ``None`` to fall back to the theme's selection color.
@@ -34,9 +36,9 @@ class TypeBadge(QLabel):
     FONT_SCALE: Final = 0.8
     """The badge font's size relative to the inherited one -- a *smaller* font, the predecessor's badge trait."""
 
-    STYLE_TEMPLATE: Final = "background-color: {background}; color: {foreground}; padding: 6px 6px;"
-    """The chip's stylesheet: a filled rectangle with tight padding; the resolved background/foreground
-    (plugin-declared or palette-selected) are filled in."""
+    STYLE_TEMPLATE: Final = "background-color: {background}; color: {foreground}; padding: 4px 10px;"
+    """The chip's stylesheet: a filled rectangle with comfortable padding; the resolved
+    background/foreground (plugin-declared or palette-selected) are filled in."""
 
     def __init__(
         self,
@@ -57,24 +59,33 @@ class TypeBadge(QLabel):
         font = self.font()
         font.setPointSizeF(font.pointSizeF() * self.FONT_SCALE)
         self.setFont(font)
+        # a fixed vertical size, not the toolbar's stretched full height (a QToolBar otherwise grows
+        # any widget it hosts to its own extent): a chip that hugs its own text, vertically centered by
+        # the toolbar layout like the icon buttons beside it
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
 
     def on_type(self, value: str) -> None:
-        """Show ``value``'s badge, or hide the badge entirely when the type is empty ([[plugins#plugin-blocks]]).
+        """Show ``value``'s badge, or blank the chip when the type is empty ([[plugins#plugin-blocks]]).
 
-        The reactive slot bound to ``binding.changed``. An empty type (a brand-new, type-less document)
-        shows no badge; any real type shows its label on a chip colored by the plugin's declared colors,
-        each falling back to the theme's selection color.
+        The reactive slot bound to ``binding.changed``. An empty type (a brand-new, type-less document,
+        or a session-restore placeholder before its file has loaded, #66) shows an empty, unstyled chip
+        that takes up no visible room; any real type shows its label on a chip colored by the plugin's
+        declared colors, each falling back to the theme's selection color.
+
+        Deliberately never calls :meth:`~QWidget.setVisible`: a QToolBar-hosted widget explicitly hidden
+        and later shown again *before its top-level window has ever been shown* -- exactly a session
+        restore's own sequence, since every pending dock's document loads while the window is still
+        hidden (``DocumentsDock.restore_session``) -- stays invisible forever afterwards even once the
+        window does show, a confirmed Qt/``QToolBarLayout`` quirk. Never touching visibility at all
+        sidesteps it: an untouched widget simply follows its parent's own shown state once parented,
+        which is also what keeps a still-parentless badge (the very first call, before
+        ``toolbar.addWidget``) from flashing as a momentary top-level window.
 
         :param value: the resource type key.
         """
-        # never force a *show* while still parentless: setVisible(True) on a parentless widget turns it
-        # into a momentary top-level window -- the empty framed flash seen on load and on every form
-        # rebuild, before the form parents the badge into its row (type_field.make_viewer). A hide is
-        # applied regardless (harmless while parentless); once parented a QLabel is visible by default,
-        # so skipping the early show still lands the badge visible.
-        if not value or self.parent() is not None:
-            self.setVisible(bool(value))
         if not value:
+            self.setText("")
+            self.setStyleSheet("")
             return
         self.__background, self.__foreground = self.__colors_for(value)
         self.setText(self.__label_for(value))

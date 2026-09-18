@@ -229,8 +229,10 @@ into, and the machinery it would be built on is `authors`' (#97).
 Each open resource has **viewer surfaces** and **editor surfaces**, every one built by a `FieldsForm`
 over the same view-model and toggled independently:
 
-- Two viewer surfaces — **Main View** (the type badge, the location, the type-declared record fields,
-  and the unknown-field / inactive-block fallback rows) and **Description View** (the image strip, then
+- Two viewer surfaces — **Main View** (the location, the type-declared record fields, and the
+  unknown-field / inactive-block fallback rows; the type badge is not a field surface at all but the
+  lead item of the document's own toolbar, so it reads whichever docks are open) and **Description
+  View** (the image strip, then
   the rendered Markdown description filling the rest of the height). They were one surface holding all
   of it until the two tall, scrolling halves were split apart from the record fields they sat around.
 - Three editor surfaces — **Main Editor**, **Description**, and **Images**.

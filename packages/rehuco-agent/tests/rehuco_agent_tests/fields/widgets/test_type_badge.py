@@ -83,10 +83,10 @@ def test_on_type_falls_back_to_the_palette_selection_colors(qtbot: QtBot) -> Non
 
 
 def test_on_type_does_not_show_a_parentless_badge(qtbot: QtBot) -> None:
-    """Seeding a still-parentless badge never shows it -- guarding the empty-window flash a parentless
-    ``setVisible(True)`` would cause on load and every form rebuild, before the form parents the badge
-    into its row ([[plugins#plugin-blocks]], #83). The badge still takes its label and colors, and shows
-    normally once parented (``type_field.make_viewer`` parents it, then the surface displays it).
+    """Seeding a still-parentless badge never shows it -- ``on_type`` never touches visibility at all
+    (see its own docstring), so a still-parentless badge simply keeps Qt's own default unshown state
+    rather than flashing as a momentary top-level window. The badge still takes its label and colors, and
+    shows normally once parented and its ancestor window is shown.
 
     **Test steps:**
 
@@ -101,20 +101,27 @@ def test_on_type_does_not_show_a_parentless_badge(qtbot: QtBot) -> None:
     assert badge.isVisible() is False
 
 
-def test_on_type_hides_the_badge_for_an_empty_type(qtbot: QtBot) -> None:
-    """An empty type shows no badge -- the chip hides itself ([[plugins#plugin-blocks]], #83).
+def test_on_type_blanks_the_badge_for_an_empty_type(qtbot: QtBot) -> None:
+    """An empty type shows no badge -- the chip blanks its text and style rather than hiding the widget
+    itself ([[plugins#plugin-blocks]], #83).
+
+    Deliberately never touches visibility (see ``on_type``'s own docstring): a widget hidden and later
+    re-shown before its top-level window has ever been shown -- exactly a session-restore placeholder's
+    own sequence (#66) -- stays invisible forever after, a confirmed Qt/``QToolBarLayout`` quirk. Blanking
+    the content instead sidesteps it entirely.
 
     **Test steps:**
 
-    * show a badge, then call ``on_type`` with the empty type
-    * verify the badge is hidden
+    * paint a badge with a real type, then call ``on_type`` with the empty type
+    * verify the label and stylesheet are both cleared
     """
     badge = make_badge(qtbot)
-    badge.setVisible(True)
+    badge.on_type("tutorial")
 
     badge.on_type("")
 
-    assert badge.isHidden()
+    assert badge.text() == ""
+    assert badge.styleSheet() == ""
 
 
 def test_a_theme_change_restyles_a_palette_fallback_badge_without_recursing(qtbot: QtBot) -> None:

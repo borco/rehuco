@@ -293,15 +293,11 @@ def build_document_form(
     type_choices = model.available_types()
     if model.resource_type not in type_choices:
         type_choices = [model.resource_type, *type_choices]
-    # the viewer badge is painted with the colors the resource's plugin declares for itself, resolved
-    # through the registry -- so a plugin from any source owns how its badge looks; an undeclared color
-    # (or a not-installed type) falls back to the theme's selection color ([[plugins#plugin-blocks]], #83)
     plugins = model.document.plugins
     type_field = TypeField(
         TYPE_FIELD_NAME,
         "Type",
         type_choices,
-        lambda type_key: (plugins.color(type_key), plugins.text_color(type_key)),
         viewer_tab=VIEWER_MAIN_TAB,
         editor_tab=EDITOR_MAIN_TAB,
     )

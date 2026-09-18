@@ -100,7 +100,7 @@ or from the app — and it appears as a set of dockable panels you can rearrange
 
 | Panel | What it shows |
 | --- | --- |
-| **Main View** | The resource's fields, read-only, under its type badge and location. Shown when a resource opens, alongside the description view; the editors below start hidden behind their toolbar buttons. |
+| **Main View** | The resource's fields, read-only, under its location. Shown when a resource opens, alongside the description view; the editors below start hidden behind their toolbar buttons. The type badge leads the document toolbar, not this panel. |
 | **Description View** | The rest of the resource read-only: its screenshots as a thumbnail strip, over the rendered Markdown description. Clicking a thumbnail fills the window with it; arrow keys or the wheel move through the set. |
 | **Main Editor** | The same fields, editable, plus the type selector that decides which block is active. Its path row offers names built from the record — title, publisher, authors, year — and picking one renames the resource on disk: the folder for a directory-scoped resource, and for a standalone one every file named after it, archives and screenshots alike. |
 | **Description** | The Markdown description in its own panel, so prose can be written with room. |

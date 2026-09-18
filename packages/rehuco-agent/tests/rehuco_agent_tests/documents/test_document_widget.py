@@ -75,6 +75,7 @@ from rehuco_agent.fields.widgets import (
     ImageViewerMode,
     PathEditor,
     SingleChoiceComboBox,
+    TypeBadge,
 )
 from rehuco_agent.fields.widgets.image_lightbox import STRIP_TOGGLE_BUTTON_NAME
 from rehuco_agent.fields.widgets.image_selector import AFTER_CONVERSION_COLUMN, CHECK_COLUMN, PREVIEW_PANE
@@ -85,6 +86,7 @@ from rehuco_agent.settings.image_viewer_settings import shared_image_viewer_sett
 from rehuco_agent.settings.logs_settings import shared_logs_settings
 from rehuco_core import (
     CURRENT_FORMAT_VERSION,
+    TUTORIAL_PLUGIN,
     ChecksumReport,
     ConversionBackups,
     LockReason,
@@ -3391,8 +3393,11 @@ def test_apply_default_layout_action_is_on_the_toolbar_with_its_icon_and_tooltip
 
 def test_apply_default_layout_action_closes_the_toolbar_behind_the_dock_toggles(widget: DocumentWidget) -> None:
     """The apply action is the toolbar's last action, pushed to the far end by a stretch, and the dock
-    toggles sit behind a separator ahead of it (#62; #311 moved the toggles behind the document
-    actions and the layout button to the end).
+    toggles sit behind a separator ahead of it (#62; #311 moved the toggles behind the document actions
+    and the layout button to the end; the type badge leads the toolbar instead, #309's own follow-up --
+    a trailing widget went invisible forever on a session-restored document, a confirmed Qt/
+    ``QToolBarLayout`` quirk, and leading position also gives it space priority over the dock toggles
+    when a narrow pane squeezes the bar into its own overflow).
 
     **Test steps:**
 
@@ -3409,6 +3414,65 @@ def test_apply_default_layout_action_closes_the_toolbar_behind_the_dock_toggles(
     toggles = actions[separator_index + 1 : -2]
     assert toggles, "the dock toggles are expected between the separator and the stretch"
     assert all(toggle.isCheckable() for toggle in toggles)
+
+
+def test_the_type_badge_leads_the_toolbar(widget: DocumentWidget) -> None:
+    """The resource's type badge leads the toolbar (#309), showing the model's current type in the
+    plugin's declared color -- first in add order, not merely first in visual position, so a squeezed
+    toolbar drops its trailing actions into overflow before ever touching this one.
+
+    **Test steps:**
+
+    * build a widget over a tutorial model
+    * verify the toolbar's first action carries a ``TypeBadge`` showing the tutorial type in its plugin color
+    """
+    toolbar = widget.findChildren(QToolBar)[0]
+    actions = toolbar.actions()
+    badge = toolbar.widgetForAction(actions[0])
+    assert isinstance(badge, TypeBadge)
+    assert badge.text() == "Tutorial"
+    tutorial_color = TUTORIAL_PLUGIN.color
+    assert tutorial_color is not None and tutorial_color in badge.styleSheet()
+
+
+def test_the_type_badge_follows_a_type_change(widget: DocumentWidget, model: RehuDocumentModel) -> None:
+    """The toolbar badge re-labels live when the model's type changes -- it is bound to the model, not to
+    a field a form rebuild would destroy (#309).
+
+    **Test steps:**
+
+    * build a widget, then switch the model's type
+    * verify the toolbar badge follows
+    """
+    toolbar = widget.findChildren(QToolBar)[0]
+    badge = toolbar.widgetForAction(toolbar.actions()[0])
+    assert isinstance(badge, TypeBadge)
+
+    model.resource_type = "reference_images"
+
+    assert badge.text() == "Reference Images"
+
+
+def test_the_type_badge_is_blank_for_an_empty_type(qtbot: QtBot, new_model: RehuDocumentModel) -> None:
+    """A brand-new, type-less document shows an empty, unstyled toolbar badge (#309).
+
+    Checked by text/style, not visibility: ``TypeBadge.on_type`` deliberately never toggles
+    ``setVisible`` (see its own docstring) -- a session-restored document's badge, hidden and later
+    re-shown before its window is ever shown, would otherwise stay invisible forever, a confirmed
+    Qt/``QToolBarLayout`` quirk.
+
+    **Test steps:**
+
+    * build a widget over a not-yet-typed document
+    * verify the toolbar badge shows no text and carries no stylesheet
+    """
+    widget = DocumentWidget(new_model)
+    qtbot.addWidget(widget)
+    toolbar = widget.findChildren(QToolBar)[0]
+    badge = toolbar.widgetForAction(toolbar.actions()[0])
+    assert isinstance(badge, TypeBadge)
+    assert badge.text() == ""
+    assert badge.styleSheet() == ""
 
 
 def test_apply_default_layout_action_carries_the_save_and_reset_entries_as_its_menu(widget: DocumentWidget) -> None:
