@@ -632,14 +632,18 @@ the thing under test. Any probe or assertion has to go through `findChildren(CFl
 the owning window — which is also how `MainWindow.hide_to_tray` reaches floating docks, for the same
 reason.
 
-**The fix is placement, not cleanup.** Dock such a dock into an area up front and float it only as the
-fallback for a layout that did not restore, so no floating container exists when `restoreState` runs and
-there is nothing to abandon. Deleting the container afterwards would be chasing one instance of a general
-rule: nothing guarantees QtAds retires a container a restore emptied. Placing the dock *somewhere* is not
-optional — an unplaced dock is never registered with the manager, and `restoreState` silently skips it.
+**The fix is placement, not cleanup.** Dock every dock into an area up front, so no floating container
+exists when `restoreState` runs and there is nothing to abandon; a floating container should only ever
+come from the user tearing a dock out, or from `restoreState` rebuilding one the user saved. rehuco's
+Settings dock used to reach floating as a *fallback* for a layout that did not restore, which is what
+#306 first had to make safe and #307 then removed outright. Deleting the container afterwards would be
+chasing one instance of a general rule: nothing guarantees QtAds retires a container a restore emptied.
+Placing the dock *somewhere* is not optional — an unplaced dock is never registered with the manager,
+and `restoreState` silently skips it.
 
-**Two traps come with the fallback**, both of the same class as 10.3's "a pinned dock reads as open" —
-QtAds state that does not survive an operation one would expect it to. `addDockWidgetFloating`:
+**Two traps come with floating a dock programmatically**, both of the same class as 10.3's "a pinned
+dock reads as open" — QtAds state that does not survive an operation one would expect it to.
+`addDockWidgetFloating`:
 
 - **reopens a closed dock it moves** (`isClosed()` goes `True` → `False`), so a caller that has already
   decided the dock should be closed has to close it again afterwards. Doing so *is* enough: the guard
@@ -694,5 +698,7 @@ on the container still being visible, and hands the containers back for the call
 `addDockWidgetFloating` on an unshown manager parks the container, and `CDockManager::showEvent`
 then shows it — but that event fires while the owning top-level is still showing its *children*,
 before its own native window maps, so a parked container's `Show` and `Paint` still land ahead of
-the window's. Measured on a real plugin with a refused layout blob and a dialog saved open: the one
-path where the floating-first fallback runs on an open dock. Guarding the `show()` catches that too.
+the window's. Measured on a real plugin with a refused layout blob and a dialog saved open, back when
+the Settings dock still floated as a fallback (#306, removed by #307): the one path that floated an
+open dock under an unshown manager. Guarding the `show()` catches that too, and the guard stays armed
+there because nothing but the absence of such a caller keeps the path closed.

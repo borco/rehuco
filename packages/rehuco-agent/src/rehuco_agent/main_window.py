@@ -12,7 +12,6 @@ from typing import Final, override
 
 import PySide6QtAds as QtAds
 from borco_core.logging import LogScope
-from borco_pyside.dialogs import DockableDialog, DockableDialogManager
 from borco_pyside.logging import LogWidget
 from borco_pyside.qtads import QtAdsFloatingShowGuard, QtAdsPinSideHandler
 from borco_pyside.theming import ActionIconThemeHandler, ThemeManager, ThemeMenu, ThemeModel
@@ -83,6 +82,16 @@ from .tray_icon import TrayIcon
 LOG: Final = logging.getLogger(__name__)
 
 SETTINGS_DIALOG_OBJECT_NAME: Final = "settings_dialog"
+"""The Settings dock's ``objectName`` -- its identity in the outer `CDockManager`'s saved layout.
+
+Still spelled *dialog*, and deliberately: the value keys the dock's remembered pin side under
+:data:`DOCK_PIN_SIDES_GROUP` (#279), which no version guards, so a rename would silently orphan that --
+and it is the name every layout blob carries, so a rename is a bump of
+:data:`~rehuco_agent.settings.main_window_settings.OUTER_DOCKS_STATE_VERSION` whether or not one was
+meant."""
+
+SETTINGS_DOCK_TITLE: Final = "Settings"
+
 DOCK_PIN_SIDES_GROUP: Final = "dock_pin_sides"
 """Settings group holding one remembered pin side per main dock, keyed by its object name
 (#279). Each dock's side is written by its own `QtAdsPinSideHandler`; a dock nobody has pinned
@@ -158,12 +167,10 @@ THEME_DARK_ICON: Final = ":/icons/theme_dark.svg"
 
 class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
     """The single top-level window: a `CDockManager` holding a **Documents** dock around
-    :class:`DocumentsDock`, with a settings dock (#47) registered on the same outer manager -- not
-    merged into `DocumentsDock`'s own nested one. Floating by default (see
-    `DockableDialog.place_floating`), so a fresh install shows it as its own independent window
-    rather than pre-split into the documents area -- reached as a *fallback* though, after a saved
-    layout was offered the dock and refused, since floating it up front is what left an empty
-    container to flash before this window (#306).
+    :class:`DocumentsDock`, with a **Settings** dock (#47) registered on the same outer manager -- not
+    merged into `DocumentsDock`'s own nested one. Four peer docks in all, each placed once and each
+    leaving its own visibility to the manager's ``saveState()``, the Settings one included since #307
+    (see :meth:`__add_settings_dock`).
 
     Dock-in-dock (a `CDockManager` inside the Documents dock's `DocumentsDock`, itself inside this
     window's own `CDockManager`) leaves room for a future resource browser to dock alongside the
@@ -190,18 +197,17 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__tray_icon: TrayIcon | None = None
         # the floating dock windows hidden alongside this one by hide_to_tray, waiting for
         # raise_and_activate to put them back -- either hidden by hide_to_tray, or held back by
-        # __init__ so a restored floating dialog does not reach the screen before this window does
+        # __init__ so a restored floating dock does not reach the screen before this window does
         # (#306). Empty at every other time.
         self.__floating_docks_hidden_with_window: Final[list[QtAds.CFloatingDockContainer]] = []
         # armed for the whole of __init__ and released at the end of it, so nothing this window owns
         # can put a top-level window on screen while the window itself is not up: the layout restore
         # below shows a dock saved as floating-and-open the moment it applies the blob, and merely
-        # hiding it again afterwards leaves a real, painted flash (#47, #306)
+        # hiding it again afterwards leaves a real, painted flash (#306)
         floating_show_guard = QtAdsFloatingShowGuard()
         shared_tray_settings().enabled_changed.connect(self.__on_tray_enabled_changed)  # type: ignore[attr-defined]
         self.__on_tray_enabled_changed(shared_tray_settings().enabled)
 
-        self.__dialog_manager: Final = DockableDialogManager()
         self.__dock_manager: Final = QtAds.CDockManager(self)
         self.__settings_dialog: Final = SettingsDialog()
         self.__register_settings_pages()
@@ -283,41 +289,27 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__session.load(persistent_settings())
         self.__restore_session_if_enabled()
 
-        self.__dialog_manager.restore_all(persistent_settings())
-
         self.__setup_view_menu()
 
         # must be called after restoring the geometry and the session (open documents) so
         # the outer dock layout can be restored to the right place, and any floating
-        # dialog's own window is already created and ready to be restored to its prior
-        # visibility (#47, #55). Skipped when empty (no session saved yet): CDockManager.restoreState()
+        # dock's own window is already created and ready to be restored to its prior
+        # visibility (#55). Skipped when empty (no session saved yet): CDockManager.restoreState()
         # would return False anyway, but only after Qt's qUncompress() logs a spurious "Input data is
         # corrupted" warning to stderr for the invalid-as-qCompress empty buffer.
         # A layout that actually restored already carries the user's own splitter sizes, so seeding a
         # default over it is exactly what must not happen -- the restore's own verdict is what decides, not
         # merely whether a blob was present (a stale or corrupted one is refused, and then there *is*
-        # nothing but the as-built layout).
-        #
-        # That one verdict drives two things, which is why it is a local: the seeding flag below,
-        # and the settings dialog's floating-first fallback (#306) -- moving either off it would
-        # silently move the other. It has to be the verdict rather than "was a blob present", because
-        # a structurally-refused blob is only discovered by making the call.
+        # nothing but the as-built layout) -- and a refused blob is only discovered by making the call.
         restored = False
         if self.__window_settings.outer_docks_state:
             restored = bool(self.__dock_manager.restoreState(QByteArray(self.__window_settings.outer_docks_state)))
         # not Final: showEvent sets it the first time it seeds
         self.__bottom_dock_heights_seeded = restored
-        if not restored:
-            # nothing usable was saved, so nothing moved the settings dock out of the Documents area
-            # it was tabbed into -- give it the floating-first placement a fresh install is owed
-            # (__setup_docking_system). After restore_all above, not before, so restoreState keeps the
-            # last word on visibility (#55); place_floating is what keeps a closed dock closed across
-            # the move.
-            self.__settings_dock.place_floating()
-        # a layout describing the settings dialog as floating *and open* is restored by showing its
+        # a layout describing a dock the user floated as floating *and open* is restored by showing its
         # container there and then, before this window exists on screen -- the guard kept that off
         # the screen; released here, it hands the container back hidden, to wait for
-        # raise_and_activate, which shows it above this window instead of ahead of it (#47, #306)
+        # raise_and_activate, which shows it above this window instead of ahead of it (#306)
         self.__floating_docks_hidden_with_window.extend(floating_show_guard.release())
         # and anything else already on screen as construction ends waits the same way -- nothing
         # should be, every show during __init__ having been guarded, so this is belt over braces
@@ -468,8 +460,8 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
     def __setup_file_menu(self) -> None:
         """Wire ``File``'s static actions -- open dialogs, close, save all, quit -- and the ``Open
         recents`` submenu's on-demand population (#64). ``Settings`` and the trailing ``Quit``
-        separator are appended later, in :meth:`__setup_docking_system`, once the settings dock's
-        own toggle action exists to reuse.
+        separator are appended later, in :meth:`__setup_docking_system`, once the settings dock exists
+        for ``settings_action``'s icon handler to mirror.
 
         ``Sweep checksums...`` (#242) lives here rather than in a menu of its own: ``File`` is where
         every *point at something on disk and act on it* entry already is, and a sweep is a folder
@@ -741,16 +733,19 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__documents_dock_widget = self.__add_documents_dock()
         self.__log_dock = self.__add_log_dock()
         self.__task_queue_dock = self.__add_task_queue_dock()
+        # a local rather than an attribute, unlike the three above: nothing outside this method needs
+        # the dock itself, and __main_docks below is what carries it for the rest of the window's life
+        settings_dock = self.__add_settings_dock()
         # documents_action/log_action/tasks_action stand in for the docks' own toggleViewAction()s in
-        # the View menu, the same reason settings_action stands in for toggle_action in File below: the
-        # toolbar button sits on a highlighted checked-button background, where ActionIconThemeHandler's
-        # checked-state color reads well, but a menu row has no such background behind its icon --
-        # only the native checkmark -- so that same color would be unreadable there whenever a dock
-        # is open. Kept (unlike every other ActionIconThemeHandler call site here) since view_menu's
-        # own aboutToShow needs them to resync the companions right before View shows --
-        # connected here rather than where the actions are actually added to view_menu (__init__,
-        # once the theme entries ahead of them exist) because all three handlers already exist by this
-        # point and view_menu itself does too, declared in the .ui.
+        # the View menu, the same reason settings_action stands in for the Settings dock's in File
+        # below: the toolbar button sits on a highlighted checked-button background, where
+        # ActionIconThemeHandler's checked-state color reads well, but a menu row has no such
+        # background behind its icon -- only the native checkmark -- so that same color would be
+        # unreadable there whenever a dock is open. Kept (unlike every other ActionIconThemeHandler
+        # call site here) since view_menu's own aboutToShow needs them to resync the companions right
+        # before View shows -- connected here rather than where the actions are actually added to
+        # view_menu (__init__, once the theme entries ahead of them exist) because all three handlers
+        # already exist by this point and view_menu itself does too, declared in the .ui.
         self.__documents_view_icon_handler = ActionIconThemeHandler(
             self.__documents_dock_widget.toggleViewAction(),
             DOCUMENTS_VIEW_ICON_RESOURCE,
@@ -794,47 +789,13 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__ui.image_previews_toggle_action.setChecked(shared_image_viewer_settings().previews_visible)
         self.__ui.image_previews_toggle_action.toggled.connect(self.__on_image_previews_toggled)
 
-        settings_dock = DockableDialog(
-            self.__dock_manager, SETTINGS_DIALOG_OBJECT_NAME, "Settings", self.__settings_dialog
-        )
-        # docked-first, transiently: tabbed into the Documents area now, and floated by __init__ only
-        # if the saved layout it then restores is refused. Not `place_floating()` here, which is what
-        # left an abandoned, empty `CFloatingDockContainer` to flash before this window on any launch
-        # whose saved layout put this dock in a *sidebar* -- the one restore path QtAds does not retire
-        # the container it took the dock out of ([[appendices.qt-ads#auto-hide-abandoned-float]], #306).
-        # Placing it *somewhere* is not optional: an unplaced dock is never registered with the manager,
-        # so restoreState silently skips it and the dialog vanishes.
-        #
-        # The Documents area rather than a bottom one: __seed_bottom_dock_heights toggles the Log and
-        # Tasks docks open and closed, and a visible tab in either would keep that pane alive through
-        # the toggle-off and change what it measures. Its area is non-None here (the dock is added by
-        # __add_documents_dock above and never removed) -- passing None would fall back to "add to the
-        # container", giving the root splitter a fourth pane and breaking that same method's "pane 0 is
-        # Documents". QtAds makes the last-added dock its area's current tab, so "Settings" is briefly
-        # in front of "Documents" -- nothing shows either (this window is not shown until __init__
-        # returns) and restore_all, restoreState and the fallback float each overwrite it, so the
-        # transient tab is not UI anyone sees or intended.
-        self.__dock_manager.addDockWidget(
-            QtAds.CenterDockWidgetArea, settings_dock.dock, self.__documents_dock_widget.dockAreaWidget()
-        )
-        # pinnable like the window's other three docks (#279). Set here rather than widened into
-        # `DockableDialog`'s own feature set: that framework's other consumers are dialogs on
-        # managers with no window sidebars to pin into, and this one is a main dock that happens to
-        # be built through it.
-        settings_dock.dock.setFeature(QtAds.CDockWidget.DockWidgetFeature.DockWidgetPinnable, True)
-        self.__dialog_manager.register(settings_dock)
-        # held onto because __init__ needs the wrapper back to run the
-        # floating fallback: `DockableDialogManager` deliberately has no lookup-by-name, and the dock
-        # alone (which __main_docks below does hold) cannot re-place itself. Not Final, for the same
-        # reason the three docks above are not: assigned from __setup_docking_system, not __init__.
-        self.__settings_dock = settings_dock
         # not Final, for the same reason the three docks above are not: assigned from
         # __setup_docking_system rather than __init__
         self.__main_docks = (
             self.__documents_dock_widget,
             self.__log_dock,
             self.__task_queue_dock,
-            settings_dock.dock,
+            settings_dock,
         )
         # one per dock, each remembering where that dock was last pinned -- QtAds updates none of
         # this itself, so a dock dropped on the right sidebar would otherwise pin back to the default
@@ -845,17 +806,17 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         )
         for handler in self.__pin_side_handlers:
             handler.load(persistent_settings())
-        # settings_action stands in for toggle_action in File (a plain menu row, unlike the
-        # toolbar button toggle_action was built for) -- see the companion parameter's docstring
-        # for why that needs a second, differently-themed action rather than reusing toggle_action
+        # settings_action stands in for the dock's own toggleViewAction() in File (a plain menu row,
+        # unlike the toolbar button that action is shown as) -- see the companion parameter's docstring
+        # for why that needs a second, differently-themed action rather than reusing the toggle
         # outright (#64). Kept (unlike every other ActionIconThemeHandler call site here) since
         # __setup_file_menu needs it to resync settings_action right before File shows.
         self.__settings_action_icon_handler = ActionIconThemeHandler(
-            settings_dock.toggle_action, SETTINGS_ICON_RESOURCE, companion=self.__ui.settings_action
+            settings_dock.toggleViewAction(), SETTINGS_ICON_RESOURCE, companion=self.__ui.settings_action
         )
 
-        # settings_dock only exists from here on, so its menu action is appended to file_menu here
-        # rather than declared in the .ui alongside the rest of the menu (#64)
+        # the menu's tail -- Settings, a separator, Quit -- is appended in code rather than declared in
+        # the .ui, so it closes the menu after every row the .ui declares and Quit stays last (#64)
         self.__ui.file_menu.addAction(self.__ui.settings_action)
         self.__ui.file_menu.addSeparator()
         self.__ui.file_menu.addAction(self.__ui.quit_action)
@@ -870,7 +831,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__ui.action_bar.addAction(self.__documents_dock_widget.toggleViewAction())
         self.__ui.action_bar.addAction(self.__log_dock.toggleViewAction())
         self.__ui.action_bar.addAction(self.__task_queue_dock.toggleViewAction())
-        self.__ui.action_bar.addAction(settings_dock.toggle_action)
+        self.__ui.action_bar.addAction(settings_dock.toggleViewAction())
 
     def __add_documents_dock(self) -> QtAds.CDockWidget:
         """Build the documents area's own dock on the outer manager, open and filling the window (#268).
@@ -949,9 +910,11 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         loop spins between the two toggles, so nothing is ever repainted with a dock open, and the
         companion actions `ActionIconThemeHandler` mirrors end up back where they started.
 
-        Sized off the splitter's own current total, and generic in the number of bottom docks (every
-        pane after the first, the Documents dock being the one added before them), so adding a third
-        one needs nothing here.
+        Sized off the splitter's own current total, so the *arithmetic* is generic in the number of
+        bottom docks (every pane after the first, the Documents dock being the one added before them)
+        -- but the two toggles name the Log and Tasks docks, so a third bottom dock would have to join
+        both pairs or be hidden while the split is measured. Which is one reason the Settings dock is a
+        tab in the Documents area instead (:meth:`__add_settings_dock`).
         """
         area = self.__documents_dock_widget.dockAreaWidget()
         if area is None:  # pragma: no cover  (the dock is placed at construction and never removed)
@@ -1089,6 +1052,49 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         dock.toggleView(False)
         return dock
 
+    def __add_settings_dock(self) -> QtAds.CDockWidget:
+        """Build the Settings dock on the outer manager, closed by default (#47, #307).
+
+        **The same plain ``CDockWidget`` the two above are**, which is the whole of #307: this was the
+        app's last `DockableDialog`, and that framework's only addition over a dock -- a "Restore on
+        start" checkbox, with a second copy of the dock's visibility persisted beside the layout to
+        feed it -- is the thing those two docstrings each explain not wanting. The cost is the
+        capability that checkbox was: leaving Settings open now and still having it stay shut next
+        launch. Open at close is open at start from here on, exactly as it is for the other three.
+
+        **Tabbed into the Documents area, not the bottom one.** :meth:`__seed_bottom_dock_heights`
+        toggles the Log and Tasks docks open and closed to measure a fresh layout's split, and a third
+        named dock down there would have to join both of those pairs and take a share of the height
+        the settings pages are far too tall to live in. A tab inside the Documents area adds no pane,
+        so that method's "pane 0 is Documents" still holds and it needs nothing. The area is non-None
+        here -- ``__add_documents_dock`` runs first and its dock is never removed -- and passing
+        ``None`` instead would fall back to "add to the container", which is exactly the fourth pane
+        this avoids.
+
+        **Closed by default**, like Log and Tasks: settings are somewhere you go, and a first run
+        should open on the documents area rather than on its own preferences. Closing it here is also
+        what puts Documents back in front, QtAds having made this the area's current tab as the
+        last one added.
+
+        :returns: the dock, closed.
+        """
+        dock = QtAds.CDockWidget(self.__dock_manager, SETTINGS_DOCK_TITLE)
+        dock.setObjectName(SETTINGS_DIALOG_OBJECT_NAME)
+        features = QtAds.CDockWidget.DockWidgetFeature
+        dock.setFeatures(
+            features.DockWidgetClosable
+            | features.DockWidgetMovable
+            | features.DockWidgetFloatable
+            | features.DockWidgetFocusable
+            | features.DockWidgetPinnable
+        )
+        dock.setWidget(self.__settings_dialog)
+        self.__dock_manager.addDockWidget(
+            QtAds.CenterDockWidgetArea, dock, self.__documents_dock_widget.dockAreaWidget()
+        )
+        dock.toggleView(False)
+        return dock
+
     def __confirm_task_queue_loss(self) -> bool:
         """Ask before quitting only when quitting would actually cost something (#202).
 
@@ -1220,15 +1226,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             return
 
         # pause, wait, save, shut down (#202, [[appendices.task-queue#teardown]]) -- before the outer
-        # dock layout is captured below, the same ordering constraint __dialog_manager's call is under
+        # dock layout is captured below
         self.__shutdown_task_queue()
 
-        # must run before __save_window_state captures the outer CDockManager's saveState(), or a
-        # floating-and-visible-but-unchecked dialog gets saved that way anyway and flashes open on
-        # the next launch before __init__'s dialog_manager.restore_all() notices the checkbox (#47)
-        self.__dialog_manager.enforce_restore_on_start()
         self.__save_window_state()
-        self.__dialog_manager.save_all(persistent_settings())
         # same moment, same shape: where each main dock was last pinned, so the next launch
         # sends its pin button back there rather than to the default (#279)
         for handler in self.__pin_side_handlers:
@@ -1461,7 +1462,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
         Every floating dock window put away for it comes back with
         it, before this window takes the foreground -- so the main window ends up the active one, with
-        the dialogs it owns restored above it rather than stealing the activation on the way up. That
+        the docks it owns restored above it rather than stealing the activation on the way up. That
         covers what :meth:`hide_to_tray` took down, what the startup layout restore brought up too
         early, and what QtAds shows from inside the ``show()`` itself: a container it parked while the
         window was unshown, which ``CDockManager::showEvent`` brings up while the window is still
@@ -1492,7 +1493,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """Hide this window to the tray, taking every floating dock window with it (#205).
 
         **A floating dock is its own top-level window**, parented to its `CDockManager` rather than
-        to this one, so it does not follow a plain ``hide()`` -- a floating Settings dialog would sit
+        to this one, so it does not follow a plain ``hide()`` -- a floated-out Settings dock would sit
         on screen with nothing behind it, offering Apply on a window the user has just put away
         (confirmed empirically offscreen). Every floating container is found from this window, which
         covers the documents dock's own nested manager as well as the outer one, so a torn-out
@@ -1501,8 +1502,8 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         Each is hidden rather than closed (``toggleView(False)``), which is what keeps the round trip
         honest in both directions: the dock stays *open* as far as `CDockWidget.isClosed` is
         concerned, so :meth:`raise_and_activate` puts back exactly what was on screen, and a Quit
-        from the tray while hidden still persists the dialog as open for the next launch
-        (`DockableDialog.save_settings` reads that same flag) rather than recording the tray's own
+        from the tray while hidden still persists the dock as open for the next launch (the outer
+        manager's ``saveState()`` reads that same flag) rather than recording the tray's own
         bookkeeping as the user's choice.
         """
         self.__defer_visible_floating_docks()
@@ -1515,7 +1516,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         Two callers: :meth:`hide_to_tray` on the way down, and ``__init__`` on the way up, where it
         runs after `QtAdsFloatingShowGuard` has already handed back everything shown during
         construction -- so there it should find nothing, and is the belt over those braces: whatever
-        is on screen as construction ends waits for the window the same way (#47, #306). Not called
+        is on screen as construction ends waits for the window the same way (#306). Not called
         from :meth:`raise_and_activate`, which defers only what its own guard caught: a floating window
         legitimately on screen when a forwarded open raises this one must not blink.
 

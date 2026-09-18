@@ -71,8 +71,10 @@ wrapped either: a `QTreeView` already is a scroll area, and nesting them gives t
 and a tree that can be scrolled out of its own viewport.
 
 `MainWindow.__register_settings_pages` constructs each page and calls
-`SettingsDialog.add_page(title, page)`; the dialog itself lives inside a floating-first, dockable
-`DockableDialog` on the outer `CDockManager` (#47's dockable-dialog framework — out of scope here).
+`SettingsDialog.add_page(title, page)`; the dialog itself is the widget of a plain `CDockWidget` on the
+outer `CDockManager`, tabbed beside the Documents dock and closed until asked for (#307). It carries no
+chrome of its own — whether it reopens with the window is whether it was open when the window closed,
+which that manager's `saveState()` already records, the same deal the Log and Tasks docks get.
 
 ## 1. The category tree (#76, #277)
 

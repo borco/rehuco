@@ -1831,8 +1831,9 @@ def test_a_tall_page_leaves_the_dialog_free_to_shrink(qtbot: QtBot) -> None:
     """A page taller than the dialog no longer sets the dialog's minimum height (#229).
 
     Guards the defect this shell shipped with: the stack's minimum was the tallest page's, so the
-    whole dialog refused to shrink and its host's own chrome -- the dock frame's "Restore on start"
-    check box -- was pushed out of the visible rectangle rather than staying put.
+    whole dialog refused to shrink and its host's own chrome -- at the time, a dock frame's "Restore on
+    start" check box under the dialog (gone since #307) -- was pushed out of the visible rectangle
+    rather than staying put.
 
     **Test steps:**
 
