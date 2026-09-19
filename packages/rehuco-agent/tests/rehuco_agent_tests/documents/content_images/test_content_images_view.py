@@ -478,13 +478,12 @@ def test_a_banner_too_long_for_the_width_is_elided_not_cut(
     painted = view.viewport().grab().toImage()
     window = view.palette().color(QPalette.ColorRole.Window).name()
     width = view.viewport().width()
-    _mark, full_text = banner_parts(view.layout_table.rows[0].banner or "", 1, collapsed=False)  # type: ignore[union-attr]
+    assert view.layout_table is not None
+    _mark, full_text = banner_parts(view.layout_table.rows[0].banner or "", 1, collapsed=False)
 
     drawn = mocker.patch.object(QPainter, "drawText")
     view.viewport().grab()
-    labels = [call.args for call in drawn.call_args_list if "…" in call.args[-1]]
-    assert len(labels) == 1
-    rect, _flags, elided = labels[0]
+    ((rect, _flags, elided),) = [call.args for call in drawn.call_args_list if "…" in call.args[-1]]
     assert elided != full_text
     assert elided.endswith(full_text[-4:])
     bold = view.font()
