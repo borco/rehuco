@@ -1,0 +1,2499 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Distributed resource management system for tutorials and reference images">
+      
+      
+      
+        <link rel="canonical" href="https://borco.github.io/rehuco/specs/diagrams/sequence-open-document/">
+      
+      
+        <link rel="prev" href="../component-decomposition/">
+      
+      
+        <link rel="next" href="../../appendices/briefcase-packaging/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Sequence: Open a Path - rehuco</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../../stylesheets/extra.css">
+    
+      <link rel="stylesheet" href="../../../assets/mkdocs_puml/puml.css">
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#sequence-diagram-opening-a-rehu-path" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="rehuco" class="md-header__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            rehuco
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Sequence: Open a Path
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../../how-it-works/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Design Specs
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../implementation-plan/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Implementation Plan
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../changelog/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Changelog
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../license/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  License
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="rehuco" class="md-nav__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    rehuco
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Specs
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design Specs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-it-works/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    How It Works
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../nodes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Node Communication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../discovery-trust-access/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Discovery & Trust
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sync/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sync & Conflicts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../multiplicity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multiplicity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../mounts-and-storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mounts & Storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../instances-and-dedup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Identity & Dedup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../borrowing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Borrowing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../offline-editing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Offline Editing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plugins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../requirements/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Requirements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../acquisition-tooling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acquisition Tooling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../packaging-deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Packaging & Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../field-schema/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Field Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference-images/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference Images
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_19" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagrams
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2_19" id="__nav_2_19_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_19_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2_19">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Diagrams
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../activity-open-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Activity: Open a Path
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../component-decomposition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Component: Containment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sequence: Open a Path
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_20" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_20" id="__nav_2_20_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Appendices
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_20_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_20">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Appendices
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../appendices/briefcase-packaging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Briefcase Packaging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../appendices/code-conventions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Conventions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../appendices/continuous-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Continuous Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../appendices/logging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Logging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../appendices/open-questions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open Questions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../appendices/post-mortem/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Post-Mortem
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../appendices/project-management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../appendices/qt-ads/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QtAds
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../appendices/release-runbook/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Runbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../appendices/settings-pages/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Settings Pages
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../appendices/task-queue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Queue
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../appendices/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../appendices/theming_and_styling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Theming & Styling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../appendices/windows-dev-launcher/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Windows Dev Launcher
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_21" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../history/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    History
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2_21" id="__nav_2_21_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_21_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_21">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    History
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/ibocator/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ibocator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalog3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutcatalog 3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalogpy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalogpy2/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy2
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalogpy3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalog4/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog4
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalog5/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog5
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/resource-hub/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Resource Hub
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/daz3d-personal-database/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Daz3D Personal Database
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/pyside-ibo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    pyside-ibo (shared library)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../implementation-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Implementation Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../changelog/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Changelog
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../changelog/rehuco-agent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../changelog/rehuco-core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../changelog/rehuco-node/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-node
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../changelog/borco-core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    borco-core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../changelog/borco-pyside/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    borco-pyside
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../license/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    License
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="sequence-diagram-opening-a-rehu-path">Sequence diagram: opening a <code>.rehu</code> path</h1>
+<p><span class="slug-ref">[[[sequence-open-document]]]</span></p>
+<p>Traces <code>packages/rehuco-agent/src/rehuco_agent/__main__.py</code>'s <code>main()</code> through <code>app.py</code>'s <code>run()</code>
+(<code>app.py:73-94</code>) down to a new dock appearing, covering both cases <code>run()</code> handles: this process
+becomes the single-instance primary, or another primary is already running and this process
+just forwards its argv and exits (<span class="slug-ref">[[nodes#single-instance]]</span>). Builds the <span class="slug-ref">[[plugins#dock-shell]]</span>
+described in prose.</p>
+<div class='puml-container'><div class="puml light" style=""><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" data-diagram-type="SEQUENCE" style="width:1930px;height:1170px;background:#FFFFFF;" width="1930px" height="1170px" viewBox="0 0 1930 1170" zoomAndPan="magnify" preserveAspectRatio="xMidYMid meet" contentStyleType="text/css" class="diagram"><?plantuml 1.2026.8?><defs/><g font-family="sans-serif" lengthAdjust="spacing"><rect x="227.025" y="186.125" width="1683.074" height="901.461" fill="none" style="stroke:#000;stroke-width:1.5;"/><rect x="517.764" y="421.188" width="1367.336" height="408.398" fill="none" style="stroke:#000;stroke-width:1.5;"/><rect x="994.349" y="510.586" width="865.751" height="305" fill="none" style="stroke:#000;stroke-width:1.5;"/><g><title>OS . Shell</title><rect x="47.338" y="57.594" width="8" height="1053.992" fill="#000" fill-opacity="0"/><line x1="50.838" y1="57.594" x2="50.838" y2="1111.586" style="stroke:#181818;stroke-width:0.5;stroke-dasharray:5,5;"/></g><g><title>__main__.main..</title><rect x="239.525" y="57.594" width="8" height="1053.992" fill="#000" fill-opacity="0"/><line x1="243.025" y1="57.594" x2="243.025" y2="1111.586" style="stroke:#181818;stroke-width:0.5;stroke-dasharray:5,5;"/></g><g><title>app.run..</title><rect x="338.806" y="57.594" width="8" height="1053.992" fill="#000" fill-opacity="0"/><line x1="342.306" y1="57.594" x2="342.306" y2="1111.586" style="stroke:#181818;stroke-width:0.5;stroke-dasharray:5,5;"/></g><g><title>Application</title><rect x="530.264" y="57.594" width="8" height="1053.992" fill="#000" fill-opacity="0"/><line x1="533.764" y1="57.594" x2="533.764" y2="1111.586" style="stroke:#181818;stroke-width:0.5;stroke-dasharray:5,5;"/></g><g><title>ApplicationSingleton</title><rect x="694.382" y="57.594" width="8" height="1053.992" fill="#000" fill-opacity="0"/><line x1="697.882" y1="57.594" x2="697.882" y2="1111.586" style="stroke:#181818;stroke-width:0.5;stroke-dasharray:5,5;"/></g><g><title>MainWindow</title><rect x="834.942" y="57.594" width="8" height="1053.992" fill="#000" fill-opacity="0"/><line x1="838.442" y1="57.594" x2="838.442" y2="1111.586" style="stroke:#181818;stroke-width:0.5;stroke-dasharray:5,5;"/></g><g><title>DocumentsDock</title><rect x="1006.849" y="57.594" width="8" height="1053.992" fill="#000" fill-opacity="0"/><line x1="1010.349" y1="57.594" x2="1010.349" y2="1111.586" style="stroke:#181818;stroke-width:0.5;stroke-dasharray:5,5;"/></g><g><title>RehuDocument</title><rect x="1226.214" y="57.594" width="8" height="1053.992" fill="#000" fill-opacity="0"/><line x1="1229.714" y1="57.594" x2="1229.714" y2="1111.586" style="stroke:#181818;stroke-width:0.5;stroke-dasharray:5,5;"/></g><g><title>RehuDocumentModel</title><rect x="1379.848" y="57.594" width="8" height="1053.992" fill="#000" fill-opacity="0"/><line x1="1383.348" y1="57.594" x2="1383.348" y2="1111.586" style="stroke:#181818;stroke-width:0.5;stroke-dasharray:5,5;"/></g><g><title>DocumentWidget</title><rect x="1540.242" y="57.594" width="8" height="1053.992" fill="#000" fill-opacity="0"/><line x1="1543.742" y1="57.594" x2="1543.742" y2="1111.586" style="stroke:#181818;stroke-width:0.5;stroke-dasharray:5,5;"/></g><g><title>FieldsForm</title><rect x="1840.6" y="57.594" width="8" height="1053.992" fill="#000" fill-opacity="0"/><line x1="1844.1" y1="57.594" x2="1844.1" y2="1111.586" style="stroke:#181818;stroke-width:0.5;stroke-dasharray:5,5;"/></g><rect x="10" y="26.297" width="81.676" height="30.297" fill="#E2E2F0" style="stroke:#181818;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="17" y="46.292" fill="#000" font-size="14" textLength="67.676">OS / Shell</text><rect x="193.359" y="26.297" width="99.333" height="30.297" fill="#E2E2F0" style="stroke:#181818;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="200.359" y="46.292" fill="#000" font-size="14" textLength="34.979" text-decoration="underline">main</text><text x="235.338" y="46.292" fill="#000" font-size="14" textLength="50.354">.main()</text><rect x="302.692" y="26.297" width="79.229" height="30.297" fill="#E2E2F0" style="stroke:#181818;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="309.692" y="46.292" fill="#000" font-size="14" textLength="65.229">app.run()</text><rect x="487.652" y="26.297" width="92.224" height="30.297" fill="#E2E2F0" style="stroke:#181818;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="494.652" y="46.292" fill="#000" font-size="14" textLength="78.224">Application</text><rect x="618.787" y="26.297" width="158.19" height="30.297" fill="#E2E2F0" style="stroke:#181818;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="625.787" y="46.292" fill="#000" font-size="14" textLength="144.19">ApplicationSingleton</text><rect x="786.978" y="26.297" width="102.929" height="30.297" fill="#E2E2F0" style="stroke:#181818;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="793.978" y="46.292" fill="#000" font-size="14" textLength="88.929">MainWindow</text><rect x="945.862" y="26.297" width="128.974" height="30.297" fill="#E2E2F0" style="stroke:#181818;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="952.862" y="46.292" fill="#000" font-size="14" textLength="114.974">DocumentsDock</text><rect x="1168.406" y="10" width="122.616" height="46.594" fill="#E2E2F0" style="stroke:#181818;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="1175.406" y="29.995" fill="#000" font-size="14" textLength="108.616">RehuDocument</text><text x="1208.937" y="46.292" fill="#000" font-size="14" textLength="41.556">(core)</text><rect x="1301.022" y="26.297" width="164.65" height="30.297" fill="#E2E2F0" style="stroke:#181818;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="1308.022" y="46.292" fill="#000" font-size="14" textLength="150.65">RehuDocumentModel</text><rect x="1475.673" y="26.297" width="136.138" height="30.297" fill="#E2E2F0" style="stroke:#181818;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="1482.673" y="46.292" fill="#000" font-size="14" textLength="122.138">DocumentWidget</text><rect x="1798.781" y="26.297" width="90.638" height="30.297" fill="#E2E2F0" style="stroke:#181818;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="1805.781" y="46.292" fill="#000" font-size="14" textLength="76.638">FieldsForm</text><rect x="10" y="1111.586" width="81.676" height="30.297" fill="#E2E2F0" style="stroke:#181818;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="17" y="1131.581" fill="#000" font-size="14" textLength="67.676">OS / Shell</text><rect x="193.359" y="1111.586" width="99.333" height="30.297" fill="#E2E2F0" style="stroke:#181818;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="200.359" y="1131.581" fill="#000" font-size="14" textLength="34.979" text-decoration="underline">main</text><text x="235.338" y="1131.581" fill="#000" font-size="14" textLength="50.354">.main()</text><rect x="302.692" y="1111.586" width="79.229" height="30.297" fill="#E2E2F0" style="stroke:#181818;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="309.692" y="1131.581" fill="#000" font-size="14" textLength="65.229">app.run()</text><rect x="487.652" y="1111.586" width="92.224" height="30.297" fill="#E2E2F0" style="stroke:#181818;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="494.652" y="1131.581" fill="#000" font-size="14" textLength="78.224">Application</text><rect x="618.787" y="1111.586" width="158.19" height="30.297" fill="#E2E2F0" style="stroke:#181818;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="625.787" y="1131.581" fill="#000" font-size="14" textLength="144.19">ApplicationSingleton</text><rect x="786.978" y="1111.586" width="102.929" height="30.297" fill="#E2E2F0" style="stroke:#181818;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="793.978" y="1131.581" fill="#000" font-size="14" textLength="88.929">MainWindow</text><rect x="945.862" y="1111.586" width="128.974" height="30.297" fill="#E2E2F0" style="stroke:#181818;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="952.862" y="1131.581" fill="#000" font-size="14" textLength="114.974">DocumentsDock</text><rect x="1168.406" y="1111.586" width="122.616" height="46.594" fill="#E2E2F0" style="stroke:#181818;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="1175.406" y="1131.581" fill="#000" font-size="14" textLength="108.616">RehuDocument</text><text x="1208.937" y="1147.878" fill="#000" font-size="14" textLength="41.556">(core)</text><rect x="1301.022" y="1111.586" width="164.65" height="30.297" fill="#E2E2F0" style="stroke:#181818;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="1308.022" y="1131.581" fill="#000" font-size="14" textLength="150.65">RehuDocumentModel</text><rect x="1475.673" y="1111.586" width="136.138" height="30.297" fill="#E2E2F0" style="stroke:#181818;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="1482.673" y="1131.581" fill="#000" font-size="14" textLength="122.138">DocumentWidget</text><rect x="1798.781" y="1111.586" width="90.638" height="30.297" fill="#E2E2F0" style="stroke:#181818;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="1805.781" y="1131.581" fill="#000" font-size="14" textLength="76.638">FieldsForm</text><polygon points="231.025,82.727,241.025,86.727,231.025,90.727,235.025,86.727" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="50.838" y1="86.727" x2="237.025" y2="86.727" style="stroke:#181818;stroke-width:1;"/><text x="57.838" y="81.661" fill="#000" font-size="13" textLength="168.188">exec rehuco-agent a.rehu</text><polygon points="330.306,111.859,340.306,115.859,330.306,119.859,334.306,115.859" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="243.025" y1="115.859" x2="336.306" y2="115.859" style="stroke:#181818;stroke-width:1;"/><text x="250.025" y="110.793" fill="#000" font-size="13" textLength="61.223">run(argv)</text><polygon points="521.764,140.992,531.764,144.992,521.764,148.992,525.764,144.992" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="342.306" y1="144.992" x2="527.764" y2="144.992" style="stroke:#181818;stroke-width:1;"/><text x="349.306" y="139.926" fill="#000" font-size="13" textLength="112.036">Application(argv)</text><polygon points="685.882,170.125,695.882,174.125,685.882,178.125,689.882,174.125" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="342.306" y1="174.125" x2="691.882" y2="174.125" style="stroke:#181818;stroke-width:1;"/><text x="349.306" y="169.059" fill="#000" font-size="13" textLength="91.419">setup(APP_ID)</text><path d="M227.025,186.125 L291.468,186.125 L291.468,193.258 L281.468,203.258 L227.025,203.258 L227.025,186.125" style="stroke:#000;stroke-width:1.5;" fill="#EEE"/><rect x="227.025" y="186.125" width="1683.074" height="901.461" fill="none" style="stroke:#000;stroke-width:1.5;"/><text x="242.025" y="199.192" fill="#000" font-size="13" textLength="19.443" font-weight="700">alt</text><text x="306.468" y="198.335" fill="#000" font-size="11" textLength="196.313" font-weight="700">[this process becomes primary]</text><polygon points="353.306,230.391,343.306,234.391,353.306,238.391,349.306,234.391" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="347.306" y1="234.391" x2="696.882" y2="234.391" style="stroke:#181818;stroke-width:1;stroke-dasharray:2,2;"/><text x="359.306" y="229.325" fill="#000" font-size="13" textLength="29.523">True</text><polygon points="685.882,259.523,695.882,263.523,685.882,267.523,689.882,263.523" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="342.306" y1="263.523" x2="691.882" y2="263.523" style="stroke:#181818;stroke-width:1;"/><text x="349.306" y="258.458" fill="#000" font-size="13" textLength="309.594">connect other_instance_run -&gt; open_forwarded</text><polygon points="521.764,288.656,531.764,292.656,521.764,296.656,525.764,292.656" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="342.306" y1="292.656" x2="527.764" y2="292.656" style="stroke:#181818;stroke-width:1;"/><text x="349.306" y="287.59" fill="#000" font-size="13" textLength="138.544">show_main_window()</text><polygon points="826.442,317.789,836.442,321.789,826.442,325.789,830.442,321.789" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="533.764" y1="321.789" x2="832.442" y2="321.789" style="stroke:#181818;stroke-width:1;"/><text x="540.764" y="316.723" fill="#000" font-size="13" textLength="123.722">new MainWindow()</text><polygon points="998.349,346.922,1008.349,350.922,998.349,354.922,1002.349,350.922" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="838.442" y1="350.922" x2="1004.349" y2="350.922" style="stroke:#181818;stroke-width:1;"/><text x="845.442" y="345.856" fill="#000" font-size="13" textLength="147.907">new DocumentsDock()</text><polygon points="353.306,376.055,343.306,380.055,353.306,384.055,349.306,380.055" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="347.306" y1="380.055" x2="532.764" y2="380.055" style="stroke:#181818;stroke-width:1;stroke-dasharray:2,2;"/><text x="359.306" y="374.989" fill="#000" font-size="13" textLength="49.321">window</text><polygon points="521.764,405.188,531.764,409.188,521.764,413.188,525.764,409.188" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="342.306" y1="409.188" x2="527.764" y2="409.188" style="stroke:#181818;stroke-width:1;"/><text x="349.306" y="404.122" fill="#000" font-size="13" textLength="167.458">open_forwarded(argv[1:])</text><path d="M517.764,421.188 L594.388,421.188 L594.388,428.32 L584.388,438.32 L517.764,438.32 L517.764,421.188" style="stroke:#000;stroke-width:1.5;" fill="#EEE"/><rect x="517.764" y="421.188" width="1367.336" height="408.398" fill="none" style="stroke:#000;stroke-width:1.5;"/><text x="532.764" y="434.254" fill="#000" font-size="13" textLength="31.624" font-weight="700">loop</text><text x="609.388" y="433.398" fill="#000" font-size="11" textLength="93.103" font-weight="700">[for each path]</text><polygon points="826.442,465.453,836.442,469.453,826.442,473.453,830.442,469.453" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="533.764" y1="469.453" x2="832.442" y2="469.453" style="stroke:#181818;stroke-width:1;"/><text x="540.764" y="464.387" fill="#000" font-size="13" textLength="98.439">open_file(path)</text><polygon points="998.349,494.586,1008.349,498.586,998.349,502.586,1002.349,498.586" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="838.442" y1="498.586" x2="1004.349" y2="498.586" style="stroke:#181818;stroke-width:1;"/><text x="845.442" y="493.52" fill="#000" font-size="13" textLength="144.231">open_document(path)</text><path d="M994.349,510.586 L1058.792,510.586 L1058.792,517.719 L1048.792,527.719 L994.349,527.719 L994.349,510.586" style="stroke:#000;stroke-width:1.5;" fill="#EEE"/><rect x="994.349" y="510.586" width="865.751" height="305" fill="none" style="stroke:#000;stroke-width:1.5;"/><text x="1009.349" y="523.653" fill="#000" font-size="13" textLength="19.443" font-weight="700">alt</text><text x="1073.792" y="522.796" fill="#000" font-size="11" textLength="205.299" font-weight="700">[dock already open for this path]</text><line x1="1010.349" y1="558.852" x2="1052.349" y2="558.852" style="stroke:#181818;stroke-width:1;"/><line x1="1052.349" y1="558.852" x2="1052.349" y2="571.852" style="stroke:#181818;stroke-width:1;"/><line x1="1011.349" y1="571.852" x2="1052.349" y2="571.852" style="stroke:#181818;stroke-width:1;"/><polygon points="1021.349,567.852,1011.349,571.852,1021.349,575.852,1017.349,571.852" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><text x="1017.349" y="553.786" fill="#000" font-size="13" textLength="125.112">focus existing dock</text><line x1="994.349" y1="580.852" x2="1860.1" y2="580.852" style="stroke:#000;stroke-width:1;stroke-dasharray:2,2;"/><text x="999.349" y="593.062" fill="#000" font-size="11" textLength="88.972" font-weight="700">[not yet open]</text><polygon points="1217.714,615.789,1227.714,619.789,1217.714,623.789,1221.714,619.789" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="1010.349" y1="619.789" x2="1223.714" y2="619.789" style="stroke:#181818;stroke-width:1;"/><text x="1017.349" y="614.723" fill="#000" font-size="13" textLength="172.472">RehuDocument.load(path)</text><polygon points="1371.348,644.922,1381.348,648.922,1371.348,652.922,1375.348,648.922" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="1010.349" y1="648.922" x2="1377.348" y2="648.922" style="stroke:#181818;stroke-width:1;"/><text x="1017.349" y="643.856" fill="#000" font-size="13" textLength="246.625">new RehuDocumentModel(document)</text><polygon points="1531.742,674.055,1541.742,678.055,1531.742,682.055,1535.742,678.055" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="1010.349" y1="678.055" x2="1537.742" y2="678.055" style="stroke:#181818;stroke-width:1;"/><text x="1017.349" y="672.989" fill="#000" font-size="13" textLength="195.038">new DocumentWidget(model)</text><polygon points="1832.1,703.188,1842.1,707.188,1832.1,711.188,1836.1,707.188" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="1543.742" y1="707.188" x2="1838.1" y2="707.188" style="stroke:#181818;stroke-width:1;"/><text x="1550.742" y="702.122" fill="#000" font-size="13" textLength="151.239">build_document_form()</text><polygon points="1832.1,732.32,1842.1,736.32,1832.1,740.32,1836.1,736.32" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="1543.742" y1="736.32" x2="1838.1" y2="736.32" style="stroke:#181818;stroke-width:1;"/><text x="1550.742" y="731.254" fill="#000" font-size="13" textLength="276.358">make_viewer(model), make_editor(model)</text><polygon points="1394.348,761.453,1384.348,765.453,1394.348,769.453,1390.348,765.453" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="1388.348" y1="765.453" x2="1843.1" y2="765.453" style="stroke:#181818;stroke-width:1;"/><text x="1400.348" y="760.387" fill="#000" font-size="13" textLength="124.458">bind(field) per field</text><line x1="1010.349" y1="794.586" x2="1052.349" y2="794.586" style="stroke:#181818;stroke-width:1;"/><line x1="1052.349" y1="794.586" x2="1052.349" y2="807.586" style="stroke:#181818;stroke-width:1;"/><line x1="1011.349" y1="807.586" x2="1052.349" y2="807.586" style="stroke:#181818;stroke-width:1;"/><polygon points="1021.349,803.586,1011.349,807.586,1021.349,811.586,1017.349,807.586" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><text x="1017.349" y="789.52" fill="#000" font-size="13" textLength="205.366">new CDockWidget, add + focus</text><line x1="838.442" y1="864.719" x2="880.442" y2="864.719" style="stroke:#181818;stroke-width:1;"/><line x1="880.442" y1="864.719" x2="880.442" y2="877.719" style="stroke:#181818;stroke-width:1;"/><line x1="839.442" y1="877.719" x2="880.442" y2="877.719" style="stroke:#181818;stroke-width:1;"/><polygon points="849.442,873.719,839.442,877.719,849.442,881.719,845.442,877.719" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><text x="845.442" y="859.653" fill="#000" font-size="13" textLength="131.873">raise_and_activate()</text><polygon points="521.764,902.852,531.764,906.852,521.764,910.852,525.764,906.852" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="342.306" y1="906.852" x2="527.764" y2="906.852" style="stroke:#181818;stroke-width:1;"/><text x="349.306" y="901.786" fill="#000" font-size="13" textLength="152.788">app.exec() (event loop)</text><line x1="227.025" y1="915.852" x2="1910.1" y2="915.852" style="stroke:#000;stroke-width:1;stroke-dasharray:2,2;"/><text x="232.025" y="928.062" fill="#000" font-size="11" textLength="232.214" font-weight="700">[another instance is already primary]</text><polygon points="353.306,965.922,343.306,969.922,353.306,973.922,349.306,969.922" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="347.306" y1="969.922" x2="696.882" y2="969.922" style="stroke:#181818;stroke-width:1;stroke-dasharray:2,2;"/><text x="359.306" y="949.723" fill="#000" font-size="13" textLength="33.827">False</text><text x="359.306" y="964.856" fill="#000" font-size="13" textLength="331.576">(argv already written to the primary's local socket)</text><polygon points="254.025,995.055,244.025,999.055,254.025,1003.055,250.025,999.055" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="248.025" y1="999.055" x2="341.306" y2="999.055" style="stroke:#181818;stroke-width:1;stroke-dasharray:2,2;"/><text x="260.025" y="993.989" fill="#000" font-size="13" textLength="52.667">return 0</text><path d="M471.476,1012.055 L471.476,1082.055 L923.476,1082.055 L923.476,1022.055 L913.476,1012.055 L471.476,1012.055" style="stroke:#181818;stroke-width:0.5;" fill="#FEFFDD"/><path d="M913.476,1012.055 L913.476,1022.055 L923.476,1022.055 L913.476,1012.055" style="stroke:#181818;stroke-width:0.5;" fill="#FEFFDD"/><text x="477.476" y="1029.122" fill="#000" font-size="13" textLength="424.049">On the *other*, already-running process: its ApplicationSingleton</text><text x="477.476" y="1044.254" fill="#000" font-size="13" textLength="431.812">decodes the forwarded argv and emits other_instance_run(paths),</text><text x="477.476" y="1059.387" fill="#000" font-size="13" textLength="400.664">re-entering the "for each path" loop above -- no new process,</text><text x="477.476" y="1074.52" fill="#000" font-size="13" textLength="128.096">no new Application.</text><?plantuml-src XLLDZzCm4BtdLmnx8O5j0zSz827GIWYj5h58FG2At7YsiTQn8zjfsN_FZ9saITk5NcfxthpvdhnIfjQzH6X2wFnDMJfnMEzKQFfjxz7LrWGqOLtRjhnJJurG-giJUmo-R9-ahNtLzQqkM-43kZ8qsA8l9JwANeTIgrqJrWp8Ek62gbKdJ82h-mSeuQ51hQz0UBX_M8ghgXNALDMQ__8YOkxek4I9hbkxVfH_xq_47xjEgre4PKq4qFr5m8CoEurXG4wt9Puzs2WZxI6YDgV-VBPrtrAgF1sU8eGFIyntRFeHzylajNMOtFz4fvUXTrPYIbKyNRQxKNA7OJIyMO9k5MhfRwrh8u0FMKPbM7s8cOKRm3zOWoEZjLs97V61MFCrYtB2KOO9nXaNRhSlChxJCwMHdcV9N8gdP1B8O-Yx_EEtRzMNpqMM2HqWDCf3vsoDtiCMgSkGxweLxZa3-XtrLvCFFroFKNZ11lMhmJg0fLPqbJ8-25DZvHBITcYgH-iEmacKSuuKXc_i8JNV8LOwBoA6XOJPn4GPFC2n5mR49kM8Apv05kqmvvd2I2REdLWw6TFvy_tDRyeOGxMr7P0KKDGDT28qyVdCpSIYDEQCAIRGqjE8aeEh9qYkZsIOq0w5V8xWQ3fLRMwQVv7oIFr8h9xQIlb0zObC4norHp0sm3E6I7kHY8U2YEQJiDPMo1C_vofnFeOAd4rGFWPQlEJtvgHuQQRobhNFb3Qin9D4IjjUQJabaglNvlzKQCKJLdk51tG3_NLwGwc2TPTCHirPZ5lgd_oH1xk03Xt4uxygmf5zudCAwng4bF0s5UfO6fCunl-XNr9JEQ4yLiB8IjH1xKN08Sf50_DcvdMI5v3ZdbS9DssHnQeB4qSJnj44QgMnmVut-BU267wb3JCf7PmAz8c2OAalSUHuxSbeBJHuYXV3pClZodEqZvo1Tr56RY7OFNbstFzZJkvDf7uJFNzpFPfUqLOntDl30hi15JnS-gvCJ99MdAGLntJJY4EAnqZ0bXdETrViU5zSJpmELvHNT6oTkQuM6-4gRGcnfNWeO8ejrdvmyyWolCyyNe-rZ_d8wF0N?></g></svg></div><div class="puml dark" style=""><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" data-diagram-type="SEQUENCE" style="width:1930px;height:1170px;background:#1B1B1B;" width="1930px" height="1170px" viewBox="0 0 1930 1170" zoomAndPan="magnify" preserveAspectRatio="xMidYMid meet" contentStyleType="text/css" class="diagram"><?plantuml 1.2026.8?><defs/><g font-family="sans-serif" lengthAdjust="spacing"><rect x="0" y="0" width="1930" height="1170" fill="#1B1B1B" style="stroke:none;"/><rect x="227.025" y="186.125" width="1683.074" height="901.461" fill="none" style="stroke:#FFF;stroke-width:1.5;"/><rect x="517.764" y="421.188" width="1367.336" height="408.398" fill="none" style="stroke:#FFF;stroke-width:1.5;"/><rect x="994.349" y="510.586" width="865.751" height="305" fill="none" style="stroke:#FFF;stroke-width:1.5;"/><g><title>OS . Shell</title><rect x="47.338" y="57.594" width="8" height="1053.992" fill="#000" fill-opacity="0"/><line x1="50.838" y1="57.594" x2="50.838" y2="1111.586" style="stroke:#E7E7E7;stroke-width:0.5;stroke-dasharray:5,5;"/></g><g><title>__main__.main..</title><rect x="239.525" y="57.594" width="8" height="1053.992" fill="#000" fill-opacity="0"/><line x1="243.025" y1="57.594" x2="243.025" y2="1111.586" style="stroke:#E7E7E7;stroke-width:0.5;stroke-dasharray:5,5;"/></g><g><title>app.run..</title><rect x="338.806" y="57.594" width="8" height="1053.992" fill="#000" fill-opacity="0"/><line x1="342.306" y1="57.594" x2="342.306" y2="1111.586" style="stroke:#E7E7E7;stroke-width:0.5;stroke-dasharray:5,5;"/></g><g><title>Application</title><rect x="530.264" y="57.594" width="8" height="1053.992" fill="#000" fill-opacity="0"/><line x1="533.764" y1="57.594" x2="533.764" y2="1111.586" style="stroke:#E7E7E7;stroke-width:0.5;stroke-dasharray:5,5;"/></g><g><title>ApplicationSingleton</title><rect x="694.382" y="57.594" width="8" height="1053.992" fill="#000" fill-opacity="0"/><line x1="697.882" y1="57.594" x2="697.882" y2="1111.586" style="stroke:#E7E7E7;stroke-width:0.5;stroke-dasharray:5,5;"/></g><g><title>MainWindow</title><rect x="834.942" y="57.594" width="8" height="1053.992" fill="#000" fill-opacity="0"/><line x1="838.442" y1="57.594" x2="838.442" y2="1111.586" style="stroke:#E7E7E7;stroke-width:0.5;stroke-dasharray:5,5;"/></g><g><title>DocumentsDock</title><rect x="1006.849" y="57.594" width="8" height="1053.992" fill="#000" fill-opacity="0"/><line x1="1010.349" y1="57.594" x2="1010.349" y2="1111.586" style="stroke:#E7E7E7;stroke-width:0.5;stroke-dasharray:5,5;"/></g><g><title>RehuDocument</title><rect x="1226.214" y="57.594" width="8" height="1053.992" fill="#000" fill-opacity="0"/><line x1="1229.714" y1="57.594" x2="1229.714" y2="1111.586" style="stroke:#E7E7E7;stroke-width:0.5;stroke-dasharray:5,5;"/></g><g><title>RehuDocumentModel</title><rect x="1379.848" y="57.594" width="8" height="1053.992" fill="#000" fill-opacity="0"/><line x1="1383.348" y1="57.594" x2="1383.348" y2="1111.586" style="stroke:#E7E7E7;stroke-width:0.5;stroke-dasharray:5,5;"/></g><g><title>DocumentWidget</title><rect x="1540.242" y="57.594" width="8" height="1053.992" fill="#000" fill-opacity="0"/><line x1="1543.742" y1="57.594" x2="1543.742" y2="1111.586" style="stroke:#E7E7E7;stroke-width:0.5;stroke-dasharray:5,5;"/></g><g><title>FieldsForm</title><rect x="1840.6" y="57.594" width="8" height="1053.992" fill="#000" fill-opacity="0"/><line x1="1844.1" y1="57.594" x2="1844.1" y2="1111.586" style="stroke:#E7E7E7;stroke-width:0.5;stroke-dasharray:5,5;"/></g><rect x="10" y="26.297" width="81.676" height="30.297" fill="#222" style="stroke:#E7E7E7;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="17" y="46.292" fill="#FFF" font-size="14" textLength="67.676">OS / Shell</text><rect x="193.359" y="26.297" width="99.333" height="30.297" fill="#222" style="stroke:#E7E7E7;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="200.359" y="46.292" fill="#FFF" font-size="14" textLength="34.979" text-decoration="underline">main</text><text x="235.338" y="46.292" fill="#FFF" font-size="14" textLength="50.354">.main()</text><rect x="302.692" y="26.297" width="79.229" height="30.297" fill="#222" style="stroke:#E7E7E7;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="309.692" y="46.292" fill="#FFF" font-size="14" textLength="65.229">app.run()</text><rect x="487.652" y="26.297" width="92.224" height="30.297" fill="#222" style="stroke:#E7E7E7;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="494.652" y="46.292" fill="#FFF" font-size="14" textLength="78.224">Application</text><rect x="618.787" y="26.297" width="158.19" height="30.297" fill="#222" style="stroke:#E7E7E7;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="625.787" y="46.292" fill="#FFF" font-size="14" textLength="144.19">ApplicationSingleton</text><rect x="786.978" y="26.297" width="102.929" height="30.297" fill="#222" style="stroke:#E7E7E7;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="793.978" y="46.292" fill="#FFF" font-size="14" textLength="88.929">MainWindow</text><rect x="945.862" y="26.297" width="128.974" height="30.297" fill="#222" style="stroke:#E7E7E7;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="952.862" y="46.292" fill="#FFF" font-size="14" textLength="114.974">DocumentsDock</text><rect x="1168.406" y="10" width="122.616" height="46.594" fill="#222" style="stroke:#E7E7E7;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="1175.406" y="29.995" fill="#FFF" font-size="14" textLength="108.616">RehuDocument</text><text x="1208.937" y="46.292" fill="#FFF" font-size="14" textLength="41.556">(core)</text><rect x="1301.022" y="26.297" width="164.65" height="30.297" fill="#222" style="stroke:#E7E7E7;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="1308.022" y="46.292" fill="#FFF" font-size="14" textLength="150.65">RehuDocumentModel</text><rect x="1475.673" y="26.297" width="136.138" height="30.297" fill="#222" style="stroke:#E7E7E7;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="1482.673" y="46.292" fill="#FFF" font-size="14" textLength="122.138">DocumentWidget</text><rect x="1798.781" y="26.297" width="90.638" height="30.297" fill="#222" style="stroke:#E7E7E7;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="1805.781" y="46.292" fill="#FFF" font-size="14" textLength="76.638">FieldsForm</text><rect x="10" y="1111.586" width="81.676" height="30.297" fill="#222" style="stroke:#E7E7E7;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="17" y="1131.581" fill="#FFF" font-size="14" textLength="67.676">OS / Shell</text><rect x="193.359" y="1111.586" width="99.333" height="30.297" fill="#222" style="stroke:#E7E7E7;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="200.359" y="1131.581" fill="#FFF" font-size="14" textLength="34.979" text-decoration="underline">main</text><text x="235.338" y="1131.581" fill="#FFF" font-size="14" textLength="50.354">.main()</text><rect x="302.692" y="1111.586" width="79.229" height="30.297" fill="#222" style="stroke:#E7E7E7;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="309.692" y="1131.581" fill="#FFF" font-size="14" textLength="65.229">app.run()</text><rect x="487.652" y="1111.586" width="92.224" height="30.297" fill="#222" style="stroke:#E7E7E7;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="494.652" y="1131.581" fill="#FFF" font-size="14" textLength="78.224">Application</text><rect x="618.787" y="1111.586" width="158.19" height="30.297" fill="#222" style="stroke:#E7E7E7;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="625.787" y="1131.581" fill="#FFF" font-size="14" textLength="144.19">ApplicationSingleton</text><rect x="786.978" y="1111.586" width="102.929" height="30.297" fill="#222" style="stroke:#E7E7E7;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="793.978" y="1131.581" fill="#FFF" font-size="14" textLength="88.929">MainWindow</text><rect x="945.862" y="1111.586" width="128.974" height="30.297" fill="#222" style="stroke:#E7E7E7;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="952.862" y="1131.581" fill="#FFF" font-size="14" textLength="114.974">DocumentsDock</text><rect x="1168.406" y="1111.586" width="122.616" height="46.594" fill="#222" style="stroke:#E7E7E7;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="1175.406" y="1131.581" fill="#FFF" font-size="14" textLength="108.616">RehuDocument</text><text x="1208.937" y="1147.878" fill="#FFF" font-size="14" textLength="41.556">(core)</text><rect x="1301.022" y="1111.586" width="164.65" height="30.297" fill="#222" style="stroke:#E7E7E7;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="1308.022" y="1131.581" fill="#FFF" font-size="14" textLength="150.65">RehuDocumentModel</text><rect x="1475.673" y="1111.586" width="136.138" height="30.297" fill="#222" style="stroke:#E7E7E7;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="1482.673" y="1131.581" fill="#FFF" font-size="14" textLength="122.138">DocumentWidget</text><rect x="1798.781" y="1111.586" width="90.638" height="30.297" fill="#222" style="stroke:#E7E7E7;stroke-width:0.5;" rx="2.5" ry="2.5"/><text x="1805.781" y="1131.581" fill="#FFF" font-size="14" textLength="76.638">FieldsForm</text><polygon points="231.025,82.727,241.025,86.727,231.025,90.727,235.025,86.727" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="50.838" y1="86.727" x2="237.025" y2="86.727" style="stroke:#E7E7E7;stroke-width:1;"/><text x="57.838" y="81.661" fill="#FFF" font-size="13" textLength="168.188">exec rehuco-agent a.rehu</text><polygon points="330.306,111.859,340.306,115.859,330.306,119.859,334.306,115.859" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="243.025" y1="115.859" x2="336.306" y2="115.859" style="stroke:#E7E7E7;stroke-width:1;"/><text x="250.025" y="110.793" fill="#FFF" font-size="13" textLength="61.223">run(argv)</text><polygon points="521.764,140.992,531.764,144.992,521.764,148.992,525.764,144.992" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="342.306" y1="144.992" x2="527.764" y2="144.992" style="stroke:#E7E7E7;stroke-width:1;"/><text x="349.306" y="139.926" fill="#FFF" font-size="13" textLength="112.036">Application(argv)</text><polygon points="685.882,170.125,695.882,174.125,685.882,178.125,689.882,174.125" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="342.306" y1="174.125" x2="691.882" y2="174.125" style="stroke:#E7E7E7;stroke-width:1;"/><text x="349.306" y="169.059" fill="#FFF" font-size="13" textLength="91.419">setup(APP_ID)</text><path d="M227.025,186.125 L291.468,186.125 L291.468,193.258 L281.468,203.258 L227.025,203.258 L227.025,186.125" style="stroke:#FFF;stroke-width:1.5;" fill="#555"/><rect x="227.025" y="186.125" width="1683.074" height="901.461" fill="none" style="stroke:#FFF;stroke-width:1.5;"/><text x="242.025" y="199.192" fill="#FFF" font-size="13" textLength="19.443" font-weight="700">alt</text><text x="306.468" y="198.335" fill="#FFF" font-size="11" textLength="196.313" font-weight="700">[this process becomes primary]</text><polygon points="353.306,230.391,343.306,234.391,353.306,238.391,349.306,234.391" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="347.306" y1="234.391" x2="696.882" y2="234.391" style="stroke:#E7E7E7;stroke-width:1;stroke-dasharray:2,2;"/><text x="359.306" y="229.325" fill="#FFF" font-size="13" textLength="29.523">True</text><polygon points="685.882,259.523,695.882,263.523,685.882,267.523,689.882,263.523" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="342.306" y1="263.523" x2="691.882" y2="263.523" style="stroke:#E7E7E7;stroke-width:1;"/><text x="349.306" y="258.458" fill="#FFF" font-size="13" textLength="309.594">connect other_instance_run -&gt; open_forwarded</text><polygon points="521.764,288.656,531.764,292.656,521.764,296.656,525.764,292.656" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="342.306" y1="292.656" x2="527.764" y2="292.656" style="stroke:#E7E7E7;stroke-width:1;"/><text x="349.306" y="287.59" fill="#FFF" font-size="13" textLength="138.544">show_main_window()</text><polygon points="826.442,317.789,836.442,321.789,826.442,325.789,830.442,321.789" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="533.764" y1="321.789" x2="832.442" y2="321.789" style="stroke:#E7E7E7;stroke-width:1;"/><text x="540.764" y="316.723" fill="#FFF" font-size="13" textLength="123.722">new MainWindow()</text><polygon points="998.349,346.922,1008.349,350.922,998.349,354.922,1002.349,350.922" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="838.442" y1="350.922" x2="1004.349" y2="350.922" style="stroke:#E7E7E7;stroke-width:1;"/><text x="845.442" y="345.856" fill="#FFF" font-size="13" textLength="147.907">new DocumentsDock()</text><polygon points="353.306,376.055,343.306,380.055,353.306,384.055,349.306,380.055" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="347.306" y1="380.055" x2="532.764" y2="380.055" style="stroke:#E7E7E7;stroke-width:1;stroke-dasharray:2,2;"/><text x="359.306" y="374.989" fill="#FFF" font-size="13" textLength="49.321">window</text><polygon points="521.764,405.188,531.764,409.188,521.764,413.188,525.764,409.188" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="342.306" y1="409.188" x2="527.764" y2="409.188" style="stroke:#E7E7E7;stroke-width:1;"/><text x="349.306" y="404.122" fill="#FFF" font-size="13" textLength="167.458">open_forwarded(argv[1:])</text><path d="M517.764,421.188 L594.388,421.188 L594.388,428.32 L584.388,438.32 L517.764,438.32 L517.764,421.188" style="stroke:#FFF;stroke-width:1.5;" fill="#555"/><rect x="517.764" y="421.188" width="1367.336" height="408.398" fill="none" style="stroke:#FFF;stroke-width:1.5;"/><text x="532.764" y="434.254" fill="#FFF" font-size="13" textLength="31.624" font-weight="700">loop</text><text x="609.388" y="433.398" fill="#FFF" font-size="11" textLength="93.103" font-weight="700">[for each path]</text><polygon points="826.442,465.453,836.442,469.453,826.442,473.453,830.442,469.453" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="533.764" y1="469.453" x2="832.442" y2="469.453" style="stroke:#E7E7E7;stroke-width:1;"/><text x="540.764" y="464.387" fill="#FFF" font-size="13" textLength="98.439">open_file(path)</text><polygon points="998.349,494.586,1008.349,498.586,998.349,502.586,1002.349,498.586" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="838.442" y1="498.586" x2="1004.349" y2="498.586" style="stroke:#E7E7E7;stroke-width:1;"/><text x="845.442" y="493.52" fill="#FFF" font-size="13" textLength="144.231">open_document(path)</text><path d="M994.349,510.586 L1058.792,510.586 L1058.792,517.719 L1048.792,527.719 L994.349,527.719 L994.349,510.586" style="stroke:#FFF;stroke-width:1.5;" fill="#555"/><rect x="994.349" y="510.586" width="865.751" height="305" fill="none" style="stroke:#FFF;stroke-width:1.5;"/><text x="1009.349" y="523.653" fill="#FFF" font-size="13" textLength="19.443" font-weight="700">alt</text><text x="1073.792" y="522.796" fill="#FFF" font-size="11" textLength="205.299" font-weight="700">[dock already open for this path]</text><line x1="1010.349" y1="558.852" x2="1052.349" y2="558.852" style="stroke:#E7E7E7;stroke-width:1;"/><line x1="1052.349" y1="558.852" x2="1052.349" y2="571.852" style="stroke:#E7E7E7;stroke-width:1;"/><line x1="1011.349" y1="571.852" x2="1052.349" y2="571.852" style="stroke:#E7E7E7;stroke-width:1;"/><polygon points="1021.349,567.852,1011.349,571.852,1021.349,575.852,1017.349,571.852" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><text x="1017.349" y="553.786" fill="#FFF" font-size="13" textLength="125.112">focus existing dock</text><line x1="994.349" y1="580.852" x2="1860.1" y2="580.852" style="stroke:#FFF;stroke-width:1;stroke-dasharray:2,2;"/><text x="999.349" y="593.062" fill="#FFF" font-size="11" textLength="88.972" font-weight="700">[not yet open]</text><polygon points="1217.714,615.789,1227.714,619.789,1217.714,623.789,1221.714,619.789" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="1010.349" y1="619.789" x2="1223.714" y2="619.789" style="stroke:#E7E7E7;stroke-width:1;"/><text x="1017.349" y="614.723" fill="#FFF" font-size="13" textLength="172.472">RehuDocument.load(path)</text><polygon points="1371.348,644.922,1381.348,648.922,1371.348,652.922,1375.348,648.922" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="1010.349" y1="648.922" x2="1377.348" y2="648.922" style="stroke:#E7E7E7;stroke-width:1;"/><text x="1017.349" y="643.856" fill="#FFF" font-size="13" textLength="246.625">new RehuDocumentModel(document)</text><polygon points="1531.742,674.055,1541.742,678.055,1531.742,682.055,1535.742,678.055" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="1010.349" y1="678.055" x2="1537.742" y2="678.055" style="stroke:#E7E7E7;stroke-width:1;"/><text x="1017.349" y="672.989" fill="#FFF" font-size="13" textLength="195.038">new DocumentWidget(model)</text><polygon points="1832.1,703.188,1842.1,707.188,1832.1,711.188,1836.1,707.188" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="1543.742" y1="707.188" x2="1838.1" y2="707.188" style="stroke:#E7E7E7;stroke-width:1;"/><text x="1550.742" y="702.122" fill="#FFF" font-size="13" textLength="151.239">build_document_form()</text><polygon points="1832.1,732.32,1842.1,736.32,1832.1,740.32,1836.1,736.32" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="1543.742" y1="736.32" x2="1838.1" y2="736.32" style="stroke:#E7E7E7;stroke-width:1;"/><text x="1550.742" y="731.254" fill="#FFF" font-size="13" textLength="276.358">make_viewer(model), make_editor(model)</text><polygon points="1394.348,761.453,1384.348,765.453,1394.348,769.453,1390.348,765.453" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="1388.348" y1="765.453" x2="1843.1" y2="765.453" style="stroke:#E7E7E7;stroke-width:1;"/><text x="1400.348" y="760.387" fill="#FFF" font-size="13" textLength="124.458">bind(field) per field</text><line x1="1010.349" y1="794.586" x2="1052.349" y2="794.586" style="stroke:#E7E7E7;stroke-width:1;"/><line x1="1052.349" y1="794.586" x2="1052.349" y2="807.586" style="stroke:#E7E7E7;stroke-width:1;"/><line x1="1011.349" y1="807.586" x2="1052.349" y2="807.586" style="stroke:#E7E7E7;stroke-width:1;"/><polygon points="1021.349,803.586,1011.349,807.586,1021.349,811.586,1017.349,807.586" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><text x="1017.349" y="789.52" fill="#FFF" font-size="13" textLength="205.366">new CDockWidget, add + focus</text><line x1="838.442" y1="864.719" x2="880.442" y2="864.719" style="stroke:#E7E7E7;stroke-width:1;"/><line x1="880.442" y1="864.719" x2="880.442" y2="877.719" style="stroke:#E7E7E7;stroke-width:1;"/><line x1="839.442" y1="877.719" x2="880.442" y2="877.719" style="stroke:#E7E7E7;stroke-width:1;"/><polygon points="849.442,873.719,839.442,877.719,849.442,881.719,845.442,877.719" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><text x="845.442" y="859.653" fill="#FFF" font-size="13" textLength="131.873">raise_and_activate()</text><polygon points="521.764,902.852,531.764,906.852,521.764,910.852,525.764,906.852" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="342.306" y1="906.852" x2="527.764" y2="906.852" style="stroke:#E7E7E7;stroke-width:1;"/><text x="349.306" y="901.786" fill="#FFF" font-size="13" textLength="152.788">app.exec() (event loop)</text><line x1="227.025" y1="915.852" x2="1910.1" y2="915.852" style="stroke:#FFF;stroke-width:1;stroke-dasharray:2,2;"/><text x="232.025" y="928.062" fill="#FFF" font-size="11" textLength="232.214" font-weight="700">[another instance is already primary]</text><polygon points="353.306,965.922,343.306,969.922,353.306,973.922,349.306,969.922" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="347.306" y1="969.922" x2="696.882" y2="969.922" style="stroke:#E7E7E7;stroke-width:1;stroke-dasharray:2,2;"/><text x="359.306" y="949.723" fill="#FFF" font-size="13" textLength="33.827">False</text><text x="359.306" y="964.856" fill="#FFF" font-size="13" textLength="331.576">(argv already written to the primary's local socket)</text><polygon points="254.025,995.055,244.025,999.055,254.025,1003.055,250.025,999.055" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="248.025" y1="999.055" x2="341.306" y2="999.055" style="stroke:#E7E7E7;stroke-width:1;stroke-dasharray:2,2;"/><text x="260.025" y="993.989" fill="#FFF" font-size="13" textLength="52.667">return 0</text><path d="M471.476,1012.055 L471.476,1082.055 L923.476,1082.055 L923.476,1022.055 L913.476,1012.055 L471.476,1012.055" style="stroke:#E7E7E7;stroke-width:0.5;" fill="#714137"/><path d="M913.476,1012.055 L913.476,1022.055 L923.476,1022.055 L913.476,1012.055" style="stroke:#E7E7E7;stroke-width:0.5;" fill="#714137"/><text x="477.476" y="1029.122" fill="#FFF" font-size="13" textLength="424.049">On the *other*, already-running process: its ApplicationSingleton</text><text x="477.476" y="1044.254" fill="#FFF" font-size="13" textLength="431.812">decodes the forwarded argv and emits other_instance_run(paths),</text><text x="477.476" y="1059.387" fill="#FFF" font-size="13" textLength="400.664">re-entering the "for each path" loop above -- no new process,</text><text x="477.476" y="1074.52" fill="#FFF" font-size="13" textLength="128.096">no new Application.</text><?plantuml-src XLLDRziu4BthLqnpMQaRM-qrXmMA106A8aZHBE13kn36uiGYJ942ITcRVxz3Kf8bs-dwOfBpvittw8FKjUe5GUDzv-xAqk9nlPE-wRUz8riRxKdxTMtQyadk6vJgcyK3ULUsUs5gLtLzgyeMdITR-ePQSgMWL-oLBmNQ_Jh8imwjbxNiK7kuUNw14buQKke6qC7por9SLIrANLNhy9SN4VF4noKAksvj-r7-epyJV-aw9MlqqkW8uFkxW1UfTuhyW9nkItpmO2ErCCU8sfpxys3glkLCEJxi8oGSbfWVrFGZxfVEQsCfkN_Ff_UXJqPGIbKyNRUxaM97VZIyMO8U9IdX7erj8o0SiepBiFehPXRkWFwb6YmRhSqATym7k0xNBCePnnbcMCWusjsXoCATdpcD_3nBvb8y9PD1ZdpVvL--Vw--FXHPXig3RwI3pfgQd8CjSPDHkCiMxLi6_3lfhoOV_hOzHU4L6zokcceFXZlHLb8xZxgcoYQawKXNhyOUqGeISuuKXclCCJNVCLOwBo8c21cpYOdIT8HJBmo8JSfHgFW0MRJ3d6SA8vcuT6BfP4pdpyzt_t360bGPqm5BWR1ke4FVnESBDnEBL9G7J361bfv6b1XSFKE6-eW0GsK9nLi4HzEfQdFJuHSfJzIlpEguhQJpN9_8DC59EG9jFBoHZxHNYS9GCD5y4jRAe3ZpSwuIvsEemCK4vMEWnNj-RywAbsOgRuFsXT8cA8L9OgLjBvMO4Xcgr-Q_LMXnJzL1qf7iG7-RtaX8R-mrar5p5kEM-oT_3ODTG4SMul5t5GcHtOTp2kiMK0ZuCnNgL1gTECR_eLzIKrcKZYhKeiBQomDw6g9SD73Op66Tv0NaT0Yh93HjaSMgeuwZ2UDe0hVIs63_D_YFo0o_qeQPb8vMUlv2WJVSbpHo_E7OQ8qA7CTBVkRbQULPtaTMmwSeOxS8p84zE-t_CIVFEb9_Z9v_l1rDhtYhwD3RmmAx0-aTNFkkJ4o2LvpW5HVefX6758yMG6rWkDnTiUDTSJlnM5fnNia6wu7hPh4HRjAMm2t7mm5pRB7sWvidbk5zvl5wh7tCHyQ7_m00?></g></svg></div></div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../component-decomposition/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Component: Containment">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Component: Containment
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../../appendices/briefcase-packaging/" class="md-footer__link md-footer__link--next" aria-label="Next: Briefcase Packaging">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Briefcase Packaging
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.tracking", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "search.share", "content.code.copy", "content.code.annotate", "content.tabs.link"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="../../../javascripts/diagram-open.js"></script>
+      
+        <script src="../../../assets/mkdocs_puml/puml.js"></script>
+      
+    
+  </body>
+</html>

@@ -1,0 +1,3370 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Distributed resource management system for tutorials and reference images">
+      
+      
+      
+        <link rel="canonical" href="https://borco.github.io/rehuco/specs/reference-images/">
+      
+      
+        <link rel="prev" href="../field-schema/">
+      
+      
+        <link rel="next" href="../diagrams/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Reference Images - rehuco</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+      <link rel="stylesheet" href="../../assets/mkdocs_puml/puml.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#18-reference-images-scanning-regions-search-and-practice" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="rehuco" class="md-header__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            rehuco
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Reference Images
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../how-it-works/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Design Specs
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../implementation-plan/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Implementation Plan
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../changelog/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Changelog
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../license/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  License
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="rehuco" class="md-nav__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    rehuco
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Specs
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design Specs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../how-it-works/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    How It Works
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../nodes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Node Communication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../discovery-trust-access/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Discovery & Trust
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sync/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sync & Conflicts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../multiplicity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multiplicity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mounts-and-storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mounts & Storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../instances-and-dedup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Identity & Dedup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../borrowing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Borrowing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../offline-editing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Offline Editing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plugins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../requirements/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Requirements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../acquisition-tooling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acquisition Tooling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../packaging-deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Packaging & Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../field-schema/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Field Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference Images
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference Images
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#181-purpose-and-scale" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §18.1 Purpose and scale
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#182-three-data-layers-each-with-an-existing-home" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §18.2 Three data layers, each with an existing home
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#183-image-identity-and-staleness" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §18.3 Image identity and staleness
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#184-practice-sessions-are-per-user-documents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §18.4 Practice sessions are per-user documents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#185-the-scan-sidecar" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §18.5 The scan sidecar
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#186-the-cross-pack-index" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §18.6 The cross-pack index
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#187-the-inference-package" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §18.7 The inference package
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#188-model-contracts-user-configurable-per-stage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §18.8 Model contracts: user-configurable per stage
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#189-what-a-node-needs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §18.9 What a node needs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1810-scan-dispatch-in-a-swarm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §18.10 Scan dispatch in a swarm
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1811-modes-and-viewers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §18.11 Modes and viewers
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1812-the-region-and-blur-sub-dock" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §18.12 The region and blur sub-dock
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1813-360-sequences" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §18.13 360° sequences
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1814-open-questions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §18.14 Open questions
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_19" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../diagrams/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagrams
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2_19" id="__nav_2_19_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_19_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_19">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Diagrams
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../diagrams/activity-open-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Activity: Open a Path
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../diagrams/component-decomposition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Component: Containment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../diagrams/sequence-open-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sequence: Open a Path
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_20" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_20" id="__nav_2_20_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Appendices
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_20_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_20">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Appendices
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/briefcase-packaging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Briefcase Packaging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/code-conventions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Conventions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/continuous-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Continuous Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/logging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Logging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/open-questions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open Questions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/post-mortem/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Post-Mortem
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/project-management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/qt-ads/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QtAds
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/release-runbook/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Runbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/settings-pages/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Settings Pages
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/task-queue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Queue
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/theming_and_styling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Theming & Styling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/windows-dev-launcher/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Windows Dev Launcher
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_21" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../history/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    History
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2_21" id="__nav_2_21_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_21_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_21">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    History
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/ibocator/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ibocator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalog3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutcatalog 3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalogpy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalogpy2/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy2
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalogpy3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalog4/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog4
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalog5/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog5
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/resource-hub/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Resource Hub
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/daz3d-personal-database/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Daz3D Personal Database
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/pyside-ibo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    pyside-ibo (shared library)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../implementation-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Implementation Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../changelog/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Changelog
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/rehuco-agent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/rehuco-core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/rehuco-node/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-node
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/borco-core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    borco-core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/borco-pyside/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    borco-pyside
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../license/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    License
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#181-purpose-and-scale" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §18.1 Purpose and scale
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#182-three-data-layers-each-with-an-existing-home" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §18.2 Three data layers, each with an existing home
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#183-image-identity-and-staleness" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §18.3 Image identity and staleness
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#184-practice-sessions-are-per-user-documents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §18.4 Practice sessions are per-user documents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#185-the-scan-sidecar" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §18.5 The scan sidecar
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#186-the-cross-pack-index" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §18.6 The cross-pack index
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#187-the-inference-package" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §18.7 The inference package
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#188-model-contracts-user-configurable-per-stage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §18.8 Model contracts: user-configurable per stage
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#189-what-a-node-needs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §18.9 What a node needs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1810-scan-dispatch-in-a-swarm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §18.10 Scan dispatch in a swarm
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1811-modes-and-viewers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §18.11 Modes and viewers
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1812-the-region-and-blur-sub-dock" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §18.12 The region and blur sub-dock
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1813-360-sequences" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §18.13 360° sequences
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1814-open-questions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §18.14 Open questions
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="18-reference-images-scanning-regions-search-and-practice">§18. Reference Images: Scanning, Regions, Search, and Practice</h1>
+<p><span class="slug-ref">[[[reference-images]]]</span></p>
+<h2 id="overview">Overview</h2>
+<p><span class="slug-ref">[[[reference-images#overview]]]</span></p>
+<ul>
+<li><a href="https://github.com/borco/rehuco/issues/221">#221: feat: browse a reference-images resource's content images (read-only viewer)</a></li>
+</ul>
+<p>This document is the full treatment of what <span class="slug-ref">[[plugins#refimages-plugin]]</span> lists in four bullets: tagging the
+images inside a reference-images resource's archives, using those tags to browse and search them, the
+non-destructive blur of intimate regions, and a timed practice mode. <strong>Nothing in it is built.</strong> It is an
+overview and wish-list, written so that the parts already decided by other specs are named as such, and the
+parts still open are marked open rather than quietly designed. Each section opens with its status:</p>
+<ul>
+<li><strong>decided</strong> — follows from an existing spec, or was settled here; a later change is a change to this document.</li>
+<li><strong>proposed</strong> — a recommended shape with its reasoning, expected to hold but not yet exercised by code.</li>
+<li><strong>wish-list</strong> — what is wanted, in the user's terms, with no design attached.</li>
+<li><strong>open</strong> — deliberately not designed yet; listed in <span class="slug-ref">[[reference-images#open-questions]]</span>.</li>
+</ul>
+<p>The scale governs everything: packs hold hundreds to ~20 000 images, the whole collection is in the order of
+<strong>10 million images and 3 TB</strong> (with duplicates), and full inference over it is measured in GPU-weeks, not
+minutes. A design that is fine at 500 000 images is not automatically fine here.</p>
+<h2 id="181-purpose-and-scale">§18.1 Purpose and scale</h2>
+<p><span class="slug-ref">[[[reference-images#purpose-and-scale]]]</span></p>
+<p><strong>Status: decided.</strong></p>
+<p>The catalog exists to serve <strong>drawing practice and reference</strong>, not general retrieval. The user does not
+mainly want a search-result list; they want a sequence of images they did not choose, on a timer, matching an
+aim — "male heads from different angles", "fat woman reclined", "male with sword and shield", "female
+standing", "draped woman", "fists", "ankles". Search is the substrate; the practice session
+(<span class="slug-ref">[[reference-images#practice-sessions]]</span>, <span class="slug-ref">[[reference-images#modes]]</span>) is the product, and the Pinterest-like
+browse is how a starting point or a similar image is found.</p>
+<p>Most packs are pose references, but not all: animals, flora, cityscapes, ruins, military vehicles and the like
+are in the collection too. Those must be <strong>tagged</strong> like everything else, and must <strong>not</strong> acquire body regions
+or blur regions — which falls out of the pipeline's shape rather than needing a rule
+(<span class="slug-ref">[[reference-images#scan-sidecar]]</span>).</p>
+<p>Two surfaces, matching the two resource families: tutorials get an Udemy-like follow interface
+(<span class="slug-ref">[[plugins#tutorial-plugin]]</span>); reference images get a Pinterest-like one. Both are served on the desktop by
+the agent and, later, in the browser by a node (<span class="slug-ref">[[architecture-design#components]]</span>).</p>
+<h2 id="182-three-data-layers-each-with-an-existing-home">§18.2 Three data layers, each with an existing home</h2>
+<p><span class="slug-ref">[[[reference-images#layers]]]</span></p>
+<p><strong>Status: decided in outline.</strong></p>
+<p><span class="slug-ref">[[data-model#image-meanings]]</span> already fixes <em>where</em> per-image metadata lives: app-managed, beside the <code>.rehu</code>,
+never inside the immutable checksummed zip. What this section adds is its <em>shape</em>: there are three kinds of
+per-image data, and each already has a home in the data model.</p>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Holds</th>
+<th>Home</th>
+<th>Ownership and sync class</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Machine-derived</strong></td>
+<td>per-image tags with confidences, an image embedding, detected person / head / hand / foot boxes, detected blur boxes, keypoints, 360° sequence membership, a ~512 px working image, and the model that produced each</td>
+<td>the <strong>scan sidecar</strong> beside the <code>.rehu</code> (<span class="slug-ref">[[reference-images#scan-sidecar]]</span>)</td>
+<td>resource metadata: written only by the resource's primary node (<span class="slug-ref">[[mounts-and-storage#folder-add]]</span>); travels with the folder; a bookkeeping suffix like <code>.checksum</code>, so it never counts as content (<span class="slug-ref">[[data-model#checksums]]</span>). <strong>Rebuildable in principle, at GPU-weeks cost — so retained and copied like screenshots, never treated as <code>.rehudb</code>-disposable</strong></td>
+</tr>
+<tr>
+<td><strong>Shared authored — the admin default</strong></td>
+<td>an admin's corrections: regions and blur boxes added, moved, resized or deleted; manual 360° groupings; per-image shared tags</td>
+<td>the <code>reference_images</code> block of the <code>.rehu</code>, inline, <strong>sparse</strong> (only images someone touched)</td>
+<td>resource metadata: single writer, online-only edit in v1 (<span class="slug-ref">[[sync#overview]]</span>); the layer every user sees by default</td>
+</tr>
+<tr>
+<td><strong>Per-user</strong></td>
+<td>favorites (image keys), per-user region and blur overrides, the user's blur preference (on/off plus the per-class switches)</td>
+<td>the block's <code>users.&lt;name&gt;</code> map (<span class="slug-ref">[[field-schema#per-user-shared]]</span>), sparse</td>
+<td>per-user state: mergeable, offline-editable, writable through any node</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Render-time merge rule: the scan provides, the admin layer overrides, the current user's layer overrides
+that.</strong> "Other users" is a <em>view</em> of their <code>users.&lt;name&gt;</code> entries and is never merged into anyone's rendering.
+The viewer offers the three as a toggle — <strong>default (admin)</strong> / <strong>current user</strong> / <strong>other users</strong> — which is a
+presentation rule in the spirit of <span class="slug-ref">[[field-schema#per-user-shared]]</span>'s table rather than an access boundary:
+private is not secret, and the file is readable by anyone who has it. Editing a region while viewing another
+user's layer writes into the <strong>current user's</strong> entry, never theirs — that is the requested "user override".</p>
+<p>Why the machine layer is not <code>.rehudb</code>-class, restated: the design's rule that a derived cache is disposable
+(<span class="slug-ref">[[data-model#local-file-trio]]</span>) assumes rebuilding is cheap. Here it is the most expensive thing the system
+ever does. Data that costs weeks to recompute must travel with the resource, so that copying a pack to
+another machine delivers it already scanned — a cache-only design cannot do that. And why it is not <em>inside</em>
+the <code>.rehu</code>: at a few kilobytes per image a 5 000-image pack becomes a 17 MB document, which the whole-document
+load, preserve-unknown and atomic-save rules (<span class="slug-ref">[[data-model#rehu-format]]</span>) would rewrite on every rating edit and
+which every folder browse would parse to collect a title. That is a read-granularity problem, solved by a
+second file — not by moving the data off the resource.</p>
+<h2 id="183-image-identity-and-staleness">§18.3 Image identity and staleness</h2>
+<p><span class="slug-ref">[[[reference-images#image-identity]]]</span></p>
+<p><strong>Status: decided.</strong></p>
+<p>All three layers key an image the same way, and there are <strong>two keys, for two costs</strong>:</p>
+<ul>
+<li><strong>Tier-0 key: the member name, its uncompressed size, and whatever per-member fingerprint the container's
+  own directory already records — tagged with the container kind that supplied it.</strong> This is not a choice of
+  hash algorithm; it is a refusal to read the bytes. A zip's central directory holds a CRC32 per member, so
+  keying a whole archive costs one directory read and <strong>inflates nothing</strong> — the whole 3 TB is keyed in
+  minutes. XXH3 (<span class="slug-ref">[[data-model#checksums]]</span>) here would mean inflating every member first, which is the full read
+  the tier-0 pass exists to avoid. <code>ContentImageScanner</code> (<code>rehuco_core.rehu_content_images</code>) already enumerates
+  a zip's central directory without decoding; today's archive set is <code>.zip</code>/<code>.cbz</code> (<code>ARCHIVE_EXTENSIONS</code>).</li>
+</ul>
+<p>The key is therefore <strong><code>(container kind, name, size, container fingerprint)</code></strong>, and each part is there for a
+  reason the others cannot cover. The <strong>name</strong> is the address — it gives the zip-order browse and is what a
+  person recognizes — but alone it cannot say whether the image at that address is still the same one: a pack
+  refreshed with a re-exported <code>012.jpg</code> keeps the path and changes the picture, and a hand-placed blur box
+  would then sit on the wrong body. The <strong>fingerprint and size</strong> answer "did the thing at this address change?"
+  without reading a byte; size alone cannot (a re-encode can land on the same size) and the member's mtime
+  cannot either (a zip stores it at two-second DOS granularity and re-packs routinely reset it). The reverse
+  case — the same bytes under a <strong>new</strong> path after a renumbering re-pack — is what the durable key below is
+  for. A new container format adds a row to a small table rather than a new identity scheme: 7z headers carry
+  a CRC32 per member; RAR headers carry a CRC32 (RAR5 optionally BLAKE2); a tar, or images loose in a folder,
+  carry <strong>nothing</strong>, and
+  their tier-0 key degrades to <code>(kind, name, size, mtime)</code> — weaker, and honest about it. Two rules keep this
+  sound: the fingerprint is compared <strong>like with like only</strong> (a zip CRC32 is never compared to a 7z CRC32, even
+  though the algorithm is the same — the kind is part of the key), and <strong>a container-kind change is a key
+  change</strong>: re-packing a zip as a 7z invalidates every tier-0 key, which is exactly the case the durable key
+  below exists to repair. A format is added only under the licensing policy
+  (<span class="slug-ref">[[packaging-deployment#licensing-policy]]</span>) — <code>zipfile</code> is the standard library; 7z and RAR readers bring
+  their own license and, for RAR, a decompressor dependency that must be checked before it is promised.</p>
+<p>This key drives the zip-order browse, change detection on a re-pack, and the stale-overlay warning
+  <span class="slug-ref">[[data-model#image-meanings]]</span> asks for: when a member's tier-0 key changes, every authored-layer entry keyed
+  to it is flagged, not silently rendered over the wrong picture.
+- <strong>Durable key: XXH3 of the member's bytes, recorded during tier 1</strong> (<span class="slug-ref">[[reference-images#scan-sidecar]]</span>) —
+  the scanner inflates every member then anyway (decode once, fan the pixels out to every stage), so the app's
+  own default algorithm is folded in at no extra I/O. This is the identity for <strong>cross-pack deduplication</strong> (the
+  duplicates in the 3 TB, feeding <span class="slug-ref">[[instances-and-dedup#deduplication]]</span>) and for re-attaching authored layers
+  when a member is renamed, re-packed byte-identically, or <strong>moved to a different container format</strong> — the
+  bytes of a JPEG are the same whether a zip, a 7z or a folder held them, so XXH3 is the one key that survives
+  every re-pack. A container fingerprint's 32 bits are far too collision-prone at ten million images to carry
+  that role: they only ever say "probably unchanged", and XXH3 confirms.</p>
+<p>Sort order for the zip-order browse is <strong>natural</strong> (<code>image9</code> before <code>image11</code>), not lexical; the zip's own
+member order is otherwise preserved.</p>
+<h2 id="184-practice-sessions-are-per-user-documents">§18.4 Practice sessions are per-user documents</h2>
+<p><span class="slug-ref">[[[reference-images#practice-sessions]]]</span></p>
+<p><strong>Status: proposed; deferred.</strong> Practice mode is deliberately the last thing in the RefImages family
+(<span class="slug-ref">[[implementation-plan]]</span>) — the browser, blur and Pinterest browsing come first. The shape below is recorded
+so the earlier slices leave room for it, not because it is next.</p>
+<p>A practice run spans packs, so its record has no single <code>.rehu</code> to live in. The precedent is the <strong>learning
+path</strong> (<span class="slug-ref">[[plugins#grouping-entities]]</span>, <span class="slug-ref">[[field-schema#learning-path-ownership]]</span>): a per-user, metadata-only
+document in the user's configured creation directory (<span class="slug-ref">[[mounts-and-storage#rehuco-scope]]</span>). A <strong>practice
+session</strong> document holds the prompt or filter it was generated from, its schedule (for instance ten 30-second
+poses, five 2-minute, two 10-minute), and the ordered list of <code>(resource UUID, image key)</code> pairs shown, with
+timestamps and whether each was skipped. The last N sessions are kept; older ones are pruned, which is the
+retention setting the user asked for ("the last couple of practice runs").</p>
+<p><strong>Favoriting from a past session writes into the <em>resource's</em> block</strong> — a per-image favorite in
+<code>users.&lt;name&gt;</code>, the same per-image mechanism used everywhere else (<span class="slug-ref">[[plugins#refimages-plugin]]</span> already says
+this) — so favorites outlive the session document that surfaced them. "Find similar" from a past session is a
+query, and stores nothing.</p>
+<p>This also answers where practice history lives when a pack is borrowed (<span class="slug-ref">[[borrowing]]</span>): it is per-user state,
+so it syncs like notes and progress do (<span class="slug-ref">[[sync#overview]]</span>), and a session whose images are on a pack that is
+now unreachable shows them as offline rather than losing the entry (<span class="slug-ref">[[instances-and-dedup#failure-model]]</span>).</p>
+<p>The timer, next/skip, and full-screen presentation are the <strong>shared timed-presentation capability</strong>
+<span class="slug-ref">[[plugins#shared-capability]]</span> already asks for; this is its second consumer after "follow tutorial".</p>
+<h2 id="185-the-scan-sidecar">§18.5 The scan sidecar</h2>
+<p><span class="slug-ref">[[[reference-images#scan-sidecar]]]</span></p>
+<p><strong>Status: proposed.</strong> The file's name, container and schema are the things most likely to change once code
+exists; what is firm is that it is one per-resource file of machine output, beside the <code>.rehu</code>.</p>
+<ul>
+<li><strong>Name:</strong> <code>&lt;stem&gt;.rehuimg</code> — <code>info.rehu</code> → <code>info.rehuimg</code>, the same stem rule as <code>info.checksum</code>. It joins
+  the <code>.rehu*</code> family (<span class="slug-ref">[[architecture-design#overview]]</span>) because it is a rehuco-owned format; <code>.checksum</code>
+  stayed generic because its <em>concept</em> is. It is a <strong>bookkeeping suffix</strong>: never content, never checksummed,
+  never counted in a size (<span class="slug-ref">[[data-model#checksums]]</span>).</li>
+<li><strong>Container: SQLite, one file.</strong> Chosen over a JSON or NDJSON-plus-blobs directory because re-running one
+  stage is an <code>UPDATE</code> rather than a rewrite, a transaction leaves an interrupted scan valid, one file is what
+  copies and syncs cleanly, <code>mode=ro&amp;immutable=1</code> works on a read-only mount, and a stored image is read by
+  offset without materializing rows — <code>Connection.blobopen()</code> locates the row by id and streams only that
+  blob's pages, so a grid costs one open handle and a few page reads per cell. Stored images live in <strong>their
+  own table</strong>, so reading tags never drags image pages through the cache. The costs are accepted and named: it is opaque binary,
+  so a <code>dump</code> command must exist; and it carries its <strong>own schema version and migration chain</strong> exactly as
+  <code>.checksum</code> does (<code>rehuco_core.migrations</code>), stamped with an <code>application_id</code> so that a foreign file at that
+  path is recognized and never written into or deleted — the <code>.rehu</code>'s own claim rule, applied to a sibling.</li>
+<li><strong>Stages are tiered so a pack is useful long before it is fully scanned</strong>, and each stage is independently
+  re-runnable, its model recorded per row (<span class="slug-ref">[[reference-images#model-contracts]]</span>):</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Tier</th>
+<th>Produces</th>
+<th>Cost</th>
+<th>Needs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>0</strong></td>
+<td>member list from the central directory, image dimensions from headers</td>
+<td>seconds per pack</td>
+<td>nothing beyond the zip</td>
+</tr>
+<tr>
+<td><strong>1</strong></td>
+<td>XXH3, the working image, image embedding, tags with confidences, blur boxes, person boxes, 360° grouping</td>
+<td>milliseconds per image</td>
+<td>one decode per image; the tagger, detector and embedder</td>
+</tr>
+<tr>
+<td><strong>2</strong></td>
+<td>whole-body pose → person / head / hand / foot regions, per-person attributes, head angles</td>
+<td>tens of milliseconds per image</td>
+<td>the pose model, on a <strong>person crop from the original</strong> (below); runs only where tier 1 found a person</td>
+</tr>
+<tr>
+<td>optional</td>
+<td>captions, prop boxes</td>
+<td>up to hundreds of milliseconds</td>
+<td>on demand, prioritized by the packs the user opens; may never complete</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Non-people images stop after tier 1 by construction</strong>: no person detected means no region rows and no
+  blur rows, which is the requested rule with nothing to configure.</p>
+<ul>
+<li><strong>Decode once.</strong> JPEG decode, not inference, is the first bottleneck at this scale; every model wants an
+  input around 400 px, so the decoder's DCT-scaled draft mode is used and the resulting array is shared by
+  every stage. This is an implementation note recorded here because it decides the pipeline's shape (a decode
+  pool feeding a batch queue), not a tuning detail.</li>
+<li><strong>Probabilities are stored, never booleans.</strong> Whether a box is blurred or an attribute is shown is a
+  threshold applied at render time, so changing a threshold is a preference, not a rescan.</li>
+<li><strong>One stored image per member — a working image, not a thumbnail.</strong> Tier 1 keeps the decoded image it ran
+  on, at about <strong>512 px on the long edge</strong> (WebP; a few tens of KB), as a blob in the sidecar. It does three
+  jobs for one blob, which is what justifies costing three to four times what a 256 px thumbnail would:</li>
+<li><strong>Browse placeholder</strong> — every grid, wall and history view renders from it, downsampled
+    (<span class="slug-ref">[[reference-images#modes]]</span>).</li>
+<li><strong>Re-run input</strong> — every <em>image-level</em> stage (tags, embedding, blur boxes, person boxes, similarity) takes
+    an input of 224–448 px, so a model swap re-runs those stages from the stored images in days, without
+    re-inflating the archives. This is the "swap the tagger in two years" case of
+    <span class="slug-ref">[[reference-images#model-contracts]]</span>, made cheap.</li>
+<li><strong>Offline fallback</strong> — a pack whose archive sits on an offline mount stays browsable from its sidecar
+    (<span class="slug-ref">[[mounts-and-storage#offline-mounts]]</span>); only "open full size" reports offline.</li>
+</ul>
+<p>Where 512 px is <strong>not</strong> enough is tier 2: a hand in a full-frame 512 px image is a few dozen pixels, and a
+  pose model wants the <em>person crop</em> at roughly 256×192 to 384×288. Tier 2 therefore <strong>crops the person from
+  the original</strong> in the archive — one seek plus one inflate, since the sidecar records each member's local
+  offset — and runs at crop resolution. Tier 2 runs only where a person was found, so this touches the
+  archive for a fraction of the collection.</p>
+<p>The size is a plugin setting, <strong>stamped per row like a model</strong>, so changing it is detected and the images
+  regenerate lazily rather than invalidating the scan; regeneration is decode-only but still the full read of
+  the collection, so the default is chosen once with care. There is no hard minimum; below roughly 128 px
+  nothing on screen can use it, above roughly 512 px the store stops being a store of working images. Blobs
+  sync as one sequential read per pack rather than thousands of stat calls over SMB; the storage budget and
+  any eviction remain open (<span class="slug-ref">[[reference-images#open-questions]]</span>).</p>
+<p>The web-session handover that seeded this document carried a fuller schema sketch and model table; they are
+deliberately not reproduced. What survives of them is above; the rest is implementation.</p>
+<h2 id="186-the-cross-pack-index">§18.6 The cross-pack index</h2>
+<p><span class="slug-ref">[[[reference-images#cross-pack-index]]]</span></p>
+<p><strong>Status: proposed.</strong></p>
+<p>Nothing sidecar-shaped can answer a query across packs. The cross-pack index — one roaring bitmap per tag
+over dense image ids for filtering, a binary-quantized approximate-nearest-neighbour index over embeddings
+for similarity and text queries, full-text search over tags — is <strong><code>.rehudb</code>-class</strong> (<span class="slug-ref">[[data-model#local-file-trio]]</span>):
+a node-local derived cache, disposable, and <strong>built by reading sidecars, never by running models</strong>. That is
+what makes "rebuildable cache" true here: delete it and it is back in an hour, because the expensive part
+lives in the sidecars. Whether it is tables inside <code>.rehudb</code> or a sibling file is left to the CacheDB-era
+implementation (<span class="slug-ref">[[implementation-plan]]</span>).</p>
+<p>A query such as "jumping female with sword" is a bitmap intersection as a cheap prefilter, a join to person
+regions with the right attributes, a rerank by embedding similarity against the encoded query text, fused
+with a pure-embedding lane so a mis-tagged image still surfaces. Pure embedding search is bad at exact
+filters; pure keyword search is bad at "woman leaning backwards over something"; the fusion is the design.</p>
+<h2 id="187-the-inference-package">§18.7 The inference package</h2>
+<p><span class="slug-ref">[[[reference-images#inference-package]]]</span></p>
+<p><strong>Status: proposed.</strong></p>
+<p>The models and their runner are an <strong>optional fourth package</strong> — <code>rehuco-vision</code>, name provisional — for the
+same structural reason <span class="slug-ref">[[packaging-deployment#three-packages]]</span> rejected extras: an extra cannot subtract a
+dependency, and a 2–3 GB torch wheel must never be reachable from a default install. It is non-GUI, runs on
+<code>onnxruntime</code> by default (its GPU and DirectML variants swap in with no change above the backend interface),
+and downloads models into a cache directory on first use — <strong>nothing is bundled in a wheel</strong>.</p>
+<p>The <code>reference_images</code> plugin's non-GUI core layer (<span class="slug-ref">[[plugins#core-vs-plugin]]</span>) consumes it through one
+<code>InferenceBackend</code> protocol with a method per stage. When the package is absent every derived field is null
+and everything else — tier 0, the zip-order browse, the authored layers, favorites — keeps working. This is
+<span class="slug-ref">[[plugins#core-vs-plugin]]</span>'s "a missing plugin degrades to the common fields" applied one layer down.</p>
+<p>Inference is <strong>always local</strong>. Hosted vision APIs refuse or sanitize nude figure reference, and the packs are
+not to be uploaded regardless.</p>
+<h2 id="188-model-contracts-user-configurable-per-stage">§18.8 Model contracts: user-configurable per stage</h2>
+<p><span class="slug-ref">[[[reference-images#model-contracts]]]</span></p>
+<p><strong>Status: proposed.</strong></p>
+<p>Each scan stage — tagger, blur-region detector, pose and regions, embedding, and the optional caption and
+prop stages — is a <strong>named contract</strong>: an input shape, an output schema, and for taggers a vocabulary map.
+For the blur detector the output schema fixes the <strong>class vocabulary</strong>: male genitals, female genitals,
+female nipples, each with an exposed and a covered variant (<span class="slug-ref">[[reference-images#modes]]</span>); a model that emits a
+different class list is mapped onto it, never the other way round, so the per-class switches mean the same
+thing whichever model produced the boxes.
+The plugin's settings page (the "Plugins" settings group, <span class="slug-ref">[[appendices.settings-pages#overview]]</span>) lists, per
+stage, <em>which model fills it</em>. Three kinds of entry are foreseen:</p>
+<ol>
+<li><strong>Built-in defaults</strong> — permissively licensed ONNX models, declared as download descriptors (URL, hash,
+   license) and fetched on first use. The candidates the handover named are of the WD14 tagger, NudeNet
+   detector, RTMPose/DWPose whole-body pose, and SigLIP/OpenCLIP embedding families; every one is a candidate,
+   not a commitment, and each is license-checked before it is added.</li>
+<li><strong>A user-supplied ONNX file</strong> for the same contract — a different tagger, a newer detector, a fine-tune.
+   The stage adapter validates the input/output shape and, for a tagger, requires a vocabulary map.</li>
+<li><strong>A local out-of-process endpoint</strong> — HTTP on localhost, or a subprocess the user runs. The handover proposed
+   this for captions (an Ollama- or LM Studio-style server); it generalizes to every stage.</li>
+</ol>
+<p><strong>Licensing, restated as a design rule rather than a prohibition</strong> (<span class="slug-ref">[[packaging-deployment#licensing-policy]]</span>).
+The author's freedom to license the application is compromised only by what rehuco <em>ships, imports or
+downloads</em>. So rehuco never depends on, imports, or fetches an AGPL package (Ultralytics YOLO is the concrete
+case) or AGPL-licensed weights — none is in the built-in list. A user who installs such a model themselves and
+points a stage at it, as an ONNX file they exported or as an endpoint they run, is making a choice about their
+own machine; rehuco's side is a contract and a configuration entry, and the out-of-process route keeps even
+the combined-work question away from the codebase. This is the project's position, not legal advice; the safe
+default is the permissive built-ins.</p>
+<p><strong>Every row records the model that produced it</strong> — name, hash, contract version — and this is what makes
+user-chosen models workable rather than merely permitted: a pack scanned by tagger A and another by tagger B
+are distinguishable, one stage is re-run with a new model without touching the others (a tagger swap two
+years from now must not cost another six-week rescan of embeddings and working images), and the cross-pack index
+can tell what it may merge. Two consequences are open (<span class="slug-ref">[[reference-images#open-questions]]</span>): how an arbitrary
+tagger's vocabulary maps onto the search vocabulary, and the fact that embeddings from two different models
+are not comparable at all.</p>
+<h2 id="189-what-a-node-needs">§18.9 What a node needs</h2>
+<p><span class="slug-ref">[[[reference-images#node-requirements]]]</span></p>
+<p><strong>Status: proposed.</strong></p>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Needs the image bytes?</th>
+<th>Needs inference?</th>
+<th>Needs the cross-pack index?</th>
+<th>Writes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Catalog (scan)</strong></td>
+<td>yes — every image, decoded once</td>
+<td><strong>yes</strong>, every stage</td>
+<td>no</td>
+<td>the scan sidecar — resource metadata, so <strong>the primary node writes it</strong></td>
+</tr>
+<tr>
+<td><strong>Pinterest front</strong> — browse, fuzzy text, similar</td>
+<td>working images from sidecars; the original on click</td>
+<td><strong>only the text encoder</strong> (query string → vector, a small model); without it, the tag/fuzzy fallback <span class="slug-ref">[[plugins#refimages-plugin]]</span> already names</td>
+<td>yes</td>
+<td>per-user favorites — per-user state, <strong>any node</strong></td>
+</tr>
+<tr>
+<td><strong>Practice front</strong></td>
+<td>full-resolution images, streamed the way a tutorial's video is</td>
+<td>no</td>
+<td>yes, for the filter</td>
+<td>the practice session document and favorites — per-user, <strong>any node</strong></td>
+</tr>
+</tbody>
+</table>
+<p>So scanning is the only operation that needs heavy compute, and the only one that writes resource metadata.
+The two fronts are ordinary serving over the cache plus per-user writes, and <strong>any node that serves a catalog
+can run them</strong> — exactly as it serves tutorial browse and watch — provided it can reach the sidecars (own disk,
+a mount, or a retained copy, <span class="slug-ref">[[mounts-and-storage#durable-retention]]</span>) and, for full images, the archives
+themselves or a node that has them.</p>
+<h2 id="1810-scan-dispatch-in-a-swarm">§18.10 Scan dispatch in a swarm</h2>
+<p><span class="slug-ref">[[[reference-images#dispatch]]]</span></p>
+<p><strong>Status: proposed.</strong></p>
+<p>There are no designated scanner nodes as a hard role. Instead, <strong>capabilities are advertised per node and
+work is dispatched by grade</strong> — the mechanism <span class="slug-ref">[[mounts-and-storage#node-benchmark]]</span> already defines for
+checksums, with one more dimension:</p>
+<ul>
+<li><strong><code>.rehuco</code> declares whether this node may scan</strong> (it has the inference package; optionally a GPU). Per-machine
+  is the right scope (<span class="slug-ref">[[mounts-and-storage#rehuco-scope]]</span>): "this box has a GPU" is a fact about a box. The
+  benchmark job additionally grades inference throughput, cold and warm.</li>
+<li><strong>A scan is a claimable, resumable work unit</strong> keyed on the resource UUID and the archive's tier-0 identity,
+  run as a persistable task-queue job (<span class="slug-ref">[[appendices.task-queue#home]]</span>) on a <strong>second queue</strong> — the inference
+  lane, alongside the disk lane, exactly the "a second queue over a different resource, never a concurrency
+  count" rule of <span class="slug-ref">[[appendices.task-queue#serial]]</span>. Claimable units are designed in from the first single-worker
+  version, because farming a backfill across two or three machines is the use case that justifies the
+  headless node, and retrofitting claimability is far worse than building it.</li>
+<li><strong>Dispatch order for a resource whose primary node is P:</strong></li>
+<li><strong>P itself</strong>, if scan-capable — bytes local, write local, the single-node base case
+     (<span class="slug-ref">[[multiplicity#single-node-base]]</span>).</li>
+<li><strong>A scan-capable node that reaches the same storage through a mount</strong> the fingerprint map proves
+     (<span class="slug-ref">[[mounts-and-storage#fingerprint-map]]</span>): it reads the archive over the mount, computes, and <strong>posts the
+     results to P</strong>, which writes the sidecar.</li>
+<li><strong>A scan-capable node with no route</strong>: P <strong>streams the archive</strong> to it (REST, range requests), and the
+     results come back the same way. At LAN speeds 3 TB is a matter of hours against GPU-weeks of compute, so
+     streaming is a legitimate fallback rather than a hack — but it is the fallback, not the design.</li>
+<li><strong>The write is always P's.</strong> A remote scanner never touches the sidecar; the result post-back is a plain
+  REST job like a checksum report (<span class="slug-ref">[[nodes#overview]]</span>), which keeps the exactly-one-primary rule of
+  <span class="slug-ref">[[mounts-and-storage#folder-add]]</span> intact without a new exception.</li>
+<li><strong>Sequence collapsing is the largest cost lever.</strong> A 72-frame turnaround needs the expensive tiers on a
+  handful of keyframes; the rest inherit sequence-level fields, and only blur boxes are genuinely per-frame.
+  360° detection therefore runs <strong>early in tier 1</strong>, before anything expensive, so the collapse is schedulable.</li>
+</ul>
+<h2 id="1811-modes-and-viewers">§18.11 Modes and viewers</h2>
+<p><span class="slug-ref">[[[reference-images#modes]]]</span></p>
+<p><strong>Status: wish-list; the browser is first.</strong> What is wanted, in the user's terms; the interaction design is not
+started. The order of building is the browser, then blur, then Pinterest browsing (<span class="slug-ref">[[implementation-plan]]</span>);
+practice mode is deferred (<span class="slug-ref">[[reference-images#practice-sessions]]</span>).</p>
+<ul>
+<li><strong>Browse a pack as it is</strong> — the archive's members in zip order with natural sort
+  (<span class="slug-ref">[[reference-images#image-identity]]</span>). This is <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/221" title="GitHub Issue: borco/rehuco #221">#221</a>'s surface, and needs only tier 0. Its tracer needs
+  <strong>no sidecar and no model</strong>: <code>ContentImageScanner</code> already enumerates the members, the lightbox already shows
+  one image with prev/next, and what is missing is a grid over the entries with asynchronous decode (image in
+  a worker, pixmap on the GUI thread, newest request first so a fast scroll never decodes rows already gone)
+  and an image-source seam in place of the lightbox's <code>list[Path]</code>, since an archive member has no path. The
+  sidecar's working images follow immediately after, because a first grid over a 20 000-image pack otherwise
+  decodes for the better part of an hour.</li>
+<li><strong>Where pixels come from, by surface</strong> — the rule tutorials already follow for video. Grids, Pinterest
+  walls, similar-image views, practice history and the region sub-dock's overview render the sidecar's
+  <strong>working image</strong> (<span class="slug-ref">[[reference-images#scan-sidecar]]</span>), so the whole browse front works from sidecars alone,
+  archive reachable or not. Full view, the practice display on a large screen, region editing at zoom, and
+  export read the <strong>original from the archive</strong> — a 512 px image upscaled to a 3440 px monitor is
+  unacceptable, and a blur box must be drawn over the pixels the user will actually see. The working image is
+  shown <strong>first, as a placeholder, and swapped for the original when it arrives</strong> — progressive, never
+  blocking on the archive; an unreachable archive leaves the placeholder and says so.</li>
+<li><strong>Pinterest-like search</strong> — a fuzzy text box; empty text picks a random starting image. Clicking an image
+  shows it large together with similar images, so browsing is a walk through neighbourhoods rather than a
+  result list. "Similar" needs no model at query time (the embeddings are stored); text needs the encoder or
+  the tag fallback (<span class="slug-ref">[[reference-images#node-requirements]]</span>).</li>
+<li><strong>Practice mode</strong> — a prompt selects a pool; random images from it are shown quickly, like a drawing class
+  (<span class="slug-ref">[[reference-images#practice-sessions]]</span>). The last few runs are remembered per user so an image can be
+  favorited or used as a "similar" seed afterwards. Display transforms that cost nothing and help — random
+  horizontal flip, grayscale, value posterization — belong here.</li>
+<li><strong>Favorites</strong> — per image, per user (<span class="slug-ref">[[reference-images#layers]]</span>).</li>
+<li><strong>Blur</strong> — off by default, an app-wide toggle with a keyboard shortcut, remembered per user. Detection
+  always runs regardless of the toggle: boxes cost nothing to store and cannot be added retroactively without
+  a rescan. Exposure attributes remain useful for <em>filtering</em> ("clothed only" is a legitimate practice
+  filter), which is selection rather than occlusion. Blur is the <strong>first stage the inference package
+  ships</strong>: the detector finds body parts on the whole image directly, so it needs no person stage, a
+  non-people image simply yields no boxes, and the render-only half (boxes, toggle, shortcut, threshold)
+  lands before any authored layer or editor.</li>
+<li><strong>Blur is per class, and the classes are distinct.</strong> There are three: <strong>male genitals</strong>, <strong>female
+  genitals</strong>, <strong>female nipples</strong>. The master toggle above switches blurring on and off; <em>what</em> is blurred
+  while it is on is a per-user preference of three independent switches, one per class, plus an <strong>"all
+  genitals"</strong> control that is derived, not a fourth state: it reads as on exactly when both genital switches
+  are on, and setting it sets both. So a user can blur all genitals, only male, only female, and/or female
+  nipples, in any combination. The class vocabulary is part of the detector's contract
+  (<span class="slug-ref">[[reference-images#model-contracts]]</span>): a user-supplied detector maps its own classes onto these three, and
+  a class it cannot supply leaves that switch inert for images it scanned.</li>
+<li><strong>A blur area carries a <em>set</em> of classes, not one.</strong> A detector emits one class per box and the scan
+  stores them exactly so — one box, one class, one probability — because that is the precise form and the
+  one that keeps per-class thresholds meaningful; the scan never merges. Overlapping boxes need no merging
+  to <em>render</em>: every box whose class is enabled is drawn, and overlapping enabled boxes coalesce on screen by
+  themselves. Sets arise in the <strong>authored</strong> layer: a box drawn by hand over an area large enough to hold
+  several parts is given every class that applies, and the sub-dock can <strong>merge</strong> selected areas into one
+  whose classes are the union (<span class="slug-ref">[[reference-images#region-editor]]</span>). The rule for a multi-class area is that
+  it is blurred when <strong>any</strong> of its classes is enabled — deliberately imprecise, because whoever merged
+  chose one area over several, and the way back is to delete it and redraw. Whether the scan should ever
+  auto-merge near-duplicate detections of one class is open (<span class="slug-ref">[[reference-images#open-questions]]</span>).</li>
+<li><strong>Only what is visible is ever blurred.</strong> A blur box exists where the detector <em>saw</em> the part; a back or
+  profile view in which the genitals or nipples are not visible yields no box, so nothing is blurred — there
+  is no rule to write, since a detector cannot box what is not in the picture. Detectors of the candidate
+  family also report <strong>covered</strong> variants; those are stored, because they are useful for the "clothed only"
+  filter, but they are <strong>never</strong> blurred: blur applies to the exposed classes alone. A part the detector
+  missed is what the authored layer's hand-drawn box is for.</li>
+</ul>
+<h2 id="1812-the-region-and-blur-sub-dock">§18.12 The region and blur sub-dock</h2>
+<p><span class="slug-ref">[[[reference-images#region-editor]]]</span></p>
+<p><strong>Status: open — wish-list only.</strong> The interaction design is deliberately not started; this section records
+what is wanted so the decision is made later on purpose rather than fallen into.</p>
+<ul>
+<li>Every reference-images document gets a <strong>sub-dock</strong> for one image at a time.</li>
+<li>It shows <strong>two previews</strong>: one with every region drawn and the selected region editable; one showing only
+  the blur regions, with the blur on/off toggle applied so the effect is seen as it will render.</li>
+<li><strong>Body regions</strong> (person, head, hands, feet, …) can be selected, moved, scaled and deleted; <strong>blur regions</strong>
+  can additionally be added and <strong>merged</strong>. A box drawn by hand is given one or more of the three blur
+  classes — male genitals, female genitals, female nipples (<span class="slug-ref">[[reference-images#modes]]</span>) — so it obeys the
+  same per-class switches as a detected one; merging selected areas yields one area whose classes are the
+  union, blurred when any of them is enabled. There is no split: the way back from a merge is delete and
+  redraw.</li>
+<li>Which layer is shown and edited follows <span class="slug-ref">[[reference-images#layers]]</span>: the admin default, the current user,
+  or other users; editing while viewing someone else's layer creates the current user's override. Whether a
+  logged-in admin edits the shared layer directly or the same override path with a "promote to default"
+  action is one of the open questions.</li>
+<li>A user edit is marked as such and is <strong>never overwritten by a re-run</strong> of the stage that first produced
+  the region.</li>
+</ul>
+<h2 id="1813-360-sequences">§18.13 360° sequences</h2>
+<p><span class="slug-ref">[[[reference-images#sequences]]]</span></p>
+<p><strong>Status: detection proposed; use open; deferred.</strong> Nothing in the earlier slices depends on sequences
+(<span class="slug-ref">[[implementation-plan]]</span>); the one thing they must not do is store anything that would make a later sequence
+field awkward to add, which the per-image keying of <span class="slug-ref">[[reference-images#image-identity]]</span> already guarantees.</p>
+<p>Many pose packs are turnarounds — 12, 24, 36 or 72 frames of one figure. Identifying them is mostly not
+machine learning: natural-sort the members, segment by the regular filename patterns these packs use, then
+confirm with the smoothness of consecutive embedding similarity, background constancy, and above all <strong>loop
+closure</strong> (a full turnaround's last frame is near-identical to its first, which is what separates it from a
+partial arc or a burst of similar poses). Manual groupings and corrections are an authored-layer field
+(<span class="slug-ref">[[reference-images#layers]]</span>). A detected sequence is what makes <span class="slug-ref">[[reference-images#dispatch]]</span>'s collapsing
+possible.</p>
+<p>How sequences are <em>used</em> is not decided. Two ideas are recorded without commitment: surfacing a matching
+sequence as a first-class result ahead of loose images for "head from different angles"-type queries; and a
+practice drill that shows one frame, lets the user draw, then reveals a frame some degrees around to check
+the mental rotation.</p>
+<h2 id="1814-open-questions">§18.14 Open questions</h2>
+<p><span class="slug-ref">[[[reference-images#open-questions]]]</span></p>
+<p>Local to this document; the global list is <span class="slug-ref">[[appendices.open-questions#still-open]]</span>.</p>
+<ul>
+<li>The sub-dock's interaction design (<span class="slug-ref">[[reference-images#region-editor]]</span>), and whether an admin edits the
+  shared layer directly or promotes an override.</li>
+<li>The sidecar's final name and whether SQLite holds; the <code>dump</code> command's format.</li>
+<li>Tag-vocabulary mapping for a user-supplied tagger (<span class="slug-ref">[[reference-images#model-contracts]]</span>) — a mapping file
+  per model with the built-ins' shipped, unmapped tags kept raw and searchable, is the likely floor.</li>
+<li>Mixed-model embeddings: the index either refuses to merge them or keeps one index per embedding model.</li>
+<li>Whether the scan should auto-merge near-duplicate blur detections of one class (the same part boxed twice
+  at slightly different extents), and at what overlap; detections of <em>different</em> classes are never merged
+  by the scan (<span class="slug-ref">[[reference-images#modes]]</span>).</li>
+<li>Whether the Pinterest front needs the text encoder on every serving node or delegates encoding to a
+  scan-capable node (a string in, a vector out — tiny).</li>
+<li>The working-image storage budget (~300–500 GB at 512 px over ten million images) and whether any eviction
+  is wanted; whether region crops are materialized lazily per region kind or always cut from the original.</li>
+<li>Practice-session retention (how many runs), and what a session records beyond what was shown.</li>
+<li>What 360° sequences are for (<span class="slug-ref">[[reference-images#sequences]]</span>); the keyframe count for collapsing.</li>
+<li>Whether per-image tags feed dynamic access grants (<span class="slug-ref">[[discovery-trust-access#access-control]]</span>) — nothing to
+  design until grants exist.</li>
+<li>Sampled rather than exhaustive human review: at ten million images one percent uncertainty is a hundred
+  thousand images, so thresholds tune for recall, user deletions are the review signal, and no queue is
+  ever worked through — recorded as a stance, not yet a design.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../field-schema/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Field Schema">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Field Schema
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../diagrams/" class="md-footer__link md-footer__link--next" aria-label="Next: Overview">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Overview
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.tracking", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "search.share", "content.code.copy", "content.code.annotate", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="../../javascripts/diagram-open.js"></script>
+      
+        <script src="../../assets/mkdocs_puml/puml.js"></script>
+      
+    
+  </body>
+</html>

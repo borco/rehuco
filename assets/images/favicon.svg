@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg width="100%" height="100%" viewBox="0 0 72 72" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:serif="http://www.serif.com/" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;">
+    <rect id="favicon" x="0" y="0" width="72" height="72" style="fill:none;"/>
+    <clipPath id="_clip1">
+        <rect x="0" y="0" width="72" height="72"/>
+    </clipPath>
+    <g clip-path="url(#_clip1)">
+        <g>
+            <path d="M72,12L72,60C72,66.623 66.623,72 60,72L12,72C5.377,72 -0,66.623 -0,60L-0,12C-0,5.377 5.377,0 12,0L60,0C66.623,0 72,5.377 72,12Z"/>
+            <path d="M59.4,21.6C59.4,23.587 57.787,25.2 55.8,25.2L14.4,25.2C12.413,25.2 10.8,23.587 10.8,21.6C10.8,19.613 12.413,18 14.4,18L55.8,18C57.787,18 59.4,19.613 59.4,21.6Z" style="fill:white;fill-opacity:0.6;"/>
+            <path d="M43.2,36C43.2,37.987 41.587,39.6 39.6,39.6L14.4,39.6C12.413,39.6 10.8,37.987 10.8,36C10.8,34.013 12.413,32.4 14.4,32.4L39.6,32.4C41.587,32.4 43.2,34.013 43.2,36Z" style="fill:white;fill-opacity:0.6;"/>
+            <path d="M51.3,50.4C51.3,52.387 49.687,54 47.7,54L14.4,54C12.413,54 10.8,52.387 10.8,50.4C10.8,48.413 12.413,46.8 14.4,46.8L47.7,46.8C49.687,46.8 51.3,48.413 51.3,50.4Z" style="fill:white;"/>
+        </g>
+    </g>
+</svg>

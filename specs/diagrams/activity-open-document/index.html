@@ -1,0 +1,2499 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Distributed resource management system for tutorials and reference images">
+      
+      
+      
+        <link rel="canonical" href="https://borco.github.io/rehuco/specs/diagrams/activity-open-document/">
+      
+      
+        <link rel="prev" href="../">
+      
+      
+        <link rel="next" href="../component-decomposition/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Activity: Open a Path - rehuco</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../../stylesheets/extra.css">
+    
+      <link rel="stylesheet" href="../../../assets/mkdocs_puml/puml.css">
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#activity-diagram-opening-one-path" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="rehuco" class="md-header__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            rehuco
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Activity: Open a Path
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../../how-it-works/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Design Specs
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../implementation-plan/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Implementation Plan
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../changelog/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Changelog
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../license/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  License
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="rehuco" class="md-nav__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    rehuco
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Specs
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design Specs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-it-works/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    How It Works
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../nodes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Node Communication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../discovery-trust-access/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Discovery & Trust
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sync/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sync & Conflicts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../multiplicity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multiplicity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../mounts-and-storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mounts & Storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../instances-and-dedup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Identity & Dedup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../borrowing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Borrowing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../offline-editing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Offline Editing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plugins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../requirements/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Requirements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../acquisition-tooling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acquisition Tooling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../packaging-deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Packaging & Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../field-schema/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Field Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference-images/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference Images
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_19" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagrams
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2_19" id="__nav_2_19_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_19_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2_19">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Diagrams
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Activity: Open a Path
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../component-decomposition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Component: Containment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sequence-open-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sequence: Open a Path
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_20" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_20" id="__nav_2_20_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Appendices
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_20_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_20">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Appendices
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../appendices/briefcase-packaging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Briefcase Packaging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../appendices/code-conventions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Conventions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../appendices/continuous-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Continuous Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../appendices/logging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Logging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../appendices/open-questions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open Questions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../appendices/post-mortem/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Post-Mortem
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../appendices/project-management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../appendices/qt-ads/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QtAds
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../appendices/release-runbook/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Runbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../appendices/settings-pages/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Settings Pages
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../appendices/task-queue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Queue
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../appendices/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../appendices/theming_and_styling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Theming & Styling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../appendices/windows-dev-launcher/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Windows Dev Launcher
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_21" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../history/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    History
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2_21" id="__nav_2_21_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_21_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_21">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    History
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/ibocator/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ibocator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalog3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutcatalog 3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalogpy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalogpy2/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy2
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalogpy3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalog4/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog4
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalog5/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog5
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/resource-hub/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Resource Hub
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/daz3d-personal-database/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Daz3D Personal Database
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/pyside-ibo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    pyside-ibo (shared library)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../implementation-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Implementation Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../changelog/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Changelog
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../changelog/rehuco-agent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../changelog/rehuco-core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../changelog/rehuco-node/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-node
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../changelog/borco-core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    borco-core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../changelog/borco-pyside/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    borco-pyside
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../license/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    License
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="activity-diagram-opening-one-path">Activity diagram: opening one path</h1>
+<p><span class="slug-ref">[[[activity-open-document]]]</span></p>
+<p>The same flow as <a href="../sequence-open-document/">sequence-open-document.md</a>, reframed around its
+decision points rather than which object calls which. The fork/join reflects
+<code>DocumentWidget.__init__</code> (<code>document_widget.py:38-40</code>): the viewer and editor forms are both
+built, from the same <code>RehuDocumentModel</code>, regardless of which dock ends up visible. Traces the
+same <span class="slug-ref">[[plugins#dock-shell]]</span> flow described in prose.</p>
+<div class='puml-container'><div class="puml light" style=""><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" data-diagram-type="ACTIVITY" style="width:782px;height:879px;background:#FFFFFF;" width="782px" height="879px" viewBox="0 0 782 879" zoomAndPan="magnify" preserveAspectRatio="xMidYMid meet" contentStyleType="text/css" class="diagram"><?plantuml 1.2026.8?><defs/><g font-family="sans-serif" lengthAdjust="spacing"><ellipse cx="287.732" cy="25" rx="10" ry="10" fill="#222" style="stroke:#222;stroke-width:0.5;"/><rect x="209.731" y="55" width="156.002" height="33.969" fill="#F1F1F1" style="stroke:#181818;stroke-width:0.5;" rx="12.5" ry="12.5"/><text x="219.731" y="76.139" fill="#000" font-size="12" textLength="136.002">receive a path to open</text><rect x="194.002" y="157.371" width="187.461" height="47.938" fill="#F1F1F1" style="stroke:#181818;stroke-width:0.5;" rx="12.5" ry="12.5"/><text x="204.002" y="178.51" fill="#000" font-size="12" textLength="167.461">forward path to the primary</text><text x="204.002" y="192.479" fill="#000" font-size="12" textLength="125.086">over the local socket</text><rect x="210.479" y="225.309" width="154.508" height="33.969" fill="#F1F1F1" style="stroke:#181818;stroke-width:0.5;" rx="12.5" ry="12.5"/><text x="220.479" y="246.447" fill="#000" font-size="12" textLength="134.508">exit process (return 0)</text><ellipse cx="287.732" cy="290.277" rx="11" ry="11" fill="none" style="stroke:#222;stroke-width:0.5;"/><ellipse cx="287.732" cy="290.277" rx="6" ry="6" fill="#222" style="stroke:#222;stroke-width:1;"/><polygon points="168.269,108.969,407.196,108.969,419.196,120.969,407.196,132.969,168.269,132.969,156.269,120.969,168.269,108.969" fill="#F1F1F1" style="stroke:#181818;stroke-width:0.5;stroke-linejoin:miter;stroke-miterlimit:10;"/><text x="291.732" y="143.179" fill="#000" font-size="11" textLength="13.702">no</text><text x="168.269" y="124.777" fill="#000" font-size="11" textLength="238.928">this process is the single-instance primary?</text><text x="419.196" y="118.375" fill="#000" font-size="11" textLength="19.008">yes</text><rect x="192.279" y="343.277" width="190.906" height="33.969" fill="#F1F1F1" style="stroke:#181818;stroke-width:0.5;" rx="12.5" ry="12.5"/><text x="202.279" y="364.416" fill="#000" font-size="12" textLength="170.906">MainWindow.open_file(path)</text><polygon points="187.258,397.246,388.207,397.246,400.207,409.246,388.207,421.246,187.258,421.246,175.258,409.246,187.258,397.246" fill="#F1F1F1" style="stroke:#181818;stroke-width:0.5;stroke-linejoin:miter;stroke-miterlimit:10;"/><text x="187.258" y="413.054" fill="#000" font-size="11" textLength="200.949">a dock is already open for this path?</text><text x="156.25" y="406.652" fill="#000" font-size="11" textLength="19.008">yes</text><text x="400.207" y="406.652" fill="#000" font-size="11" textLength="13.702">no</text><rect x="16" y="431.246" width="158.996" height="33.969" fill="#F1F1F1" style="stroke:#181818;stroke-width:0.5;" rx="12.5" ry="12.5"/><text x="26" y="452.385" fill="#000" font-size="12" textLength="138.996">focus the existing dock</text><rect x="390.364" y="431.246" width="179.205" height="33.969" fill="#F1F1F1" style="stroke:#181818;stroke-width:0.5;" rx="12.5" ry="12.5"/><text x="400.364" y="452.385" fill="#000" font-size="12" textLength="159.205">RehuDocument.load(path)</text><rect x="356.14" y="485.215" width="247.654" height="33.969" fill="#F1F1F1" style="stroke:#181818;stroke-width:0.5;" rx="12.5" ry="12.5"/><text x="366.14" y="506.354" fill="#000" font-size="12" textLength="227.654">new RehuDocumentModel(document)</text><rect x="194.996" y="539.184" width="567.941" height="6" fill="#555" style="stroke:#555;stroke-width:1;" rx="2.5" ry="2.5"/><rect x="208.996" y="565.184" width="195.453" height="33.969" fill="#F1F1F1" style="stroke:#181818;stroke-width:0.5;" rx="12.5" ry="12.5"/><text x="218.996" y="586.322" fill="#000" font-size="12" textLength="175.453">build viewer form (read-only)</text><rect x="432.449" y="565.184" width="318.488" height="33.969" fill="#F1F1F1" style="stroke:#181818;stroke-width:0.5;" rx="12.5" ry="12.5"/><text x="442.449" y="586.322" fill="#000" font-size="12" textLength="298.488">build editor form (writes back through the model)</text><rect x="194.996" y="619.152" width="567.941" height="6" fill="#555" style="stroke:#555;stroke-width:1;" rx="2.5" ry="2.5"/><rect x="358.044" y="645.152" width="243.846" height="33.969" fill="#F1F1F1" style="stroke:#181818;stroke-width:0.5;" rx="12.5" ry="12.5"/><text x="368.044" y="666.291" fill="#000" font-size="12" textLength="223.846">wrap both in a new DocumentWidget</text><rect x="296.359" y="699.121" width="367.215" height="33.969" fill="#F1F1F1" style="stroke:#181818;stroke-width:0.5;" rx="12.5" ry="12.5"/><text x="306.359" y="720.26" fill="#000" font-size="12" textLength="347.215">add its dock to DocumentsDock's CDockManager, focus it</text><polygon points="287.732,739.09,299.732,751.09,287.732,763.09,275.732,751.09,287.732,739.09" fill="#F1F1F1" style="stroke:#181818;stroke-width:0.5;stroke-linejoin:miter;stroke-miterlimit:10;"/><rect x="165.095" y="783.09" width="245.275" height="33.969" fill="#F1F1F1" style="stroke:#181818;stroke-width:0.5;" rx="12.5" ry="12.5"/><text x="175.095" y="804.229" fill="#000" font-size="12" textLength="225.275">raise_and_activate() the MainWindow</text><ellipse cx="287.732" cy="848.059" rx="11" ry="11" fill="none" style="stroke:#222;stroke-width:0.5;"/><ellipse cx="287.732" cy="848.059" rx="6" ry="6" fill="#222" style="stroke:#222;stroke-width:1;"/><line x1="287.732" y1="35" x2="287.732" y2="55" style="stroke:#181818;stroke-width:1;"/><polygon points="283.732,45,287.732,55,291.732,45,287.732,49" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="287.732" y1="205.309" x2="287.732" y2="225.309" style="stroke:#181818;stroke-width:1;"/><polygon points="283.732,215.309,287.732,225.309,291.732,215.309,287.732,219.309" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="287.732" y1="259.277" x2="287.732" y2="279.277" style="stroke:#181818;stroke-width:1;"/><polygon points="283.732,269.277,287.732,279.277,291.732,269.277,287.732,273.277" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="287.732" y1="132.969" x2="287.732" y2="157.371" style="stroke:#181818;stroke-width:1;"/><polygon points="283.732,147.371,287.732,157.371,291.732,147.371,287.732,151.371" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="419.196" y1="120.969" x2="431.196" y2="120.969" style="stroke:#181818;stroke-width:1;"/><polygon points="427.196,216.324,431.196,226.324,435.196,216.324,431.196,220.324" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="431.196" y1="120.969" x2="431.196" y2="323.277" style="stroke:#181818;stroke-width:1;"/><line x1="431.196" y1="323.277" x2="287.732" y2="323.277" style="stroke:#181818;stroke-width:1;"/><line x1="287.732" y1="323.277" x2="287.732" y2="343.277" style="stroke:#181818;stroke-width:1;"/><polygon points="283.732,333.277,287.732,343.277,291.732,333.277,287.732,337.277" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="287.732" y1="88.969" x2="287.732" y2="108.969" style="stroke:#181818;stroke-width:1;"/><polygon points="283.732,98.969,287.732,108.969,291.732,98.969,287.732,102.969" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="479.967" y1="465.215" x2="479.967" y2="485.215" style="stroke:#181818;stroke-width:1;"/><polygon points="475.967,475.215,479.967,485.215,483.967,475.215,479.967,479.215" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="306.723" y1="545.184" x2="306.723" y2="565.184" style="stroke:#181818;stroke-width:1;"/><polygon points="302.723,555.184,306.723,565.184,310.723,555.184,306.723,559.184" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="591.693" y1="545.184" x2="591.693" y2="565.184" style="stroke:#181818;stroke-width:1;"/><polygon points="587.693,555.184,591.693,565.184,595.693,555.184,591.693,559.184" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="306.723" y1="599.152" x2="306.723" y2="619.152" style="stroke:#181818;stroke-width:1;"/><polygon points="302.723,609.152,306.723,619.152,310.723,609.152,306.723,613.152" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="591.693" y1="599.152" x2="591.693" y2="619.152" style="stroke:#181818;stroke-width:1;"/><polygon points="587.693,609.152,591.693,619.152,595.693,609.152,591.693,613.152" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="479.967" y1="519.184" x2="479.967" y2="539.184" style="stroke:#181818;stroke-width:1;"/><polygon points="475.967,529.184,479.967,539.184,483.967,529.184,479.967,533.184" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="479.967" y1="625.152" x2="479.967" y2="645.152" style="stroke:#181818;stroke-width:1;"/><polygon points="475.967,635.152,479.967,645.152,483.967,635.152,479.967,639.152" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="479.967" y1="679.121" x2="479.967" y2="699.121" style="stroke:#181818;stroke-width:1;"/><polygon points="475.967,689.121,479.967,699.121,483.967,689.121,479.967,693.121" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="175.258" y1="409.246" x2="95.498" y2="409.246" style="stroke:#181818;stroke-width:1;"/><line x1="95.498" y1="409.246" x2="95.498" y2="431.246" style="stroke:#181818;stroke-width:1;"/><polygon points="91.498,421.246,95.498,431.246,99.498,421.246,95.498,425.246" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="400.207" y1="409.246" x2="479.967" y2="409.246" style="stroke:#181818;stroke-width:1;"/><line x1="479.967" y1="409.246" x2="479.967" y2="431.246" style="stroke:#181818;stroke-width:1;"/><polygon points="475.967,421.246,479.967,431.246,483.967,421.246,479.967,425.246" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="95.498" y1="465.215" x2="95.498" y2="751.09" style="stroke:#181818;stroke-width:1;"/><line x1="95.498" y1="751.09" x2="275.732" y2="751.09" style="stroke:#181818;stroke-width:1;"/><polygon points="265.732,747.09,275.732,751.09,265.732,755.09,269.732,751.09" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="479.967" y1="733.09" x2="479.967" y2="751.09" style="stroke:#181818;stroke-width:1;"/><line x1="479.967" y1="751.09" x2="299.732" y2="751.09" style="stroke:#181818;stroke-width:1;"/><polygon points="309.732,747.09,299.732,751.09,309.732,755.09,305.732,751.09" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="287.732" y1="377.246" x2="287.732" y2="397.246" style="stroke:#181818;stroke-width:1;"/><polygon points="283.732,387.246,287.732,397.246,291.732,387.246,287.732,391.246" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="287.732" y1="763.09" x2="287.732" y2="783.09" style="stroke:#181818;stroke-width:1;"/><polygon points="283.732,773.09,287.732,783.09,291.732,773.09,287.732,777.09" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="287.732" y1="817.059" x2="287.732" y2="837.059" style="stroke:#181818;stroke-width:1;"/><polygon points="283.732,827.059,287.732,837.059,291.732,827.059,287.732,831.059" fill="#181818" style="stroke:#181818;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><?plantuml-src NLAnZjim3Dtz5Unq3j2BEoT3XzvMPEboom418p4sOLaoH3fk_hwKxUGEzMB9V8zyZy_VEBemUO9ETPH3qsISzorhDrqceUnIL8gwTsbeJjntoE5tnXkfD4FlavFpE0sX6L2KSgCT3IIDfojEGPl0RQVx0gX4CMjroEI8RmG88se7cY2D58zLnLUejME1CIT78c17wmR2iGtqoj4QH4TMvW7p_UUkL2FKCUqgiETmJNd6x9zz2ta3VyHqexny2SbX04ck9pskHFhB-fnQPz8fH_YnMwkYQQme245z9zbL53rVg-fmGexl77sQzyN0-Sg1wZ9wjtb1iENqnGM6JEZlYr4mbR3QDEpJnD9wS-6crRZ94ZNpIv_Zfk7fzWzrqvjXXv9DIEWVmvTgf1c-8ax9KwZzTjjG9gLV3WlbCd7mS6EQRLDM6iegqB-c6EvV282jEV-VHfurFMXpPYM12vfzxNAQscunD1GHMojRu-VymvnnX4kot3ZQdr7KFvI_is-VIQ7tm2hhPYtY1qZiqBy8_2hl4qPiAN-7TPLiv4Te6LdeZD6VqIdVKAbU4e3FD8zLIVmV?></g></svg></div><div class="puml dark" style=""><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" data-diagram-type="ACTIVITY" style="width:782px;height:879px;background:#1B1B1B;" width="782px" height="879px" viewBox="0 0 782 879" zoomAndPan="magnify" preserveAspectRatio="xMidYMid meet" contentStyleType="text/css" class="diagram"><?plantuml 1.2026.8?><defs/><g font-family="sans-serif" lengthAdjust="spacing"><rect x="0" y="0" width="782" height="879" fill="#1B1B1B" style="stroke:none;"/><ellipse cx="287.732" cy="25" rx="10" ry="10" fill="#DDD" style="stroke:#DDD;stroke-width:0.5;"/><rect x="209.731" y="55" width="156.002" height="33.969" fill="#313139" style="stroke:#E7E7E7;stroke-width:0.5;" rx="12.5" ry="12.5"/><text x="219.731" y="76.139" fill="#FFF" font-size="12" textLength="136.002">receive a path to open</text><rect x="194.002" y="157.371" width="187.461" height="47.938" fill="#313139" style="stroke:#E7E7E7;stroke-width:0.5;" rx="12.5" ry="12.5"/><text x="204.002" y="178.51" fill="#FFF" font-size="12" textLength="167.461">forward path to the primary</text><text x="204.002" y="192.479" fill="#FFF" font-size="12" textLength="125.086">over the local socket</text><rect x="210.479" y="225.309" width="154.508" height="33.969" fill="#313139" style="stroke:#E7E7E7;stroke-width:0.5;" rx="12.5" ry="12.5"/><text x="220.479" y="246.447" fill="#FFF" font-size="12" textLength="134.508">exit process (return 0)</text><ellipse cx="287.732" cy="290.277" rx="11" ry="11" fill="none" style="stroke:#DDD;stroke-width:0.5;"/><ellipse cx="287.732" cy="290.277" rx="6" ry="6" fill="#DDD" style="stroke:#DDD;stroke-width:1;"/><polygon points="168.269,108.969,407.196,108.969,419.196,120.969,407.196,132.969,168.269,132.969,156.269,120.969,168.269,108.969" fill="#313139" style="stroke:#E7E7E7;stroke-width:0.5;stroke-linejoin:miter;stroke-miterlimit:10;"/><text x="291.732" y="143.179" fill="#FFF" font-size="11" textLength="13.702">no</text><text x="168.269" y="124.777" fill="#FFF" font-size="11" textLength="238.928">this process is the single-instance primary?</text><text x="419.196" y="118.375" fill="#FFF" font-size="11" textLength="19.008">yes</text><rect x="192.279" y="343.277" width="190.906" height="33.969" fill="#313139" style="stroke:#E7E7E7;stroke-width:0.5;" rx="12.5" ry="12.5"/><text x="202.279" y="364.416" fill="#FFF" font-size="12" textLength="170.906">MainWindow.open_file(path)</text><polygon points="187.258,397.246,388.207,397.246,400.207,409.246,388.207,421.246,187.258,421.246,175.258,409.246,187.258,397.246" fill="#313139" style="stroke:#E7E7E7;stroke-width:0.5;stroke-linejoin:miter;stroke-miterlimit:10;"/><text x="187.258" y="413.054" fill="#FFF" font-size="11" textLength="200.949">a dock is already open for this path?</text><text x="156.25" y="406.652" fill="#FFF" font-size="11" textLength="19.008">yes</text><text x="400.207" y="406.652" fill="#FFF" font-size="11" textLength="13.702">no</text><rect x="16" y="431.246" width="158.996" height="33.969" fill="#313139" style="stroke:#E7E7E7;stroke-width:0.5;" rx="12.5" ry="12.5"/><text x="26" y="452.385" fill="#FFF" font-size="12" textLength="138.996">focus the existing dock</text><rect x="390.364" y="431.246" width="179.205" height="33.969" fill="#313139" style="stroke:#E7E7E7;stroke-width:0.5;" rx="12.5" ry="12.5"/><text x="400.364" y="452.385" fill="#FFF" font-size="12" textLength="159.205">RehuDocument.load(path)</text><rect x="356.14" y="485.215" width="247.654" height="33.969" fill="#313139" style="stroke:#E7E7E7;stroke-width:0.5;" rx="12.5" ry="12.5"/><text x="366.14" y="506.354" fill="#FFF" font-size="12" textLength="227.654">new RehuDocumentModel(document)</text><rect x="194.996" y="539.184" width="567.941" height="6" fill="#AAA" style="stroke:#AAA;stroke-width:1;" rx="2.5" ry="2.5"/><rect x="208.996" y="565.184" width="195.453" height="33.969" fill="#313139" style="stroke:#E7E7E7;stroke-width:0.5;" rx="12.5" ry="12.5"/><text x="218.996" y="586.322" fill="#FFF" font-size="12" textLength="175.453">build viewer form (read-only)</text><rect x="432.449" y="565.184" width="318.488" height="33.969" fill="#313139" style="stroke:#E7E7E7;stroke-width:0.5;" rx="12.5" ry="12.5"/><text x="442.449" y="586.322" fill="#FFF" font-size="12" textLength="298.488">build editor form (writes back through the model)</text><rect x="194.996" y="619.152" width="567.941" height="6" fill="#AAA" style="stroke:#AAA;stroke-width:1;" rx="2.5" ry="2.5"/><rect x="358.044" y="645.152" width="243.846" height="33.969" fill="#313139" style="stroke:#E7E7E7;stroke-width:0.5;" rx="12.5" ry="12.5"/><text x="368.044" y="666.291" fill="#FFF" font-size="12" textLength="223.846">wrap both in a new DocumentWidget</text><rect x="296.359" y="699.121" width="367.215" height="33.969" fill="#313139" style="stroke:#E7E7E7;stroke-width:0.5;" rx="12.5" ry="12.5"/><text x="306.359" y="720.26" fill="#FFF" font-size="12" textLength="347.215">add its dock to DocumentsDock's CDockManager, focus it</text><polygon points="287.732,739.09,299.732,751.09,287.732,763.09,275.732,751.09,287.732,739.09" fill="#313139" style="stroke:#E7E7E7;stroke-width:0.5;stroke-linejoin:miter;stroke-miterlimit:10;"/><rect x="165.095" y="783.09" width="245.275" height="33.969" fill="#313139" style="stroke:#E7E7E7;stroke-width:0.5;" rx="12.5" ry="12.5"/><text x="175.095" y="804.229" fill="#FFF" font-size="12" textLength="225.275">raise_and_activate() the MainWindow</text><ellipse cx="287.732" cy="848.059" rx="11" ry="11" fill="none" style="stroke:#DDD;stroke-width:0.5;"/><ellipse cx="287.732" cy="848.059" rx="6" ry="6" fill="#DDD" style="stroke:#DDD;stroke-width:1;"/><line x1="287.732" y1="35" x2="287.732" y2="55" style="stroke:#E7E7E7;stroke-width:1;"/><polygon points="283.732,45,287.732,55,291.732,45,287.732,49" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="287.732" y1="205.309" x2="287.732" y2="225.309" style="stroke:#E7E7E7;stroke-width:1;"/><polygon points="283.732,215.309,287.732,225.309,291.732,215.309,287.732,219.309" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="287.732" y1="259.277" x2="287.732" y2="279.277" style="stroke:#E7E7E7;stroke-width:1;"/><polygon points="283.732,269.277,287.732,279.277,291.732,269.277,287.732,273.277" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="287.732" y1="132.969" x2="287.732" y2="157.371" style="stroke:#E7E7E7;stroke-width:1;"/><polygon points="283.732,147.371,287.732,157.371,291.732,147.371,287.732,151.371" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="419.196" y1="120.969" x2="431.196" y2="120.969" style="stroke:#E7E7E7;stroke-width:1;"/><polygon points="427.196,216.324,431.196,226.324,435.196,216.324,431.196,220.324" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="431.196" y1="120.969" x2="431.196" y2="323.277" style="stroke:#E7E7E7;stroke-width:1;"/><line x1="431.196" y1="323.277" x2="287.732" y2="323.277" style="stroke:#E7E7E7;stroke-width:1;"/><line x1="287.732" y1="323.277" x2="287.732" y2="343.277" style="stroke:#E7E7E7;stroke-width:1;"/><polygon points="283.732,333.277,287.732,343.277,291.732,333.277,287.732,337.277" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="287.732" y1="88.969" x2="287.732" y2="108.969" style="stroke:#E7E7E7;stroke-width:1;"/><polygon points="283.732,98.969,287.732,108.969,291.732,98.969,287.732,102.969" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="479.967" y1="465.215" x2="479.967" y2="485.215" style="stroke:#E7E7E7;stroke-width:1;"/><polygon points="475.967,475.215,479.967,485.215,483.967,475.215,479.967,479.215" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="306.723" y1="545.184" x2="306.723" y2="565.184" style="stroke:#E7E7E7;stroke-width:1;"/><polygon points="302.723,555.184,306.723,565.184,310.723,555.184,306.723,559.184" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="591.693" y1="545.184" x2="591.693" y2="565.184" style="stroke:#E7E7E7;stroke-width:1;"/><polygon points="587.693,555.184,591.693,565.184,595.693,555.184,591.693,559.184" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="306.723" y1="599.152" x2="306.723" y2="619.152" style="stroke:#E7E7E7;stroke-width:1;"/><polygon points="302.723,609.152,306.723,619.152,310.723,609.152,306.723,613.152" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="591.693" y1="599.152" x2="591.693" y2="619.152" style="stroke:#E7E7E7;stroke-width:1;"/><polygon points="587.693,609.152,591.693,619.152,595.693,609.152,591.693,613.152" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="479.967" y1="519.184" x2="479.967" y2="539.184" style="stroke:#E7E7E7;stroke-width:1;"/><polygon points="475.967,529.184,479.967,539.184,483.967,529.184,479.967,533.184" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="479.967" y1="625.152" x2="479.967" y2="645.152" style="stroke:#E7E7E7;stroke-width:1;"/><polygon points="475.967,635.152,479.967,645.152,483.967,635.152,479.967,639.152" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="479.967" y1="679.121" x2="479.967" y2="699.121" style="stroke:#E7E7E7;stroke-width:1;"/><polygon points="475.967,689.121,479.967,699.121,483.967,689.121,479.967,693.121" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="175.258" y1="409.246" x2="95.498" y2="409.246" style="stroke:#E7E7E7;stroke-width:1;"/><line x1="95.498" y1="409.246" x2="95.498" y2="431.246" style="stroke:#E7E7E7;stroke-width:1;"/><polygon points="91.498,421.246,95.498,431.246,99.498,421.246,95.498,425.246" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="400.207" y1="409.246" x2="479.967" y2="409.246" style="stroke:#E7E7E7;stroke-width:1;"/><line x1="479.967" y1="409.246" x2="479.967" y2="431.246" style="stroke:#E7E7E7;stroke-width:1;"/><polygon points="475.967,421.246,479.967,431.246,483.967,421.246,479.967,425.246" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="95.498" y1="465.215" x2="95.498" y2="751.09" style="stroke:#E7E7E7;stroke-width:1;"/><line x1="95.498" y1="751.09" x2="275.732" y2="751.09" style="stroke:#E7E7E7;stroke-width:1;"/><polygon points="265.732,747.09,275.732,751.09,265.732,755.09,269.732,751.09" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="479.967" y1="733.09" x2="479.967" y2="751.09" style="stroke:#E7E7E7;stroke-width:1;"/><line x1="479.967" y1="751.09" x2="299.732" y2="751.09" style="stroke:#E7E7E7;stroke-width:1;"/><polygon points="309.732,747.09,299.732,751.09,309.732,755.09,305.732,751.09" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="287.732" y1="377.246" x2="287.732" y2="397.246" style="stroke:#E7E7E7;stroke-width:1;"/><polygon points="283.732,387.246,287.732,397.246,291.732,387.246,287.732,391.246" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="287.732" y1="763.09" x2="287.732" y2="783.09" style="stroke:#E7E7E7;stroke-width:1;"/><polygon points="283.732,773.09,287.732,783.09,291.732,773.09,287.732,777.09" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><line x1="287.732" y1="817.059" x2="287.732" y2="837.059" style="stroke:#E7E7E7;stroke-width:1;"/><polygon points="283.732,827.059,287.732,837.059,291.732,827.059,287.732,831.059" fill="#E7E7E7" style="stroke:#E7E7E7;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><?plantuml-src NLAnZjim3Dtz5Unq3j2BEoT3XzvMPEboom418p4sOLaoH3fk_hwKxUGEzMB9v7jyZy_VEBemUO9ETPH3qsISzorhDrqceUnIL8gwTsbeJjntoE5tnXkfD4FlavFpE0sX6L2KSgCT3IIDfojEGHkFkT-NUYMAMQj39aTy8q0OKJlG16caUAmglaAj7GkCEJaI0JiQ6GZ7Dj0hHoE8ZgpC0-RxprsfHgXZsbLWp-6QyepPFtaBU6l-YEb6UVaIaiC0abnFUbo1z9VrERNEf5EEy6EtLaNJM54GWlfEigieUhvMrU647Dyv-ZJlYu7pbGFLPVHkyu9Wk-cB2moPqDyNes0gORLflKyJ2_NcmashSPCbQkONdkEcuUds3tNJc_KE9PgGq3-6BzL8CtpjE2LFeVRRRUioAVroM22NYOE76zDicxBIK5Q1_ZN5SFy206pD-Vymygpf0PipAmbSqEnhbzFKTekXeOZOg6oDd_CFSyOHBibousX_Hb7_KFxEldqcXTu3gwoRjOWVJMA7_aNWLtcVC69B-JkigsG3FqBBo49dZFwCJlc6IlMI07ocUQnAuly0?></g></svg></div></div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../" class="md-footer__link md-footer__link--prev" aria-label="Previous: Overview">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Overview
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../component-decomposition/" class="md-footer__link md-footer__link--next" aria-label="Next: Component: Containment">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Component: Containment
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.tracking", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "search.share", "content.code.copy", "content.code.annotate", "content.tabs.link"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="../../../javascripts/diagram-open.js"></script>
+      
+        <script src="../../../assets/mkdocs_puml/puml.js"></script>
+      
+    
+  </body>
+</html>
