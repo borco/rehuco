@@ -145,7 +145,15 @@ the fallback when no bin was reachable (the once-per-operation question `AskingD
 confirmed unless the *without asking* box for that kind of file -- `.orig` conversion backups, or a
 screenshot -- says not to. That replaced #301's own "delete permanently without asking when the Recycle
 Bin is not available" knob and the bulk dialog's per-batch copy of it: one box per kind of file now
-silences both the up-front confirmation and the no-bin one. The Recycle Bin choice used to be a block on
+silences both the up-front confirmation and the no-bin one. Every such confirmation **carries its kind's
+box** (#313), worded verbatim as it is on this page -- ticked and answered Yes, it writes the same
+setting, so the reset is unticking it here; ticked and answered No, nothing is written, since a No with
+"don't ask" would mean *never delete*, which the flag cannot express. One gate, `confirm_delete`
+(`delete_confirmation.py`), answers for every surface, and `AskingDeleter` puts its refusal-point
+question through the same box. The bulk backups dialog is the one surface whose delete runs with no
+window to ask from: on Windows, where a drive's bin is exact and cheap to query, it asks the no-bin
+question once per batch *before* enqueueing, naming a mixed selection's split; elsewhere the refused
+row's message names the box instead. The Recycle Bin choice used to be a block on
 Images/Sidecar Extensions, back when `RehuDocumentImageOrganizer`'s screenshot delete was its only
 consumer (#291) -- but once a `.tc` conversion's discarded backup and a discarded conversion-backups set
 started reading it too (#298), a name under "Images" was the wrong subject for a choice that no longer

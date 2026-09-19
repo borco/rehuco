@@ -16,7 +16,7 @@ from pytestqt.qtbot import QtBot
 from rehuco_agent.asking_deleter import AskingDeleter
 from rehuco_agent.documents.conversion_backup_actions import ConversionBackupActions
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_agent.settings.deletion_settings import shared_deletion_settings
+from rehuco_agent.settings.deletion_settings import DeletionKind, shared_deletion_settings
 from rehuco_core import ConversionBackups, Deleter, NoTrashBinError, RehuDocument
 
 DIRECTORY: Final = Path("/fake/library/sculpting")
@@ -100,27 +100,31 @@ def fixture_actions(qtbot: QtBot, model: RehuDocumentModel, inventory: Any) -> C
 
 @fixture(name="answer_yes")
 def fixture_answer_yes(mocker: MockerFixture) -> Any:
-    """Every confirmation answered Yes.
+    """The up-front permanent-delete gate answered Yes.
+
+    `~rehuco_agent.delete_confirmation.confirm_delete` is the whole of the policy and
+    ``test_delete_confirmation.py`` its subject; patched where the action looks it up (#313), so a
+    test here reads what the action asked for.
 
     :param mocker: pytest-mock fixture.
-    :returns: the patched ``QMessageBox.warning``, so a test can read what was asked.
+    :returns: the patched gate, so a test can read what was asked.
     """
-    return mocker.patch.object(QMessageBox, "warning", return_value=QMessageBox.StandardButton.Yes)
+    return mocker.patch(f"{ACTIONS_MODULE}.confirm_delete", return_value=True)
 
 
 @fixture(name="answer_no")
 def fixture_answer_no(mocker: MockerFixture) -> Any:
-    """Every confirmation answered No.
+    """The up-front permanent-delete gate answered No.
 
     :param mocker: pytest-mock fixture.
-    :returns: the patched ``QMessageBox.warning``.
+    :returns: the patched gate.
     """
-    return mocker.patch.object(QMessageBox, "warning", return_value=QMessageBox.StandardButton.No)
+    return mocker.patch(f"{ACTIONS_MODULE}.confirm_delete", return_value=False)
 
 
-def question_of(warning: Any) -> str:
+def question_of(confirm: Any) -> str:
     """What the last confirmation actually asked."""
-    return str(warning.call_args.args[2])
+    return str(confirm.call_args.args[3])
 
 
 # endregion
@@ -274,8 +278,8 @@ def test_discarding_asks_first_and_names_what_it_frees(
     **Test steps:**
 
     * discard, with the Recycle Bin off, with the confirmation answered Yes
-    * verify the question names the bytes and says it cannot be undone, and that the operation ran
-      through the shared asking deleter
+    * verify the question was put for the backups kind, names the bytes and says it cannot be undone,
+      and that the operation ran through the shared asking deleter
     """
     discard = mocker.patch(f"{ACTIONS_MODULE}.discard_conversion_backups", return_value=())
     deleter = mocker.Mock()
@@ -283,6 +287,7 @@ def test_discarding_asks_first_and_names_what_it_frees(
 
     actions.discard()
 
+    assert answer_yes.call_args.args[1] is DeletionKind.BACKUPS
     assert "14.0 MB" in question_of(answer_yes)
     assert "cannot be undone" in question_of(answer_yes)
     args, kwargs = discard.call_args
@@ -291,43 +296,45 @@ def test_discarding_asks_first_and_names_what_it_frees(
 
 
 def test_a_discard_bound_for_the_recycle_bin_asks_nothing(
-    actions: ConversionBackupActions, answer_yes: Any, mocker: MockerFixture
+    actions: ConversionBackupActions, mocker: MockerFixture
 ) -> None:
     """One deletion policy (#312): a question accompanies a permanent delete only, so with the bin on
-    the discard simply runs.
+    the discard simply runs -- through the real gate, which shows no box.
 
     **Test steps:**
 
     * turn the Recycle Bin on and discard
-    * verify no confirmation was shown and the operation ran
+    * verify no box was shown and the operation ran
     """
     shared_deletion_settings().use_recycle_bin = True
+    shown = mocker.patch.object(QMessageBox, "exec")
     discard = mocker.patch(f"{ACTIONS_MODULE}.discard_conversion_backups", return_value=())
 
     actions.discard()
 
-    answer_yes.assert_not_called()
+    shown.assert_not_called()
     discard.assert_called_once()
 
 
 def test_clear_backups_without_asking_skips_the_permanent_confirm(
-    actions: ConversionBackupActions, answer_yes: Any, mocker: MockerFixture
+    actions: ConversionBackupActions, mocker: MockerFixture
 ) -> None:
     """With **Clear backups without asking** on, even a permanent discard is not confirmed, and the
-    asking deleter is told not to ask either (#312).
+    asking deleter -- built for the backups kind -- reads the same box and does not ask either
+    (#312, #313).
 
     **Test steps:**
 
-    * turn the box on, keep the bin off, and discard
-    * verify no confirmation was shown, the operation ran, and a refusal inside it deletes permanently
-      with no question
+    * turn the box on, keep the bin off, and discard, through the real gate
+    * verify no box was shown, the operation ran, and a refusal inside it deletes permanently with no
+      question
     """
     shared_deletion_settings().clear_backups_without_asking = True
     mocker.patch(
         f"{ACTIONS_MODULE}.configured_deleter",
         return_value=mocker.Mock(delete=mocker.Mock(side_effect=NoTrashBinError("no bin"))),
     )
-    question = mocker.patch.object(QMessageBox, "question")
+    shown = mocker.patch.object(QMessageBox, "exec")
     unlink = mocker.patch.object(Path, "unlink", autospec=True)
 
     def discard(rehu_path: Path, *, deleter: Deleter) -> tuple[Path, ...]:
@@ -338,9 +345,8 @@ def test_clear_backups_without_asking_skips_the_permanent_confirm(
 
     actions.discard()
 
-    answer_yes.assert_not_called()
+    shown.assert_not_called()
     operation.assert_called_once()
-    question.assert_not_called()
     unlink.assert_called_once_with(DIRECTORY / "info.tc.orig")
 
 
@@ -392,11 +398,13 @@ def test_a_discard_that_fails_reports_the_reason(
     * make the operation raise
     * verify the failure was reported
     """
+    del answer_yes
+    reported = mocker.patch.object(QMessageBox, "warning")
     mocker.patch(f"{ACTIONS_MODULE}.discard_conversion_backups", side_effect=PermissionError("read-only"))
 
     actions.discard()
 
-    assert "read-only" in str(answer_yes.call_args.args[2])
+    assert "read-only" in str(reported.call_args.args[2])
 
 
 def test_discarding_a_resource_with_no_backups_does_nothing(
@@ -420,7 +428,7 @@ def test_discarding_a_resource_with_no_backups_does_nothing(
 
 
 def test_a_declined_bin_refusal_logs_instead_of_reporting_a_failure(
-    actions: ConversionBackupActions, answer_yes: Any, mocker: MockerFixture, caplog: Any
+    actions: ConversionBackupActions, mocker: MockerFixture, caplog: Any
 ) -> None:
     """A `NoTrashBinError` reaching here can only mean the asking deleter already asked and the answer
     was No (#301, exercised in ``test_asking_deleter.py``) -- the outcome reads like convert's: a logged
@@ -433,6 +441,7 @@ def test_a_declined_bin_refusal_logs_instead_of_reporting_a_failure(
     * verify no failure box was shown, and a warning naming the resource was logged
     """
     shared_deletion_settings().use_recycle_bin = True
+    reported = mocker.patch.object(QMessageBox, "warning")
     mocker.patch(
         f"{ACTIONS_MODULE}.discard_conversion_backups",
         side_effect=NoTrashBinError(f"No Recycle Bin is available for {DIRECTORY}"),
@@ -441,7 +450,7 @@ def test_a_declined_bin_refusal_logs_instead_of_reporting_a_failure(
     with caplog.at_level("WARNING", logger=ACTIONS_MODULE):
         actions.discard()
 
-    answer_yes.assert_not_called()
+    reported.assert_not_called()
     assert any("left in place" in record.message for record in caplog.records)
 
 

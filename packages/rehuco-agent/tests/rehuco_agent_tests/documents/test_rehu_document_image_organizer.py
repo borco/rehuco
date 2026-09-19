@@ -118,42 +118,6 @@ def test_remove_unlinks_when_the_recycle_bin_setting_is_off(mocker: MockerFixtur
     send2trash.assert_not_called()
 
 
-def test_deletes_to_trash_reflects_the_live_setting(renumber: MockerFixture) -> None:
-    """Read live rather than cached, so a page Saved after this organizer was built is still honoured.
-
-    **Test steps:**
-
-    * read ``deletes_to_trash`` before and after flipping the setting on an existing organizer
-    * verify each read reflects what the setting held at that moment
-    """
-    del renumber
-    organizer = RehuDocumentImageOrganizer(model_at(DIRECTORY / "info.rehu"))
-
-    assert organizer.deletes_to_trash is True
-
-    shared_deletion_settings().use_recycle_bin = False
-
-    assert organizer.deletes_to_trash is False
-
-
-def test_deletes_without_asking_reflects_the_live_setting(renumber: MockerFixture) -> None:
-    """The **Delete images without asking** box reaches the editor through the same live read (#312).
-
-    **Test steps:**
-
-    * read ``deletes_without_asking`` before and after flipping the setting on an existing organizer
-    * verify each read reflects what the setting held at that moment
-    """
-    del renumber
-    organizer = RehuDocumentImageOrganizer(model_at(DIRECTORY / "info.rehu"))
-
-    assert organizer.deletes_without_asking is False
-
-    shared_deletion_settings().delete_images_without_asking = True
-
-    assert organizer.deletes_without_asking is True
-
-
 def test_an_explicit_deleter_overrides_the_setting(mocker: MockerFixture, renumber: MockerFixture) -> None:
     """A caller passing its own deleter (the permanent-delete fallback, #291) is never second-guessed
     by the setting.

@@ -23,6 +23,9 @@ from typing import Final
 from PySide6.QtWidgets import QMessageBox, QWidget
 from rehuco_core import DEFAULT_DELETER, Deleter, NoTrashBinError
 
+from .delete_confirmation import ask_permanent_delete
+from .settings.deletion_settings import DeletionKind, shared_deletion_settings
+
 LOG: Final = logging.getLogger(__name__)
 
 TITLE: Final = "No Recycle Bin available"
@@ -33,12 +36,14 @@ class AskingDeleter:  # pylint: disable=too-few-public-methods
     `~rehuco_core.NoTrashBinError` (#301).
 
     The refusal is the one point a bin-first delete turns permanent, so this question is that kind of
-    file's permanent-delete confirmation, and the same *without asking* box that would skip the up-front
-    one silences it: nothing is asked while `without_asking` is set, and every refusal then deletes
-    permanently outright (#312 -- which box applies is the caller's to say, since only it knows what
-    kind of file the operation is deleting).
+    file's permanent-delete confirmation, put through the same `ask_permanent_delete` as the up-front
+    one and carrying the same *without asking* box (#313): nothing is asked while `kind`'s box is
+    ticked, and every refusal then deletes permanently outright (#312 -- which kind it is stays the
+    caller's to say, since only it knows what the operation is deleting). The box is read live, at
+    the refusal, so a tick made on this operation's own up-front confirm already silences this.
 
     :param inner: the deleter tried first -- typically `configured_deleter`'s answer.
+    :param kind: what kind of file this operation deletes -- which box its question carries.
     :param parent: the widget a confirmation (and, if `report_delete_failures`, a failure notice) is
         shown over.
     :param files: every file this operation will delete, listed in the question so the answer is given
@@ -49,24 +54,22 @@ class AskingDeleter:  # pylint: disable=too-few-public-methods
         turns this on, because its own caller (`RehuDocumentImageOrganizer.remove`) cannot otherwise
         tell a delete failure from the renumbering failure that follows it, and the renumbering failure
         must stay silent.
-    :param without_asking: whether a refusal deletes permanently with no question -- the operation's
-        own **Clear backups without asking** / **Delete images without asking** box.
     """
 
     def __init__(
         self,
         inner: Deleter,
+        kind: DeletionKind,
         parent: QWidget | None = None,
         *,
         files: Sequence[Path] = (),
         report_delete_failures: bool = False,
-        without_asking: bool = False,
     ) -> None:
         self.__inner: Final = inner
+        self.__kind: Final = kind
         self.__parent: Final = parent
         self.__files: Final = tuple(files)
         self.__report_delete_failures: Final = report_delete_failures
-        self.__without_asking: Final = without_asking
         self.__delete_permanently: bool | None = None
 
     def delete(self, path: Path) -> None:
@@ -97,7 +100,7 @@ class AskingDeleter:  # pylint: disable=too-few-public-methods
             raise
 
     def __permanent_delete_allowed(self, path: Path, error: NoTrashBinError) -> bool:
-        if self.__without_asking:
+        if shared_deletion_settings().without_asking(self.__kind):
             return True
         if self.__delete_permanently is None:
             self.__delete_permanently = self.__ask(path, error)
@@ -108,9 +111,7 @@ class AskingDeleter:  # pylint: disable=too-few-public-methods
         listed = "<br>".join(f"&nbsp;&nbsp;{file.name}" for file in files)
         what = f"<b>{files[0].name}</b>" if len(files) == 1 else f"these <b>{len(files)} files</b>"
         text = f"{error}<br><br>Delete {what} permanently instead? This cannot be undone.<br><br>{listed}"
-        buttons = QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        answer = QMessageBox.question(self.__parent, TITLE, text, buttons, QMessageBox.StandardButton.No)
-        return answer == QMessageBox.StandardButton.Yes
+        return ask_permanent_delete(self.__parent, self.__kind, TITLE, text)
 
     def __report(self, path: Path, error: OSError) -> None:
         # a file already gone is a rescan, not a failure -- `RecycleBinDeleter` passes it through

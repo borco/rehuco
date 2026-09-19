@@ -41,11 +41,19 @@ from rehuco_agent.fields.widgets.image_selector import (
     ScreenshotListModel,
     ScreenshotOrdering,
 )
+from rehuco_agent.settings.deletion_settings import DeletionKind, shared_deletion_settings
 from rehuco_core import Deleter, NoTrashBinError, plan_screenshot_renumbering
 
 DIRECTORY = Path("/fake")
 STEM = "info"
 PATHS = [DIRECTORY / "info00.jpg", DIRECTORY / "info01.png", DIRECTORY / "info02.gif"]
+
+CONFIRM_DELETE = "rehuco_agent.fields.widgets.image_selector.confirm_delete"
+"""The up-front permanent-delete gate, where the selector looks it up (#313). ``test_delete_confirmation.py``
+is its subject; a test here patches it to answer, and reads what the selector asked."""
+
+ASK_PERMANENT_DELETE = "rehuco_agent.asking_deleter.ask_permanent_delete"
+"""The refusal-point question `AskingDeleter` puts when the bin refuses a file, where it looks it up."""
 
 
 # region Sample classes
@@ -79,13 +87,6 @@ class FakeResource:
         self.removed: list[str] = []
         self.failure: OSError | None = None
         """Set to make every rearrangement refuse, standing in for a disk that would not take it."""
-        self.deletes_to_trash = False
-        """What :attr:`deletes_to_trash` (`ImageOrganizer`) answers -- whether a delete is permanent
-        up front, which is what decides if it is confirmed (#312). Off here, unlike the app's default,
-        so the delete tests below exercise the confirmation without each turning the bin off."""
-        self.deletes_without_asking = False
-        """What :attr:`deletes_without_asking` (`ImageOrganizer`) answers -- the **Delete images
-        without asking** box (#312)."""
         self.outcomes: dict[str, AfterConversion] | None = None
         """What :meth:`after_conversion` answers (`ImageScanner`, #293) -- ``None`` (a `.rehu`, the
         default every test but its own gets) hides the *After conversion* column."""
@@ -211,6 +212,21 @@ def fake_configured_deleter(mocker: MockerFixture) -> Any:
         :class:`RefusingDeleter` or :class:`LockedDeleter`.
     """
     return mocker.patch("rehuco_agent.fields.widgets.image_selector.configured_deleter", return_value=NoOpDeleter())
+
+
+@fixture(name="confirm")
+def fixture_confirm(mocker: MockerFixture) -> Any:
+    """The up-front permanent-delete gate, patched where the selector looks it up and answering Yes
+    (#313).
+
+    `~rehuco_agent.delete_confirmation.confirm_delete` is the whole of the policy -- the bin, the
+    kind's box, the checkbox on the question -- and ``test_delete_confirmation.py`` is its subject;
+    what a test here reads off this is what the selector asked for, and whether it obeyed the answer.
+
+    :param mocker: pytest-mock fixture.
+    :returns: the patched gate; a test declining sets ``.return_value`` to ``False``.
+    """
+    return mocker.patch("rehuco_agent.fields.widgets.image_selector.confirm_delete", return_value=True)
 
 
 def seeded(qtbot: QtBot, resource: FakeResource, hidden: list[str] | None = None) -> ImageSelector:
@@ -1217,7 +1233,7 @@ def test_moving_a_screenshot_to_the_bottom_renumbers_everything_it_passed(qtbot:
     assert resource.names == ["info00.png", "info01.gif", "info02.jpg"]
 
 
-def test_deleting_a_screenshot_closes_the_gap_after_it(mocker: MockerFixture, qtbot: QtBot) -> None:
+def test_deleting_a_screenshot_closes_the_gap_after_it(confirm: Any, qtbot: QtBot) -> None:
     """Deleting one unlinks it and pulls every later screenshot down a slot (#72).
 
     The worked case from the issue: with ``00..03``, removing ``00`` leaves ``00..02``.
@@ -1227,7 +1243,7 @@ def test_deleting_a_screenshot_closes_the_gap_after_it(mocker: MockerFixture, qt
     * confirm the prompt and delete the first of four screenshots
     * verify it was removed and the survivors renumbered onto the slots from 00
     """
-    mocker.patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes)
+    del confirm
     resource = FakeResource(["info00.jpg", "info01.jpg", "info02.jpg", "info03.jpg"])
     selector = seeded(qtbot, resource)
 
@@ -1240,7 +1256,7 @@ def test_deleting_a_screenshot_closes_the_gap_after_it(mocker: MockerFixture, qt
     assert row_names(selector) == resource.names
 
 
-def test_deleting_asks_first_and_declining_changes_nothing(mocker: MockerFixture, qtbot: QtBot) -> None:
+def test_deleting_asks_first_and_declining_changes_nothing(confirm: Any, qtbot: QtBot) -> None:
     """A delete is confirmed before it happens, and declining leaves the resource alone (#72).
 
     Unlike every other edit this editor makes, a delete unlinks a file and renumbers its neighbours
@@ -1251,7 +1267,7 @@ def test_deleting_asks_first_and_declining_changes_nothing(mocker: MockerFixture
     * decline the prompt and ask to delete
     * verify nothing was removed and nothing renamed
     """
-    mocker.patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.No)
+    confirm.return_value = False
     resource = FakeResource(["info00.jpg", "info01.jpg"])
     selector = seeded(qtbot, resource)
 
@@ -1261,91 +1277,55 @@ def test_deleting_asks_first_and_declining_changes_nothing(mocker: MockerFixture
     assert resource.names == ["info00.jpg", "info01.jpg"]
 
 
-def test_a_delete_bound_for_the_recycle_bin_asks_nothing(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """One deletion policy (#312): a question accompanies a permanent delete only, so a resource that
-    reports it deletes to the Recycle Bin is deleted from without any confirmation.
+def test_the_delete_is_put_through_the_one_gate_for_images(confirm: Any, qtbot: QtBot) -> None:
+    """One deletion policy (#312, #313): the editor reads no setting itself -- whether the delete is
+    permanent, whether it is silenced, and the box on the question are all `confirm_delete`'s, asked
+    for the images kind, over this editor, with the one outcome a permanent delete has.
 
     **Test steps:**
 
-    * delete a screenshot from a resource that reports it deletes to the Recycle Bin
-    * verify no question was asked and the screenshot was removed
+    * delete a screenshot
+    * verify the gate was asked once, for the images kind, with text that says permanent and never
+      mentions the Recycle Bin
     """
-    question = mocker.patch.object(QMessageBox, "question")
     resource = FakeResource(["info00.jpg", "info01.jpg"])
-    resource.deletes_to_trash = True
     selector = seeded(qtbot, resource)
 
     selector.delete_screenshot(0)
 
-    question.assert_not_called()
-    assert resource.removed == ["info00.jpg"]
-
-
-def test_the_confirm_text_says_permanent_when_the_organizer_does_not_use_a_bin(
-    mocker: MockerFixture, qtbot: QtBot
-) -> None:
-    """The one outcome the confirm can name, since it is only shown for a permanent delete (#291, #312).
-
-    **Test steps:**
-
-    * confirm the prompt on a resource that reports a permanent delete
-    * verify the confirm text says so and does not mention the Recycle Bin
-    """
-    question = mocker.patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes)
-    resource = FakeResource(["info00.jpg", "info01.jpg"])
-    resource.deletes_to_trash = False
-    selector = seeded(qtbot, resource)
-
-    selector.delete_screenshot(0)
-
-    text = question.call_args.args[2]
+    confirm.assert_called_once()
+    parent, kind, title, text = confirm.call_args.args
+    assert parent is selector
+    assert kind is DeletionKind.IMAGES
+    assert title == "Delete screenshot"
     assert "permanently removed" in text
     assert "Recycle Bin" not in text
-
-
-def test_delete_images_without_asking_skips_the_permanent_confirm(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """With the organizer reporting **Delete images without asking**, even a permanent delete is not
-    confirmed (#312).
-
-    **Test steps:**
-
-    * delete a screenshot from a resource that reports a permanent, unasked delete
-    * verify no question was asked and the screenshot was removed
-    """
-    question = mocker.patch.object(QMessageBox, "question")
-    resource = FakeResource(["info00.jpg", "info01.jpg"])
-    resource.deletes_to_trash = False
-    resource.deletes_without_asking = True
-    selector = seeded(qtbot, resource)
-
-    selector.delete_screenshot(0)
-
-    question.assert_not_called()
-    assert resource.removed == ["info00.jpg"]
 
 
 def test_no_bin_reachable_offers_a_permanent_delete_for_that_one_action(
     mocker: MockerFixture, qtbot: QtBot, fake_configured_deleter: Any
 ) -> None:
     """A bin-bound delete asks nothing up front; the one question is the `AskingDeleter`'s, at the
-    point the refusal makes the delete permanent (#291, #301, #312).
+    point the refusal makes the delete permanent -- and it is put for the images kind, so the box it
+    carries is the right one (#291, #301, #312, #313).
 
     **Test steps:**
 
-    * make the configured deleter refuse with `NoTrashBinError`, on a resource that deletes to the bin
+    * make the configured deleter refuse with `NoTrashBinError`, with the bin on (the default)
     * confirm the one prompt (the permanent-delete offer) and delete a screenshot
-    * verify exactly one question was asked, it was removed, and the rows agree with the disk
+    * verify exactly one question was asked, for the images kind; it was removed; the rows agree with
+      the disk
     """
-    question = mocker.patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes)
+    question = mocker.patch(ASK_PERMANENT_DELETE, return_value=True)
     mocker.patch.object(Path, "unlink", autospec=True)
     fake_configured_deleter.return_value = RefusingDeleter()
     resource = FakeResource(["info00.jpg", "info01.jpg"])
-    resource.deletes_to_trash = True
     selector = seeded(qtbot, resource)
 
     selector.delete_screenshot(0)
 
-    assert question.call_count == 1
+    question.assert_called_once()
+    assert question.call_args.args[1] is DeletionKind.IMAGES
     assert resource.removed == ["info00.jpg"]
     assert row_names(selector) == resource.names == ["info00.jpg"]
 
@@ -1357,14 +1337,13 @@ def test_declining_the_permanent_delete_offer_leaves_the_resource_alone(
 
     **Test steps:**
 
-    * make the configured deleter refuse with `NoTrashBinError`, on a resource that deletes to the bin
+    * make the configured deleter refuse with `NoTrashBinError`, with the bin on
     * decline the permanent-delete offer
     * verify nothing was removed and the rows still agree with the disk
     """
-    mocker.patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.No)
+    mocker.patch(ASK_PERMANENT_DELETE, return_value=False)
     fake_configured_deleter.return_value = RefusingDeleter()
     resource = FakeResource(["info00.jpg", "info01.jpg"])
-    resource.deletes_to_trash = True
     selector = seeded(qtbot, resource)
 
     selector.delete_screenshot(0)
@@ -1380,16 +1359,15 @@ def test_delete_images_without_asking_silences_the_no_bin_offer_too(
 
     **Test steps:**
 
-    * make the configured deleter refuse, on a resource that deletes to the bin without asking
+    * make the configured deleter refuse, with the bin on and **Delete images without asking** ticked
     * delete a screenshot
     * verify no question was asked, and the file was unlinked
     """
-    question = mocker.patch.object(QMessageBox, "question")
+    question = mocker.patch(ASK_PERMANENT_DELETE)
     unlink = mocker.patch.object(Path, "unlink", autospec=True)
     fake_configured_deleter.return_value = RefusingDeleter()
+    shared_deletion_settings().delete_images_without_asking = True
     resource = FakeResource(["info00.jpg", "info01.jpg"])
-    resource.deletes_to_trash = True
-    resource.deletes_without_asking = True
     selector = seeded(qtbot, resource)
 
     selector.delete_screenshot(0)
@@ -1409,10 +1387,9 @@ def test_a_locked_file_is_reported_by_name_and_nothing_is_removed(
     **Test steps:**
 
     * make the configured deleter fail with a plain ``OSError`` for a locked file
-    * confirm the delete
+    * delete, with the bin on so nothing is confirmed up front
     * verify a message box named the file, nothing was removed, and the rows still agree with the disk
     """
-    mocker.patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes)
     critical = mocker.patch.object(QMessageBox, "critical")
     fake_configured_deleter.return_value = LockedDeleter()
     resource = FakeResource(["info00.jpg", "info01.jpg"])
@@ -1443,12 +1420,12 @@ def test_the_ask_fires_safely_inside_the_removal_transaction(
     fake_configured_deleter.return_value = RefusingDeleter()
     mocker.patch.object(Path, "unlink", autospec=True)
 
-    def confirm_after_spinning(*args: object, **kwargs: object) -> QMessageBox.StandardButton:
+    def confirm_after_spinning(*args: object, **kwargs: object) -> bool:
         del args, kwargs
         qtbot.wait(0)
-        return QMessageBox.StandardButton.Yes
+        return True
 
-    mocker.patch.object(QMessageBox, "question", side_effect=confirm_after_spinning)
+    mocker.patch(ASK_PERMANENT_DELETE, side_effect=confirm_after_spinning)
     resource = FakeResource(["info00.jpg", "info01.jpg"])
     selector = seeded(qtbot, resource)
 
@@ -1467,7 +1444,7 @@ def test_deleting_leaves_the_row_that_took_its_place_current(mocker: MockerFixtu
     * delete the middle of three screenshots
     * verify the row it vacated is the current one
     """
-    mocker.patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes)
+    mocker.patch(CONFIRM_DELETE, return_value=True)
     resource = FakeResource(["info00.jpg", "info01.jpg", "info02.jpg"])
     selector = seeded(qtbot, resource)
 
@@ -1484,7 +1461,7 @@ def test_deleting_the_last_screenshot_falls_back_to_the_one_before_it(mocker: Mo
     * delete the last of three screenshots
     * verify the new last row is current
     """
-    mocker.patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes)
+    mocker.patch(CONFIRM_DELETE, return_value=True)
     resource = FakeResource(["info00.jpg", "info01.jpg", "info02.jpg"])
     selector = seeded(qtbot, resource)
 
@@ -1504,7 +1481,7 @@ def test_deleting_a_curated_out_screenshot_drops_it_from_the_hidden_set(mocker: 
     * hide the first of two screenshots, then delete it
     * verify the hidden set is empty and the rows match the disk
     """
-    mocker.patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes)
+    mocker.patch(CONFIRM_DELETE, return_value=True)
     resource = FakeResource(["info00.jpg", "info01.png"])
     selector = seeded(qtbot, resource, hidden=["info00.jpg"])
     emitted: list[list[str]] = []
@@ -1713,7 +1690,7 @@ def test_the_delete_action_removes_the_current_screenshot(mocker: MockerFixture,
     * select the second of three screenshots and fire Delete
     * verify that one went and the set closed up
     """
-    mocker.patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes)
+    mocker.patch(CONFIRM_DELETE, return_value=True)
     resource = FakeResource(["info00.jpg", "info01.png", "info02.gif"])
     selector = seeded(qtbot, resource)
     selector.set_current_index(1)
@@ -1780,7 +1757,7 @@ def test_a_delete_the_disk_refuses_leaves_the_selection_alone(mocker: MockerFixt
     * confirm the prompt on a resource that refuses every rearrangement, and delete the last row
     * verify the set is untouched
     """
-    mocker.patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes)
+    mocker.patch(CONFIRM_DELETE, return_value=True)
     resource = FakeResource(["info00.jpg", "info01.png", "info02.gif"])
     selector = seeded(qtbot, resource)
     selector.set_current_index(2)
@@ -2022,7 +1999,7 @@ def test_deleting_an_unconverted_image_renumbers_nothing(mocker: MockerFixture, 
     * confirm the prompt and delete the un-converted row from a set numbered ``00..02``
     * verify the file went and every numbered screenshot kept its own name
     """
-    mocker.patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes)
+    mocker.patch(CONFIRM_DELETE, return_value=True)
     resource = FakeResource(["info00.jpg", "info01.png", "info02.gif"], ["cover.jpg"])
     selector = seeded(qtbot, resource)
 
@@ -2042,16 +2019,16 @@ def test_the_delete_confirmation_says_what_the_row_kind_costs(mocker: MockerFixt
     * confirm an un-converted row's delete in a multi-record directory and read that prompt
     * verify each names its own consequence and neither names the other's
     """
-    question = mocker.patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes)
+    question = mocker.patch(CONFIRM_DELETE, return_value=True)
     resource = FakeResource(["info00.jpg", "info01.png"], ["cover.jpg"])
     resource.shared_directory = True
     selector = seeded(qtbot, resource)
 
     selector.delete_screenshot(0)
-    numbered_text = question.call_args.args[2]
+    numbered_text = question.call_args.args[3]
 
     selector.delete_screenshot(1)
-    unconverted_text = question.call_args.args[2]
+    unconverted_text = question.call_args.args[3]
 
     assert "renumbered" in numbered_text
     assert "shares this folder" not in numbered_text
@@ -2067,13 +2044,13 @@ def test_a_single_record_directory_says_nothing_about_sharing(mocker: MockerFixt
     * confirm an un-converted row's delete in a directory holding one record
     * verify the prompt says nothing about another resource
     """
-    question = mocker.patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes)
+    question = mocker.patch(CONFIRM_DELETE, return_value=True)
     resource = FakeResource(["info00.jpg"], ["cover.jpg"])
     selector = seeded(qtbot, resource)
 
     selector.delete_screenshot(1)
 
-    assert "shares this folder" not in question.call_args.args[2]
+    assert "shares this folder" not in question.call_args.args[3]
 
 
 def test_no_row_is_decorated(qtbot: QtBot) -> None:
@@ -2223,7 +2200,7 @@ def test_a_read_only_list_refuses_a_move_a_delete_and_a_convert(mocker: MockerFi
     * call the move, the delete and the convert directly
     * verify nothing was renamed, deleted or even asked about
     """
-    question = mocker.patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes)
+    question = mocker.patch(CONFIRM_DELETE, return_value=True)
     resource = FakeResource(["info00.jpg", "info01.png"], ["cover.jpg"])
     selector = read_only(qtbot, resource)
 

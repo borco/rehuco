@@ -1,4 +1,4 @@
-"""Tests for FilesPage: the Files settings category page (#226, #291, #298, #312)."""
+"""Tests for FilesPage: the Files settings category page (#226, #291, #298, #312, #313)."""
 
 from collections.abc import Iterator
 from typing import Any
@@ -11,6 +11,8 @@ from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.settings import deletion_settings, excluded_files_settings
 from rehuco_agent.settings.deletion_settings import (
+    WITHOUT_ASKING_BOXES,
+    DeletionKind,
     DeletionSettings,
     shared_deletion_settings,
 )
@@ -225,6 +227,22 @@ def test_drop_changes_reverts_the_staged_recycle_bin_choice(page: FilesPage) -> 
 
 
 WITHOUT_ASKING_FIELDS = ("clear_backups_without_asking", "delete_images_without_asking")
+
+
+@mark.parametrize("kind", list(DeletionKind))
+def test_each_without_asking_box_is_worded_as_the_confirmations_table_says(page: FilesPage, kind: DeletionKind) -> None:
+    """The permanent-delete confirmations carry this page's boxes **verbatim** (#313), and the
+    wording lives in two places -- the ``.ui`` and `WITHOUT_ASKING_BOXES` -- so this is what keeps
+    them from drifting.
+
+    **Test steps:**
+
+    * look the kind's box up in the table and on the page
+    * verify the page's text is the table's label, and the table's field is the box the page stages
+    """
+    box = WITHOUT_ASKING_BOXES[kind]
+
+    assert without_asking_check_box(page, box.field).text() == box.label
 
 
 @mark.parametrize("field", WITHOUT_ASKING_FIELDS)

@@ -76,7 +76,7 @@
          <string>Clear backups without asking</string>
         </property>
         <property name="toolTip">
-         <string>Permanently delete a conversion's .orig backups -- Convert, Discard Originals, a document's Discard Backups action, the Conversion Backups dialog -- without a confirmation. A queued discard from the Conversion Backups dialog has no window to ask from, so with this off it fails and leaves the backups in place when no Recycle Bin is reachable.</string>
+         <string>Permanently delete a conversion's .orig backups -- Convert, Discard Originals, a document's Discard Backups action, the Conversion Backups dialog -- without a confirmation. Every such confirmation carries this same box. A queued discard from the Conversion Backups dialog has no window to ask from once it runs, so with this off the dialog asks once per batch where it can already tell no Recycle Bin is reachable (Windows), and elsewhere a refused resource fails and leaves its backups in place.</string>
         </property>
        </widget>
       </item>

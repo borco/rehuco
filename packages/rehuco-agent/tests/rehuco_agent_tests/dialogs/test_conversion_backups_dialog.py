@@ -18,13 +18,13 @@ from typing import Any, Final
 
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtWidgets import QFileDialog, QMessageBox
-from pytest import fixture
+from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.dialogs.conversion_backups_dialog import NOTHING_RETAINED, ConversionBackupsDialog
 from rehuco_agent.dialogs.conversion_backups_table_model import TIE_BREAK_FLAG
 from rehuco_agent.settings.conversion_backups_dialog_settings import ConversionBackupsDialogSettings
-from rehuco_agent.settings.deletion_settings import shared_deletion_settings
+from rehuco_agent.settings.deletion_settings import DeletionKind, shared_deletion_settings
 from rehuco_core import (
     DEFAULT_DELETER_PROVIDER,
     FINISHED_JOB_STATES,
@@ -165,22 +165,54 @@ def fixture_dialog(qtbot: QtBot, queue: TaskQueue, scan: Any, present: None) -> 
 
 @fixture(name="answer_yes")
 def fixture_answer_yes(mocker: MockerFixture) -> Any:
-    """Every confirmation answered Yes.
+    """The up-front permanent-delete gate answered Yes.
+
+    `~rehuco_agent.delete_confirmation.confirm_delete` is the whole of the policy and
+    ``test_delete_confirmation.py`` its subject; patched where the dialog looks it up (#313), so a
+    test here reads what the dialog asked for.
 
     :param mocker: pytest-mock fixture.
-    :returns: the patched ``QMessageBox.warning``, so a test can read what was asked.
+    :returns: the patched gate, so a test can read what was asked.
     """
-    return mocker.patch.object(QMessageBox, "warning", return_value=QMessageBox.StandardButton.Yes)
+    return mocker.patch(f"{DIALOG_MODULE}.confirm_delete", return_value=True)
 
 
 @fixture(name="answer_no")
 def fixture_answer_no(mocker: MockerFixture) -> Any:
-    """Every confirmation answered No.
+    """The up-front permanent-delete gate answered No.
 
     :param mocker: pytest-mock fixture.
-    :returns: the patched ``QMessageBox.warning``.
+    :returns: the patched gate.
     """
-    return mocker.patch.object(QMessageBox, "warning", return_value=QMessageBox.StandardButton.No)
+    return mocker.patch(f"{DIALOG_MODULE}.confirm_delete", return_value=False)
+
+
+@fixture(name="no_bin_question")
+def fixture_no_bin_question(mocker: MockerFixture) -> Any:
+    """The up-front no-bin question, patched where the dialog looks it up and answering Yes (#313).
+
+    :param mocker: pytest-mock fixture.
+    :returns: the patched question; a test declining sets ``.return_value`` to ``False``.
+    """
+    return mocker.patch(f"{DIALOG_MODULE}.ask_permanent_delete", return_value=True)
+
+
+@fixture(name="windows_bins")
+def fixture_windows_bins(mocker: MockerFixture) -> Any:
+    """The Windows drive-capability check, on a forced Windows platform, answering *no bin* for the
+    ZBrush resource and *bin* for the rest (#313).
+
+    Patched at its source module, where the dialog imports it lazily -- the same seam
+    ``test_recycle_bin.py`` uses. Windows-only, since that module loads ``shell32`` at import.
+
+    :param mocker: pytest-mock fixture.
+    :returns: the patched ``has_recycle_bin``.
+    """
+    mocker.patch(f"{DIALOG_MODULE}.sys.platform", "win32")
+    return mocker.patch(
+        "borco_pyside.platforms.windows.recycle_bin_capability.has_recycle_bin",
+        side_effect=lambda path: path != ZBRUSH,
+    )
 
 
 def ui_of(dialog: ConversionBackupsDialog) -> Any:
@@ -232,9 +264,9 @@ def names(dialog: ConversionBackupsDialog) -> list[str]:
     return [row.path.parent.name for row in dialog.model.rows()]
 
 
-def question_of(warning: Any) -> str:
+def question_of(confirm: Any) -> str:
     """What the last confirmation actually asked."""
-    return str(warning.call_args.args[2])
+    return str(confirm.call_args.args[3])
 
 
 def listeners_of(queue: TaskQueue) -> list[object]:
@@ -637,6 +669,26 @@ def test_the_discard_action_is_not_offered_with_nothing_selected(qtbot: QtBot, d
     assert not ui_of(dialog).discard_button.isEnabled()
 
 
+def test_a_discard_over_nothing_asks_nothing_and_enqueues_nothing(
+    qtbot: QtBot, dialog: ConversionBackupsDialog, answer_yes: Any, queue: TaskQueue
+) -> None:
+    """The slot behind the button guards the same condition the button's enabled state does, so a
+    discard that somehow reaches it with nothing selected is a no-op rather than an empty batch.
+
+    **Test steps:**
+
+    * clear the selection and fire the discard slot directly
+    * verify no confirmation was put and nothing reached the queue
+    """
+    del qtbot
+    dialog.model.set_checked([SCULPTING, ZBRUSH, PAINTING], False)
+
+    dialog._ConversionBackupsDialog__on_discard()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    answer_yes.assert_not_called()
+    assert not queue.jobs()
+
+
 # endregion
 
 
@@ -652,13 +704,14 @@ def test_discarding_asks_first_and_names_the_count_and_the_bytes(
     **Test steps:**
 
     * discard the whole selection with the confirmation answered Yes
-    * verify what was asked, and that every row came back discarded
+    * verify it was put for the backups kind, what was asked, and that every row came back discarded
     """
     discard = mocker.patch(f"{JOBS_MODULE}.discard_conversion_backups", return_value=())
 
     ui_of(dialog).discard_button.click()
     wait_for_outcomes(qtbot, dialog)
 
+    assert answer_yes.call_args.args[1] is DeletionKind.BACKUPS
     assert "3 resource(s)" in question_of(answer_yes)
     assert "cannot be undone" in question_of(answer_yes)
     assert {row.outcome for row in dialog.model.rows()} == {"discarded"}
@@ -695,60 +748,68 @@ class RefusingDeleter:  # pylint: disable=too-few-public-methods
 
 
 def test_a_discard_bound_for_the_recycle_bin_asks_nothing(
-    qtbot: QtBot, dialog: ConversionBackupsDialog, answer_yes: Any, mocker: MockerFixture
+    qtbot: QtBot, dialog: ConversionBackupsDialog, mocker: MockerFixture
 ) -> None:
     """One deletion policy (#312): a question accompanies a permanent delete only, so with the bin on
-    the batch is enqueued straight away.
+    the batch is enqueued straight away -- through the real gate, which shows no box. Off Windows,
+    nothing can be known about a bin up front either, so no no-bin question is put (#313).
 
     **Test steps:**
 
-    * turn the Recycle Bin on and discard the whole selection
-    * verify no confirmation was shown and every row came back discarded
+    * turn the Recycle Bin on, force a non-Windows platform, and discard the whole selection
+    * verify no box was shown and every row came back discarded
     """
     shared_deletion_settings().use_recycle_bin = True
+    mocker.patch(f"{DIALOG_MODULE}.sys.platform", "linux")
+    shown = mocker.patch.object(QMessageBox, "exec")
     mocker.patch(f"{JOBS_MODULE}.discard_conversion_backups", return_value=())
 
     ui_of(dialog).discard_button.click()
     wait_for_outcomes(qtbot, dialog)
 
-    answer_yes.assert_not_called()
+    shown.assert_not_called()
     assert {row.outcome for row in dialog.model.rows()} == {"discarded"}
 
 
 def test_clear_backups_without_asking_skips_the_permanent_confirm(
-    qtbot: QtBot, dialog: ConversionBackupsDialog, answer_yes: Any, mocker: MockerFixture
+    qtbot: QtBot, dialog: ConversionBackupsDialog, mocker: MockerFixture
 ) -> None:
-    """With **Clear backups without asking** on, even a permanent discard is not confirmed (#312).
+    """With **Clear backups without asking** on, even a permanent discard is not confirmed -- through
+    the real gate, which shows no box (#312).
 
     **Test steps:**
 
     * turn the box on, keep the bin off, and discard the whole selection
-    * verify no confirmation was shown and every row came back discarded
+    * verify no box was shown and every row came back discarded
     """
     shared_deletion_settings().clear_backups_without_asking = True
+    shown = mocker.patch.object(QMessageBox, "exec")
     mocker.patch(f"{JOBS_MODULE}.discard_conversion_backups", return_value=())
 
     ui_of(dialog).discard_button.click()
     wait_for_outcomes(qtbot, dialog)
 
-    answer_yes.assert_not_called()
+    shown.assert_not_called()
     assert {row.outcome for row in dialog.model.rows()} == {"discarded"}
 
 
-def test_asking_on_leaves_a_refusal_failing(
+def test_off_windows_a_refusal_fails_the_row_and_names_the_box(
     qtbot: QtBot, dialog: ConversionBackupsDialog, answer_yes: Any, mocker: MockerFixture
 ) -> None:
     """With **Clear backups without asking** off, a queued job has no window to put the permanent
     question from, so a resolved deleter's refusal fails that resource's job and leaves its backups in
-    place (#301, #312).
+    place (#301, #312) -- and, where the question could not be put up front, the row names the box
+    that would have let it through (#313).
 
     **Test steps:**
 
-    * turn the bin on, so nothing is asked up front, and install a provider whose deleter refuses
+    * turn the bin on, force a non-Windows platform, and install a provider whose deleter refuses
     * discard the whole selection
-    * verify every row failed
+    * verify every row failed, its message naming the box and the Files page
     """
+    del answer_yes
     shared_deletion_settings().use_recycle_bin = True
+    mocker.patch(f"{DIALOG_MODULE}.sys.platform", "linux")
     mocker.patch.object(DEFAULT_DELETER_PROVIDER, "resolve", return_value=RefusingDeleter())
 
     def discard(rehu_path: Path, *, deleter: object) -> tuple[Path, ...]:
@@ -760,8 +821,175 @@ def test_asking_on_leaves_a_refusal_failing(
     ui_of(dialog).discard_button.click()
     wait_for_outcomes(qtbot, dialog)
 
-    answer_yes.assert_not_called()
     assert {row.outcome for row in dialog.model.rows()} == {"failed"}
+    for row in dialog.model.rows():
+        assert row.message is not None
+        assert row.message.startswith("no bin for")
+        assert '"Clear backups without asking" (Settings ▸ Files)' in row.message
+        assert "NoTrashBinError" not in row.message
+
+
+def test_a_failure_that_is_not_a_refusal_is_reported_as_it_came(
+    qtbot: QtBot, dialog: ConversionBackupsDialog, answer_yes: Any, mocker: MockerFixture
+) -> None:
+    """Only a refused bin earns the hint about the box; any other failure's message stays the
+    engine's own (#313).
+
+    **Test steps:**
+
+    * make the operation raise a plain ``PermissionError``
+    * verify each row's message names the type and reason, and no box
+    """
+    del answer_yes
+    mocker.patch(f"{JOBS_MODULE}.discard_conversion_backups", side_effect=PermissionError("read-only"))
+
+    ui_of(dialog).discard_button.click()
+    wait_for_outcomes(qtbot, dialog)
+
+    assert all(row.message == "PermissionError: read-only" for row in dialog.model.rows())
+
+
+# region the up-front no-bin question, on Windows (#313)
+
+
+@mark.windows
+def test_a_selection_entirely_without_a_bin_is_asked_about_once_up_front(
+    qtbot: QtBot, dialog: ConversionBackupsDialog, no_bin_question: Any, windows_bins: Any, mocker: MockerFixture
+) -> None:
+    """With the bin on and the box off, a location known to have no bin is asked about before
+    anything is enqueued -- once per batch, with the count and bytes, under the no-bin title -- and
+    Yes enqueues every row with the fallback on, so a refusal deletes permanently instead of failing.
+
+    **Test steps:**
+
+    * turn the bin on, make every selected resource's drive report no bin, and select ZBrush alone
+    * install a provider whose deleter refuses, and discard
+    * verify the question was put once, for the backups kind, naming the location and the count; and
+      that the row came back discarded rather than failed
+    """
+    shared_deletion_settings().use_recycle_bin = True
+    windows_bins.side_effect = lambda path: False
+    mocker.patch.object(Path, "unlink", autospec=True)
+    mocker.patch.object(DEFAULT_DELETER_PROVIDER, "resolve", return_value=RefusingDeleter())
+    dialog.model.set_checked([SCULPTING, PAINTING], False)
+
+    def discard(rehu_path: Path, *, deleter: object) -> tuple[Path, ...]:
+        deleter.delete(rehu_path.parent / "info.tc.orig")  # type: ignore[attr-defined]
+        return ()
+
+    mocker.patch(f"{JOBS_MODULE}.discard_conversion_backups", side_effect=discard)
+
+    ui_of(dialog).discard_button.click()
+    wait_for_outcomes(qtbot, dialog)
+
+    no_bin_question.assert_called_once()
+    _parent, kind, title, text = no_bin_question.call_args.args
+    assert kind is DeletionKind.BACKUPS
+    assert title == "No Recycle Bin available"
+    assert text.startswith(f"No Recycle Bin is available for {ZBRUSH.anchor}.")
+    assert "1 resource(s) permanently instead" in text
+    assert "either way" not in text
+    assert [row.outcome for row in dialog.model.rows() if row.path == ZBRUSH] == ["discarded"]
+
+
+@mark.windows
+def test_a_mixed_selection_names_the_split(
+    qtbot: QtBot, dialog: ConversionBackupsDialog, no_bin_question: Any, windows_bins: Any, mocker: MockerFixture
+) -> None:
+    """When only some rows are somewhere without a bin, the question says which, what those alone
+    would free, and that the rest go to the bin either way -- the answer changes nothing for them.
+
+    **Test steps:**
+
+    * turn the bin on, with only ZBrush's drive reporting no bin, and discard all three
+    * verify the question names 1 of 3, ZBrush's bytes alone, and the other 2
+    """
+    del windows_bins
+    shared_deletion_settings().use_recycle_bin = True
+    mocker.patch(f"{JOBS_MODULE}.discard_conversion_backups", return_value=())
+
+    ui_of(dialog).discard_button.click()
+    wait_for_outcomes(qtbot, dialog)
+
+    text = no_bin_question.call_args.args[3]
+    assert "1 of the 3 selected resources are there" in text
+    assert "1.0 kB" in text
+    assert "The other 2 are moved to the Recycle Bin either way" in text
+
+
+@mark.windows
+@mark.usefixtures("windows_bins")
+def test_no_on_the_no_bin_question_enqueues_nothing_even_for_the_rows_with_a_bin(
+    qtbot: QtBot, dialog: ConversionBackupsDialog, no_bin_question: Any, queue: TaskQueue, mocker: MockerFixture
+) -> None:
+    """No on a mixed batch calls the whole batch off rather than running only the rows with a bin: a
+    half-done table with no row saying why is worse than filtering and re-selecting.
+
+    **Test steps:**
+
+    * turn the bin on, with only ZBrush's drive reporting no bin, decline the question, and discard
+    * verify nothing reached the queue and no row changed
+    """
+    shared_deletion_settings().use_recycle_bin = True
+    no_bin_question.return_value = False
+    discard = mocker.patch(f"{JOBS_MODULE}.discard_conversion_backups")
+
+    ui_of(dialog).discard_button.click()
+    qtbot.wait(0)
+
+    discard.assert_not_called()
+    assert not queue.jobs()
+    assert all(row.outcome is None for row in dialog.model.rows())
+
+
+@mark.windows
+def test_a_selection_entirely_with_a_bin_is_not_asked(
+    qtbot: QtBot, dialog: ConversionBackupsDialog, no_bin_question: Any, windows_bins: Any, mocker: MockerFixture
+) -> None:
+    """The question exists for a location without a bin; every drive reporting one means there is
+    nothing to ask.
+
+    **Test steps:**
+
+    * turn the bin on, make every drive report a bin, and discard all three
+    * verify no question was put and every row came back discarded
+    """
+    shared_deletion_settings().use_recycle_bin = True
+    windows_bins.side_effect = lambda path: True
+    mocker.patch(f"{JOBS_MODULE}.discard_conversion_backups", return_value=())
+
+    ui_of(dialog).discard_button.click()
+    wait_for_outcomes(qtbot, dialog)
+
+    no_bin_question.assert_not_called()
+    assert {row.outcome for row in dialog.model.rows()} == {"discarded"}
+
+
+@mark.windows
+def test_the_box_already_ticked_skips_the_no_bin_question_too(
+    qtbot: QtBot, dialog: ConversionBackupsDialog, no_bin_question: Any, windows_bins: Any, mocker: MockerFixture
+) -> None:
+    """**Clear backups without asking** is the same answer given in advance: no question, and the
+    fallback carried into every job (#312, #313).
+
+    **Test steps:**
+
+    * turn the bin and the box on, with ZBrush's drive reporting no bin, and discard all three
+    * verify no question was put and the drive was never even asked about
+    """
+    shared_deletion_settings().use_recycle_bin = True
+    shared_deletion_settings().clear_backups_without_asking = True
+    mocker.patch(f"{JOBS_MODULE}.discard_conversion_backups", return_value=())
+
+    ui_of(dialog).discard_button.click()
+    wait_for_outcomes(qtbot, dialog)
+
+    no_bin_question.assert_not_called()
+    windows_bins.assert_not_called()
+    assert {row.outcome for row in dialog.model.rows()} == {"discarded"}
+
+
+# endregion
 
 
 def test_clear_backups_without_asking_threads_the_fallback_into_every_enqueued_job(
@@ -896,7 +1124,7 @@ def test_a_deferred_detach_settles_when_the_last_job_is_removed_unrun(
         assert release.wait(TIMEOUT / 1000)
 
     mocker.patch(f"{JOBS_MODULE}.discard_conversion_backups", side_effect=hold_the_worker)
-    mocker.patch.object(QMessageBox, "warning", return_value=QMessageBox.StandardButton.Yes)
+    mocker.patch(f"{DIALOG_MODULE}.confirm_delete", return_value=True)
     dialog.model.set_checked([PAINTING], False)
 
     ui_of(dialog).discard_button.click()
