@@ -10,10 +10,11 @@ The enum lives here, next to the widget that implements it, and the settings sec
 `markdown_rendering_settings` already reads its ``DEFAULT_ENGINE`` from ``markdown_view``.
 """
 
+from collections.abc import Hashable
 from enum import StrEnum
-from pathlib import Path
 from typing import Final, cast, override
 
+import humanize
 from borco_pyside.theming import glyph_icon, read_resource_bytes, recolored_svg_icon
 from PySide6.QtCore import QEvent, QObject, QSize, Qt, Signal
 from PySide6.QtGui import (
@@ -32,6 +33,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QGraphicsOpacityEffect,
     QGridLayout,
+    QLabel,
     QMainWindow,
     QToolButton,
     QWidget,
@@ -39,7 +41,9 @@ from PySide6.QtWidgets import (
 
 from ...glyphs import LIGHTBOX_CLOSE_GLYPH
 from .image_selector import PreviewLabel
-from .image_strip import ImageStrip
+from .image_source import ImageSource
+from .thumbnail_loader import ThumbnailLoader
+from .thumbnail_row import ThumbnailRow
 
 
 class ImageViewerMode(StrEnum):
@@ -101,9 +105,24 @@ CLOSE_BUTTON_NAME: Final = "lightbox_close"
 PREVIOUS_BUTTON_NAME: Final = "lightbox_previous"
 NEXT_BUTTON_NAME: Final = "lightbox_next"
 STRIP_TOGGLE_BUTTON_NAME: Final = "lightbox_strip_toggle"
-"""Object names of the viewer's four controls. Named because they are otherwise indistinguishable from
-one another by type alone -- every one is some kind of ``QToolButton`` -- so anything reaching for a
-particular control has to ask for it by name."""
+INFO_OVERLAY_NAME: Final = "lightbox_info"
+"""Object names of the viewer's four controls and its info overlay. Named because they are otherwise
+indistinguishable from one another by type alone -- every control is some kind of ``QToolButton`` -- so
+anything reaching for a particular one has to ask for it by name."""
+
+INFO_OVERLAY_BACKDROP: Final = QColor(0, 0, 0, 102)
+"""The info box's backdrop: black at 40 % (#221). Asked for at 20 %, which whitish text washes out on
+under a bright image; 40 % stays a quiet box and reads on anything."""
+
+INFO_OVERLAY_TEXT: Final = QColor(0xEE, 0xEE, 0xEE)
+"""The info box's text: whitish, pinned like every other affordance on this backdrop."""
+
+INFO_OVERLAY_POINT_SIZE_STEP: Final = 2
+"""How many points smaller than the viewer's own font the info box is set in."""
+
+INFO_OVERLAY_PADDING: Final = 8
+INFO_OVERLAY_RADIUS: Final = 4
+"""The info box's inner padding and corner radius, in pixels."""
 
 PREVIOUS_ICON_RESOURCE: Final = ":/icons/lightbox_prev.svg"
 NEXT_ICON_RESOURCE: Final = ":/icons/lightbox_next.svg"
@@ -260,6 +279,45 @@ class NavigationButton(OverlayButton):
         self.set_opacity(NAVIGATION_HOVER_OPACITY if self.underMouse() else NAVIGATION_IDLE_OPACITY)
 
 
+class ImageInfoOverlay(QLabel):
+    """The image's name, pixel size and file size in the top-left corner of the screenshot area (#221).
+
+    Transparent to the mouse, so the prev band underneath keeps its hover and its clicks; held off the
+    corner by the same stylesheet margin the corner controls use, so the screenshot beneath it still
+    reaches the edge. Painted on its own translucent box rather than the viewer's backdrop, since it
+    sits over the image, which may be anything.
+
+    :param parent: the viewer.
+    """
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName(INFO_OVERLAY_NAME)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setTextFormat(Qt.TextFormat.PlainText)
+        font = self.font()
+        font.setPointSize(max(1, font.pointSize() - INFO_OVERLAY_POINT_SIZE_STEP))
+        self.setFont(font)
+        backdrop = INFO_OVERLAY_BACKDROP
+        self.setStyleSheet(
+            f"QLabel {{ color: {INFO_OVERLAY_TEXT.name()};"
+            f" background-color: rgba({backdrop.red()}, {backdrop.green()}, {backdrop.blue()}, {backdrop.alpha()});"
+            f" border-radius: {INFO_OVERLAY_RADIUS}px; padding: {INFO_OVERLAY_PADDING}px; margin: {CORNER_MARGIN}px; }}"
+        )
+
+    def describe(self, path_text: str, pixel_size: QSize, byte_size: int | None) -> None:
+        """Set the three lines: where the image is, its ``W × H px``, and its size on disk.
+
+        :param path_text: the image's path as a person would name it.
+        :param pixel_size: the image's pixel size; an invalid one reads as unknown.
+        :param byte_size: the image's byte size, or ``None`` when unknown.
+        """
+        pixels = f"{pixel_size.width()} × {pixel_size.height()} px" if pixel_size.isValid() else "size unknown"
+        stored = humanize.naturalsize(byte_size) if byte_size is not None else "file size unknown"
+        self.setText(f"{path_text}\n{pixels}\n{stored}")
+        self.adjustSize()
+
+
 class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes
     """A curated screenshot set shown maximized, one at a time ([[plugins#tutorial-plugin]], #160, #161).
 
@@ -275,17 +333,25 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes
     area that answers, and it is hidden outright at the end it would point past, so a click can never
     step where there is nowhere to step to.
 
-    **The thumbnail row** is the same `ImageStrip` the document's own viewer dock uses -- it already
-    presents a screenshot set and reports which one was clicked, which is exactly what is needed here
-    -- shown under the screenshot with the current one framed and scrolled into view. It is toggled by
-    the corner list affordance, and that choice is a *persisted* preference rather than session state:
-    the owner seeds it from the settings and stores it back through :attr:`strip_visible_changed`,
-    which keeps this widget free of any settings dependency of its own (the settings module imports
-    :class:`ImageViewerMode` from here, so the reverse import would be a cycle).
+    **Where the pixels come from** is an :class:`ImageSource` (#221): a curated screenshot set, a
+    folder's images, or a reference pack's archive members, which have no path at all. The viewer
+    navigates positions in it and decodes the current one at full size on the spot.
 
-    **The curated set is live.** :meth:`set_images` re-points an open viewer at a rebuilt set -- a
-    curation edit in `ImageSelector`, or a scanner swap from a ``.tc`` -> ``.rehu`` conversion
-    ([[acquisition-tooling#tc-to-rehu]]) -- keeping the current screenshot if it survived, falling
+    **The thumbnail row** is a `ThumbnailRow` -- a lazy list view over the same source, decoding only
+    what is in view through the shared `ThumbnailLoader` -- shown under the image with the current
+    one framed and scrolled into view. It is toggled by the corner list affordance, and that choice is
+    a *persisted* preference rather than session state: the owner seeds it from the settings and
+    stores it back through :attr:`strip_visible_changed`, which keeps this widget free of any settings
+    dependency of its own (the settings module imports :class:`ImageViewerMode` from here, so the
+    reverse import would be a cycle).
+
+    **The info overlay** (`ImageInfoOverlay`, #221) names the image, its pixel size and its file size
+    in the top-left corner, toggled by ``I``. Its starting state is the owner's to seed and, unlike the
+    row's, nothing is reported back: a viewer opens on the setting and the key changes only this one.
+
+    **The set is live.** :meth:`set_source` re-points an open viewer at a rebuilt set -- a curation
+    edit in `ImageSelector`, or a scanner swap from a ``.tc`` -> ``.rehu`` conversion
+    ([[acquisition-tooling#tc-to-rehu]]) -- keeping the current image if its key survived, falling
     back to whatever now occupies its position if it did not, and dismissing itself outright when the
     set empties. Both reach this widget through the document surface that owns it, the same
     owner-routes-it shape the activation itself follows.
@@ -317,15 +383,18 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes
     which does nothing at all. Both paths funnel through ``close()``, and the widget deletes itself
     afterwards (``WA_DeleteOnClose``).
 
-    :param images: the curated screenshot set to navigate, in strip order.
-    :param current: which of them to open on; one not in ``images`` (or an empty ``images``) opens as
-        a set of its own, so a viewer always has something to show.
+    :param source: the images to navigate, in order; an empty one shows nothing and closes on the
+        first navigation.
+    :param current: the position to open on, clamped into the source.
     :param mode: which surface to paint on.
     :param document: the open document this viewer belongs to -- its Qt parent in every mode, the
         surface it covers in :attr:`~ImageViewerMode.DOCUMENT_OVERLAY`, and the window it resolves
         for :attr:`~ImageViewerMode.APP_WINDOW_OVERLAY`.
+    :param loader: the thumbnail decode pool the row reads through (keyword-only); one of this
+        viewer's own when the owner shares none.
     :param strip_visible: whether to open with the thumbnail row shown (keyword-only).
     :param strip_height: the thumbnail row's fixed pixel height (keyword-only).
+    :param info_visible: whether to open with the info overlay shown (keyword-only).
     """
 
     closed = Signal()
@@ -337,13 +406,15 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes
 
     def __init__(  # pylint: disable=too-many-arguments
         self,
-        images: list[Path],
-        current: Path,
+        source: ImageSource,
+        current: int,
         mode: ImageViewerMode,
         document: QWidget,
         *,
+        loader: ThumbnailLoader | None = None,
         strip_visible: bool = False,
         strip_height: int = DEFAULT_STRIP_HEIGHT,
+        info_visible: bool = False,
     ) -> None:
         host = None if mode is ImageViewerMode.FULL_SCREEN else self.__overlay_host(mode, document)
         flags = Qt.WindowType.Widget if host is not None else Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint
@@ -353,8 +424,9 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
-        self.__images: list[Path] = list(images) if current in images else [current]
-        self.__index = self.__images.index(current)
+        self.__source: ImageSource = source
+        self.__index = min(max(current, 0), max(len(source) - 1, 0))
+        self.__loader: Final = loader if loader is not None else ThumbnailLoader(self)
 
         self.__strip_height = strip_height
         layout = QGridLayout(self)
@@ -384,7 +456,12 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes
         # with the thing it controls instead of being parked in an unrelated corner
         layout.addWidget(self.__strip_toggle, 0, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom)
         layout.addWidget(self.__make_close_button(), 0, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
-        self.__strip.set_images(self.__images)
+        # top-left of the image area, after the bands so it paints over the prev one; mouse-transparent,
+        # so that band still answers underneath it
+        self.__info: Final = ImageInfoOverlay(self)
+        layout.addWidget(self.__info, 0, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        self.__info.setVisible(info_visible)
+        self.__strip.set_source(self.__source)
         self.__show_current()
 
         if host is not None:
@@ -418,19 +495,36 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes
             self.__previous_focus.destroyed.connect(self.__forget_previous_focus)
 
     @property
-    def current_image(self) -> Path:
-        """The screenshot currently shown maximized."""
-        return self.__images[self.__index]
+    def current_index(self) -> int:
+        """The position currently shown maximized."""
+        return self.__index
 
     @property
-    def images(self) -> list[Path]:
-        """The curated screenshot set this viewer navigates, in strip order."""
-        return list(self.__images)
+    def current_key(self) -> Hashable | None:
+        """The key of the image currently shown maximized, or ``None`` on an empty source."""
+        return self.__source.key(self.__index) if len(self.__source) > 0 else None
+
+    @property
+    def source(self) -> ImageSource:
+        """The images this viewer navigates, in order."""
+        return self.__source
 
     @property
     def strip_visible(self) -> bool:
         """Whether the thumbnail row is currently shown."""
         return self.__strip_toggle.isChecked()
+
+    @property
+    def info_visible(self) -> bool:
+        """Whether the info overlay is currently shown (#221)."""
+        return not self.__info.isHidden()
+
+    def set_info_visible(self, visible: bool) -> None:
+        """Show or hide the info overlay, exactly as the ``I`` key does (#221).
+
+        :param visible: whether to show it.
+        """
+        self.__info.setVisible(visible)
 
     def set_strip_visible(self, visible: bool) -> None:
         """Show or hide the thumbnail row from outside, exactly as its own toggle does (#161).
@@ -454,23 +548,24 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__strip.set_height(height)
         self.__layout_navigation_zones()
 
-    def set_images(self, images: list[Path]) -> None:
-        """Re-point this viewer at a rebuilt curated set (#161).
+    def set_source(self, source: ImageSource) -> None:
+        """Re-point this viewer at a rebuilt set (#161).
 
-        The screenshot on screen is kept if it survived the rebuild. If it did not -- the user
+        The image on screen is kept if its key survived the rebuild. If it did not -- the user
         unchecked it in `ImageSelector`, or a conversion renamed it -- whatever now occupies its
         position is shown instead, which is the nearest thing to "stay where you were" a vanished
         image allows; an emptied set dismisses the viewer, since there is nothing left to look at.
 
-        :param images: the rebuilt curated set, in strip order.
+        :param source: the rebuilt set, in order.
         """
-        current = self.current_image
-        self.__images = list(images)
-        self.__strip.set_images(self.__images)
-        if not self.__images:
+        current = self.current_key
+        self.__source = source
+        self.__strip.set_source(source)
+        if len(source) == 0:
             self.close()
             return
-        self.__index = self.__images.index(current) if current in self.__images else min(self.__index, len(images) - 1)
+        survived = next((index for index in range(len(source)) if source.key(index) == current), None)
+        self.__index = survived if survived is not None else min(self.__index, len(source) - 1)
         self.__show_current()
 
     def reveal(self) -> None:
@@ -516,7 +611,8 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes
 
     @override
     def keyPressEvent(self, event: QKeyEvent) -> None:
-        """Dismiss on ESC, navigate the curated set on the arrow/HOME/END keys, pass everything else on.
+        """Dismiss on ESC, navigate the set on the arrow/HOME/END keys, toggle the info overlay on ``I``
+        (#221), pass everything else on.
 
         :param event: the Qt key event.
         """
@@ -530,7 +626,9 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes
             case Qt.Key.Key_Home:
                 self.__go_to(0)
             case Qt.Key.Key_End:
-                self.__go_to(len(self.__images) - 1)
+                self.__go_to(len(self.__source) - 1)
+            case Qt.Key.Key_I:
+                self.set_info_visible(not self.info_visible)
             case _:
                 super().keyPressEvent(event)
 
@@ -665,14 +763,22 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes
         title, the framed thumbnail, and which hover bands exist at all -- so no navigation path can
         update one of them and forget another.
         """
-        path = self.current_image
-        self.setWindowTitle(path.name)
-        self.__preview.set_source(QPixmap(str(path)))
-        self.__strip.set_current(path)
+        if len(self.__source) == 0:
+            # nothing to show and nowhere to step: no bands, no title
+            self.__previous_button.setVisible(False)
+            self.__next_button.setVisible(False)
+            return
+        index = self.__index
+        self.setWindowTitle(self.__source.name(index))
+        image = self.__source.load(index, None)
+        self.__preview.set_source(QPixmap.fromImage(image))
+        description = self.__source.describe(index)
+        self.__info.describe(description.path_text, image.size(), description.byte_size)
+        self.__strip.set_current(index)
         # hidden, not merely faded out, at either end: an always-present band would be a 50 px strip of
         # the screenshot that swallows clicks and answers nothing
-        self.__previous_button.setVisible(self.__index > 0)
-        self.__next_button.setVisible(self.__index < len(self.__images) - 1)
+        self.__previous_button.setVisible(index > 0)
+        self.__next_button.setVisible(index < len(self.__source) - 1)
         self.__layout_navigation_zones()
 
     def __step(self, delta: int) -> None:
@@ -687,18 +793,17 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes
 
         :param index: the position to show.
         """
-        if index == self.__index or not 0 <= index < len(self.__images):
+        if index == self.__index or not 0 <= index < len(self.__source):
             return
         self.__index = index
         self.__show_current()
 
-    def __on_thumbnail_activated(self, path: Path) -> None:
-        """Jump to the screenshot whose thumbnail was clicked in this viewer's own row (#161).
+    def __on_thumbnail_activated(self, index: int) -> None:
+        """Jump to the image whose thumbnail was clicked in this viewer's own row (#161).
 
-        :param path: the clicked screenshot.
+        :param index: the clicked position.
         """
-        if path in self.__images:
-            self.__go_to(self.__images.index(path))
+        self.__go_to(index)
 
     def __on_strip_toggled(self, visible: bool) -> None:
         """Show or hide the thumbnail row, and report the choice for the owner to persist (#161).
@@ -707,9 +812,9 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes
         """
         self.__strip.set_requested_visible(visible)
         self.__strip_toggle.set_opacity(STRIP_TOGGLE_ON_OPACITY if visible else STRIP_TOGGLE_OFF_OPACITY)
-        # a row that was hidden could not scroll, so a screenshot navigated to meanwhile may sit
-        # outside the visible span -- re-marking it scrolls it back into view
-        self.__strip.set_current(self.current_image)
+        # a row that was hidden could not scroll, so an image navigated to meanwhile may sit outside
+        # the visible span -- re-marking it scrolls it back into view
+        self.__strip.set_current(self.__index)
         self.__layout_navigation_zones()
         self.strip_visible_changed.emit(visible)
 
@@ -732,19 +837,13 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes
             button.setIconSize(QSize(glyph, glyph))
             button.setGeometry(left, 0, zone, height)
 
-    def __make_strip(self) -> ImageStrip:
-        """Build this viewer's own thumbnail row (#161).
-
-        Frameless and transparent, so nothing but the thumbnails is drawn on the backdrop, and taking
-        no focus, so the keyboard stays with the viewer where ESC and the arrow keys are handled.
+    def __make_strip(self) -> ThumbnailRow:
+        """Build this viewer's own thumbnail row (#161, lazy since #221).
 
         :returns: the thumbnail row, wired to navigate on a click, hidden or shown by the caller.
         """
-        strip = ImageStrip(self, height=self.__strip_height, wheel_scrolls=True)
-        strip.setFrameShape(ImageStrip.Shape.NoFrame)
-        strip.setStyleSheet("background: transparent;")
-        strip.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        strip.image_activated.connect(self.__on_thumbnail_activated)
+        strip = ThumbnailRow(self.__loader, self, height=self.__strip_height)
+        strip.activated_index.connect(self.__on_thumbnail_activated)
         return strip
 
     def __make_navigation_button(self, icon: str, tooltip: str, delta: int) -> NavigationButton:

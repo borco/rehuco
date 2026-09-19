@@ -10,6 +10,25 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 ## [Unreleased]
 
+### Added
+
+- A **Content Images** panel on every document, hidden by default: the images inside a reference pack's
+  archives, in rows justified to the panel's width and in natural order, each archive opening with a
+  banner naming it. Read-only, since those images live in a checksummed archive. Thumbnails decode off
+  the interface thread as they scroll into view; nothing is written to disk.
+- Clicking a content image opens it maximized in the same viewer screenshots use, navigating the whole
+  pack. The viewer's `I` key shows the image's name, pixel size and file size in a corner overlay, and
+  a new Images / Display setting decides whether a viewer opens with it.
+- Images / Display gains the Content Images row-height clamp and two banner boxes — zip file names,
+  folder names in zips — all applied live to open panels.
+
+### Changed
+
+- The maximized viewer's thumbnail row decodes lazily, only what is in view, so it opens as fast over a
+  pack of thousands as over three screenshots.
+- `.avif` still counts as a content image but does **not** decode in the shipped Qt plugin set (`webp`
+  does): such members show as a broken placeholder in the panel rather than an image.
+
 ## [0.1.1] - 2026-07-29
 
 The first release to reach PyPI, so `pip install rehuco-agent` and `uv tool install rehuco-agent` now get

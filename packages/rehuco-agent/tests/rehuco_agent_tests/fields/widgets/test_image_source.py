@@ -1,0 +1,93 @@
+"""Tests for the file-backed image source and the decode helpers behind every source (#221)."""
+
+from pathlib import Path
+from typing import Final
+
+from PySide6.QtCore import QBuffer, QIODevice, Qt
+from PySide6.QtGui import QImage, QImageWriter
+from pytest_mock import MockerFixture
+from rehuco_agent.fields.widgets.image_source import PathImageSource, decode_image, image_size
+
+PATH: Final = Path("/fake/info00.png")
+
+
+def png_bytes(width: int, height: int) -> bytes:
+    """A real PNG of ``width`` by ``height``.
+
+    :param width: the pixel width.
+    :param height: the pixel height.
+    :returns: the encoded bytes.
+    """
+    image = QImage(width, height, QImage.Format.Format_RGB32)
+    image.fill(Qt.GlobalColor.darkCyan)
+    buffer = QBuffer()
+    buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+    assert QImageWriter(buffer, b"png").write(image)
+    return bytes(buffer.data().data())
+
+
+def test_decode_image_scales_down_during_the_decode_and_never_up() -> None:
+    """A height cap decodes a smaller image; a cap above the image's height leaves it as is; no cap
+    decodes it whole.
+
+    **Test steps:**
+
+    * decode a 200 by 100 PNG under a 50 px cap, a 500 px cap, and none
+    * verify the three sizes
+    """
+    data = png_bytes(200, 100)
+
+    assert decode_image(data, 50).size().toTuple() == (100, 50)
+    assert decode_image(data, 500).size().toTuple() == (200, 100)
+    assert decode_image(data, None).size().toTuple() == (200, 100)
+
+
+def test_undecodable_bytes_decode_to_a_null_image_and_no_size() -> None:
+    """Bytes that are not an image decode to nothing and report an invalid size, rather than raising.
+
+    **Test steps:**
+
+    * decode and size a few junk bytes
+    """
+    assert decode_image(b"not an image", None).isNull()
+    assert not image_size(b"not an image").isValid()
+
+
+def test_image_size_reads_the_header_off_a_leading_slice() -> None:
+    """The pixel size comes off the header alone: the first few dozen bytes of a PNG are enough.
+
+    **Test steps:**
+
+    * size the first 64 bytes of a 200 by 100 PNG
+    """
+    assert image_size(png_bytes(200, 100)[:64]).toTuple() == (200, 100)
+
+
+def test_a_path_source_reads_and_decodes_the_file(mocker: MockerFixture) -> None:
+    """The file-backed source keys by path, names by file name, and decodes the file's bytes.
+
+    **Test steps:**
+
+    * make the path read as a PNG and load it capped and whole
+    * verify the key, the name and both sizes
+    """
+    mocker.patch.object(Path, "read_bytes", return_value=png_bytes(200, 100))
+    source = PathImageSource([PATH])
+
+    assert len(source) == 1
+    assert source.key(0) == PATH
+    assert source.name(0) == "info00.png"
+    assert source.load(0, 50).size().toTuple() == (100, 50)
+    assert source.load(0, None).size().toTuple() == (200, 100)
+
+
+def test_a_path_source_yields_a_null_image_for_an_unreadable_file(mocker: MockerFixture) -> None:
+    """A file that cannot be read -- an offline mount -- decodes to a null image rather than raising.
+
+    **Test steps:**
+
+    * make the read fail and load
+    """
+    mocker.patch.object(Path, "read_bytes", side_effect=OSError("offline"))
+
+    assert PathImageSource([PATH]).load(0, None).isNull()

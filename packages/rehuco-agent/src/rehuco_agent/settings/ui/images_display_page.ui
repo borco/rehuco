@@ -103,6 +103,16 @@
         </property>
        </widget>
       </item>
+      <item>
+       <widget class="QCheckBox" name="lightbox_info_check_box">
+        <property name="text">
+         <string>Show image info</string>
+        </property>
+        <property name="toolTip">
+         <string>Whether a maximized image opens with its name, pixel size and file size shown in the corner. The I key toggles it in an open viewer; applying this changes only viewers opened from now on.</string>
+        </property>
+       </widget>
+      </item>
      </layout>
     </widget>
    </item>
@@ -257,6 +267,117 @@
         </property>
         <property name="value">
          <number>100</number>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QFrame" name="content_frame">
+     <property name="sizePolicy">
+      <sizepolicy hsizetype="Preferred" vsizetype="Maximum">
+       <horstretch>0</horstretch>
+       <verstretch>0</verstretch>
+      </sizepolicy>
+     </property>
+     <property name="frameShape">
+      <enum>QFrame::Shape::StyledPanel</enum>
+     </property>
+     <property name="frameShadow">
+      <enum>QFrame::Shadow::Raised</enum>
+     </property>
+     <layout class="QFormLayout" name="content_frame_layout">
+      <item row="0" column="0" colspan="2">
+       <widget class="QLabel" name="content_frame_label">
+        <property name="font">
+         <font>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string>Content images</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="content_min_height_label">
+        <property name="text">
+         <string>Minimum row height:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QSpinBox" name="content_min_height_spin_box">
+        <property name="toolTip">
+         <string>The shortest a row of a reference pack's images is rescaled to so that it lands flush on the dock's edge. A row that would need to be shorter is left ragged instead.</string>
+        </property>
+        <property name="suffix">
+         <string> px</string>
+        </property>
+        <property name="minimum">
+         <number>48</number>
+        </property>
+        <property name="maximum">
+         <number>1000</number>
+        </property>
+        <property name="singleStep">
+         <number>10</number>
+        </property>
+        <property name="value">
+         <number>140</number>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="0">
+       <widget class="QLabel" name="content_max_height_label">
+        <property name="text">
+         <string>Maximum row height:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="1">
+       <widget class="QSpinBox" name="content_max_height_spin_box">
+        <property name="toolTip">
+         <string>The tallest a row of a reference pack's images is rescaled to so that it lands flush on the dock's edge. A row that would need to be taller is left ragged instead.</string>
+        </property>
+        <property name="suffix">
+         <string> px</string>
+        </property>
+        <property name="minimum">
+         <number>48</number>
+        </property>
+        <property name="maximum">
+         <number>1000</number>
+        </property>
+        <property name="singleStep">
+         <number>10</number>
+        </property>
+        <property name="value">
+         <number>260</number>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="0" colspan="2">
+       <widget class="QCheckBox" name="content_zip_names_check_box">
+        <property name="text">
+         <string>Show zip file names</string>
+        </property>
+        <property name="toolTip">
+         <string>Start each archive's images with a banner naming it, as a path relative to the resource's folder.</string>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item row="4" column="0" colspan="2">
+       <widget class="QCheckBox" name="content_folder_names_check_box">
+        <property name="text">
+         <string>Show folder names in zips</string>
+        </property>
+        <property name="toolTip">
+         <string>Start each folder's images inside an archive with a banner naming the folder.</string>
         </property>
        </widget>
       </item>

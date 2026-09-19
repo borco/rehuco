@@ -24,6 +24,11 @@ class ImageChoices(NamedTuple):
     :param preview_height: how tall a screenshot is in a document's own image strip.
     :param lightbox_height: how tall a screenshot is in the maximized viewer's own thumbnail row.
     :param editor_preview_height: how tall the images editor's preview pane opens (#72).
+    :param lightbox_info_visible: whether a maximized image opens with its info overlay shown (#221).
+    :param content_min_height: the Content Images dock's shortest flush row (#221).
+    :param content_max_height: the Content Images dock's tallest flush row (#221).
+    :param content_zip_names: whether the Content Images dock banners each archive (#221).
+    :param content_folder_names: whether the Content Images dock banners each folder (#221).
     """
 
     mode: ImageViewerMode
@@ -32,12 +37,17 @@ class ImageChoices(NamedTuple):
     preview_height: int
     lightbox_height: int
     editor_preview_height: int
+    lightbox_info_visible: bool
+    content_min_height: int
+    content_max_height: int
+    content_zip_names: bool
+    content_folder_names: bool
 
 
 class ImagesDisplayPage(QWidget):
     """How an image is shown -- the surface a maximized screenshot opens on, a document's own strip,
-    the three thumbnail heights, and the width cap on an image embedded in a description (#160, #161,
-    #70, #72, #294).
+    the three thumbnail heights, the Content Images dock's rows and banners (#221), and the width cap
+    on an image embedded in a description (#160, #161, #70, #72, #294).
 
     A sibling of `ImagesFilesPage` under the "Images" group: this half answers how an image is
     *displayed*, that one what counts as one and what happens to its file on disk (#294). Two settings
@@ -57,6 +67,14 @@ class ImagesDisplayPage(QWidget):
 
     The strip toggle here is the *starting point* only: a document remembers the strip it was last
     left showing, in its own saved layout, so toggling one inside a viewer never comes back here (#161).
+    The info-overlay box is a starting point too, and a narrower one: it reaches only viewers opened
+    after Apply, never one already up (#221).
+
+    The Content Images clamp (#221) is kept consistent **in the widgets**: raising the minimum past the
+    maximum pushes the maximum up with it, and lowering the maximum under the minimum pushes the
+    minimum down, so ``min <= max`` holds in every staged state rather than being checked at save.
+    A push rather than linked bounds, so re-seeding the pair (:meth:`drop_changes`) works in either
+    order whatever the pair currently shows.
 
     :param parent: optional Qt parent.
     """
@@ -70,7 +88,25 @@ class ImagesDisplayPage(QWidget):
             ImageViewerMode.APP_WINDOW_OVERLAY: self.__ui.app_window_overlay_radio_button,
             ImageViewerMode.FULL_SCREEN: self.__ui.full_screen_radio_button,
         }
+        self.__ui.content_min_height_spin_box.valueChanged.connect(self.__on_content_min_height_changed)
+        self.__ui.content_max_height_spin_box.valueChanged.connect(self.__on_content_max_height_changed)
         self.drop_changes()
+
+    def __on_content_min_height_changed(self, minimum: int) -> None:
+        """Push the maximum up when the minimum is raised past it (#221).
+
+        :param minimum: the new minimum row height.
+        """
+        if minimum > self.__ui.content_max_height_spin_box.value():
+            self.__ui.content_max_height_spin_box.setValue(minimum)
+
+    def __on_content_max_height_changed(self, maximum: int) -> None:
+        """Push the minimum down when the maximum is lowered under it (#221).
+
+        :param maximum: the new maximum row height.
+        """
+        if maximum < self.__ui.content_min_height_spin_box.value():
+            self.__ui.content_min_height_spin_box.setValue(maximum)
 
     def is_dirty(self) -> bool:
         """Whether any staged choice differs from what its own settings object currently holds."""
@@ -94,6 +130,11 @@ class ImagesDisplayPage(QWidget):
         settings.preview_image_height = staged.preview_height
         settings.lightbox_image_height = staged.lightbox_height
         settings.editor_preview_height = staged.editor_preview_height
+        settings.lightbox_info_visible = staged.lightbox_info_visible
+        settings.content_rows_min_height = staged.content_min_height
+        settings.content_rows_max_height = staged.content_max_height
+        settings.content_zip_names = staged.content_zip_names
+        settings.content_folder_names = staged.content_folder_names
         settings.save(persistent_settings())
 
         rendering = shared_markdown_rendering_settings()
@@ -109,6 +150,11 @@ class ImagesDisplayPage(QWidget):
         self.__ui.preview_height_spin_box.setValue(saved.preview_height)
         self.__ui.lightbox_height_spin_box.setValue(saved.lightbox_height)
         self.__ui.editor_preview_height_spin_box.setValue(saved.editor_preview_height)
+        self.__ui.lightbox_info_check_box.setChecked(saved.lightbox_info_visible)
+        self.__ui.content_min_height_spin_box.setValue(saved.content_min_height)
+        self.__ui.content_max_height_spin_box.setValue(saved.content_max_height)
+        self.__ui.content_zip_names_check_box.setChecked(saved.content_zip_names)
+        self.__ui.content_folder_names_check_box.setChecked(saved.content_folder_names)
         self.__ui.max_image_width_spin_box.setValue(shared_markdown_rendering_settings().max_image_width)
 
     def __staged(self) -> ImageChoices:
@@ -123,6 +169,11 @@ class ImagesDisplayPage(QWidget):
             self.__ui.preview_height_spin_box.value(),
             self.__ui.lightbox_height_spin_box.value(),
             self.__ui.editor_preview_height_spin_box.value(),
+            self.__ui.lightbox_info_check_box.isChecked(),
+            self.__ui.content_min_height_spin_box.value(),
+            self.__ui.content_max_height_spin_box.value(),
+            self.__ui.content_zip_names_check_box.isChecked(),
+            self.__ui.content_folder_names_check_box.isChecked(),
         )
 
     @staticmethod
@@ -139,6 +190,11 @@ class ImagesDisplayPage(QWidget):
             settings.preview_image_height,
             settings.lightbox_image_height,
             settings.editor_preview_height,
+            settings.lightbox_info_visible,
+            settings.content_rows_min_height,
+            settings.content_rows_max_height,
+            settings.content_zip_names,
+            settings.content_folder_names,
         )
 
     def __selected_mode(self) -> ImageViewerMode:

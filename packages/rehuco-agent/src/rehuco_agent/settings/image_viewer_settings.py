@@ -19,6 +19,11 @@ LIGHTBOX_IMAGE_HEIGHT_KEY: Final = "lightbox_image_height"
 EDITOR_PREVIEW_HEIGHT_KEY: Final = "editor_preview_height"
 PREVIEW_WRAP_KEY: Final = "preview_wrap"
 PREVIEWS_VISIBLE_KEY: Final = "previews_visible"
+LIGHTBOX_INFO_VISIBLE_KEY: Final = "lightbox_info_visible"
+CONTENT_ROWS_MIN_HEIGHT_KEY: Final = "content_rows_min_height"
+CONTENT_ROWS_MAX_HEIGHT_KEY: Final = "content_rows_max_height"
+CONTENT_ZIP_NAMES_KEY: Final = "content_zip_names"
+CONTENT_FOLDER_NAMES_KEY: Final = "content_folder_names"
 
 DEFAULT_MODE: Final = ImageViewerMode.DOCUMENT_OVERLAY
 """What a fresh install (no ``.ini`` yet) opens screenshots on: the least disruptive of the three --
@@ -48,8 +53,26 @@ DEFAULT_EDITOR_PREVIEW_HEIGHT: Final = PREVIEW_HEIGHT
 """How tall the images editor's preview pane opens on a document with no split of its own remembered
 yet (#72). Read from `ImageSelector` for the same reason the two above are read from their widgets."""
 
+DEFAULT_LIGHTBOX_INFO_VISIBLE: Final = False
+"""Whether a maximized image opens with its info overlay shown (#221). Off, like the thumbnail row and
+for the same reason: the point of maximizing is the image, and ``I`` is one key away."""
 
-class ImageViewerSettings(QObject):
+DEFAULT_CONTENT_ROWS_MIN_HEIGHT: Final = 140
+DEFAULT_CONTENT_ROWS_MAX_HEIGHT: Final = 260
+"""The Content Images dock's row-height clamp (#221): a row is rescaled to land flush on the dock's
+edge only while its flush height falls inside it, and left ragged otherwise. Tuned against real packs
+-- portrait figure references pack four or five to a row at these on a half-width dock."""
+
+DEFAULT_CONTENT_ZIP_NAMES: Final = True
+"""Whether the Content Images dock banners each archive's start with its name (#221). On: several
+archives with no marker between them is the confusion the dock's banners exist to prevent."""
+
+DEFAULT_CONTENT_FOLDER_NAMES: Final = False
+"""Whether the Content Images dock banners each folder change inside an archive (#221). Off: most packs
+are flat, and a banner per folder on the ones that are not is a choice, not a default."""
+
+
+class ImageViewerSettings(QObject):  # pylint: disable=too-many-instance-attributes
     """How screenshots are presented, in the strip and maximized (#160, #161).
 
     A reactive ``QObject`` (``SimpleProperty`` fields), following
@@ -102,6 +125,19 @@ class ImageViewerSettings(QObject):
     editor_preview_height = SimpleProperty(DEFAULT_EDITOR_PREVIEW_HEIGHT)
     """How tall the images editor's preview pane opens, before a document remembers its own split."""
 
+    lightbox_info_visible = SimpleProperty(DEFAULT_LIGHTBOX_INFO_VISIBLE)
+    """Whether a maximized image opens with its info overlay shown (#221). Read **when a viewer
+    opens**, like :attr:`mode`: applying it changes the next viewer, never one already up, whose
+    overlay is the ``I`` key's alone."""
+
+    content_rows_min_height = SimpleProperty(DEFAULT_CONTENT_ROWS_MIN_HEIGHT)
+    content_rows_max_height = SimpleProperty(DEFAULT_CONTENT_ROWS_MAX_HEIGHT)
+    """The Content Images dock's row-height clamp (#221); applying either re-packs every open dock."""
+
+    content_zip_names = SimpleProperty(DEFAULT_CONTENT_ZIP_NAMES)
+    content_folder_names = SimpleProperty(DEFAULT_CONTENT_FOLDER_NAMES)
+    """Which boundaries the Content Images dock banners (#221); applying either re-packs every open dock."""
+
     def load(self, settings: QSettings) -> None:
         """Replace the current choices with what's in persistent storage.
 
@@ -125,6 +161,19 @@ class ImageViewerSettings(QObject):
         self.editor_preview_height = cast(
             int, settings.value(EDITOR_PREVIEW_HEIGHT_KEY, DEFAULT_EDITOR_PREVIEW_HEIGHT, type=int)
         )
+        self.lightbox_info_visible = cast(
+            bool, settings.value(LIGHTBOX_INFO_VISIBLE_KEY, DEFAULT_LIGHTBOX_INFO_VISIBLE, type=bool)
+        )
+        self.content_rows_min_height = cast(
+            int, settings.value(CONTENT_ROWS_MIN_HEIGHT_KEY, DEFAULT_CONTENT_ROWS_MIN_HEIGHT, type=int)
+        )
+        self.content_rows_max_height = cast(
+            int, settings.value(CONTENT_ROWS_MAX_HEIGHT_KEY, DEFAULT_CONTENT_ROWS_MAX_HEIGHT, type=int)
+        )
+        self.content_zip_names = cast(bool, settings.value(CONTENT_ZIP_NAMES_KEY, DEFAULT_CONTENT_ZIP_NAMES, type=bool))
+        self.content_folder_names = cast(
+            bool, settings.value(CONTENT_FOLDER_NAMES_KEY, DEFAULT_CONTENT_FOLDER_NAMES, type=bool)
+        )
         settings.endGroup()
         try:
             self.mode = ImageViewerMode(stored)
@@ -144,6 +193,11 @@ class ImageViewerSettings(QObject):
         settings.setValue(PREVIEW_IMAGE_HEIGHT_KEY, self.preview_image_height)
         settings.setValue(LIGHTBOX_IMAGE_HEIGHT_KEY, self.lightbox_image_height)
         settings.setValue(EDITOR_PREVIEW_HEIGHT_KEY, self.editor_preview_height)
+        settings.setValue(LIGHTBOX_INFO_VISIBLE_KEY, self.lightbox_info_visible)
+        settings.setValue(CONTENT_ROWS_MIN_HEIGHT_KEY, self.content_rows_min_height)
+        settings.setValue(CONTENT_ROWS_MAX_HEIGHT_KEY, self.content_rows_max_height)
+        settings.setValue(CONTENT_ZIP_NAMES_KEY, self.content_zip_names)
+        settings.setValue(CONTENT_FOLDER_NAMES_KEY, self.content_folder_names)
         settings.endGroup()
 
 

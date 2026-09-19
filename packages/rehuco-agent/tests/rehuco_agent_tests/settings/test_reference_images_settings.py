@@ -371,10 +371,11 @@ def test_the_saved_list_is_what_the_content_image_enumeration_counts(
     """
     mocker.patch.object(Path, "iterdir", return_value=[ARCHIVE_PATH])
     opened = mocker.MagicMock()
-    opened.__enter__.return_value.infolist.return_value = [
-        zipfile.ZipInfo("page01.bmp"),
-        zipfile.ZipInfo("page02.jpg"),
-    ]
+    members = [zipfile.ZipInfo("page01.bmp"), zipfile.ZipInfo("page02.jpg")]
+    for member in members:
+        # a real central directory always records both; a bare ZipInfo records neither
+        member.CRC = 0
+    opened.__enter__.return_value.infolist.return_value = members
     mocker.patch("rehuco_core.rehu_content_images.zipfile.ZipFile", return_value=opened)
     ReferenceImagesSettings(extensions=("bmp",)).save(settings)  # type: ignore[arg-type]
     section = ReferenceImagesSettings()
@@ -383,8 +384,8 @@ def test_the_saved_list_is_what_the_content_image_enumeration_counts(
     section.load(settings)  # type: ignore[arg-type]
     configured_entries = enumerate_content_images(FILE_SCOPED_PATH, section.content_image_extensions)
 
-    assert shipped_entries == [ContentImageEntry(ARCHIVE_PATH, "page02.jpg")]
-    assert configured_entries == [ContentImageEntry(ARCHIVE_PATH, "page01.bmp")]
+    assert shipped_entries == [ContentImageEntry(ARCHIVE_PATH, "page02.jpg", 0, 0)]
+    assert configured_entries == [ContentImageEntry(ARCHIVE_PATH, "page01.bmp", 0, 0)]
 
 
 # endregion

@@ -11,6 +11,7 @@ from .duration_measurement_edit import DurationMeasurementEdit
 from .expand_toggle_button import ExpandToggleButton
 from .image_lightbox import ImageLightbox, ImageViewerMode
 from .image_selector import ImageSelector
+from .image_source import ImageDescription, ImageSource, PathImageSource, decode_image, image_size
 from .image_strip import ImageStrip
 from .index_spin_box_delegate import IndexSpinBoxDelegate
 from .learning_paths_table_model import LearningPathScopeFilterProxyModel, LearningPathsTableModel
@@ -26,6 +27,8 @@ from .rating_slider import RatingSlider
 from .single_choice_combo_box import SingleChoiceComboBox
 from .single_choice_radio_buttons import SingleChoiceRadioButtons
 from .size_measurement_edit import SizeMeasurementEdit
+from .thumbnail_loader import ThumbnailLoader
+from .thumbnail_row import ThumbnailRow
 from .type_badge import TypeBadge
 from .value_readout import ValueReadout
 
@@ -47,10 +50,17 @@ __all__ = [
     "DurationMeasurementEdit",
     "ExpandToggleButton",
     "SizeMeasurementEdit",
+    "ImageDescription",
     "ImageLightbox",
     "ImageSelector",
+    "ImageSource",
     "ImageStrip",
     "ImageViewerMode",
+    "PathImageSource",
+    "ThumbnailLoader",
+    "ThumbnailRow",
+    "decode_image",
+    "image_size",
     "LineEdit",
     "MarkdownEdit",
     "MarkdownView",

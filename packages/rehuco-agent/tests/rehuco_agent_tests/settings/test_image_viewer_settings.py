@@ -9,13 +9,23 @@ from typing import Any
 from pytest import fixture
 from rehuco_agent.fields.widgets.image_lightbox import ImageViewerMode
 from rehuco_agent.settings.image_viewer_settings import (
+    CONTENT_FOLDER_NAMES_KEY,
+    CONTENT_ROWS_MAX_HEIGHT_KEY,
+    CONTENT_ROWS_MIN_HEIGHT_KEY,
+    CONTENT_ZIP_NAMES_KEY,
+    DEFAULT_CONTENT_FOLDER_NAMES,
+    DEFAULT_CONTENT_ROWS_MAX_HEIGHT,
+    DEFAULT_CONTENT_ROWS_MIN_HEIGHT,
+    DEFAULT_CONTENT_ZIP_NAMES,
     DEFAULT_EDITOR_PREVIEW_HEIGHT,
+    DEFAULT_LIGHTBOX_INFO_VISIBLE,
     DEFAULT_MODE,
     DEFAULT_PREVIEW_WRAP,
     DEFAULT_PREVIEWS_VISIBLE,
     DEFAULT_STRIP_VISIBLE,
     EDITOR_PREVIEW_HEIGHT_KEY,
     GROUP,
+    LIGHTBOX_INFO_VISIBLE_KEY,
     MODE_KEY,
     PREVIEW_WRAP_KEY,
     PREVIEWS_VISIBLE_KEY,
@@ -290,6 +300,59 @@ def test_save_then_load_round_trips_the_editor_preview_height(settings: FakeSett
     assert restored.editor_preview_height == 240
 
 
+def test_load_defaults_the_content_images_choices_when_nothing_was_saved(settings: FakeSettings) -> None:
+    """A fresh install gets the Content Images dock's clamp and banners, and a hidden info overlay, as
+    the module declares them (#221).
+
+    **Test steps:**
+
+    * load a fresh instance from an empty settings stand-in
+    * verify each of the five choices is its default
+    """
+    viewer_settings = ImageViewerSettings()
+    viewer_settings.content_rows_min_height = 1
+    viewer_settings.content_rows_max_height = 2
+    viewer_settings.content_zip_names = False
+    viewer_settings.content_folder_names = True
+    viewer_settings.lightbox_info_visible = True
+
+    viewer_settings.load(settings)  # type: ignore[arg-type]
+
+    assert viewer_settings.content_rows_min_height == DEFAULT_CONTENT_ROWS_MIN_HEIGHT == 140
+    assert viewer_settings.content_rows_max_height == DEFAULT_CONTENT_ROWS_MAX_HEIGHT == 260
+    assert viewer_settings.content_zip_names is DEFAULT_CONTENT_ZIP_NAMES is True
+    assert viewer_settings.content_folder_names is DEFAULT_CONTENT_FOLDER_NAMES is False
+    assert viewer_settings.lightbox_info_visible is DEFAULT_LIGHTBOX_INFO_VISIBLE is False
+
+
+def test_save_then_load_round_trips_the_content_images_choices(settings: FakeSettings) -> None:
+    """The Content Images dock's clamp and banners, and the info overlay's start, survive a restart (#221).
+
+    **Test steps:**
+
+    * set a non-default value for each of the five and save
+    * load into a fresh instance from the same settings stand-in
+    * verify each came back
+    """
+    viewer_settings = ImageViewerSettings()
+    viewer_settings.content_rows_min_height = 100
+    viewer_settings.content_rows_max_height = 400
+    viewer_settings.content_zip_names = False
+    viewer_settings.content_folder_names = True
+    viewer_settings.lightbox_info_visible = True
+
+    viewer_settings.save(settings)  # type: ignore[arg-type]
+
+    restored = ImageViewerSettings()
+    restored.load(settings)  # type: ignore[arg-type]
+
+    assert restored.content_rows_min_height == 100
+    assert restored.content_rows_max_height == 400
+    assert restored.content_zip_names is False
+    assert restored.content_folder_names is True
+    assert restored.lightbox_info_visible is True
+
+
 def test_saving_writes_every_choice_together(settings: FakeSettings) -> None:
     """One save persists the whole object, so writing any one choice cannot drop the others.
 
@@ -308,6 +371,11 @@ def test_saving_writes_every_choice_together(settings: FakeSettings) -> None:
     viewer_settings.preview_wrap = True
     viewer_settings.previews_visible = False
     viewer_settings.editor_preview_height = 240
+    viewer_settings.lightbox_info_visible = True
+    viewer_settings.content_rows_min_height = 100
+    viewer_settings.content_rows_max_height = 400
+    viewer_settings.content_zip_names = False
+    viewer_settings.content_folder_names = True
     viewer_settings.save(settings)  # type: ignore[arg-type]
 
     settings.beginGroup(GROUP)
@@ -316,3 +384,8 @@ def test_saving_writes_every_choice_together(settings: FakeSettings) -> None:
     assert settings.value(PREVIEW_WRAP_KEY) is True
     assert settings.value(PREVIEWS_VISIBLE_KEY) is False
     assert settings.value(EDITOR_PREVIEW_HEIGHT_KEY) == 240
+    assert settings.value(LIGHTBOX_INFO_VISIBLE_KEY) is True
+    assert settings.value(CONTENT_ROWS_MIN_HEIGHT_KEY) == 100
+    assert settings.value(CONTENT_ROWS_MAX_HEIGHT_KEY) == 400
+    assert settings.value(CONTENT_ZIP_NAMES_KEY) is False
+    assert settings.value(CONTENT_FOLDER_NAMES_KEY) is True

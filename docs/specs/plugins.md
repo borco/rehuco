@@ -258,7 +258,8 @@ existing dock** rather than opening a second. Each document dock is itself a nes
 **sub-docks** — the word for a dock inside a document dock, three managers deep
 ([[appendices.qt-ads#focus-highlighting]]): the two viewers — main view and description view — the main editor,
 the description and the images editors, plus the
-hidden-by-default inspection set — save preview, on disk, log, checksums, and files ([[plugins#files-subdock]]) — with
+hidden-by-default inspection set — save preview, on disk, log, checksums, files ([[plugins#files-subdock]]), and
+content images (the browse over a reference pack's archives, [[reference-images#modes]]) — with
 the images sub-dock doubling as the drop target of [[acquisition-tooling#drag-drop-aids]]. The surfaces are
 the viewer/editor pair ([[plugins#viewer-editor-both]]). This replaces the LocalEdit1 per-file window (#7) and
 is the

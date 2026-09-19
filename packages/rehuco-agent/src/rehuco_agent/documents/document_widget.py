@@ -25,16 +25,18 @@ from ..asking_deleter import AskingDeleter
 from ..delete_confirmation import confirm_delete
 from ..fields import FieldsTab, StatefulWidget
 from ..fields.type_field import type_label
-from ..fields.widgets import ImageLightbox, TypeBadge
+from ..fields.widgets import ImageLightbox, ImageSource, PathImageSource, ThumbnailLoader, TypeBadge
 from ..glyphs import TAB_CLOSE_GLYPH
 from ..recycle_bin_deleter import configured_deleter
 from ..settings.default_layout_settings import shared_default_layout_settings
 from ..settings.deletion_settings import DeletionKind
-from ..settings.image_viewer_settings import shared_image_viewer_settings
+from ..settings.image_viewer_settings import ImageViewerSettings, shared_image_viewer_settings
 from ..settings.logs_settings import shared_logs_settings
 from ..settings.persistent_settings import persistent_settings
+from ..settings.reference_images_settings import shared_reference_images_settings
 from .checksum_actions import ChecksumActions
 from .checksum_view import ChecksumView
+from .content_images import ContentDisplayFlags, ContentImagesModel, ContentImagesView
 from .conversion_backup_actions import ConversionBackupActions
 from .document_fields import EDITOR_IMAGES_TAB, EDITOR_MAIN_TAB, VIEWER_DESCRIPTION_TAB, build_document_form
 from .files_view import FilesView
@@ -44,7 +46,7 @@ from .save_or_prompt_retry import save_or_prompt_retry
 from .source_views import OnDiskView, SavePreviewView
 
 STATE_VERSION_KEY: Final = "version"
-STATE_VERSION: Final = 8
+STATE_VERSION: Final = 9
 """Schema version of :meth:`DocumentWidget.save_state`'s blob. The dock layout is keyed by dock
 object name, so any change to the docks (names, count, which tabs exist) makes an older blob
 incompatible: QtAds's ``restoreState`` would accept it and silently hide the current docks. Bump this
@@ -67,7 +69,9 @@ not worked around.
 
 Bumped to 8 when the Files sub-dock was added (#266) -- the ordinary case again: a v7 blob knows nothing
 of that dock, so ``restoreState`` would restore cleanly and leave it in whatever default state QtAds
-invents for an unknown dock rather than the deliberately-hidden-by-default one this widget builds."""
+invents for an unknown dock rather than the deliberately-hidden-by-default one this widget builds.
+
+Bumped to 9 when the Content Images sub-dock was added (#221), likewise."""
 
 STATE_DOCK_MANAGER_KEY: Final = "dock_manager"
 STATE_STASHED_SIZES_KEY: Final = "stashed_sizes"
@@ -88,6 +92,7 @@ SAVE_PREVIEW_ICON_RESOURCE: Final = ":/icons/document_save_preview.svg"
 ON_DISK_ICON_RESOURCE: Final = ":/icons/document_on_disk.svg"
 CHECKSUM_ICON_RESOURCE: Final = ":/icons/document_checksum.svg"
 FILES_ICON_RESOURCE: Final = ":/icons/document_file_browser.svg"
+CONTENT_IMAGES_ICON_RESOURCE: Final = ":/icons/document_content_reference_images.svg"
 DEFAULT_LAYOUT_ICON_RESOURCE: Final = ":/icons/document_default_layout.svg"
 
 SAVE_PREVIEW_DOCK_NAME: Final = "save_preview"
@@ -95,8 +100,9 @@ ON_DISK_DOCK_NAME: Final = "on_disk"
 LOG_DOCK_NAME: Final = "log"
 CHECKSUM_DOCK_NAME: Final = "checksums"
 FILES_DOCK_NAME: Final = "files"
+CONTENT_IMAGES_DOCK_NAME: Final = "content_images"
 """Object names of the read-only inspection docks (#111), this resource's own log (#200), its
-per-file checksum table (#244) and its own folder (#266);
+per-file checksum table (#244), its own folder (#266) and its content images (#221);
 namespaced apart from the ``viewer:``/``editor:`` docks, and the keys `restore_state` restores their
 hidden-by-default visibility under."""
 
@@ -105,12 +111,15 @@ ON_DISK_DOCK_TITLE: Final = "On Disk"
 LOG_DOCK_TITLE: Final = "Log"
 CHECKSUM_DOCK_TITLE: Final = "Checksums"
 FILES_DOCK_TITLE: Final = "Files"
+CONTENT_IMAGES_DOCK_TITLE: Final = "Content Images"
 """Tab titles of the read-only inspection docks (#111) -- the live model serialization (what a Save would
-write) and the verbatim on-disk file -- of this resource's own log (#200), and of its own folder (#266)."""
+write) and the verbatim on-disk file -- of this resource's own log (#200), of its own folder (#266), and
+of the images inside its archives (#221)."""
 
 LOG_DOCK_MIN_HEIGHT: Final = 120
 CHECKSUM_DOCK_MIN_HEIGHT: Final = 90
 FILES_DOCK_MIN_HEIGHT: Final = 140
+CONTENT_IMAGES_DOCK_MIN_HEIGHT: Final = 160
 IMAGES_DOCK_MIN_HEIGHT: Final = 200
 """Size floors a splitter drag can't cross, chosen by eye against a real layout so each dock keeps its
 header and summary readable rather than being squeezed to a sliver."""
@@ -220,6 +229,11 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         """This document's maximized image viewer while one is open (#160), so becoming the current
         document can hand it the keyboard -- see :meth:`take_focus`."""
 
+        self.__thumbnail_loader: Final = ThumbnailLoader(self)
+        """The one decode pool this document's lazy thumbnail surfaces share (#221): the Content Images
+        grid and every lightbox row it opens. Per document rather than per surface, so a thumbnail the
+        grid decoded is the one the lightbox's row paints."""
+
         self.__viewer_follows_curation = True
         """Whether an open maximized viewer is showing the **curated** set, and so is re-pointed when
         that set changes (#161) -- as opposed to a folder's images from the Files sub-dock (#266), which
@@ -249,6 +263,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         strip_default_changed.connect(self.__on_default_strip_visible_changed)
         lightbox_height_changed.connect(self.__on_lightbox_image_height_changed)
         previews_visible_changed.connect(self.__on_previews_visible_changed)
+        self.__follow_content_images_settings(image_settings)
 
         self.__log_scope: Hashable | None = None
         """What this document's log surface is currently attached under -- its path, or ``None`` while it
@@ -390,6 +405,12 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         # folder with no queue in sight, and only the one row that enqueues a verify goes quiet (#266)
         self.__files_dock: Final = self.__add_files_dock(model, self.__checksums)
 
+        # exists whatever the resource is, like Files: a document with no archives simply shows an
+        # empty grid, and the dock is the one place a reference pack's images can be looked at (#221)
+        self.__content_images_model: Final = ContentImagesModel(self)
+        self.__content_images_view: Final = self.__build_content_images_view(self.__content_images_model)
+        self.__content_images_dock: Final = self.__add_content_images_dock(model, self.__content_images_view)
+
         # unlike the checksum pair, these need no queue: both operations are a handful of renames over
         # one directory, run inline the way `RehuDocumentModel.convert` -- their exact mirror -- is
         # (#193). Built before the first __banner_rows call below, which asks what they found.
@@ -450,7 +471,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         inspection_docks = (self.__save_preview_dock, self.__on_disk_dock, self.__log_dock)
         if self.__checksum_dock is not None:
             inspection_docks = (*inspection_docks, self.__checksum_dock)
-        inspection_docks = (*inspection_docks, self.__files_dock)
+        inspection_docks = (*inspection_docks, self.__files_dock, self.__content_images_dock)
         for dock in (*self.__viewer_docks.values(), *self.__editor_docks.values(), *inspection_docks):
             toolbar.addAction(dock.toggleViewAction())
         # the layout button sits at the far end on its own, away from everything that acts on the
@@ -978,7 +999,8 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         :param path: the screenshot the user clicked in the strip.
         """
         self.__viewer_follows_curation = True
-        self.__open_image_viewer(self.__curated_images, path)
+        images = self.__curated_images if path in self.__curated_images else [path]
+        self.__open_image_viewer(PathImageSource(images), images.index(path))
 
     def __on_folder_images_activated(self, images: object, clicked: object) -> None:
         """Open an image double-clicked in the Files sub-dock, against its whole folder (#266).
@@ -992,31 +1014,45 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         :param images: the folder's image paths, in the order the browser draws them.
         :param clicked: the one to open first.
         """
-        if isinstance(images, list) and isinstance(clicked, Path):
+        if isinstance(images, list) and isinstance(clicked, Path) and clicked in images:
             self.__viewer_follows_curation = False
-            self.__open_image_viewer(images, clicked)
+            self.__open_image_viewer(PathImageSource(images), images.index(clicked))
 
-    def __open_image_viewer(self, images: list[Path], path: Path) -> None:
-        """Open ``path`` maximized against ``images``, on whichever surface the settings ask for.
+    def __on_content_image_activated(self, index: int) -> None:
+        """Open a content image clicked in the Content Images dock, against the whole pack (#221).
 
-        Shared by the two activation routes -- the viewer strip's curated set (#161) and the Files
-        sub-dock's folder (#266) -- so where a maximized image opens, what it is parented to and how it
-        is tracked are decided once rather than per caller.
+        Not :attr:`__curated_images` either: an archive's members are what the grid shows, and a
+        curation edit says nothing about them ([[data-model#image-meanings]]).
 
-        :param images: the set the viewer navigates.
-        :param path: where in that set to start.
+        :param index: the clicked position in the dock's source.
+        """
+        self.__viewer_follows_curation = False
+        self.__open_image_viewer(self.__content_images_view.source, index)
+
+    def __open_image_viewer(self, source: ImageSource, index: int) -> None:
+        """Open ``source[index]`` maximized, on whichever surface the settings ask for.
+
+        Shared by the three activation routes -- the viewer strip's curated set (#161), the Files
+        sub-dock's folder (#266) and the Content Images dock's archives (#221) -- so where a maximized
+        image opens, what it is parented to and how it is tracked are decided once rather than per
+        caller.
+
+        :param source: the set the viewer navigates.
+        :param index: where in that set to start.
         """
         settings = shared_image_viewer_settings()
         # resolved here, not at construction: a document that has never shown a row follows whatever
         # the shared setting says right now, including a change applied while it sat open (#161)
         strip_visible = settings.strip_visible if self.__image_strip_visible is None else self.__image_strip_visible
         viewer = ImageLightbox(
-            images,
-            path,
+            source,
+            index,
             settings.mode,
             self,
+            loader=self.__thumbnail_loader,
             strip_visible=strip_visible,
             strip_height=settings.lightbox_image_height,
+            info_visible=settings.lightbox_info_visible,
         )
         self.__image_viewer = viewer
         # cleared on both paths: dismissal (which hides it before Qt gets round to deleting it) and
@@ -1036,7 +1072,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         """
         self.__curated_images = list(images)
         if self.__image_viewer is not None and self.__viewer_follows_curation:
-            self.__image_viewer.set_images(self.__curated_images)
+            self.__image_viewer.set_source(PathImageSource(self.__curated_images))
 
     def __on_strip_visible_changed(self, visible: bool) -> None:
         """Remember the viewer's thumbnail-row choice as the user toggles it (#161).
@@ -1071,6 +1107,46 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         """
         if self.__image_viewer is not None:
             self.__image_viewer.set_strip_height(height)
+
+    def __follow_content_images_settings(self, image_settings: ImageViewerSettings) -> None:
+        """Subscribe the Content Images dock to the four settings its packing follows (#221).
+
+        Bound methods of this QObject, like the three subscriptions above it, so Qt severs them when
+        this widget is destroyed -- the settings object is a process-wide singleton.
+
+        :param image_settings: the shared settings.
+        """
+        rows_min_changed = image_settings.content_rows_min_height_changed  # type: ignore[attr-defined]
+        rows_max_changed = image_settings.content_rows_max_height_changed  # type: ignore[attr-defined]
+        zip_names_changed = image_settings.content_zip_names_changed  # type: ignore[attr-defined]
+        folder_names_changed = image_settings.content_folder_names_changed  # type: ignore[attr-defined]
+        rows_min_changed.connect(self.__on_content_rows_changed)
+        rows_max_changed.connect(self.__on_content_rows_changed)
+        zip_names_changed.connect(self.__on_content_banners_changed)
+        folder_names_changed.connect(self.__on_content_banners_changed)
+
+    def __on_content_rows_changed(self) -> None:
+        """Re-pack the Content Images dock under the newly-applied row-height clamp (#221).
+
+        Connected to both bounds' signals and reads neither payload: the view takes the pair, and
+        either one changing means the pair did.
+        """
+        settings = shared_image_viewer_settings()
+        self.__content_images_view.set_clamp(settings.content_rows_min_height, settings.content_rows_max_height)
+
+    def __on_content_banners_changed(self) -> None:
+        """Re-pack the Content Images dock under the newly-applied banner boxes (#221), same shape as
+        :meth:`__on_content_rows_changed`."""
+        self.__content_images_view.set_flags(self.__content_display_flags())
+
+    @staticmethod
+    def __content_display_flags() -> ContentDisplayFlags:
+        """The banner boxes as currently applied.
+
+        :returns: the flags.
+        """
+        settings = shared_image_viewer_settings()
+        return ContentDisplayFlags(settings.content_zip_names, settings.content_folder_names)
 
     def __on_previews_visible_changed(self, visible: bool) -> None:
         """Dismiss this document's maximized viewer the moment previews are hidden app-wide (#71).
@@ -1362,6 +1438,56 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             insert_mode=QtAds.CDockWidget.eInsertMode.ForceNoScrollArea,
             min_content_height=FILES_DOCK_MIN_HEIGHT,
         )
+
+    def __build_content_images_view(self, content_model: ContentImagesModel) -> ContentImagesView:
+        """Build the justified-row grid over ``content_model``, seeded from the applied settings (#221).
+
+        :param content_model: the entries and their dimensions.
+        :returns: the view, wired to open a clicked image maximized.
+        """
+        settings = shared_image_viewer_settings()
+        view = ContentImagesView(
+            content_model,
+            self.__thumbnail_loader,
+            self,
+            min_height=settings.content_rows_min_height,
+            max_height=settings.content_rows_max_height,
+            flags=self.__content_display_flags(),
+        )
+        view.image_activated.connect(self.__on_content_image_activated)
+        return view
+
+    def __add_content_images_dock(self, model: RehuDocumentModel, view: ContentImagesView) -> QtAds.CDockWidget:
+        """Build the Content Images dock, stacked with the inspection docks and hidden (#221).
+
+        The same shape and the same place as the #111 pair. Its archives are enumerated **when the
+        dock is shown**, not at construction: enumeration opens every archive the resource holds, over
+        a NAS mount for the packs that matter, and a document opened to read its fields should not pay
+        that. Re-enumerated on every show, which is also how a changed extension set (the Images /
+        Files page) reaches it, and on a path change, since the archives are found relative to it.
+
+        :param model: the view-model whose resource the dock browses.
+        :param view: the grid.
+        :returns: the dock, hidden.
+        """
+        dock = self.__add_hidden_inspection_dock(
+            CONTENT_IMAGES_DOCK_NAME,
+            CONTENT_IMAGES_DOCK_TITLE,
+            CONTENT_IMAGES_ICON_RESOURCE,
+            view,
+            insert_mode=QtAds.CDockWidget.eInsertMode.ForceNoScrollArea,
+            min_content_height=CONTENT_IMAGES_DOCK_MIN_HEIGHT,
+        )
+        dock.viewToggled.connect(lambda visible: self.__refresh_content_images() if visible else None)
+        model.path_changed.connect(lambda _path: self.__refresh_content_images())  # type: ignore[attr-defined]
+        return dock
+
+    def __refresh_content_images(self) -> None:
+        """Re-enumerate this resource's content images, if the dock is up to show them (#221)."""
+        if self.__content_images_dock.isClosed():
+            return
+        extensions = shared_reference_images_settings().content_image_extensions
+        self.__content_images_model.refresh(self.__model.path, extensions)
 
     def __on_log_scope_changed(self, path: Path | None) -> None:
         """Re-scope this resource's log surface when its path changes (#52's landmine, for a log).

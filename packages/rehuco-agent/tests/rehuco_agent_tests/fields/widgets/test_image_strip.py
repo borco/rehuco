@@ -148,24 +148,6 @@ def hosted_strip(qtbot: QtBot) -> Iterator[ImageStrip]:
     yield strip
 
 
-@fixture
-def hosted_wheel_strip(qtbot: QtBot) -> Iterator[ImageStrip]:
-    """A hosted strip that takes the plain wheel, as the maximized viewer's own row does.
-
-    Same host-keeps-it-alive shape as :func:`hosted_strip`; only ``wheel_scrolls`` differs.
-
-    :param qtbot: pytest-qt fixture.
-    :returns: the strip, parented and shown.
-    """
-    host = QWidget()
-    layout = QVBoxLayout(host)
-    strip = ImageStrip(wheel_scrolls=True)
-    layout.addWidget(strip)
-    qtbot.addWidget(host)
-    host.show()
-    yield strip
-
-
 def current_of(strip: ImageStrip, index: int) -> bool:
     """Whether the thumbnail at ``index`` is marked as the current screenshot.
 
@@ -748,31 +730,6 @@ def test_the_strip_draws_no_frame_of_its_own(hosted_strip: ImageStrip) -> None:
     assert hosted_strip.frameShape() == QFrame.Shape.NoFrame
     assert hosted_strip.frameWidth() == 0
     assert hosted_strip.viewportMargins() == QMargins(0, 0, 0, 0)
-
-
-def test_the_wheel_scrolls_the_row_sideways(mocker: MockerFixture, hosted_wheel_strip: ImageStrip) -> None:
-    """A plain wheel scrolls the one-row strip horizontally (#161).
-
-    Regression: a wheel reports a *vertical* delta, which the inherited handler spends on a vertical
-    scrollbar this widget does not have -- so the wheel did nothing at all over a row too long to fit.
-    Sent to the viewport, which is where Qt delivers it (a thumbnail ignores wheels, so a real one
-    propagates there from wherever the pointer sits).
-
-    **Test steps:**
-
-    * fill a strip past its width, then wheel down over it and back up
-    * verify the row scrolled out and back
-    """
-    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(WIDE_PIXMAP, 10))
-    hosted_wheel_strip.set_images(PATHS * 8)
-    scrollbar = hosted_wheel_strip.horizontalScrollBar()
-    assert scrollbar.maximum() > 0
-
-    send_wheel(hosted_wheel_strip.viewport(), -WHEEL_STEP)
-    assert scrollbar.value() > 0
-
-    send_wheel(hosted_wheel_strip.viewport(), WHEEL_STEP)
-    assert scrollbar.value() == 0
 
 
 def test_a_thumbnail_click_is_not_passed_on_to_whatever_is_behind(
