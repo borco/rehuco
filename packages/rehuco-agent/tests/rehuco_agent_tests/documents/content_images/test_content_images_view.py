@@ -2,8 +2,10 @@
 
 # pylint infers `view.layout_table`'s rows as a PySide signal template rather than the `Row` dataclass
 # they are (the view class body mixes `Signal(...)` attributes with the property), so every `.height`,
-# `.banner` and `.y` read off a row trips no-member; pyright types them correctly
-# pylint: disable=no-member
+# `.banner` and `.y` read off a row trips no-member; pyright types them correctly.
+# One cohesive suite over the grid's packing, selection, banners, keyboard and status; a scoped
+# disable reads better than an arbitrary split (same precedent as test_rehu_document_model.py).
+# pylint: disable=no-member,too-many-lines
 
 from PySide6.QtCore import QEvent, QPoint, QRect, QSize, Qt
 from PySide6.QtGui import QCursor, QPalette
@@ -142,16 +144,15 @@ def test_a_new_clamp_re_packs_the_open_view(
 def test_a_double_click_on_an_image_reports_its_position(
     view: ContentImagesView, content_model: ContentImagesModel, qtbot: QtBot
 ) -> None:
-    """A left double-click over an image fires ``image_activated`` with its position; one on a banner,
-    a gap below the rows, or with the right button fires nothing -- and the double-click leaves the
-    selection where it was.
+    """A left double-click over an image fires ``image_activated`` with its position and selects it;
+    one on a banner, a gap below the rows, or with the right button fires nothing.
 
     **Test steps:**
 
     * pack two members behind a banner and let the pack settle
     * double-click the second image's centre, the banner and the empty space below; right-double-click
       the image
-    * verify one activation, for position one, and nothing selected
+    * verify one activation, for position one, which is now the selection
     """
     view.set_flags(ContentDisplayFlags(zip_names=True, folder_names=False))
     content_model.set_entries([entry(PACK, "a.png"), entry(PACK, "b.png")], REHU_DIRECTORY)
@@ -170,7 +171,7 @@ def test_a_double_click_on_an_image_reports_its_position(
     qtbot.mouseDClick(view.viewport(), Qt.MouseButton.RightButton, pos=centre)
 
     assert activated == [1]
-    assert view.selected is None
+    assert view.selected == 1
 
 
 def test_a_single_click_selects_and_a_second_deselects(
@@ -215,16 +216,20 @@ def test_a_real_double_click_opens_without_disturbing_the_selection(
     view: ContentImagesView, content_model: ContentImagesModel, qtbot: QtBot
 ) -> None:
     """A double-click on the desktop is press, release, press, double-click, release: the first
-    release selects, the double-click opens, and the trailing release must not deselect again. A
-    click elsewhere, a right click, and a click on empty space leave the selection alone too.
+    release toggles the selection, the double-click opens and selects the image, and the trailing
+    release must not toggle again -- so a double-clicked image ends up selected whether it was
+    already, another was, or none. A click elsewhere, a right click, and a click on empty space
+    leave the selection alone too.
 
     **Test steps:**
 
-    * pack one member and send the real double-click sequence over it
-    * verify it was activated once and is still selected
+    * pack two members and send the real double-click sequence over the first, with nothing
+      selected; verify it was activated once and is selected
+    * select the second, double-click the first, and verify the first is now the selection
+    * double-click the first while it is selected and verify it stays selected
     * right-click it, click empty space, and verify the selection stands; click it and verify it clears
     """
-    content_model.set_entries([entry(PACK, "a.png")], REHU_DIRECTORY)
+    content_model.set_entries([entry(PACK, "a.png"), entry(PACK, "b.png")], REHU_DIRECTORY)
     settle(qtbot, view, content_model)
     table = view.layout_table
     assert table is not None
@@ -233,11 +238,22 @@ def test_a_real_double_click_opens_without_disturbing_the_selection(
     activated: list[int] = []
     view.image_activated.connect(activated.append)
 
-    qtbot.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=centre)
-    qtbot.mouseDClick(view.viewport(), Qt.MouseButton.LeftButton, pos=centre)
-    qtbot.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=centre)
+    def double_click_first() -> None:
+        qtbot.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=centre)
+        qtbot.mouseDClick(view.viewport(), Qt.MouseButton.LeftButton, pos=centre)
+        qtbot.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=centre)
 
+    double_click_first()
     assert activated == [0]
+    assert view.selected == 0
+
+    view.set_selected(1)
+    double_click_first()
+    assert activated == [0, 0]
+    assert view.selected == 0
+
+    double_click_first()
+    assert activated == [0, 0, 0]
     assert view.selected == 0
 
     qtbot.mouseClick(view.viewport(), Qt.MouseButton.RightButton, pos=centre)
@@ -609,6 +625,24 @@ def test_reveal_selects_scrolls_to_and_uncollapses_an_image(
 
     view.reveal(59)
     qtbot.waitUntil(lambda: view.layout_table is not None and view.layout_table.rects[59] != (0, 0, 0, 0))
+
+    # headers still landing re-pack the rows under the selection; it is kept in view through those.
+    # Only the headers on screen (and one screen ahead) are ever asked for, so wait for those alone
+    def on_screen_headers_landed() -> bool:
+        table = view.layout_table
+        if table is None:
+            return False
+        view.grab()
+        offset = view.verticalScrollBar().value()
+        rows = table.rows_between(offset, offset + view.viewport().height())
+        return all(
+            content_model.dimensions(index) is not None
+            for row in rows
+            if row.banner is None
+            for index in range(row.first, row.last + 1)
+        )
+
+    qtbot.waitUntil(on_screen_headers_landed)
     qtbot.wait(50)
     table = view.layout_table
     assert table is not None
@@ -665,20 +699,119 @@ def test_a_resize_keeps_the_selected_image_on_screen(
     assert scrollbar.value() == 0
 
 
+def test_the_keyboard_moves_the_selection_folds_the_group_and_clears(
+    view: ContentImagesView, content_model: ContentImagesModel, qtbot: QtBot
+) -> None:
+    """LEFT/RIGHT step the selection along the shown sequence (the first image with none selected,
+    stopping at the ends), UP/DOWN move to the nearest image in the neighbouring row, ``-`` and ``+``
+    collapse and expand the current group -- the selection's, else the first on screen -- and ESC
+    clears the selection; an unrelated key passes on (#221).
+
+    **Test steps:**
+
+    * pack two bannered groups of wide images and press RIGHT with nothing selected; verify the first
+    * step RIGHT twice and LEFT once; verify; press LEFT past the start and verify it stays
+    * press DOWN and verify the nearest image in the row below; UP brings it back
+    * press ``-``: the group collapses and the selection clears; ``+``: it expands again
+    * select and press ESC; verify nothing is selected; press a letter and verify nothing changed
+    * press DOWN with nothing selected and verify the first image; press UP at the top and verify it stays
+    """
+    view.set_flags(ContentDisplayFlags(zip_names=True, folder_names=False))
+    content_model.set_entries(
+        [entry(PACK, f"{index}.png", WIDE) for index in range(6)] + [entry(OTHER_PACK, "z.png", WIDE)],
+        REHU_DIRECTORY,
+    )
+    settle(qtbot, view, content_model)
+    table = view.layout_table
+    assert table is not None
+    first_row = next(row for row in table.rows if row.banner is None)
+    per_row = first_row.last - first_row.first + 1
+    assert per_row > 1
+
+    qtbot.keyClick(view, Qt.Key.Key_Right)
+    assert view.selected == 0
+    qtbot.keyClick(view, Qt.Key.Key_Right)
+    qtbot.keyClick(view, Qt.Key.Key_Right)
+    qtbot.keyClick(view, Qt.Key.Key_Left)
+    assert view.selected == 1
+    qtbot.keyClick(view, Qt.Key.Key_Left)
+    qtbot.keyClick(view, Qt.Key.Key_Left)
+    assert view.selected == 0
+
+    qtbot.keyClick(view, Qt.Key.Key_Down)
+    assert view.selected == per_row
+    qtbot.keyClick(view, Qt.Key.Key_Up)
+    assert view.selected == 0
+
+    qtbot.keyClick(view, Qt.Key.Key_Minus)
+    qtbot.waitUntil(lambda: view.collapsed == {"pack.zip"})
+    assert view.selected is None
+    assert view.current_group() == "pack.zip"
+    qtbot.keyClick(view, Qt.Key.Key_Plus)
+    qtbot.waitUntil(lambda: view.collapsed == frozenset())
+
+    view.set_selected(2)
+    qtbot.keyClick(view, Qt.Key.Key_Escape)
+    assert view.selected is None
+    qtbot.keyClick(view, Qt.Key.Key_A)
+    assert view.selected is None
+
+    qtbot.keyClick(view, Qt.Key.Key_Down)
+    assert view.selected == 0
+    qtbot.keyClick(view, Qt.Key.Key_Up)
+    assert view.selected == 0
+    view.set_selected(6)
+    qtbot.keyClick(view, Qt.Key.Key_Down)
+    qtbot.keyClick(view, Qt.Key.Key_Right)
+    assert view.selected == 6
+
+
+def test_the_keyboard_does_nothing_over_an_empty_or_unbannered_grid(
+    view: ContentImagesView, content_model: ContentImagesModel, qtbot: QtBot
+) -> None:
+    """Over nothing packed the arrows select nothing; over a grid with no banners ``+`` has no group
+    to act on; with nothing selected and nothing pinned the group is the first row's (#221).
+
+    **Test steps:**
+
+    * press RIGHT and DOWN over an empty grid and verify nothing is selected
+    * pack one unbannered member, press ``+`` and verify nothing collapsed, nothing raised
+    * banner it and verify the current group is the first row's banner with nothing selected
+    """
+    qtbot.keyClick(view, Qt.Key.Key_Right)
+    qtbot.keyClick(view, Qt.Key.Key_Down)
+    assert view.selected is None
+    assert view.current_group() is None
+
+    content_model.set_entries([entry(PACK, "a.png")], REHU_DIRECTORY)
+    settle(qtbot, view, content_model)
+    assert view.current_group() is None
+    qtbot.keyClick(view, Qt.Key.Key_Plus)
+    assert view.collapsed == frozenset()
+
+    view.set_flags(ContentDisplayFlags(zip_names=True, folder_names=False))
+    qtbot.waitUntil(lambda: view.layout_table is not None and len(view.layout_table.rows) == 2)
+    assert view.current_group() == "pack.zip"
+
+
 def test_reveal_before_any_pack_selects_without_a_group(
-    view: ContentImagesView, content_model: ContentImagesModel
+    view: ContentImagesView, content_model: ContentImagesModel, qtbot: QtBot
 ) -> None:
     """Asked before the first pack has run, ``reveal`` has no groups to consult yet and simply selects.
 
     **Test steps:**
 
     * set entries and reveal one before the pack timer fires
-    * verify it is selected, and that a resize in that state (no table yet) raises nothing
+    * verify it is selected, and that a resize, an arrow key and the current-group question in that
+      state (no table yet) raise nothing and change nothing
     """
     content_model.set_entries([entry(PACK, "a.png")], REHU_DIRECTORY)
     view.reveal(0)
     assert view.selected == 0
     view.resize(900, 400)
+    assert view.current_group() is None
+    qtbot.keyClick(view, Qt.Key.Key_Right)
+    assert view.selected == 0
 
 
 def test_new_flags_open_every_group(view: ContentImagesView, content_model: ContentImagesModel, qtbot: QtBot) -> None:
@@ -793,15 +926,15 @@ def test_a_reset_drops_the_old_table_before_the_repack(
 
 
 def test_the_view_offers_no_editing_affordance(view: ContentImagesView) -> None:
-    """Read-only, visibly so: no context menu, no focus to type into, no drag. (Selection is a view
-    state, not an edit.)
+    """Read-only, visibly so: no context menu, no drag, and focus only by a click -- for the keyboard
+    navigation, never to type into. (Selection is a view state, not an edit.)
 
     **Test steps:**
 
     * verify the context-menu policy, the focus policy and the absence of a drag start
     """
     assert view.contextMenuPolicy() == Qt.ContextMenuPolicy.NoContextMenu
-    assert view.focusPolicy() == Qt.FocusPolicy.NoFocus
+    assert view.focusPolicy() == Qt.FocusPolicy.ClickFocus
     assert not hasattr(view, "startDrag")
 
 
@@ -830,6 +963,49 @@ def test_visible_thumbnails_are_decoded_and_painted(
     assert cached is not None
     # decoded *down* to the row, never up: a member shorter than the row keeps its own height
     assert cached.height() == min(height, WIDE[1])
+
+
+def test_hidden_previews_leave_only_the_banners(
+    view: ContentImagesView,
+    content_model: ContentImagesModel,
+    loader: ThumbnailLoader,
+    qtbot: QtBot,
+    mocker: MockerFixture,
+) -> None:
+    """With previews hidden app-wide the grid packs only its banner rows -- every image goes the way a
+    collapsed group's do, and nothing is asked of the loader; showing them again brings the rows back
+    (#71, #221).
+
+    **Test steps:**
+
+    * pack one bannered member, hide previews, and verify the table holds the banner row alone and
+      no decode was requested on a paint
+    * reveal the member while hidden (a viewer closing) and verify it is selected and nothing raised
+    * show previews and verify the image row is back
+    """
+    view.set_flags(ContentDisplayFlags(zip_names=True, folder_names=False))
+    content_model.set_entries([entry(PACK, "a.png", WIDE)], REHU_DIRECTORY)
+    settle(qtbot, view, content_model)
+    requested = mocker.spy(loader, "request")
+
+    view.set_previews_visible(False)
+    assert not view.previews_visible
+    view.set_previews_visible(False)  # a repeat is a no-op
+    qtbot.waitUntil(lambda: view.layout_table is not None and len(view.layout_table.rows) == 1)
+    table = view.layout_table
+    assert table is not None
+    assert table.rows[0].banner == "pack.zip"
+    assert table.rects[0] == (0, 0, 0, 0)
+    view.viewport().grab()
+    requested.assert_not_called()
+
+    view.reveal(0)
+    qtbot.wait(50)
+    assert view.selected == 0
+    assert view.verticalScrollBar().value() == 0
+
+    view.set_previews_visible(True)
+    qtbot.waitUntil(lambda: view.layout_table is not None and len(view.layout_table.rows) == 2)
 
 
 def test_a_thumbnail_is_fitted_into_its_cell_never_stretched(

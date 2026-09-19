@@ -199,7 +199,7 @@
     <string>&amp;Image Previews</string>
    </property>
    <property name="toolTip">
-    <string>Show or hide every open document's screenshot preview strip (Ctrl+Shift+`)</string>
+    <string>Show or hide the images of every open document -- its screenshot strip and its Content Images panel (Ctrl+Shift+`)</string>
    </property>
    <property name="shortcut">
     <string>Ctrl+Shift+`</string>
@@ -219,7 +219,7 @@
     <string>Image Previews</string>
    </property>
    <property name="toolTip">
-    <string>Show or hide every open document's screenshot preview strip (Ctrl+Shift+`)</string>
+    <string>Show or hide the images of every open document -- its screenshot strip and its Content Images panel (Ctrl+Shift+`)</string>
    </property>
   </action>
   <action name="quit_action">

@@ -7,8 +7,8 @@ paints only the rows in the viewport, asks the `ThumbnailLoader` for exactly tho
 the model for the headers of the rows one screen ahead so the pack settles before they scroll in.
 
 Read-only, visibly so: no context menu, no drag. A single click **selects** one image (and a click on
-the selected one clears it); a double-click opens it maximized; a click on a banner collapses or
-expands the group under it. The path of the selected image -- or, with none selected, of the hovered
+the selected one clears it); a double-click selects it and opens it maximized; a click on a banner
+collapses or expands the group under it. The path of the selected image -- or, with none selected, of the hovered
 one -- is reported through :attr:`ContentImagesView.status_changed` for the dock's status line.
 """
 
@@ -17,14 +17,14 @@ from typing import Final, override
 
 from borco_pyside.widgets.elided_label import ElidedLabel
 from PySide6.QtCore import QEvent, QPoint, QRect, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QCursor, QMouseEvent, QPainter, QPainterPath, QPaintEvent, QPalette, QResizeEvent
+from PySide6.QtGui import QCursor, QKeyEvent, QMouseEvent, QPainter, QPainterPath, QPaintEvent, QPalette, QResizeEvent
 from PySide6.QtWidgets import QAbstractScrollArea, QFrame, QVBoxLayout, QWidget
 
 from ...fields.widgets.image_strip import THUMBNAIL_BORDER
 from ...fields.widgets.thumbnail_loader import ThumbnailLoader, thumbnail_cache_key
 from .banners import ContentDisplayFlags, banner_rows, group_of
 from .content_images_model import ArchiveImageSource, ContentImagesModel
-from .justified_layout import LayoutItem, PackedLayout, pack_rows
+from .justified_layout import LayoutItem, PackedLayout, Row, pack_rows
 
 ITEM_SPACING: Final = 4
 """The gap between images in a row and between rows, in pixels."""
@@ -122,8 +122,11 @@ class ContentImagesView(QAbstractScrollArea):  # pylint: disable=too-many-instan
         self.__selected: int | None = None
         self.__hovered: int | None = None
         self.__swallow_release = False
+        self.__previews_visible = True
         self.setFrameShape(QFrame.Shape.NoFrame)
-        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        # focus on a click, for the keyboard navigation: the arrows move the selection, +/- fold the
+        # current group, ESC clears the selection
+        self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -221,6 +224,25 @@ class ContentImagesView(QAbstractScrollArea):  # pylint: disable=too-many-instan
                 self.set_selected(None)
         else:
             self.__collapsed.discard(key)
+        self.schedule_repack()
+
+    @property
+    def previews_visible(self) -> bool:
+        """Whether the images are shown at all -- the app-wide previews toggle's state (#71)."""
+        return self.__previews_visible
+
+    def set_previews_visible(self, visible: bool) -> None:
+        """Show the images, or only the banners -- the app-wide previews toggle (``Ctrl+Shift+``,
+        backtick, #71), which clears every image off screen and reaches this grid like every
+        document's strip, whose thumbnails go the same way. The banners stay, so the resource's
+        archives and folders are still legible; every image row is packed away as a collapsed
+        group's are.
+
+        :param visible: whether the images are shown.
+        """
+        if visible == self.__previews_visible:
+            return
+        self.__previews_visible = visible
         self.schedule_repack()
 
     def reveal(self, index: int) -> None:
@@ -334,16 +356,14 @@ class ContentImagesView(QAbstractScrollArea):  # pylint: disable=too-many-instan
 
     @override
     def resizeEvent(self, event: QResizeEvent) -> None:
-        """Re-pack to the new width -- keeping the selected image on screen if it was, since every row
-        moves with the width and the scroll offset alone would land on other images.
-
-        A selection the user has scrolled away from stays away: only one in view is followed.
+        """Re-pack to the new size -- keeping the selected image on screen if it was, which the pack
+        itself does, except that it must be judged against the viewport **as it was**: a dock made
+        shorter has just pushed a cell at its old bottom edge out of the new viewport, and that cell
+        is exactly the one to keep. A selection the user has scrolled away from stays away.
 
         :param event: the Qt resize event, forwarded to the base class.
         """
         super().resizeEvent(event)
-        # judged against the viewport as it was: a dock made shorter has just pushed a cell at its
-        # old bottom edge out of the new viewport, and that cell is exactly the one to keep
         shrink = event.oldSize().height() - event.size().height() if event.oldSize().isValid() else 0
         # a selection is only ever made into the current table (a reset clears it as it drops the
         # table), so it always has a rect to judge
@@ -408,6 +428,107 @@ class ContentImagesView(QAbstractScrollArea):  # pylint: disable=too-many-instan
         self.__model.request_dimensions([*visible, *ahead])
 
     @override
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        """Keyboard navigation (#221): LEFT/RIGHT select the previous/next image, UP/DOWN the nearest
+        image in the row above/below, ``+``/``-`` (keypad included) expand/collapse the current group
+        -- the selected image's, else the pinned one's, else the first on screen -- and ESC clears
+        the selection. Anything else passes on.
+
+        :param event: the Qt key event.
+        """
+        match event.key():
+            case Qt.Key.Key_Escape:
+                self.set_selected(None)
+            case Qt.Key.Key_Left:
+                self.__step_selection(-1)
+            case Qt.Key.Key_Right:
+                self.__step_selection(1)
+            case Qt.Key.Key_Up:
+                self.__step_rows(-1)
+            case Qt.Key.Key_Down:
+                self.__step_rows(1)
+            case Qt.Key.Key_Plus | Qt.Key.Key_Minus:
+                group = self.current_group()
+                if group is not None:
+                    self.set_collapsed(group, event.key() == Qt.Key.Key_Minus)
+            case _:
+                super().keyPressEvent(event)
+                return
+        event.accept()
+
+    def current_group(self) -> str | None:
+        """The group the keyboard's ``+``/``-`` act on: the selected image's, else the pinned banner's,
+        else that of the first banner or image row on screen.
+
+        :returns: the group's key, or ``None`` with no banners at all or nothing packed.
+        """
+        if self.__selected is not None and self.__selected < len(self.__groups):
+            return self.__groups[self.__selected]
+        pinned = self.pinned_banner()
+        if pinned is not None or self.__layout is None:
+            return pinned
+        offset = self.verticalScrollBar().value()
+        on_screen = self.__layout.rows_between(offset, offset + self.viewport().height())
+        first = next(iter(on_screen), None)
+        if first is None:
+            return None
+        return first.banner if first.banner is not None else self.__groups[first.first]
+
+    def __visible_rows(self) -> list[Row]:
+        """The image rows of the current table -- no banners, no collapsed groups -- top to bottom."""
+        if self.__layout is None:
+            return []
+        return [row for row in self.__layout.rows if row.banner is None]
+
+    def __step_selection(self, delta: int) -> None:
+        """Select the image ``delta`` places along the shown sequence, or the first shown one with
+        nothing selected; stops at the ends.
+
+        :param delta: ``-1`` for the previous image, ``1`` for the next.
+        """
+        rows = self.__visible_rows()
+        shown = [index for row in rows for index in range(row.first, row.last + 1)]
+        if not shown:
+            return
+        if self.__selected not in shown:
+            self.reveal(shown[0])
+            return
+        position = shown.index(self.__selected) + delta
+        if 0 <= position < len(shown):
+            self.reveal(shown[position])
+
+    def __step_rows(self, delta: int) -> None:
+        """Select the image in the row ``delta`` rows away whose centre is nearest the selected one's,
+        or the first shown image with nothing selected; stops at the ends.
+
+        :param delta: ``-1`` for the row above, ``1`` for the row below.
+        """
+        rows = self.__visible_rows()
+        if not rows or self.__layout is None:
+            return
+        selected = self.__selected
+        current = (
+            next((at for at, row in enumerate(rows) if row.first <= selected <= row.last), None)
+            if selected is not None
+            else None
+        )
+        if selected is None or current is None:
+            self.reveal(rows[0].first)
+            return
+        target = current + delta
+        if not 0 <= target < len(rows):
+            return
+        rects = self.__layout.rects
+        x, _, w, _ = rects[selected]
+        centre = x + w / 2
+        row = rows[target]
+        nearest = min(
+            range(row.first, row.last + 1),
+            key=lambda index: abs(rects[index][0] + rects[index][2] / 2 - centre),
+        )
+        self.reveal(nearest)
+
+    @override
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         """Track the hovered image for the status line.
 
@@ -453,7 +574,8 @@ class ContentImagesView(QAbstractScrollArea):  # pylint: disable=too-many-instan
 
     @override
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
-        """Open the image under a left double-click.
+        """Open the image under a left double-click, selected -- whatever the selection was before,
+        and whether or not the click that started the double-click toggled it off.
 
         :param event: the Qt mouse event, forwarded to the base class.
         """
@@ -469,6 +591,7 @@ class ContentImagesView(QAbstractScrollArea):  # pylint: disable=too-many-instan
         index = self.index_at(point)
         if index is not None:
             self.__swallow_release = True
+            self.set_selected(index)
             self.image_activated.emit(index)
 
     def __set_hovered(self, index: int | None) -> None:
@@ -559,7 +682,18 @@ class ContentImagesView(QAbstractScrollArea):  # pylint: disable=too-many-instan
 
     def __repack(self) -> None:
         """The packing pass: banners and groups from the flags, aspects from the model, geometry from
-        `pack_rows` -- with a collapsed group's images left out."""
+        `pack_rows` -- with a collapsed group's images left out.
+
+        A selected image on screen under the outgoing table is kept on screen under the new one:
+        every pass can move it (a header landing changes a row's height, a width changes every row),
+        and the scroll offset alone would land on other images."""
+        if (
+            self.__reveal_index is None
+            and self.__selected is not None
+            and self.__layout is not None
+            and self.__is_in_view(self.__layout, self.__selected, self.viewport().height())
+        ):
+            self.__reveal_index = self.__selected
         entries = self.__model.entries
         rehu_directory = self.__model.rehu_directory
         if rehu_directory is not None:
@@ -569,8 +703,13 @@ class ContentImagesView(QAbstractScrollArea):  # pylint: disable=too-many-instan
             banners = {}
             self.__groups = [None] * len(entries)
         self.__counts = Counter(group for group in self.__groups if group is not None)
+        hide_all = not self.__previews_visible
         items = [
-            LayoutItem(self.__model.aspect(index), banners.get(index), hidden=self.__groups[index] in self.__collapsed)
+            LayoutItem(
+                self.__model.aspect(index),
+                banners.get(index),
+                hidden=hide_all or self.__groups[index] in self.__collapsed,
+            )
             for index in range(len(entries))
         ]
         width = max(1, self.viewport().width())
@@ -593,7 +732,10 @@ class ContentImagesView(QAbstractScrollArea):  # pylint: disable=too-many-instan
             _, top, _, height = self.__layout.rects[self.__reveal_index]
             bottom = top + height
             viewport_height = self.viewport().height()
-            if top < scrollbar.value():
+            # a cell packed away (previews hidden app-wide) has no place to scroll to
+            if height <= 0:
+                pass
+            elif top < scrollbar.value():
                 scrollbar.setValue(top - ITEM_SPACING)
             elif bottom > scrollbar.value() + viewport_height:
                 scrollbar.setValue(bottom + ITEM_SPACING - viewport_height)

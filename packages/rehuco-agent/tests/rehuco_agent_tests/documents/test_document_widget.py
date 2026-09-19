@@ -96,6 +96,7 @@ from rehuco_agent.fields.widgets import (
     ImageSelector,
     ImageStrip,
     ImageViewerMode,
+    MarkdownView,
     PathEditor,
     PathImageSource,
     SingleChoiceRadioButtons,
@@ -2909,6 +2910,36 @@ def test_hiding_previews_app_wide_folds_the_images_editors_preview_away(widget: 
 
     shared_image_viewer_settings().previews_visible = True
     assert not pane.isHidden()
+
+
+def test_hiding_previews_app_wide_blanks_the_content_images_grid(widget: DocumentWidget, qtbot: QtBot) -> None:
+    """The app-wide previews toggle reaches the Content Images grid and the description's embedded
+    images too -- the grid keeps only its banners, the description shows placeholders -- and a
+    document built while previews are hidden starts that way (#71, #221).
+
+    **Test steps:**
+
+    * hide previews app-wide, then show them again; verify the grid and the description viewer
+      followed both ways
+    * hide them and build another document; verify both start hidden
+    """
+    grid = content_images_view(widget)
+    description = find_on_surfaces(widget, MarkdownView)[0]
+    assert grid.previews_visible
+    assert description.images_visible
+
+    shared_image_viewer_settings().previews_visible = False
+    assert not grid.previews_visible
+    assert not description.images_visible
+    shared_image_viewer_settings().previews_visible = True
+    assert grid.previews_visible
+    assert description.images_visible
+
+    shared_image_viewer_settings().previews_visible = False
+    other = DocumentWidget(RehuDocumentModel(RehuDocument({"type": "Tutorial", "sources": []})))
+    qtbot.addWidget(other)
+    assert not content_images_view(other).previews_visible
+    assert not find_on_surfaces(other, MarkdownView)[0].images_visible
 
 
 def test_previews_reappearing_does_not_reopen_a_dismissed_viewer(

@@ -1230,15 +1230,17 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         return ContentDisplayFlags(settings.content_zip_names, settings.content_folder_names)
 
     def __on_previews_visible_changed(self, visible: bool) -> None:
-        """Dismiss this document's maximized viewer the moment previews are hidden app-wide (#71).
+        """Blank the Content Images grid's thumbnails, and dismiss this document's maximized viewer,
+        the moment previews are hidden app-wide (#71, #221).
 
-        Hiding previews is meant to clear every screenshot off screen -- a maximized one left open
+        Hiding previews is meant to clear every image off screen -- a maximized one left open
         would defeat that, and its own thumbnail row would no longer be reachable to dismiss it from.
         Previews reappearing opens nothing back up: the point was decluttering, not remembering to
         reopen whatever happened to be up. A document with no viewer open is left alone either way.
 
         :param visible: whether previews are newly visible; ``False`` dismisses an open viewer.
         """
+        self.__content_images_view.set_previews_visible(visible)
         if not visible and self.__image_viewer is not None:
             self.__image_viewer.close()
 
@@ -1535,6 +1537,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             max_height=settings.content_rows_max_height,
             flags=self.__content_display_flags(),
         )
+        view.set_previews_visible(settings.previews_visible)
         view.image_activated.connect(self.__on_content_image_activated)
         return view
 

@@ -6,7 +6,7 @@ from PySide6.QtWidgets import QTextBrowser
 from pytest import raises
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.fields.widgets.markdown_view import MarkdownView, render_markdown
+from rehuco_agent.fields.widgets.markdown_view import MarkdownView, render_markdown, replace_images_with_placeholders
 
 
 def test_render_markdown_renders_common_elements() -> None:
@@ -92,6 +92,55 @@ def test_markdown_view_shows_rendered_text(qtbot: QtBot) -> None:
     view.set_markdown("hello **world**")
 
     assert "world" in view.toPlainText()
+
+
+def test_placeholders_name_each_image_by_alt_then_file_name() -> None:
+    """Every ``<img>`` becomes a ``[image: name]`` span named from its alt text, else its source's
+    file name, else a bare ``[image]``; markup in the name is escaped, either quoting is read, and
+    the rest of the HTML is untouched (#71).
+
+    **Test steps:**
+
+    * replace the images in a snippet with an alt, a source-only image, a bare image and a
+      single-quoted one, and verify each placeholder and the surrounding text
+    """
+    html = (
+        '<p>a <img alt="a &lt;cat&gt;" src="cat.png"> b <img src="/dir/dog.png" /> c <img> '
+        "d <img src='x/bird.png' alt=''> e</p>"
+    )
+
+    result = replace_images_with_placeholders(html)
+
+    assert result == (
+        '<p>a <span class="image-placeholder">[image: a &lt;cat&gt;]</span> b '
+        '<span class="image-placeholder">[image: dog.png]</span> c '
+        '<span class="image-placeholder">[image]</span> '
+        'd <span class="image-placeholder">[image: bird.png]</span> e</p>'
+    )
+
+
+def test_hiding_images_renders_placeholders_and_showing_them_renders_images_again(qtbot: QtBot) -> None:
+    """``set_images_visible`` re-renders the current text with images or placeholders; a repeat of
+    the same value is a no-op (#71).
+
+    **Test steps:**
+
+    * set Markdown with an image, hide images and verify the placeholder shows
+    * show them again and verify it is gone
+    """
+    view = MarkdownView()
+    qtbot.addWidget(view)
+    view.set_markdown("look ![the cat](cat.png)")
+    assert view.images_visible
+    assert "[image: the cat]" not in view.toPlainText()
+
+    view.set_images_visible(False)
+    view.set_images_visible(False)
+    assert not view.images_visible
+    assert "[image: the cat]" in view.toPlainText()
+
+    view.set_images_visible(True)
+    assert "[image: the cat]" not in view.toPlainText()
 
 
 def test_apply_rendering_settings_re_renders_with_the_new_engine(qtbot: QtBot) -> None:

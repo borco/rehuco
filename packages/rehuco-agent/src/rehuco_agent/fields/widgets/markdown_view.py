@@ -10,7 +10,10 @@ set is kept to what its engine actually renders. Embedded images are resolved an
 here directly would need to duplicate the scanner's own decode step anyway.
 """
 
+import html as html_module
+import re
 from collections.abc import Callable
+from pathlib import PurePosixPath
 from typing import Any, Final, override
 
 import markdown
@@ -63,6 +66,37 @@ RENDERERS: Final[dict[str, Callable[[str], str]]] = {
 """Every renderer this app supports, keyed by the engine name used in settings (#47)."""
 
 
+IMAGE_TAG: Final = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
+"""An ``<img>`` in rendered HTML -- a void element, so the tag alone; both engines write it that way."""
+
+IMAGE_TAG_ATTRIBUTE: Final = re.compile(r"""\b(alt|src)\s*=\s*(?:"([^"]*)"|'([^']*)')""", re.IGNORECASE)
+"""The two attributes a placeholder is named from, in either quoting."""
+
+
+def replace_images_with_placeholders(html: str) -> str:
+    """Every ``<img>`` in ``html`` becomes a ``[image: name]`` placeholder -- the app-wide previews
+    toggle's reading of a description (#71): the picture goes, the fact that one is there and which
+    one stays. The name is the alt text, else the source's file name, else nothing.
+
+    :param html: rendered HTML.
+    :returns: the HTML with placeholders in place of its images.
+    """
+
+    def placeholder(match: re.Match[str]) -> str:
+        # findall gives the unmatched quoting's group as "", so the two are simply or-ed
+        attributes = {
+            key.lower(): double or single for key, double, single in IMAGE_TAG_ATTRIBUTE.findall(match.group(0))
+        }
+        name = (
+            html_module.unescape(attributes.get("alt") or "")
+            or PurePosixPath(html_module.unescape(attributes.get("src") or "")).name
+        )
+        label = f"[image: {name}]" if name else "[image]"
+        return f'<span class="image-placeholder">{html_module.escape(label)}</span>'
+
+    return IMAGE_TAG.sub(placeholder, html)
+
+
 def render_markdown(text: str, engine: str = DEFAULT_ENGINE) -> str:
     """Render Markdown ``text`` to HTML using ``engine``.
 
@@ -109,6 +143,7 @@ class MarkdownView(RichTextView):
         self.image_scanner = image_scanner
         self.__engine = engine
         self.__text = ""
+        self.__images_visible = True
         self.setOpenExternalLinks(True)
         self.document().setDefaultStyleSheet(css)
         changed = self.image_scanner_changed  # type: ignore[attr-defined]
@@ -120,7 +155,26 @@ class MarkdownView(RichTextView):
         :param text: the Markdown source.
         """
         self.__text = text
-        self.setHtml(render_markdown(text, self.__engine))
+        html = render_markdown(text, self.__engine)
+        self.setHtml(html if self.__images_visible else replace_images_with_placeholders(html))
+
+    @property
+    def images_visible(self) -> bool:
+        """Whether embedded images are rendered, or stand in as ``[image: name]`` placeholders (#71)."""
+        return self.__images_visible
+
+    def set_images_visible(self, visible: bool) -> None:
+        """Render embedded images, or ``[image: name]`` placeholders in their place -- the app-wide
+        previews toggle (``Ctrl+Shift+``, backtick, #71), which clears every image off screen and
+        reaches a description's embedded ones like every strip's thumbnails. Re-renders when it
+        changes.
+
+        :param visible: whether images are rendered.
+        """
+        if visible == self.__images_visible:
+            return
+        self.__images_visible = visible
+        self.set_markdown(self.__text)
 
     def apply_rendering_settings(self, *, engine: str, css: str) -> None:
         """Update the renderer and stylesheet together, then re-render the current text once.

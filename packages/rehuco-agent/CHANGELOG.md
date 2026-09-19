@@ -16,7 +16,8 @@ released becomes the body of the GitHub Release, so each entry is written to be 
   archives, in rows justified to the panel's width and in natural order, each archive opening with a
   banner naming it and counting its images. A banner click folds its images away and a second click
   brings them back; the banner of the group being scrolled through stays pinned at the top. A click
-  selects an image and a status line under the grid names it, or the one under the pointer. Read-only,
+  selects an image and a status line under the grid names it, or the one under the pointer; the arrow
+  keys move the selection, `+`/`-` fold the current group, `Esc` clears it. Read-only,
   since those images live in a checksummed archive. Thumbnails decode off the interface thread as they
   scroll into view; nothing is written to disk.
 - Double-clicking a content image opens it maximized in the same viewer screenshots use, navigating the
@@ -38,6 +39,8 @@ released becomes the body of the GitHub Release, so each entry is written to be 
   of dimming the document underneath, and its close, thumbnail-row and info buttons appear only while the
   pointer is near them, like the prev/next bands.
 - Screenshots in a document's strip open maximized on a double-click, not a single click.
+- The app-wide *Image Previews* toggle (`Ctrl+Shift+`\`) now hides every image: the Content Images panel
+  keeps only its banners, and a description's embedded images stand in as `[image: name]` placeholders.
 - The maximized viewer's thumbnail row decodes lazily, only what is in view, so it opens as fast over a
   pack of thousands as over three screenshots.
 - `.avif` still counts as a content image but does **not** decode in the shipped Qt plugin set (`webp`
