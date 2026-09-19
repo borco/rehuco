@@ -113,6 +113,31 @@ def test_a_request_decodes_off_the_gui_thread_into_the_cache(loader: ThumbnailLo
     assert loader.request(OWNER, source, 0, 20) is not None
 
 
+def test_a_scaled_screen_gets_a_thumbnail_decoded_at_its_own_pixels(loader: ThumbnailLoader, qtbot: QtBot) -> None:
+    """On a 2x desktop a 20 px row is 40 device pixels tall: the thumbnail is decoded at 40 and tagged
+    with the ratio, so it paints one device pixel per pixel rather than a 20 px image blown up -- and
+    it is cached apart from the 1x one.
+
+    **Test steps:**
+
+    * request a thumbnail at 20 px for a ratio of 2 and wait for it
+    * verify the decode was asked for 40 px, the pixmap carries the ratio and reads 20 px logical
+    * verify the 1x key is still a miss
+    """
+    source = RecordingSource(1)
+
+    with qtbot.waitSignal(loader.ready, timeout=5000):
+        loader.request(OWNER, source, 0, 20, 2.0)
+
+    cached = loader.cached("image0", 20, 2.0)
+    assert cached is not None
+    assert cached.height() == 40
+    assert cached.devicePixelRatio() == 2.0
+    assert cached.deviceIndependentSize().toSize().height() == 20
+    assert loader.cached("image0", 20) is None
+    assert thumbnail_cache_key("image0", 20, 2.0) != thumbnail_cache_key("image0", 20)
+
+
 def test_requests_are_served_newest_first(single_worker_loader: ThumbnailLoader, qtbot: QtBot) -> None:
     """A fast scroll queues rows the user has already left behind: the latest request is decoded first.
 

@@ -11,10 +11,10 @@ file-backed one; the archive-backed one lives beside the dock that owns the arch
 from collections.abc import Hashable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Final, Protocol
 
-from PySide6.QtCore import QBuffer, QIODevice, QSize
-from PySide6.QtGui import QImage, QImageReader
+from PySide6.QtCore import QBuffer, QIODevice, QSize, Qt
+from PySide6.QtGui import QImage, QImageIOHandler, QImageReader
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,11 +73,19 @@ class ImageSource(Protocol):
         """
 
 
-def decode_image(data: bytes, max_height: int | None) -> QImage:
-    """Decode ``data`` with `QImageReader`, downscaled during the decode when a height is asked for.
+DECODE_OVERSAMPLE: Final = 2
+"""How many times the asked-for height a thumbnail is decoded at before the final smooth downscale.
+The reader's own scaled decode is cheap but coarse -- JPEG picks a DCT step and finishes with a fast
+resample -- so it is asked for roughly twice the target and the last halving is done smoothly here,
+which is what keeps edges in a thumbnail from pixelating."""
 
-    Scaling through the reader rather than after it is what makes a thumbnail cheap: JPEG's own
-    downscaled decode never materializes the full-size pixels.
+
+def decode_image(data: bytes, max_height: int | None) -> QImage:
+    """Decode ``data`` with `QImageReader`, downscaled to ``max_height`` when one is asked for.
+
+    Most of the reduction happens in the reader, which is what makes a thumbnail cheap: JPEG's own
+    downscaled decode never materializes the full-size pixels. The reader is asked for
+    :data:`DECODE_OVERSAMPLE` times the target, and the rest is a smooth scale of that.
 
     :param data: the encoded image bytes.
     :param max_height: the height to scale down to, or ``None`` for full size.
@@ -86,15 +94,31 @@ def decode_image(data: bytes, max_height: int | None) -> QImage:
     buffer = reading_buffer(data)
     reader = QImageReader(buffer)
     reader.setAutoTransform(True)
-    if max_height is not None:
-        size = reader.size()
-        if size.isValid() and size.height() > max_height:
-            reader.setScaledSize(QSize(round(size.width() * max_height / size.height()), max_height))
-    return reader.read()
+    if max_height is None:
+        return reader.read()
+    # the cap is on the height *as shown*, while the scaled size is asked for in stored orientation
+    # -- the transform is applied after the scale -- so a quarter-turned photo is capped on its stored
+    # width and the scaled size handed back transposed
+    rotated = bool(reader.transformation() & QImageIOHandler.Transformation.TransformationRotate90)
+    shown = reader.size().transposed() if rotated else reader.size()
+    coarse_height = min(shown.height(), max_height * DECODE_OVERSAMPLE) if shown.isValid() else 0
+    if shown.isValid() and shown.height() > coarse_height:
+        coarse = QSize(round(shown.width() * coarse_height / shown.height()), coarse_height)
+        reader.setScaledSize(coarse.transposed() if rotated else coarse)
+    image = reader.read()
+    if image.height() > max_height:
+        image = image.scaledToHeight(max_height, Qt.TransformationMode.SmoothTransformation)
+    return image
 
 
 def image_size(data: bytes) -> QSize:
-    """The pixel size ``data`` encodes, read off its header alone.
+    """The pixel size ``data`` encodes, read off its header alone -- **as it will be shown**.
+
+    A photo shot with the camera turned is stored landscape with an EXIF orientation tag, and
+    `QImageReader.size` reports the stored size while the decode (``autoTransform``) rotates it: a
+    portrait would be packed as a landscape and its thumbnail stretched into the cell. The reader's
+    own ``transformation`` says whether a quarter turn applies, so the size is swapped to match what
+    :func:`decode_image` returns.
 
     :param data: the encoded bytes -- a leading slice is enough for every format whose header comes
         first, which is all of the recognized ones.
@@ -103,7 +127,10 @@ def image_size(data: bytes) -> QSize:
     buffer = reading_buffer(data)
     reader = QImageReader(buffer)
     reader.setAutoTransform(True)
-    return reader.size()
+    size = reader.size()
+    if size.isValid() and reader.transformation() & QImageIOHandler.Transformation.TransformationRotate90:
+        return size.transposed()
+    return size
 
 
 def reading_buffer(data: bytes) -> QBuffer:

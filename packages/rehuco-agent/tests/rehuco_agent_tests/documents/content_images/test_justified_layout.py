@@ -55,7 +55,22 @@ def test_a_row_closes_as_soon_as_its_flush_height_comes_inside_the_clamp() -> No
     """
     layout = pack([LayoutItem(2.0)] * 4)
 
-    assert [(row.first, row.last, row.height) for row in layout.rows] == [(0, 2, 167), (3, 3, MAX_HEIGHT)]
+    assert [(row.first, row.last, row.height) for row in layout.rows] == [(0, 2, 167), (3, 3, 167)]
+
+
+def test_a_ragged_row_takes_the_height_of_the_flush_row_above_it() -> None:
+    """A short last row reads as one more row of the same grid, not a taller one: it is closed at the
+    last flush row's height rather than the clamp's maximum.
+
+    **Test steps:**
+
+    * pack three 2:1 items (flush at 167 px) and one 1:1 item that closes ragged
+    * verify the ragged row is 167 px tall and its item 167 px wide
+    """
+    layout = pack([LayoutItem(2.0)] * 3 + [LayoutItem(1.0)])
+
+    assert layout.rows[1].height == 167
+    assert layout.rects[3] == (0, 167 + SPACING, 167, 167)
 
 
 def test_a_row_is_left_ragged_rather_than_squeezed_under_the_clamp() -> None:
@@ -76,7 +91,7 @@ def test_a_row_is_left_ragged_rather_than_squeezed_under_the_clamp() -> None:
 
 
 def test_a_trailing_row_is_ragged_at_the_maximum() -> None:
-    """A last row that never fills the width stays at the maximum, ragged -- never stretched.
+    """A ragged row with no flush row before it stays at the maximum -- never stretched.
 
     **Test steps:**
 
@@ -87,6 +102,20 @@ def test_a_trailing_row_is_ragged_at_the_maximum() -> None:
 
     assert layout.rows[0].height == MAX_HEIGHT
     assert layout.rects[0] == (0, 0, MAX_HEIGHT, MAX_HEIGHT)
+
+
+def test_a_panoramas_height_is_not_what_a_later_ragged_row_copies() -> None:
+    """A lone panorama fits the width below the clamp; a ragged row after it takes the last *grid*
+    row's height, not the panorama's.
+
+    **Test steps:**
+
+    * pack three 2:1 items (flush at 167 px), a 20:1 panorama (50 px), then a lone 1:1 item
+    * verify the last row is 167 px, not 50
+    """
+    layout = pack([LayoutItem(2.0)] * 3 + [LayoutItem(20.0), LayoutItem(1.0)])
+
+    assert [row.height for row in layout.rows] == [167, 50, 167]
 
 
 def test_a_lone_panorama_fits_the_width_under_the_minimum() -> None:

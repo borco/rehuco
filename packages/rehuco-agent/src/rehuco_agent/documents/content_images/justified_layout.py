@@ -92,11 +92,13 @@ def pack_rows(  # pylint: disable=too-many-arguments,too-many-positional-argumen
     Greedy: items are added to the open row until its flush height -- the height at which the row's
     widths sum to ``width`` -- drops to ``max_height`` or below. If that flush height is at least
     ``min_height`` the row is flush at it; otherwise the last item did not fit and the row is closed
-    without it, **ragged** at ``max_height`` (its flush height with one item fewer was above the
-    clamp). A trailing row that never reached ``max_height`` is ragged at ``max_height`` too. A lone
-    item whose own flush height is under ``min_height`` -- a panorama -- fits the width at that height,
-    since a single item has no ragged edge to be left with. A banner closes the open row and takes a
-    full-width row of ``banner_height`` of its own.
+    without it, **ragged** (its flush height with one item fewer was above the clamp). A trailing row
+    that never reached ``max_height`` is ragged too. A ragged row takes **the height of the last flush
+    row before it**, so a short last row reads as one more row of the same grid rather than a taller
+    one -- and ``max_height`` only when no flush row precedes it. A lone item whose own flush height
+    is under ``min_height`` -- a panorama -- fits the width at that height, since a single item has no
+    ragged edge to be left with. A banner closes the open row and takes a full-width row of
+    ``banner_height`` of its own.
 
     :param items: what to pack, in sequence order.
     :param width: the available width.
@@ -112,13 +114,15 @@ def pack_rows(  # pylint: disable=too-many-arguments,too-many-positional-argumen
     rows: list[Row] = []
     y = 0
     open_row: list[tuple[int, float]] = []
+    # what a row that cannot be flush is closed at: the last flush row's height once there is one
+    ragged_height = max_height
 
     def flush_height(row: list[tuple[int, float]]) -> float:
         aspects = sum(aspect for _, aspect in row)
         return (width - spacing * (len(row) - 1)) / aspects if aspects > 0 else max_height
 
     def close_row(row: list[tuple[int, float]], height: int, *, flush: bool) -> None:
-        nonlocal y
+        nonlocal y, ragged_height
         if not row:
             return
         x = 0
@@ -130,8 +134,15 @@ def pack_rows(  # pylint: disable=too-many-arguments,too-many-positional-argumen
             last_index, _ = row[-1]
             last_x = rects[last_index][0]
             rects[last_index] = (last_x, y, max(1, width - last_x), height)
+            if height >= min_height:
+                # a grid row's height, which a later ragged row copies -- not a lone panorama's,
+                # which fits the width below the clamp and is no row height at all
+                ragged_height = height
         rows.append(Row(y, height, row[0][0], row[-1][0]))
         y += height + spacing
+
+    def close_ragged(row: list[tuple[int, float]]) -> None:
+        close_row(row, ragged_height, flush=False)
 
     def settle() -> None:
         """Close the open row if its flush height has come inside (or under) the clamp."""
@@ -145,23 +156,22 @@ def pack_rows(  # pylint: disable=too-many-arguments,too-many-positional-argumen
             close_row(open_row, max(1, round(flush)), flush=True)
             open_row = []
             return
-        # the item just added pushed the row under the clamp: close the row without it, ragged at
-        # the maximum (its flush height with one item fewer was above the clamp), then judge that
-        # item on its own
+        # the item just added pushed the row under the clamp: close the row without it, ragged (its
+        # flush height with one item fewer was above the clamp), then judge that item on its own
         last = open_row.pop()
-        close_row(open_row, max_height, flush=False)
+        close_ragged(open_row)
         open_row = [last]
         settle()
 
     for index, item in enumerate(items):
         if item.banner is not None:
-            close_row(open_row, max_height, flush=False)
+            close_ragged(open_row)
             open_row = []
             rows.append(Row(y, banner_height, index, index, item.banner))
             y += banner_height + spacing
         aspect = item.aspect if item.aspect is not None and item.aspect > 0 else PLACEHOLDER_ASPECT
         open_row.append((index, aspect))
         settle()
-    close_row(open_row, max_height, flush=False)
+    close_ragged(open_row)
     total = max(0, y - spacing) if rows else 0
     return PackedLayout(tuple(rects), tuple(rows), total)

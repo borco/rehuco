@@ -168,6 +168,9 @@ class ContentImagesView(QAbstractScrollArea):  # pylint: disable=too-many-instan
         if layout is None:
             return
         painter = QPainter(self.viewport())
+        # a thumbnail is decoded for this screen's ratio and painted one device pixel per pixel; the
+        # hint covers the rare cell it does not match exactly, so that resample is not nearest-neighbour
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         offset = self.verticalScrollBar().value()
         viewport_height = self.viewport().height()
         wanted: list[str] = []
@@ -179,7 +182,7 @@ class ContentImagesView(QAbstractScrollArea):  # pylint: disable=too-many-instan
             for index in range(row.first, row.last + 1):
                 x, y, w, h = layout.rects[index]
                 self.__paint_image(painter, QRect(x, y - offset, w, h), index, row.height)
-                wanted.append(thumbnail_cache_key(self.__source.key(index), row.height))
+                wanted.append(thumbnail_cache_key(self.__source.key(index), row.height, self.devicePixelRatio()))
                 visible.append(index)
         painter.end()
         self.__loader.retain(self, wanted)
@@ -233,12 +236,20 @@ class ContentImagesView(QAbstractScrollArea):  # pylint: disable=too-many-instan
         :param index: the image's position.
         :param height: the row height the thumbnail is decoded at.
         """
-        pixmap = self.__loader.request(self, self.__source, index, height)
+        ratio = self.devicePixelRatio()
+        pixmap = self.__loader.request(self, self.__source, index, height, ratio)
         if pixmap is not None:
-            painter.drawPixmap(rect, pixmap)
+            # fitted and centred, never stretched: the cell was packed from the header's aspect, and
+            # a thumbnail that disagrees with it (a header still unread, or a format whose stored size
+            # differs from its shown one) must show its own proportions inside the cell. Sized in
+            # logical pixels, which is what the pixmap's own ratio makes its device pixels into
+            fitted = pixmap.deviceIndependentSize().toSize().scaled(rect.size(), Qt.AspectRatioMode.KeepAspectRatio)
+            target = QRect(QPoint(0, 0), fitted)
+            target.moveCenter(rect.center())
+            painter.drawPixmap(target, pixmap)
             return
         colour = self.palette().color(QPalette.ColorRole.Text)
-        failed = self.__loader.failed(self.__source.key(index), height)
+        failed = self.__loader.failed(self.__source.key(index), height, ratio)
         colour.setAlpha(BROKEN_ALPHA if failed else PLACEHOLDER_ALPHA)
         painter.fillRect(rect, colour)
 

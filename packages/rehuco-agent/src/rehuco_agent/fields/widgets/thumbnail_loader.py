@@ -26,6 +26,7 @@ class PendingDecode(NamedTuple):
     source: ImageSource
     position: int
     height: int
+    ratio: float
     cache_key: str
 
 
@@ -39,14 +40,15 @@ WORKER_LIMIT: Final = 4
 so more workers only queue on the same locks."""
 
 
-def thumbnail_cache_key(key: Hashable, height: int) -> str:
-    """The `QPixmapCache` key of ``key``'s thumbnail at ``height``.
+def thumbnail_cache_key(key: Hashable, height: int, ratio: float = 1.0) -> str:
+    """The `QPixmapCache` key of ``key``'s thumbnail at ``height`` logical pixels on a ``ratio`` screen.
 
     :param key: the image's own key (:meth:`ImageSource.key`).
-    :param height: the thumbnail height.
+    :param height: the thumbnail height, in logical pixels.
+    :param ratio: the device pixel ratio it is decoded for.
     :returns: the cache key.
     """
-    return f"{key!r}@{height}"
+    return f"{key!r}@{height}x{ratio:g}"
 
 
 class DecodeJob(QRunnable):
@@ -67,8 +69,11 @@ class DecodeJob(QRunnable):
     def run(self) -> None:
         try:
             while (job := self.__loader.take_next()) is not None:
-                source, index, height, cache_key = job
-                image = source.load(index, height)
+                source, index, height, ratio, cache_key = job
+                # decoded at the screen's own pixels, so a thumbnail on a scaled desktop is never a
+                # logical-size image stretched up to device pixels
+                image = source.load(index, round(height * ratio))
+                image.setDevicePixelRatio(ratio)
                 try:
                     self.__loader.decoded.emit(cache_key, image)
                 except RuntimeError:
@@ -110,50 +115,57 @@ class ThumbnailLoader(QObject):
         self.decoded.connect(self.__on_decoded)
 
     @staticmethod
-    def cached(key: Hashable, height: int) -> QPixmap | None:
+    def cached(key: Hashable, height: int, ratio: float = 1.0) -> QPixmap | None:
         """The thumbnail already in the cache, if any.
 
         :param key: the image's key.
-        :param height: the thumbnail height.
+        :param height: the thumbnail height, in logical pixels.
+        :param ratio: the device pixel ratio it was decoded for.
         :returns: the pixmap, or ``None`` when it is not (or no longer) cached.
         """
         # the out-parameter form: the one-argument overload is mis-typed in PySide's stubs
         pixmap = QPixmap()
-        return pixmap if QPixmapCache.find(thumbnail_cache_key(key, height), pixmap) and not pixmap.isNull() else None
+        found = QPixmapCache.find(thumbnail_cache_key(key, height, ratio), pixmap)
+        return pixmap if found and not pixmap.isNull() else None
 
-    def failed(self, key: Hashable, height: int) -> bool:
+    def failed(self, key: Hashable, height: int, ratio: float = 1.0) -> bool:
         """Whether ``key``'s thumbnail was asked for and could not be decoded.
 
         What lets a view paint a broken placeholder rather than a pending one, and stop asking.
 
         :param key: the image's key.
-        :param height: the thumbnail height.
+        :param height: the thumbnail height, in logical pixels.
+        :param ratio: the device pixel ratio it was asked for.
         :returns: whether the decode failed.
         """
         with self.__lock:
-            return thumbnail_cache_key(key, height) in self.__failed
+            return thumbnail_cache_key(key, height, ratio) in self.__failed
 
-    def request(self, requester: object, source: ImageSource, index: int, height: int) -> QPixmap | None:
+    def request(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+        self, requester: object, source: ImageSource, index: int, height: int, ratio: float = 1.0
+    ) -> QPixmap | None:
         """Ask for ``source[index]``'s thumbnail at ``height``, on ``requester``'s behalf.
 
         :param requester: the surface asking -- what :meth:`retain` later prunes by, so two surfaces
             sharing one loader (the grid and the lightbox row it opens) never withdraw each other's.
         :param source: the image source.
         :param index: the position in it.
-        :param height: the thumbnail height.
+        :param height: the thumbnail height, in logical pixels.
+        :param ratio: the surface's device pixel ratio -- the thumbnail is decoded at ``height`` times
+            this many pixels and tagged with it, so it paints one device pixel per pixel.
         :returns: the pixmap straight from the cache when it is there -- nothing is queued then -- or
             ``None`` with a decode queued, to be announced through :attr:`ready`.
         """
         key = source.key(index)
-        cached = self.cached(key, height)
+        cached = self.cached(key, height, ratio)
         if cached is not None:
             return cached
-        cache_key = thumbnail_cache_key(key, height)
+        cache_key = thumbnail_cache_key(key, height, ratio)
         with self.__lock:
             if cache_key in self.__queued or cache_key in self.__failed:
                 return None
             self.__queued.add(cache_key)
-            self.__pending.append(PendingDecode(id(requester), source, index, height, cache_key))
+            self.__pending.append(PendingDecode(id(requester), source, index, height, ratio, cache_key))
             start_worker = self.__workers < WORKER_LIMIT
             if start_worker:
                 self.__workers += 1
@@ -178,17 +190,17 @@ class ThumbnailLoader(QObject):
             self.__pending.extend(kept)
             self.__queued.difference_update(job.cache_key for job in dropped)
 
-    def take_next(self) -> tuple[ImageSource, int, int, str] | None:
+    def take_next(self) -> tuple[ImageSource, int, int, float, str] | None:
         """Pop the newest pending request, for a worker.
 
-        :returns: the ``(source, index, height, cache_key)`` to decode, or ``None`` when the queue is
-            empty -- or once the loader is being destroyed, whatever is still queued.
+        :returns: the ``(source, index, height, ratio, cache_key)`` to decode, or ``None`` when the
+            queue is empty -- or once the loader is being destroyed, whatever is still queued.
         """
         with self.__lock:
             if self.__stopped.is_set() or not self.__pending:
                 return None
             job = self.__pending.pop()
-            return job.source, job.position, job.height, job.cache_key
+            return job.source, job.position, job.height, job.ratio, job.cache_key
 
     def worker_done(self) -> None:
         """Release a worker slot, for a worker that found the queue empty."""

@@ -92,7 +92,7 @@ class ThumbnailDelegate(QStyledItemDelegate):
         del option
         height = self.__row.row_height
         pixmap = self.__row.cached_thumbnail(index.row())
-        return QSize(pixmap.width() if pixmap is not None else height, height)
+        return QSize(pixmap.deviceIndependentSize().toSize().width() if pixmap is not None else height, height)
 
     @override
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: ModelIndex) -> None:
@@ -108,6 +108,7 @@ class ThumbnailDelegate(QStyledItemDelegate):
         rect = option.rect
         pixmap = self.__row.thumbnail(index.row())
         if pixmap is not None:
+            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
             painter.drawPixmap(rect.topLeft(), pixmap)
         else:
             colour = option.palette.color(QPalette.ColorRole.Text)
@@ -218,7 +219,7 @@ class ThumbnailRow(QListView):
         source = self.__model.source
         if source is None:
             return None
-        return self.__loader.request(self, source, index, self.__height)
+        return self.__loader.request(self, source, index, self.__height, self.devicePixelRatio())
 
     def cached_thumbnail(self, index: int) -> QPixmap | None:
         """The thumbnail for ``index`` if it is already decoded, requesting nothing -- what a size hint
@@ -230,7 +231,7 @@ class ThumbnailRow(QListView):
         source = self.__model.source
         if source is None:
             return None
-        return self.__loader.cached(source.key(index), self.__height)
+        return self.__loader.cached(source.key(index), self.__height, self.devicePixelRatio())
 
     @override
     def wheelEvent(self, event: QWheelEvent) -> None:

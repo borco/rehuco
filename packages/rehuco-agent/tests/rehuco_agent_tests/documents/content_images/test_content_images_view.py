@@ -5,14 +5,23 @@
 # `.banner` and `.y` read off a row trips no-member; pyright types them correctly
 # pylint: disable=no-member
 
-from PySide6.QtCore import QPoint, Qt
+from PySide6.QtCore import QPoint, QSize, Qt
+from PySide6.QtGui import QPalette
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.content_images import ContentDisplayFlags, ContentImagesModel, ContentImagesView
 from rehuco_agent.documents.content_images.content_images_view import BANNER_HEIGHT, ITEM_SPACING
 from rehuco_agent.fields.widgets import ThumbnailLoader
+from rehuco_core import ContentImageEntry
 
-from rehuco_agent_tests.documents.content_images.conftest import OTHER_PACK, PACK, REHU_DIRECTORY, WIDE, entry
+from rehuco_agent_tests.documents.content_images.conftest import (
+    OTHER_PACK,
+    PACK,
+    REHU_DIRECTORY,
+    TALL,
+    WIDE,
+    entry,
+)
 
 
 def settle(qtbot: QtBot, view: ContentImagesView, content_model: ContentImagesModel) -> None:
@@ -244,6 +253,44 @@ def test_visible_thumbnails_are_decoded_and_painted(
     assert cached is not None
     # decoded *down* to the row, never up: a member shorter than the row keeps its own height
     assert cached.height() == min(height, WIDE[1])
+
+
+def test_a_thumbnail_is_fitted_into_its_cell_never_stretched(
+    view: ContentImagesView, content_model: ContentImagesModel, loader: ThumbnailLoader, qtbot: QtBot
+) -> None:
+    """A thumbnail whose proportions disagree with its cell is drawn fitted and centred inside it,
+    leaving the cell's backdrop either side, rather than stretched to the cell.
+
+    Regression: a portrait pack whose headers read landscape was drawn stretched into landscape cells.
+
+    **Test steps:**
+
+    * pack one member whose header says wide but whose pixels decode tall, and let the thumbnail land
+    * verify the cell's left and right margins carry the backdrop, and its centre the image
+    """
+    tall_pixels = ContentImageEntry(PACK, "tall.png", TALL[0] * 1000 + TALL[1], 0)
+    content_model.set_entries([tall_pixels], REHU_DIRECTORY)
+    settle(qtbot, view, content_model)
+    # the header the model read is what the cache served: overwrite it with a wide one, as a stored
+    # size disagreeing with the shown one would, and re-pack
+    header_key = tall_pixels.key
+    content_model.header_read.emit(header_key, QSize(*WIDE))
+    qtbot.waitUntil(lambda: content_model.aspect(0) == 2.0)
+    qtbot.waitUntil(
+        lambda: view.layout_table is not None and view.layout_table.rects[0][2] > view.layout_table.rects[0][3]
+    )
+    table = view.layout_table
+    assert table is not None
+    x, y, w, h = table.rects[0]
+    view.grab()
+    qtbot.waitUntil(lambda: loader.cached(header_key, h) is not None)
+
+    painted = view.grab().toImage()
+
+    backdrop = view.palette().color(QPalette.ColorRole.Base)
+    assert painted.pixelColor(x + 2, y + h // 2) != Qt.GlobalColor.darkCyan
+    assert painted.pixelColor(x + w // 2, y + h // 2) == Qt.GlobalColor.darkCyan
+    assert painted.pixelColor(x + w - 3, y + h // 2).name() == backdrop.name()
 
 
 def test_a_scroll_repaints(view: ContentImagesView, content_model: ContentImagesModel, qtbot: QtBot) -> None:
