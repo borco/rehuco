@@ -53,7 +53,7 @@ independent facts rather than one overloaded field.
 | `pre-work` | Pre-work | Monorepo setup, integration spikes, de-risking. |
 | `local edit` | LocalEdit | Local view/edit of resources. |
 | `cache db` | CacheDB | Cached database. |
-| `watch tutorial` | WatchTutorial | Watch a tutorial. |
+| `tutorials` | WatchTutorial | Tutorial playback, watch progress, follow mode — desktop and web. |
 | `borrowing` | Borrowing | Offline borrow. |
 | `swarm` | Swarm | Full multi-node. |
 | `daz3d` | Daz3D | daz3d-personal-database migration. |
