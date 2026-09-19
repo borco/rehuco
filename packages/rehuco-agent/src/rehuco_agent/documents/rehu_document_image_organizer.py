@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Final
 from rehuco_core import Deleter, convert_screenshot, delete_screenshot, renumber_screenshots
 
 from ..recycle_bin_deleter import configured_deleter
-from ..settings.screenshot_deletion_settings import shared_screenshot_deletion_settings
+from ..settings.deletion_settings import shared_deletion_settings
 from ..settings.screenshot_patterns_settings import shared_screenshot_patterns_settings
 
 if TYPE_CHECKING:
@@ -70,11 +70,20 @@ class RehuDocumentImageOrganizer:
     @property
     def deletes_to_trash(self) -> bool:
         """Whether the next :meth:`remove` called with no explicit ``deleter`` will try to send the
-        file to the Recycle Bin / Trash, per the **Move deleted images to the Recycle Bin** setting --
-        read live rather than cached, so a page Saved after this organizer was built is still honoured.
-        Purely informational: the confirm dialog is the only reader (#291).
+        file to the Recycle Bin / Trash, per the **Move deleted files to the Recycle Bin, if possible**
+        setting -- read live rather than cached, so a page Saved after this organizer was built is
+        still honoured. Purely informational: the editor's decision whether to confirm is the only
+        reader (#291, #312).
         """
-        return shared_screenshot_deletion_settings().use_recycle_bin
+        return shared_deletion_settings().use_recycle_bin
+
+    @property
+    def deletes_without_asking(self) -> bool:
+        """Whether a permanent delete of a screenshot happens with no question, per the **Delete
+        images without asking** setting -- read live, for the same reason :attr:`deletes_to_trash` is,
+        and just as purely informational (#312).
+        """
+        return shared_deletion_settings().delete_images_without_asking
 
     def remove(self, path: Path, remaining: Sequence[Path], deleter: Deleter | None = None) -> dict[str, str]:
         """Delete ``path`` and renumber ``remaining`` onto the slot it vacated.
@@ -85,9 +94,9 @@ class RehuDocumentImageOrganizer:
         :param path: the screenshot to delete.
         :param remaining: every other screenshot, in the order wanted.
         :param deleter: how ``path`` is actually removed; ``None`` (the default) resolves the
-            **Move deleted images to the Recycle Bin** setting into a `RecycleBinDeleter` or a plain
-            unlink -- an explicit deleter is how a caller overrides that, e.g. the dock's permanent-
-            delete fallback after a `~rehuco_core.NoTrashBinError` (#291).
+            **Move deleted files to the Recycle Bin, if possible** setting into a `RecycleBinDeleter`
+            or a plain unlink -- an explicit deleter is how a caller wraps or overrides that, e.g. the
+            dock's `~rehuco_agent.asking_deleter.AskingDeleter` around it (#301).
         :returns: ``{old filename: new filename}`` for each survivor actually renamed.
         :raises OSError: if the delete or the renumbering that follows it failed -- or the
             rearrangement was refused outright (:meth:`__location`), before anything is deleted.

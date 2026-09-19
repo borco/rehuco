@@ -1,4 +1,4 @@
-"""Tests for FilesPage: the Files settings category page (#226, #291, #298)."""
+"""Tests for FilesPage: the Files settings category page (#226, #291, #298, #312)."""
 
 from collections.abc import Iterator
 from typing import Any
@@ -6,15 +6,15 @@ from typing import Any
 from borco_pyside.widgets import StringListEditor
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QCheckBox
-from pytest import fixture
+from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.settings import excluded_files_settings, screenshot_deletion_settings
-from rehuco_agent.settings.excluded_files_settings import ExcludedFilesSettings, shared_excluded_files_settings
-from rehuco_agent.settings.screenshot_deletion_settings import (
-    ScreenshotDeletionSettings,
-    shared_screenshot_deletion_settings,
+from rehuco_agent.settings import deletion_settings, excluded_files_settings
+from rehuco_agent.settings.deletion_settings import (
+    DeletionSettings,
+    shared_deletion_settings,
 )
+from rehuco_agent.settings.excluded_files_settings import ExcludedFilesSettings, shared_excluded_files_settings
 from rehuco_agent.settings.ui import files_page
 from rehuco_agent.settings.ui.files_page import FilesPage
 from rehuco_agent.settings.ui.settings_frame_filter import SettingsFrameFilter
@@ -56,11 +56,11 @@ def fake_persistent_settings(mocker: MockerFixture) -> FakeSettings:
 
     Patched on every module holding its own reference to it: the page itself (used by
     :meth:`FilesPage.save_changes`) and each of the two settings modules whose shared instance the
-    page reads -- the excluded-file patterns and the Recycle Bin choice (#291, #298).
+    page reads -- the excluded-file patterns and the deletion policy (#291, #298, #312).
     """
     fake = FakeSettings()
     mocker.patch.object(excluded_files_settings, "persistent_settings", return_value=fake)
-    mocker.patch.object(screenshot_deletion_settings, "persistent_settings", return_value=fake)
+    mocker.patch.object(deletion_settings, "persistent_settings", return_value=fake)
     mocker.patch.object(files_page, "persistent_settings", return_value=fake)
     return fake
 
@@ -69,10 +69,10 @@ def fake_persistent_settings(mocker: MockerFixture) -> FakeSettings:
 def clear_shared_instance_cache() -> Iterator[None]:
     """Drop every process-wide instance around each test, so none inherits another's staged state."""
     shared_excluded_files_settings.cache_clear()
-    shared_screenshot_deletion_settings.cache_clear()
+    shared_deletion_settings.cache_clear()
     yield
     shared_excluded_files_settings.cache_clear()
-    shared_screenshot_deletion_settings.cache_clear()
+    shared_deletion_settings.cache_clear()
 
 
 @fixture
@@ -125,20 +125,22 @@ def recycle_bin_check_box(page: FilesPage) -> QCheckBox:
     return box
 
 
-def permanently_delete_check_box(page: FilesPage) -> QCheckBox:
-    """The page's dependent skip-asking toggle (#301).
+def without_asking_check_box(page: FilesPage, name: str) -> QCheckBox:
+    """One of the page's two *without asking* toggles (#312).
 
     :param page: the page under test.
-    :returns: the check box staging whether a refusal deletes permanently without asking.
+    :param name: the settings field it stages -- ``clear_backups_without_asking`` or
+        ``delete_images_without_asking``.
+    :returns: that check box.
     """
-    box = page.findChild(QCheckBox, "permanently_delete_if_unreachable_check_box")
+    box = page.findChild(QCheckBox, f"{name}_check_box")
     assert isinstance(box, QCheckBox)
     return box
 
 
 # endregion
 
-# region deleting files (#291, #298)
+# region deleting files (#291, #298, #312)
 
 
 def test_the_page_starts_on_the_saved_recycle_bin_choice(page: FilesPage) -> None:
@@ -162,7 +164,7 @@ def test_restores_the_saved_recycle_bin_choice(qtbot: QtBot) -> None:
     * build the page
     * verify the check box shows it unchecked and the page is clean
     """
-    shared_screenshot_deletion_settings().use_recycle_bin = False
+    shared_deletion_settings().use_recycle_bin = False
     built = FilesPage()
     qtbot.addWidget(built)
 
@@ -181,7 +183,7 @@ def test_toggling_the_recycle_bin_choice_makes_the_page_dirty(page: FilesPage) -
     recycle_bin_check_box(page).setChecked(False)
 
     assert page.is_dirty()
-    assert shared_screenshot_deletion_settings().use_recycle_bin is True
+    assert shared_deletion_settings().use_recycle_bin is True
 
 
 def test_save_changes_pushes_the_recycle_bin_choice_into_the_shared_settings(
@@ -198,10 +200,10 @@ def test_save_changes_pushes_the_recycle_bin_choice_into_the_shared_settings(
 
     page.save_changes()
 
-    assert shared_screenshot_deletion_settings().use_recycle_bin is False
+    assert shared_deletion_settings().use_recycle_bin is False
     assert not page.is_dirty()
 
-    reloaded = ScreenshotDeletionSettings()
+    reloaded = DeletionSettings()
     reloaded.load(fake_persistent_settings)  # type: ignore[arg-type]
     assert reloaded.use_recycle_bin is False
 
@@ -222,117 +224,109 @@ def test_drop_changes_reverts_the_staged_recycle_bin_choice(page: FilesPage) -> 
     assert not page.is_dirty()
 
 
-def test_the_permanently_delete_choice_starts_unchecked_and_enabled(page: FilesPage) -> None:
-    """The safer, ask-first default (#301) is off, and interactable while the Recycle Bin is in use.
+WITHOUT_ASKING_FIELDS = ("clear_backups_without_asking", "delete_images_without_asking")
+
+
+@mark.parametrize("field", WITHOUT_ASKING_FIELDS)
+def test_the_without_asking_boxes_start_unchecked(page: FilesPage, field: str) -> None:
+    """The safer, ask-first default is off for both kinds of file (#312).
 
     **Test steps:**
 
     * build a page over settings that were never saved
-    * verify the check box is unchecked, enabled, and nothing reads as pending
+    * verify the box is unchecked and nothing reads as pending
     """
-    assert permanently_delete_check_box(page).isChecked() is False
-    assert permanently_delete_check_box(page).isEnabled() is True
+    assert without_asking_check_box(page, field).isChecked() is False
     assert not page.is_dirty()
 
 
-def test_the_permanently_delete_choice_is_disabled_while_the_recycle_bin_is_off(qtbot: QtBot) -> None:
-    """Meaningless without the Recycle Bin in use, so it starts disabled to say so.
+@mark.parametrize("field", WITHOUT_ASKING_FIELDS)
+def test_the_without_asking_boxes_are_independent_of_the_recycle_bin_choice(qtbot: QtBot, field: str) -> None:
+    """Neither box depends on the Recycle Bin one: a permanent delete happens with the bin off *and*
+    as the fallback with it on, and the box silences the question either way (#312).
 
     **Test steps:**
 
     * turn the Recycle Bin off in the shared settings, then build the page
-    * verify the dependent check box is disabled
+    * verify the box is still enabled
     """
-    shared_screenshot_deletion_settings().use_recycle_bin = False
+    shared_deletion_settings().use_recycle_bin = False
     built = FilesPage()
     qtbot.addWidget(built)
 
-    assert permanently_delete_check_box(built).isEnabled() is False
+    assert without_asking_check_box(built, field).isEnabled() is True
 
 
-def test_toggling_the_recycle_bin_choice_live_toggles_the_dependent_check_box(page: FilesPage) -> None:
-    """Unchecking the Recycle Bin toggle disables the dependent choice without a rebuild.
-
-    **Test steps:**
-
-    * uncheck the Recycle Bin toggle
-    * verify the dependent check box goes disabled
-    * check it again
-    * verify the dependent check box is enabled again
-    """
-    recycle_bin_check_box(page).setChecked(False)
-    assert permanently_delete_check_box(page).isEnabled() is False
-
-    recycle_bin_check_box(page).setChecked(True)
-    assert permanently_delete_check_box(page).isEnabled() is True
-
-
-def test_restores_the_saved_permanently_delete_choice(qtbot: QtBot) -> None:
+@mark.parametrize("field", WITHOUT_ASKING_FIELDS)
+def test_restores_a_saved_without_asking_choice(qtbot: QtBot, field: str) -> None:
     """A freshly-built page reflects what was saved.
 
     **Test steps:**
 
     * turn the choice on in the shared settings
     * build the page
-    * verify the check box shows it checked and the page is clean
+    * verify the box shows it checked and the page is clean
     """
-    shared_screenshot_deletion_settings().permanently_delete_if_unreachable = True
+    setattr(shared_deletion_settings(), field, True)
     built = FilesPage()
     qtbot.addWidget(built)
 
-    assert permanently_delete_check_box(built).isChecked() is True
+    assert without_asking_check_box(built, field).isChecked() is True
     assert not built.is_dirty()
 
 
-def test_toggling_the_permanently_delete_choice_makes_the_page_dirty(page: FilesPage) -> None:
+@mark.parametrize("field", WITHOUT_ASKING_FIELDS)
+def test_toggling_a_without_asking_box_makes_the_page_dirty(page: FilesPage, field: str) -> None:
     """Checking it is a staged change until it is applied.
 
     **Test steps:**
 
-    * check the dependent toggle
+    * check the box
     * verify the page is dirty and the shared settings are untouched
     """
-    permanently_delete_check_box(page).setChecked(True)
+    without_asking_check_box(page, field).setChecked(True)
 
     assert page.is_dirty()
-    assert shared_screenshot_deletion_settings().permanently_delete_if_unreachable is False
+    assert getattr(shared_deletion_settings(), field) is False
 
 
-def test_save_changes_pushes_the_permanently_delete_choice_into_the_shared_settings(
-    page: FilesPage, fake_persistent_settings: FakeSettings
+@mark.parametrize("field", WITHOUT_ASKING_FIELDS)
+def test_save_changes_pushes_a_without_asking_choice_into_the_shared_settings(
+    page: FilesPage, fake_persistent_settings: FakeSettings, field: str
 ) -> None:
     """Applying writes the staged choice into the shared settings and persists it.
 
     **Test steps:**
 
-    * check the dependent toggle and apply
+    * check the box and apply
     * verify the shared settings hold it, the page is clean, and a reload agrees
     """
-    permanently_delete_check_box(page).setChecked(True)
+    without_asking_check_box(page, field).setChecked(True)
 
     page.save_changes()
 
-    assert shared_screenshot_deletion_settings().permanently_delete_if_unreachable is True
+    assert getattr(shared_deletion_settings(), field) is True
     assert not page.is_dirty()
 
-    reloaded = ScreenshotDeletionSettings()
+    reloaded = DeletionSettings()
     reloaded.load(fake_persistent_settings)  # type: ignore[arg-type]
-    assert reloaded.permanently_delete_if_unreachable is True
+    assert getattr(reloaded, field) is True
 
 
-def test_drop_changes_reverts_the_staged_permanently_delete_choice(page: FilesPage) -> None:
+@mark.parametrize("field", WITHOUT_ASKING_FIELDS)
+def test_drop_changes_reverts_a_staged_without_asking_choice(page: FilesPage, field: str) -> None:
     """Resetting the page discards a staged toggle along with everything else.
 
     **Test steps:**
 
-    * check the toggle without applying, then reset
+    * check the box without applying, then reset
     * verify it is back on the saved (unchecked) value
     """
-    permanently_delete_check_box(page).setChecked(True)
+    without_asking_check_box(page, field).setChecked(True)
 
     page.drop_changes()
 
-    assert permanently_delete_check_box(page).isChecked() is False
+    assert without_asking_check_box(page, field).isChecked() is False
     assert not page.is_dirty()
 
 
@@ -564,7 +558,7 @@ def test_save_changes_also_persists_the_recycle_bin_choice(page: FilesPage) -> N
     page.save_changes()
 
     assert shared_excluded_files_settings().excluded_file_patterns == ("*.tmp",)
-    assert shared_screenshot_deletion_settings().use_recycle_bin is False
+    assert shared_deletion_settings().use_recycle_bin is False
     assert page.is_dirty() is False
 
 

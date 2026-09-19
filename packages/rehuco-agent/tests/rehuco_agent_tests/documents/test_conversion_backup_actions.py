@@ -16,7 +16,8 @@ from pytestqt.qtbot import QtBot
 from rehuco_agent.asking_deleter import AskingDeleter
 from rehuco_agent.documents.conversion_backup_actions import ConversionBackupActions
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_core import ConversionBackups, NoTrashBinError, RehuDocument
+from rehuco_agent.settings.deletion_settings import shared_deletion_settings
+from rehuco_core import ConversionBackups, Deleter, NoTrashBinError, RehuDocument
 
 DIRECTORY: Final = Path("/fake/library/sculpting")
 INFO_PATH: Final = DIRECTORY / "info.rehu"
@@ -47,6 +48,14 @@ def make_backups(*, files: int = 3, total_bytes: int = 14_000_000) -> Conversion
 
 
 # region fixtures
+
+
+@fixture(autouse=True)
+def permanent_deletes() -> None:
+    """Turn the Recycle Bin off, so a discard is permanent from the start and therefore confirmed --
+    the shape most of this module asserts on (#312). ``conftest.py`` already hands every test a fresh,
+    isolated `DeletionSettings`; a test about a bin-bound discard turns the bin back on itself."""
+    shared_deletion_settings().use_recycle_bin = False
 
 
 @fixture(name="model")
@@ -259,13 +268,14 @@ def test_the_strip_is_told_to_rebuild_when_the_inventory_moves(
 def test_discarding_asks_first_and_names_what_it_frees(
     actions: ConversionBackupActions, answer_yes: Any, mocker: MockerFixture
 ) -> None:
-    """The only irreversible act in the whole import flow, so its confirmation names the size rather
-    than asking a reflexive yes/no.
+    """The only irreversible act in the whole import flow, so a permanent discard's confirmation names
+    the size rather than asking a reflexive yes/no.
 
     **Test steps:**
 
-    * discard with the confirmation answered Yes
+    * discard, with the Recycle Bin off, with the confirmation answered Yes
     * verify the question names the bytes and says it cannot be undone, and that the operation ran
+      through the shared asking deleter
     """
     discard = mocker.patch(f"{ACTIONS_MODULE}.discard_conversion_backups", return_value=())
     deleter = mocker.Mock()
@@ -278,6 +288,60 @@ def test_discarding_asks_first_and_names_what_it_frees(
     args, kwargs = discard.call_args
     assert args == (INFO_PATH,)
     assert isinstance(kwargs["deleter"], AskingDeleter)
+
+
+def test_a_discard_bound_for_the_recycle_bin_asks_nothing(
+    actions: ConversionBackupActions, answer_yes: Any, mocker: MockerFixture
+) -> None:
+    """One deletion policy (#312): a question accompanies a permanent delete only, so with the bin on
+    the discard simply runs.
+
+    **Test steps:**
+
+    * turn the Recycle Bin on and discard
+    * verify no confirmation was shown and the operation ran
+    """
+    shared_deletion_settings().use_recycle_bin = True
+    discard = mocker.patch(f"{ACTIONS_MODULE}.discard_conversion_backups", return_value=())
+
+    actions.discard()
+
+    answer_yes.assert_not_called()
+    discard.assert_called_once()
+
+
+def test_clear_backups_without_asking_skips_the_permanent_confirm(
+    actions: ConversionBackupActions, answer_yes: Any, mocker: MockerFixture
+) -> None:
+    """With **Clear backups without asking** on, even a permanent discard is not confirmed, and the
+    asking deleter is told not to ask either (#312).
+
+    **Test steps:**
+
+    * turn the box on, keep the bin off, and discard
+    * verify no confirmation was shown, the operation ran, and a refusal inside it deletes permanently
+      with no question
+    """
+    shared_deletion_settings().clear_backups_without_asking = True
+    mocker.patch(
+        f"{ACTIONS_MODULE}.configured_deleter",
+        return_value=mocker.Mock(delete=mocker.Mock(side_effect=NoTrashBinError("no bin"))),
+    )
+    question = mocker.patch.object(QMessageBox, "question")
+    unlink = mocker.patch.object(Path, "unlink", autospec=True)
+
+    def discard(rehu_path: Path, *, deleter: Deleter) -> tuple[Path, ...]:
+        deleter.delete(rehu_path.parent / "info.tc.orig")
+        return ()
+
+    operation = mocker.patch(f"{ACTIONS_MODULE}.discard_conversion_backups", side_effect=discard)
+
+    actions.discard()
+
+    answer_yes.assert_not_called()
+    operation.assert_called_once()
+    question.assert_not_called()
+    unlink.assert_called_once_with(DIRECTORY / "info.tc.orig")
 
 
 def test_a_declined_discard_changes_nothing(
@@ -364,10 +428,11 @@ def test_a_declined_bin_refusal_logs_instead_of_reporting_a_failure(
 
     **Test steps:**
 
-    * discard where the underlying operation is refused with `NoTrashBinError`
-    * verify no failure box was shown beyond the initial "discard at all" confirmation, and a warning
-      naming the resource was logged
+    * discard, with the bin on so nothing is confirmed up front, where the underlying operation is
+      refused with `NoTrashBinError`
+    * verify no failure box was shown, and a warning naming the resource was logged
     """
+    shared_deletion_settings().use_recycle_bin = True
     mocker.patch(
         f"{ACTIONS_MODULE}.discard_conversion_backups",
         side_effect=NoTrashBinError(f"No Recycle Bin is available for {DIRECTORY}"),
@@ -376,7 +441,7 @@ def test_a_declined_bin_refusal_logs_instead_of_reporting_a_failure(
     with caplog.at_level("WARNING", logger=ACTIONS_MODULE):
         actions.discard()
 
-    assert answer_yes.call_count == 1
+    answer_yes.assert_not_called()
     assert any("left in place" in record.message for record in caplog.records)
 
 

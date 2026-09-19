@@ -12,7 +12,6 @@ import pytest
 from PySide6.QtWidgets import QMessageBox
 from pytest_mock import MockerFixture
 from rehuco_agent.asking_deleter import AskingDeleter
-from rehuco_agent.settings.screenshot_deletion_settings import shared_screenshot_deletion_settings
 from rehuco_core import NoTrashBinError
 
 PATH: Final = Path("/fake/tutorial/info00.jpg")
@@ -174,20 +173,18 @@ def test_a_no_answers_every_later_refusal_without_asking_again(mocker: MockerFix
     assert question.call_count == 1
 
 
-def test_the_setting_skips_asking_entirely(mocker: MockerFixture) -> None:
-    """With **Delete permanently, without asking, when the Recycle Bin is not available** on, a refusal
-    never reaches the question, on any file.
+def test_without_asking_skips_the_question_entirely(mocker: MockerFixture) -> None:
+    """Built with the caller's *without asking* box on, a refusal never reaches the question, on any
+    file (#312).
 
     **Test steps:**
 
-    * turn the setting on
-    * delete two different refused files through one `AskingDeleter`
+    * delete two different refused files through one `AskingDeleter` built with ``without_asking``
     * verify the question was never asked, and both files were deleted permanently
     """
-    shared_screenshot_deletion_settings().permanently_delete_if_unreachable = True
     question = mocker.patch(QUESTION)
     unlink = mocker.patch.object(Path, "unlink", autospec=True)
-    deleter = AskingDeleter(RefusingDeleter())
+    deleter = AskingDeleter(RefusingDeleter(), without_asking=True)
 
     deleter.delete(PATH)
     deleter.delete(OTHER_PATH)
@@ -196,12 +193,12 @@ def test_the_setting_skips_asking_entirely(mocker: MockerFixture) -> None:
     assert unlink.call_args_list == [mocker.call(PATH), mocker.call(OTHER_PATH)]
 
 
-def test_the_setting_off_asks_as_usual(mocker: MockerFixture) -> None:
-    """The setting defaults off, so a refusal is asked about the ordinary way.
+def test_without_asking_defaults_off_so_a_refusal_is_asked_about(mocker: MockerFixture) -> None:
+    """The flag defaults off, so a refusal is asked about the ordinary way.
 
     **Test steps:**
 
-    * delete through an `AskingDeleter` with the setting at its default
+    * delete through an `AskingDeleter` built without the flag
     * verify the question was asked
     """
     question = mocker.patch(QUESTION, return_value=QMessageBox.StandardButton.No)

@@ -1,4 +1,4 @@
-"""Tests for ScreenshotDeletionSettings: whether a deleted screenshot goes to the Recycle Bin (#291).
+"""Tests for DeletionSettings: the one deletion policy (#291, #312).
 
 Uses a hand-rolled in-memory stand-in for ``QSettings`` (see ``test_excluded_files_settings.py`` for
 the same rationale) rather than a real one or ``tmp_path``.
@@ -9,12 +9,13 @@ from typing import Any
 
 from pytest import fixture
 from pytest_mock import MockerFixture
-from rehuco_agent.settings import screenshot_deletion_settings
-from rehuco_agent.settings.screenshot_deletion_settings import (
-    DEFAULT_PERMANENTLY_DELETE_IF_UNREACHABLE,
+from rehuco_agent.settings import deletion_settings
+from rehuco_agent.settings.deletion_settings import (
+    DEFAULT_CLEAR_BACKUPS_WITHOUT_ASKING,
+    DEFAULT_DELETE_IMAGES_WITHOUT_ASKING,
     DEFAULT_USE_RECYCLE_BIN,
-    ScreenshotDeletionSettings,
-    shared_screenshot_deletion_settings,
+    DeletionSettings,
+    shared_deletion_settings,
 )
 
 
@@ -56,9 +57,9 @@ def settings() -> FakeSettings:
 def clear_shared_instance_cache() -> Iterator[None]:
     """Clear the ``lru_cache``-backed singleton before and after every test (see
     ``test_markdown_rendering_settings.py`` for the full rationale)."""
-    shared_screenshot_deletion_settings.cache_clear()
+    shared_deletion_settings.cache_clear()
     yield
-    shared_screenshot_deletion_settings.cache_clear()
+    shared_deletion_settings.cache_clear()
 
 
 # endregion
@@ -66,35 +67,38 @@ def clear_shared_instance_cache() -> Iterator[None]:
 # region defaults and persistence
 
 
-def test_a_fresh_instance_defaults_to_the_recycle_bin() -> None:
-    """On: the safer default is the everyday case, a permanent delete the deliberate exception.
+def test_a_fresh_instance_defaults_to_the_recycle_bin_and_to_asking() -> None:
+    """The safer defaults: a delete tries the bin, and a permanent one is asked about.
 
     **Test steps:**
 
     * build a settings object without loading anything
-    * verify it defaults to using the Recycle Bin, and not skipping the question (#301)
+    * verify it defaults to using the Recycle Bin and to asking for both kinds of file
     """
-    settings = ScreenshotDeletionSettings()
+    settings = DeletionSettings()
 
     assert settings.use_recycle_bin is DEFAULT_USE_RECYCLE_BIN
     assert DEFAULT_USE_RECYCLE_BIN is True
-    assert settings.permanently_delete_if_unreachable is DEFAULT_PERMANENTLY_DELETE_IF_UNREACHABLE
-    assert DEFAULT_PERMANENTLY_DELETE_IF_UNREACHABLE is False
+    assert settings.clear_backups_without_asking is DEFAULT_CLEAR_BACKUPS_WITHOUT_ASKING
+    assert DEFAULT_CLEAR_BACKUPS_WITHOUT_ASKING is False
+    assert settings.delete_images_without_asking is DEFAULT_DELETE_IMAGES_WITHOUT_ASKING
+    assert DEFAULT_DELETE_IMAGES_WITHOUT_ASKING is False
 
 
 def test_load_falls_back_to_the_default_on_a_fresh_install(settings: FakeSettings) -> None:
-    """With nothing persisted, loading yields the default.
+    """With nothing persisted, loading yields the defaults.
 
     **Test steps:**
 
     * load a settings object from empty storage
-    * verify it holds the default for both choices
+    * verify it holds the default for all three choices
     """
-    loaded = ScreenshotDeletionSettings()
+    loaded = DeletionSettings()
     loaded.load(settings)  # type: ignore[arg-type]
 
     assert loaded.use_recycle_bin is DEFAULT_USE_RECYCLE_BIN
-    assert loaded.permanently_delete_if_unreachable is DEFAULT_PERMANENTLY_DELETE_IF_UNREACHABLE
+    assert loaded.clear_backups_without_asking is DEFAULT_CLEAR_BACKUPS_WITHOUT_ASKING
+    assert loaded.delete_images_without_asking is DEFAULT_DELETE_IMAGES_WITHOUT_ASKING
 
 
 def test_the_choice_round_trips_through_storage(settings: FakeSettings) -> None:
@@ -102,18 +106,42 @@ def test_the_choice_round_trips_through_storage(settings: FakeSettings) -> None:
 
     **Test steps:**
 
-    * save a settings object with the Recycle Bin turned off and the override on
+    * save a settings object with every box flipped from its default
     * load a second object from the same storage
     * verify it holds the same choices
     """
-    saved = ScreenshotDeletionSettings(use_recycle_bin=False, permanently_delete_if_unreachable=True)
+    saved = DeletionSettings(
+        clear_backups_without_asking=True, delete_images_without_asking=True, use_recycle_bin=False
+    )
     saved.save(settings)  # type: ignore[arg-type]
 
-    loaded = ScreenshotDeletionSettings()
+    loaded = DeletionSettings()
+    loaded.load(settings)  # type: ignore[arg-type]
+
+    assert loaded.clear_backups_without_asking is True
+    assert loaded.delete_images_without_asking is True
+    assert loaded.use_recycle_bin is False
+
+
+def test_the_pre_312_recycle_bin_key_still_loads(settings: FakeSettings) -> None:
+    """The one value that predates the rename maps onto the same box: the group and key were kept
+    for exactly this, and the dropped no-bin knob's key is simply no longer read (#312).
+
+    **Test steps:**
+
+    * seed storage the way a pre-#312 build wrote it: the bin off, the old knob on, nothing else
+    * load a settings object from it
+    * verify the bin choice arrived and the two new boxes hold their defaults
+    """
+    settings.setValue("screenshot_deletion/use_recycle_bin", False)
+    settings.setValue("screenshot_deletion/permanently_delete_if_unreachable", True)
+
+    loaded = DeletionSettings()
     loaded.load(settings)  # type: ignore[arg-type]
 
     assert loaded.use_recycle_bin is False
-    assert loaded.permanently_delete_if_unreachable is True
+    assert loaded.clear_backups_without_asking is DEFAULT_CLEAR_BACKUPS_WITHOUT_ASKING
+    assert loaded.delete_images_without_asking is DEFAULT_DELETE_IMAGES_WITHOUT_ASKING
 
 
 # endregion
@@ -131,10 +159,10 @@ def test_the_shared_instance_is_loaded_once(mocker: MockerFixture, settings: Fak
     * verify both calls returned the same object, holding the seeded choice
     """
     settings.setValue("screenshot_deletion/use_recycle_bin", False)
-    mocker.patch.object(screenshot_deletion_settings, "persistent_settings", return_value=settings)
+    mocker.patch.object(deletion_settings, "persistent_settings", return_value=settings)
 
-    first = shared_screenshot_deletion_settings()
-    second = shared_screenshot_deletion_settings()
+    first = shared_deletion_settings()
+    second = shared_deletion_settings()
 
     assert first is second
     assert first.use_recycle_bin is False

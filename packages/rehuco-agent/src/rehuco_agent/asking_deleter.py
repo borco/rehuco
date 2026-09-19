@@ -23,8 +23,6 @@ from typing import Final
 from PySide6.QtWidgets import QMessageBox, QWidget
 from rehuco_core import DEFAULT_DELETER, Deleter, NoTrashBinError
 
-from .settings.screenshot_deletion_settings import shared_screenshot_deletion_settings
-
 LOG: Final = logging.getLogger(__name__)
 
 TITLE: Final = "No Recycle Bin available"
@@ -34,8 +32,11 @@ class AskingDeleter:  # pylint: disable=too-few-public-methods
     """A `~rehuco_core.Deleter` that asks, once per operation, when `inner` refuses with
     `~rehuco_core.NoTrashBinError` (#301).
 
-    Nothing is asked at all while the **Delete permanently, without asking, when the Recycle Bin is not
-    available** setting is on: every refusal then deletes permanently outright.
+    The refusal is the one point a bin-first delete turns permanent, so this question is that kind of
+    file's permanent-delete confirmation, and the same *without asking* box that would skip the up-front
+    one silences it: nothing is asked while `without_asking` is set, and every refusal then deletes
+    permanently outright (#312 -- which box applies is the caller's to say, since only it knows what
+    kind of file the operation is deleting).
 
     :param inner: the deleter tried first -- typically `configured_deleter`'s answer.
     :param parent: the widget a confirmation (and, if `report_delete_failures`, a failure notice) is
@@ -48,6 +49,8 @@ class AskingDeleter:  # pylint: disable=too-few-public-methods
         turns this on, because its own caller (`RehuDocumentImageOrganizer.remove`) cannot otherwise
         tell a delete failure from the renumbering failure that follows it, and the renumbering failure
         must stay silent.
+    :param without_asking: whether a refusal deletes permanently with no question -- the operation's
+        own **Clear backups without asking** / **Delete images without asking** box.
     """
 
     def __init__(
@@ -57,11 +60,13 @@ class AskingDeleter:  # pylint: disable=too-few-public-methods
         *,
         files: Sequence[Path] = (),
         report_delete_failures: bool = False,
+        without_asking: bool = False,
     ) -> None:
         self.__inner: Final = inner
         self.__parent: Final = parent
         self.__files: Final = tuple(files)
         self.__report_delete_failures: Final = report_delete_failures
+        self.__without_asking: Final = without_asking
         self.__delete_permanently: bool | None = None
 
     def delete(self, path: Path) -> None:
@@ -92,7 +97,7 @@ class AskingDeleter:  # pylint: disable=too-few-public-methods
             raise
 
     def __permanent_delete_allowed(self, path: Path, error: NoTrashBinError) -> bool:
-        if shared_screenshot_deletion_settings().permanently_delete_if_unreachable:
+        if self.__without_asking:
             return True
         if self.__delete_permanently is None:
             self.__delete_permanently = self.__ask(path, error)

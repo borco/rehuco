@@ -8,7 +8,7 @@ from pytest import fixture
 from pytest_mock import MockerFixture
 from rehuco_agent.documents.rehu_document_image_organizer import RehuDocumentImageOrganizer
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_agent.settings.screenshot_deletion_settings import shared_screenshot_deletion_settings
+from rehuco_agent.settings.deletion_settings import shared_deletion_settings
 from rehuco_core import DEFAULT_DELETER, RehuDocument
 
 DIRECTORY: Final = Path("/fake/tutorial")
@@ -107,7 +107,7 @@ def test_remove_unlinks_when_the_recycle_bin_setting_is_off(mocker: MockerFixtur
     * verify it was unlinked and ``send2trash`` was never reached
     """
     del renumber
-    shared_screenshot_deletion_settings().use_recycle_bin = False
+    shared_deletion_settings().use_recycle_bin = False
     send2trash = mocker.patch("borco_pyside.recycle_bin.send2trash")
     unlink = mocker.patch.object(Path, "unlink")
     organizer = RehuDocumentImageOrganizer(model_at(DIRECTORY / "info.rehu"))
@@ -131,9 +131,27 @@ def test_deletes_to_trash_reflects_the_live_setting(renumber: MockerFixture) -> 
 
     assert organizer.deletes_to_trash is True
 
-    shared_screenshot_deletion_settings().use_recycle_bin = False
+    shared_deletion_settings().use_recycle_bin = False
 
     assert organizer.deletes_to_trash is False
+
+
+def test_deletes_without_asking_reflects_the_live_setting(renumber: MockerFixture) -> None:
+    """The **Delete images without asking** box reaches the editor through the same live read (#312).
+
+    **Test steps:**
+
+    * read ``deletes_without_asking`` before and after flipping the setting on an existing organizer
+    * verify each read reflects what the setting held at that moment
+    """
+    del renumber
+    organizer = RehuDocumentImageOrganizer(model_at(DIRECTORY / "info.rehu"))
+
+    assert organizer.deletes_without_asking is False
+
+    shared_deletion_settings().delete_images_without_asking = True
+
+    assert organizer.deletes_without_asking is True
 
 
 def test_an_explicit_deleter_overrides_the_setting(mocker: MockerFixture, renumber: MockerFixture) -> None:

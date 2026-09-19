@@ -15,7 +15,7 @@ from pathlib import Path
 from borco_pyside.recycle_bin import NoRecycleBinError, recycle_bin
 from rehuco_core import DEFAULT_DELETER, Deleter, NoTrashBinError
 
-from .settings.screenshot_deletion_settings import shared_screenshot_deletion_settings
+from .settings.deletion_settings import shared_deletion_settings
 
 
 class RecycleBinDeleter:  # pylint: disable=too-few-public-methods
@@ -37,7 +37,7 @@ class RecycleBinDeleter:  # pylint: disable=too-few-public-methods
 
 def configured_deleter() -> Deleter:
     """The `~rehuco_core.Deleter` any in-window delete or discard resolves to absent an explicit
-    override, per the **Move deleted images to the Recycle Bin** setting (#291, #298).
+    override, per the **Move deleted files to the Recycle Bin, if possible** setting (#291, #298, #312).
 
     Read live rather than cached, so a page Saved after a caller last asked is still honoured -- the
     same discipline `RehuDocumentImageOrganizer.deletes_to_trash` already followed for the one consumer
@@ -46,4 +46,4 @@ def configured_deleter() -> Deleter:
 
     :returns: a `RecycleBinDeleter` when the setting is on, otherwise `~rehuco_core.DEFAULT_DELETER`.
     """
-    return RecycleBinDeleter() if shared_screenshot_deletion_settings().use_recycle_bin else DEFAULT_DELETER
+    return RecycleBinDeleter() if shared_deletion_settings().use_recycle_bin else DEFAULT_DELETER

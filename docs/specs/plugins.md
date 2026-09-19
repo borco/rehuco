@@ -567,8 +567,9 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
   on such a row, single-select like every other action here: **Convert** takes its own legacy number as its new
   `<stem>NN` when that slot is free, and appends it past the current end of the numbered set otherwise — the
   free-slot-or-append rule of #265 — after which the row re-lists among the numbered set with its checkbox state
-  carried across the rename by the same remap the curated-out list already follows; and **Delete**, confirmed like
-  any other, to the Recycle Bin behind a setting with a stated no-bin fallback (#291). Moving or deleting renumbers
+  carried across the rename by the same remap the curated-out list already follows; and **Delete**, to the Recycle
+  Bin if possible, with a permanent delete confirmed unless *Delete images without asking* is on
+  ([[appendices.settings-pages#category-groups]], #291, #312). Moving or deleting renumbers
   files and **never rewrites the description** — an embed pointing at a name that moved or vanished is left exactly
   as the user wrote it — and a one-line hint in the dock says so.
 

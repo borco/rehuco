@@ -133,14 +133,25 @@ that they are about images at all. "Sidecar" is the specs' own word, kept over a
 says where these images live.
 
 **"Files" is a flat top-level page, not a group, holding two settings objects that share no subject
-but "a file on disk"** (#226, #291, #298): whether a deleted file goes through the Recycle Bin
-(`ScreenshotDeletionSettings`), and the filename globs a content scan leaves out
-(`ExcludedFilesSettings`). The Recycle Bin choice used to be a block on Images/Sidecar Extensions, back
-when `RehuDocumentImageOrganizer`'s screenshot delete was its only consumer (#291) -- but once a `.tc`
-conversion's discarded backup and a discarded conversion-backups set started reading it too (#298), a
-name under "Images" was the wrong subject for a choice that no longer has anything to do with images.
-It moved to "Files" instead, its frame first on the page, above the excluded-file-patterns editor
-(formerly the standalone "Excluded Files" page, #226) it shares that page with now.
+but "a file on disk"** (#226, #291, #298, #312): how a deleted file is deleted and whether that is asked
+about (`DeletionSettings`), and the filename globs a content scan leaves out (`ExcludedFilesSettings`).
+The deletion policy is three boxes -- *Move deleted files to the Recycle Bin, if possible* first, then
+*Clear backups without asking* and *Delete images without asking* under a caption saying a permanent
+delete is confirmed unless -- and nothing else gates a user-facing delete (#312). The order is the
+dependency: the bin box decides when a delete is permanent, and only a permanent one is ever asked
+about, so the two boxes under the caption matter only once the first has made one. A question is only ever asked for a **permanent** delete: with the bin on and reachable for the
+file, it goes there with no question at all; a permanent delete, whether from the start (bin off) or as
+the fallback when no bin was reachable (the once-per-operation question `AskingDeleter` asks, #301), is
+confirmed unless the *without asking* box for that kind of file -- `.orig` conversion backups, or a
+screenshot -- says not to. That replaced #301's own "delete permanently without asking when the Recycle
+Bin is not available" knob and the bulk dialog's per-batch copy of it: one box per kind of file now
+silences both the up-front confirmation and the no-bin one. The Recycle Bin choice used to be a block on
+Images/Sidecar Extensions, back when `RehuDocumentImageOrganizer`'s screenshot delete was its only
+consumer (#291) -- but once a `.tc` conversion's discarded backup and a discarded conversion-backups set
+started reading it too (#298), a name under "Images" was the wrong subject for a choice that no longer
+has anything to do with images. It moved to "Files" instead, its frame first on the page, above the
+excluded-file-patterns editor (formerly the standalone "Excluded Files" page, #226) it shares that page
+with now.
 
 **The whole filter state persists** across restarts — the filter text and both toggles — via
 `SettingsDialogSettings` (`settings/settings_dialog_settings.py`). The dialog restores it in

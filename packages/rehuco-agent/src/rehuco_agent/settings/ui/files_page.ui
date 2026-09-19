@@ -53,20 +53,40 @@
       <item>
        <widget class="QCheckBox" name="use_recycle_bin_check_box">
         <property name="text">
-         <string>Move deleted files to the Recycle Bin</string>
+         <string>Move deleted files to the Recycle Bin, if possible</string>
         </property>
         <property name="toolTip">
-         <string>A file this app deletes on the user's behalf -- a screenshot from the images editor, a .tc conversion's discarded backup, a discarded conversion-backups set -- goes to the Recycle Bin / Trash instead of being removed outright. Where no bin is reachable for a resource's location, the images editor offers a permanent delete for that one file; a conversion keeps its backup beside the converted resource, and a queued discard fails and leaves the backups in place.</string>
+         <string>A file this app deletes on the user's behalf goes to the Recycle Bin / Trash when one is reachable for it, with no question asked. Where none is -- a network share, the mounted NAS -- the file is deleted permanently instead.</string>
         </property>
        </widget>
       </item>
       <item>
-       <widget class="QCheckBox" name="permanently_delete_if_unreachable_check_box">
+       <widget class="WrappingLabel" name="permanent_delete_label">
         <property name="text">
-         <string>Delete permanently, without asking, when the Recycle Bin is not available</string>
+         <string>A permanent delete — the Recycle Bin off, or none reachable for the file — is confirmed first, unless:</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QCheckBox" name="clear_backups_without_asking_check_box">
+        <property name="text">
+         <string>Clear backups without asking</string>
         </property>
         <property name="toolTip">
-         <string>Skip the per-file question Convert, Discard Originals, the inline Discard action and the images editor would otherwise ask when the Recycle Bin cannot be reached, and delete outright instead.</string>
+         <string>Permanently delete a conversion's .orig backups -- Convert, Discard Originals, a document's Discard Backups action, the Conversion Backups dialog -- without a confirmation. A queued discard from the Conversion Backups dialog has no window to ask from, so with this off it fails and leaves the backups in place when no Recycle Bin is reachable.</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QCheckBox" name="delete_images_without_asking_check_box">
+        <property name="text">
+         <string>Delete images without asking</string>
+        </property>
+        <property name="toolTip">
+         <string>Permanently delete a screenshot from the images editor without a confirmation.</string>
         </property>
        </widget>
       </item>

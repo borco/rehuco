@@ -82,6 +82,7 @@ from rehuco_agent.fields.widgets.image_selector import AFTER_CONVERSION_COLUMN, 
 from rehuco_agent.fields.widgets.image_strip import ThumbnailLabel
 from rehuco_agent.fields.widgets.path_editor import UNAVAILABLE_SUFFIX
 from rehuco_agent.settings.default_layout_settings import shared_default_layout_settings
+from rehuco_agent.settings.deletion_settings import shared_deletion_settings
 from rehuco_agent.settings.image_viewer_settings import shared_image_viewer_settings
 from rehuco_agent.settings.logs_settings import shared_logs_settings
 from rehuco_core import (
@@ -794,6 +795,100 @@ def test_convert_action_prompts_before_overwriting_and_proceeds_on_yes(
     kwargs = convert.call_args.kwargs
     assert kwargs["keep_backups"] is False
     assert kwargs["overwrite"] is True
+
+
+def test_a_permanent_discard_originals_asks_first_and_cancels_on_no(
+    mocker: MockerFixture, legacy_widget: DocumentWidget, legacy_model: RehuDocumentModel
+) -> None:
+    """With the Recycle Bin off, Discard Originals is a permanent delete and is confirmed before the
+    conversion starts, naming what it removes; No leaves the ``.tc`` untouched (#312).
+
+    **Test steps:**
+
+    * turn the Recycle Bin off and the warning dialog to answer No
+    * trigger the "discard originals" convert action
+    * verify the question named the ``.orig`` backups and ``model.convert`` was never called
+    """
+    shared_deletion_settings().use_recycle_bin = False
+    warning = mocker.patch.object(QMessageBox, "warning", return_value=QMessageBox.StandardButton.No)
+    convert = mocker.patch.object(legacy_model, "convert")
+    discard = legacy_widget._DocumentWidget__convert_discard_originals_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    discard.trigger()
+
+    warning.assert_called_once()
+    assert warning.call_args.args[1] == "Discard Originals"
+    assert ".orig" in str(warning.call_args.args[2])
+    convert.assert_not_called()
+
+
+def test_a_permanent_discard_originals_proceeds_on_yes_without_asking_again(
+    mocker: MockerFixture, legacy_widget: DocumentWidget, legacy_model: RehuDocumentModel
+) -> None:
+    """Yes to the permanent question converts, with the asking deleter told the answer is already
+    given -- nothing else about the delete is asked (#312).
+
+    **Test steps:**
+
+    * turn the Recycle Bin off and the warning dialog to answer Yes
+    * trigger the "discard originals" convert action
+    * verify ``model.convert`` ran with ``keep_backups=False``
+    """
+    shared_deletion_settings().use_recycle_bin = False
+    warning = mocker.patch.object(QMessageBox, "warning", return_value=QMessageBox.StandardButton.Yes)
+    convert = mocker.patch.object(legacy_model, "convert")
+    discard = legacy_widget._DocumentWidget__convert_discard_originals_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    discard.trigger()
+
+    warning.assert_called_once()
+    convert.assert_called_once()
+    assert convert.call_args.kwargs["keep_backups"] is False
+
+
+def test_clear_backups_without_asking_skips_the_discard_originals_question(
+    mocker: MockerFixture, legacy_widget: DocumentWidget, legacy_model: RehuDocumentModel
+) -> None:
+    """With **Clear backups without asking** on, even a permanent Discard Originals asks nothing (#312).
+
+    **Test steps:**
+
+    * turn the Recycle Bin off and the box on
+    * trigger the "discard originals" convert action
+    * verify no dialog was shown and ``model.convert`` ran
+    """
+    shared_deletion_settings().use_recycle_bin = False
+    shared_deletion_settings().clear_backups_without_asking = True
+    warning = mocker.patch.object(QMessageBox, "warning")
+    convert = mocker.patch.object(legacy_model, "convert")
+    discard = legacy_widget._DocumentWidget__convert_discard_originals_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    discard.trigger()
+
+    warning.assert_not_called()
+    convert.assert_called_once()
+
+
+def test_a_bin_bound_discard_originals_asks_nothing(
+    mocker: MockerFixture, legacy_widget: DocumentWidget, legacy_model: RehuDocumentModel
+) -> None:
+    """With the Recycle Bin on (the default), Discard Originals converts straight away -- a question
+    accompanies a permanent delete only (#312).
+
+    **Test steps:**
+
+    * leave the Recycle Bin on
+    * trigger the "discard originals" convert action
+    * verify no dialog was shown and ``model.convert`` ran
+    """
+    warning = mocker.patch.object(QMessageBox, "warning")
+    convert = mocker.patch.object(legacy_model, "convert")
+    discard = legacy_widget._DocumentWidget__convert_discard_originals_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    discard.trigger()
+
+    warning.assert_not_called()
+    convert.assert_called_once()
 
 
 def test_convert_action_shows_a_critical_dialog_on_failure(

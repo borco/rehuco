@@ -1,5 +1,5 @@
-"""Files settings page: whether a deleted file goes through the Recycle Bin, and what a resource's
-size scan and checksums leave out (#226, #291, #298)."""
+"""Files settings page: how a deleted file is deleted and whether that is asked about, and what a
+resource's size scan and checksums leave out (#226, #291, #298, #312)."""
 
 from typing import Final
 
@@ -13,9 +13,9 @@ from rehuco_core import (
 )
 
 from ...item_action_icons import apply_item_action_icons
+from ..deletion_settings import shared_deletion_settings
 from ..excluded_files_settings import normalize_patterns, shared_excluded_files_settings
 from ..persistent_settings import persistent_settings
-from ..screenshot_deletion_settings import shared_screenshot_deletion_settings
 from .files_page_ui import Ui_FilesPage
 
 RECORD_PLACEHOLDER: Final = "<record>"
@@ -25,13 +25,18 @@ file-scoped neighbour's -- so naming one would read as a literal and understate 
 
 
 class FilesPage(QWidget):
-    """Whether a deleted file goes through the Recycle Bin, and the filename globs left out of every
-    directory-scoped resource's content scan (#226, #291, #298).
+    """How a deleted file is deleted and whether that is asked about, and the filename globs left out
+    of every directory-scoped resource's content scan (#226, #291, #298, #312).
 
-    Three frames for three settings. **Deleting files**, first, is the Recycle Bin choice
-    (`ScreenshotDeletionSettings`) -- despite the name, it now covers a screenshot deleted from the
-    images editor, a `.tc` conversion's discarded backup and a discarded conversion-backups set alike
-    (#298), so it sits here rather than under "Images". The other two, unchanged since #226, are the
+    Three frames for three settings. **Deleting files**, first, is the one deletion policy
+    (`DeletionSettings`): *Move deleted files to the Recycle Bin, if possible* first, then -- under a
+    caption saying a permanent delete is confirmed unless -- *Clear backups without asking* and
+    *Delete images without asking*. That order is the dependency: the bin box decides whether a delete
+    is permanent from the start (off) or only when no bin is reachable (on), and a question is only
+    ever asked for a permanent delete, so the two boxes under the caption only ever matter once the
+    first has made one. It covers a screenshot deleted from the images editor, a `.tc` conversion's discarded backup
+    and a discarded conversion-backups set alike (#298), so it sits here rather than under "Images".
+    The other two frames, unchanged since #226, are the
     two tiers of what a size scan and checksum run leave out: **Excluded file patterns** is the
     editable junk list, a `StringListEditor` (#231) wearing this app's icons. **Always excluded**,
     below it, is a read-only summary of the structural set -- every record a scan meets, with its
@@ -61,9 +66,6 @@ class FilesPage(QWidget):
         self.__ui.structural_patterns_label.setText(self.__structural_summary())
         self.__ui.patterns_editor.defaults = EXCLUDED_FILE_PATTERNS
         apply_item_action_icons(self.__ui.patterns_editor)
-        self.__ui.use_recycle_bin_check_box.toggled.connect(
-            self.__ui.permanently_delete_if_unreachable_check_box.setEnabled
-        )
 
         self.drop_changes()
 
@@ -75,11 +77,11 @@ class FilesPage(QWidget):
         they're made* is on, the dialog commits any dirty page, and a save here reloads the editor from
         what normalization kept, which would tear a freshly inserted row out from under its open cell.
         """
-        deletion = shared_screenshot_deletion_settings()
+        deletion = shared_deletion_settings()
         return (
-            self.__ui.use_recycle_bin_check_box.isChecked() != deletion.use_recycle_bin
-            or self.__ui.permanently_delete_if_unreachable_check_box.isChecked()
-            != deletion.permanently_delete_if_unreachable
+            self.__ui.clear_backups_without_asking_check_box.isChecked() != deletion.clear_backups_without_asking
+            or self.__ui.delete_images_without_asking_check_box.isChecked() != deletion.delete_images_without_asking
+            or self.__ui.use_recycle_bin_check_box.isChecked() != deletion.use_recycle_bin
             or normalize_patterns(self.__ui.patterns_editor.values)
             != shared_excluded_files_settings().excluded_file_patterns
         )
@@ -92,9 +94,10 @@ class FilesPage(QWidget):
         restores the shipped defaults -- and a page still showing what was typed would disagree with
         what every scan reads.
         """
-        deletion = shared_screenshot_deletion_settings()
+        deletion = shared_deletion_settings()
+        deletion.clear_backups_without_asking = self.__ui.clear_backups_without_asking_check_box.isChecked()
+        deletion.delete_images_without_asking = self.__ui.delete_images_without_asking_check_box.isChecked()
         deletion.use_recycle_bin = self.__ui.use_recycle_bin_check_box.isChecked()
-        deletion.permanently_delete_if_unreachable = self.__ui.permanently_delete_if_unreachable_check_box.isChecked()
         deletion.save(persistent_settings())
 
         excluded = shared_excluded_files_settings()
@@ -104,10 +107,10 @@ class FilesPage(QWidget):
 
     def drop_changes(self) -> None:
         """Discard both staged choices, re-seeding each widget from its own settings object."""
-        deletion = shared_screenshot_deletion_settings()
+        deletion = shared_deletion_settings()
+        self.__ui.clear_backups_without_asking_check_box.setChecked(deletion.clear_backups_without_asking)
+        self.__ui.delete_images_without_asking_check_box.setChecked(deletion.delete_images_without_asking)
         self.__ui.use_recycle_bin_check_box.setChecked(deletion.use_recycle_bin)
-        self.__ui.permanently_delete_if_unreachable_check_box.setChecked(deletion.permanently_delete_if_unreachable)
-        self.__ui.permanently_delete_if_unreachable_check_box.setEnabled(deletion.use_recycle_bin)
         self.__ui.patterns_editor.values = shared_excluded_files_settings().excluded_file_patterns
 
     def __structural_summary(self) -> str:

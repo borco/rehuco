@@ -28,6 +28,7 @@ from ..fields.widgets import ImageLightbox, TypeBadge
 from ..glyphs import TAB_CLOSE_GLYPH
 from ..recycle_bin_deleter import configured_deleter
 from ..settings.default_layout_settings import shared_default_layout_settings
+from ..settings.deletion_settings import shared_deletion_settings
 from ..settings.image_viewer_settings import shared_image_viewer_settings
 from ..settings.logs_settings import shared_logs_settings
 from ..settings.persistent_settings import persistent_settings
@@ -1096,15 +1097,23 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             self.__image_viewer = None
 
     def __on_convert_triggered(self, *, keep_backups: bool) -> None:
-        """Convert this document, confirming first if it would overwrite an already-converted ``.rehu``.
+        """Convert this document, confirming first if it would overwrite an already-converted ``.rehu``,
+        and -- for Discard Originals -- if the discard is permanent.
+
+        One deletion policy (#312): with the originals bound for the Recycle Bin nothing is asked up
+        front, and the `AskingDeleter` puts the permanent question only if the bin then proves
+        unreachable; with the bin off, the discard is confirmed here, naming the ``.orig`` files it
+        will remove. Both questions are silenced by **Clear backups without asking**. Two dialogs in
+        the rare overwrite-and-discard case rather than one merged question: they are different
+        decisions, and a No to either leaves the ``.tc`` untouched.
 
         :param keep_backups: whether to keep ``.orig`` backups of the ``.tc`` and legacy screenshots.
         """
         path = self.__model.path
         target = path.with_suffix(".rehu") if path is not None else None
+        buttons = QMessageBox.StandardButton
         overwrite = False
         if target is not None and target.exists():
-            buttons = QMessageBox.StandardButton
             answer = QMessageBox.warning(
                 self,
                 "Overwrite Existing File",
@@ -1116,13 +1125,26 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
                 return
             overwrite = True
         # what a discard would actually delete: the .orig siblings a conversion parks the originals
-        # under, so the question can name them rather than the files they came from
+        # under, so either question can name them rather than the files they came from
         backups = [backup_path(original) for original in originals_to_back_up(path, target)] if path and target else []
+        settings = shared_deletion_settings()
+        silent = settings.clear_backups_without_asking
+        if not keep_backups and not settings.use_recycle_bin and not silent:
+            listed = "\n".join(f"  {backup.name}" for backup in backups)
+            answer = QMessageBox.warning(
+                self,
+                "Discard Originals",
+                f"Permanently delete the originals after converting? This cannot be undone.\n\n{listed}",
+                buttons.Yes | buttons.No,
+                buttons.No,
+            )
+            if answer != buttons.Yes:
+                return
         try:
             self.__model.convert(
                 keep_backups=keep_backups,
                 overwrite=overwrite,
-                deleter=AskingDeleter(configured_deleter(), parent=self, files=backups),
+                deleter=AskingDeleter(configured_deleter(), parent=self, files=backups, without_asking=silent),
             )
         except OSError as exc:
             QMessageBox.critical(self, "Conversion Failed", f"Could not convert the document:\n\n{exc}")
