@@ -55,8 +55,14 @@ class ImageOrganizer(Protocol):
     @property
     def deletes_to_trash(self) -> bool:  # pyright: ignore[reportReturnType]
         """Whether the next :meth:`remove` called with no explicit ``deleter`` will try to send the
-        file to a Recycle Bin / Trash, rather than unlinking it outright -- what the confirm dialog
-        reads to say which of the two is about to happen (#291)."""
+        file to a Recycle Bin / Trash, rather than unlinking it outright -- what the editor reads to
+        know whether a delete is permanent up front, and so whether to confirm it (#291, #312)."""
+
+    @property
+    def deletes_without_asking(self) -> bool:  # pyright: ignore[reportReturnType]
+        """Whether a permanent delete of a screenshot is to happen with no question -- the
+        **Delete images without asking** box, read here so the editor need not know where the
+        setting lives (#312)."""
 
     def remove(self, path: Path, remaining: Sequence[Path], deleter: Deleter | None = None) -> dict[str, str]:
         """Delete one screenshot and close the gap it leaves.
@@ -66,8 +72,8 @@ class ImageOrganizer(Protocol):
             one holds no slot, so passing it would be asking for it to be given one (#270).
         :param deleter: how ``path`` is actually removed; ``None`` leaves the choice to the
             organizer's own configured default (:attr:`deletes_to_trash`) -- a caller passes one
-            explicitly only to override it, e.g. a permanent-delete retry after a
-            `~rehuco_core.NoTrashBinError` (#291).
+            explicitly only to wrap or override it, e.g. the editor's
+            `~rehuco_agent.asking_deleter.AskingDeleter` around it (#301).
         :returns: ``{old filename: new filename}`` for each survivor actually renamed.
         :raises OSError: if the delete or the renumbering that follows it failed, or the
             rearrangement was refused -- the same rule, and for the same reason, as :meth:`reorder`.

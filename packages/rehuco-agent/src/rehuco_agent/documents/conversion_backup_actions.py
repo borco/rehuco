@@ -28,6 +28,7 @@ from rehuco_core import ConversionBackups, NoTrashBinError, conversion_backups, 
 
 from ..asking_deleter import AskingDeleter
 from ..recycle_bin_deleter import configured_deleter
+from ..settings.deletion_settings import shared_deletion_settings
 from .rehu_document_model import RehuDocumentModel
 
 LOG: Final = logging.getLogger(__name__)
@@ -143,7 +144,12 @@ class ConversionBackupActions(QObject):
     # region Acting
 
     def discard(self) -> None:
-        """Delete this resource's retained backups, after confirming that it cannot be undone.
+        """Delete this resource's retained backups, confirming first when that is permanent.
+
+        One deletion policy (#312): a discard bound for the Recycle Bin asks nothing up front, and the
+        `AskingDeleter` puts the permanent question only if the bin then proves unreachable; a discard
+        that is permanent from the start confirms here, naming what it cannot undo. Both questions are
+        silenced by **Clear backups without asking**.
 
         The document itself is untouched: a discard removes only the ``.orig`` siblings, so there is
         nothing to reseed and no path to follow -- only a banner row that stops being true.
@@ -155,13 +161,22 @@ class ConversionBackupActions(QObject):
         backups = self.__retained_backups()
         if backups is None:
             return
-        if not self.__confirm(DISCARD_TITLE, DISCARD_QUESTION.format(size=self.__size(backups))):
+        settings = shared_deletion_settings()
+        silent = settings.clear_backups_without_asking
+        permanent = not settings.use_recycle_bin
+        if (
+            permanent
+            and not silent
+            and not self.__confirm(DISCARD_TITLE, DISCARD_QUESTION.format(size=self.__size(backups)))
+        ):
             return
         with LogScope.open(backups.rehu_path):
             try:
                 discarded = discard_conversion_backups(
                     backups.rehu_path,
-                    deleter=AskingDeleter(configured_deleter(), parent=self.__parent, files=backups.backups),
+                    deleter=AskingDeleter(
+                        configured_deleter(), parent=self.__parent, files=backups.backups, without_asking=silent
+                    ),
                 )
             except NoTrashBinError as error:
                 LOG.warning(

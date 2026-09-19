@@ -912,19 +912,35 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
     def delete_screenshot(self, at: int) -> None:
         """Delete one screenshot from disk, closing the gap it leaves (#72).
 
-        Confirmed first: this removes a file and renumbers its neighbours, and neither half is
-        something a document Revert can undo -- unlike every other edit this editor makes, which sit
-        in the model until a Save. The row that took its place is left current, so deleting several
-        in a row does not send the selection back to the top each time.
+        Confirmed first when it is permanent: this removes a file and renumbers its neighbours, and
+        neither half is something a document Revert can undo -- unlike every other edit this editor
+        makes, which sit in the model until a Save. A delete bound for the Recycle Bin asks nothing
+        up front; if the bin then turns out to be unreachable, the `AskingDeleter` puts the permanent
+        question at that point instead. Either question is silenced by the organizer's **Delete images
+        without asking** answer (#312). The row that took its place is left current, so deleting
+        several in a row does not send the selection back to the top each time.
 
         :param at: the row to delete; out of range, or with no organizer, is a no-op.
         """
         paths = self.screenshot_paths()
-        if not self.__list_model.can_rearrange or not 0 <= at < len(paths):
+        organizer = self.image_organizer
+        if organizer is None or not self.__list_model.can_rearrange or not 0 <= at < len(paths):
             return
-        if not self.__confirmed_delete(paths[at], numbered=self.__list_model.is_numbered(at)):
+        silent = organizer.deletes_without_asking
+        permanent = not organizer.deletes_to_trash
+        if (
+            permanent
+            and not silent
+            and not self.__confirmed_delete(paths[at], numbered=self.__list_model.is_numbered(at))
+        ):
             return
-        deleter = AskingDeleter(configured_deleter(), parent=self, files=(paths[at],), report_delete_failures=True)
+        deleter = AskingDeleter(
+            configured_deleter(),
+            parent=self,
+            files=(paths[at],),
+            report_delete_failures=True,
+            without_asking=silent,
+        )
         if self.__rearranged(lambda: self.__list_model.remove_row(at, deleter=deleter)):
             self.set_current_index(min(at, len(paths) - 2))
 
@@ -975,19 +991,19 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
         self.convert_screenshot(self.current_index)
 
     def __confirmed_delete(self, path: Path, *, numbered: bool) -> bool:
-        """Ask before deleting ``path``, saying which of the two outcomes it will have (#291).
+        """Ask before permanently deleting ``path`` (#291, #312).
 
-        Three sentences, each earned by the row: what happens to the file (the Recycle Bin setting),
-        what happens to the rest (only a numbered row leaves a gap to close, #270), and -- in a
-        multi-record directory -- that an un-converted image is listed by the other record's dock too,
-        so this deletes it there as well ([[data-model#resource-scoping]]).
+        Only ever shown for a permanent delete -- a bin-bound one asks nothing up front -- so the
+        outcome it names is the one outcome. Three sentences, each earned by the row: what happens to
+        the file, what happens to the rest (only a numbered row leaves a gap to close, #270), and -- in
+        a multi-record directory -- that an un-converted image is listed by the other record's dock
+        too, so this deletes it there as well ([[data-model#resource-scoping]]).
 
         :param path: the screenshot about to be deleted.
         :param numbered: whether it holds a slot, and so whether anything is renumbered after it.
         :returns: whether the user confirmed.
         """
-        to_trash = self.image_organizer is not None and self.image_organizer.deletes_to_trash
-        outcome = "moved to the Recycle Bin." if to_trash else "permanently removed from disk. This cannot be undone."
+        outcome = "permanently removed from disk. This cannot be undone."
         consequence = (
             " The screenshots after it are renumbered to close the gap."
             if numbered

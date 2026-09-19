@@ -44,6 +44,7 @@ from rehuco_core import (
 )
 
 from ..settings.conversion_backups_dialog_settings import ConversionBackupsDialogSettings
+from ..settings.deletion_settings import shared_deletion_settings
 from ..settings.persistent_settings import persistent_settings
 from .conversion_backups_dialog_ui import Ui_ConversionBackupsDialog
 from .conversion_backups_table_model import (
@@ -496,19 +497,23 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
     # region Acting
 
     def __on_discard(self) -> None:
-        """Confirm, then enqueue a discard over every selected resource.
+        """Confirm when the discard is permanent, then enqueue one over every selected resource.
 
         Every selected row can take one: a discard only deletes the `.orig` siblings, and a resource is
         in this table exactly because it has some.
+
+        One deletion policy (#312): a discard bound for the Recycle Bin asks nothing, and one that is
+        permanent from the start confirms here unless **Clear backups without asking** is on. The same
+        box is what each job carries as its no-bin fallback, since a queued job has no window to ask
+        from once it runs.
         """
         selected = self.__model.checked_rows()
-        if not selected or not self.__confirm_discard(selected):
+        settings = shared_deletion_settings()
+        silent = settings.clear_backups_without_asking
+        permanent = not settings.use_recycle_bin
+        if not selected or (permanent and not silent and not self.__confirm_discard(selected)):
             return
-        self.__enqueue(
-            DiscardBackupsJob,
-            selected,
-            delete_permanently_if_unreachable=self.__ui.permanent_delete_check_box.isChecked(),
-        )
+        self.__enqueue(DiscardBackupsJob, selected, delete_permanently_if_unreachable=silent)
 
     def __confirm_discard(self, rows: Sequence[ConversionBackupsRow]) -> bool:
         """Ask before discarding, naming the count and the bytes rather than asking a bare yes/no.
@@ -545,8 +550,10 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
         Nothing about *how* a discard deletes is handed over here beyond ``job_kwargs``: a
         `DiscardBackupsJob` resolves its deleter when it runs, from the process-wide provider the window
         installs, so a job rebuilt from the saved queue after a restart honours the Recycle Bin setting
-        exactly as one enqueued here does (#298); the permanent-delete override (#301) is the one
-        per-batch decision that *is* carried, since there is no window to ask again once it runs.
+        exactly as one enqueued here does (#298); the no-bin fallback (#301) is the one decision that
+        *is* carried, read off **Clear backups without asking** at enqueue (#312), since there is no
+        window to ask from once it runs -- with the box off, a refused bin fails that row and leaves
+        its backups in place.
 
         :param job_class: which operation to queue.
         :param rows: the resources to run it over.

@@ -670,8 +670,8 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         images at all. "Sidecar" is the vocabulary the specs already use, kept over a plainer word
         because it names where these images live.
 
-        **"Files" is a flat page, not a group** (#298): the Recycle Bin choice
-        (`ScreenshotDeletionSettings`) used to sit on Images/File Extensions, but now also decides a
+        **"Files" is a flat page, not a group** (#298): the deletion policy
+        (`DeletionSettings`) used to sit on Images/File Extensions, but now also decides a
         `.tc` conversion's discarded backup and a discarded conversion-backups set, not only a
         screenshot's delete -- so it moved to its own top-level "Files" (`FilesPage`), its frame first
         on the page, alongside the excluded-file-patterns editor (formerly the standalone "Excluded

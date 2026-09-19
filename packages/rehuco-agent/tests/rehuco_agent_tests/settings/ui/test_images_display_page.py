@@ -9,16 +9,16 @@ from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.fields.widgets.image_lightbox import ImageViewerMode
 from rehuco_agent.settings import image_viewer_settings, markdown_rendering_settings
+from rehuco_agent.settings.deletion_settings import (
+    DeletionSettings,
+    shared_deletion_settings,
+)
 from rehuco_agent.settings.image_viewer_settings import shared_image_viewer_settings
 from rehuco_agent.settings.markdown_rendering_settings import (
     MarkdownRenderingSettings,
     shared_markdown_rendering_settings,
 )
 from rehuco_agent.settings.reference_images_settings import ReferenceImagesSettings, shared_reference_images_settings
-from rehuco_agent.settings.screenshot_deletion_settings import (
-    ScreenshotDeletionSettings,
-    shared_screenshot_deletion_settings,
-)
 from rehuco_agent.settings.ui import images_display_page
 from rehuco_agent.settings.ui.images_display_page import ImagesDisplayPage
 from rehuco_agent.settings.ui.settings_frame_filter import SettingsFrameFilter
@@ -469,9 +469,9 @@ def test_the_page_neither_reads_nor_writes_the_files_pages_settings(
     * stage a surface here and apply, and verify neither Files-side object was saved
     """
     files_save = mocker.patch.object(ReferenceImagesSettings, "save")
-    deletion_save = mocker.patch.object(ScreenshotDeletionSettings, "save")
+    deletion_save = mocker.patch.object(DeletionSettings, "save")
     shared_reference_images_settings().extensions = (".bmp",)
-    shared_screenshot_deletion_settings().use_recycle_bin = False
+    shared_deletion_settings().use_recycle_bin = False
     assert not page.is_dirty()
 
     check(page, ImageViewerMode.FULL_SCREEN)

@@ -16,7 +16,7 @@ import pytest
 from borco_pyside.recycle_bin import NoRecycleBinError
 from pytest_mock import MockerFixture
 from rehuco_agent.recycle_bin_deleter import RecycleBinDeleter, configured_deleter
-from rehuco_agent.settings.screenshot_deletion_settings import shared_screenshot_deletion_settings
+from rehuco_agent.settings.deletion_settings import shared_deletion_settings
 from rehuco_core import DEFAULT_DELETER, NoTrashBinError
 
 PATH: Final = Path("/fake/tutorial/info00.jpg")
@@ -113,6 +113,6 @@ def test_configured_deleter_is_the_default_deleter_when_the_setting_is_off() -> 
     * turn **Move deleted images to the Recycle Bin** off
     * verify the configured deleter is `~rehuco_core.DEFAULT_DELETER`
     """
-    shared_screenshot_deletion_settings().use_recycle_bin = False
+    shared_deletion_settings().use_recycle_bin = False
 
     assert configured_deleter() is DEFAULT_DELETER
