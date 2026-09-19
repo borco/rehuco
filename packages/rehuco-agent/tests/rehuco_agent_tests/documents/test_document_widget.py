@@ -4391,6 +4391,53 @@ def test_a_content_image_activated_in_the_dock_opens_the_lightbox_over_the_pack(
     assert len(lightbox.source) == 2
 
 
+def test_closing_a_content_viewer_selects_the_image_it_was_on_when_asked(
+    widget: DocumentWidget, mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """Closing a viewer opened from the dock selects, in the dock, the image it was on -- when the
+    setting says so, read at the close; off, the dock is left alone. A viewer over a set the dock has
+    since replaced selects nothing (#221).
+
+    **Test steps:**
+
+    * open a viewer from the dock, step forward and close it; verify the dock selected the new image
+    * turn the setting off, open and step again, close; verify the selection did not follow
+    * turn it on, open a viewer, re-enumerate the dock underneath it, close; verify no selection
+    """
+    entries = [ContentImageEntry(Path("/fake/refimages/pack.zip"), f"{index}.png", 0, 0) for index in range(3)]
+    content_model = widget._DocumentWidget__content_images_model  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    content_model.set_entries(entries, Path("/fake/refimages"))
+    mocker.patch.object(ArchiveImageSource, "load", side_effect=lambda *_: QImage(20, 10, QImage.Format.Format_RGB32))
+    grid = content_images_view(widget)
+    revealed = mocker.spy(grid, "reveal")
+
+    def view_then_close(start: int) -> None:
+        grid.image_activated.emit(start)
+        lightbox = widget.findChild(ImageLightbox)
+        assert isinstance(lightbox, ImageLightbox)
+        qtbot.keyClick(lightbox, Qt.Key.Key_Right)
+        with wait_destroyed(qtbot, lightbox):
+            qtbot.keyClick(lightbox, Qt.Key.Key_Escape)
+
+    view_then_close(0)
+    assert grid.selected == 1
+    revealed.assert_called_once_with(1)
+
+    shared_image_viewer_settings().lightbox_select_last_viewed = False
+    view_then_close(0)
+    assert grid.selected == 1
+    revealed.assert_called_once()
+
+    shared_image_viewer_settings().lightbox_select_last_viewed = True
+    grid.image_activated.emit(0)
+    lightbox = widget.findChild(ImageLightbox)
+    assert isinstance(lightbox, ImageLightbox)
+    content_model.set_entries(entries, Path("/fake/refimages"))
+    with wait_destroyed(qtbot, lightbox):
+        qtbot.keyClick(lightbox, Qt.Key.Key_Escape)
+    revealed.assert_called_once()
+
+
 def test_content_images_never_reach_the_screenshot_strip(widget: DocumentWidget, model: RehuDocumentModel) -> None:
     """The strip shows screenshots and only screenshots, and the curation editor's hidden list never
     touches a content image ([[data-model#image-meanings]], #221).

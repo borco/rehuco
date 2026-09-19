@@ -1049,9 +1049,28 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         :param index: the clicked position in the dock's source.
         """
         self.__viewer_follows_curation = False
-        self.__open_image_viewer(self.__content_images_view.source, index)
+        source = self.__content_images_view.source
+        viewer = self.__open_image_viewer(source, index)
+        viewer.closed.connect(lambda: self.__on_content_viewer_closed(viewer, source))
 
-    def __open_image_viewer(self, source: ImageSource, index: int) -> None:
+    def __on_content_viewer_closed(self, viewer: ImageLightbox, source: ImageSource) -> None:
+        """Select the image the viewer was on when it closed back in the grid, scrolled into view and
+        its group expanded if it was collapsed -- when the setting asks for it (#221).
+
+        The setting is read **now**, at the close, which is the only moment it applies: flipping it
+        while a viewer is up decides what that viewer's close does. Skipped when the grid has since
+        been re-enumerated under the viewer: its positions would then name other images.
+
+        :param viewer: the viewer that closed.
+        :param source: the grid's source it was opened over.
+        """
+        if not shared_image_viewer_settings().lightbox_select_last_viewed:
+            return
+        if self.__content_images_view.source is not source:
+            return
+        self.__content_images_view.reveal(viewer.current_index)
+
+    def __open_image_viewer(self, source: ImageSource, index: int) -> ImageLightbox:
         """Open ``source[index]`` maximized, on whichever surface the settings ask for.
 
         Shared by the three activation routes -- the viewer strip's curated set (#161), the Files
@@ -1061,6 +1080,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
 
         :param source: the set the viewer navigates.
         :param index: where in that set to start.
+        :returns: the viewer, revealed.
         """
         settings = shared_image_viewer_settings()
         # resolved here, not at construction: a document that has never shown a row follows whatever
@@ -1085,6 +1105,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         viewer.destroyed.connect(lambda: self.__on_image_viewer_gone(viewer))
         viewer.strip_visible_changed.connect(self.__on_strip_visible_changed)
         viewer.reveal()
+        return viewer
 
     def __on_curated_images_changed(self, images: list[Path]) -> None:
         """Adopt a rebuilt curated screenshot set, and re-point an open viewer at it (#161).

@@ -118,6 +118,7 @@ class ContentImagesView(QAbstractScrollArea):  # pylint: disable=too-many-instan
         self.__counts: Counter[str] = Counter()
         self.__collapsed: set[str] = set()
         self.__reveal_banner: str | None = None
+        self.__reveal_index: int | None = None
         self.__selected: int | None = None
         self.__hovered: int | None = None
         self.__swallow_release = False
@@ -197,6 +198,7 @@ class ContentImagesView(QAbstractScrollArea):  # pylint: disable=too-many-instan
         self.__flags = flags
         self.__collapsed.clear()
         self.__reveal_banner = None
+        self.__reveal_index = None
         self.schedule_repack()
 
     def set_collapsed(self, key: str, collapsed: bool) -> None:
@@ -219,6 +221,24 @@ class ContentImagesView(QAbstractScrollArea):  # pylint: disable=too-many-instan
                 self.set_selected(None)
         else:
             self.__collapsed.discard(key)
+        self.schedule_repack()
+
+    def reveal(self, index: int) -> None:
+        """Select the image at ``index`` and bring it into view, expanding its group if that is
+        collapsed -- what the viewer's close does with the image it was on (#221).
+
+        The scroll lands once the next pack has run, since an expansion moves every row below it; an
+        index outside the source is ignored.
+
+        :param index: the position to reveal.
+        """
+        if not 0 <= index < len(self.__source):
+            return
+        group = self.__groups[index] if index < len(self.__groups) else None
+        if group is not None and group in self.__collapsed:
+            self.__collapsed.discard(group)
+        self.set_selected(index)
+        self.__reveal_index = index
         self.schedule_repack()
 
     def set_selected(self, index: int | None) -> None:
@@ -540,6 +560,17 @@ class ContentImagesView(QAbstractScrollArea):  # pylint: disable=too-many-instan
             banner_tops = {row.banner: row.y for row in self.__layout.rows if row.banner is not None}
             scrollbar.setValue(min(scrollbar.value(), banner_tops[self.__reveal_banner]))
             self.__reveal_banner = None
+        if self.__reveal_index is not None:
+            # the least scroll that brings the whole cell into the viewport -- nothing when it is
+            # already there, so a viewer closed on the image it opened from leaves the grid still
+            _, top, _, height = self.__layout.rects[self.__reveal_index]
+            bottom = top + height
+            viewport_height = self.viewport().height()
+            if top < scrollbar.value():
+                scrollbar.setValue(top - ITEM_SPACING)
+            elif bottom > scrollbar.value() + viewport_height:
+                scrollbar.setValue(bottom + ITEM_SPACING - viewport_height)
+            self.__reveal_index = None
         self.viewport().update()
 
     def __on_model_reset(self) -> None:
@@ -553,6 +584,7 @@ class ContentImagesView(QAbstractScrollArea):  # pylint: disable=too-many-instan
         self.__source = self.__model.source
         self.__collapsed.clear()
         self.__reveal_banner = None
+        self.__reveal_index = None
         self.__hovered = None
         self.set_selected(None)
         self.verticalScrollBar().setValue(0)

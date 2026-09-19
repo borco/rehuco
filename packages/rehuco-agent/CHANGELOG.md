@@ -28,8 +28,9 @@ released becomes the body of the GitHub Release, so each entry is written to be 
   Display says: `Shift` for the document overlay, `Ctrl` for the app-window overlay, `Ctrl+Shift` for
   full screen.
 - Images / Display gains the Content Images row-height clamp and two banner boxes — zip file names,
-  folder names in zips — plus the viewer's info overlay, its background colour and whether a double-click
-  closes it, all applied live to open panels and viewers.
+  folder names in zips — plus the viewer's info overlay, its background colour, whether a double-click
+  closes it and whether closing it selects the image it was on back in the panel (scrolled into view,
+  its group expanded), all applied live to open panels and viewers.
 
 ### Changed
 

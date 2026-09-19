@@ -127,6 +127,19 @@
        </widget>
       </item>
       <item>
+       <widget class="QCheckBox" name="lightbox_select_last_check_box">
+        <property name="text">
+         <string>Focus and select the last image viewed in the viewer</string>
+        </property>
+        <property name="toolTip">
+         <string>Whether closing a viewer opened from the Content Images panel selects, in the panel, the image it was on -- scrolled into view, its group expanded if it was collapsed. Read when a viewer closes, so it applies to one already open.</string>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
        <layout class="QHBoxLayout" name="lightbox_backdrop_layout">
         <item>
          <widget class="QLabel" name="lightbox_backdrop_label">

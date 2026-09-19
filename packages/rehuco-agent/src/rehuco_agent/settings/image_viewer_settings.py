@@ -23,6 +23,7 @@ PREVIEWS_VISIBLE_KEY: Final = "previews_visible"
 LIGHTBOX_INFO_VISIBLE_KEY: Final = "lightbox_info_visible"
 LIGHTBOX_BACKDROP_KEY: Final = "lightbox_backdrop"
 LIGHTBOX_DOUBLE_CLICK_CLOSES_KEY: Final = "lightbox_double_click_closes"
+LIGHTBOX_SELECT_LAST_VIEWED_KEY: Final = "lightbox_select_last_viewed"
 CONTENT_ROWS_MIN_HEIGHT_KEY: Final = "content_rows_min_height"
 CONTENT_ROWS_MAX_HEIGHT_KEY: Final = "content_rows_max_height"
 CONTENT_ZIP_NAMES_KEY: Final = "content_zip_names"
@@ -68,6 +69,11 @@ DEFAULT_LIGHTBOX_DOUBLE_CLICK_CLOSES: Final = True
 """Whether a double-click on the maximized image closes the viewer (#221). On: the image was opened by
 a double-click, and the same gesture undoing it is the shortest way back; off for whoever double-clicks
 by habit while looking."""
+
+DEFAULT_LIGHTBOX_SELECT_LAST_VIEWED: Final = True
+"""Whether closing a viewer opened from the Content Images dock selects, in the dock, the image it was
+on -- scrolled into view, its group expanded (#221). On: the viewer is where the user went looking, and
+the grid picking up where they stopped is what makes the two one surface."""
 
 DEFAULT_CONTENT_ROWS_MIN_HEIGHT: Final = 140
 DEFAULT_CONTENT_ROWS_MAX_HEIGHT: Final = 260
@@ -149,6 +155,10 @@ class ImageViewerSettings(QObject):  # pylint: disable=too-many-instance-attribu
     """Whether a double-click on the maximized image closes the viewer (#221); applied to every open
     viewer."""
 
+    lightbox_select_last_viewed = SimpleProperty(DEFAULT_LIGHTBOX_SELECT_LAST_VIEWED)
+    """Whether closing a viewer opened from the Content Images dock selects the image it was on back
+    in the dock (#221). Read at the close, so it applies to a viewer already open."""
+
     content_rows_min_height = SimpleProperty(DEFAULT_CONTENT_ROWS_MIN_HEIGHT)
     content_rows_max_height = SimpleProperty(DEFAULT_CONTENT_ROWS_MAX_HEIGHT)
     """The Content Images dock's row-height clamp (#221); applying either re-packs every open dock."""
@@ -191,6 +201,9 @@ class ImageViewerSettings(QObject):  # pylint: disable=too-many-instance-attribu
         self.lightbox_double_click_closes = cast(
             bool, settings.value(LIGHTBOX_DOUBLE_CLICK_CLOSES_KEY, DEFAULT_LIGHTBOX_DOUBLE_CLICK_CLOSES, type=bool)
         )
+        self.lightbox_select_last_viewed = cast(
+            bool, settings.value(LIGHTBOX_SELECT_LAST_VIEWED_KEY, DEFAULT_LIGHTBOX_SELECT_LAST_VIEWED, type=bool)
+        )
         self.content_rows_min_height = cast(
             int, settings.value(CONTENT_ROWS_MIN_HEIGHT_KEY, DEFAULT_CONTENT_ROWS_MIN_HEIGHT, type=int)
         )
@@ -223,6 +236,7 @@ class ImageViewerSettings(QObject):  # pylint: disable=too-many-instance-attribu
         settings.setValue(LIGHTBOX_INFO_VISIBLE_KEY, self.lightbox_info_visible)
         settings.setValue(LIGHTBOX_BACKDROP_KEY, self.lightbox_backdrop)
         settings.setValue(LIGHTBOX_DOUBLE_CLICK_CLOSES_KEY, self.lightbox_double_click_closes)
+        settings.setValue(LIGHTBOX_SELECT_LAST_VIEWED_KEY, self.lightbox_select_last_viewed)
         settings.setValue(CONTENT_ROWS_MIN_HEIGHT_KEY, self.content_rows_min_height)
         settings.setValue(CONTENT_ROWS_MAX_HEIGHT_KEY, self.content_rows_max_height)
         settings.setValue(CONTENT_ZIP_NAMES_KEY, self.content_zip_names)

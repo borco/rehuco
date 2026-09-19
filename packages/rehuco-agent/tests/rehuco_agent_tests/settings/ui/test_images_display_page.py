@@ -387,6 +387,7 @@ def test_the_page_starts_on_the_saved_content_images_choices(page: ImagesDisplay
     assert check_box(page, "content_folder_names_check_box").isChecked() == settings.content_folder_names
     assert check_box(page, "lightbox_info_check_box").isChecked() == settings.lightbox_info_visible
     assert check_box(page, "lightbox_double_click_check_box").isChecked() == settings.lightbox_double_click_closes
+    assert check_box(page, "lightbox_select_last_check_box").isChecked() == settings.lightbox_select_last_viewed
     assert not page.is_dirty()
 
 
@@ -404,9 +405,11 @@ def test_save_changes_pushes_the_content_images_choices_into_the_shared_settings
     check_box(page, "content_folder_names_check_box").setChecked(True)
     check_box(page, "lightbox_info_check_box").setChecked(True)
     check_box(page, "lightbox_double_click_check_box").setChecked(False)
+    check_box(page, "lightbox_select_last_check_box").setChecked(False)
     assert page.is_dirty()
 
     page.save_changes()
+    assert shared_image_viewer_settings().lightbox_select_last_viewed is False
 
     settings = shared_image_viewer_settings()
     assert settings.content_rows_min_height == 100
@@ -433,10 +436,12 @@ def test_drop_changes_reverts_the_staged_content_images_choices(page: ImagesDisp
     check_box(page, "content_folder_names_check_box").setChecked(not settings.content_folder_names)
     check_box(page, "lightbox_info_check_box").setChecked(not settings.lightbox_info_visible)
     check_box(page, "lightbox_double_click_check_box").setChecked(not settings.lightbox_double_click_closes)
+    check_box(page, "lightbox_select_last_check_box").setChecked(not settings.lightbox_select_last_viewed)
     assert page.is_dirty()
 
     page.drop_changes()
     assert check_box(page, "lightbox_double_click_check_box").isChecked() == settings.lightbox_double_click_closes
+    assert check_box(page, "lightbox_select_last_check_box").isChecked() == settings.lightbox_select_last_viewed
 
     assert not page.is_dirty()
     assert spin_box(page, "content_min_height_spin_box").value() == settings.content_rows_min_height

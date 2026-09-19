@@ -33,6 +33,8 @@ class ImageChoices(NamedTuple):
     :param lightbox_backdrop: the colour behind a maximized image, as ``#rrggbb`` (#221).
     :param lightbox_double_click_closes: whether a double-click on the maximized image closes the
         viewer (#221).
+    :param lightbox_select_last_viewed: whether closing a viewer opened from the Content Images dock
+        selects the image it was on back in the dock (#221).
     :param content_min_height: the Content Images dock's shortest flush row (#221).
     :param content_max_height: the Content Images dock's tallest flush row (#221).
     :param content_zip_names: whether the Content Images dock banners each archive (#221).
@@ -48,6 +50,7 @@ class ImageChoices(NamedTuple):
     lightbox_info_visible: bool
     lightbox_backdrop: str
     lightbox_double_click_closes: bool
+    lightbox_select_last_viewed: bool
     content_min_height: int
     content_max_height: int
     content_zip_names: bool
@@ -170,6 +173,7 @@ class ImagesDisplayPage(QWidget):
         settings.lightbox_info_visible = staged.lightbox_info_visible
         settings.lightbox_backdrop = staged.lightbox_backdrop
         settings.lightbox_double_click_closes = staged.lightbox_double_click_closes
+        settings.lightbox_select_last_viewed = staged.lightbox_select_last_viewed
         settings.content_rows_min_height = staged.content_min_height
         settings.content_rows_max_height = staged.content_max_height
         settings.content_zip_names = staged.content_zip_names
@@ -192,6 +196,7 @@ class ImagesDisplayPage(QWidget):
         self.__ui.lightbox_info_check_box.setChecked(saved.lightbox_info_visible)
         self.set_backdrop(saved.lightbox_backdrop)
         self.__ui.lightbox_double_click_check_box.setChecked(saved.lightbox_double_click_closes)
+        self.__ui.lightbox_select_last_check_box.setChecked(saved.lightbox_select_last_viewed)
         self.__ui.content_min_height_spin_box.setValue(saved.content_min_height)
         self.__ui.content_max_height_spin_box.setValue(saved.content_max_height)
         self.__ui.content_zip_names_check_box.setChecked(saved.content_zip_names)
@@ -213,6 +218,7 @@ class ImagesDisplayPage(QWidget):
             self.__ui.lightbox_info_check_box.isChecked(),
             self.__backdrop,
             self.__ui.lightbox_double_click_check_box.isChecked(),
+            self.__ui.lightbox_select_last_check_box.isChecked(),
             self.__ui.content_min_height_spin_box.value(),
             self.__ui.content_max_height_spin_box.value(),
             self.__ui.content_zip_names_check_box.isChecked(),
@@ -236,6 +242,7 @@ class ImagesDisplayPage(QWidget):
             settings.lightbox_info_visible,
             settings.lightbox_backdrop,
             settings.lightbox_double_click_closes,
+            settings.lightbox_select_last_viewed,
             settings.content_rows_min_height,
             settings.content_rows_max_height,
             settings.content_zip_names,

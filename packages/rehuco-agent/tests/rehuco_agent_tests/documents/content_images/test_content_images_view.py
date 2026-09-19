@@ -581,6 +581,70 @@ def test_collapsing_a_group_from_inside_it_scrolls_back_to_its_banner(
     assert view.banner_at(QPoint(5, collapsed_banner.y - scrollbar.value() + 2)) == "sub/other.zip"
 
 
+def test_reveal_selects_scrolls_to_and_uncollapses_an_image(
+    view: ContentImagesView, content_model: ContentImagesModel, qtbot: QtBot
+) -> None:
+    """``reveal`` selects the image, brings its cell into the viewport with the least scroll -- none
+    when it is already in view -- and expands its group when that is collapsed; an index outside the
+    source is ignored, and one asked for before any pack still selects (#221).
+
+    **Test steps:**
+
+    * pack two long bannered groups, collapse the second, and reveal an image deep inside it
+    * verify it is selected, its group expanded, and its cell inside the viewport
+    * reveal an image near the top and verify the view scrolled back up to it; reveal it again and
+      verify the scroll did not move
+    * reveal a stray index and verify nothing changed
+    """
+    view.set_flags(ContentDisplayFlags(zip_names=True, folder_names=False))
+    content_model.set_entries(
+        [entry(PACK, f"{index}.png", WIDE) for index in range(30)]
+        + [entry(OTHER_PACK, f"{index}.png", WIDE) for index in range(30)],
+        REHU_DIRECTORY,
+    )
+    qtbot.waitUntil(lambda: view.layout_table is not None and len(view.layout_table.rows) > 6)
+    view.set_collapsed("sub/other.zip", True)
+    qtbot.waitUntil(lambda: view.layout_table is not None and view.layout_table.rects[59] == (0, 0, 0, 0))
+    scrollbar = view.verticalScrollBar()
+
+    view.reveal(59)
+    qtbot.waitUntil(lambda: view.layout_table is not None and view.layout_table.rects[59] != (0, 0, 0, 0))
+    qtbot.wait(50)
+    table = view.layout_table
+    assert table is not None
+    assert view.selected == 59
+    assert view.collapsed == frozenset()
+    _, top, _, height = table.rects[59]
+    assert scrollbar.value() <= top
+    assert top + height <= scrollbar.value() + view.viewport().height()
+
+    view.reveal(1)
+    qtbot.waitUntil(lambda: scrollbar.value() <= view.layout_table.rects[1][1] if view.layout_table else False)
+    assert view.selected == 1
+    settled = scrollbar.value()
+    view.reveal(1)
+    qtbot.wait(50)
+    assert scrollbar.value() == settled
+
+    view.reveal(60)
+    assert view.selected == 1
+
+
+def test_reveal_before_any_pack_selects_without_a_group(
+    view: ContentImagesView, content_model: ContentImagesModel
+) -> None:
+    """Asked before the first pack has run, ``reveal`` has no groups to consult yet and simply selects.
+
+    **Test steps:**
+
+    * set entries and reveal one before the pack timer fires
+    * verify it is selected
+    """
+    content_model.set_entries([entry(PACK, "a.png")], REHU_DIRECTORY)
+    view.reveal(0)
+    assert view.selected == 0
+
+
 def test_new_flags_open_every_group(view: ContentImagesView, content_model: ContentImagesModel, qtbot: QtBot) -> None:
     """The groups change with the banner boxes, so what was collapsed under the old ones is forgotten.
 

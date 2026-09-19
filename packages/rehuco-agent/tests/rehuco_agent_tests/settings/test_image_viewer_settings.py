@@ -21,6 +21,7 @@ from rehuco_agent.settings.image_viewer_settings import (
     DEFAULT_LIGHTBOX_BACKDROP,
     DEFAULT_LIGHTBOX_DOUBLE_CLICK_CLOSES,
     DEFAULT_LIGHTBOX_INFO_VISIBLE,
+    DEFAULT_LIGHTBOX_SELECT_LAST_VIEWED,
     DEFAULT_MODE,
     DEFAULT_PREVIEW_WRAP,
     DEFAULT_PREVIEWS_VISIBLE,
@@ -30,6 +31,7 @@ from rehuco_agent.settings.image_viewer_settings import (
     LIGHTBOX_BACKDROP_KEY,
     LIGHTBOX_DOUBLE_CLICK_CLOSES_KEY,
     LIGHTBOX_INFO_VISIBLE_KEY,
+    LIGHTBOX_SELECT_LAST_VIEWED_KEY,
     MODE_KEY,
     PREVIEW_WRAP_KEY,
     PREVIEWS_VISIBLE_KEY,
@@ -320,10 +322,12 @@ def test_load_defaults_the_content_images_choices_when_nothing_was_saved(setting
     viewer_settings.content_folder_names = True
     viewer_settings.lightbox_info_visible = True
     viewer_settings.lightbox_double_click_closes = False
+    viewer_settings.lightbox_select_last_viewed = False
 
     viewer_settings.load(settings)  # type: ignore[arg-type]
 
     assert viewer_settings.lightbox_double_click_closes is DEFAULT_LIGHTBOX_DOUBLE_CLICK_CLOSES is True
+    assert viewer_settings.lightbox_select_last_viewed is DEFAULT_LIGHTBOX_SELECT_LAST_VIEWED is True
     assert viewer_settings.content_rows_min_height == DEFAULT_CONTENT_ROWS_MIN_HEIGHT == 140
     assert viewer_settings.content_rows_max_height == DEFAULT_CONTENT_ROWS_MAX_HEIGHT == 260
     assert viewer_settings.content_zip_names is DEFAULT_CONTENT_ZIP_NAMES is True
@@ -347,6 +351,7 @@ def test_save_then_load_round_trips_the_content_images_choices(settings: FakeSet
     viewer_settings.content_folder_names = True
     viewer_settings.lightbox_info_visible = True
     viewer_settings.lightbox_double_click_closes = False
+    viewer_settings.lightbox_select_last_viewed = False
 
     viewer_settings.save(settings)  # type: ignore[arg-type]
 
@@ -354,6 +359,7 @@ def test_save_then_load_round_trips_the_content_images_choices(settings: FakeSet
     restored.load(settings)  # type: ignore[arg-type]
 
     assert restored.lightbox_double_click_closes is False
+    assert restored.lightbox_select_last_viewed is False
     assert restored.content_rows_min_height == 100
     assert restored.content_rows_max_height == 400
     assert restored.content_zip_names is False
@@ -404,6 +410,7 @@ def test_saving_writes_every_choice_together(settings: FakeSettings) -> None:
     viewer_settings.editor_preview_height = 240
     viewer_settings.lightbox_info_visible = True
     viewer_settings.lightbox_double_click_closes = False
+    viewer_settings.lightbox_select_last_viewed = False
     viewer_settings.content_rows_min_height = 100
     viewer_settings.content_rows_max_height = 400
     viewer_settings.content_zip_names = False
@@ -412,6 +419,7 @@ def test_saving_writes_every_choice_together(settings: FakeSettings) -> None:
 
     settings.beginGroup(GROUP)
     assert settings.value(LIGHTBOX_DOUBLE_CLICK_CLOSES_KEY) is False
+    assert settings.value(LIGHTBOX_SELECT_LAST_VIEWED_KEY) is False
     assert settings.value(MODE_KEY) == "full_screen"
     assert settings.value(STRIP_VISIBLE_KEY) is True
     assert settings.value(PREVIEW_WRAP_KEY) is True
