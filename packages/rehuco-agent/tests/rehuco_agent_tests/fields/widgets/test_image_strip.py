@@ -148,24 +148,6 @@ def hosted_strip(qtbot: QtBot) -> Iterator[ImageStrip]:
     yield strip
 
 
-@fixture
-def hosted_wheel_strip(qtbot: QtBot) -> Iterator[ImageStrip]:
-    """A hosted strip that takes the plain wheel, as the maximized viewer's own row does.
-
-    Same host-keeps-it-alive shape as :func:`hosted_strip`; only ``wheel_scrolls`` differs.
-
-    :param qtbot: pytest-qt fixture.
-    :returns: the strip, parented and shown.
-    """
-    host = QWidget()
-    layout = QVBoxLayout(host)
-    strip = ImageStrip(wheel_scrolls=True)
-    layout.addWidget(strip)
-    qtbot.addWidget(host)
-    host.show()
-    yield strip
-
-
 def current_of(strip: ImageStrip, index: int) -> bool:
     """Whether the thumbnail at ``index`` is marked as the current screenshot.
 
@@ -303,13 +285,14 @@ def test_no_scanner_shows_nothing(qtbot: QtBot) -> None:
     assert strip_layout(strip).count() == 0
 
 
-def test_clicking_a_thumbnail_reports_its_screenshot(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """Left-clicking a thumbnail emits ``image_activated`` with that thumbnail's own path (#160).
+def test_double_clicking_a_thumbnail_reports_its_screenshot(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Left double-clicking a thumbnail emits ``image_activated`` with that thumbnail's own path
+    (#160); a single click reports nothing (#221 -- opening maximized is a double-click everywhere).
 
     **Test steps:**
 
-    * paint two thumbnails and click the second
-    * verify the strip reported the second path, not the first
+    * paint two thumbnails, single-click the second and verify nothing was reported
+    * double-click it and verify the strip reported the second path, not the first
     """
     mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
     strip = ImageStrip()
@@ -317,10 +300,12 @@ def test_clicking_a_thumbnail_reports_its_screenshot(mocker: MockerFixture, qtbo
     strip.set_images(PATHS)
     activated: list[Path] = []
     strip.image_activated.connect(activated.append)
-
     thumbnail = thumbnail_at(strip, 1)
-    qtbot.mouseClick(thumbnail, Qt.MouseButton.LeftButton)
 
+    qtbot.mouseClick(thumbnail, Qt.MouseButton.LeftButton)
+    assert not activated
+
+    qtbot.mouseDClick(thumbnail, Qt.MouseButton.LeftButton)
     assert activated == [PATHS[1]]
 
 
@@ -333,7 +318,7 @@ def test_a_rebuilt_thumbnail_still_reports_its_screenshot(mocker: MockerFixture,
     **Test steps:**
 
     * paint two thumbnails, then re-paint with only the second
-    * click the surviving thumbnail and verify it still reports its path
+    * double-click the surviving thumbnail and verify it still reports its path
     """
     mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
     strip = ImageStrip()
@@ -344,17 +329,17 @@ def test_a_rebuilt_thumbnail_still_reports_its_screenshot(mocker: MockerFixture,
     strip.image_activated.connect(activated.append)
 
     thumbnail = thumbnail_at(strip, 0)
-    qtbot.mouseClick(thumbnail, Qt.MouseButton.LeftButton)
+    qtbot.mouseDClick(thumbnail, Qt.MouseButton.LeftButton)
 
     assert activated == [PATHS[1]]
 
 
 def test_a_right_click_activates_nothing(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """Only a left-click opens a screenshot; other buttons are left alone.
+    """Only a left double-click opens a screenshot; other buttons are left alone.
 
     **Test steps:**
 
-    * paint one thumbnail and right-click it
+    * paint one thumbnail and right-double-click it
     * verify nothing was reported
     """
     mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
@@ -365,7 +350,7 @@ def test_a_right_click_activates_nothing(mocker: MockerFixture, qtbot: QtBot) ->
     strip.image_activated.connect(activated.append)
 
     thumbnail = thumbnail_at(strip, 0)
-    qtbot.mouseClick(thumbnail, Qt.MouseButton.RightButton)
+    qtbot.mouseDClick(thumbnail, Qt.MouseButton.RightButton)
 
     assert not activated
 
@@ -750,31 +735,6 @@ def test_the_strip_draws_no_frame_of_its_own(hosted_strip: ImageStrip) -> None:
     assert hosted_strip.viewportMargins() == QMargins(0, 0, 0, 0)
 
 
-def test_the_wheel_scrolls_the_row_sideways(mocker: MockerFixture, hosted_wheel_strip: ImageStrip) -> None:
-    """A plain wheel scrolls the one-row strip horizontally (#161).
-
-    Regression: a wheel reports a *vertical* delta, which the inherited handler spends on a vertical
-    scrollbar this widget does not have -- so the wheel did nothing at all over a row too long to fit.
-    Sent to the viewport, which is where Qt delivers it (a thumbnail ignores wheels, so a real one
-    propagates there from wherever the pointer sits).
-
-    **Test steps:**
-
-    * fill a strip past its width, then wheel down over it and back up
-    * verify the row scrolled out and back
-    """
-    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(WIDE_PIXMAP, 10))
-    hosted_wheel_strip.set_images(PATHS * 8)
-    scrollbar = hosted_wheel_strip.horizontalScrollBar()
-    assert scrollbar.maximum() > 0
-
-    send_wheel(hosted_wheel_strip.viewport(), -WHEEL_STEP)
-    assert scrollbar.value() > 0
-
-    send_wheel(hosted_wheel_strip.viewport(), WHEEL_STEP)
-    assert scrollbar.value() == 0
-
-
 def test_a_thumbnail_click_is_not_passed_on_to_whatever_is_behind(
     mocker: MockerFixture, hosted_strip: ImageStrip, qtbot: QtBot
 ) -> None:
@@ -786,8 +746,8 @@ def test_a_thumbnail_click_is_not_passed_on_to_whatever_is_behind(
 
     **Test steps:**
 
-    * paint a thumbnail and click it
-    * verify it reported its own screenshot and the click did not reach the host behind it
+    * paint a thumbnail and double-click it
+    * verify it reported its own screenshot and no release reached the host behind it
     """
     mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
     hosted_strip.set_images(PATHS[:1])
@@ -798,7 +758,7 @@ def test_a_thumbnail_click_is_not_passed_on_to_whatever_is_behind(
     reached_host: list[bool] = []
     host.mouseReleaseEvent = lambda _event: reached_host.append(True)  # type: ignore[method-assign]
 
-    qtbot.mouseClick(thumbnail_at(hosted_strip, 0), Qt.MouseButton.LeftButton)
+    qtbot.mouseDClick(thumbnail_at(hosted_strip, 0), Qt.MouseButton.LeftButton)
 
     assert activated == PATHS[:1]
     assert not reached_host
@@ -996,7 +956,7 @@ def test_a_wrapped_thumbnail_still_reports_its_screenshot(
 
     **Test steps:**
 
-    * paint two thumbnails, wrap the strip, and click the second
+    * paint two thumbnails, wrap the strip, and double-click the second
     * verify it reported its own screenshot
     """
     mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
@@ -1009,7 +969,7 @@ def test_a_wrapped_thumbnail_still_reports_its_screenshot(
     assert item is not None
     thumbnail = item.widget()
     assert thumbnail is not None
-    qtbot.mouseClick(thumbnail, Qt.MouseButton.LeftButton)
+    qtbot.mouseDClick(thumbnail, Qt.MouseButton.LeftButton)
 
     assert activated == [PATHS[1]]
 

@@ -3,7 +3,8 @@
 from collections.abc import Iterator
 from typing import Any
 
-from PySide6.QtWidgets import QCheckBox, QRadioButton, QSpinBox
+from PySide6.QtGui import QColor
+from PySide6.QtWidgets import QCheckBox, QColorDialog, QPushButton, QRadioButton, QSpinBox
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -353,6 +354,177 @@ def test_drop_changes_reverts_every_staged_choice(page: ImagesDisplayPage) -> No
     assert spin_box(page, "preview_height_spin_box").value() == settings.preview_image_height
     assert spin_box(page, "lightbox_height_spin_box").value() == settings.lightbox_image_height
     assert spin_box(page, "editor_preview_height_spin_box").value() == settings.editor_preview_height
+
+
+# region the Content Images dock and the info overlay (#221)
+
+
+def check_box(page: ImagesDisplayPage, name: str) -> QCheckBox:
+    """One of the page's check boxes, by its ``images_display_page.ui`` name.
+
+    :param page: the page under test.
+    :param name: the check box's object name.
+    :returns: that check box.
+    """
+    box = page.findChild(QCheckBox, name)
+    assert isinstance(box, QCheckBox)
+    return box
+
+
+def test_the_page_starts_on_the_saved_content_images_choices(page: ImagesDisplayPage) -> None:
+    """A fresh page shows the clamp, both banner boxes and the info-overlay box as saved (#221).
+
+    **Test steps:**
+
+    * build a page over settings that were never saved
+    * verify each widget shows that setting's default and nothing reads as pending
+    """
+    settings = shared_image_viewer_settings()
+
+    assert spin_box(page, "content_min_height_spin_box").value() == settings.content_rows_min_height
+    assert spin_box(page, "content_max_height_spin_box").value() == settings.content_rows_max_height
+    assert check_box(page, "content_zip_names_check_box").isChecked() == settings.content_zip_names
+    assert check_box(page, "content_folder_names_check_box").isChecked() == settings.content_folder_names
+    assert check_box(page, "lightbox_info_check_box").isChecked() == settings.lightbox_info_visible
+    assert check_box(page, "lightbox_double_click_check_box").isChecked() == settings.lightbox_double_click_closes
+    assert check_box(page, "lightbox_select_last_check_box").isChecked() == settings.lightbox_select_last_viewed
+    assert not page.is_dirty()
+
+
+def test_save_changes_pushes_the_content_images_choices_into_the_shared_settings(page: ImagesDisplayPage) -> None:
+    """Applying the page writes the clamp, the banner boxes and the info-overlay box (#221).
+
+    **Test steps:**
+
+    * stage all five, then apply
+    * verify the shared settings carry every one of them
+    """
+    spin_box(page, "content_min_height_spin_box").setValue(100)
+    spin_box(page, "content_max_height_spin_box").setValue(400)
+    check_box(page, "content_zip_names_check_box").setChecked(False)
+    check_box(page, "content_folder_names_check_box").setChecked(True)
+    check_box(page, "lightbox_info_check_box").setChecked(True)
+    check_box(page, "lightbox_double_click_check_box").setChecked(False)
+    check_box(page, "lightbox_select_last_check_box").setChecked(False)
+    assert page.is_dirty()
+
+    page.save_changes()
+    assert shared_image_viewer_settings().lightbox_select_last_viewed is False
+
+    settings = shared_image_viewer_settings()
+    assert settings.content_rows_min_height == 100
+    assert settings.content_rows_max_height == 400
+    assert settings.content_zip_names is False
+    assert settings.content_folder_names is True
+    assert settings.lightbox_info_visible is True
+    assert settings.lightbox_double_click_closes is False
+    assert not page.is_dirty()
+
+
+def test_drop_changes_reverts_the_staged_content_images_choices(page: ImagesDisplayPage) -> None:
+    """Resetting the page discards the staged clamp, banner boxes and info-overlay box (#221).
+
+    **Test steps:**
+
+    * stage a change to each of the five without applying, then reset
+    * verify every widget is back on the saved value
+    """
+    settings = shared_image_viewer_settings()
+    spin_box(page, "content_min_height_spin_box").setValue(settings.content_rows_min_height - 20)
+    spin_box(page, "content_max_height_spin_box").setValue(settings.content_rows_max_height + 20)
+    check_box(page, "content_zip_names_check_box").setChecked(not settings.content_zip_names)
+    check_box(page, "content_folder_names_check_box").setChecked(not settings.content_folder_names)
+    check_box(page, "lightbox_info_check_box").setChecked(not settings.lightbox_info_visible)
+    check_box(page, "lightbox_double_click_check_box").setChecked(not settings.lightbox_double_click_closes)
+    check_box(page, "lightbox_select_last_check_box").setChecked(not settings.lightbox_select_last_viewed)
+    assert page.is_dirty()
+
+    page.drop_changes()
+    assert check_box(page, "lightbox_double_click_check_box").isChecked() == settings.lightbox_double_click_closes
+    assert check_box(page, "lightbox_select_last_check_box").isChecked() == settings.lightbox_select_last_viewed
+
+    assert not page.is_dirty()
+    assert spin_box(page, "content_min_height_spin_box").value() == settings.content_rows_min_height
+    assert spin_box(page, "content_max_height_spin_box").value() == settings.content_rows_max_height
+    assert check_box(page, "content_zip_names_check_box").isChecked() == settings.content_zip_names
+    assert check_box(page, "content_folder_names_check_box").isChecked() == settings.content_folder_names
+    assert check_box(page, "lightbox_info_check_box").isChecked() == settings.lightbox_info_visible
+
+
+def test_the_backdrop_is_picked_staged_and_applied(page: ImagesDisplayPage, mocker: MockerFixture) -> None:
+    """The backdrop button opens the colour dialog on the staged colour, stages what it returns as
+    ``#rrggbb`` on its own face, and Apply pushes it into the shared settings; a cancelled dialog
+    stages nothing (#221).
+
+    **Test steps:**
+
+    * make the dialog return a colour, click the button, and verify the button shows it and the page
+      is dirty
+    * apply and verify the shared settings carry it
+    * make the dialog return an invalid colour (cancel), click again, and verify nothing changed
+    """
+    button = page.findChild(QPushButton, "lightbox_backdrop_button")
+    assert isinstance(button, QPushButton)
+    assert button.text() == shared_image_viewer_settings().lightbox_backdrop
+    picker = mocker.patch.object(QColorDialog, "getColor", return_value=QColor("#336699"))
+
+    button.click()
+
+    assert picker.call_args.args[0] == QColor(shared_image_viewer_settings().lightbox_backdrop)
+    assert page.backdrop == "#336699"
+    assert button.text() == "#336699"
+    assert page.is_dirty()
+    page.save_changes()
+    assert shared_image_viewer_settings().lightbox_backdrop == "#336699"
+
+    picker.return_value = QColor()
+    button.click()
+    assert page.backdrop == "#336699"
+
+
+def test_the_clamp_keeps_its_minimum_at_or_below_its_maximum(page: ImagesDisplayPage) -> None:
+    """Raising the minimum past the maximum pushes the maximum up; lowering the maximum under the
+    minimum pushes the minimum down -- ``min <= max`` in every staged state (#221).
+
+    **Test steps:**
+
+    * raise the minimum past the maximum and verify the maximum followed
+    * lower the maximum under the minimum and verify the minimum followed
+    """
+    minimum = spin_box(page, "content_min_height_spin_box")
+    maximum = spin_box(page, "content_max_height_spin_box")
+
+    minimum.setValue(maximum.value() + 50)
+    assert maximum.value() == minimum.value()
+
+    maximum.setValue(minimum.value() - 60)
+    assert minimum.value() == maximum.value()
+
+
+def test_re_seeding_the_clamp_lands_on_the_saved_pair_whatever_it_showed(page: ImagesDisplayPage) -> None:
+    """Dropping changes restores a saved pair wholly above or wholly below the staged one (#221).
+
+    Regression guard for the push rule's reason to exist: with linked *bounds* instead, re-seeding
+    ``(300, 400)`` over a page showing ``(140, 260)`` would clamp the minimum at 260 on the way.
+
+    **Test steps:**
+
+    * save a pair wholly above the defaults, drop changes, and verify the widgets show it
+    * save a pair wholly below it, drop changes, and verify again
+    """
+    settings = shared_image_viewer_settings()
+    for pair in ((300, 400), (60, 80)):
+        settings.content_rows_min_height, settings.content_rows_max_height = pair
+
+        page.drop_changes()
+
+        assert (
+            spin_box(page, "content_min_height_spin_box").value(),
+            spin_box(page, "content_max_height_spin_box").value(),
+        ) == pair
+
+
+# endregion
 
 
 # region the description image-width cap (moved here from DescriptionsPage)

@@ -53,7 +53,7 @@
       <item>
        <widget class="QLabel" name="surface_hint_label">
         <property name="text">
-         <string>Where a screenshot opens when it is clicked in the image strip:</string>
+         <string>Where an image opens when it is double-clicked, unless a key held down picks another surface:</string>
         </property>
         <property name="wordWrap">
          <bool>true</bool>
@@ -63,10 +63,10 @@
       <item>
        <widget class="QRadioButton" name="document_overlay_radio_button">
         <property name="text">
-         <string>rehu window overlay</string>
+         <string>rehu window overlay (or SHIFT)</string>
         </property>
         <property name="toolTip">
-         <string>Covers the open document, leaving its tab and the app's menus and toolbars visible.</string>
+         <string>Covers the open document, leaving its tab and the app's menus and toolbars visible. Holding SHIFT while double-clicking opens this way whatever is chosen here.</string>
         </property>
         <property name="checked">
          <bool>true</bool>
@@ -76,20 +76,30 @@
       <item>
        <widget class="QRadioButton" name="app_window_overlay_radio_button">
         <property name="text">
-         <string>app window overlay</string>
+         <string>app window overlay (or CTRL)</string>
         </property>
         <property name="toolTip">
-         <string>Covers the whole main window, leaving only its menu, tool, and status bars visible.</string>
+         <string>Covers the whole main window, leaving only its menu, tool, and status bars visible. Holding CTRL while double-clicking opens this way whatever is chosen here.</string>
         </property>
        </widget>
       </item>
       <item>
        <widget class="QRadioButton" name="full_screen_radio_button">
         <property name="text">
-         <string>frameless full-screen</string>
+         <string>frameless full-screen (or CTRL+SHIFT)</string>
         </property>
         <property name="toolTip">
-         <string>Covers the entire screen, with no window frame.</string>
+         <string>Covers the entire screen, with no window frame. Holding CTRL+SHIFT while double-clicking opens this way whatever is chosen here.</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QCheckBox" name="lightbox_info_check_box">
+        <property name="text">
+         <string>Show image info</string>
+        </property>
+        <property name="toolTip">
+         <string>Whether a maximized image shows its name, pixel size and file size in the corner. The I key toggles it in an open viewer; applying this sets every open viewer too.</string>
         </property>
        </widget>
       </item>
@@ -102,6 +112,66 @@
          <string>Whether a maximized screenshot opens with its thumbnail strip shown. Each document remembers its own strip, so this only decides what a document that has never shown one starts with.</string>
         </property>
        </widget>
+      </item>
+      <item>
+       <widget class="QCheckBox" name="lightbox_double_click_check_box">
+        <property name="text">
+         <string>Double-click closes the viewer</string>
+        </property>
+        <property name="toolTip">
+         <string>Whether a double-click on the maximized image closes the viewer -- the gesture that opened it, undoing it. Applying this sets every open viewer too.</string>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QCheckBox" name="lightbox_select_last_check_box">
+        <property name="text">
+         <string>Focus and select the last image viewed in the viewer</string>
+        </property>
+        <property name="toolTip">
+         <string>Whether closing a viewer opened from the Content Images panel selects, in the panel, the image it was on -- scrolled into view, its group expanded if it was collapsed. Read when a viewer closes, so it applies to one already open.</string>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <layout class="QHBoxLayout" name="lightbox_backdrop_layout">
+        <item>
+         <widget class="QLabel" name="lightbox_backdrop_label">
+          <property name="text">
+           <string>Background:</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="lightbox_backdrop_button">
+          <property name="toolTip">
+           <string>The colour painted behind a maximized image. Applying it recolours every open viewer.</string>
+          </property>
+          <property name="text">
+           <string>#1e1e1e</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="lightbox_backdrop_spacer">
+          <property name="orientation">
+           <enum>Qt::Orientation::Horizontal</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>0</width>
+            <height>0</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+       </layout>
       </item>
      </layout>
     </widget>
@@ -257,6 +327,117 @@
         </property>
         <property name="value">
          <number>100</number>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QFrame" name="content_frame">
+     <property name="sizePolicy">
+      <sizepolicy hsizetype="Preferred" vsizetype="Maximum">
+       <horstretch>0</horstretch>
+       <verstretch>0</verstretch>
+      </sizepolicy>
+     </property>
+     <property name="frameShape">
+      <enum>QFrame::Shape::StyledPanel</enum>
+     </property>
+     <property name="frameShadow">
+      <enum>QFrame::Shadow::Raised</enum>
+     </property>
+     <layout class="QFormLayout" name="content_frame_layout">
+      <item row="0" column="0" colspan="2">
+       <widget class="QLabel" name="content_frame_label">
+        <property name="font">
+         <font>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string>Content images</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="content_min_height_label">
+        <property name="text">
+         <string>Minimum row height:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QSpinBox" name="content_min_height_spin_box">
+        <property name="toolTip">
+         <string>The shortest a row of a reference pack's images is rescaled to so that it lands flush on the dock's edge. A row that would need to be shorter is left ragged instead.</string>
+        </property>
+        <property name="suffix">
+         <string> px</string>
+        </property>
+        <property name="minimum">
+         <number>48</number>
+        </property>
+        <property name="maximum">
+         <number>1000</number>
+        </property>
+        <property name="singleStep">
+         <number>10</number>
+        </property>
+        <property name="value">
+         <number>140</number>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="0">
+       <widget class="QLabel" name="content_max_height_label">
+        <property name="text">
+         <string>Maximum row height:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="1">
+       <widget class="QSpinBox" name="content_max_height_spin_box">
+        <property name="toolTip">
+         <string>The tallest a row of a reference pack's images is rescaled to so that it lands flush on the dock's edge. A row that would need to be taller is left ragged instead.</string>
+        </property>
+        <property name="suffix">
+         <string> px</string>
+        </property>
+        <property name="minimum">
+         <number>48</number>
+        </property>
+        <property name="maximum">
+         <number>1000</number>
+        </property>
+        <property name="singleStep">
+         <number>10</number>
+        </property>
+        <property name="value">
+         <number>260</number>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="0" colspan="2">
+       <widget class="QCheckBox" name="content_zip_names_check_box">
+        <property name="text">
+         <string>Show zip file names</string>
+        </property>
+        <property name="toolTip">
+         <string>Start each archive's images with a banner naming it, as a path relative to the resource's folder.</string>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item row="4" column="0" colspan="2">
+       <widget class="QCheckBox" name="content_folder_names_check_box">
+        <property name="text">
+         <string>Show folder names in zips</string>
+        </property>
+        <property name="toolTip">
+         <string>Start each folder's images inside an archive with a banner naming the folder.</string>
         </property>
        </widget>
       </item>

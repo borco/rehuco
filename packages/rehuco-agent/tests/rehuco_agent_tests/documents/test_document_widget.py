@@ -31,13 +31,30 @@ from borco_pyside.logging.log_model import MESSAGE_COLUMN
 from borco_pyside.theming import themed_svg_icon
 from borco_pyside.widgets import FlowLayout, MessageBanner, ToolBarStretch
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QKeySequence, QPixmap
-from PySide6.QtWidgets import QLabel, QLineEdit, QMenu, QMessageBox, QToolBar, QToolButton, QTreeView, QWidget
-from pytest import fixture, raises
+from PySide6.QtGui import QImage, QKeySequence, QPixmap
+from PySide6.QtWidgets import (
+    QApplication,
+    QLabel,
+    QLineEdit,
+    QMenu,
+    QMessageBox,
+    QToolBar,
+    QToolButton,
+    QTreeView,
+    QWidget,
+)
+from pytest import fixture, mark, raises
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.app_logging import LOG_VIEW_ICON_RESOURCE, shared_log_bridge
 from rehuco_agent.asking_deleter import AskingDeleter
+from rehuco_agent.documents.content_images import (
+    ArchiveImageSource,
+    ContentDisplayFlags,
+    ContentImagesPanel,
+    ContentImagesView,
+    content_images_model,
+)
 from rehuco_agent.documents.document_fields import (
     EDITOR_IMAGES_TAB,
     EDITOR_MAIN_TAB,
@@ -48,6 +65,10 @@ from rehuco_agent.documents.document_widget import (
     APPLY_DEFAULT_LAYOUT_TOOLTIP,
     CHECKSUM_DOCK_MIN_HEIGHT,
     CHECKSUM_ICON_RESOURCE,
+    CONTENT_IMAGES_DOCK_MIN_HEIGHT,
+    CONTENT_IMAGES_DOCK_NAME,
+    CONTENT_IMAGES_DOCK_TITLE,
+    CONTENT_IMAGES_ICON_RESOURCE,
     DEFAULT_LAYOUT_ICON_RESOURCE,
     FILES_DOCK_MIN_HEIGHT,
     FILES_ICON_RESOURCE,
@@ -58,9 +79,11 @@ from rehuco_agent.documents.document_widget import (
     SAVE_DEFAULT_LAYOUT_LABEL,
     SAVE_PREVIEW_ICON_RESOURCE,
     STATE_IMAGE_STRIP_VISIBLE_KEY,
+    STATE_VERSION,
     STATE_VERSION_KEY,
     STATE_WIDGET_STATE_KEY,
     DocumentWidget,
+    viewer_mode_for,
 )
 from rehuco_agent.documents.files_view import FilesView
 from rehuco_agent.documents.name_suggestion_model import NameSuggestionModel
@@ -73,8 +96,11 @@ from rehuco_agent.fields.widgets import (
     ImageSelector,
     ImageStrip,
     ImageViewerMode,
+    MarkdownView,
     PathEditor,
+    PathImageSource,
     SingleChoiceRadioButtons,
+    ThumbnailRow,
     TypeBadge,
 )
 from rehuco_agent.fields.widgets.image_lightbox import STRIP_TOGGLE_BUTTON_NAME
@@ -85,10 +111,12 @@ from rehuco_agent.settings.default_layout_settings import shared_default_layout_
 from rehuco_agent.settings.deletion_settings import DeletionKind, shared_deletion_settings
 from rehuco_agent.settings.image_viewer_settings import shared_image_viewer_settings
 from rehuco_agent.settings.logs_settings import shared_logs_settings
+from rehuco_agent.settings.reference_images_settings import shared_reference_images_settings
 from rehuco_core import (
     CURRENT_FORMAT_VERSION,
     TUTORIAL_PLUGIN,
     ChecksumReport,
+    ContentImageEntry,
     ConversionBackups,
     LockReason,
     LockReasonKind,
@@ -248,6 +276,27 @@ def curate_screenshots(widget: DocumentWidget, paths: list[Path], mocker: Mocker
     strip.set_images(paths)
 
 
+def loadable_lightbox_image(mocker: MockerFixture) -> None:
+    """Make every path a maximized viewer opens decode as a real image, with no file on disk.
+
+    Patched at the source's own seam (`PathImageSource.load`), which the viewer's maximized copy and
+    its lazy thumbnail row both read through (#221).
+
+    :param mocker: pytest-mock fixture.
+    """
+    mocker.patch.object(PathImageSource, "load", side_effect=lambda *_: QImage(320, 180, QImage.Format.Format_RGB32))
+
+
+def lightbox_paths(lightbox: ImageLightbox) -> list[Path]:
+    """The set a maximized viewer navigates, as the paths it was opened over.
+
+    :param lightbox: the viewer.
+    :returns: the paths, in order.
+    """
+    source = lightbox.source
+    return [source.key(index) for index in range(len(source))]  # type: ignore[misc]
+
+
 def strip_wraps(strip: ImageStrip) -> bool:
     """Whether ``strip`` is laying its thumbnails out wrapped rather than on one row (#70).
 
@@ -274,7 +323,7 @@ def test_activating_a_screenshot_opens_it_maximized_over_the_document(
     * report an activation through the images field, as a thumbnail click does
     * verify a viewer opened, parented to this widget, on the settings' default surface
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_lightbox.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    loadable_lightbox_image(mocker)
 
     activate_screenshot(widget, Path("/fake/info00.jpg"))
 
@@ -298,7 +347,7 @@ def test_the_maximized_viewer_opens_on_the_surface_the_settings_name(
     * report an activation
     * verify the viewer that opened is a window, not an overlay
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_lightbox.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    loadable_lightbox_image(mocker)
     shared_image_viewer_settings().mode = ImageViewerMode.FULL_SCREEN
 
     activate_screenshot(widget, Path("/fake/info00.jpg"))
@@ -320,7 +369,7 @@ def test_take_focus_hands_the_keyboard_to_an_open_viewer(widget: DocumentWidget,
     * call ``take_focus`` as `DocumentsDock` does when this document becomes current
     * verify the viewer is this document's focus widget again
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_lightbox.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    loadable_lightbox_image(mocker)
     activate_screenshot(widget, Path("/fake/info00.jpg"))
     lightbox = widget.findChild(ImageLightbox)
     assert isinstance(lightbox, ImageLightbox)
@@ -355,7 +404,7 @@ def test_a_dismissed_viewer_is_forgotten(widget: DocumentWidget, mocker: MockerF
     * open a viewer and dismiss it with ESC
     * call ``take_focus`` and verify it neither raises nor re-focuses anything
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_lightbox.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    loadable_lightbox_image(mocker)
     activate_screenshot(widget, Path("/fake/info00.jpg"))
     lightbox = widget.findChild(ImageLightbox)
     assert isinstance(lightbox, ImageLightbox)
@@ -382,7 +431,7 @@ def test_an_older_viewers_teardown_does_not_forget_a_newer_one(
     * drop the second's focus and call ``take_focus``
     * verify the second viewer is re-focused (still the tracked one)
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_lightbox.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    loadable_lightbox_image(mocker)
     activate_screenshot(widget, Path("/fake/info00.jpg"))
     first = widget.findChild(ImageLightbox)
     assert isinstance(first, ImageLightbox)
@@ -411,7 +460,7 @@ def test_a_screenshot_activated_after_a_type_switch_still_opens(
     * report an activation through the rebuilt field
     * verify a viewer still opened
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_lightbox.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    loadable_lightbox_image(mocker)
     model.resource_type = "reference_images"
 
     activate_screenshot(widget, Path("/fake/info00.jpg"))
@@ -2449,15 +2498,15 @@ def test_a_maximized_viewer_opens_against_the_documents_whole_curated_set(
     * activate the middle one, as a thumbnail click does
     * verify the viewer opened on it, carrying the whole set
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_lightbox.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    loadable_lightbox_image(mocker)
     curate_screenshots(widget, SCREENSHOTS, mocker)
 
     activate_screenshot(widget, SCREENSHOTS[1])
 
     lightbox = widget.findChild(ImageLightbox)
     assert isinstance(lightbox, ImageLightbox)
-    assert lightbox.current_image == SCREENSHOTS[1]
-    assert lightbox.images == SCREENSHOTS
+    assert lightbox.current_key == SCREENSHOTS[1]
+    assert lightbox_paths(lightbox) == SCREENSHOTS
 
 
 def test_a_curation_edit_re_points_an_open_viewer(widget: DocumentWidget, mocker: MockerFixture) -> None:
@@ -2469,7 +2518,7 @@ def test_a_curation_edit_re_points_an_open_viewer(widget: DocumentWidget, mocker
     * re-paint the strip without the first screenshot, as a curation edit does
     * verify the open viewer is navigating the shorter set, still on the same screenshot
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_lightbox.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    loadable_lightbox_image(mocker)
     curate_screenshots(widget, SCREENSHOTS, mocker)
     activate_screenshot(widget, SCREENSHOTS[2])
     lightbox = widget.findChild(ImageLightbox)
@@ -2477,8 +2526,8 @@ def test_a_curation_edit_re_points_an_open_viewer(widget: DocumentWidget, mocker
 
     curate_screenshots(widget, SCREENSHOTS[1:], mocker)
 
-    assert lightbox.images == SCREENSHOTS[1:]
-    assert lightbox.current_image == SCREENSHOTS[2]
+    assert lightbox_paths(lightbox) == SCREENSHOTS[1:]
+    assert lightbox.current_key == SCREENSHOTS[2]
 
 
 def toggle_thumbnail_row(widget: DocumentWidget, *, visible: bool) -> None:
@@ -2504,7 +2553,7 @@ def test_the_first_viewer_takes_its_thumbnail_row_from_the_shared_setting(
     * set the shared setting to open with the row shown, then open a viewer
     * verify the row is shown
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_lightbox.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    loadable_lightbox_image(mocker)
     shared_image_viewer_settings().strip_visible = True
     reopened = DocumentWidget(widget.model)
     curate_screenshots(reopened, SCREENSHOTS, mocker)
@@ -2530,7 +2579,7 @@ def test_toggling_the_viewers_thumbnail_row_is_remembered_by_this_document_alone
     * verify the shared setting is untouched
     * dismiss that viewer and open another, verifying this document still starts with the row shown
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_lightbox.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    loadable_lightbox_image(mocker)
     curate_screenshots(widget, SCREENSHOTS, mocker)
     activate_screenshot(widget, SCREENSHOTS[0])
     lightbox = widget.findChild(ImageLightbox)
@@ -2560,7 +2609,7 @@ def test_the_thumbnail_row_choice_rides_the_documents_saved_layout(
     * restore that state into a fresh widget over the same model
     * verify a viewer opened there starts with the row shown
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_lightbox.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    loadable_lightbox_image(mocker)
     curate_screenshots(widget, SCREENSHOTS, mocker)
     activate_screenshot(widget, SCREENSHOTS[0])
     toggle_thumbnail_row(widget, visible=True)
@@ -2591,7 +2640,7 @@ def test_a_layout_saved_before_the_thumbnail_row_existed_falls_back_to_the_setti
     * restore it into a fresh widget with the shared setting asking for a shown row
     * verify the layout restored and the viewer opens with the row shown
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_lightbox.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    loadable_lightbox_image(mocker)
     values = cbor2.loads(widget.save_state())
     del values[STATE_IMAGE_STRIP_VISIBLE_KEY]
     shared_image_viewer_settings().strip_visible = True
@@ -2617,7 +2666,7 @@ def test_the_maximized_viewers_thumbnail_height_follows_the_setting(
     * set a distinctive lightbox thumbnail height, then open a viewer
     * verify its row was built at that height
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_lightbox.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    loadable_lightbox_image(mocker)
     shared_image_viewer_settings().lightbox_image_height = 123
     curate_screenshots(widget, SCREENSHOTS, mocker)
 
@@ -2625,8 +2674,8 @@ def test_the_maximized_viewers_thumbnail_height_follows_the_setting(
 
     lightbox = widget.findChild(ImageLightbox)
     assert isinstance(lightbox, ImageLightbox)
-    strip = lightbox.findChild(ImageStrip)
-    assert isinstance(strip, ImageStrip)
+    strip = lightbox.findChild(ThumbnailRow)
+    assert isinstance(strip, ThumbnailRow)
     assert strip.maximumHeight() == 123
 
 
@@ -2754,7 +2803,7 @@ def test_applying_a_new_maximized_row_height_resizes_an_open_viewer(
     * open a viewer with its row shown, then change the configured lightbox height
     * verify the open viewer's row resized
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_lightbox.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    loadable_lightbox_image(mocker)
     curate_screenshots(widget, SCREENSHOTS, mocker)
     activate_screenshot(widget, SCREENSHOTS[0])
     toggle_thumbnail_row(widget, visible=True)
@@ -2763,8 +2812,8 @@ def test_applying_a_new_maximized_row_height_resizes_an_open_viewer(
 
     shared_image_viewer_settings().lightbox_image_height = 140
 
-    strip = lightbox.findChild(ImageStrip)
-    assert isinstance(strip, ImageStrip)
+    strip = lightbox.findChild(ThumbnailRow)
+    assert isinstance(strip, ThumbnailRow)
     assert strip.maximumHeight() == 140
 
 
@@ -2781,7 +2830,7 @@ def test_applying_the_strip_default_shows_the_row_in_an_open_viewer(
     * open a viewer with its row hidden, then turn the configured default on
     * verify the open viewer's row appeared and its toggle agrees
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_lightbox.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    loadable_lightbox_image(mocker)
     curate_screenshots(widget, SCREENSHOTS, mocker)
     activate_screenshot(widget, SCREENSHOTS[0])
     lightbox = widget.findChild(ImageLightbox)
@@ -2791,8 +2840,8 @@ def test_applying_the_strip_default_shows_the_row_in_an_open_viewer(
     shared_image_viewer_settings().strip_visible = True
 
     assert lightbox.strip_visible
-    strip = lightbox.findChild(ImageStrip)
-    assert isinstance(strip, ImageStrip)
+    strip = lightbox.findChild(ThumbnailRow)
+    assert isinstance(strip, ThumbnailRow)
     assert not strip.isHidden()
 
 
@@ -2809,7 +2858,7 @@ def test_hiding_previews_app_wide_dismisses_an_open_maximized_viewer(
     * open a viewer, then hide previews app-wide
     * verify the viewer is gone
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_lightbox.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    loadable_lightbox_image(mocker)
     curate_screenshots(widget, SCREENSHOTS, mocker)
     activate_screenshot(widget, SCREENSHOTS[0])
     lightbox = widget.findChild(ImageLightbox)
@@ -2863,6 +2912,36 @@ def test_hiding_previews_app_wide_folds_the_images_editors_preview_away(widget: 
     assert not pane.isHidden()
 
 
+def test_hiding_previews_app_wide_blanks_the_content_images_grid(widget: DocumentWidget, qtbot: QtBot) -> None:
+    """The app-wide previews toggle reaches the Content Images grid and the description's embedded
+    images too -- the grid keeps only its banners, the description shows placeholders -- and a
+    document built while previews are hidden starts that way (#71, #221).
+
+    **Test steps:**
+
+    * hide previews app-wide, then show them again; verify the grid and the description viewer
+      followed both ways
+    * hide them and build another document; verify both start hidden
+    """
+    grid = content_images_view(widget)
+    description = find_on_surfaces(widget, MarkdownView)[0]
+    assert grid.previews_visible
+    assert description.images_visible
+
+    shared_image_viewer_settings().previews_visible = False
+    assert not grid.previews_visible
+    assert not description.images_visible
+    shared_image_viewer_settings().previews_visible = True
+    assert grid.previews_visible
+    assert description.images_visible
+
+    shared_image_viewer_settings().previews_visible = False
+    other = DocumentWidget(RehuDocumentModel(RehuDocument({"type": "Tutorial", "sources": []})))
+    qtbot.addWidget(other)
+    assert not content_images_view(other).previews_visible
+    assert not find_on_surfaces(other, MarkdownView)[0].images_visible
+
+
 def test_previews_reappearing_does_not_reopen_a_dismissed_viewer(
     widget: DocumentWidget, mocker: MockerFixture, qtbot: QtBot
 ) -> None:
@@ -2873,7 +2952,7 @@ def test_previews_reappearing_does_not_reopen_a_dismissed_viewer(
     * open a viewer, hide previews app-wide (dismissing it), then show them again
     * verify no viewer reappeared
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_lightbox.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    loadable_lightbox_image(mocker)
     curate_screenshots(widget, SCREENSHOTS, mocker)
     activate_screenshot(widget, SCREENSHOTS[0])
     lightbox = widget.findChild(ImageLightbox)
@@ -2900,7 +2979,7 @@ def test_a_document_that_never_showed_a_row_follows_a_later_default(
     * change the configured default on a document that has never opened a viewer
     * open one and verify it followed the new default
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_lightbox.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    loadable_lightbox_image(mocker)
     curate_screenshots(widget, SCREENSHOTS, mocker)
 
     shared_image_viewer_settings().strip_visible = True
@@ -2926,7 +3005,7 @@ def test_a_document_that_was_told_otherwise_keeps_its_own_row_choice(
     * dismiss it and open another
     * verify it opens with the row off, against a default that still says on
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_lightbox.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    loadable_lightbox_image(mocker)
     shared_image_viewer_settings().strip_visible = True
     curate_screenshots(widget, SCREENSHOTS, mocker)
     activate_screenshot(widget, SCREENSHOTS[0])
@@ -4130,7 +4209,7 @@ def test_an_image_activated_in_the_browser_opens_against_the_folder(widget: Docu
 
     viewer = widget._DocumentWidget__image_viewer  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert viewer is not None
-    assert viewer.images == folder
+    assert lightbox_paths(viewer) == folder
 
 
 def test_an_activation_carrying_anything_else_opens_no_viewer(widget: DocumentWidget) -> None:
@@ -4172,14 +4251,418 @@ def test_a_curation_edit_does_not_re_point_a_folder_viewer(widget: DocumentWidge
     widget._DocumentWidget__on_curated_images_changed(curated)  # type: ignore[attr-defined]  # pylint: disable=protected-access
     viewer = widget._DocumentWidget__image_viewer  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert viewer is not None
-    assert viewer.images == folder
+    assert lightbox_paths(viewer) == folder
 
     viewer.close()
     widget._DocumentWidget__on_image_activated(curated[0])  # type: ignore[attr-defined]  # pylint: disable=protected-access
     widget._DocumentWidget__on_curated_images_changed(folder)  # type: ignore[attr-defined]  # pylint: disable=protected-access
     strip_viewer = widget._DocumentWidget__image_viewer  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert strip_viewer is not None
-    assert strip_viewer.images == folder
+    assert lightbox_paths(strip_viewer) == folder
+
+
+# endregion
+
+
+# region the Content Images dock over this resource's archives (#221)
+
+
+def content_images_dock(widget: DocumentWidget) -> QtAds.CDockWidget:
+    """Return the widget's private Content Images dock.
+
+    :param widget: the document widget to inspect.
+    :returns: the Content Images `CDockWidget`.
+    """
+    return widget._DocumentWidget__content_images_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+
+def content_images_view(widget: DocumentWidget) -> ContentImagesView:
+    """Return the grid the Content Images dock hosts.
+
+    :param widget: the document widget to inspect.
+    :returns: the view.
+    """
+    panel = content_images_dock(widget).widget()
+    assert isinstance(panel, ContentImagesPanel)
+    return panel.view
+
+
+def test_the_content_images_dock_exists_and_starts_hidden(widget: DocumentWidget) -> None:
+    """The archives' browse surface is built for every document, hidden by default like the rest of
+    the inspection set (#221).
+
+    **Test steps:**
+
+    * build a widget over the sample model
+    * verify the dock hosts a `ContentImagesPanel` -- the grid over its status line -- named and
+      titled, with its toggle unchecked
+    """
+    dock = content_images_dock(widget)
+
+    assert isinstance(dock.widget(), ContentImagesPanel)
+    assert isinstance(content_images_view(widget), ContentImagesView)
+    assert dock.objectName() == CONTENT_IMAGES_DOCK_NAME
+    assert dock.windowTitle() == CONTENT_IMAGES_DOCK_TITLE
+    assert dock.toggleViewAction().isChecked() is False
+
+
+def test_the_content_images_dock_toggle_is_on_the_toolbar_with_its_own_icon(widget: DocumentWidget) -> None:
+    """Its toggle sits beside the other inspection toggles, after Files, themed from its own SVG (#221).
+
+    **Test steps:**
+
+    * verify the toolbar carries the dock's toggle right after the Files one
+    * verify the toggle's icon was built from the content-images icon
+    """
+    action = content_images_dock(widget).toggleViewAction()
+    actions = widget.findChildren(QToolBar)[0].actions()
+
+    assert actions.index(action) == actions.index(files_dock(widget).toggleViewAction()) + 1
+    assert action.icon().cacheKey() == themed_svg_icon(CONTENT_IMAGES_ICON_RESOURCE).cacheKey()
+
+
+def test_the_content_images_dock_hosts_its_view_directly_with_a_floor(widget: DocumentWidget) -> None:
+    """The grid manages its own scrolling, so no scroll area wraps it, and a splitter cannot squeeze the
+    dock under its floor (#221).
+
+    **Test steps:**
+
+    * verify the view is parented directly on the dock and the dock's minimum height is the floor
+    """
+    dock = content_images_dock(widget)
+
+    assert dock.widget().parentWidget() is dock
+    assert dock.minimumSizeHint().height() == CONTENT_IMAGES_DOCK_MIN_HEIGHT
+
+
+def test_the_dock_layout_version_counts_the_content_images_dock() -> None:
+    """Adding a dock bumps the persisted layout's version, so an older blob is rebuilt rather than
+    restored with the new dock in whatever state QtAds invents for it (#221).
+
+    **Test steps:**
+
+    * verify the version is nine
+    """
+    assert STATE_VERSION == 9
+
+
+def test_showing_the_dock_enumerates_the_resources_archives(
+    widget: DocumentWidget, model: RehuDocumentModel, mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """Enumeration waits for the dock to be shown -- it opens every archive -- and runs off the GUI
+    thread through the resource's path and the configured extension set (#221).
+
+    **Test steps:**
+
+    * bind the model to a path, make the enumeration return one entry, and verify nothing ran yet
+    * show the dock and wait for the model to reset
+    * verify the enumeration ran for that path and the grid's source lists the entry
+    """
+    model.path = Path("/fake/refimages/info.rehu")
+    found = [ContentImageEntry(Path("/fake/refimages/pack.zip"), "a.jpg", 0, 0)]
+    enumeration = mocker.patch.object(content_images_model, "enumerate_content_images", return_value=found)
+    assert not enumeration.called
+    content_model = widget._DocumentWidget__content_images_model  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    with qtbot.waitSignal(content_model.modelReset, timeout=5000):
+        content_images_dock(widget).toggleView(True)
+
+    enumeration.assert_called_with(model.path, shared_reference_images_settings().content_image_extensions)
+    assert len(content_images_view(widget).source) == 1
+
+
+def test_a_document_with_no_archive_opens_and_edits_with_an_empty_dock(
+    widget: DocumentWidget, mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """A resource with no archive, an unreadable one, or one with no images renders nothing and raises
+    nothing; the document still opens and edits (#221).
+
+    **Test steps:**
+
+    * make the enumeration find nothing, show the dock and paint it
+    * verify the grid is empty and the document's editors are still enabled
+    """
+    mocker.patch.object(content_images_model, "enumerate_content_images", return_value=[])
+    widget.model.path = Path("/fake/refimages/info.rehu")
+
+    content_images_dock(widget).toggleView(True)
+    qtbot.waitUntil(lambda: content_images_view(widget).layout_table is not None)
+    content_images_view(widget).grab()
+
+    assert len(content_images_view(widget).source) == 0
+    assert not widget.model.locked
+    assert all(surface.isEnabled() for surface in field_surfaces(widget))
+
+
+def test_a_content_image_activated_in_the_dock_opens_the_lightbox_over_the_pack(
+    widget: DocumentWidget, mocker: MockerFixture
+) -> None:
+    """A clicked content image opens maximized against the whole pack -- never the curated screenshot
+    set, which says nothing about archive members (#221).
+
+    **Test steps:**
+
+    * give the dock's model two entries whose bytes decode, and activate the second
+    * verify a viewer opened on position one over a two-image source, and that a curation edit leaves it
+      alone
+    """
+    entries = [ContentImageEntry(Path("/fake/refimages/pack.zip"), f"{index}.png", 0, 0) for index in range(2)]
+    content_model = widget._DocumentWidget__content_images_model  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    content_model.set_entries(entries, Path("/fake/refimages"))
+    mocker.patch.object(ArchiveImageSource, "load", side_effect=lambda *_: QImage(20, 10, QImage.Format.Format_RGB32))
+
+    content_images_view(widget).image_activated.emit(1)
+
+    lightbox = widget.findChild(ImageLightbox)
+    assert isinstance(lightbox, ImageLightbox)
+    assert lightbox.current_index == 1
+    assert len(lightbox.source) == 2
+    assert lightbox.current_key == entries[1].key
+    widget._DocumentWidget__on_curated_images_changed(SCREENSHOTS)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert len(lightbox.source) == 2
+
+
+def test_closing_a_content_viewer_selects_the_image_it_was_on_when_asked(
+    widget: DocumentWidget, mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """Closing a viewer opened from the dock selects, in the dock, the image it was on -- when the
+    setting says so, read at the close; off, the dock is left alone. A viewer over a set the dock has
+    since replaced selects nothing (#221).
+
+    **Test steps:**
+
+    * open a viewer from the dock, step forward and close it; verify the dock selected the new image
+    * turn the setting off, open and step again, close; verify the selection did not follow
+    * turn it on, open a viewer, re-enumerate the dock underneath it, close; verify no selection
+    """
+    entries = [ContentImageEntry(Path("/fake/refimages/pack.zip"), f"{index}.png", 0, 0) for index in range(3)]
+    content_model = widget._DocumentWidget__content_images_model  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    content_model.set_entries(entries, Path("/fake/refimages"))
+    mocker.patch.object(ArchiveImageSource, "load", side_effect=lambda *_: QImage(20, 10, QImage.Format.Format_RGB32))
+    grid = content_images_view(widget)
+    revealed = mocker.spy(grid, "reveal")
+
+    def view_then_close(start: int) -> None:
+        grid.image_activated.emit(start)
+        lightbox = widget.findChild(ImageLightbox)
+        assert isinstance(lightbox, ImageLightbox)
+        qtbot.keyClick(lightbox, Qt.Key.Key_Right)
+        with wait_destroyed(qtbot, lightbox):
+            qtbot.keyClick(lightbox, Qt.Key.Key_Escape)
+
+    view_then_close(0)
+    assert grid.selected == 1
+    revealed.assert_called_once_with(1)
+
+    shared_image_viewer_settings().lightbox_select_last_viewed = False
+    view_then_close(0)
+    assert grid.selected == 1
+    revealed.assert_called_once()
+
+    shared_image_viewer_settings().lightbox_select_last_viewed = True
+    grid.image_activated.emit(0)
+    lightbox = widget.findChild(ImageLightbox)
+    assert isinstance(lightbox, ImageLightbox)
+    content_model.set_entries(entries, Path("/fake/refimages"))
+    with wait_destroyed(qtbot, lightbox):
+        qtbot.keyClick(lightbox, Qt.Key.Key_Escape)
+    revealed.assert_called_once()
+
+
+def test_content_images_never_reach_the_screenshot_strip(widget: DocumentWidget, model: RehuDocumentModel) -> None:
+    """The strip shows screenshots and only screenshots, and the curation editor's hidden list never
+    touches a content image ([[data-model#image-meanings]], #221).
+
+    **Test steps:**
+
+    * give the dock's model an entry and hide an image by name in the model
+    * verify the strip lists no archive member and the dock's source is unchanged
+    """
+    content_model = widget._DocumentWidget__content_images_model  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    content_model.set_entries([ContentImageEntry(Path("/fake/refimages/pack.zip"), "a.png", 0, 0)], Path("/fake"))
+    strip = widget.findChild(ImageStrip)
+    assert isinstance(strip, ImageStrip)
+    painted: list[list[Path]] = []
+    strip.images_changed.connect(painted.append)
+
+    model.hidden_images = ["a.png"]
+
+    assert all("pack.zip" not in str(path) for paths in painted for path in paths)
+    assert len(content_images_view(widget).source) == 1
+
+
+def test_applying_a_new_clamp_or_banner_choice_reaches_the_open_dock(widget: DocumentWidget) -> None:
+    """The settings page's Apply re-packs every open dock: the clamp and the banner boxes are live (#221).
+
+    **Test steps:**
+
+    * change each of the four settings on the shared object
+    * verify the grid took them
+    """
+    settings = shared_image_viewer_settings()
+    view = content_images_view(widget)
+
+    settings.content_rows_min_height = 90
+    settings.content_rows_max_height = 300
+    settings.content_zip_names = False
+    settings.content_folder_names = True
+
+    assert view.clamp == (90, 300)
+    assert view.flags == ContentDisplayFlags(zip_names=False, folder_names=True)
+
+
+@mark.parametrize(
+    ("modifiers", "expected"),
+    [
+        (Qt.KeyboardModifier.NoModifier, ImageViewerMode.FULL_SCREEN),
+        (Qt.KeyboardModifier.ShiftModifier, ImageViewerMode.DOCUMENT_OVERLAY),
+        (Qt.KeyboardModifier.ControlModifier, ImageViewerMode.APP_WINDOW_OVERLAY),
+        (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier, ImageViewerMode.FULL_SCREEN),
+        (Qt.KeyboardModifier.AltModifier, ImageViewerMode.FULL_SCREEN),
+    ],
+)
+def test_the_keys_held_at_activation_pick_the_viewers_surface(
+    modifiers: Qt.KeyboardModifier, expected: ImageViewerMode
+) -> None:
+    """Shift opens over the document, Ctrl over the app window, Ctrl+Shift over the screen; anything
+    else -- nothing, or a key with no meaning here -- means the setting (#221).
+
+    **Test steps:**
+
+    * resolve each modifier set against a full-screen setting
+    """
+    assert viewer_mode_for(modifiers, ImageViewerMode.FULL_SCREEN) == expected
+
+
+def test_an_activation_reads_the_keys_held_at_that_moment(widget: DocumentWidget, mocker: MockerFixture) -> None:
+    """The viewer opened by an activation is on the surface the held keys pick, whatever the setting.
+
+    **Test steps:**
+
+    * set the surface to the document overlay and activate with Ctrl+Shift held
+    * verify a full-screen viewer -- a window -- opened
+    """
+    loadable_lightbox_image(mocker)
+    shared_image_viewer_settings().mode = ImageViewerMode.DOCUMENT_OVERLAY
+    mocker.patch.object(
+        QApplication,
+        "keyboardModifiers",
+        return_value=Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier,
+    )
+
+    activate_screenshot(widget, Path("/fake/info00.jpg"))
+
+    lightbox = widget.findChild(ImageLightbox)
+    assert isinstance(lightbox, ImageLightbox)
+    assert lightbox.isWindow()
+
+
+def test_applying_a_backdrop_reaches_an_open_viewer_and_the_next(widget: DocumentWidget, mocker: MockerFixture) -> None:
+    """The lightbox backdrop follows the setting live and seeds the next viewer (#221).
+
+    **Test steps:**
+
+    * with no viewer open, change the setting and verify nothing raises
+    * open a viewer and verify it paints the configured backdrop
+    * change the setting and verify the open viewer repainted; open another and verify it agrees
+    """
+    loadable_lightbox_image(mocker)
+    curate_screenshots(widget, SCREENSHOTS, mocker)
+    shared_image_viewer_settings().lightbox_backdrop = "#112233"
+    activate_screenshot(widget, SCREENSHOTS[0])
+    first = widget.findChild(ImageLightbox)
+    assert isinstance(first, ImageLightbox)
+    assert first.backdrop.name() == "#112233"
+
+    shared_image_viewer_settings().lightbox_backdrop = "#445566"
+    assert first.backdrop.name() == "#445566"
+
+    activate_screenshot(widget, SCREENSHOTS[1])
+    second = next(viewer for viewer in widget.findChildren(ImageLightbox) if viewer is not first)
+    assert second.backdrop.name() == "#445566"
+
+
+def test_applying_the_double_click_setting_reaches_an_open_viewer_and_the_next(
+    widget: DocumentWidget, mocker: MockerFixture
+) -> None:
+    """Whether a double-click dismisses the viewer follows the setting live and seeds the next one (#221).
+
+    **Test steps:**
+
+    * with no viewer open, change the setting and verify nothing raises
+    * open a viewer with the setting off and verify it refuses the double-click
+    * turn the setting on and verify the open viewer now allows it; open another and verify it agrees
+    """
+    loadable_lightbox_image(mocker)
+    curate_screenshots(widget, SCREENSHOTS, mocker)
+    shared_image_viewer_settings().lightbox_double_click_closes = False
+    activate_screenshot(widget, SCREENSHOTS[0])
+    first = widget.findChild(ImageLightbox)
+    assert isinstance(first, ImageLightbox)
+    assert not first.double_click_closes
+
+    shared_image_viewer_settings().lightbox_double_click_closes = True
+    assert first.double_click_closes
+
+    activate_screenshot(widget, SCREENSHOTS[1])
+    second = next(viewer for viewer in widget.findChildren(ImageLightbox) if viewer is not first)
+    assert second.double_click_closes
+
+
+def test_applying_the_info_overlay_setting_reaches_an_open_viewer_and_the_next(
+    widget: DocumentWidget, mocker: MockerFixture
+) -> None:
+    """The info overlay follows the setting live, like the row height: applying it shows the overlay
+    in the viewer the user is looking at, and the next viewer opens with it (#221).
+
+    **Test steps:**
+
+    * with no viewer open, toggle the setting and verify nothing raises
+    * open a viewer with the setting off and verify its overlay is hidden
+    * turn the setting on and verify the open viewer now shows it
+    * open another and verify it shows the overlay too
+    """
+    loadable_lightbox_image(mocker)
+    curate_screenshots(widget, SCREENSHOTS, mocker)
+    shared_image_viewer_settings().lightbox_info_visible = True
+    shared_image_viewer_settings().lightbox_info_visible = False
+    activate_screenshot(widget, SCREENSHOTS[0])
+    first = widget.findChild(ImageLightbox)
+    assert isinstance(first, ImageLightbox)
+    assert not first.info_visible
+
+    shared_image_viewer_settings().lightbox_info_visible = True
+    assert first.info_visible
+
+    activate_screenshot(widget, SCREENSHOTS[1])
+    second = next(viewer for viewer in widget.findChildren(ImageLightbox) if viewer is not first)
+    assert second.info_visible
+
+
+def test_the_viewer_names_a_screenshot_relative_to_the_document(
+    widget: DocumentWidget, model: RehuDocumentModel, mocker: MockerFixture
+) -> None:
+    """The viewer's info overlay names a screenshot relative to the ``.rehu``'s directory, the way an
+    archive member is named, not by its full path; a document with no path yet has no directory to
+    name it from, so its viewer falls back to the full path (#221).
+
+    **Test steps:**
+
+    * open a viewer over the curated screenshots of a path-less document and verify the full path
+    * give the document its path, open another and verify its source describes the current one as
+      ``info01.jpg`` alone
+    """
+    loadable_lightbox_image(mocker)
+    curate_screenshots(widget, SCREENSHOTS, mocker)
+    activate_screenshot(widget, SCREENSHOTS[0])
+    viewer = widget.findChild(ImageLightbox)
+    assert isinstance(viewer, ImageLightbox)
+    assert viewer.source.describe(viewer.current_index).path_text == str(SCREENSHOTS[0])
+
+    model.path = TARGET_PATH
+    activate_screenshot(widget, SCREENSHOTS[1])
+    second = next(other for other in widget.findChildren(ImageLightbox) if other is not viewer)
+    assert second.source.describe(second.current_index).path_text == "info01.jpg"
 
 
 # endregion

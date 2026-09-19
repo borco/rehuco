@@ -144,7 +144,8 @@ def test_the_pattern_order_decides_which_file_takes_a_contested_slot(mocker: Moc
 
 def test_names_under_one_pattern_are_ordered_naturally(mocker: MockerFixture) -> None:
     """Within a single pattern, two spellings of one number are ordered naturally rather than as text,
-    so which of them takes the slot does not depend on zero-padding sorting before digits.
+    so which of them takes the slot does not depend on zero-padding sorting before digits: a numeric
+    tie goes to the spelling with fewer leading zeros (`natural_sort_key`).
 
     **Test steps:**
 
@@ -157,10 +158,10 @@ def test_names_under_one_pattern_are_ordered_naturally(mocker: MockerFixture) ->
     plan = scan_tc_screenshots(DIRECTORY, STEM)
 
     assert plan.renames == (
-        ScreenshotRename("info02.jpg", "file-02.jpg"),
+        ScreenshotRename("info02.jpg", "file-2.jpg"),
         ScreenshotRename("info10.jpg", "file-10.jpg"),
     )
-    assert plan.unconverted == (UnconvertedScreenshot("file-2.jpg", ScreenshotSkipReason.COLLISION),)
+    assert plan.unconverted == (UnconvertedScreenshot("file-02.jpg", ScreenshotSkipReason.COLLISION),)
 
 
 def test_a_preexisting_numbered_file_owns_its_slot(mocker: MockerFixture) -> None:

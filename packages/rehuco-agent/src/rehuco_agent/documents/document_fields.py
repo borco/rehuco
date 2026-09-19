@@ -447,6 +447,10 @@ def build_document_form(
         editor_settings=shared_description_editor_settings(),  # type: ignore[arg-type]
         viewer_tab=VIEWER_DESCRIPTION_TAB,
         editor_tab=EDITOR_DESCRIPTION_TAB,
+        # the same declutter toggle the strip answers (#71): a description's embedded images stand in
+        # as placeholders while it is off
+        previews_visible=shared_image_viewer_settings().previews_visible,
+        previews_visible_changed=shared_image_viewer_settings().previews_visible_changed,  # type: ignore[attr-defined]
     )
     # the type selector leads the Main Editor -- it is the most fundamental choice, and re-selecting it
     # re-resolves the whole form (#83). It is editor-only, so it adds no viewer row and location's

@@ -126,6 +126,33 @@ def test_viewer_forwards_image_scanner_changed_to_the_markdown_view(qtbot: QtBot
     assert viewer.image_scanner is new_scanner
 
 
+def test_viewer_stands_images_in_as_placeholders_while_previews_are_hidden(
+    qtbot: QtBot, model: RehuDocumentModel
+) -> None:
+    """Built with previews hidden, the viewer renders ``[image: name]`` in place of each embedded
+    image, and follows the toggle both ways through the signal it is given (#71).
+
+    **Test steps:**
+
+    * seed a description with an image and build the viewer with previews hidden
+    * verify the placeholder is shown; fire the toggle on and off and verify it follows
+    """
+    model.description = "before ![a cat](cat.png) after"
+    emitter = Emitter()
+    field = DescriptionField("description", previews_visible=False, previews_visible_changed=emitter.changed)
+    viewer = field.make_viewer(model.bind(field)).viewer
+    assert isinstance(viewer, MarkdownView)
+    qtbot.addWidget(viewer)
+    assert not viewer.images_visible
+    assert "[image: a cat]" in viewer.toPlainText()
+
+    emitter.changed.emit(True)
+    assert viewer.images_visible
+    assert "[image: a cat]" not in viewer.toPlainText()
+    emitter.changed.emit(False)
+    assert "[image: a cat]" in viewer.toPlainText()
+
+
 def test_viewer_without_image_scanner_changed_makes_no_connection(qtbot: QtBot, model: RehuDocumentModel) -> None:
     """Omitting ``image_scanner_changed`` builds a viewer with no reactive scanner wiring, without error.
 

@@ -20,6 +20,7 @@ from typing import Final
 from PIL import Image, UnidentifiedImageError
 
 from .constants import IMAGE_EXTENSIONS, LEGACY_SUFFIX
+from .natural_sort import natural_sort_key
 from .rehu_screenshots import scan_rehu_screenshot_files
 from .resource_scoping import is_record_name
 
@@ -275,20 +276,6 @@ def is_legacy_screenshot(filename: str, patterns: tuple[ScreenshotNamePattern, .
     """
     stem, suffix = os.path.splitext(filename)
     return suffix.lower() in IMAGE_EXTENSIONS and compiled_screenshot_name_patterns(patterns).recognizes(stem)
-
-
-def natural_sort_key(filename: str) -> tuple[tuple[int, int, str], ...]:
-    """``filename`` as a natural-sort key, so ``file-2`` sorts before ``file-10``.
-
-    Shared between :class:`TcScreenshotScanner`, which orders same-pattern candidates by it, and
-    :func:`scan_unconverted_screenshots`, which orders the images dock's un-converted row by it (#265).
-
-    :param filename: the candidate filename.
-    :returns: one entry per digit/non-digit run, digits compared as numbers.
-    """
-    return tuple(
-        (0, int(part), "") if part.isdigit() else (1, 0, part.lower()) for part in re.split(r"(\d+)", filename) if part
-    )
 
 
 def scan_unconverted_screenshots(

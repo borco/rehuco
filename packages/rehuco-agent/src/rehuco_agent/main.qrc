@@ -17,6 +17,7 @@
         <file alias="icons/checksum_unexpected.svg">../../../../design/icons/checksum_unexpected.svg</file>
         <file alias="icons/checksum_verify.svg">../../../../design/icons/checksum_verify.svg</file>
         <file alias="icons/document_checksum.svg">../../../../design/icons/document_checksum.svg</file>
+        <file alias="icons/document_content_reference_images.svg">../../../../design/icons/document_content_reference_images.svg</file>
         <file alias="icons/document_default_layout.svg">../../../../design/icons/document_default_layout.svg</file>
         <file alias="icons/document_editor_description.svg">../../../../design/icons/document_editor_description.svg</file>
         <file alias="icons/document_editor_images.svg">../../../../design/icons/document_editor_images.svg</file>
@@ -52,6 +53,7 @@
         <file alias="icons/items_restore.svg">../../../../design/icons/items_restore.svg</file>
         <file alias="icons/items_top.svg">../../../../design/icons/items_top.svg</file>
         <file alias="icons/items_up.svg">../../../../design/icons/items_up.svg</file>
+        <file alias="icons/lightbox_info.svg">../../../../design/icons/lightbox_info.svg</file>
         <file alias="icons/lightbox_list.svg">../../../../design/icons/lightbox_list.svg</file>
         <file alias="icons/lightbox_next.svg">../../../../design/icons/lightbox_next.svg</file>
         <file alias="icons/lightbox_prev.svg">../../../../design/icons/lightbox_prev.svg</file>

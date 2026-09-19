@@ -97,6 +97,12 @@ class DescriptionField(Field[str]):
         seeds from and re-applies on, injected by the owner rather than reached for directly; omit
         for a bare editor that starts with `MarkdownEdit`'s own defaults and does not follow
         settings changes.
+    :param previews_visible: whether the viewer renders the description's embedded images, or
+        ``[image: name]`` placeholders in their place (keyword-only, #71) -- the app-wide previews
+        toggle's (``Ctrl+Shift+``, backtick) current state, which the owner passes.
+    :param previews_visible_changed: fires when that toggle changes, forwarded into the viewer's
+        :meth:`~rehuco_agent.fields.widgets.markdown_view.MarkdownView.set_images_visible`; omit for a
+        viewer that does not follow it.
     """
 
     TYPE = "description"
@@ -112,12 +118,16 @@ class DescriptionField(Field[str]):
         editor_settings: DescriptionEditorViewSettings | None = None,
         viewer_tab: FieldsTab,
         editor_tab: FieldsTab,
+        previews_visible: bool = True,
+        previews_visible_changed: SignalInstance | None = None,
     ) -> None:
         super().__init__(name, label, viewer_tab=viewer_tab, editor_tab=editor_tab)
         self.__image_scanner: Final = image_scanner
         self.__image_scanner_changed: Final = image_scanner_changed
         self.__rendering_settings: Final = rendering_settings
         self.__editor_settings: Final = editor_settings
+        self.__previews_visible: Final = previews_visible
+        self.__previews_visible_changed: Final = previews_visible_changed
 
     @override
     def make_viewer(self, binding: FieldBinding[str]) -> FieldViewerWidgets:
@@ -130,12 +140,17 @@ class DescriptionField(Field[str]):
                 engine=settings.engine,
                 css=settings.css,
             )
+        # before the text, so a description opened with previews hidden never renders its images once
+        viewer.set_images_visible(self.__previews_visible)
         viewer.set_markdown(binding.value)
         binding.changed.connect(viewer.set_markdown)
         if self.__image_scanner_changed is not None:
             self.__image_scanner_changed.connect(viewer.set_image_scanner)  # type: ignore[attr-defined]
         if settings is not None:
             self.__wire_rendering_settings(viewer, settings)
+        if self.__previews_visible_changed is not None:
+            # the settings singleton outlives this viewer: bound through the form, which severs it
+            self.bind_external(self.__previews_visible_changed, viewer.set_images_visible)
         # fill, as in the editor: the description view holds the strip and this and nothing else (#299),
         # so it takes the height the fixed-height strip above it leaves rather than keeping its natural
         # one. It was one row among others (the unknown-field fallbacks followed it) until that split

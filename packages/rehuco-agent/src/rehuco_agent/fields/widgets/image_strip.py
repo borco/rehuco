@@ -40,7 +40,7 @@ class ThumbnailLabel(QLabel):
     """
 
     clicked = Signal(Path)
-    """Fires with :attr:`path` when the thumbnail is left-clicked."""
+    """Fires with :attr:`path` when the thumbnail is left double-clicked."""
 
     def __init__(self, path: Path, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -106,15 +106,24 @@ class ThumbnailLabel(QLabel):
 
     @override
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
-        """Emit :attr:`clicked` when a left-button press *and* release both land on this thumbnail.
-
-        Release, not press: Qt grabs the mouse on press, so a release still inside the widget is the
-        standard "this was a click, not a drag away" test -- pressing here and letting go elsewhere
-        must not open anything. Accepted for the same reason the press is.
+        """Take the release too, for the same reason as the press.
 
         :param event: the Qt mouse-release event, forwarded to the base class.
         """
         super().mouseReleaseEvent(event)
+        event.accept()
+
+    @override
+    def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
+        """Emit :attr:`clicked` on a left double-click landing on this thumbnail (#221).
+
+        A double-click, not a click: opening an image maximized is the same gesture everywhere an
+        image is shown -- the Files sub-dock's rows and the Content Images grid, where a single click
+        selects. Accepted for the same reason the press is.
+
+        :param event: the Qt mouse event, forwarded to the base class.
+        """
+        super().mouseDoubleClickEvent(event)
         event.accept()
         if event.button() == Qt.MouseButton.LeftButton and self.rect().contains(event.position().toPoint()):
             self.clicked.emit(self.__path)
@@ -144,18 +153,13 @@ class ImageStrip(QScrollArea):  # pylint: disable=too-many-instance-attributes
     :param parent: optional Qt parent.
     :param height: the height each thumbnail is scaled to, and the strip's own fixed height while it
         is a single row.
-    :param wheel_scrolls: whether a plain vertical wheel scrolls this row sideways (keyword-only).
-        Off by default: a strip embedded in a scrollable form must leave the wheel to the form, so
-        only a strip that is a control in its own right -- the maximized viewer's -- turns it on.
-        A horizontal wheel scrolls the row either way.
     :param wrap: whether to start wrapped rather than as a single row (keyword-only, #70). The user's
-        own choice for a document's strip; the maximized viewer's row is never wrapped, since it is an
-        index alongside the screenshot rather than the content itself.
+        own choice for a document's strip.
     """
 
     image_activated = Signal(Path)
-    """Fires with the screenshot a user clicked. The strip stays a dumb presenter: it reports *which*
-    image was activated and nothing more -- what opens is the owner's decision (#160)."""
+    """Fires with the screenshot a user double-clicked. The strip stays a dumb presenter: it reports
+    *which* image was activated and nothing more -- what opens is the owner's decision (#160)."""
 
     images_changed = Signal(list)
     """Fires with the screenshots now painted, whenever the row is rebuilt -- a curation edit, a
@@ -165,13 +169,10 @@ class ImageStrip(QScrollArea):  # pylint: disable=too-many-instance-attributes
     image_scanner = SimpleProperty[ImageScanner | None](None)
     """The strategy resolving this resource's screenshots; ``None`` shows nothing."""
 
-    def __init__(
-        self, parent: QWidget | None = None, height: int = 150, *, wheel_scrolls: bool = False, wrap: bool = False
-    ) -> None:
+    def __init__(self, parent: QWidget | None = None, height: int = 150, *, wrap: bool = False) -> None:
         super().__init__(parent)
         self.__height = height
         self.__wrap = wrap
-        self.__wheel_scrolls: Final = wheel_scrolls
         self.__hidden: list[str] = []
         self.__thumbnails: dict[Path, ThumbnailLabel] = {}
         self.__current: Path | None = None
@@ -330,22 +331,18 @@ class ImageStrip(QScrollArea):  # pylint: disable=too-many-instance-attributes
 
     @override
     def wheelEvent(self, event: QWheelEvent) -> None:
-        """Scroll the row sideways on the wheel -- but only where the wheel is the strip's to take.
+        """Scroll the row sideways on a **horizontal** wheel only -- the wheel the strip's to take.
 
         A one-row strip only ever scrolls horizontally, while a plain wheel reports a *vertical*
         delta, which the inherited handler spends on a vertical scrollbar this widget does not have.
-        So a **horizontal** delta (a tilt wheel, or the platform's shift-wheel) always scrolls the row:
-        nothing else wants it.
-
-        A plain vertical wheel is the strip's only when ``wheel_scrolls`` says so -- the maximized
-        viewer's row, which is a control in its own right. Inside a document the strip is one row of a
-        scrollable form, and taking the wheel there would stop the form scrolling whenever the pointer
-        happened to be over the screenshots.
+        So a horizontal delta (a tilt wheel, or the platform's shift-wheel) scrolls the row: nothing
+        else wants it. A plain vertical wheel is left alone: the strip is one row of a scrollable form,
+        and taking the wheel here would stop the form scrolling whenever the pointer happened to be
+        over the screenshots.
 
         :param event: the Qt wheel event.
         """
-        horizontal = event.angleDelta().x()
-        delta = horizontal or (event.angleDelta().y() if self.__wheel_scrolls else 0)
+        delta = event.angleDelta().x()
         if not delta:
             # ignored, not merely unhandled: that is what hands the wheel to whatever scrolls around us
             event.ignore()

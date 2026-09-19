@@ -11,9 +11,10 @@ screenshot counterparts.
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Final
+from typing import ClassVar, Final
 
 from .constants import ARCHIVE_EXTENSIONS, CONTENT_IMAGE_EXTENSIONS
+from .natural_sort import NaturalRun, natural_path_sort_key
 from .resource_scoping import is_directory_scoped, is_directory_scoped_name, is_record_name
 
 
@@ -22,13 +23,33 @@ class ContentImageEntry:
     """One content image found inside a reference-images resource's archive(s)
     ([[data-model#image-meanings]]).
 
+    Carries the member's **tier-0 identity** ([[reference-images#image-identity]]) straight off the
+    central directory -- its uncompressed size and the CRC32 the zip already records -- so a consumer
+    can key per-member facts (dimensions, thumbnails) without inflating a byte, and a re-exported image
+    at the same address reads as a different one.
+
     :ivar archive: the archive file this entry lives in.
     :ivar name: the entry's path within the archive, exactly as stored (``/``-separated per the zip
         format, regardless of platform).
+    :ivar size: the member's uncompressed size in bytes.
+    :ivar crc: the member's CRC32 as the central directory records it.
     """
 
     archive: Path
     name: str
+    size: int
+    crc: int
+
+    ZIP_KIND: ClassVar[str] = "zip"
+    """The container kind tagging :attr:`key` -- a zip's CRC32 is compared only with another zip's."""
+
+    @property
+    def key(self) -> tuple[str, str, int, int]:
+        """The tier-0 key ``(kind, name, size, fingerprint)`` ([[reference-images#image-identity]]).
+
+        Never the mtime: a zip stores it at two-second granularity and a re-pack resets it.
+        """
+        return self.ZIP_KIND, self.name, self.size, self.crc
 
 
 class ContentImageScanner:  # pylint: disable=too-few-public-methods
@@ -95,7 +116,7 @@ class ContentImageScanner:  # pylint: disable=too-few-public-methods
             if sibling.stem.lower() == stem.lower() and sibling.suffix.lower() in ARCHIVE_EXTENSIONS
         ]
         # pylint: enable=duplicate-code
-        return sorted(matches, key=lambda sibling: sibling.name)
+        return sorted(matches, key=self.__archive_order)
 
     def __find_archives_under(self, directory: Path) -> list[Path]:
         """List the archives under ``directory`` that no other record covers (#254).
@@ -127,10 +148,24 @@ class ContentImageScanner:  # pylint: disable=too-few-public-methods
             and (candidate.parent, candidate.stem.lower()) not in claimed
             and not covered.intersection(candidate.parents)
         ]
-        return sorted(matches, key=str)
+        return sorted(matches, key=self.__archive_order)
+
+    @staticmethod
+    def __archive_order(archive: Path) -> tuple[tuple[NaturalRun, ...], ...]:
+        """``archive``'s place among its siblings: natural, component by component, so ``pack2.zip``
+        precedes ``pack10.zip`` and a nested folder's packs sort where the folder does.
+
+        :param archive: the archive path.
+        :returns: its :func:`~rehuco_core.natural_sort.natural_path_sort_key`.
+        """
+        return natural_path_sort_key(archive.as_posix())
 
     def __list_archive_images(self, archive: Path) -> list[ContentImageEntry]:
-        """List one archive's recognized image entries, in central-directory order.
+        """List one archive's recognized image entries, in natural order of their paths.
+
+        Natural, not the central directory's ([[reference-images#image-identity]]): that order is
+        whatever the packer wrote and is not a promise, while a reference pack's folders and names are
+        how its author ordered it. Sorting here, once, is what gives every consumer one sequence.
 
         :param archive: the archive file to read.
         :returns: one :class:`ContentImageEntry` per recognized entry, or empty when ``archive`` is
@@ -141,7 +176,12 @@ class ContentImageScanner:  # pylint: disable=too-few-public-methods
                 infolist = opened.infolist()
         except OSError, zipfile.BadZipFile:
             return []
-        return [ContentImageEntry(archive, info.filename) for info in infolist if self.__is_content_image(info)]
+        entries = [
+            ContentImageEntry(archive, info.filename, info.file_size, info.CRC)
+            for info in infolist
+            if self.__is_content_image(info)
+        ]
+        return sorted(entries, key=lambda entry: natural_path_sort_key(entry.name))
 
     def __is_content_image(self, info: zipfile.ZipInfo) -> bool:
         """Whether one zip entry is a recognized content image, per [[data-model#image-meanings]]'s notes.
@@ -171,8 +211,10 @@ def enumerate_content_images(
     :param extensions: the recognized image extensions, matched case-insensitively -- injected rather than
         read from a setting (:data:`~rehuco_core.constants.CONTENT_IMAGE_EXTENSIONS` by default), so the
         caller decides, the same inversion `rehuco_agent.fields.image_scanner.ImageScanner` applies.
-    :returns: one :class:`ContentImageEntry` per recognized entry, in a stable order (archives sorted by
-        path, entries within an archive in central-directory order). An absent, unreadable, or corrupt
+    :returns: one :class:`ContentImageEntry` per recognized entry, in a stable order: archives in natural
+        order of their paths, and each archive's entries in natural order of their member paths, component
+        by component (:func:`~rehuco_core.natural_sort.natural_path_sort_key`) -- never the central
+        directory's, which is whatever the packer wrote. An absent, unreadable, or corrupt
         archive contributes no entries rather than raising -- a document-level condition, not a crash.
     """
     return ContentImageScanner(rehu_path, extensions).scan()

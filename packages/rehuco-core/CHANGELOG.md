@@ -9,6 +9,20 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ## [Unreleased]
 
+### Added
+
+- `natural_path_sort_key` — a natural sort over `/`-separated paths, component by component.
+- `ContentImageEntry` carries each member's uncompressed size and CRC32 off the central directory, and
+  exposes them as its tier-0 `key`.
+
+### Changed
+
+- `enumerate_content_images` returns each archive's members in natural order of their paths, and the
+  archives in natural order too — never the central directory's order, which is whatever the packer
+  wrote.
+- `natural_sort_key` breaks a numeric tie by leading zeros (`image9` before `image009`); a legacy
+  screenshot scan with both spellings of one number now gives the slot to the unpadded one.
+
 ## [0.1.0] - 2026-07-29
 
 The first version carrying the library itself: `0.0.0` and `0.0.1` were name-reservation stubs built

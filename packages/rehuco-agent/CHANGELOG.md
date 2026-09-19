@@ -10,6 +10,42 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 ## [Unreleased]
 
+### Added
+
+- A **Content Images** panel on every document, hidden by default: the images inside a reference pack's
+  archives, in rows justified to the panel's width and in natural order, each archive opening with a
+  banner naming it and counting its images. A banner click folds its images away and a second click
+  brings them back; the banner of the group being scrolled through stays pinned at the top. A click
+  selects an image and a status line under the grid names it, or the one under the pointer; the arrow
+  keys move the selection, `+`/`-` fold the current group, `Esc` clears it. Read-only,
+  since those images live in a checksummed archive. Thumbnails decode off the interface thread as they
+  scroll into view; nothing is written to disk.
+- Double-clicking a content image opens it maximized in the same viewer screenshots use, navigating the
+  whole pack. The viewer's `I` key (or its corner button) shows the image's name, pixel size and file
+  size in a corner overlay, hovering a thumbnail names it in a box right above the row (no tooltip
+  delay), `T` toggles the thumbnail row, and a double-click on the image closes it. A screenshot is
+  named relative to the `.rehu`, the way an archive member is.
+- Holding a key while double-clicking picks the viewer's surface for that one open, whatever Images /
+  Display says: `Shift` for the document overlay, `Ctrl` for the app-window overlay, `Ctrl+Shift` for
+  full screen.
+- Images / Display gains the Content Images row-height clamp and two banner boxes — zip file names,
+  folder names in zips — plus the viewer's info overlay, its background colour, whether a double-click
+  closes it and whether closing it selects the image it was on back in the panel (scrolled into view,
+  its group expanded), all applied live to open panels and viewers.
+
+### Changed
+
+- The maximized viewer paints an opaque background (the dark grey code editors use, configurable) instead
+  of dimming the document underneath, and its close, thumbnail-row and info buttons appear only while the
+  pointer is near them, like the prev/next bands.
+- Screenshots in a document's strip open maximized on a double-click, not a single click.
+- The app-wide *Image Previews* toggle (`Ctrl+Shift+`\`) now hides every image: the Content Images panel
+  keeps only its banners, and a description's embedded images stand in as `[image: name]` placeholders.
+- The maximized viewer's thumbnail row decodes lazily, only what is in view, so it opens as fast over a
+  pack of thousands as over three screenshots.
+- `.avif` still counts as a content image but does **not** decode in the shipped Qt plugin set (`webp`
+  does): such members show as a broken placeholder in the panel rather than an image.
+
 ## [0.1.1] - 2026-07-29
 
 The first release to reach PyPI, so `pip install rehuco-agent` and `uv tool install rehuco-agent` now get

@@ -82,6 +82,7 @@ from .migrations import (
     migrate_checksum_data,
     migrate_rehu_data,
 )
+from .natural_sort import natural_path_sort_key, natural_sort_key
 from .plugins import (
     BUILTIN_PLUGINS,
     COLLECTION_PLUGIN,
@@ -265,7 +266,6 @@ from .tc_screenshots import (
     compiled_screenshot_name_patterns,
     convert_screenshot,
     is_legacy_screenshot,
-    natural_sort_key,
     scan_tc_screenshots,
     scan_unconverted_screenshots,
     screenshot_name_patterns_from_state,
@@ -485,8 +485,9 @@ __all__ = [
     "log_legacy_seed",
     "migrate_block_data",
     "migrate_checksum_data",
-    "natural_sort_key",
     "migrate_rehu_data",
+    "natural_path_sort_key",
+    "natural_sort_key",
     "new_checksum_record",
     "original_path",
     "originals_to_back_up",

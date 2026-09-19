@@ -5,9 +5,10 @@ from typing import Final, cast
 
 from borco_pyside.core import SimpleProperty
 from PySide6.QtCore import QObject, QSettings
+from PySide6.QtGui import QColor
 
 from ..fields.images_field import IMAGE_STRIP_HEIGHT
-from ..fields.widgets.image_lightbox import DEFAULT_STRIP_HEIGHT, ImageViewerMode
+from ..fields.widgets.image_lightbox import DEFAULT_BACKDROP, DEFAULT_STRIP_HEIGHT, ImageViewerMode
 from ..fields.widgets.image_selector import PREVIEW_HEIGHT
 from .persistent_settings import persistent_settings
 
@@ -19,6 +20,14 @@ LIGHTBOX_IMAGE_HEIGHT_KEY: Final = "lightbox_image_height"
 EDITOR_PREVIEW_HEIGHT_KEY: Final = "editor_preview_height"
 PREVIEW_WRAP_KEY: Final = "preview_wrap"
 PREVIEWS_VISIBLE_KEY: Final = "previews_visible"
+LIGHTBOX_INFO_VISIBLE_KEY: Final = "lightbox_info_visible"
+LIGHTBOX_BACKDROP_KEY: Final = "lightbox_backdrop"
+LIGHTBOX_DOUBLE_CLICK_CLOSES_KEY: Final = "lightbox_double_click_closes"
+LIGHTBOX_SELECT_LAST_VIEWED_KEY: Final = "lightbox_select_last_viewed"
+CONTENT_ROWS_MIN_HEIGHT_KEY: Final = "content_rows_min_height"
+CONTENT_ROWS_MAX_HEIGHT_KEY: Final = "content_rows_max_height"
+CONTENT_ZIP_NAMES_KEY: Final = "content_zip_names"
+CONTENT_FOLDER_NAMES_KEY: Final = "content_folder_names"
 
 DEFAULT_MODE: Final = ImageViewerMode.DOCUMENT_OVERLAY
 """What a fresh install (no ``.ini`` yet) opens screenshots on: the least disruptive of the three --
@@ -48,8 +57,40 @@ DEFAULT_EDITOR_PREVIEW_HEIGHT: Final = PREVIEW_HEIGHT
 """How tall the images editor's preview pane opens on a document with no split of its own remembered
 yet (#72). Read from `ImageSelector` for the same reason the two above are read from their widgets."""
 
+DEFAULT_LIGHTBOX_BACKDROP: Final = DEFAULT_BACKDROP
+"""The colour behind a maximized image, as ``#rrggbb`` (#221). Read from the widget that paints it,
+like the heights above."""
 
-class ImageViewerSettings(QObject):
+DEFAULT_LIGHTBOX_INFO_VISIBLE: Final = False
+"""Whether a maximized image opens with its info overlay shown (#221). Off, like the thumbnail row and
+for the same reason: the point of maximizing is the image, and ``I`` is one key away."""
+
+DEFAULT_LIGHTBOX_DOUBLE_CLICK_CLOSES: Final = True
+"""Whether a double-click on the maximized image closes the viewer (#221). On: the image was opened by
+a double-click, and the same gesture undoing it is the shortest way back; off for whoever double-clicks
+by habit while looking."""
+
+DEFAULT_LIGHTBOX_SELECT_LAST_VIEWED: Final = True
+"""Whether closing a viewer opened from the Content Images dock selects, in the dock, the image it was
+on -- scrolled into view, its group expanded (#221). On: the viewer is where the user went looking, and
+the grid picking up where they stopped is what makes the two one surface."""
+
+DEFAULT_CONTENT_ROWS_MIN_HEIGHT: Final = 140
+DEFAULT_CONTENT_ROWS_MAX_HEIGHT: Final = 260
+"""The Content Images dock's row-height clamp (#221): a row is rescaled to land flush on the dock's
+edge only while its flush height falls inside it, and left ragged otherwise. Tuned against real packs
+-- portrait figure references pack four or five to a row at these on a half-width dock."""
+
+DEFAULT_CONTENT_ZIP_NAMES: Final = True
+"""Whether the Content Images dock banners each archive's start with its name (#221). On: several
+archives with no marker between them is the confusion the dock's banners exist to prevent."""
+
+DEFAULT_CONTENT_FOLDER_NAMES: Final = False
+"""Whether the Content Images dock banners each folder change inside an archive (#221). Off: most packs
+are flat, and a banner per folder on the ones that are not is a choice, not a default."""
+
+
+class ImageViewerSettings(QObject):  # pylint: disable=too-many-instance-attributes
     """How screenshots are presented, in the strip and maximized (#160, #161).
 
     A reactive ``QObject`` (``SimpleProperty`` fields), following
@@ -102,6 +143,30 @@ class ImageViewerSettings(QObject):
     editor_preview_height = SimpleProperty(DEFAULT_EDITOR_PREVIEW_HEIGHT)
     """How tall the images editor's preview pane opens, before a document remembers its own split."""
 
+    lightbox_info_visible = SimpleProperty(DEFAULT_LIGHTBOX_INFO_VISIBLE)
+    """Whether a maximized image shows its info overlay (#221). Applied to every open viewer as well
+    as the next, like :attr:`lightbox_image_height`; ``I`` inside a viewer changes that one alone and
+    writes nothing back."""
+
+    lightbox_backdrop = SimpleProperty(DEFAULT_LIGHTBOX_BACKDROP)
+    """The colour behind a maximized image, as ``#rrggbb`` (#221); applied to every open viewer."""
+
+    lightbox_double_click_closes = SimpleProperty(DEFAULT_LIGHTBOX_DOUBLE_CLICK_CLOSES)
+    """Whether a double-click on the maximized image closes the viewer (#221); applied to every open
+    viewer."""
+
+    lightbox_select_last_viewed = SimpleProperty(DEFAULT_LIGHTBOX_SELECT_LAST_VIEWED)
+    """Whether closing a viewer opened from the Content Images dock selects the image it was on back
+    in the dock (#221). Read at the close, so it applies to a viewer already open."""
+
+    content_rows_min_height = SimpleProperty(DEFAULT_CONTENT_ROWS_MIN_HEIGHT)
+    content_rows_max_height = SimpleProperty(DEFAULT_CONTENT_ROWS_MAX_HEIGHT)
+    """The Content Images dock's row-height clamp (#221); applying either re-packs every open dock."""
+
+    content_zip_names = SimpleProperty(DEFAULT_CONTENT_ZIP_NAMES)
+    content_folder_names = SimpleProperty(DEFAULT_CONTENT_FOLDER_NAMES)
+    """Which boundaries the Content Images dock banners (#221); applying either re-packs every open dock."""
+
     def load(self, settings: QSettings) -> None:
         """Replace the current choices with what's in persistent storage.
 
@@ -125,6 +190,30 @@ class ImageViewerSettings(QObject):
         self.editor_preview_height = cast(
             int, settings.value(EDITOR_PREVIEW_HEIGHT_KEY, DEFAULT_EDITOR_PREVIEW_HEIGHT, type=int)
         )
+        self.lightbox_info_visible = cast(
+            bool, settings.value(LIGHTBOX_INFO_VISIBLE_KEY, DEFAULT_LIGHTBOX_INFO_VISIBLE, type=bool)
+        )
+        # a colour the widget cannot paint -- a hand-edited ini -- falls back rather than raising
+        stored_backdrop = cast(str, settings.value(LIGHTBOX_BACKDROP_KEY, DEFAULT_LIGHTBOX_BACKDROP, type=str))
+        self.lightbox_backdrop = (
+            stored_backdrop if QColor.isValidColorName(stored_backdrop) else DEFAULT_LIGHTBOX_BACKDROP
+        )
+        self.lightbox_double_click_closes = cast(
+            bool, settings.value(LIGHTBOX_DOUBLE_CLICK_CLOSES_KEY, DEFAULT_LIGHTBOX_DOUBLE_CLICK_CLOSES, type=bool)
+        )
+        self.lightbox_select_last_viewed = cast(
+            bool, settings.value(LIGHTBOX_SELECT_LAST_VIEWED_KEY, DEFAULT_LIGHTBOX_SELECT_LAST_VIEWED, type=bool)
+        )
+        self.content_rows_min_height = cast(
+            int, settings.value(CONTENT_ROWS_MIN_HEIGHT_KEY, DEFAULT_CONTENT_ROWS_MIN_HEIGHT, type=int)
+        )
+        self.content_rows_max_height = cast(
+            int, settings.value(CONTENT_ROWS_MAX_HEIGHT_KEY, DEFAULT_CONTENT_ROWS_MAX_HEIGHT, type=int)
+        )
+        self.content_zip_names = cast(bool, settings.value(CONTENT_ZIP_NAMES_KEY, DEFAULT_CONTENT_ZIP_NAMES, type=bool))
+        self.content_folder_names = cast(
+            bool, settings.value(CONTENT_FOLDER_NAMES_KEY, DEFAULT_CONTENT_FOLDER_NAMES, type=bool)
+        )
         settings.endGroup()
         try:
             self.mode = ImageViewerMode(stored)
@@ -144,6 +233,14 @@ class ImageViewerSettings(QObject):
         settings.setValue(PREVIEW_IMAGE_HEIGHT_KEY, self.preview_image_height)
         settings.setValue(LIGHTBOX_IMAGE_HEIGHT_KEY, self.lightbox_image_height)
         settings.setValue(EDITOR_PREVIEW_HEIGHT_KEY, self.editor_preview_height)
+        settings.setValue(LIGHTBOX_INFO_VISIBLE_KEY, self.lightbox_info_visible)
+        settings.setValue(LIGHTBOX_BACKDROP_KEY, self.lightbox_backdrop)
+        settings.setValue(LIGHTBOX_DOUBLE_CLICK_CLOSES_KEY, self.lightbox_double_click_closes)
+        settings.setValue(LIGHTBOX_SELECT_LAST_VIEWED_KEY, self.lightbox_select_last_viewed)
+        settings.setValue(CONTENT_ROWS_MIN_HEIGHT_KEY, self.content_rows_min_height)
+        settings.setValue(CONTENT_ROWS_MAX_HEIGHT_KEY, self.content_rows_max_height)
+        settings.setValue(CONTENT_ZIP_NAMES_KEY, self.content_zip_names)
+        settings.setValue(CONTENT_FOLDER_NAMES_KEY, self.content_folder_names)
         settings.endGroup()
 
 

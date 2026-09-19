@@ -57,13 +57,30 @@ def mock_archives(mocker: MockerFixture, contents: dict[Path, list[zipfile.ZipIn
     return mocker.patch("rehuco_core.rehu_content_images.zipfile.ZipFile", side_effect=side_effect)
 
 
-def zip_info(name: str) -> zipfile.ZipInfo:
+def zip_info(name: str, size: int = 0, crc: int = 0) -> zipfile.ZipInfo:
     """Build a real :class:`zipfile.ZipInfo` for ``name`` -- a plain data holder, no archive needed.
 
     :param name: the entry's stored path.
+    :param size: the uncompressed size the central directory would record.
+    :param crc: the CRC32 the central directory would record.
     :returns: a :class:`zipfile.ZipInfo` naming it.
     """
-    return zipfile.ZipInfo(name)
+    info = zipfile.ZipInfo(name)
+    info.file_size = size
+    info.CRC = crc
+    return info
+
+
+def entry(archive: Path, name: str, size: int = 0, crc: int = 0) -> ContentImageEntry:
+    """The :class:`ContentImageEntry` :func:`zip_info`'s counterpart enumerates to.
+
+    :param archive: the archive path.
+    :param name: the member path.
+    :param size: the uncompressed size.
+    :param crc: the CRC32.
+    :returns: the expected entry.
+    """
+    return ContentImageEntry(archive, name, size, crc)
 
 
 # region file-scoped
@@ -84,7 +101,7 @@ def test_file_scoped_enumerates_only_its_own_sibling_archive(mocker: MockerFixtu
 
     entries = enumerate_content_images(FILE_SCOPED_PATH)
 
-    assert entries == [ContentImageEntry(DIRECTORY / "foo.zip", "page01.jpg")]
+    assert entries == [entry(DIRECTORY / "foo.zip", "page01.jpg")]
     mock_zipfile.assert_called_once_with(DIRECTORY / "foo.zip")
 
 
@@ -102,30 +119,61 @@ def test_file_scoped_matches_stem_and_extension_case_insensitively(mocker: Mocke
 
     entries = enumerate_content_images(FILE_SCOPED_PATH)
 
-    assert entries == [ContentImageEntry(DIRECTORY / "FOO.ZIP", "page01.jpg")]
+    assert entries == [entry(DIRECTORY / "FOO.ZIP", "page01.jpg")]
 
 
-def test_file_scoped_lists_entries_in_infolist_order_ignoring_non_images(mocker: MockerFixture) -> None:
-    """Non-image entries are dropped; recognized ones keep the archive's own central-directory order.
+def test_file_scoped_lists_entries_in_natural_order_ignoring_non_images(mocker: MockerFixture) -> None:
+    """Non-image entries are dropped; recognized ones come back in natural order of their paths, never
+    the central directory's ([[reference-images#image-identity]]).
 
     **Test steps:**
 
-    * mock ``foo.zip`` to hold two images and a text file, image entries out of alphabetical order
+    * mock ``foo.zip`` to hold images in a shuffled central-directory order -- ``page10`` before
+      ``page9``, a subfolder's member before the root's, a text file in between
     * enumerate
-    * verify only the two images come back, in the archive's own order
+    * verify the images come back natural-sorted component by component, the text file dropped
     """
     mock_siblings(mocker, ["foo.zip"])
     mock_archives(
         mocker,
-        {DIRECTORY / "foo.zip": [zip_info("page02.jpg"), zip_info("readme.txt"), zip_info("page01.png")]},
+        {
+            DIRECTORY / "foo.zip": [
+                zip_info("page10.jpg"),
+                zip_info("readme.txt"),
+                zip_info("extras/bonus.png"),
+                zip_info("page9.jpg"),
+                zip_info("page009.jpg"),
+            ]
+        },
     )
 
     entries = enumerate_content_images(FILE_SCOPED_PATH)
 
     assert entries == [
-        ContentImageEntry(DIRECTORY / "foo.zip", "page02.jpg"),
-        ContentImageEntry(DIRECTORY / "foo.zip", "page01.png"),
+        entry(DIRECTORY / "foo.zip", "extras/bonus.png"),
+        entry(DIRECTORY / "foo.zip", "page9.jpg"),
+        entry(DIRECTORY / "foo.zip", "page009.jpg"),
+        entry(DIRECTORY / "foo.zip", "page10.jpg"),
     ]
+
+
+def test_entries_carry_the_central_directory_size_and_crc(mocker: MockerFixture) -> None:
+    """Each entry carries the member's uncompressed size and CRC32 off the central directory, and keys
+    itself by them ([[reference-images#image-identity]]) -- without a byte inflated.
+
+    **Test steps:**
+
+    * mock ``foo.zip`` to hold one image with a known size and CRC
+    * enumerate
+    * verify the entry carries both and its key is ``("zip", name, size, crc)``
+    """
+    mock_siblings(mocker, ["foo.zip"])
+    mock_archives(mocker, {DIRECTORY / "foo.zip": [zip_info("page01.jpg", 123_456, 0xDEADBEEF)]})
+
+    entries = enumerate_content_images(FILE_SCOPED_PATH)
+
+    assert entries == [entry(DIRECTORY / "foo.zip", "page01.jpg", 123_456, 0xDEADBEEF)]
+    assert entries[0].key == ("zip", "page01.jpg", 123_456, 0xDEADBEEF)
 
 
 def test_loose_sibling_images_are_never_counted(mocker: MockerFixture) -> None:
@@ -175,9 +223,31 @@ def test_directory_scoped_sums_every_archive_recursively(mocker: MockerFixture) 
     entries = enumerate_content_images(DIRECTORY_SCOPED_PATH)
 
     assert entries == [
-        ContentImageEntry(root_zip, "page01.jpg"),
-        ContentImageEntry(nested_cbz, "page01.jpg"),
+        entry(root_zip, "page01.jpg"),
+        entry(nested_cbz, "page01.jpg"),
     ]
+
+
+def test_directory_scoped_orders_archives_naturally_by_path(mocker: MockerFixture) -> None:
+    """Archives come in natural order of their paths: ``pack2`` before ``pack10``, a folder's packs where
+    the folder sorts -- not ``str`` order, which puts ``pack10`` first.
+
+    **Test steps:**
+
+    * mock the tree to yield ``pack10.zip``, ``pack2.zip`` and ``vol1/pack1.zip`` in that order
+    * mock one image per archive
+    * enumerate
+    * verify the entries come archive by archive, ``pack2``, ``pack10``, then ``vol1/pack1``
+    """
+    pack10 = DIRECTORY / "pack10.zip"
+    pack2 = DIRECTORY / "pack2.zip"
+    nested = DIRECTORY / "vol1" / "pack1.zip"
+    mock_tree(mocker, [pack10, pack2, nested])
+    mock_archives(mocker, {pack10: [zip_info("a.jpg")], pack2: [zip_info("a.jpg")], nested: [zip_info("a.jpg")]})
+
+    entries = enumerate_content_images(DIRECTORY_SCOPED_PATH)
+
+    assert entries == [entry(pack2, "a.jpg"), entry(pack10, "a.jpg"), entry(nested, "a.jpg")]
 
 
 def test_directory_scoped_excludes_a_subdirectory_with_its_own_info_rehu(mocker: MockerFixture) -> None:
@@ -201,7 +271,7 @@ def test_directory_scoped_excludes_a_subdirectory_with_its_own_info_rehu(mocker:
 
     entries = enumerate_content_images(DIRECTORY_SCOPED_PATH)
 
-    assert entries == [ContentImageEntry(own_archive, "cover.jpg")]
+    assert entries == [entry(own_archive, "cover.jpg")]
 
 
 def test_directory_scoped_excludes_an_archive_a_file_scoped_record_claims(mocker: MockerFixture) -> None:
@@ -220,7 +290,7 @@ def test_directory_scoped_excludes_an_archive_a_file_scoped_record_claims(mocker
 
     entries = enumerate_content_images(DIRECTORY_SCOPED_PATH)
 
-    assert entries == [ContentImageEntry(unclaimed, "page02.jpg")]
+    assert entries == [entry(unclaimed, "page02.jpg")]
 
 
 def test_a_legacy_info_tc_is_directory_scoped_too(mocker: MockerFixture) -> None:
@@ -243,7 +313,7 @@ def test_a_legacy_info_tc_is_directory_scoped_too(mocker: MockerFixture) -> None
 
     entries = enumerate_content_images(DIRECTORY / INFO_TC_FILENAME)
 
-    assert entries == [ContentImageEntry(root_zip, "page01.jpg"), ContentImageEntry(nested_cbz, "page02.jpg")]
+    assert entries == [entry(root_zip, "page01.jpg"), entry(nested_cbz, "page02.jpg")]
 
 
 # endregion
@@ -278,7 +348,7 @@ def test_directory_entries_dot_files_and_macosx_are_excluded(mocker: MockerFixtu
 
     entries = enumerate_content_images(FILE_SCOPED_PATH)
 
-    assert entries == [ContentImageEntry(DIRECTORY / "foo.zip", "page/keep.jpg")]
+    assert entries == [entry(DIRECTORY / "foo.zip", "page/keep.jpg")]
 
 
 def test_nested_entries_count(mocker: MockerFixture) -> None:
@@ -295,7 +365,7 @@ def test_nested_entries_count(mocker: MockerFixture) -> None:
 
     entries = enumerate_content_images(FILE_SCOPED_PATH)
 
-    assert entries == [ContentImageEntry(DIRECTORY / "foo.zip", "volume1/chapter2/page03.jpg")]
+    assert entries == [entry(DIRECTORY / "foo.zip", "volume1/chapter2/page03.jpg")]
 
 
 def test_encrypted_entries_still_enumerate(mocker: MockerFixture) -> None:
@@ -314,7 +384,7 @@ def test_encrypted_entries_still_enumerate(mocker: MockerFixture) -> None:
 
     entries = enumerate_content_images(FILE_SCOPED_PATH)
 
-    assert entries == [ContentImageEntry(DIRECTORY / "foo.zip", "page01.jpg")]
+    assert entries == [entry(DIRECTORY / "foo.zip", "page01.jpg")]
 
 
 def test_enumerating_never_reads_or_extracts_entry_contents(mocker: MockerFixture) -> None:
@@ -351,7 +421,7 @@ def test_zips_inside_zips_are_not_descended_into(mocker: MockerFixture) -> None:
 
     entries = enumerate_content_images(FILE_SCOPED_PATH)
 
-    assert entries == [ContentImageEntry(DIRECTORY / "foo.zip", "page01.jpg")]
+    assert entries == [entry(DIRECTORY / "foo.zip", "page01.jpg")]
     mock_zipfile.assert_called_once_with(DIRECTORY / "foo.zip")
 
 
@@ -370,8 +440,8 @@ def test_custom_extension_set_changes_what_is_counted(mocker: MockerFixture) -> 
     default_entries = enumerate_content_images(FILE_SCOPED_PATH)
     tiff_entries = enumerate_content_images(FILE_SCOPED_PATH, extensions=(".tiff",))
 
-    assert default_entries == [ContentImageEntry(DIRECTORY / "foo.zip", "page01.jpg")]
-    assert tiff_entries == [ContentImageEntry(DIRECTORY / "foo.zip", "page01.tiff")]
+    assert default_entries == [entry(DIRECTORY / "foo.zip", "page01.jpg")]
+    assert tiff_entries == [entry(DIRECTORY / "foo.zip", "page01.tiff")]
 
 
 # endregion
@@ -465,7 +535,7 @@ def test_content_images_and_screenshots_stay_disjoint(mocker: MockerFixture) -> 
     entries = enumerate_content_images(FILE_SCOPED_PATH)
 
     assert screenshots == [DIRECTORY / "foo00.jpg", DIRECTORY / "foo01.png"]
-    assert entries == [ContentImageEntry(DIRECTORY / "foo.zip", "page01.jpg")]
+    assert entries == [entry(DIRECTORY / "foo.zip", "page01.jpg")]
 
 
 # endregion
