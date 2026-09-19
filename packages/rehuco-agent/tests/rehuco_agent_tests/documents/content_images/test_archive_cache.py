@@ -146,6 +146,35 @@ def test_losing_the_race_to_open_an_archive_keeps_the_winners_handle(mocker: Moc
     losers[0].open.assert_not_called()
 
 
+def test_a_handle_closed_by_an_eviction_under_the_read_is_looked_up_again(mocker: MockerFixture) -> None:
+    """A handle found and then closed by an eviction before its lock was taken is not read through:
+    the read looks the archive up again, once -- an eviction is no fact about the member, and the
+    caller would record a failure for good. A handle still closed on the second look reads as ``None``.
+
+    **Test steps:**
+
+    * plant a handle whose file object reads as closed once, then open
+    * verify the read succeeded through that handle on its second look
+    * plant one that stays closed and verify the read gives up as ``None``
+    """
+    cache = ArchiveCache()
+    handles = cache._ArchiveCache__handles  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    flaky = mocker.MagicMock(name="flaky")
+    type(flaky).fp = mocker.PropertyMock(side_effect=[None, object()])
+    flaky.open.return_value.__enter__.return_value.read.return_value = PAYLOAD
+    handles[ARCHIVE] = (flaky, threading.Lock())
+
+    assert cache.read(MEMBER) == PAYLOAD
+    flaky.open.assert_called_once_with(MEMBER.name)
+
+    closed = mocker.MagicMock(name="closed")
+    type(closed).fp = mocker.PropertyMock(return_value=None)
+    handles[OTHER] = (closed, threading.Lock())
+
+    assert cache.read(OTHER_MEMBER) is None
+    closed.open.assert_not_called()
+
+
 def test_an_unopenable_archive_reads_as_nothing(mocker: MockerFixture) -> None:
     """An archive that cannot be opened -- offline, truncated -- reads as ``None``, never raises.
 

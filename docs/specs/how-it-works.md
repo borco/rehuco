@@ -106,7 +106,7 @@ or from the app — and it appears as a set of dockable panels you can rearrange
 | **Description** | The Markdown description in its own panel, so prose can be written with room. |
 | **Images** | Which screenshots the strip shows: every sibling image, checkable, beside a preview. |
 | **Save Preview** / **On Disk** | Hidden by default: exactly what a save would write, and the file as it is on disk right now. The pair is how you see a migration or a preserved unknown field with your own eyes. |
-| **Content Images** | Hidden by default: the images *inside* a reference pack's archives, in rows justified to the panel's width and in natural order, each archive opening with a banner naming it. Read-only — those images live in a checksummed archive and the app never touches them. Clicking one fills the window with it, like a screenshot; `I` there shows its name, pixel size and file size. |
+| **Content Images** | Hidden by default: the images *inside* a reference pack's archives, in rows justified to the panel's width and in natural order, each archive opening with a banner naming it and counting its images; a banner click folds its group away, and the banner of the group being scrolled through stays pinned at the top. Read-only — those images live in a checksummed archive and the app never touches them. A click selects one and a status line names it; a double-click fills the window with it, like a screenshot, where `I` shows its name, pixel size and file size. |
 
 The fields themselves come from a **field toolkit** — one small class per kind of value (text, date,
 rating, duration, size, tag list, path, …), each knowing how to display and edit it. A type's panels are

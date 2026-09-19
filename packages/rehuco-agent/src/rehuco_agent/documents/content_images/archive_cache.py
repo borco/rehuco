@@ -73,18 +73,26 @@ class ArchiveCache:
         :param limit: how many bytes, or ``None`` for all.
         :returns: the bytes, or ``None`` on any failure.
         """
-        opened = self.__handle(entry.archive)
-        if opened is None:
-            return None
-        archive, lock = opened
-        try:
-            with lock, archive.open(entry.name) as member:
-                return member.read() if limit is None else member.read(limit)
-        except OSError, zipfile.BadZipFile, KeyError, RuntimeError, ValueError:
-            # KeyError: the member is not in this archive any more; RuntimeError: encrypted, or the
-            # handle was closed under us by an eviction racing this read -- the next call reopens it;
-            # ValueError: a member whose compression this zipfile cannot inflate
-            return None
+        # twice at most: a handle looked up and then closed by an eviction before its lock was taken
+        # is already out of the cache, so the second lookup opens the archive afresh. Not merely an
+        # exception to swallow -- a read that fails is recorded as unreadable for good by its callers
+        # (a header's size, a thumbnail), and an eviction race is no fact about the member
+        for _ in range(2):
+            opened = self.__handle(entry.archive)
+            if opened is None:
+                return None
+            archive, lock = opened
+            try:
+                with lock:
+                    if archive.fp is None:
+                        continue
+                    with archive.open(entry.name) as member:
+                        return member.read() if limit is None else member.read(limit)
+            except OSError, zipfile.BadZipFile, KeyError, RuntimeError, ValueError:
+                # KeyError: the member is not in this archive any more; RuntimeError: encrypted;
+                # ValueError: a member whose compression this zipfile cannot inflate
+                return None
+        return None
 
     def __handle(self, path: Path) -> tuple[zipfile.ZipFile, threading.Lock] | None:
         """The open handle for ``path``, opening it (and evicting the least recently used) if needed.

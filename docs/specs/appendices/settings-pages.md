@@ -118,7 +118,7 @@ type, and the import wizard that reads them is reached from `File` as well.
 **One page per subject, not per owner** — split along how that subject is asked about, once "Images"
 had two questions worth asking separately (#294). "Images/Display" answers how an image is *shown*:
 the viewer surface and thumbnail strips, the Content Images dock's row-height clamp and banner boxes
-and whether a maximized image opens with its info overlay (#221) — all `ImageViewerSettings` — and the
+and whether a maximized image shows its info overlay and on what backdrop (#221) — all `ImageViewerSettings` — and the
 width cap on an image embedded in a description (`MarkdownRenderingSettings`). The other two pages describe one bucket, a resource's
 **sidecar images** — the image files kept beside it, which its thumbnail strip curates from and its
 description references with `![]()`. "Images/Sidecar Extensions" says which files count as one

@@ -28,10 +28,13 @@ class LayoutItem:
 
     :ivar aspect: the image's width/height, or ``None`` while unknown.
     :ivar banner: the banner text to put on its own full-width row before this item, or ``None``.
+    :ivar hidden: whether the image is left out of the rows -- its group is collapsed. Its banner, if
+        any, still takes its row; its rect is empty.
     """
 
     aspect: float | None = None
     banner: str | None = None
+    hidden: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,7 +59,7 @@ class Row:
 class PackedLayout:
     """The packing pass's output.
 
-    :ivar rects: ``(x, y, w, h)`` per item index.
+    :ivar rects: ``(x, y, w, h)`` per item index; all zeros for a hidden item.
     :ivar rows: the rows, top to bottom, banner rows included.
     :ivar height: the total height.
     """
@@ -169,6 +172,8 @@ def pack_rows(  # pylint: disable=too-many-arguments,too-many-positional-argumen
             open_row = []
             rows.append(Row(y, banner_height, index, index, item.banner))
             y += banner_height + spacing
+        if item.hidden:
+            continue
         aspect = item.aspect if item.aspect is not None and item.aspect > 0 else PLACEHOLDER_ASPECT
         open_row.append((index, aspect))
         settle()

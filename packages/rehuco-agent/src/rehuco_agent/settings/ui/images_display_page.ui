@@ -53,7 +53,7 @@
       <item>
        <widget class="QLabel" name="surface_hint_label">
         <property name="text">
-         <string>Where a screenshot opens when it is clicked in the image strip:</string>
+         <string>Where an image opens when it is double-clicked, unless a key held down picks another surface:</string>
         </property>
         <property name="wordWrap">
          <bool>true</bool>
@@ -63,10 +63,10 @@
       <item>
        <widget class="QRadioButton" name="document_overlay_radio_button">
         <property name="text">
-         <string>rehu window overlay</string>
+         <string>rehu window overlay (or SHIFT)</string>
         </property>
         <property name="toolTip">
-         <string>Covers the open document, leaving its tab and the app's menus and toolbars visible.</string>
+         <string>Covers the open document, leaving its tab and the app's menus and toolbars visible. Holding SHIFT while double-clicking opens this way whatever is chosen here.</string>
         </property>
         <property name="checked">
          <bool>true</bool>
@@ -76,20 +76,30 @@
       <item>
        <widget class="QRadioButton" name="app_window_overlay_radio_button">
         <property name="text">
-         <string>app window overlay</string>
+         <string>app window overlay (or CTRL)</string>
         </property>
         <property name="toolTip">
-         <string>Covers the whole main window, leaving only its menu, tool, and status bars visible.</string>
+         <string>Covers the whole main window, leaving only its menu, tool, and status bars visible. Holding CTRL while double-clicking opens this way whatever is chosen here.</string>
         </property>
        </widget>
       </item>
       <item>
        <widget class="QRadioButton" name="full_screen_radio_button">
         <property name="text">
-         <string>frameless full-screen</string>
+         <string>frameless full-screen (or CTRL+SHIFT)</string>
         </property>
         <property name="toolTip">
-         <string>Covers the entire screen, with no window frame.</string>
+         <string>Covers the entire screen, with no window frame. Holding CTRL+SHIFT while double-clicking opens this way whatever is chosen here.</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QCheckBox" name="lightbox_info_check_box">
+        <property name="text">
+         <string>Show image info</string>
+        </property>
+        <property name="toolTip">
+         <string>Whether a maximized image shows its name, pixel size and file size in the corner. The I key toggles it in an open viewer; applying this sets every open viewer too.</string>
         </property>
        </widget>
       </item>
@@ -104,14 +114,51 @@
        </widget>
       </item>
       <item>
-       <widget class="QCheckBox" name="lightbox_info_check_box">
+       <widget class="QCheckBox" name="lightbox_double_click_check_box">
         <property name="text">
-         <string>Show image info</string>
+         <string>Double-click closes the viewer</string>
         </property>
         <property name="toolTip">
-         <string>Whether a maximized image opens with its name, pixel size and file size shown in the corner. The I key toggles it in an open viewer; applying this changes only viewers opened from now on.</string>
+         <string>Whether a double-click on the maximized image closes the viewer -- the gesture that opened it, undoing it. Applying this sets every open viewer too.</string>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
         </property>
        </widget>
+      </item>
+      <item>
+       <layout class="QHBoxLayout" name="lightbox_backdrop_layout">
+        <item>
+         <widget class="QLabel" name="lightbox_backdrop_label">
+          <property name="text">
+           <string>Background:</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="lightbox_backdrop_button">
+          <property name="toolTip">
+           <string>The colour painted behind a maximized image. Applying it recolours every open viewer.</string>
+          </property>
+          <property name="text">
+           <string>#1e1e1e</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="lightbox_backdrop_spacer">
+          <property name="orientation">
+           <enum>Qt::Orientation::Horizontal</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>0</width>
+            <height>0</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+       </layout>
       </item>
      </layout>
     </widget>

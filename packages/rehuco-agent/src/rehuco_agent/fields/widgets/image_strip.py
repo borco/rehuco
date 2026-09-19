@@ -40,7 +40,7 @@ class ThumbnailLabel(QLabel):
     """
 
     clicked = Signal(Path)
-    """Fires with :attr:`path` when the thumbnail is left-clicked."""
+    """Fires with :attr:`path` when the thumbnail is left double-clicked."""
 
     def __init__(self, path: Path, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -106,15 +106,24 @@ class ThumbnailLabel(QLabel):
 
     @override
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
-        """Emit :attr:`clicked` when a left-button press *and* release both land on this thumbnail.
-
-        Release, not press: Qt grabs the mouse on press, so a release still inside the widget is the
-        standard "this was a click, not a drag away" test -- pressing here and letting go elsewhere
-        must not open anything. Accepted for the same reason the press is.
+        """Take the release too, for the same reason as the press.
 
         :param event: the Qt mouse-release event, forwarded to the base class.
         """
         super().mouseReleaseEvent(event)
+        event.accept()
+
+    @override
+    def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
+        """Emit :attr:`clicked` on a left double-click landing on this thumbnail (#221).
+
+        A double-click, not a click: opening an image maximized is the same gesture everywhere an
+        image is shown -- the Files sub-dock's rows and the Content Images grid, where a single click
+        selects. Accepted for the same reason the press is.
+
+        :param event: the Qt mouse event, forwarded to the base class.
+        """
+        super().mouseDoubleClickEvent(event)
         event.accept()
         if event.button() == Qt.MouseButton.LeftButton and self.rect().contains(event.position().toPoint()):
             self.clicked.emit(self.__path)
@@ -149,8 +158,8 @@ class ImageStrip(QScrollArea):  # pylint: disable=too-many-instance-attributes
     """
 
     image_activated = Signal(Path)
-    """Fires with the screenshot a user clicked. The strip stays a dumb presenter: it reports *which*
-    image was activated and nothing more -- what opens is the owner's decision (#160)."""
+    """Fires with the screenshot a user double-clicked. The strip stays a dumb presenter: it reports
+    *which* image was activated and nothing more -- what opens is the owner's decision (#160)."""
 
     images_changed = Signal(list)
     """Fires with the screenshots now painted, whenever the row is rebuilt -- a curation edit, a

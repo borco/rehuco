@@ -9,6 +9,7 @@ from rehuco_agent.documents.content_images.banners import (
     archive_relative_path,
     banner_rows,
     banner_text,
+    group_of,
     member_folder,
 )
 from rehuco_core import ContentImageEntry
@@ -42,9 +43,9 @@ TWO_ARCHIVES: Final = [
     ("flags", "expected"),
     [
         (ContentDisplayFlags(zip_names=False, folder_names=False), None),
-        (ContentDisplayFlags(zip_names=True, folder_names=False), "[dir1/zip1.zip]"),
-        (ContentDisplayFlags(zip_names=False, folder_names=True), "[/path1/path2]"),
-        (ContentDisplayFlags(zip_names=True, folder_names=True), "[dir1/zip1.zip:/path1/path2]"),
+        (ContentDisplayFlags(zip_names=True, folder_names=False), "dir1/zip1.zip"),
+        (ContentDisplayFlags(zip_names=False, folder_names=True), "/path1/path2"),
+        (ContentDisplayFlags(zip_names=True, folder_names=True), "dir1/zip1.zip:/path1/path2"),
     ],
 )
 def test_the_banner_text_follows_the_issues_table(flags: ContentDisplayFlags, expected: str | None) -> None:
@@ -87,18 +88,18 @@ def test_the_archive_path_is_relative_to_the_rehu_and_slash_separated() -> None:
     ("flags", "expected"),
     [
         (ContentDisplayFlags(zip_names=False, folder_names=False), []),
-        (ContentDisplayFlags(zip_names=True, folder_names=False), [(0, "[dir1/zip1.zip]"), (3, "[zip2.zip]")]),
+        (ContentDisplayFlags(zip_names=True, folder_names=False), [(0, "dir1/zip1.zip"), (3, "zip2.zip")]),
         (
             ContentDisplayFlags(zip_names=False, folder_names=True),
-            [(0, "[/]"), (2, "[/path1/path2]"), (3, "[/]"), (4, "[/sub]")],
+            [(0, "/"), (2, "/path1/path2"), (3, "/"), (4, "/sub")],
         ),
         (
             ContentDisplayFlags(zip_names=True, folder_names=True),
             [
-                (0, "[dir1/zip1.zip:/]"),
-                (2, "[dir1/zip1.zip:/path1/path2]"),
-                (3, "[zip2.zip:/]"),
-                (4, "[zip2.zip:/sub]"),
+                (0, "dir1/zip1.zip:/"),
+                (2, "dir1/zip1.zip:/path1/path2"),
+                (3, "zip2.zip:/"),
+                (4, "zip2.zip:/sub"),
             ],
         ),
     ],
@@ -115,3 +116,21 @@ def test_a_banner_goes_wherever_the_displayed_key_changes(
     * verify the banner positions and texts
     """
     assert list(banner_rows(TWO_ARCHIVES, REHU_DIRECTORY, flags)) == expected
+
+
+def test_every_entry_belongs_to_the_banner_above_it() -> None:
+    """Each entry's group is the last banner at or before it -- what a collapse hides by -- and none
+    at all with both boxes off.
+
+    **Test steps:**
+
+    * group the fixture with zip names on, and again with both boxes off
+    """
+    assert group_of(TWO_ARCHIVES, REHU_DIRECTORY, ContentDisplayFlags(True, False)) == [
+        "dir1/zip1.zip",
+        "dir1/zip1.zip",
+        "dir1/zip1.zip",
+        "zip2.zip",
+        "zip2.zip",
+    ]
+    assert group_of(TWO_ARCHIVES, REHU_DIRECTORY, ContentDisplayFlags(False, False)) == [None] * 5

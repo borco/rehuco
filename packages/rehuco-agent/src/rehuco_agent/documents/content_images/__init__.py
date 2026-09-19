@@ -15,7 +15,7 @@ path on disk and are never edited ([[data-model#image-meanings]]). The pieces, b
 from .archive_cache import ArchiveCache
 from .banners import ContentDisplayFlags, banner_rows, banner_text
 from .content_images_model import ArchiveImageSource, ContentImagesModel
-from .content_images_view import ContentImagesView
+from .content_images_view import ContentImagesPanel, ContentImagesView
 from .justified_layout import LayoutItem, PackedLayout, Row, pack_rows
 
 __all__ = [
@@ -23,6 +23,7 @@ __all__ = [
     "ArchiveImageSource",
     "ContentDisplayFlags",
     "ContentImagesModel",
+    "ContentImagesPanel",
     "ContentImagesView",
     "LayoutItem",
     "PackedLayout",

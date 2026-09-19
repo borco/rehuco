@@ -148,6 +148,23 @@ def test_a_banner_takes_a_full_width_row_and_forces_a_break() -> None:
     assert layout.height == layout.rows[2].y + layout.rows[2].height
 
 
+def test_a_hidden_item_keeps_its_banner_and_loses_its_cell() -> None:
+    """A collapsed group's images are left out of the rows while the banner still takes its row; a
+    hidden item's rect is empty and the next visible item starts fresh under the banner.
+
+    **Test steps:**
+
+    * pack a bannered hidden item, another hidden one, then a bannered visible one
+    * verify two banner rows, one image row, and an empty rect for each hidden item
+    """
+    layout = pack([LayoutItem(2.0, "a", hidden=True), LayoutItem(2.0, hidden=True), LayoutItem(2.0, "b")])
+
+    assert [row.banner for row in layout.rows] == ["a", "b", None]
+    assert layout.rects[0] == (0, 0, 0, 0)
+    assert layout.rects[1] == (0, 0, 0, 0)
+    assert layout.rects[2][1] == 2 * (BANNER_HEIGHT + SPACING)
+
+
 def test_sequence_is_preserved_in_every_output() -> None:
     """Items are placed left to right, top to bottom, in the order given -- never reordered to pack
     better.

@@ -1,6 +1,6 @@
 """The maximized screenshot viewer -- the lightbox ([[plugins#tutorial-plugin]], #160, #161).
 
-Shows one screenshot of a curated set scaled to fit, on a dimmed backdrop, over one of three surfaces
+Shows one screenshot of a curated set scaled to fit, on an opaque backdrop, over one of three surfaces
 the user picks in the settings (:class:`ImageViewerMode`). The mode is the only thing that varies: the
 content, the navigation, the dismiss paths, and the focus discipline are identical on all three, so
 there is one widget rather than three.
@@ -9,6 +9,10 @@ The enum lives here, next to the widget that implements it, and the settings sec
 (:mod:`rehuco_agent.settings.image_viewer_settings`) imports it -- the same direction
 `markdown_rendering_settings` already reads its ``DEFAULT_ENGINE`` from ``markdown_view``.
 """
+
+# One widget and the small controls only it uses (the hover bands, the corner buttons, the info
+# overlay): splitting them off would scatter one surface's chrome over several modules
+# pylint: disable=too-many-lines
 
 from collections.abc import Hashable
 from enum import StrEnum
@@ -21,6 +25,7 @@ from PySide6.QtGui import (
     QCloseEvent,
     QColor,
     QEnterEvent,
+    QIcon,
     QKeyEvent,
     QMouseEvent,
     QPainter,
@@ -36,6 +41,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMainWindow,
     QToolButton,
+    QVBoxLayout,
     QWidget,
 )
 
@@ -64,15 +70,11 @@ class ImageViewerMode(StrEnum):
     """A frameless window over the entire screen -- the classic photo-viewer lightbox."""
 
 
-OVERLAY_BACKDROP: Final = QColor(0, 0, 0, 216)
-"""Backdrop painted behind an overlay: near-opaque, but translucent enough that the covered editors
-stay faintly readable, which is what tells the user this is a layer over their document rather than a
-navigation away from it."""
-
-FULL_SCREEN_BACKDROP: Final = QColor(0, 0, 0)
-"""Backdrop painted behind the full-screen viewer -- fully opaque: there is nothing underneath worth
-showing through, and a top-level window can only composite alpha where the platform supports
-translucency at all."""
+DEFAULT_BACKDROP: Final = "#1e1e1e"
+"""The backdrop painted behind the image when the owner names none (#221): a neutral dark grey, fully
+opaque on every surface -- a translucent overlay let the covered document bleed through the image's
+own edges. The user's choice reaches this widget from the owner as a colour; the settings section
+reads this default from here, the way it reads :data:`DEFAULT_STRIP_HEIGHT`."""
 
 OVERLAY_GLYPH_COLOR: Final = QColor(Qt.GlobalColor.white)
 """Every affordance on this viewer is drawn white in every theme, not palette-themed like the rest of
@@ -86,13 +88,9 @@ maximizing it -- so this is applied to the two corner controls alone, as a style
 than as a layout margin that would inset the screenshot with them."""
 
 
-CLOSE_ICON_SIZE: Final = QSize(24, 24)
-"""The close affordance's icon size -- larger than a toolbar button's default, since this is a surface
+CORNER_ICON_SIZE: Final = 24
+"""The corner controls' icon size -- larger than a toolbar button's default, since this is a surface
 that can fill the whole screen."""
-
-STRIP_TOGGLE_ICON_SIZE: Final = 24
-"""The thumbnail-row toggle's icon size, matching :data:`CLOSE_ICON_SIZE` -- the two are the viewer's
-pair of corner controls."""
 
 DEFAULT_STRIP_HEIGHT: Final = 96
 """The in-viewer thumbnail row's height in pixels when the owner names none (#161) -- shorter than the
@@ -105,8 +103,9 @@ CLOSE_BUTTON_NAME: Final = "lightbox_close"
 PREVIOUS_BUTTON_NAME: Final = "lightbox_previous"
 NEXT_BUTTON_NAME: Final = "lightbox_next"
 STRIP_TOGGLE_BUTTON_NAME: Final = "lightbox_strip_toggle"
+INFO_TOGGLE_BUTTON_NAME: Final = "lightbox_info_toggle"
 INFO_OVERLAY_NAME: Final = "lightbox_info"
-"""Object names of the viewer's four controls and its info overlay. Named because they are otherwise
+"""Object names of the viewer's five controls and its info overlay. Named because they are otherwise
 indistinguishable from one another by type alone -- every control is some kind of ``QToolButton`` -- so
 anything reaching for a particular one has to ask for it by name."""
 
@@ -122,11 +121,13 @@ INFO_OVERLAY_POINT_SIZE_STEP: Final = 2
 
 INFO_OVERLAY_PADDING: Final = 8
 INFO_OVERLAY_RADIUS: Final = 4
-"""The info box's inner padding and corner radius, in pixels."""
+INFO_OVERLAY_SPACING: Final = 4
+"""The info box's inner padding and corner radius, and the gap between it and its toggle, in pixels."""
 
 PREVIOUS_ICON_RESOURCE: Final = ":/icons/lightbox_prev.svg"
 NEXT_ICON_RESOURCE: Final = ":/icons/lightbox_next.svg"
 STRIP_TOGGLE_ICON_RESOURCE: Final = ":/icons/lightbox_list.svg"
+INFO_TOGGLE_ICON_RESOURCE: Final = ":/icons/lightbox_info.svg"
 
 NAVIGATION_ZONE_WIDTH: Final = 50
 NAVIGATION_ZONE_DIVISIONS: Final = 8
@@ -148,11 +149,12 @@ NAVIGATION_PRESSED_OPACITY: Final = 0.8
 over the screenshot, and briefly near-solid while pressed (#161). Opacity is its *whole* visible
 state -- the zone itself stays where it is, so the glyph never moves or resizes as it appears."""
 
-STRIP_TOGGLE_OFF_OPACITY: Final = 0.2
-STRIP_TOGGLE_ON_OPACITY: Final = 0.8
-"""How present the thumbnail-row toggle is with the row hidden and shown (#161). Never fully absent,
-unlike the prev/next zones: with the row hidden there would otherwise be nothing at all to say the
-viewer has one."""
+CORNER_HOVER_OPACITY: Final = 0.8
+CORNER_PRESSED_OPACITY: Final = 1.0
+"""How present a corner control -- close, the row toggle, the info toggle -- is under the mouse and
+while pressed (#221). Absent otherwise, like the prev/next zones, so nothing sits on the image until
+the pointer goes looking; but a 24 px glyph needs to be far more solid than a band's hint when it
+does appear, or it reads as a smudge."""
 
 OVERLAY_BUTTON_STYLE: Final = """
 QToolButton { background: transparent; border: none; }
@@ -161,24 +163,12 @@ QToolButton { background: transparent; border: none; }
 own -- no border, and no hover/pressed background. The style's own would fight the opacity that is
 carrying the state, and a zone-sized button's backdrop would be a 50 px slab over the screenshot."""
 
-STRIP_TOGGLE_BUTTON_STYLE: Final = f"""
+CORNER_BUTTON_STYLE: Final = f"""
 QToolButton {{ background: transparent; border: none; margin: {CORNER_MARGIN}px; }}
 """
-"""The thumbnail-row toggle is an :class:`OverlayButton` held off the corner by a **stylesheet**
-margin: the layout it sits in has none at all, so that the screenshot beneath it can reach the
-viewer's every edge."""
-
-CLOSE_BUTTON_STYLE: Final = f"""
-QToolButton {{ background: transparent; border: none; border-radius: 4px; padding: 4px;
-               margin: {CORNER_MARGIN}px; }}
-QToolButton:hover {{ background-color: palette(highlight); }}
-QToolButton:pressed {{ background-color: palette(dark); }}
-"""
-"""Hover/pressed feedback for the close affordance, drawn from the **palette** (``palette(highlight)``
-/ ``palette(dark)``) rather than fixed colors, so it follows a theme switch like every other control
--- unlike the glyph itself (:data:`OVERLAY_GLYPH_COLOR`), which is pinned white because it sits on this
-widget's own always-dark backdrop. A stylesheet, not ``setAutoRaise``: auto-raise gives no
-distinguishable pressed state on a backdrop the style knows nothing about."""
+"""A corner control is an :class:`OverlayButton` held off the corner by a **stylesheet** margin: the
+layout it sits in has none at all, so that the screenshot beneath it can reach the viewer's every
+edge."""
 
 
 class OverlayButton(QToolButton):
@@ -193,14 +183,17 @@ class OverlayButton(QToolButton):
     Takes no focus: a click on one must leave the keyboard with the viewer, which is where ESC and the
     arrow keys are handled.
 
-    :param icon: the SVG resource to draw, recolored to :data:`OVERLAY_GLYPH_COLOR`.
+    :param icon: the SVG resource to draw, recolored to :data:`OVERLAY_GLYPH_COLOR` -- or an icon
+        already drawn in it (the close glyph comes from a font, not an SVG).
     :param opacity: the opacity to start at.
     :param parent: optional Qt parent.
     """
 
-    def __init__(self, icon: str, opacity: float, parent: QWidget | None = None) -> None:
+    def __init__(self, icon: str | QIcon, opacity: float, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setIcon(recolored_svg_icon(read_resource_bytes(icon), OVERLAY_GLYPH_COLOR))
+        self.setIcon(
+            recolored_svg_icon(read_resource_bytes(icon), OVERLAY_GLYPH_COLOR) if isinstance(icon, str) else icon
+        )
         self.setStyleSheet(OVERLAY_BUTTON_STYLE)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -220,37 +213,36 @@ class OverlayButton(QToolButton):
         return self.__effect.opacity()
 
 
-class NavigationButton(OverlayButton):
-    """A prev/next affordance filling a hover band along one edge of the screenshot (#161).
+class HoverButton(OverlayButton):
+    """An overlay control that is absent until the mouse is over it (#161, #221).
 
-    The button **is** the band: it spans the full height of the screenshot area and
-    :data:`NAVIGATION_ZONE_WIDTH` in from its edge, drawn at :data:`NAVIGATION_IDLE_OPACITY` (nothing
-    at all) until the mouse enters it. That makes Qt's own enter/leave the hover test -- no mouse
-    tracking, no hit-testing against a rectangle held separately from the one the clicks land in -- and
-    makes the whole band clickable, not just the glyph drawn in the middle of it.
+    Drawn at nothing at all until the mouse enters, at ``hover`` while it is over, and at ``pressed``
+    while held down. Qt's own enter/leave is the hover test -- no mouse tracking, no hit-testing
+    against a rectangle held separately from the one the clicks land in.
 
-    Hidden outright at either end of the set, so there is no dead band to hover over when there is
-    nothing to navigate to.
-
-    :param icon: the SVG resource to draw, recolored to :data:`OVERLAY_GLYPH_COLOR`.
+    :param icon: the SVG resource to draw (recolored to :data:`OVERLAY_GLYPH_COLOR`), or a ready icon.
+    :param hover: the opacity under the mouse.
+    :param pressed: the opacity while held down.
     :param parent: optional Qt parent.
     """
 
-    def __init__(self, icon: str, parent: QWidget | None = None) -> None:
+    def __init__(self, icon: str | QIcon, hover: float, pressed: float, parent: QWidget | None = None) -> None:
         super().__init__(icon, NAVIGATION_IDLE_OPACITY, parent)
+        self.__hover: Final = hover
+        self.__pressed: Final = pressed
 
     @override
     def enterEvent(self, event: QEnterEvent) -> None:
-        """Fade the glyph in as the mouse enters the band.
+        """Fade the glyph in as the mouse enters.
 
         :param event: the Qt enter event, forwarded to the base class.
         """
         super().enterEvent(event)
-        self.set_opacity(NAVIGATION_HOVER_OPACITY)
+        self.set_opacity(self.__hover)
 
     @override
     def leaveEvent(self, event: QEvent) -> None:
-        """Fade the glyph back out as the mouse leaves the band.
+        """Fade the glyph back out as the mouse leaves.
 
         :param event: the Qt leave event, forwarded to the base class.
         """
@@ -259,33 +251,67 @@ class NavigationButton(OverlayButton):
 
     @override
     def mousePressEvent(self, event: QMouseEvent) -> None:
-        """Brighten the glyph while the band is held down.
+        """Brighten the glyph while held down.
 
         :param event: the Qt mouse-press event, forwarded to the base class.
         """
         super().mousePressEvent(event)
-        self.set_opacity(NAVIGATION_PRESSED_OPACITY)
+        self.set_opacity(self.__pressed)
 
     @override
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         """Settle the glyph back to hovered or absent, depending on where the release landed.
 
-        A press dragged out of the band and released there leaves the mouse outside it, so the glyph
-        must go all the way out rather than stay at the hover level with nothing hovering it.
+        A press dragged out of the control and released there leaves the mouse outside it, so the
+        glyph must go all the way out rather than stay at the hover level with nothing hovering it.
 
         :param event: the Qt mouse-release event, forwarded to the base class.
         """
         super().mouseReleaseEvent(event)
-        self.set_opacity(NAVIGATION_HOVER_OPACITY if self.underMouse() else NAVIGATION_IDLE_OPACITY)
+        self.set_opacity(self.__hover if self.underMouse() else NAVIGATION_IDLE_OPACITY)
+
+
+class NavigationButton(HoverButton):
+    """A prev/next affordance filling a hover band along one edge of the screenshot (#161).
+
+    The button **is** the band: it spans the full height of the screenshot area and
+    :data:`NAVIGATION_ZONE_WIDTH` in from its edge, so the whole band is clickable, not just the glyph
+    drawn in the middle of it. Hidden outright at either end of the set, so there is no dead band to
+    hover over when there is nothing to navigate to.
+
+    :param icon: the SVG resource to draw, recolored to :data:`OVERLAY_GLYPH_COLOR`.
+    :param parent: optional Qt parent.
+    """
+
+    def __init__(self, icon: str, parent: QWidget | None = None) -> None:
+        super().__init__(icon, NAVIGATION_HOVER_OPACITY, NAVIGATION_PRESSED_OPACITY, parent)
+
+
+class CornerButton(HoverButton):
+    """A corner control -- close, the row toggle, the info toggle -- held off the edge by its own
+    margin and, like a band, absent until hovered (#221).
+
+    :param icon: the SVG resource to draw, or a ready icon.
+    :param name: the control's object name.
+    :param tooltip: the control's tooltip.
+    :param parent: optional Qt parent.
+    """
+
+    def __init__(self, icon: str | QIcon, name: str, tooltip: str, parent: QWidget | None = None) -> None:
+        super().__init__(icon, CORNER_HOVER_OPACITY, CORNER_PRESSED_OPACITY, parent)
+        self.setObjectName(name)
+        self.setToolTip(tooltip)
+        self.setStyleSheet(CORNER_BUTTON_STYLE)
+        self.setIconSize(QSize(CORNER_ICON_SIZE, CORNER_ICON_SIZE))
 
 
 class ImageInfoOverlay(QLabel):
     """The image's name, pixel size and file size in the top-left corner of the screenshot area (#221).
 
-    Transparent to the mouse, so the prev band underneath keeps its hover and its clicks; held off the
-    corner by the same stylesheet margin the corner controls use, so the screenshot beneath it still
-    reaches the edge. Painted on its own translucent box rather than the viewer's backdrop, since it
-    sits over the image, which may be anything.
+    Transparent to the mouse, so the prev band underneath keeps its hover and its clicks. Painted on
+    its own translucent box rather than the viewer's backdrop, since it sits over the image, which may
+    be anything. Stacked over its toggle in the viewer's top-left corner, which is what holds both off
+    the edge.
 
     :param parent: the viewer.
     """
@@ -302,7 +328,7 @@ class ImageInfoOverlay(QLabel):
         self.setStyleSheet(
             f"QLabel {{ color: {INFO_OVERLAY_TEXT.name()};"
             f" background-color: rgba({backdrop.red()}, {backdrop.green()}, {backdrop.blue()}, {backdrop.alpha()});"
-            f" border-radius: {INFO_OVERLAY_RADIUS}px; padding: {INFO_OVERLAY_PADDING}px; margin: {CORNER_MARGIN}px; }}"
+            f" border-radius: {INFO_OVERLAY_RADIUS}px; padding: {INFO_OVERLAY_PADDING}px; }}"
         )
 
     def describe(self, path_text: str, pixel_size: QSize, byte_size: int | None) -> None:
@@ -318,7 +344,7 @@ class ImageInfoOverlay(QLabel):
         self.adjustSize()
 
 
-class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes
+class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes,too-many-public-methods
     """A curated screenshot set shown maximized, one at a time ([[plugins#tutorial-plugin]], #160, #161).
 
     **Navigation** moves through the curated set in strip order and **stops at both ends** rather than
@@ -346,8 +372,9 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes
     reverse import would be a cycle).
 
     **The info overlay** (`ImageInfoOverlay`, #221) names the image, its pixel size and its file size
-    in the top-left corner, toggled by ``I``. Its starting state is the owner's to seed and, unlike the
-    row's, nothing is reported back: a viewer opens on the setting and the key changes only this one.
+    in the top-left corner, toggled by ``I``. The owner seeds it from the setting and pushes that
+    setting's later changes down (:meth:`set_info_visible`), the way the row's height is pushed;
+    unlike the row, nothing is reported back up -- ``I`` changes this viewer alone.
 
     **The set is live.** :meth:`set_source` re-points an open viewer at a rebuilt set -- a curation
     edit in `ImageSelector`, or a scanner swap from a ``.tc`` -> ``.rehu`` conversion
@@ -379,9 +406,10 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes
     the owning document are tracked through their own ``destroyed`` signals, so a form rebuild (a type
     switch) or a closing document leaves nothing to restore instead of reaching into a dead object.
 
-    **Dismiss is ESC or the close button, and nothing else** -- deliberately not a click on the image,
-    which does nothing at all. Both paths funnel through ``close()``, and the widget deletes itself
-    afterwards (``WA_DeleteOnClose``).
+    **Dismiss is ESC, the close button, or -- when the owner allows it -- a double-click on the image**
+    (#221): the gesture that opened the viewer, undoing it. A single click on the image does nothing at
+    all. Every path funnels through ``close()``, and the widget deletes itself afterwards
+    (``WA_DeleteOnClose``).
 
     :param source: the images to navigate, in order; an empty one shows nothing and closes on the
         first navigation.
@@ -395,6 +423,10 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes
     :param strip_visible: whether to open with the thumbnail row shown (keyword-only).
     :param strip_height: the thumbnail row's fixed pixel height (keyword-only).
     :param info_visible: whether to open with the info overlay shown (keyword-only).
+    :param backdrop: the colour painted behind the image (keyword-only); :data:`DEFAULT_BACKDROP`
+        when the owner names none.
+    :param double_click_closes: whether a double-click on the image dismisses the viewer
+        (keyword-only).
     """
 
     closed = Signal()
@@ -415,12 +447,15 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes
         strip_visible: bool = False,
         strip_height: int = DEFAULT_STRIP_HEIGHT,
         info_visible: bool = False,
+        backdrop: QColor | None = None,
+        double_click_closes: bool = True,
     ) -> None:
         host = None if mode is ImageViewerMode.FULL_SCREEN else self.__overlay_host(mode, document)
         flags = Qt.WindowType.Widget if host is not None else Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint
         super().__init__(host if host is not None else document, flags)
         self.__host: Final = host
-        self.__backdrop: Final = OVERLAY_BACKDROP if host is not None else FULL_SCREEN_BACKDROP
+        self.__backdrop = backdrop if backdrop is not None else QColor(DEFAULT_BACKDROP)
+        self.__double_click_closes = double_click_closes
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
@@ -456,11 +491,11 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes
         # with the thing it controls instead of being parked in an unrelated corner
         layout.addWidget(self.__strip_toggle, 0, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom)
         layout.addWidget(self.__make_close_button(), 0, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
-        # top-left of the image area, after the bands so it paints over the prev one; mouse-transparent,
-        # so that band still answers underneath it
-        self.__info: Final = ImageInfoOverlay(self)
-        layout.addWidget(self.__info, 0, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
-        self.__info.setVisible(info_visible)
+        # top-left of the image area, after the bands so it paints over the prev one: the info box
+        # (mouse-transparent, so that band still answers underneath it) with its toggle below
+        self.__info: Final = ImageInfoOverlay()
+        self.__info_toggle: Final = self.__make_info_toggle(info_visible=info_visible)
+        layout.addWidget(self.__make_info_corner(), 0, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self.__strip.set_source(self.__source)
         self.__show_current()
 
@@ -517,14 +552,41 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes
     @property
     def info_visible(self) -> bool:
         """Whether the info overlay is currently shown (#221)."""
-        return not self.__info.isHidden()
+        return self.__info_toggle.isChecked()
 
     def set_info_visible(self, visible: bool) -> None:
-        """Show or hide the info overlay, exactly as the ``I`` key does (#221).
+        """Show or hide the info overlay, exactly as the ``I`` key and its corner toggle do (#221).
 
         :param visible: whether to show it.
         """
-        self.__info.setVisible(visible)
+        self.__info_toggle.setChecked(visible)
+
+    @property
+    def backdrop(self) -> QColor:
+        """The colour painted behind the image."""
+        return QColor(self.__backdrop)
+
+    def set_backdrop(self, colour: QColor) -> None:
+        """Repaint behind the image in ``colour`` -- the settings page's Apply (#221).
+
+        :param colour: the new backdrop.
+        """
+        if colour == self.__backdrop:
+            return
+        self.__backdrop = QColor(colour)
+        self.update()
+
+    @property
+    def double_click_closes(self) -> bool:
+        """Whether a double-click on the image dismisses the viewer (#221)."""
+        return self.__double_click_closes
+
+    def set_double_click_closes(self, closes: bool) -> None:
+        """Allow or refuse the double-click dismissal -- the settings page's Apply (#221).
+
+        :param closes: whether a double-click on the image closes the viewer.
+        """
+        self.__double_click_closes = closes
 
     def set_strip_visible(self, visible: bool) -> None:
         """Show or hide the thumbnail row from outside, exactly as its own toggle does (#161).
@@ -600,9 +662,8 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes
     def paintEvent(self, event: QPaintEvent) -> None:
         """Fill the viewer with its backdrop, under the scaled screenshot.
 
-        Painted rather than set as a palette/stylesheet background so the overlay modes can dim what
-        they cover: a child widget that isn't opaque composites its alpha over whatever its parent
-        already painted.
+        Painted rather than set as a palette/stylesheet background, so a change of colour is one
+        repaint and no stylesheet rebuild.
 
         :param event: the Qt paint event; unused -- the whole widget is repainted either way.
         """
@@ -612,7 +673,7 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes
     @override
     def keyPressEvent(self, event: QKeyEvent) -> None:
         """Dismiss on ESC, navigate the set on the arrow/HOME/END keys, toggle the info overlay on ``I``
-        (#221), pass everything else on.
+        and the thumbnail row on ``T`` (#221), pass everything else on.
 
         :param event: the Qt key event.
         """
@@ -628,9 +689,27 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes
             case Qt.Key.Key_End:
                 self.__go_to(len(self.__source) - 1)
             case Qt.Key.Key_I:
-                self.set_info_visible(not self.info_visible)
+                self.__info_toggle.toggle()
+            case Qt.Key.Key_T:
+                # through the toggle, exactly as a click on it: reported for the owner to remember
+                self.__strip_toggle.toggle()
             case _:
                 super().keyPressEvent(event)
+
+    @override
+    def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
+        """Dismiss on a left double-click over the image, when the owner allows it (#221).
+
+        Only reaches here from the image itself: the preview label is transparent to the mouse, while
+        the bands, the corner controls and the thumbnail row take their own double-clicks.
+
+        :param event: the Qt mouse event, forwarded to the base class when it dismisses nothing.
+        """
+        if self.__double_click_closes and event.button() == Qt.MouseButton.LeftButton:
+            event.accept()
+            self.close()
+            return
+        super().mouseDoubleClickEvent(event)
 
     @override
     def wheelEvent(self, event: QWheelEvent) -> None:
@@ -811,7 +890,6 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes
         :param visible: the row's new visibility.
         """
         self.__strip.set_requested_visible(visible)
-        self.__strip_toggle.set_opacity(STRIP_TOGGLE_ON_OPACITY if visible else STRIP_TOGGLE_OFF_OPACITY)
         # a row that was hidden could not scroll, so an image navigated to meanwhile may sit outside
         # the visible span -- re-marking it scrolls it back into view
         self.__strip.set_current(self.__index)
@@ -860,7 +938,7 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes
         button.clicked.connect(lambda: self.__step(delta))
         return button
 
-    def __make_strip_toggle(self, *, strip_visible: bool) -> OverlayButton:
+    def __make_strip_toggle(self, *, strip_visible: bool) -> CornerButton:
         """Build the corner affordance that shows and hides the thumbnail row (#161).
 
         The row's initial visibility is applied here rather than through the toggle's own ``toggled``
@@ -871,30 +949,54 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes
         :param strip_visible: whether to start with the row shown.
         :returns: the toggle, already reflecting ``strip_visible``.
         """
-        opacity = STRIP_TOGGLE_ON_OPACITY if strip_visible else STRIP_TOGGLE_OFF_OPACITY
-        button = OverlayButton(STRIP_TOGGLE_ICON_RESOURCE, opacity, self)
-        button.setObjectName(STRIP_TOGGLE_BUTTON_NAME)
-        button.setStyleSheet(STRIP_TOGGLE_BUTTON_STYLE)
-        button.setToolTip("Thumbnails")
-        button.setIconSize(QSize(STRIP_TOGGLE_ICON_SIZE, STRIP_TOGGLE_ICON_SIZE))
+        button = CornerButton(STRIP_TOGGLE_ICON_RESOURCE, STRIP_TOGGLE_BUTTON_NAME, "Thumbnails (T)", self)
         button.setCheckable(True)
         button.setChecked(strip_visible)
         self.__strip.set_requested_visible(strip_visible)
         button.toggled.connect(self.__on_strip_toggled)
         return button
 
-    def __make_close_button(self) -> QToolButton:
+    def __make_info_toggle(self, *, info_visible: bool) -> CornerButton:
+        """Build the corner affordance that shows and hides the info overlay (#221).
+
+        Seeded before it is wired, like the row's toggle: opening on the setting is not a change.
+
+        :param info_visible: whether to start with the overlay shown.
+        :returns: the toggle, already reflecting ``info_visible``.
+        """
+        button = CornerButton(INFO_TOGGLE_ICON_RESOURCE, INFO_TOGGLE_BUTTON_NAME, "Image info (I)", self)
+        button.setCheckable(True)
+        button.setChecked(info_visible)
+        self.__info.setVisible(info_visible)
+        button.toggled.connect(self.__info.setVisible)
+        return button
+
+    def __make_info_corner(self) -> QWidget:
+        """Stack the info overlay over its toggle in the top-left corner (#221).
+
+        The toggle sits **below** the box while the box is shown -- where the pointer naturally goes
+        to dismiss what it is reading -- and alone in the corner while it is hidden. The stack carries
+        the corner margin the other corner controls carry in their own stylesheets.
+
+        :returns: the stack, for the layout's top-left cell.
+        """
+        corner = QWidget(self)
+        stack = QVBoxLayout(corner)
+        stack.setContentsMargins(CORNER_MARGIN, CORNER_MARGIN, CORNER_MARGIN, CORNER_MARGIN)
+        stack.setSpacing(INFO_OVERLAY_SPACING)
+        stack.addWidget(self.__info, 0, Qt.AlignmentFlag.AlignLeft)
+        # the toggle's own stylesheet margin is the stack's job here
+        self.__info_toggle.setStyleSheet(OVERLAY_BUTTON_STYLE)
+        stack.addWidget(self.__info_toggle, 0, Qt.AlignmentFlag.AlignLeft)
+        return corner
+
+    def __make_close_button(self) -> CornerButton:
         """Build the corner close affordance, drawn white on this viewer's own dark backdrop.
 
         :returns: the close button, already wired to dismiss the viewer.
         """
-        button = QToolButton(self)
-        button.setObjectName(CLOSE_BUTTON_NAME)
-        button.setIcon(glyph_icon(LIGHTBOX_CLOSE_GLYPH.codepoint, LIGHTBOX_CLOSE_GLYPH.family, OVERLAY_GLYPH_COLOR))
-        button.setToolTip("Close (Esc)")
-        button.setIconSize(CLOSE_ICON_SIZE)
-        button.setStyleSheet(CLOSE_BUTTON_STYLE)
-        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        glyph = glyph_icon(LIGHTBOX_CLOSE_GLYPH.codepoint, LIGHTBOX_CLOSE_GLYPH.family, OVERLAY_GLYPH_COLOR)
+        button = CornerButton(glyph, CLOSE_BUTTON_NAME, "Close (Esc)", self)
         button.clicked.connect(self.close)
         return button
 

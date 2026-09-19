@@ -32,8 +32,18 @@ from borco_pyside.theming import themed_svg_icon
 from borco_pyside.widgets import FlowLayout, MessageBanner, ToolBarStretch
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QImage, QKeySequence, QPixmap
-from PySide6.QtWidgets import QLabel, QLineEdit, QMenu, QMessageBox, QToolBar, QToolButton, QTreeView, QWidget
-from pytest import fixture, raises
+from PySide6.QtWidgets import (
+    QApplication,
+    QLabel,
+    QLineEdit,
+    QMenu,
+    QMessageBox,
+    QToolBar,
+    QToolButton,
+    QTreeView,
+    QWidget,
+)
+from pytest import fixture, mark, raises
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.app_logging import LOG_VIEW_ICON_RESOURCE, shared_log_bridge
@@ -41,6 +51,7 @@ from rehuco_agent.asking_deleter import AskingDeleter
 from rehuco_agent.documents.content_images import (
     ArchiveImageSource,
     ContentDisplayFlags,
+    ContentImagesPanel,
     ContentImagesView,
     content_images_model,
 )
@@ -72,6 +83,7 @@ from rehuco_agent.documents.document_widget import (
     STATE_VERSION_KEY,
     STATE_WIDGET_STATE_KEY,
     DocumentWidget,
+    viewer_mode_for,
 )
 from rehuco_agent.documents.files_view import FilesView
 from rehuco_agent.documents.name_suggestion_model import NameSuggestionModel
@@ -4239,9 +4251,9 @@ def content_images_view(widget: DocumentWidget) -> ContentImagesView:
     :param widget: the document widget to inspect.
     :returns: the view.
     """
-    view = content_images_dock(widget).widget()
-    assert isinstance(view, ContentImagesView)
-    return view
+    panel = content_images_dock(widget).widget()
+    assert isinstance(panel, ContentImagesPanel)
+    return panel.view
 
 
 def test_the_content_images_dock_exists_and_starts_hidden(widget: DocumentWidget) -> None:
@@ -4251,11 +4263,13 @@ def test_the_content_images_dock_exists_and_starts_hidden(widget: DocumentWidget
     **Test steps:**
 
     * build a widget over the sample model
-    * verify the dock hosts a `ContentImagesView`, named and titled, with its toggle unchecked
+    * verify the dock hosts a `ContentImagesPanel` -- the grid over its status line -- named and
+      titled, with its toggle unchecked
     """
     dock = content_images_dock(widget)
 
-    assert isinstance(dock.widget(), ContentImagesView)
+    assert isinstance(dock.widget(), ContentImagesPanel)
+    assert isinstance(content_images_view(widget), ContentImagesView)
     assert dock.objectName() == CONTENT_IMAGES_DOCK_NAME
     assert dock.windowTitle() == CONTENT_IMAGES_DOCK_TITLE
     assert dock.toggleViewAction().isChecked() is False
@@ -4419,27 +4433,128 @@ def test_applying_a_new_clamp_or_banner_choice_reaches_the_open_dock(widget: Doc
     assert view.flags == ContentDisplayFlags(zip_names=False, folder_names=True)
 
 
-def test_the_lightbox_opens_with_the_info_overlay_the_settings_ask_for(
-    widget: DocumentWidget, mocker: MockerFixture
+@mark.parametrize(
+    ("modifiers", "expected"),
+    [
+        (Qt.KeyboardModifier.NoModifier, ImageViewerMode.FULL_SCREEN),
+        (Qt.KeyboardModifier.ShiftModifier, ImageViewerMode.DOCUMENT_OVERLAY),
+        (Qt.KeyboardModifier.ControlModifier, ImageViewerMode.APP_WINDOW_OVERLAY),
+        (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier, ImageViewerMode.FULL_SCREEN),
+        (Qt.KeyboardModifier.AltModifier, ImageViewerMode.FULL_SCREEN),
+    ],
+)
+def test_the_keys_held_at_activation_pick_the_viewers_surface(
+    modifiers: Qt.KeyboardModifier, expected: ImageViewerMode
 ) -> None:
-    """The info overlay's starting state is read when a viewer opens -- so applying it reaches the next
-    viewer, never one already up (#221).
+    """Shift opens over the document, Ctrl over the app window, Ctrl+Shift over the screen; anything
+    else -- nothing, or a key with no meaning here -- means the setting (#221).
 
     **Test steps:**
 
-    * open a viewer with the setting off and verify its overlay is hidden
-    * turn the setting on and verify the open viewer is unchanged
-    * open another and verify it shows the overlay
+    * resolve each modifier set against a full-screen setting
+    """
+    assert viewer_mode_for(modifiers, ImageViewerMode.FULL_SCREEN) == expected
+
+
+def test_an_activation_reads_the_keys_held_at_that_moment(widget: DocumentWidget, mocker: MockerFixture) -> None:
+    """The viewer opened by an activation is on the surface the held keys pick, whatever the setting.
+
+    **Test steps:**
+
+    * set the surface to the document overlay and activate with Ctrl+Shift held
+    * verify a full-screen viewer -- a window -- opened
+    """
+    loadable_lightbox_image(mocker)
+    shared_image_viewer_settings().mode = ImageViewerMode.DOCUMENT_OVERLAY
+    mocker.patch.object(
+        QApplication,
+        "keyboardModifiers",
+        return_value=Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier,
+    )
+
+    activate_screenshot(widget, Path("/fake/info00.jpg"))
+
+    lightbox = widget.findChild(ImageLightbox)
+    assert isinstance(lightbox, ImageLightbox)
+    assert lightbox.isWindow()
+
+
+def test_applying_a_backdrop_reaches_an_open_viewer_and_the_next(widget: DocumentWidget, mocker: MockerFixture) -> None:
+    """The lightbox backdrop follows the setting live and seeds the next viewer (#221).
+
+    **Test steps:**
+
+    * with no viewer open, change the setting and verify nothing raises
+    * open a viewer and verify it paints the configured backdrop
+    * change the setting and verify the open viewer repainted; open another and verify it agrees
     """
     loadable_lightbox_image(mocker)
     curate_screenshots(widget, SCREENSHOTS, mocker)
+    shared_image_viewer_settings().lightbox_backdrop = "#112233"
+    activate_screenshot(widget, SCREENSHOTS[0])
+    first = widget.findChild(ImageLightbox)
+    assert isinstance(first, ImageLightbox)
+    assert first.backdrop.name() == "#112233"
+
+    shared_image_viewer_settings().lightbox_backdrop = "#445566"
+    assert first.backdrop.name() == "#445566"
+
+    activate_screenshot(widget, SCREENSHOTS[1])
+    second = next(viewer for viewer in widget.findChildren(ImageLightbox) if viewer is not first)
+    assert second.backdrop.name() == "#445566"
+
+
+def test_applying_the_double_click_setting_reaches_an_open_viewer_and_the_next(
+    widget: DocumentWidget, mocker: MockerFixture
+) -> None:
+    """Whether a double-click dismisses the viewer follows the setting live and seeds the next one (#221).
+
+    **Test steps:**
+
+    * with no viewer open, change the setting and verify nothing raises
+    * open a viewer with the setting off and verify it refuses the double-click
+    * turn the setting on and verify the open viewer now allows it; open another and verify it agrees
+    """
+    loadable_lightbox_image(mocker)
+    curate_screenshots(widget, SCREENSHOTS, mocker)
+    shared_image_viewer_settings().lightbox_double_click_closes = False
+    activate_screenshot(widget, SCREENSHOTS[0])
+    first = widget.findChild(ImageLightbox)
+    assert isinstance(first, ImageLightbox)
+    assert not first.double_click_closes
+
+    shared_image_viewer_settings().lightbox_double_click_closes = True
+    assert first.double_click_closes
+
+    activate_screenshot(widget, SCREENSHOTS[1])
+    second = next(viewer for viewer in widget.findChildren(ImageLightbox) if viewer is not first)
+    assert second.double_click_closes
+
+
+def test_applying_the_info_overlay_setting_reaches_an_open_viewer_and_the_next(
+    widget: DocumentWidget, mocker: MockerFixture
+) -> None:
+    """The info overlay follows the setting live, like the row height: applying it shows the overlay
+    in the viewer the user is looking at, and the next viewer opens with it (#221).
+
+    **Test steps:**
+
+    * with no viewer open, toggle the setting and verify nothing raises
+    * open a viewer with the setting off and verify its overlay is hidden
+    * turn the setting on and verify the open viewer now shows it
+    * open another and verify it shows the overlay too
+    """
+    loadable_lightbox_image(mocker)
+    curate_screenshots(widget, SCREENSHOTS, mocker)
+    shared_image_viewer_settings().lightbox_info_visible = True
+    shared_image_viewer_settings().lightbox_info_visible = False
     activate_screenshot(widget, SCREENSHOTS[0])
     first = widget.findChild(ImageLightbox)
     assert isinstance(first, ImageLightbox)
     assert not first.info_visible
 
     shared_image_viewer_settings().lightbox_info_visible = True
-    assert not first.info_visible
+    assert first.info_visible
 
     activate_screenshot(widget, SCREENSHOTS[1])
     second = next(viewer for viewer in widget.findChildren(ImageLightbox) if viewer is not first)

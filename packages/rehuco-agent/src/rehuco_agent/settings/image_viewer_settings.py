@@ -5,9 +5,10 @@ from typing import Final, cast
 
 from borco_pyside.core import SimpleProperty
 from PySide6.QtCore import QObject, QSettings
+from PySide6.QtGui import QColor
 
 from ..fields.images_field import IMAGE_STRIP_HEIGHT
-from ..fields.widgets.image_lightbox import DEFAULT_STRIP_HEIGHT, ImageViewerMode
+from ..fields.widgets.image_lightbox import DEFAULT_BACKDROP, DEFAULT_STRIP_HEIGHT, ImageViewerMode
 from ..fields.widgets.image_selector import PREVIEW_HEIGHT
 from .persistent_settings import persistent_settings
 
@@ -20,6 +21,8 @@ EDITOR_PREVIEW_HEIGHT_KEY: Final = "editor_preview_height"
 PREVIEW_WRAP_KEY: Final = "preview_wrap"
 PREVIEWS_VISIBLE_KEY: Final = "previews_visible"
 LIGHTBOX_INFO_VISIBLE_KEY: Final = "lightbox_info_visible"
+LIGHTBOX_BACKDROP_KEY: Final = "lightbox_backdrop"
+LIGHTBOX_DOUBLE_CLICK_CLOSES_KEY: Final = "lightbox_double_click_closes"
 CONTENT_ROWS_MIN_HEIGHT_KEY: Final = "content_rows_min_height"
 CONTENT_ROWS_MAX_HEIGHT_KEY: Final = "content_rows_max_height"
 CONTENT_ZIP_NAMES_KEY: Final = "content_zip_names"
@@ -53,9 +56,18 @@ DEFAULT_EDITOR_PREVIEW_HEIGHT: Final = PREVIEW_HEIGHT
 """How tall the images editor's preview pane opens on a document with no split of its own remembered
 yet (#72). Read from `ImageSelector` for the same reason the two above are read from their widgets."""
 
+DEFAULT_LIGHTBOX_BACKDROP: Final = DEFAULT_BACKDROP
+"""The colour behind a maximized image, as ``#rrggbb`` (#221). Read from the widget that paints it,
+like the heights above."""
+
 DEFAULT_LIGHTBOX_INFO_VISIBLE: Final = False
 """Whether a maximized image opens with its info overlay shown (#221). Off, like the thumbnail row and
 for the same reason: the point of maximizing is the image, and ``I`` is one key away."""
+
+DEFAULT_LIGHTBOX_DOUBLE_CLICK_CLOSES: Final = True
+"""Whether a double-click on the maximized image closes the viewer (#221). On: the image was opened by
+a double-click, and the same gesture undoing it is the shortest way back; off for whoever double-clicks
+by habit while looking."""
 
 DEFAULT_CONTENT_ROWS_MIN_HEIGHT: Final = 140
 DEFAULT_CONTENT_ROWS_MAX_HEIGHT: Final = 260
@@ -126,9 +138,16 @@ class ImageViewerSettings(QObject):  # pylint: disable=too-many-instance-attribu
     """How tall the images editor's preview pane opens, before a document remembers its own split."""
 
     lightbox_info_visible = SimpleProperty(DEFAULT_LIGHTBOX_INFO_VISIBLE)
-    """Whether a maximized image opens with its info overlay shown (#221). Read **when a viewer
-    opens**, like :attr:`mode`: applying it changes the next viewer, never one already up, whose
-    overlay is the ``I`` key's alone."""
+    """Whether a maximized image shows its info overlay (#221). Applied to every open viewer as well
+    as the next, like :attr:`lightbox_image_height`; ``I`` inside a viewer changes that one alone and
+    writes nothing back."""
+
+    lightbox_backdrop = SimpleProperty(DEFAULT_LIGHTBOX_BACKDROP)
+    """The colour behind a maximized image, as ``#rrggbb`` (#221); applied to every open viewer."""
+
+    lightbox_double_click_closes = SimpleProperty(DEFAULT_LIGHTBOX_DOUBLE_CLICK_CLOSES)
+    """Whether a double-click on the maximized image closes the viewer (#221); applied to every open
+    viewer."""
 
     content_rows_min_height = SimpleProperty(DEFAULT_CONTENT_ROWS_MIN_HEIGHT)
     content_rows_max_height = SimpleProperty(DEFAULT_CONTENT_ROWS_MAX_HEIGHT)
@@ -164,6 +183,14 @@ class ImageViewerSettings(QObject):  # pylint: disable=too-many-instance-attribu
         self.lightbox_info_visible = cast(
             bool, settings.value(LIGHTBOX_INFO_VISIBLE_KEY, DEFAULT_LIGHTBOX_INFO_VISIBLE, type=bool)
         )
+        # a colour the widget cannot paint -- a hand-edited ini -- falls back rather than raising
+        stored_backdrop = cast(str, settings.value(LIGHTBOX_BACKDROP_KEY, DEFAULT_LIGHTBOX_BACKDROP, type=str))
+        self.lightbox_backdrop = (
+            stored_backdrop if QColor.isValidColorName(stored_backdrop) else DEFAULT_LIGHTBOX_BACKDROP
+        )
+        self.lightbox_double_click_closes = cast(
+            bool, settings.value(LIGHTBOX_DOUBLE_CLICK_CLOSES_KEY, DEFAULT_LIGHTBOX_DOUBLE_CLICK_CLOSES, type=bool)
+        )
         self.content_rows_min_height = cast(
             int, settings.value(CONTENT_ROWS_MIN_HEIGHT_KEY, DEFAULT_CONTENT_ROWS_MIN_HEIGHT, type=int)
         )
@@ -194,6 +221,8 @@ class ImageViewerSettings(QObject):  # pylint: disable=too-many-instance-attribu
         settings.setValue(LIGHTBOX_IMAGE_HEIGHT_KEY, self.lightbox_image_height)
         settings.setValue(EDITOR_PREVIEW_HEIGHT_KEY, self.editor_preview_height)
         settings.setValue(LIGHTBOX_INFO_VISIBLE_KEY, self.lightbox_info_visible)
+        settings.setValue(LIGHTBOX_BACKDROP_KEY, self.lightbox_backdrop)
+        settings.setValue(LIGHTBOX_DOUBLE_CLICK_CLOSES_KEY, self.lightbox_double_click_closes)
         settings.setValue(CONTENT_ROWS_MIN_HEIGHT_KEY, self.content_rows_min_height)
         settings.setValue(CONTENT_ROWS_MAX_HEIGHT_KEY, self.content_rows_max_height)
         settings.setValue(CONTENT_ZIP_NAMES_KEY, self.content_zip_names)

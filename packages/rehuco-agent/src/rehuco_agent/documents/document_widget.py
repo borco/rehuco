@@ -16,7 +16,7 @@ from borco_pyside.qtads import QtAdsAutoHideButtonSuppressor, QtAdsFocusTracker
 from borco_pyside.theming import ActionIconThemeHandler
 from borco_pyside.widgets import MessageBanner, MessageBannerRow, MessageBannerSeverity, ToolBarStretch
 from PySide6.QtCore import QByteArray, Qt, Signal
-from PySide6.QtGui import QAction, QIcon, QKeySequence
+from PySide6.QtGui import QAction, QColor, QIcon, QKeySequence
 from PySide6.QtWidgets import QApplication, QMainWindow, QMenu, QMessageBox, QVBoxLayout, QWidget
 from rehuco_core import TaskQueue, backup_path, originals_to_back_up
 
@@ -25,7 +25,7 @@ from ..asking_deleter import AskingDeleter
 from ..delete_confirmation import confirm_delete
 from ..fields import FieldsTab, StatefulWidget
 from ..fields.type_field import type_label
-from ..fields.widgets import ImageLightbox, ImageSource, PathImageSource, ThumbnailLoader, TypeBadge
+from ..fields.widgets import ImageLightbox, ImageSource, ImageViewerMode, PathImageSource, ThumbnailLoader, TypeBadge
 from ..glyphs import TAB_CLOSE_GLYPH
 from ..recycle_bin_deleter import configured_deleter
 from ..settings.default_layout_settings import shared_default_layout_settings
@@ -36,7 +36,7 @@ from ..settings.persistent_settings import persistent_settings
 from ..settings.reference_images_settings import shared_reference_images_settings
 from .checksum_actions import ChecksumActions
 from .checksum_view import ChecksumView
-from .content_images import ContentDisplayFlags, ContentImagesModel, ContentImagesView
+from .content_images import ContentDisplayFlags, ContentImagesModel, ContentImagesPanel, ContentImagesView
 from .conversion_backup_actions import ConversionBackupActions
 from .document_fields import EDITOR_IMAGES_TAB, EDITOR_MAIN_TAB, VIEWER_DESCRIPTION_TAB, build_document_form
 from .files_view import FilesView
@@ -134,6 +134,28 @@ APPLY_DEFAULT_LAYOUT_TOOLTIP: Final = "Apply default layout"
 SAVE_DEFAULT_LAYOUT_LABEL: Final = "Save current layout as default"
 RESET_DEFAULT_LAYOUT_LABEL: Final = "Reset default layout"
 """What the default-layout toolbar action and its two menu entries say (#62)."""
+
+
+def viewer_mode_for(modifiers: Qt.KeyboardModifier, configured: ImageViewerMode) -> ImageViewerMode:
+    """Which surface a maximized image opens on, given the keys held as it was activated (#221).
+
+    The activation's modifiers override the setting for that one viewer: **Shift** opens it over the
+    document, **Ctrl** over the whole app window, **Ctrl+Shift** over the whole screen -- so any surface
+    is one gesture away whatever the setting says -- and no modifier means the setting.
+
+    :param modifiers: the keyboard modifiers held at the activation.
+    :param configured: the surface the settings name.
+    :returns: the surface to open on.
+    """
+    shift = bool(modifiers & Qt.KeyboardModifier.ShiftModifier)
+    ctrl = bool(modifiers & Qt.KeyboardModifier.ControlModifier)
+    if ctrl and shift:
+        return ImageViewerMode.FULL_SCREEN
+    if ctrl:
+        return ImageViewerMode.APP_WINDOW_OVERLAY
+    if shift:
+        return ImageViewerMode.DOCUMENT_OVERLAY
+    return configured
 
 
 class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attributes
@@ -254,16 +276,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         at construction, so a document that has never shown a row still follows a default the user
         changes while it sits open."""
 
-        image_settings = shared_image_viewer_settings()
-        strip_default_changed = image_settings.strip_visible_changed  # type: ignore[attr-defined]
-        lightbox_height_changed = image_settings.lightbox_image_height_changed  # type: ignore[attr-defined]
-        previews_visible_changed = image_settings.previews_visible_changed  # type: ignore[attr-defined]
-        # bound methods of this QObject, so Qt severs them when this widget is destroyed -- these
-        # signals belong to a process-wide singleton that long outlives any one document (#161)
-        strip_default_changed.connect(self.__on_default_strip_visible_changed)
-        lightbox_height_changed.connect(self.__on_lightbox_image_height_changed)
-        previews_visible_changed.connect(self.__on_previews_visible_changed)
-        self.__follow_content_images_settings(image_settings)
+        self.__follow_image_settings(shared_image_viewer_settings())
 
         self.__log_scope: Hashable | None = None
         """What this document's log surface is currently attached under -- its path, or ``None`` while it
@@ -1019,7 +1032,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             self.__open_image_viewer(PathImageSource(images), images.index(clicked))
 
     def __on_content_image_activated(self, index: int) -> None:
-        """Open a content image clicked in the Content Images dock, against the whole pack (#221).
+        """Open a content image double-clicked in the Content Images dock, against the whole pack (#221).
 
         Not :attr:`__curated_images` either: an archive's members are what the grid shows, and a
         curation edit says nothing about them ([[data-model#image-meanings]]).
@@ -1047,12 +1060,14 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         viewer = ImageLightbox(
             source,
             index,
-            settings.mode,
+            viewer_mode_for(QApplication.keyboardModifiers(), settings.mode),
             self,
             loader=self.__thumbnail_loader,
             strip_visible=strip_visible,
             strip_height=settings.lightbox_image_height,
             info_visible=settings.lightbox_info_visible,
+            backdrop=QColor(settings.lightbox_backdrop),
+            double_click_closes=settings.lightbox_double_click_closes,
         )
         self.__image_viewer = viewer
         # cleared on both paths: dismissal (which hides it before Qt gets round to deleting it) and
@@ -1108,22 +1123,58 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         if self.__image_viewer is not None:
             self.__image_viewer.set_strip_height(height)
 
-    def __follow_content_images_settings(self, image_settings: ImageViewerSettings) -> None:
-        """Subscribe the Content Images dock to the four settings its packing follows (#221).
+    def __follow_image_settings(self, image_settings: ImageViewerSettings) -> None:
+        """Subscribe to every image setting this document applies live: the maximized viewer's row,
+        height, info overlay, backdrop and double-click dismissal, the app-wide previews toggle (#161,
+        #71, #221), and the Content Images dock's clamp and banners (#221).
 
-        Bound methods of this QObject, like the three subscriptions above it, so Qt severs them when
-        this widget is destroyed -- the settings object is a process-wide singleton.
+        Bound methods of this QObject, so Qt severs them when this widget is destroyed -- the settings
+        object is a process-wide singleton that long outlives any one document.
 
         :param image_settings: the shared settings.
         """
-        rows_min_changed = image_settings.content_rows_min_height_changed  # type: ignore[attr-defined]
-        rows_max_changed = image_settings.content_rows_max_height_changed  # type: ignore[attr-defined]
-        zip_names_changed = image_settings.content_zip_names_changed  # type: ignore[attr-defined]
-        folder_names_changed = image_settings.content_folder_names_changed  # type: ignore[attr-defined]
-        rows_min_changed.connect(self.__on_content_rows_changed)
-        rows_max_changed.connect(self.__on_content_rows_changed)
-        zip_names_changed.connect(self.__on_content_banners_changed)
-        folder_names_changed.connect(self.__on_content_banners_changed)
+        # the `<name>_changed` signals are what `SimpleProperty` synthesizes; the checker cannot see them
+        settings: Any = image_settings
+        subscriptions = (
+            (settings.strip_visible_changed, self.__on_default_strip_visible_changed),
+            (settings.lightbox_image_height_changed, self.__on_lightbox_image_height_changed),
+            (settings.previews_visible_changed, self.__on_previews_visible_changed),
+            (settings.lightbox_info_visible_changed, self.__on_lightbox_info_visible_changed),
+            (settings.lightbox_backdrop_changed, self.__on_lightbox_backdrop_changed),
+            (settings.lightbox_double_click_closes_changed, self.__on_lightbox_double_click_closes_changed),
+            (settings.content_rows_min_height_changed, self.__on_content_rows_changed),
+            (settings.content_rows_max_height_changed, self.__on_content_rows_changed),
+            (settings.content_zip_names_changed, self.__on_content_banners_changed),
+            (settings.content_folder_names_changed, self.__on_content_banners_changed),
+        )
+        for signal, slot in subscriptions:
+            signal.connect(slot)
+
+    def __on_lightbox_info_visible_changed(self, visible: bool) -> None:
+        """Show or hide an open viewer's info overlay as the setting is applied (#221) -- the same
+        live push :meth:`__on_lightbox_image_height_changed` makes, so Apply is something to watch.
+
+        :param visible: the newly-configured visibility.
+        """
+        if self.__image_viewer is not None:
+            self.__image_viewer.set_info_visible(visible)
+
+    def __on_lightbox_backdrop_changed(self, colour: str) -> None:
+        """Repaint an open viewer's backdrop as the setting is applied (#221), the same live push the
+        row height and the info overlay get.
+
+        :param colour: the newly-configured colour, as ``#rrggbb``.
+        """
+        if self.__image_viewer is not None:
+            self.__image_viewer.set_backdrop(QColor(colour))
+
+    def __on_lightbox_double_click_closes_changed(self, closes: bool) -> None:
+        """Allow or refuse an open viewer's double-click dismissal as the setting is applied (#221).
+
+        :param closes: whether a double-click on the image now closes the viewer.
+        """
+        if self.__image_viewer is not None:
+            self.__image_viewer.set_double_click_closes(closes)
 
     def __on_content_rows_changed(self) -> None:
         """Re-pack the Content Images dock under the newly-applied row-height clamp (#221).
@@ -1443,7 +1494,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         """Build the justified-row grid over ``content_model``, seeded from the applied settings (#221).
 
         :param content_model: the entries and their dimensions.
-        :returns: the view, wired to open a clicked image maximized.
+        :returns: the view, wired to open a double-clicked image maximized.
         """
         settings = shared_image_viewer_settings()
         view = ContentImagesView(
@@ -1474,7 +1525,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             CONTENT_IMAGES_DOCK_NAME,
             CONTENT_IMAGES_DOCK_TITLE,
             CONTENT_IMAGES_ICON_RESOURCE,
-            view,
+            ContentImagesPanel(view, self),
             insert_mode=QtAds.CDockWidget.eInsertMode.ForceNoScrollArea,
             min_content_height=CONTENT_IMAGES_DOCK_MIN_HEIGHT,
         )

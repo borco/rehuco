@@ -157,7 +157,10 @@ class ThumbnailRow(QListView):
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
-        self.setStyleSheet("background: transparent;")
+        # scoped to the view: a selector-less rule reaches every descendant, and Qt paints a tooltip
+        # through the stylesheet of the widget it belongs to -- a transparent tooltip over the
+        # thumbnails came out as black boxes
+        self.setStyleSheet("QListView { background: transparent; }")
         self.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFixedHeight(height)
         self.clicked.connect(lambda index: self.activated_index.emit(index.row()))

@@ -9,16 +9,20 @@ from pathlib import Path
 from typing import Any, Final
 
 from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
-from PySide6.QtGui import QEnterEvent, QImage, QWheelEvent
+from PySide6.QtGui import QColor, QEnterEvent, QImage, QWheelEvent
 from PySide6.QtWidgets import QApplication, QLineEdit, QMainWindow, QToolButton, QVBoxLayout, QWidget
-from pytest import fixture
+from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.fields.widgets.image_lightbox import (
     CLOSE_BUTTON_NAME,
+    CORNER_HOVER_OPACITY,
+    CORNER_ICON_SIZE,
     CORNER_MARGIN,
+    DEFAULT_BACKDROP,
     DEFAULT_STRIP_HEIGHT,
     INFO_OVERLAY_NAME,
+    INFO_TOGGLE_BUTTON_NAME,
     NAVIGATION_HOVER_OPACITY,
     NAVIGATION_IDLE_OPACITY,
     NAVIGATION_PRESSED_OPACITY,
@@ -27,9 +31,6 @@ from rehuco_agent.fields.widgets.image_lightbox import (
     NEXT_BUTTON_NAME,
     PREVIOUS_BUTTON_NAME,
     STRIP_TOGGLE_BUTTON_NAME,
-    STRIP_TOGGLE_ICON_SIZE,
-    STRIP_TOGGLE_OFF_OPACITY,
-    STRIP_TOGGLE_ON_OPACITY,
     ImageInfoOverlay,
     ImageLightbox,
     ImageViewerMode,
@@ -322,8 +323,32 @@ def test_the_close_button_dismisses_the_viewer(document: QWidget, qtbot: QtBot) 
         qtbot.mouseClick(button, Qt.MouseButton.LeftButton)
 
 
+def test_a_double_click_on_the_image_dismisses_the_viewer_when_allowed(document: QWidget, qtbot: QtBot) -> None:
+    """A left double-click on the image closes the viewer -- the gesture that opened it -- when the
+    owner allows it, which it does by default; refused, the double-click leaves the viewer up, and the
+    owner can flip the answer on an open viewer (#221).
+
+    **Test steps:**
+
+    * reveal a viewer with the dismissal refused, double-click its middle and verify it stays up
+    * allow it and verify a double-click destroys the viewer
+    """
+    lightbox = open_viewer([PATH], PATH, ImageViewerMode.DOCUMENT_OVERLAY, document, double_click_closes=False)
+    qtbot.addWidget(lightbox)
+    lightbox.reveal()
+    assert lightbox.double_click_closes is False
+
+    qtbot.mouseDClick(lightbox, Qt.MouseButton.LeftButton, pos=lightbox.rect().center())
+    assert not lightbox.isHidden()
+
+    lightbox.set_double_click_closes(True)
+    assert lightbox.double_click_closes is True
+    with wait_destroyed(qtbot, lightbox):
+        qtbot.mouseDClick(lightbox, Qt.MouseButton.LeftButton, pos=lightbox.rect().center())
+
+
 def test_clicking_the_image_does_not_dismiss_the_viewer(document: QWidget, qtbot: QtBot) -> None:
-    """A click on the image leaves the viewer up -- only ESC and the close button dismiss.
+    """A click on the image leaves the viewer up -- only ESC, the close button and a double-click dismiss.
 
     Regression: the two halves of the image are the prev/next affordance, so a click there must never
     also mean "close".
@@ -961,25 +986,52 @@ def test_the_row_toggle_shows_the_row_and_reports_the_choice(document: QWidget, 
     assert reported == [True, False]
 
 
-def test_the_row_toggle_is_faint_while_the_row_is_hidden(document: QWidget, qtbot: QtBot) -> None:
-    """The toggle is never fully absent -- faint with the row hidden, brighter with it shown (#161).
-
-    With the row hidden there would otherwise be nothing at all to say the viewer has one.
+def test_the_t_key_toggles_the_row_like_its_button(document: QWidget, qtbot: QtBot) -> None:
+    """``T`` shows and hides the thumbnail row through its toggle, so the choice is reported for the
+    owner to remember exactly as a click on the button is (#221).
 
     **Test steps:**
 
-    * reveal a viewer with the row hidden and check the toggle's opacity
-    * show the row and check it again
+    * reveal a viewer with the row hidden and press ``T`` twice
+    * verify the row came and went, and both changes were reported
     """
     lightbox = reveal_over(document, PATHS, PATHS[1])
     qtbot.addWidget(lightbox)
-    toggle = overlay(lightbox, STRIP_TOGGLE_BUTTON_NAME)
+    reported: list[bool] = []
+    lightbox.strip_visible_changed.connect(reported.append)
 
-    assert toggle.opacity() == STRIP_TOGGLE_OFF_OPACITY
+    qtbot.keyClick(lightbox, Qt.Key.Key_T)
+    assert lightbox.strip_visible
+    assert not strip_of(lightbox).isHidden()
 
-    toggle.setChecked(True)
+    qtbot.keyClick(lightbox, Qt.Key.Key_T)
+    assert not lightbox.strip_visible
+    assert reported == [True, False]
 
-    assert toggle.opacity() == STRIP_TOGGLE_ON_OPACITY
+
+@mark.parametrize("name", [STRIP_TOGGLE_BUTTON_NAME, CLOSE_BUTTON_NAME, INFO_TOGGLE_BUTTON_NAME])
+def test_a_corner_control_is_absent_until_hovered(document: QWidget, qtbot: QtBot, name: str) -> None:
+    """The three corner controls behave like the prev/next bands: nothing at all until the mouse is
+    over them, solid while it is, whatever state they are in (#221).
+
+    **Test steps:**
+
+    * reveal a viewer and check the control's opacity at rest and with its state flipped
+    * enter it and verify it appeared; leave it and verify it went
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[1])
+    qtbot.addWidget(lightbox)
+    control = overlay(lightbox, name)
+    assert control.opacity() == NAVIGATION_IDLE_OPACITY
+    if control.isCheckable():
+        control.setChecked(not control.isChecked())
+        assert control.opacity() == NAVIGATION_IDLE_OPACITY
+
+    QApplication.sendEvent(control, QEnterEvent(QPointF(1, 1), QPointF(1, 1), QPointF(1, 1)))
+    assert control.opacity() == CORNER_HOVER_OPACITY
+
+    QApplication.sendEvent(control, QEvent(QEvent.Type.Leave))
+    assert control.opacity() == NAVIGATION_IDLE_OPACITY
 
 
 def test_the_thumbnail_row_shows_no_scrollbars(document: QWidget, qtbot: QtBot) -> None:
@@ -1285,8 +1337,60 @@ def test_the_info_overlay_sits_in_the_top_left_corner_and_takes_no_clicks(docume
     qtbot.addWidget(lightbox)
     info = info_of(lightbox)
 
-    assert info.geometry().topLeft() == lightbox.rect().topLeft()
+    assert info.mapTo(lightbox, QPoint(0, 0)) == QPoint(CORNER_MARGIN, CORNER_MARGIN)
     assert info.testAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+
+
+def test_the_info_toggle_sits_under_the_box_and_toggles_it(document: QWidget, qtbot: QtBot) -> None:
+    """The corner toggle shows and hides the overlay -- and while the box is shown, sits directly
+    below it, where the pointer goes to dismiss what it is reading (#221).
+
+    **Test steps:**
+
+    * reveal a viewer with the overlay shown and verify the toggle is checked and directly below the box
+    * click the toggle and verify the box went and the toggle took its place in the corner
+    * press ``I`` and verify the toggle reads checked again
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[1], info_visible=True)
+    qtbot.addWidget(lightbox)
+    toggle = control(lightbox, INFO_TOGGLE_BUTTON_NAME)
+    info = info_of(lightbox)
+    assert toggle.isChecked()
+    assert toggle.mapTo(lightbox, QPoint(0, 0)).y() > info.mapTo(lightbox, QPoint(0, info.height())).y()
+
+    qtbot.mouseClick(toggle, Qt.MouseButton.LeftButton)
+    assert not lightbox.info_visible
+    assert info.isHidden()
+    qtbot.waitUntil(lambda: toggle.mapTo(lightbox, QPoint(0, 0)) == QPoint(CORNER_MARGIN, CORNER_MARGIN))
+
+    qtbot.keyClick(lightbox, Qt.Key.Key_I)
+    assert toggle.isChecked()
+    assert lightbox.info_visible
+
+
+def test_the_backdrop_is_opaque_and_follows_the_owner(document: QWidget, qtbot: QtBot, mocker: MockerFixture) -> None:
+    """The viewer paints an opaque backdrop -- the default neutral grey, or whatever the owner names --
+    and repaints when told a new one (#221).
+
+    **Test steps:**
+
+    * reveal a viewer with no backdrop named and verify it paints the default, opaque
+    * set a new backdrop and verify a corner pixel takes it
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[1])
+    qtbot.addWidget(lightbox)
+    corner = QPoint(lightbox.width() // 2, lightbox.height() - 2)
+    assert lightbox.backdrop == QColor(DEFAULT_BACKDROP)
+    assert lightbox.backdrop.alpha() == 255
+    assert lightbox.grab().toImage().pixelColor(corner).name() == DEFAULT_BACKDROP
+
+    lightbox.set_backdrop(QColor("#336699"))
+    assert lightbox.grab().toImage().pixelColor(corner).name() == "#336699"
+
+    # the colour it already has is a no-op, not a repaint
+    repainted = mocker.spy(lightbox, "update")
+    lightbox.set_backdrop(QColor("#336699"))
+    repainted.assert_not_called()
 
 
 # endregion
@@ -1345,13 +1449,16 @@ def test_the_corner_controls_are_held_off_the_edge(document: QWidget, qtbot: QtB
 
     toggle = control(lightbox, STRIP_TOGGLE_BUTTON_NAME)
     close = control(lightbox, CLOSE_BUTTON_NAME)
-    inset = STRIP_TOGGLE_ICON_SIZE + 2 * CORNER_MARGIN
+    info_toggle = control(lightbox, INFO_TOGGLE_BUTTON_NAME)
+    inset = CORNER_ICON_SIZE + 2 * CORNER_MARGIN
     assert toggle.geometry().bottomLeft() == lightbox.rect().bottomLeft()
     assert toggle.width() >= inset
     assert toggle.height() >= inset
     assert close.geometry().right() == lightbox.rect().right()
     assert close.geometry().top() == lightbox.rect().top()
     assert close.width() >= inset
+    # the info toggle's corner stack carries its margin: the glyph sits a margin in from the corner
+    assert info_toggle.mapTo(lightbox, QPoint(0, 0)) == QPoint(CORNER_MARGIN, CORNER_MARGIN)
 
 
 def test_the_thumbnail_row_is_as_tall_as_it_was_built(document: QWidget, qtbot: QtBot) -> None:
