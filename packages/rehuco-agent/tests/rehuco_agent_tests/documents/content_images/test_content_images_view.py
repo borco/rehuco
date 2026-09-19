@@ -630,6 +630,41 @@ def test_reveal_selects_scrolls_to_and_uncollapses_an_image(
     assert view.selected == 1
 
 
+def test_a_resize_keeps_the_selected_image_on_screen(
+    view: ContentImagesView, content_model: ContentImagesModel, qtbot: QtBot
+) -> None:
+    """Narrowing the view re-flows every row, so the scroll offset alone would land on other images:
+    a selected image that was on screen is kept there; one the user had scrolled away from is left
+    where it was (#221).
+
+    **Test steps:**
+
+    * pack a long set, reveal an image deep in it, then halve the width
+    * verify the selected cell still intersects the viewport
+    * scroll to the top and widen the view again; verify the scroll stayed at the top
+    """
+    content_model.set_entries([entry(PACK, f"{index}.png", WIDE) for index in range(60)], REHU_DIRECTORY)
+    qtbot.waitUntil(lambda: view.layout_table is not None and len(view.layout_table.rows) > 10)
+    view.reveal(45)
+    qtbot.waitUntil(lambda: view.verticalScrollBar().value() > 0)
+    qtbot.wait(50)
+
+    view.resize(500, 400)
+    qtbot.wait(50)
+
+    table = view.layout_table
+    assert table is not None
+    _, top, _, height = table.rects[45]
+    scrollbar = view.verticalScrollBar()
+    assert top < scrollbar.value() + view.viewport().height()
+    assert top + height > scrollbar.value()
+
+    scrollbar.setValue(0)
+    view.resize(1000, 400)
+    qtbot.wait(50)
+    assert scrollbar.value() == 0
+
+
 def test_reveal_before_any_pack_selects_without_a_group(
     view: ContentImagesView, content_model: ContentImagesModel
 ) -> None:
@@ -638,11 +673,12 @@ def test_reveal_before_any_pack_selects_without_a_group(
     **Test steps:**
 
     * set entries and reveal one before the pack timer fires
-    * verify it is selected
+    * verify it is selected, and that a resize in that state (no table yet) raises nothing
     """
     content_model.set_entries([entry(PACK, "a.png")], REHU_DIRECTORY)
     view.reveal(0)
     assert view.selected == 0
+    view.resize(900, 400)
 
 
 def test_new_flags_open_every_group(view: ContentImagesView, content_model: ContentImagesModel, qtbot: QtBot) -> None:

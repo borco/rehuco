@@ -334,12 +334,39 @@ class ContentImagesView(QAbstractScrollArea):  # pylint: disable=too-many-instan
 
     @override
     def resizeEvent(self, event: QResizeEvent) -> None:
-        """Re-pack to the new width.
+        """Re-pack to the new width -- keeping the selected image on screen if it was, since every row
+        moves with the width and the scroll offset alone would land on other images.
+
+        A selection the user has scrolled away from stays away: only one in view is followed.
 
         :param event: the Qt resize event, forwarded to the base class.
         """
         super().resizeEvent(event)
+        # judged against the viewport as it was: a dock made shorter has just pushed a cell at its
+        # old bottom edge out of the new viewport, and that cell is exactly the one to keep
+        shrink = event.oldSize().height() - event.size().height() if event.oldSize().isValid() else 0
+        # a selection is only ever made into the current table (a reset clears it as it drops the
+        # table), so it always has a rect to judge
+        if (
+            self.__selected is not None
+            and self.__layout is not None
+            and self.__is_in_view(self.__layout, self.__selected, self.viewport().height() + shrink)
+        ):
+            self.__reveal_index = self.__selected
         self.schedule_repack()
+
+    def __is_in_view(self, layout: PackedLayout, index: int, viewport_height: int) -> bool:
+        """Whether ``index``'s cell intersects a viewport ``viewport_height`` tall at the current
+        scroll offset, under ``layout``.
+
+        :param layout: the table to read the cell from.
+        :param index: the position.
+        :param viewport_height: the viewport's height to judge against.
+        :returns: ``False`` for a hidden cell.
+        """
+        _, top, _, height = layout.rects[index]
+        offset = self.verticalScrollBar().value()
+        return height > 0 and top < offset + viewport_height and top + height > offset
 
     @override
     def paintEvent(self, event: QPaintEvent) -> None:
