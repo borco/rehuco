@@ -1013,7 +1013,16 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         """
         self.__viewer_follows_curation = True
         images = self.__curated_images if path in self.__curated_images else [path]
-        self.__open_image_viewer(PathImageSource(images), images.index(path))
+        self.__open_image_viewer(self.__path_source(images), images.index(path))
+
+    def __path_source(self, images: list[Path]) -> PathImageSource:
+        """An image source over ``images`` that names each relative to this document's directory.
+
+        :param images: the files, in navigation order.
+        :returns: the source.
+        """
+        path = self.__model.path
+        return PathImageSource(images, path.parent if path is not None else None)
 
     def __on_folder_images_activated(self, images: object, clicked: object) -> None:
         """Open an image double-clicked in the Files sub-dock, against its whole folder (#266).
@@ -1029,7 +1038,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         """
         if isinstance(images, list) and isinstance(clicked, Path) and clicked in images:
             self.__viewer_follows_curation = False
-            self.__open_image_viewer(PathImageSource(images), images.index(clicked))
+            self.__open_image_viewer(self.__path_source(images), images.index(clicked))
 
     def __on_content_image_activated(self, index: int) -> None:
         """Open a content image double-clicked in the Content Images dock, against the whole pack (#221).
@@ -1087,7 +1096,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         """
         self.__curated_images = list(images)
         if self.__image_viewer is not None and self.__viewer_follows_curation:
-            self.__image_viewer.set_source(PathImageSource(self.__curated_images))
+            self.__image_viewer.set_source(self.__path_source(self.__curated_images))
 
     def __on_strip_visible_changed(self, visible: bool) -> None:
         """Remember the viewer's thumbnail-row choice as the user toggles it (#161).

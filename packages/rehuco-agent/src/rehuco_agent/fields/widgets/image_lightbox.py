@@ -105,6 +105,7 @@ NEXT_BUTTON_NAME: Final = "lightbox_next"
 STRIP_TOGGLE_BUTTON_NAME: Final = "lightbox_strip_toggle"
 INFO_TOGGLE_BUTTON_NAME: Final = "lightbox_info_toggle"
 INFO_OVERLAY_NAME: Final = "lightbox_info"
+HOVER_INFO_NAME: Final = "lightbox_hover_info"
 """Object names of the viewer's five controls and its info overlay. Named because they are otherwise
 indistinguishable from one another by type alone -- every control is some kind of ``QToolButton`` -- so
 anything reaching for a particular one has to ask for it by name."""
@@ -306,19 +307,24 @@ class CornerButton(HoverButton):
 
 
 class ImageInfoOverlay(QLabel):
-    """The image's name, pixel size and file size in the top-left corner of the screenshot area (#221).
+    """The image's name, pixel size and file size in a translucent box over the screenshot area (#221).
 
-    Transparent to the mouse, so the prev band underneath keeps its hover and its clicks. Painted on
-    its own translucent box rather than the viewer's backdrop, since it sits over the image, which may
-    be anything. Stacked over its toggle in the viewer's top-left corner, which is what holds both off
-    the edge.
+    Two of them: the current image's, stacked over its toggle in the top-left corner, and the hovered
+    thumbnail's, in the bottom-left over the row's toggle -- right on the row the pointer is on, shown
+    the moment a thumbnail is entered, where a tooltip would wait and then float over the thumbnails.
+    Transparent to the mouse, so the band or toggle underneath keeps its hover and its clicks.
+    Painted on its own box rather than the viewer's backdrop, since it sits over the image, which may
+    be anything.
 
     :param parent: the viewer.
+    :param name: the object name -- which of the two this is.
     """
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, parent: QWidget | None = None, name: str = INFO_OVERLAY_NAME) -> None:
         super().__init__(parent)
-        self.setObjectName(INFO_OVERLAY_NAME)
+        self.__lines: list[str] = []
+        self.__max_width = 0
+        self.setObjectName(name)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.setTextFormat(Qt.TextFormat.PlainText)
         font = self.font()
@@ -331,16 +337,43 @@ class ImageInfoOverlay(QLabel):
             f" border-radius: {INFO_OVERLAY_RADIUS}px; padding: {INFO_OVERLAY_PADDING}px; }}"
         )
 
-    def describe(self, path_text: str, pixel_size: QSize, byte_size: int | None) -> None:
-        """Set the three lines: where the image is, its ``W × H px``, and its size on disk.
+    def describe(self, path_text: str, pixel_size: QSize | None, byte_size: int | None) -> None:
+        """Set the lines: where the image is, its ``W × H px`` (when that is known at all), and its
+        size on disk.
 
         :param path_text: the image's path as a person would name it.
-        :param pixel_size: the image's pixel size; an invalid one reads as unknown.
+        :param pixel_size: the image's pixel size; an invalid one reads as unknown, ``None`` leaves
+            the line out -- a hovered thumbnail was never decoded at full size.
         :param byte_size: the image's byte size, or ``None`` when unknown.
         """
-        pixels = f"{pixel_size.width()} × {pixel_size.height()} px" if pixel_size.isValid() else "size unknown"
-        stored = humanize.naturalsize(byte_size) if byte_size is not None else "file size unknown"
-        self.setText(f"{path_text}\n{pixels}\n{stored}")
+        lines = [path_text]
+        if pixel_size is not None:
+            lines.append(f"{pixel_size.width()} × {pixel_size.height()} px" if pixel_size.isValid() else "size unknown")
+        lines.append(humanize.naturalsize(byte_size) if byte_size is not None else "file size unknown")
+        self.__lines = lines
+        self.__render()
+
+    def set_max_width(self, width: int) -> None:
+        """Bound the box to ``width`` -- what the viewer has to give, less its margins -- eliding each
+        line to fit; the viewer calls this on every resize.
+
+        :param width: the widest the box may be, in pixels; ``0`` for unbounded.
+        """
+        if width == self.__max_width:
+            return
+        self.__max_width = width
+        self.__render()
+
+    def __render(self) -> None:
+        """Show the lines, each middle-elided to the bound: a member path inside a deep archive can be
+        far wider than the viewer, and the box must never run off its edge."""
+        text_width = self.__max_width - 2 * INFO_OVERLAY_PADDING
+        if self.__max_width > 0 and text_width > 0:
+            metrics = self.fontMetrics()
+            shown = [metrics.elidedText(line, Qt.TextElideMode.ElideMiddle, text_width) for line in self.__lines]
+        else:
+            shown = self.__lines
+        self.setText("\n".join(shown))
         self.adjustSize()
 
 
@@ -470,7 +503,7 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes,to
         # (:data:`CORNER_MARGIN`), which insets them without insetting the screenshot underneath.
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        self.__preview: Final = PreviewLabel()
+        self.__preview: Final = PreviewLabel(self)
         # transparent to the mouse: the label is a passive presenter, so every press over it lands on
         # the viewer that owns it rather than being swallowed by the widget that covers the whole surface
         self.__preview.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
@@ -490,10 +523,18 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes,to
         # and drops to the viewer's own bottom-left corner when that row is hidden -- the control stays
         # with the thing it controls instead of being parked in an unrelated corner
         layout.addWidget(self.__strip_toggle, 0, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom)
+        # the hovered thumbnail's info box shares that corner and paints over the toggle: the two are
+        # never wanted at once (the toggle shows under the pointer, the box while the pointer is on a
+        # thumbnail), and the box sitting right on the row is what ties it to the thumbnail it names
+        # parented from the start: a parentless widget is a window, and hiding one before it is
+        # reparented is enough for the platform to create -- and flash -- a native window for it
+        self.__hover_info: Final = ImageInfoOverlay(self, name=HOVER_INFO_NAME)
+        layout.addWidget(self.__make_hover_corner(), 0, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom)
+        self.__hover_info.hide()
         layout.addWidget(self.__make_close_button(), 0, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
         # top-left of the image area, after the bands so it paints over the prev one: the info box
         # (mouse-transparent, so that band still answers underneath it) with its toggle below
-        self.__info: Final = ImageInfoOverlay()
+        self.__info: Final = ImageInfoOverlay(self)
         self.__info_toggle: Final = self.__make_info_toggle(info_visible=info_visible)
         layout.addWidget(self.__make_info_corner(), 0, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self.__strip.set_source(self.__source)
@@ -905,6 +946,8 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes,to
         has necessarily settled at the new size.
         """
         width = self.width()
+        for box in (self.__info, self.__hover_info):
+            box.set_max_width(max(0, width - 2 * CORNER_MARGIN))
         zone = min(NAVIGATION_ZONE_WIDTH, width // NAVIGATION_ZONE_DIVISIONS)
         # isHidden(), not isVisible(): the row's own explicit state, which is set before the viewer is
         # ever shown and would read as "not visible" on a widget whose parent is still hidden
@@ -922,7 +965,34 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes,to
         """
         strip = ThumbnailRow(self.__loader, self, height=self.__strip_height)
         strip.activated_index.connect(self.__on_thumbnail_activated)
+        strip.hovered_index.connect(self.__on_thumbnail_hovered)
         return strip
+
+    def __on_thumbnail_hovered(self, index: int) -> None:
+        """Name the thumbnail under the pointer in the box above the row, or hide the box (#221).
+
+        :param index: the hovered position, or ``-1`` for none.
+        """
+        if not 0 <= index < len(self.__source):
+            self.__hover_info.hide()
+            return
+        description = self.__source.describe(index)
+        self.__hover_info.describe(description.path_text, None, description.byte_size)
+        self.__hover_info.show()
+
+    def __make_hover_corner(self) -> QWidget:
+        """Hold the hovered thumbnail's info box a corner margin in from the bottom-left (#221) -- the
+        same inset the current image's box keeps from the top-left.
+
+        :returns: the holder, for the layout's bottom-left cell.
+        """
+        corner = QWidget(self)
+        # transparent like the box it holds, so the toggle underneath keeps its hover and its clicks
+        corner.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        holder = QVBoxLayout(corner)
+        holder.setContentsMargins(CORNER_MARGIN, CORNER_MARGIN, CORNER_MARGIN, CORNER_MARGIN)
+        holder.addWidget(self.__hover_info, 0, Qt.AlignmentFlag.AlignLeft)
+        return corner
 
     def __make_navigation_button(self, icon: str, tooltip: str, delta: int) -> NavigationButton:
         """Build one prev/next hover band.

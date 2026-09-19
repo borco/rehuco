@@ -8,7 +8,17 @@ virtualizes its paint, so only the thumbnails in the viewport are ever asked of 
 
 from typing import Any, Final, override
 
-from PySide6.QtCore import QAbstractListModel, QModelIndex, QObject, QPersistentModelIndex, QRectF, QSize, Qt, Signal
+from PySide6.QtCore import (
+    QAbstractListModel,
+    QEvent,
+    QModelIndex,
+    QObject,
+    QPersistentModelIndex,
+    QRectF,
+    QSize,
+    Qt,
+    Signal,
+)
 from PySide6.QtGui import QPainter, QPainterPath, QPalette, QPixmap, QWheelEvent
 from PySide6.QtWidgets import QAbstractItemView, QFrame, QListView, QStyledItemDelegate, QStyleOptionViewItem, QWidget
 
@@ -59,10 +69,11 @@ class ImageSourceModel(QAbstractListModel):
 
     @override
     def data(self, index: ModelIndex, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
-        """The image's name, as display text and tooltip; nothing for any other role."""
+        """The image's name as display text; nothing for any other role -- no tooltip, since the
+        viewer names the hovered thumbnail in its own info box (:attr:`ThumbnailRow.hovered_index`)."""
         if not index.isValid() or self.__source is None:
             return None
-        if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.ToolTipRole):
+        if role == Qt.ItemDataRole.DisplayRole:
             return self.__source.name(index.row())
         return None
 
@@ -138,6 +149,10 @@ class ThumbnailRow(QListView):
     activated_index = Signal(int)
     """Fires with the position of the thumbnail the user clicked."""
 
+    hovered_index = Signal(int)
+    """Fires with the position of the thumbnail under the pointer as it changes, and ``-1`` once the
+    pointer is over none -- a gap, or outside the row. Immediate, unlike a tooltip."""
+
     def __init__(self, loader: ThumbnailLoader, parent: QWidget | None = None, height: int = 96) -> None:
         super().__init__(parent)
         self.__loader: Final = loader
@@ -164,6 +179,13 @@ class ThumbnailRow(QListView):
         self.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFixedHeight(height)
         self.clicked.connect(lambda index: self.activated_index.emit(index.row()))
+        # tracking on the viewport (the widget the pointer is actually over) is what makes the view
+        # report the item under a moving pointer (``entered``); ``viewportEntered`` is the pointer
+        # over the row but over no item
+        self.viewport().setMouseTracking(True)
+        self.__hovered = -1
+        self.entered.connect(lambda index: self.__set_hovered(index.row()))
+        self.viewportEntered.connect(lambda: self.__set_hovered(-1))
         loader.ready.connect(self.__on_thumbnail_ready)
 
     @property
@@ -182,6 +204,8 @@ class ThumbnailRow(QListView):
         :param source: the images to show, or ``None`` for none.
         """
         self.__current = -1
+        # a position hovered in the old source names nothing in the new one
+        self.__set_hovered(-1)
         self.__model.set_source(source)
 
     def set_current(self, index: int) -> None:
@@ -249,6 +273,25 @@ class ThumbnailRow(QListView):
         scrollbar = self.horizontalScrollBar()
         scrollbar.setValue(scrollbar.value() - delta)
         event.accept()
+
+    @override
+    def leaveEvent(self, event: QEvent) -> None:
+        """Nothing is hovered once the pointer leaves the row.
+
+        :param event: the Qt leave event, forwarded to the base class.
+        """
+        super().leaveEvent(event)
+        self.__set_hovered(-1)
+
+    def __set_hovered(self, index: int) -> None:
+        """Announce the hovered position when it changes.
+
+        :param index: the position, or ``-1`` for none.
+        """
+        if index == self.__hovered:
+            return
+        self.__hovered = index
+        self.hovered_index.emit(index)
 
     def __on_thumbnail_ready(self, cache_key: str) -> None:
         """Repaint and re-lay out as a thumbnail lands -- its width is only known now.

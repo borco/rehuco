@@ -4,9 +4,9 @@ import threading
 from collections.abc import Hashable
 from typing import Final
 
-from PySide6.QtCore import QSize, Qt, QThreadPool
+from PySide6.QtCore import QEvent, QPoint, QSize, Qt, QThreadPool
 from PySide6.QtGui import QImage, QPixmapCache
-from PySide6.QtWidgets import QStyleOptionViewItem
+from PySide6.QtWidgets import QApplication, QStyleOptionViewItem
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -364,6 +364,50 @@ def test_a_click_reports_the_position(loader: ThumbnailLoader, qtbot: QtBot) -> 
     assert activated == [1]
 
 
+def test_the_pointer_over_an_item_reports_it_at_once_and_leaving_reports_none(
+    loader: ThumbnailLoader, qtbot: QtBot
+) -> None:
+    """``hovered_index`` follows the pointer immediately -- no tooltip delay -- and reads ``-1`` over a
+    gap, once the pointer leaves, and once the source is swapped from under it.
+
+    **Test steps:**
+
+    * build a shown row over three images and move the pointer onto the second, then the first
+    * verify each was announced once
+    * move past the last item, then out of the row, and verify ``-1`` each time
+    * hover the first again, swap the source, and verify ``-1``
+    """
+    source = RecordingSource(3)
+    row = ThumbnailRow(loader, height=20)
+    qtbot.addWidget(row)
+    row.set_source(source)
+    row.resize(400, 20)
+    row.show()
+    qtbot.waitExposed(row)
+    model = row.model()
+    assert model is not None
+    hovered: list[int] = []
+    row.hovered_index.connect(hovered.append)
+
+    qtbot.mouseMove(row.viewport(), row.visualRect(model.index(1, 0)).center())
+    qtbot.mouseMove(row.viewport(), row.visualRect(model.index(0, 0)).center())
+    qtbot.waitUntil(lambda: hovered == [1, 0])
+
+    qtbot.mouseMove(row.viewport(), QPoint(row.viewport().width() - 2, 10))
+    qtbot.waitUntil(lambda: hovered == [1, 0, -1])
+    qtbot.mouseMove(row.viewport(), row.visualRect(model.index(0, 0)).center())
+    qtbot.waitUntil(lambda: hovered == [1, 0, -1, 0])
+    QApplication.sendEvent(row, QEvent(QEvent.Type.Leave))
+    assert hovered == [1, 0, -1, 0, -1]
+
+    # onto the second, not back onto the first: the pointer is still there, and a move to where it
+    # already is is no move at all
+    qtbot.mouseMove(row.viewport(), row.visualRect(model.index(1, 0)).center())
+    qtbot.waitUntil(lambda: hovered[-1] == 1)
+    row.set_source(RecordingSource(1))
+    assert hovered[-1] == -1
+
+
 def test_a_new_height_re_requests_at_that_height(loader: ThumbnailLoader, qtbot: QtBot, mocker: MockerFixture) -> None:
     """Resizing the row changes what every thumbnail is asked for; the same height is a no-op.
 
@@ -413,7 +457,7 @@ def test_the_row_answers_nothing_without_a_source_or_for_a_stray_index(loader: T
 
     row.set_source(RecordingSource(2))
     assert model.data(model.index(0, 0)) == "image0"
-    assert model.data(model.index(0, 0), Qt.ItemDataRole.ToolTipRole) == "image0"
+    assert model.data(model.index(0, 0), Qt.ItemDataRole.ToolTipRole) is None  # the viewer's box, not a tip
     assert model.data(model.index(5, 0)) is None
     assert model.data(model.index(0, 0), Qt.ItemDataRole.DecorationRole) is None
     assert model.rowCount(model.index(0, 0)) == 0

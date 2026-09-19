@@ -8,7 +8,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, Final
 
-from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
+from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, Qt
 from PySide6.QtGui import QColor, QEnterEvent, QImage, QWheelEvent
 from PySide6.QtWidgets import QApplication, QLineEdit, QMainWindow, QToolButton, QVBoxLayout, QWidget
 from pytest import fixture, mark
@@ -21,6 +21,7 @@ from rehuco_agent.fields.widgets.image_lightbox import (
     CORNER_MARGIN,
     DEFAULT_BACKDROP,
     DEFAULT_STRIP_HEIGHT,
+    HOVER_INFO_NAME,
     INFO_OVERLAY_NAME,
     INFO_TOGGLE_BUTTON_NAME,
     NAVIGATION_HOVER_OPACITY,
@@ -1307,6 +1308,35 @@ def test_the_info_overlay_names_the_image_its_pixels_and_its_bytes(
     assert info_of(lightbox).text().startswith(str(PATHS[2]))
 
 
+def test_the_info_overlay_elides_a_path_wider_than_the_viewer(
+    document: QWidget, qtbot: QtBot, mocker: MockerFixture
+) -> None:
+    """A line wider than the viewer allows is middle-elided, so the box never runs off the edge; the
+    bound follows the viewer's own width (#221).
+
+    **Test steps:**
+
+    * reveal a viewer with the overlay shown over an image whose path is very long
+    * verify the path line is elided and the box fits inside the viewer's margins
+    * bound the box by hand to nothing and verify the full path comes back
+    """
+    mocker.patch.object(Path, "stat", return_value=mocker.Mock(st_size=1_000))
+    long_path = Path("/fake/" + "/".join(["folder"] * 60) + "/info.png")
+    lightbox = reveal_over(document, [long_path], long_path, info_visible=True)
+    qtbot.addWidget(lightbox)
+    info = info_of(lightbox)
+    # a size of this test's own, rather than whatever the document stand-in has settled at by now
+    lightbox.resize(400, 300)
+    qtbot.waitUntil(lambda: info.width() <= 400 - 2 * CORNER_MARGIN)
+
+    path_line = info.text().split("\n")[0]
+    assert path_line != str(long_path)
+    assert "…" in path_line
+
+    info.set_max_width(0)
+    assert info.text().split("\n")[0] == str(long_path)
+
+
 def test_the_info_overlay_says_when_the_file_size_is_unknown(
     document: QWidget, qtbot: QtBot, mocker: MockerFixture
 ) -> None:
@@ -1339,6 +1369,50 @@ def test_the_info_overlay_sits_in_the_top_left_corner_and_takes_no_clicks(docume
 
     assert info.mapTo(lightbox, QPoint(0, 0)) == QPoint(CORNER_MARGIN, CORNER_MARGIN)
     assert info.testAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+
+
+def test_hovering_a_thumbnail_names_it_in_a_box_above_the_row(
+    document: QWidget, qtbot: QtBot, mocker: MockerFixture
+) -> None:
+    """The pointer over a thumbnail shows the image's path and stored size in a box stacked over the
+    row's toggle -- at once, and with no pixel line, since the thumbnail was never decoded at full size;
+    leaving the row hides the box (#221).
+
+    **Test steps:**
+
+    * reveal a viewer with its row shown and verify the hover box is hidden
+    * move the pointer onto the first thumbnail and verify the box shows its path and size, a corner
+      margin in from the bottom-left of the image area -- over the row's toggle, which it paints above
+    * take the pointer out of the row and verify the box is hidden
+    """
+    mocker.patch.object(Path, "stat", return_value=mocker.Mock(st_size=2_000))
+    lightbox = reveal_over(document, PATHS, PATHS[1], strip_visible=True)
+    qtbot.addWidget(lightbox)
+    hover = lightbox.findChild(ImageInfoOverlay, HOVER_INFO_NAME)
+    assert isinstance(hover, ImageInfoOverlay)
+    row = lightbox.findChild(ThumbnailRow)
+    assert isinstance(row, ThumbnailRow)
+    model = row.model()
+    assert model is not None
+    # the pointer may have been left over the row's place by an earlier test, in which case the box
+    # is rightly up already -- and a synthetic move elsewhere sends the row no Leave, as a real one
+    # would: take it out of the row explicitly first
+    QApplication.sendEvent(row, QEvent(QEvent.Type.Leave))
+    assert hover.isHidden()
+
+    qtbot.mouseMove(row.viewport(), row.visualRect(model.index(0, 0)).center())
+    qtbot.waitUntil(lambda: not hover.isHidden())
+
+    assert hover.text() == f"{PATHS[0]}\n2.0 kB"
+    bottom_left = hover.mapTo(lightbox, QPoint(0, hover.height()))
+    assert bottom_left == QPoint(CORNER_MARGIN, row.geometry().top() - CORNER_MARGIN)
+    toggle = control(lightbox, STRIP_TOGGLE_BUTTON_NAME)
+    hover_rect = QRect(hover.mapTo(lightbox, QPoint(0, 0)), hover.size())
+    assert hover_rect.intersects(toggle.geometry())
+    assert hover.testAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+
+    QApplication.sendEvent(row, QEvent(QEvent.Type.Leave))
+    assert hover.isHidden()
 
 
 def test_the_info_toggle_sits_under_the_box_and_toggles_it(document: QWidget, qtbot: QtBot) -> None:

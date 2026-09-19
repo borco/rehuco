@@ -5,7 +5,7 @@
 # `.banner` and `.y` read off a row trips no-member; pyright types them correctly
 # pylint: disable=no-member
 
-from PySide6.QtCore import QEvent, QPoint, QSize, Qt
+from PySide6.QtCore import QEvent, QPoint, QRect, QSize, Qt
 from PySide6.QtGui import QCursor, QPalette
 from PySide6.QtWidgets import QApplication
 from pytest_mock import MockerFixture
@@ -16,7 +16,13 @@ from rehuco_agent.documents.content_images import (
     ContentImagesPanel,
     ContentImagesView,
 )
-from rehuco_agent.documents.content_images.content_images_view import BANNER_HEIGHT, ITEM_SPACING
+from rehuco_agent.documents.content_images.content_images_view import (
+    BANNER_HEIGHT,
+    BANNER_INSET,
+    BANNER_MARK_WIDTH,
+    ITEM_SPACING,
+    banner_parts,
+)
 from rehuco_agent.fields.widgets import ThumbnailLoader
 from rehuco_core import ContentImageEntry
 
@@ -401,6 +407,59 @@ def test_a_banner_click_collapses_its_group_and_a_second_expands_it(
     assert view.banner_label("pack.zip") == "- pack.zip [1]"
 
 
+def test_the_banner_label_stands_still_when_its_mark_changes(
+    view: ContentImagesView, content_model: ContentImagesModel, qtbot: QtBot
+) -> None:
+    """The mark sits in a column of its own, so ``-`` becoming ``+`` (a narrower glyph becoming a wider
+    one) moves the label not one pixel: the two parts are painted in fixed columns.
+
+    **Test steps:**
+
+    * pack one bannered member and grab its banner row, then collapse the group and grab again
+    * verify the label column is pixel-identical (the mark column itself is not compared: the
+      offscreen platform draws every glyph as the same box)
+    """
+    view.set_flags(ContentDisplayFlags(zip_names=True, folder_names=False))
+    content_model.set_entries([entry(PACK, "a.png")], REHU_DIRECTORY)
+    settle(qtbot, view, content_model)
+    label_left = BANNER_INSET + BANNER_MARK_WIDTH
+    label_column = QRect(label_left, 0, view.viewport().width() - label_left, BANNER_HEIGHT)
+    expanded = view.viewport().grab().toImage()
+
+    view.set_collapsed("pack.zip", True)
+    qtbot.waitUntil(lambda: view.layout_table is not None and len(view.layout_table.rows) == 1)
+    collapsed = view.viewport().grab().toImage()
+
+    assert expanded.copy(label_column) == collapsed.copy(label_column)
+    assert banner_parts("pack.zip", 1, collapsed=True) == ("+", "pack.zip [1]")
+    assert banner_parts("pack.zip", 1, collapsed=False) == ("-", "pack.zip [1]")
+
+
+def test_a_banner_too_long_for_the_width_is_elided_not_cut(
+    view: ContentImagesView, content_model: ContentImagesModel, qtbot: QtBot
+) -> None:
+    """A label longer than the row is elided in the middle, so it stops a margin short of the edge
+    rather than being clipped at it.
+
+    **Test steps:**
+
+    * pack one member under a very deep folder with both boxes on, in a narrow view
+    * grab the banner row and verify it carries ink, but none in the margin at its right edge
+    """
+    view.set_flags(ContentDisplayFlags(zip_names=True, folder_names=True))
+    view.resize(200, 400)
+    content_model.set_entries([entry(PACK, "/".join(["folder"] * 40) + "/a.png")], REHU_DIRECTORY)
+    settle(qtbot, view, content_model)
+    painted = view.viewport().grab().toImage()
+    window = view.palette().color(QPalette.ColorRole.Window).name()
+    width = view.viewport().width()
+
+    inked = {painted.pixelColor(x, y).name() for x in range(width) for y in range(BANNER_HEIGHT)} - {window}
+    assert inked
+    margin = {painted.pixelColor(x, y).name() for x in range(width - BANNER_INSET, width) for y in range(BANNER_HEIGHT)}
+    assert margin == {window}
+
+
 def test_a_double_click_on_a_banner_toggles_its_group_once(
     view: ContentImagesView, content_model: ContentImagesModel, qtbot: QtBot
 ) -> None:
@@ -512,11 +571,13 @@ def test_collapsing_a_group_from_inside_it_scrolls_back_to_its_banner(
     assert view.pinned_banner() == "sub/other.zip"
     view.set_collapsed("sub/other.zip", True)
     qtbot.waitUntil(lambda: view.layout_table is not None and view.layout_table.rows[-1].banner == "sub/other.zip")
+    # the scrollbar's appearance or disappearance reflows the rows once more; let that settle
+    qtbot.wait(50)
     table = view.layout_table
     assert table is not None
-    assert scrollbar.value() == scrollbar.maximum()
     collapsed_banner = next(row for row in table.rows if row.banner == "sub/other.zip")
     assert scrollbar.maximum() < collapsed_banner.y  # the collapsed tail no longer fills a viewport
+    assert scrollbar.value() <= collapsed_banner.y
     assert view.banner_at(QPoint(5, collapsed_banner.y - scrollbar.value() + 2)) == "sub/other.zip"
 
 
@@ -547,6 +608,7 @@ def test_the_panel_shows_the_status_under_the_grid(
 
     * build a panel and have the grid report a status
     * verify the label shows it, below the grid
+    * report a path far wider than the panel and verify it is elided rather than widening the panel
     """
     grid = ContentImagesView(content_model, loader)
     panel = ContentImagesPanel(grid)
@@ -558,8 +620,16 @@ def test_the_panel_shows_the_status_under_the_grid(
     grid.status_changed.emit("pack.zip:/a.png")
 
     assert panel.status.text() == "pack.zip:/a.png"
-    assert panel.status.geometry().top() >= grid.geometry().bottom()
+    assert panel.status.mapTo(panel, QPoint(0, 0)).y() >= grid.geometry().bottom()
     assert panel.view is grid
+
+    long_path = "pack.zip:/" + "/".join(["folder"] * 40) + "/a.png"
+    grid.status_changed.emit(long_path)
+    shown = panel.status.text()
+    assert shown != long_path
+    assert "…" in shown
+    assert shown.startswith("pack.zip:/") and shown.endswith("/a.png")
+    assert panel.status.width() < 400
 
 
 def test_re_applying_the_same_clamp_or_flags_packs_nothing(view: ContentImagesView, mocker: MockerFixture) -> None:

@@ -153,10 +153,14 @@ class PathImageSource:
     """An :class:`ImageSource` over image files on disk -- screenshots, a folder's images.
 
     :param paths: the files, in navigation order.
+    :param base: the directory the description names a file relative to -- the ``.rehu``'s, so the
+        info overlay reads the same way for a screenshot beside it as for an archive member; a file
+        outside it, or any file when there is no base, is named in full.
     """
 
-    def __init__(self, paths: Sequence[Path]) -> None:
+    def __init__(self, paths: Sequence[Path], base: Path | None = None) -> None:
         self.__paths = list(paths)
+        self.__base = base
 
     def __len__(self) -> int:
         return len(self.__paths)
@@ -170,13 +174,28 @@ class PathImageSource:
         return self.__paths[index].name
 
     def describe(self, index: int) -> ImageDescription:
-        """The file's path and its size on disk, unknown when it cannot be stat'ed."""
+        """The file's path -- relative to the base when it is under it -- and its size on disk,
+        unknown when it cannot be stat'ed."""
         path = self.__paths[index]
         try:
             size = path.stat().st_size
         except OSError:
             size = None
-        return ImageDescription(str(path), size)
+        return ImageDescription(self.__path_text(path), size)
+
+    def __path_text(self, path: Path) -> str:
+        """``path`` as the description names it.
+
+        :param path: the file.
+        :returns: the path relative to the base, ``/``-separated like an archive member's; the full
+            path when there is no base or the file is not under it.
+        """
+        if self.__base is None:
+            return str(path)
+        try:
+            return path.relative_to(self.__base).as_posix()
+        except ValueError:
+            return str(path)
 
     def load(self, index: int, max_height: int | None) -> QImage:
         """Decode the file; null when it cannot be read or is not an image."""

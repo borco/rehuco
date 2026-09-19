@@ -15,9 +15,10 @@ one -- is reported through :attr:`ContentImagesView.status_changed` for the dock
 from collections import Counter
 from typing import Final, override
 
+from borco_pyside.widgets.elided_label import ElidedLabel
 from PySide6.QtCore import QEvent, QPoint, QRect, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QCursor, QMouseEvent, QPainter, QPainterPath, QPaintEvent, QPalette, QResizeEvent
-from PySide6.QtWidgets import QAbstractScrollArea, QFrame, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QAbstractScrollArea, QFrame, QVBoxLayout, QWidget
 
 from ...fields.widgets.image_strip import THUMBNAIL_BORDER
 from ...fields.widgets.thumbnail_loader import ThumbnailLoader, thumbnail_cache_key
@@ -38,6 +39,10 @@ EXPANDED_MARK: Final = "-"
 COLLAPSED_MARK: Final = "+"
 """What a banner is prefixed with: the mark says what a click on it does next."""
 
+BANNER_MARK_WIDTH: Final = 14
+"""The column the mark is centred in, in pixels. Fixed, and wider than either glyph: ``-`` is narrower
+than ``+``, and a label that started right after the mark would shift sideways on every toggle."""
+
 STATUS_LABEL_NAME: Final = "content_images_status"
 """The status line's object name."""
 
@@ -55,7 +60,18 @@ def banner_label(key: str, count: int, *, collapsed: bool) -> str:
     :param collapsed: whether the group is collapsed.
     :returns: e.g. ``- foo.zip [32]``.
     """
-    return f"{COLLAPSED_MARK if collapsed else EXPANDED_MARK} {key} [{count}]"
+    return " ".join(banner_parts(key, count, collapsed=collapsed))
+
+
+def banner_parts(key: str, count: int, *, collapsed: bool) -> tuple[str, str]:
+    """`banner_label` in its two painted parts: the mark, and the key with its count.
+
+    :param key: the group's key (`banner_text`).
+    :param count: how many images the group holds.
+    :param collapsed: whether the group is collapsed.
+    :returns: e.g. ``("-", "foo.zip [32]")``.
+    """
+    return COLLAPSED_MARK if collapsed else EXPANDED_MARK, f"{key} [{count}]"
 
 
 class ContentImagesView(QAbstractScrollArea):  # pylint: disable=too-many-instance-attributes,too-many-public-methods
@@ -325,7 +341,7 @@ class ContentImagesView(QAbstractScrollArea):  # pylint: disable=too-many-instan
         visible: list[int] = []
         for row in layout.rows_between(offset, offset + viewport_height):
             if row.banner is not None:
-                self.__paint_banner(painter, row.y - offset, row.height, self.banner_label(row.banner))
+                self.__paint_banner(painter, row.y - offset, row.height, row.banner)
                 continue
             for index in range(row.first, row.last + 1):
                 x, y, w, h = layout.rects[index]
@@ -423,20 +439,29 @@ class ContentImagesView(QAbstractScrollArea):  # pylint: disable=too-many-instan
         """Announce what the status line should say now."""
         self.status_changed.emit(self.status_text())
 
-    def __paint_banner(self, painter: QPainter, y: int, height: int, text: str) -> None:
-        """Paint one banner row: its text, in the palette's placeholder colour, bold.
+    def __paint_banner(self, painter: QPainter, y: int, height: int, key: str) -> None:
+        """Paint one banner row: its mark centred in a fixed column, then its label, elided to what
+        is left of the width -- in the palette's placeholder colour, bold. Two columns, so the label
+        stands still when the mark changes width on a toggle.
 
         :param painter: the painter.
         :param y: the row's top in viewport coordinates.
         :param height: the row's height.
-        :param text: the banner's label.
+        :param key: the group's key.
         """
+        mark, text = banner_parts(key, self.__counts.get(key, 0), collapsed=key in self.__collapsed)
         font = painter.font()
         font.setBold(True)
         painter.setFont(font)
         painter.setPen(self.palette().color(QPalette.ColorRole.PlaceholderText))
-        rect = QRect(BANNER_INSET, y, self.viewport().width() - BANNER_INSET, height)
-        painter.drawText(rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, text)
+        mark_rect = QRect(BANNER_INSET, y, BANNER_MARK_WIDTH, height)
+        painter.drawText(mark_rect, Qt.AlignmentFlag.AlignCenter, mark)
+        left = BANNER_INSET + BANNER_MARK_WIDTH
+        rect = QRect(left, y, self.viewport().width() - left - BANNER_INSET, height)
+        # elided in the middle: the path's start and the count at its end are the parts that tell
+        # one group from the next, and the folder names between are what a narrow dock can spare
+        elided = painter.fontMetrics().elidedText(text, Qt.TextElideMode.ElideMiddle, rect.width())
+        painter.drawText(rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, elided)
         font.setBold(False)
         painter.setFont(font)
 
@@ -450,7 +475,7 @@ class ContentImagesView(QAbstractScrollArea):  # pylint: disable=too-many-instan
         if pinned is None:
             return
         painter.fillRect(0, 0, self.viewport().width(), BANNER_HEIGHT, self.palette().color(QPalette.ColorRole.Window))
-        self.__paint_banner(painter, 0, BANNER_HEIGHT, self.banner_label(pinned))
+        self.__paint_banner(painter, 0, BANNER_HEIGHT, pinned)
 
     def __paint_image(self, painter: QPainter, rect: QRect, index: int, height: int) -> None:
         """Paint one image cell: its thumbnail, or a placeholder while it decodes or once it failed,
@@ -564,18 +589,23 @@ class ContentImagesPanel(QWidget):
     def __init__(self, view: ContentImagesView, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.__view: Final = view
-        self.__status: Final = QLabel(self)
+        # elided to the dock's width -- a member path inside a deep archive can be far longer than
+        # the dock is wide; the inset is the strip's, not the label's, so it elides to its real width
+        self.__status: Final = ElidedLabel(self)
         self.__status.setObjectName(STATUS_LABEL_NAME)
         self.__status.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.__status.setBackgroundRole(QPalette.ColorRole.Window)
-        self.__status.setAutoFillBackground(True)
-        self.__status.setContentsMargins(BANNER_INSET, 2, BANNER_INSET, 2)
+        strip = QWidget(self)
+        strip.setBackgroundRole(QPalette.ColorRole.Window)
+        strip.setAutoFillBackground(True)
+        strip_layout = QVBoxLayout(strip)
+        strip_layout.setContentsMargins(BANNER_INSET, 2, BANNER_INSET, 2)
+        strip_layout.addWidget(self.__status)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         layout.addWidget(view, 1)
-        layout.addWidget(self.__status)
-        view.status_changed.connect(self.__status.setText)
+        layout.addWidget(strip)
+        view.status_changed.connect(self.__status.set_text)
 
     @property
     def view(self) -> ContentImagesView:
@@ -583,6 +613,6 @@ class ContentImagesPanel(QWidget):
         return self.__view
 
     @property
-    def status(self) -> QLabel:
+    def status(self) -> ElidedLabel:
         """The status line."""
         return self.__status

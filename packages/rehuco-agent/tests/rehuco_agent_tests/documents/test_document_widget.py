@@ -4561,6 +4561,32 @@ def test_applying_the_info_overlay_setting_reaches_an_open_viewer_and_the_next(
     assert second.info_visible
 
 
+def test_the_viewer_names_a_screenshot_relative_to_the_document(
+    widget: DocumentWidget, model: RehuDocumentModel, mocker: MockerFixture
+) -> None:
+    """The viewer's info overlay names a screenshot relative to the ``.rehu``'s directory, the way an
+    archive member is named, not by its full path; a document with no path yet has no directory to
+    name it from, so its viewer falls back to the full path (#221).
+
+    **Test steps:**
+
+    * open a viewer over the curated screenshots of a path-less document and verify the full path
+    * give the document its path, open another and verify its source describes the current one as
+      ``info01.jpg`` alone
+    """
+    loadable_lightbox_image(mocker)
+    curate_screenshots(widget, SCREENSHOTS, mocker)
+    activate_screenshot(widget, SCREENSHOTS[0])
+    viewer = widget.findChild(ImageLightbox)
+    assert isinstance(viewer, ImageLightbox)
+    assert viewer.source.describe(viewer.current_index).path_text == str(SCREENSHOTS[0])
+
+    model.path = TARGET_PATH
+    activate_screenshot(widget, SCREENSHOTS[1])
+    second = next(other for other in widget.findChildren(ImageLightbox) if other is not viewer)
+    assert second.source.describe(second.current_index).path_text == "info01.jpg"
+
+
 # endregion
 
 

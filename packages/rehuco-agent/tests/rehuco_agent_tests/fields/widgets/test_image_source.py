@@ -147,6 +147,27 @@ def test_a_path_source_reads_and_decodes_the_file(mocker: MockerFixture) -> None
     assert source.load(0, None).size().toTuple() == (200, 100)
 
 
+def test_a_path_source_names_a_file_relative_to_its_base(mocker: MockerFixture) -> None:
+    """The description names a file relative to the base directory when it has one and the file is
+    under it -- the ``.rehu``'s directory, so a screenshot reads like an archive member -- and in full
+    otherwise (#221).
+
+    **Test steps:**
+
+    * describe a file under the base, one outside it, and one with no base
+    * verify the relative, the full and the full form respectively, and the stat'ed size
+    """
+    mocker.patch.object(Path, "stat", return_value=mocker.Mock(st_size=42))
+    under = Path("/fake/resource/shots/info00.png")
+    outside = Path("/elsewhere/info00.png")
+
+    with_base = PathImageSource([under, outside], Path("/fake/resource"))
+    assert with_base.describe(0).path_text == "shots/info00.png"
+    assert with_base.describe(0).byte_size == 42
+    assert with_base.describe(1).path_text == str(outside)
+    assert PathImageSource([under]).describe(0).path_text == str(under)
+
+
 def test_a_path_source_yields_a_null_image_for_an_unreadable_file(mocker: MockerFixture) -> None:
     """A file that cannot be read -- an offline mount -- decodes to a null image rather than raising.
 

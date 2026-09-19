@@ -21,7 +21,9 @@ released becomes the body of the GitHub Release, so each entry is written to be 
   scroll into view; nothing is written to disk.
 - Double-clicking a content image opens it maximized in the same viewer screenshots use, navigating the
   whole pack. The viewer's `I` key (or its corner button) shows the image's name, pixel size and file
-  size in a corner overlay, `T` toggles the thumbnail row, and a double-click on the image closes it.
+  size in a corner overlay, hovering a thumbnail names it in a box right above the row (no tooltip
+  delay), `T` toggles the thumbnail row, and a double-click on the image closes it. A screenshot is
+  named relative to the `.rehu`, the way an archive member is.
 - Holding a key while double-clicking picks the viewer's surface for that one open, whatever Images /
   Display says: `Shift` for the document overlay, `Ctrl` for the app-window overlay, `Ctrl+Shift` for
   full screen.
