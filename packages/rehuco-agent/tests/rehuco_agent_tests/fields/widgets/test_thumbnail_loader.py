@@ -166,13 +166,17 @@ def test_a_withdrawn_request_is_never_decoded(single_worker_loader: ThumbnailLoa
 
     **Test steps:**
 
-    * hold the gate and queue three requests -- the worker takes the first at once and blocks on it
-    * retain only that first one, release the gate
+    * hold the gate, queue one request and wait until the worker is blocked on it -- a gate, not an
+      assumption: on a slow runner the worker can still be starting when the next requests arrive,
+      and newest-first would then hand it one of those instead
+    * queue two more, retain only the first, release the gate
     * verify only the first was decoded, and a dropped one can be asked for again
     """
     source = RecordingSource(3)
     source.gate.clear()
-    for index in range(3):
+    single_worker_loader.request(OWNER, source, 0, 20)
+    qtbot.waitUntil(source.started.is_set)
+    for index in (1, 2):
         single_worker_loader.request(OWNER, source, index, 20)
 
     single_worker_loader.retain(OWNER, [thumbnail_cache_key("image0", 20)])

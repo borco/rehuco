@@ -8,7 +8,7 @@
 # pylint: disable=no-member,too-many-lines
 
 from PySide6.QtCore import QEvent, QPoint, QRect, QSize, Qt
-from PySide6.QtGui import QCursor, QPalette
+from PySide6.QtGui import QCursor, QFontMetrics, QPainter, QPalette
 from PySide6.QtWidgets import QApplication
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -452,15 +452,24 @@ def test_the_banner_label_stands_still_when_its_mark_changes(
 
 
 def test_a_banner_too_long_for_the_width_is_elided_not_cut(
-    view: ContentImagesView, content_model: ContentImagesModel, qtbot: QtBot
+    view: ContentImagesView, content_model: ContentImagesModel, qtbot: QtBot, mocker: MockerFixture
 ) -> None:
     """A label longer than the row is elided in the middle, so it stops a margin short of the edge
     rather than being clipped at it.
 
+    **Asserted on the string handed to the painter, measured in this run's own font**, not on ink:
+    the offscreen platform starts with no fonts, and once ``borco-pyside``'s theming tests load an
+    icon font into that empty database it becomes the fallback for plain text for the rest of the
+    process, at which point letters paint nothing at all -- the `test_task_row_delegate.py` elision
+    test names the same trap. Which happens in one test order and not another (serial ``make cov``
+    on Windows, never a parallel worker that skipped those tests), so ink is not a premise here.
+
     **Test steps:**
 
     * pack one member under a very deep folder with both boxes on, in a narrow view
-    * grab the banner row and verify it carries ink, but none in the margin at its right edge
+    * capture what the banner paint hands ``drawText`` and verify the label was shortened in the
+      middle, keeps its count, and measures no wider than the row less its right inset
+    * grab the row and verify the inset at its right edge carries no ink
     """
     view.set_flags(ContentDisplayFlags(zip_names=True, folder_names=True))
     view.resize(200, 400)
@@ -469,9 +478,18 @@ def test_a_banner_too_long_for_the_width_is_elided_not_cut(
     painted = view.viewport().grab().toImage()
     window = view.palette().color(QPalette.ColorRole.Window).name()
     width = view.viewport().width()
+    _mark, full_text = banner_parts(view.layout_table.rows[0].banner or "", 1, collapsed=False)  # type: ignore[union-attr]
 
-    inked = {painted.pixelColor(x, y).name() for x in range(width) for y in range(BANNER_HEIGHT)} - {window}
-    assert inked
+    drawn = mocker.patch.object(QPainter, "drawText")
+    view.viewport().grab()
+    labels = [call.args for call in drawn.call_args_list if "…" in call.args[-1]]
+    assert len(labels) == 1
+    rect, _flags, elided = labels[0]
+    assert elided != full_text
+    assert elided.endswith(full_text[-4:])
+    bold = view.font()
+    bold.setBold(True)
+    assert QFontMetrics(bold).horizontalAdvance(elided) <= rect.width() == width - rect.left() - BANNER_INSET
     margin = {painted.pixelColor(x, y).name() for x in range(width - BANNER_INSET, width) for y in range(BANNER_HEIGHT)}
     assert margin == {window}
 

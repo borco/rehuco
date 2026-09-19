@@ -6,6 +6,7 @@ test needs to tick the checkbox and read what the box shows. A ``MagicMock`` the
 ``self``.
 """
 
+import sys
 from collections.abc import Callable, Iterator
 from typing import Any, Final
 
@@ -147,7 +148,10 @@ def test_a_permanent_delete_is_asked_about_with_the_kinds_box(parent: QWidget, s
     assert confirm_delete(parent, DeletionKind.IMAGES, TITLE, TEXT) is True
 
     (box,) = shown.shown
-    assert box.windowTitle() == TITLE
+    if sys.platform != "darwin":
+        # QMessageBox.setWindowTitle is a no-op on macOS by Qt's own design ("message boxes on the
+        # mac do not have a title"), so the title the caller asked for is unobservable there
+        assert box.windowTitle() == TITLE
     assert box.text() == TEXT
     assert box.defaultButton() == box.button(QMessageBox.StandardButton.No)
     check_box = box.checkBox()
