@@ -25,26 +25,30 @@ it names the resource count and the byte total rather than asking a reflexive ye
 # pylint: disable=duplicate-code
 
 import logging
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Final, override
 
 from borco_core.logging import LogScope
 from PySide6.QtCore import QByteArray, QObject, Qt, QThread, Signal
-from PySide6.QtWidgets import QDialog, QFileDialog, QMessageBox, QWidget
+from PySide6.QtWidgets import QDialog, QFileDialog, QWidget
 from rehuco_core import (
     FINISHED_JOB_STATES,
     ConversionBackupsTreeScan,
     DiscardBackupsJob,
     JobState,
     JobStatus,
+    NoTrashBinError,
     TaskQueue,
     TcBackupsJob,
     scan_conversion_backups,
 )
 
+from ..asking_deleter import TITLE as NO_BIN_TITLE
+from ..delete_confirmation import ask_permanent_delete, confirm_delete
 from ..settings.conversion_backups_dialog_settings import ConversionBackupsDialogSettings
-from ..settings.deletion_settings import shared_deletion_settings
+from ..settings.deletion_settings import WITHOUT_ASKING_BOXES, DeletionKind, shared_deletion_settings
 from ..settings.persistent_settings import persistent_settings
 from .conversion_backups_dialog_ui import Ui_ConversionBackupsDialog
 from .conversion_backups_table_model import (
@@ -73,6 +77,28 @@ DISCARD_QUESTION: Final = (
     "Permanently delete the backups of {count} resource(s), freeing {size}?\n\n"
     "This cannot be undone. Their original .tc and legacy screenshots are gone for good."
 )
+
+NO_BIN_NOTICE: Final = "No Recycle Bin is available for {where}.\n\n"
+"""How the up-front no-bin question opens (#313) -- the same sentence `RecycleBin` refuses with,
+since it is the same fact, found earlier."""
+
+NO_BIN_QUESTION: Final = (
+    NO_BIN_NOTICE + "Delete the backups of {count} resource(s) permanently instead, freeing {size}?\n"
+    "This cannot be undone. Their original .tc and legacy screenshots are gone for good."
+)
+"""The up-front no-bin question when **every** selected resource is somewhere without a bin (#313)."""
+
+NO_BIN_MIXED_QUESTION: Final = (
+    NO_BIN_NOTICE + "{without} of the {count} selected resources are there. Delete their backups "
+    "permanently instead, freeing {size}? This cannot be undone. "
+    "The other {with_bin} are moved to the Recycle Bin either way."
+)
+"""The up-front no-bin question for a mixed selection (#313): the answer only changes what happens to
+the rows without a bin, and the question says so."""
+
+NO_BIN_FAILURE: Final = '{reason}. Turn on "{box}" (Settings ▸ Files) to delete permanently instead.'
+"""What a row refused by the Recycle Bin says where the question could not be put up front -- off
+Windows, bin availability is only discoverable by trying (#313)."""
 
 BUSY_STATUS: Final = "{done} / {total}"
 SCANNING_STATUS: Final = "Scanning… {count:,} examined"
@@ -503,42 +529,89 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
         in this table exactly because it has some.
 
         One deletion policy (#312): a discard bound for the Recycle Bin asks nothing, and one that is
-        permanent from the start confirms here unless **Clear backups without asking** is on. The same
+        permanent from the start confirms here unless **Clear backups without asking** is on --
+        `confirm_delete` is the whole of that gate, and the question carries the box (#313). The same
         box is what each job carries as its no-bin fallback, since a queued job has no window to ask
-        from once it runs.
+        from once it runs -- so where a bin's absence can be known before enqueueing, the no-bin
+        question is put here instead, once per batch (:meth:`__no_bin_fallback_allowed`).
         """
         selected = self.__model.checked_rows()
-        settings = shared_deletion_settings()
-        silent = settings.clear_backups_without_asking
-        permanent = not settings.use_recycle_bin
-        if not selected or (permanent and not silent and not self.__confirm_discard(selected)):
+        if not selected:
             return
-        self.__enqueue(DiscardBackupsJob, selected, delete_permanently_if_unreachable=silent)
+        question = DISCARD_QUESTION.format(count=len(selected), size=self.__size_of(selected))
+        if not confirm_delete(self, DeletionKind.BACKUPS, DISCARD_TITLE, question):
+            return
+        fallback = self.__no_bin_fallback_allowed(selected)
+        if fallback is None:
+            return
+        self.__enqueue(DiscardBackupsJob, selected, delete_permanently_if_unreachable=fallback)
 
-    def __confirm_discard(self, rows: Sequence[ConversionBackupsRow]) -> bool:
-        """Ask before discarding, naming the count and the bytes rather than asking a bare yes/no.
+    def __no_bin_fallback_allowed(self, rows: Sequence[ConversionBackupsRow]) -> bool | None:
+        """Whether the batch's jobs may delete permanently where no Recycle Bin is reachable (#313).
 
-        :param rows: the resources whose backups are about to be deleted.
-        :returns: whether to go ahead.
+        The one surface that cannot put the permanent question at the refusal point: its jobs run on
+        the queue with no window, so with the bin on and the box off a refused bin fails the row and
+        leaves the backups in place -- on a share with no Recycle Bin (the mounted NAS) that is every
+        row. On Windows a drive's bin is exact and cheap to ask about up front, so the selection is
+        checked before enqueueing and, when any row's location has no bin, `AskingDeleter`'s own
+        question is put once per batch, with the count and bytes the up-front confirm already names.
+        A mixed selection names the split, since the answer only changes what happens to the rows
+        without a bin; No on one enqueues nothing rather than only the rows with a bin -- a half-done
+        table with no row saying why is worse than filtering and re-selecting.
+
+        Off Windows bin availability is only discoverable by trying, so no question is put and the
+        failed row's message names the box instead (:meth:`__outcome_for`).
+
+        **No new setting**: Yes carries the fallback into this batch's jobs and nothing else, and the
+        question's own checkbox is the same *Clear backups without asking* box, for the user who wants
+        it to stick.
+
+        :param rows: the resources about to be discarded.
+        :returns: the fallback to enqueue with, or ``None`` when the batch is called off.
         """
-        total_bytes = sum(row.backups.total_bytes for row in rows)
-        return self.__ask(DISCARD_TITLE, DISCARD_QUESTION.format(count=len(rows), size=format_size(total_bytes)))
+        settings = shared_deletion_settings()
+        silent = settings.without_asking(DeletionKind.BACKUPS)
+        # the box already answers it, or the bin is off and no job will ever be refused
+        if silent or not settings.use_recycle_bin:
+            return silent
+        without_bin = self.__rows_without_a_bin(rows)
+        if not without_bin:
+            return False
+        where = ", ".join(sorted({row.path.drive or row.path.anchor for row in without_bin}))
+        if len(without_bin) == len(rows):
+            question = NO_BIN_QUESTION.format(where=where, count=len(rows), size=self.__size_of(rows))
+        else:
+            question = NO_BIN_MIXED_QUESTION.format(
+                where=where,
+                without=len(without_bin),
+                count=len(rows),
+                size=self.__size_of(without_bin),
+                with_bin=len(rows) - len(without_bin),
+            )
+        return True if ask_permanent_delete(self, DeletionKind.BACKUPS, NO_BIN_TITLE, question) else None
 
-    def __ask(self, title: str, question: str) -> bool:
-        """Put one destructive question, defaulting to No.
+    @staticmethod
+    def __rows_without_a_bin(rows: Sequence[ConversionBackupsRow]) -> list[ConversionBackupsRow]:
+        """The rows whose location has no Recycle Bin -- known up front on Windows only (#313).
 
-        :param title: the dialog's title.
-        :param question: what is being asked.
-        :returns: whether the answer was Yes.
+        Reaches the drive check the same way `~borco_pyside.recycle_bin.RecycleBin.add` does: guarded
+        by ``sys.platform``, imported inside the function, since the module behind it loads
+        ``shell32`` at import.
+
+        :param rows: the resources to check.
+        :returns: the rows without a bin; empty off Windows, where nothing can be known yet.
         """
-        answer = QMessageBox.warning(
-            self,
-            title,
-            question,
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        return answer == QMessageBox.StandardButton.Yes
+        if sys.platform != "win32":
+            return []
+        # pylint: disable-next=import-outside-toplevel
+        from borco_pyside.platforms.windows.recycle_bin_capability import has_recycle_bin
+
+        return [row for row in rows if not has_recycle_bin(row.path)]
+
+    @staticmethod
+    def __size_of(rows: Sequence[ConversionBackupsRow]) -> str:
+        """What ``rows``' backups occupy, as the confirmations name it."""
+        return format_size(sum(row.backups.total_bytes for row in rows))
 
     def __enqueue(self, job_class: type[TcBackupsJob], rows: Sequence[ConversionBackupsRow], **job_kwargs: Any) -> None:
         """Put one job per resource on the queue, inside that resource's own log scope.
@@ -551,9 +624,9 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
         `DiscardBackupsJob` resolves its deleter when it runs, from the process-wide provider the window
         installs, so a job rebuilt from the saved queue after a restart honours the Recycle Bin setting
         exactly as one enqueued here does (#298); the no-bin fallback (#301) is the one decision that
-        *is* carried, read off **Clear backups without asking** at enqueue (#312), since there is no
-        window to ask from once it runs -- with the box off, a refused bin fails that row and leaves
-        its backups in place.
+        *is* carried, since there is no window to ask from once it runs -- **Clear backups without
+        asking**, or the batch's own Yes to the up-front no-bin question (#313). Without either, a
+        refused bin fails that row and leaves its backups in place.
 
         :param job_class: which operation to queue.
         :param rows: the resources to run it over.
@@ -624,6 +697,11 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
     def __outcome_for(status: JobStatus) -> tuple[str, str | None]:
         """What a finished job's status means for its row.
 
+        A row the Recycle Bin refused names the box that would have let it through (#313): where the
+        no-bin question could not be put up front, the row is the only place left to say what fixes
+        it. The engine reports a failure as ``"<type>: <message>"``, so the type is what tells this
+        refusal from any other failure.
+
         :param status: its last status.
         :returns: the outcome, and a failure's message.
         """
@@ -631,6 +709,10 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
             return "discarded", None
         if status.state is JobState.CANCELLED:
             return "cancelled", None
+        prefix = f"{NoTrashBinError.__name__}: "
+        if status.error is not None and status.error.startswith(prefix):
+            reason = status.error.removeprefix(prefix)
+            return "failed", NO_BIN_FAILURE.format(reason=reason, box=WITHOUT_ASKING_BOXES[DeletionKind.BACKUPS].label)
         return "failed", status.error
 
     # endregion

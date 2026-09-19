@@ -27,8 +27,9 @@ from PySide6.QtWidgets import QMessageBox, QWidget
 from rehuco_core import ConversionBackups, NoTrashBinError, conversion_backups, discard_conversion_backups
 
 from ..asking_deleter import AskingDeleter
+from ..delete_confirmation import confirm_delete
 from ..recycle_bin_deleter import configured_deleter
-from ..settings.deletion_settings import shared_deletion_settings
+from ..settings.deletion_settings import DeletionKind
 from .rehu_document_model import RehuDocumentModel
 
 LOG: Final = logging.getLogger(__name__)
@@ -149,7 +150,8 @@ class ConversionBackupActions(QObject):
         One deletion policy (#312): a discard bound for the Recycle Bin asks nothing up front, and the
         `AskingDeleter` puts the permanent question only if the bin then proves unreachable; a discard
         that is permanent from the start confirms here, naming what it cannot undo. Both questions are
-        silenced by **Clear backups without asking**.
+        silenced by **Clear backups without asking**, the box each of them carries (#313) --
+        `confirm_delete` is the whole of that gate.
 
         The document itself is untouched: a discard removes only the ``.orig`` siblings, so there is
         nothing to reseed and no path to follow -- only a banner row that stops being true.
@@ -161,21 +163,15 @@ class ConversionBackupActions(QObject):
         backups = self.__retained_backups()
         if backups is None:
             return
-        settings = shared_deletion_settings()
-        silent = settings.clear_backups_without_asking
-        permanent = not settings.use_recycle_bin
-        if (
-            permanent
-            and not silent
-            and not self.__confirm(DISCARD_TITLE, DISCARD_QUESTION.format(size=self.__size(backups)))
-        ):
+        question = DISCARD_QUESTION.format(size=self.__size(backups))
+        if not confirm_delete(self.__parent, DeletionKind.BACKUPS, DISCARD_TITLE, question):
             return
         with LogScope.open(backups.rehu_path):
             try:
                 discarded = discard_conversion_backups(
                     backups.rehu_path,
                     deleter=AskingDeleter(
-                        configured_deleter(), parent=self.__parent, files=backups.backups, without_asking=silent
+                        configured_deleter(), DeletionKind.BACKUPS, parent=self.__parent, files=backups.backups
                     ),
                 )
             except NoTrashBinError as error:
@@ -217,22 +213,6 @@ class ConversionBackupActions(QObject):
         """
         backups = self.__backups
         return backups if backups is not None and backups.backups else None
-
-    def __confirm(self, title: str, question: str) -> bool:
-        """Put one destructive question, defaulting to No.
-
-        :param title: the dialog's title.
-        :param question: what is being asked.
-        :returns: whether the answer was Yes.
-        """
-        answer = QMessageBox.warning(
-            self.__parent,
-            title,
-            question,
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        return answer == QMessageBox.StandardButton.Yes
 
     def __report(self, title: str, message: str) -> None:
         """Say why nothing happened.

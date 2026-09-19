@@ -52,6 +52,7 @@ from PySide6.QtWidgets import (
 from rehuco_core import Deleter
 
 from ...asking_deleter import AskingDeleter
+from ...delete_confirmation import DeletionKind, confirm_delete
 from ...item_action_icons import apply_action_column_icons
 from ...recycle_bin_deleter import configured_deleter
 from ..image_organizer import ImageOrganizer
@@ -916,9 +917,10 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
         neither half is something a document Revert can undo -- unlike every other edit this editor
         makes, which sit in the model until a Save. A delete bound for the Recycle Bin asks nothing
         up front; if the bin then turns out to be unreachable, the `AskingDeleter` puts the permanent
-        question at that point instead. Either question is silenced by the organizer's **Delete images
-        without asking** answer (#312). The row that took its place is left current, so deleting
-        several in a row does not send the selection back to the top each time.
+        question at that point instead. Either question is silenced by **Delete images without
+        asking** (#312), the box each of them carries (#313) -- `confirm_delete` is the whole of that
+        gate, so this editor reads no setting itself. The row that took its place is left current, so
+        deleting several in a row does not send the selection back to the top each time.
 
         :param at: the row to delete; out of range, or with no organizer, is a no-op.
         """
@@ -926,20 +928,14 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
         organizer = self.image_organizer
         if organizer is None or not self.__list_model.can_rearrange or not 0 <= at < len(paths):
             return
-        silent = organizer.deletes_without_asking
-        permanent = not organizer.deletes_to_trash
-        if (
-            permanent
-            and not silent
-            and not self.__confirmed_delete(paths[at], numbered=self.__list_model.is_numbered(at))
-        ):
+        if not self.__confirmed_delete(paths[at], numbered=self.__list_model.is_numbered(at)):
             return
         deleter = AskingDeleter(
             configured_deleter(),
+            DeletionKind.IMAGES,
             parent=self,
             files=(paths[at],),
             report_delete_failures=True,
-            without_asking=silent,
         )
         if self.__rearranged(lambda: self.__list_model.remove_row(at, deleter=deleter)):
             self.set_current_index(min(at, len(paths) - 2))
@@ -991,17 +987,18 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
         self.convert_screenshot(self.current_index)
 
     def __confirmed_delete(self, path: Path, *, numbered: bool) -> bool:
-        """Ask before permanently deleting ``path`` (#291, #312).
+        """Ask before permanently deleting ``path`` (#291, #312, #313).
 
-        Only ever shown for a permanent delete -- a bin-bound one asks nothing up front -- so the
-        outcome it names is the one outcome. Three sentences, each earned by the row: what happens to
-        the file, what happens to the rest (only a numbered row leaves a gap to close, #270), and -- in
-        a multi-record directory -- that an un-converted image is listed by the other record's dock
-        too, so this deletes it there as well ([[data-model#resource-scoping]]).
+        Only ever shown for a permanent delete -- a bin-bound one asks nothing up front, and
+        `confirm_delete` is what decides that -- so the outcome it names is the one outcome. Three
+        sentences, each earned by the row: what happens to the file, what happens to the rest (only a
+        numbered row leaves a gap to close, #270), and -- in a multi-record directory -- that an
+        un-converted image is listed by the other record's dock too, so this deletes it there as well
+        ([[data-model#resource-scoping]]).
 
         :param path: the screenshot about to be deleted.
         :param numbered: whether it holds a slot, and so whether anything is renumbered after it.
-        :returns: whether the user confirmed.
+        :returns: whether the delete may go ahead -- confirmed, or not in need of confirming.
         """
         outcome = "permanently removed from disk. This cannot be undone."
         consequence = (
@@ -1015,18 +1012,7 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
             else ""
         )
         text = f"Delete <b>{path.name}</b> from this resource?<br><br>The file is {outcome}{consequence}{shared}"
-        return self.__confirmed("Delete screenshot", text)
-
-    def __confirmed(self, title: str, text: str) -> bool:
-        """Ask a Yes/No question, defaulting to No -- the one dialog shape every delete confirm uses.
-
-        :param title: the dialog's title.
-        :param text: the dialog's body, rich text.
-        :returns: whether the user answered Yes.
-        """
-        buttons = QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        answer = QMessageBox.question(self, title, text, buttons, QMessageBox.StandardButton.No)
-        return answer == QMessageBox.StandardButton.Yes
+        return confirm_delete(self, DeletionKind.IMAGES, "Delete screenshot", text)
 
     def __rearranged(self, rearrange: Callable[[], bool]) -> bool:
         """Run one of the model's rearrangements and report what it changed.

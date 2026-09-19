@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING, Final
 from rehuco_core import Deleter, convert_screenshot, delete_screenshot, renumber_screenshots
 
 from ..recycle_bin_deleter import configured_deleter
-from ..settings.deletion_settings import shared_deletion_settings
 from ..settings.screenshot_patterns_settings import shared_screenshot_patterns_settings
 
 if TYPE_CHECKING:
@@ -50,9 +49,9 @@ class RehuDocumentImageOrganizer:
     def convert(self, path: Path) -> dict[str, str]:
         """Rename ``path`` into this resource's numbered set, free slot or appended (#265, #270).
 
-        The patterns are read live from the shared settings, for the same reason
-        :attr:`deletes_to_trash` is: a page Saved after this organizer was built is still the user's
-        current answer about which names are screenshots at all.
+        The patterns are read live from the shared settings rather than cached: a page Saved after
+        this organizer was built is still the user's current answer about which names are
+        screenshots at all.
 
         :param path: the un-converted screenshot to number.
         :returns: ``{old filename: new filename}`` -- one entry, so the curated-out list follows the
@@ -66,24 +65,6 @@ class RehuDocumentImageOrganizer:
         _, stem = self.__location()
         converted = convert_screenshot(path, stem, shared_screenshot_patterns_settings().screenshot_name_patterns)
         return {path.name: converted.name}
-
-    @property
-    def deletes_to_trash(self) -> bool:
-        """Whether the next :meth:`remove` called with no explicit ``deleter`` will try to send the
-        file to the Recycle Bin / Trash, per the **Move deleted files to the Recycle Bin, if possible**
-        setting -- read live rather than cached, so a page Saved after this organizer was built is
-        still honoured. Purely informational: the editor's decision whether to confirm is the only
-        reader (#291, #312).
-        """
-        return shared_deletion_settings().use_recycle_bin
-
-    @property
-    def deletes_without_asking(self) -> bool:
-        """Whether a permanent delete of a screenshot happens with no question, per the **Delete
-        images without asking** setting -- read live, for the same reason :attr:`deletes_to_trash` is,
-        and just as purely informational (#312).
-        """
-        return shared_deletion_settings().delete_images_without_asking
 
     def remove(self, path: Path, remaining: Sequence[Path], deleter: Deleter | None = None) -> dict[str, str]:
         """Delete ``path`` and renumber ``remaining`` onto the slot it vacated.

@@ -1,4 +1,4 @@
-"""Tests for DeletionSettings: the one deletion policy (#291, #312).
+"""Tests for DeletionSettings: the one deletion policy (#291, #312, #313).
 
 Uses a hand-rolled in-memory stand-in for ``QSettings`` (see ``test_excluded_files_settings.py`` for
 the same rationale) rather than a real one or ``tmp_path``.
@@ -7,14 +7,17 @@ the same rationale) rather than a real one or ``tmp_path``.
 from collections.abc import Iterator
 from typing import Any
 
-from pytest import fixture
+from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from rehuco_agent.settings import deletion_settings
 from rehuco_agent.settings.deletion_settings import (
     DEFAULT_CLEAR_BACKUPS_WITHOUT_ASKING,
     DEFAULT_DELETE_IMAGES_WITHOUT_ASKING,
     DEFAULT_USE_RECYCLE_BIN,
+    WITHOUT_ASKING_BOXES,
+    DeletionKind,
     DeletionSettings,
+    remember_without_asking,
     shared_deletion_settings,
 )
 
@@ -166,6 +169,74 @@ def test_the_shared_instance_is_loaded_once(mocker: MockerFixture, settings: Fak
 
     assert first is second
     assert first.use_recycle_bin is False
+
+
+# endregion
+
+# region the boxes by kind (#313)
+
+
+@mark.parametrize(
+    ("kind", "field"),
+    [
+        (DeletionKind.BACKUPS, "clear_backups_without_asking"),
+        (DeletionKind.IMAGES, "delete_images_without_asking"),
+    ],
+)
+def test_each_kind_reads_and_writes_its_own_box(kind: DeletionKind, field: str) -> None:
+    """A kind is an address for one of the two boxes, and nothing else moves when it is written.
+
+    **Test steps:**
+
+    * read the kind's box on a fresh instance, then set it
+    * verify the read followed the named field, the write landed on it, and the other box is untouched
+    """
+    settings = DeletionSettings()
+    assert settings.without_asking(kind) is False
+
+    settings.set_without_asking(kind, True)
+
+    assert getattr(settings, field) is True
+    other = next(candidate for candidate in DeletionKind if candidate is not kind)
+    assert settings.without_asking(other) is False
+
+
+@mark.parametrize("kind", list(DeletionKind))
+def test_the_table_names_the_files_page_label_verbatim(kind: DeletionKind) -> None:
+    """The checkbox a confirmation carries is worded exactly as the box on Files, which is what makes
+    the tick recoverable: the user knows which box to untick.
+
+    **Test steps:**
+
+    * read the kind's box from the table
+    * verify its label is the settings page's own text and its field is a real setting
+    """
+    box = WITHOUT_ASKING_BOXES[kind]
+
+    assert box.label.endswith("without asking")
+    assert hasattr(DeletionSettings(), box.field)
+
+
+def test_remember_without_asking_ticks_the_shared_box_and_persists_it(
+    mocker: MockerFixture, settings: FakeSettings
+) -> None:
+    """A confirmation's tick writes the setting itself -- nothing new is stored, and the next reader
+    of the shared instance sees it as well as the next launch.
+
+    **Test steps:**
+
+    * patch ``persistent_settings`` to an in-memory store and remember the backups kind
+    * verify the shared instance holds the tick, and a fresh load from the store holds it too
+    """
+    mocker.patch.object(deletion_settings, "persistent_settings", return_value=settings)
+
+    remember_without_asking(DeletionKind.BACKUPS)
+
+    assert shared_deletion_settings().clear_backups_without_asking is True
+    reloaded = DeletionSettings()
+    reloaded.load(settings)  # type: ignore[arg-type]
+    assert reloaded.clear_backups_without_asking is True
+    assert reloaded.delete_images_without_asking is False
 
 
 # endregion
