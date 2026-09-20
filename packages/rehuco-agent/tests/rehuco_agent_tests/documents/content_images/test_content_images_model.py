@@ -111,6 +111,18 @@ def test_the_archive_image_source_describes_its_member_and_pixel_size(
     read_head.assert_called_once()
 
 
+def test_the_model_exposes_its_own_archive_cache(content_model: ContentImagesModel) -> None:
+    """The cache every read of this resource's archives goes through is reachable from outside, for a
+    caller that wants to read through it directly.
+
+    **Test steps:**
+
+    * read the model's cache
+    * verify it is the same cache instance the model reads its own members through
+    """
+    assert isinstance(content_model.archive_cache, ArchiveCache)
+
+
 def test_the_model_answers_nothing_for_an_invalid_index_or_another_role(content_model: ContentImagesModel) -> None:
     """Off-model asks come back empty, the way any `QAbstractListModel` answers them.
 

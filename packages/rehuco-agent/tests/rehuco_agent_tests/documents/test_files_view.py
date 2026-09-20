@@ -217,19 +217,25 @@ def test_the_reveal_action_shows_the_browsed_folder(view: FilesView, mocker: Moc
     reveal.assert_called_once_with(view.directory)
 
 
-def test_the_reveal_action_is_disabled_for_a_path_less_document(qtbot: QtBot) -> None:
-    """A never-saved document has no folder to reveal, so the action starts disabled.
+def test_the_reveal_action_is_disabled_for_a_path_less_document(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """A never-saved document has no folder to reveal, so the action starts disabled -- and a disabled
+    `QAction`'s own ``trigger()`` is a no-op, never reaching the reveal helper.
 
     **Test steps:**
 
-    * build a browser over a path-less model
-    * verify the reveal action is disabled
+    * build a browser over a path-less model and verify the reveal action is disabled
+    * trigger it regardless and verify the reveal helper was never reached
     """
+    reveal = mocker.patch("rehuco_agent.documents.files_view.reveal_in_file_browser")
     view = FilesView(RehuDocumentModel(RehuDocument({}, None)))
     qtbot.addWidget(view)
     view.show()
 
     assert not view.reveal_action.isEnabled()
+
+    view.reveal_action.trigger()
+
+    reveal.assert_not_called()
 
 
 def test_re_showing_a_current_browser_reads_nothing(qtbot: QtBot, view: FilesView, listing: Any) -> None:
