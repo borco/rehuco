@@ -6,7 +6,8 @@
 # pylint: disable=too-many-lines
 
 import logging
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator, Iterator
+from contextlib import contextmanager
 from datetime import timedelta
 from pathlib import Path
 from threading import Event
@@ -2837,9 +2838,10 @@ def test_raise_and_activate_forces_foreground_on_windows(mocker: MockerFixture, 
     **Test steps:**
 
     * build the window with the real platform still in effect
-    * force ``sys.platform`` to ``"win32"`` and mock the Windows-only helper
+    * force ``sys.platform`` to ``"win32"`` and mock the Windows-only helpers (the show-at-once pair
+      too, #308, so the faked platform never reaches ``ctypes.windll`` off Windows)
     * call ``raise_and_activate``
-    * verify the helper was called with this window
+    * verify the foreground helper was called with this window
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -2848,6 +2850,8 @@ def test_raise_and_activate_forces_foreground_on_windows(mocker: MockerFixture, 
     mocker.patch.object(window, "activateWindow")
 
     mocker.patch("rehuco_agent.main_window.sys.platform", "win32")
+    mocker.patch("borco_pyside.platforms.windows.window_transitions.open_transition_disabled")
+    mocker.patch("borco_pyside.platforms.windows.window_painting.paint_now")
     force_foreground = mocker.patch("borco_pyside.platforms.windows.window_activation.force_foreground")
 
     window.raise_and_activate()
@@ -5491,6 +5495,118 @@ def test_a_restored_floating_dock_shows_after_the_main_window(mocker: MockerFixt
     assert container.isVisible() is True
     real_shows = [name for name, guarded in shows if not guarded]
     assert real_shows.index("MainWindow") < real_shows.index("CFloatingDockContainer")
+
+
+def test_a_restored_floating_dock_is_shown_at_once_with_the_window_on_windows(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """On Windows, the window and each floating container put back by ``raise_and_activate`` are each
+    shown with the desktop's open animation off and painted right after -- all before the window is
+    raised -- so the dock neither sits empty over the window until the event loop drains nor fades in
+    a beat behind it (#308).
+
+    Only the *calls* are assertable here: the deferred paint is a ``WM_PAINT`` scheduling fact of the
+    real ``windows`` plugin and the fade is the desktop's, neither of which offscreen reproduces, so
+    the frame-by-frame check on a real launch is what confirms the effect and this pins the wiring
+    that produces it.
+
+    Same platform trap as ``test_raise_and_activate_forces_foreground_on_windows``: the window is built
+    with the real platform still in effect, and ``sys.platform`` is faked only afterwards.
+
+    **Test steps:**
+
+    * float one window's Settings dock out, open, and capture the layout it saves
+    * seed that blob and construct a second window with the real platform in effect
+    * fake ``sys.platform`` to ``"win32"``, mock the three Windows-only helpers plus both ``show``\\ s
+      and the window's ``raise_``, all on one recorder
+    * ``raise_and_activate`` and verify the order: each show bracketed by the transition context and
+      followed by its paint, then raise, then force foreground
+    """
+    first = MainWindow()
+    qtbot.addWidget(first)
+    float_open_settings_dock(first)
+    first._MainWindow__save_window_state()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    saved = first._MainWindow__window_settings.outer_docks_state  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    def fake_load(self: MainWindowSettings, settings: object) -> None:
+        del settings
+        self.outer_docks_state = saved
+
+    mocker.patch.object(MainWindowSettings, "load", fake_load)
+    second = MainWindow()
+    qtbot.addWidget(second)
+    container = main_dock(second, SETTINGS_DIALOG_OBJECT_NAME).floatingDockContainer()
+    assert container is not None
+
+    mocker.patch("rehuco_agent.main_window.sys.platform", "win32")
+    recorder = mocker.MagicMock()
+    recorder.attach_mock(mocker.patch.object(second, "show"), "show")
+    recorder.attach_mock(mocker.patch.object(container, "show"), "container_show")
+    recorder.attach_mock(mocker.patch.object(second, "raise_"), "raise_")
+    recorder.attach_mock(mocker.patch("borco_pyside.platforms.windows.window_painting.paint_now"), "paint_now")
+    recorder.attach_mock(
+        mocker.patch("borco_pyside.platforms.windows.window_activation.force_foreground"), "force_foreground"
+    )
+
+    @contextmanager
+    def fake_no_fade(window: QWidget) -> Generator[None]:
+        recorder.no_fade_enter(window)
+        yield
+        recorder.no_fade_exit(window)
+
+    mocker.patch("borco_pyside.platforms.windows.window_transitions.open_transition_disabled", fake_no_fade)
+
+    second.raise_and_activate()
+
+    assert recorder.mock_calls == [
+        mocker.call.no_fade_enter(second),
+        mocker.call.show(),
+        mocker.call.paint_now(second),
+        mocker.call.no_fade_exit(second),
+        mocker.call.no_fade_enter(container),
+        mocker.call.container_show(),
+        mocker.call.paint_now(container),
+        mocker.call.no_fade_exit(container),
+        mocker.call.raise_(),
+        mocker.call.force_foreground(second),
+    ]
+
+
+def test_a_restored_floating_dock_is_shown_plainly_elsewhere(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Off Windows, neither Windows-only helper is reached for the window or a restored floating dock:
+    the deferred first paint and the per-window fade are the Windows desktop's, and both helpers are
+    Windows-only calls (#308).
+
+    **Test steps:**
+
+    * float one window's Settings dock out, open, and capture the layout it saves
+    * seed that blob, fake ``sys.platform`` to ``"linux"``, construct a second window
+    * ``raise_and_activate`` and verify the container came up and neither helper was called
+    """
+    first = MainWindow()
+    qtbot.addWidget(first)
+    float_open_settings_dock(first)
+    first._MainWindow__save_window_state()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    saved = first._MainWindow__window_settings.outer_docks_state  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    def fake_load(self: MainWindowSettings, settings: object) -> None:
+        del settings
+        self.outer_docks_state = saved
+
+    mocker.patch.object(MainWindowSettings, "load", fake_load)
+    mocker.patch("rehuco_agent.main_window.sys.platform", "linux")
+    paint_now = mocker.patch("borco_pyside.platforms.windows.window_painting.paint_now")
+    no_fade = mocker.patch("borco_pyside.platforms.windows.window_transitions.open_transition_disabled")
+    second = MainWindow()
+    qtbot.addWidget(second)
+    container = main_dock(second, SETTINGS_DIALOG_OBJECT_NAME).floatingDockContainer()
+    assert container is not None
+
+    second.raise_and_activate()
+
+    assert container.isVisible() is True
+    paint_now.assert_not_called()
+    no_fade.assert_not_called()
 
 
 # endregion

@@ -702,3 +702,23 @@ the window's. Measured on a real plugin with a refused layout blob and a dialog 
 the Settings dock still floated as a fallback (#306, removed by #307): the one path that floated an
 open dock under an unshown manager. Guarding the `show()` catches that too, and the guard stays armed
 there because nothing but the absence of such a caller keeps the path closed.
+
+**Releasing them after the window is not the end of it either: on Windows a released container comes
+up empty** (#308). Its window is *owned* by the main window, so it stacks above it from the moment it
+is shown, and no raise or foreground forcing of the owner ever gets between the two — measured on the
+real plugin, the z-order never inverts. What the eye sees as the dock "arriving a beat late" is its
+first paint: the main window paints synchronously inside its own `show()`, but Qt exposes a top-level
+shown after it only from a `WM_PAINT`, which the queue generates once nothing else is pending — so the
+dock sits above the window as an empty surface, the window showing through, until startup's posted
+events drain, and only then fills in. `QWidget.repaint()` is dropped on a not-yet-exposed window;
+`UpdateWindow` on its handle sends the `WM_PAINT` there and then, which is what
+`borco_pyside.platforms.windows.window_painting.paint_now` does right after each release.
+
+**And a painted dock still fades in behind the window.** The Desktop Window Manager animates every
+top-level's appearance from its own `ShowWindow`, so the container's fade starts the ~35 ms its show
+comes after the window's and, captured frame by frame, it is a translucent ghost over an already-opaque
+window for those frames — the same "behind and empty, then brought on top" the deferred paint gave,
+shorter. `DWMWA_TRANSITIONS_FORCEDISABLED` set on each window around its show
+(`borco_pyside.platforms.windows.window_transitions.open_transition_disabled`) puts both in the first
+frame either reaches, at the price of the fade-in itself; cleared again after the show, every later
+transition stays the desktop's.
