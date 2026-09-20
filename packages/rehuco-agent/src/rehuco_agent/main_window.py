@@ -7,6 +7,7 @@
 
 import logging
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Final, override
 
@@ -25,6 +26,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QSystemTrayIcon,
+    QWidget,
     QWidgetAction,
 )
 from rehuco_core import (
@@ -1468,17 +1470,25 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         showing its *children* -- ahead of its own native window, measured on a real plugin (#306).
         Which is why **this, not a plain ``show()``, is the app's way onto the screen**:
         `Application.show_main_window` and `TrayIcon` both come through here.
+
+        Every show here goes through :meth:`__show_at_once`, so that on Windows this window and the
+        docks put back after it reach the screen **together, painted** (#308). A floating container
+        is a window this one *owns*, so it always stacks above it -- the raise and the foreground
+        forcing below never get between the two, measured on the real plugin. Two other things did,
+        both the desktop's: a top-level's first paint waits for a ``WM_PAINT`` the queue generates only
+        once nothing else is pending, so a restored dock sat empty over this window until startup's
+        posted events had drained; and the desktop fades each top-level in from its own ``ShowWindow``,
+        so even a painted dock was a translucent ghost over this already-opaque window for the frames
+        between the two shows. Painted on the spot and shown without the fade, both are in the first
+        frame either reaches.
         """
         # armed around the show only, so a floating window legitimately on screen already (a forwarded
         # open while the app is up) is not touched -- only what this show itself brings up too early
         floating_show_guard = QtAdsFloatingShowGuard()
-        if self.isMinimized():
-            self.showNormal()
-        else:
-            self.show()
+        self.__show_at_once(self, self.showNormal if self.isMinimized() else self.show)
         self.__floating_docks_hidden_with_window.extend(floating_show_guard.release())
         for container in self.__floating_docks_hidden_with_window:
-            container.show()
+            self.__show_at_once(container, container.show)
         self.__floating_docks_hidden_with_window.clear()
         self.raise_()
         self.activateWindow()
@@ -1487,6 +1497,28 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             from borco_pyside.platforms.windows import window_activation  # pylint: disable=import-outside-toplevel
 
             window_activation.force_foreground(self)
+
+    @staticmethod
+    def __show_at_once(window: QWidget, show: Callable[[], None]) -> None:
+        """Run ``show`` on ``window`` so that it is on screen, painted, when this returns (#308).
+
+        On Windows that takes two things a plain ``show()`` leaves to the desktop: the window's first
+        paint, which otherwise waits for a ``WM_PAINT`` the queue generates only once nothing else is
+        pending, and the desktop's open animation, which otherwise fades each top-level in on its own
+        clock. Elsewhere it is the plain ``show``.
+
+        :param window: the top-level widget ``show`` puts on screen.
+        :param show: the show to run -- ``show`` or ``showNormal``, whichever the caller means.
+        """
+        if sys.platform != "win32":
+            show()
+            return
+        # pylint: disable-next=import-outside-toplevel
+        from borco_pyside.platforms.windows import window_painting, window_transitions
+
+        with window_transitions.open_transition_disabled(window):
+            show()
+            window_painting.paint_now(window)
 
     def hide_to_tray(self) -> None:
         """Hide this window to the tray, taking every floating dock window with it (#205).
