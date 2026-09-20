@@ -1,4 +1,4 @@
-"""Tests for DefaultLayoutSettings: the saved default document dock layout (#62).
+"""Tests for DefaultLayoutSettings: the saved default document dock layout of each type (#62, #320).
 
 Uses a hand-rolled in-memory stand-in for ``QSettings`` (see ``test_main_window_settings.py`` for the
 same rationale) rather than a real one or ``tmp_path``.
@@ -7,6 +7,7 @@ same rationale) rather than a real one or ``tmp_path``.
 from collections.abc import Iterator
 from typing import Any
 
+from PySide6.QtCore import QByteArray
 from pytest import fixture
 from pytest_mock import MockerFixture
 from rehuco_agent.settings import default_layout_settings
@@ -19,24 +20,48 @@ from rehuco_agent.settings.default_layout_settings import DefaultLayoutSettings,
 
 
 class FakeSettings:  # pylint: disable=invalid-name,missing-function-docstring,redefined-builtin
-    """A minimal in-memory stand-in for the ``QSettings`` group/value API."""
+    """A minimal in-memory stand-in for the ``QSettings`` group/value API.
+
+    Groups nest on a prefix stack, since this section opens one group per type inside its own
+    (``default_layout/<type>/state``, #320), and it enumerates and removes those child groups.
+    """
 
     def __init__(self) -> None:
         self.__data: dict[str, Any] = {}
-        self.__group = ""
+        self.__prefixes: list[str] = []
+
+    @property
+    def __prefix(self) -> str:
+        return "".join(self.__prefixes)
 
     def beginGroup(self, name: str) -> None:  # noqa: N802
-        self.__group = f"{name}/"
+        self.__prefixes.append(f"{name}/")
 
     def endGroup(self) -> None:  # noqa: N802
-        self.__group = ""
+        if self.__prefixes:
+            self.__prefixes.pop()
 
     def setValue(self, key: str, value: Any) -> None:  # noqa: N802
-        self.__data[self.__group + key] = value
+        self.__data[self.__prefix + key] = value  # pylint: disable=unsupported-assignment-operation
 
     def value(self, key: str, default: Any = None, type: Any = None) -> Any:  # noqa: A002, N802
         del type
-        return self.__data.get(self.__group + key, default)
+        return self.__data.get(self.__prefix + key, default)
+
+    def childGroups(self) -> list[str]:  # noqa: N802
+        prefix = self.__prefix
+        nested = (key[len(prefix) :] for key in self.__data if key.startswith(prefix))
+        return sorted({rest.split("/")[0] for rest in nested if "/" in rest})
+
+    def remove(self, key: str) -> None:
+        full = self.__prefix + key
+        for stored in list(self.__data):
+            if stored == full or stored.startswith(full + "/") or (not key and stored.startswith(full)):
+                del self.__data[stored]  # pylint: disable=unsupported-delete-operation
+
+    def keys(self) -> list[str]:
+        """Every stored key, for asserting on what a save left behind."""
+        return sorted(self.__data)
 
 
 @fixture
@@ -63,14 +88,17 @@ def clear_shared_instance_cache() -> Iterator[None]:
 
 
 def test_a_fresh_install_has_no_saved_default() -> None:
-    """No default has ever been saved on a fresh install.
+    """No default has ever been saved on a fresh install, for any type.
 
     **Test steps:**
 
     * build a `DefaultLayoutSettings` with no stored values
-    * verify its state is empty
+    * verify it holds no state, and asking for a type answers empty
     """
-    assert DefaultLayoutSettings().state == b""
+    settings = DefaultLayoutSettings()
+
+    assert not settings.states
+    assert settings.state_for("tutorial") == b""
 
 
 # endregion
@@ -78,17 +106,19 @@ def test_a_fresh_install_has_no_saved_default() -> None:
 # region storage
 
 
-def test_the_state_round_trips_through_storage(settings: FakeSettings) -> None:
-    """A saved default is read back exactly as it was written.
+def test_the_states_round_trip_through_storage(settings: FakeSettings) -> None:
+    """Each type's saved default is read back exactly as it was written, under its own group (#320).
 
     **Test steps:**
 
-    * save a settings object holding a non-empty state
-    * load a fresh one from the same storage
-    * verify the state came back unchanged
+    * save a settings object holding two types' states
+    * verify each landed at ``default_layout/<type>/state``
+    * load a fresh one from the same storage and verify it came back unchanged
     """
-    saved = DefaultLayoutSettings(state=b"some cbor2 blob")
+    saved = DefaultLayoutSettings(states={"tutorial": b"tutorial blob", "reference_images": b"pack blob"})
     saved.save(settings)  # pyright: ignore[reportArgumentType]
+
+    assert settings.keys() == ["default_layout/reference_images/state", "default_layout/tutorial/state"]
 
     loaded = DefaultLayoutSettings()
     loaded.load(settings)  # pyright: ignore[reportArgumentType]
@@ -108,6 +138,52 @@ def test_loading_from_empty_storage_yields_no_default(settings: FakeSettings) ->
     loaded.load(settings)  # pyright: ignore[reportArgumentType]
 
     assert loaded == DefaultLayoutSettings()
+
+
+def test_saving_drops_a_reset_type_and_the_untyped_blob(settings: FakeSettings) -> None:
+    """A type popped from the states leaves storage on the next save, and so does the untyped blob a
+    pre-#320 build wrote at ``default_layout/state`` -- dropped, not migrated, since it was written
+    against the pre-split dock set (#320).
+
+    **Test steps:**
+
+    * seed storage with the untyped blob and two types, then load
+    * verify the untyped blob was ignored
+    * pop one type, save, and verify only the other remains in storage
+    """
+    settings.beginGroup("default_layout")
+    settings.setValue("state", QByteArray(b"old untyped blob"))
+    settings.endGroup()
+    both = DefaultLayoutSettings(states={"tutorial": b"t", "reference_images": b"r"})
+    both.save(settings)  # pyright: ignore[reportArgumentType]
+    loaded = DefaultLayoutSettings()
+    loaded.load(settings)  # pyright: ignore[reportArgumentType]
+    assert loaded.states == {"tutorial": b"t", "reference_images": b"r"}
+
+    loaded.states.pop("tutorial")
+    loaded.save(settings)  # pyright: ignore[reportArgumentType]
+
+    assert settings.keys() == ["default_layout/reference_images/state"]
+
+
+def test_an_empty_stored_state_reads_as_no_default(settings: FakeSettings) -> None:
+    """A type whose stored blob is empty has no default, the same as a type never saved.
+
+    **Test steps:**
+
+    * store an empty blob under a type and load
+    * verify the type is absent from the states
+    """
+    settings.beginGroup("default_layout")
+    settings.beginGroup("collection")
+    settings.setValue("state", QByteArray())
+    settings.endGroup()
+    settings.endGroup()
+
+    loaded = DefaultLayoutSettings()
+    loaded.load(settings)  # pyright: ignore[reportArgumentType]
+
+    assert not loaded.states
 
 
 def test_the_shared_instance_is_the_same_object_every_time(mocker: MockerFixture) -> None:

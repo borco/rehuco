@@ -143,22 +143,23 @@ def test_requests_are_served_newest_first(single_worker_loader: ThumbnailLoader,
 
     **Test steps:**
 
-    * hold the gate and queue four requests
-    * release the gate
-    * verify the queue was drained newest first -- whichever request the worker had already taken
-      before the rest were queued, the remainder come down from the newest
+    * hold the gate, queue one request and wait until the worker is blocked on it -- a gate, not an
+      assumption: the worker takes the newest request at the moment it looks, and on a slow runner that
+      moment can fall anywhere in the queueing loop, handing it any of the four first
+    * queue three more, release the gate
+    * verify the rest were drained newest first
     """
     source = RecordingSource(4)
     source.gate.clear()
-    for index in range(4):
+    single_worker_loader.request(OWNER, source, 0, 20)
+    qtbot.waitUntil(source.started.is_set)
+    for index in (1, 2, 3):
         single_worker_loader.request(OWNER, source, index, 20)
 
     source.gate.set()
     qtbot.waitUntil(lambda: len(source.loaded) == 4)
 
-    first, *rest = source.loaded
-    assert rest == sorted(rest, reverse=True)
-    assert first in (0, 3)
+    assert source.loaded == [0, 3, 2, 1]
 
 
 def test_a_withdrawn_request_is_never_decoded(single_worker_loader: ThumbnailLoader, qtbot: QtBot) -> None:

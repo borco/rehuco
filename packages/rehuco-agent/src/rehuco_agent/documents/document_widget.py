@@ -7,6 +7,7 @@
 
 from collections.abc import Hashable, Mapping
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Final
 
 import cbor2
@@ -18,7 +19,7 @@ from borco_pyside.widgets import MessageBanner, MessageBannerRow, MessageBannerS
 from PySide6.QtCore import QByteArray, Qt, Signal
 from PySide6.QtGui import QAction, QColor, QIcon, QKeySequence
 from PySide6.QtWidgets import QApplication, QMainWindow, QMenu, QMessageBox, QVBoxLayout, QWidget
-from rehuco_core import TaskQueue, backup_path, originals_to_back_up
+from rehuco_core import REFERENCE_IMAGES_PLUGIN, TaskQueue, backup_path, originals_to_back_up
 
 from ..app_logging import LOG_VIEW_ICON_RESOURCE, build_log_widget, shared_log_bridge
 from ..asking_deleter import AskingDeleter
@@ -47,31 +48,13 @@ from .source_views import OnDiskView, SavePreviewView
 
 STATE_VERSION_KEY: Final = "version"
 STATE_VERSION: Final = 9
-"""Schema version of :meth:`DocumentWidget.save_state`'s blob. The dock layout is keyed by dock
-object name, so any change to the docks (names, count, which tabs exist) makes an older blob
-incompatible: QtAds's ``restoreState`` would accept it and silently hide the current docks. Bump this
-on any such change; :meth:`DocumentWidget.restore_state` ignores a blob whose version differs, keeping
-the default (all-visible) layout instead.
-
-Bumped to 4 when the read-only inspection docks were added (#111): an older (v3) blob knows nothing of
-them, so ``restoreState`` would restore cleanly yet leave each new dock in whatever default state QtAds
-invents for an unknown dock, rather than the deliberately-hidden-by-default one this widget builds.
-
-Bumped to 5 when this resource's own log dock was added (#200), for exactly the same reason.
-
-Bumped to 6 when the per-file checksum dock was added (#244), likewise.
-
-Bumped to 7 when the single ``viewer:Viewer`` dock was split into ``viewer:Main View`` and
-``viewer:Description View`` (#299) -- the sharpest case the version exists for: a v6 blob names a dock
-that no longer exists and neither of the ones that replaced it, so every document's saved layout and the
-saved default layout are dropped on first open and rebuilt from the as-built one. That reset is accepted,
-not worked around.
-
-Bumped to 8 when the Files sub-dock was added (#266) -- the ordinary case again: a v7 blob knows nothing
-of that dock, so ``restoreState`` would restore cleanly and leave it in whatever default state QtAds
-invents for an unknown dock rather than the deliberately-hidden-by-default one this widget builds.
-
-Bumped to 9 when the Content Images sub-dock was added (#221), likewise."""
+"""Schema version of :meth:`DocumentWidget.save_state`'s blob: :meth:`DocumentWidget.restore_state`
+ignores a blob whose version differs, keeping the layout it has. Bump it for a **semantic** change to
+the blob only. A change to the dock set -- a dock added, removed or renamed, which is what every bump
+up to 9 was for -- needs none since #320: the dock set is per type, and a restore tolerates a blob
+whose set differs from the widget's (QtAds skips a named dock that isn't built, and the restore
+re-attaches a built dock the blob never named, hidden, where construction puts it), so nothing has to
+be remembered and nobody's layouts reset."""
 
 STATE_DOCK_MANAGER_KEY: Final = "dock_manager"
 STATE_STASHED_SIZES_KEY: Final = "stashed_sizes"
@@ -131,9 +114,28 @@ remedy for every lock reason. The specs' own user-facing word for this is "upgra
 the internal name."""
 
 APPLY_DEFAULT_LAYOUT_TOOLTIP: Final = "Apply default layout"
-SAVE_DEFAULT_LAYOUT_LABEL: Final = "Save current layout as default"
-RESET_DEFAULT_LAYOUT_LABEL: Final = "Reset default layout"
-"""What the default-layout toolbar action and its two menu entries say (#62)."""
+SAVE_DEFAULT_LAYOUT_LABEL: Final = "Save current layout as default for {type}"
+RESET_DEFAULT_LAYOUT_LABEL: Final = "Reset default layout for {type}"
+"""What the default-layout toolbar action and its two menu entries say (#62); the two entries name the
+type whose default they write and clear (#320), since a default is per type."""
+
+TYPE_DOCK_NAMES: Final[Mapping[str, frozenset[str]]] = MappingProxyType(
+    {REFERENCE_IMAGES_PLUGIN.key: frozenset({CONTENT_IMAGES_DOCK_NAME})}
+)
+"""The sub-docks each resource type adds to the common shell ([[plugins#dock-shell]], #320), keyed by
+the type's main key: a reference pack's Content Images (#221); a tutorial's player once it exists
+(#317); a collection nothing. [[plugins#core-vs-plugin]] applied to docks -- the viewers, the editors
+and the inspection set are every document's, and the rest is the type's own."""
+
+
+def type_dock_names(layout_type: str) -> frozenset[str]:
+    """The object names of the sub-docks ``layout_type`` adds to the common shell (#320).
+
+    :param layout_type: a type's main key, as :attr:`DocumentWidget.layout_type` gives it.
+    :returns: the type's own dock names; empty for a type declaring none, the empty type, and a type
+        whose plugin isn't installed here.
+    """
+    return TYPE_DOCK_NAMES.get(layout_type, frozenset())
 
 
 def viewer_mode_for(modifiers: Qt.KeyboardModifier, configured: ImageViewerMode) -> ImageViewerMode:
@@ -167,7 +169,11 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
     hidden) editor still reaches the (possibly hidden) viewer through the model's signals, making
     "both" work even when only one is on screen. A document **opens as a reader** (#299): the two
     viewer docks -- Main View on the left, Description View on the right -- are the only ones shown,
-    with the editors and the inspection set hidden behind their toolbar toggles. Carries the
+    with the editors and the inspection set hidden behind their toolbar toggles. The dock **set** is
+    the common shell plus whatever the resource's type declares (:data:`TYPE_DOCK_NAMES`, #320),
+    decided **once**, when the type is first known -- at construction, or at the deferred first read
+    of a session-restore placeholder (#66) -- and never touched by a later type switch; a default
+    layout is saved per type, and a restore tolerates a blob written against another set. Carries the
     closed-dock-size workaround
     ([[packaging-deployment#qml-regression]]): `CDockManager.splitterSizes` are stashed on
     ``viewToggled(False)`` -- confirmed, against this QtAds version, to still fire with the area at
@@ -418,11 +424,18 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         # folder with no queue in sight, and only the one row that enqueues a verify goes quiet (#266)
         self.__files_dock: Final = self.__add_files_dock(model, self.__checksums)
 
-        # exists whatever the resource is, like Files: a document with no archives simply shows an
-        # empty grid, and the dock is the one place a reference pack's images can be looked at (#221)
-        self.__content_images_model: Final = ContentImagesModel(self)
-        self.__content_images_view: Final = self.__build_content_images_view(self.__content_images_model)
-        self.__content_images_dock: Final = self.__add_content_images_dock(model, self.__content_images_view)
+        # the type's own docks come last, after the whole common shell (#320): today only a reference
+        # pack's Content Images (#221), the one place its archives' images can be looked at. A pending
+        # placeholder (#66) has no type yet, so its set is completed at its first read instead
+        # (__add_type_docks_on_first_read) -- which is why none of these is Final
+        self.__content_images_model: ContentImagesModel | None = None
+        self.__content_images_view: ContentImagesView | None = None
+        self.__content_images_dock: QtAds.CDockWidget | None = None
+        self.__awaiting_type = model.pending
+        self.__type_docks: dict[str, QtAds.CDockWidget] = self.__add_type_docks(type_dock_names(self.layout_type))
+        # the archives are found relative to the path, so a path change re-enumerates them; connected
+        # once here rather than by the dock that needs it, which a type change removes and rebuilds
+        model.path_changed.connect(lambda _path: self.__refresh_content_images())  # type: ignore[attr-defined]
 
         # unlike the checksum pair, these need no queue: both operations are a handful of renames over
         # one directory, run inline the way `RehuDocumentModel.convert` -- their exact mirror -- is
@@ -444,11 +457,15 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         self.__apply_default_layout_action.triggered.connect(self.apply_default_layout)
         self.addAction(self.__apply_default_layout_action)
 
-        self.__save_default_layout_action: Final = QAction(SAVE_DEFAULT_LAYOUT_LABEL, self)
+        self.__save_default_layout_action: Final = QAction(self)
         self.__save_default_layout_action.triggered.connect(self.__on_save_default_layout)
 
-        self.__reset_default_layout_action: Final = QAction(RESET_DEFAULT_LAYOUT_LABEL, self)
+        self.__reset_default_layout_action: Final = QAction(self)
         self.__reset_default_layout_action.triggered.connect(self.__on_reset_default_layout)
+
+        # both entries name the type whose default they touch, and follow a type switch (#320)
+        self.__update_default_layout_actions()
+        model.resource_type_changed.connect(self.__update_default_layout_actions)  # type: ignore[attr-defined]
 
         # the main action carries the other two as its menu, the same shape ChecksumActions gives
         # Verify Old/Verify All (#244) -- one toolbar button both applies the default and offers the
@@ -484,12 +501,17 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         inspection_docks = (self.__save_preview_dock, self.__on_disk_dock, self.__log_dock)
         if self.__checksum_dock is not None:
             inspection_docks = (*inspection_docks, self.__checksum_dock)
-        inspection_docks = (*inspection_docks, self.__files_dock, self.__content_images_dock)
+        inspection_docks = (*inspection_docks, self.__files_dock)
         for dock in (*self.__viewer_docks.values(), *self.__editor_docks.values(), *inspection_docks):
             toolbar.addAction(dock.toggleViewAction())
         # the layout button sits at the far end on its own, away from everything that acts on the
-        # document or its docks (#311)
-        toolbar.addWidget(ToolBarStretch())
+        # document or its docks (#311). The stretch's action is what a type dock's toggle is inserted
+        # ahead of (#320), so the type's toggles close the common run whenever they are built -- here,
+        # or at a placeholder's first read
+        self.__toolbar: Final = toolbar
+        self.__toolbar_stretch_action: Final = toolbar.addWidget(ToolBarStretch())
+        for dock in self.__type_docks.values():
+            toolbar.insertAction(self.__toolbar_stretch_action, dock.toggleViewAction())
         toolbar.addAction(self.__apply_default_layout_action)
         # matched to the toolbar's own icon size, not a sibling button's full height (which also
         # carries the button's own hit-area margin around the glyph) -- a chip as tall as the icon
@@ -500,8 +522,16 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         # what "Apply default layout" falls back to (:meth:`apply_default_layout`) while no usable
         # default is saved (#62): this document's own as-built layout, not an arbitrary one.
         # Layout-only, same subset the saved default itself is, so the fallback resets docks without
-        # also resetting per-widget state the user has since changed.
-        self.__factory_state: Final = self.save_layout_state()
+        # also resetting per-widget state the user has since changed. Recaptured when a placeholder's
+        # first read completes the dock set, since the as-built layout is the set's.
+        self.__factory_state = self.save_layout_state()
+
+        self.__opened_with_state: bytes | None = None
+        """The session blob a :attr:`~RehuDocumentModel.pending` placeholder was opened with (#66,
+        #320), kept until its first read: the placeholder is typeless, so its type's docks don't exist
+        when the blob is first restored, and what the blob says about them -- a reference pack's
+        Content Images left open -- can only land once the read has built them. The stored layout is
+        what a restored document gets, not a default, so it is restored again then."""
 
     @property
     def model(self) -> RehuDocumentModel:
@@ -538,6 +568,13 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         """This document's Discard Backups action (#193), offered exactly while the resource still holds
         retained backups."""
         return self.__conversion_backups
+
+    @property
+    def layout_type(self) -> str:
+        """The key this document's dock set and default layout are chosen by (#320): its resource
+        type's main key, aliases normalized through the registry ([[plugins#plugin-blocks]]); a type
+        whose plugin isn't installed keys by its own spelling, and a type-less document by ``""``."""
+        return self.__model.document.plugins.main_key(self.__model.resource_type)
 
     def detach(self) -> None:
         """Let go of everything app-wide this document is attached to, before it is destroyed.
@@ -626,9 +663,17 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         """Restore a dock layout previously captured by :meth:`save_state`.
 
         :param state: the cbor2-encoded state to restore.
+        A blob written against a **different dock set** restores too (#320) -- a type's default onto a
+        document switched to that type, a reference pack's own session layout onto its still-typeless
+        placeholder: QtAds skips a named dock that isn't built, and a built dock the blob never named
+        is left closed with no area, which is repaired here by re-attaching it hidden into the
+        Description View's area, exactly where construction stacks it -- otherwise its next toggle
+        would open it floating.
+
+        :param state: the cbor2-encoded state to restore.
         :returns: ``True`` if the dock manager's own state was restored successfully; ``False`` if
             ``state`` was empty, malformed, not in the expected shape, or of an incompatible
-            :data:`STATE_VERSION` (in which case the default layout is kept).
+            :data:`STATE_VERSION` -- in each of which the current layout is kept.
         """
         try:
             values: Any = cbor2.loads(state)
@@ -662,6 +707,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         finally:
             self.__restoring_layout = False
         if restored:
+            self.__reattach_unmentioned_docks()
             # re-select the dock that was current -- restoreState above only recovers the current
             # tab within each area, not which of two split (viewer/editor) areas actually had focus
             current_dock_state = values.get(STATE_CURRENT_DOCK_KEY, b"")
@@ -676,6 +722,18 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
                 if widget is not None and isinstance(saved, bytes):
                     widget.restore_state(saved)
         return restored
+
+    def __reattach_unmentioned_docks(self) -> None:
+        """Put back, hidden, every dock a just-restored layout never named (#320).
+
+        QtAds leaves such a dock closed and area-less (measured offscreen against this QtAds version);
+        shown from there it would open as a floating window. Re-adding it to the Description View's
+        area and hiding it makes its next toggle land where the dock always lives instead. A closed
+        dock that the layout *did* name keeps its area, so only the area-less ones are touched.
+        """
+        for dock in self.__dock_manager.dockWidgetsMap().values():
+            if dock.dockAreaWidget() is None:
+                self.__stack_hidden_beside_description_view(dock)
 
     def __stateful_widgets(self) -> dict[str, StatefulWidget]:
         """The persisting widgets (`StatefulWidget`) across all docks, keyed by object name.
@@ -785,10 +843,14 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         A type switch makes a different block active ([[plugins#plugin-blocks]]): the outgoing block's
         editors must go away, the incoming block's fields render, and the set of unknown-field and
         inactive-block fallback rows changes -- whole rows that the fallbacks' own reactive show/hide
-        can't add or remove, so the grids are rebuilt rather than merely toggled. Each existing dock
-        keeps its identity, position, and toggle action (the dock *set* never changes across a switch --
-        the tabs are fixed surfaces); only its **content grid** is swapped, so the user's layout, the
-        inspection docks, and the persisted-layout blob all stay valid.
+        can't add or remove, so the grids are rebuilt rather than merely toggled. Each existing field
+        dock keeps its identity, position, and toggle action (the field tabs are fixed surfaces); only
+        its **content grid** is swapped. The type's *own* docks are **not** touched by a switch (#320):
+        the set was decided when the type was first known, and a switch that added or removed a dock
+        would disturb the very layout the user is working in -- including the dock the switch was made
+        from. The one time this method completes the set is a session-restore placeholder's first read
+        (:meth:`__add_type_docks_on_first_read`), which is also when the session blob it was opened with
+        is restored onto the completed set (:attr:`__opened_with_state`).
 
         A stateful widget's own UI state (e.g. the path editor's expand toggle) is captured before the
         swap and restored into its freshly-built counterpart afterwards -- keyed by object name, the same
@@ -834,6 +896,47 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
                 widget.restore_state(state)
         if refocus_main_editor:
             self.__focus_first_child(self.__editor_docks[EDITOR_MAIN_TAB].widget())  # pylint: disable=no-member
+        self.__add_type_docks_on_first_read()
+
+    def __add_type_docks_on_first_read(self) -> None:
+        """Complete a session-restore placeholder's dock set once its first read has named its type
+        (#66, #320), then give it the layout it was opened with.
+
+        A placeholder is built typeless, so it has the common shell and nothing else; its real type's
+        docks are added here, hidden, exactly as a loaded document builds them, with their toggles
+        closing the toolbar's common run. Runs **once**: the flag is cleared on the first non-pending
+        rebuild, so a later type switch never comes back through here. The as-built layout is
+        recaptured, since it is the completed set's. Then the same rule as at open
+        (:meth:`adopt_layout`): the stored layout it was opened with, restored again so what it says
+        about the new docks lands, else the type's current layout.
+        """
+        if not self.__awaiting_type or self.__model.pending:
+            return
+        self.__awaiting_type = False
+        self.__type_docks = self.__add_type_docks(type_dock_names(self.layout_type))
+        for dock in self.__type_docks.values():
+            self.__toolbar.insertAction(self.__toolbar_stretch_action, dock.toggleViewAction())
+        self.__factory_state = self.save_layout_state()
+        opened_with, self.__opened_with_state = self.__opened_with_state, None
+        self.adopt_layout(opened_with)
+
+    def __add_type_docks(self, names: frozenset[str]) -> dict[str, QtAds.CDockWidget]:
+        """Build the docks ``names`` asks for, each hidden and stacked with the inspection set (#320).
+
+        The one place a dock object name is turned into a built dock, so the per-type declaration
+        (:data:`TYPE_DOCK_NAMES`) stays a list of names and this widget stays the only thing that knows
+        how each is made.
+
+        :param names: the type's dock names (:func:`type_dock_names`).
+        :returns: the built docks, keyed by object name.
+        """
+        docks: dict[str, QtAds.CDockWidget] = {}
+        if CONTENT_IMAGES_DOCK_NAME in names:
+            self.__content_images_model = ContentImagesModel(self)
+            self.__content_images_view = self.__build_content_images_view(self.__content_images_model)
+            self.__content_images_dock = self.__add_content_images_dock(self.__content_images_view)
+            docks[CONTENT_IMAGES_DOCK_NAME] = self.__content_images_dock
+        return docks
 
     @staticmethod
     def __focus_first_child(widget: QWidget) -> None:
@@ -971,32 +1074,71 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         """
         save_or_prompt_retry(self, self.__model)
 
+    def adopt_layout(self, state: bytes | None) -> None:
+        """Give a document being opened its layout (#62, #320) -- what `DocumentsDock` calls once the
+        widget is parented into the hierarchy (restoring earlier feeds saved splitter sizes to a
+        never-laid-out widget). Two cases and no third:
+
+        - opened with a **stored** layout (a session restore): that layout; if it cannot restore
+          (corrupted, another :data:`STATE_VERSION`), the type's current layout -- its saved default,
+          else as-built;
+        - opened with **none** (a file opened fresh): the type's current layout, the same way.
+
+        A :attr:`~RehuDocumentModel.pending` placeholder keeps its stored blob
+        (:attr:`__opened_with_state`) to restore again once its first read has built its type's docks,
+        and the fallback is decided then, against the real type.
+
+        :param state: the document's own stored layout, or ``None`` when it has none.
+        """
+        if state is not None and self.__model.pending:
+            self.restore_state(state)
+            self.__opened_with_state = state
+            return
+        if state is not None and self.restore_state(state):
+            return
+        if shared_default_layout_settings().state_for(self.layout_type):
+            self.apply_default_layout()
+
     def apply_default_layout(self) -> None:
-        """Apply the saved default dock layout, or this document's own as-built layout when no
-        **usable** default is saved (#62) -- the toolbar action's slot, and what `DocumentsDock` calls
-        on every document it opens while a default is defined.
+        """Apply this type's saved default dock layout, or this document's own as-built layout when no
+        **usable** default is saved for it (#62, #320) -- the toolbar action's slot, and what
+        :meth:`adopt_layout` reaches for on a document opened with no stored layout. Reads the type
+        the document has **now**: a tutorial switched to a reference pack applies the pack default,
+        onto the docks it has.
 
         Falls back on :meth:`restore_state` *failing*, not merely on the stored blob being empty: an
-        empty blob is "never saved" (or reset), but a non-empty one can be just as unusable -- written
-        under an older :data:`STATE_VERSION`, or corrupted -- and treating it as a default would make
-        this a permanent silent no-op rather than the reset the action promises.
+        empty blob is "never saved" (or reset), but a non-empty one can be just as unusable --
+        corrupted, or of another :data:`STATE_VERSION` -- and treating it as a default would make this
+        a permanent silent no-op rather than the reset the action promises.
         """
-        if not self.restore_state(shared_default_layout_settings().state):
+        if not self.restore_state(shared_default_layout_settings().state_for(self.layout_type)):
             self.restore_state(self.__factory_state)
 
     def __on_save_default_layout(self) -> None:
-        """Save this document's current dock layout as the default every newly opened document adopts
-        (#62) -- the layout-only subset (:meth:`save_layout_state`), never per-document widget state."""
+        """Save this document's current dock layout as the default every newly opened document of its
+        type adopts (#62, #320) -- the layout-only subset (:meth:`save_layout_state`), never
+        per-document widget state."""
         settings = shared_default_layout_settings()
-        settings.state = self.save_layout_state()
+        settings.states[self.layout_type] = self.save_layout_state()  # pylint: disable=unsupported-assignment-operation
         settings.save(persistent_settings())
 
     def __on_reset_default_layout(self) -> None:
-        """Clear the saved default layout (#62); a later "Apply default layout" falls back to each
-        document's own as-built layout again."""
+        """Clear this type's saved default layout and no other's (#62, #320); a later "Apply default
+        layout" falls back to each document's own as-built layout again."""
         settings = shared_default_layout_settings()
-        settings.state = b""
+        settings.states.pop(self.layout_type, None)
         settings.save(persistent_settings())
+
+    def __update_default_layout_actions(self) -> None:
+        """Label the Save/Reset entries with the type whose default they touch, and offer them only
+        while there is one (#320): a type-less document -- brand new, its type not picked yet -- has
+        nothing to key a default by, so Apply falls back to as-built and neither entry is enabled."""
+        layout_type = self.layout_type
+        label = type_label(layout_type)
+        self.__save_default_layout_action.setText(SAVE_DEFAULT_LAYOUT_LABEL.format(type=label))
+        self.__reset_default_layout_action.setText(RESET_DEFAULT_LAYOUT_LABEL.format(type=label))
+        self.__save_default_layout_action.setEnabled(bool(layout_type))
+        self.__reset_default_layout_action.setEnabled(bool(layout_type))
 
     def __on_image_activated(self, path: Path) -> None:
         """Open ``path`` maximized, on whichever surface the user's settings ask for (#160).
@@ -1048,6 +1190,8 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
 
         :param index: the clicked position in the dock's source.
         """
+        if self.__content_images_view is None:
+            return
         self.__viewer_follows_curation = False
         source = self.__content_images_view.source
         viewer = self.__open_image_viewer(source, index)
@@ -1066,7 +1210,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         """
         if not shared_image_viewer_settings().lightbox_select_last_viewed:
             return
-        if self.__content_images_view.source is not source:
+        if self.__content_images_view is None or self.__content_images_view.source is not source:
             return
         self.__content_images_view.reveal(viewer.current_index)
 
@@ -1212,13 +1356,15 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         Connected to both bounds' signals and reads neither payload: the view takes the pair, and
         either one changing means the pair did.
         """
-        settings = shared_image_viewer_settings()
-        self.__content_images_view.set_clamp(settings.content_rows_min_height, settings.content_rows_max_height)
+        if self.__content_images_view is not None:
+            settings = shared_image_viewer_settings()
+            self.__content_images_view.set_clamp(settings.content_rows_min_height, settings.content_rows_max_height)
 
     def __on_content_banners_changed(self) -> None:
         """Re-pack the Content Images dock under the newly-applied banner boxes (#221), same shape as
         :meth:`__on_content_rows_changed`."""
-        self.__content_images_view.set_flags(self.__content_display_flags())
+        if self.__content_images_view is not None:
+            self.__content_images_view.set_flags(self.__content_display_flags())
 
     @staticmethod
     def __content_display_flags() -> ContentDisplayFlags:
@@ -1240,7 +1386,8 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
 
         :param visible: whether previews are newly visible; ``False`` dismisses an open viewer.
         """
-        self.__content_images_view.set_previews_visible(visible)
+        if self.__content_images_view is not None:
+            self.__content_images_view.set_previews_visible(visible)
         if not visible and self.__image_viewer is not None:
             self.__image_viewer.close()
 
@@ -1541,16 +1688,17 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         view.image_activated.connect(self.__on_content_image_activated)
         return view
 
-    def __add_content_images_dock(self, model: RehuDocumentModel, view: ContentImagesView) -> QtAds.CDockWidget:
-        """Build the Content Images dock, stacked with the inspection docks and hidden (#221).
+    def __add_content_images_dock(self, view: ContentImagesView) -> QtAds.CDockWidget:
+        """Build the Content Images dock, stacked with the inspection docks and hidden (#221) -- a
+        reference pack's own dock (#320), not every document's.
 
         The same shape and the same place as the #111 pair. Its archives are enumerated **when the
         dock is shown**, not at construction: enumeration opens every archive the resource holds, over
         a NAS mount for the packs that matter, and a document opened to read its fields should not pay
         that. Re-enumerated on every show, which is also how a changed extension set (the Images /
-        Files page) reaches it, and on a path change, since the archives are found relative to it.
+        Files page) reaches it, and on a path change (connected at construction, since the archives
+        are found relative to it).
 
-        :param model: the view-model whose resource the dock browses.
         :param view: the grid.
         :returns: the dock, hidden.
         """
@@ -1563,11 +1711,13 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             min_content_height=CONTENT_IMAGES_DOCK_MIN_HEIGHT,
         )
         dock.viewToggled.connect(lambda visible: self.__refresh_content_images() if visible else None)
-        model.path_changed.connect(lambda _path: self.__refresh_content_images())  # type: ignore[attr-defined]
         return dock
 
     def __refresh_content_images(self) -> None:
-        """Re-enumerate this resource's content images, if the dock is up to show them (#221)."""
+        """Re-enumerate this resource's content images, if the dock exists and is up to show them
+        (#221, #320)."""
+        if self.__content_images_dock is None or self.__content_images_model is None:
+            return
         if self.__content_images_dock.isClosed():
             return
         extensions = shared_reference_images_settings().content_image_extensions
@@ -1635,15 +1785,25 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             (near-zero) default.
         :returns: the built dock, hidden.
         """
+        dock = self.__make_dock(name, title, content, insert_mode, min_content_height)
+        ActionIconThemeHandler(dock.toggleViewAction(), icon)
+        self.__stack_hidden_beside_description_view(dock)
+        return dock
+
+    def __stack_hidden_beside_description_view(self, dock: QtAds.CDockWidget) -> None:
+        """Stack ``dock`` into the Description View's area and hide it -- how every inspection dock is
+        placed at construction (#111), and where a restored layout's unmentioned dock is put back
+        (:meth:`__reattach_unmentioned_docks`, #320).
+
+        :param dock: the dock to place; a fresh one, or one QtAds left area-less.
+        """
         neighbour = self.__description_view_dock()
         area = neighbour.dockAreaWidget() if neighbour is not None else None
-        dock = self.__make_dock(name, title, content, insert_mode, min_content_height)
         if area is not None:
             self.__dock_manager.addDockWidget(QtAds.CenterDockWidgetArea, dock, area)
         else:
             # only reachable with no viewer docks at all, which this document's composition never is
             self.__dock_manager.addDockWidget(QtAds.RightDockWidgetArea, dock)
-        ActionIconThemeHandler(dock.toggleViewAction(), icon)
         # hidden by default: a first-run layout shows the two viewers and none of these
         self.__hide_dock(dock)
         # a just-added dock opens as the current tab, which would leave an arbitrary inspection tab
@@ -1651,7 +1811,6 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         # which is what every one of them used to do with its own copy of this guard
         if neighbour is not None:
             neighbour.setAsCurrentTab()
-        return dock
 
     def __make_dock(
         self,

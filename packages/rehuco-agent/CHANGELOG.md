@@ -12,8 +12,8 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 ### Added
 
-- A **Content Images** panel on every document, hidden by default: the images inside a reference pack's
-  archives, in rows justified to the panel's width and in natural order, each archive opening with a
+- A **Content Images** panel on every reference-images document, hidden by default: the images inside
+  the pack's archives, in rows justified to the panel's width and in natural order, each archive opening with a
   banner naming it and counting its images. A banner click folds its images away and a second click
   brings them back; the banner of the group being scrolled through stays pinned at the top. A click
   selects an image and a status line under the grid names it, or the one under the pointer; the arrow
@@ -35,6 +35,14 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 ### Changed
 
+- A document's panels are the common set plus what its type adds — today the Content Images panel on a
+  reference pack — and the **default layout is saved per type**: *Save current layout as default for
+  Tutorial* and *Reset default layout for Tutorial* name the type they act on, and a type with no default
+  opens as built. A document restored with the session keeps the layout that was stored for it; one opened
+  fresh gets its type's default; changing a document's type in the editor leaves its panels and layout as
+  they are, and the layout button then applies the new type's default. The previous single default layout
+  is dropped. Saved layouts survive a panel being added to one type: a layout now restores onto a document
+  whose panels differ from the ones it was saved with.
 - The maximized viewer paints an opaque background (the dark grey code editors use, configurable) instead
   of dimming the document underneath, and its close, thumbnail-row and info buttons appear only while the
   pointer is near them, like the prev/next bands.

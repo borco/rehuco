@@ -35,6 +35,8 @@ from rehuco_agent.settings.document_session_settings import DocumentSessionSetti
 from rehuco_agent.settings.identity_settings import IdentitySettings
 from rehuco_core import (
     CURRENT_FORMAT_VERSION,
+    REFERENCE_IMAGES_PLUGIN,
+    TUTORIAL_PLUGIN,
     LockReasonKind,
     RehuDocument,
     RenameCoordinator,
@@ -2025,7 +2027,7 @@ def test_a_freshly_opened_document_adopts_the_saved_default_layout(mocker: Mocke
     first = dock.open_document(FAKE_PATH)
     first_on_disk = first._DocumentWidget__on_disk_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
     first_on_disk.toggleView(True)
-    shared_default_layout_settings().state = first.save_layout_state()
+    shared_default_layout_settings().states[TUTORIAL_PLUGIN.key] = first.save_layout_state()  # pylint: disable=unsupported-assignment-operation
 
     second = dock.open_document(OTHER_PATH)
 
@@ -2052,7 +2054,7 @@ def test_a_session_restored_layout_wins_over_the_saved_default(mocker: MockerFix
     own_state = first.save_state()
     first_on_disk = first._DocumentWidget__on_disk_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
     first_on_disk.toggleView(True)
-    shared_default_layout_settings().state = first.save_layout_state()
+    shared_default_layout_settings().states[TUTORIAL_PLUGIN.key] = first.save_layout_state()  # pylint: disable=unsupported-assignment-operation
 
     second = dock.open_document(OTHER_PATH, state=own_state)
 
@@ -2077,7 +2079,7 @@ def test_an_unusable_session_layout_falls_through_to_the_saved_default(mocker: M
     first = dock.open_document(FAKE_PATH)
     first_on_disk = first._DocumentWidget__on_disk_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
     first_on_disk.toggleView(True)
-    shared_default_layout_settings().state = first.save_layout_state()
+    shared_default_layout_settings().states[TUTORIAL_PLUGIN.key] = first.save_layout_state()  # pylint: disable=unsupported-assignment-operation
 
     second = dock.open_document(OTHER_PATH, state=b"not a layout blob")
 
@@ -2098,12 +2100,55 @@ def test_a_freshly_opened_document_keeps_its_own_layout_with_no_saved_default(
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    assert shared_default_layout_settings().state == b""
+    assert not shared_default_layout_settings().states
 
     widget = dock.open_document(FAKE_PATH)
 
     on_disk = widget._DocumentWidget__on_disk_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert on_disk.toggleViewAction().isChecked() is False
+
+
+def test_a_lazily_restored_reference_pack_gets_its_own_layout_once_it_loads(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """A session-restored reference pack is a typeless placeholder until its tab shows, so its own
+    remembered layout -- naming the Content Images dock only a pack builds -- cannot restore at
+    construction; it is applied once the load has built the type's docks, and wins over the type's
+    saved default (#66, #320).
+
+    **Test steps:**
+
+    * open a reference pack, capture its layout with Content Images visible, and save a default with
+      it hidden; close it
+    * restore a session handing the pack that blob, unfocused, so it stays pending; verify no Content
+      Images dock exists yet
+    * show the dock so the tab loads; verify Content Images exists and is visible
+    """
+    pack = {"type": "ReferenceImages", "sources": [{"title": "Pack", "primary": True}]}
+    load_document(mocker, pack)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    first = dock.open_document(FAKE_PATH)
+    shared_default_layout_settings().states[REFERENCE_IMAGES_PLUGIN.key] = first.save_layout_state()  # pylint: disable=unsupported-assignment-operation
+    content_images = first._DocumentWidget__content_images_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert content_images is not None
+    content_images.toggleView(True)
+    own_state = first.save_state()
+    dock.close_all()
+
+    session = DocumentSessionSettings()
+    session.items[FAKE_PATH] = DocumentSessionSettings.Item(open=True, state=own_state)  # pylint: disable=unsupported-assignment-operation
+    dock.restore_session(session)
+    restored = dock.open_document_widgets()[0]
+    assert restored.model.pending is True
+    assert restored._DocumentWidget__content_images_dock is None  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    dock.show()
+    qtbot.waitUntil(lambda: not restored.model.pending, timeout=int(TIMEOUT * 1000))
+
+    content_images = restored._DocumentWidget__content_images_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert content_images is not None
+    assert content_images.toggleViewAction().isChecked() is True
 
 
 # endregion

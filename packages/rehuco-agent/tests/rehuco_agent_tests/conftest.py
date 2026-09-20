@@ -98,6 +98,21 @@ class FakeSettings:  # pylint: disable=invalid-name,missing-function-docstring,r
         del type
         return self.__data.get(self.__prefix + key, default)
 
+    def childGroups(self) -> list[str]:  # noqa: N802
+        """The first path segment of every key nested at least one level under the open group -- what
+        `DefaultLayoutSettings` enumerates its per-type entries by (#320)."""
+        prefix = self.__prefix
+        nested = (key[len(prefix) :] for key in self.__data if key.startswith(prefix))
+        return sorted({rest.split("/")[0] for rest in nested if "/" in rest})
+
+    def remove(self, key: str) -> None:
+        """Drop ``key`` and everything under it from the open group -- ``""`` empties the whole group,
+        as ``QSettings`` does."""
+        full = self.__prefix + key
+        for stored in list(self.__data):
+            if stored == full or stored.startswith(full + "/") or (not key and stored.startswith(full)):
+                del self.__data[stored]
+
     def beginWriteArray(self, prefix: str, size: int = -1) -> None:  # noqa: N802
         del size
         self.__arrays.append([prefix, self.__prefix, 0])
