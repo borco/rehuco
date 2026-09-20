@@ -4,9 +4,9 @@ import threading
 from collections.abc import Hashable
 from typing import Final
 
-from PySide6.QtCore import QEvent, QPoint, QSize, Qt, QThreadPool
-from PySide6.QtGui import QImage, QPixmapCache
-from PySide6.QtWidgets import QApplication, QStyleOptionViewItem
+from PySide6.QtCore import QEvent, QPoint, QPointF, QSize, Qt, QThreadPool
+from PySide6.QtGui import QImage, QMouseEvent, QPixmapCache
+from PySide6.QtWidgets import QApplication, QStyleOptionViewItem, QWidget
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -21,6 +21,25 @@ IMAGE_WIDTH: Final = 80
 OWNER: Final = object()
 OTHER_OWNER: Final = object()
 """Two surfaces asking the same loader, as the grid and the lightbox row it opens do."""
+
+
+def send_mouse_move(widget: QWidget, point: QPoint) -> None:
+    """Deliver a mouse-move synchronously, straight to ``widget``, bypassing the platform's own input
+    queue: ``QTest``/``qtbot.mouseMove`` posts through that queue, which a fully saturated parallel run
+    can starve or drop from outright, well past any timeout a test can afford to wait out.
+
+    :param widget: the widget the move lands on.
+    :param point: the position, in ``widget``'s own coordinates.
+    """
+    event = QMouseEvent(
+        QEvent.Type.MouseMove,
+        QPointF(point),
+        QPointF(widget.mapToGlobal(point)),
+        Qt.MouseButton.NoButton,
+        Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    QApplication.sendEvent(widget, event)
 
 
 class RecordingSource:
@@ -380,14 +399,26 @@ def test_the_pointer_over_an_item_reports_it_at_once_and_leaving_reports_none(
     """``hovered_index`` follows the pointer immediately -- no tooltip delay -- and reads ``-1`` over a
     gap, once the pointer leaves, and once the source is swapped from under it.
 
+    Moved with :func:`send_mouse_move`, not ``qtbot.mouseMove``: the latter goes through the platform's
+    own input queue, and under a fully saturated ``cov-parallel`` run that queue can drop a move outright
+    rather than merely delay it -- measured directly, with the row's geometry, its gate and its loader
+    all otherwise exactly as expected, `hovered_index` simply never fired. The `Leave` event two lines
+    below it, sent the same synchronous way this whole test now sends every move, never once failed
+    alongside it -- the tell that the queue, not this widget, was dropping them. Sending the
+    `QMouseEvent` straight to the widget bypasses that queue the same way.
+
     **Test steps:**
 
-    * build a shown row over three images and move the pointer onto the second, then the first
-    * verify each was announced once
+    * build a shown row over three images, holding the gate so every item stays a placeholder square
+      -- a landed decode would re-lay the row out from under the coordinates just computed, since a
+      relayout is only scheduled, not applied, until the event loop next turns
+    * move the pointer onto the second, then the first, and verify each was announced once
     * move past the last item, then out of the row, and verify ``-1`` each time
     * hover the first again, swap the source, and verify ``-1``
+    * release the gate so the held worker does not leak past the test
     """
     source = RecordingSource(3)
+    source.gate.clear()
     row = ThumbnailRow(loader, height=20)
     qtbot.addWidget(row)
     row.set_source(source)
@@ -398,24 +429,27 @@ def test_the_pointer_over_an_item_reports_it_at_once_and_leaving_reports_none(
     assert model is not None
     hovered: list[int] = []
     row.hovered_index.connect(hovered.append)
+    viewport = row.viewport()
 
-    qtbot.mouseMove(row.viewport(), row.visualRect(model.index(1, 0)).center())
-    qtbot.mouseMove(row.viewport(), row.visualRect(model.index(0, 0)).center())
-    qtbot.waitUntil(lambda: hovered == [1, 0])
+    send_mouse_move(viewport, row.visualRect(model.index(1, 0)).center())
+    send_mouse_move(viewport, row.visualRect(model.index(0, 0)).center())
+    assert hovered == [1, 0]
 
-    qtbot.mouseMove(row.viewport(), QPoint(row.viewport().width() - 2, 10))
-    qtbot.waitUntil(lambda: hovered == [1, 0, -1])
-    qtbot.mouseMove(row.viewport(), row.visualRect(model.index(0, 0)).center())
-    qtbot.waitUntil(lambda: hovered == [1, 0, -1, 0])
+    send_mouse_move(viewport, QPoint(viewport.width() - 2, 10))
+    assert hovered == [1, 0, -1]
+    send_mouse_move(viewport, row.visualRect(model.index(0, 0)).center())
+    assert hovered == [1, 0, -1, 0]
     QApplication.sendEvent(row, QEvent(QEvent.Type.Leave))
     assert hovered == [1, 0, -1, 0, -1]
 
     # onto the second, not back onto the first: the pointer is still there, and a move to where it
     # already is is no move at all
-    qtbot.mouseMove(row.viewport(), row.visualRect(model.index(1, 0)).center())
-    qtbot.waitUntil(lambda: hovered[-1] == 1)
+    send_mouse_move(viewport, row.visualRect(model.index(1, 0)).center())
+    assert hovered[-1] == 1
     row.set_source(RecordingSource(1))
     assert hovered[-1] == -1
+
+    source.gate.set()
 
 
 def test_a_new_height_re_requests_at_that_height(loader: ThumbnailLoader, qtbot: QtBot, mocker: MockerFixture) -> None:
