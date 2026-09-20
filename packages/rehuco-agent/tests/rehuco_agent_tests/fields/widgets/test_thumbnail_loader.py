@@ -56,6 +56,11 @@ class RecordingSource:
         """The name and no size."""
         return ImageDescription(self.__names[index], None)
 
+    def pixel_size(self, index: int) -> QSize:
+        """Unknown -- nothing here has a header."""
+        del index
+        return QSize()
+
     def load(self, index: int, max_height: int | None) -> QImage:
         """Wait at the gate, record the position, and return a small image -- or a null one."""
         self.started.set()

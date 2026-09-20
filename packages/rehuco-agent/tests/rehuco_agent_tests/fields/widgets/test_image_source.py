@@ -8,7 +8,13 @@ from PIL import Image
 from PySide6.QtCore import QBuffer, QIODevice, QSize, Qt
 from PySide6.QtGui import QImage, QImageReader, QImageWriter
 from pytest_mock import MockerFixture
-from rehuco_agent.fields.widgets.image_source import PathImageSource, decode_image, image_size
+from rehuco_agent.fields.widgets.image_source import (
+    PathImageSource,
+    decode_image,
+    image_size,
+    image_size_at,
+    reading_buffer,
+)
 
 PATH: Final = Path("/fake/info00.png")
 
@@ -129,6 +135,30 @@ def test_image_size_is_the_shown_size_under_an_exif_orientation() -> None:
     assert decode_image(data, 30).size().toTuple() == (20, 30)
 
 
+def test_image_size_at_reads_the_header_off_the_path(mocker: MockerFixture) -> None:
+    """The path-based size opens `QImageReader` straight on the path -- never loading the whole file
+    into memory first, unlike :func:`image_size` -- and reads the same header off it (#321).
+
+    **Test steps:**
+
+    * redirect the reader's construction to a buffer over a real PNG's bytes, keyed by the given path
+    * size the path and verify it matches the PNG's real size
+    """
+    # the buffer is held by this closure for the whole test: a `QImageReader` keeps only a raw
+    # pointer to its device, and a buffer built and handed over in the same expression is freed by
+    # Python the moment that expression returns, before the reader ever reads from it
+    buffer = reading_buffer(png_bytes(200, 100))
+    real_reader = QImageReader
+
+    def reader_for_path(name: str) -> QImageReader:
+        assert name == str(PATH)
+        return real_reader(buffer)
+
+    mocker.patch("rehuco_agent.fields.widgets.image_source.QImageReader", side_effect=reader_for_path)
+
+    assert image_size_at(PATH).toTuple() == (200, 100)
+
+
 def test_a_path_source_reads_and_decodes_the_file(mocker: MockerFixture) -> None:
     """The file-backed source keys by path, names by file name, and decodes the file's bytes.
 
@@ -166,6 +196,26 @@ def test_a_path_source_names_a_file_relative_to_its_base(mocker: MockerFixture) 
     assert with_base.describe(0).byte_size == 42
     assert with_base.describe(1).path_text == str(outside)
     assert PathImageSource([under]).describe(0).path_text == str(under)
+
+
+def test_a_path_source_reads_its_pixel_size_off_the_header_apart_from_describing(mocker: MockerFixture) -> None:
+    """The pixel size is a header read of its own, never part of the description: a description is
+    asked for on every hover and every step, and must stay free of I/O beyond a stat (#321).
+
+    **Test steps:**
+
+    * make the header read answer a size and describe the file
+    * verify describing never touched the header, and asking for the size did
+    """
+    header = mocker.patch("rehuco_agent.fields.widgets.image_source.image_size_at", return_value=QSize(200, 100))
+    mocker.patch.object(Path, "stat", return_value=mocker.Mock(st_size=42))
+    source = PathImageSource([PATH])
+
+    source.describe(0)
+    header.assert_not_called()
+
+    assert source.pixel_size(0).toTuple() == (200, 100)
+    header.assert_called_once_with(PATH)
 
 
 def test_a_path_source_yields_a_null_image_for_an_unreadable_file(mocker: MockerFixture) -> None:

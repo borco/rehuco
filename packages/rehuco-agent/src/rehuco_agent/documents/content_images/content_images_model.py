@@ -65,10 +65,31 @@ class ArchiveImageSource:
         archive = archive_relative_path(entry.archive, self.__rehu_directory)
         return ImageDescription(f"{archive}:/{entry.name}", entry.size)
 
+    def pixel_size(self, index: int) -> QSize:
+        """The member's pixel size off its header, through the cache (#321)."""
+        return member_pixel_size(self.__cache, self.__entries[index])
+
     def load(self, index: int, max_height: int | None) -> QImage:
         """Decode the member through the cache; null when the archive or member cannot be read."""
         data = self.__cache.read(self.__entries[index])
         return decode_image(data, max_height) if data is not None else QImage()
+
+
+def member_pixel_size(cache: ArchiveCache, entry: ContentImageEntry) -> QSize:
+    """One member's pixel size, off a partial inflate first and the whole member only when the header
+    is not in that first slice -- what `HeaderJob` reads its own dimensions column with, and what
+    `ArchiveImageSource.pixel_size` reads the hover overlay's line with.
+
+    :param cache: the open-handle cache to read the member through.
+    :param entry: the member.
+    :returns: the size, or an invalid one when the header cannot be read.
+    """
+    head = cache.read_head(entry)
+    size = image_size(head) if head is not None else QSize()
+    if head is not None and not size.isValid():
+        whole = cache.read(entry)
+        size = image_size(whole) if whole is not None else QSize()
+    return size
 
 
 class JobSignals(QObject):
@@ -149,11 +170,7 @@ class HeaderJob(QRunnable):
         try:
             if self.__stopped.is_set():
                 return
-            head = self.__cache.read_head(self.__entry)
-            size = image_size(head) if head is not None else QSize()
-            if head is not None and not size.isValid():
-                whole = self.__cache.read(self.__entry)
-                size = image_size(whole) if whole is not None else QSize()
+            size = member_pixel_size(self.__cache, self.__entry)
             self.__signals.header_read.emit(self.__entry.key, size)
         finally:
             self.__signals.deleteLater()
