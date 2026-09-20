@@ -83,17 +83,21 @@ def test_clicking_the_link_reveals_the_path_in_the_file_browser(
     * seed a location and build the viewer
     * activate the rendered link
     * verify the reveal helper was called with the location as a `Path`, and nothing else opened it
+
+    The location is an absolute path of the *host's* shape: a Windows drive-letter literal survives
+    the ``file:`` round trip only on Windows, and on POSIX comes back as ``/C:/...``.
     """
     reveal = mocker.patch("rehuco_agent.fields.path_field.reveal_in_file_browser")
-    model.location = "C:/tutorials/foo"
+    location = Path("/tutorials/foo").resolve()
+    model.location = str(location)
     field = PathField("location")
     viewer = field.make_viewer(model.bind(field)).viewer
     assert isinstance(viewer, ElidedLabel)
     qtbot.addWidget(viewer)
 
-    viewer.linkActivated.emit(QUrl.fromLocalFile("C:/tutorials/foo").toString())
+    viewer.linkActivated.emit(QUrl.fromLocalFile(str(location)).toString())
 
-    reveal.assert_called_once_with(Path("C:/tutorials/foo"))
+    reveal.assert_called_once_with(location)
 
 
 def test_viewer_renders_nothing_when_empty(qtbot: QtBot, model: RehuDocumentModel) -> None:
