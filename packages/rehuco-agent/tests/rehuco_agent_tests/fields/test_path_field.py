@@ -5,7 +5,8 @@ expand toggle, and the live suggestion/current-name wiring.
 from pathlib import Path
 
 from borco_pyside.widgets import ElidedLabel
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, QUrl, Signal
+from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields.widgets import ExpandToggleButton, PathEditor
@@ -52,12 +53,13 @@ def editor_suggestion_names(editor: PathEditor) -> list[str]:
 
 # region viewer
 def test_viewer_is_an_elided_native_path_link(qtbot: QtBot, model: RehuDocumentModel) -> None:
-    """The viewer is an ``ElidedLabel`` external link showing the value with native separators.
+    """The viewer is an ``ElidedLabel`` link showing the value with native separators.
 
     **Test steps:**
 
     * seed a posix-style location and build the viewer
-    * verify it's an ``ElidedLabel`` opening external links, showing the native path in a file link
+    * verify it's an ``ElidedLabel`` that does not open external links itself, showing the native path
+      in a file link
     """
     model.location = "C:/tutorials/foo"
     field = PathField("location")
@@ -65,10 +67,33 @@ def test_viewer_is_an_elided_native_path_link(qtbot: QtBot, model: RehuDocumentM
     assert isinstance(viewer, ElidedLabel)
     qtbot.addWidget(viewer)
 
-    assert viewer.openExternalLinks() is True
+    assert viewer.openExternalLinks() is False
     assert viewer.text().startswith('<a href="file:')
     # native separators: backslashes on Windows, forward slashes elsewhere
     assert f">{Path('C:/tutorials/foo')}</a>" in viewer.text()
+
+
+def test_clicking_the_link_reveals_the_path_in_the_file_browser(
+    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
+) -> None:
+    """Activating the link reveals the document's path, instead of handing it to Qt's own opener.
+
+    **Test steps:**
+
+    * seed a location and build the viewer
+    * activate the rendered link
+    * verify the reveal helper was called with the location as a `Path`, and nothing else opened it
+    """
+    reveal = mocker.patch("rehuco_agent.fields.path_field.reveal_in_file_browser")
+    model.location = "C:/tutorials/foo"
+    field = PathField("location")
+    viewer = field.make_viewer(model.bind(field)).viewer
+    assert isinstance(viewer, ElidedLabel)
+    qtbot.addWidget(viewer)
+
+    viewer.linkActivated.emit(QUrl.fromLocalFile("C:/tutorials/foo").toString())
+
+    reveal.assert_called_once_with(Path("C:/tutorials/foo"))
 
 
 def test_viewer_renders_nothing_when_empty(qtbot: QtBot, model: RehuDocumentModel) -> None:

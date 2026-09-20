@@ -40,10 +40,11 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Final, override
 
+from borco_pyside.file_browser import reveal_in_file_browser
 from borco_pyside.theming import ActionIconThemeHandler
 from PySide6.QtCore import QModelIndex, QPersistentModelIndex, Qt, QUrl, Signal
 from PySide6.QtGui import QAction, QDesktopServices, QShowEvent
-from PySide6.QtWidgets import QHeaderView, QToolBar, QWidget
+from PySide6.QtWidgets import QHeaderView, QToolBar, QToolButton, QWidget
 from rehuco_core import IMAGE_EXTENSIONS, FileKind
 
 from ..settings.checksum_settings import shared_checksum_settings
@@ -297,6 +298,7 @@ class FilesView(QWidget):
         path = self.__model.path
         self.__directory = directory
         self.__set_navigable(path is not None and directory is not None and directory != path.parent)
+        self.__ui.reveal_action.setEnabled(directory is not None)
         self.refresh()
 
     def __reset_to_root(self, *_args: object) -> None:
@@ -392,13 +394,25 @@ class FilesView(QWidget):
         ui.refresh_action.triggered.connect(self.refresh)
         ui.up_action.triggered.connect(self.__on_up_triggered)
         ui.home_action.triggered.connect(self.__reset_to_root)
+        ui.reveal_action.triggered.connect(self.__on_reveal_triggered)
 
         toolbar = QToolBar(self)
         # home first: leftmost is the longest jump, and the two are enabled and disabled together
         toolbar.addAction(ui.home_action)
         toolbar.addAction(ui.up_action)
         toolbar.addAction(ui.refresh_action)
+        toolbar.addAction(ui.reveal_action)
+        # no glyph of its own yet (design/icons#314); text keeps it visible until one is drawn
+        reveal_button = toolbar.widgetForAction(ui.reveal_action)
+        if isinstance(reveal_button, QToolButton):
+            reveal_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
         ui.main_layout.insertWidget(0, toolbar)
+
+    def __on_reveal_triggered(self) -> None:
+        """Show the browsed folder in the system's file browser -- a no-op for a path-less document,
+        where the action is disabled anyway."""
+        if self.__directory is not None:
+            reveal_in_file_browser(self.__directory)
 
     @property
     def refresh_action(self) -> QAction:
@@ -415,6 +429,11 @@ class FilesView(QWidget):
         """Goes to the folder above. Disabled at the resource's own folder, which is as far up as this
         browser goes."""
         return self.__ui.up_action
+
+    @property
+    def reveal_action(self) -> QAction:
+        """Shows the browsed folder in the system's file browser. Disabled for a path-less document."""
+        return self.__ui.reveal_action
 
     @property
     def directory(self) -> Path | None:

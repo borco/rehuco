@@ -99,6 +99,14 @@
     <string>Go to the folder above this one.</string>
    </property>
   </action>
+  <action name="reveal_action">
+   <property name="text">
+    <string>Reveal</string>
+   </property>
+   <property name="toolTip">
+    <string>Show the browsed folder in the system's file browser.</string>
+   </property>
+  </action>
  </widget>
  <resources/>
  <connections/>
