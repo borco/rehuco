@@ -129,7 +129,7 @@ class ThumbnailLabel(QLabel):
             self.clicked.emit(self.__path)
 
 
-class ImageStrip(QScrollArea):  # pylint: disable=too-many-instance-attributes
+class ImageStrip(QScrollArea):
     """A row -- or, wrapped, a block -- of screenshot thumbnails ([[plugins#field-toolkit]], #27, #70).
 
     Every image is scaled to ``height`` (preserving aspect ratio) and laid out left-to-right. The two
