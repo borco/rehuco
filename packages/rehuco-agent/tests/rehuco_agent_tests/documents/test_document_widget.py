@@ -83,6 +83,7 @@ from rehuco_agent.documents.document_widget import (
     STATE_VERSION_KEY,
     STATE_WIDGET_STATE_KEY,
     DocumentWidget,
+    type_dock_names,
     viewer_mode_for,
 )
 from rehuco_agent.documents.files_view import FilesView
@@ -113,7 +114,9 @@ from rehuco_agent.settings.image_viewer_settings import shared_image_viewer_sett
 from rehuco_agent.settings.logs_settings import shared_logs_settings
 from rehuco_agent.settings.reference_images_settings import shared_reference_images_settings
 from rehuco_core import (
+    COLLECTION_PLUGIN,
     CURRENT_FORMAT_VERSION,
+    REFERENCE_IMAGES_PLUGIN,
     TUTORIAL_PLUGIN,
     ChecksumReport,
     ContentImageEntry,
@@ -160,6 +163,21 @@ def model() -> RehuDocumentModel:
 def widget(qtbot: QtBot, model: RehuDocumentModel) -> DocumentWidget:
     """A constructed :class:`DocumentWidget` over the sample model, registered for teardown."""
     widget = DocumentWidget(model)
+    qtbot.addWidget(widget)
+    return widget
+
+
+@fixture
+def refimages_model() -> RehuDocumentModel:
+    """A view-model over a reference pack -- the one type that adds a dock of its own (Content
+    Images, #221) to the common shell (#320)."""
+    return RehuDocumentModel(RehuDocument({"type": "ReferenceImages", "sources": [{"title": "Pack", "primary": True}]}))
+
+
+@fixture
+def refimages_widget(qtbot: QtBot, refimages_model: RehuDocumentModel) -> DocumentWidget:
+    """A constructed :class:`DocumentWidget` over the reference pack, registered for teardown."""
+    widget = DocumentWidget(refimages_model)
     qtbot.addWidget(widget)
     return widget
 
@@ -2912,7 +2930,9 @@ def test_hiding_previews_app_wide_folds_the_images_editors_preview_away(widget: 
     assert not pane.isHidden()
 
 
-def test_hiding_previews_app_wide_blanks_the_content_images_grid(widget: DocumentWidget, qtbot: QtBot) -> None:
+def test_hiding_previews_app_wide_blanks_the_content_images_grid(
+    refimages_widget: DocumentWidget, qtbot: QtBot
+) -> None:
     """The app-wide previews toggle reaches the Content Images grid and the description's embedded
     images too -- the grid keeps only its banners, the description shows placeholders -- and a
     document built while previews are hidden starts that way (#71, #221).
@@ -2923,6 +2943,7 @@ def test_hiding_previews_app_wide_blanks_the_content_images_grid(widget: Documen
       followed both ways
     * hide them and build another document; verify both start hidden
     """
+    widget = refimages_widget
     grid = content_images_view(widget)
     description = find_on_surfaces(widget, MarkdownView)[0]
     assert grid.previews_visible
@@ -2936,7 +2957,7 @@ def test_hiding_previews_app_wide_blanks_the_content_images_grid(widget: Documen
     assert description.images_visible
 
     shared_image_viewer_settings().previews_visible = False
-    other = DocumentWidget(RehuDocumentModel(RehuDocument({"type": "Tutorial", "sources": []})))
+    other = DocumentWidget(RehuDocumentModel(RehuDocument({"type": "ReferenceImages", "sources": []})))
     qtbot.addWidget(other)
     assert not content_images_view(other).previews_visible
     assert not find_on_surfaces(other, MarkdownView)[0].images_visible
@@ -3497,22 +3518,52 @@ def test_the_log_surfaces_filters_ride_the_documents_saved_layout(widget: Docume
     assert not restored_ui.show_debugs_action.isChecked()
 
 
-def test_a_layout_saved_before_the_log_dock_existed_is_rejected(widget: DocumentWidget) -> None:
-    """A v4 blob knows nothing of the log dock, so it is ignored rather than restored (#200).
-
-    Restoring it would leave the new dock in whatever state QtAds invents for a dock the layout never
-    mentions, rather than the deliberately-hidden-by-default one this widget builds.
+def test_a_layout_of_another_manual_version_is_rejected(widget: DocumentWidget) -> None:
+    """The version still guards the blob (#200, #320): one written under a different number is ignored
+    rather than restored. Since #320 it stands for a semantic change to the blob alone -- a dock-set
+    change no longer needs a bump, since a restore tolerates a blob from another set.
 
     **Test steps:**
 
-    * roll a saved blob's version back to 4
+    * roll a saved blob's version back one
     * restore it
     * verify it was refused
     """
     values = cbor2.loads(widget.save_state())
-    values[STATE_VERSION_KEY] = 4
+    values[STATE_VERSION_KEY] = STATE_VERSION - 1
 
     assert widget.restore_state(cbor2.dumps(values)) is False
+
+
+def test_a_layout_from_another_dock_set_restores_and_reattaches_what_it_never_named(
+    widget: DocumentWidget, refimages_widget: DocumentWidget, qtbot: QtBot
+) -> None:
+    """A blob written against a different dock set restores (#320): a named dock that isn't built is
+    skipped, and a built dock the blob never named -- which QtAds leaves closed and area-less, to open
+    floating on its next toggle -- is re-attached hidden into the Description View's area.
+
+    **Test steps:**
+
+    * restore a reference pack's blob (naming Content Images) onto a tutorial; verify it restored
+    * restore a tutorial's blob (never naming it) onto a pack whose Content Images is open; verify it
+      restored, the dock is closed and still has an area, and toggling it on shows it docked beside
+      Description View rather than floating
+    """
+    pack_blob = refimages_widget.save_layout_state()
+    tutorial_blob = widget.save_layout_state()
+    assert widget.restore_state(pack_blob) is True
+
+    content_images = content_images_dock(refimages_widget)
+    content_images.toggleView(True)
+    assert refimages_widget.restore_state(tutorial_blob) is True
+
+    assert content_images.isClosed()
+    assert content_images.dockAreaWidget() is not None
+    content_images.toggleView(True)
+    qtbot.wait(1)
+    assert not content_images.isFloating()
+    description = refimages_widget._DocumentWidget__viewer_docks[VIEWER_DESCRIPTION_TAB]  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert content_images.dockAreaWidget() is description.dockAreaWidget()  # pylint: disable=no-member
 
 
 # endregion
@@ -3769,23 +3820,51 @@ def test_apply_default_layout_action_carries_the_save_and_reset_entries_as_its_m
     """
     action = widget._DocumentWidget__apply_default_layout_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
     menu = cast(QMenu, action.menu())
-    assert [entry.text() for entry in menu.actions()] == [SAVE_DEFAULT_LAYOUT_LABEL, RESET_DEFAULT_LAYOUT_LABEL]
+    assert [entry.text() for entry in menu.actions()] == [
+        SAVE_DEFAULT_LAYOUT_LABEL.format(type="Tutorial"),
+        RESET_DEFAULT_LAYOUT_LABEL.format(type="Tutorial"),
+    ]
+
+
+def test_the_save_and_reset_entries_follow_the_type(
+    widget: DocumentWidget, model: RehuDocumentModel, new_widget: DocumentWidget
+) -> None:
+    """The two entries name the type whose default they touch and follow a switch (#320); a type-less
+    document has nothing to key a default by, so its entries are disabled.
+
+    **Test steps:**
+
+    * switch the tutorial to a reference pack; verify both entries now name Reference Images
+    * verify a brand-new, type-less document's entries are disabled
+    """
+    menu = cast(QMenu, widget._DocumentWidget__apply_default_layout_action.menu())  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    model.resource_type = "reference_images"
+
+    assert [entry.text() for entry in menu.actions()] == [
+        SAVE_DEFAULT_LAYOUT_LABEL.format(type="Reference Images"),
+        RESET_DEFAULT_LAYOUT_LABEL.format(type="Reference Images"),
+    ]
+    new_menu = cast(QMenu, new_widget._DocumentWidget__apply_default_layout_action.menu())  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert all(not entry.isEnabled() for entry in new_menu.actions())
 
 
 def test_save_current_layout_as_default_writes_the_current_layout(widget: DocumentWidget) -> None:
-    """Triggering Save records this document's current dock layout as the shared default (#62).
+    """Triggering Save records this document's current dock layout as its type's default, and no
+    other type's (#62, #320).
 
     **Test steps:**
 
     * toggle the On Disk dock visible (off by default)
     * trigger Save
-    * verify the shared default now holds this document's current layout-only state
+    * verify the tutorial default now holds this document's current layout-only state, and it is the
+      only type with one
     """
     on_disk_dock(widget).toggleView(True)
 
     widget._DocumentWidget__save_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
-    assert shared_default_layout_settings().state == widget.save_layout_state()
+    assert shared_default_layout_settings().states == {TUTORIAL_PLUGIN.key: widget.save_layout_state()}
 
 
 def test_the_saved_default_is_layout_only(widget: DocumentWidget) -> None:
@@ -3800,25 +3879,28 @@ def test_the_saved_default_is_layout_only(widget: DocumentWidget) -> None:
     """
     widget._DocumentWidget__save_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
-    payload = cbor2.loads(shared_default_layout_settings().state)
+    payload = cbor2.loads(shared_default_layout_settings().state_for(TUTORIAL_PLUGIN.key))
     assert STATE_WIDGET_STATE_KEY not in payload
     assert STATE_IMAGE_STRIP_VISIBLE_KEY not in payload
 
 
-def test_reset_default_layout_clears_the_shared_default(widget: DocumentWidget) -> None:
-    """Triggering Reset clears whatever default was saved (#62).
+def test_reset_default_layout_clears_only_its_types_default(widget: DocumentWidget) -> None:
+    """Triggering Reset clears the default saved for this document's type and leaves every other
+    type's alone (#62, #320).
 
     **Test steps:**
 
-    * seed a non-empty shared default
-    * trigger Reset
-    * verify the shared default is empty again
+    * seed a tutorial default and a reference-images one
+    * trigger Reset on the tutorial
+    * verify the tutorial default is gone and the reference-images one untouched
     """
-    shared_default_layout_settings().state = widget.save_state()
+    settings = shared_default_layout_settings()
+    settings.states[TUTORIAL_PLUGIN.key] = widget.save_layout_state()  # pylint: disable=unsupported-assignment-operation
+    settings.states[REFERENCE_IMAGES_PLUGIN.key] = b"pack blob"  # pylint: disable=unsupported-assignment-operation
 
     widget._DocumentWidget__reset_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
-    assert shared_default_layout_settings().state == b""
+    assert settings.states == {REFERENCE_IMAGES_PLUGIN.key: b"pack blob"}
 
 
 def test_apply_default_layout_restores_the_saved_default(widget: DocumentWidget) -> None:
@@ -3831,12 +3913,34 @@ def test_apply_default_layout_restores_the_saved_default(widget: DocumentWidget)
     * verify the dock is visible again, matching the saved default
     """
     on_disk_dock(widget).toggleView(True)
-    shared_default_layout_settings().state = widget.save_layout_state()
+    shared_default_layout_settings().states[TUTORIAL_PLUGIN.key] = widget.save_layout_state()  # pylint: disable=unsupported-assignment-operation
     on_disk_dock(widget).toggleView(False)
 
     widget._DocumentWidget__apply_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     assert on_disk_dock(widget).toggleViewAction().isChecked() is True
+
+
+def test_apply_default_layout_never_reads_another_types_default(
+    widget: DocumentWidget, refimages_widget: DocumentWidget
+) -> None:
+    """A tutorial's Apply reads the tutorial default and nothing else: with only a reference-images
+    default saved it falls back to as-built, since there is no inheritance across types (#320).
+
+    **Test steps:**
+
+    * save a reference-images default with On Disk visible
+    * toggle the tutorial's On Disk visible, then trigger its Apply
+    * verify the tutorial's On Disk is hidden again -- as-built, not the pack's default
+    """
+    on_disk_dock(refimages_widget).toggleView(True)
+    refimages_widget._DocumentWidget__save_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert set(shared_default_layout_settings().states) == {REFERENCE_IMAGES_PLUGIN.key}
+    on_disk_dock(widget).toggleView(True)
+
+    widget._DocumentWidget__apply_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    assert on_disk_dock(widget).toggleViewAction().isChecked() is False
 
 
 def test_apply_default_layout_falls_back_to_the_as_built_layout_when_none_is_saved(widget: DocumentWidget) -> None:
@@ -3852,7 +3956,7 @@ def test_apply_default_layout_falls_back_to_the_as_built_layout_when_none_is_sav
     * verify the dock is hidden again, matching the widget's own as-built layout
     """
     on_disk_dock(widget).toggleView(True)
-    assert shared_default_layout_settings().state == b""
+    assert not shared_default_layout_settings().states
 
     widget._DocumentWidget__apply_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
@@ -3874,7 +3978,7 @@ def test_apply_default_layout_falls_back_when_the_saved_default_is_stale(widget:
     """
     payload = cbor2.loads(widget.save_layout_state())
     payload[STATE_VERSION_KEY] -= 1
-    shared_default_layout_settings().state = cbor2.dumps(payload)
+    shared_default_layout_settings().states[TUTORIAL_PLUGIN.key] = cbor2.dumps(payload)  # pylint: disable=unsupported-assignment-operation
     on_disk_dock(widget).toggleView(True)
 
     widget._DocumentWidget__apply_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
@@ -4268,12 +4372,14 @@ def test_a_curation_edit_does_not_re_point_a_folder_viewer(widget: DocumentWidge
 
 
 def content_images_dock(widget: DocumentWidget) -> QtAds.CDockWidget:
-    """Return the widget's private Content Images dock.
+    """Return the widget's private Content Images dock, which a reference pack has (#320).
 
     :param widget: the document widget to inspect.
     :returns: the Content Images `CDockWidget`.
     """
-    return widget._DocumentWidget__content_images_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    dock = widget._DocumentWidget__content_images_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert dock is not None
+    return dock
 
 
 def content_images_view(widget: DocumentWidget) -> ContentImagesView:
@@ -4287,26 +4393,26 @@ def content_images_view(widget: DocumentWidget) -> ContentImagesView:
     return panel.view
 
 
-def test_the_content_images_dock_exists_and_starts_hidden(widget: DocumentWidget) -> None:
+def test_the_content_images_dock_exists_and_starts_hidden(refimages_widget: DocumentWidget) -> None:
     """The archives' browse surface is built for every document, hidden by default like the rest of
     the inspection set (#221).
 
     **Test steps:**
 
-    * build a widget over the sample model
+    * build a refimages_widget over the sample refimages_model
     * verify the dock hosts a `ContentImagesPanel` -- the grid over its status line -- named and
       titled, with its toggle unchecked
     """
-    dock = content_images_dock(widget)
+    dock = content_images_dock(refimages_widget)
 
     assert isinstance(dock.widget(), ContentImagesPanel)
-    assert isinstance(content_images_view(widget), ContentImagesView)
+    assert isinstance(content_images_view(refimages_widget), ContentImagesView)
     assert dock.objectName() == CONTENT_IMAGES_DOCK_NAME
     assert dock.windowTitle() == CONTENT_IMAGES_DOCK_TITLE
     assert dock.toggleViewAction().isChecked() is False
 
 
-def test_the_content_images_dock_toggle_is_on_the_toolbar_with_its_own_icon(widget: DocumentWidget) -> None:
+def test_the_content_images_dock_toggle_is_on_the_toolbar_with_its_own_icon(refimages_widget: DocumentWidget) -> None:
     """Its toggle sits beside the other inspection toggles, after Files, themed from its own SVG (#221).
 
     **Test steps:**
@@ -4314,14 +4420,14 @@ def test_the_content_images_dock_toggle_is_on_the_toolbar_with_its_own_icon(widg
     * verify the toolbar carries the dock's toggle right after the Files one
     * verify the toggle's icon was built from the content-images icon
     """
-    action = content_images_dock(widget).toggleViewAction()
-    actions = widget.findChildren(QToolBar)[0].actions()
+    action = content_images_dock(refimages_widget).toggleViewAction()
+    actions = refimages_widget.findChildren(QToolBar)[0].actions()
 
-    assert actions.index(action) == actions.index(files_dock(widget).toggleViewAction()) + 1
+    assert actions.index(action) == actions.index(files_dock(refimages_widget).toggleViewAction()) + 1
     assert action.icon().cacheKey() == themed_svg_icon(CONTENT_IMAGES_ICON_RESOURCE).cacheKey()
 
 
-def test_the_content_images_dock_hosts_its_view_directly_with_a_floor(widget: DocumentWidget) -> None:
+def test_the_content_images_dock_hosts_its_view_directly_with_a_floor(refimages_widget: DocumentWidget) -> None:
     """The grid manages its own scrolling, so no scroll area wraps it, and a splitter cannot squeeze the
     dock under its floor (#221).
 
@@ -4329,50 +4435,206 @@ def test_the_content_images_dock_hosts_its_view_directly_with_a_floor(widget: Do
 
     * verify the view is parented directly on the dock and the dock's minimum height is the floor
     """
-    dock = content_images_dock(widget)
+    dock = content_images_dock(refimages_widget)
 
     assert dock.widget().parentWidget() is dock
     assert dock.minimumSizeHint().height() == CONTENT_IMAGES_DOCK_MIN_HEIGHT
 
 
-def test_the_dock_layout_version_counts_the_content_images_dock() -> None:
-    """Adding a dock bumps the persisted layout's version, so an older blob is rebuilt rather than
-    restored with the new dock in whatever state QtAds invents for it (#221).
+def test_the_content_images_dock_is_a_reference_packs_alone(
+    qtbot: QtBot, widget: DocumentWidget, refimages_widget: DocumentWidget
+) -> None:
+    """The dock set is the common shell plus what the type declares (#320): a reference pack has
+    Content Images, a tutorial and a collection have neither the dock nor its toolbar toggle.
 
     **Test steps:**
 
-    * verify the version is nine
+    * verify the declaration names Content Images for the reference-images type alone
+    * verify the reference pack built the dock and a tutorial and a collection did not
+    * verify no toggle on the tutorial's or the collection's toolbar carries the dock's title
     """
-    assert STATE_VERSION == 9
+    assert type_dock_names(REFERENCE_IMAGES_PLUGIN.key) == {CONTENT_IMAGES_DOCK_NAME}
+    assert type_dock_names(TUTORIAL_PLUGIN.key) == frozenset()
+    assert type_dock_names(COLLECTION_PLUGIN.key) == frozenset()
+    assert type_dock_names("") == frozenset()
+    assert type_dock_names("daz3d") == frozenset()
+
+    collection = DocumentWidget(RehuDocumentModel(RehuDocument({"type": "Collection", "sources": []})))
+    qtbot.addWidget(collection)
+    assert content_images_dock(refimages_widget).objectName() == CONTENT_IMAGES_DOCK_NAME
+    for other in (widget, collection):
+        assert other._DocumentWidget__content_images_dock is None  # type: ignore[attr-defined]  # pylint: disable=protected-access
+        assert other._DocumentWidget__content_images_view is None  # type: ignore[attr-defined]  # pylint: disable=protected-access
+        assert CONTENT_IMAGES_DOCK_NAME not in other._DocumentWidget__dock_manager.dockWidgetsMap()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+        titles = [action.text() for action in other.findChildren(QToolBar)[0].actions()]
+        assert CONTENT_IMAGES_DOCK_TITLE not in titles
+
+
+def test_a_document_with_no_content_images_dock_ignores_its_signals(widget: DocumentWidget) -> None:
+    """The slots a Content Images dock feeds -- an activation, the clamp and banner settings -- are wired
+    on every document, since the settings are process-wide, and do nothing on one whose type built no
+    such dock (#320).
+
+    **Test steps:**
+
+    * on a tutorial, report a content-image activation and change the clamp and banner settings
+    * verify no viewer opened and nothing raised
+    """
+    widget._DocumentWidget__on_content_image_activated(0)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    settings = shared_image_viewer_settings()
+    settings.content_rows_min_height = 90
+    settings.content_zip_names = False
+
+    assert widget.findChild(ImageLightbox) is None
+
+
+def test_a_type_switch_touches_neither_the_docks_nor_the_layout(
+    widget: DocumentWidget, model: RehuDocumentModel, refimages_widget: DocumentWidget
+) -> None:
+    """Switching a document's type adds no dock, removes none, and applies no layout (#320): the set
+    was decided when the type was first known, and re-laying out on a switch would disturb the very
+    arrangement the switch was made from -- a saved default that hides Main Editor would hide the
+    type selector itself.
+
+    **Test steps:**
+
+    * save a reference-images default with Content Images visible, and open the tutorial's On Disk
+    * switch the tutorial to a reference pack and back
+    * verify no Content Images dock or toggle appeared, the manager's dock names are unchanged, and
+      On Disk is still open both times
+    """
+    content_images_dock(refimages_widget).toggleView(True)
+    shared_default_layout_settings().states[REFERENCE_IMAGES_PLUGIN.key] = refimages_widget.save_layout_state()  # pylint: disable=unsupported-assignment-operation
+    on_disk_dock(widget).toggleView(True)
+    docks_before = sorted(widget._DocumentWidget__dock_manager.dockWidgetsMap())  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    toolbar = widget.findChildren(QToolBar)[0]
+    toggles_before = [action.text() for action in toolbar.actions()]
+
+    for resource_type in ("reference_images", "tutorial"):
+        model.resource_type = resource_type
+
+        assert widget._DocumentWidget__content_images_dock is None  # type: ignore[attr-defined]  # pylint: disable=protected-access
+        assert CONTENT_IMAGES_DOCK_NAME not in widget._DocumentWidget__dock_manager.dockWidgetsMap()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+        assert [action.text() for action in toolbar.actions()] == toggles_before
+        assert sorted(widget._DocumentWidget__dock_manager.dockWidgetsMap()) == docks_before  # type: ignore[attr-defined]  # pylint: disable=protected-access
+        assert on_disk_dock(widget).toggleViewAction().isChecked() is True
+
+
+def test_apply_default_layout_on_a_switched_document_applies_the_new_types_default(
+    widget: DocumentWidget, model: RehuDocumentModel, refimages_widget: DocumentWidget
+) -> None:
+    """Apply reads the type the document has now (#320): a tutorial switched to a reference pack
+    applies the pack default, onto the docks it has -- the default's Content Images entry is simply
+    skipped.
+
+    **Test steps:**
+
+    * save a reference-images default with On Disk open, switch the tutorial to a pack
+    * trigger Apply; verify On Disk is open and no Content Images dock appeared
+    """
+    on_disk_dock(refimages_widget).toggleView(True)
+    refimages_widget._DocumentWidget__save_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    model.resource_type = "reference_images"
+    assert on_disk_dock(widget).toggleViewAction().isChecked() is False
+
+    widget._DocumentWidget__apply_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    assert on_disk_dock(widget).toggleViewAction().isChecked() is True
+    assert widget._DocumentWidget__content_images_dock is None  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+
+def test_a_pending_documents_stored_layout_lands_on_the_docks_its_first_read_builds(
+    qtbot: QtBot, mocker: MockerFixture
+) -> None:
+    """A session-restore placeholder is typeless until it loads, so a reference pack's stored layout is
+    restored once at open and again once the first read has built Content Images -- what it says about
+    that dock lands then, and the type's saved default never steps in (#66, #320).
+
+    **Test steps:**
+
+    * capture a reference pack's layout with Content Images open, and save a default with it closed
+    * build a widget over a pending placeholder and hand it the stored blob; verify no Content Images
+      dock exists yet
+    * load the placeholder as a reference pack; verify Content Images exists and is open -- the stored
+      layout, not the default
+    * verify a later revert re-adopts nothing
+    """
+    pack = DocumentWidget(RehuDocumentModel(RehuDocument({"type": "ReferenceImages", "sources": []})))
+    qtbot.addWidget(pack)
+    shared_default_layout_settings().states[REFERENCE_IMAGES_PLUGIN.key] = pack.save_layout_state()  # pylint: disable=unsupported-assignment-operation
+    content_images_dock(pack).toggleView(True)
+    stored = pack.save_state()
+
+    mocker.patch.object(Path, "read_text", return_value=json.dumps({"type": "ReferenceImages", "sources": []}))
+    pending = RehuDocumentModel.create_pending(Path("/fake/pack/info.rehu"))
+    widget = DocumentWidget(pending)
+    qtbot.addWidget(widget)
+    widget.adopt_layout(stored)
+    assert widget._DocumentWidget__content_images_dock is None  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    pending.load_pending()
+
+    assert content_images_dock(widget).toggleViewAction().isChecked() is True
+    content_images_dock(widget).toggleView(False)
+    pending.revert()
+    assert content_images_dock(widget).toggleViewAction().isChecked() is False
+
+
+def test_a_pending_document_with_an_unusable_stored_layout_gets_its_types_current_layout(
+    qtbot: QtBot, mocker: MockerFixture
+) -> None:
+    """A stored layout that cannot restore is replaced by the type's current layout -- its saved
+    default -- decided at the first read, against the real type (#66, #320).
+
+    **Test steps:**
+
+    * save a reference-images default with Content Images open
+    * build a widget over a pending placeholder handed garbage as its stored layout, then load it
+    * verify Content Images exists and is open -- the pack default applied once the type was known
+    """
+    pack = DocumentWidget(RehuDocumentModel(RehuDocument({"type": "ReferenceImages", "sources": []})))
+    qtbot.addWidget(pack)
+    content_images_dock(pack).toggleView(True)
+    shared_default_layout_settings().states[REFERENCE_IMAGES_PLUGIN.key] = pack.save_layout_state()  # pylint: disable=unsupported-assignment-operation
+
+    mocker.patch.object(Path, "read_text", return_value=json.dumps({"type": "ReferenceImages", "sources": []}))
+    pending = RehuDocumentModel.create_pending(Path("/fake/pack/info.rehu"))
+    widget = DocumentWidget(pending)
+    qtbot.addWidget(widget)
+    widget.adopt_layout(b"not a layout blob")
+
+    pending.load_pending()
+
+    assert content_images_dock(widget).toggleViewAction().isChecked() is True
 
 
 def test_showing_the_dock_enumerates_the_resources_archives(
-    widget: DocumentWidget, model: RehuDocumentModel, mocker: MockerFixture, qtbot: QtBot
+    refimages_widget: DocumentWidget, refimages_model: RehuDocumentModel, mocker: MockerFixture, qtbot: QtBot
 ) -> None:
     """Enumeration waits for the dock to be shown -- it opens every archive -- and runs off the GUI
     thread through the resource's path and the configured extension set (#221).
 
     **Test steps:**
 
-    * bind the model to a path, make the enumeration return one entry, and verify nothing ran yet
-    * show the dock and wait for the model to reset
+    * bind the refimages_model to a path, make the enumeration return one entry, and verify nothing ran yet
+    * show the dock and wait for the refimages_model to reset
     * verify the enumeration ran for that path and the grid's source lists the entry
     """
-    model.path = Path("/fake/refimages/info.rehu")
+    refimages_model.path = Path("/fake/refimages/info.rehu")
     found = [ContentImageEntry(Path("/fake/refimages/pack.zip"), "a.jpg", 0, 0)]
     enumeration = mocker.patch.object(content_images_model, "enumerate_content_images", return_value=found)
     assert not enumeration.called
-    content_model = widget._DocumentWidget__content_images_model  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    content_model = refimages_widget._DocumentWidget__content_images_model  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     with qtbot.waitSignal(content_model.modelReset, timeout=5000):
-        content_images_dock(widget).toggleView(True)
+        content_images_dock(refimages_widget).toggleView(True)
 
-    enumeration.assert_called_with(model.path, shared_reference_images_settings().content_image_extensions)
-    assert len(content_images_view(widget).source) == 1
+    enumeration.assert_called_with(refimages_model.path, shared_reference_images_settings().content_image_extensions)
+    assert len(content_images_view(refimages_widget).source) == 1
 
 
 def test_a_document_with_no_archive_opens_and_edits_with_an_empty_dock(
-    widget: DocumentWidget, mocker: MockerFixture, qtbot: QtBot
+    refimages_widget: DocumentWidget, mocker: MockerFixture, qtbot: QtBot
 ) -> None:
     """A resource with no archive, an unreadable one, or one with no images renders nothing and raises
     nothing; the document still opens and edits (#221).
@@ -4383,47 +4645,47 @@ def test_a_document_with_no_archive_opens_and_edits_with_an_empty_dock(
     * verify the grid is empty and the document's editors are still enabled
     """
     mocker.patch.object(content_images_model, "enumerate_content_images", return_value=[])
-    widget.model.path = Path("/fake/refimages/info.rehu")
+    refimages_widget.model.path = Path("/fake/refimages/info.rehu")
 
-    content_images_dock(widget).toggleView(True)
-    qtbot.waitUntil(lambda: content_images_view(widget).layout_table is not None)
-    content_images_view(widget).grab()
+    content_images_dock(refimages_widget).toggleView(True)
+    qtbot.waitUntil(lambda: content_images_view(refimages_widget).layout_table is not None)
+    content_images_view(refimages_widget).grab()
 
-    assert len(content_images_view(widget).source) == 0
-    assert not widget.model.locked
-    assert all(surface.isEnabled() for surface in field_surfaces(widget))
+    assert len(content_images_view(refimages_widget).source) == 0
+    assert not refimages_widget.model.locked
+    assert all(surface.isEnabled() for surface in field_surfaces(refimages_widget))
 
 
 def test_a_content_image_activated_in_the_dock_opens_the_lightbox_over_the_pack(
-    widget: DocumentWidget, mocker: MockerFixture
+    refimages_widget: DocumentWidget, mocker: MockerFixture
 ) -> None:
     """A clicked content image opens maximized against the whole pack -- never the curated screenshot
     set, which says nothing about archive members (#221).
 
     **Test steps:**
 
-    * give the dock's model two entries whose bytes decode, and activate the second
+    * give the dock's refimages_model two entries whose bytes decode, and activate the second
     * verify a viewer opened on position one over a two-image source, and that a curation edit leaves it
       alone
     """
     entries = [ContentImageEntry(Path("/fake/refimages/pack.zip"), f"{index}.png", 0, 0) for index in range(2)]
-    content_model = widget._DocumentWidget__content_images_model  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    content_model = refimages_widget._DocumentWidget__content_images_model  # type: ignore[attr-defined]  # pylint: disable=protected-access
     content_model.set_entries(entries, Path("/fake/refimages"))
     mocker.patch.object(ArchiveImageSource, "load", side_effect=lambda *_: QImage(20, 10, QImage.Format.Format_RGB32))
 
-    content_images_view(widget).image_activated.emit(1)
+    content_images_view(refimages_widget).image_activated.emit(1)
 
-    lightbox = widget.findChild(ImageLightbox)
+    lightbox = refimages_widget.findChild(ImageLightbox)
     assert isinstance(lightbox, ImageLightbox)
     assert lightbox.current_index == 1
     assert len(lightbox.source) == 2
     assert lightbox.current_key == entries[1].key
-    widget._DocumentWidget__on_curated_images_changed(SCREENSHOTS)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    refimages_widget._DocumentWidget__on_curated_images_changed(SCREENSHOTS)  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert len(lightbox.source) == 2
 
 
 def test_closing_a_content_viewer_selects_the_image_it_was_on_when_asked(
-    widget: DocumentWidget, mocker: MockerFixture, qtbot: QtBot
+    refimages_widget: DocumentWidget, mocker: MockerFixture, qtbot: QtBot
 ) -> None:
     """Closing a viewer opened from the dock selects, in the dock, the image it was on -- when the
     setting says so, read at the close; off, the dock is left alone. A viewer over a set the dock has
@@ -4436,15 +4698,15 @@ def test_closing_a_content_viewer_selects_the_image_it_was_on_when_asked(
     * turn it on, open a viewer, re-enumerate the dock underneath it, close; verify no selection
     """
     entries = [ContentImageEntry(Path("/fake/refimages/pack.zip"), f"{index}.png", 0, 0) for index in range(3)]
-    content_model = widget._DocumentWidget__content_images_model  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    content_model = refimages_widget._DocumentWidget__content_images_model  # type: ignore[attr-defined]  # pylint: disable=protected-access
     content_model.set_entries(entries, Path("/fake/refimages"))
     mocker.patch.object(ArchiveImageSource, "load", side_effect=lambda *_: QImage(20, 10, QImage.Format.Format_RGB32))
-    grid = content_images_view(widget)
+    grid = content_images_view(refimages_widget)
     revealed = mocker.spy(grid, "reveal")
 
     def view_then_close(start: int) -> None:
         grid.image_activated.emit(start)
-        lightbox = widget.findChild(ImageLightbox)
+        lightbox = refimages_widget.findChild(ImageLightbox)
         assert isinstance(lightbox, ImageLightbox)
         qtbot.keyClick(lightbox, Qt.Key.Key_Right)
         with wait_destroyed(qtbot, lightbox):
@@ -4461,7 +4723,7 @@ def test_closing_a_content_viewer_selects_the_image_it_was_on_when_asked(
 
     shared_image_viewer_settings().lightbox_select_last_viewed = True
     grid.image_activated.emit(0)
-    lightbox = widget.findChild(ImageLightbox)
+    lightbox = refimages_widget.findChild(ImageLightbox)
     assert isinstance(lightbox, ImageLightbox)
     content_model.set_entries(entries, Path("/fake/refimages"))
     with wait_destroyed(qtbot, lightbox):
@@ -4469,29 +4731,31 @@ def test_closing_a_content_viewer_selects_the_image_it_was_on_when_asked(
     revealed.assert_called_once()
 
 
-def test_content_images_never_reach_the_screenshot_strip(widget: DocumentWidget, model: RehuDocumentModel) -> None:
+def test_content_images_never_reach_the_screenshot_strip(
+    refimages_widget: DocumentWidget, refimages_model: RehuDocumentModel
+) -> None:
     """The strip shows screenshots and only screenshots, and the curation editor's hidden list never
     touches a content image ([[data-model#image-meanings]], #221).
 
     **Test steps:**
 
-    * give the dock's model an entry and hide an image by name in the model
+    * give the dock's refimages_model an entry and hide an image by name in the refimages_model
     * verify the strip lists no archive member and the dock's source is unchanged
     """
-    content_model = widget._DocumentWidget__content_images_model  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    content_model = refimages_widget._DocumentWidget__content_images_model  # type: ignore[attr-defined]  # pylint: disable=protected-access
     content_model.set_entries([ContentImageEntry(Path("/fake/refimages/pack.zip"), "a.png", 0, 0)], Path("/fake"))
-    strip = widget.findChild(ImageStrip)
+    strip = refimages_widget.findChild(ImageStrip)
     assert isinstance(strip, ImageStrip)
     painted: list[list[Path]] = []
     strip.images_changed.connect(painted.append)
 
-    model.hidden_images = ["a.png"]
+    refimages_model.hidden_images = ["a.png"]
 
     assert all("pack.zip" not in str(path) for paths in painted for path in paths)
-    assert len(content_images_view(widget).source) == 1
+    assert len(content_images_view(refimages_widget).source) == 1
 
 
-def test_applying_a_new_clamp_or_banner_choice_reaches_the_open_dock(widget: DocumentWidget) -> None:
+def test_applying_a_new_clamp_or_banner_choice_reaches_the_open_dock(refimages_widget: DocumentWidget) -> None:
     """The settings page's Apply re-packs every open dock: the clamp and the banner boxes are live (#221).
 
     **Test steps:**
@@ -4500,7 +4764,7 @@ def test_applying_a_new_clamp_or_banner_choice_reaches_the_open_dock(widget: Doc
     * verify the grid took them
     """
     settings = shared_image_viewer_settings()
-    view = content_images_view(widget)
+    view = content_images_view(refimages_widget)
 
     settings.content_rows_min_height = 90
     settings.content_rows_max_height = 300

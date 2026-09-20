@@ -239,8 +239,8 @@ over the same view-model and toggled independently:
 - **viewer only**, **editor only**, or **both** — chosen by toggle actions; "both" is the live case
   above. A resource **opens as a reader**: the two viewers are shown side by side, Main View left and
   Description View right, and every editor starts hidden behind its toggle. A user who prefers
-  otherwise saves the arrangement they want as the default layout, which every document with none of
-  its own then opens into.
+  otherwise saves the arrangement they want as that type's default layout, which every document of the
+  type with none of its own then opens into.
 - The surfaces are hosted as docks inside a per-resource nested dock area ([[plugins#dock-shell]]), so "both" is
   arrangeable docks, not a fixed split. See [[component-decomposition]] for the containment hierarchy this produces.
 
@@ -256,15 +256,26 @@ focused document's area (tabbed) and makes it current — what was just opened i
 opening a file that is **already open focuses the
 existing dock** rather than opening a second. Each document dock is itself a nested dock area holding that resource's
 **sub-docks** — the word for a dock inside a document dock, three managers deep
-([[appendices.qt-ads#focus-highlighting]]): the two viewers — main view and description view — the main editor,
-the description and the images editors, plus the
-hidden-by-default inspection set — save preview, on disk, log, checksums, files ([[plugins#files-subdock]]), and
-content images (the browse over a reference pack's archives, [[reference-images#modes]]) — with
-the images sub-dock doubling as the drop target of [[acquisition-tooling#drag-drop-aids]]. The surfaces are
-the viewer/editor pair ([[plugins#viewer-editor-both]]). This replaces the LocalEdit1 per-file window (#7) and
-is the
-same shell the catalog browser later opens viewers into ([[plugins#browsers]]). See [[sequence-open-document]] and
-[[activity-open-document]] for this flow traced end-to-end.
+([[appendices.qt-ads#focus-highlighting]]). **The sub-dock set is declared per resource type** —
+[[plugins#core-vs-plugin]] applied to docks: the **common shell** every document has — the two viewers, main view
+and description view; the main editor, the description and the images editors; plus the hidden-by-default
+inspection set — save preview, on disk, log, checksums, files ([[plugins#files-subdock]]) — and then **the type's
+own**: a reference pack adds content images (the browse over its archives, [[reference-images#modes]]), a tutorial
+will add its player, a collection adds nothing. The images sub-dock doubles as the drop target of
+[[acquisition-tooling#drag-drop-aids]]. The surfaces are the viewer/editor pair ([[plugins#viewer-editor-both]]).
+This replaces the LocalEdit1 per-file window (#7) and is the same shell the catalog browser later opens viewers
+into ([[plugins#browsers]]). See [[sequence-open-document]] and [[activity-open-document]] for this flow traced
+end-to-end.
+
+A layout follows the type: the **default layout** is saved per type with no inheritance across types, and a
+document opened with no stored layout of its own gets its type's — a session-restored document gets **what was
+stored**, and only if that cannot restore does the type's current layout step in. The set is decided once, when the
+type is first known — at open, or at a session-restore placeholder's deferred first read — and a later type switch
+in the editor neither adds nor removes a dock and applies no layout; the layout button then applies the *new*
+type's default, onto the docks the document has. A layout restores onto a dock set other than the one it was
+written against: a dock it names that isn't built is skipped, and a built dock it never names is put back hidden
+where it always lives (QtAds would otherwise leave it area-less, to open floating). That tolerance is what retires
+the hand-bumped layout version: adding a dock to one type no longer resets anyone's layouts.
 
 The open-and-forward and single-instance semantics this shell realizes are owned by [[nodes#local-vs-swarm]] (local-file
 mode) and [[nodes#single-instance]] (single-instance / file association); session persistence and the close guard are a

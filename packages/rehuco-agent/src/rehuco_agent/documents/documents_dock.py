@@ -21,7 +21,6 @@ from rehuco_core import (
 )
 
 from ..glyphs import TAB_CLOSE_GLYPH
-from ..settings.default_layout_settings import shared_default_layout_settings
 from ..settings.document_session_settings import DocumentSessionSettings
 from ..settings.identity_settings import shared_identity_settings
 from .confirm_and_save_dirty import confirm_and_save_dirty
@@ -541,15 +540,9 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
 
         # exactly one layout is applied, after addDockWidget above so the widget is parented into the
         # hierarchy first -- restoring earlier feeds the saved splitter sizes to a never-laid-out
-        # widget. A session-restored document gets its own remembered layout; anything else adopts the
-        # saved default when one is defined (#62), through the widget's own apply (an unusable saved
-        # blob falls back to the as-built layout it already has), so what a default means lives in one
-        # place. A session blob that fails to restore (stale version, corrupted) falls through to the
-        # default too: the default is precisely "what a document with no usable layout of its own
-        # gets". The emptiness guard only skips a pointless as-built -> as-built restore on the common
-        # no-default path.
-        if (state is None or not dock.document_widget.restore_state(state)) and shared_default_layout_settings().state:
-            dock.document_widget.apply_default_layout()
+        # widget. Which one -- the session's own, its type's saved default (#62, #320), or the as-built
+        # it already has -- is the widget's own decision, so what a default means lives in one place
+        dock.document_widget.adopt_layout(state)
 
         return dock
 
