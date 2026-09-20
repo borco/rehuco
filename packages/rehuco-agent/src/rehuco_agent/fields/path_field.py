@@ -2,15 +2,23 @@
 ([[plugins#field-toolkit]]).
 """
 
+import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import override
+from typing import Final, override
 
+from borco_pyside.file_browser import reveal_in_file_browser
 from borco_pyside.widgets import ElidedLabel
 from PySide6.QtCore import QUrl, SignalInstance
 
 from .field import Field, FieldBinding, FieldEditorWidgets, FieldsTab, FieldViewerWidgets
 from .widgets import ExpandToggleButton, PathEditor
+
+REVEAL_HINT: Final = {"win32": "Show in Explorer", "darwin": "Reveal in Finder"}.get(
+    sys.platform, "Show in file manager"
+)
+"""What a click on the location link does, named for the tooltip -- the OS's own term where the two
+main desktops have one, else the generic phrase (#314)."""
 
 
 class PathField(Field[str]):
@@ -106,7 +114,7 @@ class PathField(Field[str]):
         :returns: an `ElidedLabel` that re-renders the link on every change.
         """
         label = ElidedLabel()
-        label.setOpenExternalLinks(True)
+        label.linkActivated.connect(lambda href: reveal_in_file_browser(Path(QUrl(href).toLocalFile())))
         self.__render_link(label, binding.value)
         self.bind_external(binding.changed, lambda value: self.__render_link(label, value))
         return label
@@ -130,4 +138,4 @@ class PathField(Field[str]):
         if not value:
             label.set_text("")
             return
-        label.set_text(str(Path(value)), href=QUrl.fromLocalFile(value).toString())
+        label.set_text(str(Path(value)), href=QUrl.fromLocalFile(value).toString(), hint=REVEAL_HINT)

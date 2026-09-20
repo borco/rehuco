@@ -202,6 +202,36 @@ def test_the_refresh_action_reads_again(qtbot: QtBot, view: FilesView, listing: 
     assert listing.call_count == 2
 
 
+def test_the_reveal_action_shows_the_browsed_folder(view: FilesView, mocker: MockerFixture) -> None:
+    """The Reveal action hands the *browsed* directory to the reveal helper, not the resource's root.
+
+    **Test steps:**
+
+    * trigger the reveal action on a shown browser at its root
+    * verify the helper was called with the browsed directory
+    """
+    reveal = mocker.patch("rehuco_agent.documents.files_view.reveal_in_file_browser")
+
+    view.reveal_action.trigger()
+
+    reveal.assert_called_once_with(view.directory)
+
+
+def test_the_reveal_action_is_disabled_for_a_path_less_document(qtbot: QtBot) -> None:
+    """A never-saved document has no folder to reveal, so the action starts disabled.
+
+    **Test steps:**
+
+    * build a browser over a path-less model
+    * verify the reveal action is disabled
+    """
+    view = FilesView(RehuDocumentModel(RehuDocument({}, None)))
+    qtbot.addWidget(view)
+    view.show()
+
+    assert not view.reveal_action.isEnabled()
+
+
 def test_re_showing_a_current_browser_reads_nothing(qtbot: QtBot, view: FilesView, listing: Any) -> None:
     """The other half of the deferral: a show only catches up a read that was *deferred*, so a dock
     tabbed away from and back -- which Qt reports as a hide and a show -- does not re-list the folder

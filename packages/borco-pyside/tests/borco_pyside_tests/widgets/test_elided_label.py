@@ -114,6 +114,57 @@ def test_text_without_href_is_not_html_escaped(qtbot: QtBot) -> None:
     assert label.textFormat() == Qt.TextFormat.PlainText
 
 
+def test_hint_alone_is_the_tooltip_when_the_text_fits(qtbot: QtBot) -> None:
+    """A ``hint`` with a ``href`` becomes the whole tooltip when the text isn't elided.
+
+    **Test steps:**
+
+    * build a wide label and set a value with a href and a hint
+    * verify the tooltip is the hint alone
+    """
+    label = ElidedLabel()
+    qtbot.addWidget(label)
+    label.setFixedWidth(4000)
+
+    label.set_text(LONG_TEXT, href="https://example.com/full/target", hint="Reveal in Finder")
+
+    assert label.toolTip() == "Reveal in Finder"
+
+
+def test_hint_is_ignored_without_a_href(qtbot: QtBot) -> None:
+    """A ``hint`` with no ``href`` is plain text, so there is no link action to hint at.
+
+    **Test steps:**
+
+    * build a wide label and set a value with a hint but no href
+    * verify no tooltip is shown
+    """
+    label = ElidedLabel()
+    qtbot.addWidget(label)
+    label.setFixedWidth(4000)
+
+    label.set_text(LONG_TEXT, hint="Reveal in Finder")
+
+    assert label.toolTip() == ""
+
+
+def test_hint_is_appended_after_the_full_text_when_elided(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """When the text elides, the hint joins the full text rather than replacing it.
+
+    **Test steps:**
+
+    * mock ``elidedText`` to elide, then set a value with a href and a hint
+    * verify the tooltip carries both the full text and the hint
+    """
+    label = ElidedLabel()
+    qtbot.addWidget(label)
+    mocker.patch.object(QFontMetrics, "elidedText", return_value="a…z")
+
+    label.set_text("abcdef", href="https://example.com", hint="Reveal in Finder")
+
+    assert label.toolTip() == "abcdef\nReveal in Finder"
+
+
 def test_minimum_width_is_zero_so_it_never_forces_its_layout_wider(qtbot: QtBot) -> None:
     """The label reports a zero minimum width, so a long value can't impose a width floor.
 
