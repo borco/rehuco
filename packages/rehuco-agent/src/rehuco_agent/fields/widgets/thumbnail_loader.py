@@ -51,37 +51,137 @@ def thumbnail_cache_key(key: Hashable, height: int, ratio: float = 1.0) -> str:
     return f"{key!r}@{height}x{ratio:g}"
 
 
+class DecodeSignals(QObject):
+    """The sender one worker emits through -- never the loader itself (#221).
+
+    Emitting on the loader from a pool thread races its destruction: the document can close while a
+    worker is inside ``emit``, and no flag checked a moment earlier guards that -- the worker crashes,
+    or deadlocks against the GUI thread over the GIL and Qt's connection locks. A worker holding the
+    loader as its last reference would be worse still: the ``QObject`` deleted on the pool thread when
+    the runnable is released, posted events and all.
+
+    So each worker gets a sender of its own, wired signal-to-signal into the loader's landing signal
+    on the GUI thread, and holds the loader's plain-Python queue rather than the loader; when the
+    loader goes, Qt severs that connection under its own locks and a decode landing afterward reaches
+    nobody. **The sender is deleted on the GUI thread only**: it is parented to the pool, whose
+    destructor waits for its runnables, and the worker ``deleteLater``-s it when done -- a ``QObject``
+    deleted on a pool thread would tear its connections down under the loader's own destructor, with
+    the same crashes. The same shape
+    :func:`~rehuco_agent.fields.background_measurement.measure_in_background` documents.
+
+    :param pool: the pool the worker runs on, which owns the sender.
+    """
+
+    decoded = Signal(str, QImage)
+    """A decoded image and its cache key."""
+
+    def __init__(self, pool: QThreadPool) -> None:
+        super().__init__(pool)
+
+
+class DecodeQueue:
+    """The loader's pending requests and worker count, shared with its workers under one lock (#221).
+
+    Plain Python, no ``QObject``: this is the whole of what a worker touches, so a worker outliving
+    its loader finds a stopped queue rather than a dead object.
+    """
+
+    def __init__(self) -> None:
+        self.__lock: Final = threading.Lock()
+        self.__pending: Final[deque[PendingDecode]] = deque()
+        self.__queued: Final[set[str]] = set()
+        self.__workers = 0
+        self.__stopped: Final = threading.Event()
+
+    def stop(self) -> None:
+        """Drain the queue for good: every worker finds nothing more to take."""
+        self.__stopped.set()
+
+    def enqueue(self, job: PendingDecode) -> bool | None:
+        """Queue ``job`` unless its cache key already is.
+
+        :param job: the request.
+        :returns: ``None`` when it was already queued; otherwise whether a worker slot was taken for
+            it, in which case the caller starts one.
+        """
+        with self.__lock:
+            if job.cache_key in self.__queued:
+                return None
+            self.__queued.add(job.cache_key)
+            self.__pending.append(job)
+            if self.__workers >= WORKER_LIMIT:
+                return False
+            self.__workers += 1
+            return True
+
+    def retain(self, owner: int, wanted: set[str]) -> None:
+        """Withdraw every request of ``owner`` but those in ``wanted``.
+
+        :param owner: the requester's identity.
+        :param wanted: the cache keys it still wants.
+        """
+        with self.__lock:
+            dropped = [job for job in self.__pending if job.owner == owner and job.cache_key not in wanted]
+            kept = [job for job in self.__pending if job.owner != owner or job.cache_key in wanted]
+            self.__pending.clear()
+            self.__pending.extend(kept)
+            self.__queued.difference_update(job.cache_key for job in dropped)
+
+    def settle(self, cache_key: str) -> None:
+        """Forget ``cache_key`` as queued: its decode landed, so a later request may queue it again.
+
+        :param cache_key: the request's cache key.
+        """
+        with self.__lock:
+            self.__queued.discard(cache_key)
+
+    def take_next(self) -> tuple[ImageSource, int, int, float, str] | None:
+        """Pop the newest pending request, for a worker.
+
+        :returns: the ``(source, index, height, ratio, cache_key)`` to decode, or ``None`` when the
+            queue is empty -- or once the loader is being destroyed, whatever is still queued.
+        """
+        with self.__lock:
+            if self.__stopped.is_set() or not self.__pending:
+                return None
+            job = self.__pending.pop()
+            return job.source, job.position, job.height, job.ratio, job.cache_key
+
+    def worker_done(self) -> None:
+        """Release a worker slot, for a worker that found the queue empty."""
+        with self.__lock:
+            self.__workers -= 1
+
+
 class DecodeJob(QRunnable):
     """One worker draining the loader's queue until it is empty.
 
     Started when work arrives and a slot is free; exits when there is nothing left, so an idle loader
-    holds no thread. Reports each decode back through the loader's own signal, which crosses to the
-    GUI thread as a queued connection.
+    holds no thread. Reports each decode through its own sender, which crosses to the GUI thread as
+    a queued connection.
 
-    :param loader: the loader whose queue this drains.
+    :param queue: the queue this drains.
+    :param signals: the sender to report through, already wired; released when the worker is done.
     """
 
-    def __init__(self, loader: ThumbnailLoader) -> None:
+    def __init__(self, queue: DecodeQueue, signals: DecodeSignals) -> None:
         super().__init__()
-        self.__loader: Final = loader
+        self.__queue: Final = queue
+        self.__signals: Final = signals
         self.setAutoDelete(True)
 
     def run(self) -> None:
         try:
-            while (job := self.__loader.take_next()) is not None:
+            while (job := self.__queue.take_next()) is not None:
                 source, index, height, ratio, cache_key = job
                 # decoded at the screen's own pixels, so a thumbnail on a scaled desktop is never a
                 # logical-size image stretched up to device pixels
                 image = source.load(index, round(height * ratio))
                 image.setDevicePixelRatio(ratio)
-                try:
-                    self.__loader.decoded.emit(cache_key, image)
-                except RuntimeError:
-                    # the loader's C++ side went while this decoded -- its document closed; the
-                    # stop flag drains the rest, so nothing else is decoded for nobody
-                    return
+                self.__signals.decoded.emit(cache_key, image)
         finally:
-            self.__loader.worker_done()
+            self.__queue.worker_done()
+            self.__signals.deleteLater()
 
 
 class ThumbnailLoader(QObject):
@@ -95,22 +195,25 @@ class ThumbnailLoader(QObject):
     """Fires with the cache key of a thumbnail that just landed in `QPixmapCache`."""
 
     decoded = Signal(str, QImage)
-    """Worker-to-GUI hop: a decoded image and its cache key. Internal, connected to
-    :meth:`__on_decoded` on this object's own thread."""
+    """Where a decoded image and its cache key land on the GUI thread, relayed from `DecodeSignals`.
+    Internal, connected to :meth:`__on_decoded` on this object's own thread."""
 
     def __init__(self, parent: QObject | None = None, pool: QThreadPool | None = None) -> None:
         super().__init__(parent)
         self.__pool: Final = pool if pool is not None else QThreadPool.globalInstance()
-        self.__lock: Final = threading.Lock()
-        self.__pending: Final[deque[PendingDecode]] = deque()
-        self.__queued: Final[set[str]] = set()
+        self.__queue: Final = DecodeQueue()
         self.__failed: Final[set[str]] = set()
-        self.__workers = 0
-        self.__stopped: Final = threading.Event()
+        queue = self.__queue
+
+        def on_destroyed() -> None:
+            queue.stop()
+
         # a worker that outlives this object's C++ side (the document closed mid-decode) must find
-        # the queue empty rather than emit into a dead signal. Not a bound method: Qt drops a
-        # connection whose receiver is the object being destroyed, so it would never run
-        self.destroyed.connect(self.__stopped.set)
+        # the queue empty. A closure, not a bound method: Qt drops a connection whose receiver is the
+        # object being destroyed, and PySide holds a bound method's receiver weakly, so on a plain
+        # `del` that receiver is torn down before -- or while -- the slot runs. The connection holds
+        # a closure strongly, so this runs with intact state on every path
+        self.destroyed.connect(on_destroyed)
         QPixmapCache.setCacheLimit(max(QPixmapCache.cacheLimit(), CACHE_LIMIT_KIB))
         self.decoded.connect(self.__on_decoded)
 
@@ -138,10 +241,9 @@ class ThumbnailLoader(QObject):
         :param ratio: the device pixel ratio it was asked for.
         :returns: whether the decode failed.
         """
-        with self.__lock:
-            return thumbnail_cache_key(key, height, ratio) in self.__failed
+        return thumbnail_cache_key(key, height, ratio) in self.__failed
 
-    def request(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+    def request(
         self, requester: object, source: ImageSource, index: int, height: int, ratio: float = 1.0
     ) -> QPixmap | None:
         """Ask for ``source[index]``'s thumbnail at ``height``, on ``requester``'s behalf.
@@ -161,16 +263,14 @@ class ThumbnailLoader(QObject):
         if cached is not None:
             return cached
         cache_key = thumbnail_cache_key(key, height, ratio)
-        with self.__lock:
-            if cache_key in self.__queued or cache_key in self.__failed:
-                return None
-            self.__queued.add(cache_key)
-            self.__pending.append(PendingDecode(id(requester), source, index, height, ratio, cache_key))
-            start_worker = self.__workers < WORKER_LIMIT
-            if start_worker:
-                self.__workers += 1
-        if start_worker:
-            self.__pool.start(DecodeJob(self))
+        if cache_key in self.__failed:
+            return None
+        if self.__queue.enqueue(PendingDecode(id(requester), source, index, height, ratio, cache_key)):
+            # the pool-thread emits arrive here queued; this connection is what the loader's
+            # destruction severs, so a late decode reaches nobody
+            signals = DecodeSignals(self.__pool)
+            signals.decoded.connect(self.decoded)
+            self.__pool.start(DecodeJob(self.__queue, signals))
         return None
 
     def retain(self, requester: object, cache_keys: Iterable[str]) -> None:
@@ -181,31 +281,7 @@ class ThumbnailLoader(QObject):
         :param requester: the surface whose requests to prune.
         :param cache_keys: the cache keys it still wants.
         """
-        wanted = set(cache_keys)
-        owner = id(requester)
-        with self.__lock:
-            dropped = [job for job in self.__pending if job.owner == owner and job.cache_key not in wanted]
-            kept = [job for job in self.__pending if job.owner != owner or job.cache_key in wanted]
-            self.__pending.clear()
-            self.__pending.extend(kept)
-            self.__queued.difference_update(job.cache_key for job in dropped)
-
-    def take_next(self) -> tuple[ImageSource, int, int, float, str] | None:
-        """Pop the newest pending request, for a worker.
-
-        :returns: the ``(source, index, height, ratio, cache_key)`` to decode, or ``None`` when the
-            queue is empty -- or once the loader is being destroyed, whatever is still queued.
-        """
-        with self.__lock:
-            if self.__stopped.is_set() or not self.__pending:
-                return None
-            job = self.__pending.pop()
-            return job.source, job.position, job.height, job.ratio, job.cache_key
-
-    def worker_done(self) -> None:
-        """Release a worker slot, for a worker that found the queue empty."""
-        with self.__lock:
-            self.__workers -= 1
+        self.__queue.retain(id(requester), set(cache_keys))
 
     @Slot(str, QImage)
     def __on_decoded(self, cache_key: str, image: QImage) -> None:
@@ -217,10 +293,9 @@ class ThumbnailLoader(QObject):
         :param cache_key: the thumbnail's cache key.
         :param image: the decoded image, possibly null.
         """
-        with self.__lock:
-            self.__queued.discard(cache_key)
-            if image.isNull():
-                self.__failed.add(cache_key)
-        if not image.isNull():
+        self.__queue.settle(cache_key)
+        if image.isNull():
+            self.__failed.add(cache_key)
+        else:
             QPixmapCache.insert(cache_key, QPixmap.fromImage(image))
         self.ready.emit(cache_key)

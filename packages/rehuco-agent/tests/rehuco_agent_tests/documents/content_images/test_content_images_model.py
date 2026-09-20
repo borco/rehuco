@@ -1,5 +1,6 @@
 """Tests for the Content Images model and its archive-backed image source (#221)."""
 
+import threading
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QThreadPool
@@ -7,6 +8,7 @@ from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.content_images import ArchiveCache, ContentImagesModel
 from rehuco_agent.documents.content_images import content_images_model as model_module
+from shiboken6 import isValid
 
 from rehuco_agent_tests.documents.content_images.conftest import (
     OTHER_PACK,
@@ -147,7 +149,7 @@ def test_a_stale_enumeration_is_dropped(content_model: ContentImagesModel, mocke
     * verify nothing was adopted
     """
     mocker.patch.object(model_module, "enumerate_content_images", return_value=[])
-    mocker.patch.object(QThreadPool, "globalInstance")
+    mocker.patch.object(QThreadPool, "start")
     content_model.refresh(REHU_DIRECTORY / "info.rehu", (".jpg",))
 
     content_model.enumerated.emit(0, [entry(PACK, "stale.jpg")])
@@ -155,68 +157,84 @@ def test_a_stale_enumeration_is_dropped(content_model: ContentImagesModel, mocke
     assert content_model.entries == []
 
 
-def test_a_destroyed_model_reports_nothing_and_closes_its_archives(
-    mocker: MockerFixture, qtbot: QtBot, archive: object
-) -> None:
-    """Once the model is gone -- its document closed -- a job on the pool reports into nothing and the
-    archive handles it held are closed.
+def test_a_destroyed_model_stops_and_closes_its_archives(mocker: MockerFixture, qtbot: QtBot, archive: object) -> None:
+    """Once the model is gone -- its document closed -- a job on the pool that has not read yet reads
+    nothing, and the archive handles it held are closed.
 
     **Test steps:**
 
     * spy on the cache's close before the model binds it, build a model, and delete it
-    * verify it reads as stopped, ``report`` runs nothing, and the cache was closed
+    * verify it reads as stopped and the cache was closed
     """
     del archive
     # on the class, before construction: the model binds `close` at construction, so an instance spy
     # patched afterwards would never see the call
     closed = mocker.spy(ArchiveCache, "close")
     content_model = ContentImagesModel()
-    reported: list[int] = []
 
     content_model.deleteLater()
     qtbot.waitUntil(lambda: content_model.stopped)
 
-    content_model.report(lambda: reported.append(1))
-    assert not reported
     closed.assert_called_once()
 
 
 def test_a_header_job_on_a_stopped_model_reads_nothing(
     content_model: ContentImagesModel, qtbot: QtBot, mocker: MockerFixture
 ) -> None:
-    """A header read that starts after its model stopped touches no archive and records nothing.
+    """A header read still queued on the pool when its model stopped touches no archive.
 
     **Test steps:**
 
-    * set an entry, delete the model and wait for it to stop
-    * request the dimensions and verify no read happened and none landed
+    * set an entry and request its header with the pool held, so the job is queued but not run
+    * delete the model and wait for it to stop
+    * run the job and verify no read happened
     """
     content_model.set_entries([entry(PACK, "a.png", WIDE)], REHU_DIRECTORY)
     read_head = mocker.spy(ArchiveCache, "read_head")
+    started = mocker.patch.object(QThreadPool, "start")
+    content_model.request_dimensions([0])
+    ((job,), _kwargs) = started.call_args
     content_model.deleteLater()
     qtbot.waitUntil(lambda: content_model.stopped)
 
-    content_model.request_dimensions([0])
-    qtbot.wait(100)
+    job.run()
 
     read_head.assert_not_called()
-    assert content_model.dimensions(0) is None
 
 
-def test_report_swallows_an_emission_into_a_dead_object(content_model: ContentImagesModel) -> None:
-    """The C++ side can go between the stop check and the emit; that ``RuntimeError`` is a job's result
-    for nobody, not a worker-thread traceback.
+def test_a_header_landing_after_its_model_is_gone_reaches_nobody(
+    content_model: ContentImagesModel, qtbot: QtBot, mocker: MockerFixture
+) -> None:
+    """A read already under way when the model goes finishes and reports through its own sender, into
+    a connection Qt has severed: no crash, no traceback, nothing left on the pool.
 
     **Test steps:**
 
-    * report an emission that raises as a dead-object emit does
-    * verify nothing propagates
+    * on a pool of this test's own, hold the header read at a gate, request a header, and wait for
+      the worker to reach the gate
+    * delete the model and wait for its C++ side to go
+    * release the gate and verify the pool drains
     """
+    pool = QThreadPool()
+    mocker.patch.object(QThreadPool, "globalInstance", return_value=pool)
+    gate = threading.Event()
+    entered = threading.Event()
 
-    def dead_emit() -> None:
-        raise RuntimeError("Internal C++ object already deleted")
+    def held_read(*_args: object) -> bytes:
+        entered.set()
+        gate.wait(5)
+        return png_bytes(*WIDE)
 
-    content_model.report(dead_emit)
+    mocker.patch.object(ArchiveCache, "read_head", side_effect=held_read)
+    content_model.set_entries([entry(PACK, "a.png", WIDE)], REHU_DIRECTORY)
+    content_model.request_dimensions([0])
+    qtbot.waitUntil(entered.is_set)
+
+    content_model.deleteLater()
+    qtbot.waitUntil(lambda: not isValid(content_model))
+
+    gate.set()
+    qtbot.waitUntil(lambda: pool.activeThreadCount() == 0)
 
 
 def test_refreshing_for_no_path_empties_the_model(content_model: ContentImagesModel) -> None:

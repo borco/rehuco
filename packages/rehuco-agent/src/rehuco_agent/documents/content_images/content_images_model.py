@@ -7,7 +7,7 @@ the scan sidecar ([[reference-images#scan-sidecar]]) can later sit in front of w
 """
 
 import threading
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from pathlib import Path, PurePosixPath
 from typing import Any, Final, cast, override
 
@@ -71,25 +71,58 @@ class ArchiveImageSource:
         return decode_image(data, max_height) if data is not None else QImage()
 
 
+class JobSignals(QObject):
+    """The sender one job emits through -- never the model itself (#221).
+
+    A job never touches the model's ``QObject`` from the pool thread. Emitting on the model races its
+    destruction: the document can close while a worker is inside ``emit``, and a stop flag checked a
+    moment earlier guards nothing -- the worker crashes, or deadlocks against the GUI thread over the
+    GIL and Qt's connection locks. And a job holding the model as its last reference would delete the
+    ``QObject`` on the pool thread when the runnable is released, posted events and all.
+
+    So each job gets a sender of its own, wired signal-to-signal into the model's landing signal on
+    the GUI thread. When the model goes, Qt severs that connection under its own locks and a report
+    emitted afterward reaches nobody. **The sender is deleted on the GUI thread only**: it is parented
+    to the pool, whose destructor waits for its runnables, and the job ``deleteLater``-s it when done
+    -- a ``QObject`` deleted on a pool thread would tear its connections down under the model's own
+    destructor, with the same crashes. The same shape
+    :func:`~rehuco_agent.fields.background_measurement.measure_in_background` documents.
+
+    :param pool: the pool the job runs on, which owns the sender.
+    """
+
+    enumerated = Signal(int, list)
+    """An `EnumerateJob`'s generation and entries."""
+
+    header_read = Signal(object, QSize)
+    """A `HeaderJob`'s tier-0 key and pixel size (invalid when unreadable)."""
+
+    def __init__(self, pool: QThreadPool) -> None:
+        super().__init__(pool)
+
+
 class EnumerateJob(QRunnable):
     """Enumerates a resource's content images off the GUI thread -- it opens every archive.
 
-    :param model: the model to report to.
+    :param signals: the sender to report through, already wired; released when the job is done.
     :param generation: which request this answers; a stale answer is dropped.
     :param path: the ``.rehu`` file.
     :param extensions: the recognized image extensions.
     """
 
-    def __init__(self, model: ContentImagesModel, generation: int, path: Path, extensions: tuple[str, ...]) -> None:
+    def __init__(self, signals: JobSignals, generation: int, path: Path, extensions: tuple[str, ...]) -> None:
         super().__init__()
-        self.__model: Final = model
+        self.__signals: Final = signals
         self.__generation: Final = generation
         self.__path: Final = path
         self.__extensions: Final = extensions
 
     def run(self) -> None:
-        entries = enumerate_content_images(self.__path, self.__extensions)
-        self.__model.report(lambda: self.__model.enumerated.emit(self.__generation, entries))
+        try:
+            entries = enumerate_content_images(self.__path, self.__extensions)
+            self.__signals.enumerated.emit(self.__generation, entries)
+        finally:
+            self.__signals.deleteLater()
 
 
 class HeaderJob(QRunnable):
@@ -97,25 +130,33 @@ class HeaderJob(QRunnable):
 
     A partial inflate first; the whole member only when the header is not in the first slice.
 
-    :param model: the model to report to.
+    :param signals: the sender to report through, already wired; released when the job is done.
+    :param cache: the open-handle cache to read through.
+    :param stopped: set once the model is being destroyed, so a job that has not read yet reads nothing.
     :param entry: the member.
     """
 
-    def __init__(self, model: ContentImagesModel, entry: ContentImageEntry) -> None:
+    def __init__(
+        self, signals: JobSignals, cache: ArchiveCache, stopped: threading.Event, entry: ContentImageEntry
+    ) -> None:
         super().__init__()
-        self.__model: Final = model
+        self.__signals: Final = signals
+        self.__cache: Final = cache
+        self.__stopped: Final = stopped
         self.__entry: Final = entry
 
     def run(self) -> None:
-        if self.__model.stopped:
-            return
-        cache = self.__model.archive_cache
-        head = cache.read_head(self.__entry)
-        size = image_size(head) if head is not None else QSize()
-        if head is not None and not size.isValid():
-            whole = cache.read(self.__entry)
-            size = image_size(whole) if whole is not None else QSize()
-        self.__model.report(lambda: self.__model.header_read.emit(self.__entry.key, size))
+        try:
+            if self.__stopped.is_set():
+                return
+            head = self.__cache.read_head(self.__entry)
+            size = image_size(head) if head is not None else QSize()
+            if head is not None and not size.isValid():
+                whole = self.__cache.read(self.__entry)
+                size = image_size(whole) if whole is not None else QSize()
+            self.__signals.header_read.emit(self.__entry.key, size)
+        finally:
+            self.__signals.deleteLater()
 
 
 class ContentImagesModel(QAbstractListModel):  # pylint: disable=too-many-instance-attributes
@@ -125,10 +166,12 @@ class ContentImagesModel(QAbstractListModel):  # pylint: disable=too-many-instan
     """
 
     enumerated = Signal(int, list)
-    """Worker-to-GUI hop: an `EnumerateJob`'s generation and entries. Internal."""
+    """Where an `EnumerateJob`'s generation and entries land on the GUI thread, relayed from
+    `JobSignals`. Internal."""
 
     header_read = Signal(object, QSize)
-    """Worker-to-GUI hop: a member's tier-0 key and pixel size (invalid when unreadable). Internal."""
+    """Where a member's tier-0 key and pixel size (invalid when unreadable) land on the GUI thread,
+    relayed from `JobSignals`. Internal."""
 
     dimensions_changed = Signal()
     """Fires after a header read lands, so a view can re-pack -- coalesced by the view, not here."""
@@ -143,11 +186,19 @@ class ContentImagesModel(QAbstractListModel):  # pylint: disable=too-many-instan
         self.__generation = 0
         self.__lock: Final = threading.Lock()
         self.__stopped: Final = threading.Event()
-        # a job that outlives this object's C++ side (the document closed mid-read) must report into
-        # nothing rather than emit into a dead signal, and the archives it held open must close.
-        # Not bound methods of self: Qt drops a connection whose receiver is being destroyed
-        self.destroyed.connect(self.__stopped.set)
-        self.destroyed.connect(self.__cache.close)
+        stopped = self.__stopped
+        cache = self.__cache
+
+        def on_destroyed() -> None:
+            stopped.set()
+            cache.close()
+
+        # a job that outlives this object's C++ side (the document closed mid-read) must read nothing
+        # further, and the archives it held open must close. A closure, not a bound method: Qt drops
+        # a connection whose receiver is the object being destroyed, and PySide holds a bound method's
+        # receiver weakly, so on a plain `del` that receiver is torn down before -- or while -- the slot
+        # runs. The connection holds a closure strongly, so this runs with intact state on every path
+        self.destroyed.connect(on_destroyed)
         self.enumerated.connect(self.__on_enumerated)
         self.header_read.connect(self.__on_header_read)
 
@@ -160,19 +211,6 @@ class ContentImagesModel(QAbstractListModel):  # pylint: disable=too-many-instan
     def stopped(self) -> bool:
         """Whether this model is being destroyed, so a job on the pool should do nothing further."""
         return self.__stopped.is_set()
-
-    def report(self, emit: Callable[[], None]) -> None:
-        """Run ``emit`` -- a job's signal emission -- unless this model is gone (worker thread).
-
-        :param emit: the emission.
-        """
-        if self.__stopped.is_set():
-            return
-        try:
-            emit()
-        except RuntimeError:
-            # the C++ side went between the check and the emit; the job's result is for nobody
-            return
 
     @property
     def entries(self) -> list[ContentImageEntry]:
@@ -201,9 +239,10 @@ class ContentImagesModel(QAbstractListModel):  # pylint: disable=too-many-instan
             self.set_entries([], None)
             return
         self.__rehu_directory = path.parent
-        job = EnumerateJob(self, self.__generation, path, extensions)
+        pool = self.__pool()
+        job = EnumerateJob(self.__job_signals(pool), self.__generation, path, extensions)
         job.setAutoDelete(True)
-        self.__pool().start(job)
+        pool.start(job)
 
     def set_entries(self, entries: Sequence[ContentImageEntry], rehu_directory: Path | None) -> None:
         """Replace the entries wholesale.
@@ -242,6 +281,7 @@ class ContentImagesModel(QAbstractListModel):  # pylint: disable=too-many-instan
 
         :param indices: the positions a view is about to lay out.
         """
+        pool = self.__pool()
         jobs: list[HeaderJob] = []
         with self.__lock:
             for index in indices:
@@ -249,8 +289,7 @@ class ContentImagesModel(QAbstractListModel):  # pylint: disable=too-many-instan
                 if entry.key in self.__dimensions or entry.key in self.__pending:
                     continue
                 self.__pending.add(entry.key)
-                jobs.append(HeaderJob(self, entry))
-        pool = self.__pool()
+                jobs.append(HeaderJob(self.__job_signals(pool), self.__cache, self.__stopped, entry))
         for job in jobs:
             job.setAutoDelete(True)
             pool.start(job)
@@ -276,6 +315,20 @@ class ContentImagesModel(QAbstractListModel):  # pylint: disable=too-many-instan
     def __pool() -> QThreadPool:
         """The pool every read runs on -- the global one, shared with the thumbnail loader."""
         return QThreadPool.globalInstance()
+
+    def __job_signals(self, pool: QThreadPool) -> JobSignals:
+        """A job's sender, wired into this model's landing signals (GUI thread).
+
+        The pool-thread emits arrive queued; these connections are what the model's destruction
+        severs, so a late report reaches nobody.
+
+        :param pool: the pool the job runs on.
+        :returns: the sender.
+        """
+        signals = JobSignals(pool)
+        signals.enumerated.connect(self.enumerated)
+        signals.header_read.connect(self.header_read)
+        return signals
 
     @Slot(int, list)
     def __on_enumerated(self, generation: int, entries: list) -> None:
