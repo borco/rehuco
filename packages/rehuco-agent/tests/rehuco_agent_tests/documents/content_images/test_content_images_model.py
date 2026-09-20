@@ -1,13 +1,15 @@
 """Tests for the Content Images model and its archive-backed image source (#221)."""
 
 import threading
+from collections.abc import Callable
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QThreadPool
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.documents.content_images import ArchiveCache, ContentImagesModel
+from rehuco_agent.documents.content_images import ArchiveCache, ArchiveImageSource, ContentImagesModel
 from rehuco_agent.documents.content_images import content_images_model as model_module
+from rehuco_core import ContentImageEntry
 from shiboken6 import isValid
 
 from rehuco_agent_tests.documents.content_images.conftest import (
@@ -82,6 +84,43 @@ def test_a_header_missing_from_the_leading_slice_is_read_off_the_whole_member(
 
     assert content_model.aspect(0) == 2.0
     read.assert_called_once()
+
+
+def test_the_archive_image_source_describes_its_member_and_pixel_size(
+    archive: Callable[[ContentImageEntry], bytes | None], mocker: MockerFixture
+) -> None:
+    """`ArchiveImageSource.describe` names the member relative to the ``.rehu`` without touching the
+    archive; the pixel size is a separate header read -- the same one `HeaderJob` keeps for the
+    dock's own dimensions column, reused rather than duplicated (#321).
+
+    **Test steps:**
+
+    * describe a member of a pack under the ``.rehu`` directory and verify the archive was not read
+    * verify the archive-relative path and the stored byte size
+    * ask for the pixel size and verify it came off the header
+    """
+    source = ArchiveImageSource([entry(PACK, "a.png", WIDE)], ArchiveCache(), REHU_DIRECTORY)
+    read_head = mocker.patch.object(ArchiveCache, "read_head", side_effect=archive)
+
+    description = source.describe(0)
+
+    read_head.assert_not_called()
+    assert description.path_text == "pack.zip:/a.png"
+    assert description.byte_size == entry(PACK, "a.png", WIDE).size
+    assert source.pixel_size(0).toTuple() == WIDE
+    read_head.assert_called_once()
+
+
+def test_the_model_exposes_its_own_archive_cache(content_model: ContentImagesModel) -> None:
+    """The cache every read of this resource's archives goes through is reachable from outside, for a
+    caller that wants to read through it directly.
+
+    **Test steps:**
+
+    * read the model's cache
+    * verify it is the same cache instance the model reads its own members through
+    """
+    assert isinstance(content_model.archive_cache, ArchiveCache)
 
 
 def test_the_model_answers_nothing_for_an_invalid_index_or_another_role(content_model: ContentImagesModel) -> None:

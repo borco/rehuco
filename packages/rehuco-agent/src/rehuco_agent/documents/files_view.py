@@ -404,14 +404,14 @@ class FilesView(QWidget):
         toolbar.addAction(ui.reveal_action)
         # no glyph of its own yet (design/icons#314); text keeps it visible until one is drawn
         reveal_button = toolbar.widgetForAction(ui.reveal_action)
-        if isinstance(reveal_button, QToolButton):
+        if isinstance(reveal_button, QToolButton):  # pragma: no cover  (a QToolBar always builds one)
             reveal_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
         ui.main_layout.insertWidget(0, toolbar)
 
     def __on_reveal_triggered(self) -> None:
         """Show the browsed folder in the system's file browser -- a no-op for a path-less document,
         where the action is disabled anyway."""
-        if self.__directory is not None:
+        if self.__directory is not None:  # pragma: no cover  (a disabled action's trigger() is a no-op)
             reveal_in_file_browser(self.__directory)
 
     @property

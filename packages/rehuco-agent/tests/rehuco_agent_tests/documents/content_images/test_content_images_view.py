@@ -300,6 +300,29 @@ def test_a_scroll_re_reads_what_is_under_the_resting_pointer(
     assert view.status_text() == f"pack.zip:/{under}.png"
 
 
+def test_hovering_a_banner_names_nothing(
+    view: ContentImagesView, content_model: ContentImagesModel, qtbot: QtBot
+) -> None:
+    """A banner row is not an image row: the pointer resting on one reports nothing hovered, the same
+    way a gap below the rows does.
+
+    **Test steps:**
+
+    * pack one bannered member and rest the pointer on its banner
+    * verify the status line stays empty
+    """
+    view.set_flags(ContentDisplayFlags(zip_names=True, folder_names=False))
+    content_model.set_entries([entry(PACK, "a.png")], REHU_DIRECTORY)
+    settle(qtbot, view, content_model)
+    table = view.layout_table
+    assert table is not None
+    assert table.rows[0].banner is not None
+
+    qtbot.mouseMove(view.viewport(), QPoint(5, table.rows[0].y + 2))
+
+    assert view.status_text() == ""
+
+
 def test_the_pointer_leaving_clears_the_hover(
     view: ContentImagesView, content_model: ContentImagesModel, qtbot: QtBot
 ) -> None:

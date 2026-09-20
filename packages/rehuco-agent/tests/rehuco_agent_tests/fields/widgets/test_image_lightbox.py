@@ -8,7 +8,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, Final
 
-from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, Qt
+from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, QSize, Qt
 from PySide6.QtGui import QColor, QEnterEvent, QImage, QWheelEvent
 from PySide6.QtWidgets import QApplication, QLineEdit, QMainWindow, QToolButton, QVBoxLayout, QWidget
 from pytest import fixture, mark
@@ -1289,23 +1289,49 @@ def test_the_i_key_toggles_the_info_overlay(document: QWidget, qtbot: QtBot) -> 
 def test_the_info_overlay_names_the_image_its_pixels_and_its_bytes(
     document: QWidget, qtbot: QtBot, mocker: MockerFixture
 ) -> None:
-    """The overlay carries the image's path, ``W × H px`` and its stored size, and follows navigation.
+    """The overlay carries the image's path, ``W × H px``, its stored size, and its position in the
+    browsed list (#321), and follows navigation.
 
     **Test steps:**
 
     * make the fake files report a size on disk and reveal a viewer with the overlay shown
-    * verify the three lines
-    * step forward and verify the path line moved with it
+    * verify the four lines
+    * step forward and verify the path line moved with it, and the position advanced
     """
     mocker.patch.object(Path, "stat", return_value=mocker.Mock(st_size=1_500_000))
     lightbox = reveal_over(document, PATHS, PATHS[1], info_visible=True)
     qtbot.addWidget(lightbox)
 
-    assert info_of(lightbox).text() == f"{PATHS[1]}\n{IMAGE_WIDTH} × {IMAGE_HEIGHT} px\n1.5 MB"
+    assert info_of(lightbox).text() == f"{PATHS[1]}\n{IMAGE_WIDTH} × {IMAGE_HEIGHT} px\n1.5 MB\n[2/3]"
 
     qtbot.keyClick(lightbox, Qt.Key.Key_Right)
 
-    assert info_of(lightbox).text().startswith(str(PATHS[2]))
+    text = info_of(lightbox).text()
+    assert text.startswith(str(PATHS[2]))
+    assert text.endswith("[3/3]")
+
+
+def test_navigating_never_reads_a_header_for_the_info_overlay(
+    document: QWidget, qtbot: QtBot, mocker: MockerFixture
+) -> None:
+    """Stepping through the set reads no header: the pixel size on the current image's overlay comes
+    from the full decode already in hand, and a header read is an I/O (an inflate under the archive's
+    lock, for a pack) the viewer must not add to every step (#321).
+
+    **Test steps:**
+
+    * spy on the source's header read and reveal a viewer with the overlay shown
+    * step forward and back and verify the spy was never called, while the overlay still sized the image
+    """
+    header = mocker.patch.object(PathImageSource, "pixel_size")
+    lightbox = reveal_over(document, PATHS, PATHS[1], info_visible=True)
+    qtbot.addWidget(lightbox)
+
+    qtbot.keyClick(lightbox, Qt.Key.Key_Right)
+    qtbot.keyClick(lightbox, Qt.Key.Key_Left)
+
+    header.assert_not_called()
+    assert f"{IMAGE_WIDTH} × {IMAGE_HEIGHT} px" in info_of(lightbox).text()
 
 
 def test_the_info_overlay_elides_a_path_wider_than_the_viewer(
@@ -1340,18 +1366,21 @@ def test_the_info_overlay_elides_a_path_wider_than_the_viewer(
 def test_the_info_overlay_says_when_the_file_size_is_unknown(
     document: QWidget, qtbot: QtBot, mocker: MockerFixture
 ) -> None:
-    """A file that cannot be stat'ed reads as size unknown rather than raising (#221).
+    """A file that cannot be stat'ed reads as size unknown rather than raising (#221), with the
+    position line still following it (#321).
 
     **Test steps:**
 
     * make every stat fail as an offline mount's does, and reveal a viewer with the overlay shown
-    * verify the third line says so
+    * verify the file-size line says so, right before the position line
     """
     mocker.patch.object(Path, "stat", side_effect=OSError("offline"))
     lightbox = reveal_over(document, PATHS, PATHS[1], info_visible=True)
     qtbot.addWidget(lightbox)
 
-    assert info_of(lightbox).text().endswith("file size unknown")
+    lines = info_of(lightbox).text().split("\n")
+    assert lines[-2] == "file size unknown"
+    assert lines[-1] == "[2/3]"
 
 
 def test_the_info_overlay_sits_in_the_top_left_corner_and_takes_no_clicks(document: QWidget, qtbot: QtBot) -> None:
@@ -1374,18 +1403,20 @@ def test_the_info_overlay_sits_in_the_top_left_corner_and_takes_no_clicks(docume
 def test_hovering_a_thumbnail_names_it_in_a_box_above_the_row(
     document: QWidget, qtbot: QtBot, mocker: MockerFixture
 ) -> None:
-    """The pointer over a thumbnail shows the image's path and stored size in a box stacked over the
-    row's toggle -- at once, and with no pixel line, since the thumbnail was never decoded at full size;
-    leaving the row hides the box (#221).
+    """The pointer over a thumbnail shows the image's path, pixel size, stored size and position in a
+    box stacked over the row's toggle -- at once, read off the file's header rather than a full decode
+    (#221, #321); leaving the row hides the box.
 
     **Test steps:**
 
     * reveal a viewer with its row shown and verify the hover box is hidden
-    * move the pointer onto the first thumbnail and verify the box shows its path and size, a corner
-      margin in from the bottom-left of the image area -- over the row's toggle, which it paints above
+    * move the pointer onto the first thumbnail and verify the box shows its path, size and position, a
+      corner margin in from the bottom-left of the image area -- over the row's toggle, which it paints
+      above
     * take the pointer out of the row and verify the box is hidden
     """
     mocker.patch.object(Path, "stat", return_value=mocker.Mock(st_size=2_000))
+    mocker.patch.object(PathImageSource, "pixel_size", return_value=QSize(IMAGE_WIDTH, IMAGE_HEIGHT))
     lightbox = reveal_over(document, PATHS, PATHS[1], strip_visible=True)
     qtbot.addWidget(lightbox)
     hover = lightbox.findChild(ImageInfoOverlay, HOVER_INFO_NAME)
@@ -1403,7 +1434,7 @@ def test_hovering_a_thumbnail_names_it_in_a_box_above_the_row(
     qtbot.mouseMove(row.viewport(), row.visualRect(model.index(0, 0)).center())
     qtbot.waitUntil(lambda: not hover.isHidden())
 
-    assert hover.text() == f"{PATHS[0]}\n2.0 kB"
+    assert hover.text() == f"{PATHS[0]}\n{IMAGE_WIDTH} × {IMAGE_HEIGHT} px\n2.0 kB\n[1/3]"
     bottom_left = hover.mapTo(lightbox, QPoint(0, hover.height()))
     assert bottom_left == QPoint(CORNER_MARGIN, row.geometry().top() - CORNER_MARGIN)
     toggle = control(lightbox, STRIP_TOGGLE_BUTTON_NAME)

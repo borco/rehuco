@@ -129,6 +129,25 @@ def test_a_folder_is_opened_rather_than_selected_in_its_parent(mocker: MockerFix
     start.assert_called_once_with("explorer.exe", [str(PARENT)])
 
 
+def test_a_folder_is_opened_rather_than_selected_on_macos(mocker: MockerFixture) -> None:
+    """The same folder-opens-on-its-own-contents rule on macOS: ``open`` with no ``-R`` switch.
+
+    **Test steps:**
+
+    * force macOS and an existing folder
+    * reveal it
+    * verify ``open`` was launched against the folder, with no ``-R`` switch
+    """
+    mocker.patch("borco_pyside.file_browser.sys.platform", "darwin")
+    mocker.patch.object(Path, "exists", autospec=True, side_effect=exists_only(PARENT))
+    mocker.patch.object(Path, "is_dir", autospec=True, side_effect=exists_only(PARENT))
+    start = mocker.patch("borco_pyside.file_browser.QProcess.startDetached", return_value=(True, 0))
+
+    assert reveal_in_file_browser(PARENT) is True
+
+    start.assert_called_once_with("open", [str(PARENT)])
+
+
 # endregion
 
 # region missing file

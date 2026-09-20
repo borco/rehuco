@@ -11,7 +11,7 @@ from .duration_measurement_edit import DurationMeasurementEdit
 from .expand_toggle_button import ExpandToggleButton
 from .image_lightbox import ImageLightbox, ImageViewerMode
 from .image_selector import ImageSelector
-from .image_source import ImageDescription, ImageSource, PathImageSource, decode_image, image_size
+from .image_source import ImageDescription, ImageSource, PathImageSource, decode_image, image_size, image_size_at
 from .image_strip import ImageStrip
 from .index_spin_box_delegate import IndexSpinBoxDelegate
 from .learning_paths_table_model import LearningPathScopeFilterProxyModel, LearningPathsTableModel
@@ -61,6 +61,7 @@ __all__ = [
     "ThumbnailRow",
     "decode_image",
     "image_size",
+    "image_size_at",
     "LineEdit",
     "MarkdownEdit",
     "MarkdownView",

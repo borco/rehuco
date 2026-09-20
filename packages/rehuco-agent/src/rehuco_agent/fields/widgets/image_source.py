@@ -63,6 +63,18 @@ class ImageSource(Protocol):
         :returns: the description.
         """
 
+    def pixel_size(self, index: int) -> QSize:  # pyright: ignore[reportReturnType]
+        """The image's ``W × H`` read off its header alone -- never a full decode (#321).
+
+        Kept apart from :meth:`describe` on purpose: a header read is an I/O and, for an archive
+        member, an inflate under the archive's lock, which the description's callers (a status line
+        on every hover, the viewer on every step) must not pay for. Only the thumbnail-hover overlay
+        asks, one image at a time, at the pointer's pace.
+
+        :param index: the position.
+        :returns: the size, or an invalid one when the header cannot be read.
+        """
+
     def load(self, index: int, max_height: int | None) -> QImage:  # pyright: ignore[reportReturnType]
         """Decode the image at ``index``, at full size or downscaled to ``max_height``.
 
@@ -114,18 +126,39 @@ def decode_image(data: bytes, max_height: int | None) -> QImage:
 def image_size(data: bytes) -> QSize:
     """The pixel size ``data`` encodes, read off its header alone -- **as it will be shown**.
 
-    A photo shot with the camera turned is stored landscape with an EXIF orientation tag, and
-    `QImageReader.size` reports the stored size while the decode (``autoTransform``) rotates it: a
-    portrait would be packed as a landscape and its thumbnail stretched into the cell. The reader's
-    own ``transformation`` says whether a quarter turn applies, so the size is swapped to match what
-    :func:`decode_image` returns.
-
     :param data: the encoded bytes -- a leading slice is enough for every format whose header comes
         first, which is all of the recognized ones.
     :returns: the size, or an invalid one when the header is not there.
     """
     buffer = reading_buffer(data)
     reader = QImageReader(buffer)
+    return reader_image_size(reader)
+
+
+def image_size_at(path: Path) -> QSize:
+    """The pixel size the file at ``path`` encodes, read off its header alone -- **as it will be
+    shown**. Cheaper than :func:`image_size` for a file already on disk: `QImageReader` reads only
+    the header itself rather than the whole file being read into memory first.
+
+    :param path: the file.
+    :returns: the size, or an invalid one when it cannot be read or has no header.
+    """
+    reader = QImageReader(str(path))
+    return reader_image_size(reader)
+
+
+def reader_image_size(reader: QImageReader) -> QSize:
+    """The size ``reader`` reports, swapped for a quarter-turned photo so it matches what
+    :func:`decode_image` returns.
+
+    A photo shot with the camera turned is stored landscape with an EXIF orientation tag, and
+    `QImageReader.size` reports the stored size while the decode (``autoTransform``) rotates it: a
+    portrait would be packed as a landscape and its thumbnail stretched into the cell. The reader's
+    own ``transformation`` says whether a quarter turn applies, so the size is swapped to match.
+
+    :param reader: the reader, not yet asked for its size.
+    :returns: the size, or an invalid one when the header is not there.
+    """
     reader.setAutoTransform(True)
     size = reader.size()
     if size.isValid() and reader.transformation() & QImageIOHandler.Transformation.TransformationRotate90:
@@ -182,6 +215,10 @@ class PathImageSource:
         except OSError:
             size = None
         return ImageDescription(self.__path_text(path), size)
+
+    def pixel_size(self, index: int) -> QSize:
+        """The file's pixel size off its header, read straight off disk (#321)."""
+        return image_size_at(self.__paths[index])
 
     def __path_text(self, path: Path) -> str:
         """``path`` as the description names it.

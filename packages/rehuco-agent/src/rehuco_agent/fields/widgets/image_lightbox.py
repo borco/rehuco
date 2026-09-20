@@ -307,7 +307,8 @@ class CornerButton(HoverButton):
 
 
 class ImageInfoOverlay(QLabel):
-    """The image's name, pixel size and file size in a translucent box over the screenshot area (#221).
+    """The image's name, pixel size, file size and position in the browsed list, in a translucent box
+    over the screenshot area (#221, #321).
 
     Two of them: the current image's, stacked over its toggle in the top-left corner, and the hovered
     thumbnail's, in the bottom-left over the row's toggle -- right on the row the pointer is on, shown
@@ -337,19 +338,22 @@ class ImageInfoOverlay(QLabel):
             f" border-radius: {INFO_OVERLAY_RADIUS}px; padding: {INFO_OVERLAY_PADDING}px; }}"
         )
 
-    def describe(self, path_text: str, pixel_size: QSize | None, byte_size: int | None) -> None:
-        """Set the lines: where the image is, its ``W × H px`` (when that is known at all), and its
-        size on disk.
+    def describe(self, path_text: str, pixel_size: QSize, byte_size: int | None, position: int, count: int) -> None:
+        """Set the lines: where the image is, its ``W × H px`` (or that it is unknown), its size on
+        disk, and where it stands in the list it is being browsed in (#321).
 
         :param path_text: the image's path as a person would name it.
-        :param pixel_size: the image's pixel size; an invalid one reads as unknown, ``None`` leaves
-            the line out -- a hovered thumbnail was never decoded at full size.
+        :param pixel_size: the image's pixel size; an invalid one reads as unknown.
         :param byte_size: the image's byte size, or ``None`` when unknown.
+        :param position: the image's 1-based position in the browsed list.
+        :param count: how many images the browsed list holds.
         """
-        lines = [path_text]
-        if pixel_size is not None:
-            lines.append(f"{pixel_size.width()} × {pixel_size.height()} px" if pixel_size.isValid() else "size unknown")
-        lines.append(humanize.naturalsize(byte_size) if byte_size is not None else "file size unknown")
+        lines = [
+            path_text,
+            f"{pixel_size.width()} × {pixel_size.height()} px" if pixel_size.isValid() else "size unknown",
+            humanize.naturalsize(byte_size) if byte_size is not None else "file size unknown",
+            f"[{position}/{count}]",
+        ]
         self.__lines = lines
         self.__render()
 
@@ -404,8 +408,9 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes,to
     dependency of its own (the settings module imports :class:`ImageViewerMode` from here, so the
     reverse import would be a cycle).
 
-    **The info overlay** (`ImageInfoOverlay`, #221) names the image, its pixel size and its file size
-    in the top-left corner, toggled by ``I``. The owner seeds it from the setting and pushes that
+    **The info overlay** (`ImageInfoOverlay`, #221, #321) names the image, its pixel size, its file
+    size, and where it stands in the browsed list, in the top-left corner, toggled by ``I``. The owner
+    seeds it from the setting and pushes that
     setting's later changes down (:meth:`set_info_visible`), the way the row's height is pushed;
     unlike the row, nothing is reported back up -- ``I`` changes this viewer alone.
 
@@ -893,7 +898,7 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes,to
         image = self.__source.load(index, None)
         self.__preview.set_source(QPixmap.fromImage(image))
         description = self.__source.describe(index)
-        self.__info.describe(description.path_text, image.size(), description.byte_size)
+        self.__info.describe(description.path_text, image.size(), description.byte_size, index + 1, len(self.__source))
         self.__strip.set_current(index)
         # hidden, not merely faded out, at either end: an always-present band would be a 50 px strip of
         # the screenshot that swallows clicks and answers nothing
@@ -977,7 +982,9 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes,to
             self.__hover_info.hide()
             return
         description = self.__source.describe(index)
-        self.__hover_info.describe(description.path_text, None, description.byte_size)
+        self.__hover_info.describe(
+            description.path_text, self.__source.pixel_size(index), description.byte_size, index + 1, len(self.__source)
+        )
         self.__hover_info.show()
 
     def __make_hover_corner(self) -> QWidget:
