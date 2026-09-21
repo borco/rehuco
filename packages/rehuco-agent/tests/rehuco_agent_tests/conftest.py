@@ -25,6 +25,8 @@ from rehuco_agent.app_logging import shared_log_bridge
 from rehuco_agent.dialogs import conversion_backups_dialog
 from rehuco_agent.documents import document_widget
 from rehuco_agent.fields.widgets.markdown_view import render_markdown
+from rehuco_agent.scraping.registry import shared_scraper_registry
+from rehuco_agent.scraping.scraper_executor import shared_scraper_executor
 from rehuco_agent.settings import (
     checksum_settings,
     default_layout_settings,
@@ -37,6 +39,7 @@ from rehuco_agent.settings import (
     logs_settings,
     markdown_rendering_settings,
     reference_images_settings,
+    scrapers_settings,
     screenshot_patterns_settings,
     tray_settings,
     videos_settings,
@@ -52,6 +55,7 @@ from rehuco_agent.settings.location_templates_settings import shared_location_te
 from rehuco_agent.settings.logs_settings import shared_logs_settings
 from rehuco_agent.settings.markdown_rendering_settings import shared_markdown_rendering_settings
 from rehuco_agent.settings.reference_images_settings import shared_reference_images_settings
+from rehuco_agent.settings.scrapers_settings import shared_scrapers_settings
 from rehuco_agent.settings.screenshot_patterns_settings import shared_screenshot_patterns_settings
 from rehuco_agent.settings.tray_settings import shared_tray_settings
 from rehuco_agent.settings.ui import checksums_page, settings_dialog, tasks_page, tray_block
@@ -99,6 +103,11 @@ class FakeSettings:  # pylint: disable=invalid-name,missing-function-docstring,r
     def value(self, key: str, default: Any = None, type: Any = None) -> Any:  # noqa: A002, N802
         del type
         return self.__data.get(self.__prefix + key, default)
+
+    def fileName(self) -> str:  # noqa: N802
+        """A fake ``.ini`` path -- what `default_scripts_folder` derives its default folder from
+        (#269), so a test never computes one under the developer's real config directory."""
+        return "/fake/borco/rehuco-agent.ini"
 
     def childGroups(self) -> list[str]:  # noqa: N802
         """The first path segment of every key nested at least one level under the open group -- what
@@ -276,6 +285,30 @@ def isolate_shared_reference_images_settings(mocker: MockerFixture) -> Iterator[
     mocker.patch.object(reference_images_settings, "persistent_settings", return_value=FakeSettings())
     yield
     shared_reference_images_settings.cache_clear()
+
+
+@fixture(autouse=True)
+def isolate_shared_scrapers_settings(mocker: MockerFixture) -> Iterator[None]:
+    """Isolate every test from the process-wide `ScrapersSettings` singleton, and the shared
+    `ScraperRegistry`/`ScraperExecutor` that read it (#269).
+
+    Same rationale as :func:`isolate_shared_markdown_rendering_settings`: whichever test first opens
+    the Scrapers settings page, or builds a `ScrapeJob` through the shared registry, would otherwise
+    pin an instance loaded from the developer's real on-disk settings -- and scan whatever real folder
+    that names -- for the rest of the session. The registry and the executor are cleared alongside the
+    settings they are built from, for the same reason `isolate_shared_log_bridge` clears what depends
+    on `shared_logs_settings`.
+
+    Tests that specifically exercise the scrapers settings patch ``persistent_settings`` themselves.
+    """
+    shared_scrapers_settings.cache_clear()
+    shared_scraper_registry.cache_clear()
+    shared_scraper_executor.cache_clear()
+    mocker.patch.object(scrapers_settings, "persistent_settings", return_value=FakeSettings())
+    yield
+    shared_scrapers_settings.cache_clear()
+    shared_scraper_registry.cache_clear()
+    shared_scraper_executor.cache_clear()
 
 
 @fixture(autouse=True)

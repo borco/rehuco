@@ -1335,6 +1335,7 @@ dependencies = [
     { name = "pyside6-scintilla" },
     { name = "python-dateutil" },
     { name = "rehuco-core" },
+    { name = "requests" },
     { name = "unidecode" },
 ]
 
@@ -1355,6 +1356,7 @@ requires-dist = [
     { name = "pyside6-scintilla", specifier = ">=5.6.3.7" },
     { name = "python-dateutil", specifier = ">=2.9.0" },
     { name = "rehuco-core", editable = "packages/rehuco-core" },
+    { name = "requests", specifier = ">=2.32.0" },
     { name = "unidecode", specifier = ">=1.4.0" },
 ]
 
