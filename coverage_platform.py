@@ -23,8 +23,15 @@ WINDOWS_ONLY_OMIT: Final = [
 ]
 """Globs for wholly-Windows modules to omit from the report off Windows."""
 
-WINDOWS_ONLY_EXCLUDE = r'if sys\.platform == "win32":'
-"""Regex matching the ``__main__`` win32 guard lines, whose blocks are excluded off Windows."""
+WINDOWS_ONLY_EXCLUDE: Final = [
+    r'if sys\.platform == "win32":',
+    # for Windows-only code reachable only through a value threaded from elsewhere (e.g. a
+    # helper's return value that is only ever non-empty on Windows), where the reachable block
+    # isn't itself a direct `sys.platform` guard -- marks a single line or a `def` (excluding its
+    # whole body), not literal ``# pragma: no cover`` so Windows' own report still counts it there.
+    r"# win32-only",
+]
+"""Regexes matching lines whose blocks are excluded off Windows."""
 
 
 class PlatformCoverageConfigurer:
@@ -47,7 +54,7 @@ class PlatformCoverageConfigurer:
         config.set_option("run:omit", omit)
 
         exclude = list(config.get_option("report:exclude_lines") or [])
-        exclude.append(WINDOWS_ONLY_EXCLUDE)
+        exclude.extend(WINDOWS_ONLY_EXCLUDE)
         config.set_option("report:exclude_lines", exclude)
 
 

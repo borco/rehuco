@@ -543,7 +543,7 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
             return
         fallback = self.__no_bin_fallback_allowed(selected)
         if fallback is None:
-            return
+            return  # win32-only: __no_bin_fallback_allowed only ever returns None on Windows (#313)
         self.__enqueue(DiscardBackupsJob, selected, delete_permanently_if_unreachable=fallback)
 
     def __no_bin_fallback_allowed(self, rows: Sequence[ConversionBackupsRow]) -> bool | None:
@@ -577,6 +577,17 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
         without_bin = self.__rows_without_a_bin(rows)
         if not without_bin:
             return False
+        return self.__ask_no_bin_question(rows, without_bin)
+
+    def __ask_no_bin_question(  # win32-only: only reached with a non-empty without_bin (#313)
+        self, rows: Sequence[ConversionBackupsRow], without_bin: Sequence[ConversionBackupsRow]
+    ) -> bool | None:
+        """The once-per-batch no-bin question, worded for a full or a mixed loss of the bin (#313).
+
+        :param rows: the whole batch about to be discarded.
+        :param without_bin: the rows within it whose location has no reachable Recycle Bin.
+        :returns: the fallback to enqueue with, or ``None`` on No.
+        """
         where = ", ".join(sorted({row.path.drive or row.path.anchor for row in without_bin}))
         if len(without_bin) == len(rows):
             question = NO_BIN_QUESTION.format(where=where, count=len(rows), size=self.__size_of(rows))
@@ -601,12 +612,12 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
         :param rows: the resources to check.
         :returns: the rows without a bin; empty off Windows, where nothing can be known yet.
         """
-        if sys.platform != "win32":
-            return []
-        # pylint: disable-next=import-outside-toplevel
-        from borco_pyside.platforms.windows.recycle_bin_capability import has_recycle_bin
+        if sys.platform == "win32":
+            # pylint: disable-next=import-outside-toplevel
+            from borco_pyside.platforms.windows.recycle_bin_capability import has_recycle_bin
 
-        return [row for row in rows if not has_recycle_bin(row.path)]
+            return [row for row in rows if not has_recycle_bin(row.path)]
+        return []
 
     @staticmethod
     def __size_of(rows: Sequence[ConversionBackupsRow]) -> str:
