@@ -577,7 +577,7 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
         without_bin = self.__rows_without_a_bin(rows)
         if not without_bin:
             return False
-        return self.__ask_no_bin_question(rows, without_bin)
+        return self.__ask_no_bin_question(rows, without_bin)  # win32-only (#313)
 
     def __ask_no_bin_question(  # win32-only: only reached with a non-empty without_bin (#313)
         self, rows: Sequence[ConversionBackupsRow], without_bin: Sequence[ConversionBackupsRow]
