@@ -1,17 +1,20 @@
 """A `ScintillaEdit` configured for editing Markdown prose ([[plugins#field-toolkit]], #74): line
 numbers, wrapped long lines, a visible end-of-line glyph, typing across a block (rectangular)
-selection, and filename autocomplete for embedded ``![alt](...)`` image references.
+selection, filename autocomplete for embedded ``![alt](...)`` image references, and converting a
+dropped browser selection's HTML to Markdown ([[acquisition-tooling#drag-drop-aids]], #264).
 """
 
 import re
-from typing import Final
+from typing import Final, override
 
 from borco_pyside.core import SimpleProperty
 from borco_pyside.theming import ApplicationPaletteChangeNotifier
-from PySide6.QtGui import QFontDatabase, QKeySequence, QPalette, QShortcut
+from PySide6.QtCore import QMimeData, Qt
+from PySide6.QtGui import QDropEvent, QFontDatabase, QKeySequence, QPalette, QShortcut
 from PySide6.QtWidgets import QApplication, QWidget
 from pyside6_scintilla import Scintilla, ScintillaEdit
 
+from ...scraping.html_markdown import HtmlMarkdown
 from ..image_scanner import ImageScanner
 
 LINE_NUMBER_MARGIN: Final = 0
@@ -40,9 +43,11 @@ class MarkdownEdit(ScintillaEdit):  # pylint: disable=too-few-public-methods
     """A `ScintillaEdit` configured as a Markdown source editor (#74): a line-number margin, wrapped
     long lines, a visible end-of-line glyph -- each independently toggleable (:attr:`line_numbers`,
     :attr:`wrap_long_lines`, :attr:`line_endings_visible`, #69) -- typing that reaches every line of a
-    block (rectangular) selection (Alt+drag / Alt+Shift+Arrow) at once, and autocomplete offering this
+    block (rectangular) selection (Alt+drag / Alt+Shift+Arrow) at once, autocomplete offering this
     resource's own image filenames while typing an in-progress ``![alt](...)`` reference, or on
-    demand (the full list) via Ctrl+Space.
+    demand (the full list) via Ctrl+Space, and converting a dropped browser selection's HTML to
+    Markdown at the drop point ([[acquisition-tooling#drag-drop-aids]], #264) -- holding **Shift**
+    while dropping skips the conversion and drops the plain text instead.
 
     :param parent: optional Qt parent.
     :param image_scanner: resolves this resource's own image filenames, offered by autocomplete;
@@ -79,6 +84,33 @@ class MarkdownEdit(ScintillaEdit):  # pylint: disable=too-few-public-methods
         self.__setup_toggles(line_numbers, line_endings_visible, wrap_long_lines)
         self.__setup_autocomplete()
         self.__setup_theme_reactivity()
+
+    @override
+    def dropEvent(self, event: QDropEvent) -> None:  # pylint: disable=invalid-name
+        """Convert a dropped browser selection's HTML to Markdown before handing the drop on to
+        Scintilla, so it lands exactly where a plain-text drop would (#264). Holding **Shift**
+        skips the conversion; a drop carrying no ``text/html`` (only ``text/plain``) is untouched
+        either way.
+
+        :param event: the drop event, as delivered by Qt.
+        """
+        data = event.mimeData()
+        shift_held = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+        if not data.hasHtml() or shift_held:
+            super().dropEvent(event)
+            return
+
+        markdown = HtmlMarkdown.convert(data.html())
+        converted_data = QMimeData()
+        converted_data.setText(markdown)
+        converted_event = QDropEvent(
+            event.position(), event.dropAction(), converted_data, event.buttons(), event.modifiers(), event.type()
+        )
+        super().dropEvent(converted_event)
+        # Qt reads the outcome off the event *it* delivered, not the substitute -- without this the
+        # drag source is told the drop was refused
+        event.setDropAction(converted_event.dropAction())
+        event.setAccepted(converted_event.isAccepted())
 
     def __setup_appearance(self) -> None:
         """Static appearance, independent of the three toggleable states :meth:`__setup_toggles`

@@ -38,6 +38,8 @@ dependencies = [
     # meta-package, so an older resolve would drag Addons back in through this one dependency.
     "pyside6-scintilla>=5.6.3.7",
     "markdown>=3.7",
+    "markdownify>=1.2.0",
+    "beautifulsoup4>=4.13.0",
     "mistletoe>=1.4.0",
     "pillow",
 ]
