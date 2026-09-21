@@ -127,13 +127,13 @@ site's markup in places a few CSS selectors name exactly, and a scraper that bre
 afternoon rather than a model to re-prompt. The LLM stays, as the fallback for hosts nobody has written a scraper for
 ([[acquisition-tooling#llm-url-extract]]).
 
-### §15.2.1 One Protocol per resource type
+### §15.2.1 One method, one result shape
 
 [[[acquisition-tooling#scraper-protocols]]]
 
 Scraping is a **desktop concern** and lives in `rehuco-agent`: a productivity aid feeding the editor, not something a
-node does unattended, so `rehuco-core` learns no HTTP client and no HTML parser. Three kinds of Protocol, all
-structural, all plain classes:
+node does unattended, so `rehuco-core` learns no HTTP client and no HTML parser. Two kinds of Protocol, both
+structural, both plain classes:
 
 - **`PageFetcher`** — `fetch(url) -> Page`, a `Page` being the URL asked for, the URL it resolved to, and the HTML. The
   default fetches over plain HTTP with a browser User-Agent. A **browser-driven fetcher** — a headless browser, the
@@ -141,15 +141,26 @@ structural, all plain classes:
   needs, or that a paywalled site makes necessary: the heaviest dependency in the app should be paid for by the site
   that needs it. See [[acquisition-tooling#browser-persona]] for what it drives.
 - **`SiteScraper`** — what every scraper is: `matches(url) -> bool`, a host or prefix test as tc4's `can_scrap` was, a
-  `label`, and the `publisher` it fills in.
-- **One Protocol per resource type** — `TutorialScraper.scrape_tutorial(page)`,
-  `ReferenceImagesScraper.scrape_reference_images(page)`, `CollectionScraper.scrape_collection(page)`, one per plugin
-  key ([[plugins#plugin-blocks]]). Each returns a **typed result**: field values keyed by the plugin's own field names
-  ([[field-schema#resource-types]]); a Markdown description whose image links are already rewritten to the placeholder
-  `<stem>NN` names the images will get, in order; and those `images` as `(name, url, referrer)` triples the image
-  pipeline of [[acquisition-tooling#drag-drop-aids]] downloads. A concrete scraper implements **as many type Protocols
-  as its site can serve** — ArtStation sells tutorials and reference packs from the same product page — and dispatch
-  asks for the document's *current* type, skipping a scraper that matches the host but does not implement that type.
+  `label`, the `publisher` it fills in, a `needs_browser` flag — `True` on a scraper that cannot read its site without
+  the browser-driven fetcher, and refused with a clear log message rather than fetched over plain HTTP until that
+  fetcher exists — and one method — `scrape_page(page) -> ScrapeResult`. **Not one Protocol per
+  resource type**: an earlier draft dispatched to `scrape_tutorial`/`scrape_reference_images`/`scrape_collection`
+  separately, one per plugin key ([[plugins#plugin-blocks]]), but a `ScrapeResult`'s fields are an unvalidated,
+  plain mapping rather than pre-filtered to one type's declared set (below) — so there is nothing left for three
+  near-identical methods to decide that one doesn't. A concrete scraper's `matches(url)` alone decides whether it
+  runs; ArtStation selling tutorials and reference packs from the same product page returns whatever fields that
+  page has, and the reader picks out what applies.
+
+A `ScrapeResult` holds three things: **`fields`**, a plain mapping spelled from the plugin field-name vocabulary
+([[field-schema#resource-types]], e.g. `"title"`, `"advertised_duration"`) but not restricted to any one type's
+declared set — a scraper returns whatever it found, and picking out what fits the document a result is applied to
+happens where it is applied, not at scrape time; **`description`**, Markdown with any images the scraper chooses to
+embed already rewritten to a stem-less placeholder in encounter order (the `<stem>` of `<stem>NN` is a per-document
+fact no scraper knows); and **`images`**, the `(slot, url, referrer)` triples the image pipeline of
+[[acquisition-tooling#drag-drop-aids]] downloads, substituting the real stem in. A scraper decides for itself whether
+any of `images` are also referenced in `description` — ArtStation and Udemy download images without ever mentioning
+them in the description text, while a scraper that embeds several of what it downloads directly into the description
+is equally supported.
 
 A result is a proposal. A field the scraper could not find is absent, never filled with a guess, and the editor shows
 what arrived beside what was there.
@@ -161,12 +172,14 @@ what arrived beside what was there.
 Scrapers are looked up in an **ordered list**, first `matches()` wins, and the list is the **user's scripts folder
 first, then the built-ins** — so a user's module overrides a shipped scraper for the same host. That is the whole answer
 to brittleness: when a site changes, the fix is a `.py` file in a folder, not a release. The folder is a settings page,
-**Scrapers** ([[appendices.settings-pages#category-groups]]): the folder path; a table of what loaded — module, the
-hosts it matches, the type Protocols it satisfies — and, per module, the import error when it failed, since a scraper
-that silently did not load is indistinguishable from one that matched nothing; and a **Reload** that re-imports without
-a restart. Scripts in that folder are **trusted local code**, run with the app's own privileges; the page says so and
-the app does nothing to sandbox them. Built-in scrapers ship for **ArtStation** and **Udemy** first, the two the
-predecessors kept alive longest.
+**Scrapers** ([[appendices.settings-pages#category-groups]]): the folder path; a table of what loaded — one row per
+file, naming the file, the scrapers it defines (`label`, `publisher`) — and, per file, the import error when it
+failed, since a scraper that silently did not load is indistinguishable from one that matched nothing; and a
+**Reload** that re-scans the saved folder without a restart. A user's own script needs no import from this package
+at all: `SiteScraper` is a plain structural Protocol, so a copied-and-edited file satisfies it by shape alone, with
+no registration step beyond being a `.py` file in the folder. Scripts in that folder are **trusted local code**, run
+with the app's own privileges; the page says so and the app does nothing to sandbox them. Built-in scrapers ship for
+**ArtStation** and **Udemy** first, the two the predecessors kept alive longest.
 
 ### §15.2.3 The browser fetcher and its persona
 
@@ -192,15 +205,22 @@ The profile is a **credential store**: it lives only under the config directory,
 and is never synced or copied by anything the app does. Sessions expire and two-factor sites re-ask; the app does
 not try to keep a login alive, it only keeps the door to renewing one open.
 
-### §15.2.4 The scrape is a job
+### §15.2.4 The scrape runs on its own pool, not the app-wide task queue
 
 [[[acquisition-tooling#scrape-job]]]
 
-A drop queues one job on the app-wide task queue ([[appendices.task-queue]]), under the document's log scope so its
-fetch and its parse are readable in that document's log ([[appendices.logging#scopes]]), cancellable like any other.
-Its result is applied on the GUI thread, and only if the document is still open at the same path; a document closed or
-renamed while its page was being fetched simply discards the result. `markdownify`, `beautifulsoup4` and `requests`
-become runtime dependencies of `rehuco-agent`; the browser driver goes under an opt-in extra.
+A drop submits one `ScrapeJob` to a small, dedicated `ScraperExecutor` — **not** the app-wide task queue
+([[appendices.task-queue]]). That queue is a single worker running one job at a time, right for a checksum sweep or a
+catalog import measured in hours, wrong for an interactive fetch a sweep must never delay: a scrape dropped while one
+is running gets a free worker immediately, and two scrapes dropped close together run concurrently rather than
+serializing behind each other. A scrape is submitted under the document's log scope, so its fetch and its parse are
+readable in that document's log alongside the app-wide one ([[appendices.logging#scopes]]) — the one piece of the
+task queue's machinery still needed, since a pool thread otherwise inherits no context from whoever submitted the
+work to it. Not a `TaskJob`: with no pause/resume/cancel worth the machinery for one fetch-and-parse, a scrape has no
+row on the Tasks dock, and its only visible trace is its log lines. Its result is applied on the GUI thread, and only
+if the document is still open at the same path; a document closed or renamed while its page was being fetched simply
+discards the result. `markdownify`, `beautifulsoup4` and `requests` become runtime dependencies of `rehuco-agent`;
+the browser driver goes under an opt-in extra.
 
 ### §15.2.5 The LLM fallback, deferred
 
@@ -228,8 +248,8 @@ scraper returns, with no per-site code at all.
   headless browser to render before extraction, and a readability/main-content trim before the model keeps quality up on
   long pages. So per-site effort drops a lot but doesn't vanish — it moves from "parse this site's DOM" (brittle) to
   "render and trim this site's page" (more robust).
-- Implemented as a **task-queue job** ([[architecture-design#components]]), the same one a scraper runs as
-  ([[acquisition-tooling#scrape-job]]).
+- Implemented on the same `ScraperExecutor` pool a scraper runs on ([[acquisition-tooling#scrape-job]]), not the
+  app-wide task queue ([[architecture-design#components]]).
 
 ## §15.3 Migration: `.tc` → `.rehu` (the oldest source format)
 

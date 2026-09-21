@@ -75,6 +75,7 @@ from .settings.ui.images_display_page import ImagesDisplayPage
 from .settings.ui.images_files_page import ImagesFilesPage
 from .settings.ui.location_templates_page import LocationTemplatesPage
 from .settings.ui.logs_page import LogsPage
+from .settings.ui.scrapers_page import ScrapersPage
 from .settings.ui.screenshot_patterns_page import ScreenshotPatternsPage
 from .settings.ui.session_page import SessionPage
 from .settings.ui.settings_dialog import SettingsDialog
@@ -738,6 +739,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         for main_key, title in sorted(location_titles.items(), key=lambda item: item[1]):
             self.__settings_dialog.add_page("Locations", title, LocationTemplatesPage(main_key))
         self.__settings_dialog.add_page("Logs", LogsPage())
+        self.__settings_dialog.add_page("Scrapers", ScrapersPage())
         self.__settings_dialog.add_page("Session", SessionPage())
 
         # the three system-integration pages, one per platform: registered here, between Session and
