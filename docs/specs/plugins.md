@@ -652,10 +652,12 @@ sidecar, user-configurable models, what a node needs, and swarm dispatch — is 
   metadata alongside `.rehu`/screenshots (not inside the immutable, checksummed zip), keyed to images by index/filename
   — see [[data-model#image-meanings]] for the screenshot-vs-zip-content distinction and the stale-overlay warning when a
   zip is manually refreshed.
-- **Non-destructive redaction**: rectangle/ellipse regions with an effect type (mosaic/blur/solid color), stored as
-  app-managed metadata ([[data-model#image-meanings]]) and applied at render time — the original image inside the zip
-  stays byte-identical and covered by the checksum manifest ([[data-model#checksums]]). A toggle controls whether
-  redaction is shown; likely a per-user (not just per-device) preference.
+- **Non-destructive redaction**: rectangle/ellipse regions with an effect type (mosaic/blur/solid color/**cover** —
+  cover is inpaint-based removal, restoring plausible skin or background rather than occluding; see
+  [[reference-images#modes]]), stored as app-managed metadata ([[data-model#image-meanings]]) and applied at render
+  time — the original image inside the zip stays byte-identical and covered by the checksum manifest
+  ([[data-model#checksums]]). A toggle controls whether redaction is shown; likely a per-user (not just per-device)
+  preference, and overridable per document and per image ([[reference-images#redaction-scope]]).
 - **Search**: tag-based filtering (select from existing tags, e.g. `female`, `back`, `3/4`) is straightforward.
   Free-text natural-language search (e.g. "3/4 view of male face") is harder and should be scoped as: a cheap fallback
   (fuzzy match against existing tags/synonyms) now, with a semantic/embedding-based approach as a possible later upgrade

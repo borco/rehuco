@@ -267,8 +267,9 @@ not to be uploaded regardless.
 
 **Status: proposed.**
 
-Each scan stage — tagger, blur-region detector, pose and regions, embedding, and the optional caption and
-prop stages — is a **named contract**: an input shape, an output schema, and for taggers a vocabulary map.
+Each scan stage — tagger, blur-region detector, pose and regions, embedding, inpainting (cover, optional,
+gated per-class like blur), and the optional caption and prop stages — is a **named contract**: an input
+shape, an output schema, and for taggers a vocabulary map.
 For the blur detector the output schema fixes the **class vocabulary**: male genitals, female genitals,
 female nipples, each with an exposed and a covered variant ([[reference-images#modes]]); a model that emits a
 different class list is mapped onto it, never the other way round, so the per-class switches mean the same
@@ -419,6 +420,143 @@ practice mode is deferred ([[reference-images#practice-sessions]]).
   family also report **covered** variants; those are stored, because they are useful for the "clothed only"
   filter, but they are **never** blurred: blur applies to the exposed classes alone. A part the detector
   missed is what the authored layer's hand-drawn box is for.
+- **Cover is a second render mode over the same boxes, not a second class system.** The detector, the class
+  vocabulary and the per-class switches are all shared with blur unchanged — cover only changes *what
+  happens* to an enabled box: instead of occluding the pixels, it draws a generated fill over them.
+- **The original is never touched, by construction, same as every other effect type here.** The generated
+  fill is composited **at render time**, exactly like blur/mosaic/solid already are ([[plugins#refimages-plugin]]:
+  "the original image inside the zip stays byte-identical"). Cover differs only in *what* gets composited: a
+  precomputed patch instead of a computed-on-the-fly blur/mosaic/color. Nothing about cover writes into the
+  archive or replaces the working image; it is purely additive, an overlay asset plus a paste-at-coordinates
+  operation done every render, same as today's other three effects.
+- **One default behavior, one opt-in flag — not two named sub-modes.** The default, for every class, is
+  **plain removal**: fill aims to look like the region was never there, a continuation of surrounding skin or
+  background, not a flat color. A separate **reconstruct** flag (off by default, both in settings and at
+  generation time) asks the model to instead synthesize a *specific* plausible shape rather than merely
+  continue the surroundings. Today reconstruct only has a defined target for **male genitals** — a neutral,
+  featureless bulge as on a display mannequin — and is expected to be materially less reliable than plain
+  removal (pose/angle-dependent, harder on non-uniform backgrounds), which is exactly why it is opt-in rather
+  than the default. For the other two classes reconstruct has no defined target yet and the flag is simply
+  inert there until one is designed.
+- **Because cover is precomputed at scan time (below), the reconstruct flag is a scan-time parameter, not a
+  render-time toggle.** It is stamped per row like the model that produced it
+  ([[reference-images#scan-sidecar]]'s "the size is a plugin setting, stamped per row... regeneration is
+  detected"), with its default coming from settings and an override available wherever a scan or rescan is
+  triggered (a directory-scan wizard, or a single-pack rescan). Changing the flag after the fact means the
+  affected boxes are regenerated, not re-rendered.
+- **Cover is precomputed at scan time, not rendered on demand — but stored as a small patch, not a whole
+  image.** Unlike blur/mosaic/solid (a cheap render-time draw needing no stored asset), inpainting is
+  expensive per image and must be precomputed — incompatible with the "10 million images, GPU-weeks" scale
+  note in this document's overview if done at view time. What is stored, though, is **only the generated
+  fill for the box's own bounds (plus a small blend margin)**, not a copy of the whole frame: at this scale a
+  full alternate image per redacted picture would roughly double the sidecar's working-image storage budget
+  (already an open question at ~300–500 GB, [[reference-images#scan-sidecar]]), whereas a patch scales with
+  total *box area* across the collection, a small fraction of total pixel area. This is produced as an
+  **optional tier-1 sub-stage**, gated on the same per-class enablement that governs blur, with each patch
+  stored **in its own blob table in the scan sidecar** ([[reference-images#scan-sidecar]]) alongside the box
+  row it belongs to, keyed by box id. Rendering composites the patch over the original/working image at the
+  box's coordinates, same mechanics as any other effect type — the visual result is identical to a
+  full-image variant; only the storage shape differs.
+- **Seam handling, since most source images are lossy JPEG.** Composition happens on decoded pixel arrays,
+  so JPEG's block structure is not itself a seam risk. Inpainting models of the candidate families are
+  **context-conditioned** — they take real surrounding pixels as part of their input, not just the mask — so
+  a patch is already generated to match local color, tone and lighting, which is most of what makes a seam
+  invisible. The residual risk is a **noise/grain mismatch**: a cleanly generated patch can look subtly
+  smoother than the compression noise baked into the surrounding JPEG pixels. Two mitigations, both cheap
+  relative to generation cost itself: the patch's blend margin (above) is composited with a **feathered
+  alpha edge** (a few pixels of linear falloff), not a hard cut, specifically to hide this; injecting matched
+  synthetic grain into the patch to match the surrounding noise floor is a further refinement, left **open**
+  rather than required for a first cut ([[reference-images#open-questions]]). The patch itself is stored
+  **losslessly** (e.g. PNG) — unlike the working image's intentionally lossy WebP, a patch is small enough
+  that lossless costs little, and it sits right at a visible boundary where a second layer of compression
+  artifacts is only downside.
+- **Cover needs its own model contract** ([[reference-images#model-contracts]]): an inpainting stage, input =
+  image + one box's mask (plus a small context margin around it, not the whole frame) + the reconstruct
+  flag, output = a small filled patch. Plain removal (LaMa-class, small/fast, CPU-friendly) and reconstruct
+  (conditioned/prompted inpainting, e.g. an SD-inpaint-class model) are materially different in size and
+  cost — one contract with a mode parameter, but implementers should not assume one model serves both modes
+  well.
+- **Recompute is a user-triggered action, not a one-shot scan artifact.** Because engines/models for this
+  stage are expected to change ([[reference-images#model-contracts]]'s "swap the tagger in two years" case
+  applies here too, plus the explicit expectation that cover quality will need tuning), the region/blur
+  sub-dock ([[reference-images#region-editor]]) gets a **"Recompute cover" action per box** (and a
+  whole-image variant), letting the user re-run just that box's patch with a different registered engine or
+  a different reconstruct setting without rescanning the pack. This reuses the existing "every row records
+  the model that produced it" rule ([[reference-images#model-contracts]]) unchanged — a recomputed patch
+  simply gets a new model stamp — and is cheap precisely because it operates on one small patch, not the
+  whole image.
+- **Effect type is a single setting, not per-class.** Consistent with [[plugins#refimages-plugin]]'s
+  existing singular "an effect type" (mosaic/blur/solid/cover, one active choice), not a per-class effect
+  matrix — the per-class axis stays "which classes are redacted"; the effect-type axis stays "how a redacted
+  class is rendered". Both are independent overrides at whatever scope applies
+  ([[reference-images#redaction-scope]]).
+- **Status: open** — which specific model families become the built-in defaults for plain removal and for
+  the reconstruct flag's target, and whether reconstruct ships as a built-in default at all. No licensing
+  problem is known for any specific candidate today — this is just naming that whichever model is eventually
+  chosen has to clear the same **existing, project-wide** rule every other stage's built-in already answers
+  to ([[reference-images#model-contracts]]: no built-in default may be AGPL-licensed or depend on
+  AGPL-licensed weights; a model that isn't permissively licensed is still usable, just only as a
+  user-supplied ONNX file or an external endpoint the user runs themselves, never a built-in). Recorded in
+  [[reference-images#open-questions]].
+
+## §18.11a Redaction scope: app, document, image
+
+[[[reference-images#redaction-scope]]]
+
+**Status: proposed.**
+
+- The master toggle above ([[reference-images#modes]]) is **app-wide, per-user**, and applies uniformly
+  across every dock. This adds two narrower scopes beneath it that can **override** the app-wide default:
+  **per document** (a whole pack/zip) and **per image**. Each scope is either **Inherit** (follow the scope
+  above) or **Override** (show its own control group, below); cascading app → document → image mirrors the
+  override direction the three data layers already establish for region content
+  ([[reference-images#layers]]'s "the scan provides, the admin layer overrides, the current user's layer
+  overrides that") applied to *visibility* rather than *box geometry*. There is no existing override-cascade
+  pattern elsewhere in the codebase; this is the first of its kind, so it should be built as a small reusable
+  helper rather than duplicated per scope.
+- **The control group at every scope is the same four checkboxes**, not a single on/off plus separate
+  per-class switches:
+
+  ```text
+  [ ] Safe
+  [ ] Safe — male genitals
+  [ ] Safe — female genitals
+  [ ] Safe — female nipples
+  ```
+
+  All four flush left, no visual nesting — "Safe" is distinguished by being first and by its cascade
+  behavior, not by indentation. A class checkbox checked means that class **is being redacted** (the effect
+  type applies) — "safe to view" — unchecked means shown raw; all unchecked is the existing decided default
+  ("off by default", [[reference-images#modes]]). Cascade rules: clicking **Safe** sets all three class boxes
+  to the same state; unchecking **any** class box also unchecks **Safe** (since not everything is safe
+  anymore); when all three class boxes end up checked, **Safe** becomes checked too. This is plain boolean
+  logic (`Safe == AND(the three)`, with `Safe` itself also writable to force all three) — no
+  indeterminate/tri-state widget is required, though Qt's native `Qt::PartiallyChecked` checkbox state
+  remains available later if a visual distinction between "some classes safe" and "none safe" turns out to
+  be wanted. This same four-checkbox group is reused verbatim at all three scopes (app settings, per-document
+  override, per-image override) — only what it writes to differs.
+- Storage follows the existing per-user layer ([[reference-images#layers]]): the document-scope override
+  lives in the `.rehu`'s `reference_images` block under `users.<name>` at the document level (a new sparse
+  field, not per-image); the image-scope override reuses the same per-image override slot the region editor
+  already needs ([[reference-images#region-editor]]), extended with the same four-checkbox override state
+  alongside the region/class edits. Neither override needs a new file or sync class — both are per-user
+  state, syncing exactly as favorites and blur preferences already do.
+- **The effect-type choice (blur/mosaic/solid/cover) cascades the same way**, independently of the
+  four-checkbox on/off state — a document can inherit the app's checkboxes but override to "cover" instead
+  of the app's default "blur", for instance.
+- **Open, but framed for where it would actually bind**: a hard floor a viewer's own preference cannot undo
+  only means something on a surface that controls the bytes it hands out — the **node-served web front**
+  ([[reference-images#node-requirements]]), which can decline to honor a session's own override before it
+  ever sends pixels. It means little on the **desktop agent**, which already has the raw archive on disk
+  regardless of any in-app toggle, so a client-side "lock" there is closer to theater than enforcement.
+  Nothing in this shape needs to change to leave room for this later: the override already lives in the
+  per-user layer that whichever node serves the image reads
+  ([[reference-images#node-requirements]]'s table), so a future access-control check is an additional gate
+  the **serving node** applies before honoring the requester's preference — not a redesign of where the
+  preference is stored. Natural home for that gate is [[discovery-trust-access#access-control]], and it is
+  explicitly nothing to design until grants exist there, consistent with the existing "whether per-image tags
+  feed dynamic access grants" bullet ([[reference-images#open-questions]]). Recorded there as a
+  forward-compatible note, not a commitment.
 
 ## §18.12 The region and blur sub-dock
 
@@ -487,6 +625,16 @@ Local to this document; the global list is [[appendices.open-questions#still-ope
 - What 360° sequences are for ([[reference-images#sequences]]); the keyframe count for collapsing.
 - Whether per-image tags feed dynamic access grants ([[discovery-trust-access#access-control]]) — nothing to
   design until grants exist.
+- Which model families back plain removal versus the reconstruct flag's male-genitals target
+  ([[reference-images#modes]]), and whether reconstruct ships as a built-in default at all.
+- Whether cover patches should get matched synthetic grain injected to blend with a lossy-JPEG original's
+  compression noise, beyond the feathered alpha edge already proposed ([[reference-images#modes]]).
+- Whether a document/image-scope visibility override ([[reference-images#redaction-scope]]) could ever be
+  locked past a viewer's own preference — framed as a future **serving-node** gate (the desktop agent has
+  the raw archive regardless, so a client-side lock there enforces nothing), nothing to design until access
+  grants exist (same bullet above).
+- The batch-scan trigger's exact surface (wizard vs. context menu vs. both) — proposed in
+  [[implementation-plan]]'s RefImages3b, not yet decided in spec terms.
 - Sampled rather than exhaustive human review: at ten million images one percent uncertainty is a hundred
   thousand images, so thresholds tune for recall, user deletions are the review signal, and no queue is
   ever worked through — recorded as a stance, not yet a design.
