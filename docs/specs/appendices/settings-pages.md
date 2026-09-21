@@ -361,7 +361,11 @@ where three copies would drift into a real defect rather than a cosmetic one.
   control values (`QLineEdit`, `QPlainTextEdit`, `QAbstractButton`, `QSpinBox`, and any `ItemListEditor`,
   read as every cell's `EditRole` value — so a derived, read-only column such as the try-it table's slot
   never paints its frame when a pattern above it changes, #287) at
-  construction, and `dirty_frames()` compares the live values against that snapshot.
+  construction, and `dirty_frames()` compares the live values against that snapshot. A frame, or a
+  single control, carrying the `scratch` dynamic property (`SettingsFrameFilter.SCRATCH_PROPERTY`, set
+  in the `.ui`) is left out of the snapshot altogether: a **try-it** input previews a setting and is not
+  one, so it never paints its frame — the same reason it never stages a change and is never saved
+  (#322). Only a value that has an effect on the app earns a highlight or an Apply.
   `resync_baseline()` adopts the current values as the new clean state — the dialog calls it right
   after every `save_changes()`/`drop_changes()`, or `dirty_frames()` would keep comparing against the
   *previous* clean state and report a just-settled page as still dirty. This snapshot approach needs no

@@ -3,8 +3,12 @@ RehuDocumentModel (#46).
 """
 
 from pytest import fixture, mark, param
-from rehuco_agent.documents.name_suggestion_model import NAME_SUGGESTION_PATTERNS, NameSuggestionModel
+from rehuco_agent.documents.name_suggestion_model import NameSuggestionModel
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
+from rehuco_agent.settings.location_templates_settings import (
+    NAME_SUGGESTION_PATTERNS,
+    shared_location_templates_settings,
+)
 from rehuco_core import RehuDocument
 
 
@@ -117,6 +121,75 @@ def test_changed_does_not_fire_for_unrelated_fields(
     model.rating = 4
 
     assert not fired
+
+
+def test_suggestions_follow_the_document_type_pattern_list(model: RehuDocumentModel) -> None:
+    """A recognised type reads its own list from `LocationTemplatesSettings`, not another type's (#322).
+
+    **Test steps:**
+
+    * customize the reference-images list in the shared settings
+    * switch the model to that type
+    * verify suggestions follow the customized list rather than the tutorial default
+    """
+    settings = shared_location_templates_settings()
+    settings.patterns = {**settings.patterns, "reference_images": ("{publisher} - {title}", "{title}")}
+    model.resource_type = "reference_images"
+
+    assert NameSuggestionModel(model).suggestions() == ["Bar - Foo", "Foo"]
+
+
+def test_suggestions_fall_back_to_the_tutorial_list_for_an_unrecognised_type(model: RehuDocumentModel) -> None:
+    """A foreign/uninstalled type falls back to the tutorial list (#322).
+
+    **Test steps:**
+
+    * customize the tutorial list in the shared settings
+    * switch the model to a type no installed plugin claims
+    * verify suggestions follow the customized tutorial list
+    """
+    settings = shared_location_templates_settings()
+    settings.patterns = {**settings.patterns, "tutorial": ("{publisher} - {title}",)}
+    model.resource_type = "some_future_plugin"
+
+    assert NameSuggestionModel(model).suggestions() == ["Bar - Foo"]
+
+
+def test_changed_fires_when_the_resource_type_changes(
+    model: RehuDocumentModel, name_suggestions: NameSuggestionModel
+) -> None:
+    """Switching the document's type re-emits ``changed`` without a reopen (#322).
+
+    **Test steps:**
+
+    * connect to ``changed``
+    * switch the model's ``resource_type``
+    * verify the signal fired
+    """
+    fired: list[bool] = []
+    name_suggestions.changed.connect(lambda: fired.append(True))
+
+    model.resource_type = "reference_images"
+
+    assert fired == [True]
+
+
+def test_changed_fires_when_the_location_templates_settings_apply(name_suggestions: NameSuggestionModel) -> None:
+    """Applying a Locations settings page re-emits ``changed`` without a reopen (#322).
+
+    **Test steps:**
+
+    * connect to ``changed``
+    * reassign the shared `LocationTemplatesSettings.patterns`, as a save would
+    * verify the signal fired
+    """
+    fired: list[bool] = []
+    name_suggestions.changed.connect(lambda: fired.append(True))
+
+    settings = shared_location_templates_settings()
+    settings.patterns = {**settings.patterns, "tutorial": ("{title}",)}
+
+    assert fired == [True]
 
 
 # endregion

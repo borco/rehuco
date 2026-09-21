@@ -193,22 +193,23 @@ def test_editing_a_pattern_marks_only_the_patterns_frame_dirty(page: ScreenshotP
     assert frame_filter.dirty_frames() == [ui.patterns_frame]
 
 
-def test_editing_a_sample_marks_only_the_try_it_frame_dirty(page: ScreenshotPatternsPage) -> None:
-    """A sample is a staged value like a pattern, so its frame paints the same way when it changes.
+def test_editing_a_sample_marks_nothing_dirty(page: ScreenshotPatternsPage) -> None:
+    """A sample is scratch space, not a setting (#322): retyping one paints no frame and gives Apply
+    nothing to do, since no scan would read anything different.
 
     **Test steps:**
 
     * build a frame filter over the clean page
     * retype a sample filename
-    * verify the try-it frame alone is reported dirty
+    * verify no frame is reported dirty and the page is not dirty
     """
-    ui = page._ScreenshotPatternsPage__ui  # pyright: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     frame_filter = SettingsFrameFilter(page, "Sidecar Names")
 
     model = try_it_editor_of(page).model
     model.setData(model.index(0, FILENAME_COLUMN), "shot-3.jpg")
 
-    assert frame_filter.dirty_frames() == [ui.try_it_frame]
+    assert not frame_filter.dirty_frames()
+    assert page.is_dirty() is False
 
 
 def test_the_page_filters_by_its_three_frames(page: ScreenshotPatternsPage) -> None:
@@ -368,86 +369,25 @@ def test_reset_restores_the_shipped_patterns(page: ScreenshotPatternsPage) -> No
 
 # endregion
 
-# region Editing, saving and dropping the samples
+# region The samples are scratch, not a setting
 
 
-def test_a_blank_sample_row_is_not_yet_a_change(page: ScreenshotPatternsPage) -> None:
-    """An inserted, still-empty sample does not make the page dirty, for the same reason a blank
-    pattern does not: saving would drop it, and an auto-applying dialog would tear it out mid-typing.
-
-    **Test steps:**
-
-    * insert a blank sample and verify the page stays clean
-    * type a name into it and verify the page is dirty exactly then
-    """
-    model = try_it_editor_of(page).model
-    row = model.rowCount()
-    model.insertRow(row)
-    assert page.is_dirty() is False
-
-    model.setData(model.index(row, FILENAME_COLUMN), "shot-3.jpg")
-    assert page.is_dirty() is True
-
-
-def test_saving_persists_the_samples_and_settles_the_page(page: ScreenshotPatternsPage) -> None:
-    """The samples are saved with the patterns: a set worth checking against is worth keeping.
+def test_saving_and_dropping_leave_the_samples_as_typed(page: ScreenshotPatternsPage) -> None:
+    """Apply and Reset act on settings; the samples are neither saved nor reverted by them (#322).
 
     **Test steps:**
 
-    * stage a sample list and save it
-    * verify the shared settings hold it and the page is no longer dirty
+    * retype the try-it samples, then save and then drop
+    * verify the typed samples survived both, and nothing about them reached the shared settings
     """
     try_it_editor_of(page).values = ("shot-3.jpg", "cover.png")
 
     page.save_changes()
-
-    assert shared_screenshot_patterns_settings().screenshot_samples == ("shot-3.jpg", "cover.png")
-    assert page.is_dirty() is False
-
-
-def test_saving_reloads_the_samples_normalizing_actually_kept(page: ScreenshotPatternsPage) -> None:
-    """Blank and repeated samples are dropped on save, and the table shows what was kept.
-
-    **Test steps:**
-
-    * stage a sample list holding a blank and a repeat, and save
-    * verify the table comes back showing the survivors
-    """
-    try_it_editor_of(page).values = (" shot-3.jpg ", "", "shot-3.jpg", "cover.png")
-
-    page.save_changes()
-
     assert try_it_editor_of(page).values == ("shot-3.jpg", "cover.png")
 
-
-def test_saving_an_emptied_sample_list_restores_the_seeded_samples(page: ScreenshotPatternsPage) -> None:
-    """An empty try-it table shows nothing, so emptying it means the seeded samples instead.
-
-    **Test steps:**
-
-    * empty the try-it table and save
-    * verify the seeded samples come back
-    """
-    try_it_editor_of(page).values = ()
-
-    page.save_changes()
-
-    assert try_it_editor_of(page).values == DEFAULT_SAMPLES
-
-
-def test_dropping_changes_reverts_to_the_saved_samples(page: ScreenshotPatternsPage) -> None:
-    """Cancel drops the staged samples along with the staged patterns.
-
-    **Test steps:**
-
-    * stage a sample change, then drop it
-    * verify the saved samples are back
-    """
-    try_it_editor_of(page).values = ("shot-3.jpg",)
-
     page.drop_changes()
-
-    assert try_it_editor_of(page).values == DEFAULT_SAMPLES
+    assert try_it_editor_of(page).values == ("shot-3.jpg", "cover.png")
+    assert not hasattr(shared_screenshot_patterns_settings(), "samples")
 
 
 def test_reset_restores_the_seeded_samples(page: ScreenshotPatternsPage) -> None:
