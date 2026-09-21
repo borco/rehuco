@@ -423,7 +423,7 @@ Everything that isn't on the personal critical path, per the architecture doc's 
   | RefImages4c | **cover effect** — the inpainting stage contract, precomputed cover patches stored in the sidecar, effect-type picker wired into render and the sub-dock ([[reference-images#modes]], [[reference-images#region-editor]]) | RefImages4, rehuco-vision inpainting stage |
   | RefImages5 | **Pinterest, in-pack** — the tagger and embedding stages; similar-image walls by brute-force cosine over one sidecar, fuzzy text over tags, random start; per-user favorites ([[reference-images#modes]]) | RefImages3 |
   | RefImages6 | **Pinterest, cross-pack** — the index built from sidecars into `.rehudb`; the text encoder for text→vector queries ([[reference-images#cross-pack-index]]) | RefImages5, **CacheDB** |
-  | RefImages7 | body regions (tier 2, person crops from the original) and the full region editor | RefImages4 |
+  | RefImages7 | **pose on the working image, and ranking** — keypoints, part boxes with their size in frame, posture and head-angle tags, no crops; the ranking rule with the part hierarchy, subject-first objects and view diversification ([[reference-images#modes]]) | RefImages5 |
   | RefImages8 | the web fronts served by a node | RefImages6, **WatchTutorial** |
   | RefImages9 | scan dispatch across nodes, capability advertisement, the streaming fallback ([[reference-images#dispatch]]) | **Swarm** |
   | *deferred* | 360° identification ([[reference-images#sequences]]); practice mode with its session document and the shared timed-presentation capability ([[reference-images#practice-sessions]], [[plugins#shared-capability]]) | — |

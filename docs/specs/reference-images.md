@@ -57,7 +57,7 @@ per-image data, and each already has a home in the data model.
 
 | Layer | Holds | Home | Ownership and sync class |
 | --- | --- | --- | --- |
-| **Machine-derived** | per-image tags with confidences, an image embedding, detected person / head / hand / foot boxes, detected blur boxes, keypoints, 360° sequence membership, a ~512 px working image, and the model that produced each | the **scan sidecar** beside the `.rehu` ([[reference-images#scan-sidecar]]) | resource metadata: written only by the resource's primary node ([[mounts-and-storage#folder-add]]); travels with the folder; a bookkeeping suffix like `.checksum`, so it never counts as content ([[data-model#checksums]]). **Rebuildable in principle, at GPU-weeks cost — so retained and copied like screenshots, never treated as `.rehudb`-disposable** |
+| **Machine-derived** | per-image tags with confidences, an image embedding, detected person / head / hand / foot boxes, detected blur boxes, keypoints and the posture and head-angle tags derived from them, 360° sequence membership, a ~512 px working image, and the model that produced each | the **scan sidecar** beside the `.rehu` ([[reference-images#scan-sidecar]]) | resource metadata: written only by the resource's primary node ([[mounts-and-storage#folder-add]]); travels with the folder; a bookkeeping suffix like `.checksum`, so it never counts as content ([[data-model#checksums]]). **Rebuildable in principle, at GPU-weeks cost — so retained and copied like screenshots, never treated as `.rehudb`-disposable** |
 | **Shared authored — the admin default** | an admin's corrections: regions and blur boxes added, moved, resized or deleted; manual 360° groupings; per-image shared tags | the `reference_images` block of the `.rehu`, inline, **sparse** (only images someone touched) | resource metadata: single writer, online-only edit in v1 ([[sync#overview]]); the layer every user sees by default |
 | **Per-user** | favorites (image keys), per-user region and blur overrides, the user's blur preference (on/off plus the per-class switches) | the block's `users.<name>` map ([[field-schema#per-user-shared]]), sparse | per-user state: mergeable, offline-editable, writable through any node |
 
@@ -182,7 +182,7 @@ exists; what is firm is that it is one per-resource file of machine output, besi
   | --- | --- | --- | --- |
   | **0** | member list from the central directory, image dimensions from headers | seconds per pack | nothing beyond the zip |
   | **1** | XXH3, the working image, image embedding, tags with confidences, blur boxes, person boxes, 360° grouping | milliseconds per image | one decode per image; the tagger, detector and embedder |
-  | **2** | whole-body pose → person / head / hand / foot regions, per-person attributes, head angles | tens of milliseconds per image | the pose model, on a **person crop from the original** (below); runs only where tier 1 found a person |
+  | **2** | whole-body pose on the **working image**: keypoints → person / head / hand / foot boxes with their size in frame, posture tags (standing, sitting, kneeling, crouching, reclined, jumping, climbing, running, turning, leaning, arms raised, …), head yaw/pitch classes | tens of milliseconds per image | the pose model; runs only where tier 1 found a person; **no crop** (below) |
   | optional | captions, prop boxes | up to hundreds of milliseconds | on demand, prioritized by the packs the user opens; may never complete |
 
   **Non-people images stop after tier 1 by construction**: no person detected means no region rows and no
@@ -206,11 +206,15 @@ exists; what is firm is that it is one per-resource file of machine output, besi
   - **Offline fallback** — a pack whose archive sits on an offline mount stays browsable from its sidecar
     ([[mounts-and-storage#offline-mounts]]); only "open full size" reports offline.
 
-  Where 512 px is **not** enough is tier 2: a hand in a full-frame 512 px image is a few dozen pixels, and a
-  pose model wants the *person crop* at roughly 256×192 to 384×288. Tier 2 therefore **crops the person from
-  the original** in the archive — one seek plus one inflate, since the sidecar records each member's local
-  offset — and runs at crop resolution. Tier 2 runs only where a person was found, so this touches the
-  archive for a fraction of the collection.
+  Tier 2 runs on the working image too, not on a crop. For posture and head angle the full frame at 512 px is
+  enough; a hand's or foot's **box** comes from the wrist and elbow, or ankle and knee, keypoints, and the head
+  box from nose, eyes and ears — which is all ranking needs ([[reference-images#modes]]). Finger-level
+  keypoints, and the person crop from the original they would require, were considered and dropped as a lot
+  of work for little gain: the catalog's questions are "find me" questions. The sidecar still records each
+  member's local offset (the lightbox and export read the original), but no inference reads it. Posture tags
+  are **rules over keypoints** — documented, testable on synthetic skeletons — stored as tags with confidences
+  in the same vocabulary the tagger fills; where both sources emit a term, the row keeps the higher confidence
+  and both stamps.
 
   The size is a plugin setting, **stamped per row like a model**, so changing it is detected and the images
   regenerate lazily rather than invalidating the scan; regeneration is decode-only but still the full read of
@@ -279,7 +283,9 @@ stage, *which model fills it*. Three kinds of entry are foreseen:
 
 1. **Built-in defaults** — permissively licensed ONNX models, declared as download descriptors (URL, hash,
    license) and fetched on first use. The candidates the handover named are of the WD14 tagger, NudeNet
-   detector, RTMPose/DWPose whole-body pose, and SigLIP/OpenCLIP embedding families; every one is a candidate,
+   detector, RTMPose/DWPose whole-body pose — run on the working image, its posture-rule set part of the stage's
+   contract so a model with another skeleton is mapped onto it ([[reference-images#scan-sidecar]]) — and
+   SigLIP/OpenCLIP embedding families; every one is a candidate,
    not a commitment, and each is license-checked before it is added.
 2. **A user-supplied ONNX file** for the same contract — a different tagger, a newer detector, a fine-tune.
    The stage adapter validates the input/output shape and, for a tagger, requires a vocabulary map.
@@ -499,6 +505,22 @@ practice mode is deferred ([[reference-images#practice-sessions]]).
   user-supplied ONNX file or an external endpoint the user runs themselves, never a built-in). Recorded in
   [[reference-images#open-questions]].
 
+- **Part-aware and subject-first ranking, view diversity** *(proposed)*. A query naming a body part
+  resolves to that part's box or tag; results order by the part's **size in frame, descending** — closeups,
+  then portraits, then figures that merely contain it — with ties by tag confidence. The vocabulary map
+  declares a small **part hierarchy** (head ⊃ face ⊃ eyes / nose / ears / mouth; hand ⊃ fingers; foot ⊃
+  toes) with one rule: a sub-part alone never satisfies the whole ("head" excludes an ear-only shot), and a
+  query for a sub-part ranks its closeups first (framing tags such as `close-up` and `eye focus`). A query
+  naming an **object** alone ("sword") is **subject-first**: images where the object is the subject (no
+  person — `no humans` — or object-focus / still-life framing) rank before images where it is held or used,
+  then the rest by confidence. "From different angles" **diversifies** the order across view tags
+  (round-robin over front / three-quarter / profile / back / from below / from above) so a walk is not forty
+  frontal portraits. Posture, action, perspective ("extreme perspective" → foreshortening, from below or
+  above, fisheye, dutch angle) and props are ordinary tags in the conjunction: "man jumping with a gun" =
+  `male` ∧ `jumping` ∧ `gun`, "woman reclined" = `female` ∧ `reclined`. Posture terms come from two sources
+  — the tagger and rules over the pose stage's keypoints ([[reference-images#scan-sidecar]]) — merged into
+  one vocabulary at the higher confidence, both stamped.
+
 ## §18.11a Redaction scope: app, document, image
 
 [[[reference-images#redaction-scope]]]
@@ -620,7 +642,9 @@ Local to this document; the global list is [[appendices.open-questions#still-ope
 - Whether the Pinterest front needs the text encoder on every serving node or delegates encoding to a
   scan-capable node (a string in, a vector out — tiny).
 - The working-image storage budget (~300–500 GB at 512 px over ten million images) and whether any eviction
-  is wanted; whether region crops are materialized lazily per region kind or always cut from the original.
+  is wanted.
+- The posture-rule set (keypoints → posture terms) and its confidence calibration; the part hierarchy's exact
+  vocabulary; the view-tag set used for diversification ([[reference-images#modes]]).
 - Practice-session retention (how many runs), and what a session records beyond what was shown.
 - What 360° sequences are for ([[reference-images#sequences]]); the keyframe count for collapsing.
 - Whether per-image tags feed dynamic access grants ([[discovery-trust-access#access-control]]) — nothing to
