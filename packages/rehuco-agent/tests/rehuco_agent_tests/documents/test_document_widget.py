@@ -4488,20 +4488,22 @@ def test_a_document_with_no_content_images_dock_ignores_its_signals(widget: Docu
     assert widget.findChild(ImageLightbox) is None
 
 
-def test_a_type_switch_touches_neither_the_docks_nor_the_layout(
+def test_a_type_switch_swaps_the_types_own_docks_and_applies_no_layout(
     widget: DocumentWidget, model: RehuDocumentModel, refimages_widget: DocumentWidget
 ) -> None:
-    """Switching a document's type adds no dock, removes none, and applies no layout (#320): the set
-    was decided when the type was first known, and re-laying out on a switch would disturb the very
-    arrangement the switch was made from -- a saved default that hides Main Editor would hide the
-    type selector itself.
+    """Switching a document's type swaps the type's own docks for the new type's, toolbar toggles
+    included, and applies no layout (#320): a tutorial switched to a reference pack gains a hidden
+    Content Images and its toggle ahead of the layout button, and switching back removes both --
+    while On Disk, open before the switch, stays open both times, since re-laying out on a switch
+    would disturb the very arrangement the switch was made from.
 
     **Test steps:**
 
     * save a reference-images default with Content Images visible, and open the tutorial's On Disk
-    * switch the tutorial to a reference pack and back
-    * verify no Content Images dock or toggle appeared, the manager's dock names are unchanged, and
-      On Disk is still open both times
+    * switch the tutorial to a reference pack; verify Content Images exists hidden, its toggle sits
+      right before the toolbar's stretch, and On Disk is still open
+    * switch back to a tutorial; verify the dock, its toggle and its manager entry are gone, the
+      toolbar reads as it did before, and On Disk is still open
     """
     content_images_dock(refimages_widget).toggleView(True)
     shared_default_layout_settings().states[REFERENCE_IMAGES_PLUGIN.key] = refimages_widget.save_layout_state()  # pylint: disable=unsupported-assignment-operation
@@ -4509,38 +4511,79 @@ def test_a_type_switch_touches_neither_the_docks_nor_the_layout(
     docks_before = sorted(widget._DocumentWidget__dock_manager.dockWidgetsMap())  # type: ignore[attr-defined]  # pylint: disable=protected-access
     toolbar = widget.findChildren(QToolBar)[0]
     toggles_before = [action.text() for action in toolbar.actions()]
+    stretch = widget._DocumentWidget__toolbar_stretch_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
-    for resource_type in ("reference_images", "tutorial"):
-        model.resource_type = resource_type
+    model.resource_type = "reference_images"
 
-        assert widget._DocumentWidget__content_images_dock is None  # type: ignore[attr-defined]  # pylint: disable=protected-access
-        assert CONTENT_IMAGES_DOCK_NAME not in widget._DocumentWidget__dock_manager.dockWidgetsMap()  # type: ignore[attr-defined]  # pylint: disable=protected-access
-        assert [action.text() for action in toolbar.actions()] == toggles_before
-        assert sorted(widget._DocumentWidget__dock_manager.dockWidgetsMap()) == docks_before  # type: ignore[attr-defined]  # pylint: disable=protected-access
-        assert on_disk_dock(widget).toggleViewAction().isChecked() is True
+    toggle = content_images_dock(widget).toggleViewAction()
+    assert toggle.isChecked() is False
+    assert CONTENT_IMAGES_DOCK_NAME in widget._DocumentWidget__dock_manager.dockWidgetsMap()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    actions = toolbar.actions()
+    assert actions.index(toggle) == actions.index(stretch) - 1
+    assert on_disk_dock(widget).toggleViewAction().isChecked() is True
+
+    model.resource_type = "tutorial"
+
+    assert widget._DocumentWidget__content_images_dock is None  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert CONTENT_IMAGES_DOCK_NAME not in widget._DocumentWidget__dock_manager.dockWidgetsMap()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert toggle not in toolbar.actions()
+    assert [action.text() for action in toolbar.actions()] == toggles_before
+    assert sorted(widget._DocumentWidget__dock_manager.dockWidgetsMap()) == docks_before  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert on_disk_dock(widget).toggleViewAction().isChecked() is True
+
+
+def test_a_type_switch_closes_the_outgoing_types_open_dock(
+    refimages_widget: DocumentWidget, refimages_model: RehuDocumentModel
+) -> None:
+    """A type dock left open is closed by the switch that removes it (#320): a reference pack's Content
+    Images, open when the pack is switched to a tutorial, goes away with its toggle rather than
+    lingering as a dock the tutorial never declared.
+
+    **Test steps:**
+
+    * open the pack's Content Images, then switch the pack to a tutorial
+    * verify the dock is gone from the manager and the toolbar, and the widget's fields say so
+    * verify a path change afterwards is ignored rather than refreshing a dock that no longer exists
+    """
+    content_images_dock(refimages_widget).toggleView(True)
+    toggle = content_images_dock(refimages_widget).toggleViewAction()
+    toolbar = refimages_widget.findChildren(QToolBar)[0]
+    assert toggle in toolbar.actions()
+
+    refimages_model.resource_type = "tutorial"
+
+    assert refimages_widget._DocumentWidget__content_images_dock is None  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert refimages_widget._DocumentWidget__content_images_view is None  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert refimages_widget._DocumentWidget__content_images_model is None  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert CONTENT_IMAGES_DOCK_NAME not in refimages_widget._DocumentWidget__dock_manager.dockWidgetsMap()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert toggle not in toolbar.actions()
+    refimages_model.path = Path("/fake/elsewhere/info.rehu")
 
 
 def test_apply_default_layout_on_a_switched_document_applies_the_new_types_default(
     widget: DocumentWidget, model: RehuDocumentModel, refimages_widget: DocumentWidget
 ) -> None:
     """Apply reads the type the document has now (#320): a tutorial switched to a reference pack
-    applies the pack default, onto the docks it has -- the default's Content Images entry is simply
-    skipped.
+    applies the pack default, onto the docks the switch gave it -- the default's Content Images entry
+    lands on the dock the switch built.
 
     **Test steps:**
 
-    * save a reference-images default with On Disk open, switch the tutorial to a pack
-    * trigger Apply; verify On Disk is open and no Content Images dock appeared
+    * save a reference-images default with On Disk and Content Images open, switch the tutorial to
+      a pack; verify neither is open yet, since a switch applies no layout
+    * trigger Apply; verify both are open
     """
     on_disk_dock(refimages_widget).toggleView(True)
+    content_images_dock(refimages_widget).toggleView(True)
     refimages_widget._DocumentWidget__save_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
     model.resource_type = "reference_images"
     assert on_disk_dock(widget).toggleViewAction().isChecked() is False
+    assert content_images_dock(widget).toggleViewAction().isChecked() is False
 
     widget._DocumentWidget__apply_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     assert on_disk_dock(widget).toggleViewAction().isChecked() is True
-    assert widget._DocumentWidget__content_images_dock is None  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert content_images_dock(widget).toggleViewAction().isChecked() is True
 
 
 def test_a_pending_documents_stored_layout_lands_on_the_docks_its_first_read_builds(

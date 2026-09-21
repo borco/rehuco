@@ -269,10 +269,11 @@ end-to-end.
 
 A layout follows the type: the **default layout** is saved per type with no inheritance across types, and a
 document opened with no stored layout of its own gets its type's — a session-restored document gets **what was
-stored**, and only if that cannot restore does the type's current layout step in. The set is decided once, when the
-type is first known — at open, or at a session-restore placeholder's deferred first read — and a later type switch
-in the editor neither adds nor removes a dock and applies no layout; the layout button then applies the *new*
-type's default, onto the docks the document has. A layout restores onto a dock set other than the one it was
+stored**, and only if that cannot restore does the type's current layout step in. The set follows the type: built
+when the type is first known — at open, or at a session-restore placeholder's deferred first read — and swapped by a
+later type switch in the editor, which closes and removes the outgoing type's own docks, their toolbar toggles with
+them, and adds the incoming type's hidden. A switch applies no layout — the docks the user is switching from stay as
+they are; the layout button afterwards applies the *new* type's default. A layout restores onto a dock set other than the one it was
 written against: a dock it names that isn't built is skipped, and a built dock it never names is put back hidden
 where it always lives (QtAds would otherwise leave it area-less, to open floating). That tolerance is what retires
 the hand-bumped layout version: adding a dock to one type no longer resets anyone's layouts.
