@@ -250,25 +250,22 @@ def test_the_page_filters_by_its_three_frames(page: ScreenshotPatternsPage) -> N
 # region Editing, saving and dropping the patterns
 
 
-def test_a_row_saving_would_drop_is_not_yet_a_change(page: ScreenshotPatternsPage) -> None:
-    """A blank or half-typed pattern does not make the page dirty, because applying would not change
-    what is saved -- and while *Apply changes as they're made* is on, the dialog commits any dirty
-    page, which would tear the fresh row out from under its open cell (#53).
+def test_a_blank_row_is_not_yet_a_change_but_a_typed_one_is(page: ScreenshotPatternsPage) -> None:
+    """A blank pattern does not make the page dirty, because applying would not change what is saved --
+    and while *Apply changes as they're made* is on, the dialog commits any dirty page, which would tear
+    the fresh row out from under its open cell (#53). The first keystroke is a change, compilable or
+    not: saving keeps a broken row rather than dropping it (#322).
 
     **Test steps:**
 
     * insert a blank pattern and verify the page stays clean
-    * type half of a broken pattern and verify it still does
-    * complete a compilable pattern and verify the page is dirty exactly then
+    * type half of a broken pattern and verify the page is dirty exactly then
     """
     model = model_of(page)
     row = model.insert(-1)
     assert page.is_dirty() is False
 
     model.setData(model.index(row, PATTERN_COLUMN), "[")
-    assert page.is_dirty() is False
-
-    model.setData(model.index(row, PATTERN_COLUMN), "^shot-(\\d+)$")
     assert page.is_dirty() is True
 
 
@@ -302,18 +299,38 @@ def test_saving_persists_the_patterns_and_settles_the_page(page: ScreenshotPatte
     assert page.is_dirty() is False
 
 
-def test_saving_reloads_what_normalizing_actually_kept(page: ScreenshotPatternsPage) -> None:
-    """A page still showing what was typed would disagree with every scan.
+def test_saving_keeps_a_broken_row_flagged_and_out_of_the_effective_set(page: ScreenshotPatternsPage) -> None:
+    """A typo is fixed in place, not retyped (#322): Apply keeps the row, the page shows it red, and no
+    scan reads it.
 
     **Test steps:**
 
     * stage a good pattern alongside one that cannot compile, and save
-    * verify the page comes back showing only the pattern that survived
+    * verify the page comes back showing both, the broken one flagged
+    * verify the shared settings' effective set holds only the good one
     """
     editor_of(page).values = (
         ScreenshotNamePattern(r"^shot-(\d+)$"),
         ScreenshotNamePattern("["),
     )
+
+    page.save_changes()
+
+    assert editor_of(page).values == (ScreenshotNamePattern(r"^shot-(\d+)$"), ScreenshotNamePattern("["))
+    assert model_of(page).invalid_reason(1) != ""
+    assert page.is_dirty() is False
+    assert shared_screenshot_patterns_settings().screenshot_name_patterns == (ScreenshotNamePattern(r"^shot-(\d+)$"),)
+
+
+def test_saving_drops_a_blank_row(page: ScreenshotPatternsPage) -> None:
+    """A page still showing a row saving dropped would disagree with the next Apply.
+
+    **Test steps:**
+
+    * stage a good pattern alongside a blank one, and save
+    * verify the page comes back showing only the pattern
+    """
+    editor_of(page).values = (ScreenshotNamePattern(r"^shot-(\d+)$"), ScreenshotNamePattern(""))
 
     page.save_changes()
 

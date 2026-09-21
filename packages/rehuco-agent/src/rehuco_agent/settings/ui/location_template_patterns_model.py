@@ -11,7 +11,7 @@ from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, QPersisten
 from PySide6.QtGui import QBrush, QColor
 
 from ...fields.colors import WARNING_COLOR
-from ..location_templates_settings import NAME_SUGGESTION_PATTERNS, location_pattern_is_valid
+from ..location_templates_settings import NAME_SUGGESTION_PATTERNS, location_pattern_problem
 
 PATTERN_COLUMN: Final = 0
 """The row's only column: the raw pattern."""
@@ -19,13 +19,6 @@ PATTERN_COLUMN: Final = 0
 COLUMN_COUNT: Final = 1
 
 COLUMN_TITLES: Final = ("Pattern",)
-
-MISSING_PATTERN_REASON: Final = "A pattern is a format string interpolating {title} / {publisher} / {authors} / {year}."
-
-INVALID_PATTERN_REASON: Final = (
-    "This does not parse as a format string, or names a placeholder other than "
-    "{title} / {publisher} / {authors} / {year}."
-)
 
 type ModelIndex = QModelIndex | QPersistentModelIndex
 """What Qt hands a model method; the persistent form arrives from a view holding onto an index."""
@@ -44,12 +37,13 @@ class LocationTemplatePatternsModel(QAbstractTableModel):
 
     **Validation is flagged, never enforced**, the same call
     :class:`~rehuco_agent.settings.ui.screenshot_name_patterns_model.ScreenshotNamePatternsModel` makes: a
-    pattern that is blank, fails to parse, or names an unknown placeholder colors its cell and explains
-    itself in a tooltip. Nothing refuses the keystroke -- a pattern is half-typed for as long as it takes
-    to type it -- and the settings object drops what will not resolve on save.
+    pattern that is blank, fails to parse, names an unknown placeholder or misuses a ``{{ ... }}`` group
+    colors its cell and says which in a tooltip. Nothing refuses the keystroke -- a pattern is half-typed
+    for as long as it takes to type it -- and saving keeps the row, flagged, rather than dropping it:
+    only the effective list a document reads skips it.
 
     **The check is the settings module's own**, asked through
-    :func:`~rehuco_agent.settings.location_templates_settings.location_pattern_is_valid` rather than
+    :func:`~rehuco_agent.settings.location_templates_settings.location_pattern_problem` rather than
     restated here, which is what keeps what this page marks invalid exactly what a suggestion would
     refuse.
 
@@ -120,6 +114,23 @@ class LocationTemplatePatternsModel(QAbstractTableModel):
         """
         target = at + 1 if at >= 0 else len(self.__entries)
         self.insertRow(target)
+        return target
+
+    def duplicate(self, at: int) -> int:
+        """Insert a copy of ``at`` below it -- the `ItemEditor` contract.
+
+        One insert announcement carrying the copy, rather than a blank insert filled in afterwards, so
+        the row never exists blank.
+
+        :param at: the row to copy; a negative row is a no-op.
+        :returns: the copy's row, or ``at`` when nothing was copied.
+        """
+        if at < 0:
+            return at
+        target = at + 1
+        self.beginInsertRows(QModelIndex(), target, target)
+        self.__entries.insert(target, self.__entries[at])
+        self.endInsertRows()
         return target
 
     def delete(self, at: int) -> None:
@@ -193,10 +204,7 @@ class LocationTemplatePatternsModel(QAbstractTableModel):
         :param row: the row to test.
         :returns: the explanation, or an empty string when the pattern is fine.
         """
-        pattern = self.__entries[row]
-        if not pattern.strip():
-            return MISSING_PATTERN_REASON
-        return "" if location_pattern_is_valid(pattern) else INVALID_PATTERN_REASON
+        return location_pattern_problem(self.__entries[row])
 
     # region Qt model interface
 

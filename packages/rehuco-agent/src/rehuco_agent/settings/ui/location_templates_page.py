@@ -9,7 +9,9 @@ from PySide6.QtWidgets import QWidget
 from ...fields.widgets.path_editor import PathEditor
 from ..location_templates_settings import (
     NAME_SUGGESTION_PATTERNS,
+    location_pattern_problem,
     normalize_location_templates,
+    render_location_pattern,
     shared_location_templates_settings,
 )
 from ..persistent_settings import persistent_settings
@@ -28,10 +30,13 @@ class LocationTemplatesPage(QWidget):
     Two frames. **Location name patterns** is the editable list, a
     :class:`~rehuco_agent.settings.ui.location_template_patterns_editor.LocationTemplatePatternsEditor` of
     one column each: a format string interpolating ``{title}`` / ``{publisher}`` / ``{authors}`` /
-    ``{year}``. **Try it** is a sample record (title / publisher / authors / year, editable) beside a
-    read-only preview of what each staged pattern would name it -- sanitized the same way a `PathField`
-    would show it (:meth:`~rehuco_agent.fields.widgets.path_editor.PathEditor.sanitize`), refreshed on
-    every edit to either the patterns or the sample.
+    ``{year}``, with ``{{ ... }}`` groups that drop out when a field is missing. **Try it** is a sample
+    record (title / publisher / authors / year, editable) beside a read-only preview of what each staged
+    pattern would name it -- sanitized the same way a `PathField` would show it
+    (:meth:`~rehuco_agent.fields.widgets.path_editor.PathEditor.sanitize`), refreshed on every edit to
+    either the patterns or the sample. One line per pattern, so every row is accounted for: a line whose
+    name an earlier line already produced says so (the `PathField` offers it once), an invalid row says
+    why, and a pattern whose groups all dropped says it named nothing.
 
     **The sample record is scratch space, not a setting.** It previews the patterns and changes nothing
     the app does, so it is seeded from :data:`DEFAULT_SAMPLE`, never saved, never part of
@@ -47,11 +52,11 @@ class LocationTemplatesPage(QWidget):
     `~rehuco_agent.documents.name_suggestion_model.NameSuggestionModel` offers for this type, on every
     open document, without a reopen.
 
-    Saving normalizes: blank patterns and ones naming an unknown placeholder are dropped, duplicates go,
-    and an emptied list resolves to the shipped defaults rather than to *offer nothing*. That rule lives
-    in `LocationTemplatesSettings`, not in the editor, which holds whatever was typed; the page reloads
-    itself from the saved result afterwards, so what it shows is always what a suggestion would actually
-    use.
+    Saving normalizes: blank patterns and exact duplicates go, and an emptied list resolves to the shipped
+    defaults rather than to *offer nothing* -- but an **invalid row is kept**, flagged, so a typo is fixed
+    in place rather than retyped: only the effective list a document reads skips it. That rule lives in
+    `LocationTemplatesSettings`, not in the editor, which holds whatever was typed; the page reloads
+    itself from the stored result afterwards, so what it shows is always what the next Apply would keep.
 
     :param resource_type: the plugin main key this page edits (e.g. ``"tutorial"``).
     :param parent: optional Qt parent.
@@ -81,22 +86,22 @@ class LocationTemplatesPage(QWidget):
         self.drop_changes()
 
     def is_dirty(self) -> bool:
-        """Whether applying would change the patterns this type's shared settings resolve to.
+        """Whether applying would change this type's stored patterns.
 
         The staged patterns are normalized before the comparison, so a row that saving would drop
-        anyway -- blank, half-typed, or naming an unknown placeholder -- is not yet a change. The sample
-        record is not consulted: it is not a setting.
+        anyway -- blank, or an exact repeat -- is not yet a change; an invalid row *is* one, since saving
+        keeps it. The sample record is not consulted: it is not a setting.
         """
         staged = normalize_location_templates(self.__ui.patterns_editor.values, NAME_SUGGESTION_PATTERNS)
-        return staged != shared_location_templates_settings().patterns_for(self.__resource_type)
+        return staged != shared_location_templates_settings().stored_for(self.__resource_type)
 
     def save_changes(self) -> None:
         """Push this type's staged patterns into the shared settings object, persist them, and show the
         result.
 
-        The list is reloaded from the saved set afterwards rather than left as typed: normalization can
-        change it, and a page still showing what was typed would disagree with what the next suggestion
-        actually offers.
+        The list is reloaded from the stored set afterwards rather than left as typed: normalization can
+        change it, and a page still showing what was typed would disagree with what the next Apply
+        would keep.
         """
         settings = shared_location_templates_settings()
         staged = normalize_location_templates(self.__ui.patterns_editor.values, NAME_SUGGESTION_PATTERNS)
@@ -105,29 +110,33 @@ class LocationTemplatesPage(QWidget):
         self.drop_changes()
 
     def drop_changes(self) -> None:
-        """Discard the staged pattern edits, refilling the editor from this type's effective set; the
-        sample record stays as typed."""
-        self.__ui.patterns_editor.values = shared_location_templates_settings().patterns_for(self.__resource_type)
+        """Discard the staged pattern edits, refilling the editor from this type's stored set -- invalid
+        rows included, flagged; the sample record stays as typed."""
+        self.__ui.patterns_editor.values = shared_location_templates_settings().stored_for(self.__resource_type)
         self.__refresh_try_it()
 
     def __refresh_try_it(self) -> None:
-        """Recompute the Try-it preview from the staged (not yet saved) patterns and the sample record."""
+        """Recompute the Try-it preview from the staged (not yet saved) patterns and the sample record.
+
+        One line per pattern. A name an earlier line already produced is reported as such rather than
+        repeated, since the `PathField` offers it once; the comparison is on the sanitized name, so what
+        merges here is exactly what merges there.
+        """
         sample = (edit.text() for edit in self.__sample_edits)
         values: dict[str, str] = dict(zip(("title", "publisher", "authors", "year"), sample, strict=True))
-        lines = [f"{pattern} → {self.__try_it_result(pattern, values)}" for pattern in self.__ui.patterns_editor.values]
+        lines: list[str] = []
+        first_line_by_name: dict[str, int] = {}
+        for pattern in self.__ui.patterns_editor.values:
+            problem = location_pattern_problem(pattern)
+            name = None if problem else PathEditor.sanitize(render_location_pattern(pattern, values))
+            if problem:
+                result = f"(invalid: {problem})"
+            elif name is None:
+                result = "(empty)"
+            elif name in first_line_by_name:
+                result = f"(same as line {first_line_by_name[name]})"
+            else:
+                first_line_by_name[name] = len(lines) + 1
+                result = name
+            lines.append(f"{pattern} → {result}")
         self.__ui.try_it_result_label.setText("\n".join(lines))
-
-    @staticmethod
-    def __try_it_result(pattern: str, values: dict[str, str]) -> str:
-        """What ``pattern`` would name the sample record, sanitized the way a `PathField` would show it.
-
-        :param pattern: one staged pattern, possibly still half-typed or invalid.
-        :param values: the sample record's ``title`` / ``publisher`` / ``authors`` / ``year``.
-        :returns: the sanitized name, or a short explanation when the pattern cannot be formatted.
-        """
-        try:
-            raw = pattern.format(**values)
-        except KeyError, IndexError, ValueError:
-            return "(invalid pattern)"
-        sanitized = PathEditor.sanitize(raw)
-        return sanitized if sanitized is not None else "(empty after sanitizing)"

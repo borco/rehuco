@@ -124,6 +124,23 @@ class ScreenshotNamePatternsModel(QAbstractTableModel):
         self.insertRow(target)
         return target
 
+    def duplicate(self, at: int) -> int:
+        """Insert a copy of ``at`` below it -- the `ItemEditor` contract.
+
+        One insert announcement carrying the copy, rather than a blank insert filled in afterwards, so
+        the row never exists blank; a pattern is frozen, so the entry itself is shared.
+
+        :param at: the row to copy; a negative row is a no-op.
+        :returns: the copy's row, or ``at`` when nothing was copied.
+        """
+        if at < 0:
+            return at
+        target = at + 1
+        self.beginInsertRows(QModelIndex(), target, target)
+        self.__entries.insert(target, self.__entries[at])
+        self.endInsertRows()
+        return target
+
     def delete(self, at: int) -> None:
         """Drop one pattern -- the `ItemEditor` contract.
 

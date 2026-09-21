@@ -25,6 +25,16 @@ class ItemEditor(Protocol):
         :returns: the new entry's row.
         """
 
+    def duplicate(self, at: int) -> int:  # pyright: ignore[reportReturnType]
+        """Insert a copy of one entry below it, and say where it landed.
+
+        The model alone knows what a copy of its entry is -- a frozen record cloned, a compiled pattern
+        rebuilt -- which is why this is the editor's to do rather than an insert the caller then fills.
+
+        :param at: the row to copy; a negative row is a no-op.
+        :returns: the copy's row, or ``at`` when nothing was copied.
+        """
+
     def delete(self, at: int) -> None:
         """Drop one entry.
 

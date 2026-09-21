@@ -9,7 +9,7 @@ from borco_pyside.core import SimpleProperty
 from PySide6.QtCore import QObject, Signal
 from rehuco_core import author_name
 
-from ..settings.location_templates_settings import shared_location_templates_settings
+from ..settings.location_templates_settings import render_location_pattern, shared_location_templates_settings
 from .rehu_document_model import RehuDocumentModel
 
 NAME_SUGGESTION_SOURCE_FIELDS: Final = ("title", "authors", "publisher", "released")
@@ -59,9 +59,13 @@ class NameSuggestionModel(QObject):
         released ``year`` -- left unsanitized; the `PathField` editor transliterates and
         filesystem-sanitizes them before display, and drops any that reduce to nothing. ``released``
         may be ``None`` (absent, [[field-schema#deferred-items]]) -- the year is empty then, same as
-        for a too-short ``released`` string.
+        for a too-short ``released`` string, and a pattern's ``{{ [{year}]}}`` group drops out with it.
 
-        :returns: one candidate string per pattern, in pattern order.
+        Two patterns rendering the same name are **merged** here, where the names are computed: a
+        title-only record renders every shipped default to the bare title, which is one suggestion,
+        not four. A pattern rendering to nothing at all is dropped for the same reason.
+
+        :returns: the distinct candidate strings, in the order their patterns first produced them.
         """
         values = {
             "title": self.__model.title,
@@ -74,4 +78,5 @@ class NameSuggestionModel(QObject):
         if main_key not in plugins:
             main_key = FALLBACK_RESOURCE_TYPE
         patterns = shared_location_templates_settings().patterns_for(main_key)
-        return [pattern.format(**values) for pattern in patterns]
+        rendered = (render_location_pattern(pattern, values) for pattern in patterns)
+        return list(dict.fromkeys(name for name in rendered if name))

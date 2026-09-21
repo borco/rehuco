@@ -10,6 +10,7 @@ from pytestqt.qtbot import QtBot
 from rehuco_agent.settings import location_templates_settings
 from rehuco_agent.settings.location_templates_settings import (
     NAME_SUGGESTION_PATTERNS,
+    UNKNOWN_PLACEHOLDER_PROBLEM,
     shared_location_templates_settings,
 )
 from rehuco_agent.settings.ui import location_templates_page
@@ -224,24 +225,20 @@ def test_the_ordering_column_is_shown(page: LocationTemplatesPage) -> None:
 # region Editing, saving and dropping the patterns
 
 
-def test_a_row_saving_would_drop_is_not_yet_a_change(page: LocationTemplatesPage) -> None:
-    """A blank or half-typed pattern does not make the page dirty, because applying would not change
-    what is saved.
+def test_a_blank_row_is_not_yet_a_change_but_a_typed_one_is(page: LocationTemplatesPage) -> None:
+    """A blank pattern does not make the page dirty, because applying would not change what is saved.
+    The first keystroke is a change, valid or not: saving keeps a broken row rather than dropping it.
 
     **Test steps:**
 
     * insert a blank pattern and verify the page stays clean
-    * type an unknown-placeholder pattern and verify it still does
-    * complete a well-formed pattern and verify the page is dirty exactly then
+    * type an unknown-placeholder pattern and verify the page is dirty exactly then
     """
     model = model_of(page)
     row = model.insert(-1)
     assert page.is_dirty() is False
 
     model.setData(model.index(row, PATTERN_COLUMN), "{title} ({series})")
-    assert page.is_dirty() is False
-
-    model.setData(model.index(row, PATTERN_COLUMN), "{title} - archive")
     assert page.is_dirty() is True
 
 
@@ -338,15 +335,35 @@ def test_saving_one_type_does_not_disturb_another(page: LocationTemplatesPage) -
     assert shared_location_templates_settings().patterns_for("reference_images") == ("{publisher} - {title}",)
 
 
-def test_saving_reloads_what_normalizing_actually_kept(page: LocationTemplatesPage) -> None:
-    """A page still showing what was typed would disagree with what the next suggestion actually offers.
+def test_saving_keeps_an_invalid_row_flagged_and_out_of_the_effective_list(page: LocationTemplatesPage) -> None:
+    """A typo is fixed in place, not retyped: Apply keeps the row, the page shows it red, and no
+    document is offered it.
 
     **Test steps:**
 
     * stage a good pattern alongside one naming an unknown placeholder, and save
-    * verify the page comes back showing only the pattern that survived
+    * verify the page comes back showing both, the broken one flagged, and settled
+    * verify the shared settings' effective list holds only the good one
     """
     editor_of(page).values = ("{title} - archive", "{title} ({series})")
+
+    page.save_changes()
+
+    assert editor_of(page).values == ("{title} - archive", "{title} ({series})")
+    assert model_of(page).invalid_reason(1) != ""
+    assert page.is_dirty() is False
+    assert shared_location_templates_settings().patterns_for("tutorial") == ("{title} - archive",)
+
+
+def test_saving_drops_a_blank_row(page: LocationTemplatesPage) -> None:
+    """A page still showing a row saving dropped would disagree with the next Apply.
+
+    **Test steps:**
+
+    * stage a good pattern alongside a blank one, and save
+    * verify the page comes back showing only the pattern
+    """
+    editor_of(page).values = ("{title} - archive", "")
 
     page.save_changes()
 
@@ -484,16 +501,49 @@ def test_the_try_it_preview_refreshes_when_the_sample_record_is_edited(page: Loc
 
 
 def test_the_try_it_preview_flags_a_pattern_naming_an_unknown_placeholder(page: LocationTemplatesPage) -> None:
-    """An unresolvable pattern's preview line says so, rather than raising or going blank.
+    """An unresolvable pattern's preview line says why, rather than raising or going blank.
 
     **Test steps:**
 
     * stage a pattern naming an unknown placeholder
-    * verify its preview line reports the pattern as invalid
+    * verify its preview line reports the pattern as invalid, with the settings module's reason
     """
     editor_of(page).values = ("{title} ({series})",)
 
-    assert "invalid" in try_it_text(page).lower()
+    assert try_it_text(page) == f"{{title}} ({{series}}) → (invalid: {UNKNOWN_PLACEHOLDER_PROBLEM})"
+
+
+def test_the_try_it_preview_merges_a_name_an_earlier_line_already_produced(page: LocationTemplatesPage) -> None:
+    """Two patterns naming the sample the same way are offered once on a document, and the preview says
+    which line already covered it rather than repeating the name.
+
+    **Test steps:**
+
+    * stage the plain title pattern and the optional-year one, then blank the sample year
+    * verify the second line points at the first instead of repeating the name
+    """
+    editor_of(page).values = ("{title}", "{title}{{ [{year}]}}")
+    page._LocationTemplatesPage__ui.sample_year_edit.setText("")  # pyright: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    assert try_it_text(page).splitlines() == [
+        f"{{title}} → {DEFAULT_SAMPLE[0]}",
+        "{title}{{ [{year}]}} → (same as line 1)",
+    ]
+
+
+def test_the_try_it_preview_reports_a_pattern_that_names_nothing(page: LocationTemplatesPage) -> None:
+    """An all-optional pattern whose groups all dropped says it named nothing, which a document would
+    simply not offer.
+
+    **Test steps:**
+
+    * stage a pattern that is one optional group, then blank the field it depends on
+    * verify the preview line reports an empty name
+    """
+    editor_of(page).values = ("{{{authors}}}",)
+    page._LocationTemplatesPage__ui.sample_authors_edit.setText("")  # pyright: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    assert try_it_text(page) == "{{{authors}}} → (empty)"
 
 
 @mark.parametrize("resource_type", ["tutorial", "reference_images", "collection"])

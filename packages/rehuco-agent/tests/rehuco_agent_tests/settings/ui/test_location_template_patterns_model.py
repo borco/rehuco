@@ -11,13 +11,12 @@
 from PySide6.QtCore import QModelIndex, Qt
 from pytest import fixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.settings.location_templates_settings import NAME_SUGGESTION_PATTERNS
-from rehuco_agent.settings.ui.location_template_patterns_model import (
-    INVALID_PATTERN_REASON,
-    MISSING_PATTERN_REASON,
-    PATTERN_COLUMN,
-    LocationTemplatePatternsModel,
+from rehuco_agent.settings.location_templates_settings import (
+    BLANK_PATTERN_PROBLEM,
+    NAME_SUGGESTION_PATTERNS,
+    UNKNOWN_PLACEHOLDER_PROBLEM,
 )
+from rehuco_agent.settings.ui.location_template_patterns_model import PATTERN_COLUMN, LocationTemplatePatternsModel
 
 FIRST = "{title}"
 SECOND = "{publisher} - {title}"
@@ -105,6 +104,37 @@ def test_an_inserted_pattern_lands_after_the_current_one_and_is_blank(model: Loc
     assert row == 1
     assert model.entries[1] == ""
     assert model.rowCount() == 4
+
+
+def test_a_duplicated_pattern_lands_below_its_source_as_one_insert(model: LocationTemplatePatternsModel) -> None:
+    """Duplicate is how a variant of a pattern is written: a copy below it, already typed, so the row
+    never exists blank for the editor to mistake for an abandonable insert.
+
+    **Test steps:**
+
+    * duplicate the first row while counting insert announcements
+    * verify the copy is at row 1, equals the source, and came as a single ``rowsInserted``
+    """
+    announced: list[tuple[int, int]] = []
+    model.rowsInserted.connect(lambda _parent, first, last: announced.append((first, last)))
+
+    row = model.duplicate(0)
+
+    assert row == 1
+    assert model.entries == (FIRST, FIRST, SECOND, THIRD)
+    assert announced == [(1, 1)]
+
+
+def test_duplicating_with_no_current_row_does_nothing(model: LocationTemplatePatternsModel) -> None:
+    """A negative row names nothing to copy, and reports itself back unchanged.
+
+    **Test steps:**
+
+    * duplicate a negative row
+    * verify nothing was added
+    """
+    assert model.duplicate(-1) == -1
+    assert model.entries == (FIRST, SECOND, THIRD)
 
 
 def test_deleting_with_no_current_row_does_nothing(model: LocationTemplatePatternsModel) -> None:
@@ -267,7 +297,7 @@ def test_a_blank_cell_explains_and_colours_itself(model: LocationTemplatePattern
     model.setData(model.index(0, PATTERN_COLUMN), "")
     index = model.index(0, PATTERN_COLUMN)
 
-    assert model.data(index, Qt.ItemDataRole.ToolTipRole) == MISSING_PATTERN_REASON
+    assert model.data(index, Qt.ItemDataRole.ToolTipRole) == BLANK_PATTERN_PROBLEM
     assert model.data(index, Qt.ItemDataRole.ForegroundRole) is not None
 
 
@@ -275,7 +305,7 @@ def test_a_cell_naming_an_unknown_placeholder_explains_and_colours_itself(
     model: LocationTemplatePatternsModel,
 ) -> None:
     """A pattern naming a placeholder outside the known four is flagged the same way a blank one is,
-    with its own reason.
+    with its own reason -- the settings module's, so the tooltip says *what* is wrong.
 
     **Test steps:**
 
@@ -285,7 +315,7 @@ def test_a_cell_naming_an_unknown_placeholder_explains_and_colours_itself(
     model.setData(model.index(0, PATTERN_COLUMN), "{title} ({series})")
     index = model.index(0, PATTERN_COLUMN)
 
-    assert model.data(index, Qt.ItemDataRole.ToolTipRole) == INVALID_PATTERN_REASON
+    assert model.data(index, Qt.ItemDataRole.ToolTipRole) == UNKNOWN_PLACEHOLDER_PROBLEM
     assert model.data(index, Qt.ItemDataRole.ForegroundRole) is not None
 
 

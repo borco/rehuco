@@ -54,7 +54,7 @@
       <item>
        <widget class="WrappingLabel" name="patterns_order_label">
         <property name="text">
-         <string>Order decides which pattern matches first when more than one could — an ordinary list, evaluated top to bottom — and which file takes a slot two names want. A pattern that fails to compile, or carries more than one capture group, is skipped and shown in red. An empty list falls back to the shipped patterns.</string>
+         <string>Order decides which pattern matches first when more than one could — an ordinary list, evaluated top to bottom — and which file takes a slot two names want. A pattern that fails to compile, or carries more than one capture group, is kept and shown in red, and simply not used. An empty list falls back to the shipped patterns.</string>
         </property>
         <property name="wordWrap">
          <bool>true</bool>

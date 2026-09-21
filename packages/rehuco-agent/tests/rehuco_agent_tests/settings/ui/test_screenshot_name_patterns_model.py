@@ -99,6 +99,37 @@ def test_an_inserted_pattern_lands_after_the_current_one_and_is_blank(model: Scr
     assert model.rowCount() == 4
 
 
+def test_a_duplicated_pattern_lands_below_its_source_as_one_insert(model: ScreenshotNamePatternsModel) -> None:
+    """Duplicate is how a variant of a pattern is written: a copy below it, already typed, so the row
+    never exists blank for the editor to mistake for an abandonable insert.
+
+    **Test steps:**
+
+    * duplicate the first row while counting insert announcements
+    * verify the copy is at row 1, equals the source, and came as a single ``rowsInserted``
+    """
+    announced: list[tuple[int, int]] = []
+    model.rowsInserted.connect(lambda _parent, first, last: announced.append((first, last)))
+
+    row = model.duplicate(0)
+
+    assert row == 1
+    assert model.entries == (FIRST, FIRST, SECOND, THIRD)
+    assert announced == [(1, 1)]
+
+
+def test_duplicating_with_no_current_row_does_nothing(model: ScreenshotNamePatternsModel) -> None:
+    """A negative row names nothing to copy, and reports itself back unchanged.
+
+    **Test steps:**
+
+    * duplicate a negative row
+    * verify nothing was added
+    """
+    assert model.duplicate(-1) == -1
+    assert model.entries == (FIRST, SECOND, THIRD)
+
+
 def test_deleting_with_no_current_row_does_nothing(model: ScreenshotNamePatternsModel) -> None:
     """Delete acts on the current row, and there may not be one.
 

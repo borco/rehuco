@@ -215,6 +215,44 @@ def test_insert_puts_a_new_entry_below_the_current_one_and_opens_it(editor: Stri
     assert isinstance(QApplication.focusWidget(), QLineEdit)
 
 
+def test_duplicate_puts_a_copy_below_the_current_entry_without_opening_it(editor: StringListEditor) -> None:
+    """Duplicate is how a variant of an existing entry is written: a copy lands below it and becomes
+    current, already typed -- so nothing opens for typing, and nothing is there to abandon.
+
+    **Test steps:**
+
+    * make the first row current, then duplicate
+    * verify a copy landed below it, is current, and no cell editor is open
+    """
+    select(editor, 0)
+
+    editor.item_actions.duplicate_action.trigger()
+
+    assert editor.values == ("one", "one", "two", "three")
+    assert current_row(editor) == 1
+    assert not isinstance(QApplication.focusWidget(), QLineEdit)
+
+
+def test_a_duplicated_entry_cleared_afterwards_stays_as_a_blank_row(editor: StringListEditor) -> None:
+    """A copy is a value from the moment it lands, never an abandonable insert: clearing it in a later
+    edit leaves a blank row, exactly as clearing any other row does -- it is not silently removed.
+
+    **Test steps:**
+
+    * duplicate the first row, then open the copy, clear it and commit
+    * verify the blank copy is still there
+    """
+    select(editor, 0)
+    editor.item_actions.duplicate_action.trigger()
+
+    editor.item_actions.edit_action.trigger()
+    field = open_editor()
+    field.clear()
+    commit(field)
+
+    assert editor.values == ("one", "", "two", "three")
+
+
 def test_insert_appends_when_nothing_is_current(editor: StringListEditor) -> None:
     """With no current row there is no "below", so the entry goes last -- which is also how an
     emptied list gets its first row back.
@@ -639,6 +677,24 @@ def test_insert_from_the_keyboard_opens_the_new_entry_for_typing(editor: StringL
     type_and_commit("typed")
 
     assert editor.values == ("one", "typed", "two", "three")
+
+
+def test_duplicate_from_the_keyboard_copies_the_current_entry(editor: StringListEditor) -> None:
+    """``Ctrl+D`` is armed on the view like the other row keys.
+
+    **Test steps:**
+
+    * focus the view on its second row and press Ctrl+D
+    * verify a copy of that row landed below it
+    """
+    view = inner_view(editor)
+    view.setFocus()
+    select(editor, 1)
+
+    QTest.keySequence(view, QKeySequence(Qt.KeyboardModifier.ControlModifier | Qt.Key.Key_D))
+
+    assert editor.values == ("one", "two", "two", "three")
+    assert current_row(editor) == 2
 
 
 # endregion

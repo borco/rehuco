@@ -115,17 +115,18 @@ def test_patterns_are_trimmed_and_order_is_kept() -> None:
     assert patterns == (r"^shot-(\d+)$", "^cover$")
 
 
-def test_an_uncompilable_pattern_is_dropped() -> None:
-    """The page flags a half-typed pattern rather than refusing the keystroke, so saving is where it goes.
+def test_an_uncompilable_pattern_is_kept() -> None:
+    """Normalizing is the stored shape, and a broken row is stored: dropping it on Apply would make a
+    typo cost the whole row (#322). Only blank rows go; the effective set is what skips it.
 
     **Test steps:**
 
     * normalize a list holding a blank pattern, a broken one, a two-group one, and a good one
-    * verify only the good one survives
+    * verify the blank one alone is dropped
     """
     patterns = normalize_screenshot_name_patterns(["", "[", r"(\d+)-(\d+)", r"^shot-(\d+)$"])
 
-    assert patterns == (r"^shot-(\d+)$",)
+    assert patterns == ("[", r"(\d+)-(\d+)", r"^shot-(\d+)$")
 
 
 def test_a_duplicate_pattern_is_dropped_by_exact_string_match() -> None:
@@ -155,8 +156,8 @@ def test_a_bare_string_reads_as_a_one_element_list() -> None:
 
 @mark.parametrize(
     "value",
-    [None, [], (), "", "   ", ["", "  "], 42, ["["]],
-    ids=["absent", "empty-list", "empty-tuple", "empty-string", "blank-string", "blank-entries", "int", "all-broken"],
+    [None, [], (), "", "   ", ["", "  "], 42],
+    ids=["absent", "empty-list", "empty-tuple", "empty-string", "blank-string", "blank-entries", "int"],
 )
 def test_a_value_naming_no_pattern_falls_back_to_the_defaults(value: object) -> None:
     """Absent, empty and garbage all yield the shipped defaults, never *recognize nothing* (#287).
@@ -166,7 +167,7 @@ def test_a_value_naming_no_pattern_falls_back_to_the_defaults(value: object) -> 
 
     **Test steps:**
 
-    * normalize each value that names no usable pattern
+    * normalize each value that names no pattern at all
     * verify the shipped defaults came back
     """
     assert normalize_screenshot_name_patterns(value) == DEFAULT_PATTERN_STRINGS
@@ -213,6 +214,38 @@ def test_stored_values_replace_the_defaults_entirely() -> None:
     stored.patterns = ("^cover$",)
 
     assert [pattern.pattern for pattern in stored.screenshot_name_patterns] == ["^cover$"]
+
+
+def test_an_uncompilable_row_is_stored_but_not_effective() -> None:
+    """The two views of one list (#322): the page stages against the stored one, which keeps a broken
+    row to fix; a scan reads the effective one, which skips it.
+
+    **Test steps:**
+
+    * store a list holding a good pattern and one that does not compile
+    * verify ``stored_patterns`` holds both and ``screenshot_name_patterns`` only the good one
+    """
+    stored = ScreenshotPatternsSettings()
+    stored.patterns = ("[", "^cover$")
+
+    assert stored.stored_patterns == ("[", "^cover$")
+    assert [pattern.pattern for pattern in stored.screenshot_name_patterns] == ["^cover$"]
+
+
+def test_a_list_with_no_compilable_row_is_effectively_the_defaults() -> None:
+    """A stored list that compiles nothing recognizes the shipped set rather than nothing -- while still
+    showing the broken rows on the page.
+
+    **Test steps:**
+
+    * store a list of nothing but broken patterns
+    * verify ``stored_patterns`` keeps them and the effective set is the shipped one
+    """
+    stored = ScreenshotPatternsSettings()
+    stored.patterns = ("[", r"(\d+)-(\d+)")
+
+    assert stored.stored_patterns == ("[", r"(\d+)-(\d+)")
+    assert stored.screenshot_name_patterns == SCREENSHOT_NAME_PATTERNS
 
 
 # endregion

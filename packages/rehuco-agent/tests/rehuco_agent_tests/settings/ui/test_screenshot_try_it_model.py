@@ -171,6 +171,36 @@ def test_deleting_drops_one_sample(model: ScreenshotTryItModel) -> None:
     assert model.entries == ("lesson1.jpg",)
 
 
+def test_a_duplicated_sample_lands_below_its_source_as_one_insert(model: ScreenshotTryItModel) -> None:
+    """A copy of a sample lands below it, already typed, its slot recomputed like any row's.
+
+    **Test steps:**
+
+    * duplicate the first row while counting insert announcements
+    * verify the copy is at row 1, equals the source, and came as a single ``rowsInserted``
+    """
+    announced: list[tuple[int, int]] = []
+    model.rowsInserted.connect(lambda _parent, first, last: announced.append((first, last)))
+
+    row = model.duplicate(0)
+
+    assert row == 1
+    assert model.entries == ("cover.jpg", "cover.jpg", "lesson1.jpg")
+    assert announced == [(1, 1)]
+
+
+def test_duplicating_with_no_current_row_does_nothing(model: ScreenshotTryItModel) -> None:
+    """A negative row names nothing to copy, and reports itself back unchanged.
+
+    **Test steps:**
+
+    * duplicate a negative row
+    * verify nothing was added
+    """
+    assert model.duplicate(-1) == -1
+    assert model.entries == ("cover.jpg", "lesson1.jpg")
+
+
 def test_deleting_with_no_current_row_does_nothing(model: ScreenshotTryItModel) -> None:
     """Delete acts on the current row, and there may not be one.
 

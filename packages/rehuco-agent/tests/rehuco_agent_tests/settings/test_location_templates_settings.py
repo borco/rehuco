@@ -13,10 +13,17 @@ from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from rehuco_agent.settings import location_templates_settings
 from rehuco_agent.settings.location_templates_settings import (
+    BLANK_PATTERN_PROBLEM,
+    EMPTY_GROUP_PROBLEM,
+    MALFORMED_PATTERN_PROBLEM,
     NAME_SUGGESTION_PATTERNS,
+    STRAY_GROUP_MARKER_PROBLEM,
+    UNKNOWN_PLACEHOLDER_PROBLEM,
     LocationTemplatesSettings,
     location_pattern_is_valid,
+    location_pattern_problem,
     normalize_location_templates,
+    render_location_pattern,
     shared_location_templates_settings,
 )
 
@@ -90,38 +97,138 @@ def clear_shared_instance_cache() -> Iterator[None]:
 
 # endregion
 
-# region location_pattern_is_valid
+# region location_pattern_problem
 
 
 def test_a_blank_pattern_is_not_valid() -> None:
     """A blank pattern is unusable regardless of what it would otherwise parse as."""
+    assert location_pattern_problem("") == BLANK_PATTERN_PROBLEM
+    assert location_pattern_problem("   ") == BLANK_PATTERN_PROBLEM
     assert location_pattern_is_valid("") is False
-    assert location_pattern_is_valid("   ") is False
-
-
-def test_a_malformed_format_string_is_not_valid() -> None:
-    """An unmatched brace fails to parse as a format string at all."""
-    assert location_pattern_is_valid("{title") is False
-
-
-def test_a_positional_placeholder_is_not_valid() -> None:
-    """A bare ``{}`` or a numeric index names no known field."""
-    assert location_pattern_is_valid("{} - {title}") is False
-    assert location_pattern_is_valid("{0} - {title}") is False
-
-
-def test_an_unknown_placeholder_is_not_valid() -> None:
-    """A placeholder outside the four known fields is refused, not silently interpolated as empty."""
-    assert location_pattern_is_valid("{title} ({series})") is False
 
 
 @mark.parametrize(
     "pattern",
-    ["{title}", "{publisher} - {title}", "{title} [{year}]", "{authors} - {title}", "plain text, no placeholders"],
+    ["{title", "title}", "{ti{tle}", "{title!}", "{title:>10}", "{title!r}", "{title:{}}", "{title:{series}}"],
+    ids=[
+        "unclosed",
+        "unopened",
+        "reopened",
+        "conversion-cut-short",
+        "spec",
+        "conversion",
+        "nested-spec",
+        "nested-name",
+    ],
+)
+def test_a_malformed_placeholder_is_refused(pattern: str) -> None:
+    """A brace with no partner, a placeholder :meth:`str.format` itself cannot parse, or one carrying a
+    spec or conversion a name never needs -- refused up front, since ``parse`` does not look inside a
+    spec and ``{title:{series}}`` would otherwise pass here and raise at render time."""
+    assert location_pattern_problem(pattern) == MALFORMED_PATTERN_PROBLEM
+    assert render_location_pattern(pattern, SAMPLE) == ""
+
+
+@mark.parametrize(
+    "pattern",
+    ["{} - {title}", "{0} - {title}", "{title} ({series})", "{{{series}}}"],
+    ids=["blank", "positional", "unknown", "unknown-in-group"],
+)
+def test_a_placeholder_outside_the_known_four_is_refused(pattern: str) -> None:
+    """A placeholder outside the four known fields is refused, not silently interpolated as empty --
+    inside a group as much as outside one."""
+    assert location_pattern_problem(pattern) == UNKNOWN_PLACEHOLDER_PROBLEM
+
+
+@mark.parametrize("pattern", ["{title}{{ - }}", "{title}{{}}"], ids=["text-only", "empty"])
+def test_a_group_naming_no_placeholder_is_refused(pattern: str) -> None:
+    """A group that depends on nothing could never be left out, so it is a mistake rather than a
+    literal."""
+    assert location_pattern_problem(pattern) == EMPTY_GROUP_PROBLEM
+
+
+@mark.parametrize(
+    "pattern",
+    ["{title}{{ [{year}]", "{title} [{year}]}}", "{{{{{authors} - }}}}", "{{{{{authors} - }} }}"],
+    ids=["unclosed", "unopened", "nested-tight", "nested"],
+)
+def test_a_stray_or_nested_group_marker_is_refused(pattern: str) -> None:
+    """Groups do not nest and every ``{{`` needs its ``}}``."""
+    assert location_pattern_problem(pattern) == STRAY_GROUP_MARKER_PROBLEM
+
+
+@mark.parametrize(
+    "pattern",
+    [
+        "{title}",
+        "{publisher} - {title}",
+        "{title} [{year}]",
+        "{authors} - {title}",
+        "plain text, no placeholders",
+        "{title}{{ [{year}]}}",
+        "{{{authors} - }}{title}",
+        "{{{authors}}}",
+        "{{{publisher}: }}{title}{{ ({year})}}",
+    ],
 )
 def test_a_well_formed_pattern_is_valid(pattern: str) -> None:
-    """A pattern naming only known placeholders (or none at all) is usable."""
+    """A pattern naming only known placeholders (or none at all), with every group naming one, is
+    usable -- including a group that is nothing but its placeholder."""
+    assert location_pattern_problem(pattern) == ""
     assert location_pattern_is_valid(pattern) is True
+
+
+# endregion
+
+# region render_location_pattern
+
+SAMPLE: dict[str, str] = {"title": "Intro", "publisher": "Acme", "authors": "Jane, John", "year": "2025"}
+
+
+def test_plain_placeholders_render_as_before() -> None:
+    """Outside a group a pattern is an ordinary format string."""
+    assert render_location_pattern("{publisher} - {title}", SAMPLE) == "Acme - Intro"
+
+
+def test_a_group_is_kept_when_every_placeholder_inside_it_has_a_value() -> None:
+    """A filled group renders its inner text verbatim, its own whitespace and punctuation included."""
+    assert render_location_pattern("{title}{{ [{year}]}}", SAMPLE) == "Intro [2025]"
+    assert render_location_pattern("{{{authors} - }}{title}", SAMPLE) == "Jane, John - Intro"
+
+
+@mark.parametrize("year", ["", "   "], ids=["empty", "blank"])
+def test_a_group_drops_out_when_a_placeholder_inside_it_is_empty(year: str) -> None:
+    """The group's separator goes with it, which is the whole point: no ``Intro []``."""
+    assert render_location_pattern("{title}{{ [{year}]}}", {**SAMPLE, "year": year}) == "Intro"
+
+
+def test_a_group_needs_every_placeholder_inside_it() -> None:
+    """One empty field is enough to drop a group naming two."""
+    assert render_location_pattern("{title}{{ ({publisher}, {year})}}", {**SAMPLE, "year": ""}) == "Intro"
+
+
+def test_a_pattern_whose_groups_all_drop_renders_to_nothing() -> None:
+    """An all-optional pattern with nothing to say says nothing, for the caller to skip."""
+    assert render_location_pattern("{{{authors}}}", {**SAMPLE, "authors": ""}) == ""
+
+
+def test_an_invalid_pattern_renders_to_nothing() -> None:
+    """Rendering never raises; the row is flagged elsewhere."""
+    assert render_location_pattern("{title} ({series})", SAMPLE) == ""
+
+
+def test_the_shipped_defaults_render_a_title_only_record_to_one_name() -> None:
+    """Every field but the title is optional in the shipped set, so a bare record names itself once
+    rather than four ways with empty separators.
+
+    **Test steps:**
+
+    * render each shipped default against a record carrying only a title
+    * verify they all render to the title
+    """
+    bare = {"title": "Intro", "publisher": "", "authors": "", "year": ""}
+
+    assert {render_location_pattern(pattern, bare) for pattern in NAME_SUGGESTION_PATTERNS} == {"Intro"}
 
 
 # endregion
@@ -142,18 +249,18 @@ def test_patterns_are_trimmed_and_order_is_kept() -> None:
     assert patterns == ("{title}", "{publisher} - {title}")
 
 
-def test_a_pattern_naming_an_unknown_placeholder_is_dropped() -> None:
-    """The page flags an unusable pattern rather than refusing the keystroke, so normalizing is where it
-    actually goes.
+def test_a_pattern_naming_an_unknown_placeholder_is_kept() -> None:
+    """Normalizing is the stored shape, and an invalid row is stored: dropping it on Apply would make a
+    typo cost the whole row (#322). Only blank rows go.
 
     **Test steps:**
 
     * normalize a list holding a blank pattern, one naming an unknown placeholder, and a good one
-    * verify only the good one survives
+    * verify the blank one alone is dropped
     """
     patterns = normalize_location_templates(["", "{title} ({series})", "{title}"], NAME_SUGGESTION_PATTERNS)
 
-    assert patterns == ("{title}",)
+    assert patterns == ("{title} ({series})", "{title}")
 
 
 def test_a_duplicate_pattern_is_dropped_by_exact_string_match() -> None:
@@ -182,15 +289,15 @@ def test_a_bare_string_reads_as_a_one_element_list() -> None:
 
 @mark.parametrize(
     "value",
-    [None, [], (), "", "   ", ["", "  "], 42, ["{unknown}"]],
-    ids=["absent", "empty-list", "empty-tuple", "empty-string", "blank-string", "blank-entries", "int", "all-broken"],
+    [None, [], (), "", "   ", ["", "  "], 42],
+    ids=["absent", "empty-list", "empty-tuple", "empty-string", "blank-string", "blank-entries", "int"],
 )
 def test_a_value_naming_no_pattern_falls_back_to_the_defaults(value: object) -> None:
     """Absent, empty and garbage all yield the passed-in defaults, never *offer nothing*.
 
     **Test steps:**
 
-    * normalize each value that names no usable pattern
+    * normalize each value that names no pattern at all
     * verify the passed-in defaults came back
     """
     assert normalize_location_templates(value, NAME_SUGGESTION_PATTERNS) == NAME_SUGGESTION_PATTERNS
@@ -198,7 +305,39 @@ def test_a_value_naming_no_pattern_falls_back_to_the_defaults(value: object) -> 
 
 # endregion
 
-# region patterns_for
+# region stored_for and patterns_for
+
+
+def test_an_invalid_row_is_stored_but_not_effective() -> None:
+    """The two views of one list (#322): the page stages against the stored one, which keeps a broken
+    row to fix; a document reads the effective one, which skips it.
+
+    **Test steps:**
+
+    * store a list holding a good pattern and one naming an unknown placeholder
+    * verify ``stored_for`` holds both and ``patterns_for`` only the good one
+    """
+    settings = LocationTemplatesSettings()
+    settings.patterns = {"tutorial": ("{title} ({series})", "{title}")}
+
+    assert settings.stored_for("tutorial") == ("{title} ({series})", "{title}")
+    assert settings.patterns_for("tutorial") == ("{title}",)
+
+
+def test_a_list_with_no_valid_row_is_effectively_the_defaults() -> None:
+    """A stored list that renders nothing offers the shipped set rather than nothing -- while still
+    showing the broken rows on the page.
+
+    **Test steps:**
+
+    * store a list of nothing but invalid patterns
+    * verify ``stored_for`` keeps them and ``patterns_for`` falls back to the defaults
+    """
+    settings = LocationTemplatesSettings()
+    settings.patterns = {"tutorial": ("{title} ({series})", "{title")}
+
+    assert settings.stored_for("tutorial") == ("{title} ({series})", "{title")
+    assert settings.patterns_for("tutorial") == NAME_SUGGESTION_PATTERNS
 
 
 def test_patterns_for_a_never_seen_type_resolves_to_the_shipped_defaults() -> None:

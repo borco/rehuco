@@ -310,6 +310,12 @@ verbatim, so only blanks and duplicates go; a *format* also loses its leading do
 `BMP` comes back `.bmp`. Both rules live on the settings object, never in the widget — the widget holds
 what was typed, which is what lets one editor serve two blocks that disagree (#231).
 
+Normalizing never drops a row the user can still fix. A pattern that does not parse — an uncompilable
+regex on Images / Sidecar Names, an unknown placeholder on a Locations page — is **kept and flagged**
+across Apply, so a typo is corrected in place rather than retyped; the settings object keeps two views
+of the list, the *stored* one the page stages against and the *effective* one everything else reads,
+and only the effective one skips such a row (#322).
+
 It also lost a Default/Custom radio pair in the same slice, whose flag said which half was in effect. The
 pair went because the empty-list fallback already draws that distinction — a list naming nothing *is*
 "whatever this app ships", and the editor's Reset fills the list with that set on request. The old keys

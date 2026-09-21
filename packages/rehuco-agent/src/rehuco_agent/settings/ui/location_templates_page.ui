@@ -47,14 +47,14 @@
       <item>
        <widget class="LocationTemplatePatternsEditor" name="patterns_editor">
         <property name="toolTip">
-         <string>Each pattern is a format string interpolating {title}, {publisher}, {authors} and {year}. Double-click a cell to edit it.</string>
+         <string>Each pattern interpolates {title}, {publisher}, {authors} and {year}; a {{ ... }} group is left out when a field inside it is empty. Double-click a cell to edit it.</string>
         </property>
        </widget>
       </item>
       <item>
        <widget class="WrappingLabel" name="placeholders_label">
         <property name="text">
-         <string>The four placeholders a pattern may use: {title}, {publisher}, {authors} and {year}. Order decides which suggestion is offered first. A pattern that fails to parse, or names any other placeholder, is skipped and shown in red. An empty list falls back to the shipped patterns.</string>
+         <string>The four placeholders a pattern may use: {title}, {publisher}, {authors} and {year}. Wrap a fragment in {{ ... }} to leave it out when a field inside it is empty: {title}{{ [{year}]}} names a resource with no year plainly, not with an empty []. Order decides which suggestion is offered first, and two patterns naming a resource the same way are offered once. A pattern that fails to parse, or names any other placeholder, is kept and shown in red, and simply not used. An empty list falls back to the shipped patterns.</string>
         </property>
         <property name="wordWrap">
          <bool>true</bool>

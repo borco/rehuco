@@ -58,6 +58,10 @@ def canonical_author_entry(entry: AuthorEntry) -> AuthorEntry:
     return entry
 
 
+# the count is `QAbstractTableModel`'s surface plus the two protocols `ItemListEditor` drives the model
+# through -- four ordering methods, four editing ones -- none of which this class chose; splitting it
+# would separate the rows from the operations performed on them
+# pylint: disable-next=too-many-public-methods
 class AuthorsTableModel(QAbstractTableModel):
     """The document's ``authors`` list as editable rows of *name* and *URL* ([[field-schema#authors]]).
 
@@ -116,6 +120,25 @@ class AuthorsTableModel(QAbstractTableModel):
         """
         target = at + 1 if at >= 0 else len(self.__entries)
         self.insertRow(target)
+        return target
+
+    def duplicate(self, at: int) -> int:
+        """Insert a copy of ``at`` below it -- the `ItemEditor` contract.
+
+        A record entry is copied (``{**entry}``) rather than shared, since entries are never mutated in
+        place and the two rows must go their own way from here. One insert announcement carrying the
+        copy, rather than a blank insert filled in afterwards, so the row never exists blank.
+
+        :param at: the row to copy; a negative row is a no-op.
+        :returns: the copy's row, or ``at`` when nothing was copied.
+        """
+        if at < 0:
+            return at
+        source = self.__entries[at]
+        target = at + 1
+        self.beginInsertRows(QModelIndex(), target, target)
+        self.__entries.insert(target, {**source} if isinstance(source, dict) else source)
+        self.endInsertRows()
         return target
 
     def delete(self, at: int) -> None:

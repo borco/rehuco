@@ -10,6 +10,7 @@ from .horizontal_line import HorizontalLine
 from .item_action_button_column import ItemEditActionsColumn, ItemOrderingActionsColumn
 from .item_actions import (
     DeleteItemAction,
+    DuplicateItemAction,
     EditItemAction,
     InsertItemAction,
     MoveDownItemAction,
@@ -43,6 +44,7 @@ __all__ = [
     "ContentSizedListView",
     "ContentSizedTableView",
     "DeleteItemAction",
+    "DuplicateItemAction",
     "EditItemAction",
     "ElidedLabel",
     "FlowLayout",

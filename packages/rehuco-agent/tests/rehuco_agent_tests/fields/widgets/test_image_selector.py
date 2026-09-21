@@ -1727,14 +1727,15 @@ def test_the_move_actions_are_disabled_at_the_ends(qtbot: QtBot) -> None:
 
 
 def test_the_editor_protocols_no_op_calls_leave_the_set_alone(qtbot: QtBot) -> None:
-    """Insert and Reset satisfy the toolkit's protocol without meaning anything for a file (#72).
+    """Insert, Duplicate and Reset satisfy the toolkit's protocol without meaning anything for a file
+    (#72).
 
     Their buttons are hidden and their keys never armed, so this pins that the protocol is answered
     rather than that anyone can reach them.
 
     **Test steps:**
 
-    * call insert and reset on the adapter directly
+    * call insert, duplicate and reset on the adapter directly
     * verify the current row is unchanged and nothing was renamed
     """
     resource = FakeResource(["info00.jpg", "info01.png"])
@@ -1743,6 +1744,7 @@ def test_the_editor_protocols_no_op_calls_leave_the_set_alone(qtbot: QtBot) -> N
     assert isinstance(ordering, ScreenshotOrdering)
 
     assert ordering.insert(1) == 1
+    assert ordering.duplicate(1) == 1
     ordering.reset()
 
     assert ordering.count == 2

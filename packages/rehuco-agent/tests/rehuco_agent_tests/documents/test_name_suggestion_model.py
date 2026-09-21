@@ -66,20 +66,49 @@ def test_suggestions_interpolate_the_record_fields() -> None:
     ]
 
 
-def test_suggestions_uses_an_empty_year_when_released_is_none(model: RehuDocumentModel) -> None:
-    """A ``None`` ``released`` (absent, [[field-schema#deferred-items]]) yields an empty year in the
-    ``[{year}]`` pattern rather than crashing on ``None[:4]``.
+def test_a_missing_year_drops_its_optional_group_rather_than_crashing(model: RehuDocumentModel) -> None:
+    """A ``None`` ``released`` (absent, [[field-schema#deferred-items]]) reads as an empty year, so the
+    shipped ``{{ [{year}]}}`` group drops out -- no ``Foo []``, and no crash on ``None[:4]``.
 
     **Test steps:**
 
     * build suggestions over the shared fixture, which sets no ``released``
-    * verify the year-bracket pattern interpolates an empty year
+    * verify no suggestion carries empty brackets
     """
     assert model.released is None
+    assert "{title}{{ [{year}]}}" in NAME_SUGGESTION_PATTERNS
 
     suggestions = NameSuggestionModel(model).suggestions()
 
-    assert suggestions[NAME_SUGGESTION_PATTERNS.index("{title} [{year}]")] == "Foo []"
+    assert "Foo" in suggestions
+    assert not any("[]" in suggestion for suggestion in suggestions)
+
+
+def test_patterns_rendering_the_same_name_are_merged(model: RehuDocumentModel) -> None:
+    """A record carrying only a title renders every shipped default to the title -- offered once.
+
+    **Test steps:**
+
+    * build suggestions over the shared fixture, then over one with the publisher cleared too
+    * verify the publisher-less record yields the title once and nothing else
+    """
+    model.publisher = ""
+
+    assert NameSuggestionModel(model).suggestions() == ["Foo"]
+
+
+def test_an_invalid_stored_pattern_is_not_offered(model: RehuDocumentModel) -> None:
+    """A row the settings page keeps flagged never reaches a document (#322).
+
+    **Test steps:**
+
+    * store a list holding a good pattern and one naming an unknown placeholder
+    * verify only the good one renders into a suggestion
+    """
+    settings = shared_location_templates_settings()
+    settings.patterns = {**settings.patterns, "tutorial": ("{title} ({series})", "{publisher} - {title}")}
+
+    assert NameSuggestionModel(model).suggestions() == ["Bar - Foo"]
 
 
 @mark.parametrize(

@@ -59,17 +59,18 @@ def pattern_is_valid(pattern: str) -> bool:
 
 
 def normalize_screenshot_name_patterns(patterns: object) -> tuple[str, ...]:
-    """Coerce a stored or edited pattern list into the form a scan is handed.
+    """Coerce a stored or edited pattern list into its **stored** shape.
 
-    Each entry is trimmed; one that does not compile as a valid single-or-no-group regex is dropped, the
-    same check `rehuco_core.ScreenshotNamePatterns` itself applies rather than a second spelling of it
-    here. Duplicates are dropped by exact string match after trimming -- not case-insensitively, since
-    regex casing matters syntactically -- and the order the patterns were given in is kept, since it
-    decides which pattern matches first.
+    Each entry is trimmed; blank ones go, and duplicates are dropped by exact string match after
+    trimming -- not case-insensitively, since regex casing matters syntactically -- with the order the
+    patterns were given in kept, since it decides which pattern matches first. One that does not
+    compile is **kept**: dropping it on save would make a typo cost the whole row, and the settings page
+    flags it in place instead (#322). What skips it is the effective set,
+    :attr:`ScreenshotPatternsSettings.screenshot_name_patterns`.
 
-    A value naming no usable pattern at all falls back to
-    :data:`~rehuco_core.SCREENSHOT_NAME_PATTERNS` rather than to *recognize nothing*: an empty set would
-    silently convert every legacy resource without carrying a single screenshot across.
+    A value naming no pattern at all falls back to :data:`~rehuco_core.SCREENSHOT_NAME_PATTERNS` rather
+    than to *recognize nothing*: an empty set would silently convert every legacy resource without
+    carrying a single screenshot across.
 
     Reading the stored shape at all -- including the ini backend's habit of handing a single-element
     list back as a bare string -- is
@@ -77,12 +78,12 @@ def normalize_screenshot_name_patterns(patterns: object) -> tuple[str, ...]:
     the policy this list applies on top of it.
 
     :param patterns: the stored patterns, or the patterns as edited.
-    :returns: the usable patterns in the order first seen, or the shipped defaults when there are none.
+    :returns: the patterns in the order first seen, or the shipped defaults when there are none.
     """
     normalized: list[str] = []
     for entry in read_stored_strings(patterns):
         pattern = entry.strip()
-        if not pattern or pattern in normalized or not pattern_is_valid(pattern):
+        if not pattern or pattern in normalized:
             continue
         normalized.append(pattern)
     return tuple(normalized) or tuple(pattern.pattern for pattern in SCREENSHOT_NAME_PATTERNS)
@@ -91,10 +92,10 @@ def normalize_screenshot_name_patterns(patterns: object) -> tuple[str, ...]:
 class ScreenshotPatternsSettings(QObject):
     """The naming patterns every legacy screenshot scan is handed (#53, #287).
 
-    One stored field, raw as the page left it: the patterns. What everything else consumes is
-    :attr:`screenshot_name_patterns`, the effective set the patterns resolve to. The page's try-it
-    samples are deliberately **not** here: they preview the patterns and are not a setting, so they are
-    never saved (#322).
+    One stored field, raw as the page left it: the patterns. The page stages against
+    :attr:`stored_patterns`; every scan consumes :attr:`screenshot_name_patterns`, the effective set the
+    patterns resolve to. The page's try-it samples are deliberately **not** here: they preview the
+    patterns and are not a setting, so they are never saved (#322).
 
     :param parent: optional Qt parent.
     """
@@ -104,11 +105,17 @@ class ScreenshotPatternsSettings(QObject):
     one rather than nothing."""
 
     @property
+    def stored_patterns(self) -> tuple[str, ...]:
+        """The normalized **stored** list -- uncompilable rows included, since the settings page shows
+        and re-shows them until they are fixed (:func:`normalize_screenshot_name_patterns`)."""
+        return normalize_screenshot_name_patterns(self.patterns)
+
+    @property
     def screenshot_name_patterns(self) -> tuple[ScreenshotNamePattern, ...]:
-        """The effective set a scan is handed: :attr:`patterns` normalized, falling back to
-        :data:`~rehuco_core.SCREENSHOT_NAME_PATTERNS` when it names nothing usable
-        (:func:`normalize_screenshot_name_patterns`)."""
-        return tuple(ScreenshotNamePattern(pattern) for pattern in normalize_screenshot_name_patterns(self.patterns))
+        """The **effective** set a scan is handed: :attr:`stored_patterns` without the rows that do not
+        compile, falling back to :data:`~rehuco_core.SCREENSHOT_NAME_PATTERNS` when none does."""
+        usable = tuple(pattern for pattern in self.stored_patterns if pattern_is_valid(pattern))
+        return tuple(ScreenshotNamePattern(pattern) for pattern in usable) or SCREENSHOT_NAME_PATTERNS
 
     def load(self, settings: QSettings) -> None:
         """Replace the stored patterns with what's in persistent storage.

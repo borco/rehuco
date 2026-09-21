@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QWidget
 from .action_button_column import ActionButtonColumn
 from .item_actions import (
     DeleteItemAction,
+    DuplicateItemAction,
     EditItemAction,
     InsertItemAction,
     MoveDownItemAction,
@@ -24,18 +25,22 @@ from .item_protocols import ItemEditor, ItemOrderingEditor, ItemViewer
 
 
 class ItemEditActionsColumn(ActionButtonColumn):
-    """Insert / Edit / Delete / Reset, wired straight to an :class:`~borco_pyside.widgets.item_protocols.ItemEditor`
-    and an :class:`~borco_pyside.widgets.item_protocols.ItemViewer`.
+    """Insert / Duplicate / Edit / Delete / Reset, wired straight to an
+    :class:`~borco_pyside.widgets.item_protocols.ItemEditor` and an
+    :class:`~borco_pyside.widgets.item_protocols.ItemViewer`.
 
-    Insert is the one action that touches both: it asks the editor to insert after the viewer's current
-    row, makes the result current, and opens it for typing -- "insert always opens the new entry" and
-    "click Edit" both end up calling :meth:`~borco_pyside.widgets.item_protocols.ItemViewer.edit_current`,
-    so neither path can drift from the other. Edit and Delete answer to the viewer's current row; Reset
-    is list-wide, so it neither reads nor needs one -- and is, unlike the other three, not something
+    Insert and Duplicate both touch editor and viewer: each asks the editor for a new row after the
+    viewer's current one and makes the result current. Insert then opens it for typing -- "insert
+    always opens the new entry" and "click Edit" both end up calling
+    :meth:`~borco_pyside.widgets.item_protocols.ItemViewer.edit_current`, so neither path can drift from
+    the other -- while Duplicate does not: a copy is already typed, and opening it would only invite the
+    Escape that undoes a blank insert. Duplicate, Edit and Delete answer to the viewer's current row;
+    Reset is list-wide, so it neither reads nor needs one -- and is, unlike the others, not something
     every editor wants: hide its button with ``reset_action.setVisible(False)`` when there is no reset
-    concept at all (`ActionButtonColumn.add_action_button` is what makes that actually hide it).
+    concept at all (`ActionButtonColumn.add_action_button` is what makes that actually hide it), and
+    likewise ``duplicate_action`` where an entry is not the editor's to copy.
 
-    :param editor: performs the insert/delete/reset.
+    :param editor: performs the insert/duplicate/delete/reset.
     :param viewer: says which row is current, and opens it for typing.
     :param parent: optional Qt parent.
     """
@@ -46,13 +51,21 @@ class ItemEditActionsColumn(ActionButtonColumn):
         self.__viewer: Final = viewer
 
         self.__insert_action: Final = InsertItemAction(self)
+        self.__duplicate_action: Final = DuplicateItemAction(self)
         self.__edit_action: Final = EditItemAction(self)
         self.__delete_action: Final = DeleteItemAction(self)
         self.__reset_action: Final = ResetItemAction(self)
-        for action in (self.__insert_action, self.__edit_action, self.__delete_action, self.__reset_action):
+        for action in (
+            self.__insert_action,
+            self.__duplicate_action,
+            self.__edit_action,
+            self.__delete_action,
+            self.__reset_action,
+        ):
             self.add_action_button(action)
 
         self.__insert_action.triggered.connect(self.__on_insert)
+        self.__duplicate_action.triggered.connect(self.__on_duplicate)
         self.__edit_action.triggered.connect(viewer.edit_current)
         self.__delete_action.triggered.connect(self.__on_delete)
         self.__reset_action.triggered.connect(editor.reset)
@@ -63,6 +76,11 @@ class ItemEditActionsColumn(ActionButtonColumn):
     def insert_action(self) -> InsertItemAction:
         """Add a new entry below the current one -- and the only way into an emptied list."""
         return self.__insert_action
+
+    @property
+    def duplicate_action(self) -> DuplicateItemAction:
+        """Insert a copy of the current entry below it."""
+        return self.__duplicate_action
 
     @property
     def edit_action(self) -> EditItemAction:
@@ -85,13 +103,20 @@ class ItemEditActionsColumn(ActionButtonColumn):
         self.__viewer.set_current_index(new_index)
         self.__viewer.edit_current()
 
+    def __on_duplicate(self) -> None:
+        """Copy the current row below itself and make the copy current -- without opening it."""
+        new_index = self.__editor.duplicate(self.__viewer.current_index)
+        self.__viewer.set_current_index(new_index)
+
     def __on_delete(self) -> None:
         """Drop the current entry."""
         self.__editor.delete(self.__viewer.current_index)
 
     def __update_enabled(self) -> None:
-        """Edit and Delete answer to whether there is a current row; Insert and Reset are list-wide."""
+        """Duplicate, Edit and Delete answer to whether there is a current row; Insert and Reset are
+        list-wide."""
         has_current = self.__viewer.current_index >= 0
+        self.__duplicate_action.setEnabled(has_current)
         self.__edit_action.setEnabled(has_current)
         self.__delete_action.setEnabled(has_current)
 

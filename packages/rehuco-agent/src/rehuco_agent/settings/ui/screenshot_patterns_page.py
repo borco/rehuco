@@ -6,7 +6,7 @@ recognized by, first written for how a `.tc`'s screenshots are recognized when i
 from typing import Final
 
 from PySide6.QtWidgets import QWidget
-from rehuco_core import SCREENSHOT_NAME_PATTERNS
+from rehuco_core import SCREENSHOT_NAME_PATTERNS, ScreenshotNamePattern
 
 from ..persistent_settings import persistent_settings
 from ..screenshot_patterns_settings import (
@@ -48,10 +48,12 @@ class ScreenshotPatternsPage(QWidget):
     only ever started explicitly -- so this page has no live-update wiring to drive beyond the try-it
     table refreshing itself from the staged (not yet saved) patterns.
 
-    Saving normalizes: blank and uncompilable patterns are dropped, duplicates go, and an emptied list
-    resolves to the shipped defaults rather than to *recognize nothing*. That rule lives in
-    `ScreenshotPatternsSettings`, not in the editor, which holds whatever was typed; the page reloads
-    itself from the saved result afterwards, so what it shows is always what a scan would actually use.
+    Saving normalizes: blank patterns and exact duplicates go, and an emptied list resolves to the
+    shipped defaults rather than to *recognize nothing* -- but an **uncompilable row is kept**, flagged,
+    so a typo is fixed in place rather than retyped (#322): only the effective set a scan reads skips it.
+    That rule lives in `ScreenshotPatternsSettings`, not in the editor, which holds whatever was typed;
+    the page reloads itself from the stored result afterwards, so what it shows is always what the next
+    Apply would keep.
 
     :param parent: optional Qt parent.
     """
@@ -71,27 +73,24 @@ class ScreenshotPatternsPage(QWidget):
         self.drop_changes()
 
     def is_dirty(self) -> bool:
-        """Whether applying would change the patterns the shared settings resolve to.
+        """Whether applying would change the stored patterns.
 
         The staged patterns are normalized before the comparison, so a row that saving would drop
-        anyway -- blank, half-typed, uncompilable -- is not yet a change. That is what lets an insert
-        survive while *Apply changes as they're made* is on: the dialog polls this and commits a dirty
-        page, and a save here reloads the editor from what normalization kept, which would tear the
-        fresh row out from under its open cell (#53). The try-it samples are not consulted: they are
-        not a setting.
+        anyway -- blank, or an exact repeat -- is not yet a change. That is what lets an insert survive
+        while *Apply changes as they're made* is on: the dialog polls this and commits a dirty page, and a
+        save here reloads the editor from what normalization kept, which would tear the fresh row out
+        from under its open cell (#53). An uncompilable row *is* a change, since saving keeps it. The
+        try-it samples are not consulted: they are not a setting.
         """
         staged = tuple(pattern.pattern for pattern in self.__ui.patterns_editor.values)
-        normalized = normalize_screenshot_name_patterns(staged)
-        current = tuple(pattern.pattern for pattern in shared_screenshot_patterns_settings().screenshot_name_patterns)
-        return normalized != current
+        return normalize_screenshot_name_patterns(staged) != shared_screenshot_patterns_settings().stored_patterns
 
     def save_changes(self) -> None:
         """Push the staged patterns into the shared settings object, persist them, and show the result.
 
-        The list is reloaded from the saved set afterwards rather than left as typed: normalization can
-        change it -- a blank or uncompilable pattern is dropped, and emptying the list restores the
-        shipped defaults -- and a page still showing what was typed would disagree with what every scan
-        reads.
+        The list is reloaded from the stored set afterwards rather than left as typed: normalization can
+        change it -- a blank pattern is dropped, and emptying the list restores the shipped defaults --
+        and a page still showing what was typed would disagree with what the next Apply would keep.
         """
         settings = shared_screenshot_patterns_settings()
         staged = tuple(pattern.pattern for pattern in self.__ui.patterns_editor.values)
@@ -100,7 +99,8 @@ class ScreenshotPatternsPage(QWidget):
         self.drop_changes()
 
     def drop_changes(self) -> None:
-        """Discard the staged pattern edits, refilling the editor from the shared settings' effective set;
-        the try-it samples stay as typed."""
-        self.__ui.patterns_editor.values = shared_screenshot_patterns_settings().screenshot_name_patterns
+        """Discard the staged pattern edits, refilling the editor from the shared settings' stored set --
+        uncompilable rows included, flagged; the try-it samples stay as typed."""
+        stored = shared_screenshot_patterns_settings().stored_patterns
+        self.__ui.patterns_editor.values = tuple(ScreenshotNamePattern(pattern) for pattern in stored)
         self.__ui.try_it_editor.refresh_slots()

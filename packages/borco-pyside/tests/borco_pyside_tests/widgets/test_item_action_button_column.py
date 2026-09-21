@@ -25,6 +25,11 @@ class FakeEditor(QObject):
         self.calls.append(("insert", at))
         return at + 1
 
+    def duplicate(self, at: int) -> int:
+        """Record the call and report the row after ``at``."""
+        self.calls.append(("duplicate", at))
+        return at + 1
+
     def delete(self, at: int) -> None:
         """Record the call."""
         self.calls.append(("delete", at))
@@ -156,6 +161,29 @@ def test_insert_asks_the_editor_then_selects_and_opens_the_result(qtbot: QtBot) 
     assert ("edit_current",) in viewer.calls
 
 
+def test_duplicate_asks_the_editor_then_selects_the_copy_without_opening_it(qtbot: QtBot) -> None:
+    """Duplicate reads and writes both objects like Insert does, but stops short of opening the copy:
+    it is already typed, and opening it would only invite the Escape that undoes a blank insert.
+
+    **Test steps:**
+
+    * build the column over a viewer at row 2
+    * trigger Duplicate
+    * verify the editor was asked to copy row 2, the viewer's current row became 3, and
+      ``edit_current`` was **not** called
+    """
+    editor = FakeEditor()
+    viewer = FakeViewer(current_index=2)
+    column = build_edit_column(editor, viewer)
+    qtbot.addWidget(column)
+
+    column.duplicate_action.trigger()
+
+    assert editor.calls == [("duplicate", 2)]
+    assert viewer.current_index == 3
+    assert ("edit_current",) not in viewer.calls
+
+
 def test_edit_calls_the_viewer_directly(qtbot: QtBot) -> None:
     """Edit does not touch the editor at all -- opening the current entry is the viewer's alone.
 
@@ -211,13 +239,13 @@ def test_reset_calls_the_editor_with_no_row(qtbot: QtBot) -> None:
     assert editor.calls == [("reset",)]
 
 
-def test_edit_and_delete_answer_to_whether_there_is_a_current_row(qtbot: QtBot) -> None:
-    """Insert and Reset are list-wide; Edit and Delete need something to act on.
+def test_duplicate_edit_and_delete_answer_to_whether_there_is_a_current_row(qtbot: QtBot) -> None:
+    """Insert and Reset are list-wide; Duplicate, Edit and Delete need something to act on.
 
     **Test steps:**
 
-    * build the column with no current row and verify Edit/Delete are off, Insert/Reset are on
-    * move the viewer's current row and verify Edit/Delete come on
+    * build the column with no current row and verify Duplicate/Edit/Delete are off, Insert/Reset on
+    * move the viewer's current row and verify Duplicate/Edit/Delete come on
     """
     editor = FakeEditor()
     viewer = FakeViewer(current_index=-1)
@@ -226,11 +254,13 @@ def test_edit_and_delete_answer_to_whether_there_is_a_current_row(qtbot: QtBot) 
 
     assert column.insert_action.isEnabled() is True
     assert column.reset_action.isEnabled() is True
+    assert column.duplicate_action.isEnabled() is False
     assert column.edit_action.isEnabled() is False
     assert column.delete_action.isEnabled() is False
 
     viewer.set_current_index(0)
 
+    assert column.duplicate_action.isEnabled() is True
     assert column.edit_action.isEnabled() is True
     assert column.delete_action.isEnabled() is True
 

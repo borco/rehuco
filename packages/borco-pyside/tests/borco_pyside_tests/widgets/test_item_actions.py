@@ -4,6 +4,7 @@ from typing import Any
 
 from borco_pyside.widgets import (
     DeleteItemAction,
+    DuplicateItemAction,
     EditItemAction,
     InsertItemAction,
     MoveDownItemAction,
@@ -22,6 +23,7 @@ from pytest import mark
 # expected tooltip suffix is asked of Qt at assert time rather than written out here.
 ACTIONS_WITH_SHORTCUTS = [
     (InsertItemAction, Qt.Key.Key_Insert),
+    (DuplicateItemAction, Qt.KeyboardModifier.ControlModifier | Qt.Key.Key_D),
     (EditItemAction, Qt.Key.Key_F2),
     (DeleteItemAction, QKeySequence.StandardKey.Delete),
     (MoveToTopItemAction, Qt.KeyboardModifier.ControlModifier | Qt.Key.Key_Home),
