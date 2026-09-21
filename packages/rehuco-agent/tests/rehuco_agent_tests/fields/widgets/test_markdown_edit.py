@@ -474,6 +474,13 @@ def test_dropping_html_inserts_its_converted_markdown(qtbot: QtBot, drop_event: 
     assert bytes(editor.getText(editor.length() + 1).data()).decode("utf-8") == "Hello **world**"
 
 
+# Resolves a point via pointXFromPosition/pointYFromPosition, the same Scintilla column<->pixel
+# measurement that collapses under the offscreen QPA platform once any application font is loaded
+# elsewhere in the shared-QApplication test session (see the comment above
+# test_typing_reaches_every_line_of_a_block_selection, #74). Passes standalone and on Linux/macOS
+# CI; only the full Windows CI run -- where the collapse lands the point one line off -- reproduces
+# it, so it isn't this test's own doing either.
+@mark.fails_offscreen
 def test_dropping_html_lands_at_the_drop_position(qtbot: QtBot) -> None:
     """The converted Markdown is inserted where the drop happened, not at the caret or the end of
     the buffer -- the substitute event carries the original's position (#264).
