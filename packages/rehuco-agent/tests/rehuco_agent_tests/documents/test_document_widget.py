@@ -137,6 +137,14 @@ CONFIRM_DELETE: Final = "rehuco_agent.documents.document_widget.confirm_delete"
 """The up-front permanent-delete gate, where the widget looks it up (#313); ``test_delete_confirmation.py``
 is its subject, and a test here reads what Discard Originals asked for."""
 
+WAIT_TIMEOUT_MS: Final = 10_000
+"""How long a cross-thread ``waitSignal`` gives the GUI thread to deliver, in milliseconds.
+
+Generous for the reason ``test_main_window.WAIT_TIMEOUT_MS`` is: the wait is often the first event-loop
+spin in the test, which first drains the deferred-deletion backlog every widget-heavy test above it left
+behind -- seconds, this deep into the file -- so the budget has to cover that before it can honestly call
+a signal missing (the CI-only timeout of the content-images enumeration wait, 2026-09-21)."""
+
 
 # region fixtures
 @fixture
@@ -3627,7 +3635,7 @@ def test_a_checksum_finding_lands_in_the_inline_strip(
     actions = widget.checksum_actions
     assert actions is not None
     try:
-        with qtbot.waitSignal(actions.finding_changed, timeout=5000):
+        with qtbot.waitSignal(actions.finding_changed, timeout=WAIT_TIMEOUT_MS):
             actions.verify_action.trigger()
         strip = banner(widget)
         texts = {label.text() for label in strip.findChildren(QLabel)}
@@ -4290,7 +4298,7 @@ def test_another_resource_activated_in_the_browser_is_relayed_out(qtbot: QtBot, 
     view = files_dock(widget).widget()
     assert isinstance(view, FilesView)
 
-    with qtbot.waitSignal(widget.record_activated, timeout=5000) as relayed:
+    with qtbot.waitSignal(widget.record_activated, timeout=WAIT_TIMEOUT_MS) as relayed:
         view.record_activated.emit(neighbour)
 
     assert relayed.args == [neighbour]
@@ -4734,7 +4742,7 @@ def test_showing_the_dock_enumerates_the_resources_archives(
     assert not enumeration.called
     content_model = refimages_widget._DocumentWidget__content_images_model  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
-    with qtbot.waitSignal(content_model.modelReset, timeout=5000):
+    with qtbot.waitSignal(content_model.modelReset, timeout=WAIT_TIMEOUT_MS):
         content_images_dock(refimages_widget).toggleView(True)
 
     enumeration.assert_called_with(refimages_model.path, shared_reference_images_settings().content_image_extensions)
