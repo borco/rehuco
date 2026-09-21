@@ -641,6 +641,14 @@ class ScreenshotOrdering(QObject):
         """
         return at
 
+    def duplicate(self, at: int) -> int:
+        """No-op: a screenshot is a file on disk, not an entry to copy (see the class docstring).
+
+        :param at: the row a copy would have gone after.
+        :returns: ``at``, leaving the current row exactly where it was.
+        """
+        return at
+
     def reset(self) -> None:
         """No-op: a resource has no default set of screenshots to restore (see the class docstring)."""
 
@@ -770,12 +778,13 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
         # so neither this widget nor the ordering satisfies its protocol statically despite doing so
         self.__item_actions: Final = ItemEditActionsColumn(self.__ordering, self)  # type: ignore[arg-type]
         self.__ordering_actions: Final = ItemOrderingActionsColumn(self.__ordering, self)  # type: ignore[arg-type]
-        # Insert, Edit and Reset ship with the edit column but mean nothing for a file on disk:
-        # hidden outright rather than left disabled, since there is no state in which they would
+        # Insert, Duplicate, Edit and Reset ship with the edit column but mean nothing for a file on
+        # disk: hidden outright rather than left disabled, since there is no state in which they would
         # become available. Their keys are never armed either -- only the actions added to the list
-        # below have one, which is what stops Ins and F2 reaching the no-ops behind them.
+        # below have one, which is what stops Ins, Ctrl+D and F2 reaching the no-ops behind them.
         for unavailable in (
             self.__item_actions.insert_action,
+            self.__item_actions.duplicate_action,
             self.__item_actions.edit_action,
             self.__item_actions.reset_action,
         ):

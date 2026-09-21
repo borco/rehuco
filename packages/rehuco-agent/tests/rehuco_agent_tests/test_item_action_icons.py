@@ -7,14 +7,15 @@ from pytestqt.qtbot import QtBot
 from rehuco_agent.item_action_icons import ICONS_BY_ACTION_TYPE, apply_item_action_icons
 
 
-def test_every_mapped_action_type_carries_an_icon(qtbot: QtBot) -> None:
-    """Every action a `StringListEditor` builds -- including the always-present Reset -- gets dressed,
-    whether or not its button is currently shown.
+def test_every_action_the_editor_builds_is_mapped_and_carries_an_icon(qtbot: QtBot) -> None:
+    """Every action a `StringListEditor` builds -- including the always-present Reset -- is in the map
+    and gets dressed, whether or not its button is currently shown. The map being *complete* is the
+    point: an action the toolkit grew that nobody mapped would otherwise ship as a blank button (#322).
 
     **Test steps:**
 
     * build an editor and dress it
-    * verify every button's action, of a mapped type, ends up with a non-null icon
+    * verify every button's action is of a mapped type and ends up with a non-null icon
     """
     editor = StringListEditor()
     qtbot.addWidget(editor)
@@ -24,8 +25,8 @@ def test_every_mapped_action_type_carries_an_icon(qtbot: QtBot) -> None:
     for column in (editor.item_actions, editor.ordering_actions):
         for button in column.findChildren(QToolButton):
             action = button.defaultAction()
-            if type(action) in ICONS_BY_ACTION_TYPE:
-                assert not action.icon().isNull(), f"{action.text()} carries no icon"
+            assert type(action) in ICONS_BY_ACTION_TYPE, f"{action.text()} is not mapped to an icon"
+            assert not action.icon().isNull(), f"{action.text()} carries no icon"
 
 
 def test_an_action_of_an_unmapped_type_is_left_alone(qtbot: QtBot) -> None:

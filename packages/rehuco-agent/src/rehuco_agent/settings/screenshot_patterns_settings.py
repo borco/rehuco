@@ -34,11 +34,12 @@ from .persistent_settings import persistent_settings, read_stored_strings
 
 GROUP: Final = "screenshot_patterns"
 PATTERNS_KEY: Final = "patterns"
-SAMPLES_KEY: Final = "samples"
 
 DEFAULT_SAMPLES: Final = ("cover.jpg", "sample-03.jpg", "image-07.jpg")
-"""The try-it table's seeded sample filenames -- real matches of the shipped patterns, so a fresh page
-shows the convention working rather than an empty table."""
+"""What the settings page's try-it table starts out holding -- real matches of the shipped patterns, so
+a fresh page shows the convention working rather than an empty table. Scratch, not a setting: the page
+seeds the table with these and never saves what is typed there (#322). A ``samples`` key an earlier
+build (#287) wrote beside the patterns is simply never read again."""
 
 
 def pattern_is_valid(pattern: str) -> bool:
@@ -58,17 +59,18 @@ def pattern_is_valid(pattern: str) -> bool:
 
 
 def normalize_screenshot_name_patterns(patterns: object) -> tuple[str, ...]:
-    """Coerce a stored or edited pattern list into the form a scan is handed.
+    """Coerce a stored or edited pattern list into its **stored** shape.
 
-    Each entry is trimmed; one that does not compile as a valid single-or-no-group regex is dropped, the
-    same check `rehuco_core.ScreenshotNamePatterns` itself applies rather than a second spelling of it
-    here. Duplicates are dropped by exact string match after trimming -- not case-insensitively, since
-    regex casing matters syntactically -- and the order the patterns were given in is kept, since it
-    decides which pattern matches first.
+    Each entry is trimmed; blank ones go, and duplicates are dropped by exact string match after
+    trimming -- not case-insensitively, since regex casing matters syntactically -- with the order the
+    patterns were given in kept, since it decides which pattern matches first. One that does not
+    compile is **kept**: dropping it on save would make a typo cost the whole row, and the settings page
+    flags it in place instead (#322). What skips it is the effective set,
+    :attr:`ScreenshotPatternsSettings.screenshot_name_patterns`.
 
-    A value naming no usable pattern at all falls back to
-    :data:`~rehuco_core.SCREENSHOT_NAME_PATTERNS` rather than to *recognize nothing*: an empty set would
-    silently convert every legacy resource without carrying a single screenshot across.
+    A value naming no pattern at all falls back to :data:`~rehuco_core.SCREENSHOT_NAME_PATTERNS` rather
+    than to *recognize nothing*: an empty set would silently convert every legacy resource without
+    carrying a single screenshot across.
 
     Reading the stored shape at all -- including the ini backend's habit of handing a single-element
     list back as a bare string -- is
@@ -76,43 +78,24 @@ def normalize_screenshot_name_patterns(patterns: object) -> tuple[str, ...]:
     the policy this list applies on top of it.
 
     :param patterns: the stored patterns, or the patterns as edited.
-    :returns: the usable patterns in the order first seen, or the shipped defaults when there are none.
+    :returns: the patterns in the order first seen, or the shipped defaults when there are none.
     """
     normalized: list[str] = []
     for entry in read_stored_strings(patterns):
         pattern = entry.strip()
-        if not pattern or pattern in normalized or not pattern_is_valid(pattern):
+        if not pattern or pattern in normalized:
             continue
         normalized.append(pattern)
     return tuple(normalized) or tuple(pattern.pattern for pattern in SCREENSHOT_NAME_PATTERNS)
 
 
-def normalize_screenshot_samples(samples: object) -> tuple[str, ...]:
-    """Coerce a stored or edited sample-filename list into the form the try-it table shows.
-
-    Each entry is trimmed, blanks and exact repeats are dropped, and the order is kept. A value naming
-    no sample at all falls back to :data:`DEFAULT_SAMPLES` rather than to an empty table: the table
-    exists to show the patterns working, and an empty one shows nothing.
-
-    :param samples: the stored samples, or the samples as edited.
-    :returns: the samples in the order first seen, or the seeded defaults when there are none.
-    """
-    normalized: list[str] = []
-    for entry in read_stored_strings(samples):
-        sample = entry.strip()
-        if not sample or sample in normalized:
-            continue
-        normalized.append(sample)
-    return tuple(normalized) or DEFAULT_SAMPLES
-
-
 class ScreenshotPatternsSettings(QObject):
     """The naming patterns every legacy screenshot scan is handed (#53, #287).
 
-    Two stored fields, raw as the page left them: the patterns, and the try-it table's sample
-    filenames (#287) -- saved beside the patterns because a set of names worth checking a
-    configuration against is worth keeping. What everything else consumes is
-    :attr:`screenshot_name_patterns`, the effective set the patterns resolve to.
+    One stored field, raw as the page left it: the patterns. The page stages against
+    :attr:`stored_patterns`; every scan consumes :attr:`screenshot_name_patterns`, the effective set the
+    patterns resolve to. The page's try-it samples are deliberately **not** here: they preview the
+    patterns and are not a setting, so they are never saved (#322).
 
     :param parent: optional Qt parent.
     """
@@ -121,25 +104,21 @@ class ScreenshotPatternsSettings(QObject):
     """The patterns as stored -- empty on a fresh install, where the effective set is the shipped default
     one rather than nothing."""
 
-    samples = SimpleProperty[tuple[str, ...]](())
-    """The try-it sample filenames as stored -- empty on a fresh install, where the effective set is
-    :data:`DEFAULT_SAMPLES`."""
+    @property
+    def stored_patterns(self) -> tuple[str, ...]:
+        """The normalized **stored** list -- uncompilable rows included, since the settings page shows
+        and re-shows them until they are fixed (:func:`normalize_screenshot_name_patterns`)."""
+        return normalize_screenshot_name_patterns(self.patterns)
 
     @property
     def screenshot_name_patterns(self) -> tuple[ScreenshotNamePattern, ...]:
-        """The effective set a scan is handed: :attr:`patterns` normalized, falling back to
-        :data:`~rehuco_core.SCREENSHOT_NAME_PATTERNS` when it names nothing usable
-        (:func:`normalize_screenshot_name_patterns`)."""
-        return tuple(ScreenshotNamePattern(pattern) for pattern in normalize_screenshot_name_patterns(self.patterns))
-
-    @property
-    def screenshot_samples(self) -> tuple[str, ...]:
-        """The try-it table's effective samples: :attr:`samples` normalized, falling back to
-        :data:`DEFAULT_SAMPLES` when it names nothing (:func:`normalize_screenshot_samples`)."""
-        return normalize_screenshot_samples(self.samples)
+        """The **effective** set a scan is handed: :attr:`stored_patterns` without the rows that do not
+        compile, falling back to :data:`~rehuco_core.SCREENSHOT_NAME_PATTERNS` when none does."""
+        usable = tuple(pattern for pattern in self.stored_patterns if pattern_is_valid(pattern))
+        return tuple(ScreenshotNamePattern(pattern) for pattern in usable) or SCREENSHOT_NAME_PATTERNS
 
     def load(self, settings: QSettings) -> None:
-        """Replace the stored patterns and samples with what's in persistent storage.
+        """Replace the stored patterns with what's in persistent storage.
 
         The value is normalized on the way in, so a never-saved, empty, or unreadable one comes back as
         the shipped defaults rather than as an empty set that a later save would then persist
@@ -149,17 +128,15 @@ class ScreenshotPatternsSettings(QObject):
         """
         settings.beginGroup(GROUP)
         self.patterns = normalize_screenshot_name_patterns(settings.value(PATTERNS_KEY))
-        self.samples = normalize_screenshot_samples(settings.value(SAMPLES_KEY))
         settings.endGroup()
 
     def save(self, settings: QSettings) -> None:
-        """Save the patterns and samples to persistent storage, as lists the ini backend can round-trip.
+        """Save the patterns to persistent storage, as a list the ini backend can round-trip.
 
         :param settings: the ``QSettings`` to write to.
         """
         settings.beginGroup(GROUP)
         settings.setValue(PATTERNS_KEY, list(self.patterns))
-        settings.setValue(SAMPLES_KEY, list(self.samples))
         settings.endGroup()
 
 

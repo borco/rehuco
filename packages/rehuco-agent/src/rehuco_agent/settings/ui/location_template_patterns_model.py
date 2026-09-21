@@ -1,31 +1,24 @@
-"""The screenshot "try it" table: a sample filename beside the slot the current patterns would assign
-it ([[acquisition-tooling#screenshot-schemes]], #287).
-"""
+"""The location name patterns as a one-column model: a plain format-string pattern per row (#322)."""
 
 # The Qt half and the two protocols' row operations are `ScreenshotNamePatternsModel`'s almost line for
 # line -- see that module's own note on why this is a copy rather than a shared generic base.
 # pylint: disable=duplicate-code
 
-from collections.abc import Callable, Sequence
-from pathlib import Path
+from collections.abc import Sequence
 from typing import Any, Final, override
 
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, QPersistentModelIndex, Qt, Signal
-from rehuco_core import ScreenshotNamePattern, ScreenshotNamePatterns
+from PySide6.QtGui import QBrush, QColor
 
-FILENAME_COLUMN: Final = 0
-"""The sample filename or stem the user types -- the only editable cell."""
+from ...fields.colors import WARNING_COLOR
+from ..location_templates_settings import NAME_SUGGESTION_PATTERNS, location_pattern_problem
 
-SLOT_COLUMN: Final = 1
-"""The slot the current patterns assign the filename, or "not a screenshot" -- read-only, recomputed
-from :attr:`ScreenshotTryItModel.patterns_provider`."""
+PATTERN_COLUMN: Final = 0
+"""The row's only column: the raw pattern."""
 
-COLUMN_COUNT: Final = 2
+COLUMN_COUNT: Final = 1
 
-COLUMN_TITLES: Final = ("Sample filename", "Slot")
-
-NOT_A_SCREENSHOT: Final = "not a screenshot"
-"""Shown in :data:`SLOT_COLUMN` when no pattern matches the sample."""
+COLUMN_TITLES: Final = ("Pattern",)
 
 type ModelIndex = QModelIndex | QPersistentModelIndex
 """What Qt hands a model method; the persistent form arrives from a view holding onto an index."""
@@ -35,26 +28,31 @@ type ModelIndex = QModelIndex | QPersistentModelIndex
 # through -- four ordering methods, three editing ones -- none of which this class chose; splitting it
 # would separate the rows from the operations performed on them
 # pylint: disable-next=too-many-public-methods
-class ScreenshotTryItModel(QAbstractTableModel):
-    """Sample filenames, each shown beside the slot the live pattern list would assign it (#287).
+class LocationTemplatePatternsModel(QAbstractTableModel):
+    """One resource type's rename-suggestion patterns as editable rows of one plain format string each
+    (#322).
 
-    The samples are a settings-page value like the patterns above them: the page stages them here,
-    and `ScreenshotPatternsSettings` keeps them. This model holds them as typed and normalizes nothing.
-    There is no "invalid" concept for a sample row: an empty filename simply has no slot, the same as
-    one no pattern recognizes.
+    **Order matters: it is the order suggestions are offered in** -- an ordinary list, so reordering the
+    list is a real edit for exactly that reason.
 
-    :attr:`SLOT_COLUMN` never edits or moves on its own -- it is a pure function of
-    :attr:`patterns_provider`'s current return value, called fresh on every read. When the pattern list
-    changes, call :meth:`refresh_slots` (a full reset -- this table never holds enough rows for a partial
-    invalidation to be worth the extra bookkeeping) so the column reflects it.
+    **Validation is flagged, never enforced**, the same call
+    :class:`~rehuco_agent.settings.ui.screenshot_name_patterns_model.ScreenshotNamePatternsModel` makes: a
+    pattern that is blank, fails to parse, names an unknown placeholder or misuses a ``{{ ... }}`` group
+    colors its cell and says which in a tooltip. Nothing refuses the keystroke -- a pattern is half-typed
+    for as long as it takes to type it -- and saving keeps the row, flagged, rather than dropping it:
+    only the effective list a document reads skips it.
 
-    :param defaults: what :meth:`reset` restores; empty unless a caller says otherwise, since a widget
-        promoted into a ``.ui`` is built with only a parent and the page sets the rest.
+    **The check is the settings module's own**, asked through
+    :func:`~rehuco_agent.settings.location_templates_settings.location_pattern_problem` rather than
+    restated here, which is what keeps what this page marks invalid exactly what a suggestion would
+    refuse.
+
+    **Also an `ItemEditor`/`ItemOrderingEditor`** (structurally -- no explicit `Protocol` inheritance,
+    since mixing `Protocol`'s metaclass with Shiboken's raises a metaclass conflict), the same shape
+    `ScreenshotNamePatternsModel` implements, so `ItemListEditor` drives this one identically.
+
+    :param defaults: what :meth:`reset` restores; the shipped patterns unless a caller says otherwise.
     :param parent: optional Qt parent.
-    :param patterns_provider: called on every read of :attr:`SLOT_COLUMN` to get the live pattern list --
-        the settings page hands this the patterns editor's own :attr:`~ItemListEditor.values` getter, so
-        an edit there is visible here without either widget holding a reference to the other's model.
-        Empty (no pattern ever matches) until set, for the same reason ``defaults`` is.
     """
 
     count_changed = Signal()
@@ -62,13 +60,10 @@ class ScreenshotTryItModel(QAbstractTableModel):
 
     def __init__(
         self,
-        defaults: Sequence[str] = (),
+        defaults: Sequence[str] = NAME_SUGGESTION_PATTERNS,
         parent: QObject | None = None,
-        *,
-        patterns_provider: Callable[[], Sequence[ScreenshotNamePattern]] = tuple,
     ) -> None:
         super().__init__(parent)
-        self.patterns_provider = patterns_provider
         self.__entries: list[str] = []
         self.__defaults: tuple[str, ...] = tuple(defaults)
         self.rowsInserted.connect(self.count_changed)
@@ -77,18 +72,19 @@ class ScreenshotTryItModel(QAbstractTableModel):
 
     @property
     def count(self) -> int:
-        """How many sample rows there are -- the `ItemOrderingEditor` contract."""
+        """How many patterns there are -- the `ItemOrderingEditor` contract."""
         return len(self.__entries)
 
     @property
     def entries(self) -> tuple[str, ...]:
-        """Every sample filename, in row order, exactly as typed."""
+        """Every pattern, in row order, exactly as typed -- unnormalized, since normalizing is the
+        settings object's (:mod:`~rehuco_agent.settings.location_templates_settings`)."""
         return tuple(self.__entries)
 
     def set_entries(self, entries: Sequence[str]) -> None:
-        """Replace every row, as one model reset, if the samples actually differ.
+        """Replace every row, as one model reset, if the patterns actually differ.
 
-        :param entries: the sample filenames to show, in order.
+        :param entries: the patterns to show, in order.
         """
         replacement = list(entries)
         if replacement == self.__entries:
@@ -106,24 +102,15 @@ class ScreenshotTryItModel(QAbstractTableModel):
     def defaults(self, defaults: Sequence[str]) -> None:
         """Set what :meth:`reset` restores.
 
-        :param defaults: the sample filenames Reset should put back.
+        :param defaults: the patterns Reset should put back.
         """
         self.__defaults = tuple(defaults)
 
-    def refresh_slots(self) -> None:
-        """Recompute :attr:`SLOT_COLUMN` against the current :attr:`patterns_provider`.
-
-        A full reset rather than a targeted ``dataChanged`` on the slot column -- this table is never
-        going to hold thousands of rows, so simple and correct beats partial invalidation.
-        """
-        self.beginResetModel()
-        self.endResetModel()
-
     def insert(self, at: int) -> int:
-        """Insert a blank sample after ``at``, or at the end -- the `ItemEditor` contract.
+        """Insert a blank pattern after ``at``, or at the end -- the `ItemEditor` contract.
 
         :param at: the row to insert after, or a negative row to append.
-        :returns: the new row.
+        :returns: the new pattern's row.
         """
         target = at + 1 if at >= 0 else len(self.__entries)
         self.insertRow(target)
@@ -133,7 +120,7 @@ class ScreenshotTryItModel(QAbstractTableModel):
         """Insert a copy of ``at`` below it -- the `ItemEditor` contract.
 
         One insert announcement carrying the copy, rather than a blank insert filled in afterwards, so
-        the row never exists blank; the slot column is derived, so it needs no copying.
+        the row never exists blank.
 
         :param at: the row to copy; a negative row is a no-op.
         :returns: the copy's row, or ``at`` when nothing was copied.
@@ -147,7 +134,7 @@ class ScreenshotTryItModel(QAbstractTableModel):
         return target
 
     def delete(self, at: int) -> None:
-        """Drop one sample -- the `ItemEditor` contract.
+        """Drop one pattern -- the `ItemEditor` contract.
 
         :param at: the row to drop; a negative row is a no-op.
         """
@@ -159,7 +146,7 @@ class ScreenshotTryItModel(QAbstractTableModel):
         self.set_entries(self.__defaults)
 
     def move_to_top(self, at: int) -> int:
-        """Move one sample to the first row -- the `ItemOrderingEditor` contract.
+        """Move one pattern to the first row -- the `ItemOrderingEditor` contract.
 
         :param at: the row to move.
         :returns: the row it ended up at.
@@ -167,7 +154,7 @@ class ScreenshotTryItModel(QAbstractTableModel):
         return self.__move(at, 0)
 
     def move_up(self, at: int) -> int:
-        """Move one sample up a row -- the `ItemOrderingEditor` contract.
+        """Move one pattern up a row -- the `ItemOrderingEditor` contract.
 
         :param at: the row to move.
         :returns: the row it ended up at.
@@ -175,7 +162,7 @@ class ScreenshotTryItModel(QAbstractTableModel):
         return self.__move(at, at - 1)
 
     def move_down(self, at: int) -> int:
-        """Move one sample down a row -- the `ItemOrderingEditor` contract.
+        """Move one pattern down a row -- the `ItemOrderingEditor` contract.
 
         :param at: the row to move.
         :returns: the row it ended up at.
@@ -183,7 +170,7 @@ class ScreenshotTryItModel(QAbstractTableModel):
         return self.__move(at, at + 1)
 
     def move_to_bottom(self, at: int) -> int:
-        """Move one sample to the last row -- the `ItemOrderingEditor` contract.
+        """Move one pattern to the last row -- the `ItemOrderingEditor` contract.
 
         :param at: the row to move.
         :returns: the row it ended up at.
@@ -193,28 +180,31 @@ class ScreenshotTryItModel(QAbstractTableModel):
     def __move(self, row: int, destination: int) -> int:
         """Move ``row`` to ``destination``, as one model move, and say where it ended up.
 
+        The same single-``moveRow`` discipline
+        :meth:`~rehuco_agent.settings.ui.screenshot_name_patterns_model.ScreenshotNamePatternsModel.__move`
+        uses: every other row keeps its index and the selection follows the pattern rather than the
+        position.
+
         :param row: the row to move.
         :param destination: where to move it to; out-of-range or unchanged is a no-op.
         :returns: ``destination`` if the move happened, ``row`` (unchanged) otherwise.
         """
         if row < 0 or destination == row or not 0 <= destination < len(self.__entries):
             return row
+        # Qt reads the destination in the *pre-move* row space -- the row the entry is inserted
+        # *before* -- so a downward move has to name one past the target, because removing the source
+        # first shifts everything below it up by one.
         before = destination + 1 if destination > row else destination
         self.moveRow(QModelIndex(), row, QModelIndex(), before)
         return destination
 
-    def __slot_text(self, filename: str) -> str:
-        """The slot :attr:`patterns_provider`'s current patterns assign ``filename``, as display text.
+    def invalid_reason(self, row: int) -> str:
+        """Why the pattern at ``row`` is not something a suggestion could use, if it isn't.
 
-        :param filename: the sample filename or stem, as typed.
-        :returns: a zero-padded two-digit slot (``"07"``), or :data:`NOT_A_SCREENSHOT`.
+        :param row: the row to test.
+        :returns: the explanation, or an empty string when the pattern is fine.
         """
-        stem = Path(filename).stem if filename.strip() else ""
-        if not stem:
-            return NOT_A_SCREENSHOT
-        patterns = ScreenshotNamePatterns(tuple(self.patterns_provider()))
-        slot = patterns.slot(stem)
-        return f"{slot:02d}" if slot is not None else NOT_A_SCREENSHOT
+        return location_pattern_problem(self.__entries[row])
 
     # region Qt model interface
 
@@ -241,23 +231,21 @@ class ScreenshotTryItModel(QAbstractTableModel):
     def flags(self, index: ModelIndex) -> Qt.ItemFlag:
         if not index.isValid():
             return Qt.ItemFlag.NoItemFlags
-        flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
-        if index.column() == FILENAME_COLUMN:
-            flags |= Qt.ItemFlag.ItemIsEditable
-        return flags
+        return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEditable
 
     @override
     def data(self, index: ModelIndex, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
         if not index.isValid():
             return None
-        if role not in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole):
-            return None
-        filename = self.__entries[index.row()]
-        if index.column() == FILENAME_COLUMN:
-            return filename
-        if role == Qt.ItemDataRole.EditRole:
-            return None
-        return self.__slot_text(filename)
+        entry = self.__entries[index.row()]
+        if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole):
+            return entry
+        reason = self.invalid_reason(index.row())
+        if role == Qt.ItemDataRole.ToolTipRole:
+            return reason or None
+        if role == Qt.ItemDataRole.ForegroundRole and reason:
+            return QBrush(QColor(WARNING_COLOR))
+        return None
 
     @override
     def setData(  # noqa: N802  (Qt API name)
@@ -266,15 +254,14 @@ class ScreenshotTryItModel(QAbstractTableModel):
         value: Any,
         role: int = Qt.ItemDataRole.EditRole,
     ) -> bool:
-        if not index.isValid() or role != Qt.ItemDataRole.EditRole or index.column() != FILENAME_COLUMN:
+        if not index.isValid() or role != Qt.ItemDataRole.EditRole:
             return False
         row = index.row()
-        text = str(value).strip()
-        if text == self.__entries[row]:
+        replacement = str(value).strip()
+        if replacement == self.__entries[row]:
             return False
-        self.__entries[row] = text  # pylint: disable=unsupported-assignment-operation
-        # both columns: the slot column is a pure function of this one
-        self.dataChanged.emit(index.sibling(row, FILENAME_COLUMN), index.sibling(row, SLOT_COLUMN))
+        self.__entries[row] = replacement  # pylint: disable=unsupported-assignment-operation
+        self.dataChanged.emit(index, index)
         return True
 
     @override
@@ -306,10 +293,13 @@ class ScreenshotTryItModel(QAbstractTableModel):
     ) -> bool:
         if sourceParent.isValid() or destinationParent.isValid():
             return False
+        # beginMoveRows is the validity check as well as the announcement: it refuses a destination
+        # inside the block being moved, and a move that would leave the list as it was
         if not self.beginMoveRows(QModelIndex(), sourceRow, sourceRow + count - 1, QModelIndex(), destinationChild):
             return False
         block = self.__entries[sourceRow : sourceRow + count]
         del self.__entries[sourceRow : sourceRow + count]  # pylint: disable=unsupported-delete-operation
+        # the destination was read in the pre-move row space, so taking the block out first shifts it
         at = destinationChild if destinationChild < sourceRow else destinationChild - count
         self.__entries[at:at] = block  # pylint: disable=unsupported-assignment-operation
         self.endMoveRows()

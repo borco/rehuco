@@ -38,6 +38,10 @@ type ModelIndex = QModelIndex | QPersistentModelIndex
 """What Qt hands a model method; the persistent form arrives from a view holding onto an index."""
 
 
+# the count is `QAbstractTableModel`'s surface plus the two protocols `ItemListEditor` drives the model
+# through -- four ordering methods, four editing ones -- none of which this class chose; splitting it
+# would separate the rows from the operations performed on them
+# pylint: disable-next=too-many-public-methods
 class MembershipTableModel(QAbstractTableModel):
     """The Title/Index half of a memberships table, and the contract its subclasses fill in (#235).
 
@@ -130,6 +134,15 @@ class MembershipTableModel(QAbstractTableModel):
         target = at + 1 if at >= 0 else self.rowCount()
         self.insertRow(target)
         return target
+
+    def duplicate(self, at: int) -> int:
+        """No-op -- the `ItemEditor` contract, honestly declined: a copy of a membership would say the
+        same thing twice, so the editors built on this hide the action (see `MembershipsEditor`).
+
+        :param at: the row a copy would have gone after.
+        :returns: ``at``, leaving the current row exactly where it was.
+        """
+        return at
 
     def delete(self, at: int) -> None:
         """Drop one membership -- the `ItemEditor` contract.

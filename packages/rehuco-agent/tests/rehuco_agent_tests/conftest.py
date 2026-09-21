@@ -33,6 +33,7 @@ from rehuco_agent.settings import (
     excluded_files_settings,
     identity_settings,
     image_viewer_settings,
+    location_templates_settings,
     logs_settings,
     markdown_rendering_settings,
     reference_images_settings,
@@ -47,6 +48,7 @@ from rehuco_agent.settings.description_editor_settings import shared_description
 from rehuco_agent.settings.excluded_files_settings import shared_excluded_files_settings
 from rehuco_agent.settings.identity_settings import shared_identity_settings
 from rehuco_agent.settings.image_viewer_settings import shared_image_viewer_settings
+from rehuco_agent.settings.location_templates_settings import shared_location_templates_settings
 from rehuco_agent.settings.logs_settings import shared_logs_settings
 from rehuco_agent.settings.markdown_rendering_settings import shared_markdown_rendering_settings
 from rehuco_agent.settings.reference_images_settings import shared_reference_images_settings
@@ -341,6 +343,24 @@ def isolate_shared_screenshot_patterns_settings(mocker: MockerFixture) -> Iterat
     mocker.patch.object(screenshot_patterns_settings, "persistent_settings", return_value=FakeSettings())
     yield
     shared_screenshot_patterns_settings.cache_clear()
+
+
+@fixture(autouse=True)
+def isolate_shared_location_templates_settings(mocker: MockerFixture) -> Iterator[None]:
+    """Isolate every test from the process-wide `LocationTemplatesSettings` singleton (#322).
+
+    Same rationale as :func:`isolate_shared_screenshot_patterns_settings`: whichever test first builds a
+    `NameSuggestionModel` or a `LocationTemplatesPage` (directly, or via ``MainWindow``) would otherwise
+    pin an instance loaded from the developer's real on-disk settings for the rest of the session -- and
+    decide, from that file, which rename suggestions every later test's `PathField` offers.
+
+    Tests that specifically exercise the location-templates settings patch ``persistent_settings``
+    themselves.
+    """
+    shared_location_templates_settings.cache_clear()
+    mocker.patch.object(location_templates_settings, "persistent_settings", return_value=FakeSettings())
+    yield
+    shared_location_templates_settings.cache_clear()
 
 
 @fixture(autouse=True)

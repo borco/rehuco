@@ -333,6 +333,19 @@ def test_an_insert_at_a_negative_row_appends(model: CollectionsTableModel) -> No
     assert model.insert(-1) == 2
 
 
+def test_duplicate_is_an_honest_no_op(model: CollectionsTableModel) -> None:
+    """A copy of a membership would say the same thing twice, so the protocol is answered and nothing
+    happens -- the editor hides the button (see `MembershipsEditor`).
+
+    **Test steps:**
+
+    * duplicate a real row
+    * verify the row came back as given and the count is unchanged
+    """
+    assert model.duplicate(0) == 0
+    assert model.count == 2
+
+
 def test_delete_drops_one_membership(model: CollectionsTableModel) -> None:
     """One row, one membership.
 

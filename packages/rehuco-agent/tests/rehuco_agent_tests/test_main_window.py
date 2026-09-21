@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
+from rehuco_agent import main_window
 from rehuco_agent.app_logging import shared_log_bridge
 from rehuco_agent.documents.document_widget import LOG_DOCK_MIN_HEIGHT
 from rehuco_agent.main_window import (
@@ -59,6 +60,7 @@ from rehuco_agent.settings.ui.files_page import FilesPage
 from rehuco_agent.settings.ui.identity_page import IdentityPage
 from rehuco_agent.settings.ui.images_display_page import ImagesDisplayPage
 from rehuco_agent.settings.ui.images_files_page import ImagesFilesPage
+from rehuco_agent.settings.ui.location_templates_page import LocationTemplatesPage
 from rehuco_agent.settings.ui.logs_page import LogsPage
 from rehuco_agent.settings.ui.screenshot_patterns_page import ScreenshotPatternsPage
 from rehuco_agent.settings.ui.settings_dialog import PAGE_ROLE, TITLE_ROLE, SettingsDialog
@@ -68,10 +70,13 @@ from rehuco_agent.tasks import TaskQueueStatusIndicator, TaskQueueWidget
 from rehuco_agent.tray_icon import TrayIcon
 from rehuco_core import (
     DEFAULT_DELETER_PROVIDER,
+    DEFAULT_PLUGIN_REGISTRY,
     INFO_REHU_FILENAME,
     JobControl,
     JobState,
     JobStatus,
+    PluginRegistry,
+    PluginSpec,
     SweepChecksumsJob,
     TaskJobBase,
     TaskQueue,
@@ -448,8 +453,8 @@ def test_registers_the_videos_page(qtbot: QtBot) -> None:
 
 
 def test_the_category_tree_is_one_flat_alphabetical_list(qtbot: QtBot) -> None:
-    """Every page is a top-level row, except the three grouped under "Images" (#277, #294, #298), and
-    the rows are in alphabetical order.
+    """Every page is a top-level row, except the ones grouped under "Images" (#277, #294, #298) and
+    "Locations" (#322), and the rows are in alphabetical order.
 
     The pages that used to nest under "Plugins" are among the top-level ones, so a reader looking for
     "Videos" no longer has to know it is a plugin's setting to find it. Order is registration order
@@ -460,9 +465,10 @@ def test_the_category_tree_is_one_flat_alphabetical_list(qtbot: QtBot) -> None:
     **Test steps:**
 
     * construct a real ``MainWindow``
-    * verify only the "Images" row has children, the cross-platform pages are all top-level rows,
-      and the whole top-level list is sorted case-insensitively
+    * verify only "Images" and "Locations" have children, the cross-platform pages are all top-level
+      rows, and the whole top-level list is sorted case-insensitively
     * verify "Images" nests exactly Display, Sidecar Extensions and Sidecar Names, in that order
+    * verify "Locations" nests one page per installed plugin main key, alphabetically by title
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -471,13 +477,15 @@ def test_the_category_tree_is_one_flat_alphabetical_list(qtbot: QtBot) -> None:
     model = settings_dialog._SettingsDialog__model  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     items = [model.item(row) for row in range(model.rowCount())]
     titles = [item.text() for item in items]
-    assert [item.rowCount() for item in items] == [3 if title == "Images" else 0 for title in titles]
+    grouped_row_counts = {"Images": 3, "Locations": len(DEFAULT_PLUGIN_REGISTRY.main_keys)}
+    assert [item.rowCount() for item in items] == [grouped_row_counts.get(title, 0) for title in titles]
     assert set(titles) >= {
         "Checksums",
         "Descriptions",
         "Files",
         "Identity",
         "Images",
+        "Locations",
         "Logs",
         "Session",
         "Tasks",
@@ -490,6 +498,44 @@ def test_the_category_tree_is_one_flat_alphabetical_list(qtbot: QtBot) -> None:
     images_item = items[titles.index("Images")]
     child_titles = [images_item.child(row).text() for row in range(images_item.rowCount())]
     assert child_titles == ["Display", "Sidecar Extensions", "Sidecar Names"]
+
+    locations_item = items[titles.index("Locations")]
+    location_child_titles = [locations_item.child(row).text() for row in range(locations_item.rowCount())]
+    assert location_child_titles == ["Collections", "Reference Images", "Tutorials"]
+
+
+def test_a_plugin_this_build_does_not_ship_still_gets_its_own_locations_page(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """Locations pages come from the installed plugin registry, not a fixed enumeration of today's
+    three types (#322): a fourth, made-up plugin gets its own page with no code change beyond
+    registering it.
+
+    **Test steps:**
+
+    * swap ``DEFAULT_PLUGIN_REGISTRY`` for one carrying today's three plugins plus a made-up fourth
+    * construct a real ``MainWindow``
+    * verify the Locations group now nests a fourth page, alphabetically placed by its display title
+    """
+    extra_registry = PluginRegistry((*DEFAULT_PLUGIN_REGISTRY, PluginSpec(("daz3d",), color="#5D4037")))
+    mocker.patch.object(main_window, "DEFAULT_PLUGIN_REGISTRY", extra_registry)
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    model = settings_dialog._SettingsDialog__model  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    items = [model.item(row) for row in range(model.rowCount())]
+    titles = [item.text() for item in items]
+    locations_item = items[titles.index("Locations")]
+    location_child_titles = [locations_item.child(row).text() for row in range(locations_item.rowCount())]
+
+    assert location_child_titles == ["Collections", "Daz3Ds", "Reference Images", "Tutorials"]
+
+    dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    stacked = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
+    pages = [area.widget() for area in stacked if isinstance(area, QScrollArea)]
+    assert any(isinstance(page, LocationTemplatesPage) for page in pages)
 
 
 def test_registers_the_checksums_page(qtbot: QtBot) -> None:

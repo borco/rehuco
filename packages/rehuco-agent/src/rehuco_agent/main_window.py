@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 )
 from rehuco_core import (
     DEFAULT_DELETER_PROVIDER,
+    DEFAULT_PLUGIN_REGISTRY,
     DEFAULT_RENAME_COORDINATOR,
     FINISHED_JOB_STATES,
     JobState,
@@ -49,6 +50,7 @@ from .documents.documents_dock import DocumentsDock
 from .documents.rehu_document_menu_entry import RehuDocumentMenuEntry
 from .documents.rehu_document_model import path_label
 from .documents.save_or_prompt_retry import save_or_prompt_retry
+from .fields.type_field import type_label
 from .main_window_ui import Ui_MainWindow
 from .recycle_bin_deleter import configured_deleter
 from .settings.checksum_settings import shared_checksum_settings
@@ -71,6 +73,7 @@ from .settings.ui.files_page import FilesPage
 from .settings.ui.identity_page import IdentityPage
 from .settings.ui.images_display_page import ImagesDisplayPage
 from .settings.ui.images_files_page import ImagesFilesPage
+from .settings.ui.location_templates_page import LocationTemplatesPage
 from .settings.ui.logs_page import LogsPage
 from .settings.ui.screenshot_patterns_page import ScreenshotPatternsPage
 from .settings.ui.session_page import SessionPage
@@ -164,6 +167,23 @@ THEME_LIGHT_ICON: Final = ":/icons/theme_light.svg"
 THEME_DARK_ICON: Final = ":/icons/theme_dark.svg"
 """Shown for the dark theme mode (``Qt.ColorScheme.Dark``), same two consumers as
 :data:`THEME_DEFAULT_ICON`."""
+
+
+def location_group_title(main_key: str) -> str:
+    """A Locations settings page's title for ``main_key`` (#322): `type_label`, pluralized.
+
+    `type_label` is singular everywhere else it labels a type -- the type radio group, the toolbar
+    badge -- because those name *one document's* type. A Locations page is about every resource of a
+    type, so its title reads as a group ("Tutorials", not "Tutorial"). A trailing ``s`` is added unless
+    `type_label` already ends in one (``"Reference Images"`` needs none); naive for a type this build
+    doesn't know the plural of, but no worse than a fixed enumeration once a new plugin's key doesn't
+    pluralize in English at all.
+
+    :param main_key: a plugin main key (e.g. ``"tutorial"``).
+    :returns: the plural display title.
+    """
+    label = type_label(main_key)
+    return label if label.endswith("s") else f"{label}s"
 
 
 class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
@@ -647,6 +667,13 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         is the page the dialog initially shows before `SettingsDialog.restore_selected_page` corrects
         that guess.
 
+        **Locations is the one group generated rather than spelled out** (#322): every other row here
+        names a fixed page, but a `LocationTemplatesPage` exists per *installed* plugin main key
+        (`rehuco_core.DEFAULT_PLUGIN_REGISTRY.main_keys`), sorted by `type_label` so the group still
+        reads alphabetically. A plugin declared after this build ships gets its own Locations page with
+        no further edit here -- the one place in this method where "one line per page" would mean
+        editing this file for every future resource type.
+
         **The titles are here, not on the pages** (#277). A page used to name itself through a
         ``title`` property, which put the tree's labels in a dozen classes that each knew only
         themselves -- so no one place could be read, or sorted, to see the tree. `add_page` takes the
@@ -701,6 +728,15 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__settings_dialog.add_page("Images", "Display", ImagesDisplayPage())
         self.__settings_dialog.add_page("Images", "Sidecar Extensions", ImagesFilesPage())
         self.__settings_dialog.add_page("Images", "Sidecar Names", ScreenshotPatternsPage())
+        # one page per *installed* plugin main key, not a fixed enumeration (#322): a plugin declared
+        # later needs no edit here, unlike every other group above. The group holds pages, so each
+        # title is plural -- `type_label` is singular everywhere else it's used (the type radio group,
+        # the toolbar badge), which is right there but wrong here ("Tutorial" names a document; a
+        # Locations page is about every "Tutorials" resource) -- and sorted by that plural title so the
+        # group reads alphabetically regardless of plugin declaration order.
+        location_titles = {main_key: location_group_title(main_key) for main_key in DEFAULT_PLUGIN_REGISTRY.main_keys}
+        for main_key, title in sorted(location_titles.items(), key=lambda item: item[1]):
+            self.__settings_dialog.add_page("Locations", title, LocationTemplatesPage(main_key))
         self.__settings_dialog.add_page("Logs", LogsPage())
         self.__settings_dialog.add_page("Session", SessionPage())
 

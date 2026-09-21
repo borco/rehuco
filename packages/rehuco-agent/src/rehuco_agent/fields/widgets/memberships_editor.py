@@ -88,6 +88,9 @@ class MembershipsEditor(ItemListEditor):
         # a default set of memberships would be somebody else's memberships -- there is no reset concept
         # here at all, not just none configured, so the button is hidden rather than left disabled
         self.item_actions.reset_action.setVisible(False)
+        # a copy of a membership would say the same thing twice -- a resource is in a collection once,
+        # and a learning path is one path -- so there is no duplicate concept either
+        self.item_actions.duplicate_action.setVisible(False)
         # the same glyphs the settings pages' string lists and the authors rows wear
         apply_item_action_icons(self)
         self.values_changed.connect(self.__on_values_changed)

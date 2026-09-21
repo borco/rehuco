@@ -230,6 +230,7 @@ class ItemListEditor(QWidget):
         """
         for action in (
             self.__item_actions.insert_action,
+            self.__item_actions.duplicate_action,
             self.__item_actions.edit_action,
             self.__item_actions.delete_action,
         ):
@@ -273,14 +274,20 @@ class ItemListEditor(QWidget):
         )
 
     def __on_row_inserted(self, parent: QModelIndex, first: int, last: int) -> None:
-        """Remember a freshly-inserted row as pending -- abandonable until something is typed into it.
+        """Remember a freshly-inserted *blank* row as pending -- abandonable until something is typed
+        into it.
+
+        A row inserted already filled -- a `ItemEditor.duplicate` copy -- is a value from the moment it
+        lands, not a gesture, so it is never pending: were it recorded, clearing it in the next cell edit
+        would silently remove it, where clearing any other row leaves a blank one.
 
         :param parent: the parent index the row was inserted under; unused, this model is flat.
         :param first: the first inserted row.
-        :param last: the last inserted row; unused, `ItemEditor.insert` only ever inserts one at a time.
+        :param last: the last inserted row; unused, the editor protocol only ever inserts one at a time.
         """
         del parent, last
-        self.__pending_entry = QPersistentModelIndex(self.__model.index(first, 0))
+        if self.row_is_blank(first):
+            self.__pending_entry = QPersistentModelIndex(self.__model.index(first, 0))
 
     def __on_model_changed(self, *args: object) -> None:
         """Report the edit the model just made, unless it was the silent half of an abandoned insert.

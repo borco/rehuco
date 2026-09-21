@@ -1,5 +1,7 @@
 """Frame-level filtering for one settings page: show only the QFrames whose text matches (#67)."""
 
+from typing import Final
+
 from borco_pyside.widgets import ActionButtonColumn, ItemListEditor
 from PySide6.QtCore import QAbstractListModel, QModelIndex, Qt
 from PySide6.QtWidgets import QAbstractButton, QFrame, QGroupBox, QLabel, QLineEdit, QPlainTextEdit, QSpinBox, QWidget
@@ -7,6 +9,13 @@ from PySide6.QtWidgets import QAbstractButton, QFrame, QGroupBox, QLabel, QLineE
 ValueWidget = QLineEdit | QPlainTextEdit | QAbstractButton | QSpinBox | ItemListEditor
 """The settings-page control types whose value :class:`SettingsFrameFilter` knows how to read for its
 baseline snapshot (#77) -- exactly the ones the pages under `rehuco_agent.settings.ui` actually use."""
+
+SCRATCH_PROPERTY: Final = "scratch"
+"""Dynamic property marking a frame, or one control, as **scratch input rather than a setting** (#322):
+a try-it sample previews what a setting does and is not one, so it is left out of the dirty snapshot
+entirely -- it never paints its frame, the way it never stages a change or gets saved. Set in the
+``.ui`` as a dynamic bool property (Designer shows and edits those), the same idiom
+`ActionButtonColumn.NOT_A_CAPTION_PROPERTY` uses to keep a widget out of the caption text."""
 
 
 class SettingsFrameFilter:
@@ -40,7 +49,8 @@ class SettingsFrameFilter:
     page that stages its edits straight in its widgets. One page bends that: `DescriptionsPage` keeps
     the *other* engine's CSS draft off-widget while its own is shown, which this snapshot can't see --
     an accepted gap, since the frame highlight is a visual aid, not the dirty flag of record (`is_dirty`
-    still is).
+    still is). A frame or control flagged :data:`SCRATCH_PROPERTY` is not snapshotted at all: a try-it
+    input is not a setting, and only a value that changes what the app does earns a highlight (#322).
 
     :param page: the page widget to discover filterable frames in (already built via ``setupUi``).
     :param title: the owning page's title, for the title-match rule.
@@ -111,21 +121,28 @@ class SettingsFrameFilter:
     def __snapshot(self, frame: QFrame) -> dict[ValueWidget, object]:
         """Every :data:`ValueWidget` inside ``frame``, paired with its current value.
 
-        :param frame: the frame to snapshot.
+        :param frame: the frame to snapshot; one flagged :data:`SCRATCH_PROPERTY` snapshots nothing.
         :returns: each value widget found, keyed to its current value.
         """
+        if frame.property(SCRATCH_PROPERTY):
+            return {}
         return {widget: self.__value(widget) for widget in self.__value_widgets(frame)}
 
     def __value_widgets(self, frame: QFrame) -> list[ValueWidget]:
         """``frame``'s value widgets, a composite one (an `ItemListEditor`) counted once rather than
-        recursed into -- its buttons and any open cell editor are machinery, not values.
+        recursed into -- its buttons and any open cell editor are machinery, not values -- and one
+        flagged :data:`SCRATCH_PROPERTY` left out.
 
         :param frame: the frame to walk.
         :returns: the value widgets found, outermost first.
         """
         widgets: list[ValueWidget] = []
         for widget in frame.findChildren(QWidget):
-            if isinstance(widget, ValueWidget) and not self.__inside_value_widget(widget, frame):
+            if (
+                isinstance(widget, ValueWidget)
+                and not widget.property(SCRATCH_PROPERTY)
+                and not self.__inside_value_widget(widget, frame)
+            ):
                 widgets.append(widget)
         return widgets
 

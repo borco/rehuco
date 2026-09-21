@@ -54,7 +54,7 @@
       <item>
        <widget class="WrappingLabel" name="patterns_order_label">
         <property name="text">
-         <string>Order decides which pattern matches first when more than one could — an ordinary list, evaluated top to bottom — and which file takes a slot two names want. A pattern that fails to compile, or carries more than one capture group, is skipped and shown in red. An empty list falls back to the shipped patterns.</string>
+         <string>Order decides which pattern matches first when more than one could — an ordinary list, evaluated top to bottom — and which file takes a slot two names want. A pattern that fails to compile, or carries more than one capture group, is kept and shown in red, and simply not used. An empty list falls back to the shipped patterns.</string>
         </property>
         <property name="wordWrap">
          <bool>true</bool>
@@ -109,6 +109,9 @@
      <property name="frameShadow">
       <enum>QFrame::Shadow::Raised</enum>
      </property>
+     <property name="scratch" stdset="0">
+      <bool>true</bool>
+     </property>
      <layout class="QVBoxLayout" name="try_it_frame_layout">
       <item>
        <widget class="QLabel" name="try_it_frame_label">
@@ -125,7 +128,7 @@
       <item>
        <widget class="WrappingLabel" name="try_it_note_label">
         <property name="text">
-         <string>Type a sample filename to see which slot the patterns above would assign it, updated as you edit them. The sample names are saved with the patterns.</string>
+         <string>Type a sample filename to see which slot the patterns above would assign it, updated as you edit them. The samples are scratch space, not a setting: nothing typed here is saved.</string>
         </property>
         <property name="wordWrap">
          <bool>true</bool>

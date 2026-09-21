@@ -1,26 +1,23 @@
-"""Tests for ScreenshotPatternsSettings: the patterns a legacy `.tc`'s screenshots are recognized by,
-and the try-it samples kept beside them (#53, #287).
+"""Tests for ScreenshotPatternsSettings: the patterns a legacy `.tc`'s screenshots are recognized by
+(#53, #287).
 
 Uses a hand-rolled in-memory stand-in for ``QSettings`` (see ``test_main_window_settings.py`` for
 the same rationale) rather than a real one or ``tmp_path``.
 """
 
 from collections.abc import Iterator
-from pathlib import Path
 from typing import Any
 
 from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from rehuco_agent.settings import screenshot_patterns_settings
 from rehuco_agent.settings.screenshot_patterns_settings import (
-    DEFAULT_SAMPLES,
     ScreenshotPatternsSettings,
     normalize_screenshot_name_patterns,
-    normalize_screenshot_samples,
     pattern_is_valid,
     shared_screenshot_patterns_settings,
 )
-from rehuco_core import SCREENSHOT_NAME_PATTERNS, ScreenshotNamePatterns
+from rehuco_core import SCREENSHOT_NAME_PATTERNS
 
 DEFAULT_PATTERN_STRINGS = tuple(pattern.pattern for pattern in SCREENSHOT_NAME_PATTERNS)
 
@@ -118,17 +115,18 @@ def test_patterns_are_trimmed_and_order_is_kept() -> None:
     assert patterns == (r"^shot-(\d+)$", "^cover$")
 
 
-def test_an_uncompilable_pattern_is_dropped() -> None:
-    """The page flags a half-typed pattern rather than refusing the keystroke, so saving is where it goes.
+def test_an_uncompilable_pattern_is_kept() -> None:
+    """Normalizing is the stored shape, and a broken row is stored: dropping it on Apply would make a
+    typo cost the whole row (#322). Only blank rows go; the effective set is what skips it.
 
     **Test steps:**
 
     * normalize a list holding a blank pattern, a broken one, a two-group one, and a good one
-    * verify only the good one survives
+    * verify the blank one alone is dropped
     """
     patterns = normalize_screenshot_name_patterns(["", "[", r"(\d+)-(\d+)", r"^shot-(\d+)$"])
 
-    assert patterns == (r"^shot-(\d+)$",)
+    assert patterns == ("[", r"(\d+)-(\d+)", r"^shot-(\d+)$")
 
 
 def test_a_duplicate_pattern_is_dropped_by_exact_string_match() -> None:
@@ -158,8 +156,8 @@ def test_a_bare_string_reads_as_a_one_element_list() -> None:
 
 @mark.parametrize(
     "value",
-    [None, [], (), "", "   ", ["", "  "], 42, ["["]],
-    ids=["absent", "empty-list", "empty-tuple", "empty-string", "blank-string", "blank-entries", "int", "all-broken"],
+    [None, [], (), "", "   ", ["", "  "], 42],
+    ids=["absent", "empty-list", "empty-tuple", "empty-string", "blank-string", "blank-entries", "int"],
 )
 def test_a_value_naming_no_pattern_falls_back_to_the_defaults(value: object) -> None:
     """Absent, empty and garbage all yield the shipped defaults, never *recognize nothing* (#287).
@@ -169,7 +167,7 @@ def test_a_value_naming_no_pattern_falls_back_to_the_defaults(value: object) -> 
 
     **Test steps:**
 
-    * normalize each value that names no usable pattern
+    * normalize each value that names no pattern at all
     * verify the shipped defaults came back
     """
     assert normalize_screenshot_name_patterns(value) == DEFAULT_PATTERN_STRINGS
@@ -188,67 +186,20 @@ def test_non_string_entries_are_dropped_rather_than_rejected() -> None:
 
 # endregion
 
-# region normalize_screenshot_samples
-
-
-def test_the_seeded_samples_are_shipped_pattern_matches() -> None:
-    """The seeded samples are a helpful starting point: real matches, not arbitrary text.
-
-    **Test steps:**
-
-    * ask the shipped patterns to recognize every seeded sample's stem
-    """
-    patterns = ScreenshotNamePatterns(SCREENSHOT_NAME_PATTERNS)
-
-    assert all(patterns.recognizes(Path(sample).stem) for sample in DEFAULT_SAMPLES)
-
-
-def test_samples_are_trimmed_deduplicated_and_kept_in_order() -> None:
-    """A sample is a name as typed: trimmed, once, in the order given -- nothing about it is validated.
-
-    **Test steps:**
-
-    * normalize a list carrying whitespace, a blank, and an exact repeat
-    * verify the survivors, in order
-    """
-    samples = normalize_screenshot_samples([" shot-3.jpg ", "", "cover.png", "shot-3.jpg", "  "])
-
-    assert samples == ("shot-3.jpg", "cover.png")
-
-
-@mark.parametrize(
-    "value",
-    [None, [], "", ["", "  "], 42],
-    ids=["absent", "empty-list", "empty-string", "blank-entries", "int"],
-)
-def test_a_value_naming_no_sample_falls_back_to_the_seeded_ones(value: object) -> None:
-    """An empty try-it table shows nothing, so nothing stored means the seeded samples (#287).
-
-    **Test steps:**
-
-    * normalize each value that names no sample
-    * verify the seeded samples came back
-    """
-    assert normalize_screenshot_samples(value) == DEFAULT_SAMPLES
-
-
-# endregion
-
-# region the effective sets
+# region the effective set
 
 
 def test_a_fresh_instance_resolves_to_the_defaults() -> None:
-    """Nothing stored means the shipped patterns and the seeded samples are in force.
+    """Nothing stored means the shipped patterns are in force.
 
     **Test steps:**
 
     * build a settings object without loading anything
-    * verify both effective sets are the defaults
+    * verify the effective set is the defaults
     """
     fresh = ScreenshotPatternsSettings()
 
     assert tuple(pattern.pattern for pattern in fresh.screenshot_name_patterns) == DEFAULT_PATTERN_STRINGS
-    assert fresh.screenshot_samples == DEFAULT_SAMPLES
 
 
 def test_stored_values_replace_the_defaults_entirely() -> None:
@@ -256,15 +207,45 @@ def test_stored_values_replace_the_defaults_entirely() -> None:
 
     **Test steps:**
 
-    * build a settings object holding one pattern and one sample
-    * verify each effective set is exactly that
+    * build a settings object holding one pattern
+    * verify the effective set is exactly that
     """
     stored = ScreenshotPatternsSettings()
     stored.patterns = ("^cover$",)
-    stored.samples = ("shot-3.jpg",)
 
     assert [pattern.pattern for pattern in stored.screenshot_name_patterns] == ["^cover$"]
-    assert stored.screenshot_samples == ("shot-3.jpg",)
+
+
+def test_an_uncompilable_row_is_stored_but_not_effective() -> None:
+    """The two views of one list (#322): the page stages against the stored one, which keeps a broken
+    row to fix; a scan reads the effective one, which skips it.
+
+    **Test steps:**
+
+    * store a list holding a good pattern and one that does not compile
+    * verify ``stored_patterns`` holds both and ``screenshot_name_patterns`` only the good one
+    """
+    stored = ScreenshotPatternsSettings()
+    stored.patterns = ("[", "^cover$")
+
+    assert stored.stored_patterns == ("[", "^cover$")
+    assert [pattern.pattern for pattern in stored.screenshot_name_patterns] == ["^cover$"]
+
+
+def test_a_list_with_no_compilable_row_is_effectively_the_defaults() -> None:
+    """A stored list that compiles nothing recognizes the shipped set rather than nothing -- while still
+    showing the broken rows on the page.
+
+    **Test steps:**
+
+    * store a list of nothing but broken patterns
+    * verify ``stored_patterns`` keeps them and the effective set is the shipped one
+    """
+    stored = ScreenshotPatternsSettings()
+    stored.patterns = ("[", r"(\d+)-(\d+)")
+
+    assert stored.stored_patterns == ("[", r"(\d+)-(\d+)")
+    assert stored.screenshot_name_patterns == SCREENSHOT_NAME_PATTERNS
 
 
 # endregion
@@ -298,56 +279,71 @@ def test_patterns_changed_fires_on_assignment(mocker: MockerFixture) -> None:
 
 
 def test_load_falls_back_to_the_defaults_on_a_fresh_install(settings: FakeSettings) -> None:
-    """With nothing persisted, loading yields the shipped patterns and the seeded samples.
+    """With nothing persisted, loading yields the shipped patterns.
 
     **Test steps:**
 
     * load a settings object from empty storage
-    * verify both stored fields are the defaults
+    * verify the stored field is the defaults
     """
     loaded = ScreenshotPatternsSettings()
     loaded.load(settings)  # type: ignore[arg-type]
 
     assert loaded.patterns == DEFAULT_PATTERN_STRINGS
-    assert loaded.samples == DEFAULT_SAMPLES
 
 
-def test_both_fields_round_trip_through_storage(settings: FakeSettings) -> None:
-    """What was saved is what loads back, in order, for the patterns and the samples alike (#287).
+def test_the_patterns_round_trip_through_storage(settings: FakeSettings) -> None:
+    """What was saved is what loads back, in order.
 
     **Test steps:**
 
-    * save a settings object holding two patterns and two samples
+    * save a settings object holding two patterns
     * load a second object from the same storage
     * verify it holds the same, in the same order
     """
     saved = ScreenshotPatternsSettings()
     saved.patterns = (r"^shot-(\d+)$", "^cover$")
-    saved.samples = ("shot-3.jpg", "cover.png")
     saved.save(settings)  # type: ignore[arg-type]
 
     loaded = ScreenshotPatternsSettings()
     loaded.load(settings)  # type: ignore[arg-type]
 
     assert loaded.patterns == (r"^shot-(\d+)$", "^cover$")
-    assert loaded.samples == ("shot-3.jpg", "cover.png")
 
 
-def test_both_fields_are_saved_as_lists(settings: FakeSettings) -> None:
-    """Stored as lists, which is what the ``QSettings`` ini backend can round-trip.
+def test_the_patterns_are_saved_as_a_list(settings: FakeSettings) -> None:
+    """Stored as a list, which is what the ``QSettings`` ini backend can round-trip.
 
     **Test steps:**
 
-    * save a settings object holding two patterns and one sample
-    * verify each raw stored value is a ``list``, not a tuple
+    * save a settings object holding two patterns
+    * verify the raw stored value is a ``list``, not a tuple
     """
     stored = ScreenshotPatternsSettings()
     stored.patterns = ("^cover$", "^file$")
-    stored.samples = ("cover.jpg",)
     stored.save(settings)  # type: ignore[arg-type]
 
     assert settings.value("screenshot_patterns/patterns") == ["^cover$", "^file$"]
-    assert settings.value("screenshot_patterns/samples") == ["cover.jpg"]
+
+
+def test_a_samples_key_an_earlier_build_wrote_is_ignored(settings: FakeSettings) -> None:
+    """The try-it samples were saved beside the patterns until they stopped being a setting (#322); a
+    stale key is neither read nor a reason to fail.
+
+    **Test steps:**
+
+    * seed storage with a pattern list and the old samples key
+    * load a settings object from it
+    * verify the patterns loaded and nothing about the samples surfaced
+    """
+    settings.setValue("screenshot_patterns/patterns", ["^cover$"])
+    settings.setValue("screenshot_patterns/samples", ["shot-3.jpg"])
+
+    loaded = ScreenshotPatternsSettings()
+    loaded.load(settings)  # type: ignore[arg-type]
+
+    assert loaded.patterns == ("^cover$",)
+    assert not hasattr(loaded, "samples")
 
 
 def test_load_repairs_an_unusable_stored_value(settings: FakeSettings) -> None:
@@ -355,18 +351,16 @@ def test_load_repairs_an_unusable_stored_value(settings: FakeSettings) -> None:
 
     **Test steps:**
 
-    * seed storage with a number under each key
+    * seed storage with a number under the patterns key
     * load a settings object from it
     * verify the defaults came back
     """
     settings.setValue("screenshot_patterns/patterns", 42)
-    settings.setValue("screenshot_patterns/samples", 42)
 
     loaded = ScreenshotPatternsSettings()
     loaded.load(settings)  # type: ignore[arg-type]
 
     assert loaded.patterns == DEFAULT_PATTERN_STRINGS
-    assert loaded.samples == DEFAULT_SAMPLES
 
 
 # endregion

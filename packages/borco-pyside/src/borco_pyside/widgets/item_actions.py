@@ -38,6 +38,21 @@ class InsertItemAction(QAction):
         set_tooltip_and_shortcut(self, "Insert a new entry below the current one", QKeySequence(Qt.Key.Key_Insert))
 
 
+class DuplicateItemAction(QAction):
+    """Insert a copy of the current entry below it -- the way a variant of an existing entry is written.
+
+    :param parent: optional Qt parent.
+    """
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__("Duplicate", parent)
+        set_tooltip_and_shortcut(
+            self,
+            "Duplicate the current entry below itself",
+            QKeySequence(Qt.KeyboardModifier.ControlModifier | Qt.Key.Key_D),
+        )
+
+
 class EditItemAction(QAction):
     """Reopen the current entry for typing.
 

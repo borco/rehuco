@@ -222,6 +222,36 @@ def test_insert_appends_with_no_current_row(model: StringItemListModel) -> None:
     assert model.entries[3] == ""
 
 
+def test_duplicate_puts_a_copy_below_the_given_row_and_returns_it(model: StringItemListModel) -> None:
+    """A copy of the entry, already typed, as one insert -- the row never exists blank.
+
+    **Test steps:**
+
+    * duplicate row 0 while counting insert announcements
+    * verify the copy is at row 1, equals the original, and arrived in a single ``rowsInserted``
+    """
+    announced: list[tuple[int, int]] = []
+    model.rowsInserted.connect(lambda _parent, first, last: announced.append((first, last)))
+
+    new_row = model.duplicate(0)
+
+    assert new_row == 1
+    assert model.entries == ("one", "one", "two", "three")
+    assert announced == [(1, 1)]
+
+
+def test_duplicate_with_no_current_row_does_nothing(model: StringItemListModel) -> None:
+    """A negative row names nothing to copy, and reports itself back unchanged.
+
+    **Test steps:**
+
+    * duplicate with a negative row
+    * verify the list is untouched and the row came back as given
+    """
+    assert model.duplicate(-1) == -1
+    assert model.entries == ("one", "two", "three")
+
+
 def test_delete_drops_the_given_row(model: StringItemListModel) -> None:
     """Delete acts on the row it is given.
 

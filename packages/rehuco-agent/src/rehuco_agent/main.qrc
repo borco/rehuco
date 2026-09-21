@@ -49,6 +49,7 @@
         <file alias="icons/items_bottom.svg">../../../../design/icons/items_bottom.svg</file>
         <file alias="icons/items_delete.svg">../../../../design/icons/items_delete.svg</file>
         <file alias="icons/items_down.svg">../../../../design/icons/items_down.svg</file>
+        <file alias="icons/items_duplicate.svg">../../../../design/icons/items_duplicate.svg</file>
         <file alias="icons/items_edit.svg">../../../../design/icons/items_edit.svg</file>
         <file alias="icons/items_restore.svg">../../../../design/icons/items_restore.svg</file>
         <file alias="icons/items_top.svg">../../../../design/icons/items_top.svg</file>

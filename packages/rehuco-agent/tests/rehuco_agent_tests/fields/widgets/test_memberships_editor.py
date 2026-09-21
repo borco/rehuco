@@ -101,15 +101,17 @@ def test_the_table_wears_no_row_numbers_grid_or_wrapping(collections: Collection
     assert view.wordWrap() is False
 
 
-def test_there_is_no_reset_and_no_ordering(collections: CollectionsEditor) -> None:
-    """A default set of memberships would be somebody else's, and ``index`` is the position -- so four
-    move buttons would offer an edit that changes no stored value.
+def test_there_is_no_reset_no_duplicate_and_no_ordering(collections: CollectionsEditor) -> None:
+    """A default set of memberships would be somebody else's, a copy of one would say the same thing
+    twice, and ``index`` is the position -- so four move buttons would offer an edit that changes no
+    stored value.
 
     **Test steps:**
 
-    * verify the reset button and the whole ordering column are hidden
+    * verify the reset and duplicate buttons and the whole ordering column are hidden
     """
     assert collections.item_actions.reset_action.isVisible() is False
+    assert collections.item_actions.duplicate_action.isVisible() is False
     assert collections.ordering_actions.isVisible() is False
 
 

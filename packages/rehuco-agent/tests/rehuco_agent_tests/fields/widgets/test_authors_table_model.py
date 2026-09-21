@@ -575,6 +575,50 @@ def test_insert_appends_with_no_current_row(model: AuthorsTableModel) -> None:
     assert model.entries[2] == ""
 
 
+def test_duplicate_copies_a_record_entry_rather_than_sharing_it(model: AuthorsTableModel) -> None:
+    """The copy lands below its source and equals it, as its own dict: entries are never mutated in
+    place, and two rows sharing one record would go their separate ways through the same object.
+
+    **Test steps:**
+
+    * duplicate the record row while counting insert announcements
+    * verify the copy is at row 2, equals the record, is a distinct object, and came as one insert
+    """
+    announced: list[tuple[int, int]] = []
+    model.rowsInserted.connect(lambda _parent, first, last: announced.append((first, last)))
+
+    new_row = model.duplicate(1)
+
+    assert new_row == 2
+    assert model.entries[2] == {"name": "Bob", "url": "https://example.com/bob"}
+    assert model.entries[2] is not model.entries[1]
+    assert announced == [(2, 2)]
+
+
+def test_duplicate_copies_a_plain_name(model: AuthorsTableModel) -> None:
+    """A plain-string entry copies as itself.
+
+    **Test steps:**
+
+    * duplicate the plain-name row
+    * verify the copy is below it and equals it
+    """
+    assert model.duplicate(0) == 1
+    assert model.entries == ("Alice", "Alice", {"name": "Bob", "url": "https://example.com/bob"})
+
+
+def test_duplicate_with_no_current_row_does_nothing(model: AuthorsTableModel) -> None:
+    """A negative row names nothing to copy, and reports itself back unchanged.
+
+    **Test steps:**
+
+    * duplicate with a negative row
+    * verify the list is untouched and the row came back as given
+    """
+    assert model.duplicate(-1) == -1
+    assert model.count == 2
+
+
 def test_delete_drops_the_given_row(model: AuthorsTableModel) -> None:
     """Delete acts on the row it is given, not a row the model remembers.
 

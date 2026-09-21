@@ -310,6 +310,12 @@ verbatim, so only blanks and duplicates go; a *format* also loses its leading do
 `BMP` comes back `.bmp`. Both rules live on the settings object, never in the widget — the widget holds
 what was typed, which is what lets one editor serve two blocks that disagree (#231).
 
+Normalizing never drops a row the user can still fix. A pattern that does not parse — an uncompilable
+regex on Images / Sidecar Names, an unknown placeholder on a Locations page — is **kept and flagged**
+across Apply, so a typo is corrected in place rather than retyped; the settings object keeps two views
+of the list, the *stored* one the page stages against and the *effective* one everything else reads,
+and only the effective one skips such a row (#322).
+
 It also lost a Default/Custom radio pair in the same slice, whose flag said which half was in effect. The
 pair went because the empty-list fallback already draws that distinction — a list naming nothing *is*
 "whatever this app ships", and the editor's Reset fills the list with that set on request. The old keys
@@ -361,7 +367,11 @@ where three copies would drift into a real defect rather than a cosmetic one.
   control values (`QLineEdit`, `QPlainTextEdit`, `QAbstractButton`, `QSpinBox`, and any `ItemListEditor`,
   read as every cell's `EditRole` value — so a derived, read-only column such as the try-it table's slot
   never paints its frame when a pattern above it changes, #287) at
-  construction, and `dirty_frames()` compares the live values against that snapshot.
+  construction, and `dirty_frames()` compares the live values against that snapshot. A frame, or a
+  single control, carrying the `scratch` dynamic property (`SettingsFrameFilter.SCRATCH_PROPERTY`, set
+  in the `.ui`) is left out of the snapshot altogether: a **try-it** input previews a setting and is not
+  one, so it never paints its frame — the same reason it never stages a change and is never saved
+  (#322). Only a value that has an effect on the app earns a highlight or an Apply.
   `resync_baseline()` adopts the current values as the new clean state — the dialog calls it right
   after every `save_changes()`/`drop_changes()`, or `dirty_frames()` would keep comparing against the
   *previous* clean state and report a just-settled page as still dirty. This snapshot approach needs no

@@ -6,9 +6,9 @@ other half of that arrangement -- one place naming which SVG each action wears, 
 string lists and the ``authors`` record rows look like each other without either restating the mapping.
 
 Dispatch is by the action's own type, not by a fixed set of named columns: every editor's item column
-carries all four actions including Reset (some editors, e.g. the ``authors`` rows, simply hide its
-button rather than never building it), and every action gets dressed regardless of whether its button
-is currently shown.
+carries all five actions including Reset and Duplicate (some editors, e.g. the ``authors`` rows, simply
+hide a button rather than never building it), and every action gets dressed regardless of whether its
+button is currently shown.
 
 Each icon is kept recolored for the current theme by an `ActionIconThemeHandler` parented to its own
 action (#104), so applying them is a single call with nothing to hold on to afterwards.
@@ -20,6 +20,7 @@ from borco_pyside.theming import ActionIconThemeHandler
 from borco_pyside.widgets import (
     ActionButtonColumn,
     DeleteItemAction,
+    DuplicateItemAction,
     EditItemAction,
     InsertItemAction,
     ItemListEditor,
@@ -33,6 +34,7 @@ from PySide6.QtWidgets import QToolButton
 
 ICONS_BY_ACTION_TYPE: Final = {
     InsertItemAction: ":/icons/items_add.svg",
+    DuplicateItemAction: ":/icons/items_duplicate.svg",
     EditItemAction: ":/icons/items_edit.svg",
     DeleteItemAction: ":/icons/items_delete.svg",
     ResetItemAction: ":/icons/items_restore.svg",

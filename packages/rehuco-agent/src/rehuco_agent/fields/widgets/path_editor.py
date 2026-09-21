@@ -195,12 +195,15 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
         :param raw_suggestions: the caller-formatted candidate strings.
         :returns: the sanitized, deduplicated, order-preserved names.
         """
-        sanitized = (PathEditor.__sanitize(raw) for raw in raw_suggestions)
+        sanitized = (PathEditor.sanitize(raw) for raw in raw_suggestions)
         return list(dict.fromkeys(name for name in sanitized if name is not None))
 
     @staticmethod
-    def __sanitize(raw: str) -> str | None:
+    def sanitize(raw: str) -> str | None:
         """Transliterate ``raw`` to ASCII and sanitize it into a valid filesystem name.
+
+        Public so a caller previewing what a candidate *would* render as -- the Locations settings
+        page's Try-it frame (#322) -- can share this exact step rather than a second copy of it.
 
         :param raw: a caller-formatted suggestion string (may hold unicode/invalid characters).
         :returns: the sanitized name, or ``None`` if nothing valid survives.
