@@ -425,9 +425,10 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         self.__files_dock: Final = self.__add_files_dock(model, self.__checksums)
 
         # the type's own docks come last, after the whole common shell (#320): today only a reference
-        # pack's Content Images (#221), the one place its archives' images can be looked at. A pending
-        # placeholder (#66) has no type yet, so its set is completed at its first read instead
-        # (__add_type_docks_on_first_read) -- which is why none of these is Final
+        # pack's Content Images (#221), the one place its archives' images can be looked at. They follow
+        # the type: a switch swaps them for the new type's, and a pending placeholder (#66) has no type
+        # yet, so its set is completed at its first read (__rebuild_type_docks) -- which is why none of
+        # these is Final
         self.__content_images_model: ContentImagesModel | None = None
         self.__content_images_view: ContentImagesView | None = None
         self.__content_images_dock: QtAds.CDockWidget | None = None
@@ -530,8 +531,9 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         """The session blob a :attr:`~RehuDocumentModel.pending` placeholder was opened with (#66,
         #320), kept until its first read: the placeholder is typeless, so its type's docks don't exist
         when the blob is first restored, and what the blob says about them -- a reference pack's
-        Content Images left open -- can only land once the read has built them. The stored layout is
-        what a restored document gets, not a default, so it is restored again then."""
+        Content Images left open -- can only land once the read has built them
+        (:meth:`__rebuild_type_docks`). The stored layout is what a restored document gets, not a
+        default, so it is restored again then."""
 
     @property
     def model(self) -> RehuDocumentModel:
@@ -845,12 +847,14 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         inactive-block fallback rows changes -- whole rows that the fallbacks' own reactive show/hide
         can't add or remove, so the grids are rebuilt rather than merely toggled. Each existing field
         dock keeps its identity, position, and toggle action (the field tabs are fixed surfaces); only
-        its **content grid** is swapped. The type's *own* docks are **not** touched by a switch (#320):
-        the set was decided when the type was first known, and a switch that added or removed a dock
-        would disturb the very layout the user is working in -- including the dock the switch was made
-        from. The one time this method completes the set is a session-restore placeholder's first read
-        (:meth:`__add_type_docks_on_first_read`), which is also when the session blob it was opened with
-        is restored onto the completed set (:attr:`__opened_with_state`).
+        its **content grid** is swapped. The type's *own* docks follow the type (#320,
+        :meth:`__rebuild_type_docks`): the outgoing type's are closed and removed, toggle and all, and
+        the incoming type's are built hidden -- so a pack switched to a tutorial loses Content Images
+        and its toolbar button, and the reverse switch gets them back. No layout is applied by a
+        switch: the docks the user is working in, the one the switch was made from among them, stay
+        as they are. A session-restore placeholder's first read completes its set the same way, and is
+        also when the session blob it was opened with is restored onto the completed set
+        (:attr:`__opened_with_state`).
 
         A stateful widget's own UI state (e.g. the path editor's expand toggle) is captured before the
         swap and restored into its freshly-built counterpart afterwards -- keyed by object name, the same
@@ -896,29 +900,65 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
                 widget.restore_state(state)
         if refocus_main_editor:
             self.__focus_first_child(self.__editor_docks[EDITOR_MAIN_TAB].widget())  # pylint: disable=no-member
-        self.__add_type_docks_on_first_read()
+        self.__rebuild_type_docks()
 
-    def __add_type_docks_on_first_read(self) -> None:
-        """Complete a session-restore placeholder's dock set once its first read has named its type
-        (#66, #320), then give it the layout it was opened with.
+    def __rebuild_type_docks(self) -> None:
+        """Bring the type's own docks in step with the type the document has now (#320): after a type
+        switch, and at a session-restore placeholder's first read (#66).
 
-        A placeholder is built typeless, so it has the common shell and nothing else; its real type's
-        docks are added here, hidden, exactly as a loaded document builds them, with their toggles
-        closing the toolbar's common run. Runs **once**: the flag is cleared on the first non-pending
-        rebuild, so a later type switch never comes back through here. The as-built layout is
-        recaptured, since it is the completed set's. Then the same rule as at open
-        (:meth:`adopt_layout`): the stored layout it was opened with, restored again so what it says
-        about the new docks lands, else the type's current layout.
+        The docks the outgoing type declared and the incoming one doesn't are closed and removed, their
+        toolbar toggles with them; the ones the incoming type adds are built hidden, exactly as a
+        loaded document builds them, their toggles closing the toolbar's common run. A dock both
+        declare is kept as it is, since nothing about it changed. The as-built layout is recaptured
+        whenever the set changes, since it is the set's. No layout is applied by a switch.
+
+        A placeholder is built typeless, so its first read is where its real type's docks arrive; then,
+        **once**, the same rule as at open (:meth:`adopt_layout`): the stored layout it was opened
+        with, restored again so what it says about the new docks lands, else the type's current layout.
+        A pending placeholder is left alone -- it has no type to follow yet.
         """
-        if not self.__awaiting_type or self.__model.pending:
+        if self.__model.pending:
             return
-        self.__awaiting_type = False
-        self.__type_docks = self.__add_type_docks(type_dock_names(self.layout_type))
-        for dock in self.__type_docks.values():
-            self.__toolbar.insertAction(self.__toolbar_stretch_action, dock.toggleViewAction())
-        self.__factory_state = self.save_layout_state()
-        opened_with, self.__opened_with_state = self.__opened_with_state, None
-        self.adopt_layout(opened_with)
+        wanted = type_dock_names(self.layout_type)
+        built = frozenset(self.__type_docks)
+        if wanted != built:
+            self.__remove_type_docks(built - wanted)
+            added = self.__add_type_docks(wanted - built)
+            for dock in added.values():
+                self.__toolbar.insertAction(self.__toolbar_stretch_action, dock.toggleViewAction())
+            self.__type_docks.update(added)
+            self.__factory_state = self.save_layout_state()
+        if self.__awaiting_type:
+            self.__awaiting_type = False
+            opened_with, self.__opened_with_state = self.__opened_with_state, None
+            self.adopt_layout(opened_with)
+
+    def __remove_type_docks(self, names: frozenset[str]) -> None:
+        """Close and tear down the type docks ``names`` (#320), the mirror of :meth:`__add_type_docks`.
+
+        Each is hidden first -- guarded, so the hide isn't stashed as a user toggle -- then taken out of
+        the manager and off the toolbar, and deleted with its content. The Content Images model is the
+        widget's own child rather than the dock's, so it is let go here too, and the fields that name
+        the dock go back to ``None`` so the reactive paths that read them (a path change, a settings
+        change, an activation) see no dock, the way a type without one does.
+
+        :param names: the dock names to remove; ones not built are ignored.
+        """
+        for name in names:
+            dock = self.__type_docks.pop(name, None)
+            if dock is None:
+                continue
+            self.__hide_dock(dock)
+            self.__toolbar.removeAction(dock.toggleViewAction())
+            self.__dock_manager.removeDockWidget(dock)
+            self.__stashed_sizes.pop(name, None)
+            dock.deleteLater()
+            if name == CONTENT_IMAGES_DOCK_NAME:
+                if self.__content_images_model is not None:
+                    self.__content_images_model.deleteLater()
+                self.__content_images_model = None
+                self.__content_images_view = None
+                self.__content_images_dock = None
 
     def __add_type_docks(self, names: frozenset[str]) -> dict[str, QtAds.CDockWidget]:
         """Build the docks ``names`` asks for, each hidden and stacked with the inspection set (#320).
