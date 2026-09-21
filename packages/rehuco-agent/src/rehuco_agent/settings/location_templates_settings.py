@@ -29,7 +29,7 @@ change updates an already-open document's suggestion list without a reopen.
 """
 
 import string
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from functools import lru_cache
 from typing import Final
 
@@ -232,6 +232,18 @@ def render_location_pattern(pattern: str, values: Mapping[str, str]) -> str:
     return LocationPattern(pattern).render(values)
 
 
+def effective_location_templates(patterns: Iterable[str]) -> tuple[str, ...]:
+    """The patterns among ``patterns`` that render, or the shipped set when none does -- the one
+    spelling of "what a document is offered", shared by :meth:`LocationTemplatesSettings.patterns_for`
+    and the settings page's Try-it preview so the two can never disagree.
+
+    :param patterns: a stored or staged list, invalid rows included.
+    :returns: the renderable patterns in order, or :data:`NAME_SUGGESTION_PATTERNS` when there are none.
+    """
+    usable = tuple(pattern for pattern in patterns if location_pattern_is_valid(pattern))
+    return usable or NAME_SUGGESTION_PATTERNS
+
+
 def normalize_location_templates(patterns: object, defaults: tuple[str, ...]) -> tuple[str, ...]:
     """Coerce a stored or edited pattern list into its **stored** shape.
 
@@ -298,8 +310,7 @@ class LocationTemplatesSettings(QObject):
         :returns: the renderable patterns in offer order, or :data:`NAME_SUGGESTION_PATTERNS` when the
             stored list holds none.
         """
-        usable = tuple(pattern for pattern in self.stored_for(resource_type) if location_pattern_is_valid(pattern))
-        return usable or NAME_SUGGESTION_PATTERNS
+        return effective_location_templates(self.stored_for(resource_type))
 
     def load(self, settings: QSettings) -> None:
         """Replace every type's stored list with what's in persistent storage.

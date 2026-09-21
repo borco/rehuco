@@ -9,7 +9,7 @@ from PySide6.QtWidgets import QWidget
 from ...fields.widgets.path_editor import PathEditor
 from ..location_templates_settings import (
     NAME_SUGGESTION_PATTERNS,
-    location_pattern_problem,
+    effective_location_templates,
     normalize_location_templates,
     render_location_pattern,
     shared_location_templates_settings,
@@ -31,12 +31,12 @@ class LocationTemplatesPage(QWidget):
     :class:`~rehuco_agent.settings.ui.location_template_patterns_editor.LocationTemplatePatternsEditor` of
     one column each: a format string interpolating ``{title}`` / ``{publisher}`` / ``{authors}`` /
     ``{year}``, with ``{{ ... }}`` groups that drop out when a field is missing. **Try it** is a sample
-    record (title / publisher / authors / year, editable) beside a read-only preview of what each staged
-    pattern would name it -- sanitized the same way a `PathField` would show it
-    (:meth:`~rehuco_agent.fields.widgets.path_editor.PathEditor.sanitize`), refreshed on every edit to
-    either the patterns or the sample. One line per pattern, so every row is accounted for: a line whose
-    name an earlier line already produced says so (the `PathField` offers it once), an invalid row says
-    why, and a pattern whose groups all dropped says it named nothing.
+    record (title / publisher / authors / year, editable) beside a read-only preview of the names the
+    staged patterns would offer it -- exactly the list a `PathField` would show on a document with these
+    fields: sanitized (:meth:`~rehuco_agent.fields.widgets.path_editor.PathEditor.sanitize`), merged, an
+    invalid or all-dropped pattern contributing nothing -- refreshed on every edit to either the patterns
+    or the sample. The names alone, not the pattern each came from: the row above is where a pattern is
+    read and flagged, and the preview's job is to show the outcome the way the document will.
 
     **The sample record is scratch space, not a setting.** It previews the patterns and changes nothing
     the app does, so it is seeded from :data:`DEFAULT_SAMPLE`, never saved, never part of
@@ -118,25 +118,16 @@ class LocationTemplatesPage(QWidget):
     def __refresh_try_it(self) -> None:
         """Recompute the Try-it preview from the staged (not yet saved) patterns and the sample record.
 
-        One line per pattern. A name an earlier line already produced is reported as such rather than
-        repeated, since the `PathField` offers it once; the comparison is on the sanitized name, so what
-        merges here is exactly what merges there.
+        The same pipeline a document's suggestions go through -- the effective list
+        (:func:`~rehuco_agent.settings.location_templates_settings.effective_location_templates`, so a
+        list with no valid row previews the shipped set a document would fall back to), rendered,
+        sanitized, what reduced to nothing dropped, exact repeats merged in first-seen order -- so what
+        shows here is exactly what a `PathField` would offer. An invalid pattern contributes nothing;
+        its row is flagged above.
         """
         sample = (edit.text() for edit in self.__sample_edits)
         values: dict[str, str] = dict(zip(("title", "publisher", "authors", "year"), sample, strict=True))
-        lines: list[str] = []
-        first_line_by_name: dict[str, int] = {}
-        for pattern in self.__ui.patterns_editor.values:
-            problem = location_pattern_problem(pattern)
-            name = None if problem else PathEditor.sanitize(render_location_pattern(pattern, values))
-            if problem:
-                result = f"(invalid: {problem})"
-            elif name is None:
-                result = "(empty)"
-            elif name in first_line_by_name:
-                result = f"(same as line {first_line_by_name[name]})"
-            else:
-                first_line_by_name[name] = len(lines) + 1
-                result = name
-            lines.append(f"{pattern} → {result}")
-        self.__ui.try_it_result_label.setText("\n".join(lines))
+        usable = effective_location_templates(self.__ui.patterns_editor.values)
+        sanitized = (PathEditor.sanitize(render_location_pattern(pattern, values)) for pattern in usable)
+        names = dict.fromkeys(name for name in sanitized if name is not None)
+        self.__ui.try_it_result_label.setText("\n".join(names))

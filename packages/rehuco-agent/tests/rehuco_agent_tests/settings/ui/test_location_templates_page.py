@@ -445,40 +445,36 @@ def test_saving_and_dropping_leave_the_sample_as_typed(page: LocationTemplatesPa
 # region The Try-it preview follows the patterns and the sample record
 
 
-def test_the_try_it_preview_shows_one_line_per_pattern(page: LocationTemplatesPage) -> None:
-    """One preview line per staged pattern, each naming the pattern and its result.
+def test_the_try_it_preview_shows_the_names_a_document_would_be_offered(page: LocationTemplatesPage) -> None:
+    """The names alone, one per line in pattern order -- what a `PathField` would show, with nothing
+    about the patterns they came from.
 
     **Test steps:**
 
     * stage two patterns
-    * verify the preview holds exactly two lines, one per pattern
+    * verify the preview is exactly the two sanitized names, in order
     """
     editor_of(page).values = ("{title}", "{publisher} - {title}")
 
-    lines = try_it_text(page).splitlines()
-
-    assert len(lines) == 2
-    assert lines[0].startswith("{title} ")
-    assert lines[1].startswith("{publisher} - {title} ")
+    assert try_it_text(page).splitlines() == ["Sample Title", "Sample Publisher - Sample Title"]
 
 
 def test_the_try_it_preview_refreshes_when_a_pattern_is_edited(page: LocationTemplatesPage) -> None:
-    """Editing a pattern updates its preview line immediately.
+    """Editing a pattern updates the preview immediately.
 
     **Test steps:**
 
-    * stage one pattern and read its preview line
+    * stage one pattern
     * edit the pattern
-    * verify the preview line changed to match
+    * verify the preview changed to match
     """
     editor_of(page).values = ("{title}",)
-    before = try_it_text(page)
+    assert try_it_text(page) == "Sample Title"
 
     model = model_of(page)
     model.setData(model.index(0, PATTERN_COLUMN), "{publisher} - {title}")
 
-    assert try_it_text(page) != before
-    assert try_it_text(page).startswith("{publisher} - {title} ")
+    assert try_it_text(page) == "Sample Publisher - Sample Title"
 
 
 def test_the_try_it_preview_refreshes_when_the_sample_record_is_edited(page: LocationTemplatesPage) -> None:
@@ -500,50 +496,70 @@ def test_the_try_it_preview_refreshes_when_the_sample_record_is_edited(page: Loc
     assert "A Brand New Title" in after
 
 
-def test_the_try_it_preview_flags_a_pattern_naming_an_unknown_placeholder(page: LocationTemplatesPage) -> None:
-    """An unresolvable pattern's preview line says why, rather than raising or going blank.
+def test_the_try_it_preview_leaves_out_a_pattern_naming_an_unknown_placeholder(
+    page: LocationTemplatesPage,
+) -> None:
+    """An invalid pattern contributes no name, exactly as it would on a document -- the row above is
+    where it is flagged and explained, not the preview.
 
     **Test steps:**
 
-    * stage a pattern naming an unknown placeholder
-    * verify its preview line reports the pattern as invalid, with the settings module's reason
+    * stage a good pattern and one naming an unknown placeholder
+    * verify the preview holds the good pattern's name alone, and the row is flagged
+    """
+    editor_of(page).values = ("{title}", "{title} ({series})")
+
+    assert try_it_text(page) == "Sample Title"
+    assert model_of(page).invalid_reason(1) == UNKNOWN_PLACEHOLDER_PROBLEM
+
+
+def test_the_try_it_preview_falls_back_to_the_shipped_set_when_no_row_is_valid(page: LocationTemplatesPage) -> None:
+    """A list with no valid row is, on a document, the shipped set -- so that is what the preview shows,
+    rather than an empty box that would promise a document no suggestions at all.
+
+    **Test steps:**
+
+    * stage nothing but an invalid pattern
+    * verify the preview is what the shipped patterns name the sample
     """
     editor_of(page).values = ("{title} ({series})",)
 
-    assert try_it_text(page) == f"{{title}} ({{series}}) → (invalid: {UNKNOWN_PLACEHOLDER_PROBLEM})"
+    assert try_it_text(page).splitlines() == [
+        "Sample Title",
+        "Sample Publisher - Sample Title",
+        "Sample Title [2025]",
+        "Jane Doe, John Roe - Sample Title",
+    ]
 
 
-def test_the_try_it_preview_merges_a_name_an_earlier_line_already_produced(page: LocationTemplatesPage) -> None:
-    """Two patterns naming the sample the same way are offered once on a document, and the preview says
-    which line already covered it rather than repeating the name.
+def test_the_try_it_preview_merges_patterns_naming_the_sample_the_same_way(page: LocationTemplatesPage) -> None:
+    """Two patterns naming the sample the same way are offered once on a document, so the preview shows
+    the name once.
 
     **Test steps:**
 
     * stage the plain title pattern and the optional-year one, then blank the sample year
-    * verify the second line points at the first instead of repeating the name
+    * verify the preview is the one name
     """
     editor_of(page).values = ("{title}", "{title}{{ [{year}]}}")
     page._LocationTemplatesPage__ui.sample_year_edit.setText("")  # pyright: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
-    assert try_it_text(page).splitlines() == [
-        f"{{title}} → {DEFAULT_SAMPLE[0]}",
-        "{title}{{ [{year}]}} → (same as line 1)",
-    ]
+    assert try_it_text(page) == DEFAULT_SAMPLE[0]
 
 
-def test_the_try_it_preview_reports_a_pattern_that_names_nothing(page: LocationTemplatesPage) -> None:
-    """An all-optional pattern whose groups all dropped says it named nothing, which a document would
-    simply not offer.
+def test_the_try_it_preview_leaves_out_a_pattern_that_names_nothing(page: LocationTemplatesPage) -> None:
+    """An all-optional pattern whose groups all dropped is not offered on a document, so it shows
+    nothing here either.
 
     **Test steps:**
 
     * stage a pattern that is one optional group, then blank the field it depends on
-    * verify the preview line reports an empty name
+    * verify the preview is empty
     """
     editor_of(page).values = ("{{{authors}}}",)
     page._LocationTemplatesPage__ui.sample_authors_edit.setText("")  # pyright: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
-    assert try_it_text(page) == "{{{authors}}} → (empty)"
+    assert try_it_text(page) == ""
 
 
 @mark.parametrize("resource_type", ["tutorial", "reference_images", "collection"])

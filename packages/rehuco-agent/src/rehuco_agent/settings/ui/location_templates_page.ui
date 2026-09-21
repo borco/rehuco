@@ -91,7 +91,7 @@
       <item>
        <widget class="WrappingLabel" name="try_it_note_label">
         <property name="text">
-         <string>Edit the sample record below to see what each pattern above would name it, updated as you edit either. The sample is scratch space, not a setting: nothing typed here is saved.</string>
+         <string>Edit the sample record below to see the names the patterns above would offer it, as a document would, updated as you edit either. The sample is scratch space, not a setting: nothing typed here is saved.</string>
         </property>
         <property name="wordWrap">
          <bool>true</bool>
