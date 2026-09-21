@@ -44,13 +44,76 @@ whose QML drop areas and Scintilla drop override are the shape these follow.
 
 [[[acquisition-tooling#drop-source-url]]]
 
-A browser selection arrives as `text/html` and `text/plain`, and a link or an image adds `text/uri-list`; none of the
-three names the page the selection was taken from. On Windows the selection is also handed over as the `HTML Format`
-clipboard format, whose header carries a `SourceURL:` line; Qt strips that header when it synthesizes `text/html`, but
-the raw payload stays reachable under `application/x-qt-windows-mime;value="HTML Format"`. macOS and Linux carry no
-such header for a plain selection, so there the page URL is unknown unless the user drops the link as well. **To be
-confirmed by a spike** before the main-editor and images drops are built — the browser-by-platform matrix is exactly
-the kind of fact that is cheaper to measure than to remember; the spike's lesson replaces this paragraph.
+Measured on Windows with Firefox, Chrome and Edge (`spike`, #263); macOS and Linux not yet tried.
+
+**In Firefox**, a **page selection** — plain text or one that includes an `<img>` — arrives as `text/html` and
+`text/plain` (plus Firefox's own `text/_moz_htmlcontext`/`text/_moz_htmlinfo` hints) and nothing else beyond the two
+Windows drag-cursor mimes (`DragImageBits`/`DragContext` — the on-screen drag thumbnail, not payload). No format on
+this drop names the source page: `application/x-qt-windows-mime;value="HTML Format"` — the raw clipboard payload a
+`SourceURL:` header was expected to live in — never appears on any selection drop tried, because the browser never
+offers that format as a *drag* format, only as a copy-to-clipboard one, so there is nothing for Qt to strip. A
+selection containing an `<img>` carries no `image/*` data either — the image survives only as an `<img src="…">` URL
+inside the `text/html` markup, never as bytes.
+
+A Firefox **bare image** (an `<img>` grabbed directly, no text selected around it) is the sparsest case: only the two
+Windows drag-cursor mimes arrive — no `text/html`, `text/plain`, or `image/*` — so the drop carries no usable image
+data or URL through Qt at all.
+
+A Firefox **link** (an in-page `<a>`) and the **address-bar URL** both expose the page URL plainly, via
+`text/uri-list` (already the format §15.1's URL-drop rule reads) and
+`application/x-qt-windows-mime;value="UniformResourceLocatorW"`, plus a synthesized `.url` Internet Shortcut file
+under `application/x-qt-windows-mime;value="FileContents"`/`FileGroupDescriptor(W)`. In a controlled pair — the same
+link dragged from the page, then its target loaded and the resulting address-bar URL dragged in turn — the link
+carried `text/x-moz-url-desc` (the link's title text) and the `text/_moz_htmlcontext`/`text/_moz_htmlinfo` hints,
+while the address-bar drag carried neither, having no page DOM behind it. An earlier, uncontrolled round of assorted
+link drags was less consistent about the `text/_moz_htmlcontext`/`text/_moz_htmlinfo` pair, so treat that split as
+indicative, not a hard rule.
+
+So in Firefox a selection and a link/address-bar drop are mutually exclusive, not complementary: a selection never
+carries its page's URL, and a link or address-bar drag never carries the surrounding page markup. §15.1's rule that a
+selection drop hands its fragment to the scraper "with the page URL alongside, where the platform provides one" has
+no source for that URL in Firefox — the platform can only ever hand over a *separate* link/address-bar drop, never
+one drop carrying both.
+
+**In Chrome and Edge** — identical on both, byte for byte, since Edge is Chromium underneath — the same four drags
+were repeated on the same pages. Both write `text/x-moz-url` (URL and title, `\n`-joined) on their own link and
+address-bar drags too, so that format is a shared de-facto convention, not a Firefox tell. Neither ever offers
+`application/x-qt-windows-mime;value="HTML Format"`.
+
+The material difference is `application/x-qt-windows-mime;value="chromium/x-renderer-taint"`: a short mime, present
+on *every* Chromium drop tried — selection, image, and link alike — holding the source page's **origin**, scheme and
+host only (`https://www.artstation.com`), never the full path. It is Chromium's only drop-carried hint of where a
+selection or an image came from: coarse enough to route a drop to the right site's scraper, not precise enough to
+refetch the exact page. It is absent from the address-bar drag, which has no source page to taint.
+
+A Chromium **image** drag is richer than Firefox's: it carries the image's own URL directly, via `text/uri-list`,
+`text/plain`, and `UniformResourceLocatorW`, plus the surrounding `<img>` markup (`src` and `data-src`) in
+`text/html` — still no raw `image/*` bytes, and the `.url`-shortcut `FileContents` that a link drag populates comes
+back empty here, since Chromium only synthesizes it for a navigable page, not an image URL.
+
+So Chromium's selection and image drops are not fully silent about their source the way Firefox's are —
+`chromium/x-renderer-taint` gives the origin, which §15.1's "page URL alongside" rule could route a scrape by, if not
+fetch a specific page with. macOS and Linux are untested on any browser; a browser that exposes a Windows
+`HTML Format` payload, or the full `SourceURL` some other way, would change this conclusion further.
+
+A **multi-image lightbox** (ArtStation's product gallery, seven thumbnails plus an enlarged view) confirmed §15.1's
+generic image rule needs no per-site help here: every thumbnail `<img>` carried `data-src` pointing at the full-size
+original (`.../large/file.jpg`) alongside a 330×330 `src` (`.../medium/file.jpg`); the enlarged view's own `<img>`
+already had `src` pointing straight at `/large/`. Preferring `data-src` over `src` — already §15.1's rule, no
+ArtStation-specific rewrite invoked — pulled all seven originals (1800×1012, confirmed by downloading them), each a
+self-contained CDN URL with its own path and no cross-thumbnail structure to key off. `data-src` for a lazy-loaded
+image is a common web convention, not one this site invented.
+
+This generalizes past ArtStation: a dropped selection or image can never be reliably attributed to a site at drop
+time — Firefox gives no origin at all, and Chromium's `chromium/x-renderer-taint` gives only the bare origin, present
+or absent per browser and drop shape, not a value anything should branch a scraper choice on. So the image-candidate
+extraction that §15.1 already describes (`srcset`, `data-src`, `og:image`) has to be the *only* path for a
+selection/image drop — never a fallback behind a "detect the site, run its rule" step, since that detection isn't
+reliably available to fall back from. A site scraper's per-site thumbnail-to-full-size rewrite (§15.1's stated
+exception) stays reserved for a site that has no `data-src`/`srcset` to read at all; it never substitutes for the
+generic rule. The corollary: nothing about this drop-acquisition design should require a Chromium-family browser —
+Firefox already has to work correctly with zero source-page hint, so Chrome/Edge's extra (and undocumented,
+unversioned) `chromium/x-renderer-taint` hint is strictly an opportunistic bonus, not a dependency.
 
 ## §15.2 URL extraction: site scrapers, with an LLM fallback
 
