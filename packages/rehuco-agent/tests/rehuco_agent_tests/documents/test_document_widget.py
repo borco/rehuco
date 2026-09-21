@@ -4532,6 +4532,71 @@ def test_a_type_switch_swaps_the_types_own_docks_and_applies_no_layout(
     assert on_disk_dock(widget).toggleViewAction().isChecked() is True
 
 
+def test_a_resource_type_change_on_a_still_pending_placeholder_builds_no_type_dock(qtbot: QtBot) -> None:
+    """A placeholder is typeless until its first read, so a resource-type change reaching the rebuild
+    before that read is left alone rather than acting on a type nothing has confirmed yet (#66, #320).
+
+    **Test steps:**
+
+    * build a widget over a pending placeholder
+    * change its resource type while still pending
+    * verify no Content Images dock was built and the widget is still awaiting its real type
+    """
+    pending = RehuDocumentModel.create_pending(Path("/fake/pack/info.rehu"))
+    widget = DocumentWidget(pending)
+    qtbot.addWidget(widget)
+
+    pending.resource_type = "reference_images"
+
+    assert widget._DocumentWidget__content_images_dock is None  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert widget._DocumentWidget__awaiting_type is True  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+
+def test_remove_type_docks_ignores_a_name_that_was_never_built(refimages_widget: DocumentWidget) -> None:
+    """A name `__remove_type_docks` is asked to drop but never built is ignored, not an error (#320) --
+    the docstring's own "ones not built are ignored", exercised directly since every type this build
+    ships declares at most one dock of its own, so a real switch never offers this method more than one
+    name to consider at a time.
+
+    **Test steps:**
+
+    * ask the reference pack's widget to remove a dock name it never built
+    * verify its one real type dock is untouched
+    """
+    real_dock = content_images_dock(refimages_widget)
+
+    refimages_widget._DocumentWidget__remove_type_docks(frozenset({"never_built"}))  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    assert refimages_widget._DocumentWidget__content_images_dock is real_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+
+def test_remove_type_docks_only_runs_the_content_images_cleanup_for_its_own_name(
+    refimages_widget: DocumentWidget,
+) -> None:
+    """Removing a dock under a name other than Content Images' tears the dock down without touching the
+    Content Images bookkeeping, and removing Content Images itself tolerates its model already being
+    gone -- both exercised directly, for the reason above: today's one type dock never lets a real
+    switch offer this method a second name, or a model already cleared, to react to (#320).
+
+    **Test steps:**
+
+    * register the reference pack's one real dock under a second, unrelated name too, and clear the
+      model reference `__remove_type_docks` would otherwise tear down
+    * remove both names in one call
+    * verify neither name is tracked afterward and nothing raised
+    """
+    dock = content_images_dock(refimages_widget)
+    refimages_widget._DocumentWidget__type_docks["unrelated_dock"] = dock  # type: ignore[attr-defined]  # pylint: disable=protected-access,unsupported-assignment-operation
+    refimages_widget._DocumentWidget__content_images_model = None  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    refimages_widget._DocumentWidget__remove_type_docks(  # type: ignore[attr-defined]  # pylint: disable=protected-access
+        frozenset({"unrelated_dock", CONTENT_IMAGES_DOCK_NAME})
+    )
+
+    assert "unrelated_dock" not in refimages_widget._DocumentWidget__type_docks  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert CONTENT_IMAGES_DOCK_NAME not in refimages_widget._DocumentWidget__type_docks  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+
 def test_a_type_switch_closes_the_outgoing_types_open_dock(
     refimages_widget: DocumentWidget, refimages_model: RehuDocumentModel
 ) -> None:
