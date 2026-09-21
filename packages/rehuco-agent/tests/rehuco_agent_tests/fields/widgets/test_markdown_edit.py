@@ -1,14 +1,31 @@
 """Tests for MarkdownEdit: Scintilla configuration for a Markdown source editor (#74)."""
 
+from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtGui import QColor, QFontDatabase, QPalette
+from PySide6.QtCore import QMimeData, QPointF, Qt
+from PySide6.QtGui import QColor, QDropEvent, QFontDatabase, QPalette
 from PySide6.QtWidgets import QApplication
 from pyside6_scintilla import Scintilla
-from pytest import mark, param, raises
+from pytest import fixture, mark, param, raises
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.fields.widgets.markdown_edit import EOL_REPRESENTATION, MarkdownEdit
+
+
+@fixture
+def drop_event() -> Callable[..., QDropEvent]:
+    """A factory building a synthetic `QDropEvent`, as if dropped at the origin.
+
+    :returns: a callable taking the drop's mime data and an optional ``shift`` keyword (whether
+        Shift is held, as `dropEvent` checks via `event.modifiers()`), returning the event.
+    """
+
+    def build(data: QMimeData, *, shift: bool = False) -> QDropEvent:
+        modifiers = Qt.KeyboardModifier.ShiftModifier if shift else Qt.KeyboardModifier.NoModifier
+        return QDropEvent(QPointF(0, 0), Qt.DropAction.CopyAction, data, Qt.MouseButton.NoButton, modifiers)
+
+    return build
 
 
 def test_line_number_margin_is_visible(qtbot: QtBot) -> None:
@@ -434,3 +451,117 @@ def test_autocomplete_prefix_detection_handles_multi_byte_characters_before_the_
     editor.charAdded.emit(ord("("))
 
     assert editor.autoCActive()
+
+
+def test_dropping_html_inserts_its_converted_markdown(qtbot: QtBot, drop_event: Callable[..., QDropEvent]) -> None:
+    """Dropping a selection carrying ``text/html`` inserts the converted Markdown at the drop
+    point, not the raw HTML or the accompanying plain text (#264).
+
+    **Test steps:**
+
+    * build a drop carrying both ``text/html`` and ``text/plain`` for the same selection
+    * feed it to `dropEvent`
+    * verify the buffer holds the HTML's converted Markdown
+    """
+    editor = MarkdownEdit()
+    qtbot.addWidget(editor)
+    data = QMimeData()
+    data.setHtml("<p>Hello <b>world</b></p>")
+    data.setText("Hello world")
+
+    editor.dropEvent(drop_event(data))
+
+    assert bytes(editor.getText(editor.length() + 1).data()).decode("utf-8") == "Hello **world**"
+
+
+def test_dropping_html_lands_at_the_drop_position(qtbot: QtBot) -> None:
+    """The converted Markdown is inserted where the drop happened, not at the caret or the end of
+    the buffer -- the substitute event carries the original's position (#264).
+
+    **Test steps:**
+
+    * fill the editor with three lines and resolve the on-screen point of the third line's start
+    * drop HTML at that point
+    * verify the Markdown was inserted at the start of the third line
+    """
+    editor = MarkdownEdit()
+    qtbot.addWidget(editor)
+    editor.resize(400, 300)
+    editor.setText("first\nsecond\nthird")
+    line_2_start = editor.positionFromLine(2)
+    point = QPointF(editor.pointXFromPosition(line_2_start), editor.pointYFromPosition(line_2_start))
+    data = QMimeData()
+    data.setHtml("<i>DROP</i>")
+    data.setText("DROP")
+
+    editor.dropEvent(
+        QDropEvent(point, Qt.DropAction.CopyAction, data, Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier)
+    )
+
+    assert bytes(editor.getText(editor.length() + 1).data()).decode("utf-8") == "first\nsecond\n*DROP*third"
+
+
+def test_dropping_html_accepts_the_original_event(qtbot: QtBot, drop_event: Callable[..., QDropEvent]) -> None:
+    """The event Qt delivered is marked accepted once the substitute drop went through -- Qt reads
+    the outcome off that one, and an unaccepted drop is reported to the drag source as refused
+    (#264).
+
+    **Test steps:**
+
+    * drop HTML on the editor
+    * verify the original event is accepted and carries the substitute's drop action
+    """
+    editor = MarkdownEdit()
+    qtbot.addWidget(editor)
+    data = QMimeData()
+    data.setHtml("<b>x</b>")
+    data.setText("x")
+    event = drop_event(data)
+
+    editor.dropEvent(event)
+
+    assert event.isAccepted()
+    assert event.dropAction() == Qt.DropAction.CopyAction
+
+
+def test_dropping_html_with_shift_held_inserts_the_plain_text(
+    qtbot: QtBot, drop_event: Callable[..., QDropEvent]
+) -> None:
+    """Holding Shift while dropping a selection carrying ``text/html`` skips the conversion and
+    inserts the drop's plain text instead (#264).
+
+    **Test steps:**
+
+    * build the same HTML+plain-text drop as the unmodified case
+    * feed it to `dropEvent` with Shift held
+    * verify the buffer holds the plain text, not the converted Markdown
+    """
+    editor = MarkdownEdit()
+    qtbot.addWidget(editor)
+    data = QMimeData()
+    data.setHtml("<p>Hello <b>world</b></p>")
+    data.setText("Hello world")
+
+    editor.dropEvent(drop_event(data, shift=True))
+
+    assert bytes(editor.getText(editor.length() + 1).data()).decode("utf-8") == "Hello world"
+
+
+def test_dropping_plain_text_only_is_untouched(qtbot: QtBot, drop_event: Callable[..., QDropEvent]) -> None:
+    """A drop carrying only ``text/plain`` -- no ``text/html`` -- lands unchanged, exactly as it
+    would on a plain `ScintillaEdit` (#264).
+
+    **Test steps:**
+
+    * build a drop carrying only plain text
+    * feed it to `dropEvent`
+    * verify the buffer holds that text, verbatim
+    """
+    editor = MarkdownEdit()
+    qtbot.addWidget(editor)
+    data = QMimeData()
+    data.setText("just plain text")
+
+    editor.dropEvent(drop_event(data))
+
+    assert bytes(editor.getText(editor.length() + 1).data()).decode("utf-8") == "just plain text"
