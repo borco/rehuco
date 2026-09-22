@@ -94,6 +94,60 @@ def test_scrape_page_on_an_unrelated_page_returns_an_empty_result() -> None:
 # endregion
 
 
+# region partial pages -- each guard's own missing-piece path
+def test_scrape_page_header_present_without_an_h1_or_author() -> None:
+    """A header block with neither an `<h1>` nor the author span sets neither field."""
+    html = '<div class="productPage-header"></div>'
+
+    result = ArtStation().scrape_page(Page(url=PRODUCT_URL, final_url=PRODUCT_URL, html=html))
+
+    assert "title" not in result.fields
+    assert "authors" not in result.fields
+
+
+def test_scrape_page_tags_block_with_only_excluded_tags_sets_no_field() -> None:
+    """`advertised_tags` is left unset, not set to an empty list, when nothing survives the exclusion."""
+    html = (
+        '<div class="productPage-gallery-col"><div class="productPage-tags">'
+        '<a class="productPage-tag">Tutorials</a></div></div>'
+    )
+
+    result = ArtStation().scrape_page(Page(url=PRODUCT_URL, final_url=PRODUCT_URL, html=html))
+
+    assert "advertised_tags" not in result.fields
+
+
+def test_scrape_page_gallery_without_a_tags_block_or_description() -> None:
+    """A gallery with neither `.productPage-tags` nor `.product-description` yields no tags/description."""
+    html = '<div class="productPage-gallery-col"><div class="unrelated"></div></div>'
+
+    result = ArtStation().scrape_page(Page(url=PRODUCT_URL, final_url=PRODUCT_URL, html=html))
+
+    assert "advertised_tags" not in result.fields
+    assert result.description is None
+
+
+def test_scrape_page_thumbnail_button_without_an_img_is_skipped() -> None:
+    """A thumbnail `<button>` with no `<img>` child contributes no image."""
+    html = '<div class="productPage-gallery-col"><button class="image-gallery-thumbnail"></button></div>'
+
+    result = ArtStation().scrape_page(Page(url=PRODUCT_URL, final_url=PRODUCT_URL, html=html))
+
+    assert not result.images
+
+
+def test_scrape_page_thumbnail_img_without_data_src_is_skipped() -> None:
+    """A thumbnail `<img>` with no `data-src` attribute contributes no image."""
+    html = '<div class="productPage-gallery-col"><button class="image-gallery-thumbnail"><img /></button></div>'
+
+    result = ArtStation().scrape_page(Page(url=PRODUCT_URL, final_url=PRODUCT_URL, html=html))
+
+    assert not result.images
+
+
+# endregion
+
+
 # region full-size rewrite
 @mark.parametrize(
     ("data_src", "expected"),
