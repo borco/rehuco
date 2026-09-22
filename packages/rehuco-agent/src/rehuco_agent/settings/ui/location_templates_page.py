@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QWidget
 from ...fields.widgets.path_editor import PathEditor
 from ..location_templates_settings import (
     NAME_SUGGESTION_PATTERNS,
+    LocationTemplatesSettings,
     effective_location_templates,
     normalize_location_templates,
     render_location_pattern,
@@ -113,6 +114,17 @@ class LocationTemplatesPage(QWidget):
         """Discard the staged pattern edits, refilling the editor from this type's stored set -- invalid
         rows included, flagged; the sample record stays as typed."""
         self.__ui.patterns_editor.values = shared_location_templates_settings().stored_for(self.__resource_type)
+        self.__refresh_try_it()
+
+    def seed_defaults(self) -> None:
+        """Stage the factory state: the patterns an unloaded `LocationTemplatesSettings` resolves to
+        for this type -- the shipped `NAME_SUGGESTION_PATTERNS`, the same for every type -- and the
+        shipped sample record (#342). The sample is a try-it input, not a setting, and is put back
+        here only so its frame's own Defaults button has a factory state to return to; nothing about
+        it is ever saved."""
+        self.__ui.patterns_editor.values = LocationTemplatesSettings().stored_for(self.__resource_type)
+        for edit, value in zip(self.__sample_edits, DEFAULT_SAMPLE, strict=True):
+            edit.setText(value)
         self.__refresh_try_it()
 
     def __refresh_try_it(self) -> None:

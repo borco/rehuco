@@ -253,6 +253,36 @@ def test_a_duplicated_entry_cleared_afterwards_stays_as_a_blank_row(editor: Stri
     assert editor.values == ("one", "", "two", "three")
 
 
+def test_a_row_inserted_and_filled_through_the_model_is_a_value_not_a_pending_insert(
+    editor: StringListEditor,
+) -> None:
+    """A row inserted with no editor ever opening (a settings frame restoring a snapshot writes rows
+    straight into the model) is pending only until it is filled: once typed into, a later edit that
+    clears it leaves a blank row, exactly as clearing any other row does -- it is not silently removed
+    as an abandoned insert would be.
+
+    **Test steps:**
+
+    * insert a row at the top through the model and fill it through the model
+    * open it, clear it and commit
+    * verify the blank row is still there, and that the fill was reported as an edit
+    """
+    changes: list[None] = []
+    editor.values_changed.connect(lambda: changes.append(None))
+    editor.model.insertRows(0, 1)
+    editor.model.setData(editor.model.index(0, 0), "restored", Qt.ItemDataRole.EditRole)
+    assert changes == [None]
+    assert editor.values == ("restored", "one", "two", "three")
+
+    select(editor, 0)
+    editor.item_actions.edit_action.trigger()
+    field = open_editor()
+    field.clear()
+    commit(field)
+
+    assert editor.values == ("", "one", "two", "three")
+
+
 def test_insert_appends_when_nothing_is_current(editor: StringListEditor) -> None:
     """With no current row there is no "below", so the entry goes last -- which is also how an
     emptied list gets its first row back.

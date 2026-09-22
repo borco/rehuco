@@ -8,7 +8,7 @@
 
 `SettingsDialog` (`rehuco_agent/settings/ui/settings_dialog.py`, #47) is a VLC-preferences-style
 shell: a filterable category tree on the left, the selected category's page on the right, and a
-toolbar with Save all / Save current page / Drop all / Drop current page. It holds no settings
+toolbar with Apply All / Apply / Reset All / Reset / Defaults All / Defaults. It holds no settings
 content itself — every category is a `SettingsPage` (`settings/ui/settings_page.py`), a
 `@runtime_checkable` `Protocol` an ordinary `.ui`-backed `QWidget` satisfies structurally, the same
 style already used for the field toolkit's `StatefulWidget`/`FieldModel` ([[plugins#field-toolkit]]):
@@ -18,7 +18,13 @@ class SettingsPage(Protocol):
     def is_dirty(self) -> bool: ...
     def save_changes(self) -> None: ...
     def drop_changes(self) -> None: ...
+    def seed_defaults(self) -> None: ...
 ```
+
+`seed_defaults()` (#342) fills the widgets with the section's **factory** values — what a fresh
+install shows — as a staged edit, the way `drop_changes()` fills them with the saved ones; nothing is
+persisted until Apply. The dialog calls it once at registration to learn each frame's defaults
+([[appendices.settings-pages#dirty-state-ui]]) and again on the toolbar's Defaults / Defaults All.
 
 **A page does not name itself** (#277). It used to carry a `title` property, which put the tree's
 labels in a dozen classes that each knew only themselves, so no single place could be read — or
@@ -242,6 +248,8 @@ The dialog shell dispatches, it never interprets:
 - **Save current page** / **Drop current page** — call it on the selected leaf page, or on every page
   under a selected group row (#230) — the same one-level recursion Save all / Drop all already do,
   now also driven by what the tree's current row is rather than always every page.
+- **Defaults All** / **Defaults** — call `seed_defaults()` the same two ways (#342). A staged edit
+  like typing: the frames turn dirty and Apply commits, so nothing here persists on its own.
 
 What "saved" or "dropped" actually *means* is entirely up to each page. Two shapes exist today:
 
@@ -364,14 +372,21 @@ where three copies would drift into a real defect rather than a cosmetic one.
   selected row's page(s), the "all" actions track whether *any* registered page is dirty.
 - **Frame level** — no page reports this; `SettingsPage.is_dirty()` only ever answers for the whole
   page. `SettingsFrameFilter` derives it generically instead: it snapshots every frame's recognized
-  control values (`QLineEdit`, `QPlainTextEdit`, `QAbstractButton`, `QSpinBox`, and any `ItemListEditor`,
+  control values (`QLineEdit`, `QPlainTextEdit`, a *checkable* `QAbstractButton` — a Browse… or
+  Register push button holds nothing, #342 — `QSpinBox`, and any `ItemListEditor`,
   read as every cell's `EditRole` value — so a derived, read-only column such as the try-it table's slot
   never paints its frame when a pattern above it changes, #287) at
   construction, and `dirty_frames()` compares the live values against that snapshot. A frame, or a
   single control, carrying the `scratch` dynamic property (`SettingsFrameFilter.SCRATCH_PROPERTY`, set
-  in the `.ui`) is left out of the snapshot altogether: a **try-it** input previews a setting and is not
-  one, so it never paints its frame — the same reason it never stages a change and is never saved
-  (#322). Only a value that has an effect on the app earns a highlight or an Apply.
+  in the `.ui`) never counts: a **try-it** input previews a setting and is not one, so it never paints
+  its frame — the same reason it never stages a change and is never saved (#322). Only a value that
+  has an effect on the app earns a highlight or an Apply. (A scratch *frame* is still snapshotted, so
+  its own Reset/Defaults buttons have something to put back, #342; a scratch *control* is not.)
+  A control whose value the built-in types cannot express says so itself through the `ValueControl`
+  protocol (`settings_value()`/`set_settings_value()`), and is read and written like any other —
+  `ColorSwatchButton` (`settings/ui/color_swatch_button.py`), the lightbox backdrop swatch, is the
+  first: while the page kept that colour in an attribute beside a plain button, the frame never tinted
+  and its buttons never enabled (#342).
   `resync_baseline()` adopts the current values as the new clean state — the dialog calls it right
   after every `save_changes()`/`drop_changes()`, or `dirty_frames()` would keep comparing against the
   *previous* clean state and report a just-settled page as still dirty. This snapshot approach needs no
@@ -387,14 +402,60 @@ idiom: every block wears a `QFrame[dirty="true"]` property-selector stylesheet
 unpolish/polish) is all that turns the tint on and off -- behind a changed-guard, so the poll leaves
 unchanged frames entirely alone instead of re-parsing a stylesheet per tick. A background-only rule,
 deliberately: it composes with the native `StyledPanel` border, so a dirty frame keeps the platform
-look, where any QSS `border` rule would replace the OS-drawn panel wholesale. An earlier
-version of this slice also floated a per-frame `SettingsFrameOverlay` with its own Apply/Reset buttons
-in each dirty frame's corner; it was removed (#77) because those buttons could only ever act on the
-**whole page** (nothing generic can tell which settings field a widget maps to, so a true per-frame
-partial commit isn't derivable from the widgets alone), and a page with several dirty frames at once
-showed several Apply/Reset pairs that all did the same whole-page thing -- reading as scoped to the
-frame they sat in when they weren't. The toolbar's own Apply/Reset is the one true way to commit or
-discard a page's changes.
+look, where any QSS `border` rule would replace the OS-drawn panel wholesale.
+
+**Per-frame Apply, Reset and Defaults (#342).** Every frame with something to reset carries up to three
+right-aligned icon-only tool buttons in its header row: **Apply** commits that frame's edits and only
+those, **Reset** writes the frame's *saved* values back into its widgets, **Defaults** its *factory*
+values. The two restores are staged edits, not commits — the dirty comparison simply finds the frame
+back at (Reset) or away from (Defaults) its clean state. #77's `SettingsFrameOverlay` was removed because
+its per-frame Apply could only ever save the *whole page* (no widget says which settings field it maps
+to, so a partial commit is not derivable from the widgets) and so read as scoped when it was not. What
+makes both honest now is the snapshot `SettingsFrameFilter` already keeps per frame, pairing each value
+widget with its value: restoring is the inverse of the reader that took it
+(`restore_saved`/`restore_defaults`, writing by type — `setText`, `setPlainText`, `setValue`,
+`setChecked`, an `ItemListEditor`'s rows through its model, a `ValueControl` through its own setter), and
+a one-frame commit is **staged around the whole-page save** (`apply_frame`): every *other* frame's
+edits are parked — its widgets put back to their saved baseline — for the duration of `save_changes()`,
+the baseline is resynced, and the parked edits are written back, where the dirty comparison finds them
+again. What was persisted is exactly this frame's edits on top of what was already saved; what is on
+screen is exactly what was typed; the page stays badged dirty until every frame is applied. The page
+still only ever saves itself whole, so the toolbar's Apply is the same commit for all frames at once,
+not a loop over them. The one thing parking cannot reach is state a page keeps *off* its widgets — and
+writing a widget back can fire a handler that overwrites that state with the parked value
+(`DescriptionsPage`'s `textChanged` copies the editor into the draft slot of the engine shown, so
+parking its engine frame would have replaced an unsaved CSS edit with the saved text, silently). Such
+a page takes over its own buttons instead, below.
+
+The factory values come from a **second snapshot**: `add_page` calls the page's `seed_defaults()`, has
+the filter `capture_defaults()`, then calls `drop_changes()` and `resync_baseline()` — so the page is
+never left showing anything but what it arrived with, and `frames_at_defaults()` mirrors `dirty_frames()`
+against the other reference point. Enablement rides the same poll: Apply and Reset while the frame
+differs from its saved values, Defaults while it differs from its defaults; every button starts disabled,
+since the poll refreshes only the pages on screen. A `scratch` try-it frame gets Reset and Defaults but
+no Apply — its sample was never going to be saved, and its "saved" reference is simply what it showed at
+the last commit, which `resync_baseline()` re-adopts — while typing into it never tints it, dirties the
+page or lights the toolbar's Defaults. A frame with no value widget (`has_values()` — Windows
+Integration's Register/Unregister, push buttons that hold nothing) gets no row; nor does one without a
+`<frame>_label` to build the row around (the Scrapers table frame). The row itself
+(`SettingsFrameHeader`, `settings/ui/settings_frame_header.py`) is **injected by the dialog, not declared
+by the page**: it takes the label's place in the frame's layout via `QLayout.replaceWidget` — which
+lands it wherever the label sat, a box item or a `QFormLayout`'s spanning row alike — and adopts the
+label, so every page gained the buttons with no `.ui` change. Its buttons wear `SCRATCH_PROPERTY` and
+`NOT_A_CAPTION_PROPERTY` so the snapshot never counts them and the filter never searches them. A list
+editor inside a headed frame has its own restore button hidden (`item_actions.reset_action`): the
+row's Defaults now says the same thing, from one place. A page the generic path cannot see all of —
+an editor the filter cannot read (a table model), or state kept off its widgets — takes over all three
+buttons by satisfying `FrameRestoringPage` (`apply_frame(frame)` / `reset_frame(frame)` /
+`restore_frame_defaults(frame)`), which the dialog prefers when present. `DescriptionsPage` is the one
+that does: its two frames map one-to-one onto `MarkdownRenderingSettings` and
+`DescriptionEditorSettings`, so each hook saves, reverts or re-seeds one object exactly, hidden CSS
+draft included — which also makes its engine frame's Reset clear the page where a widget-only restore
+could not.
+
+The toolbar's **Defaults** / **Defaults All** call `seed_defaults()` on the current page(s) / every
+page — the widgets change, the poll marks frames dirty, Apply commits as usual. They enable while some
+frame with values is away from its defaults.
 
 A dialog-wide **"Apply changes as they're made"** `WrappingCheckBox` drives auto-apply: while checked,
 a page found dirty on the next poll tick is committed immediately. It lives in the toolbar, added via
@@ -444,6 +505,23 @@ now folded into a group (`"Images"`) finds the group row it became.
   gathers their searchable text by introspection (§Overview), so a page implements no `field_labels`
   or `apply_filter` and keeps no term list. The frame is the smallest filterable unit — don't split a
   group's controls across separate frames expecting them to hide independently.
+- **Name the header label `<frame>_label`** and make it the frame's first layout item (a
+  `QFormLayout`'s spanning row 0 counts). That name is how the dialog finds the label to build the
+  per-frame Apply/Reset/Defaults row around ([[appendices.settings-pages#dirty-state-ui]]); a frame
+  whose first row is something else gets no buttons, which is right only for a frame with nothing to
+  reset.
+- Implement `seed_defaults()` by filling the widgets from a **freshly constructed, unloaded** settings
+  object — `VideosSettings()`, `LogsSettings()` — which holds exactly the field defaults, dataclass or
+  `SimpleProperty` `QObject` alike. Share the widget-filling body with `drop_changes()` (a private
+  `__show(settings)` taking either object), so the two can never disagree about which widget shows
+  which field. A status label or registry table reflects saved state and is left alone. A try-it
+  sample (`scratch`) is put back to its shipped value too — not because it is a setting (it is never
+  saved, and `drop_changes()` leaves it as typed) but so its frame's own Defaults button has a factory
+  state to return to.
+- Keep every staged value **in a widget**. A value a page holds in an attribute beside its widget is
+  invisible to the frame snapshot: the frame never tints, its buttons never enable, and the change
+  still rides along with another frame's Apply. Where none of the built-in control types fits, give the
+  widget `settings_value()`/`set_settings_value()` (`ValueControl`) — `ColorSwatchButton` is the model.
 - Give the page's root layout zero margins (the stack already provides padding) and end it with a
   vertical spacer so frames stack at the top rather than stretching to fill. If one frame holds a
   control that should grow (e.g. `DescriptionsPage`'s CSS editor), stretch that frame's layout

@@ -74,6 +74,9 @@
         <file alias="icons/rehu_upgrade.svg">../../../../design/icons/rehu_upgrade.svg</file>
         <file alias="icons/rehuco-agent.svg">../../../../design/icons/rehuco-agent.svg</file>
         <file alias="icons/screenshot_convert.svg">../../../../design/icons/screenshot_convert.svg</file>
+        <file alias="icons/settings_apply.svg">../../../../design/icons/settings_apply.svg</file>
+        <file alias="icons/settings_reset_to_defaults.svg">../../../../design/icons/settings_reset_to_defaults.svg</file>
+        <file alias="icons/settings_reset_to_saved.svg">../../../../design/icons/settings_reset_to_saved.svg</file>
         <file alias="icons/task_cancel.svg">../../../../design/icons/task_cancel.svg</file>
         <file alias="icons/task_canceled.svg">../../../../design/icons/task_canceled.svg</file>
         <file alias="icons/task_canceling.svg">../../../../design/icons/task_canceling.svg</file>

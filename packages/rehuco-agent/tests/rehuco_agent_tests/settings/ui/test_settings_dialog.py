@@ -8,9 +8,18 @@
 
 from typing import Any
 
-from borco_pyside.widgets import WrappingCheckBox
+from borco_pyside.widgets import StringListEditor, WrappingCheckBox
 from PySide6.QtCore import QModelIndex
-from PySide6.QtWidgets import QAbstractScrollArea, QFrame, QLabel, QLineEdit, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QAbstractScrollArea,
+    QFrame,
+    QLabel,
+    QLineEdit,
+    QScrollArea,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
+)
 from pytest import fixture, raises
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -18,6 +27,8 @@ from rehuco_agent.documents.document_dock import DIRTY_DOCK_MARKER
 from rehuco_agent.settings.settings_dialog_settings import SettingsDialogSettings
 from rehuco_agent.settings.ui import settings_dialog
 from rehuco_agent.settings.ui.settings_dialog import SettingsDialog
+from rehuco_agent.settings.ui.settings_frame_filter import SCRATCH_PROPERTY
+from rehuco_agent.settings.ui.settings_frame_header import SettingsFrameHeader
 
 
 # region fixtures
@@ -65,7 +76,16 @@ def fake_persistent_settings(mocker: MockerFixture) -> FakeSettings:
 
 
 # region Sample classes
-class FakePage(QWidget):
+SAVED_TEXT = ""
+"""What a `FakePage`'s edits show at their "saved" value -- the text a fresh ``QLineEdit`` holds, so a
+test that never saves sees no difference from before #342."""
+
+DEFAULT_TEXT = "factory"
+"""What a `FakePage`'s edits show after ``seed_defaults`` -- deliberately not the saved text, so the
+dialog's defaults snapshot differs from its baseline the way a real page's can (#342)."""
+
+
+class FakePage(QWidget):  # pylint: disable=too-many-instance-attributes
     """A minimal `SettingsPage` stand-in for exercising `SettingsDialog` without a real page.
 
     Builds one top-level ``QFrame`` per entry in ``blocks`` (each holding a ``QLabel`` for every
@@ -80,6 +100,10 @@ class FakePage(QWidget):
         self.dirty = False
         self.save_calls = 0
         self.drop_calls = 0
+        self.defaults_calls = 0
+        # what each edit showed at every save, oldest first -- what a real page would have persisted,
+        # which is how a one-frame Apply (#342) is told apart from a whole-page one
+        self.saved_texts: list[list[str]] = []
         self.frames: list[QFrame] = []
         # one per frame, so a test can make a specific frame's SettingsFrameFilter.dirty_frames()
         # baseline diverge without the page as a whole knowing anything about it (#77)
@@ -89,32 +113,75 @@ class FakePage(QWidget):
         # way a real page's controller does, and QWidget.layout() answers the untyped base class
         self.main_layout = QVBoxLayout(self)
         layout = self.main_layout
-        for terms in blocks or []:
+        for index, terms in enumerate(blocks or []):
             frame = QFrame(self)
+            frame.setObjectName(f"block_{index}_frame")
             frame_layout = QVBoxLayout(frame)
-            for term in terms:
-                frame_layout.addWidget(QLabel(term, frame))
+            for position, term in enumerate(terms):
+                label = QLabel(term, frame)
+                # the first term is the frame's header, named as every real page's .ui names it
+                # (<frame>_label) -- what the dialog builds the Reset/Defaults row around (#342)
+                if position == 0:
+                    label.setObjectName(f"{frame.objectName()}_label")
+                frame_layout.addWidget(label)
             edit = QLineEdit(frame)
             frame_layout.addWidget(edit)
             layout.addWidget(frame)
             self.frames.append(frame)
             self.edits.append(edit)
+        self.__saved = [SAVED_TEXT] * len(self.edits)
 
     def is_dirty(self) -> bool:
-        """Whatever :attr:`dirty` was last set to -- ``False`` unless a test opts in."""
-        return self.dirty
+        """Whatever :attr:`dirty` was last set to, or any edit differing from what was last saved --
+        the second half being what a real page's ``is_dirty`` answers, so a one-frame Apply (#342)
+        leaves this page dirty exactly as it would leave a real one."""
+        return self.dirty or [edit.text() for edit in self.edits] != self.__saved
 
     def save_changes(self) -> None:
         """Record that a save was requested, and settle -- the same as a real page's is_dirty()
         reporting clean once its staged edits match what was just saved."""
         self.save_calls += 1
         self.dirty = False
+        self.__saved = [edit.text() for edit in self.edits]
+        self.saved_texts.append(list(self.__saved))
 
     def drop_changes(self) -> None:
         """Record that a drop was requested, and settle -- the same as a real page's is_dirty()
         reporting clean once its edits are reverted."""
         self.drop_calls += 1
         self.dirty = False
+        for edit, text in zip(self.edits, self.__saved, strict=True):
+            edit.setText(text)
+
+    def seed_defaults(self) -> None:
+        """Record that defaults were requested, and stage them: every edit shows :data:`DEFAULT_TEXT`,
+        the way a real page fills its widgets from an unloaded settings object (#342)."""
+        self.defaults_calls += 1
+        for edit in self.edits:
+            edit.setText(DEFAULT_TEXT)
+
+
+class FrameRestoringFakePage(FakePage):
+    """A `FakePage` that also takes over its frames' Reset/Defaults buttons (#342), recording which
+    frame each hook was asked about instead of touching any widget."""
+
+    def __init__(self, blocks: list[list[str]] | None = None, parent: QWidget | None = None) -> None:
+        super().__init__(blocks, parent)
+        self.applied_frames: list[QFrame] = []
+        self.reset_frames: list[QFrame] = []
+        self.defaults_frames: list[QFrame] = []
+
+    def apply_frame(self, frame: QFrame) -> None:
+        """Record the frame whose Apply was pressed."""
+        self.applied_frames.append(frame)
+
+    def reset_frame(self, frame: QFrame) -> None:
+        """Record the frame whose Reset was pressed."""
+        self.reset_frames.append(frame)
+
+    def restore_frame_defaults(self, frame: QFrame) -> None:
+        """Record the frame whose Defaults was pressed."""
+        self.defaults_frames.append(frame)
 
 
 # endregion
@@ -126,6 +193,7 @@ def register_page(
     blocks: list[list[str]] | None = None,
     *,
     group: str | None = None,
+    page: FakePage | None = None,
 ) -> FakePage:
     """Build a `FakePage` and register it under ``title``, optionally nested under ``group``.
 
@@ -133,17 +201,25 @@ def register_page(
     drives whichever `SettingsDialog.add_page` overload the arguments call for (#277) and hands the
     page back to assert on.
 
+    Registration itself calls ``seed_defaults`` and ``drop_changes`` once each (#342, to capture the
+    two snapshots), so both counters are zeroed afterwards -- a test then counts only what *it*
+    triggers.
+
     :param dialog: the dialog to register into.
     :param title: the page's title, as the tree should show it.
     :param blocks: the page's blocks, as `FakePage` takes them.
     :param group: the group to nest the page's row under, or ``None`` for a top-level row.
+    :param page: the page to register, for a test needing a `FakePage` subclass; built here otherwise.
     :returns: the page just registered.
     """
-    page = FakePage(blocks)
+    if page is None:
+        page = FakePage(blocks)
     if group is None:
         dialog.add_page(title, page)
     else:
         dialog.add_page(group, title, page)
+    page.drop_calls = 0
+    page.defaults_calls = 0
     return page
 
 
@@ -2549,4 +2625,372 @@ def test_starts_with_the_persisted_auto_apply_toggle(qtbot: QtBot, fake_persiste
     assert auto_apply_check_box(dialog).is_checked() is True
 
 
+# endregion
+
+
+# region per-frame Reset / Defaults and the toolbar's Defaults actions (#342)
+# pylint's inference mistakes FakePage.edits / .frames for signal templates (the same false positive
+# the dirty-state region above silences line by line); scoped over this region instead.
+# pylint: disable=no-member
+
+
+def frame_header(dialog: SettingsDialog, frame: QFrame) -> SettingsFrameHeader | None:
+    """The header row the dialog built for ``frame`` at registration, or ``None`` if it built none.
+
+    :param dialog: the dialog to inspect.
+    :param frame: one of a registered page's blocks.
+    :returns: its `SettingsFrameHeader`, if any.
+    """
+    headers = dialog._SettingsDialog__frame_headers  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    return headers.get(frame)
+
+
+def test_registration_leaves_the_page_showing_its_saved_values(qtbot: QtBot) -> None:
+    """Capturing the defaults snapshot passes through ``seed_defaults`` and back through
+    ``drop_changes``, so a page comes out of ``add_page`` exactly as it went in.
+
+    **Test steps:**
+
+    * register a page with one editable frame
+    * verify both calls happened, the edit shows the saved text, and the frame is clean
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    page = FakePage([["Name"]])
+
+    dialog.add_page("Registry", page)
+
+    assert page.defaults_calls == 1
+    assert page.drop_calls == 1
+    assert page.edits[0].text() == SAVED_TEXT
+    refresh_dirty_state(dialog)
+    assert page.frames[0].property("dirty") is False
+
+
+def test_every_frame_with_a_labeled_header_and_values_gets_a_header_row(qtbot: QtBot) -> None:
+    """A frame that declares a ``<frame>_label`` and holds a value widget is given the two buttons.
+
+    **Test steps:**
+
+    * register a page with two such frames
+    * verify each has a header sitting first in the frame's layout, holding the frame's own label
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    page = register_page(dialog, "Registry", [["Name"], ["Path"]])
+
+    for frame in page.frames:
+        header = frame_header(dialog, frame)
+        assert header is not None
+        frame_layout = frame.layout()
+        assert frame_layout is not None
+        assert frame_layout.indexOf(header) == 0
+        label = frame.findChild(QLabel, f"{frame.objectName()}_label")
+        assert label is not None
+        assert label.parentWidget() is header
+
+
+def test_a_frame_without_a_named_label_gets_no_header_row(qtbot: QtBot) -> None:
+    """A frame whose first row is not a ``<frame>_label`` -- the Scrapers table frame's shape -- is
+    left as its ``.ui`` drew it.
+
+    **Test steps:**
+
+    * register a page with one frame whose label carries no name
+    * verify no header was built for it
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    page = FakePage([["Name"]])
+    page.findChildren(QLabel)[0].setObjectName("")
+    register_page(dialog, "Registry", page=page)
+
+    assert frame_header(dialog, page.frames[0]) is None
+
+
+def test_a_scratch_frame_gets_reset_and_defaults_but_no_apply(qtbot: QtBot) -> None:
+    """A try-it frame's sample can be put back as it was or as shipped, but there is nothing in it
+    to save -- and typing into it never dirties the page or lights the toolbar's Defaults.
+
+    **Test steps:**
+
+    * register a page whose one frame is flagged ``scratch``, type into it, refresh
+    * verify the row has Reset and Defaults only, both enabled, the frame untinted, the page's
+      toolbar Defaults off; Reset then puts the sample back
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    page = FakePage([["Sample"]])
+    page.frames[0].setProperty(SCRATCH_PROPERTY, True)
+    register_page(dialog, "Registry", page=page)
+    header = frame_header(dialog, page.frames[0])
+    assert header is not None
+    assert [b.defaultAction() for b in header.findChildren(QToolButton)] == [
+        header.reset_action,
+        header.defaults_action,
+    ]
+
+    page.edits[0].setText("typed")
+    refresh_dirty_state(dialog)
+
+    assert header.reset_action.isEnabled() is True
+    assert header.defaults_action.isEnabled() is True
+    assert page.frames[0].property("dirty") is False
+    assert dialog_ui(dialog).defaults_current_page_action.isEnabled() is False  # type: ignore[attr-defined]
+    header.reset_action.trigger()
+    assert page.edits[0].text() == SAVED_TEXT
+
+
+def test_a_list_editor_in_a_headed_frame_loses_its_own_restore_button(qtbot: QtBot) -> None:
+    """The row's Defaults puts the shipped list back, so the editor's own restore button -- which said
+    the same thing from beside the table -- is hidden; the row still carries all three buttons.
+
+    **Test steps:**
+
+    * register a page whose frame holds a `StringListEditor`
+    * verify the editor's reset action is hidden and the row has Apply, Reset and Defaults
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    page = FakePage([["Patterns"]])
+    frame_layout = page.frames[0].layout()
+    assert frame_layout is not None
+    editor = StringListEditor(page.frames[0])
+    editor.defaults = ("shipped",)  # what makes the editor show its restore button at all
+    frame_layout.addWidget(editor)
+    assert editor.reset_action.isVisible() is True
+    register_page(dialog, "Registry", page=page)
+
+    assert editor.reset_action.isVisible() is False
+    header = frame_header(dialog, page.frames[0])
+    assert header is not None
+    assert [b.defaultAction() for b in header.findChildren(QToolButton)] == [
+        header.apply_action,
+        header.reset_action,
+        header.defaults_action,
+    ]
+
+
+def test_applying_one_frame_saves_its_edit_alone_and_leaves_the_page_dirty(qtbot: QtBot) -> None:
+    """A frame's Apply persists that frame's change and nothing else: the other frame's edit is still
+    on screen and still dirty afterwards, the page keeps its badge, and only once that frame is
+    applied too does the page settle.
+
+    **Test steps:**
+
+    * register a two-frame page, edit both, refresh
+    * trigger the first frame's Apply
+    * verify the save saw the first edit changed and the second at its saved text, both edits still
+      show what was typed, the first frame is clean and the second dirty, the page still badged
+    * trigger the second frame's Apply and verify the page is clean
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    page = register_page(dialog, "Registry", [["Name"], ["Path"]])
+    page.edits[0].setText("first")
+    page.edits[1].setText("second")
+    refresh_dirty_state(dialog)
+    first = frame_header(dialog, page.frames[0])
+    second = frame_header(dialog, page.frames[1])
+    assert first is not None and second is not None
+
+    first.apply_action.trigger()
+
+    assert page.saved_texts == [["first", SAVED_TEXT]]
+    assert [edit.text() for edit in page.edits] == ["first", "second"]
+    assert page.frames[0].property("dirty") is False
+    assert page.frames[1].property("dirty") is True
+    assert first.apply_action.isEnabled() is False
+    assert second.apply_action.isEnabled() is True
+    assert page.is_dirty() is True
+    assert visible_titles(dialog) == [f"{DIRTY_DOCK_MARKER}Registry"]
+
+    second.apply_action.trigger()
+
+    assert page.saved_texts == [["first", SAVED_TEXT], ["first", "second"]]
+    assert page.frames[1].property("dirty") is False
+    assert visible_titles(dialog) == ["Registry"]
+
+
+def test_reset_returns_an_edited_frame_to_its_saved_values_and_clears_the_tint(qtbot: QtBot) -> None:
+    """Pressing a frame's Reset writes the saved baseline back into its widgets, which the dirty
+    comparison then finds clean -- no commit, no baseline resync.
+
+    **Test steps:**
+
+    * register a page with one frame, edit its field, refresh
+    * trigger the frame's Reset action
+    * verify the edit shows the saved text, the tint is off, and nothing was dropped or saved
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    page = register_page(dialog, "Registry", [["Name"]])
+    page.edits[0].setText("changed")
+    refresh_dirty_state(dialog)
+    assert page.frames[0].property("dirty") is True
+    header = frame_header(dialog, page.frames[0])
+    assert header is not None
+
+    header.reset_action.trigger()
+
+    assert page.edits[0].text() == SAVED_TEXT
+    assert page.frames[0].property("dirty") is False
+    assert page.drop_calls == 0
+    assert page.save_calls == 0
+
+
+def test_defaults_stages_the_factory_values_and_apply_then_persists_them(qtbot: QtBot) -> None:
+    """Pressing a frame's Defaults writes the factory snapshot back, which reads as a dirty edit
+    until Apply commits it as any other.
+
+    **Test steps:**
+
+    * register a page with one frame (its saved text differs from the factory text)
+    * trigger the frame's Defaults action
+    * verify the edit shows the factory text and the frame is tinted
+    * trigger Apply and verify the page was saved
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    page = register_page(dialog, "Registry", [["Name"]])
+    header = frame_header(dialog, page.frames[0])
+    assert header is not None
+
+    header.defaults_action.trigger()
+
+    assert page.edits[0].text() == DEFAULT_TEXT
+    assert page.frames[0].property("dirty") is True
+    # nothing set by hand: the staged factory text alone is what makes the page dirty and Apply live
+    refresh_dirty_state(dialog)
+    assert dialog_ui(dialog).apply_current_page_action.isEnabled() is True  # type: ignore[attr-defined]
+    dialog_ui(dialog).apply_current_page_action.trigger()  # type: ignore[attr-defined]
+    assert page.save_calls == 1
+
+
+def test_reset_enables_while_dirty_and_defaults_while_off_its_defaults(qtbot: QtBot) -> None:
+    """Each button's enablement follows the frame's own state on every refresh.
+
+    **Test steps:**
+
+    * register a page with one frame: clean, so Reset is off and Defaults (saved != factory) is on
+    * edit the field: Reset comes on
+    * type the factory text: Reset stays on, Defaults goes off
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    page = register_page(dialog, "Registry", [["Name"]])
+    header = frame_header(dialog, page.frames[0])
+    assert header is not None
+    refresh_dirty_state(dialog)
+    assert header.reset_action.isEnabled() is False
+    assert header.defaults_action.isEnabled() is True
+
+    page.edits[0].setText("changed")
+    refresh_dirty_state(dialog)
+    assert header.reset_action.isEnabled() is True
+    assert header.defaults_action.isEnabled() is True
+
+    page.edits[0].setText(DEFAULT_TEXT)
+    refresh_dirty_state(dialog)
+    assert header.reset_action.isEnabled() is True
+    assert header.defaults_action.isEnabled() is False
+
+
+def test_a_frame_restoring_page_has_its_hooks_called_instead_of_the_generic_writers(qtbot: QtBot) -> None:
+    """A page satisfying `FrameRestoringPage` takes over both buttons: the dialog calls its hooks
+    with the frame and touches no widget itself.
+
+    **Test steps:**
+
+    * register a `FrameRestoringFakePage` with one frame, edit its field, refresh (enabling all three)
+    * trigger the frame's Apply, Reset, then Defaults
+    * verify each hook saw the frame once, nothing was saved, and the edit was left as typed
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    page = FrameRestoringFakePage([["Name"]])
+    register_page(dialog, "Registry", page=page)
+    page.edits[0].setText("changed")
+    refresh_dirty_state(dialog)
+    header = frame_header(dialog, page.frames[0])
+    assert header is not None
+
+    header.apply_action.trigger()
+    header.reset_action.trigger()
+    header.defaults_action.trigger()
+
+    assert page.applied_frames == [page.frames[0]]
+    assert page.reset_frames == [page.frames[0]]
+    assert page.defaults_frames == [page.frames[0]]
+    assert page.save_calls == 0
+    assert page.edits[0].text() == "changed"
+
+
+def test_defaults_all_action_seeds_every_page(qtbot: QtBot) -> None:
+    """Triggering "Defaults All" stages every registered page's factory values.
+
+    **Test steps:**
+
+    * add two pages
+    * trigger ``defaults_all_action``
+    * verify both pages' ``seed_defaults`` was called and their edits show the factory text
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    first = register_page(dialog, "Registry", [["Name"]])
+    second = register_page(dialog, "Markdown Rendering", [["Engine"]])
+
+    dialog_ui(dialog).defaults_all_action.trigger()  # type: ignore[attr-defined]
+
+    assert first.defaults_calls == 1
+    assert second.defaults_calls == 1
+    assert first.edits[0].text() == DEFAULT_TEXT
+    assert second.edits[0].text() == DEFAULT_TEXT
+
+
+def test_defaults_current_page_action_seeds_only_the_selected_page(qtbot: QtBot) -> None:
+    """Triggering "Defaults" stages only the currently-selected page's factory values.
+
+    **Test steps:**
+
+    * add two pages, select the second
+    * trigger ``defaults_current_page_action``
+    * verify only the second page's ``seed_defaults`` was called
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    first = register_page(dialog, "Registry", [["Name"]])
+    second = register_page(dialog, "Markdown Rendering", [["Engine"]])
+    select_page(dialog, "Markdown Rendering")
+
+    dialog_ui(dialog).defaults_current_page_action.trigger()  # type: ignore[attr-defined]
+
+    assert first.defaults_calls == 0
+    assert second.defaults_calls == 1
+
+
+def test_defaults_actions_are_disabled_once_every_page_is_at_its_defaults(qtbot: QtBot) -> None:
+    """The toolbar's Defaults / Defaults All enable only while some frame is away from its factory
+    values.
+
+    **Test steps:**
+
+    * add one page (saved text differs from factory): both actions are on
+    * trigger "Defaults All": both go off
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    register_page(dialog, "Registry", [["Name"]])
+    refresh_dirty_state(dialog)
+    ui = dialog_ui(dialog)
+    assert ui.defaults_current_page_action.isEnabled() is True  # type: ignore[attr-defined]
+    assert ui.defaults_all_action.isEnabled() is True  # type: ignore[attr-defined]
+
+    ui.defaults_all_action.trigger()  # type: ignore[attr-defined]
+
+    assert ui.defaults_current_page_action.isEnabled() is False  # type: ignore[attr-defined]
+    assert ui.defaults_all_action.isEnabled() is False  # type: ignore[attr-defined]
+
+
+# pylint: enable=no-member
 # endregion

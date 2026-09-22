@@ -79,6 +79,10 @@ class RegistryPage(QWidget):
         """Discard the staged tray edit -- register/unregister already took effect when clicked."""
         self.__tray.drop_changes()
 
+    def seed_defaults(self) -> None:
+        """Stage the tray block's factory value -- registration is not a setting (#342)."""
+        self.__tray.seed_defaults()
+
     def __register(self) -> None:
         """Register the file association and context menus, then reflect the result."""
         windows_registration.register(self.__exe_path, self.__archive_extensions)

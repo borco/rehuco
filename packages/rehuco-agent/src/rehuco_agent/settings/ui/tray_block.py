@@ -5,7 +5,7 @@ from typing import Final
 from PySide6.QtWidgets import QCheckBox, QLabel, QSystemTrayIcon
 
 from ..persistent_settings import persistent_settings
-from ..tray_settings import shared_tray_settings
+from ..tray_settings import TraySettings, shared_tray_settings
 
 
 class TrayBlock:
@@ -54,3 +54,7 @@ class TrayBlock:
     def drop_changes(self) -> None:
         """Discard the staged edit, reverting the checkbox to the shared settings' current value."""
         self.__enabled_check_box.setChecked(shared_tray_settings().enabled)
+
+    def seed_defaults(self) -> None:
+        """Stage the factory value: what an unloaded `TraySettings` holds (#342)."""
+        self.__enabled_check_box.setChecked(TraySettings().enabled)

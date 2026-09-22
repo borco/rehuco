@@ -13,8 +13,8 @@ from rehuco_core import (
 )
 
 from ...item_action_icons import apply_item_action_icons
-from ..deletion_settings import shared_deletion_settings
-from ..excluded_files_settings import normalize_patterns, shared_excluded_files_settings
+from ..deletion_settings import DeletionSettings, shared_deletion_settings
+from ..excluded_files_settings import ExcludedFilesSettings, normalize_patterns, shared_excluded_files_settings
 from ..persistent_settings import persistent_settings
 from .files_page_ui import Ui_FilesPage
 
@@ -107,11 +107,23 @@ class FilesPage(QWidget):
 
     def drop_changes(self) -> None:
         """Discard both staged choices, re-seeding each widget from its own settings object."""
-        deletion = shared_deletion_settings()
+        self.__show(shared_deletion_settings(), shared_excluded_files_settings())
+
+    def seed_defaults(self) -> None:
+        """Stage the factory values: what unloaded `DeletionSettings` and `ExcludedFilesSettings`
+        hold (#342)."""
+        self.__show(DeletionSettings(), ExcludedFilesSettings())
+
+    def __show(self, deletion: DeletionSettings, excluded: ExcludedFilesSettings) -> None:
+        """Fill every widget from the two settings objects.
+
+        :param deletion: the deletion choices to show.
+        :param excluded: the excluded-patterns list to show, as it resolves.
+        """
         self.__ui.clear_backups_without_asking_check_box.setChecked(deletion.clear_backups_without_asking)
         self.__ui.delete_images_without_asking_check_box.setChecked(deletion.delete_images_without_asking)
         self.__ui.use_recycle_bin_check_box.setChecked(deletion.use_recycle_bin)
-        self.__ui.patterns_editor.values = shared_excluded_files_settings().excluded_file_patterns
+        self.__ui.patterns_editor.values = excluded.excluded_file_patterns
 
     def __structural_summary(self) -> str:
         """Describe the four structural exclusions, written from the constants rather than restated.

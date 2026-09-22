@@ -4,7 +4,7 @@ from collections.abc import Iterator
 from typing import Any
 
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import QCheckBox, QColorDialog, QPushButton, QRadioButton, QSpinBox
+from PySide6.QtWidgets import QCheckBox, QColorDialog, QFrame, QPushButton, QRadioButton, QSpinBox
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -14,7 +14,7 @@ from rehuco_agent.settings.deletion_settings import (
     DeletionSettings,
     shared_deletion_settings,
 )
-from rehuco_agent.settings.image_viewer_settings import shared_image_viewer_settings
+from rehuco_agent.settings.image_viewer_settings import ImageViewerSettings, shared_image_viewer_settings
 from rehuco_agent.settings.markdown_rendering_settings import (
     MarkdownRenderingSettings,
     shared_markdown_rendering_settings,
@@ -219,6 +219,21 @@ def spin_box(page: ImagesDisplayPage, name: str) -> QSpinBox:
     return box
 
 
+def backdrop_frame_of(page: ImagesDisplayPage) -> QFrame:
+    """The top-level frame holding the backdrop swatch -- what `SettingsFrameFilter` reports it under.
+
+    :param page: the page under test.
+    :returns: that frame.
+    """
+    button = page.findChild(QPushButton, "lightbox_backdrop_button")
+    assert isinstance(button, QPushButton)
+    frame = button.parentWidget()
+    while frame is not None and frame.parentWidget() is not page:
+        frame = frame.parentWidget()
+    assert isinstance(frame, QFrame)
+    return frame
+
+
 def strip_check_box(page: ImagesDisplayPage) -> QCheckBox:
     """The page's thumbnail-strip toggle.
 
@@ -356,6 +371,39 @@ def test_drop_changes_reverts_every_staged_choice(page: ImagesDisplayPage) -> No
     assert spin_box(page, "editor_preview_height_spin_box").value() == settings.editor_preview_height
 
 
+def test_seed_defaults_stages_the_factory_values_over_saved_ones(qtbot: QtBot) -> None:
+    """``seed_defaults`` shows what a fresh install would -- the document-overlay surface, the
+    shipped heights, backdrop and image-width cap -- as a staged edit against whatever is saved (#342).
+
+    **Test steps:**
+
+    * seed the shared settings away from every default touched here, and build the page
+    * call ``seed_defaults``
+    * verify the factory values are on screen and the page is dirty
+    """
+    factory = ImageViewerSettings()
+    settings = shared_image_viewer_settings()
+    settings.mode = ImageViewerMode.FULL_SCREEN
+    settings.strip_visible = not factory.strip_visible
+    settings.preview_image_height = factory.preview_image_height + 20
+    settings.lightbox_backdrop = "#123456"
+    shared_markdown_rendering_settings().max_image_width = MarkdownRenderingSettings().max_image_width + 1
+    built = ImagesDisplayPage()
+    qtbot.addWidget(built)
+
+    built.seed_defaults()
+
+    assert built.is_dirty()
+    document_overlay = built.findChild(QRadioButton, "document_overlay_radio_button")
+    assert isinstance(document_overlay, QRadioButton) and document_overlay.isChecked()
+    assert strip_check_box(built).isChecked() == factory.strip_visible
+    assert spin_box(built, "preview_height_spin_box").value() == factory.preview_image_height
+    backdrop_button = built.findChild(QPushButton, "lightbox_backdrop_button")
+    assert isinstance(backdrop_button, QPushButton)
+    assert backdrop_button.text() == QColor(factory.lightbox_backdrop).name()
+    assert width_spin_box(built).value() == MarkdownRenderingSettings().max_image_width
+
+
 # region the Content Images dock and the info overlay (#221)
 
 
@@ -449,6 +497,42 @@ def test_drop_changes_reverts_the_staged_content_images_choices(page: ImagesDisp
     assert check_box(page, "content_zip_names_check_box").isChecked() == settings.content_zip_names
     assert check_box(page, "content_folder_names_check_box").isChecked() == settings.content_folder_names
     assert check_box(page, "lightbox_info_check_box").isChecked() == settings.lightbox_info_visible
+
+
+def test_a_staged_backdrop_makes_its_own_frame_dirty(page: ImagesDisplayPage) -> None:
+    """The swatch holds the colour itself, so the settings dialog's generic frame snapshot sees a
+    backdrop change like any other -- which is what tints the frame and enables its Apply/Reset (#342).
+
+    **Test steps:**
+
+    * snapshot the page's frames, then stage a different backdrop
+    * verify the swatch's own frame is reported dirty
+    """
+    frame_filter = SettingsFrameFilter(page, "Display")
+
+    page.set_backdrop("#336699")
+
+    assert frame_filter.dirty_frames() == [backdrop_frame_of(page)]
+
+
+def test_resetting_the_backdrop_frame_restores_the_saved_colour(page: ImagesDisplayPage) -> None:
+    """A frame's generic Reset writes the swatch back through ``set_settings_value``, the same path
+    every other control's restore goes through (#342).
+
+    **Test steps:**
+
+    * snapshot the page's frames (saved colour), stage a different one
+    * ``restore_saved`` the swatch's frame
+    * verify the swatch shows the saved colour again
+    """
+    frame_filter = SettingsFrameFilter(page, "Display")
+    saved = page.backdrop
+    backdrop_frame = backdrop_frame_of(page)
+    page.set_backdrop("#336699")
+
+    frame_filter.restore_saved(backdrop_frame)
+
+    assert page.backdrop == saved
 
 
 def test_the_backdrop_is_picked_staged_and_applied(page: ImagesDisplayPage, mocker: MockerFixture) -> None:

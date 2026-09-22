@@ -531,6 +531,64 @@ def test_drop_changes_reverts_every_staged_choice(qtbot: QtBot) -> None:
     assert page.is_dirty() is False
 
 
+def test_seed_defaults_stages_the_factory_values_over_saved_ones(qtbot: QtBot) -> None:
+    """``seed_defaults`` shows what a fresh install would -- the bundled backend, no path, the shipped
+    formats -- as a staged edit against whatever is saved (#342).
+
+    **Test steps:**
+
+    * save the other backend, a path and one format, and build the page
+    * call ``seed_defaults``
+    * verify the factory values are on screen and the page is dirty
+    """
+    settings = shared_videos_settings()
+    settings.engine = FfprobeDurationProbe.NAME
+    settings.ffprobe_executable = MISSING_FFPROBE
+    settings.extensions = (".mp4",)
+    page = VideosPage()
+    qtbot.addWidget(page)
+    ui = page_ui(page)
+
+    page.seed_defaults()
+
+    assert ui.mediainfo_probe_radio_button.isChecked() is True
+    assert ui.ffprobe_executable_edit.text() == ""
+    assert extensions_editor(page).values == VIDEO_EXTENSIONS
+    assert page.is_dirty() is True
+
+
+def test_applying_one_frame_through_the_filter_saves_it_alone_on_a_page_that_reseeds_on_save(
+    qtbot: QtBot,
+) -> None:
+    """The generic one-frame commit (`SettingsFrameFilter.apply_frame`) on a real page whose
+    ``save_changes`` ends by re-seeding every widget from what was saved: the probe frame's path
+    lands in the settings, the extensions frame's staged list does not, and after the save the staged
+    list is back on screen and that frame alone reads dirty (#342).
+
+    **Test steps:**
+
+    * stage a path in the probe frame and a different list in the extensions frame
+    * ``apply_frame`` the probe frame with the page's own ``save_changes``
+    * verify what was saved, what is still on screen, and which frame is dirty
+    """
+    page = VideosPage()
+    qtbot.addWidget(page)
+    frame_filter = SettingsFrameFilter(page, "Videos")
+    ui = page_ui(page)
+    ui.ffprobe_executable_edit.setText(MISSING_FFPROBE)
+    extensions_editor(page).values = (".mkv",)
+
+    frame_filter.apply_frame(ui.probe_frame, page.save_changes)
+
+    settings = shared_videos_settings()
+    assert settings.ffprobe_executable == MISSING_FFPROBE
+    assert settings.video_extensions == VIDEO_EXTENSIONS
+    assert ui.ffprobe_executable_edit.text() == MISSING_FFPROBE
+    assert extensions_editor(page).values == (".mkv",)
+    assert frame_filter.dirty_frames() == [ui.extensions_frame]
+    assert page.is_dirty() is True
+
+
 # endregion
 
 # region the page shell

@@ -69,12 +69,23 @@ class ChecksumsPage(QWidget):
         """Discard the staged edits, re-seeding every control from persistent storage."""
         saved = ChecksumSettings()
         saved.load(persistent_settings())
+        self.__show(saved)
+
+    def seed_defaults(self) -> None:
+        """Stage the factory values: what an unloaded `ChecksumSettings` holds (#342)."""
+        self.__show(ChecksumSettings())
+
+    def __show(self, settings: ChecksumSettings) -> None:
+        """Fill every control from ``settings``.
+
+        :param settings: the values to show -- the saved ones, or a fresh object's defaults.
+        """
         names = list(CHECKSUM_ALGORITHMS)
-        button = self.__algorithms.button(names.index(saved.algorithm))
+        button = self.__algorithms.button(names.index(settings.algorithm))
         button.setChecked(True)
-        self.__ui.migrate_check_box.setChecked(saved.migrate_on_verify)
-        self.__ui.create_missing_check_box.setChecked(saved.create_missing_on_verify)
-        self.__ui.stale_days_spin_box.setValue(saved.stale_days)
+        self.__ui.migrate_check_box.setChecked(settings.migrate_on_verify)
+        self.__ui.create_missing_check_box.setChecked(settings.create_missing_on_verify)
+        self.__ui.stale_days_spin_box.setValue(settings.stale_days)
         self.__resync_migrate_label()
 
     def __selected_algorithm(self) -> str:

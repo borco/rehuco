@@ -149,3 +149,27 @@ def test_dropping_changes_re_seeds_from_storage(page: SessionPage) -> None:
 
     assert ui(page).restore_on_startup_check_box.isChecked()
     assert not page.is_dirty()
+
+
+def test_seed_defaults_stages_the_factory_value_over_a_saved_one(
+    page: SessionPage, fake_persistent_settings: FakeSettings
+) -> None:
+    """``seed_defaults`` shows the factory value -- restore on -- as a staged edit against a saved
+    off (#342).
+
+    **Test steps:**
+
+    * save the box off and drop into it
+    * call ``seed_defaults``
+    * verify the box is checked and the page is dirty
+    """
+    SessionRestoreSettings(restore_on_startup=False).save(
+        fake_persistent_settings  # pyright: ignore[reportArgumentType]
+    )
+    page.drop_changes()
+    assert not ui(page).restore_on_startup_check_box.isChecked()
+
+    page.seed_defaults()
+
+    assert ui(page).restore_on_startup_check_box.isChecked()
+    assert page.is_dirty()

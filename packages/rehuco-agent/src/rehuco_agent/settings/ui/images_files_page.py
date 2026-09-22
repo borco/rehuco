@@ -8,7 +8,7 @@ from rehuco_core import CONTENT_IMAGE_EXTENSIONS
 
 from ...item_action_icons import apply_item_action_icons
 from ..persistent_settings import persistent_settings
-from ..reference_images_settings import normalize_extensions, shared_reference_images_settings
+from ..reference_images_settings import ReferenceImagesSettings, normalize_extensions, shared_reference_images_settings
 from .images_files_page_ui import Ui_ImagesFilesPage
 
 
@@ -56,6 +56,10 @@ class ImagesFilesPage(QWidget):
     def drop_changes(self) -> None:
         """Discard the staged extension list, re-seeding the editor from the shared settings object."""
         self.__show_saved_extensions()
+
+    def seed_defaults(self) -> None:
+        """Stage the factory list: what an unloaded `ReferenceImagesSettings` resolves to (#342)."""
+        self.__ui.extensions_editor.values = ReferenceImagesSettings().content_image_extensions
 
     def __show_saved_extensions(self) -> None:
         """Fill the extensions editor with the set the shared reference-images settings resolve to."""

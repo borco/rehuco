@@ -14,12 +14,13 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPlainTextEdit,
+    QPushButton,
     QSpinBox,
     QVBoxLayout,
     QWidget,
 )
 from pytestqt.qtbot import QtBot
-from rehuco_agent.settings.ui.settings_frame_filter import SettingsFrameFilter
+from rehuco_agent.settings.ui.settings_frame_filter import SCRATCH_PROPERTY, SettingsFrameFilter
 
 
 def make_page(qtbot: QtBot, groups: list[list[str]]) -> tuple[QWidget, list[QFrame]]:
@@ -466,6 +467,33 @@ def test_editing_a_plain_text_edit_marks_its_frame_dirty(qtbot: QtBot) -> None:
     assert frame_filter.dirty_frames() == [frame]
 
 
+def test_a_push_button_is_not_a_value_widget(qtbot: QtBot) -> None:
+    """A non-checkable button holds nothing, so a frame with only one has no values to snapshot (#342).
+
+    **Test steps:**
+
+    * build a page whose one frame holds a plain push button beside a checkbox
+    * verify the frame's snapshot counts the checkbox alone: it has values, and pressing the button
+      (which flips nothing) leaves it clean, while a frame with only the button has no values
+    """
+    page = QWidget()
+    qtbot.addWidget(page)
+    layout = QVBoxLayout(page)
+    mixed = QFrame(page)
+    mixed_layout = QVBoxLayout(mixed)
+    mixed_layout.addWidget(QPushButton("Browse...", mixed))
+    mixed_layout.addWidget(QCheckBox(mixed))
+    layout.addWidget(mixed)
+    buttons_only = QFrame(page)
+    QVBoxLayout(buttons_only).addWidget(QPushButton("Register", buttons_only))
+    layout.addWidget(buttons_only)
+    frame_filter = SettingsFrameFilter(page, "Markdown Rendering")
+
+    assert frame_filter.has_values(mixed) is True
+    assert frame_filter.has_values(buttons_only) is False
+    assert frame_filter.dirty_frames() == []
+
+
 def test_changing_a_string_list_editors_values_marks_its_frame_dirty(qtbot: QtBot) -> None:
     """A `StringListEditor` counts as one value widget, read through its own ``values`` property.
 
@@ -504,6 +532,367 @@ def test_a_clean_frame_alongside_a_dirty_one_is_not_reported(qtbot: QtBot) -> No
     edits[1].setText("changed")
 
     assert frame_filter.dirty_frames() == [frames[1]]
+
+
+# endregion
+
+
+# region defaults snapshot and restoring either snapshot (#342)
+
+
+def make_single_frame_page(qtbot: QtBot, widget: QWidget) -> tuple[QWidget, QFrame]:
+    """Build a page with one top-level frame holding ``widget`` alone.
+
+    :param qtbot: the Qt test bot, to own the page.
+    :param widget: the value widget to put in the frame; reparented to it.
+    :returns: the page and its one frame.
+    """
+    page = QWidget()
+    qtbot.addWidget(page)
+    layout = QVBoxLayout(page)
+    frame = QFrame(page)
+    frame_layout = QVBoxLayout(frame)
+    widget.setParent(frame)
+    frame_layout.addWidget(widget)
+    layout.addWidget(frame)
+    return page, frame
+
+
+def test_no_frame_is_at_its_defaults_before_they_are_captured(qtbot: QtBot) -> None:
+    """Without a defaults snapshot there is nothing to be at, so no frame is reported.
+
+    **Test steps:**
+
+    * build a filter and never call ``capture_defaults``
+    * verify ``frames_at_defaults`` is empty
+    """
+    page, _, _ = make_value_page(qtbot, 2)
+    frame_filter = SettingsFrameFilter(page, "Markdown Rendering")
+
+    assert frame_filter.frames_at_defaults() == []
+
+
+def test_frames_at_defaults_follows_the_captured_defaults_snapshot(qtbot: QtBot) -> None:
+    """A frame is at its defaults exactly while its widgets match what ``capture_defaults`` saw.
+
+    **Test steps:**
+
+    * type the factory text, capture defaults, type the saved text back, resync the baseline
+    * verify the frame is clean but not at its defaults
+    * type the factory text again: verify it is at its defaults, and dirty
+    """
+    page, frames, edits = make_value_page(qtbot, 1)
+    frame_filter = SettingsFrameFilter(page, "Markdown Rendering")
+    edits[0].setText("factory")
+    frame_filter.capture_defaults()
+    edits[0].setText("saved")
+    frame_filter.resync_baseline()
+    assert frame_filter.dirty_frames() == []
+    assert frame_filter.frames_at_defaults() == []
+
+    edits[0].setText("factory")
+
+    assert frame_filter.dirty_frames() == [frames[0]]
+    assert frame_filter.frames_at_defaults() == [frames[0]]
+
+
+def test_has_values_is_false_for_a_frame_with_no_value_widget(qtbot: QtBot) -> None:
+    """A frame with nothing snapshotted has nothing a Reset/Defaults pair could act on -- a scratch
+    frame with an edit *does* have values (its own buttons need them), a label-only frame does not.
+
+    **Test steps:**
+
+    * build a page with a label-only frame, a scratch-flagged frame with an edit, and a plain one
+    * verify the two frames with an edit have values and the label-only one does not
+    """
+    page, frames, _ = make_value_page(qtbot, 2)
+    frames[0].setProperty(SCRATCH_PROPERTY, True)
+    label_only = QFrame(page)
+    QVBoxLayout(label_only).addWidget(QLabel("Note", label_only))
+    page_layout = page.layout()
+    assert page_layout is not None
+    page_layout.addWidget(label_only)
+    frame_filter = SettingsFrameFilter(page, "Markdown Rendering")
+
+    assert frame_filter.has_values(frames[0]) is True
+    assert frame_filter.is_scratch(frames[0]) is True
+    assert frame_filter.has_values(frames[1]) is True
+    assert frame_filter.is_scratch(frames[1]) is False
+    assert frame_filter.has_values(label_only) is False
+
+
+def test_a_scratch_frame_answers_its_own_state_but_never_the_pages(qtbot: QtBot) -> None:
+    """A scratch frame's edit moves ``differs_from_saved``/``differs_from_defaults`` -- what its
+    Reset/Defaults follow -- while ``dirty_frames``/``frames_at_defaults`` keep leaving it out.
+
+    **Test steps:**
+
+    * flag a frame scratch, capture defaults, type into its edit
+    * verify the per-frame queries see the edit and the page-level lists do not
+    """
+    page, frames, edits = make_value_page(qtbot, 1)
+    frames[0].setProperty(SCRATCH_PROPERTY, True)
+    frame_filter = SettingsFrameFilter(page, "Markdown Rendering")
+    frame_filter.capture_defaults()
+    assert frame_filter.differs_from_defaults(frames[0]) is False
+
+    edits[0].setText("typed")
+
+    assert frame_filter.differs_from_saved(frames[0]) is True
+    assert frame_filter.differs_from_defaults(frames[0]) is True
+    assert frame_filter.dirty_frames() == []
+    assert frame_filter.frames_at_defaults() == []
+
+
+def test_list_editors_names_a_frames_list_editors_and_nothing_else(qtbot: QtBot) -> None:
+    """The list editors among a frame's value widgets, for the dialog to hide their restore buttons.
+
+    **Test steps:**
+
+    * build a page with a list-editor frame and a line-edit frame
+    * verify the former answers its editor and the latter nothing
+    """
+    editor = StringListEditor()
+    page, list_frame = make_single_frame_page(qtbot, editor)
+    edit_frame = QFrame(page)
+    QVBoxLayout(edit_frame).addWidget(QLineEdit(edit_frame))
+    page_layout = page.layout()
+    assert page_layout is not None
+    page_layout.addWidget(edit_frame)
+    frame_filter = SettingsFrameFilter(page, "Markdown Rendering")
+
+    assert frame_filter.list_editors(list_frame) == [editor]
+    assert frame_filter.list_editors(edit_frame) == []
+
+
+def test_apply_frame_saves_only_that_frames_edits_and_keeps_the_others_staged(qtbot: QtBot) -> None:
+    """A one-frame commit parks the other frames at their saved values around the page's save, then
+    hands their edits back -- so what was saved is one frame's change, and what is on screen is
+    everything typed.
+
+    **Test steps:**
+
+    * edit both frames of a two-frame page
+    * ``apply_frame`` the first, with a save that records what each edit showed at that moment
+    * verify the save saw the first edit changed and the second at its baseline, both edits still show
+      what was typed, and only the second frame is dirty
+    """
+    page, frames, edits = make_value_page(qtbot, 2)
+    frame_filter = SettingsFrameFilter(page, "Markdown Rendering")
+    edits[0].setText("first")
+    edits[1].setText("second")
+    seen: list[tuple[str, str]] = []
+
+    frame_filter.apply_frame(frames[0], lambda: seen.append((edits[0].text(), edits[1].text())))
+
+    assert seen == [("first", "")]
+    assert (edits[0].text(), edits[1].text()) == ("first", "second")
+    assert frame_filter.dirty_frames() == [frames[1]]
+
+
+def test_apply_frame_leaves_a_scratch_frames_typed_values_alone(qtbot: QtBot) -> None:
+    """A scratch frame is neither parked nor applied: its samples stay as typed through a sibling's
+    commit, and are never handed to the save.
+
+    **Test steps:**
+
+    * type into a scratch frame and a plain frame, apply the plain one
+    * verify the scratch edit showed its typed text during the save and still does
+    """
+    page, frames, edits = make_value_page(qtbot, 2)
+    frames[0].setProperty(SCRATCH_PROPERTY, True)
+    frame_filter = SettingsFrameFilter(page, "Markdown Rendering")
+    edits[0].setText("sample")
+    edits[1].setText("setting")
+    seen: list[str] = []
+
+    frame_filter.apply_frame(frames[1], lambda: seen.append(edits[0].text()))
+
+    assert seen == ["sample"]
+    assert edits[0].text() == "sample"
+    assert frame_filter.dirty_frames() == []
+
+
+def test_restore_saved_writes_the_baseline_back_into_a_line_edit(qtbot: QtBot) -> None:
+    """Restoring the saved snapshot undoes a typed edit, and the frame reads clean again.
+
+    **Test steps:**
+
+    * type into a line edit, then ``restore_saved`` its frame
+    * verify the edit shows the baseline text and the frame is not dirty
+    """
+    page, frames, edits = make_value_page(qtbot, 1)
+    edits[0].setText("saved")
+    frame_filter = SettingsFrameFilter(page, "Markdown Rendering")
+    edits[0].setText("changed")
+
+    frame_filter.restore_saved(frames[0])
+
+    assert edits[0].text() == "saved"
+    assert frame_filter.dirty_frames() == []
+
+
+def test_restore_defaults_writes_the_defaults_snapshot_back(qtbot: QtBot) -> None:
+    """Restoring the defaults snapshot puts the factory text on screen, which is a dirty edit.
+
+    **Test steps:**
+
+    * capture defaults with the factory text, resync the baseline with the saved text
+    * ``restore_defaults`` the frame
+    * verify the edit shows the factory text, the frame is dirty and at its defaults
+    """
+    page, frames, edits = make_value_page(qtbot, 1)
+    frame_filter = SettingsFrameFilter(page, "Markdown Rendering")
+    edits[0].setText("factory")
+    frame_filter.capture_defaults()
+    edits[0].setText("saved")
+    frame_filter.resync_baseline()
+
+    frame_filter.restore_defaults(frames[0])
+
+    assert edits[0].text() == "factory"
+    assert frame_filter.dirty_frames() == [frames[0]]
+    assert frame_filter.frames_at_defaults() == [frames[0]]
+
+
+def test_restore_writes_a_plain_text_edit_back(qtbot: QtBot) -> None:
+    """A `QPlainTextEdit` is restored through ``setPlainText``.
+
+    **Test steps:**
+
+    * snapshot a plain text edit holding the saved text, retype it, restore
+    * verify it shows the saved text
+    """
+    text_edit = QPlainTextEdit()
+    text_edit.setPlainText("saved")
+    page, frame = make_single_frame_page(qtbot, text_edit)
+    frame_filter = SettingsFrameFilter(page, "Markdown Rendering")
+    text_edit.setPlainText("changed")
+
+    frame_filter.restore_saved(frame)
+
+    assert text_edit.toPlainText() == "saved"
+
+
+def test_restore_writes_a_spin_box_back(qtbot: QtBot) -> None:
+    """A `QSpinBox` is restored through ``setValue``.
+
+    **Test steps:**
+
+    * snapshot a spin box at 3, change it, restore
+    * verify it reads 3
+    """
+    spin_box = QSpinBox()
+    spin_box.setValue(3)
+    page, frame = make_single_frame_page(qtbot, spin_box)
+    frame_filter = SettingsFrameFilter(page, "Markdown Rendering")
+    spin_box.setValue(7)
+
+    frame_filter.restore_saved(frame)
+
+    assert spin_box.value() == 3
+
+
+def test_restore_writes_a_checkbox_back(qtbot: QtBot) -> None:
+    """A `QCheckBox` is restored through ``setChecked``.
+
+    **Test steps:**
+
+    * snapshot a checked box, uncheck it, restore
+    * verify it is checked
+    """
+    check_box = QCheckBox()
+    check_box.setChecked(True)
+    page, frame = make_single_frame_page(qtbot, check_box)
+    frame_filter = SettingsFrameFilter(page, "Markdown Rendering")
+    check_box.setChecked(False)
+
+    frame_filter.restore_saved(frame)
+
+    assert check_box.isChecked() is True
+
+
+def test_restore_writes_a_string_list_editors_rows_back_through_its_model(qtbot: QtBot) -> None:
+    """A `StringListEditor` is restored row by row through its model, so an added, removed and
+    retyped entry all come back as they were snapshotted.
+
+    **Test steps:**
+
+    * snapshot an editor holding two entries, replace them with three others, restore
+    * verify the two original entries are back, in order, and the frame is clean
+    """
+    editor = StringListEditor()
+    editor.values = ["one", "two"]
+    page, frame = make_single_frame_page(qtbot, editor)
+    frame_filter = SettingsFrameFilter(page, "Markdown Rendering")
+    editor.values = ["three", "four", "five"]
+
+    frame_filter.restore_saved(frame)
+
+    assert editor.values == ("one", "two")
+    assert frame_filter.dirty_frames() == []
+
+
+def test_restore_refills_a_string_list_editor_that_was_emptied(qtbot: QtBot) -> None:
+    """An editor with every row deleted gets its snapshot's rows back -- no rows to remove first.
+
+    **Test steps:**
+
+    * snapshot an editor holding one entry, delete it, restore
+    * verify the entry is back
+    """
+    editor = StringListEditor()
+    editor.values = ["one"]
+    page, frame = make_single_frame_page(qtbot, editor)
+    frame_filter = SettingsFrameFilter(page, "Markdown Rendering")
+    editor.values = []
+
+    frame_filter.restore_saved(frame)
+
+    assert editor.values == ("one",)
+
+
+def test_restore_empties_a_string_list_editor_whose_snapshot_was_empty(qtbot: QtBot) -> None:
+    """A snapshot of no rows restores to no rows.
+
+    **Test steps:**
+
+    * snapshot an empty editor, add an entry, restore
+    * verify the editor is empty again
+    """
+    editor = StringListEditor()
+    page, frame = make_single_frame_page(qtbot, editor)
+    frame_filter = SettingsFrameFilter(page, "Markdown Rendering")
+    editor.values = ["one"]
+
+    frame_filter.restore_saved(frame)
+
+    assert not editor.values
+
+
+def test_restore_puts_a_scratch_frames_samples_back(qtbot: QtBot) -> None:
+    """A scratch frame is snapshotted like any other, so its Reset and Defaults have something to
+    return to -- the try-it sample record as it was, or as shipped.
+
+    **Test steps:**
+
+    * capture defaults with the shipped sample, resync with a retyped one, type a third
+    * restore saved, then defaults
+    * verify each restore lands on its own reference value
+    """
+    page, frames, edits = make_value_page(qtbot, 1)
+    frames[0].setProperty(SCRATCH_PROPERTY, True)
+    frame_filter = SettingsFrameFilter(page, "Markdown Rendering")
+    edits[0].setText("shipped")
+    frame_filter.capture_defaults()
+    edits[0].setText("retyped")
+    frame_filter.resync_baseline()
+    edits[0].setText("typed")
+
+    frame_filter.restore_saved(frames[0])
+    assert edits[0].text() == "retyped"
+    frame_filter.restore_defaults(frames[0])
+    assert edits[0].text() == "shipped"
 
 
 # endregion

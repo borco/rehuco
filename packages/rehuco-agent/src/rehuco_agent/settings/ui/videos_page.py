@@ -90,7 +90,17 @@ class VideosPage(QWidget):
 
     def drop_changes(self) -> None:
         """Discard the staged edits, re-seeding every widget from the shared settings."""
-        settings = shared_videos_settings()
+        self.__show(shared_videos_settings())
+
+    def seed_defaults(self) -> None:
+        """Stage the factory values: what an unloaded `VideosSettings` holds (#342)."""
+        self.__show(VideosSettings())
+
+    def __show(self, settings: VideosSettings) -> None:
+        """Fill every widget from ``settings``.
+
+        :param settings: the values to show -- the shared object's saved ones, or a fresh one's defaults.
+        """
         if settings.engine == FfprobeDurationProbe.NAME:
             self.__ui.ffprobe_probe_radio_button.setChecked(True)
         else:

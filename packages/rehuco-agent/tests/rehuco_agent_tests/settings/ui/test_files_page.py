@@ -226,6 +226,28 @@ def test_drop_changes_reverts_the_staged_recycle_bin_choice(page: FilesPage) -> 
     assert not page.is_dirty()
 
 
+def test_seed_defaults_stages_the_factory_values_over_saved_ones(qtbot: QtBot) -> None:
+    """``seed_defaults`` shows what a fresh install would -- Recycle Bin on, the shipped exclusion
+    patterns -- as a staged edit against whatever is saved (#342).
+
+    **Test steps:**
+
+    * seed the shared settings with the Recycle Bin off and one custom pattern, and build the page
+    * call ``seed_defaults``
+    * verify the factory values are on screen and the page is dirty
+    """
+    shared_deletion_settings().use_recycle_bin = False
+    shared_excluded_files_settings().patterns = ("*.bak",)
+    page = FilesPage()
+    qtbot.addWidget(page)
+
+    page.seed_defaults()
+
+    assert recycle_bin_check_box(page).isChecked() is True
+    assert patterns_editor(page).values == EXCLUDED_FILE_PATTERNS
+    assert page.is_dirty()
+
+
 WITHOUT_ASKING_FIELDS = ("clear_backups_without_asking", "delete_images_without_asking")
 
 

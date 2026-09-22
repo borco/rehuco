@@ -367,6 +367,29 @@ def test_dropping_changes_reverts_to_the_saved_patterns(page: ScreenshotPatterns
     assert editor_of(page).values == SCREENSHOT_NAME_PATTERNS
 
 
+def test_seed_defaults_stages_the_shipped_patterns_over_saved_ones(page: ScreenshotPatternsPage) -> None:
+    """``seed_defaults`` shows the shipped set as a staged edit against whatever is saved, and puts
+    the shipped try-it samples back too -- so that frame's own Defaults has a factory state to return
+    to (#342).
+
+    **Test steps:**
+
+    * save a custom pattern and drop into it; retype the samples
+    * call ``seed_defaults``
+    * verify the shipped patterns and samples are shown, and the page is dirty
+    """
+    shared_screenshot_patterns_settings().patterns = (r"^shot-(\d+)$",)
+    page.drop_changes()
+    assert editor_of(page).values == (ScreenshotNamePattern(r"^shot-(\d+)$"),)
+    try_it_editor_of(page).values = ("typed.jpg",)
+
+    page.seed_defaults()
+
+    assert editor_of(page).values == SCREENSHOT_NAME_PATTERNS
+    assert try_it_editor_of(page).values == DEFAULT_SAMPLES
+    assert page.is_dirty() is True
+
+
 def test_reset_restores_the_shipped_patterns(page: ScreenshotPatternsPage) -> None:
     """Reset is the shipped set, offered because there genuinely is a default to go back to.
 

@@ -400,6 +400,31 @@ def test_dropping_changes_reverts_to_the_saved_patterns(page: LocationTemplatesP
     assert editor_of(page).values == NAME_SUGGESTION_PATTERNS
 
 
+def test_seed_defaults_stages_the_shipped_patterns_over_saved_ones(page: LocationTemplatesPage) -> None:
+    """``seed_defaults`` shows the shipped set as a staged edit against whatever this type has saved,
+    and puts the shipped sample record back too -- so the try-it frame's own Defaults has a factory
+    state to return to (#342).
+
+    **Test steps:**
+
+    * save a custom pattern for this type and drop into it; type a sample title
+    * call ``seed_defaults``
+    * verify the shipped patterns and sample are shown, and the page is dirty
+    """
+    settings = shared_location_templates_settings()
+    settings.patterns = {**settings.patterns, "tutorial": ("{title} - archive",)}
+    page.drop_changes()
+    assert editor_of(page).values == ("{title} - archive",)
+    ui = page._LocationTemplatesPage__ui  # pyright: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    ui.sample_title_edit.setText("Typed Title")
+
+    page.seed_defaults()
+
+    assert editor_of(page).values == NAME_SUGGESTION_PATTERNS
+    assert ui.sample_title_edit.text() == DEFAULT_SAMPLE[0]
+    assert page.is_dirty() is True
+
+
 def test_reset_restores_the_shipped_patterns(page: LocationTemplatesPage) -> None:
     """Reset is the shipped set, offered because there genuinely is a default to go back to.
 

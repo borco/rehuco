@@ -284,6 +284,25 @@ def test_drop_changes_reverts_the_staged_extension_list(qtbot: QtBot) -> None:
     assert not built.is_dirty()
 
 
+def test_seed_defaults_stages_the_shipped_list_over_a_saved_one(qtbot: QtBot) -> None:
+    """``seed_defaults`` shows the shipped formats as a staged edit against whatever is saved (#342).
+
+    **Test steps:**
+
+    * seed the shared settings with two formats and build the page
+    * call ``seed_defaults``
+    * verify the shipped list is on screen and the page is dirty
+    """
+    shared_reference_images_settings().extensions = (".bmp", ".tif")
+    built = ImagesFilesPage()
+    qtbot.addWidget(built)
+
+    built.seed_defaults()
+
+    assert listed_extensions(built) == CONTENT_IMAGE_EXTENSIONS
+    assert built.is_dirty()
+
+
 def test_the_wrapping_extensions_note_is_never_clipped_at_any_width(page: ImagesFilesPage) -> None:
     """The note gets the height its text needs at the width it is given, and gives it back on widening.
 

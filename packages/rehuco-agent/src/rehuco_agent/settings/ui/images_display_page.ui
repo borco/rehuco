@@ -149,7 +149,7 @@
          </widget>
         </item>
         <item>
-         <widget class="QPushButton" name="lightbox_backdrop_button">
+         <widget class="ColorSwatchButton" name="lightbox_backdrop_button">
           <property name="toolTip">
            <string>The colour painted behind a maximized image. Applying it recolours every open viewer.</string>
           </property>
@@ -529,6 +529,13 @@
    </item>
   </layout>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>ColorSwatchButton</class>
+   <extends>QPushButton</extends>
+   <header>rehuco_agent.settings.ui.color_swatch_button</header>
+  </customwidget>
+ </customwidgets>
  <resources/>
  <connections/>
 </ui>

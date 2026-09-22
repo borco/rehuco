@@ -8,7 +8,7 @@ from typing import Final
 from PySide6.QtWidgets import QWidget
 from rehuco_core import DEFAULT_UNKNOWN_USERNAME
 
-from ..identity_settings import default_username, shared_identity_settings
+from ..identity_settings import IdentitySettings, default_username, shared_identity_settings
 from ..persistent_settings import persistent_settings
 from .identity_page_ui import Ui_IdentityPage
 
@@ -55,7 +55,19 @@ class IdentityPage(QWidget):
 
     def drop_changes(self) -> None:
         """Discard the staged edits, reverting both fields back to the shared settings' current values."""
-        settings = shared_identity_settings()
+        self.__show(shared_identity_settings())
+
+    def seed_defaults(self) -> None:
+        """Stage the factory values: what an unloaded `IdentitySettings` holds (#342) -- for the
+        current username, this machine's login, which is the same runtime answer a fresh install
+        gives."""
+        self.__show(IdentitySettings())
+
+    def __show(self, settings: IdentitySettings) -> None:
+        """Fill both fields from ``settings``.
+
+        :param settings: the values to show -- the shared object's saved ones, or a fresh one's defaults.
+        """
         self.__ui.current_username_edit.setText(settings.current_username)
         self.__ui.unknown_username_edit.setText(settings.unknown_username)
 

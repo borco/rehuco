@@ -285,3 +285,24 @@ def test_save_changes_applies_the_tray_choice_and_drop_changes_reverts_it(qtbot:
 
     assert ui.enabled_check_box.isChecked() is True
     assert ui.status_label.text() == desktop_integration_page.NOT_CHECKED_STATUS
+
+
+def test_seed_defaults_stages_the_tray_off_over_a_saved_on(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """``seed_defaults`` shows the factory value -- tray off -- as a staged edit against a saved on,
+    and leaves the registration controls alone (#342).
+
+    **Test steps:**
+
+    * save the tray on and construct the page
+    * call ``seed_defaults``
+    * verify the box is unchecked, the page is dirty, and the status label was never touched
+    """
+    shared_tray_settings().enabled = True
+    page, ui = build_page(qtbot, mocker)
+    assert ui.enabled_check_box.isChecked() is True
+
+    page.seed_defaults()
+
+    assert ui.enabled_check_box.isChecked() is False
+    assert page.is_dirty() is True
+    assert ui.status_label.text() == desktop_integration_page.NOT_CHECKED_STATUS
