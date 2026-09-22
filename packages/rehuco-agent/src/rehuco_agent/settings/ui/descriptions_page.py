@@ -4,10 +4,10 @@ line-numbers/line-endings/wrap-long-lines switches (#69)."""
 from typing import Final
 
 from PySide6.QtCore import QSignalBlocker
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QFrame, QWidget
 
-from ..description_editor_settings import shared_description_editor_settings
-from ..markdown_rendering_settings import shared_markdown_rendering_settings
+from ..description_editor_settings import DescriptionEditorSettings, shared_description_editor_settings
+from ..markdown_rendering_settings import MarkdownRenderingSettings, shared_markdown_rendering_settings
 from ..persistent_settings import persistent_settings
 from .descriptions_page_ui import Ui_DescriptionsPage
 
@@ -27,6 +27,14 @@ class DescriptionsPage(QWidget):
     ``_changed`` signals, which every open document's ``MarkdownView`` and ``MarkdownEdit`` are
     already connected to, so already-open viewers re-render and already-open editors restyle
     immediately.
+
+    **This page takes over its frames' Apply / Reset / Defaults buttons** (`FrameRestoringPage`,
+    #342), because the draft of the engine *not* shown lives off-widget, where the dialog's generic
+    path cannot see it. That path commits one frame by writing the other frames' saved values back
+    into their widgets around a whole-page save -- and writing ``css_edit`` fires ``textChanged``,
+    which would copy the *saved* text over the edited draft: applying the editor frame would silently
+    lose an unsaved CSS edit. Here the two frames map one-to-one onto the two settings objects, so
+    each can be saved, reverted or re-seeded exactly, drafts included, with no parking at all.
 
     :param parent: optional Qt parent.
     """
@@ -68,6 +76,61 @@ class DescriptionsPage(QWidget):
     def save_changes(self) -> None:
         """Push the staged edits into the shared settings objects (live-updating open viewers and
         editors) and persist them."""
+        self.__save_rendering()
+        self.__save_editor()
+
+    def drop_changes(self) -> None:
+        """Discard staged edits, reverting every field back to the shared settings' current values."""
+        self.__show_rendering(shared_markdown_rendering_settings())
+        self.__show_editor(shared_description_editor_settings())
+
+    def seed_defaults(self) -> None:
+        """Stage the factory values: what unloaded `MarkdownRenderingSettings` and
+        `DescriptionEditorSettings` hold (#342) -- both engines' CSS drafts included, not just the
+        one on screen."""
+        self.__show_rendering(MarkdownRenderingSettings())
+        self.__show_editor(DescriptionEditorSettings())
+
+    # region FrameRestoringPage
+
+    def apply_frame(self, frame: QFrame) -> None:
+        """Persist the one settings object ``frame`` edits, drafts included, leaving the other frame's
+        edits staged (#342).
+
+        :param frame: the engine frame or the editor frame.
+        """
+        if frame is self.__ui.engine_frame:
+            self.__save_rendering()
+        else:
+            self.__save_editor()
+
+    def reset_frame(self, frame: QFrame) -> None:
+        """Put ``frame``'s controls -- and, for the engine frame, both CSS drafts -- back to the
+        shared settings' current values (#342).
+
+        :param frame: the engine frame or the editor frame.
+        """
+        if frame is self.__ui.engine_frame:
+            self.__show_rendering(shared_markdown_rendering_settings())
+        else:
+            self.__show_editor(shared_description_editor_settings())
+
+    def restore_frame_defaults(self, frame: QFrame) -> None:
+        """Put ``frame``'s controls -- and, for the engine frame, both CSS drafts -- back to their
+        factory values (#342).
+
+        :param frame: the engine frame or the editor frame.
+        """
+        if frame is self.__ui.engine_frame:
+            self.__show_rendering(MarkdownRenderingSettings())
+        else:
+            self.__show_editor(DescriptionEditorSettings())
+
+    # endregion
+
+    def __save_rendering(self) -> None:
+        """Push the engine frame's staged choices -- engine and both CSS drafts -- into the shared
+        rendering settings and persist them."""
         self.__sync_current_css_draft()
         settings = shared_markdown_rendering_settings()
         settings.engine = self.__current_engine()
@@ -75,15 +138,19 @@ class DescriptionsPage(QWidget):
         settings.mistletoe_css = self.__mistletoe_css_draft
         settings.save(persistent_settings())
 
+    def __save_editor(self) -> None:
+        """Push the editor frame's three toggles into the shared editor settings and persist them."""
         editor_settings = shared_description_editor_settings()
         editor_settings.show_line_numbers = self.__ui.line_numbers_check_box.isChecked()
         editor_settings.show_line_endings = self.__ui.line_endings_check_box.isChecked()
         editor_settings.wrap_long_lines = self.__ui.wrap_long_lines_check_box.isChecked()
         editor_settings.save(persistent_settings())
 
-    def drop_changes(self) -> None:
-        """Discard staged edits, reverting every field back to the shared settings' current values."""
-        settings = shared_markdown_rendering_settings()
+    def __show_rendering(self, settings: MarkdownRenderingSettings) -> None:
+        """Fill the engine frame -- the radio, and both off-widget CSS drafts -- from ``settings``.
+
+        :param settings: the rendering choices to show.
+        """
         self.__markdown_css_draft = settings.markdown_css
         self.__mistletoe_css_draft = settings.mistletoe_css
         if settings.engine == "mistletoe":
@@ -92,7 +159,11 @@ class DescriptionsPage(QWidget):
             self.__ui.markdown_engine_radio_button.setChecked(True)
         self.__show_current_css_draft()
 
-        editor_settings = shared_description_editor_settings()
+    def __show_editor(self, editor_settings: DescriptionEditorSettings) -> None:
+        """Fill the editor frame's three toggles from ``editor_settings``.
+
+        :param editor_settings: the editor toggles to show.
+        """
         self.__ui.line_numbers_check_box.setChecked(editor_settings.show_line_numbers)
         self.__ui.line_endings_check_box.setChecked(editor_settings.show_line_endings)
         self.__ui.wrap_long_lines_check_box.setChecked(editor_settings.wrap_long_lines)

@@ -40,3 +40,7 @@ class SessionPage(QWidget):
         saved = SessionRestoreSettings()
         saved.load(persistent_settings())
         self.__ui.restore_on_startup_check_box.setChecked(saved.restore_on_startup)
+
+    def seed_defaults(self) -> None:
+        """Stage the factory value: what an unloaded `SessionRestoreSettings` holds (#342)."""
+        self.__ui.restore_on_startup_check_box.setChecked(SessionRestoreSettings().restore_on_startup)

@@ -49,6 +49,17 @@ class TasksPage(QWidget):
         """Discard the staged edits, re-seeding every checkbox from persistent storage."""
         saved = TasksSettings()
         saved.load(persistent_settings())
-        self.__ui.clear_done_check_box.setChecked(saved.clear_done_on_restart)
-        self.__ui.clear_failed_check_box.setChecked(saved.clear_failed_on_restart)
-        self.__ui.resume_check_box.setChecked(saved.resume_on_restart)
+        self.__show(saved)
+
+    def seed_defaults(self) -> None:
+        """Stage the factory values: what an unloaded `TasksSettings` holds (#342)."""
+        self.__show(TasksSettings())
+
+    def __show(self, settings: TasksSettings) -> None:
+        """Fill every checkbox from ``settings``.
+
+        :param settings: the values to show -- the saved ones, or a fresh object's defaults.
+        """
+        self.__ui.clear_done_check_box.setChecked(settings.clear_done_on_restart)
+        self.__ui.clear_failed_check_box.setChecked(settings.clear_failed_on_restart)
+        self.__ui.resume_check_box.setChecked(settings.resume_on_restart)

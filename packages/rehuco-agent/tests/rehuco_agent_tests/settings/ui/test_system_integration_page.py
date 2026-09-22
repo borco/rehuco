@@ -171,6 +171,27 @@ def test_drop_changes_reverts_the_checkbox(qtbot: QtBot) -> None:
     assert page.is_dirty() is False
 
 
+def test_seed_defaults_stages_the_tray_off_over_a_saved_on(qtbot: QtBot) -> None:
+    """``seed_defaults`` shows the factory value -- tray off -- as a staged edit against a saved on (#342).
+
+    **Test steps:**
+
+    * save the tray on and build the page
+    * call ``seed_defaults``
+    * verify the box is unchecked and the page is dirty
+    """
+    shared_tray_settings().enabled = True
+    page = SystemIntegrationPage()
+    qtbot.addWidget(page)
+    ui = page._SystemIntegrationPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert ui.enabled_check_box.isChecked() is True
+
+    page.seed_defaults()
+
+    assert ui.enabled_check_box.isChecked() is False
+    assert page.is_dirty() is True
+
+
 def test_unavailable_label_hidden_when_a_tray_is_available(qtbot: QtBot, mocker: MockerFixture) -> None:
     """The "no system tray" note is hidden when a tray is actually available.
 

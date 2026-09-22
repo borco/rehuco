@@ -15,6 +15,7 @@ from rehuco_agent.settings.markdown_rendering_settings import shared_markdown_re
 from rehuco_agent.settings.ui import descriptions_page
 from rehuco_agent.settings.ui.descriptions_page import DescriptionsPage
 from rehuco_agent.settings.ui.settings_frame_filter import SettingsFrameFilter
+from rehuco_agent.settings.ui.settings_page import FrameRestoringPage
 
 
 # region fixtures
@@ -246,6 +247,36 @@ def test_drop_changes_reverts_edits(qtbot: QtBot) -> None:
     assert page.is_dirty() is False
 
 
+def test_seed_defaults_stages_the_factory_values_over_saved_ones(qtbot: QtBot) -> None:
+    """``seed_defaults`` shows what a fresh install would -- the markdown engine, empty CSS for
+    *both* engines, every editor toggle on -- as a staged edit against whatever is saved (#342).
+
+    **Test steps:**
+
+    * seed the shared settings with mistletoe, CSS for both engines, and line numbers off
+    * build the page and call ``seed_defaults``
+    * verify the factory values are on screen, switch engines and verify that CSS is empty too,
+      and that the page is dirty
+    """
+    settings = shared_markdown_rendering_settings()
+    settings.engine = "mistletoe"
+    settings.markdown_css = "saved-markdown-css"
+    settings.mistletoe_css = "saved-mistletoe-css"
+    shared_description_editor_settings().show_line_numbers = False
+    page = DescriptionsPage()
+    qtbot.addWidget(page)
+    ui = page._DescriptionsPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    page.seed_defaults()
+
+    assert ui.markdown_engine_radio_button.isChecked()
+    assert ui.css_edit.toPlainText() == ""
+    assert ui.line_numbers_check_box.isChecked()
+    assert page.is_dirty() is True
+    ui.mistletoe_engine_radio_button.setChecked(True)
+    assert ui.css_edit.toPlainText() == ""
+
+
 def test_editor_check_boxes_start_with_the_shared_settings_current_values(qtbot: QtBot) -> None:
     """A freshly-built page's three editor checkboxes reflect the shared editor settings' current
     values (#69).
@@ -375,3 +406,180 @@ def test_frame_filter_discovers_the_pages_frames_and_their_text(qtbot: QtBot) ->
     frame_filter.apply("thumbnail", show_full_on_title_match=False)
 
     assert ui.engine_frame.isVisibleTo(page) is False
+
+
+# region the page's own frame hooks (#342)
+
+
+def test_the_page_satisfies_frame_restoring_page(qtbot: QtBot) -> None:
+    """The dialog prefers a page's own hooks over its generic parking path exactly when the page has
+    this shape -- so the shape is what to assert, not the dialog's choice.
+
+    **Test steps:**
+
+    * build the page
+    * verify it is a `FrameRestoringPage`
+    """
+    page = DescriptionsPage()
+    qtbot.addWidget(page)
+
+    assert isinstance(page, FrameRestoringPage)
+
+
+def test_applying_the_editor_frame_keeps_an_unsaved_css_draft_of_the_hidden_engine(qtbot: QtBot) -> None:
+    """The scenario the generic path gets wrong: an edited markdown CSS, mistletoe then shown, the
+    editor frame applied. Parking the engine frame would write the saved CSS into ``css_edit`` and,
+    through ``textChanged``, over the markdown draft -- losing the edit. The page's own hook saves the
+    editor settings alone and touches no draft.
+
+    **Test steps:**
+
+    * edit the markdown CSS, switch to mistletoe, toggle line numbers
+    * apply the editor frame
+    * verify the toggle was saved, the rendering settings were not, the page is still dirty, and
+      switching back to markdown shows the edit
+    """
+    page = DescriptionsPage()
+    qtbot.addWidget(page)
+    ui = page._DescriptionsPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    ui.css_edit.setPlainText("edited-markdown-css")
+    ui.mistletoe_engine_radio_button.setChecked(True)
+    ui.line_numbers_check_box.setChecked(False)
+
+    page.apply_frame(ui.editor_frame)
+
+    assert shared_description_editor_settings().show_line_numbers is False
+    assert shared_markdown_rendering_settings().engine == "markdown"
+    assert shared_markdown_rendering_settings().markdown_css == ""
+    assert page.is_dirty() is True
+    ui.markdown_engine_radio_button.setChecked(True)
+    assert ui.css_edit.toPlainText() == "edited-markdown-css"
+
+
+def test_applying_the_engine_frame_saves_both_drafts_and_leaves_the_editor_frame_staged(qtbot: QtBot) -> None:
+    """The engine frame's Apply persists the engine and both CSS drafts -- the hidden one included --
+    and nothing of the editor frame.
+
+    **Test steps:**
+
+    * edit both engines' CSS, end on mistletoe, toggle line numbers
+    * apply the engine frame
+    * verify both drafts and the engine were saved, line numbers were not, the page is still dirty
+    """
+    page = DescriptionsPage()
+    qtbot.addWidget(page)
+    ui = page._DescriptionsPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    ui.css_edit.setPlainText("edited-markdown-css")
+    ui.mistletoe_engine_radio_button.setChecked(True)
+    ui.css_edit.setPlainText("edited-mistletoe-css")
+    ui.line_numbers_check_box.setChecked(False)
+
+    page.apply_frame(ui.engine_frame)
+
+    settings = shared_markdown_rendering_settings()
+    assert (settings.engine, settings.markdown_css, settings.mistletoe_css) == (
+        "mistletoe",
+        "edited-markdown-css",
+        "edited-mistletoe-css",
+    )
+    assert shared_description_editor_settings().show_line_numbers is True
+    assert page.is_dirty() is True
+
+
+def test_resetting_the_engine_frame_reverts_the_hidden_engines_draft_too(qtbot: QtBot) -> None:
+    """Reset on the engine frame puts back the saved engine *and both drafts*, so the page reads
+    clean afterwards -- where a widget-only restore would leave the hidden draft edited and the page
+    dirty with nothing tinted.
+
+    **Test steps:**
+
+    * edit the markdown CSS, switch to mistletoe
+    * reset the engine frame
+    * verify the markdown engine is back, the page is clean, and no engine holds the edit
+    """
+    page = DescriptionsPage()
+    qtbot.addWidget(page)
+    ui = page._DescriptionsPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    ui.css_edit.setPlainText("edited-markdown-css")
+    ui.mistletoe_engine_radio_button.setChecked(True)
+
+    page.reset_frame(ui.engine_frame)
+
+    assert ui.markdown_engine_radio_button.isChecked() is True
+    assert ui.css_edit.toPlainText() == ""
+    assert page.is_dirty() is False
+
+
+def test_resetting_the_editor_frame_reverts_its_toggles_and_leaves_the_engine_frame_alone(qtbot: QtBot) -> None:
+    """Reset on the editor frame puts the three toggles back to the shared settings' values and
+    touches neither the engine radio nor a CSS draft.
+
+    **Test steps:**
+
+    * seed the shared editor settings with line numbers off, build the page
+    * toggle line numbers on and edit the markdown CSS
+    * reset the editor frame
+    * verify line numbers are off again, the page is still dirty, and the CSS edit is untouched
+    """
+    shared_description_editor_settings().show_line_numbers = False
+    page = DescriptionsPage()
+    qtbot.addWidget(page)
+    ui = page._DescriptionsPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    ui.line_numbers_check_box.setChecked(True)
+    ui.css_edit.setPlainText("edited-markdown-css")
+
+    page.reset_frame(ui.editor_frame)
+
+    assert ui.line_numbers_check_box.isChecked() is False
+    assert ui.css_edit.toPlainText() == "edited-markdown-css"
+    assert page.is_dirty() is True
+
+
+def test_restoring_the_editor_frames_defaults_leaves_the_engine_frame_alone(qtbot: QtBot) -> None:
+    """Defaults on the editor frame re-seeds the three toggles only.
+
+    **Test steps:**
+
+    * seed the shared editor settings with line numbers off; edit the markdown CSS
+    * restore the editor frame's defaults
+    * verify line numbers are on again and the CSS edit is untouched
+    """
+    shared_description_editor_settings().show_line_numbers = False
+    page = DescriptionsPage()
+    qtbot.addWidget(page)
+    ui = page._DescriptionsPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    ui.css_edit.setPlainText("edited-markdown-css")
+
+    page.restore_frame_defaults(ui.editor_frame)
+
+    assert ui.line_numbers_check_box.isChecked() is True
+    assert ui.css_edit.toPlainText() == "edited-markdown-css"
+
+
+def test_restoring_the_engine_frames_defaults_empties_both_drafts(qtbot: QtBot) -> None:
+    """Defaults on the engine frame is the factory rendering state: the markdown engine and no CSS
+    for either engine.
+
+    **Test steps:**
+
+    * seed the shared rendering settings with mistletoe and CSS for both engines, build the page
+    * restore the engine frame's defaults
+    * verify markdown is selected and both engines show empty CSS
+    """
+    settings = shared_markdown_rendering_settings()
+    settings.engine = "mistletoe"
+    settings.markdown_css = "saved-markdown-css"
+    settings.mistletoe_css = "saved-mistletoe-css"
+    page = DescriptionsPage()
+    qtbot.addWidget(page)
+    ui = page._DescriptionsPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    page.restore_frame_defaults(ui.engine_frame)
+
+    assert ui.markdown_engine_radio_button.isChecked() is True
+    assert ui.css_edit.toPlainText() == ""
+    ui.mistletoe_engine_radio_button.setChecked(True)
+    assert ui.css_edit.toPlainText() == ""
+
+
+# endregion

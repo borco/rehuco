@@ -188,6 +188,28 @@ def test_drop_changes_restores_the_saved_folder(qtbot: QtBot) -> None:
     assert page.is_dirty() is False
 
 
+def test_seed_defaults_stages_the_empty_folder_over_a_saved_one(qtbot: QtBot, registry: FakeRegistry) -> None:
+    """``seed_defaults`` shows the factory value -- no folder, meaning the default location -- as a
+    staged edit against a saved one, and leaves the table's saved-folder scan alone (#342).
+
+    **Test steps:**
+
+    * save a folder and build the page
+    * call ``seed_defaults``
+    * verify the field is empty, the page is dirty, and nothing was rescanned
+    """
+    shared_scrapers_settings().scripts_folder = CHOSEN_FOLDER
+    page = ScrapersPage()
+    qtbot.addWidget(page)
+    assert page_ui(page).folder_edit.text() == CHOSEN_FOLDER
+
+    page.seed_defaults()
+
+    assert page_ui(page).folder_edit.text() == ""
+    assert page.is_dirty() is True
+    assert registry.reloads == 0
+
+
 def test_reload_rescans_without_saving_a_typed_folder(qtbot: QtBot, registry: FakeRegistry) -> None:
     """Reload re-scans the saved folder, never the one being typed -- so a dirty field is never
     mistaken for what the table shows (#269).

@@ -6,7 +6,7 @@ from PySide6.QtWidgets import QFileDialog, QWidget
 
 from ...scraping.registry import shared_scraper_registry
 from ..persistent_settings import persistent_settings
-from ..scrapers_settings import shared_scrapers_settings
+from ..scrapers_settings import ScrapersSettings, shared_scrapers_settings
 from .scrapers_page_ui import Ui_ScrapersPage
 from .scrapers_table_model import ScrapersTableModel
 
@@ -54,6 +54,12 @@ class ScrapersPage(QWidget):
         """Discard the staged edit, re-seeding the field from the shared settings."""
         self.__ui.folder_edit.setText(shared_scrapers_settings().scripts_folder)
         self.__refresh_table()
+
+    def seed_defaults(self) -> None:
+        """Stage the factory value: what an unloaded `ScrapersSettings` holds -- an empty path, meaning
+        the default location (#342). The table is left alone: it always shows the *saved* folder's
+        scan, never the one being typed."""
+        self.__ui.folder_edit.setText(ScrapersSettings().scripts_folder)
 
     def __refresh_table(self) -> None:
         """Show the registry's current rows, and name the folder they came from."""

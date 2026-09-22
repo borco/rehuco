@@ -33,6 +33,9 @@
      <addaction name="separator"/>
      <addaction name="reset_all_action"/>
      <addaction name="reset_current_page_action"/>
+     <addaction name="separator"/>
+     <addaction name="defaults_all_action"/>
+     <addaction name="defaults_current_page_action"/>
     </widget>
    </item>
    <item>
@@ -98,6 +101,22 @@
    </property>
    <property name="toolTip">
     <string>Discard the current page's changes</string>
+   </property>
+  </action>
+  <action name="defaults_all_action">
+   <property name="text">
+    <string>Defaults All</string>
+   </property>
+   <property name="toolTip">
+    <string>Restore factory defaults on every page</string>
+   </property>
+  </action>
+  <action name="defaults_current_page_action">
+   <property name="text">
+    <string>Defaults</string>
+   </property>
+   <property name="toolTip">
+    <string>Restore the current page's factory defaults</string>
    </property>
   </action>
  </widget>

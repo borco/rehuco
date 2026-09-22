@@ -319,4 +319,34 @@ def test_dropping_reverts_every_control(page: ChecksumsPage, fake_persistent_set
     assert ui(page).migrate_check_box.text() == f"Update checksums to {CHECKSUM_ALGORITHMS['crc32'].label} on verify"
 
 
+def test_seed_defaults_stages_the_factory_values_over_saved_ones(
+    page: ChecksumsPage, fake_persistent_settings: FakeSettings
+) -> None:
+    """``seed_defaults`` shows what a fresh install would -- the default algorithm, no migration, the
+    shipped staleness window -- as a staged edit against whatever is saved, label included (#342).
+
+    **Test steps:**
+
+    * save non-default values and drop into them
+    * call ``seed_defaults``
+    * verify every control, and the label, shows the factory value and the page is dirty
+    """
+    ChecksumSettings(algorithm="crc32", migrate_on_verify=True, stale_days=7).save(
+        fake_persistent_settings  # pyright: ignore[reportArgumentType]
+    )
+    page.drop_changes()
+    factory = ChecksumSettings()
+
+    page.seed_defaults()
+
+    assert page.is_dirty()
+    assert ui(page).stale_days_spin_box.value() == factory.stale_days
+    assert not ui(page).migrate_check_box.isChecked()
+    assert algorithm_buttons(page)[list(CHECKSUM_ALGORITHMS).index(DEFAULT_CHECKSUM_ALGORITHM)].isChecked()
+    assert (
+        ui(page).migrate_check_box.text()
+        == f"Update checksums to {CHECKSUM_ALGORITHMS[DEFAULT_CHECKSUM_ALGORITHM].label} on verify"
+    )
+
+
 # endregion

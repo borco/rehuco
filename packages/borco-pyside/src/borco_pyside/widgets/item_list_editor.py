@@ -297,6 +297,11 @@ class ItemListEditor(QWidget):
         del args
         if self.__quiet or self.__pending_entry_is_blank():
             return
+        # a pending insert that has been typed into is a value from now on, not a gesture: forget it
+        # here rather than only when an editor closes, since a row can be inserted and filled with no
+        # editor ever opening (a settings frame restoring a snapshotted list row by row) -- left armed,
+        # it would turn the next clearing of that row into a silent removal
+        self.__pending_entry = QPersistentModelIndex()
         self.values_changed.emit()
 
     def __pending_entry_is_blank(self) -> bool:

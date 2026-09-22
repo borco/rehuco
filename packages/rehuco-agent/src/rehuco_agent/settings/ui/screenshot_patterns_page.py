@@ -11,6 +11,7 @@ from rehuco_core import SCREENSHOT_NAME_PATTERNS, ScreenshotNamePattern
 from ..persistent_settings import persistent_settings
 from ..screenshot_patterns_settings import (
     DEFAULT_SAMPLES,
+    ScreenshotPatternsSettings,
     normalize_screenshot_name_patterns,
     shared_screenshot_patterns_settings,
 )
@@ -101,6 +102,21 @@ class ScreenshotPatternsPage(QWidget):
     def drop_changes(self) -> None:
         """Discard the staged pattern edits, refilling the editor from the shared settings' stored set --
         uncompilable rows included, flagged; the try-it samples stay as typed."""
-        stored = shared_screenshot_patterns_settings().stored_patterns
+        self.__show(shared_screenshot_patterns_settings())
+
+    def seed_defaults(self) -> None:
+        """Stage the factory state: the patterns an unloaded `ScreenshotPatternsSettings` resolves to --
+        the shipped `SCREENSHOT_NAME_PATTERNS` -- and the shipped try-it samples (#342). The samples
+        are not a setting; they are put back only so their frame's own Defaults button has a factory
+        state to return to, and nothing about them is ever saved."""
+        self.__ui.try_it_editor.values = DEFAULT_SAMPLES
+        self.__show(ScreenshotPatternsSettings())
+
+    def __show(self, settings: ScreenshotPatternsSettings) -> None:
+        """Refill the patterns editor from ``settings``' stored set, and re-derive the try-it slots.
+
+        :param settings: the shared object's saved patterns, or a fresh one's defaults.
+        """
+        stored = settings.stored_patterns
         self.__ui.patterns_editor.values = tuple(ScreenshotNamePattern(pattern) for pattern in stored)
         self.__ui.try_it_editor.refresh_slots()

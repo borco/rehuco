@@ -38,3 +38,7 @@ class SystemIntegrationPage(QWidget):
     def drop_changes(self) -> None:
         """Discard the staged tray edit."""
         self.__tray.drop_changes()
+
+    def seed_defaults(self) -> None:
+        """Stage the tray block's factory value (#342)."""
+        self.__tray.seed_defaults()

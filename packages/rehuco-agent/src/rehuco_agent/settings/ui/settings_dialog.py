@@ -22,7 +22,8 @@ from ..settings_dialog_settings import SettingsDialogSettings
 from .settings_block_column import SettingsBlockColumn
 from .settings_dialog_ui import Ui_SettingsDialog
 from .settings_frame_filter import SettingsFrameFilter
-from .settings_page import SettingsPage
+from .settings_frame_header import SettingsFrameHeader, header_label_of
+from .settings_page import FrameRestoringPage, SettingsPage
 
 PAGE_ROLE: Final = Qt.ItemDataRole.UserRole + 1
 """Item-data role storing each category-tree row's page widget, for selection-driven page switching."""
@@ -85,6 +86,7 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         # to fill what the others leave (see __restore_blocks).
         self.__page_blocks: Final[dict[QWidget, list[tuple[QFrame, int, bool]]]] = {}
         self.__frame_filters: Final[dict[QWidget, SettingsFrameFilter]] = {}
+        self.__frame_headers: Final[dict[QFrame, SettingsFrameHeader]] = {}
         self.__blank_page: Final = QWidget(self)
         self.__ui.page_stack.addWidget(self.__blank_page)
         # Which *source* row the stack is on. The tree's own currentIndex cannot answer this: it is a
@@ -134,16 +136,23 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__ui.filter_edit.textChanged.connect(self.__sync_no_match_state)
         self.__ui.show_full_group_check_box.toggled.connect(self.__sync_no_match_state)
 
-        self.__ui.apply_all_action.triggered.connect(self.__apply_all)
-        self.__ui.apply_current_page_action.triggered.connect(self.__apply_current_page)
-        self.__ui.reset_all_action.triggered.connect(self.__reset_all)
-        self.__ui.reset_current_page_action.triggered.connect(self.__reset_current_page)
+        self.__wire_toolbar_actions()
 
         # Runs only while this dialog is actually visible (started/stopped in showEvent/hideEvent):
         # a hidden settings dock has nothing on screen for a badge or highlight to update.
         self.__dirty_poll_timer: Final = QTimer(self)
         self.__dirty_poll_timer.setInterval(DIRTY_POLL_INTERVAL_MS)
         self.__dirty_poll_timer.timeout.connect(self.__poll_dirty_state)
+
+    def __wire_toolbar_actions(self) -> None:
+        """Connect the six toolbar actions: Apply / Reset / Defaults, each for every page and for the
+        current row (#47, #342)."""
+        self.__ui.apply_all_action.triggered.connect(self.__apply_all)
+        self.__ui.apply_current_page_action.triggered.connect(self.__apply_current_page)
+        self.__ui.reset_all_action.triggered.connect(self.__reset_all)
+        self.__ui.reset_current_page_action.triggered.connect(self.__reset_current_page)
+        self.__ui.defaults_all_action.triggered.connect(self.__defaults_all)
+        self.__ui.defaults_current_page_action.triggered.connect(self.__defaults_current_page)
 
     @override
     def showEvent(self, event: QShowEvent) -> None:  # noqa: N802  (Qt API name)
@@ -193,6 +202,13 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         area of its own (:meth:`__scroll_area_for`), so it is the stack -- and nothing around it -- that
         runs out of room when the dialog is small.
 
+        **Two snapshots and a header row per frame** (#342). The page arrives holding its saved values
+        (every page seeds those at the end of ``__init__``); this registers them as the frame filter's
+        clean baseline, then asks the page to ``seed_defaults`` so the filter can capture each frame's
+        *factory* values too, and ``drop_changes`` puts the saved values straight back -- the page is
+        never left showing anything but what it showed on arrival. Each frame with something to reset
+        then gets its `SettingsFrameHeader` in place of its bare title label (see :meth:`__wrap_headers`).
+
         :param args: ``(title, page)`` or ``(group, title, page)``.
         :raises TypeError: if given anything other than two or three arguments.
         """
@@ -211,11 +227,16 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         item.setEditable(False)
         self.__record_blocks(page, frame_filter)
         self.__frame_filters[widget] = frame_filter  # pylint: disable=unsupported-assignment-operation
+        page.seed_defaults()
+        frame_filter.capture_defaults()
+        page.drop_changes()
+        frame_filter.resync_baseline()
         # Property before stylesheet: the sheet's one polish then already sees the clean state, so
         # __set_frame_dirty's changed-guard never has to repolish a frame that was never edited.
         for frame in frame_filter.blocks():
             frame.setProperty("dirty", False)
             frame.setStyleSheet(DIRTY_FRAME_STYLESHEET)
+        self.__wrap_headers(page, frame_filter)
         parent = self.__model if group is None else self.__group_item(group)
         parent.appendRow(item)
         self.__ui.page_stack.addWidget(self.__scroll_area_for(widget))
@@ -422,6 +443,73 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
             for block in frame_filter.blocks()
             if (index := indexes.get(block)) is not None
         ]
+
+    def __wrap_headers(self, page: SettingsPage, frame_filter: SettingsFrameFilter) -> None:
+        """Give each of ``page``'s frames that has something to reset a `SettingsFrameHeader` (#342).
+
+        A frame earns a header only when both halves are there: a ``<frame>_label`` to build the row
+        around, and at least one value widget for the buttons to write into
+        (`SettingsFrameFilter.has_values`) -- a frame of push buttons (Windows Integration's
+        Register/Unregister), or the Scrapers table frame, has no setting to reset and, in the latter
+        case, no label of that name either, and stays as its ``.ui`` drew it. A ``scratch`` try-it
+        frame's row has no Apply (nothing in it is ever saved). A list editor inside a headed frame
+        loses its own restore button: the row's Defaults now says the same thing, from one place.
+
+        :param page: the page being registered.
+        :param frame_filter: that page's filter, which already discovered its blocks.
+        """
+        for frame in frame_filter.blocks():
+            if not frame_filter.has_values(frame):
+                continue
+            if (label := header_label_of(frame)) is None:
+                continue
+            header = SettingsFrameHeader(label, with_apply=not frame_filter.is_scratch(frame))
+            for editor in frame_filter.list_editors(frame):
+                editor.item_actions.reset_action.setVisible(False)
+            header.apply_action.triggered.connect(lambda _checked=False, block=frame: self.__apply_frame(page, block))
+            header.reset_action.triggered.connect(lambda _checked=False, block=frame: self.__reset_frame(page, block))
+            header.defaults_action.triggered.connect(
+                lambda _checked=False, block=frame: self.__restore_frame_defaults(page, block)
+            )
+            self.__frame_headers[frame] = header  # pylint: disable=unsupported-assignment-operation
+
+    def __apply_frame(self, page: SettingsPage, frame: QFrame) -> None:
+        """Commit ``frame``'s staged values alone, through the page's own hook when it has one (#342).
+
+        :param page: the page owning ``frame``.
+        :param frame: the frame whose Apply button was pressed.
+        """
+        if isinstance(page, FrameRestoringPage):
+            page.apply_frame(frame)
+        else:
+            self.__frame_filters[cast(QWidget, page)].apply_frame(frame, page.save_changes)
+        self.__refresh_dirty_ui()
+
+    def __reset_frame(self, page: SettingsPage, frame: QFrame) -> None:
+        """Put ``frame``'s controls back to their saved values, through the page's own hook when it
+        has one (#342).
+
+        :param page: the page owning ``frame``.
+        :param frame: the frame whose Reset button was pressed.
+        """
+        if isinstance(page, FrameRestoringPage):
+            page.reset_frame(frame)
+        else:
+            self.__frame_filters[cast(QWidget, page)].restore_saved(frame)
+        self.__refresh_dirty_ui()
+
+    def __restore_frame_defaults(self, page: SettingsPage, frame: QFrame) -> None:
+        """Put ``frame``'s controls back to their factory values, through the page's own hook when
+        it has one (#342).
+
+        :param page: the page owning ``frame``.
+        :param frame: the frame whose Defaults button was pressed.
+        """
+        if isinstance(page, FrameRestoringPage):
+            page.restore_frame_defaults(frame)
+        else:
+            self.__frame_filters[cast(QWidget, page)].restore_defaults(frame)
+        self.__refresh_dirty_ui()
 
     def __show_group(self, group_item: QStandardItem) -> None:
         """Show the blocks of every page under ``group_item``, in tree order, in one column (#230).
@@ -661,6 +749,19 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
             self.__commit_page(page, save=False)
         self.__refresh_dirty_ui()
 
+    def __defaults_all(self) -> None:
+        """Stage every registered page's factory values (#342) -- Apply commits them, as any edit."""
+        for page in self.__pages():
+            page.seed_defaults()
+        self.__refresh_dirty_ui()
+
+    def __defaults_current_page(self) -> None:
+        """Stage the currently-selected row's factory values -- one page, or every page under a group
+        row (#342)."""
+        for page in self.__current_pages():
+            page.seed_defaults()
+        self.__refresh_dirty_ui()
+
     def __commit_page(self, page: SettingsPage, *, save: bool) -> None:
         """Apply or discard ``page``'s staged edits, and resync its frame-dirty baseline to match (#77).
 
@@ -704,23 +805,48 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
                 item.setText(text)
 
     def __refresh_action_enablement(self) -> None:
-        """Enable Apply/Reset only while there is something for them to act on (#77)."""
-        current_dirty = any(page.is_dirty() for page in self.__current_pages())
-        any_dirty = any(page.is_dirty() for page in self.__pages())
+        """Enable Apply/Reset only while there is something for them to act on (#77), and Defaults
+        only while some frame is away from its factory values (#342)."""
+        current_pages = self.__current_pages()
+        all_pages = self.__pages()
+        current_dirty = any(page.is_dirty() for page in current_pages)
+        any_dirty = any(page.is_dirty() for page in all_pages)
         self.__ui.apply_current_page_action.setEnabled(current_dirty)
         self.__ui.reset_current_page_action.setEnabled(current_dirty)
         self.__ui.apply_all_action.setEnabled(any_dirty)
         self.__ui.reset_all_action.setEnabled(any_dirty)
+        self.__ui.defaults_current_page_action.setEnabled(any(self.__off_defaults(page) for page in current_pages))
+        self.__ui.defaults_all_action.setEnabled(any(self.__off_defaults(page) for page in all_pages))
+
+    def __off_defaults(self, page: SettingsPage) -> bool:
+        """Whether any of ``page``'s frames with values differs from its factory snapshot (#342).
+
+        :param page: the page to check.
+        :returns: whether a Defaults on it would change something.
+        """
+        frame_filter = self.__frame_filters[cast(QWidget, page)]
+        at_defaults = set(frame_filter.frames_at_defaults())
+        return any(
+            frame_filter.has_values(frame) and not frame_filter.is_scratch(frame) and frame not in at_defaults
+            for frame in frame_filter.blocks()
+        )
 
     def __refresh_current_frame_state(self) -> None:
-        """Refresh the pink dirty highlight of every frame the stack is currently showing (#77) --
-        an off-screen frame has nothing to update towards.
+        """Refresh the pink dirty highlight of every frame the stack is currently showing (#77), and
+        its header buttons' enablement (#342) -- an off-screen frame has nothing to update towards.
         """
         for page in self.__shown_pages():
             frame_filter = self.__frame_filters[cast(QWidget, page)]
             dirty_frames = set(frame_filter.dirty_frames())
             for frame in frame_filter.blocks():
                 self.__set_frame_dirty(frame, frame in dirty_frames)
+                # asked per frame rather than off dirty_frames: a scratch frame is never *dirty*
+                # (never tinted, never a page verdict), yet its own Reset/Defaults still follow it
+                if (header := self.__frame_headers.get(frame)) is not None:
+                    header.set_state(
+                        dirty=frame_filter.differs_from_saved(frame),
+                        at_defaults=not frame_filter.differs_from_defaults(frame),
+                    )
 
     @staticmethod
     def __set_frame_dirty(frame: QFrame, dirty: bool) -> None:

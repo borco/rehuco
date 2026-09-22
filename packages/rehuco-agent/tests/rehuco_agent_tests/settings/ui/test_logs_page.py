@@ -207,6 +207,27 @@ def test_dropping_changes_re_seeds_from_the_shared_settings(page: LogsPage) -> N
     assert not page.is_dirty()
 
 
+def test_seed_defaults_stages_the_factory_limits_over_saved_ones(page: LogsPage) -> None:
+    """``seed_defaults`` shows the shipped limits as a staged edit against whatever is saved (#342).
+
+    **Test steps:**
+
+    * save two other limits and drop into them
+    * call ``seed_defaults``
+    * verify both spin boxes show the shipped limit and the page is dirty
+    """
+    settings = shared_logs_settings()
+    settings.app_limit = 11
+    settings.resource_limit = 7
+    page.drop_changes()
+
+    page.seed_defaults()
+
+    assert ui(page).app_limit_spin_box.value() == DEFAULT_LOG_LIMIT
+    assert ui(page).resource_limit_spin_box.value() == DEFAULT_LOG_LIMIT
+    assert page.is_dirty()
+
+
 # endregion
 
 

@@ -155,3 +155,29 @@ def test_dropping_changes_re_seeds_from_storage(page: TasksPage) -> None:
 
     assert not ui(page).clear_done_check_box.isChecked()
     assert not page.is_dirty()
+
+
+def test_seed_defaults_stages_the_factory_values_over_saved_ones(
+    page: TasksPage, fake_persistent_settings: FakeSettings
+) -> None:
+    """``seed_defaults`` shows the factory values -- every box off -- as a staged edit against saved
+    ones (#342).
+
+    **Test steps:**
+
+    * save every box on and drop into them
+    * call ``seed_defaults``
+    * verify every box is off and the page is dirty
+    """
+    TasksSettings(clear_done_on_restart=True, clear_failed_on_restart=True, resume_on_restart=True).save(
+        fake_persistent_settings  # pyright: ignore[reportArgumentType]
+    )
+    page.drop_changes()
+    assert ui(page).resume_check_box.isChecked()
+
+    page.seed_defaults()
+
+    assert not ui(page).clear_done_check_box.isChecked()
+    assert not ui(page).clear_failed_check_box.isChecked()
+    assert not ui(page).resume_check_box.isChecked()
+    assert page.is_dirty()

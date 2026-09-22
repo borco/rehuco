@@ -2,18 +2,13 @@
 
 from typing import Final, NamedTuple
 
-from PySide6.QtGui import QColor
-from PySide6.QtWidgets import QColorDialog, QRadioButton, QWidget
+from PySide6.QtWidgets import QRadioButton, QWidget
 
 from ...fields.widgets.image_lightbox import ImageViewerMode
-from ..image_viewer_settings import DEFAULT_LIGHTBOX_BACKDROP, DEFAULT_MODE, shared_image_viewer_settings
-from ..markdown_rendering_settings import shared_markdown_rendering_settings
+from ..image_viewer_settings import DEFAULT_MODE, ImageViewerSettings, shared_image_viewer_settings
+from ..markdown_rendering_settings import MarkdownRenderingSettings, shared_markdown_rendering_settings
 from ..persistent_settings import persistent_settings
 from .images_display_page_ui import Ui_ImagesDisplayPage
-
-BACKDROP_SWATCH_TEXT_FLIP: Final = 0.5
-"""The lightness under which the backdrop swatch's own text turns white, so the colour's name stays
-readable on the colour."""
 
 
 class ImageChoices(NamedTuple):
@@ -103,34 +98,24 @@ class ImagesDisplayPage(QWidget):
         }
         self.__ui.content_min_height_spin_box.valueChanged.connect(self.__on_content_min_height_changed)
         self.__ui.content_max_height_spin_box.valueChanged.connect(self.__on_content_max_height_changed)
-        self.__backdrop = DEFAULT_LIGHTBOX_BACKDROP
-        self.__ui.lightbox_backdrop_button.clicked.connect(self.__pick_backdrop)
         self.drop_changes()
 
     @property
     def backdrop(self) -> str:
         """The staged colour behind a maximized image, as ``#rrggbb``."""
-        return self.__backdrop
+        return self.__ui.lightbox_backdrop_button.color()
 
     def set_backdrop(self, colour: str) -> None:
         """Stage ``colour`` as the backdrop -- what the picker does with the user's choice.
 
-        The button is the swatch: its text names the colour and its face shows it, in a text colour
-        that reads on either a dark or a light face.
+        **The swatch itself holds it** (`ColorSwatchButton`), rather than this page keeping it in an
+        attribute beside the button: a value the settings dialog's frame snapshot cannot see is one
+        whose frame never tints and whose Apply / Reset never enable, while the change still rides
+        along with another frame's Apply (#342).
 
         :param colour: the colour, as ``#rrggbb``.
         """
-        self.__backdrop = QColor(colour).name()
-        text = "#ffffff" if QColor(self.__backdrop).lightnessF() < BACKDROP_SWATCH_TEXT_FLIP else "#000000"
-        button = self.__ui.lightbox_backdrop_button
-        button.setText(self.__backdrop)
-        button.setStyleSheet(f"QPushButton {{ background-color: {self.__backdrop}; color: {text}; }}")
-
-    def __pick_backdrop(self) -> None:
-        """Open the colour dialog on the staged backdrop and stage what it returns, if anything."""
-        chosen = QColorDialog.getColor(QColor(self.__backdrop), self, "Lightbox background")
-        if chosen.isValid():
-            self.set_backdrop(chosen.name())
+        self.__ui.lightbox_backdrop_button.set_color(colour)
 
     def __on_content_min_height_changed(self, minimum: int) -> None:
         """Push the maximum up when the minimum is raised past it (#221).
@@ -186,22 +171,34 @@ class ImagesDisplayPage(QWidget):
 
     def drop_changes(self) -> None:
         """Discard the staged choices, re-seeding every widget from its own settings object."""
-        saved = self.__saved()
-        self.__buttons[saved.mode].setChecked(True)
-        self.__ui.strip_visible_check_box.setChecked(saved.strip_visible)
-        self.__ui.wrap_check_box.setChecked(saved.preview_wrap)
-        self.__ui.preview_height_spin_box.setValue(saved.preview_height)
-        self.__ui.lightbox_height_spin_box.setValue(saved.lightbox_height)
-        self.__ui.editor_preview_height_spin_box.setValue(saved.editor_preview_height)
-        self.__ui.lightbox_info_check_box.setChecked(saved.lightbox_info_visible)
-        self.set_backdrop(saved.lightbox_backdrop)
-        self.__ui.lightbox_double_click_check_box.setChecked(saved.lightbox_double_click_closes)
-        self.__ui.lightbox_select_last_check_box.setChecked(saved.lightbox_select_last_viewed)
-        self.__ui.content_min_height_spin_box.setValue(saved.content_min_height)
-        self.__ui.content_max_height_spin_box.setValue(saved.content_max_height)
-        self.__ui.content_zip_names_check_box.setChecked(saved.content_zip_names)
-        self.__ui.content_folder_names_check_box.setChecked(saved.content_folder_names)
-        self.__ui.max_image_width_spin_box.setValue(shared_markdown_rendering_settings().max_image_width)
+        self.__show(self.__saved(), shared_markdown_rendering_settings().max_image_width)
+
+    def seed_defaults(self) -> None:
+        """Stage the factory values: what unloaded `ImageViewerSettings` and `MarkdownRenderingSettings`
+        hold (#342)."""
+        self.__show(self.__choices_of(ImageViewerSettings()), MarkdownRenderingSettings().max_image_width)
+
+    def __show(self, choices: ImageChoices, max_image_width: int) -> None:
+        """Fill every widget from ``choices`` and the one rendering value this page also edits.
+
+        :param choices: the image choices to show.
+        :param max_image_width: the Markdown image-width cap to show.
+        """
+        self.__buttons[choices.mode].setChecked(True)
+        self.__ui.strip_visible_check_box.setChecked(choices.strip_visible)
+        self.__ui.wrap_check_box.setChecked(choices.preview_wrap)
+        self.__ui.preview_height_spin_box.setValue(choices.preview_height)
+        self.__ui.lightbox_height_spin_box.setValue(choices.lightbox_height)
+        self.__ui.editor_preview_height_spin_box.setValue(choices.editor_preview_height)
+        self.__ui.lightbox_info_check_box.setChecked(choices.lightbox_info_visible)
+        self.set_backdrop(choices.lightbox_backdrop)
+        self.__ui.lightbox_double_click_check_box.setChecked(choices.lightbox_double_click_closes)
+        self.__ui.lightbox_select_last_check_box.setChecked(choices.lightbox_select_last_viewed)
+        self.__ui.content_min_height_spin_box.setValue(choices.content_min_height)
+        self.__ui.content_max_height_spin_box.setValue(choices.content_max_height)
+        self.__ui.content_zip_names_check_box.setChecked(choices.content_zip_names)
+        self.__ui.content_folder_names_check_box.setChecked(choices.content_folder_names)
+        self.__ui.max_image_width_spin_box.setValue(max_image_width)
 
     def __staged(self) -> ImageChoices:
         """The choices currently shown in this page's widgets.
@@ -216,7 +213,7 @@ class ImagesDisplayPage(QWidget):
             self.__ui.lightbox_height_spin_box.value(),
             self.__ui.editor_preview_height_spin_box.value(),
             self.__ui.lightbox_info_check_box.isChecked(),
-            self.__backdrop,
+            self.backdrop,
             self.__ui.lightbox_double_click_check_box.isChecked(),
             self.__ui.lightbox_select_last_check_box.isChecked(),
             self.__ui.content_min_height_spin_box.value(),
@@ -231,7 +228,15 @@ class ImagesDisplayPage(QWidget):
 
         :returns: the saved surface, strip visibility, strip layout, and the three image heights.
         """
-        settings = shared_image_viewer_settings()
+        return ImagesDisplayPage.__choices_of(shared_image_viewer_settings())
+
+    @staticmethod
+    def __choices_of(settings: ImageViewerSettings) -> ImageChoices:
+        """The choices ``settings`` holds, in this page's comparable shape.
+
+        :param settings: the shared object, or a fresh one for the factory values (#342).
+        :returns: its surface, strip visibility, strip layout, and the three image heights.
+        """
         return ImageChoices(
             settings.mode,
             settings.strip_visible,

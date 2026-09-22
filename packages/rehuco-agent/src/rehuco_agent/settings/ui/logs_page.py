@@ -4,7 +4,7 @@ from typing import Final
 
 from PySide6.QtWidgets import QWidget
 
-from ..logs_settings import shared_logs_settings
+from ..logs_settings import LogsSettings, shared_logs_settings
 from ..persistent_settings import persistent_settings
 from .logs_page_ui import Ui_LogsPage
 
@@ -67,7 +67,17 @@ class LogsPage(QWidget):
 
     def drop_changes(self) -> None:
         """Discard the staged edits, re-seeding both spin boxes from the shared settings."""
-        settings = shared_logs_settings()
+        self.__show(shared_logs_settings())
+
+    def seed_defaults(self) -> None:
+        """Stage the factory values: what an unloaded `LogsSettings` holds (#342)."""
+        self.__show(LogsSettings())
+
+    def __show(self, settings: LogsSettings) -> None:
+        """Fill both spin boxes from ``settings``.
+
+        :param settings: the values to show -- the shared object's saved ones, or a fresh one's defaults.
+        """
         self.__ui.app_limit_spin_box.setValue(settings.app_limit)
         self.__ui.resource_limit_spin_box.setValue(settings.resource_limit)
         self.__show_clamp_note()

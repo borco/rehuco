@@ -227,6 +227,30 @@ def test_drop_changes_reverts_both_edits(qtbot: QtBot) -> None:
     assert page.is_dirty() is False
 
 
+def test_seed_defaults_stages_the_factory_values_over_saved_ones(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """``seed_defaults`` shows what a fresh install would -- this machine's login and ``unknown`` --
+    as a staged edit against whatever is saved (#342).
+
+    **Test steps:**
+
+    * pin the OS login, seed the shared settings with other names, and build the page
+    * call ``seed_defaults``
+    * verify both fields show the factory values and the page is dirty
+    """
+    mocker.patch("getpass.getuser", return_value="login-name")
+    shared_identity_settings().current_username = "alice"
+    shared_identity_settings().unknown_username = "strangers"
+    page = IdentityPage()
+    qtbot.addWidget(page)
+    ui = page._IdentityPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    page.seed_defaults()
+
+    assert ui.current_username_edit.text() == "login-name"
+    assert ui.unknown_username_edit.text() == IdentitySettings().unknown_username
+    assert page.is_dirty() is True
+
+
 def test_frame_filter_discovers_the_pages_frame_and_its_text(qtbot: QtBot) -> None:
     """A `SettingsFrameFilter` finds the page's labeled frame and filters it by its text (#67).
 
