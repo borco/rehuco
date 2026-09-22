@@ -147,7 +147,13 @@ def test_beside_a_tracker_the_button_sits_level_with_the_close_button(
     close_button = tab_close_button(dock)
     assert close_button is not None
 
-    qtbot.waitUntil(lambda: close_button.width() == close_button.height(), timeout=WAIT)
+    # squaring the close button (the tracker's job) is one async step; the tab's box layout then
+    # positioning both buttons at their post-squaring geometry is a second, later one -- waiting on
+    # only the first leaves the button still at its pre-layout (0, 0) on a slower runner (macOS CI).
+    # button.x() > 0 rather than a vertical check: the title label ahead of it in the layout puts it
+    # right of the origin in any real run, where a top margin of 0 is a legitimate final geometry on
+    # some platforms/themes and would never satisfy a ">0" wait on the vertical axis.
+    qtbot.waitUntil(lambda: close_button.width() == close_button.height() and button.x() > 0, timeout=WAIT)
 
     assert button.size() == close_button.size()
     assert button.geometry().top() == close_button.geometry().top()
