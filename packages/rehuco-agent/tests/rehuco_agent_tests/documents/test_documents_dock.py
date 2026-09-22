@@ -2525,3 +2525,54 @@ def test_a_document_tab_carries_no_pin_button(mocker: MockerFixture, auto_hide_f
 
 
 # endregion
+
+
+# region maximizing a document over the documents area (#341)
+
+
+def test_a_document_tab_carries_a_maximize_button_and_a_capture_reads_it_undone(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """Each document's tab carries the maximize toggle beside its close button, and the session
+    capture reads the layout with it undone (#341).
+
+    The middle of the three nested managers: a document maximized here fills the documents area,
+    and the blob `MainWindow` stores at close must still hold both split areas at their sizes.
+
+    **Test steps:**
+
+    * open two documents and split the second off to the right, capture the layout
+    * maximize the first document through its tab's button
+    * verify only that area is open, and ``save_state`` still equals the un-maximized capture
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    dock.resize(800, 600)
+    dock.show()
+    manager = dock._DocumentsDock__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    handler = dock._DocumentsDock__maximize_handler  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    first = dock.open_document(FAKE_PATH)
+    second = dock.open_document(OTHER_PATH)
+    first_dock = next(d for d, w in dock._DocumentsDock__document_docks.items() if w is first)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    second_dock = next(d for d, w in dock._DocumentsDock__document_docks.items() if w is second)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    manager.addDockWidget(QtAds.RightDockWidgetArea, second_dock)
+    first_area = first_dock.dockAreaWidget()
+    assert first_area is not None
+    # the baseline must be a settled layout: the split's re-division lands on a posted layout
+    # request, and a capture before it would differ from every later one
+    qtbot.waitUntil(lambda: all(size > 0 for size in manager.splitterSizes(first_area)), timeout=10_000)
+    unmaximized = dock.save_state()
+    qtbot.waitUntil(lambda: handler.button(first_dock) is not None, timeout=10_000)
+    button = handler.button(first_dock)
+    assert button is not None
+
+    button.click()
+
+    assert manager.openedDockAreas() == [first_area]
+    assert dock.save_state() == unmaximized
+    assert manager.openedDockAreas() == [first_area]
+    assert button.isChecked()
+
+
+# endregion

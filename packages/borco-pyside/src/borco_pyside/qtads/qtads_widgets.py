@@ -28,3 +28,17 @@ def tab_close_button(dock: QtAds.CDockWidget) -> QAbstractButton | None:
     :returns: the close button, or ``None`` if its tab shows none.
     """
     return dock.tabWidget().findChild(QAbstractButton, "tabCloseButton")
+
+
+TAB_MAXIMIZE_BUTTON_NAME = "tabMaximizeButton"
+"""Object name of the maximize toggle `QtAdsMaximizeHandler` inserts into a dock's tab, beside the
+close button -- shared here so the focus tracker can re-polish it with the tab's other children."""
+
+
+def tab_maximize_button(dock: QtAds.CDockWidget) -> QAbstractButton | None:
+    """``dock``'s tab maximize button, or ``None`` if no `QtAdsMaximizeHandler` has put one there yet.
+
+    :param dock: the dock whose tab maximize button to find.
+    :returns: the maximize button, or ``None``.
+    """
+    return dock.tabWidget().findChild(QAbstractButton, TAB_MAXIMIZE_BUTTON_NAME)

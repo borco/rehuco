@@ -24,6 +24,7 @@ from rehuco_core import REFERENCE_IMAGES_PLUGIN, TaskQueue, backup_path, origina
 from ..app_logging import LOG_VIEW_ICON_RESOURCE, build_log_widget, shared_log_bridge
 from ..asking_deleter import AskingDeleter
 from ..delete_confirmation import confirm_delete
+from ..dock_maximize import attach_maximize_handler
 from ..fields import FieldsTab, StatefulWidget
 from ..fields.type_field import type_label
 from ..fields.widgets import ImageLightbox, ImageSource, ImageViewerMode, PathImageSource, ThumbnailLoader, TypeBadge
@@ -314,6 +315,9 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         # button comes from a process-wide flag, so it is suppressed per manager rather than cleared
         # per dock. Nothing holds onto it -- it parents itself to the manager it suppresses.
         QtAdsAutoHideButtonSuppressor(self.__dock_manager)
+        # the maximize toggle on each sub-dock's tab (#341), filling this document; kept so
+        # every layout capture reads the docks un-maximized, and so a dock toggle exits it first
+        self.__maximize_handler: Final = attach_maximize_handler(self.__dock_manager)
         self.__stashed_sizes: Final[dict[str, list[int]]] = {}
         self.__restoring_layout = False
 
@@ -653,10 +657,16 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         return cbor2.dumps(self.__layout_state())
 
     def __layout_state(self) -> dict[str, Any]:
-        """The dock-layout entries shared by :meth:`save_state` and :meth:`save_layout_state`."""
+        """The dock-layout entries shared by :meth:`save_state` and :meth:`save_layout_state`.
+
+        Read with any maximized sub-dock undone for the capture (#341): a maximize is session-only,
+        and a blob taken over hidden areas would record them at zero.
+        """
+        with self.__maximize_handler.unmaximized():
+            dock_manager_state = bytes(self.__dock_manager.saveState().data())
         return {
             STATE_VERSION_KEY: STATE_VERSION,
-            STATE_DOCK_MANAGER_KEY: bytes(self.__dock_manager.saveState().data()),
+            STATE_DOCK_MANAGER_KEY: dock_manager_state,
             STATE_STASHED_SIZES_KEY: self.__stashed_sizes,
             STATE_CURRENT_DOCK_KEY: self.__tracker.save_state(),
         }
@@ -1880,7 +1890,12 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         return dock
 
     def __on_view_toggled(self, dock: QtAds.CDockWidget, visible: bool) -> None:
-        """Stash ``dock``'s splitter sizes as it hides, or restore them as it reappears.
+        """Stash ``dock``'s splitter sizes as it hides, or restore them as it reappears -- after
+        exiting a maximized sub-dock, if one stands (#341).
+
+        The exit comes first here rather than being left to the handler's own hooks: this slot is
+        connected as the dock is built, before the handler's, so it would otherwise stash the
+        sizes of a layout with the sibling areas still collapsed and later restore that sliver.
 
         No-op while :meth:`restore_state` is actively running -- see the comment there.
 
@@ -1889,6 +1904,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         """
         if self.__restoring_layout:
             return
+        self.__maximize_handler.restore()
         if visible:
             self.__restore_size(dock)
         else:

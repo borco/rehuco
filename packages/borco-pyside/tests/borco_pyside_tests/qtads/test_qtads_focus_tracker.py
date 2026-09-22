@@ -13,7 +13,8 @@ from borco_pyside.qtads.qtads_focus_tracker import QtAdsFocusTracker
 from borco_pyside.qtads.qtads_widgets import tab_close_button, tab_label
 from borco_pyside.theming import ApplicationPaletteChangeNotifier, Glyph
 from PySide6.QtCore import QByteArray, Qt
-from PySide6.QtWidgets import QApplication, QWidget
+from PySide6.QtGui import QPalette
+from PySide6.QtWidgets import QApplication, QPushButton, QWidget
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -762,6 +763,56 @@ def test_tracked_focus_dock_stylesheet_builds_qss_from_its_colours(manager: QtAd
     assert "#333" in qss
 
 
+def test_tab_maximize_button_stylesheet_is_derived_from_the_close_buttons_rules() -> None:
+    """The maximize button's rest, hover and pressed rules are the close button's, renamed, minus the
+    close icon's ``qproperty-`` lines and its negative padding -- so both themes' sheets serve.
+
+    **Test steps:**
+
+    * feed a close-button sheet in QtAds' shape, with a wrapped ``qproperty-icon`` value
+    * verify each block comes back under ``#tabMaximizeButton`` with its colours, no icon line, and
+      zero padding, and that an unrelated sheet yields nothing
+    """
+    sheet = """
+#tabCloseButton {
+        margin-top: 2px;
+        background: none;
+        padding: 0px -2px;
+        qproperty-icon: url(:/ads/images/close-button.svg),
+                url(:/ads/images/close-button-disabled.svg) disabled;
+}
+#tabCloseButton:hover {
+        border: 1px solid rgba(0, 0, 0, 32);
+}
+#other { color: red; }
+"""
+
+    qss = QtAdsFocusTracker.tab_maximize_button_stylesheet(sheet)
+
+    assert "#tabCloseButton" not in qss
+    assert "#tabMaximizeButton {\n    margin-top: 2px;\n    background: none;\n    padding: 0px;\n}" in qss
+    assert "#tabMaximizeButton:hover {\n    border: 1px solid rgba(0, 0, 0, 32);\n    padding: 0px;\n}" in qss
+    assert "qproperty" not in qss and "close-button" not in qss and "#other" not in qss
+    assert QtAdsFocusTracker.tab_maximize_button_stylesheet("QWidget { }") == ""
+
+
+def test_construction_appends_the_derived_maximize_button_rules(manager: QtAds.CDockManager) -> None:
+    """The manager's own sheet carries QtAds' close-button rules, so the appended block carries their
+    maximize-button counterparts, recoloured on the current tab beside the close glyph.
+
+    **Test steps:**
+
+    * build a tracker over a manager carrying QtAds' default sheet
+    * verify the sheet now selects ``#tabMaximizeButton`` at rest, on hover and on the current tab
+    """
+    QtAdsFocusTracker(manager)
+
+    qss = manager.styleSheet()
+    assert "#tabMaximizeButton {" in qss
+    assert "#tabMaximizeButton:hover {" in qss
+    assert '[tracked_focus="true"] #tabMaximizeButton' in qss
+
+
 def test_construction_appends_to_the_existing_stylesheet(manager: QtAds.CDockManager) -> None:
     """The tracker appends its QSS to whatever the manager already carries, not replacing it.
 
@@ -972,6 +1023,34 @@ def test_styling_a_dock_mid_teardown_is_swallowed(manager: QtAds.CDockManager, m
     tracker._QtAdsFocusTracker__set_current_dock(fake)  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     assert tracker.current_dock is fake
+
+
+def test_styling_a_current_dock_re_polishes_its_maximize_button(manager: QtAds.CDockManager, qtbot: QtBot) -> None:
+    """A tab's maximize button (a `QtAdsMaximizeHandler`'s, when present) is re-polished with the
+    tab's other children as current-ness moves, so the descendant colour rule takes on it -- and
+    lets go again, which an un-re-polished descendant would not (its rule only re-evaluates when it
+    is polished itself).
+
+    **Test steps:**
+
+    * add two docks under a tracker with an explicit label colour, and give the second's tab a
+      stand-in ``tabMaximizeButton``
+    * make the second current, then the first again
+    * verify the stand-in's text colour took the label colour, then dropped it
+    """
+    tracker = QtAdsFocusTracker(manager, label="#123456")
+    first = add_dock(manager, "first")
+    second = add_dock(manager, "second")
+    button = QPushButton(second.tabWidget())
+    button.setObjectName("tabMaximizeButton")
+    manager.show()
+    qtbot.waitExposed(manager)
+
+    tracker.set_current_dock(second)
+    assert button.palette().color(QPalette.ColorRole.ButtonText).name() == "#123456"
+
+    tracker.set_current_dock(first)
+    assert button.palette().color(QPalette.ColorRole.ButtonText).name() != "#123456"
 
 
 def test_styling_a_current_dock_with_no_close_button_re_polishes_without_it(

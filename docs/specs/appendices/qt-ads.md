@@ -722,3 +722,84 @@ shorter. `DWMWA_TRANSITIONS_FORCEDISABLED` set on each window around its show
 (`borco_pyside.platforms.windows.window_transitions.open_transition_disabled`) puts both in the first
 frame either reaches, at the price of the fade-in itself; cleared again after the show, every later
 transition stays the desktop's.
+
+## 12. A per-tab maximize is a userland hide/show, and every capture has to undo it
+
+
+
+[[[appendices.qt-ads#area-maximize]]]
+
+
+
+QtAds has no "maximize this dock" (#341): `closeOtherAreas()` *closes* the siblings — their docks read
+closed and their toggle actions un-check — and the `showMaximized` family is plain `QWidget` window
+state. Upstream's own answer (githubuser0xFFFF/Qt-Advanced-Docking-System#194) is the userland
+hide/show, and that is what `borco_pyside.qtads.QtAdsMaximizeHandler` does: the maximized dock is
+brought to the front of its area, the area's other tabs are hidden (`tabWidget().setVisible(False)` —
+the docks stay open; QtAds neither re-shows such a tab on a resize or current change nor lists it in
+the tabs menu, measured), `setVisible(False)` on every sibling `CDockAreaWidget` of the same container
+grows that area to the whole container, and showing exactly those tabs and areas puts them back. The
+neighbouring tabs go too so that the maximized dock is the only thing on screen: left in the tab bar,
+one of them could be "maximized" with nothing visible happening, and its restore would then put back
+everything the first maximize hid. The *container* is the scope, not the manager — `CDockManager.openedDockAreas()` covers the main
+container only, so a dock in a floating window is reached through `area.dockContainer().openedDockAreas()`
+and fills that window, leaving the main one alone. Everything below was measured offscreen against the
+installed binding.
+
+
+
+**Hiding an area is signal-silent.** `CDockAreaWidget.setVisible(False)` and back emit nothing at all:
+no `dockAreaViewToggled` on the manager, no `viewToggled` on any of the area's docks, no
+`dockAreasAdded`/`dockAreasRemoved`. `toggleView` is the route that emits. So no dock reads closed,
+nothing else in the app reacts, and `openedDockAreas()` (which filters on `isHidden()`) simply stops
+listing the hidden ones — which is also why the handler needs no re-entrancy guard against its own
+hides, and why a document's `viewToggled`-driven size stash never sees them.
+
+
+
+**A capture taken while maximized is poisoned.** `saveState()` serialises the hidden panes' splitter
+`Sizes` at zero (`800 0` for a two-pane split), and restoring that blob later gives a sliver, not the
+layout the user had. Every layout capture in the app — a document's session and default-layout blobs,
+the documents area's, the task queue's, the window's close-time outer state — therefore runs inside the
+handler's `unmaximized()` block, which shows the hidden areas back for the duration and hides them
+again after, with the button and the maximize itself left as they were. Two details make the block
+honest: the splitter only re-divides on a `LayoutRequest`, which Qt *posts*, so a capture in the same
+call would still read zeros — `QCoreApplication.sendPostedEvents(None, QEvent.Type.LayoutRequest)`
+delivers them synchronously, with no turn of the event loop and nothing else let through; and every
+splitter's sizes under the container are recorded as the dock is maximized and re-applied after each
+show, since a hidden pane's size is the splitter's own bookkeeping rather than a promise.
+
+
+
+**Exit first, then the change.** Any structural change on the manager — an area added or removed (a
+dock dragged out or docked in), a dock added or removed, a dock or an area shown or hidden by a toggle
+(`viewToggled`, `dockAreaViewToggled`) — restores synchronously from the signal, so whatever the app
+does in reaction sees the un-maximized layout. A dock toggled *inside a hidden sibling* fires
+`dockAreaViewToggled(area, False)` and can leave that area with no open docks; showing such an area
+back puts an empty box on screen (measured), so the restore skips any area whose
+`openDockWidgetsCount()` is zero. A layout restore rebuilds every area from scratch: the handler forgets
+its bookkeeping on `stateRestored`, while the tabs — and the buttons on them — survive, the same objects
+reparented ([[appendices.qt-ads#restore-current-split]]); a refused blob touches nothing, so a standing
+maximize correctly survives one. One consumer still needs its own call: `DocumentWidget.__on_view_toggled`
+is connected as each dock is built, before the handler could be, so it calls `restore()` itself ahead of
+its size stash rather than trusting slot order.
+
+
+
+**The button is the app's, inserted into the tab beside QtAds' own close button.** A Python-subclassed
+tab through the factory crashes ([[appendices.qt-ads#custom-tab-widget]]), so a plain `QPushButton` — the
+close button's own kind — goes into the tab's own layout after the title's own spacing, with a spacing
+of the same width inserted after it — `title · gap · maximize · gap · close`, the shape
+[[appendices.qt-ads#tab-layout-insert]] established.
+It is drawn exactly as `QtAdsFocusTracker` draws the close button: a glyph as **text**, squared to the
+tab's height (Phosphor's *arrows-out* at rest and *arrows-in* while maximized, in this app), so the
+tracker's `ads--CDockWidgetTab[tracked_focus="true"] #tabMaximizeButton { color: … }` rule keeps it
+legible on the current tab's highlight. Its rest, hover and pressed look are QtAds' own
+`#tabCloseButton` rules — which differ between the light and dark sheets — copied with the selector
+renamed at the moment the tracker appends its block (`QtAdsFocusTracker.tab_maximize_button_stylesheet`),
+minus the close icon's `qproperty-` lines and negative padding; re-derived on every re-apply, so a theme
+flip reads the sheet the pinned mode now calls for. And the tracker re-polishes the button with the tab's
+other children as current-ness moves — a descendant rule takes only on the re-polished descendant
+itself, and a button inserted while its tab was current would otherwise keep the highlight's white on a
+tab no longer highlighted (measured). The buttons are re-walked from `dockWidgetsMap()` on
+`dockWidgetAdded` and `stateRestored`, the deferred way `QtAdsAutoHideButtonSuppressor` walks its areas.

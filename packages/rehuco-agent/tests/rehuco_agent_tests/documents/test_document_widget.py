@@ -5092,3 +5092,111 @@ def test_a_documents_own_sub_docks_carry_no_pin_button(
 
 
 # endregion
+
+
+# region maximizing a sub-dock over the document (#341)
+
+
+def maximize_button(widget: DocumentWidget, dock: QtAds.CDockWidget, qtbot: QtBot) -> QToolButton:
+    """The maximize toggle on ``dock``'s tab, waited for -- the handler inserts it deferred.
+
+    :param widget: the document widget whose handler put it there.
+    :param dock: the sub-dock whose tab to read.
+    :param qtbot: the bot to wait with.
+    :returns: the button.
+    """
+    handler = widget._DocumentWidget__maximize_handler  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    qtbot.waitUntil(lambda: handler.button(dock) is not None, timeout=WAIT_TIMEOUT_MS)
+    button = handler.button(dock)
+    assert button is not None
+    return button
+
+
+def test_a_sub_dock_maximizes_over_the_documents_other_areas(widget: DocumentWidget, qtbot: QtBot) -> None:
+    """Each sub-dock's tab carries the maximize toggle beside its close button, and it fills the
+    document (#341).
+
+    The innermost of the three nested managers: a document opens as two split viewer areas, and
+    maximizing Main View's leaves it the only one open.
+
+    **Test steps:**
+
+    * show the widget, find Main View's maximize button
+    * click it
+    * verify Main View's area is the only open one, and Description View still reads open
+    """
+    widget.resize(800, 600)
+    widget.show()
+    manager = widget._DocumentWidget__dock_manager  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    main_view = manager.findDockWidget("viewer:Main View")
+    description_view = manager.findDockWidget("viewer:Description View")
+    assert main_view is not None and description_view is not None
+    button = maximize_button(widget, main_view, qtbot)
+
+    button.click()
+
+    assert manager.openedDockAreas() == [main_view.dockAreaWidget()]
+    assert not description_view.isClosed()
+    assert button.isChecked()
+
+
+def test_a_layout_capture_reads_a_maximized_document_undone(widget: DocumentWidget, qtbot: QtBot) -> None:
+    """``save_layout_state`` and ``save_state`` capture the un-maximized layout while a sub-dock
+    stands maximized, and leave it maximized afterwards (#341) -- a default saved from a maximized
+    document must not open every later one as a sliver.
+
+    **Test steps:**
+
+    * show the widget, capture the layout-only blob, maximize Main View
+    * verify both captures equal the un-maximized one, and the maximize still stands after each
+    """
+    widget.resize(800, 600)
+    widget.show()
+    manager = widget._DocumentWidget__dock_manager  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    main_view = manager.findDockWidget("viewer:Main View")
+    assert main_view is not None
+    unmaximized_layout = widget.save_layout_state()
+    unmaximized_state = widget.save_state()
+    button = maximize_button(widget, main_view, qtbot)
+    button.click()
+    assert manager.openedDockAreas() == [main_view.dockAreaWidget()]
+
+    assert widget.save_layout_state() == unmaximized_layout
+    assert manager.openedDockAreas() == [main_view.dockAreaWidget()]
+    assert widget.save_state() == unmaximized_state
+    assert manager.openedDockAreas() == [main_view.dockAreaWidget()]
+    assert button.isChecked()
+
+
+def test_a_dock_toggle_exits_maximize_before_the_size_stash_reads_it(widget: DocumentWidget, qtbot: QtBot) -> None:
+    """Toggling a sub-dock while another is maximized exits the maximize first, so the
+    closed-dock-size stash records the real layout rather than the collapsed one (#341).
+
+    **Test steps:**
+
+    * show the widget, note Description View's splitter sizes, maximize Main View
+    * toggle On Disk visible through its action
+    * verify the maximize exited, and Description View's area is back at its sizes
+    """
+    widget.resize(800, 600)
+    widget.show()
+    manager = widget._DocumentWidget__dock_manager  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    main_view = manager.findDockWidget("viewer:Main View")
+    description_view = manager.findDockWidget("viewer:Description View")
+    assert main_view is not None and description_view is not None
+    description_area = description_view.dockAreaWidget()
+    assert description_area is not None
+    sizes = manager.splitterSizes(description_area)
+    assert all(size > 0 for size in sizes)
+    button = maximize_button(widget, main_view, qtbot)
+    button.click()
+
+    on_disk_dock(widget).toggleViewAction().trigger()
+
+    assert not button.isChecked()
+    assert len(manager.openedDockAreas()) == 2
+    qtbot.waitUntil(lambda: manager.splitterSizes(description_area) == sizes, timeout=WAIT_TIMEOUT_MS)
+    assert on_disk_dock(widget).toggleViewAction().isChecked()
+
+
+# endregion

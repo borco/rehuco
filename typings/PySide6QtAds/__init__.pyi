@@ -104,8 +104,26 @@ class CTitleBarButton(QToolButton):
 class CDockAreaTitleBar(QWidget):
     """The title-bar strip above a `CDockAreaWidget`'s tabs (`objectName() == "dockAreaTitleBar"`)."""
 
+class CDockContainerWidget(QWidget):
+    """The surface a set of areas is laid out on: a `CDockManager` **is** one (its main container),
+    and every `CFloatingDockContainer` window holds another. The scope an area's siblings are found
+    in -- `CDockManager.openedDockAreas()` covers the main container only, so a floating window's
+    areas are reached through its own container ([[appendices.qt-ads#area-maximize]])."""
+
+    def openedDockAreas(self) -> list[CDockAreaWidget]:
+        """Every currently-open (not `isHidden()`) area of this container, in no guaranteed order --
+        an area hidden with plain `setVisible(False)` drops out of it (verified)."""
+
+    def isFloating(self) -> bool:
+        """Whether this container is a floating window's rather than the manager's own."""
+
 class CDockAreaWidget(QWidget):
-    """One tabbed area within a `CDockManager`, holding one or more `CDockWidget` tabs."""
+    """One tabbed area within a `CDockManager`, holding one or more `CDockWidget` tabs.
+
+    Hiding one with plain `QWidget.setVisible(False)` emits **nothing** -- no `dockAreaViewToggled`
+    on the manager, no `viewToggled` on its docks, no `dockAreasRemoved` -- and its splitter hands
+    the room to its neighbours; showing it back restores the pane sizes (verified offscreen,
+    [[appendices.qt-ads#area-maximize]]). `toggleView` is the route that emits."""
 
     def setCurrentIndex(self, index: int) -> None:
         """Bring the tab at `index` to the front, hiding whichever tab was previously current."""
@@ -130,6 +148,18 @@ class CDockAreaWidget(QWidget):
     """Emitted with the new tab index whenever this area's current (selected) tab changes -- e.g.
     the user clicks a different tab."""
 
+    def dockContainer(self) -> CDockContainerWidget:
+        """The container this area is laid out on: the manager's own, or a floating window's."""
+
+    def openDockWidgetsCount(self) -> int:
+        """How many of this area's docks are open (not closed). Zero for an area whose last dock
+        was toggled closed while the area itself sat hidden -- QtAds would have hidden it as that
+        dock closed, and showing it back puts an empty area on screen (verified)."""
+
+    def openedDockWidgets(self) -> list[CDockWidget]:
+        """This area's open (not closed) docks, in tab order -- the tabs a maximized dock's
+        neighbours are hidden from ([[appendices.qt-ads#area-maximize]])."""
+
 class CElidingLabel(QLabel):
     """A `QLabel` that elides overflowing text instead of overflowing its bounds. Also the default
     content of a `CDockWidgetTab`'s clickable label (`objectName() == "dockWidgetTabLabel"`,
@@ -147,8 +177,12 @@ class CDockWidgetTab(QWidget):
 
 class CFloatingDockContainer(QWidget):
     """The top-level window hosting one or more docks torn out of a `CDockManager` (drag-out, or
-    `CDockManager.addDockWidgetFloating`). A plain `QWidget` for typing purposes -- callers only
-    ever need `isVisible()`/`show()`/etc., inherited from it."""
+    `CDockManager.addDockWidgetFloating`). Mostly a plain `QWidget` for typing purposes -- callers
+    need `isVisible()`/`show()`/etc., inherited from it -- plus the container it lays its areas on."""
+
+    def dockContainer(self) -> CDockContainerWidget:
+        """This window's own container: the scope of its areas, distinct from the manager's main
+        one (`CDockManager.openedDockAreas()` never lists a floating window's areas, verified)."""
 
 class CDockWidget(QWidget):
     """One dockable pane: a titled, taggable container around a single content `QWidget`
@@ -516,6 +550,15 @@ class CDockManager(QWidget):
     """Emitted with a `CDockAreaWidget` just after this manager creates it. Per-instance: an outer
     manager's connection never fires for a nested manager's areas, which is what makes per-manager
     title-bar-button suppression possible at all ([[appendices.qt-ads#tabs-menu-per-manager]])."""
+
+    dockAreasAdded: Signal
+    """Emitted (no arguments) as areas join this manager's main container -- a dock docked back in
+    from a floating window, or split off into a new area. Not emitted for a plain `setVisible`."""
+
+    dockAreasRemoved: Signal
+    """Emitted (no arguments) as areas leave this manager's main container -- a dock dragged out
+    into a floating window, or the last dock of an area removed. Not emitted for a plain
+    `setVisible`."""
 
     def addDockWidget(
         self,

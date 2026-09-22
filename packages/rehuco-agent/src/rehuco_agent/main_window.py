@@ -14,7 +14,7 @@ from typing import Final, override
 import PySide6QtAds as QtAds
 from borco_core.logging import LogScope
 from borco_pyside.logging import LogWidget
-from borco_pyside.qtads import QtAdsFloatingShowGuard, QtAdsPinSideHandler
+from borco_pyside.qtads import QtAdsFloatingShowGuard, QtAdsFocusTracker, QtAdsPinSideHandler
 from borco_pyside.theming import ActionIconThemeHandler, ThemeManager, ThemeMenu, ThemeModel
 from borco_pyside.widgets import ToolBarStretch
 from PySide6.QtCore import QByteArray
@@ -44,6 +44,7 @@ from .app_logging import LOG_VIEW_ICON_RESOURCE, build_log_widget, shared_log_br
 from .archives import ARCHIVE_EXTENSIONS
 from .dialogs.conversion_backups_dialog import ConversionBackupsDialog
 from .dialogs.import_legacy_catalog_wizard import ImportLegacyCatalogWizard
+from .dock_maximize import attach_maximize_handler
 from .documents.confirm_and_save_dirty import confirm_and_save_dirty
 from .documents.document_widget import LOG_DOCK_MIN_HEIGHT, DocumentWidget
 from .documents.documents_dock import DocumentsDock
@@ -51,6 +52,7 @@ from .documents.rehu_document_menu_entry import RehuDocumentMenuEntry
 from .documents.rehu_document_model import path_label
 from .documents.save_or_prompt_retry import save_or_prompt_retry
 from .fields.type_field import type_label
+from .glyphs import TAB_CLOSE_GLYPH
 from .main_window_ui import Ui_MainWindow
 from .recycle_bin_deleter import configured_deleter
 from .settings.checksum_settings import shared_checksum_settings
@@ -231,6 +233,15 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__on_tray_enabled_changed(shared_tray_settings().enabled)
 
         self.__dock_manager: Final = QtAds.CDockManager(self)
+        # this manager is every nested tracker's stylesheet host, and their sheet zeroes the close
+        # icon on *every* tab under it -- its own included -- on the promise that a tracker draws the
+        # close glyph in its place. Without a tracker of its own, the outer tabs' [x] was an empty
+        # 4 px hit area (measured on screen, #341). Nothing holds onto it: it parents itself to the
+        # manager it tracks, and no state is read back off it
+        QtAdsFocusTracker(self.__dock_manager, close_glyph=TAB_CLOSE_GLYPH)
+        # the maximize toggle on each outer dock tab (#341): the handler parents itself to
+        # the manager, and is kept only so the close-time layout capture can read it un-maximized
+        self.__maximize_handler: Final = attach_maximize_handler(self.__dock_manager)
         self.__settings_dialog: Final = SettingsDialog()
         self.__register_settings_pages()
         # after registration, not folded into SettingsDialog.__init__: add_page's own "first page
@@ -1321,7 +1332,8 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         app-wide log surface's own filters (#200)."""
         self.__window_settings.geometry = bytes(self.saveGeometry().data())
         self.__window_settings.toolbars_state = bytes(self.saveState(TOOLBARS_STATE_VERSION).data())
-        self.__window_settings.outer_docks_state = bytes(self.__dock_manager.saveState().data())
+        with self.__maximize_handler.unmaximized():
+            self.__window_settings.outer_docks_state = bytes(self.__dock_manager.saveState().data())
         self.__window_settings.log_widget_state = self.__log_widget.save_state()
         self.__window_settings.task_queue_state = self.__task_queue_widget.save_state()
         self.__window_settings.save(persistent_settings())

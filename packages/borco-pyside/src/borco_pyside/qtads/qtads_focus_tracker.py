@@ -1,5 +1,6 @@
 """Tracks the currently-selected dock within a QtAds `CDockManager`."""
 
+import re
 from typing import Final
 
 import PySide6QtAds as QtAds
@@ -7,7 +8,7 @@ from PySide6.QtCore import QObject, QSize, QTimer, Signal
 from PySide6.QtWidgets import QApplication, QWidget
 
 from ..theming import ApplicationPaletteChangeNotifier, Glyph
-from .qtads_widgets import tab_close_button, tab_label
+from .qtads_widgets import tab_close_button, tab_label, tab_maximize_button
 
 
 # the tracker holds three cohesive pieces of state that happen to be counted separately: what it
@@ -203,8 +204,9 @@ class QtAdsFocusTracker(QObject):  # pylint: disable=too-many-instance-attribute
         otherwise re-apply its 16px icon size -- the rule re-applies 0 on each such repolish instead.
 
         :param highlight: fill/border colour of the current dock's tab. Default ``palette(highlight)``.
-        :param label: text colour of the current dock's tab label *and* its close button (drawn as
-            :data:`DEFAULT_CLOSE_GLYPH`'s text, not an icon, so this recolors it). Default
+        :param label: text colour of the current dock's tab label, its close button (drawn as
+            :data:`DEFAULT_CLOSE_GLYPH`'s text, not an icon, so this recolors it) and the
+            ``#tabMaximizeButton`` a `QtAdsMaximizeHandler` draws the same way beside it. Default
             ``palette(highlighted-text)`` -- the role guaranteed to contrast ``highlight`` in both
             light and dark themes.
         :param title_bar: colour of the accent line just below the title bar (drawn as the current
@@ -225,7 +227,8 @@ ads--CDockWidgetTab[{prop}="true"] {{
 ads--CDockWidgetTab[{prop}="true"] QLabel {{
     color: {label};
 }}
-ads--CDockWidgetTab[{prop}="true"] #tabCloseButton {{
+ads--CDockWidgetTab[{prop}="true"] #tabCloseButton,
+ads--CDockWidgetTab[{prop}="true"] #tabMaximizeButton {{
     color: {label};
 }}
 ads--CDockWidget[{prop}="true"] {{
@@ -277,9 +280,40 @@ ads--CDockWidget[{prop}="true"] {{
         # [[appendices.qt-ads#qss-cascade]]). Reordering this puts the doubled close mark back.
         existing = carrier.styleSheet()
         if self.__stylesheet_addition not in existing:
-            carrier.setStyleSheet(
-                f"{existing}\n{self.__stylesheet_addition}" if existing else self.__stylesheet_addition
-            )
+            addition = self.__stylesheet_addition + self.tab_maximize_button_stylesheet(existing)
+            carrier.setStyleSheet(f"{existing}\n{addition}" if existing else addition)
+
+    @staticmethod
+    def tab_maximize_button_stylesheet(stylesheet: str) -> str:
+        """Derive the rules dressing a `QtAdsMaximizeHandler`'s tab button from the close button's.
+
+        The button sits beside the tab's close button and must draw like it -- the same top margin,
+        no frame at rest, the same hover frame and pressed fill -- and those come from QtAds' own
+        ``#tabCloseButton`` rules, which differ between its light and dark sheets. Rather than
+        restating either, every block of ``stylesheet`` whose selector is ``#tabCloseButton`` or one
+        of its pseudo-states is copied with the selector renamed to ``#tabMaximizeButton``, minus the
+        ``qproperty-`` lines that set the close icon and the negative padding that fits it (the
+        maximize button draws a glyph as text, squared like the close button is). Re-derived on
+        every re-apply, so a theme flip re-reads the sheet the mode now calls for. Empty when
+        ``stylesheet`` carries no close-button rules to copy.
+
+        :param stylesheet: the sheet the rules are derived from -- the carrier's, as QtAds set it.
+        :returns: the derived QSS, ready to append.
+        """
+        blocks = re.findall(r"(?:^|(?<=\}))\s*(#tabCloseButton(?::[a-z]+)?)\s*\{([^}]*)\}", stylesheet)
+        rules: list[str] = []
+        for selector, body in blocks:
+            # split on declarations, not lines: the close icon's qproperty-icon value wraps onto a
+            # second line (its disabled variant), which a line filter would let through
+            declarations = [" ".join(part.split()) for part in body.split(";")]
+            kept = [
+                declaration
+                for declaration in declarations
+                if declaration and not declaration.startswith(("qproperty-", "padding"))
+            ]
+            renamed = selector.replace("#tabCloseButton", "#tabMaximizeButton")
+            rules.append(renamed + " {\n" + "".join(f"    {line};\n" for line in kept) + "    padding: 0px;\n}\n")
+        return "".join(rules)
 
     def __on_palette_changed(self) -> None:
         """Re-pin the colour scheme to the new palette, and put this tracker's marks back on top.
@@ -463,9 +497,10 @@ ads--CDockWidget[{prop}="true"] {{
 
         Sets ``tracked_focus`` on ``dock`` (styled with the accent line -- its top border, just below
         the title bar) and on its ``tab`` (the highlight fill), then re-polishes them plus the tab's
-        label. A descendant rule (e.g. ``...CDockWidgetTab[tracked_focus] QLabel``) re-evaluates only
-        when the descendant itself is re-polished, never merely because its ancestor was; QSS does not
-        cascade ``color`` across child widgets the way CSS does.
+        label, close button and maximize button (`QtAdsMaximizeHandler`'s, when present). A
+        descendant rule (e.g. ``...CDockWidgetTab[tracked_focus] QLabel``) re-evaluates only when the
+        descendant itself is re-polished, never merely because its ancestor was; QSS does not cascade
+        ``color`` across child widgets the way CSS does.
 
         Defensive against a ``dock`` mid-teardown (e.g. the one just removed): Shiboken can flag its
         tab "already deleted" transiently, surfacing as ``RuntimeError`` -- harmless to skip.
@@ -478,8 +513,9 @@ ads--CDockWidget[{prop}="true"] {{
             dock.setProperty(self.TRACKED_FOCUS_PROPERTY, current)
             tab.setProperty(self.TRACKED_FOCUS_PROPERTY, current)
             widgets: list[QWidget] = [dock, tab, tab_label(dock)]
-            if (button := tab_close_button(dock)) is not None:
-                widgets.append(button)
+            for button in (tab_close_button(dock), tab_maximize_button(dock)):
+                if button is not None:
+                    widgets.append(button)
             self.__repolish(*widgets)
         except RuntimeError:
             pass
