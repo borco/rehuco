@@ -24,6 +24,7 @@ from rehuco_core import (
 )
 
 from ..app_logging import LOG_VIEW_ICON_RESOURCE, build_log_widget, shared_log_bridge
+from ..dock_maximize import attach_maximize_handler
 from ..fields.colors import DONE_COLOR, ERROR_COLOR, INFO_COLOR, QUEUED_COLOR
 from ..glyphs import TAB_CLOSE_GLYPH
 from ..settings.logs_settings import shared_logs_settings
@@ -189,6 +190,9 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
         # same for the pin button, and for the same reason (#279): pinning belongs to the window's own
         # docks, and this shell's two sub-docks live inside one of them
         QtAdsAutoHideButtonSuppressor(self.__dock_manager)
+        # the maximize toggle on each sub-dock's tab (#341); kept only so save_state can read
+        # the layout un-maximized
+        self.__maximize_handler: Final = attach_maximize_handler(self.__dock_manager)
         self.__add_queue_dock()
         self.__log_dock: Final = self.__add_log_dock()
 
@@ -414,10 +418,12 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
 
         :returns: cbor2-encoded state, suitable for :meth:`restore_state`.
         """
+        with self.__maximize_handler.unmaximized():
+            dock_manager_state = bytes(self.__dock_manager.saveState().data())
         return cbor2.dumps(
             {
                 STATE_VERSION_KEY: STATE_VERSION,
-                STATE_DOCK_MANAGER_KEY: bytes(self.__dock_manager.saveState().data()),
+                STATE_DOCK_MANAGER_KEY: dock_manager_state,
                 STATE_LOG_WIDGET_KEY: self.__log_widget.save_state(),
             }
         )

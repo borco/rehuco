@@ -1523,3 +1523,43 @@ def test_the_log_surface_s_own_filters_survive_a_restore(queue: TaskQueue, qtbot
 
 
 # endregion
+
+
+# region maximizing a sub-dock over the shell (#341)
+
+
+def test_a_sub_dock_maximizes_and_a_capture_reads_it_undone(widget: TaskQueueWidget, qtbot: QtBot) -> None:
+    """Each sub-dock's tab carries the maximize toggle, and ``save_state`` reads the layout with it
+    undone (#341).
+
+    **Test steps:**
+
+    * show the shell with its Log sub-dock revealed, capture the layout
+    * maximize the Log sub-dock through its tab's button
+    * verify only that area is open, ``save_state`` still equals the un-maximized capture, and the
+      maximize stands afterwards
+    """
+    widget.resize(800, 600)
+    widget.show()
+    log_dock_of(widget).toggleView(True)
+    manager = widget._TaskQueueWidget__dock_manager  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    handler = widget._TaskQueueWidget__maximize_handler  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    log_area = log_dock_of(widget).dockAreaWidget()
+    assert log_area is not None
+    # the baseline must be a settled layout: the reveal's splitter re-division lands on a posted
+    # layout request, and a capture before it would differ from every later one
+    qtbot.waitUntil(lambda: all(size > 0 for size in manager.splitterSizes(log_area)), timeout=10_000)
+    unmaximized = widget.save_state()
+    qtbot.waitUntil(lambda: handler.button(log_dock_of(widget)) is not None, timeout=10_000)
+    button = handler.button(log_dock_of(widget))
+    assert button is not None
+
+    button.click()
+
+    assert manager.openedDockAreas() == [log_area]
+    assert widget.save_state() == unmaximized
+    assert manager.openedDockAreas() == [log_area]
+    assert button.isChecked()
+
+
+# endregion

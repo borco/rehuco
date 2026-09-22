@@ -20,6 +20,7 @@ from rehuco_core import (
     load_tc,
 )
 
+from ..dock_maximize import attach_maximize_handler
 from ..glyphs import TAB_CLOSE_GLYPH
 from ..settings.document_session_settings import DocumentSessionSettings
 from ..settings.identity_settings import shared_identity_settings
@@ -137,6 +138,9 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         # governed by a process-wide flag no per-dock feature can narrow. Nothing holds onto it --
         # it parents itself to the manager it suppresses.
         QtAdsAutoHideButtonSuppressor(self.__dock_manager)
+        # the maximize toggle on each document's tab (#341), filling the documents area; kept
+        # only so the session capture can read the layout un-maximized
+        self.__maximize_handler: Final = attach_maximize_handler(self.__dock_manager)
 
     def open_document(self, path: Path, *, state: bytes | None = None) -> DocumentWidget:
         """Open ``path`` in a new dock, or focus its dock if already open.
@@ -379,7 +383,8 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
             path-derived identity), so only meaningful once every document that was part of it has been
             reopened (their docks recreated with the same identifiers) again.
         """
-        return bytes(self.__dock_manager.saveState().data())
+        with self.__maximize_handler.unmaximized():
+            return bytes(self.__dock_manager.saveState().data())
 
     def restore_state(self, state: bytes) -> bool:
         """Restore a previously-saved outer layout.

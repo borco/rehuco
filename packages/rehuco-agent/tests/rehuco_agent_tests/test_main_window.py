@@ -16,6 +16,7 @@ from typing import Any, Final
 import PySide6QtAds as QtAds
 from borco_pyside.logging import LogWidget
 from borco_pyside.logging.log_model import MESSAGE_COLUMN
+from borco_pyside.qtads import tab_close_button
 from borco_pyside.qtads.qtads_pin_side_handler import DEFAULT_PIN_SIDE, PIN_SIDE_KEY
 from PySide6.QtCore import QByteArray, QEvent, QModelIndex, QObject, Qt
 from PySide6.QtGui import QCloseEvent, QKeySequence
@@ -34,6 +35,7 @@ from pytestqt.qtbot import QtBot
 from rehuco_agent import main_window
 from rehuco_agent.app_logging import shared_log_bridge
 from rehuco_agent.documents.document_widget import LOG_DOCK_MIN_HEIGHT
+from rehuco_agent.glyphs import TAB_CLOSE_GLYPH
 from rehuco_agent.main_window import (
     DOCK_PIN_SIDES_GROUP,
     DOCUMENTS_DOCK_OBJECT_NAME,
@@ -5653,6 +5655,78 @@ def test_a_restored_floating_dock_is_shown_plainly_elsewhere(mocker: MockerFixtu
     assert container.isVisible() is True
     paint_now.assert_not_called()
     no_fade.assert_not_called()
+
+
+# endregion
+
+
+# region maximizing an outer dock over the window (#341)
+
+
+def test_the_outer_tabs_draw_their_close_glyph(qtbot: QtBot) -> None:
+    """The outer manager's own tabs get the close glyph a tracker draws (#341).
+
+    That manager hosts every nested tracker's stylesheet, whose close-button rule zeroes the icon on
+    every tab under it -- its own included -- so without a tracker of its own the outer [x] was an
+    empty hit area (measured on screen).
+
+    **Test steps:**
+
+    * build the window, reveal the Log dock
+    * verify its tab's close button carries the app's close glyph, squared, with no icon
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    log_dock(window).toggleView(True)
+    close_button = tab_close_button(log_dock(window))
+    assert close_button is not None
+
+    qtbot.waitUntil(lambda: close_button.text() == TAB_CLOSE_GLYPH.codepoint, timeout=10_000)
+
+    assert close_button.iconSize().width() == 0
+    assert close_button.width() == close_button.height()
+
+
+def test_an_outer_dock_maximizes_and_the_close_time_capture_reads_it_undone(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """Each outer dock's tab carries the maximize toggle -- the Documents, Log, Tasks and Settings
+    docks fill the window -- and the close-time outer-docks capture reads the layout with it undone
+    (#341).
+
+    The outermost of the three nested managers.
+
+    **Test steps:**
+
+    * show the window with the Log dock revealed beside the Documents dock, capture the outer layout
+    * maximize the Log dock through its tab's button
+    * dispatch a close event and verify the recorded outer state equals the un-maximized capture
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.resize(1000, 700)
+    window.show()
+    manager = window._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    handler = window._MainWindow__maximize_handler  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    log_dock(window).toggleView(True)
+    log_area = log_dock(window).dockAreaWidget()
+    assert log_area is not None
+    # the baseline must be a settled layout: the window's first show and the reveal both re-divide
+    # the strip on a later turn of the event loop, and a capture before that differs from every
+    # later one whether or not anything is maximized in between
+    qtbot.wait(100)
+    unmaximized = bytes(manager.saveState().data())
+    qtbot.waitUntil(lambda: handler.button(log_dock(window)) is not None, timeout=10_000)
+    button = handler.button(log_dock(window))
+    assert button is not None
+    mocker.patch.object(MainWindowSettings, "save")
+    button.click()
+    assert manager.openedDockAreas() == [log_area]
+
+    window.closeEvent(QCloseEvent())
+
+    window_settings = window._MainWindow__window_settings  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert window_settings.outer_docks_state == unmaximized
 
 
 # endregion
