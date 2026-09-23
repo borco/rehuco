@@ -4,7 +4,13 @@ from typing import Final
 
 import requests
 
+from .protocols import LoginRequiredError
 from .results import Page
+
+LOGIN_WALL_STATUS_CODES: Final = frozenset({401, 403})
+"""The one generic login-wall signal a plain HTTP fetch has -- most login walls answer `200` with a
+login page instead, which only the scraper's own parsing can recognize
+([[acquisition-tooling#browser-persona]])."""
 
 USER_AGENT: Final = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -32,8 +38,13 @@ class HttpPageFetcher:
 
         :param url: the address to fetch.
         :returns: the fetched page.
-        :raises requests.RequestException: on a connection failure, a timeout, or a 4xx/5xx status.
+        :raises LoginRequiredError: the response status was ``401`` or ``403``
+            (:data:`LOGIN_WALL_STATUS_CODES`).
+        :raises requests.RequestException: on a connection failure, a timeout, or another 4xx/5xx
+            status.
         """
         response = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=REQUEST_TIMEOUT_SECONDS)
+        if response.status_code in LOGIN_WALL_STATUS_CODES:
+            raise LoginRequiredError(f"{url} answered {response.status_code}, which usually means a login wall.")
         response.raise_for_status()
         return Page(url=url, final_url=response.url, html=response.text)

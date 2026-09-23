@@ -139,14 +139,20 @@ node does unattended, so `rehuco-core` learns no HTTP client and no HTML parser.
 structural, both plain classes:
 
 - **`PageFetcher`** — `fetch(url) -> Page`, a `Page` being the URL asked for, the URL it resolved to, and the HTML. The
-  default fetches over plain HTTP with a browser User-Agent. A **browser-driven fetcher** — a headless browser, the
-  geckodriver / undetected-chromedriver route the predecessors ended on — is an opt-in extra a scraper may declare it
-  needs, or that a paywalled site makes necessary: the heaviest dependency in the app should be paid for by the site
-  that needs it. See [[acquisition-tooling#browser-persona]] for what it drives.
+  default fetches over plain HTTP with a browser User-Agent. A **browser-driven fetcher**, Selenium on the persona
+  ([[acquisition-tooling#browser-persona]]), is used instead whenever a scraper declares it needs one, or the user
+  ticked **Use browser** for it on the Scrapers settings page — a per-scraper choice, since the heaviest dependency
+  in the app should be paid for by the site that needs it, not switched on for every scrape at once. A fetcher raises
+  `FetchError` on a failed fetch, or `LoginRequiredError` when the page it landed on is a login wall rather than the
+  one it asked for — `HttpPageFetcher` raises the latter itself on a `401`/`403`, the one generic signal a plain HTTP
+  fetch has; a scraper's own parsing raises it too, since only the scraper knows what its site's login wall looks
+  like when the status is a plain `200`.
 - **`SiteScraper`** — what every scraper is: `matches(url) -> bool`, a host or prefix test as tc4's `can_scrap` was, a
-  `label`, the `publisher` it fills in, a `needs_browser` flag — `True` on a scraper that cannot read its site without
-  the browser-driven fetcher, and refused with a clear log message rather than fetched over plain HTTP until that
-  fetcher exists — and one method — `scrape_page(page) -> ScrapeResult`. **Not one Protocol per
+  `label`, the `publisher` it fills in, `site_name`/`site_url` — what the Scrapers table's link for this scraper
+  shows and where it takes the user, opened through the persona browser's `open_for_login`, never Selenium
+  ([[acquisition-tooling#browser-persona]]) — a `needs_browser` flag — `True` on a scraper that cannot read its site
+  without a real browser session, always routed through the persona regardless of the table's ticks — and one
+  method — `scrape_page(page) -> ScrapeResult`. **Not one Protocol per
   resource type**: an earlier draft dispatched to `scrape_tutorial`/`scrape_reference_images`/`scrape_collection`
   separately, one per plugin key ([[plugins#plugin-blocks]]), but a `ScrapeResult`'s fields are an unvalidated,
   plain mapping rather than pre-filtered to one type's declared set (below) — so there is nothing left for three
@@ -207,10 +213,13 @@ a migrated document's `authors` stays name-only, since the source format never c
 Scrapers are looked up in an **ordered list**, first `matches()` wins, and the list is the **user's scripts folder
 first, then the built-ins** — so a user's module overrides a shipped scraper for the same host. That is the whole answer
 to brittleness: when a site changes, the fix is a `.py` file in a folder, not a release. The folder is a settings page,
-**Scrapers** ([[appendices.settings-pages#category-groups]]): the folder path; a table of what loaded — one row per
-file, naming the file, the scrapers it defines (`label`, `publisher`) — and, per file, the import error when it
-failed, since a scraper that silently did not load is indistinguishable from one that matched nothing; and a
-**Reload** that re-scans the saved folder without a restart. A user's own script needs no import from this package
+**Scrapers** ([[appendices.settings-pages#category-groups]]): the folder path; a table with **one row per scraper**,
+built-ins included — naming it as a link (`site_name`, opening `site_url` in the persona browser on a click), its
+source file (or "Built-in"), and a **Use browser** checkbox ([[acquisition-tooling#browser-persona]]) — plus one row
+per file that loaded no scraper or failed to,
+carrying the import error, since a scraper that silently did not load is indistinguishable from one that matched
+nothing; and a **Reload** that re-scans the saved folder without a restart. A user's own script needs no import from
+this package
 at all: `SiteScraper` is a plain structural Protocol, so a copied-and-edited file satisfies it by shape alone, with
 no registration step beyond being a `.py` file in the folder. Scripts in that folder are **trusted local code**, run
 with the app's own privileges; the page says so and the app does nothing to sandbox them. Built-in scrapers ship for
@@ -227,25 +236,75 @@ stdout, or to `--output PATH` when the packaged build's silent console makes tha
 
 [[[acquisition-tooling#browser-persona]]]
 
-The browser-driven fetcher launches a real browser through Selenium with a **persona**: a browser profile directory
-of its own, under the app's config directory, that keeps its cookies and local storage between runs. That is what
-lets it read a **paywalled or members-only page** — the user logs in once, by hand, and every later automated load
-carries the session, the way tutcatalogpy3's driver launched Firefox on a dedicated profile. Three controls on the
-Scrapers settings page ([[acquisition-tooling#scraper-registry]]) belong to it:
+The browser-driven fetcher launches a real browser through **Selenium** — a plain runtime dependency of
+`rehuco-agent`, not an opt-in extra, so the packaged Windows/macOS builds carry it too. What stays optional is
+having a **browser installed**: Selenium Manager, bundled in the wheel, resolves the matching driver for Firefox,
+Chrome or Edge automatically on first use, and a fetch fails with a clear message naming the browser when neither
+is present.
 
-- **Use the browser fetcher** — off by default; when on, every scrape that does not refuse it goes through the
-  browser, not only the ones a scraper declared it needs. Which browser (Firefox via geckodriver, Chrome via
-  undetected-chromedriver) is a choice beside it, since bot detection differs per site and the second exists because
-  the first is flagged on some.
+The browser runs on a **persona**: a profile directory of its own, one per browser, under
+`<config>/rehuco-agent/persona/<browser>` — the app's own scraper identity, never the user's everyday browser, its
+logins, or its history. It keeps cookies and local storage between runs, which is what lets it read a **paywalled or
+members-only page**: the user logs in once, by hand, and every later scrape through that persona carries the
+session, the way tutcatalogpy3's driver launched Firefox on a dedicated profile.
+
+**Logging in and scraping are two different processes on the same profile, never one shared session.** A
+WebDriver-controlled browser is flagged as automated by the browser itself for as long as the session runs, whatever
+it happens to be doing at that moment — Firefox's Marionette sets `navigator.webdriver` the instant remote control
+is enabled, not only while a command is in flight, because the WebDriver spec requires it. Google's and
+Cloudflare-grade sign-in checks key off exactly that flag, so a Selenium-driven session cannot sign in anywhere
+either of them guards, no matter how long the user is given to answer a challenge by hand, and no per-site workaround
+changes that — it is what a WebDriver session *is*. **Open the browser** therefore never touches Selenium at all: it
+launches the persona's browser directly, the same way double-clicking its icon would, so the browser Google or
+Cloudflare sees is an ordinary one. What carries a login forward to a later, Selenium-driven scrape is not a shared
+live session — it is the **profile directory** the two share: cookies a plain login window wrote are on disk before
+that window ever closes, and any scrape opened later on the same folder reads them like any other returning visit.
+The one thing the two cannot do is run at once: a profile can be held open by only one browser process at a time,
+plain or Selenium-driven alike, so a scrape attempted while the login window is still open fails to start its own
+session, with a message naming that as the likely cause. A scrape itself always starts a short-lived Selenium
+session (headless unless **Show the browser while scraping** is ticked) and quits it when done — there is nothing
+left running for a next scrape, or a login, to find.
+
+Controls on the Scrapers page:
+
+- **Browser** — Firefox, Chrome or Edge; which persona a scrape or a login uses.
 - **Show the browser while scraping** — headless is the default; visible is how a page that came back empty is
-  inspected, and how a challenge page is solved in the same profile the fetcher will use next.
-- **Open the browser** — launches the persona's browser on nothing in particular, so the user can log in to a site
-  and close it; the session is then the fetcher's. This is also the remedy when a session has expired, so it stays
-  one click away rather than buried in a first-run flow.
+  inspected.
+- **Open the browser** — launches (or, if one is already open, brings forward) a plain, un-automated window on the
+  persona, so the user can log in to any number of sites by hand and leave the window open or close it; either way
+  the logins persist in the profile. This is also the remedy when a session has expired, so it stays one click away
+  rather than buried in a first-run flow.
+- **Reset persona…** — closes any open login window and deletes the persona folder, for a clean, logged-out profile
+  the next use recreates from scratch. Confirmed first, since it logs the persona out of every site at once.
+- **Use browser**, one checkbox per row of the Scrapers table ([[acquisition-tooling#scraper-registry]]) — the
+  per-scraper opt-in described above. A `needs_browser` scraper's box is shown checked and disabled: that choice is
+  the scraper's, not the user's, to make.
+
+**No stealth driver, and none would help sign-in anyway.** tutcatalogpy3 used `undetected-chromedriver` to defeat
+per-page anti-bot detection; this build does not. It is GPLv3 (this project is MIT), its last release predates this
+work by over a year, and it bypasses Selenium Manager's own driver resolution with its own. It also would not have
+solved the sign-in problem above regardless: `navigator.webdriver` is set by the WebDriver spec itself, not by a
+particular driver's fingerprint, so no amount of patching a *scraping* session makes it eligible to sign in anywhere
+Google- or Cloudflare-grade detection watches for that flag — only the plain, unautomated login window is. A scrape
+that still gets challenged on an ordinary content page (rarer, since such gates are usually placed on sign-in and
+similar flows rather than on every authenticated page view) is its own, later issue if it turns out to matter.
+
+**Detecting a login wall** is the scraper's job, not the fetcher's: most sites answer one with a plain `200` and a
+login form rather than a distinguishing status code, so only a scraper's own parsing — noticing the element it
+wants is missing, and the site's login marker is present — can raise `LoginRequiredError`
+([[acquisition-tooling#scraper-protocols]]) with any reliability. The one generic fallback is a `401`/`403` over
+plain HTTP, which `HttpPageFetcher` itself turns into the same error. Either path becomes a `LoginRequiredScrapeError`
+naming the scraper and the host, shown as the drop's banner row the same way every other scrape failure is.
 
 The profile is a **credential store**: it lives only under the config directory, is never inside a resource folder,
 and is never synced or copied by anything the app does. Sessions expire and two-factor sites re-ask; the app does
 not try to keep a login alive, it only keeps the door to renewing one open.
+
+**No stealth driver.** tutcatalogpy3 used `undetected-chromedriver` to defeat anti-bot detection; this build does
+not. It is GPLv3 (this project is MIT), its last release predates this work by over a year, and it bypasses Selenium
+Manager's own driver resolution with its own. Plain Selenium, the visible-browser mode, and a persona actually
+logged in are the remedy the design already needs for other reasons; a site that still needs stealth is its own,
+later issue.
 
 ### §15.2.5 The scrape runs on its own pool, not the app-wide task queue
 
@@ -264,8 +323,8 @@ message-only inline strip every other condition already uses — and, if it did 
 no-scraper-matched host, worded exactly as `rehuco-agent --scrape URL` prints it
 ([[acquisition-tooling#scraper-registry]]), or the scraper's own failure. Its result is applied on the GUI thread,
 and only if the document is still open at the same path; a document closed or renamed while its page was being
-fetched simply discards the result. `markdownify`, `beautifulsoup4` and `requests` become runtime dependencies of
-`rehuco-agent`; the browser driver goes under an opt-in extra.
+fetched simply discards the result. `markdownify`, `beautifulsoup4`, `requests` and `selenium` are all plain runtime
+dependencies of `rehuco-agent` ([[acquisition-tooling#browser-persona]] for why Selenium is not an opt-in extra).
 
 ### §15.2.6 The LLM fallback, deferred
 

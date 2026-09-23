@@ -13,13 +13,30 @@ from typing import Protocol, runtime_checkable
 from .results import Page, ScrapeResult
 
 
+class FetchError(Exception):
+    """A `PageFetcher` could not produce a page -- a browser session failed to start, or the driver
+    itself raised ([[acquisition-tooling#browser-persona]]). `~.http_fetcher.HttpPageFetcher` raises
+    `requests.RequestException` instead, which `~.scrape_job.ScrapeJob` catches alongside this one."""
+
+
+class LoginRequiredError(Exception):
+    """Raised by :meth:`SiteScraper.scrape_page` when a fetched page is a login wall rather than the
+    page it asked for ([[acquisition-tooling#browser-persona]]).
+
+    Only the scraper itself knows what its site's login wall looks like, so detecting one is the
+    scraper's job, not the fetcher's -- `~.http_fetcher.HttpPageFetcher` raises it too, but only for the
+    one generic signal a plain HTTP fetch has: a ``401``/``403`` status.
+    """
+
+
 @runtime_checkable
 # one method is the design, not an omission -- see the docstring above
 # pylint: disable-next=too-few-public-methods
 class PageFetcher(Protocol):
     """Turns a URL into a fetched page. The default (:class:`~.http_fetcher.HttpPageFetcher`) does this
-    over plain HTTP; a browser-driven one is future work a scraper opts into via
-    :attr:`SiteScraper.needs_browser` ([[acquisition-tooling#browser-persona]]).
+    over plain HTTP; a scraper whose :attr:`SiteScraper.needs_browser` is `True`, or that the user
+    ticked **Use browser** for, is fetched through the persona browser instead
+    (:class:`~.browser_fetcher.BrowserPageFetcher`, [[acquisition-tooling#browser-persona]]).
     """
 
     def fetch(self, url: str) -> Page:  # pyright: ignore[reportReturnType]
@@ -27,6 +44,8 @@ class PageFetcher(Protocol):
 
         :param url: the address to fetch.
         :returns: the fetched page.
+        :raises FetchError: the fetch failed.
+        :raises LoginRequiredError: the fetch landed on a login wall.
         """
 
 
@@ -54,14 +73,26 @@ class SiteScraper(Protocol):
         """The publisher this scraper fills into a scraped result's ``publisher`` field."""
 
     @property
+    def site_name(self) -> str:  # pyright: ignore[reportReturnType]
+        """What to display for a link to this scraper's site, on the Scrapers settings page's table
+        row -- what to show, as opposed to :attr:`site_url`, where clicking it takes the user
+        ([[acquisition-tooling#browser-persona]])."""
+
+    @property
+    def site_url(self) -> str:  # pyright: ignore[reportReturnType]
+        """Where a click on :attr:`site_name` takes the user -- opened in the persona browser through
+        `~.browser_fetcher.PersonaBrowser.open_for_login`, never through Selenium, so it is exactly as
+        eligible to sign in as **Open the browser** itself is ([[acquisition-tooling#browser-persona]]).
+        A new tab if the persona browser is already open, a fresh window otherwise."""
+
+    @property
     def needs_browser(self) -> bool:  # pyright: ignore[reportReturnType]
-        """Whether this scraper needs the browser-driven fetcher
-        ([[acquisition-tooling#browser-persona]]) rather than a plain HTTP one.
+        """Whether this scraper is always fetched through the persona browser
+        ([[acquisition-tooling#browser-persona]]) rather than plain HTTP.
 
         `True` for a scraper that cannot read its site without a real browser session (a paywalled or
-        members-only page); every other scraper answers `False`. A scrape asking for one before it
-        exists is refused with a clear message rather than silently fetched over plain HTTP, which would
-        return a login wall instead of the page.
+        members-only page); every other scraper answers `False` and may still be routed through the
+        browser by the user's own **Use browser** choice on the Scrapers settings page.
         """
 
     def matches(self, url: str) -> bool:  # pyright: ignore[reportReturnType]

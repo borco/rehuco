@@ -9,8 +9,10 @@ from urllib.parse import urlsplit
 from PySide6.QtCore import QObject, Qt, Signal, SignalInstance
 from requests import RequestException
 
+from ..settings.scrapers_settings import ScrapersSettings, shared_scrapers_settings
+from .browser_fetcher import BrowserPageFetcher
 from .http_fetcher import HttpPageFetcher
-from .protocols import PageFetcher
+from .protocols import FetchError, LoginRequiredError, PageFetcher
 from .registry import ScraperRegistry
 from .results import InvalidScrapeResultError, Page, ScrapeResult
 
@@ -18,8 +20,8 @@ LOG: Final = logging.getLogger(__name__)
 
 
 class ScrapeError(Exception):
-    """A scrape could not produce a result -- no scraper matched, a matching scraper needs the browser
-    fetcher, the fetch failed, or the scraper's own result failed `~.results.SCRAPE_RESULT_SCHEMA`.
+    """A scrape could not produce a result -- no scraper matched, the fetch failed, or the scraper's
+    own result failed `~.results.SCRAPE_RESULT_SCHEMA`.
 
     Raised by `ScrapeJob.scrape`, the synchronous half both `ScrapeJob.run` (which logs it instead of
     letting it escape a pool thread) and the ``--scrape`` CLI (which prints it and exits 1) consume."""
@@ -38,7 +40,20 @@ class NoScraperError(ScrapeError):
         super().__init__(f"No scraper matches {self.host} ({url}).")
 
 
-class ScrapeJob:
+class LoginRequiredScrapeError(ScrapeError):
+    """The fetched page was a login wall ([[acquisition-tooling#browser-persona]]) -- raised as
+    `~.protocols.LoginRequiredError` by a scraper's own parsing, or by `~.http_fetcher.HttpPageFetcher`
+    on a ``401``/``403``.
+
+    :param label: the scraper that hit the login wall.
+    :param host: the host that needs a login.
+    """
+
+    def __init__(self, label: str, host: str) -> None:
+        super().__init__(f"{label} needs a login: open the browser from Settings ▸ Scrapers and log in to {host}.")
+
+
+class ScrapeJob:  # pylint: disable=too-many-instance-attributes
     """Fetches one page (or takes an already-fetched one), dispatches it to a matching scraper, and
     hands the result to the GUI thread.
 
@@ -58,8 +73,13 @@ class ScrapeJob:
     :param url: the URL to scrape.
     :param registry: where to look up a matching scraper.
     :param page: an already-fetched page (the dropped-fragment path,
-        [[acquisition-tooling#drag-drop-aids]]) -- when given, :attr:`fetcher` is never called.
-    :param fetcher: what fetches ``url`` when no ``page`` is given.
+        [[acquisition-tooling#drag-drop-aids]]) -- when given, no fetcher is ever called.
+    :param fetcher: what fetches ``url`` when no ``page`` is given, overriding the dispatch below --
+        `None` (every caller but a test) resolves one from `settings` instead:
+        `~.http_fetcher.HttpPageFetcher` unless the matching scraper needs the browser
+        ([[acquisition-tooling#browser-persona]]), in which case `~.browser_fetcher.BrowserPageFetcher`.
+    :param settings: where the browser choice and the per-scraper **Use browser** picks come from;
+        `None` reads the shared, process-wide settings, the shape every caller but a test wants.
     """
 
     def __init__(
@@ -69,11 +89,13 @@ class ScrapeJob:
         *,
         page: Page | None = None,
         fetcher: PageFetcher | None = None,
+        settings: ScrapersSettings | None = None,
     ) -> None:
         self.__url: Final = url
         self.__registry: Final = registry
         self.__page: Final = page
-        self.__fetcher: Final = fetcher if fetcher is not None else HttpPageFetcher()
+        self.__forced_fetcher: Final = fetcher
+        self.__settings: Final = settings if settings is not None else shared_scrapers_settings()
         self.__marshaller: Final = ScrapeJob.Marshaller()
         self.__publisher: str | None = None
         self.__page_url: str | None = None
@@ -128,19 +150,19 @@ class ScrapeJob:
     def result_ready(self) -> SignalInstance:
         """Fires on the GUI thread with the scraped `ScrapeResult`, exactly once, only on success.
 
-        Never fires when no scraper matched, when a matching scraper needs the browser fetcher, when the
-        fetch failed, or when the scraper's own result failed the scrape-result schema -- each of those
-        is logged instead (:meth:`scrape` raises `ScrapeError` for all four, :meth:`run` catches and
-        logs it). Applying the result to an editor, and discarding it if the document has since closed
-        or been renamed, is the caller's job.
+        Never fires when no scraper matched, when the fetch failed or landed on a login wall, or when
+        the scraper's own result failed the scrape-result schema -- each of those is logged instead
+        (:meth:`scrape` raises `ScrapeError` for all, :meth:`run` catches and logs it). Applying the
+        result to an editor, and discarding it if the document has since closed or been renamed, is the
+        caller's job.
         """
         return self.__marshaller.result_ready
 
     @property
     def failed(self) -> SignalInstance:
         """Fires on the GUI thread with the `ScrapeError`, exactly once, whenever :attr:`result_ready`
-        does not -- no scraper matched, a matching scraper needs the browser fetcher, the fetch failed,
-        or the result failed the scrape-result schema. Fires alongside the same `LOG.warning`/
+        does not -- no scraper matched, the fetch failed or landed on a login wall, or the result failed
+        the scrape-result schema. Fires alongside the same `LOG.warning`/
         `LOG.exception` call :meth:`run` always made; this is what lets a caller show the refusal beside
         an open document (e.g. a `MessageBanner` row) rather than read it only from the log.
         """
@@ -191,28 +213,33 @@ class ScrapeJob:
 
         :returns: the scraper's result, validated against `~.results.SCRAPE_RESULT_SCHEMA`
             (`~.results.ScrapeResult.coerce`).
-        :raises ScrapeError: no scraper matches, the matching scraper (direct or after a redirect) needs
-            the browser fetcher, the fetch failed, or the result failed the schema.
+        :raises ScrapeError: no scraper matches, the fetch failed, the fetch landed on a login wall, or
+            the result failed the schema.
         """
         scraper = self.__registry.find(self.__url)
         if scraper is None:
             raise NoScraperError(self.__url)
-        if scraper.needs_browser:
-            raise ScrapeError(
-                f"{scraper.label} needs the browser fetcher, which this build does not have; "
-                f"{self.__url} was not scraped."
-            )
-        page = self.__page if self.__page is not None else self.__fetch(self.__url)
+        page = self.__page if self.__page is not None else self.__fetch(self.__url, scraper)
         if page.final_url != self.__url:
             redirected = self.__registry.find(page.final_url)
-            if redirected is not None and redirected.needs_browser:
-                raise ScrapeError(
-                    f"{redirected.label} needs the browser fetcher, which this build does not have; "
-                    f"{self.__url} was not scraped."
-                )
             if redirected is not None:
+                needs_refetch = (
+                    self.__page is None
+                    and self.__forced_fetcher is None
+                    and self.__settings.uses_browser(redirected)
+                    and not self.__settings.uses_browser(scraper)
+                )
+                if needs_refetch:
+                    # the redirect landed on a scraper the original one wouldn't have needed the
+                    # browser for -- re-fetch through it rather than handing over an HTTP-fetched page
+                    page = self.__fetch(page.final_url, redirected)
                 scraper = redirected
-        raw_result = scraper.scrape_page(page)
+        try:
+            raw_result = scraper.scrape_page(page)
+        except LoginRequiredError as error:
+            raise LoginRequiredScrapeError(
+                scraper.label, urlsplit(page.final_url).hostname or page.final_url
+            ) from error
         try:
             result = ScrapeResult.coerce(raw_result)
         except InvalidScrapeResultError as error:
@@ -221,15 +248,34 @@ class ScrapeJob:
         self.__page_url = page.final_url
         return result
 
-    def __fetch(self, url: str) -> Page:
-        """Fetch ``url``, wrapping a failure as a `ScrapeError` rather than letting it crash the pool
-        thread.
+    def __fetch(self, url: str, scraper: object) -> Page:
+        """Fetch ``url`` with the fetcher ``scraper`` dispatches to, wrapping a failure as a
+        `ScrapeError` rather than letting it crash the pool thread.
 
         :param url: the address to fetch.
+        :param scraper: the scraper this fetch is for -- decides HTTP vs. the persona browser.
         :returns: the fetched page.
-        :raises ScrapeError: the fetch failed.
+        :raises ScrapeError: the fetch failed, or landed on a login wall.
         """
+        fetcher = self.__fetcher_for(scraper)
         try:
-            return self.__fetcher.fetch(url)
-        except RequestException as error:
+            return fetcher.fetch(url)
+        except LoginRequiredError as error:
+            raise LoginRequiredScrapeError(
+                getattr(scraper, "label", "The scraper"), urlsplit(url).hostname or url
+            ) from error
+        except (RequestException, FetchError) as error:
             raise ScrapeError(f"Could not fetch {url}: {error}") from error
+
+    def __fetcher_for(self, scraper: object) -> PageFetcher:
+        """The fetcher this scrape uses for ``scraper``: the injected override, or dispatch on
+        `~rehuco_agent.settings.scrapers_settings.ScrapersSettings.uses_browser`.
+
+        :param scraper: the scraper the fetch is for.
+        :returns: the fetcher to use.
+        """
+        if self.__forced_fetcher is not None:
+            return self.__forced_fetcher
+        if self.__settings.uses_browser(scraper):
+            return BrowserPageFetcher(self.__settings)
+        return HttpPageFetcher()

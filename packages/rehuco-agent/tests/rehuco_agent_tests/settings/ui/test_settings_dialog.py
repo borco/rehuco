@@ -2691,8 +2691,8 @@ def test_every_frame_with_a_labeled_header_and_values_gets_a_header_row(qtbot: Q
 
 
 def test_a_frame_without_a_named_label_gets_no_header_row(qtbot: QtBot) -> None:
-    """A frame whose first row is not a ``<frame>_label`` -- the Scrapers table frame's shape -- is
-    left as its ``.ui`` drew it.
+    """A frame whose first row is not a ``<frame>_label`` -- no bold caption of its own -- is left as
+    its ``.ui`` drew it.
 
     **Test steps:**
 

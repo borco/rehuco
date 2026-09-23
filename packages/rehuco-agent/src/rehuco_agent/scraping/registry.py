@@ -44,6 +44,49 @@ class LoadedScraperModule:
     error: str | None
 
 
+BUILTIN_SOURCE_LABEL: Final = "Built-in"
+"""What the Scrapers table's Source column shows for a scraper this build ships, rather than a file
+name."""
+
+
+@dataclass(frozen=True)
+# a data-carrying row, not behaviour -- splitting it would only scatter one table row's fields
+# pylint: disable-next=too-many-instance-attributes
+class ScraperRow:
+    """One row of the Scrapers settings page's table: one scraper, or one script file that loaded but
+    defines no scraper, or failed to load at all ([[acquisition-tooling#browser-persona]]).
+
+    A scraper needs its own row, built-ins included, so the **Use browser** column
+    (`~rehuco_agent.settings.scrapers_settings.ScrapersSettings.browser_scrapers`) can be ticked for it
+    -- `LoadedScraperModule`'s one-row-per-file shape has no row for a built-in scraper to hang a
+    checkbox off.
+
+    :param key: `~rehuco_agent.settings.scrapers_settings.scraper_key` of the scraper this row is for,
+        or `None` for a file contributing no scraper (no checkbox, no key to stage).
+    :param label: the scraper's own `label`, or `~.scrapers_table_model.NO_SCRAPERS_TEXT` for a file row.
+    :param publisher: the scraper's `publisher`, shown alongside :attr:`label` only when it differs --
+        ArtStation's scraper names both the same, and showing ``"ArtStation (ArtStation)"`` would say
+        nothing a plain ``"ArtStation"`` doesn't. Empty for a file row.
+    :param site_name: the scraper's `~.protocols.SiteScraper.site_name`, what the table's Scraper column
+        shows as a link. Empty for a file row.
+    :param site_url: the scraper's `~.protocols.SiteScraper.site_url`, what that link opens. Empty for a
+        file row.
+    :param source: the file's name, or :data:`BUILTIN_SOURCE_LABEL`.
+    :param needs_browser: whether this scraper always uses the persona browser, forcing its checkbox on
+        and disabled. `False`, meaningless, for a file row.
+    :param error: why the file could not be loaded, or `None`.
+    """
+
+    key: str | None
+    label: str
+    publisher: str
+    site_name: str
+    site_url: str
+    source: str
+    needs_browser: bool
+    error: str | None
+
+
 class ScraperRegistry:
     """Loads scrapers from a scripts folder, ahead of this build's own ([[acquisition-tooling#scraper-registry]]).
 
@@ -83,6 +126,61 @@ class ScraperRegistry:
     def modules(self) -> tuple[LoadedScraperModule, ...]:
         """Every scripts-folder file the last :meth:`reload` scanned, in scan order."""
         return self.__state.modules
+
+    @property
+    def rows(self) -> tuple[ScraperRow, ...]:
+        """The Scrapers table's rows: one per scraper (folder first, then built-in, each a fresh
+        instance for its `label`/`publisher`), interleaved with one per file that loaded no scraper or
+        failed to -- the same scan order `find` tries, so the table reads top to bottom as the dispatch
+        order it describes."""
+        from ..settings.scrapers_settings import scraper_key  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+        rows: list[ScraperRow] = []
+        for module in self.__state.modules:
+            if module.scrapers:
+                for scraper in module.scrapers:
+                    rows.append(
+                        ScraperRow(
+                            key=scraper_key(scraper),
+                            label=scraper.label,
+                            publisher=scraper.publisher,
+                            site_name=scraper.site_name,
+                            site_url=scraper.site_url,
+                            source=module.path.name,
+                            needs_browser=scraper.needs_browser,
+                            error=None,
+                        )
+                    )
+            else:
+                rows.append(
+                    ScraperRow(
+                        key=None,
+                        label="",
+                        publisher="",
+                        site_name="",
+                        site_url="",
+                        source=module.path.name,
+                        needs_browser=False,
+                        error=module.error,
+                    )
+                )
+        for scraper_class in self.__builtins:
+            instance = self.__instantiate(scraper_class)
+            if instance is None:
+                continue
+            rows.append(
+                ScraperRow(
+                    key=scraper_key(instance),
+                    label=instance.label,
+                    publisher=instance.publisher,
+                    site_name=instance.site_name,
+                    site_url=instance.site_url,
+                    source=BUILTIN_SOURCE_LABEL,
+                    needs_browser=instance.needs_browser,
+                    error=None,
+                )
+            )
+        return tuple(rows)
 
     def reload(self) -> None:
         """Re-scan the scripts folder, without a restart.

@@ -41,6 +41,12 @@ dependencies = [
     "markdownify>=1.2.0",
     "beautifulsoup4>=4.13.0",
     "requests>=2.32.0",
+    # The browser-driven fetcher's persona (#278, [[acquisition-tooling#browser-persona]]). A plain
+    # dependency, not an opt-in extra: Briefcase merges extras into nothing, so an opt-in one would
+    # never reach the packaged exe. What stays optional is having a browser installed -- Selenium
+    # Manager resolves the driver, and a scrape that needs the browser fails with a clear message
+    # naming the browser when neither is present.
+    "selenium>=4.30",
     "mistletoe>=1.4.0",
     "pillow",
     "fastjsonschema>=2.21",

@@ -4,7 +4,9 @@
 import logging
 
 import pytest
-from PySide6.QtWidgets import QLabel
+from PySide6.QtCore import QEvent
+from PySide6.QtGui import QColor, QPalette
+from PySide6.QtWidgets import QApplication, QLabel
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
@@ -69,7 +71,8 @@ def test_authors_field_viewer_renders_an_anchor_for_a_valid_http_url(qtbot: QtBo
     assert isinstance(viewer, QLabel)
     qtbot.addWidget(viewer)
 
-    assert viewer.text() == 'Alice (<a href="https://example.com/alice">url</a>)'
+    assert viewer.text().startswith('Alice (<a href="https://example.com/alice" style="color:')
+    assert viewer.text().endswith(">url</a>)")
 
 
 def test_authors_field_viewer_renders_no_anchor_for_a_non_http_url(qtbot: QtBot, model: RehuDocumentModel) -> None:
@@ -131,7 +134,36 @@ def test_authors_field_viewer_tracks_model_changes(qtbot: QtBot, model: RehuDocu
     qtbot.addWidget(viewer)
 
     model.authors = ["Bob", {"name": "Carol", "url": "https://example.com"}]
-    assert viewer.text() == 'Bob, Carol (<a href="https://example.com">url</a>)'
+    assert viewer.text().startswith('Bob, Carol (<a href="https://example.com" style="color:')
+    assert viewer.text().endswith(">url</a>)")
+
+
+def test_authors_field_viewer_re_colors_its_link_on_a_palette_change(
+    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
+) -> None:
+    """A live palette change (a theme toggle) re-renders a shown link in the new color, not the one
+    it was first drawn in -- the same live-recoloring `~borco_pyside.widgets.ElidedLabel` gives its
+    own links, needed here too since the anchor's color is baked into the markup at render time.
+
+    **Test steps:**
+
+    * build the viewer over a record entry with a URL
+    * mock the application palette's link color to a distinct one, then deliver a palette-change event
+    * verify the rendered markup now carries the new color
+    """
+    model.authors = [{"name": "Alice", "url": "https://example.com/alice"}]
+    field = AuthorsField("authors")
+    viewer = field.make_viewer(model.bind(field)).viewer
+    assert isinstance(viewer, QLabel)
+    qtbot.addWidget(viewer)
+
+    palette = QApplication.palette()
+    palette.setColor(QPalette.ColorRole.Link, QColor("#abcdef"))
+    mocker.patch.object(QApplication, "palette", return_value=palette)
+
+    viewer.changeEvent(QEvent(QEvent.Type.PaletteChange))
+
+    assert "color:#abcdef;" in viewer.text()
 
 
 # endregion

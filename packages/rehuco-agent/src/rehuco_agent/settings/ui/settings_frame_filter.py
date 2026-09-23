@@ -5,7 +5,17 @@ from typing import Final, Protocol, cast, runtime_checkable
 
 from borco_pyside.widgets import ActionButtonColumn, ItemListEditor
 from PySide6.QtCore import QAbstractItemModel, QAbstractListModel, QModelIndex, Qt
-from PySide6.QtWidgets import QAbstractButton, QFrame, QGroupBox, QLabel, QLineEdit, QPlainTextEdit, QSpinBox, QWidget
+from PySide6.QtWidgets import (
+    QAbstractButton,
+    QComboBox,
+    QFrame,
+    QGroupBox,
+    QLabel,
+    QLineEdit,
+    QPlainTextEdit,
+    QSpinBox,
+    QWidget,
+)
 
 
 @runtime_checkable
@@ -26,10 +36,12 @@ class ValueControl(Protocol):
         """Write a value this control returned earlier back into it."""
 
 
-ValueWidget = QLineEdit | QPlainTextEdit | QAbstractButton | QSpinBox | ItemListEditor | ValueControl
+ValueWidget = QLineEdit | QPlainTextEdit | QAbstractButton | QSpinBox | QComboBox | ItemListEditor | ValueControl
 """The settings-page control types whose value :class:`SettingsFrameFilter` knows how to read for its
 baseline snapshot (#77) -- exactly the ones the pages under `rehuco_agent.settings.ui` actually use,
-plus anything implementing :class:`ValueControl` (#342)."""
+plus anything implementing :class:`ValueControl` (#342). `QComboBox` snapshots `currentIndex` --
+narrower than an item's data, but every combo box today (the Scrapers page's browser choice,
+[[acquisition-tooling#browser-persona]]) is a fixed list, never repopulated at runtime."""
 
 SCRATCH_PROPERTY: Final = "scratch"
 """Dynamic property marking a frame, or one control, as **scratch input rather than a setting** (#322):
@@ -332,7 +344,7 @@ class SettingsFrameFilter:
         return False
 
     @staticmethod
-    def __value(widget: ValueWidget) -> object:
+    def __value(widget: ValueWidget) -> object:  # pylint: disable=too-many-return-statements
         """``widget``'s current value, read by type.
 
         :param widget: the value widget to read.
@@ -348,6 +360,8 @@ class SettingsFrameFilter:
             return widget.toPlainText()
         if isinstance(widget, QSpinBox):
             return widget.value()
+        if isinstance(widget, QComboBox):
+            return widget.currentIndex()
         if isinstance(widget, ItemListEditor):
             # every cell under EditRole, which is what the list *holds*: a derived, read-only column
             # (the try-it table's slot, #287) answers nothing there, so a change upstream of it is not
@@ -387,6 +401,8 @@ class SettingsFrameFilter:
             widget.setPlainText(cast(str, value))
         elif isinstance(widget, QSpinBox):
             widget.setValue(cast(int, value))
+        elif isinstance(widget, QComboBox):
+            widget.setCurrentIndex(cast(int, value))
         elif isinstance(widget, ItemListEditor):
             SettingsFrameFilter.__restore_rows(widget.model, cast(tuple[tuple[object, ...], ...], value))
         else:  # the remaining ValueWidget member: QAbstractButton

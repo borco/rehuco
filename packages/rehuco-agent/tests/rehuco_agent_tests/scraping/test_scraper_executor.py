@@ -15,7 +15,7 @@ URL_B = "https://b.example.com/page"
 
 
 @dataclass
-class BlockingScraper:  # pylint: disable=missing-function-docstring
+class BlockingScraper:  # pylint: disable=missing-function-docstring,too-many-instance-attributes
     """A `SiteScraper` whose `scrape_page` waits until every submitted job has arrived, then
     releases -- proof that two jobs run concurrently rather than serialize behind each other.
     """
@@ -25,6 +25,8 @@ class BlockingScraper:  # pylint: disable=missing-function-docstring
     result: ScrapeResult = field(default_factory=lambda: ScrapeResult(fields={}, description=None, images=()))
     label: str = "Blocking"
     publisher: str = "Blocking Co"
+    site_name: str = "Blocking"
+    site_url: str = "https://blocking.example.com"
     needs_browser: bool = False
 
     def matches(self, url: str) -> bool:
@@ -116,6 +118,8 @@ def test_a_job_submitted_inside_a_log_scope_logs_under_it(qtbot: QtBot) -> None:
     class FakeScraperLoggingOnRun:  # pylint: disable=missing-class-docstring,missing-function-docstring
         label = "Logs"
         publisher = "Logs Co"
+        site_name = "Logs"
+        site_url = "https://logs.example.com"
         needs_browser = False
 
         def matches(self, url: str) -> bool:

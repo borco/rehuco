@@ -527,7 +527,10 @@ def test_builds_a_viewer_and_an_editor_from_the_document_field_list(widget: Docu
 
     viewer_texts = {label.text() for label in find_on_surfaces(widget, QLabel)}
     assert {"Foo", "Bar"} <= viewer_texts
-    assert '<a href="https://example.com">https://example.com</a>' in viewer_texts
+    assert any(
+        text.startswith('<a href="https://example.com" style="color:') and text.endswith(">https://example.com</a>")
+        for text in viewer_texts
+    )
 
 
 def test_a_field_status_message_bubbles_up_through_the_widget(qtbot: QtBot, model: RehuDocumentModel) -> None:
