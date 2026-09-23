@@ -1,0 +1,53 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "rehuco scrape result",
+  "description": "What one scrape of one web page returns: field values, a Markdown description, and images to download. Only fields a web page can show are accepted; values the app computes from local files, and the user's own state, are rejected.",
+  "type": "object",
+  "required": ["fields"],
+  "additionalProperties": false,
+  "properties": {
+    "fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": { "type": "string" },
+        "publisher": { "type": "string" },
+        "url": { "type": "string" },
+        "authors": {
+          "type": "array",
+          "items": {
+            "type": ["string", "object"],
+            "required": ["name"],
+            "properties": {
+              "name": { "type": "string" },
+              "url": { "type": "string", "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://" }
+            }
+          }
+        },
+        "released": { "type": ["string", "null"] },
+        "description": { "type": "string" },
+        "advertised_tags": { "type": "array", "items": { "type": "string" } },
+        "advertised_duration": { "type": ["integer", "null"] },
+        "advertised_count": { "type": ["string", "null"] },
+        "level": {
+          "type": "array",
+          "items": { "enum": ["beginner", "intermediate", "advanced", "any"] }
+        }
+      }
+    },
+    "description": { "type": ["string", "null"] },
+    "images": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["slot", "url"],
+        "additionalProperties": false,
+        "properties": {
+          "slot": { "type": "integer", "minimum": 0, "maximum": 99 },
+          "url": { "type": "string", "minLength": 1 },
+          "referrer": { "type": ["string", "null"] }
+        }
+      }
+    }
+  }
+}

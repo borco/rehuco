@@ -12,6 +12,9 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 ### Added
 
+- `rehuco-agent --scrape URL [--scrapers-folder DIR] [--output PATH]` scrapes a page from the console and
+  prints the result as JSON, and `rehuco-agent --scrape-schema PATH` writes the JSON Schema every scrape
+  result is checked against — both for developing a scraper script without opening the GUI.
 - A **Content Images** panel on every reference-images document, hidden by default: the images inside
   the pack's archives, in rows justified to the panel's width and in natural order, each archive opening with a
   banner naming it and counting its images. A banner click folds its images away and a second click

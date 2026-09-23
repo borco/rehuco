@@ -43,6 +43,7 @@ dependencies = [
     "requests>=2.32.0",
     "mistletoe>=1.4.0",
     "pillow",
+    "fastjsonschema>=2.21",
 ]
 
 [project.urls]

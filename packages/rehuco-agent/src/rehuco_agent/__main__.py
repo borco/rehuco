@@ -1,5 +1,7 @@
 """CLI entry point: ``rehuco-agent [--version] [--info] [--register|--unregister] [paths...]``
-(register/unregister: Windows and Linux)."""
+(register/unregister: Windows and Linux); ``rehuco-agent --scrape URL [--scrapers-folder DIR]
+[--output PATH]`` and ``rehuco-agent --scrape-schema PATH`` run a scrape from the console, no GUI
+([[acquisition-tooling#scraper-registry]])."""
 
 import argparse
 import ctypes
@@ -51,7 +53,7 @@ def print_registration_info(exe_path: Path) -> None:
         print("registration is declared by the app bundle on macOS; there is no runtime state to query")
 
 
-# pylint: disable-next=too-many-return-statements,too-many-branches
+# pylint: disable-next=too-many-return-statements,too-many-branches,too-many-statements
 def main() -> int:
     """Print version/registration info, register/unregister this app as the ``.rehu`` handler, or
     launch the GUI.
@@ -126,7 +128,33 @@ def main() -> int:
             help="remove this app's .rehu/.tc handler registration (Windows: plus the context menus)",
         )
     parser.add_argument("paths", nargs="*", help=".rehu files, resource directories, or archives to open")
+    scrape_group = parser.add_mutually_exclusive_group()
+    scrape_group.add_argument("--scrape", metavar="URL", help="scrape URL and print the result as JSON")
+    parser.add_argument(
+        "--scrapers-folder",
+        metavar="DIR",
+        type=Path,
+        help="build the scraper registry over DIR for this --scrape call only, ignoring the saved Scrapers setting",
+    )
+    parser.add_argument("--output", metavar="PATH", type=Path, help="write --scrape's JSON to PATH instead of stdout")
+    scrape_group.add_argument(
+        "--scrape-schema", metavar="PATH", type=Path, help="write the scrape-result JSON schema to PATH and exit"
+    )
     args = parser.parse_args()
+    if args.scrape is None and (args.scrapers_folder is not None or args.output is not None):
+        parser.error("--scrapers-folder and --output only apply with --scrape")
+
+    # Checked first and returns immediately: neither combines with --version/--info/--register/
+    # --unregister, and both need none of the platform machinery below. Imported here, not at module
+    # scope, for the same reason `rehuco_agent.app` is imported lazily further down -- a plain
+    # register/unregister or GUI launch pays nothing for `fastjsonschema` or the scraping package.
+    # pylint: disable-next=import-outside-toplevel
+    from rehuco_agent.scraping import cli as scraping_cli  # noqa: PLC0415
+
+    if args.scrape_schema is not None:
+        return scraping_cli.write_scrape_schema(args.scrape_schema)
+    if args.scrape is not None:
+        return scraping_cli.scrape_url_to_json(args.scrape, scrapers_folder=args.scrapers_folder, output=args.output)
 
     # Printed before any --register/--unregister action below, so --info reports the *previous*
     # state -- matching how `rehuco-agent --info --register` reads left to right.

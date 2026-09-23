@@ -308,3 +308,11 @@ def test_cover_size_rewrite(image_url: str, expected: str) -> None:
 
 
 # endregion
+
+
+def test_scrape_page_result_passes_the_scrape_result_schema() -> None:
+    """A real course page's result validates against `SCRAPE_RESULT_SCHEMA` (#340) -- a built-in scraper
+    is checked the same way a user script's return value is."""
+    result = Udemy().scrape_page(Page(url=COURSE_URL, final_url=COURSE_URL, html=COURSE_HTML))
+
+    assert ScrapeResult.coerce(result) == result
