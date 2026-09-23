@@ -1,14 +1,57 @@
 """Tests for the built-in ArtStation scraper (#273)."""
 
-from pathlib import Path
 from typing import Final
 
 from pytest import mark, param
 from rehuco_agent.scraping.results import Page, ScrapeResult
 from rehuco_agent.scraping.sites.artstation import FULL_SIZE_REWRITE, ArtStation
 
-PRODUCT_URL: Final = "https://www.artstation.com/marketplace/p/dNeeJ/vertical-drill-tutorial"
-PRODUCT_HTML: Final = (Path(__file__).parent / "fixtures" / "artstation_product.html").read_text(encoding="utf-8")
+PRODUCT_URL: Final = "https://www.artstation.com/marketplace/p/aBcDe/example-product-tutorial"
+
+PRODUCT_HTML: Final = """
+<div class="productPage-header">
+  <h1>Example Product Tutorial</h1>
+  <div class="productPage-header-author">
+    <a itemprop="url" href="https://www.artstation.com/annauthor/store">
+      <span itemprop="name">Ann Author</span>
+    </a>
+  </div>
+</div>
+<div class="productPage-gallery-col">
+  <button class="image-gallery-thumbnail">
+    <img data-src="https://cdna.artstation.com/p/assets/468/large/file.jpg?1" />
+  </button>
+  <button class="image-gallery-thumbnail">
+    <img data-src="https://cdnb.artstation.com/p/assets/469/large/file.jpg?2" />
+  </button>
+  <button class="image-gallery-thumbnail">
+    <img data-src="https://cdna.artstation.com/p/assets/470/large/file.jpg?3" />
+  </button>
+  <button class="image-gallery-thumbnail">
+    <img data-src="https://cdnb.artstation.com/p/assets/471/large/file.jpg?4" />
+  </button>
+  <div class="productPage-tags">
+    <a class="productPage-tag">Tutorials</a>
+    <a class="productPage-tag">Other Tutorials</a>
+    <a class="productPage-tag">Game Art</a>
+    <a class="productPage-tag">Hard Surface</a>
+    <a class="productPage-tag">Lighting</a>
+    <a class="productPage-tag">Modeling</a>
+    <a class="productPage-tag">Props</a>
+    <a class="productPage-tag">Rendering</a>
+    <a class="productPage-tag">Texturing</a>
+    <a class="productPage-tag">Blender</a>
+    <a class="productPage-tag">Marmoset</a>
+    <a class="productPage-tag">Substance Painter</a>
+  </div>
+  <div class="product-description">
+    <p>This is a full process of modeling, unwrapping, and texturing a made-up prop in the lovely
+    blender and substance painter! You should have basic knowledge of these tools.</p>
+  </div>
+</div>
+"""
+"""A minimal, hand-written stand-in for a product page's markup (#273): only the elements
+`ArtStation.scrape_page` reads, not a copy of a real page."""
 
 EXPECTED_TAGS: Final = (
     "game art",
@@ -24,10 +67,10 @@ EXPECTED_TAGS: Final = (
 )
 
 EXPECTED_IMAGE_URLS: Final = (
-    "https://cdna.artstation.com/p/marketplace/presentation_assets/001/832/468/large/file.jpg?1657485870",
-    "https://cdnb.artstation.com/p/marketplace/presentation_assets/001/832/469/large/file.jpg?1657485900",
-    "https://cdna.artstation.com/p/marketplace/presentation_assets/001/832/470/large/file.jpg?1657485933",
-    "https://cdnb.artstation.com/p/marketplace/presentation_assets/001/832/471/large/file.jpg?1657485965",
+    "https://cdna.artstation.com/p/assets/468/large/file.jpg?1",
+    "https://cdnb.artstation.com/p/assets/469/large/file.jpg?2",
+    "https://cdna.artstation.com/p/assets/470/large/file.jpg?3",
+    "https://cdnb.artstation.com/p/assets/471/large/file.jpg?4",
 )
 
 
@@ -37,7 +80,7 @@ EXPECTED_IMAGE_URLS: Final = (
     [
         param(PRODUCT_URL, True, id="artstation-product"),
         param("https://www.artstation.com/", True, id="artstation-root"),
-        param("https://www.udemy.com/course/vertical-drill-tutorial/", False, id="non-artstation"),
+        param("https://www.udemy.com/course/example-course/", False, id="non-artstation"),
     ],
 )
 def test_matches(url: str, expected: bool) -> None:
@@ -53,10 +96,8 @@ def test_scrape_page_reads_title_and_authors() -> None:
     """The header's `<h1>` becomes `title`; its `itemprop=url` author link becomes a name+url `authors` record."""
     result = ArtStation().scrape_page(Page(url=PRODUCT_URL, final_url=PRODUCT_URL, html=PRODUCT_HTML))
 
-    assert result.fields["title"] == "Vertical Drill Tutorial"
-    assert result.fields["authors"] == [
-        {"name": "Milad Kambari", "url": "https://www.artstation.com/milad_kambari/store"}
-    ]
+    assert result.fields["title"] == "Example Product Tutorial"
+    assert result.fields["authors"] == [{"name": "Ann Author", "url": "https://www.artstation.com/annauthor/store"}]
 
 
 def test_scrape_page_reads_tags_excluding_the_generic_ones() -> None:
@@ -111,12 +152,12 @@ def test_scrape_page_author_link_without_an_href_sets_a_plain_name() -> None:
     """An `itemprop=url` author link with no `href` falls back to a plain name string, not a record."""
     html = (
         '<div class="productPage-header"><div class="productPage-header-author">'
-        '<a itemprop="url"><span itemprop="name">Milad Kambari</span></a></div></div>'
+        '<a itemprop="url"><span itemprop="name">Ann Author</span></a></div></div>'
     )
 
     result = ArtStation().scrape_page(Page(url=PRODUCT_URL, final_url=PRODUCT_URL, html=html))
 
-    assert result.fields["authors"] == ["Milad Kambari"]
+    assert result.fields["authors"] == ["Ann Author"]
 
 
 def test_scrape_page_tags_block_with_only_excluded_tags_sets_no_field() -> None:
