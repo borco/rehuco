@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from pytest import LogCaptureFixture, raises
 from pytestqt.qtbot import QtBot
 from rehuco_agent.scraping.results import Page, ScrapeResult
-from rehuco_agent.scraping.scrape_job import ScrapeError, ScrapeJob
+from rehuco_agent.scraping.scrape_job import NoScraperError, ScrapeError, ScrapeJob
 from requests import RequestException
 
 URL = "https://example.com/page"
@@ -123,7 +123,7 @@ def test_no_matching_scraper_logs_and_emits_nothing(qtbot: QtBot, caplog: LogCap
 
     assert not fetcher.calls
     assert not received
-    assert "No scraper matches" in caplog.text
+    assert f"No scraper matches example.com ({URL})." in caplog.text
 
 
 def test_a_scraper_needing_the_browser_is_refused_without_fetching(qtbot: QtBot, caplog: LogCaptureFixture) -> None:
@@ -297,7 +297,7 @@ def test_scrape_raises_for_no_matching_scraper() -> None:
     `None`."""
     job = ScrapeJob(URL, FakeRegistry({}), fetcher=FakeFetcher())  # type: ignore[arg-type]
 
-    with raises(ScrapeError, match="No scraper matches"):
+    with raises(ScrapeError, match="No scraper matches example.com"):
         job.scrape()
 
 
@@ -317,6 +317,85 @@ def test_scrape_raises_when_the_fetch_fails() -> None:
 
     with raises(ScrapeError, match="Could not fetch"):
         job.scrape()
+
+
+def test_no_matching_scraper_emits_failed_with_the_host(qtbot: QtBot) -> None:
+    """`failed` fires on the GUI thread with a `NoScraperError` naming the host (#272)."""
+    registry = FakeRegistry({})
+    job = ScrapeJob(URL, registry, fetcher=FakeFetcher())  # type: ignore[arg-type]
+
+    with qtbot.waitSignal(job.failed, timeout=1000) as blocker:
+        job.run()
+
+    assert blocker.args is not None
+    assert len(blocker.args) == 1
+    error = blocker.args[0]
+    assert isinstance(error, NoScraperError)
+    assert error.host == "example.com"
+
+
+def test_a_failed_fetch_emits_failed(qtbot: QtBot) -> None:
+    """`failed` fires on the GUI thread with the `ScrapeError` a failed fetch raised (#272)."""
+    scraper = FakeScraper()
+    registry = FakeRegistry({URL: scraper})
+    fetcher = FakeFetcher(error=RequestException("boom"))
+    job = ScrapeJob(URL, registry, fetcher=fetcher)  # type: ignore[arg-type]
+
+    with qtbot.waitSignal(job.failed, timeout=1000) as blocker:
+        job.run()
+
+    assert blocker.args is not None
+    assert "Could not fetch" in str(blocker.args[0])
+
+
+def test_an_invalid_result_emits_failed(qtbot: QtBot) -> None:
+    """`failed` fires on the GUI thread when the scraper's result fails the schema (#272)."""
+    bad_result = ScrapeResult(fields={"current_size": 5}, description=None, images=())
+    scraper = FakeScraper(label="Bad", result=bad_result)
+    registry = FakeRegistry({URL: scraper})
+    page = Page(url=URL, final_url=URL, html="<html></html>")
+    job = ScrapeJob(URL, registry, page=page, fetcher=FakeFetcher())  # type: ignore[arg-type]
+
+    with qtbot.waitSignal(job.failed, timeout=1000) as blocker:
+        job.run()
+
+    assert blocker.args is not None
+    assert "Bad returned an invalid result" in str(blocker.args[0])
+
+
+def test_a_raising_scraper_emits_failed(qtbot: QtBot) -> None:
+    """`failed` fires on the GUI thread when the scraper itself raises (#272)."""
+
+    class RaisingScraper(FakeScraper):  # pylint: disable=missing-class-docstring
+        def scrape_page(self, page: Page) -> ScrapeResult:
+            del page
+            raise RuntimeError("boom in user code")
+
+    registry = FakeRegistry({URL: RaisingScraper()})
+    page = Page(url=URL, final_url=URL, html="<html></html>")
+    job = ScrapeJob(URL, registry, fetcher=FakeFetcher(page=page))  # type: ignore[arg-type]
+
+    with qtbot.waitSignal(job.failed, timeout=1000) as blocker:
+        job.run()
+
+    assert blocker.args is not None
+    assert f"Scraping {URL} failed" in str(blocker.args[0])
+
+
+def test_publisher_and_page_url_are_set_after_a_successful_scrape(qtbot: QtBot) -> None:
+    """`publisher`/`page_url` name the scraper and page that actually ran, after any redirect (#272)."""
+    original_scraper = FakeScraper(label="Original", publisher="Original Co")
+    redirected_result = ScrapeResult(fields={"title": "Redirected"}, description=None, images=())
+    redirected_scraper = FakeScraper(label="Redirected", publisher="Redirected Co", result=redirected_result)
+    registry = FakeRegistry({URL: original_scraper, REDIRECTED_URL: redirected_scraper})
+    page = Page(url=URL, final_url=REDIRECTED_URL, html="<html></html>")
+    job = ScrapeJob(URL, registry, fetcher=FakeFetcher(page=page))  # type: ignore[arg-type]
+
+    with qtbot.waitSignal(job.result_ready, timeout=1000):
+        job.run()
+
+    assert job.publisher == "Redirected Co"
+    assert job.page_url == REDIRECTED_URL
 
 
 def test_a_redirect_onto_an_unclaimed_host_keeps_the_original_scraper(qtbot: QtBot) -> None:

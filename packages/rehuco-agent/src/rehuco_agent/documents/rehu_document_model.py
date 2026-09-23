@@ -171,6 +171,11 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     """Fires when the set of unrecognized active-block fields changes -- i.e. one is dropped via
     :meth:`remove_unknown_field` ([[plugins#fallback-editor]], #28)."""
 
+    sources_changed = Signal()
+    """Fires when a non-primary source is appended via :meth:`add_source` (#272) -- the primary source's
+    own `title`/`publisher`/`url` changes are covered by their own `SimpleProperty` notify signals
+    instead, since those are what `__on_common_field_changed` already write through."""
+
     reloaded = Signal()
     """Fires when the document's **file seam** was crossed -- the bytes this model stands for were
     re-read or replaced wholesale: every :meth:`revert` (re-reads the file) and every :meth:`convert`
@@ -951,6 +956,32 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         if self.__document.remove_active_field(name):
             self.unknown_fields_changed.emit()
             self.dirty = True
+
+    def add_source(self, publisher: str, url: str) -> None:
+        """Add a scraped page as a source ([[field-schema#sources]], #272), never a duplicate of one
+        already there by ``url``.
+
+        Fills the primary source when it has no ``url`` yet, through the existing
+        `~RehuDocumentModel.url`/`~RehuDocumentModel.publisher` properties so dirty tracking and the
+        Save Preview refresh exactly as an edit through those fields already does. Otherwise appends a
+        new, non-primary entry -- the document already has a primary source, e.g. from an earlier drop
+        or a `.tc` migration, that a second scrape must not overwrite -- and emits
+        :attr:`sources_changed` itself, since that write bypasses the field setters.
+
+        :param publisher: the scraper's publisher, used only when filling the primary source's own
+            empty ``publisher``, or seeding a new entry's.
+        :param url: the scraped page's URL. No-op if a source with this ``url`` already exists.
+        """
+        if any(isinstance(source, dict) and source.get("url") == url for source in self.sources):
+            return
+        if not self.url:
+            self.url = url
+            if not self.publisher:
+                self.publisher = publisher
+            return
+        self.__document.sources.append({"title": self.title, "publisher": publisher, "url": url})
+        self.dirty = True
+        self.sources_changed.emit()
 
     def drop_inactive_block(self, name: str) -> None:
         """Drop a whole inactive plugin block the user chooses not to carry ([[plugins#fallback-editor]],

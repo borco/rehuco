@@ -732,6 +732,72 @@ def test_setting_publisher_and_url_write_through(model: RehuDocumentModel, docum
     assert document.url == "https://changed.example"
 
 
+def test_add_source_fills_an_empty_primary() -> None:
+    """`add_source` fills the primary source's `url`/`publisher` when it has none yet, through the
+    existing setters, so dirty tracking follows the usual path (#272).
+
+    **Test steps:**
+
+    * build a model over a document with no sources
+    * call ``add_source``
+    * verify the primary source now holds both, and the model is dirty
+    """
+    document = RehuDocument({"type": "Tutorial"})
+    model = RehuDocumentModel(document)
+
+    model.add_source("Some Publisher", "https://example.com/page")
+
+    assert document.url == "https://example.com/page"
+    assert document.publisher == "Some Publisher"
+    assert model.dirty is True
+
+
+def test_add_source_leaves_an_existing_primary_publisher_alone() -> None:
+    """A primary source's own non-empty `publisher` is not overwritten by a later fill (#272)."""
+    document = RehuDocument({"type": "Tutorial", "sources": [{"publisher": "Original", "primary": True}]})
+    model = RehuDocumentModel(document)
+
+    model.add_source("Scraped Publisher", "https://example.com/page")
+
+    assert document.publisher == "Original"
+
+
+def test_add_source_appends_when_the_primary_already_has_a_url(
+    model: RehuDocumentModel, document: RehuDocument
+) -> None:
+    """A second source, once the primary already has one, is appended rather than overwriting it, and
+    `sources_changed` fires since that write bypasses the field setters (#272).
+
+    **Test steps:**
+
+    * connect to ``sources_changed``
+    * call ``add_source`` with a new URL
+    * verify the primary is untouched, a new entry was appended, dirty is set, and the signal fired once
+    """
+    received = 0
+
+    def _record() -> None:
+        nonlocal received
+        received += 1
+
+    model.sources_changed.connect(_record)
+
+    model.add_source("Other Publisher", "https://other.example.com")
+
+    assert document.url == "https://example.com"
+    assert document.sources[-1] == {"title": "Foo", "publisher": "Other Publisher", "url": "https://other.example.com"}
+    assert model.dirty is True
+    assert received == 1
+
+
+def test_add_source_is_a_no_op_for_a_duplicate_url(model: RehuDocumentModel, document: RehuDocument) -> None:
+    """A source already present by `url` is never duplicated (#272)."""
+    model.add_source("Whatever", "https://example.com")
+
+    assert document.sources == [{"title": "Foo", "publisher": "Bar", "url": "https://example.com", "primary": True}]
+    assert model.dirty is False
+
+
 def test_model_seeds_released_from_the_document(document: RehuDocument) -> None:
     """The ``released`` field seeds from the document's top-level value, without dirtying.
 

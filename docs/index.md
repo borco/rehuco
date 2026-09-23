@@ -24,6 +24,8 @@ rules that keep it trustworthy, the app's panels, and what isn't built.
 - **Edits a resource's details.** Open a `.rehu` from the file manager or from the app: title,
   authors, publisher, release date, URL, durations, sizes, rating, level, tags, flags, and a Markdown
   description.
+- **Fills those fields from a dropped page.** Drop a URL — ArtStation, Udemy, or a user's own scraper
+  script — on the editor to scrape it, and review the result as an ordinary edit before saving.
 - **Shows its screenshots.** A thumbnail strip beside the fields — click one to fill the window,
   arrow keys or the wheel to move through the set, and pick which of them the strip shows.
 - **Converts legacy `.tc` catalogs.** Reads the older format, writes `.rehu`, and keeps backups it

@@ -96,12 +96,14 @@ class SavePreviewView(MonospaceTextView):
         self.__model: Final = model
         self.__stale = False
         # enumerate the model's declared properties rather than hand-listing them, so a field added
-        # later stays reflected here with no second list to keep in step; unknown_fields_changed
-        # (a dropped fallback field) is a plain Signal, not a property, so it's wired separately
+        # later stays reflected here with no second list to keep in step; unknown_fields_changed (a
+        # dropped fallback field) and sources_changed (a source appended by a scrape, #272) are plain
+        # Signals, not properties, so they're wired separately
         model_type = type(model)
         for name in SimpleProperty.property_names(model_type):
             getattr(model, SimpleProperty.notify_signal_name(model_type, name)).connect(self.__on_model_changed)
         model.unknown_fields_changed.connect(self.__on_model_changed)
+        model.sources_changed.connect(self.__on_model_changed)
         self.__render()
 
     def __on_model_changed(self, *_args: object) -> None:

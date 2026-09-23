@@ -29,9 +29,9 @@ from borco_core.logging import LOG_SCOPE_ATTRIBUTE, LogScope
 from borco_pyside.logging import LogEntry, LogWidget
 from borco_pyside.logging.log_model import MESSAGE_COLUMN
 from borco_pyside.theming import themed_svg_icon
-from borco_pyside.widgets import FlowLayout, MessageBanner, ToolBarStretch
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QImage, QKeySequence, QPixmap
+from borco_pyside.widgets import FlowLayout, MessageBanner, MessageBannerRow, MessageBannerSeverity, ToolBarStretch
+from PySide6.QtCore import QMimeData, QPointF, Qt, QUrl
+from PySide6.QtGui import QDragEnterEvent, QDropEvent, QImage, QKeySequence, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QLabel,
@@ -108,6 +108,7 @@ from rehuco_agent.fields.widgets.image_lightbox import STRIP_TOGGLE_BUTTON_NAME
 from rehuco_agent.fields.widgets.image_selector import AFTER_CONVERSION_COLUMN, CHECK_COLUMN, PREVIEW_PANE
 from rehuco_agent.fields.widgets.image_strip import ThumbnailLabel
 from rehuco_agent.fields.widgets.path_editor import UNAVAILABLE_SUFFIX
+from rehuco_agent.scraping.url_drop import UrlDrop
 from rehuco_agent.settings.default_layout_settings import shared_default_layout_settings
 from rehuco_agent.settings.deletion_settings import DeletionKind, shared_deletion_settings
 from rehuco_agent.settings.image_viewer_settings import shared_image_viewer_settings
@@ -5197,6 +5198,151 @@ def test_a_dock_toggle_exits_maximize_before_the_size_stash_reads_it(widget: Doc
     assert len(manager.openedDockAreas()) == 2
     qtbot.waitUntil(lambda: manager.splitterSizes(description_area) == sizes, timeout=WAIT_TIMEOUT_MS)
     assert on_disk_dock(widget).toggleViewAction().isChecked()
+
+
+# endregion
+
+
+# region URL drop on the Main Editor dock (#272)
+def _drag_enter_event(data: QMimeData) -> QDragEnterEvent:
+    """A synthetic `QDragEnterEvent`, as if dragged in over the origin."""
+    return QDragEnterEvent(
+        QPointF(0, 0).toPoint(), Qt.DropAction.CopyAction, data, Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier
+    )
+
+
+def _drop_event(data: QMimeData) -> QDropEvent:
+    """A synthetic `QDropEvent`, as if dropped at the origin."""
+    return QDropEvent(
+        QPointF(0, 0), Qt.DropAction.CopyAction, data, Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier
+    )
+
+
+def _main_editor_dock(widget: DocumentWidget) -> QtAds.CDockWidget:
+    """The widget's Main Editor dock -- what `UrlDropFilter` is installed on."""
+    return widget._DocumentWidget__editor_docks[EDITOR_MAIN_TAB]  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+
+def _url_mime_data(url: str = "https://www.artstation.com/artwork/example") -> QMimeData:
+    """A `text/uri-list` drop carrying one URL."""
+    data = QMimeData()
+    data.setUrls([QUrl(url)])
+    return data
+
+
+def _drag_onto_main_editor(widget: DocumentWidget, qtbot: QtBot, data: QMimeData) -> tuple[bool, bool]:
+    """Deliver a drag-enter, then a drop, of ``data`` to the shown Main Editor dock **through Qt's own
+    dispatch** (`QApplication.sendEvent`), so what is exercised is the dock's real wiring -- the
+    ``setAcceptDrops`` and the installed `UrlDropFilter` -- and not the filter called by hand.
+
+    The drop follows an enter, as a real drag does: Qt delivers a drop to nothing that has not accepted
+    the enter first. ``data`` is the caller's, kept alive by it: the events hold a bare pointer to it,
+    and a temporary collected under them is a use-after-free (observed as an access violation).
+
+    :param widget: the document widget whose Main Editor dock to drop on.
+    :param qtbot: pytest-qt bot.
+    :param data: the drop's mime data.
+    :returns: whether the enter, and then the drop, was accepted.
+    """
+    widget.show()
+    qtbot.waitExposed(widget)
+    widget.toggle_action(EDITOR_MAIN_TAB).trigger()
+    dock = _main_editor_dock(widget)
+    enter = _drag_enter_event(data)
+    QApplication.sendEvent(dock, enter)
+    if not enter.isAccepted():
+        return False, False
+    drop = _drop_event(data)
+    QApplication.sendEvent(dock, drop)
+    return True, drop.isAccepted()
+
+
+def test_a_url_drop_on_the_main_editor_is_accepted_and_submitted(
+    saved_widget: DocumentWidget, qtbot: QtBot, mocker: MockerFixture
+) -> None:
+    """A URL drop on the Main Editor dock is accepted, and submitted to `.ScrapeActions` (#272).
+
+    **Test steps:**
+
+    * mock the widget's `ScrapeActions.submit`
+    * drag a `text/uri-list` URL onto the dock and drop it, through Qt's own dispatch
+    * verify both the enter and the drop were accepted, and `submit` got the parsed drop
+    """
+    scrapes = saved_widget._DocumentWidget__scrapes  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    submit = mocker.patch.object(scrapes, "submit")
+    data = _url_mime_data()
+
+    assert _drag_onto_main_editor(saved_widget, qtbot, data) == (True, True)
+
+    submit.assert_called_once_with(UrlDrop(url="https://www.artstation.com/artwork/example", fragment=None))
+
+
+def test_plain_text_that_is_not_a_url_is_refused(
+    saved_widget: DocumentWidget, qtbot: QtBot, mocker: MockerFixture
+) -> None:
+    """Ordinary text dropped on the Main Editor dock is refused at the enter, never submitted (#272)."""
+    scrapes = saved_widget._DocumentWidget__scrapes  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    submit = mocker.patch.object(scrapes, "submit")
+    data = QMimeData()
+    data.setText("just some words")
+
+    assert _drag_onto_main_editor(saved_widget, qtbot, data) == (False, False)
+
+    submit.assert_not_called()
+
+
+def test_a_locked_documents_main_editor_refuses_a_url_drop(
+    legacy_widget: DocumentWidget, qtbot: QtBot, mocker: MockerFixture
+) -> None:
+    """A URL dropped on a locked document's Main Editor is refused at the enter, never queued (#272)."""
+    scrapes = legacy_widget._DocumentWidget__scrapes  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    submit = mocker.patch.object(scrapes, "submit")
+    data = _url_mime_data()
+
+    assert _drag_onto_main_editor(legacy_widget, qtbot, data) == (False, False)
+
+    submit.assert_not_called()
+
+
+def test_a_url_drop_survives_a_type_switch(block_model: RehuDocumentModel, qtbot: QtBot, mocker: MockerFixture) -> None:
+    """The drop filter is on the dock itself, not its rebuilt content grid, so it still answers a drop
+    after a type switch replaces that grid (#272).
+
+    **Test steps:**
+
+    * build a widget, switch its type (rebuilding the Main Editor's grid)
+    * drag a URL onto the same Main Editor dock and drop it
+    * verify it was still submitted
+    """
+    block_model.path = Path("/fake/library/sculpting.rehu")
+    widget = DocumentWidget(block_model)
+    qtbot.addWidget(widget)
+    block_model.resource_type = "reference_images"
+    scrapes = widget._DocumentWidget__scrapes  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    submit = mocker.patch.object(scrapes, "submit")
+    data = _url_mime_data()
+
+    assert _drag_onto_main_editor(widget, qtbot, data) == (True, True)
+
+    submit.assert_called_once()
+
+
+def test_a_scrape_notice_lands_in_the_inline_strip(saved_widget: DocumentWidget, mocker: MockerFixture) -> None:
+    """`ScrapeActions.changed` rebuilds the banner with its current `notice` rows (#272).
+
+    **Test steps:**
+
+    * fake a busy notice on the widget's `ScrapeActions` and fire ``changed``
+    * verify the banner shows that row
+    """
+    scrapes = saved_widget._DocumentWidget__scrapes  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    rows = [MessageBannerRow(MessageBannerSeverity.INFO, "Scraping example.com…")]
+    mocker.patch.object(type(scrapes), "notice", new_callable=mocker.PropertyMock, return_value=rows)
+
+    scrapes.changed.emit()
+
+    labels = banner(saved_widget).findChildren(QLabel)
+    assert any(label.text() == "Scraping example.com…" for label in labels)
 
 
 # endregion

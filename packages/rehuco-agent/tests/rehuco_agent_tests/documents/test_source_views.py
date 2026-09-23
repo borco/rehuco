@@ -141,6 +141,28 @@ def test_save_preview_rerenders_after_dropping_an_unknown_field(qtbot: QtBot) ->
     assert text == model.document.serialize()
 
 
+def test_save_preview_rerenders_after_a_source_is_appended(
+    save_preview: SavePreviewView, model: RehuDocumentModel
+) -> None:
+    """Appending a source (``sources_changed``, #272) re-renders the preview even when the model was
+    already dirty -- the case no property signal covers, since ``dirty`` does not change again.
+
+    **Test steps:**
+
+    * dirty the model with an ordinary edit first
+    * append a second source through ``add_source``
+    * verify the label shows the new source's URL
+    """
+    model.title = "Edited Title"
+    assert model.dirty is True
+
+    model.add_source("Other Publisher", "https://other.example.com/page")
+
+    text = label(save_preview, SavePreviewView.LABEL_NAME).text()
+    assert "https://other.example.com/page" in text
+    assert text == model.document.serialize()
+
+
 def test_save_preview_does_not_rerender_while_hidden(
     qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
 ) -> None:
