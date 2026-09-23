@@ -165,7 +165,30 @@ is equally supported.
 A result is a proposal. A field the scraper could not find is absent, never filled with a guess, and the editor shows
 what arrived beside what was there.
 
-### §15.2.2 The registry, and the user's own scrapers
+A result is **validated as a whole** before anything is applied, against one checked-in JSON Schema, the
+**scrape-result schema** (draft-07, checked with `fastjsonschema`). It is the JSON shape of the three parts above:
+`fields` accepts any key from the plugin field-name vocabulary and no other key, and each field's value must pass
+the same type rules that lock a loaded document with a malformed field ([[data-model#write-integrity]]). A result
+that fails is rejected entirely, and nothing from it is applied. The log names the scraper and the location of the
+first error (`data.fields.authors[0].url`). Every result is checked, whether the scraper returned a `ScrapeResult`
+or a mapping, and the built-in scrapers are checked too. A scraper is user code, so what it returns is treated as
+input from outside the app; the step that applies a result can then trust every value without checking it again.
+
+An `authors` entry a scraper contributes is a plain name, or, when the site links the name to an author's own page, a
+`{"name", "url"}` record ([[field-schema#authors]]) carrying that link — ArtStation's product page does this (#273),
+and Udemy's instructor block is expected to as well (#274). A scraper emits the record form whenever such a link is
+present and falls back to the plain name only when the page has none; this is the one rule, stated here rather than
+re-derived per scraper. The record's `url` must be an `http(s)` address, and the schema rejects any other.
+
+### §15.2.2 Legacy `.tc` author-URL upgrade
+
+[[[acquisition-tooling#legacy-author-url]]]
+
+tc4 kept only the author's name; the sites both built-in scrapers cover always carried the profile link too, so it
+was simply dropped on the floor. Nothing above changes for `.tc` migration ([[acquisition-tooling#tc-to-rehu]]):
+a migrated document's `authors` stays name-only, since the source format never captured the URL to carry forward.
+
+### §15.2.3 The registry, and the user's own scrapers
 
 [[[acquisition-tooling#scraper-registry]]]
 
@@ -179,9 +202,12 @@ failed, since a scraper that silently did not load is indistinguishable from one
 at all: `SiteScraper` is a plain structural Protocol, so a copied-and-edited file satisfies it by shape alone, with
 no registration step beyond being a `.py` file in the folder. Scripts in that folder are **trusted local code**, run
 with the app's own privileges; the page says so and the app does nothing to sandbox them. Built-in scrapers ship for
-**ArtStation** and **Udemy** first, the two the predecessors kept alive longest.
+**ArtStation** and **Udemy** first, the two the predecessors kept alive longest. A script author gets the schema
+every result is validated against ([[acquisition-tooling#scraper-protocols]]) by running `rehuco-agent --scrape-schema PATH`,
+which writes it to a file. It writes a file rather than printing because the packaged Windows build prints nothing
+to a console ([[appendices.release-runbook#windows-console]]), and it is the same schema the installed app uses.
 
-### §15.2.3 The browser fetcher and its persona
+### §15.2.4 The browser fetcher and its persona
 
 [[[acquisition-tooling#browser-persona]]]
 
@@ -205,7 +231,7 @@ The profile is a **credential store**: it lives only under the config directory,
 and is never synced or copied by anything the app does. Sessions expire and two-factor sites re-ask; the app does
 not try to keep a login alive, it only keeps the door to renewing one open.
 
-### §15.2.4 The scrape runs on its own pool, not the app-wide task queue
+### §15.2.5 The scrape runs on its own pool, not the app-wide task queue
 
 [[[acquisition-tooling#scrape-job]]]
 
@@ -222,13 +248,13 @@ if the document is still open at the same path; a document closed or renamed whi
 discards the result. `markdownify`, `beautifulsoup4` and `requests` become runtime dependencies of `rehuco-agent`;
 the browser driver goes under an opt-in extra.
 
-### §15.2.5 The LLM fallback, deferred
+### §15.2.6 The LLM fallback, deferred
 
 [[[acquisition-tooling#llm-url-extract]]]
 
 For a host no scraper matches, the earlier design still stands — as a fallback, and still deferred: fetch the page text
-and hand it to a small local model for **structured extraction into a fixed JSON schema**, the same typed result a
-scraper returns, with no per-site code at all.
+and hand it to a small local model for **structured extraction into the scrape-result schema**
+([[acquisition-tooling#scraper-protocols]]), the same typed result a scraper returns, with no per-site code at all.
 
 - **Local model is the right call** — zero per-call cost (run thousands of times across the catalog), no external
   dependency, offline, private. This is high-volume personal productivity, where a small local model beats a cloud API
