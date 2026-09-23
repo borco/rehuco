@@ -8,7 +8,7 @@
 from collections.abc import Hashable, Mapping
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Final
+from typing import Any, Final, cast, override
 
 import cbor2
 import PySide6QtAds as QtAds
@@ -16,8 +16,8 @@ from borco_pyside.logging import LogWidget
 from borco_pyside.qtads import QtAdsAutoHideButtonSuppressor, QtAdsFocusTracker
 from borco_pyside.theming import ActionIconThemeHandler
 from borco_pyside.widgets import MessageBanner, MessageBannerRow, MessageBannerSeverity, ToolBarStretch
-from PySide6.QtCore import QByteArray, Qt, Signal
-from PySide6.QtGui import QAction, QColor, QIcon, QKeySequence
+from PySide6.QtCore import QByteArray, QEvent, QObject, Qt, Signal
+from PySide6.QtGui import QAction, QColor, QDropEvent, QIcon, QKeySequence
 from PySide6.QtWidgets import QApplication, QMainWindow, QMenu, QMessageBox, QVBoxLayout, QWidget
 from rehuco_core import REFERENCE_IMAGES_PLUGIN, TaskQueue, backup_path, originals_to_back_up
 
@@ -30,6 +30,7 @@ from ..fields.type_field import type_label
 from ..fields.widgets import ImageLightbox, ImageSource, ImageViewerMode, PathImageSource, ThumbnailLoader, TypeBadge
 from ..glyphs import TAB_CLOSE_GLYPH
 from ..recycle_bin_deleter import configured_deleter
+from ..scraping.url_drop import UrlDrop
 from ..settings.default_layout_settings import shared_default_layout_settings
 from ..settings.deletion_settings import DeletionKind
 from ..settings.image_viewer_settings import ImageViewerSettings, shared_image_viewer_settings
@@ -45,6 +46,7 @@ from .files_view import FilesView
 from .name_suggestion_model import NameSuggestionModel
 from .rehu_document_model import RehuDocumentModel
 from .save_or_prompt_retry import save_or_prompt_retry
+from .scrape_actions import ScrapeActions
 from .source_views import OnDiskView, SavePreviewView
 
 STATE_VERSION_KEY: Final = "version"
@@ -159,6 +161,54 @@ def viewer_mode_for(modifiers: Qt.KeyboardModifier, configured: ImageViewerMode)
     if shift:
         return ImageViewerMode.DOCUMENT_OVERLAY
     return configured
+
+
+class UrlDropFilter(QObject):
+    """Turns a `UrlDrop` landing on the Main Editor dock into a `ScrapeActions.submit`
+    ([[acquisition-tooling#drag-drop-aids]], #272).
+
+    **An event filter on the `~PySide6QtAds.CDockWidget` itself, not on its content grid.** A type
+    switch or a revert rebuilds the grid wholesale (:meth:`DocumentWidget.__rebuild_field_docks`), which
+    would drop a filter installed on it; the dock survives every rebuild. Qt's own drag-and-drop
+    delivery already does the rest: a widget with ``acceptDrops()`` unset (every plain label, and the
+    grid's own background) is skipped in favor of the nearest ancestor that has it set -- which is this
+    dock, once :attr:`~PySide6QtAds.CDockWidget.setAcceptDrops` is set on it -- while a child that
+    already accepts drops on its own (a `QLineEdit`, by Qt's own default) keeps taking a plain-text drop
+    exactly as it always has.
+
+    :param actions: where a recognized drop is submitted.
+    :param model: the document, read for :attr:`~.RehuDocumentModel.locked` and
+        :attr:`~.RehuDocumentModel.path` -- a locked document, or one with no path yet, refuses the
+        drop outright rather than queuing a scrape with nowhere to land.
+    """
+
+    def __init__(self, actions: ScrapeActions, model: RehuDocumentModel) -> None:
+        super().__init__()
+        self.__actions: Final = actions
+        self.__model: Final = model
+
+    @override
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802 (Qt override)
+        """See :meth:`QObject.eventFilter`: accept a recognized URL drop, submit it, and stop it from
+        reaching the dock's own (nonexistent) drop handling; let anything else through unchanged.
+
+        :param watched: the dock this filter is installed on.
+        :param event: the event to inspect.
+        :returns: whether the event was consumed here.
+        """
+        del watched
+        if event.type() not in (QEvent.Type.DragEnter, QEvent.Type.DragMove, QEvent.Type.Drop):
+            return False
+        drop_event = cast(QDropEvent, event)
+        if self.__model.locked or self.__model.path is None:
+            return False
+        drop = UrlDrop.parse(drop_event.mimeData())
+        if drop is None:
+            return False
+        drop_event.acceptProposedAction()
+        if event.type() == QEvent.Type.Drop:
+            self.__actions.submit(drop)
+        return True
 
 
 class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attributes
@@ -448,6 +498,16 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         self.__conversion_backups: Final = ConversionBackupActions(model, self)
         self.__conversion_backups.changed.connect(self.__on_conversion_backups_changed)
 
+        # a URL (or a selection carrying one) dropped on the Main Editor dock queues a scrape and applies
+        # its result as an ordinary dirty edit ([[acquisition-tooling#drag-drop-aids]], #272). Built
+        # before the first __banner_rows call below, which asks what it found.
+        self.__scrapes: Final = ScrapeActions(model, parent=self)
+        self.__scrapes.changed.connect(self.__on_scrape_notice_changed)
+        main_editor_dock: QtAds.CDockWidget = self.__editor_docks[EDITOR_MAIN_TAB]
+        main_editor_dock.setAcceptDrops(True)  # pylint: disable=no-member
+        self.__url_drop_filter: Final = UrlDropFilter(self.__scrapes, model)
+        main_editor_dock.installEventFilter(self.__url_drop_filter)  # pylint: disable=no-member
+
         self.__set_editors_locked(model.locked)
         self.__update_write_action_visibility()
         self.__banner.set_rows(self.__banner_rows())
@@ -585,13 +645,16 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
     def detach(self) -> None:
         """Let go of everything app-wide this document is attached to, before it is destroyed.
 
-        Called by the owner (`DocumentsDock`) as a document is closed. Only the queue listener needs it
-        today: the engine calls its listeners on the worker thread, so one arriving after the C++
-        objects have gone would emit from a deleted ``QObject``. Work already enqueued is untouched --
-        closing a document does not cancel a run over its files, and the row stays in the Tasks dock.
+        Called by the owner (`DocumentsDock`) as a document is closed. The queue listener needs it for
+        the same reason `.ScrapeActions` does: each runs work off the GUI thread and would otherwise
+        touch a deleted ``QObject`` once that work reports back. Work already under way is untouched
+        either way -- closing a document does not cancel a checksum run already enqueued (its row stays
+        in the Tasks dock) or a scrape already dispatched; each simply stops mattering to this widget
+        once it lands.
         """
         if self.__checksums is not None:
             self.__checksums.detach()
+        self.__scrapes.detach()
 
     def toggle_action(self, tab: FieldsTab) -> QAction:
         """The visibility-toggle action for ``tab``'s dock -- whichever viewer or editor tab it is.
@@ -838,6 +901,15 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         """
         self.__banner.set_rows(self.__banner_rows())
 
+    def __on_scrape_notice_changed(self) -> None:
+        """Rebuild the inline notice strip as a dropped-URL scrape starts, finishes, or fails (#272).
+
+        The banner half of :meth:`__on_upgradable_changed`'s shape with no toolbar half: a scrape's
+        outcome changes nothing about what this document can do -- there is no remedy action to swap,
+        only something to say.
+        """
+        self.__banner.set_rows(self.__banner_rows())
+
     def __on_rename_error_changed(self) -> None:
         """Rebuild the inline notice strip as a failed rename is reported or cleared (#162).
 
@@ -1049,7 +1121,9 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
 
         :returns: one row per :attr:`~RehuDocumentModel.lock_reasons` entry, in the same order, then an
             upgrade row when :attr:`~RehuDocumentModel.upgradable` is set, then a rename row when
-            :attr:`~RehuDocumentModel.rename_error` is non-empty.
+            :attr:`~RehuDocumentModel.rename_error` is non-empty, then the checksum and conversion-backup
+            rows, then whatever `.ScrapeActions.notice` says about the current or last dropped scrape
+            (#272).
         """
         rows = [MessageBannerRow(MessageBannerSeverity.WARNING, reason.message) for reason in self.__model.lock_reasons]
         if self.__model.upgradable:
@@ -1063,6 +1137,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             # information, not a warning: retained backups are the resource's own original .tc and
             # screenshots, worth knowing about but nothing here is at risk (#193, #290)
             rows.append(MessageBannerRow(MessageBannerSeverity.INFO, self.__conversion_backups.notice))
+        rows.extend(self.__scrapes.notice)
         return rows
 
     def __set_editors_locked(self, locked: bool) -> None:

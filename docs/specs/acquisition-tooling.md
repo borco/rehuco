@@ -23,12 +23,15 @@ whose QML drop areas and Scintilla drop override are the shape these follow.
   in a drag is messy. The editor substitutes the converted text for the drop's mime data and hands the drop on to
   Scintilla, so it lands exactly where a plain-text drop would; holding **Shift** skips the conversion and drops the
   plain text. Generic: no site knows about it, and it fetches nothing.
-- **A URL dropped on the main editor fills the fields.** A `text/uri-list` drop, or a plain-text drop that parses as one
-  `http(s)` URL, queues a scrape job ([[acquisition-tooling#scrape-job]]) and applies its result to the editor as an
-  ordinary **dirty, reviewable edit** — never a save; the user reads it and decides. A selection drop whose `text/html`
-  is more than the URL itself hands that fragment to the scraper as the page — the tc4 rule that let a page already
-  rendered in the browser be scraped without fetching it again — with the page URL alongside, where the platform
-  provides one ([[acquisition-tooling#drop-source-url]]).
+- **A URL dropped on the main editor fills the fields.** A `text/uri-list` drop, a `text/x-moz-url` link/address-bar
+  drop, or a plain-text drop that parses as one `http(s)` URL, queues a scrape job
+  ([[acquisition-tooling#scrape-job]]) and applies its result to the editor as an ordinary **dirty, reviewable edit** —
+  never a save; the user reads it and decides. A selection drop whose `text/html` is more than the URL itself hands
+  that fragment to the scraper as the page — the tc4 rule that let a page already rendered in the browser be scraped
+  without fetching it again — with the page URL alongside, where the platform provides one
+  ([[acquisition-tooling#drop-source-url]]). A selection with no URL anywhere in it — every Firefox selection,
+  §15.1.1 — has nothing to route a scrape by and is refused outright, the same as any drop this rule doesn't
+  recognize.
 - **Anything dropped on the images sub-dock ends as screenshots.** A local image file is copied in. A drop carrying
   `image/*` data is written from that data; an image URL is downloaded, with the page it came from as referrer where
   known. A page URL, or a selection, is **parsed for candidates** — `<img>` sources, the largest `srcset` entry,
@@ -256,10 +259,13 @@ serializing behind each other. A scrape is submitted under the document's log sc
 readable in that document's log alongside the app-wide one ([[appendices.logging#scopes]]) — the one piece of the
 task queue's machinery still needed, since a pool thread otherwise inherits no context from whoever submitted the
 work to it. Not a `TaskJob`: with no pause/resume/cancel worth the machinery for one fetch-and-parse, a scrape has no
-row on the Tasks dock, and its only visible trace is its log lines. Its result is applied on the GUI thread, and only
-if the document is still open at the same path; a document closed or renamed while its page was being fetched simply
-discards the result. `markdownify`, `beautifulsoup4` and `requests` become runtime dependencies of `rehuco-agent`;
-the browser driver goes under an opt-in extra.
+row on the Tasks dock. Its trace is its log lines, plus one banner row on the document while it runs — the same
+message-only inline strip every other condition already uses — and, if it did not succeed, one more naming why: the
+no-scraper-matched host, worded exactly as `rehuco-agent --scrape URL` prints it
+([[acquisition-tooling#scraper-registry]]), or the scraper's own failure. Its result is applied on the GUI thread,
+and only if the document is still open at the same path; a document closed or renamed while its page was being
+fetched simply discards the result. `markdownify`, `beautifulsoup4` and `requests` become runtime dependencies of
+`rehuco-agent`; the browser driver goes under an opt-in extra.
 
 ### §15.2.6 The LLM fallback, deferred
 

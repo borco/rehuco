@@ -211,6 +211,21 @@ directly in :func:`build_document_form` alongside ``location``/images, not liste
 constant for now."""
 
 
+def declared_field_names(model: RehuDocumentModel) -> frozenset[str]:
+    """The field names this document's **type** declares -- the common core plus the active type's own
+    fields, both read off the declarations in core (:data:`~rehuco_core.CORE_FIELD_NAMES` and the
+    plugin's `~rehuco_core.PluginSpec.field_names`).
+
+    Split out of :func:`composed_field_specs` because a scrape result's applier (`.ScrapeActions`, #272)
+    needs the same set to decide which scraped fields apply to this type, with no
+    :class:`FieldSpec` involved.
+
+    :param model: the document whose active type selects the fields.
+    :returns: the declared field names.
+    """
+    return frozenset(CORE_FIELD_NAMES) | frozenset(model.document.plugins.field_names(model.resource_type))
+
+
 def composed_field_specs(model: RehuDocumentModel) -> tuple[FieldSpec, ...]:
     """The :data:`MODEL_AGNOSTIC_FIELD_SPECS` entries this document's **type** declares
     ([[field-schema#resource-types]], #195).
@@ -237,7 +252,7 @@ def composed_field_specs(model: RehuDocumentModel) -> tuple[FieldSpec, ...]:
     :returns: the declared specs, in :data:`MODEL_AGNOSTIC_FIELD_SPECS` order, each narrowed to the names
         this type declares.
     """
-    declared = frozenset(CORE_FIELD_NAMES) | frozenset(model.document.plugins.field_names(model.resource_type))
+    declared = declared_field_names(model)
     specs: list[FieldSpec] = []
     for spec in MODEL_AGNOSTIC_FIELD_SPECS:
         kept = tuple(name for name in spec.names if name in declared)

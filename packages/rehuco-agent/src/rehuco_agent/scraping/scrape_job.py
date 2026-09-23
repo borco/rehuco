@@ -4,6 +4,7 @@
 
 import logging
 from typing import Final
+from urllib.parse import urlsplit
 
 from PySide6.QtCore import QObject, Qt, Signal, SignalInstance
 from requests import RequestException
@@ -22,6 +23,19 @@ class ScrapeError(Exception):
 
     Raised by `ScrapeJob.scrape`, the synchronous half both `ScrapeJob.run` (which logs it instead of
     letting it escape a pool thread) and the ``--scrape`` CLI (which prints it and exits 1) consume."""
+
+
+class NoScraperError(ScrapeError):
+    """No scraper matches the URL's host -- the one refusal that means a script is missing rather than
+    broken, so a drop reports it by host ([[acquisition-tooling#drag-drop-aids]]) in the same words the
+    ``--scrape`` CLI prints.
+
+    :param url: the URL nothing matched.
+    """
+
+    def __init__(self, url: str) -> None:
+        self.host: Final = urlsplit(url).hostname or url
+        super().__init__(f"No scraper matches {self.host} ({url}).")
 
 
 class ScrapeJob:
@@ -61,6 +75,8 @@ class ScrapeJob:
         self.__page: Final = page
         self.__fetcher: Final = fetcher if fetcher is not None else HttpPageFetcher()
         self.__marshaller: Final = ScrapeJob.Marshaller()
+        self.__publisher: str | None = None
+        self.__page_url: str | None = None
 
     class Marshaller(QObject):
         """Carries a finished scrape's result across the thread boundary, and nothing else.
@@ -69,30 +85,44 @@ class ScrapeJob:
         `rehuco_agent.tasks.TaskQueueModel.Marshaller` is: a mangled class name is not one Qt or the
         linters will accept, and nothing outside `ScrapeJob` has a reason to build one.
 
-        Two signals rather than one: :attr:`scraped` fires on whichever thread the scrape ran on and is
-        connected, with an explicit `Qt.ConnectionType.QueuedConnection`, to :meth:`__relay`, which
-        re-emits :attr:`result_ready` -- so that one always fires on the GUI thread, whatever kind of
-        object connects to it (a plain callable included, which `AutoConnection` would run on the
-        worker thread instead).
+        Two pairs of signals rather than two: :attr:`scraped`/:attr:`failure` fire on whichever thread
+        the scrape ran on and are each connected, with an explicit `Qt.ConnectionType.QueuedConnection`,
+        to a relay that re-emits :attr:`result_ready`/:attr:`failed` -- so those two always fire on the
+        GUI thread, whatever kind of object connects to them (a plain callable included, which
+        `AutoConnection` would run on the worker thread instead).
         """
 
         scraped = Signal(object)
         """Fires with the `ScrapeResult`, on the worker thread. Not for callers outside `ScrapeJob`."""
 
+        failure = Signal(object)
+        """Fires with the `ScrapeError`, on the worker thread. Not for callers outside `ScrapeJob`."""
+
         result_ready = Signal(object)
         """Fires with the `ScrapeResult`, always on the GUI thread. What `ScrapeJob.result_ready`
         exposes."""
 
+        failed = Signal(object)
+        """Fires with the `ScrapeError`, always on the GUI thread. What `ScrapeJob.failed` exposes."""
+
         def __init__(self) -> None:
             super().__init__()
-            self.scraped.connect(self.__relay, Qt.ConnectionType.QueuedConnection)
+            self.scraped.connect(self.__relay_result, Qt.ConnectionType.QueuedConnection)
+            self.failure.connect(self.__relay_failure, Qt.ConnectionType.QueuedConnection)
 
-        def __relay(self, result: object) -> None:
+        def __relay_result(self, result: object) -> None:
             """Re-emit :attr:`result_ready`, on the GUI thread by construction of the connection above.
 
             :param result: the `ScrapeResult` :attr:`scraped` carried.
             """
             self.result_ready.emit(result)
+
+        def __relay_failure(self, error: object) -> None:
+            """Re-emit :attr:`failed`, on the GUI thread by construction of the connection above.
+
+            :param error: the `ScrapeError` :attr:`failure` carried.
+            """
+            self.failed.emit(error)
 
     @property
     def result_ready(self) -> SignalInstance:
@@ -106,28 +136,58 @@ class ScrapeJob:
         """
         return self.__marshaller.result_ready
 
+    @property
+    def failed(self) -> SignalInstance:
+        """Fires on the GUI thread with the `ScrapeError`, exactly once, whenever :attr:`result_ready`
+        does not -- no scraper matched, a matching scraper needs the browser fetcher, the fetch failed,
+        or the result failed the scrape-result schema. Fires alongside the same `LOG.warning`/
+        `LOG.exception` call :meth:`run` always made; this is what lets a caller show the refusal beside
+        an open document (e.g. a `MessageBanner` row) rather than read it only from the log.
+        """
+        return self.__marshaller.failed
+
+    @property
+    def publisher(self) -> str | None:
+        """The publisher of the scraper that produced the result, after any redirect -- `None` until
+        :meth:`scrape` has resolved one. Read after :attr:`result_ready` fires; both are set before it
+        is emitted."""
+        return self.__publisher
+
+    @property
+    def page_url(self) -> str | None:
+        """The URL of the page actually read -- the dropped fragment's URL, or the fetch's
+        `~.results.Page.final_url` -- `None` until :meth:`scrape` has resolved one. Read after
+        :attr:`result_ready` fires; both are set before it is emitted."""
+        return self.__page_url
+
     def run(self) -> None:
         """Do the work: resolve, fetch, parse, validate, emit.
 
         Runs on whatever thread `ScraperExecutor` hands it to. Touches no widget directly -- the result
-        crosses back to the GUI thread through :attr:`result_ready`'s queued connection.
+        crosses back to the GUI thread through :attr:`result_ready`'s queued connection, and a refusal
+        through :attr:`failed`'s.
 
         The blanket catch is the point rather than a shortcut, the same one `BackgroundMeasurement`
         makes: `matches` and `scrape_page` are user-written code, an exception escaping a pool thread
         is printed by the pool and reaches no log dock, and the document's log is the one place a
         broken script can be diagnosed from. A `ScrapeError` -- an expected refusal or a bad result --
-        is logged as a warning rather than with a traceback; anything else still gets `LOG.exception`.
+        is logged as a warning rather than with a traceback; anything else still gets `LOG.exception`
+        and is wrapped as a `ScrapeError` before reaching :attr:`failed`.
         """
         try:
             self.__marshaller.scraped.emit(self.scrape())
         except ScrapeError as error:
             LOG.warning(str(error))
-        except Exception:  # pylint: disable=broad-exception-caught
+            self.__marshaller.failure.emit(error)
+        except Exception as error:  # pylint: disable=broad-exception-caught
             LOG.exception("Scraping %s failed.", self.__url)
+            self.__marshaller.failure.emit(ScrapeError(f"Scraping {self.__url} failed: {error}"))
 
     def scrape(self) -> ScrapeResult:
         """Resolve, refuse or fetch, re-resolve a redirect, parse, validate -- the synchronous half of
         :meth:`run`, and what the ``--scrape`` CLI calls directly.
+
+        Also resolves :attr:`publisher` and :attr:`page_url`, set before returning.
 
         :returns: the scraper's result, validated against `~.results.SCRAPE_RESULT_SCHEMA`
             (`~.results.ScrapeResult.coerce`).
@@ -136,7 +196,7 @@ class ScrapeJob:
         """
         scraper = self.__registry.find(self.__url)
         if scraper is None:
-            raise ScrapeError(f"No scraper matches {self.__url}.")
+            raise NoScraperError(self.__url)
         if scraper.needs_browser:
             raise ScrapeError(
                 f"{scraper.label} needs the browser fetcher, which this build does not have; "
@@ -154,9 +214,12 @@ class ScrapeJob:
                 scraper = redirected
         raw_result = scraper.scrape_page(page)
         try:
-            return ScrapeResult.coerce(raw_result)
+            result = ScrapeResult.coerce(raw_result)
         except InvalidScrapeResultError as error:
             raise ScrapeError(f"{scraper.label} returned an invalid result for {self.__url}: {error}") from error
+        self.__publisher = scraper.publisher
+        self.__page_url = page.final_url
+        return result
 
     def __fetch(self, url: str) -> Page:
         """Fetch ``url``, wrapping a failure as a `ScrapeError` rather than letting it crash the pool
