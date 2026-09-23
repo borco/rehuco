@@ -59,9 +59,11 @@ class ArtStation:
             title = header.find("h1")
             if isinstance(title, Tag):
                 fields["title"] = title.get_text(strip=True)
-            author = header.select_one(".productPage-header-author span a span[itemprop='name']")
-            if isinstance(author, Tag):
-                fields["authors"] = [author.get_text(strip=True)]
+            author_link = header.select_one(".productPage-header-author a[itemprop='url']")
+            if isinstance(author_link, Tag):
+                name = author_link.get_text(strip=True)
+                url = author_link.get("href")
+                fields["authors"] = [{"name": name, "url": url} if isinstance(url, str) else name]
 
         gallery = soup.select_one(".productPage-gallery-col")
         description = None

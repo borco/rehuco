@@ -50,11 +50,13 @@ def test_matches(url: str, expected: bool) -> None:
 
 # region scrape_page
 def test_scrape_page_reads_title_and_authors() -> None:
-    """The header's `<h1>` and its `itemprop=name` author span become `title`/`authors`."""
+    """The header's `<h1>` becomes `title`; its `itemprop=url` author link becomes a name+url `authors` record."""
     result = ArtStation().scrape_page(Page(url=PRODUCT_URL, final_url=PRODUCT_URL, html=PRODUCT_HTML))
 
     assert result.fields["title"] == "Vertical Drill Tutorial"
-    assert result.fields["authors"] == ["Milad Kambari"]
+    assert result.fields["authors"] == [
+        {"name": "Milad Kambari", "url": "https://www.artstation.com/milad_kambari/store"}
+    ]
 
 
 def test_scrape_page_reads_tags_excluding_the_generic_ones() -> None:
@@ -103,6 +105,18 @@ def test_scrape_page_header_present_without_an_h1_or_author() -> None:
 
     assert "title" not in result.fields
     assert "authors" not in result.fields
+
+
+def test_scrape_page_author_link_without_an_href_sets_a_plain_name() -> None:
+    """An `itemprop=url` author link with no `href` falls back to a plain name string, not a record."""
+    html = (
+        '<div class="productPage-header"><div class="productPage-header-author">'
+        '<a itemprop="url"><span itemprop="name">Milad Kambari</span></a></div></div>'
+    )
+
+    result = ArtStation().scrape_page(Page(url=PRODUCT_URL, final_url=PRODUCT_URL, html=html))
+
+    assert result.fields["authors"] == ["Milad Kambari"]
 
 
 def test_scrape_page_tags_block_with_only_excluded_tags_sets_no_field() -> None:
