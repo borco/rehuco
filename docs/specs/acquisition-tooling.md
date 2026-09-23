@@ -176,7 +176,7 @@ input from outside the app; the step that applies a result can then trust every 
 
 An `authors` entry a scraper contributes is a plain name, or, when the site links the name to an author's own page, a
 `{"name", "url"}` record ([[field-schema#authors]]) carrying that link — ArtStation's product page does this (#273),
-and Udemy's instructor block is expected to as well (#274). A scraper emits the record form whenever such a link is
+and Udemy's instructor block does the same (#274). A scraper emits the record form whenever such a link is
 present and falls back to the plain name only when the page has none; this is the one rule, stated here rather than
 re-derived per scraper. The record's `url` must be an `http(s)` address, and the schema rejects any other.
 
@@ -270,10 +270,10 @@ and hand it to a small local model for **structured extraction into the scrape-r
   models do well. Pair with an explicit **"return null when a field isn't present"** instruction so the model leaves
   blanks rather than hallucinating a plausible-but-wrong value. With both, a constrained 7B is "right on common cases,
   never confidently wrong" — exactly the bar for an assistive tool the user reviews before saving.
-- **The harder half is fetching/rendering, not extraction.** JS-heavy course pages (Udemy, Gumroad) may still need a
-  headless browser to render before extraction, and a readability/main-content trim before the model keeps quality up on
-  long pages. So per-site effort drops a lot but doesn't vanish — it moves from "parse this site's DOM" (brittle) to
-  "render and trim this site's page" (more robust).
+- **The harder half is fetching/rendering, not extraction.** JS-heavy course pages (Gumroad; Udemy's renders
+  server-side, #274) may still need a headless browser to render before extraction, and a readability/main-content
+  trim before the model keeps quality up on long pages. So per-site effort drops a lot but doesn't vanish — it moves
+  from "parse this site's DOM" (brittle) to "render and trim this site's page" (more robust).
 - Implemented on the same `ScraperExecutor` pool a scraper runs on ([[acquisition-tooling#scrape-job]]), not the
   app-wide task queue ([[architecture-design#components]]).
 

@@ -14,6 +14,7 @@ from typing import Final, cast
 
 from .protocols import SiteScraper
 from .sites.artstation import ArtStation
+from .sites.udemy import Udemy
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -22,8 +23,8 @@ USER_SCRAPER_MODULE_PREFIX: Final = "rehuco_user_scrapers"
 shadow the real package nor be shadowed by it -- the loaded module is never inserted into `sys.modules`
 either, so this prefix is the only thing standing between two files with the same stem."""
 
-BUILTIN_SCRAPERS: Final[tuple[type[SiteScraper], ...]] = (ArtStation,)
-"""The scrapers this build ships. Missing Udemy until #274 adds it."""
+BUILTIN_SCRAPERS: Final[tuple[type[SiteScraper], ...]] = (ArtStation, Udemy)
+"""The scrapers this build ships."""
 
 
 @dataclass(frozen=True)
