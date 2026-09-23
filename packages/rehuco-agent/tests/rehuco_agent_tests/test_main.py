@@ -92,3 +92,64 @@ def test_paths_only_skips_windows_block_on_non_windows(monkeypatch: pytest.Monke
     assert main() == 0
     run.assert_called_once_with([str(Path(FAKE_ARGV0).resolve()), "a.rehu"])
     windll.shell32.SetCurrentProcessExplicitAppUserModelID.assert_not_called()
+
+
+def test_scrape_schema_writes_the_schema_and_never_launches_the_gui(
+    monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture, tmp_path: Path
+) -> None:
+    """``--scrape-schema PATH`` is checked before any platform branch and returns without ``run()`` (#340).
+
+    **Test steps:**
+
+    * set ``sys.argv`` to argv[0] plus ``--scrape-schema PATH``
+    * mock ``run`` and verify ``main()`` returns ``0``, the file is written, and ``run()`` is never called
+    """
+    path = tmp_path / "schema.json"
+    monkeypatch.setattr("sys.argv", [FAKE_ARGV0, "--scrape-schema", str(path)])
+    run = mocker.patch("rehuco_agent.app.run", return_value=0)
+
+    assert main() == 0
+    assert path.exists()
+    run.assert_not_called()
+
+
+def test_output_without_scrape_is_a_usage_error(monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture) -> None:
+    """``--output``/``--scrapers-folder`` qualify ``--scrape``; alone they are refused the way argparse
+    refuses any misuse (exit ``2``), rather than silently ignored on the way to a GUI launch (#340).
+
+    **Test steps:**
+
+    * set ``sys.argv`` to argv[0] plus ``--output PATH`` and no ``--scrape``
+    * mock ``run`` and verify ``main()`` exits ``2`` and never reaches ``run()``
+    """
+    monkeypatch.setattr("sys.argv", [FAKE_ARGV0, "--output", "out.json"])
+    run = mocker.patch("rehuco_agent.app.run", return_value=0)
+
+    with pytest.raises(SystemExit) as excinfo:
+        main()
+
+    assert excinfo.value.code == 2
+    run.assert_not_called()
+
+
+def test_scrape_flag_dispatches_to_the_scraping_cli_and_never_launches_the_gui(
+    monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture
+) -> None:
+    """``--scrape URL`` dispatches to `rehuco_agent.scraping.cli.scrape_url_to_json` and returns without
+    ``run()`` (#340).
+
+    **Test steps:**
+
+    * set ``sys.argv`` to argv[0] plus ``--scrape URL``
+    * mock ``scrape_url_to_json`` and ``run``
+    * verify ``main()`` returns the mocked exit code, the CLI helper is called with the parsed
+      arguments, and ``run()`` is never called
+    """
+    url = "https://example.com/page"
+    monkeypatch.setattr("sys.argv", [FAKE_ARGV0, "--scrape", url])
+    scrape_url_to_json = mocker.patch("rehuco_agent.scraping.cli.scrape_url_to_json", return_value=0)
+    run = mocker.patch("rehuco_agent.app.run", return_value=0)
+
+    assert main() == 0
+    scrape_url_to_json.assert_called_once_with(url, scrapers_folder=None, output=None)
+    run.assert_not_called()

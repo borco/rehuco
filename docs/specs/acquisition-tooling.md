@@ -151,12 +151,17 @@ structural, both plain classes:
   runs; ArtStation selling tutorials and reference packs from the same product page returns whatever fields that
   page has, and the reader picks out what applies.
 
-A `ScrapeResult` holds three things: **`fields`**, a plain mapping spelled from the plugin field-name vocabulary
-([[field-schema#resource-types]], e.g. `"title"`, `"advertised_duration"`) but not restricted to any one type's
-declared set — a scraper returns whatever it found, and picking out what fits the document a result is applied to
-happens where it is applied, not at scrape time; **`description`**, Markdown with any images the scraper chooses to
-embed already rewritten to a stem-less placeholder in encounter order (the `<stem>` of `<stem>NN` is a per-document
-fact no scraper knows); and **`images`**, the `(slot, url, referrer)` triples the image pipeline of
+A `ScrapeResult` holds three things. **`fields`** is a plain mapping spelled from `SCRAPED_FIELD_NAMES`
+([[field-schema#resource-types]], e.g. `"title"`, `"advertised_duration"`) — the part of the plugin field-name
+vocabulary a web page can actually show, not restricted to any one type's declared set: a scraper returns
+whatever it found, and picking out what fits the document a result is applied to happens where it is applied, not
+at scrape time. Left out on purpose are what the app measures from the local files (`original_size`, `current_size`,
+`original_duration`, `current_duration`, `current_count` — a page's own claim goes in `advertised_duration` /
+`advertised_count` instead) and the user's own state (`hidden_images`, `extra_tags`, the boolean flags, `rating`,
+`learning_paths`, the `.rehu` timestamps): a scraper converts the page it fetched, and none of those come from a
+page. **`description`** is Markdown, with any images the scraper chooses to embed already rewritten to a stem-less
+placeholder in encounter order (the `<stem>` of `<stem>NN` is a per-document fact no scraper knows). **`images`**
+are the `(slot, url, referrer)` triples the image pipeline of
 [[acquisition-tooling#drag-drop-aids]] downloads, substituting the real stem in. A scraper decides for itself whether
 any of `images` are also referenced in `description` — ArtStation and Udemy download images without ever mentioning
 them in the description text, while a scraper that embeds several of what it downloads directly into the description
@@ -167,11 +172,15 @@ what arrived beside what was there.
 
 A result is **validated as a whole** before anything is applied, against one checked-in JSON Schema, the
 **scrape-result schema** (draft-07, checked with `fastjsonschema`). It is the JSON shape of the three parts above:
-`fields` accepts any key from the plugin field-name vocabulary and no other key, and each field's value must pass
-the same type rules that lock a loaded document with a malformed field ([[data-model#write-integrity]]). A result
-that fails is rejected entirely, and nothing from it is applied. The log names the scraper and the location of the
-first error (`data.fields.authors[0].url`). Every result is checked, whether the scraper returned a `ScrapeResult`
-or a mapping, and the built-in scrapers are checked too. A scraper is user code, so what it returns is treated as
+`{"fields": {...}, "description": str|null, "images": [{"slot", "url", "referrer"}]}`, with `description` and
+`images` optional. `fields` accepts only a key in `SCRAPED_FIELD_NAMES` and no other, and each field's value must
+pass the same type rules that lock a loaded document with a malformed field ([[data-model#write-integrity]]);
+`level` is further held to its fixed value set ([[field-schema#field-types]]), and an integral float where an
+integer belongs (`3600.0`, which JSON Schema's `integer` admits) is read as that integer rather than refused. A
+result that fails is rejected entirely, and nothing from it is applied. The log names the scraper and the
+location of the first error (`data.fields.authors[0].url`). Every result is checked, whether the scraper returned
+a `ScrapeResult` **or its JSON-shaped mapping directly** — the two accepted return forms `SiteScraper.scrape_page`
+may answer with — and the built-in scrapers are checked too. A scraper is user code, so what it returns is treated as
 input from outside the app; the step that applies a result can then trust every value without checking it again.
 
 An `authors` entry a scraper contributes is a plain name, or, when the site links the name to an author's own page, a
@@ -206,6 +215,10 @@ with the app's own privileges; the page says so and the app does nothing to sand
 every result is validated against ([[acquisition-tooling#scraper-protocols]]) by running `rehuco-agent --scrape-schema PATH`,
 which writes it to a file. It writes a file rather than printing because the packaged Windows build prints nothing
 to a console ([[appendices.release-runbook#windows-console]]), and it is the same schema the installed app uses.
+`rehuco-agent --scrape URL [--scrapers-folder DIR] [--output PATH]` runs the same lookup, fetch and parse from the
+console: `--scrapers-folder` builds the registry over that folder for this call only, without touching the saved
+Scrapers setting, so a script can be developed and tested end to end without opening the GUI; the result prints to
+stdout, or to `--output PATH` when the packaged build's silent console makes that the only way to see it.
 
 ### §15.2.4 The browser fetcher and its persona
 

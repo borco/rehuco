@@ -235,3 +235,11 @@ def test_full_size_rewrite(data_src: str, expected: str) -> None:
 
 
 # endregion
+
+
+def test_scrape_page_result_passes_the_scrape_result_schema() -> None:
+    """A real product page's result validates against `SCRAPE_RESULT_SCHEMA` (#340) -- a built-in scraper
+    is checked the same way a user script's return value is."""
+    result = ArtStation().scrape_page(Page(url=PRODUCT_URL, final_url=PRODUCT_URL, html=PRODUCT_HTML))
+
+    assert ScrapeResult.coerce(result) == result

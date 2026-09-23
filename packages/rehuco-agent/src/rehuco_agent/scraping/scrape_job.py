@@ -11,9 +11,17 @@ from requests import RequestException
 from .http_fetcher import HttpPageFetcher
 from .protocols import PageFetcher
 from .registry import ScraperRegistry
-from .results import Page
+from .results import InvalidScrapeResultError, Page, ScrapeResult
 
 LOG: Final = logging.getLogger(__name__)
+
+
+class ScrapeError(Exception):
+    """A scrape could not produce a result -- no scraper matched, a matching scraper needs the browser
+    fetcher, the fetch failed, or the scraper's own result failed `~.results.SCRAPE_RESULT_SCHEMA`.
+
+    Raised by `ScrapeJob.scrape`, the synchronous half both `ScrapeJob.run` (which logs it instead of
+    letting it escape a pool thread) and the ``--scrape`` CLI (which prints it and exits 1) consume."""
 
 
 class ScrapeJob:
@@ -90,14 +98,16 @@ class ScrapeJob:
     def result_ready(self) -> SignalInstance:
         """Fires on the GUI thread with the scraped `ScrapeResult`, exactly once, only on success.
 
-        Never fires when no scraper matched, when a matching scraper needs the browser fetcher, or when
-        the fetch failed -- each of those is logged instead. Applying the result to an editor, and
-        discarding it if the document has since closed or been renamed, is the caller's job.
+        Never fires when no scraper matched, when a matching scraper needs the browser fetcher, when the
+        fetch failed, or when the scraper's own result failed the scrape-result schema -- each of those
+        is logged instead (:meth:`scrape` raises `ScrapeError` for all four, :meth:`run` catches and
+        logs it). Applying the result to an editor, and discarding it if the document has since closed
+        or been renamed, is the caller's job.
         """
         return self.__marshaller.result_ready
 
     def run(self) -> None:
-        """Do the work: resolve, fetch, parse, emit.
+        """Do the work: resolve, fetch, parse, validate, emit.
 
         Runs on whatever thread `ScraperExecutor` hands it to. Touches no widget directly -- the result
         crosses back to the GUI thread through :attr:`result_ready`'s queued connection.
@@ -105,53 +115,58 @@ class ScrapeJob:
         The blanket catch is the point rather than a shortcut, the same one `BackgroundMeasurement`
         makes: `matches` and `scrape_page` are user-written code, an exception escaping a pool thread
         is printed by the pool and reaches no log dock, and the document's log is the one place a
-        broken script can be diagnosed from.
+        broken script can be diagnosed from. A `ScrapeError` -- an expected refusal or a bad result --
+        is logged as a warning rather than with a traceback; anything else still gets `LOG.exception`.
         """
         try:
-            self.__scrape()
+            self.__marshaller.scraped.emit(self.scrape())
+        except ScrapeError as error:
+            LOG.warning(str(error))
         except Exception:  # pylint: disable=broad-exception-caught
             LOG.exception("Scraping %s failed.", self.__url)
 
-    def __scrape(self) -> None:
-        """The steps of :meth:`run`, in order: resolve, refuse or fetch, re-resolve a redirect, parse,
-        emit.
+    def scrape(self) -> ScrapeResult:
+        """Resolve, refuse or fetch, re-resolve a redirect, parse, validate -- the synchronous half of
+        :meth:`run`, and what the ``--scrape`` CLI calls directly.
+
+        :returns: the scraper's result, validated against `~.results.SCRAPE_RESULT_SCHEMA`
+            (`~.results.ScrapeResult.coerce`).
+        :raises ScrapeError: no scraper matches, the matching scraper (direct or after a redirect) needs
+            the browser fetcher, the fetch failed, or the result failed the schema.
         """
         scraper = self.__registry.find(self.__url)
         if scraper is None:
-            LOG.warning("No scraper matches %s.", self.__url)
-            return
+            raise ScrapeError(f"No scraper matches {self.__url}.")
         if scraper.needs_browser:
-            LOG.warning(
-                "%s needs the browser fetcher, which this build does not have; %s was not scraped.",
-                scraper.label,
-                self.__url,
+            raise ScrapeError(
+                f"{scraper.label} needs the browser fetcher, which this build does not have; "
+                f"{self.__url} was not scraped."
             )
-            return
         page = self.__page if self.__page is not None else self.__fetch(self.__url)
-        if page is None:
-            return
         if page.final_url != self.__url:
             redirected = self.__registry.find(page.final_url)
             if redirected is not None and redirected.needs_browser:
-                LOG.warning(
-                    "%s needs the browser fetcher, which this build does not have; %s was not scraped.",
-                    redirected.label,
-                    self.__url,
+                raise ScrapeError(
+                    f"{redirected.label} needs the browser fetcher, which this build does not have; "
+                    f"{self.__url} was not scraped."
                 )
-                return
             if redirected is not None:
                 scraper = redirected
-        result = scraper.scrape_page(page)
-        self.__marshaller.scraped.emit(result)
+        raw_result = scraper.scrape_page(page)
+        try:
+            return ScrapeResult.coerce(raw_result)
+        except InvalidScrapeResultError as error:
+            raise ScrapeError(f"{scraper.label} returned an invalid result for {self.__url}: {error}") from error
 
-    def __fetch(self, url: str) -> Page | None:
-        """Fetch ``url``, logging and swallowing a failure rather than letting it crash the pool thread.
+    def __fetch(self, url: str) -> Page:
+        """Fetch ``url``, wrapping a failure as a `ScrapeError` rather than letting it crash the pool
+        thread.
 
         :param url: the address to fetch.
-        :returns: the fetched page, or `None` when the fetch failed.
+        :returns: the fetched page.
+        :raises ScrapeError: the fetch failed.
         """
         try:
             return self.__fetcher.fetch(url)
         except RequestException as error:
-            LOG.warning("Could not fetch %s: %s", url, error)
-            return None
+            raise ScrapeError(f"Could not fetch {url}: {error}") from error

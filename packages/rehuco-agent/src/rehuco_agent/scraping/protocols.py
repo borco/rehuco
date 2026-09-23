@@ -7,6 +7,7 @@ folder ([[acquisition-tooling#scraper-registry]]) can define a class that never 
 still be picked up, as long as its shape matches.
 """
 
+from collections.abc import Mapping
 from typing import Protocol, runtime_checkable
 
 from .results import Page, ScrapeResult
@@ -70,9 +71,12 @@ class SiteScraper(Protocol):
         :returns: whether this scraper should run for it.
         """
 
-    def scrape_page(self, page: Page) -> ScrapeResult:  # pyright: ignore[reportReturnType]
+    def scrape_page(self, page: Page) -> ScrapeResult | Mapping[str, object]:  # pyright: ignore[reportReturnType]
         """Parse a fetched page into a result.
 
         :param page: the page :meth:`matches` accepted.
-        :returns: whatever fields, description and images this scraper found.
+        :returns: whatever fields, description and images this scraper found, either as a `ScrapeResult`
+            or as its JSON-shaped mapping ([[acquisition-tooling#scraper-protocols]]) -- a plain script
+            can return the mapping directly, with no import of this package at all.
+            `~.results.ScrapeResult.coerce` normalizes either form, and validates it, before it is used.
         """

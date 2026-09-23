@@ -2,10 +2,10 @@
 
 from dataclasses import dataclass, field
 
-from pytest import LogCaptureFixture
+from pytest import LogCaptureFixture, raises
 from pytestqt.qtbot import QtBot
 from rehuco_agent.scraping.results import Page, ScrapeResult
-from rehuco_agent.scraping.scrape_job import ScrapeJob
+from rehuco_agent.scraping.scrape_job import ScrapeError, ScrapeJob
 from requests import RequestException
 
 URL = "https://example.com/page"
@@ -19,13 +19,13 @@ class FakeScraper:  # pylint: disable=missing-function-docstring
     label: str = "Fake"
     publisher: str = "Fake Co"
     needs_browser: bool = False
-    result: ScrapeResult = field(default_factory=lambda: ScrapeResult(fields={}, description=None, images=()))
+    result: object = field(default_factory=lambda: ScrapeResult(fields={}, description=None, images=()))
 
     def matches(self, url: str) -> bool:
         del url
         return True
 
-    def scrape_page(self, page: Page) -> ScrapeResult:
+    def scrape_page(self, page: Page) -> object:
         del page
         return self.result
 
@@ -254,6 +254,69 @@ def test_a_redirect_onto_a_browser_only_scraper_is_refused(qtbot: QtBot, caplog:
 
     assert not received
     assert "Gated needs the browser fetcher" in caplog.text
+
+
+def test_a_scraper_returning_a_mapping_yields_the_same_result_as_the_dataclass(qtbot: QtBot) -> None:
+    """A script returning a JSON-shaped mapping directly is normalized the same as one returning the
+    dataclass (#340)."""
+    dataclass_result = ScrapeResult(fields={"title": "T"}, description="d", images=())
+    mapping_result = {"fields": {"title": "T"}, "description": "d", "images": []}
+    scraper = FakeScraper(result=mapping_result)
+    registry = FakeRegistry({URL: scraper})
+    page = Page(url=URL, final_url=URL, html="<html></html>")
+    job = ScrapeJob(URL, registry, page=page, fetcher=FakeFetcher())  # type: ignore[arg-type]
+
+    with qtbot.waitSignal(job.result_ready, timeout=1000) as blocker:
+        job.run()
+
+    assert blocker.args == [dataclass_result]
+
+
+def test_an_invalid_result_fails_only_that_scrape(qtbot: QtBot, caplog: LogCaptureFixture) -> None:
+    """A scraper's result failing the scrape-result schema is logged with the scraper's label and the
+    URL, and never reaches `result_ready` (#340) -- non-fatal, per-script, the same as an import error."""
+    bad_result = ScrapeResult(fields={"current_size": 5}, description=None, images=())
+    scraper = FakeScraper(label="Bad", result=bad_result)
+    registry = FakeRegistry({URL: scraper})
+    page = Page(url=URL, final_url=URL, html="<html></html>")
+    job = ScrapeJob(URL, registry, page=page, fetcher=FakeFetcher())  # type: ignore[arg-type]
+    received: list[object] = []
+    job.result_ready.connect(received.append)
+
+    with caplog.at_level("WARNING"):
+        job.run()
+    qtbot.wait(50)
+
+    assert not received
+    assert "Bad returned an invalid result" in caplog.text
+    assert URL in caplog.text
+
+
+def test_scrape_raises_for_no_matching_scraper() -> None:
+    """`scrape()` raises `ScrapeError` (the synchronous half `run()`/the CLI use) rather than returning
+    `None`."""
+    job = ScrapeJob(URL, FakeRegistry({}), fetcher=FakeFetcher())  # type: ignore[arg-type]
+
+    with raises(ScrapeError, match="No scraper matches"):
+        job.scrape()
+
+
+def test_scrape_raises_when_the_matching_scraper_needs_the_browser() -> None:
+    """`scrape()` raises `ScrapeError` for a browser-only scraper rather than returning `None`."""
+    registry = FakeRegistry({URL: FakeScraper(needs_browser=True)})
+    job = ScrapeJob(URL, registry, fetcher=FakeFetcher())  # type: ignore[arg-type]
+
+    with raises(ScrapeError, match="needs the browser fetcher"):
+        job.scrape()
+
+
+def test_scrape_raises_when_the_fetch_fails() -> None:
+    """`scrape()` raises `ScrapeError` when the fetcher raises, rather than returning `None`."""
+    registry = FakeRegistry({URL: FakeScraper()})
+    job = ScrapeJob(URL, registry, fetcher=FakeFetcher(error=RequestException("boom")))  # type: ignore[arg-type]
+
+    with raises(ScrapeError, match="Could not fetch"):
+        job.scrape()
 
 
 def test_a_redirect_onto_an_unclaimed_host_keeps_the_original_scraper(qtbot: QtBot) -> None:
