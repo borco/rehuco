@@ -10,7 +10,7 @@ from typing import Final
 
 from borco_pyside.widgets import ElidedLabel
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFontMetrics
+from PySide6.QtGui import QColor, QFontMetrics, QPalette
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 
@@ -74,7 +74,52 @@ def test_href_wraps_the_visible_text_in_a_link_to_the_full_target(qtbot: QtBot) 
 
     label.set_text(LONG_TEXT, href="https://example.com/full/target")
 
-    assert label.text() == f'<a href="https://example.com/full/target">{LONG_TEXT}</a>'
+    assert label.text().startswith('<a href="https://example.com/full/target" style="color:')
+    assert label.text().endswith(f">{LONG_TEXT}</a>")
+
+
+def test_the_links_color_is_the_palettes_own_link_role(qtbot: QtBot) -> None:
+    """The link is colored from the label's own palette, not Qt's hardcoded rich-text default --
+    illegible against a dark theme otherwise, since that default never follows the app's theme.
+
+    **Test steps:**
+
+    * give the label a palette with a distinct link color
+    * set a value with a href
+    * verify the rendered markup's inline style carries that exact color
+    """
+    label = ElidedLabel()
+    qtbot.addWidget(label)
+    label.setFixedWidth(4000)
+    palette = label.palette()
+    palette.setColor(QPalette.ColorRole.Link, QColor("#123456"))
+    label.setPalette(palette)
+
+    label.set_text(LONG_TEXT, href="https://example.com/full/target")
+
+    assert "color:#123456;" in label.text()
+
+
+def test_a_palette_change_re_colors_a_shown_link(qtbot: QtBot) -> None:
+    """A live palette change (a theme toggle) re-renders a shown link in the new color, not the one it
+    was first drawn in.
+
+    **Test steps:**
+
+    * set a value with a href under one palette
+    * change the label's own palette to a distinct link color
+    * verify the rendered markup now carries the new color
+    """
+    label = ElidedLabel()
+    qtbot.addWidget(label)
+    label.setFixedWidth(4000)
+    label.set_text(LONG_TEXT, href="https://example.com/full/target")
+
+    palette = label.palette()
+    palette.setColor(QPalette.ColorRole.Link, QColor("#abcdef"))
+    label.setPalette(palette)
+
+    assert "color:#abcdef;" in label.text()
 
 
 def test_href_escapes_html_special_characters(qtbot: QtBot) -> None:

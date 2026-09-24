@@ -42,6 +42,8 @@ class Udemy:
 
     label = "Udemy"
     publisher = "Udemy"
+    site_name = "Udemy"
+    site_url = "https://www.udemy.com"
     needs_browser = False
 
     def matches(self, url: str) -> bool:

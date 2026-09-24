@@ -18,6 +18,8 @@ FOLDER_SCRAPER_SOURCE = """
 class ExampleScraper:
     label = "Example"
     publisher = "Example Co"
+    site_name = "Example"
+    site_url = "https://example.com"
     needs_browser = False
 
     def matches(self, url):
@@ -35,6 +37,8 @@ class FakeScraper:  # pylint: disable=missing-function-docstring
     result: object
     label: str = "Fake"
     publisher: str = "Fake Co"
+    site_name: str = "Fake"
+    site_url: str = "https://fake.example.com"
     needs_browser: bool = False
 
     def matches(self, url: str) -> bool:

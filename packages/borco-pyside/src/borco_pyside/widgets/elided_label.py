@@ -3,8 +3,8 @@
 import html
 from typing import override
 
-from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QResizeEvent
+from PySide6.QtCore import QEvent, QSize, Qt
+from PySide6.QtGui import QPalette, QResizeEvent
 from PySide6.QtWidgets import QLabel, QSizePolicy, QWidget
 
 
@@ -56,6 +56,17 @@ class ElidedLabel(QLabel):
         super().resizeEvent(event)
         self.__render()
 
+    @override
+    def changeEvent(self, event: QEvent) -> None:  # noqa: N802  (Qt API name)
+        """Re-render on a palette change, so a link's color follows a live theme toggle rather than
+        staying whatever it was drawn in at the previous one.
+
+        :param event: the Qt change event; only a palette change triggers a re-render.
+        """
+        if event.type() == QEvent.Type.PaletteChange and self.__href:
+            self.__render()
+        super().changeEvent(event)
+
     def __render(self) -> None:
         """Re-render the label with the full text middle-elided to the current width, showing the
         full text in a tooltip only while it is actually elided."""
@@ -69,7 +80,10 @@ class ElidedLabel(QLabel):
         # literally while not escaping would mangle a ``<`` -- plain text is plain, a link is rich.
         if self.__href:
             self.setTextFormat(Qt.TextFormat.RichText)
-            self.setText(f'<a href="{html.escape(self.__href)}">{html.escape(elided)}</a>')
+            # Qt's rich-text anchor defaults to a hardcoded blue, not the palette's own Link role --
+            # illegible against a dark theme's background, since nothing here ever asked for that color
+            link_color = self.palette().color(QPalette.ColorRole.Link).name()
+            self.setText(f'<a href="{html.escape(self.__href)}" style="color:{link_color};">{html.escape(elided)}</a>')
         else:
             self.setTextFormat(Qt.TextFormat.PlainText)
             self.setText(elided)

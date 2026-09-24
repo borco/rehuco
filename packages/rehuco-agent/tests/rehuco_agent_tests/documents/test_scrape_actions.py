@@ -22,11 +22,14 @@ WAIT_TIMEOUT_MS: Final = 2000
 
 
 @dataclass
-class FakeScraper:  # pylint: disable=missing-function-docstring
+# duplicate-code: deliberately the same shape `test_scrape_job.py`'s FakeScraper uses
+class FakeScraper:  # pylint: disable=missing-function-docstring,duplicate-code
     """A minimal `SiteScraper`, the same shape `test_scrape_job.py`'s uses."""
 
     label: str = "Fake"
     publisher: str = "Example Publisher"
+    site_name: str = "Fake"
+    site_url: str = "https://fake.example.com"
     needs_browser: bool = False
     result: object = field(default_factory=lambda: ScrapeResult(fields={}, description=None, images=()))
 

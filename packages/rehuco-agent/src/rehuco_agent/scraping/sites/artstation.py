@@ -34,6 +34,8 @@ class ArtStation:
 
     label = "ArtStation"
     publisher = "ArtStation"
+    site_name = "ArtStation"
+    site_url = "https://www.artstation.com"
     needs_browser = False
 
     def matches(self, url: str) -> bool:

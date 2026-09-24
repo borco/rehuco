@@ -17,6 +17,8 @@ FOLDER_SCRAPER_SOURCE = """
 class FolderScraper:
     label = "Folder"
     publisher = "Folder Co"
+    site_name = "Folder"
+    site_url = "https://example.com"
     needs_browser = False
 
     def matches(self, url):
@@ -42,6 +44,8 @@ class NeedsArgs:
 
     label = "Needs Args"
     publisher = "Needs Args Co"
+    site_name = "Needs Args"
+    site_url = "https://example.com"
     needs_browser = False
 
     def matches(self, url):
@@ -57,10 +61,33 @@ class BuiltinScraperStub:  # pylint: disable=missing-function-docstring
 
     label = "Built-in"
     publisher = "Built-in Co"
+    site_name = "Built-in"
+    site_url = "https://example.com"
     needs_browser = False
 
     def matches(self, url: str) -> bool:
         return "example.com" in url
+
+    def scrape_page(self, page: Page) -> ScrapeResult:
+        raise NotImplementedError
+
+
+class BuiltinNeedsArgsStub:  # pylint: disable=missing-function-docstring
+    """A built-in class this build never actually ships -- proves a built-in that cannot be
+    constructed with no arguments is skipped in `rows` the same way a folder scraper's own is."""
+
+    label = "Broken Built-in"
+    publisher = "Broken Built-in Co"
+    site_name = "Broken Built-in"
+    site_url = "https://example.com"
+    needs_browser = False
+
+    def __init__(self, required: str) -> None:
+        self.required = required
+
+    def matches(self, url: str) -> bool:
+        del url
+        return True
 
     def scrape_page(self, page: Page) -> ScrapeResult:
         raise NotImplementedError
@@ -243,6 +270,83 @@ def test_missing_folder_loads_as_no_modules(tmp_path: Path) -> None:
 
     assert not registry.modules
     assert registry.find("https://example.com/page") is None
+
+
+@mark.disk
+def test_rows_lists_a_scraper_per_row_folder_first_then_built_in(tmp_path: Path) -> None:
+    """`rows` has one entry per scraper -- the folder's, then the built-ins -- and one entry for a file
+    contributing none (#278).
+
+    **Test steps:**
+
+    * write a folder scraper
+    * build a registry over that folder plus a built-in
+    * verify the rows: the folder scraper first, then the built-in, each carrying a key
+    """
+    (tmp_path / "folder_scraper.py").write_text(FOLDER_SCRAPER_SOURCE)
+    registry = ScraperRegistry(folder=tmp_path, builtins=(BuiltinScraperStub,))
+
+    rows = registry.rows
+
+    assert [row.label for row in rows] == ["Folder", "Built-in"]
+    assert [row.publisher for row in rows] == ["Folder Co", "Built-in Co"]
+    assert [row.source for row in rows] == ["folder_scraper.py", "Built-in"]
+    assert all(row.key is not None for row in rows)
+
+
+@mark.disk
+def test_rows_carries_needs_browser_per_scraper(tmp_path: Path) -> None:
+    """A scraper's `needs_browser` is carried onto its row, for the table's checkbox (#278).
+
+    **Test steps:**
+
+    * write a scraper declaring ``needs_browser = True``
+    * build a registry over that folder
+    * verify the row's flag
+    """
+    (tmp_path / "gated_scraper.py").write_text(
+        FOLDER_SCRAPER_SOURCE.replace("needs_browser = False", "needs_browser = True")
+    )
+    registry = ScraperRegistry(folder=tmp_path)
+
+    assert registry.rows[0].needs_browser is True
+
+
+@mark.disk
+def test_rows_has_no_key_for_an_empty_or_broken_file(tmp_path: Path) -> None:
+    """A file defining no scraper, and a file that failed to load, carry `None` keys (#278).
+
+    **Test steps:**
+
+    * write an empty-contribution file and a broken file
+    * build a registry over the folder
+    * verify neither row carries a key, and the broken one carries its error
+    """
+    (tmp_path / "no_scraper.py").write_text(NO_SCRAPER_SOURCE)
+    (tmp_path / "broken_scraper.py").write_text(BROKEN_SOURCE)
+    registry = ScraperRegistry(folder=tmp_path, builtins=())
+
+    rows = {row.source: row for row in registry.rows}
+
+    assert rows["no_scraper.py"].key is None
+    assert rows["broken_scraper.py"].key is None
+    assert rows["broken_scraper.py"].error is not None
+
+
+def test_rows_skips_a_built_in_that_cannot_be_constructed_with_no_arguments(tmp_path: Path) -> None:
+    """A built-in class that cannot be built with no arguments contributes no row, the same way an
+    unbuildable folder scraper is skipped rather than reported as an error (#278).
+
+    **Test steps:**
+
+    * build a registry with a built-in requiring a constructor argument, alongside a real one
+    * verify only the real built-in shows up in `rows`
+    """
+    registry = ScraperRegistry(folder=tmp_path, builtins=(BuiltinNeedsArgsStub, BuiltinScraperStub))
+
+    rows = registry.rows
+
+    assert [row.label for row in rows] == ["Built-in"]
 
 
 def test_shared_scraper_registry_is_a_singleton() -> None:

@@ -9,6 +9,7 @@ state without the page having to be realized on screen.
 from borco_pyside.widgets import StringListEditor
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QFrame,
     QGroupBox,
     QLabel,
@@ -417,6 +418,59 @@ def test_checking_a_checkbox_marks_its_frame_dirty(qtbot: QtBot) -> None:
     check_box.setChecked(True)
 
     assert frame_filter.dirty_frames() == [frame]
+
+
+def test_changing_a_combo_box_marks_its_frame_dirty(qtbot: QtBot) -> None:
+    """A `QComboBox` counts as a value widget, the same as a line edit.
+
+    **Test steps:**
+
+    * build a page whose one frame holds a combo box
+    * change its current index
+    * verify the frame is reported dirty
+    """
+    page = QWidget()
+    qtbot.addWidget(page)
+    layout = QVBoxLayout(page)
+    frame = QFrame(page)
+    frame_layout = QVBoxLayout(frame)
+    combo = QComboBox(frame)
+    combo.addItems(["Firefox", "Chrome", "Edge"])
+    frame_layout.addWidget(combo)
+    layout.addWidget(frame)
+    frame_filter = SettingsFrameFilter(page, "Markdown Rendering")
+
+    combo.setCurrentIndex(1)
+
+    assert frame_filter.dirty_frames() == [frame]
+
+
+def test_restore_saved_puts_a_combo_boxs_baseline_index_back(qtbot: QtBot) -> None:
+    """`restore_saved` writes a combo box's captured baseline index back, clearing the frame's dirty
+    state (#342).
+
+    **Test steps:**
+
+    * build a page whose one frame holds a combo box, at its baseline index
+    * change the index, then restore the saved baseline
+    * verify the index is back and the frame is no longer dirty
+    """
+    page = QWidget()
+    qtbot.addWidget(page)
+    layout = QVBoxLayout(page)
+    frame = QFrame(page)
+    frame_layout = QVBoxLayout(frame)
+    combo = QComboBox(frame)
+    combo.addItems(["Firefox", "Chrome", "Edge"])
+    frame_layout.addWidget(combo)
+    layout.addWidget(frame)
+    frame_filter = SettingsFrameFilter(page, "Markdown Rendering")
+    combo.setCurrentIndex(2)
+
+    frame_filter.restore_saved(frame)
+
+    assert combo.currentIndex() == 0
+    assert frame_filter.dirty_frames() == []
 
 
 def test_changing_a_spin_box_marks_its_frame_dirty(qtbot: QtBot) -> None:

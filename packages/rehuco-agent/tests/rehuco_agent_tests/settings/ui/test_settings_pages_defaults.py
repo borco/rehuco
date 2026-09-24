@@ -11,13 +11,12 @@ for. The three System Integration pages are covered in their own modules instead
 """
 
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any
 
 from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.scraping.registry import LoadedScraperModule
+from rehuco_agent.scraping.registry import ScraperRow
 from rehuco_agent.settings.ui import scrapers_page, session_page
 from rehuco_agent.settings.ui.checksums_page import ChecksumsPage
 from rehuco_agent.settings.ui.descriptions_page import DescriptionsPage
@@ -86,8 +85,17 @@ class FakeRegistry:  # pylint: disable=missing-function-docstring,too-few-public
     """Stands in for the shared `ScraperRegistry`, so `ScrapersPage` scans no real folder."""
 
     def __init__(self) -> None:
-        self.modules: tuple[LoadedScraperModule, ...] = (
-            LoadedScraperModule(path=Path("/fake/scrapers/foo_scraper.py"), scrapers=(), error=None),
+        self.rows: tuple[ScraperRow, ...] = (
+            ScraperRow(
+                key=None,
+                label="",
+                publisher="",
+                site_name="",
+                site_url="",
+                source="foo_scraper.py",
+                needs_browser=False,
+                error=None,
+            ),
         )
 
     def reload(self) -> None:

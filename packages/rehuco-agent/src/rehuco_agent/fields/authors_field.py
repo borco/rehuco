@@ -4,12 +4,12 @@ is lossless, record rows otherwise ([[plugins#field-toolkit]], [[field-schema#au
 
 import html
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Final, override
 
-from PySide6.QtCore import QObject, QSignalBlocker, Qt, QUrl, Signal
-from PySide6.QtGui import QCursor, QDesktopServices
-from PySide6.QtWidgets import QLabel, QToolTip
+from PySide6.QtCore import QEvent, QObject, QSignalBlocker, Qt, QUrl, Signal
+from PySide6.QtGui import QCursor, QDesktopServices, QPalette
+from PySide6.QtWidgets import QApplication, QLabel, QToolTip
 from rehuco_core import AuthorEntry, author_name
 
 from .author_url import HTTP_SCHEMES, is_http_author_url
@@ -53,6 +53,29 @@ class AuthorsField(Field[Sequence[AuthorEntry]], QObject):
 
     TYPE = "authors"
 
+    class Label(QLabel):
+        """The viewer's `QLabel`, re-rendered on a palette change so its links' colors follow a live
+        theme toggle rather than staying whatever they were drawn in at construction or at the last
+        value change -- the same reasoning `~borco_pyside.widgets.ElidedLabel`'s own `changeEvent`
+        override gives, needed here too since :meth:`AuthorsField.__to_html` bakes the palette's link
+        color into the markup at render time rather than leaving it to Qt's own (unthemed) rich-text
+        default. Nested rather than a module-level class: nothing outside :meth:`make_viewer` ever
+        builds one.
+
+        :param render: builds the current rich-text HTML afresh, called on construction and again on
+            every later palette change.
+        """
+
+        def __init__(self, render: Callable[[], str]) -> None:
+            super().__init__()
+            self.__render: Final = render
+
+        @override
+        def changeEvent(self, event: QEvent) -> None:  # noqa: N802  (Qt API name)
+            if event.type() == QEvent.Type.PaletteChange:
+                self.setText(self.__render())
+            super().changeEvent(event)
+
     status_message: Signal = Signal(str)
     """Fires with a hovered link's URL for the **owner to route** to the real status bar (an empty
     string on leave, to clear it) -- the `StatusReporter` contract ([[plugins#field-toolkit]]). The field
@@ -63,7 +86,7 @@ class AuthorsField(Field[Sequence[AuthorEntry]], QObject):
 
     @override
     def make_viewer(self, binding: FieldBinding[Sequence[AuthorEntry]]) -> FieldViewerWidgets:
-        label = QLabel()
+        label = self.Label(lambda: self.__to_html(binding.value))
         label.setTextFormat(Qt.TextFormat.RichText)
         label.setWordWrap(True)
         label.setOpenExternalLinks(False)
@@ -97,15 +120,21 @@ class AuthorsField(Field[Sequence[AuthorEntry]], QObject):
         anchor for a strict http/https URL -- anything else (no URL, a non-http(s) scheme, a malformed
         value) renders as if the entry carried no URL at all ([[data-model#write-integrity]]).
 
+        The anchor's color is read from the live palette's own `QPalette.ColorRole.Link`, not left to
+        Qt's rich-text engine's hardcoded default -- illegible against a dark theme otherwise, the same
+        bug `~borco_pyside.widgets.ElidedLabel`'s own link rendering had.
+
         :param entries: the authors entries to render, string or record alike.
         :returns: the joined rich-text HTML.
         """
+        link_color = QApplication.palette().color(QPalette.ColorRole.Link).name()
         parts = []
         for entry in entries:
             name_html = html.escape(author_name(entry))
             url = entry.get("url") if isinstance(entry, dict) else None
             if isinstance(url, str) and is_http_author_url(url):
-                parts.append(f'{name_html} (<a href="{html.escape(url)}">url</a>)')
+                href = html.escape(url)
+                parts.append(f'{name_html} (<a href="{href}" style="color:{link_color};">url</a>)')
             else:
                 parts.append(name_html)
         return TextListString.join(parts)

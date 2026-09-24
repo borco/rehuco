@@ -23,10 +23,12 @@ def test_url_field_viewer_is_an_elided_external_link(qtbot: QtBot, model: RehuDo
     qtbot.addWidget(viewer)
 
     assert viewer.openExternalLinks() is True
-    assert viewer.text() == '<a href="https://example.com">https://example.com</a>'
+    assert viewer.text().startswith('<a href="https://example.com" style="color:')
+    assert viewer.text().endswith(">https://example.com</a>")
 
     model.url = "https://changed.example"
-    assert viewer.text() == '<a href="https://changed.example">https://changed.example</a>'
+    assert viewer.text().startswith('<a href="https://changed.example" style="color:')
+    assert viewer.text().endswith(">https://changed.example</a>")
 
 
 def test_url_field_viewer_renders_nothing_when_empty(qtbot: QtBot, model: RehuDocumentModel) -> None:
@@ -105,7 +107,8 @@ def test_url_field_editor_and_viewer_echo_without_a_feedback_loop(qtbot: QtBot, 
     editor.setText("https://live.example")
 
     assert model.url == "https://live.example"
-    assert viewer.text() == '<a href="https://live.example">https://live.example</a>'
+    assert viewer.text().startswith('<a href="https://live.example" style="color:')
+    assert viewer.text().endswith(">https://live.example</a>")
     assert editor.text() == "https://live.example"
 
 
