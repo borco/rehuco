@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
-from rehuco_core import Deleter, convert_screenshot, delete_screenshot, renumber_screenshots
+from rehuco_core import Deleter, convert_screenshot, delete_screenshot, renumber_screenshots, save_screenshot
 
 from ..recycle_bin_deleter import configured_deleter
 from ..settings.screenshot_patterns_settings import shared_screenshot_patterns_settings
@@ -65,6 +65,20 @@ class RehuDocumentImageOrganizer:
         _, stem = self.__location()
         converted = convert_screenshot(path, stem, shared_screenshot_patterns_settings().screenshot_name_patterns)
         return {path.name: converted.name}
+
+    def acquire(self, data: bytes, extension: str, slot: int | None = None) -> Path:
+        """Write ``data`` into this resource's numbered set (#73).
+
+        :param data: the image's raw bytes, written exactly as given.
+        :param extension: the file's extension, leading dot included.
+        :param slot: the ``<stem>NN`` slot to write into; ``None`` takes the next free one.
+        :returns: the new file's path.
+        :raises OSError: the write failed, or was refused -- including the refusal :meth:`__location`
+            raises for a path-less document or a legacy ``.tc``.
+        :raises ValueError: ``slot`` is ``None`` and the numbered set is already full.
+        """
+        directory, stem = self.__location()
+        return save_screenshot(directory, stem, data, extension, slot)
 
     def remove(self, path: Path, remaining: Sequence[Path], deleter: Deleter | None = None) -> dict[str, str]:
         """Delete ``path`` and renumber ``remaining`` onto the slot it vacated.

@@ -16,10 +16,10 @@ from borco_pyside.logging import LogWidget
 from borco_pyside.qtads import QtAdsAutoHideButtonSuppressor, QtAdsFocusTracker
 from borco_pyside.theming import ActionIconThemeHandler
 from borco_pyside.widgets import MessageBanner, MessageBannerRow, MessageBannerSeverity, ToolBarStretch
-from PySide6.QtCore import QByteArray, QEvent, QObject, Qt, Signal
+from PySide6.QtCore import QByteArray, QEvent, QMimeData, QObject, Qt, Signal
 from PySide6.QtGui import QAction, QColor, QDropEvent, QIcon, QKeySequence
 from PySide6.QtWidgets import QApplication, QMainWindow, QMenu, QMessageBox, QVBoxLayout, QWidget
-from rehuco_core import REFERENCE_IMAGES_PLUGIN, TaskQueue, backup_path, originals_to_back_up
+from rehuco_core import IMAGE_EXTENSIONS, REFERENCE_IMAGES_PLUGIN, TaskQueue, backup_path, originals_to_back_up
 
 from ..app_logging import LOG_VIEW_ICON_RESOURCE, build_log_widget, shared_log_bridge
 from ..asking_deleter import AskingDeleter
@@ -30,6 +30,7 @@ from ..fields.type_field import type_label
 from ..fields.widgets import ImageLightbox, ImageSource, ImageViewerMode, PathImageSource, ThumbnailLoader, TypeBadge
 from ..glyphs import TAB_CLOSE_GLYPH
 from ..recycle_bin_deleter import configured_deleter
+from ..scraping.image_pipeline import MIME_EXTENSIONS, ImageBytes
 from ..scraping.url_drop import UrlDrop
 from ..settings.default_layout_settings import shared_default_layout_settings
 from ..settings.deletion_settings import DeletionKind
@@ -43,7 +44,9 @@ from .content_images import ContentDisplayFlags, ContentImagesModel, ContentImag
 from .conversion_backup_actions import ConversionBackupActions
 from .document_fields import EDITOR_IMAGES_TAB, EDITOR_MAIN_TAB, VIEWER_DESCRIPTION_TAB, build_document_form
 from .files_view import FilesView
+from .image_downloads import ImageDownloads
 from .name_suggestion_model import NameSuggestionModel
+from .rehu_document_image_organizer import RehuDocumentImageOrganizer
 from .rehu_document_model import RehuDocumentModel
 from .save_or_prompt_retry import save_or_prompt_retry
 from .scrape_actions import ScrapeActions
@@ -209,6 +212,112 @@ class UrlDropFilter(QObject):
         if event.type() == QEvent.Type.Drop:
             self.__actions.submit(drop)
         return True
+
+
+RENDERER_TAINT_FORMAT: Final = 'application/x-qt-windows-mime;value="chromium/x-renderer-taint"'
+"""Chromium's only drop-carried hint of where an image or a selection came from -- the source page's
+origin, scheme and host only, never the full path ([[acquisition-tooling#drop-source-url]], §15.1.1).
+Present on every Chromium image drop tried; absent from Firefox and from an address-bar drag."""
+
+
+class ImageDropFilter(QObject):
+    """Turns anything dropped on the Images sub-dock into an acquired screenshot
+    ([[acquisition-tooling#drag-drop-aids]], #73).
+
+    The same `~PySide6QtAds.CDockWidget`-level event filter idiom `UrlDropFilter` uses, and for the same
+    reason: this dock survives a type switch or a revert's wholesale grid rebuild, a filter installed on
+    its content would not. Tried in order -- the first that matches wins:
+
+    1. a local file (``file:`` in ``text/uri-list``) with a recognized image extension, read and
+       written synchronously;
+    2. a drop carrying its own ``image/*`` data, written synchronously from those bytes;
+    3. an ``http(s)`` URL (the same reading `~rehuco_agent.scraping.url_drop.UrlDrop.parse` does for the
+       Main Editor), downloaded through :attr:`__image_downloads`.
+
+    :param image_downloads: where a recognized drop is written or submitted.
+    :param model: the document, read for :attr:`~.RehuDocumentModel.locked` and
+        :attr:`~.RehuDocumentModel.path` -- a locked document, or one with no path yet, refuses the
+        drop outright.
+    """
+
+    def __init__(self, image_downloads: ImageDownloads, model: RehuDocumentModel) -> None:
+        super().__init__()
+        self.__image_downloads: Final = image_downloads
+        self.__model: Final = model
+
+    @override
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802 (Qt override)
+        """See :meth:`QObject.eventFilter`: accept a recognized image drop, act on it, and stop it from
+        reaching the dock's own (nonexistent) drop handling; let anything else through unchanged.
+
+        :param watched: the dock this filter is installed on.
+        :param event: the event to inspect.
+        :returns: whether the event was consumed here.
+        """
+        del watched
+        if event.type() not in (QEvent.Type.DragEnter, QEvent.Type.DragMove, QEvent.Type.Drop):
+            return False
+        drop_event = cast(QDropEvent, event)
+        if self.__model.locked or self.__model.path is None:
+            return False
+        data = drop_event.mimeData()
+        local_file = self.__local_file(data)
+        image_bytes = None if local_file is not None else self.__image_bytes(data)
+        drop = None if local_file is not None or image_bytes is not None else UrlDrop.parse(data)
+        if local_file is None and image_bytes is None and drop is None:
+            return False
+        drop_event.acceptProposedAction()
+        if event.type() == QEvent.Type.Drop:
+            if local_file is not None:
+                self.__image_downloads.acquire_local(local_file)
+            elif image_bytes is not None:
+                self.__image_downloads.acquire_local(image_bytes)
+            else:
+                assert drop is not None  # narrowed above; for pyright only
+                self.__image_downloads.submit(drop.url, self.__referrer(data))
+        return True
+
+    @staticmethod
+    def __local_file(data: QMimeData) -> Path | None:
+        """The first ``file:`` URL in ``data`` with a recognized image extension, if any.
+
+        :param data: the drop's mime data.
+        :returns: the local path, or ``None``.
+        """
+        if not data.hasUrls():
+            return None
+        for url in data.urls():
+            if url.isLocalFile():
+                candidate = Path(url.toLocalFile())
+                if candidate.suffix.lower() in IMAGE_EXTENSIONS:
+                    return candidate
+        return None
+
+    @staticmethod
+    def __image_bytes(data: QMimeData) -> ImageBytes | None:
+        """The drop's own ``image/*`` payload, if it carries one this pipeline recognizes.
+
+        :param data: the drop's mime data.
+        :returns: the raw bytes and the mime type they were read under, or ``None``.
+        """
+        for mime_type in MIME_EXTENSIONS:
+            if data.hasFormat(mime_type):
+                return ImageBytes(data=bytes(data.data(mime_type).data()), mime_type=mime_type)
+        return None
+
+    @staticmethod
+    def __referrer(data: QMimeData) -> str | None:
+        """The source page's origin, if Chromium's own drop-carried hint names one
+        ([[acquisition-tooling#drop-source-url]], §15.1.1).
+
+        :param data: the drop's mime data.
+        :returns: the origin URL, or ``None`` when the drop carries no such hint (every Firefox drop,
+            and Chromium's own address-bar drag) or it does not decode into one.
+        """
+        if not data.hasFormat(RENDERER_TAINT_FORMAT):
+            return None
+        origin = bytes(data.data(RENDERER_TAINT_FORMAT).data()).decode("utf-8", errors="replace").strip("\x00").strip()
+        return origin if origin.startswith(("http://", "https://")) else None
 
 
 class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attributes
@@ -498,15 +607,29 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         self.__conversion_backups: Final = ConversionBackupActions(model, self)
         self.__conversion_backups.changed.connect(self.__on_conversion_backups_changed)
 
+        # what a scraped image, or an image dropped directly on the images sub-dock, is downloaded and
+        # written to disk through (#73). Built before ScrapeActions, which hands every scraped image's
+        # URL over to it, and before the first __banner_rows call below, which asks what it found.
+        self.__image_downloads: Final = ImageDownloads(model, RehuDocumentImageOrganizer(model), parent=self)
+        self.__image_downloads.changed.connect(self.__on_image_download_notice_changed)
+
         # a URL (or a selection carrying one) dropped on the Main Editor dock queues a scrape and applies
         # its result as an ordinary dirty edit ([[acquisition-tooling#drag-drop-aids]], #272). Built
         # before the first __banner_rows call below, which asks what it found.
-        self.__scrapes: Final = ScrapeActions(model, parent=self)
+        self.__scrapes: Final = ScrapeActions(model, self.__image_downloads, parent=self)
         self.__scrapes.changed.connect(self.__on_scrape_notice_changed)
         main_editor_dock: QtAds.CDockWidget = self.__editor_docks[EDITOR_MAIN_TAB]
         main_editor_dock.setAcceptDrops(True)  # pylint: disable=no-member
         self.__url_drop_filter: Final = UrlDropFilter(self.__scrapes, model)
         main_editor_dock.installEventFilter(self.__url_drop_filter)  # pylint: disable=no-member
+
+        # anything dropped directly on the images sub-dock ends as a screenshot too
+        # ([[acquisition-tooling#drag-drop-aids]], #73): a local file or image data is written
+        # synchronously, an image URL goes through the same ImageDownloads a scrape's images do
+        images_dock: QtAds.CDockWidget = self.__editor_docks[EDITOR_IMAGES_TAB]
+        images_dock.setAcceptDrops(True)  # pylint: disable=no-member
+        self.__image_drop_filter: Final = ImageDropFilter(self.__image_downloads, model)
+        images_dock.installEventFilter(self.__image_drop_filter)  # pylint: disable=no-member
 
         self.__set_editors_locked(model.locked)
         self.__update_write_action_visibility()
@@ -655,6 +778,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         if self.__checksums is not None:
             self.__checksums.detach()
         self.__scrapes.detach()
+        self.__image_downloads.detach()
 
     def toggle_action(self, tab: FieldsTab) -> QAction:
         """The visibility-toggle action for ``tab``'s dock -- whichever viewer or editor tab it is.
@@ -910,6 +1034,13 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         """
         self.__banner.set_rows(self.__banner_rows())
 
+    def __on_image_download_notice_changed(self) -> None:
+        """Rebuild the inline notice strip as an image acquisition starts, finishes, or fails (#73).
+
+        The same shape as :meth:`__on_scrape_notice_changed`, and for the same reason: an acquisition's
+        outcome changes nothing about what this document can do."""
+        self.__banner.set_rows(self.__banner_rows())
+
     def __on_rename_error_changed(self) -> None:
         """Rebuild the inline notice strip as a failed rename is reported or cleared (#162).
 
@@ -1123,7 +1254,8 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             upgrade row when :attr:`~RehuDocumentModel.upgradable` is set, then a rename row when
             :attr:`~RehuDocumentModel.rename_error` is non-empty, then the checksum and conversion-backup
             rows, then whatever `.ScrapeActions.notice` says about the current or last dropped scrape
-            (#272).
+            (#272), then whatever `.ImageDownloads.notice` says about an image acquisition in flight or
+            its last failure (#73).
         """
         rows = [MessageBannerRow(MessageBannerSeverity.WARNING, reason.message) for reason in self.__model.lock_reasons]
         if self.__model.upgradable:
@@ -1138,6 +1270,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             # screenshots, worth knowing about but nothing here is at risk (#193, #290)
             rows.append(MessageBannerRow(MessageBannerSeverity.INFO, self.__conversion_backups.notice))
         rows.extend(self.__scrapes.notice)
+        rows.extend(self.__image_downloads.notice)
         return rows
 
     def __set_editors_locked(self, locked: bool) -> None:

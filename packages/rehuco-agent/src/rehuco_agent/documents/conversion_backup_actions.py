@@ -44,16 +44,17 @@ which is the point of it, and the handler exists for the icons drawn *without* a
 them one."""
 
 DISCARD_LABEL: Final = "&Discard Backups"
-DISCARD_TOOLTIP: Final = "Delete this resource's .orig backups, making the conversion permanent."
+DISCARD_TOOLTIP: Final = "Delete this resource's .orig backups."
+"""One kind of backup, not two ([[acquisition-tooling#tc-to-rehu]], #73): a ``.tc`` conversion's own
+retained originals and an image acquisition's overwritten-slot backups are both plain ``.orig``
+siblings, so this one action and this one sentence cover either -- there is nothing left here that is
+true of a conversion's backups and not of the other kind."""
 
-NOTICE: Final = "This resource still has its conversion backups — {summary}."
+NOTICE: Final = "This resource still has backups — {summary}."
 """What the document's inline strip says while backups are retained."""
 
 DISCARD_TITLE: Final = "Discard Backups"
-DISCARD_QUESTION: Final = (
-    "Permanently delete this resource's backups, freeing {size}?\n\n"
-    "This cannot be undone. Its original .tc and screenshots are gone for good."
-)
+DISCARD_QUESTION: Final = "Permanently delete this resource's backups, freeing {size}?\n\nThis cannot be undone."
 
 DISCARD_FAILED_TITLE: Final = "Discard Failed"
 
@@ -103,12 +104,12 @@ class ConversionBackupActions(QObject):
 
     @property
     def discard_action(self) -> QAction:
-        """Deletes this resource's retained backups, making the conversion permanent."""
+        """Deletes this resource's retained backups."""
         return self.__discard_action
 
     @property
     def retained(self) -> bool:
-        """Whether this resource still holds conversion backups -- what decides whether Discard is
+        """Whether this resource still holds retained backups -- what decides whether Discard is
         offered, and whether the banner has anything to say."""
         return self.__retained_backups() is not None
 
