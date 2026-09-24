@@ -268,16 +268,6 @@ def test_a_failed_start_names_the_persona_being_possibly_open_for_login(mocker: 
         browser.fetch(URL, Browser.FIREFOX, headless=True)
 
 
-def test_a_missing_selenium_install_becomes_a_fetcherror_naming_the_browser(mocker: MockerFixture) -> None:
-    """`browser_drivers` failing to import (selenium, or the browser's own bindings, missing) is
-    reported as a clear `FetchError` naming the browser (#278)."""
-    mocker.patch.dict("sys.modules", {"rehuco_agent.scraping.browser_drivers": None})
-    browser = PersonaBrowser()
-
-    with raises(FetchError, match="Firefox"):
-        browser.fetch(URL, Browser.FIREFOX, headless=True)
-
-
 # endregion
 
 

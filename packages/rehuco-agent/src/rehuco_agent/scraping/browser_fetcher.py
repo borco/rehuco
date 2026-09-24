@@ -21,16 +21,17 @@ import subprocess  # nosec B404  # only ever runs a browser executable `find_bro
 import threading
 from collections.abc import Callable
 from functools import lru_cache
-from typing import TYPE_CHECKING, Final
+from typing import Final
 
 from PySide6.QtCore import QObject, QThreadPool, Signal
+from selenium.common.exceptions import WebDriverException
+from selenium.webdriver.remote.webdriver import WebDriver
+from selenium.webdriver.support.ui import WebDriverWait
 
 from ..settings.scrapers_settings import Browser, ScrapersSettings, persona_folder
+from . import browser_drivers
 from .protocols import FetchError
 from .results import Page
-
-if TYPE_CHECKING:
-    from selenium.webdriver.remote.webdriver import WebDriver
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -128,9 +129,7 @@ class PersonaBrowser:
         :raises FileNotFoundError: ``browser`` was not found on this machine.
         :raises OSError: the process could not be started.
         """
-        from .browser_drivers import login_command  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
-
-        command = login_command(browser, persona_folder(browser), url)
+        command = browser_drivers.login_command(browser, persona_folder(browser), url)
         return subprocess.Popen(command)  # nosec B603  # a resolved executable and fixed arguments, never a shell
 
     @staticmethod
@@ -151,13 +150,6 @@ class PersonaBrowser:
 
     def __navigate(self, driver: WebDriver, url: str) -> Page:
         """Load ``url`` in ``driver``'s current tab and return it as a `Page`."""
-        from selenium.common.exceptions import (  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
-            WebDriverException,
-        )
-        from selenium.webdriver.support.ui import (  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
-            WebDriverWait,
-        )
-
         try:
             driver.set_page_load_timeout(PAGE_LOAD_TIMEOUT_SECONDS)
             driver.get(url)
@@ -172,21 +164,10 @@ class PersonaBrowser:
     def __start_scrape_driver(browser: Browser, *, headless: bool) -> WebDriver:
         """Start a fresh Selenium session on ``browser``'s persona folder, for one scrape.
 
-        :raises FetchError: `selenium` is not installed, or the browser/driver could not be started.
+        :raises FetchError: the browser or its driver could not be started.
         """
         try:
-            from .browser_drivers import start_driver  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
-        except ImportError as error:
-            raise FetchError(
-                f"The persona browser needs {browser.value.capitalize()} installed on this machine "
-                f"(Selenium resolves its driver automatically): {error}"
-            ) from error
-        from selenium.common.exceptions import (  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
-            WebDriverException,
-        )
-
-        try:
-            return start_driver(browser, headless=headless, profile_folder=persona_folder(browser))
+            return browser_drivers.start_driver(browser, headless=headless, profile_folder=persona_folder(browser))
         except WebDriverException as error:
             raise FetchError(
                 f"Could not start {browser.value.capitalize()} for a scrape: {error}.{PROFILE_IN_USE_HINT}"

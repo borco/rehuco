@@ -300,12 +300,6 @@ The profile is a **credential store**: it lives only under the config directory,
 and is never synced or copied by anything the app does. Sessions expire and two-factor sites re-ask; the app does
 not try to keep a login alive, it only keeps the door to renewing one open.
 
-**No stealth driver.** tutcatalogpy3 used `undetected-chromedriver` to defeat anti-bot detection; this build does
-not. It is GPLv3 (this project is MIT), its last release predates this work by over a year, and it bypasses Selenium
-Manager's own driver resolution with its own. Plain Selenium, the visible-browser mode, and a persona actually
-logged in are the remedy the design already needs for other reasons; a site that still needs stealth is its own,
-later issue.
-
 ### §15.2.5 The scrape runs on its own pool, not the app-wide task queue
 
 [[[acquisition-tooling#scrape-job]]]

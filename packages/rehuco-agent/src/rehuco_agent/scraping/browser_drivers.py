@@ -116,16 +116,16 @@ def start_driver(browser: Browser, *, headless: bool, profile_folder: Path) -> W
     """
     profile_folder.mkdir(parents=True, exist_ok=True)
     if browser is Browser.FIREFOX:
-        return __start_firefox(headless=headless, profile_folder=profile_folder)
-    return __start_chromium(browser, headless=headless, profile_folder=profile_folder)
+        return start_firefox(headless=headless, profile_folder=profile_folder)
+    return start_chromium(browser, headless=headless, profile_folder=profile_folder)
 
 
-def __start_firefox(*, headless: bool, profile_folder: Path) -> WebDriver:
-    """Start Firefox on ``profile_folder``.
+def start_firefox(*, headless: bool, profile_folder: Path) -> WebDriver:
+    """Start Firefox on ``profile_folder``, for :func:`start_driver`.
 
     ``-profile`` is a command-line argument, not `FirefoxOptions.profile`: that property copies the
-    profile into a temporary directory before launching, which would make every login vanish the moment
-    the browser closes.
+    profile into a temporary directory before launching, which would make every login vanish the
+    moment the browser closes.
     """
     options = webdriver.FirefoxOptions()
     if headless:
@@ -135,18 +135,18 @@ def __start_firefox(*, headless: bool, profile_folder: Path) -> WebDriver:
     return webdriver.Firefox(options=options)  # pylint: disable=not-callable  # selenium's own stubs confuse pylint
 
 
-def __start_chromium(browser: Browser, *, headless: bool, profile_folder: Path) -> WebDriver:
-    """Start Chrome or Edge on ``profile_folder``, via ``--user-data-dir``."""
+def start_chromium(browser: Browser, *, headless: bool, profile_folder: Path) -> WebDriver:
+    """Start Chrome or Edge on ``profile_folder``, via ``--user-data-dir``, for :func:`start_driver`."""
     if browser is Browser.CHROME:
         chrome_options = webdriver.ChromeOptions()
-        __add_chromium_arguments(chrome_options, headless=headless, profile_folder=profile_folder)
-        return webdriver.Chrome(options=chrome_options)  # pylint: disable=not-callable  # see __start_firefox
+        add_chromium_arguments(chrome_options, headless=headless, profile_folder=profile_folder)
+        return webdriver.Chrome(options=chrome_options)  # pylint: disable=not-callable  # see start_firefox
     edge_options = webdriver.EdgeOptions()
-    __add_chromium_arguments(edge_options, headless=headless, profile_folder=profile_folder)
-    return webdriver.Edge(options=edge_options)  # pylint: disable=not-callable  # see __start_firefox
+    add_chromium_arguments(edge_options, headless=headless, profile_folder=profile_folder)
+    return webdriver.Edge(options=edge_options)  # pylint: disable=not-callable  # see start_firefox
 
 
-def __add_chromium_arguments(
+def add_chromium_arguments(
     options: webdriver.ChromeOptions | webdriver.EdgeOptions, *, headless: bool, profile_folder: Path
 ) -> None:
     """Add the headless flag (when asked) and the persona's ``--user-data-dir`` to ``options``, shared
