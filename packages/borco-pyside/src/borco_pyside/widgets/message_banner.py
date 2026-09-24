@@ -117,6 +117,11 @@ class MessageBanner(QWidget):
             # __layout only ever holds widgets added via addWidget below, never a spacer or nested
             # layout, so item.widget() is never None here
             widget = cast(QWidget, item.widget())
+            # hide explicitly first: addWidget queued a `_q_showIfNotHidden` for a row added while
+            # the strip was visible, and a row removed before that call runs would otherwise be
+            # shown by it as a bare top-level window -- setParent(None) clears the implicit hidden
+            # state, an explicit hide() survives it
+            widget.hide()
             # unparent immediately -- deleteLater() alone only schedules the actual destruction,
             # leaving the row widget (and its children) discoverable via findChildren() until the
             # next event loop turn, which would leak a stale row into whatever set_rows builds next

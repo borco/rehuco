@@ -178,7 +178,10 @@ class ImagesField(Field[list[str]], QObject):  # pylint: disable=too-many-instan
         strip.set_hidden(binding.value)
         binding.changed.connect(strip.set_hidden)
         if self.__image_scanner_changed is not None:
-            self.__image_scanner_changed.connect(strip.set_image_scanner)  # type: ignore[attr-defined]
+            # through bind_external, not a raw connect: the model outlives this strip. Measured live
+            # (#73), a raw connect to a `SimpleProperty` `set_<name>` was not severed when a form
+            # rebuild destroyed its widget, and every later rescan raised into the dead one
+            self.bind_external(self.__image_scanner_changed, strip.set_image_scanner)  # type: ignore[arg-type]
         if self.__strip_height_changed is not None:
             # through bind_external, not a raw connect: the settings outlive this strip, so the owner
             # has to be able to sever it deterministically when a form rebuild destroys the widget
@@ -216,7 +219,8 @@ class ImagesField(Field[list[str]], QObject):  # pylint: disable=too-many-instan
         selector.screenshots_changed.connect(self.screenshots_changed)
         binding.changed.connect(selector.set_hidden)
         if self.__image_scanner_changed is not None:
-            self.__image_scanner_changed.connect(selector.set_image_scanner)  # type: ignore[attr-defined]
+            # through bind_external for the reason the strip's own scanner connection gives
+            self.bind_external(self.__image_scanner_changed, selector.set_image_scanner)  # type: ignore[arg-type]
         if self.__selector_preview_height_changed is not None:
             # through bind_external for the same reason the strip's height is: the settings outlive
             # the selector, so a form rebuild has to be able to sever this deterministically
