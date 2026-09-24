@@ -21,6 +21,10 @@ from PySide6.QtCore import QObject, Signal
 from ..fields.image_organizer import ImageOrganizer
 from ..scraping.image_download_job import ImageDownloadJob
 from ..scraping.image_pipeline import AcquiredImage, ImageBytes, NotAnImageError, acquire
+from ..scraping.protocols import PageFetcher
+from ..scraping.registry import ScraperRegistry, shared_scraper_registry
+from ..scraping.results import ScrapeResult
+from ..scraping.scrape_job import ScrapeError, ScrapeJob
 from ..scraping.scraper_executor import ScraperExecutor, shared_scraper_executor
 from .rehu_document_model import RehuDocumentModel
 
@@ -29,8 +33,11 @@ LOG: Final = logging.getLogger(__name__)
 BUSY_MESSAGE: Final = "Downloading an image…"
 """What the banner says while at least one download is in flight."""
 
+BUSY_PAGE_MESSAGE: Final = "Reading a page for its images…"
+"""What the banner says while a dropped page is being scraped for :meth:`ImageDownloads.submit_page`."""
 
-class ImageDownloads(QObject):
+
+class ImageDownloads(QObject):  # pylint: disable=too-many-instance-attributes
     """One document's acquired screenshots, however they arrived (#73).
 
     :meth:`submit` queues an `~rehuco_agent.scraping.image_download_job.ImageDownloadJob` per URL and
@@ -41,31 +48,60 @@ class ImageDownloads(QObject):
     to keep off the GUI thread for either. Both write through the same
     `~rehuco_agent.fields.image_organizer.ImageOrganizer` and the same discard rules.
 
+    :meth:`submit_page` is the third entry point: a page URL (rather than an image URL) dropped
+    directly on the images sub-dock, scraped the same way `.ScrapeActions` scrapes one, but with its
+    ``fields`` and ``description`` thrown away -- only its ``images`` are handed to :meth:`submit`, one
+    per image. What lets a user re-fetch a resource's screenshots from their source page -- a redesign,
+    a broken link fixed, a higher-resolution asset -- without touching anything else the ``.rehu``
+    carries.
+
     :param model: the document these downloads are about.
     :param image_organizer: what writes an acquired image's bytes to disk; ``None`` (a document with no
         path yet) refuses every submission outright.
-    :param executor: what runs the downloads; ``None`` uses the shared, process-wide instance.
+    :param registry: where :meth:`submit_page` looks up a matching scraper; ``None`` uses the shared,
+        process-wide instance.
+    :param executor: what runs the downloads and the page scrapes; ``None`` uses the shared,
+        process-wide instance.
+    :param fetcher: what :meth:`submit_page` fetches a page with; ``None`` uses `ScrapeJob`'s own
+        default (a real network fetch). Overridable for tests, the same reason `.ScrapeActions` takes
+        one.
     :param parent: optional Qt parent.
     """
 
     changed = Signal()
     """Fires when :attr:`notice` may have changed -- what the document's banner rebuilds on."""
 
-    def __init__(
+    acquired = Signal()
+    """Fires once an image has actually been written to disk -- what
+    `~rehuco_agent.documents.RehuDocumentModel.rescan_images` already reads the directory back
+    through, and what a listener that tracks retained ``.orig`` backups
+    (`.ConversionBackupActions`) rescans on: writing into an occupied slot backs the file already
+    there up first, which is not a seam any of that class's own re-read triggers (a path change, a
+    save, a lock-reason change) fires for on its own."""
+
+    def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
         model: RehuDocumentModel,
         image_organizer: ImageOrganizer | None,
+        registry: ScraperRegistry | None = None,
         executor: ScraperExecutor | None = None,
+        fetcher: PageFetcher | None = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
         self.__model: Final = model
         self.__image_organizer: Final = image_organizer
+        self.__registry: Final = registry if registry is not None else shared_scraper_registry()
         self.__executor: Final = executor if executor is not None else shared_scraper_executor()
+        self.__fetcher: Final = fetcher
         self.__pending: Final[dict[ImageDownloadJob, Path]] = {}
         """Jobs submitted but not yet resolved, keyed to the path captured at submission -- kept alive
         for the same reason `.ScrapeActions.__pending` is, and read back to decide whether the document
         is still the one that asked."""
+
+        self.__pending_pages: Final[dict[ScrapeJob, Path]] = {}
+        """The page scrapes :meth:`submit_page` is waiting to hear back from, the same shape as
+        :attr:`__pending` but for the job kind that only reads a page for its images."""
 
         self.__last_failure = ""
         self.__detached = False
@@ -76,12 +112,14 @@ class ImageDownloads(QObject):
 
     @property
     def notice(self) -> list[MessageBannerRow]:
-        """The document's inline strip rows for a download in flight, followed by the last failure, if
-        one stands and nothing is running."""
+        """The document's inline strip rows for a download or a page scrape in flight, followed by the
+        last failure, if one stands and nothing is running."""
         rows: list[MessageBannerRow] = []
+        if self.__pending_pages:
+            rows.append(MessageBannerRow(MessageBannerSeverity.INFO, BUSY_PAGE_MESSAGE))
         if self.__pending:
             rows.append(MessageBannerRow(MessageBannerSeverity.INFO, BUSY_MESSAGE))
-        elif self.__last_failure:
+        if not self.__pending and not self.__pending_pages and self.__last_failure:
             rows.append(MessageBannerRow(MessageBannerSeverity.WARNING, self.__last_failure))
         return rows
 
@@ -93,6 +131,7 @@ class ImageDownloads(QObject):
         """
         self.__detached = True
         self.__pending.clear()
+        self.__pending_pages.clear()
 
     # endregion
 
@@ -117,6 +156,30 @@ class ImageDownloads(QObject):
         self.changed.emit()
         with LogScope.open(path):
             LOG.info("Downloading %s…", url)
+            self.__executor.submit(job)
+
+    def submit_page(self, url: str) -> None:
+        """Scrape one page for its images, under this document's log scope.
+
+        Re-fetches a resource's screenshots from the page they came from, without touching anything
+        else the ``.rehu`` carries: the scraped ``fields`` and ``description`` are thrown away, and only
+        ``images`` is read, each handed to :meth:`submit` in turn -- so a slot the page's own scraper
+        still assigns the same way overwrites (backing the old file up first, never losing it outright)
+        while every other field stays exactly as it was.
+
+        :param url: the page's URL, not an image's -- a URL `.ScrapeActions.submit` would recognize.
+        """
+        path = self.__model.path
+        if path is None:
+            return
+        job = ScrapeJob(url, self.__registry, fetcher=self.__fetcher)
+        self.__pending_pages[job] = path  # pylint: disable=unsupported-assignment-operation
+        self.__last_failure = ""
+        job.result_ready.connect(lambda result: self.__on_page_result(job, path, result))
+        job.failed.connect(lambda error: self.__on_page_failed(job, error))
+        self.changed.emit()
+        with LogScope.open(path):
+            LOG.info("Reading %s for its images…", url)
             self.__executor.submit(job)
 
     def acquire_local(self, source: Path | ImageBytes) -> None:
@@ -146,6 +209,7 @@ class ImageDownloads(QObject):
                 LOG.warning("Could not write a dropped image to disk: %s", error)
                 return
         self.__model.rescan_images()
+        self.acquired.emit()
 
     # endregion
 
@@ -182,6 +246,7 @@ class ImageDownloads(QObject):
                 LOG.warning("Could not write a downloaded image to disk: %s", error)
                 return
             self.__model.rescan_images()
+        self.acquired.emit()
 
     def __on_failed(self, job: ImageDownloadJob, error: object) -> None:
         """Record a download's failure for the banner, on the GUI thread.
@@ -194,4 +259,45 @@ class ImageDownloads(QObject):
         if self.__detached:
             return
         self.__last_failure = str(error)
+        self.changed.emit()
+
+    def __on_page_result(self, job: ScrapeJob, submitted_path: Path, result: object) -> None:
+        """Submit one download per scraped image, discarding the page's fields and description, on the
+        GUI thread.
+
+        The same discard rules :meth:`__on_result` applies to a finished download apply here first --
+        there would be nothing to hand the images on to otherwise.
+
+        :param job: the job that just resolved, dropped from :attr:`__pending_pages` either way.
+        :param submitted_path: the document's path when ``job`` was submitted.
+        :param result: the `~rehuco_agent.scraping.results.ScrapeResult`.
+        """
+        self.__pending_pages.pop(job, None)
+        if self.__detached:
+            return
+        self.changed.emit()
+        with LogScope.open(submitted_path):
+            if self.__model.path != submitted_path:
+                LOG.info("Discarding a page's images: the document is no longer at %s.", submitted_path)
+                return
+            if self.__model.locked:
+                LOG.info("Discarding a page's images: the document is locked.")
+                return
+            # not a runtime check: result_ready's payload is always a ScrapeResult, by ScrapeJob's own
+            # contract -- see ScrapeActions.__on_result's matching cast
+            images = cast(ScrapeResult, result).images
+            for image in images:
+                self.submit(image.url, image.referrer, image.slot)
+
+    def __on_page_failed(self, job: ScrapeJob, error: object) -> None:
+        """Record a page scrape's failure for the banner, on the GUI thread.
+
+        :param job: the job that just failed, dropped from :attr:`__pending_pages` either way.
+        :param error: the `~rehuco_agent.scraping.scrape_job.ScrapeError` `ScrapeJob.run` caught.
+        """
+        self.__pending_pages.pop(job, None)
+        if self.__detached:
+            return
+        # not a runtime check -- see __on_page_result's matching cast
+        self.__last_failure = str(cast(ScrapeError, error))
         self.changed.emit()

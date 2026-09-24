@@ -9,6 +9,7 @@ from collections.abc import Hashable, Mapping
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Final, cast, override
+from urllib.parse import urlsplit
 
 import cbor2
 import PySide6QtAds as QtAds
@@ -232,7 +233,19 @@ class ImageDropFilter(QObject):
        written synchronously;
     2. a drop carrying its own ``image/*`` data, written synchronously from those bytes;
     3. an ``http(s)`` URL (the same reading `~rehuco_agent.scraping.url_drop.UrlDrop.parse` does for the
-       Main Editor), downloaded through :attr:`__image_downloads`.
+       Main Editor) whose own path also carries a recognized image extension, downloaded through
+       :attr:`__image_downloads`;
+    4. any other recognized ``http(s)`` URL, read as a **page** and scraped for its images through
+       :meth:`~rehuco_agent.documents.image_downloads.ImageDownloads.submit_page` -- so a resource's
+       screenshots can be re-fetched from their source page (a redesign, a fixed link, a higher-resolution
+       asset) without a scrape's fields or description touching the ``.rehu`` at all.
+
+    **A link and an image are told apart by extension, not by drop shape.** Both reach Qt as a plain
+    ``text/uri-list`` URL with nothing else distinguishing them ([[acquisition-tooling#drop-source-url]],
+    §15.1.1), so the one signal available is the URL's own path -- a recognized image suffix takes case
+    3, anything else (including no suffix at all) takes case 4. Parsing an arbitrary page for image
+    *candidates* and letting the user pick among them is the picker's job (#275), not this filter's:
+    every image case 4 finds is downloaded outright, the same as a scrape's own images already are.
 
     :param image_downloads: where a recognized drop is written or submitted.
     :param model: the document, read for :attr:`~.RehuDocumentModel.locked` and
@@ -274,7 +287,10 @@ class ImageDropFilter(QObject):
                 self.__image_downloads.acquire_local(image_bytes)
             else:
                 assert drop is not None  # narrowed above; for pyright only
-                self.__image_downloads.submit(drop.url, self.__referrer(data))
+                if self.__looks_like_image(drop.url):
+                    self.__image_downloads.submit(drop.url, self.__referrer(data))
+                else:
+                    self.__image_downloads.submit_page(drop.url)
         return True
 
     @staticmethod
@@ -304,6 +320,16 @@ class ImageDropFilter(QObject):
             if data.hasFormat(mime_type):
                 return ImageBytes(data=bytes(data.data(mime_type).data()), mime_type=mime_type)
         return None
+
+    @staticmethod
+    def __looks_like_image(url: str) -> bool:
+        """Whether ``url``'s own path carries a recognized image extension -- case 3 rather than case 4
+        of the class docstring's list.
+
+        :param url: the dropped URL.
+        :returns: whether it looks like an image rather than a page.
+        """
+        return Path(urlsplit(url).path).suffix.lower() in IMAGE_EXTENSIONS
 
     @staticmethod
     def __referrer(data: QMimeData) -> str | None:
@@ -612,6 +638,10 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         # URL over to it, and before the first __banner_rows call below, which asks what it found.
         self.__image_downloads: Final = ImageDownloads(model, RehuDocumentImageOrganizer(model), parent=self)
         self.__image_downloads.changed.connect(self.__on_image_download_notice_changed)
+        # an acquisition writing into an occupied slot backs the file already there up first (#73),
+        # which is not a seam ConversionBackupActions.refresh already runs at on its own -- it reacts
+        # to a path change, a save or a lock-reason change, none of which this is
+        self.__image_downloads.acquired.connect(self.__conversion_backups.refresh)
 
         # a URL (or a selection carrying one) dropped on the Main Editor dock queues a scrape and applies
         # its result as an ordinary dirty edit ([[acquisition-tooling#drag-drop-aids]], #272). Built
