@@ -239,7 +239,11 @@ def test_the_link_is_drawn_in_the_palettes_link_color(delegate: ScrapersScraperC
     * verify some drawn pixel is that exact color
     """
     option = option_for()
-    option.palette.setColor(QPalette.ColorRole.Link, Qt.GlobalColor.red)  # pylint: disable=no-member
+    # assigned whole rather than edited through `option.palette`: pylint's inference of that C-extension
+    # attribute differs between its parallel workers, so no per-line disable was right on every run
+    palette = QPalette()
+    palette.setColor(QPalette.ColorRole.Link, Qt.GlobalColor.red)
+    option.palette = palette
     model, index = index_for(LINKED_ROW)  # pylint: disable=unused-variable
     image, painter = new_painter()
 
