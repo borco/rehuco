@@ -109,9 +109,6 @@
      <property name="frameShadow">
       <enum>QFrame::Shadow::Raised</enum>
      </property>
-     <property name="scratch" stdset="0">
-      <bool>true</bool>
-     </property>
      <layout class="QVBoxLayout" name="try_it_frame_layout">
       <item>
        <widget class="QLabel" name="try_it_frame_label">
@@ -128,7 +125,7 @@
       <item>
        <widget class="WrappingLabel" name="try_it_note_label">
         <property name="text">
-         <string>Type a sample filename to see which slot the patterns above would assign it, updated as you edit them. The samples are scratch space, not a setting: nothing typed here is saved.</string>
+         <string>Type a sample filename to see which slot the patterns above would assign it, updated as you edit either. Apply keeps the samples, like any other setting.</string>
         </property>
         <property name="wordWrap">
          <bool>true</bool>

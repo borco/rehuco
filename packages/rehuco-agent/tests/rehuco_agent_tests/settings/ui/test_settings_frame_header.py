@@ -3,7 +3,7 @@
 from borco_pyside.widgets import ActionButtonColumn
 from PySide6.QtWidgets import QFormLayout, QFrame, QLabel, QLineEdit, QToolButton, QVBoxLayout
 from pytestqt.qtbot import QtBot
-from rehuco_agent.settings.ui.settings_frame_filter import SCRATCH_PROPERTY, SettingsFrameFilter
+from rehuco_agent.settings.ui.settings_frame_filter import SettingsFrameFilter
 from rehuco_agent.settings.ui.settings_frame_header import SettingsFrameHeader, header_label_of
 
 
@@ -94,24 +94,6 @@ def test_the_row_takes_the_labels_place_in_the_frames_layout(qtbot: QtBot) -> No
     ]
 
 
-def test_the_apply_button_is_optional(qtbot: QtBot) -> None:
-    """A try-it frame's row has no Apply; Reset and Defaults are always there.
-
-    **Test steps:**
-
-    * build a header without Apply
-    * verify the row's buttons, and that the omitted action still exists to be wired
-    """
-    no_apply = SettingsFrameHeader(QLabel("Try it"), with_apply=False)
-    qtbot.addWidget(no_apply)
-
-    assert [b.defaultAction() for b in no_apply.findChildren(QToolButton)] == [
-        no_apply.reset_action,
-        no_apply.defaults_action,
-    ]
-    assert no_apply.apply_action.text() == "Apply"
-
-
 def test_a_label_outside_any_layout_is_simply_adopted(qtbot: QtBot) -> None:
     """A label with no layout to be replaced in still becomes the row's first child.
 
@@ -128,14 +110,15 @@ def test_a_label_outside_any_layout_is_simply_adopted(qtbot: QtBot) -> None:
 
 
 def test_the_buttons_are_flagged_as_neither_settings_nor_captions(qtbot: QtBot) -> None:
-    """Both tool buttons wear the scratch and not-a-caption properties, so a frame filter neither
-    snapshots them (a ``QToolButton`` is a ``QAbstractButton``) nor searches their text.
+    """The tool buttons are not checkable, so a frame filter never snapshots them (it reads a
+    ``QAbstractButton`` only when it holds a checked state), and they wear the not-a-caption property,
+    so it never searches their text.
 
     **Test steps:**
 
     * build a page whose frame gets a header beside a line edit
-    * verify both properties are set, the filter snapshots only the edit, and the frame's search
-      text carries the label alone
+    * verify the buttons are not checkable and not captions, the filter snapshots only the edit, and
+      the frame's search text carries the label alone
     """
     page = QFrame()
     qtbot.addWidget(page)
@@ -144,7 +127,7 @@ def test_the_buttons_are_flagged_as_neither_settings_nor_captions(qtbot: QtBot) 
     QVBoxLayout(page).addWidget(frame)
     header = SettingsFrameHeader(label)
     for button in header.findChildren(QToolButton):
-        assert button.property(SCRATCH_PROPERTY) is True
+        assert button.isCheckable() is False
         assert button.property(ActionButtonColumn.NOT_A_CAPTION_PROPERTY) is True
     frame_filter = SettingsFrameFilter(page, "Videos")
 

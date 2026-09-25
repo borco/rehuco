@@ -13,6 +13,7 @@ from rehuco_agent.settings.ui.screenshot_name_patterns_model import PATTERN_COLU
 from rehuco_agent.settings.ui.screenshot_patterns_page import ScreenshotPatternsPage
 from rehuco_agent.settings.ui.screenshot_try_it_editor import ScreenshotTryItEditor
 from rehuco_agent.settings.ui.screenshot_try_it_model import FILENAME_COLUMN, NOT_A_SCREENSHOT, SLOT_COLUMN
+from rehuco_agent.settings.ui.settings_dialog import SettingsDialog
 from rehuco_agent.settings.ui.settings_frame_filter import SettingsFrameFilter
 from rehuco_core import SCREENSHOT_NAME_PATTERNS, ScreenshotNamePattern
 
@@ -193,23 +194,24 @@ def test_editing_a_pattern_marks_only_the_patterns_frame_dirty(page: ScreenshotP
     assert frame_filter.dirty_frames() == [ui.patterns_frame]
 
 
-def test_editing_a_sample_marks_nothing_dirty(page: ScreenshotPatternsPage) -> None:
-    """A sample is scratch space, not a setting (#322): retyping one paints no frame and gives Apply
-    nothing to do, since no scan would read anything different.
+def test_editing_a_sample_marks_only_the_try_it_frame_dirty(page: ScreenshotPatternsPage) -> None:
+    """A sample is a setting like the patterns: retyping one dirties its own frame, and the page, and
+    nothing else.
 
     **Test steps:**
 
     * build a frame filter over the clean page
     * retype a sample filename
-    * verify no frame is reported dirty and the page is not dirty
+    * verify the try-it frame alone is dirty, and the page is dirty
     """
+    ui = page._ScreenshotPatternsPage__ui  # pyright: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     frame_filter = SettingsFrameFilter(page, "Sidecar Names")
 
     model = try_it_editor_of(page).model
     model.setData(model.index(0, FILENAME_COLUMN), "shot-3.jpg")
 
-    assert not frame_filter.dirty_frames()
-    assert page.is_dirty() is False
+    assert frame_filter.dirty_frames() == [ui.try_it_frame]
+    assert page.is_dirty() is True
 
 
 def test_the_page_filters_by_its_three_frames(page: ScreenshotPatternsPage) -> None:
@@ -409,25 +411,141 @@ def test_reset_restores_the_shipped_patterns(page: ScreenshotPatternsPage) -> No
 
 # endregion
 
-# region The samples are scratch, not a setting
+# region The samples are a setting like the patterns
 
 
-def test_saving_and_dropping_leave_the_samples_as_typed(page: ScreenshotPatternsPage) -> None:
-    """Apply and Reset act on settings; the samples are neither saved nor reverted by them (#322).
+def test_an_unapplied_sample_edit_gets_its_slot_but_is_not_stored(
+    page: ScreenshotPatternsPage, fake_persistent_settings: FakeSettings
+) -> None:
+    """The slot column follows the sample as typed, applied or not -- storage waits for Apply.
 
     **Test steps:**
 
-    * retype the try-it samples, then save and then drop
-    * verify the typed samples survived both, and nothing about them reached the shared settings
+    * retype the first sample to a filename a shipped pattern numbers
+    * verify its slot shows while nothing was written
+    """
+    model = try_it_editor_of(page).model
+    model.setData(model.index(0, FILENAME_COLUMN), "sample-05.jpg")
+
+    assert slot_shown(page, 0) == "05"
+    assert fake_persistent_settings.value("screenshot_patterns/samples") is None
+
+
+def test_saving_stores_the_samples_and_settles_the_page(
+    page: ScreenshotPatternsPage, fake_persistent_settings: FakeSettings
+) -> None:
+    """Apply writes the samples beside the patterns, and the page is clean after.
+
+    **Test steps:**
+
+    * stage a different sample list and save
+    * verify storage holds it, the table still shows it, and the page is not dirty
     """
     try_it_editor_of(page).values = ("shot-3.jpg", "cover.png")
 
     page.save_changes()
+
+    assert fake_persistent_settings.value("screenshot_patterns/samples") == ["shot-3.jpg", "cover.png"]
     assert try_it_editor_of(page).values == ("shot-3.jpg", "cover.png")
+    assert page.is_dirty() is False
+
+
+def test_dropping_changes_restores_the_saved_samples(page: ScreenshotPatternsPage) -> None:
+    """Reset puts the saved samples back, as it does the patterns.
+
+    **Test steps:**
+
+    * save a sample list, then stage another and drop
+    * verify the saved list is back and the page is clean
+    """
+    try_it_editor_of(page).values = ("shot-3.jpg",)
+    page.save_changes()
+    try_it_editor_of(page).values = ("other.jpg",)
 
     page.drop_changes()
-    assert try_it_editor_of(page).values == ("shot-3.jpg", "cover.png")
-    assert not hasattr(shared_screenshot_patterns_settings(), "samples")
+
+    assert try_it_editor_of(page).values == ("shot-3.jpg",)
+    assert page.is_dirty() is False
+
+
+def test_seed_defaults_stages_the_shipped_samples(page: ScreenshotPatternsPage) -> None:
+    """``seed_defaults`` stages the shipped samples over saved ones -- a change until applied.
+
+    **Test steps:**
+
+    * save a sample list, then seed the defaults
+    * verify the shipped samples are shown and the page is dirty
+    """
+    try_it_editor_of(page).values = ("shot-3.jpg",)
+    page.save_changes()
+
+    page.seed_defaults()
+
+    assert try_it_editor_of(page).values == DEFAULT_SAMPLES
+    assert page.is_dirty() is True
+
+
+def test_a_new_page_shows_the_saved_samples(qtbot: QtBot) -> None:
+    """What was applied comes back on the next launch.
+
+    **Test steps:**
+
+    * stage and save samples on one page
+    * drop the shared instance, as a restart would, and build a new page
+    * verify it shows the saved samples
+    """
+    first = ScreenshotPatternsPage()
+    qtbot.addWidget(first)
+    try_it_editor_of(first).values = ("shot-3.jpg", "cover.png")
+    first.save_changes()
+
+    shared_screenshot_patterns_settings.cache_clear()
+    second = ScreenshotPatternsPage()
+    qtbot.addWidget(second)
+
+    assert try_it_editor_of(second).values == ("shot-3.jpg", "cover.png")
+
+
+def test_a_blank_inserted_sample_is_not_yet_a_change(page: ScreenshotPatternsPage) -> None:
+    """A freshly inserted sample row is an edit still being made: under "Apply changes as they're made"
+    a dirty page is committed and reloaded, which would tear the row out from under its open cell.
+
+    **Test steps:**
+
+    * insert a blank sample row and verify the page stays clean
+    * type into it and verify the page is dirty exactly then
+    """
+    model = try_it_editor_of(page).model
+    model.insertRow(model.rowCount())
+    assert page.is_dirty() is False
+
+    model.setData(model.index(model.rowCount() - 1, FILENAME_COLUMN), "shot-9.jpg")
+    assert page.is_dirty() is True
+
+
+def test_auto_apply_commits_a_sample_edit(
+    qtbot: QtBot, page: ScreenshotPatternsPage, fake_persistent_settings: FakeSettings
+) -> None:
+    """Under "Apply changes as they're made" a sample edit is committed by the next poll, like any
+    other frame's.
+
+    **Test steps:**
+
+    * register the page and turn auto-apply on
+    * retype a sample and run one poll tick
+    * verify the new list was stored and the page is clean
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    dialog.add_page("Images", "Sidecar Names", page)
+    dialog._SettingsDialog__auto_apply_check_box.set_checked(True)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    model = try_it_editor_of(page).model
+    model.setData(model.index(0, FILENAME_COLUMN), "shot-3.jpg")
+
+    dialog._SettingsDialog__poll_dirty_state()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    assert fake_persistent_settings.value("screenshot_patterns/samples") == ["shot-3.jpg", *DEFAULT_SAMPLES[1:]]
+    assert page.is_dirty() is False
 
 
 def test_reset_restores_the_seeded_samples(page: ScreenshotPatternsPage) -> None:

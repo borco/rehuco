@@ -1,7 +1,7 @@
 """Frame-level filtering for one settings page: show only the QFrames whose text matches (#67)."""
 
 from collections.abc import Callable
-from typing import Final, Protocol, cast, runtime_checkable
+from typing import Protocol, cast, runtime_checkable
 
 from borco_pyside.widgets import ActionButtonColumn, ItemListEditor
 from PySide6.QtCore import QAbstractItemModel, QAbstractListModel, QModelIndex, Qt
@@ -43,15 +43,6 @@ plus anything implementing :class:`ValueControl` (#342). `QComboBox` snapshots `
 narrower than an item's data, but every combo box today (the Scrapers page's browser choice,
 [[acquisition-tooling#browser-persona]]) is a fixed list, never repopulated at runtime."""
 
-SCRATCH_PROPERTY: Final = "scratch"
-"""Dynamic property marking a frame, or one control, as **scratch input rather than a setting** (#322):
-a try-it sample previews what a setting does and is not one, so it never paints its frame, never
-counts toward the page's dirty verdict, and is never saved. A scratch *control* is left out of the
-snapshot entirely; a scratch *frame* is still snapshotted, so its own Reset and Defaults buttons have
-something to put back (#342), and kept out of every page-level answer instead. Set in the ``.ui`` as
-a dynamic bool property (Designer shows and edits those), the same idiom
-`ActionButtonColumn.NOT_A_CAPTION_PROPERTY` uses to keep a widget out of the caption text."""
-
 
 class SettingsFrameFilter:
     """Shows or hides a settings page's labeled QFrames against a filter string (#67).
@@ -85,9 +76,7 @@ class SettingsFrameFilter:
     page that stages its edits straight in its widgets. One page bends that: `DescriptionsPage` keeps
     the *other* engine's CSS draft off-widget while its own is shown, which this snapshot can't see --
     an accepted gap, since the frame highlight is a visual aid, not the dirty flag of record (`is_dirty`
-    still is). A frame flagged :data:`SCRATCH_PROPERTY` never appears in :meth:`dirty_frames` (and a
-    scratch control is not snapshotted at all): a try-it input is not a setting, and only a value that
-    changes what the app does earns a highlight (#322).
+    still is).
 
     The same snapshot machinery serves the per-frame **Apply**, **Reset** and **Defaults** buttons
     (#342): a second snapshot, taken by :meth:`capture_defaults` while the page holds its factory
@@ -96,8 +85,7 @@ class SettingsFrameFilter:
     :meth:`apply_frame` stages a one-frame commit around the page's whole-page save by parking the
     other frames' edits. Restoring is a staged edit like any other -- nothing is saved, the baseline
     is not resynced, and the dirty comparison simply finds the frame back at (or away from) its clean
-    state. A scratch frame is snapshotted too, so its own Reset/Defaults work, but it is kept out of
-    every page-level verdict and never applied.
+    state.
 
     :param page: the page widget to discover filterable frames in (already built via ``setupUi``).
     :param title: the owning page's title, for the title-match rule.
@@ -107,7 +95,6 @@ class SettingsFrameFilter:
         self.__title_lower = title.lower()
         frames = [child for child in page.findChildren(QFrame) if self.__is_group_frame(child, page)]
         self.__frames = [(frame, self.__frame_text(frame)) for frame in frames]
-        self.__scratch = {frame for frame in frames if frame.property(SCRATCH_PROPERTY)}
         self.__baselines = {frame: self.__snapshot(frame) for frame in frames}
         self.__defaults: dict[QFrame, dict[ValueWidget, object]] = {frame: {} for frame in frames}
 
@@ -146,29 +133,22 @@ class SettingsFrameFilter:
         """Which of this page's top-level frames have a :data:`ValueWidget` differing from the
         baseline last captured at construction or by :meth:`resync_baseline` (#77).
 
-        A :data:`SCRATCH_PROPERTY` frame is never in here: its values are not settings, so it never
-        paints and never counts toward the page (#322) -- ask :meth:`differs_from_saved` for it.
-
         :returns: the dirty frames, in page order.
         """
-        return [frame for frame, _ in self.__frames if frame not in self.__scratch and self.differs_from_saved(frame)]
+        return [frame for frame, _ in self.__frames if self.differs_from_saved(frame)]
 
     def frames_at_defaults(self) -> list[QFrame]:
         """Which of this page's top-level frames currently hold their factory values (#342).
-
-        A :data:`SCRATCH_PROPERTY` frame is left out, as :meth:`dirty_frames` leaves it out.
 
         :returns: the frames at their defaults, in page order. A frame with no captured defaults
             snapshot (:meth:`capture_defaults` was never called, or the frame has no value widgets)
             counts as never at its defaults.
         """
-        return [
-            frame for frame, _ in self.__frames if frame not in self.__scratch and not self.differs_from_defaults(frame)
-        ]
+        return [frame for frame, _ in self.__frames if not self.differs_from_defaults(frame)]
 
     def differs_from_saved(self, frame: QFrame) -> bool:
         """Whether any of ``frame``'s value widgets differs from its saved baseline -- what enables
-        its Reset and Apply buttons (#342), scratch frame or not.
+        its Reset and Apply buttons (#342).
 
         :param frame: the frame to check; must be one of :attr:`__frames`.
         :returns: whether the frame is away from its baseline.
@@ -177,21 +157,12 @@ class SettingsFrameFilter:
 
     def differs_from_defaults(self, frame: QFrame) -> bool:
         """Whether any of ``frame``'s value widgets differs from its factory snapshot -- what enables
-        its Defaults button (#342), scratch frame or not.
+        its Defaults button (#342).
 
         :param frame: the frame to check; must be one of :attr:`__frames`.
         :returns: whether the frame is away from its defaults; ``True`` while none were captured.
         """
         return not self.__defaults[frame] or self.__differs_from(self.__defaults[frame])
-
-    def is_scratch(self, frame: QFrame) -> bool:
-        """Whether ``frame`` is flagged :data:`SCRATCH_PROPERTY`: a try-it input, snapshotted so its
-        Reset/Defaults can act, but never dirty, never tinted and never applied (#322, #342).
-
-        :param frame: the frame to check; must be one of :attr:`__frames`.
-        :returns: whether the frame is scratch.
-        """
-        return frame in self.__scratch
 
     def has_values(self, frame: QFrame) -> bool:
         """Whether ``frame`` holds any :data:`ValueWidget` this filter snapshots at all (#342).
@@ -224,8 +195,7 @@ class SettingsFrameFilter:
         duration of ``save``, then the baseline is resynced (every widget now shows a saved value) and
         the parked edits are written back, where the dirty comparison finds them again. What ``save``
         persisted is exactly this frame's edits on top of what was already saved; what the user still
-        sees is exactly what they had typed. A scratch frame is neither parked nor applied: its
-        values were never going to be saved.
+        sees is exactly what they had typed.
 
         The one thing this cannot park is state a page keeps *off* its widgets -- and writing a
         widget back can fire a signal that overwrites such state with the parked value (a
@@ -236,11 +206,7 @@ class SettingsFrameFilter:
         :param frame: the frame whose edits to commit; must be one of :attr:`__frames`.
         :param save: the page's ``save_changes``.
         """
-        others = [
-            (other, self.__snapshot(other))
-            for other, _ in self.__frames
-            if other is not frame and other not in self.__scratch
-        ]
+        others = [(other, self.__snapshot(other)) for other, _ in self.__frames if other is not frame]
         for other, _ in others:
             self.__restore(self.__baselines[other])
         save()
@@ -291,10 +257,6 @@ class SettingsFrameFilter:
     def __snapshot(self, frame: QFrame) -> dict[ValueWidget, object]:
         """Every :data:`ValueWidget` inside ``frame``, paired with its current value.
 
-        A scratch *frame* is snapshotted like any other -- its Reset and Defaults need the two
-        reference points -- and kept out of the page verdicts by the callers instead; a scratch
-        *control* inside a non-scratch frame is still left out here, as it always was.
-
         :param frame: the frame to snapshot.
         :returns: each value widget found, keyed to its current value.
         """
@@ -302,8 +264,7 @@ class SettingsFrameFilter:
 
     def __value_widgets(self, frame: QFrame) -> list[ValueWidget]:
         """``frame``'s value widgets, a composite one (an `ItemListEditor`) counted once rather than
-        recursed into -- its buttons and any open cell editor are machinery, not values -- and one
-        flagged :data:`SCRATCH_PROPERTY` left out.
+        recursed into -- its buttons and any open cell editor are machinery, not values.
 
         A button counts only when it is **checkable** (or a :class:`ValueControl`, which says its own
         value): a radio or a check box holds a value, where a Browse..., Register or Reload push
@@ -322,7 +283,6 @@ class SettingsFrameFilter:
                     and not widget.isCheckable()
                     and not isinstance(widget, ValueControl)
                 )
-                and not widget.property(SCRATCH_PROPERTY)
                 and not self.__inside_value_widget(widget, frame)
             ):
                 widgets.append(widget)
@@ -381,7 +341,7 @@ class SettingsFrameFilter:
         inverse of :meth:`__value` (#342).
 
         :param snapshot: one frame's widget/value pairs to write back (its captured baseline or
-            defaults snapshot). Empty for a :data:`SCRATCH_PROPERTY` frame, so nothing is written.
+            defaults snapshot).
         """
         for widget, value in snapshot.items():
             self.__restore_one(widget, value)

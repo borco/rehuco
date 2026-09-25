@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from pytestqt.qtbot import QtBot
-from rehuco_agent.settings.ui.settings_frame_filter import SCRATCH_PROPERTY, SettingsFrameFilter
+from rehuco_agent.settings.ui.settings_frame_filter import SettingsFrameFilter
 
 
 def make_page(qtbot: QtBot, groups: list[list[str]]) -> tuple[QWidget, list[QFrame]]:
@@ -651,16 +651,14 @@ def test_frames_at_defaults_follows_the_captured_defaults_snapshot(qtbot: QtBot)
 
 
 def test_has_values_is_false_for_a_frame_with_no_value_widget(qtbot: QtBot) -> None:
-    """A frame with nothing snapshotted has nothing a Reset/Defaults pair could act on -- a scratch
-    frame with an edit *does* have values (its own buttons need them), a label-only frame does not.
+    """A frame with nothing snapshotted has nothing a Reset/Defaults pair could act on.
 
     **Test steps:**
 
-    * build a page with a label-only frame, a scratch-flagged frame with an edit, and a plain one
-    * verify the two frames with an edit have values and the label-only one does not
+    * build a page with a label-only frame beside a frame with an edit
+    * verify the frame with an edit has values and the label-only one does not
     """
-    page, frames, _ = make_value_page(qtbot, 2)
-    frames[0].setProperty(SCRATCH_PROPERTY, True)
+    page, frames, _ = make_value_page(qtbot, 1)
     label_only = QFrame(page)
     QVBoxLayout(label_only).addWidget(QLabel("Note", label_only))
     page_layout = page.layout()
@@ -669,33 +667,7 @@ def test_has_values_is_false_for_a_frame_with_no_value_widget(qtbot: QtBot) -> N
     frame_filter = SettingsFrameFilter(page, "Markdown Rendering")
 
     assert frame_filter.has_values(frames[0]) is True
-    assert frame_filter.is_scratch(frames[0]) is True
-    assert frame_filter.has_values(frames[1]) is True
-    assert frame_filter.is_scratch(frames[1]) is False
     assert frame_filter.has_values(label_only) is False
-
-
-def test_a_scratch_frame_answers_its_own_state_but_never_the_pages(qtbot: QtBot) -> None:
-    """A scratch frame's edit moves ``differs_from_saved``/``differs_from_defaults`` -- what its
-    Reset/Defaults follow -- while ``dirty_frames``/``frames_at_defaults`` keep leaving it out.
-
-    **Test steps:**
-
-    * flag a frame scratch, capture defaults, type into its edit
-    * verify the per-frame queries see the edit and the page-level lists do not
-    """
-    page, frames, edits = make_value_page(qtbot, 1)
-    frames[0].setProperty(SCRATCH_PROPERTY, True)
-    frame_filter = SettingsFrameFilter(page, "Markdown Rendering")
-    frame_filter.capture_defaults()
-    assert frame_filter.differs_from_defaults(frames[0]) is False
-
-    edits[0].setText("typed")
-
-    assert frame_filter.differs_from_saved(frames[0]) is True
-    assert frame_filter.differs_from_defaults(frames[0]) is True
-    assert frame_filter.dirty_frames() == []
-    assert frame_filter.frames_at_defaults() == []
 
 
 def test_list_editors_names_a_frames_list_editors_and_nothing_else(qtbot: QtBot) -> None:
@@ -742,29 +714,6 @@ def test_apply_frame_saves_only_that_frames_edits_and_keeps_the_others_staged(qt
     assert seen == [("first", "")]
     assert (edits[0].text(), edits[1].text()) == ("first", "second")
     assert frame_filter.dirty_frames() == [frames[1]]
-
-
-def test_apply_frame_leaves_a_scratch_frames_typed_values_alone(qtbot: QtBot) -> None:
-    """A scratch frame is neither parked nor applied: its samples stay as typed through a sibling's
-    commit, and are never handed to the save.
-
-    **Test steps:**
-
-    * type into a scratch frame and a plain frame, apply the plain one
-    * verify the scratch edit showed its typed text during the save and still does
-    """
-    page, frames, edits = make_value_page(qtbot, 2)
-    frames[0].setProperty(SCRATCH_PROPERTY, True)
-    frame_filter = SettingsFrameFilter(page, "Markdown Rendering")
-    edits[0].setText("sample")
-    edits[1].setText("setting")
-    seen: list[str] = []
-
-    frame_filter.apply_frame(frames[1], lambda: seen.append(edits[0].text()))
-
-    assert seen == ["sample"]
-    assert edits[0].text() == "sample"
-    assert frame_filter.dirty_frames() == []
 
 
 def test_restore_saved_writes_the_baseline_back_into_a_line_edit(qtbot: QtBot) -> None:
@@ -922,31 +871,6 @@ def test_restore_empties_a_string_list_editor_whose_snapshot_was_empty(qtbot: Qt
     frame_filter.restore_saved(frame)
 
     assert not editor.values
-
-
-def test_restore_puts_a_scratch_frames_samples_back(qtbot: QtBot) -> None:
-    """A scratch frame is snapshotted like any other, so its Reset and Defaults have something to
-    return to -- the try-it sample record as it was, or as shipped.
-
-    **Test steps:**
-
-    * capture defaults with the shipped sample, resync with a retyped one, type a third
-    * restore saved, then defaults
-    * verify each restore lands on its own reference value
-    """
-    page, frames, edits = make_value_page(qtbot, 1)
-    frames[0].setProperty(SCRATCH_PROPERTY, True)
-    frame_filter = SettingsFrameFilter(page, "Markdown Rendering")
-    edits[0].setText("shipped")
-    frame_filter.capture_defaults()
-    edits[0].setText("retyped")
-    frame_filter.resync_baseline()
-    edits[0].setText("typed")
-
-    frame_filter.restore_saved(frames[0])
-    assert edits[0].text() == "retyped"
-    frame_filter.restore_defaults(frames[0])
-    assert edits[0].text() == "shipped"
 
 
 # endregion

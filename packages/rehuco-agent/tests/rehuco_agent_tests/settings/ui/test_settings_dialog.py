@@ -27,7 +27,6 @@ from rehuco_agent.documents.document_dock import DIRTY_DOCK_MARKER
 from rehuco_agent.settings.settings_dialog_settings import SettingsDialogSettings
 from rehuco_agent.settings.ui import settings_dialog
 from rehuco_agent.settings.ui.settings_dialog import SettingsDialog
-from rehuco_agent.settings.ui.settings_frame_filter import SCRATCH_PROPERTY
 from rehuco_agent.settings.ui.settings_frame_header import SettingsFrameHeader
 
 
@@ -2706,39 +2705,6 @@ def test_a_frame_without_a_named_label_gets_no_header_row(qtbot: QtBot) -> None:
     register_page(dialog, "Registry", page=page)
 
     assert frame_header(dialog, page.frames[0]) is None
-
-
-def test_a_scratch_frame_gets_reset_and_defaults_but_no_apply(qtbot: QtBot) -> None:
-    """A try-it frame's sample can be put back as it was or as shipped, but there is nothing in it
-    to save -- and typing into it never dirties the page or lights the toolbar's Defaults.
-
-    **Test steps:**
-
-    * register a page whose one frame is flagged ``scratch``, type into it, refresh
-    * verify the row has Reset and Defaults only, both enabled, the frame untinted, the page's
-      toolbar Defaults off; Reset then puts the sample back
-    """
-    dialog = SettingsDialog()
-    qtbot.addWidget(dialog)
-    page = FakePage([["Sample"]])
-    page.frames[0].setProperty(SCRATCH_PROPERTY, True)
-    register_page(dialog, "Registry", page=page)
-    header = frame_header(dialog, page.frames[0])
-    assert header is not None
-    assert [b.defaultAction() for b in header.findChildren(QToolButton)] == [
-        header.reset_action,
-        header.defaults_action,
-    ]
-
-    page.edits[0].setText("typed")
-    refresh_dirty_state(dialog)
-
-    assert header.reset_action.isEnabled() is True
-    assert header.defaults_action.isEnabled() is True
-    assert page.frames[0].property("dirty") is False
-    assert dialog_ui(dialog).defaults_current_page_action.isEnabled() is False  # type: ignore[attr-defined]
-    header.reset_action.trigger()
-    assert page.edits[0].text() == SAVED_TEXT
 
 
 def test_a_list_editor_in_a_headed_frame_loses_its_own_restore_button(qtbot: QtBot) -> None:

@@ -8,7 +8,9 @@ from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.settings import location_templates_settings
+from rehuco_agent.settings.location_replacements_settings import ReplacementRule, shared_location_replacements_settings
 from rehuco_agent.settings.location_templates_settings import (
+    DEFAULT_SAMPLE,
     NAME_SUGGESTION_PATTERNS,
     UNKNOWN_PLACEHOLDER_PROBLEM,
     shared_location_templates_settings,
@@ -16,7 +18,8 @@ from rehuco_agent.settings.location_templates_settings import (
 from rehuco_agent.settings.ui import location_templates_page
 from rehuco_agent.settings.ui.location_template_patterns_editor import LocationTemplatePatternsEditor
 from rehuco_agent.settings.ui.location_template_patterns_model import PATTERN_COLUMN, LocationTemplatePatternsModel
-from rehuco_agent.settings.ui.location_templates_page import DEFAULT_SAMPLE, LocationTemplatesPage
+from rehuco_agent.settings.ui.location_templates_page import LocationTemplatesPage
+from rehuco_agent.settings.ui.settings_dialog import SettingsDialog
 from rehuco_agent.settings.ui.settings_frame_filter import SettingsFrameFilter
 
 # region Sample settings backend
@@ -198,22 +201,23 @@ def test_editing_a_pattern_marks_only_the_patterns_frame_dirty(page: LocationTem
     assert frame_filter.dirty_frames() == [ui.patterns_frame]
 
 
-def test_editing_the_sample_marks_nothing_dirty(page: LocationTemplatesPage) -> None:
-    """The sample record is scratch space, not a setting (#322): retyping it paints no frame and gives
-    Apply nothing to do, since nothing the app does would change.
+def test_editing_the_sample_marks_only_the_try_it_frame_dirty(page: LocationTemplatesPage) -> None:
+    """The sample record is a setting like the patterns: retyping it dirties its own frame, and the
+    page, and nothing else.
 
     **Test steps:**
 
     * build a frame filter over the clean page
     * retype the sample title
-    * verify no frame is reported dirty and the page is not dirty
+    * verify the try-it frame alone is dirty, and the page is dirty
     """
+    ui = page._LocationTemplatesPage__ui  # pyright: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     frame_filter = SettingsFrameFilter(page, "Tutorials")
 
     set_sample_title(page, "A Brand New Title")
 
-    assert not frame_filter.dirty_frames()
-    assert page.is_dirty() is False
+    assert frame_filter.dirty_frames() == [ui.try_it_frame]
+    assert page.is_dirty() is True
 
 
 def test_the_ordering_column_is_shown(page: LocationTemplatesPage) -> None:
@@ -499,25 +503,167 @@ def test_reset_restores_the_shipped_patterns(page: LocationTemplatesPage) -> Non
 
 # endregion
 
-# region The sample record is scratch, not a setting
+# region The sample record is a setting like the patterns
 
 
-def test_saving_and_dropping_leave_the_sample_as_typed(page: LocationTemplatesPage) -> None:
-    """Apply and Reset act on settings; the sample record is neither saved nor reverted by them (#322).
+def test_an_unapplied_sample_edit_is_previewed_but_not_stored(
+    page: LocationTemplatesPage, fake_persistent_settings: FakeSettings
+) -> None:
+    """The preview expands the record as typed, applied or not -- storage waits for Apply.
 
     **Test steps:**
 
-    * retype the sample title, then save and then drop
-    * verify the typed title survived both, and nothing about it reached the shared settings
+    * stage the plain title pattern, retype the sample title
+    * verify the preview shows the new title while nothing was written
+    """
+    editor_of(page).values = ("{title}",)
+
+    set_sample_title(page, "A Brand New Title")
+
+    assert try_it_text(page) == "A Brand New Title"
+    assert fake_persistent_settings.value("location_try_it/tutorial/title") is None
+
+
+def test_saving_stores_the_sample_and_settles_the_page(
+    page: LocationTemplatesPage, fake_persistent_settings: FakeSettings
+) -> None:
+    """Apply writes the sample record under this type's sample group, and the page is clean after.
+
+    **Test steps:**
+
+    * retype the sample title and save
+    * verify storage holds it and the page is not dirty
     """
     set_sample_title(page, "A Brand New Title")
 
     page.save_changes()
-    assert sample_shown(page) == ("A Brand New Title", *DEFAULT_SAMPLE[1:])
+
+    assert fake_persistent_settings.value("location_try_it/tutorial/title") == "A Brand New Title"
+    assert sample_shown(page)[0] == "A Brand New Title"
+    assert page.is_dirty() is False
+
+
+def test_dropping_changes_restores_the_saved_sample(page: LocationTemplatesPage) -> None:
+    """Reset puts the saved record back, as it does the patterns.
+
+    **Test steps:**
+
+    * save a retyped title, then type another and drop
+    * verify the saved title is back and the page is clean
+    """
+    set_sample_title(page, "Saved Title")
+    page.save_changes()
+    set_sample_title(page, "Unsaved Title")
 
     page.drop_changes()
-    assert sample_shown(page) == ("A Brand New Title", *DEFAULT_SAMPLE[1:])
-    assert not hasattr(shared_location_templates_settings(), "samples")
+
+    assert sample_shown(page)[0] == "Saved Title"
+    assert page.is_dirty() is False
+
+
+def test_seed_defaults_stages_the_shipped_sample(page: LocationTemplatesPage) -> None:
+    """``seed_defaults`` stages the shipped record over a saved one -- a change until applied.
+
+    **Test steps:**
+
+    * save a retyped title, then seed the defaults
+    * verify the shipped record is shown and the page is dirty
+    """
+    set_sample_title(page, "Saved Title")
+    page.save_changes()
+
+    page.seed_defaults()
+
+    assert sample_shown(page) == DEFAULT_SAMPLE
+    assert page.is_dirty() is True
+
+
+def test_a_new_page_shows_the_saved_sample(qtbot: QtBot) -> None:
+    """What was applied comes back on the next launch, for this type only.
+
+    **Test steps:**
+
+    * type and save a title on a tutorial page
+    * drop the shared instance, as a restart would, and build a tutorial and a reference-images page
+    * verify the tutorial page shows the saved title and the other the shipped record
+    """
+    first = LocationTemplatesPage("tutorial")
+    qtbot.addWidget(first)
+    set_sample_title(first, "A Brand New Title")
+    first.save_changes()
+
+    shared_location_templates_settings.cache_clear()
+    tutorial = LocationTemplatesPage("tutorial")
+    reference_images = LocationTemplatesPage("reference_images")
+    qtbot.addWidget(tutorial)
+    qtbot.addWidget(reference_images)
+
+    assert sample_shown(tutorial) == ("A Brand New Title", *DEFAULT_SAMPLE[1:])
+    assert sample_shown(reference_images) == DEFAULT_SAMPLE
+
+
+def registered(qtbot: QtBot, page: LocationTemplatesPage) -> SettingsDialog:
+    """A settings dialog holding ``page``, the way ``MainWindow`` registers it.
+
+    :param qtbot: pytest-qt fixture, which owns the dialog's lifetime.
+    :param page: the page to register.
+    :returns: the dialog.
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    dialog.add_page("Locations", "Tutorials", page)
+    return dialog
+
+
+def test_the_try_it_frames_apply_stores_the_sample_and_leaves_a_pattern_edit_staged(
+    qtbot: QtBot, page: LocationTemplatesPage, fake_persistent_settings: FakeSettings
+) -> None:
+    """The try-it frame's own Apply commits the sample alone: a pattern edit beside it stays staged.
+
+    **Test steps:**
+
+    * register the page, then edit a pattern and the sample title
+    * trigger the try-it frame's Apply
+    * verify the title was stored, the pattern was not, and the patterns frame is still dirty
+    """
+    dialog = registered(qtbot, page)
+    ui = page._LocationTemplatesPage__ui  # pyright: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    headers = dialog._SettingsDialog__frame_headers  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    model = model_of(page)
+    model.setData(model.index(0, PATTERN_COLUMN), "{title} - archive")
+    set_sample_title(page, "A Brand New Title")
+    dialog._SettingsDialog__refresh_dirty_ui()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    apply_action = headers[ui.try_it_frame].apply_action
+    assert apply_action.isEnabled() is True
+
+    apply_action.trigger()
+
+    assert fake_persistent_settings.value("location_try_it/tutorial/title") == "A Brand New Title"
+    assert "{title} - archive" not in shared_location_templates_settings().stored_for("tutorial")
+    assert editor_of(page).values[0] == "{title} - archive"
+    assert page.is_dirty() is True
+
+
+def test_auto_apply_commits_a_sample_edit(
+    qtbot: QtBot, page: LocationTemplatesPage, fake_persistent_settings: FakeSettings
+) -> None:
+    """Under "Apply changes as they're made" a sample edit is committed by the next poll, like any
+    other frame's.
+
+    **Test steps:**
+
+    * register the page and turn auto-apply on
+    * retype the sample title and run one poll tick
+    * verify the title was stored and the page is clean
+    """
+    dialog = registered(qtbot, page)
+    dialog._SettingsDialog__auto_apply_check_box.set_checked(True)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    set_sample_title(page, "A Brand New Title")
+
+    dialog._SettingsDialog__poll_dirty_state()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    assert fake_persistent_settings.value("location_try_it/tutorial/title") == "A Brand New Title"
+    assert page.is_dirty() is False
 
 
 # endregion
@@ -640,6 +786,48 @@ def test_the_try_it_preview_leaves_out_a_pattern_that_names_nothing(page: Locati
     page._LocationTemplatesPage__ui.sample_authors_edit.setText("")  # pyright: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
     assert try_it_text(page) == ""
+
+
+def test_the_try_it_preview_runs_through_the_saved_replacement_rules(page: LocationTemplatesPage) -> None:
+    """A rendered candidate goes through the saved location-replacement rules before it is sanitized
+    (#350), the same seam a document's suggestions go through.
+
+    **Test steps:**
+
+    * clear the shared replacement rules and stage a pattern with a literal underscore
+    * verify the preview shows it unreplaced
+    * set a rule turning the underscore into a space
+    * verify the preview shows the replaced separator
+    """
+    shared_location_replacements_settings().rules = ()
+    editor_of(page).values = ("{publisher}_{title}",)
+    assert try_it_text(page) == "Sample Publisher_Sample Title"
+
+    shared_location_replacements_settings().rules = (ReplacementRule("_", " "),)
+
+    assert try_it_text(page) == "Sample Publisher Sample Title"
+
+
+def test_the_try_it_preview_follows_a_saved_replacement_rule_change_live(page: LocationTemplatesPage) -> None:
+    """Saving the Location Replacements page updates an already-open Locations page's preview, the same
+    live-follow `LocationTemplatesSettings.patterns_changed` already gets (#350).
+
+    **Test steps:**
+
+    * clear the shared replacement rules and stage a pattern with a literal underscore
+    * read the preview before any rule is saved
+    * assign a rule, as a save would
+    * verify the preview picked up the change with no rebuild of the page
+    """
+    shared_location_replacements_settings().rules = ()
+    editor_of(page).values = ("{publisher}_{title}",)
+    before = try_it_text(page)
+
+    shared_location_replacements_settings().rules = (ReplacementRule("_", " "),)
+
+    after = try_it_text(page)
+    assert after != before
+    assert after == "Sample Publisher Sample Title"
 
 
 @mark.parametrize("resource_type", ["tutorial", "reference_images", "collection"])
