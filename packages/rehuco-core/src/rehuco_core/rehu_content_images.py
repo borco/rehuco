@@ -9,12 +9,16 @@ screenshot counterparts.
 """
 
 import zipfile
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import ClassVar, Final
 
+from borco_core import shared_read_open
+
 from .constants import ARCHIVE_EXTENSIONS, CONTENT_IMAGE_EXTENSIONS
 from .natural_sort import NaturalRun, natural_path_sort_key
+from .rename_coordination import RenameCoordinator
 from .resource_scoping import is_directory_scoped, is_directory_scoped_name, is_record_name
 
 
@@ -69,15 +73,25 @@ class ContentImageScanner:  # pylint: disable=too-few-public-methods
     place the rule is stated (#250), so an unconverted ``info.tc`` counts the archives its directory holds
     rather than looking for an ``info.zip`` that was never there.
 
+    Each archive is read inside its own :meth:`~rehuco_core.RenameCoordinator.holding` when a coordinator
+    is given (#347), through :func:`~borco_core.shared_read_open`: one hold per archive rather than one
+    for the walk, so a rename arriving mid-scan waits for one central-directory read, not for a whole
+    library over a NAS. An archive the rename moved before its turn reads as empty -- the caller that
+    renamed re-enumerates anyway.
+
     :param rehu_path: the resource's ``.rehu`` file.
     :param extensions: the recognized image extensions, matched case-insensitively.
+    :param coordinator: the rename barrier to read inside, or ``None`` for none.
     """
 
     __MACOSX_DIRNAME: Final = "__MACOSX"
 
-    def __init__(self, rehu_path: Path, extensions: tuple[str, ...]) -> None:
+    def __init__(
+        self, rehu_path: Path, extensions: tuple[str, ...], coordinator: RenameCoordinator | None = None
+    ) -> None:
         self.__rehu_path: Final = rehu_path
         self.__extensions: Final = extensions
+        self.__coordinator: Final = coordinator
 
     def scan(self) -> list[ContentImageEntry]:
         """Enumerate :attr:`rehu_path`'s content images.
@@ -172,7 +186,7 @@ class ContentImageScanner:  # pylint: disable=too-few-public-methods
             absent, not a zip, truncated, or otherwise unreadable -- reported as empty rather than raised.
         """
         try:
-            with zipfile.ZipFile(archive) as opened:
+            with self.__holding(), shared_read_open(archive) as file, zipfile.ZipFile(file) as opened:
                 infolist = opened.infolist()
         except OSError, zipfile.BadZipFile:
             return []
@@ -182,6 +196,10 @@ class ContentImageScanner:  # pylint: disable=too-few-public-methods
             if self.__is_content_image(info)
         ]
         return sorted(entries, key=lambda entry: natural_path_sort_key(entry.name))
+
+    def __holding(self) -> AbstractContextManager[None]:
+        """The coordinator's hold, or nothing to hold when there is no coordinator."""
+        return self.__coordinator.holding() if self.__coordinator is not None else nullcontext()
 
     def __is_content_image(self, info: zipfile.ZipInfo) -> bool:
         """Whether one zip entry is a recognized content image, per [[data-model#image-meanings]]'s notes.
@@ -203,7 +221,9 @@ class ContentImageScanner:  # pylint: disable=too-few-public-methods
 
 
 def enumerate_content_images(
-    rehu_path: Path, extensions: tuple[str, ...] = CONTENT_IMAGE_EXTENSIONS
+    rehu_path: Path,
+    extensions: tuple[str, ...] = CONTENT_IMAGE_EXTENSIONS,
+    coordinator: RenameCoordinator | None = None,
 ) -> list[ContentImageEntry]:
     """Enumerate ``rehu_path``'s content images: everything its archive(s) hold, never anything loose.
 
@@ -216,5 +236,6 @@ def enumerate_content_images(
         by component (:func:`~rehuco_core.natural_sort.natural_path_sort_key`) -- never the central
         directory's, which is whatever the packer wrote. An absent, unreadable, or corrupt
         archive contributes no entries rather than raising -- a document-level condition, not a crash.
+    :param coordinator: the rename barrier each archive is read inside (#347), or ``None`` for none.
     """
-    return ContentImageScanner(rehu_path, extensions).scan()
+    return ContentImageScanner(rehu_path, extensions, coordinator).scan()

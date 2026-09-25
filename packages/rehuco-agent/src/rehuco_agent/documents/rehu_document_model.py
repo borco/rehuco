@@ -516,6 +516,15 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         )
 
     @property
+    def rename_coordinator(self) -> RenameCoordinator | None:
+        """What :meth:`rename_location` renames through, or ``None`` for a plain rename (#241) -- so a
+        reader this document owns can stand aside for it (#347).
+
+        :returns: the coordinator this model was built with.
+        """
+        return self.__rename_coordinator
+
+    @property
     def pending(self) -> bool:
         """Whether this model is a session-restore placeholder whose file has not been read yet (#66).
 

@@ -376,6 +376,7 @@ def test_the_saved_list_is_what_the_content_image_enumeration_counts(
         # a real central directory always records both; a bare ZipInfo records neither
         member.CRC = 0
     opened.__enter__.return_value.infolist.return_value = members
+    mocker.patch("rehuco_core.rehu_content_images.shared_read_open")
     mocker.patch("rehuco_core.rehu_content_images.zipfile.ZipFile", return_value=opened)
     ReferenceImagesSettings(extensions=("bmp",)).save(settings)  # type: ignore[arg-type]
     section = ReferenceImagesSettings()

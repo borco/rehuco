@@ -1,6 +1,8 @@
 """Tests for reference-images content-image enumeration ([[data-model#resource-scoping]])."""
 
 import zipfile
+from collections.abc import Generator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Final
 from unittest.mock import MagicMock
@@ -10,6 +12,7 @@ from rehuco_core import (
     INFO_REHU_FILENAME,
     INFO_TC_FILENAME,
     ContentImageEntry,
+    RenameCoordinator,
     enumerate_content_images,
     scan_rehu_screenshot_files,
 )
@@ -37,8 +40,27 @@ def mock_tree(mocker: MockerFixture, paths: list[Path]) -> None:
     mocker.patch.object(Path, "rglob", return_value=paths)
 
 
+def mock_shared_read_open(mocker: MockerFixture) -> MagicMock:
+    """Mock :func:`~borco_core.shared_read_open` so the file it opens *is* its path -- what the mocked
+    ``zipfile.ZipFile`` is then handed, so it can still answer per archive (#347).
+
+    :param mocker: pytest-mock fixture.
+    :returns: the patched opener, for call-arg assertions.
+    """
+
+    def side_effect(path: Path) -> MagicMock:
+        file = mocker.MagicMock(name=str(path))
+        file.__enter__.return_value = path
+        return file
+
+    return mocker.patch("rehuco_core.rehu_content_images.shared_read_open", side_effect=side_effect)
+
+
 def mock_archives(mocker: MockerFixture, contents: dict[Path, list[zipfile.ZipInfo] | Exception]) -> MagicMock:
     """Mock ``zipfile.ZipFile`` so opening a path named in ``contents`` yields that archive's entries.
+
+    The file under it is opened through a mocked :func:`mock_shared_read_open`, so the zip is handed the
+    path back as its "file".
 
     :param mocker: pytest-mock fixture.
     :param contents: ``{archive_path: entries}``, or ``{archive_path: an_exception_instance}`` for an
@@ -54,6 +76,7 @@ def mock_archives(mocker: MockerFixture, contents: dict[Path, list[zipfile.ZipIn
         opened.__enter__.return_value.infolist.return_value = entry
         return opened
 
+    mock_shared_read_open(mocker)
     return mocker.patch("rehuco_core.rehu_content_images.zipfile.ZipFile", side_effect=side_effect)
 
 
@@ -536,6 +559,74 @@ def test_content_images_and_screenshots_stay_disjoint(mocker: MockerFixture) -> 
 
     assert screenshots == [DIRECTORY / "foo00.jpg", DIRECTORY / "foo01.png"]
     assert entries == [entry(DIRECTORY / "foo.zip", "page01.jpg")]
+
+
+# endregion
+
+
+# region rename barrier
+
+
+def test_archives_open_through_the_share_delete_reader(mocker: MockerFixture) -> None:
+    """Every archive is opened through :func:`~borco_core.shared_read_open`, so a file-scoped rename is
+    never refused by the scan's own handle (#347).
+
+    **Test steps:**
+
+    * mock one sibling archive and enumerate
+    * verify the opener was asked for it, and the file it returned was closed again
+    """
+    mock_siblings(mocker, ["foo.zip"])
+    mock_archives(mocker, {DIRECTORY / "foo.zip": [zip_info("page01.jpg")]})
+    opener = mocker.patch("rehuco_core.rehu_content_images.shared_read_open", wraps=None)
+    opener.return_value.__enter__.return_value = DIRECTORY / "foo.zip"
+
+    enumerate_content_images(FILE_SCOPED_PATH)
+
+    opener.assert_called_once_with(DIRECTORY / "foo.zip")
+    opener.return_value.__exit__.assert_called_once()
+
+
+def test_each_archive_is_read_inside_its_own_hold(mocker: MockerFixture) -> None:
+    """With a coordinator, each archive is opened inside a
+    :meth:`~rehuco_core.RenameCoordinator.holding` of its own, never one hold for the whole walk (#347).
+
+    **Test steps:**
+
+    * mock a directory holding two archives, and a coordinator whose hold records entry and exit
+    * enumerate with it, recording at each open how deep in holds the scan is
+    * verify both opens ran inside exactly one hold, and the holds were entered and left once per archive
+    """
+    depth = [0]
+    events: list[str] = []
+
+    @contextmanager
+    def holding() -> Generator[None]:
+        depth[0] += 1
+        events.append("enter")
+        try:
+            yield
+        finally:
+            depth[0] -= 1
+            events.append("exit")
+
+    coordinator = mocker.MagicMock(spec=RenameCoordinator)
+    coordinator.holding.side_effect = holding
+    mock_tree(mocker, [DIRECTORY / "a.zip", DIRECTORY / "b.zip"])
+    mock_archives(mocker, {DIRECTORY / "a.zip": [zip_info("a.jpg")], DIRECTORY / "b.zip": [zip_info("b.jpg")]})
+    opener = mock_shared_read_open(mocker)
+    open_file = opener.side_effect
+
+    def recording_open(path: Path) -> MagicMock:
+        events.append(f"open@{depth[0]}")
+        return open_file(path)
+
+    opener.side_effect = recording_open
+
+    entries = enumerate_content_images(DIRECTORY_SCOPED_PATH, coordinator=coordinator)
+
+    assert entries == [entry(DIRECTORY / "a.zip", "a.jpg"), entry(DIRECTORY / "b.zip", "b.jpg")]
+    assert events == ["enter", "open@1", "exit", "enter", "open@1", "exit"]
 
 
 # endregion

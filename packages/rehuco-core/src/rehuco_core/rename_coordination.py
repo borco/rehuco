@@ -138,6 +138,7 @@ class RenameCoordinator:
         self.__holders = 0
         self.__locations: list[ReferenceType[ResourceLocation]] = []
         self.__listeners: list[Callable[[], None]] = []
+        self.__yield_listeners: list[Callable[[], None]] = []
 
     def track(self, path: Path) -> ResourceLocation:
         """Start following ``path`` across renames.
@@ -183,6 +184,34 @@ class RenameCoordinator:
         with self.__condition:
             if listener in self.__listeners:
                 self.__listeners.remove(listener)
+
+    def add_yield_listener(self, listener: Callable[[], None]) -> None:
+        """Be told, before the rename waits, that it wants readers to let go (#347).
+
+        For a reader :meth:`holding` cannot reach: one that keeps a handle open **between** reads, with
+        nobody inside the block while it sits idle -- an open-archive cache a browse reads through is
+        the case that needed it. Such a handle is no holder, so the rename would not wait for it and
+        would run straight into it; this is where it hears to close. A reader *inside* the block still
+        answers :attr:`yield_wanted` as always -- the listener only covers what nobody is holding.
+
+        :param listener: called with no arguments once the flag is up and before the wait for holders,
+            on whichever thread asked for the rename, with no lock held -- so it may read
+            :attr:`yield_wanted`. **Must not block on a reader**: the rename's timeout bounds the wait
+            for holders, not this call, and the caller is usually the GUI thread. An exception is logged
+            and the rename goes on.
+        """
+        with self.__condition:
+            self.__yield_listeners.append(listener)
+
+    def remove_yield_listener(self, listener: Callable[[], None]) -> None:
+        """Stop being told a rename wants readers to let go; tolerant the same way
+        :meth:`remove_rename_listener` is.
+
+        :param listener: the callable to drop.
+        """
+        with self.__condition:
+            if listener in self.__yield_listeners:
+                self.__yield_listeners.remove(listener)
 
     @property
     def yield_wanted(self) -> bool:
@@ -276,6 +305,11 @@ class RenameCoordinator:
         with self.__condition:
             self.__yield_wanted = True
             self.__condition.notify_all()
+            listeners = tuple(self.__yield_listeners)
+        # outside the lock: a listener closes handles, and a reader it might contend with needs the
+        # condition to leave `holding`
+        self.__call(listeners, "A yield listener failed; its handles may block this rename.")
+        with self.__condition:
             if self.__condition.wait_for(lambda: self.__holders == 0, timeout):
                 return
             self.__yield_wanted = False
@@ -328,11 +362,20 @@ class RenameCoordinator:
         """
         with self.__condition:
             listeners = tuple(self.__listeners)
+        self.__call(listeners, "A rename listener failed; detach it or fix it -- it was skipped.")
+
+    @staticmethod
+    def __call(listeners: tuple[Callable[[], None], ...], failure: str) -> None:
+        """Call each of ``listeners``, logging -- never raising -- what one of them raises.
+
+        :param listeners: the callables.
+        :param failure: what to log when one fails.
+        """
         for listener in listeners:
             try:
                 listener()
             except Exception:  # pylint: disable=broad-exception-caught
-                LOG.exception("A rename listener failed; detach it or fix it -- it was skipped.")
+                LOG.exception(failure)
 
 
 DEFAULT_RENAME_COORDINATOR: Final = RenameCoordinator()
