@@ -84,3 +84,17 @@ class LocationTemplatePatternsEditor(ItemListEditor):
         """
         self.__model.defaults = defaults
         self.item_actions.reset_action.setVisible(bool(self.__model.defaults))
+
+    @property
+    def known_placeholders(self) -> frozenset[str]:
+        """The placeholders a row may name (#349); ``KNOWN_PLACEHOLDERS`` unless the owning page's type
+        accepts more."""
+        return self.__model.known_placeholders
+
+    @known_placeholders.setter
+    def known_placeholders(self, known_placeholders: frozenset[str]) -> None:
+        """Set the placeholders a row may name -- the owning page's job, once, before rows are loaded.
+
+        :param known_placeholders: the placeholders this type's patterns accept.
+        """
+        self.__model.known_placeholders = known_placeholders

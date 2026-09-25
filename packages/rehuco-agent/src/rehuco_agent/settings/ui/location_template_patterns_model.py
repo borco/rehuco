@@ -11,7 +11,7 @@ from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, QPersisten
 from PySide6.QtGui import QBrush, QColor
 
 from ...fields.colors import WARNING_COLOR
-from ..location_templates_settings import NAME_SUGGESTION_PATTERNS, location_pattern_problem
+from ..location_templates_settings import KNOWN_PLACEHOLDERS, NAME_SUGGESTION_PATTERNS, location_pattern_problem
 
 PATTERN_COLUMN: Final = 0
 """The row's only column: the raw pattern."""
@@ -52,6 +52,8 @@ class LocationTemplatePatternsModel(QAbstractTableModel):
     `ScreenshotNamePatternsModel` implements, so `ItemListEditor` drives this one identically.
 
     :param defaults: what :meth:`reset` restores; the shipped patterns unless a caller says otherwise.
+    :param known_placeholders: the placeholders a row may name (#349); :data:`KNOWN_PLACEHOLDERS` unless
+        the page's type accepts more.
     :param parent: optional Qt parent.
     """
 
@@ -61,11 +63,13 @@ class LocationTemplatePatternsModel(QAbstractTableModel):
     def __init__(
         self,
         defaults: Sequence[str] = NAME_SUGGESTION_PATTERNS,
+        known_placeholders: frozenset[str] = KNOWN_PLACEHOLDERS,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
         self.__entries: list[str] = []
         self.__defaults: tuple[str, ...] = tuple(defaults)
+        self.__known_placeholders: frozenset[str] = known_placeholders
         self.rowsInserted.connect(self.count_changed)
         self.rowsRemoved.connect(self.count_changed)
         self.modelReset.connect(self.count_changed)
@@ -105,6 +109,21 @@ class LocationTemplatePatternsModel(QAbstractTableModel):
         :param defaults: the patterns Reset should put back.
         """
         self.__defaults = tuple(defaults)
+
+    @property
+    def known_placeholders(self) -> frozenset[str]:
+        """The placeholders a row may name (#349); every :meth:`invalid_reason` check goes through
+        this set."""
+        return self.__known_placeholders
+
+    @known_placeholders.setter
+    def known_placeholders(self, known_placeholders: frozenset[str]) -> None:
+        """Set the placeholders a row may name, set once per page instance before any row is loaded
+        (#349) -- an existing row's flag is not re-evaluated, since no caller changes this after.
+
+        :param known_placeholders: the placeholders this type's patterns accept.
+        """
+        self.__known_placeholders = known_placeholders
 
     def insert(self, at: int) -> int:
         """Insert a blank pattern after ``at``, or at the end -- the `ItemEditor` contract.
@@ -204,7 +223,7 @@ class LocationTemplatePatternsModel(QAbstractTableModel):
         :param row: the row to test.
         :returns: the explanation, or an empty string when the pattern is fine.
         """
-        return location_pattern_problem(self.__entries[row])
+        return location_pattern_problem(self.__entries[row], self.__known_placeholders)
 
     # region Qt model interface
 

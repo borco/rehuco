@@ -133,15 +133,21 @@ def try_it_text(page: LocationTemplatesPage) -> str:
 
 
 def sample_shown(page: LocationTemplatesPage) -> tuple[str, ...]:
-    """The sample record as the page's four fields currently show it.
+    """The sample record as the page's five fields currently show it.
 
     :param page: the page.
-    :returns: ``(title, publisher, authors, year)`` as typed.
+    :returns: ``(title, publisher, authors, year, count)`` as typed.
     """
     ui = page._LocationTemplatesPage__ui  # pyright: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     return tuple(
         edit.text()
-        for edit in (ui.sample_title_edit, ui.sample_publisher_edit, ui.sample_authors_edit, ui.sample_year_edit)
+        for edit in (
+            ui.sample_title_edit,
+            ui.sample_publisher_edit,
+            ui.sample_authors_edit,
+            ui.sample_year_edit,
+            ui.sample_count_edit,
+        )
     )
 
 
@@ -218,6 +224,55 @@ def test_the_ordering_column_is_shown(page: LocationTemplatesPage) -> None:
     * verify the ordering column is not hidden
     """
     assert editor_of(page).ordering_actions.isHidden() is False
+
+
+# endregion
+
+# region The count placeholder is per-type (#349)
+
+
+def test_a_tutorial_page_hides_the_count_sample_row_and_refuses_the_placeholder(page: LocationTemplatesPage) -> None:
+    """Tutorial's plugin declares no ``advertised_count``, so its page offers no ``{count}`` and hides
+    the Try-it row for it (#349).
+
+    **Test steps:**
+
+    * verify the Count sample row is hidden
+    * type a pattern naming ``{count}``
+    * verify it is flagged unknown
+    """
+    ui = page._LocationTemplatesPage__ui  # pyright: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert ui.sample_count_label.isHidden() is True
+    assert ui.sample_count_edit.isHidden() is True
+
+    model = model_of(page)
+    model.setData(model.index(0, PATTERN_COLUMN), "{title} ({count})")
+
+    assert model.invalid_reason(0) == UNKNOWN_PLACEHOLDER_PROBLEM
+
+
+def test_a_reference_images_page_shows_the_count_sample_row_and_accepts_the_placeholder(qtbot: QtBot) -> None:
+    """ReferenceImages declares ``advertised_count``, so its page shows the Count sample row and a
+    ``{count}`` pattern is valid there (#349).
+
+    **Test steps:**
+
+    * build a reference-images page
+    * verify the Count sample row is shown
+    * type a pattern naming ``{count}``
+    * verify it is not flagged, and the Try-it preview renders it
+    """
+    page = LocationTemplatesPage("reference_images")
+    qtbot.addWidget(page)
+    ui = page._LocationTemplatesPage__ui  # pyright: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert ui.sample_count_label.isHidden() is False
+    assert ui.sample_count_edit.isHidden() is False
+
+    model = model_of(page)
+    model.setData(model.index(0, PATTERN_COLUMN), "{title} ({count})")
+
+    assert model.invalid_reason(0) == ""
+    assert f"Sample Title ({DEFAULT_SAMPLE[-1]})" in try_it_text(page).splitlines()
 
 
 # endregion

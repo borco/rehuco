@@ -140,6 +140,16 @@
         <item row="3" column="1">
          <widget class="QLineEdit" name="sample_year_edit"/>
         </item>
+        <item row="4" column="0">
+         <widget class="QLabel" name="sample_count_label">
+          <property name="text">
+           <string>Count</string>
+          </property>
+         </widget>
+        </item>
+        <item row="4" column="1">
+         <widget class="QLineEdit" name="sample_count_edit"/>
+        </item>
        </layout>
       </item>
       <item>
