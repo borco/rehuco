@@ -4775,8 +4775,35 @@ def test_showing_the_dock_enumerates_the_resources_archives(
     with qtbot.waitSignal(content_model.modelReset, timeout=WAIT_TIMEOUT_MS):
         content_images_dock(refimages_widget).toggleView(True)
 
-    enumeration.assert_called_with(refimages_model.path, shared_reference_images_settings().content_image_extensions)
+    enumeration.assert_called_with(
+        refimages_model.path,
+        shared_reference_images_settings().content_image_extensions,
+        refimages_model.rename_coordinator,
+    )
     assert len(content_images_view(refimages_widget).source) == 1
+
+
+def test_a_path_change_releases_the_archive_handles_even_with_the_dock_closed(
+    refimages_widget: DocumentWidget, refimages_model: RehuDocumentModel, mocker: MockerFixture
+) -> None:
+    """The archives open at the old path are let go of on a path change, whether or not the dock is up
+    to re-enumerate -- a closed dock's cache still holds what it last read (#347).
+
+    **Test steps:**
+
+    * with the dock closed, spy on the cache's release
+    * change the document's path
+    * verify the handles were released and nothing was enumerated
+    """
+    enumeration = mocker.patch.object(content_images_model, "enumerate_content_images", return_value=[])
+    content_model = refimages_widget._DocumentWidget__content_images_model  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert content_images_dock(refimages_widget).isClosed()
+    released = mocker.spy(content_model.archive_cache, "release_handles")
+
+    refimages_model.path = Path("/fake/renamed/info.rehu")
+
+    released.assert_called_once()
+    enumeration.assert_not_called()
 
 
 def test_a_document_with_no_archive_opens_and_edits_with_an_empty_dock(

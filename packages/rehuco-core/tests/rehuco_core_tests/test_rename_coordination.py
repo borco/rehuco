@@ -453,3 +453,80 @@ def test_a_failing_listener_is_logged_and_the_rest_still_run(coordinator: Rename
 
 
 # endregion
+
+
+# region yield listeners
+def test_a_yield_listener_hears_the_flag_before_the_wait(coordinator: RenameCoordinator, filesystem: Any) -> None:
+    """An idle handle nobody holds is told to close once the flag is up and before the rename waits --
+    with no lock held, so it can ask the coordinator itself (#347).
+
+    **Test steps:**
+
+    * hold on a worker thread, attach a yield listener recording the flag and the holder release
+    * rename on another thread, and check the listener ran while the rename was still waiting
+    * release the hold, and check the rename completes
+    """
+    del filesystem
+    holding = Event()
+    release = Event()
+    heard: list[bool] = []
+    coordinator.add_yield_listener(lambda: heard.append(coordinator.yield_wanted))
+
+    def reader() -> None:
+        with coordinator.holding():
+            holding.set()
+            release.wait(SETTLE)
+
+    with running(reader):
+        assert holding.wait(SETTLE)
+        with running(lambda: coordinator.rename(INFO_PATH, NEW_NAME)):
+            assert wait_until(lambda: heard == [True])
+            assert coordinator.yield_wanted is True
+            release.set()
+            assert wait_until(lambda: not coordinator.yield_wanted)
+
+
+def test_a_failing_yield_listener_does_not_stop_the_rename(coordinator: RenameCoordinator, filesystem: Any) -> None:
+    """A listener that raises is logged and skipped; the rest still hear, and the rename runs.
+
+    **Test steps:**
+
+    * attach a raising yield listener, followed by one that records
+    * rename, and check it returned normally and the second listener ran
+    """
+    calls: list[None] = []
+
+    def raising() -> None:
+        raise RuntimeError("boom")
+
+    coordinator.add_yield_listener(raising)
+    coordinator.add_yield_listener(lambda: calls.append(None))
+
+    assert coordinator.rename(INFO_PATH, NEW_NAME) == RENAMED / "info.rehu"
+    assert calls == [None]
+    assert filesystem.call_args.args == (FOLDER, RENAMED)
+
+
+def test_a_removed_yield_listener_is_not_called(coordinator: RenameCoordinator, filesystem: Any) -> None:
+    """Removing stops the calls, and removing twice is tolerated.
+
+    **Test steps:**
+
+    * attach a yield listener, remove it twice, rename
+    * check it was never called
+    """
+    del filesystem
+    calls: list[None] = []
+
+    def listener() -> None:
+        calls.append(None)
+
+    coordinator.add_yield_listener(listener)
+    coordinator.remove_yield_listener(listener)
+    coordinator.remove_yield_listener(listener)
+    coordinator.rename(INFO_PATH, NEW_NAME)
+
+    assert not calls
+
+
+# endregion

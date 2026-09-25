@@ -9,7 +9,7 @@ from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.content_images import ArchiveCache, ArchiveImageSource, ContentImagesModel
 from rehuco_agent.documents.content_images import content_images_model as model_module
-from rehuco_core import ContentImageEntry
+from rehuco_core import ContentImageEntry, RenameCoordinator
 from shiboken6 import isValid
 
 from rehuco_agent_tests.documents.content_images.conftest import (
@@ -173,9 +173,48 @@ def test_refresh_enumerates_off_the_gui_thread_and_adopts_the_result(
     with qtbot.waitSignal(content_model.modelReset, timeout=5000):
         content_model.refresh(REHU_DIRECTORY / "info.rehu", (".jpg",))
 
-    enumeration.assert_called_once_with(REHU_DIRECTORY / "info.rehu", (".jpg",))
+    enumeration.assert_called_once_with(REHU_DIRECTORY / "info.rehu", (".jpg",), None)
     assert content_model.entries == found
     assert content_model.rehu_directory == REHU_DIRECTORY
+
+
+def test_the_rename_barrier_reaches_the_enumeration_and_the_cache(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """A model built with the document's coordinator enumerates and reads inside it, so browsing a pack
+    never blocks renaming it (#347).
+
+    **Test steps:**
+
+    * spy on the cache's construction, build a model with a coordinator, and refresh it
+    * verify the cache and the enumeration were both handed that coordinator
+    """
+    coordinator = RenameCoordinator()
+    built = mocker.spy(model_module, "ArchiveCache")
+    enumeration = mocker.patch.object(model_module, "enumerate_content_images", return_value=[])
+    content_model = ContentImagesModel(coordinator)
+
+    with qtbot.waitSignal(content_model.modelReset, timeout=5000):
+        content_model.refresh(REHU_DIRECTORY / "info.rehu", (".jpg",))
+
+    built.assert_called_once_with(coordinator)
+    enumeration.assert_called_once_with(REHU_DIRECTORY / "info.rehu", (".jpg",), coordinator)
+    content_model.archive_cache.close()
+
+
+def test_releasing_the_archives_releases_the_cache_handles(
+    content_model: ContentImagesModel, mocker: MockerFixture
+) -> None:
+    """A path change lets go of every open archive, through the cache (#347).
+
+    **Test steps:**
+
+    * spy on the cache's release, and release the model's archives
+    * verify the cache released once
+    """
+    released = mocker.spy(content_model.archive_cache, "release_handles")
+
+    content_model.release_archives()
+
+    released.assert_called_once()
 
 
 def test_a_stale_enumeration_is_dropped(content_model: ContentImagesModel, mocker: MockerFixture) -> None:

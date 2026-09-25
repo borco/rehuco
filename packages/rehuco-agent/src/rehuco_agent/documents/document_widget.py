@@ -638,7 +638,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         self.__type_docks: dict[str, QtAds.CDockWidget] = self.__add_type_docks(type_dock_names(self.layout_type))
         # the archives are found relative to the path, so a path change re-enumerates them; connected
         # once here rather than by the dock that needs it, which a type change removes and rebuilds
-        model.path_changed.connect(lambda _path: self.__refresh_content_images())  # type: ignore[attr-defined]
+        model.path_changed.connect(lambda _path: self.__on_content_images_path_changed())  # type: ignore[attr-defined]
 
         # unlike the checksum pair, these need no queue: both operations are a handful of renames over
         # one directory, run inline the way `RehuDocumentModel.convert` -- their exact mirror -- is
@@ -1230,7 +1230,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         """
         docks: dict[str, QtAds.CDockWidget] = {}
         if CONTENT_IMAGES_DOCK_NAME in names:
-            self.__content_images_model = ContentImagesModel(self)
+            self.__content_images_model = ContentImagesModel(self.__model.rename_coordinator, self)
             self.__content_images_view = self.__build_content_images_view(self.__content_images_model)
             self.__content_images_dock = self.__add_content_images_dock(self.__content_images_view)
             docks[CONTENT_IMAGES_DOCK_NAME] = self.__content_images_dock
@@ -2015,6 +2015,16 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         )
         dock.viewToggled.connect(lambda visible: self.__refresh_content_images() if visible else None)
         return dock
+
+    def __on_content_images_path_changed(self) -> None:
+        """Let go of the archives at the old path and re-enumerate at the new one (#347).
+
+        The handles are released whether or not the dock is up to show anything: a closed dock's cache
+        still holds whatever it last read, and those are exactly the files that moved.
+        """
+        if self.__content_images_model is not None:
+            self.__content_images_model.release_archives()
+        self.__refresh_content_images()
 
     def __refresh_content_images(self) -> None:
         """Re-enumerate this resource's content images, if the dock exists and is up to show them

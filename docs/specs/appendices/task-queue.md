@@ -183,6 +183,16 @@ That re-read **overlaps `run`**, unlike everything else here, so a job whose sou
 from something safe to read on another thread. That is what a `ResourceLocation` is for, and why such a
 job holds one instead of a path.
 
+**A reader outside the queue joins the same barrier** ([#347](https://github.com/borco/rehuco/issues/347)).
+The Content Images dock's archive cache keeps handles open *between* reads, which no `holding()` block
+covers, so a rename counted zero holders and ran straight into them: NTFS refused the directory, and the
+banner said only "Access is denied". It now takes part from both ends. A read runs inside `holding()` and
+closes its handle before leaving when a rename is waiting. A handle nobody is reading is closed by a
+**yield listener**, which the coordinator calls once the flag is up and before it waits. That listener
+never waits on a reader: the GUI thread is usually the one renaming. Archives open at tracked locations,
+so a read paused by the rename resumes at the new name instead of failing, which matters because a
+failed read is recorded as unreadable for good.
+
 ### 3.3 One pause concept, and requests kept apart from states
 
 [[[appendices.task-queue#pause-concept]]]

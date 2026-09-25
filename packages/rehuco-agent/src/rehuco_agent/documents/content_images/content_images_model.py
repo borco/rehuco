@@ -24,7 +24,7 @@ from PySide6.QtCore import (
     Slot,
 )
 from PySide6.QtGui import QImage
-from rehuco_core import ContentImageEntry, enumerate_content_images
+from rehuco_core import ContentImageEntry, RenameCoordinator, enumerate_content_images
 
 from ...fields.widgets.image_source import ImageDescription, decode_image, image_size
 from .archive_cache import ArchiveCache
@@ -129,18 +129,27 @@ class EnumerateJob(QRunnable):
     :param generation: which request this answers; a stale answer is dropped.
     :param path: the ``.rehu`` file.
     :param extensions: the recognized image extensions.
+    :param coordinator: the rename barrier each archive is read inside (#347), or ``None`` for none.
     """
 
-    def __init__(self, signals: JobSignals, generation: int, path: Path, extensions: tuple[str, ...]) -> None:
+    def __init__(
+        self,
+        signals: JobSignals,
+        generation: int,
+        path: Path,
+        extensions: tuple[str, ...],
+        coordinator: RenameCoordinator | None,
+    ) -> None:
         super().__init__()
         self.__signals: Final = signals
         self.__generation: Final = generation
         self.__path: Final = path
         self.__extensions: Final = extensions
+        self.__coordinator: Final = coordinator
 
     def run(self) -> None:
         try:
-            entries = enumerate_content_images(self.__path, self.__extensions)
+            entries = enumerate_content_images(self.__path, self.__extensions, self.__coordinator)
             self.__signals.enumerated.emit(self.__generation, entries)
         finally:
             self.__signals.deleteLater()
@@ -179,6 +188,8 @@ class HeaderJob(QRunnable):
 class ContentImagesModel(QAbstractListModel):  # pylint: disable=too-many-instance-attributes
     """The content images of one resource, with each one's pixel size read on demand (#221).
 
+    :param coordinator: the rename barrier every archive read takes part in (#347) -- the document's
+        own, so browsing never blocks renaming it -- or ``None`` for none.
     :param parent: optional Qt parent.
     """
 
@@ -193,9 +204,10 @@ class ContentImagesModel(QAbstractListModel):  # pylint: disable=too-many-instan
     dimensions_changed = Signal()
     """Fires after a header read lands, so a view can re-pack -- coalesced by the view, not here."""
 
-    def __init__(self, parent: QObject | None = None) -> None:
+    def __init__(self, coordinator: RenameCoordinator | None = None, parent: QObject | None = None) -> None:
         super().__init__(parent)
-        self.__cache: Final = ArchiveCache()
+        self.__coordinator: Final = coordinator
+        self.__cache: Final = ArchiveCache(coordinator)
         self.__entries: list[ContentImageEntry] = []
         self.__rehu_directory: Path | None = None
         self.__dimensions: Final[dict[TierZeroKey, QSize]] = {}
@@ -257,9 +269,17 @@ class ContentImagesModel(QAbstractListModel):  # pylint: disable=too-many-instan
             return
         self.__rehu_directory = path.parent
         pool = self.__pool()
-        job = EnumerateJob(self.__job_signals(pool), self.__generation, path, extensions)
+        job = EnumerateJob(self.__job_signals(pool), self.__generation, path, extensions, self.__coordinator)
         job.setAutoDelete(True)
         pool.start(job)
+
+    def release_archives(self) -> None:
+        """Close every archive handle held open, for a resource whose path just changed (#347).
+
+        The next read reopens where the archive is now; see
+        :meth:`ArchiveCache.release_handles`.
+        """
+        self.__cache.release_handles()
 
     def set_entries(self, entries: Sequence[ContentImageEntry], rehu_directory: Path | None) -> None:
         """Replace the entries wholesale.
