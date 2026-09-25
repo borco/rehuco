@@ -231,3 +231,77 @@ def test_a_legacy_tc_resource_is_not_converted_one_image_at_a_time(mocker: Mocke
         organizer.convert(DIRECTORY / "cover.jpg")
 
     convert.assert_not_called()
+
+
+def test_acquire_writes_through_save_screenshot_against_this_resources_stem(mocker: MockerFixture) -> None:
+    """``acquire`` delegates to :func:`~rehuco_core.save_screenshot` with the resolved directory and
+    stem, forwarding the bytes, extension and slot unchanged (#73).
+
+    **Test steps:**
+
+    * acquire some bytes with an explicit slot on a document bound to ``/fake/tutorial/info.rehu``
+    * verify the core was asked with that directory, stem, the bytes, extension and slot
+    * verify the new path came back
+    """
+    save_screenshot = mocker.patch(
+        "rehuco_agent.documents.rehu_document_image_organizer.save_screenshot",
+        return_value=DIRECTORY / "info02.jpg",
+    )
+    organizer = RehuDocumentImageOrganizer(model_at(DIRECTORY / "info.rehu"))
+
+    assert organizer.acquire(b"bytes", ".jpg", 2) == DIRECTORY / "info02.jpg"
+
+    save_screenshot.assert_called_once_with(DIRECTORY, "info", b"bytes", ".jpg", 2)
+
+
+def test_acquire_defaults_to_the_next_free_slot(mocker: MockerFixture) -> None:
+    """``slot=None`` is forwarded as-is -- :func:`~rehuco_core.save_screenshot` picks the next free one.
+
+    **Test steps:**
+
+    * acquire some bytes with no slot given
+    * verify the core was asked with ``slot=None``
+    """
+    save_screenshot = mocker.patch(
+        "rehuco_agent.documents.rehu_document_image_organizer.save_screenshot",
+        return_value=DIRECTORY / "info00.jpg",
+    )
+    organizer = RehuDocumentImageOrganizer(model_at(DIRECTORY / "info.rehu"))
+
+    organizer.acquire(b"bytes", ".jpg")
+
+    save_screenshot.assert_called_once_with(DIRECTORY, "info", b"bytes", ".jpg", None)
+
+
+def test_a_legacy_tc_resource_refuses_to_acquire(mocker: MockerFixture) -> None:
+    """The same refusal covers an acquisition (#73): a ``.tc``'s files are pre-conversion originals.
+
+    **Test steps:**
+
+    * acquire bytes on a legacy ``.tc`` document
+    * verify the refusal raised before the core was reached at all
+    """
+    save_screenshot = mocker.patch("rehuco_agent.documents.rehu_document_image_organizer.save_screenshot")
+    organizer = RehuDocumentImageOrganizer(model_at(DIRECTORY / "info.tc", legacy_tc=True))
+
+    with pytest.raises(PermissionError):
+        organizer.acquire(b"bytes", ".jpg")
+
+    save_screenshot.assert_not_called()
+
+
+def test_a_document_with_no_path_yet_refuses_to_acquire(mocker: MockerFixture) -> None:
+    """There is nowhere to write until the document has been saved somewhere (#73).
+
+    **Test steps:**
+
+    * acquire bytes on a document with no path
+    * verify the refusal raised and nothing was written
+    """
+    save_screenshot = mocker.patch("rehuco_agent.documents.rehu_document_image_organizer.save_screenshot")
+    organizer = RehuDocumentImageOrganizer(model_at(None))
+
+    with pytest.raises(PermissionError):
+        organizer.acquire(b"bytes", ".jpg")
+
+    save_screenshot.assert_not_called()

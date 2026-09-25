@@ -23,7 +23,7 @@ from ..scraping.markdown_images import substitute_image_stem
 from ..scraping.protocols import PageFetcher
 from ..scraping.registry import ScraperRegistry, shared_scraper_registry
 from ..scraping.results import Page, ScrapeResult
-from ..scraping.scrape_job import NoScraperError, ScrapeError, ScrapeJob
+from ..scraping.scrape_job import ScrapeJob
 from ..scraping.scraper_executor import ScraperExecutor, shared_scraper_executor
 from ..scraping.url_drop import UrlDrop
 from .document_fields import declared_field_names
@@ -83,7 +83,6 @@ class ScrapeActions(QObject):  # pylint: disable=too-many-instance-attributes
         signal is delivered), and read back to decide whether the document is still the one that asked."""
 
         self.__last_failure = ""
-        self.__last_error: ScrapeError | None = None
         self.__detached = False
         """Set by :meth:`detach`. Checked explicitly, rather than relying on dropping this object's own
         reference to a pending job: a job is kept alive by the very signal connection its result would
@@ -95,17 +94,14 @@ class ScrapeActions(QObject):  # pylint: disable=too-many-instance-attributes
     @property
     def notice(self) -> list[MessageBannerRow]:
         """The document's inline strip rows for the scrape currently in flight, if any, followed by the
-        last failure, if one stands and nothing is running -- replaced by the next drop's own outcome."""
+        last failure as a warning, if one stands and nothing is running -- replaced by the next drop's own
+        outcome. A page no scraper matches is a failure like any other: the drop did not do what it was
+        dropped for."""
         rows: list[MessageBannerRow] = []
         for host in self.__pending.values():
             rows.append(MessageBannerRow(MessageBannerSeverity.INFO, BUSY_MESSAGE.format(host=host)))
         if not self.__pending and self.__last_failure:
-            severity = (
-                MessageBannerSeverity.INFO
-                if isinstance(self.__last_error, NoScraperError)
-                else MessageBannerSeverity.WARNING
-            )
-            rows.append(MessageBannerRow(severity, self.__last_failure))
+            rows.append(MessageBannerRow(MessageBannerSeverity.WARNING, self.__last_failure))
         return rows
 
     def detach(self) -> None:
@@ -181,8 +177,6 @@ class ScrapeActions(QObject):  # pylint: disable=too-many-instance-attributes
         self.__pending.pop(job, None)
         if self.__detached:
             return
-        # not a runtime check -- see __on_result's matching cast
-        self.__last_error = cast(ScrapeError, error)
         self.__last_failure = str(error)
         self.changed.emit()
 

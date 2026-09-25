@@ -64,7 +64,8 @@ def save_screenshot(directory: Path, stem: str, data: bytes, extension: str, slo
     :returns: the new file's path.
     :raises PermissionError: ``directory`` still holds a legacy ``.tc`` record -- the same refusal
         :func:`~rehuco_core.tc_screenshots.convert_screenshot` makes.
-    :raises ValueError: ``slot`` is ``None`` and the numbered set is already full.
+    :raises ValueError: ``slot`` is ``None`` and the numbered set is already full, or ``slot`` was
+        given explicitly and is out of range for the set.
     """
     if (directory / f"{stem}{LEGACY_SUFFIX}").exists():
         raise PermissionError(f"{directory} belongs to a resource that is still a {LEGACY_SUFFIX}")
@@ -75,8 +76,11 @@ def save_screenshot(directory: Path, stem: str, data: bytes, extension: str, slo
         if slot >= MAX_SCREENSHOT_SLOT:
             raise ValueError(f"cannot number a new screenshot: the {stem}NN set is full")
     else:
+        if slot >= MAX_SCREENSHOT_SLOT:
+            raise ValueError(f"cannot number a new screenshot: slot {slot} is out of range for the {stem}NN set")
+        target_stem = f"{stem}{slot:02d}".lower()
         for occupant in existing:
-            if occupant.stem == f"{stem}{slot:02d}":
+            if occupant.stem.lower() == target_stem:
                 occupant.rename(screenshot_backup_path(occupant))
     destination = directory / f"{stem}{slot:02d}{extension}"
     # exclusive create, not write_bytes: a slot just vacated by the rename above -- or freshly picked

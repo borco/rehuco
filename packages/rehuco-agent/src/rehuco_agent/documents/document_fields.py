@@ -269,6 +269,7 @@ def composed_field_specs(model: RehuDocumentModel) -> tuple[FieldSpec, ...]:
 def build_document_form(
     model: RehuDocumentModel,
     name_suggestions: NameSuggestionModel,
+    image_organizer: RehuDocumentImageOrganizer,
     registry: FieldRegistry | None = None,
 ) -> FieldsForm:
     """Build the document's complete :class:`FieldsForm` for ``model``.
@@ -295,6 +296,10 @@ def build_document_form(
         it is reused rather than a fresh one leaking per rebuild (#149). Required, not optional-with-a-
         default: minting one here would put that ownership back inside a per-build call, the exact seam
         #149 closed. The owner parents it to ``model`` so it is freed with the whole document (#148).
+    :param image_organizer: what the images strip's editor writes screenshot reorders/removals through
+        -- the caller's own instance (`DocumentWidget`), shared with its `.image_downloads.ImageDownloads`
+        rather than a second, redundant one minted here (#73): both are stateless, but one instance keeps
+        the two writers of the same directory in one place.
     :param registry: the field registry to resolve the record types with; a default one when omitted.
     :returns: a form composing location + images + description, then the record fields, then the
         unknown fallbacks, then the inactive blocks.
@@ -351,8 +356,9 @@ def build_document_form(
         image_scanner=model.image_scanner,
         image_scanner_changed=model.image_scanner_changed,  # type: ignore[attr-defined]
         # the write side of the same directory: moving or deleting a screenshot renames files, since
-        # a resource's screenshot order is its `<stem>NN` numbering and nothing else records it (#72)
-        image_organizer=RehuDocumentImageOrganizer(model),
+        # a resource's screenshot order is its `<stem>NN` numbering and nothing else records it (#72).
+        # The caller's own instance (#73), shared with ImageDownloads rather than a second one minted here.
+        image_organizer=image_organizer,
         viewer_tab=VIEWER_DESCRIPTION_TAB,
         editor_tab=EDITOR_IMAGES_TAB,
         # the height plus its change signal, the same shape the scanner above uses: the strip is built

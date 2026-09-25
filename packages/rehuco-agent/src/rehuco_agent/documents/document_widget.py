@@ -229,13 +229,16 @@ class ImageDropFilter(QObject):
     reason: this dock survives a type switch or a revert's wholesale grid rebuild, a filter installed on
     its content would not. Tried in order -- the first that matches wins:
 
-    1. a local file (``file:`` in ``text/uri-list``) with a recognized image extension, read and
-       written synchronously;
+    1. every local file (``file:`` in ``text/uri-list``) with a recognized image extension, read and
+       written synchronously -- a multi-file drop acquires every one of them, as one batch;
     2. a drop carrying its own ``image/*`` data, written synchronously from those bytes;
-    3. an ``http(s)`` URL (the same reading `~rehuco_agent.scraping.url_drop.UrlDrop.parse` does for the
+    3. an ``http(s)`` link, not a selection (the same reading
+       `~rehuco_agent.scraping.url_drop.UrlDrop.parse` does for the
        Main Editor) whose own path also carries a recognized image extension, downloaded through
        :attr:`__image_downloads`;
-    4. any other recognized ``http(s)`` URL, read as a **page** and scraped for its images through
+    4. any other recognized ``http(s)`` URL, and every selection, read as a **page** -- a selection's own
+       ``text/html`` scraped as that page rather than fetched again, exactly as the Main Editor scrapes
+       one ([[acquisition-tooling#drag-drop-aids]]) -- and scraped for its images through
        :meth:`~rehuco_agent.documents.image_downloads.ImageDownloads.submit_page` -- so a resource's
        screenshots can be re-fetched from their source page (a redesign, a fixed link, a higher-resolution
        asset) without a scrape's fields or description touching the ``.rehu`` at all.
@@ -243,7 +246,8 @@ class ImageDropFilter(QObject):
     **A link and an image are told apart by extension, not by drop shape.** Both reach Qt as a plain
     ``text/uri-list`` URL with nothing else distinguishing them ([[acquisition-tooling#drop-source-url]],
     §15.1.1), so the one signal available is the URL's own path -- a recognized image suffix takes case
-    3, anything else (including no suffix at all) takes case 4. Parsing an arbitrary page for image
+    3, anything else (including no suffix at all) takes case 4. A selection is always case 4, whatever its
+    URL: it carries markup of its own, and that markup is the page. Parsing an arbitrary page for image
     *candidates* and letting the user pick among them is the picker's job (#275), not this filter's:
     every image case 4 finds is downloaded outright, the same as a scrape's own images already are.
 
@@ -274,40 +278,43 @@ class ImageDropFilter(QObject):
         if self.__model.locked or self.__model.path is None:
             return False
         data = drop_event.mimeData()
-        local_file = self.__local_file(data)
-        image_bytes = None if local_file is not None else self.__image_bytes(data)
-        drop = None if local_file is not None or image_bytes is not None else UrlDrop.parse(data)
-        if local_file is None and image_bytes is None and drop is None:
+        local_files = self.__local_files(data)
+        image_bytes = None if local_files else self.__image_bytes(data)
+        drop = None if local_files or image_bytes is not None else UrlDrop.parse(data)
+        if not local_files and image_bytes is None and drop is None:
             return False
         drop_event.acceptProposedAction()
         if event.type() == QEvent.Type.Drop:
-            if local_file is not None:
-                self.__image_downloads.acquire_local(local_file)
+            if local_files:
+                self.__image_downloads.acquire_local(local_files)
             elif image_bytes is not None:
-                self.__image_downloads.acquire_local(image_bytes)
-            else:
-                assert drop is not None  # narrowed above; for pyright only
-                if self.__looks_like_image(drop.url):
+                self.__image_downloads.acquire_local([image_bytes])
+            elif drop is not None:  # pragma: no branch -- the guard above already excludes all-None
+                if drop.fragment is None and self.__looks_like_image(drop.url):
                     self.__image_downloads.submit(drop.url, self.__referrer(data))
                 else:
-                    self.__image_downloads.submit_page(drop.url)
+                    self.__image_downloads.submit_page(drop)
         return True
 
     @staticmethod
-    def __local_file(data: QMimeData) -> Path | None:
-        """The first ``file:`` URL in ``data`` with a recognized image extension, if any.
+    def __local_files(data: QMimeData) -> list[Path]:
+        """Every ``file:`` URL in ``data`` with a recognized image extension (#73).
+
+        A multi-file drop -- several images selected in a file manager and dropped together -- acquires
+        every one of them, not only the first.
 
         :param data: the drop's mime data.
-        :returns: the local path, or ``None``.
+        :returns: the local paths, in the drop's own order; empty when none match.
         """
         if not data.hasUrls():
-            return None
+            return []
+        files: list[Path] = []
         for url in data.urls():
             if url.isLocalFile():
                 candidate = Path(url.toLocalFile())
                 if candidate.suffix.lower() in IMAGE_EXTENSIONS:
-                    return candidate
-        return None
+                    files.append(candidate)
+        return files
 
     @staticmethod
     def __image_bytes(data: QMimeData) -> ImageBytes | None:
@@ -516,7 +523,13 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         # (not discarded after building) so its fields outlive the widgets they built -- a field's
         # binding connections (Field.bind_external) are cleared when its widgets are destroyed, which
         # needs the field still alive at that moment (a form rebuild on a type switch/revert).
-        self.__form = build_document_form(model, name_suggestions=self.__name_suggestions)
+        # built once and shared with ImageDownloads below (#73): both are stateless writers of the same
+        # directory, so one instance covers the curation editor's reorders/removals and an acquisition's
+        # writes alike, rather than the form minting a second, redundant one of its own
+        self.__image_organizer: Final = RehuDocumentImageOrganizer(model)
+        self.__form = build_document_form(
+            model, name_suggestions=self.__name_suggestions, image_organizer=self.__image_organizer
+        )
         # a field that reports a transient status message (the authors viewer's hovered-link URL, a
         # StatusReporter) emits it rather than reaching for the status bar itself; collect those and
         # bubble them up through status_message, which DocumentsDock relays on to MainWindow's real bar.
@@ -636,7 +649,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         # what a scraped image, or an image dropped directly on the images sub-dock, is downloaded and
         # written to disk through (#73). Built before ScrapeActions, which hands every scraped image's
         # URL over to it, and before the first __banner_rows call below, which asks what it found.
-        self.__image_downloads: Final = ImageDownloads(model, RehuDocumentImageOrganizer(model), parent=self)
+        self.__image_downloads: Final = ImageDownloads(model, self.__image_organizer, parent=self)
         self.__image_downloads.changed.connect(self.__on_image_download_notice_changed)
         # an acquisition writing into an occupied slot backs the file already there up first (#73),
         # which is not a seam ConversionBackupActions.refresh already runs at on its own -- it reacts
@@ -1127,7 +1140,9 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         # destroyed -- deterministically, while its fields are still alive -- so no stale lambda fires into
         # a deleted widget later (a subsequent revert/switch). Then replace the retained form.
         self.__form.clear_external()
-        self.__form = build_document_form(self.__model, name_suggestions=self.__name_suggestions)
+        self.__form = build_document_form(
+            self.__model, name_suggestions=self.__name_suggestions, image_organizer=self.__image_organizer
+        )
         # re-route the rebuilt form's fresh fields' status messages; the outgoing form's fields drop
         # their connection as they are collected (Qt severs a dead QObject sender's connections).
         self.__form.connect_status_messages(self.status_message)

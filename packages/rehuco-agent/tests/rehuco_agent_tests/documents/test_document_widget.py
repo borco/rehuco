@@ -21,7 +21,7 @@ import json
 import logging
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Final, cast
+from typing import Any, Final, cast
 
 import cbor2
 import PySide6QtAds as QtAds
@@ -30,7 +30,7 @@ from borco_pyside.logging import LogEntry, LogWidget
 from borco_pyside.logging.log_model import MESSAGE_COLUMN
 from borco_pyside.theming import themed_svg_icon
 from borco_pyside.widgets import FlowLayout, MessageBanner, MessageBannerRow, MessageBannerSeverity, ToolBarStretch
-from PySide6.QtCore import QMimeData, QPointF, Qt, QUrl
+from PySide6.QtCore import QByteArray, QMimeData, QPointF, Qt, QUrl
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QImage, QKeySequence, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -75,6 +75,7 @@ from rehuco_agent.documents.document_widget import (
     IMAGES_DOCK_MIN_HEIGHT,
     LOG_DOCK_MIN_HEIGHT,
     ON_DISK_ICON_RESOURCE,
+    RENDERER_TAINT_FORMAT,
     RESET_DEFAULT_LAYOUT_LABEL,
     SAVE_DEFAULT_LAYOUT_LABEL,
     SAVE_PREVIEW_ICON_RESOURCE,
@@ -471,6 +472,31 @@ def test_an_older_viewers_teardown_does_not_forget_a_newer_one(
     widget.take_focus()
 
     assert widget.focusWidget() is second
+
+
+def test_a_rescan_after_a_form_rebuild_never_reaches_the_destroyed_image_views(
+    widget: DocumentWidget, model: RehuDocumentModel, qtbot: QtBot
+) -> None:
+    """Regression: a form rebuild destroys the images strip and curation list it replaces, and a later
+    rescan must not call into either. Their scanner connection is one of the form's external bindings
+    (`Field.bind_external`), severed with the rest before the rebuild; left as a raw ``connect`` on the
+    model, the next rescan raised out of the dead widget (#73).
+
+    **Test steps:**
+
+    * switch the document's type, rebuilding the form, and wait until the old strip and list are destroyed
+    * rescan the document's images
+    * verify nothing raised, and the rebuilt list took the new scanner
+    """
+    old_strip = widget.findChild(ImageStrip)
+    assert isinstance(old_strip, ImageStrip)
+    old_selector = image_selector(widget)
+
+    with wait_destroyed(qtbot, old_strip), wait_destroyed(qtbot, old_selector):
+        model.resource_type = "reference_images"
+    model.rescan_images()
+
+    assert image_selector(widget).image_scanner is model.image_scanner
 
 
 def test_a_screenshot_activated_after_a_type_switch_still_opens(
@@ -1599,7 +1625,7 @@ def test_retained_conversion_backups_show_a_banner_row_and_the_discard_action(
     qtbot.addWidget(built)
 
     texts = {label.text() for label in banner(built).findChildren(QLabel)}
-    assert any("conversion backups" in text for text in texts)
+    assert any("still has backups" in text for text in texts)
     assert built.conversion_backup_actions.discard_action.isVisible()
 
 
@@ -5346,6 +5372,399 @@ def test_a_scrape_notice_lands_in_the_inline_strip(saved_widget: DocumentWidget,
 
     labels = banner(saved_widget).findChildren(QLabel)
     assert any(label.text() == "Scraping example.com…" for label in labels)
+
+
+# endregion
+
+
+# region image drop on the Images sub-dock (#73)
+def images_dock(widget: DocumentWidget) -> QtAds.CDockWidget:
+    """The widget's Images sub-dock -- what `ImageDropFilter` is installed on."""
+    return widget._DocumentWidget__editor_docks[EDITOR_IMAGES_TAB]  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+
+def drag_onto_images_dock(widget: DocumentWidget, qtbot: QtBot, data: QMimeData) -> tuple[bool, bool]:
+    """Deliver a drag-enter, then a drop, of ``data`` to the shown Images dock **through Qt's own
+    dispatch**, the same way `_drag_onto_main_editor` does for the Main Editor (#73).
+
+    :param widget: the document widget whose Images dock to drop on.
+    :param qtbot: pytest-qt bot.
+    :param data: the drop's mime data.
+    :returns: whether the enter, and then the drop, was accepted.
+    """
+    widget.show()
+    qtbot.waitExposed(widget)
+    widget.toggle_action(EDITOR_IMAGES_TAB).trigger()
+    dock = images_dock(widget)
+    enter = _drag_enter_event(data)
+    QApplication.sendEvent(dock, enter)
+    if not enter.isAccepted():
+        return False, False
+    drop = _drop_event(data)
+    QApplication.sendEvent(dock, drop)
+    return True, drop.isAccepted()
+
+
+def local_file_mime_data(*paths: Path) -> QMimeData:
+    """A ``text/uri-list`` drop carrying one or more local ``file:`` URLs."""
+    data = QMimeData()
+    data.setUrls([QUrl.fromLocalFile(str(path)) for path in paths])
+    return data
+
+
+def image_bytes_mime_data(mime_type: str = "image/png") -> QMimeData:
+    """A drop carrying its own recognized ``image/*`` payload."""
+    data = QMimeData()
+    data.setData(mime_type, QByteArray(b"\x89PNG\r\n\x1a\n"))
+    return data
+
+
+def taint_mime_data(url: str, origin: str | None) -> QMimeData:
+    """A `_url_mime_data` drop, optionally carrying Chromium's renderer-taint origin hint.
+
+    :param url: the URL to drop.
+    :param origin: the origin to carry as the taint hint, or ``None`` to carry none at all.
+    """
+    data = _url_mime_data(url)
+    if origin is not None:
+        data.setData(RENDERER_TAINT_FORMAT, QByteArray(origin.encode("utf-8")))
+    return data
+
+
+def test_a_local_file_drop_on_the_images_dock_acquires_it(
+    saved_widget: DocumentWidget, qtbot: QtBot, mocker: MockerFixture
+) -> None:
+    """A single ``file:`` URL with a recognized image extension is acquired straight from disk (#73)."""
+    image_downloads = saved_widget._DocumentWidget__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    acquire_local = mocker.patch.object(image_downloads, "acquire_local")
+    data = local_file_mime_data(Path("/fake/dropped.jpg"))
+
+    assert drag_onto_images_dock(saved_widget, qtbot, data) == (True, True)
+
+    acquire_local.assert_called_once_with([Path("/fake/dropped.jpg")])
+
+
+def test_multiple_local_files_in_one_drop_acquires_each(
+    saved_widget: DocumentWidget, qtbot: QtBot, mocker: MockerFixture
+) -> None:
+    """A multi-file drop acquires every recognized file, not only the first -- all of them in one call,
+    so they are one batch (#73)."""
+    image_downloads = saved_widget._DocumentWidget__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    acquire_local = mocker.patch.object(image_downloads, "acquire_local")
+    data = local_file_mime_data(Path("/fake/one.jpg"), Path("/fake/two.png"))
+
+    assert drag_onto_images_dock(saved_widget, qtbot, data) == (True, True)
+
+    acquire_local.assert_called_once_with([Path("/fake/one.jpg"), Path("/fake/two.png")])
+
+
+def test_a_local_file_with_an_unrecognized_extension_is_skipped(
+    saved_widget: DocumentWidget, qtbot: QtBot, mocker: MockerFixture
+) -> None:
+    """A local file with no recognized image extension is left out; the recognized one beside it in
+    the same drop still gets acquired (#73)."""
+    image_downloads = saved_widget._DocumentWidget__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    acquire_local = mocker.patch.object(image_downloads, "acquire_local")
+    data = local_file_mime_data(Path("/fake/notes.txt"), Path("/fake/dropped.jpg"))
+
+    assert drag_onto_images_dock(saved_widget, qtbot, data) == (True, True)
+
+    acquire_local.assert_called_once_with([Path("/fake/dropped.jpg")])
+
+
+def test_an_image_data_drop_on_the_images_dock_acquires_it(
+    saved_widget: DocumentWidget, qtbot: QtBot, mocker: MockerFixture
+) -> None:
+    """A drop carrying its own ``image/*`` payload is acquired from those bytes (#73)."""
+    image_downloads = saved_widget._DocumentWidget__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    acquire_local = mocker.patch.object(image_downloads, "acquire_local")
+    data = image_bytes_mime_data("image/png")
+
+    assert drag_onto_images_dock(saved_widget, qtbot, data) == (True, True)
+
+    acquire_local.assert_called_once()
+    ((acquired,),) = acquire_local.call_args.args
+    assert acquired.mime_type == "image/png"
+
+
+def test_a_mixed_url_and_local_file_drop_acquires_only_the_local_file(
+    saved_widget: DocumentWidget, qtbot: QtBot, mocker: MockerFixture
+) -> None:
+    """A drop carrying both a non-local URL and a local file only acquires the local one (#73)."""
+    image_downloads = saved_widget._DocumentWidget__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    acquire_local = mocker.patch.object(image_downloads, "acquire_local")
+    data = QMimeData()
+    data.setUrls([QUrl("https://example.com/photo.jpg"), QUrl.fromLocalFile("/fake/dropped.jpg")])
+
+    assert drag_onto_images_dock(saved_widget, qtbot, data) == (True, True)
+
+    acquire_local.assert_called_once_with([Path("/fake/dropped.jpg")])
+
+
+def test_an_image_url_drop_with_no_taint_hint_at_all_is_submitted_with_no_referrer(
+    saved_widget: DocumentWidget, qtbot: QtBot, mocker: MockerFixture
+) -> None:
+    """A drop carrying no renderer-taint hint whatsoever (every Firefox drop) submits with no referrer
+    (#73, [[acquisition-tooling#drop-source-url]])."""
+    image_downloads = saved_widget._DocumentWidget__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    submit = mocker.patch.object(image_downloads, "submit")
+    data = _url_mime_data("https://example.com/photo.jpg")
+
+    assert drag_onto_images_dock(saved_widget, qtbot, data) == (True, True)
+
+    submit.assert_called_once_with("https://example.com/photo.jpg", None)
+
+
+def test_an_image_url_drop_is_submitted_with_the_renderer_taint_origin(
+    saved_widget: DocumentWidget, qtbot: QtBot, mocker: MockerFixture
+) -> None:
+    """An image-suffixed URL is submitted for download, with Chromium's renderer-taint hint as the
+    ``Referer`` (#73, [[acquisition-tooling#drop-source-url]])."""
+    image_downloads = saved_widget._DocumentWidget__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    submit = mocker.patch.object(image_downloads, "submit")
+    data = taint_mime_data("https://example.com/photo.jpg", "https://example.com")
+
+    assert drag_onto_images_dock(saved_widget, qtbot, data) == (True, True)
+
+    submit.assert_called_once_with("https://example.com/photo.jpg", "https://example.com")
+
+
+def test_a_non_http_taint_is_ignored_as_a_referrer(
+    saved_widget: DocumentWidget, qtbot: QtBot, mocker: MockerFixture
+) -> None:
+    """A taint hint that does not decode to an ``http(s)`` origin is dropped, not passed on (#73)."""
+    image_downloads = saved_widget._DocumentWidget__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    submit = mocker.patch.object(image_downloads, "submit")
+    data = _url_mime_data("https://example.com/photo.jpg")
+    data.setData(RENDERER_TAINT_FORMAT, QByteArray(b"not-a-url"))
+
+    assert drag_onto_images_dock(saved_widget, qtbot, data) == (True, True)
+
+    submit.assert_called_once_with("https://example.com/photo.jpg", None)
+
+
+def test_a_page_url_drop_is_submitted_as_a_page(
+    saved_widget: DocumentWidget, qtbot: QtBot, mocker: MockerFixture
+) -> None:
+    """A URL with no recognized image suffix is scraped as a page, not downloaded as an image (#73)."""
+    image_downloads = saved_widget._DocumentWidget__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    submit_page = mocker.patch.object(image_downloads, "submit_page")
+    data = _url_mime_data("https://www.artstation.com/artwork/example")
+
+    assert drag_onto_images_dock(saved_widget, qtbot, data) == (True, True)
+
+    submit_page.assert_called_once_with(UrlDrop(url="https://www.artstation.com/artwork/example", fragment=None))
+
+
+def test_a_locked_documents_images_dock_refuses_a_drop(
+    legacy_widget: DocumentWidget, qtbot: QtBot, mocker: MockerFixture
+) -> None:
+    """A locked document's Images dock refuses a drop at the enter, nothing acquired (#73)."""
+    image_downloads = legacy_widget._DocumentWidget__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    acquire_local = mocker.patch.object(image_downloads, "acquire_local")
+    data = local_file_mime_data(Path("/fake/dropped.jpg"))
+
+    assert drag_onto_images_dock(legacy_widget, qtbot, data) == (False, False)
+
+    acquire_local.assert_not_called()
+
+
+def test_a_path_less_documents_images_dock_refuses_a_drop(
+    widget: DocumentWidget, qtbot: QtBot, mocker: MockerFixture
+) -> None:
+    """A document with no path yet refuses a drop at the enter -- there is nowhere to write it (#73)."""
+    image_downloads = widget._DocumentWidget__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    acquire_local = mocker.patch.object(image_downloads, "acquire_local")
+    data = local_file_mime_data(Path("/fake/dropped.jpg"))
+
+    assert drag_onto_images_dock(widget, qtbot, data) == (False, False)
+
+    acquire_local.assert_not_called()
+
+
+def test_an_unrecognised_drop_on_the_images_dock_is_refused(saved_widget: DocumentWidget, qtbot: QtBot) -> None:
+    """Plain text carrying no URL, no image payload and no local file is refused outright (#73)."""
+    data = QMimeData()
+    data.setText("just some words")
+
+    assert drag_onto_images_dock(saved_widget, qtbot, data) == (False, False)
+
+
+def test_an_image_download_notice_lands_in_the_inline_strip(
+    saved_widget: DocumentWidget, mocker: MockerFixture
+) -> None:
+    """`ImageDownloads.changed` rebuilds the banner with its current `notice` rows (#73).
+
+    **Test steps:**
+
+    * fake a busy notice on the widget's `ImageDownloads` and fire ``changed``
+    * verify the banner shows that row
+    """
+    image_downloads = saved_widget._DocumentWidget__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    rows = [MessageBannerRow(MessageBannerSeverity.INFO, "Downloading an image…")]
+    mocker.patch.object(type(image_downloads), "notice", new_callable=mocker.PropertyMock, return_value=rows)
+
+    image_downloads.changed.emit()
+
+    labels = banner(saved_widget).findChildren(QLabel)
+    assert any(label.text() == "Downloading an image…" for label in labels)
+
+
+SELECTION_HTML: Final = '<p>Some <b>selected</b> text <img src="https://example.com/photo.jpg"></p>'
+"""A selection's own markup: more than the link it carries, so `UrlDrop.parse` keeps it as the fragment."""
+
+
+def test_a_selection_drop_on_the_images_dock_is_scraped_as_a_page(
+    saved_widget: DocumentWidget, qtbot: QtBot, mocker: MockerFixture
+) -> None:
+    """A selection is always a page, its own markup included -- even when the URL it carries ends in an
+    image extension -- the same drop the Main Editor scrapes (#73, [[acquisition-tooling#drag-drop-aids]]).
+
+    **Test steps:**
+
+    * drop a selection: an image-suffixed URL plus the selected markup around it
+    * verify it went to `submit_page` with its fragment, and nothing was downloaded as an image
+    """
+    image_downloads = saved_widget._DocumentWidget__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    submit = mocker.patch.object(image_downloads, "submit")
+    submit_page = mocker.patch.object(image_downloads, "submit_page")
+    data = _url_mime_data("https://example.com/photo.jpg")
+    data.setHtml(SELECTION_HTML)
+
+    assert drag_onto_images_dock(saved_widget, qtbot, data) == (True, True)
+
+    submit_page.assert_called_once_with(UrlDrop(url="https://example.com/photo.jpg", fragment=SELECTION_HTML))
+    submit.assert_not_called()
+
+
+DROP_TARGET_PATH: Final = Path("/fake/drop-target/info.rehu")
+"""The resource the end-to-end drop tests write screenshots beside (:func:`screenshots_on_disk`)."""
+
+DROPPED_FILE: Final = Path("/fake/downloads/dropped.jpg")
+"""The local file those tests drop, read through the faked filesystem."""
+
+
+@fixture
+def screenshots_on_disk(mocker: MockerFixture) -> list[Path]:
+    """What :data:`DROP_TARGET_PATH`'s directory holds, faked at the filesystem's edge and grown by every
+    screenshot written into it (#73).
+
+    Only the edges are replaced -- the listers the images list and the numbering read, the ``.tc`` probe
+    and the exclusive create `~rehuco_core.save_screenshot` makes, and the read of :data:`DROPPED_FILE`
+    -- and every other path is handed to the real filesystem, so a drop runs everything between the dock
+    and the list's rows for real: the filter, `ImageDownloads`, the pipeline, the organizer, the
+    numbering and the rescan.
+
+    :param mocker: pytest-mock fixture.
+    :returns: the directory's screenshots, in the order written.
+    """
+    files: list[Path] = []
+    directory = DROP_TARGET_PATH.parent
+    real_exists = Path.exists
+    real_open = Path.open
+    real_read_bytes = Path.read_bytes
+
+    def exists(path: Path, *args: Any, **kwargs: Any) -> bool:
+        return path in files if path.parent == directory else real_exists(path, *args, **kwargs)
+
+    def open_path(path: Path, *args: Any, **kwargs: Any) -> Any:
+        # an exclusive create is how save_screenshot writes; anything else (the .rehu read back by the
+        # inspection docks) goes to the real filesystem, and finds nothing there
+        if path.parent != directory or (args[0] if args else kwargs.get("mode")) != "xb":
+            return real_open(path, *args, **kwargs)
+        files.append(path)
+        return mocker.mock_open()()
+
+    def read_bytes(path: Path) -> bytes:
+        return b"\xff\xd8\xff" if path == DROPPED_FILE else real_read_bytes(path)
+
+    def listing(*_args: Any, **_kwargs: Any) -> list[Path]:
+        return sorted(files)
+
+    mocker.patch.object(Path, "exists", autospec=True, side_effect=exists)
+    mocker.patch.object(Path, "open", autospec=True, side_effect=open_path)
+    mocker.patch.object(Path, "read_bytes", autospec=True, side_effect=read_bytes)
+    mocker.patch("rehuco_core.rehu_screenshot_acquisition.scan_rehu_screenshot_files", side_effect=listing)
+    mocker.patch("rehuco_agent.documents.rehu_document_model.scan_rehu_screenshot_files", side_effect=listing)
+    mocker.patch("rehuco_agent.documents.rehu_document_model.scan_unconverted_screenshots", return_value=[])
+    return files
+
+
+@fixture
+def drop_target_widget(qtbot: QtBot, screenshots_on_disk: list[Path]) -> DocumentWidget:
+    """A widget over :data:`DROP_TARGET_PATH`, built only once its directory is faked -- the lister the
+    images list reads through is chosen when the model builds its scanner.
+
+    :param qtbot: pytest-qt bot.
+    :param screenshots_on_disk: the faked directory, requested for its ordering only.
+    :returns: the widget.
+    """
+    del screenshots_on_disk
+    model = RehuDocumentModel(
+        RehuDocument({"type": "Tutorial", "sources": [{"title": "Foo", "primary": True}]}, DROP_TARGET_PATH)
+    )
+    widget = DocumentWidget(model)
+    qtbot.addWidget(widget)
+    return widget
+
+
+def test_a_dropped_local_file_adds_one_row_to_the_images_list(
+    drop_target_widget: DocumentWidget, screenshots_on_disk: list[Path], qtbot: QtBot
+) -> None:
+    """The issue's own acceptance test (#73): a ``file:`` drop on the Images dock ends as one more row in
+    its list -- through the real filter, `ImageDownloads`, pipeline, organizer, numbering and rescan,
+    with only the filesystem faked.
+
+    **Test steps:**
+
+    * open a document over an empty screenshot directory, and verify its list is empty
+    * drop a local ``.jpg`` on the Images dock
+    * verify one file was written, as ``info00.jpg``, and the list shows exactly that one row
+    """
+    assert image_selector(drop_target_widget).screenshot_paths() == []
+    data = local_file_mime_data(DROPPED_FILE)
+
+    assert drag_onto_images_dock(drop_target_widget, qtbot, data) == (True, True)
+
+    written = DROP_TARGET_PATH.parent / "info00.jpg"
+    assert screenshots_on_disk == [written]
+    assert image_selector(drop_target_widget).screenshot_paths() == [written]
+
+
+def test_a_dropped_png_payload_adds_one_row_to_the_images_list(
+    drop_target_widget: DocumentWidget, screenshots_on_disk: list[Path], qtbot: QtBot
+) -> None:
+    """The acceptance test's other half (#73): a drop carrying its own ``image/png`` data ends as one
+    more row too, written under the extension its mime type names.
+
+    **Test steps:**
+
+    * open a document over an empty screenshot directory, and verify its list is empty
+    * drop ``image/png`` data on the Images dock
+    * verify one file was written, as ``info00.png``, and the list shows exactly that one row
+    """
+    assert image_selector(drop_target_widget).screenshot_paths() == []
+    data = image_bytes_mime_data("image/png")
+
+    assert drag_onto_images_dock(drop_target_widget, qtbot, data) == (True, True)
+
+    written = DROP_TARGET_PATH.parent / "info00.png"
+    assert screenshots_on_disk == [written]
+    assert image_selector(drop_target_widget).screenshot_paths() == [written]
+
+
+def test_an_acquired_image_refreshes_the_conversion_backup_actions(
+    saved_widget: DocumentWidget, mocker: MockerFixture
+) -> None:
+    """`ImageDownloads.acquired` refreshes `.ConversionBackupActions`, since an acquisition writing
+    into an occupied slot can leave a new backup behind that no other seam re-reads for (#73)."""
+    image_downloads = saved_widget._DocumentWidget__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    conversion_backups = saved_widget._DocumentWidget__conversion_backups  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    refresh = mocker.patch.object(conversion_backups, "refresh")
+
+    image_downloads.acquired.emit()
+
+    refresh.assert_called_once()
 
 
 # endregion

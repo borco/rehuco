@@ -14,7 +14,11 @@ from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.asking_deleter import AskingDeleter
-from rehuco_agent.documents.conversion_backup_actions import ConversionBackupActions
+from rehuco_agent.documents.conversion_backup_actions import (
+    DISCARD_QUESTION,
+    DISCARD_QUESTION_IRREVERSIBLE,
+    ConversionBackupActions,
+)
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.settings.deletion_settings import DeletionKind, shared_deletion_settings
 from rehuco_core import ConversionBackups, Deleter, NoTrashBinError, RehuDocument
@@ -28,15 +32,17 @@ CONVERTED_STAMP: Final = "2023-11-14T22:13:20Z"
 ACTIONS_MODULE: Final = "rehuco_agent.documents.conversion_backup_actions"
 
 
-def make_backups(*, files: int = 3, total_bytes: int = 14_000_000) -> ConversionBackups:
+def make_backups(*, files: int = 3, total_bytes: int = 14_000_000, converted: bool = True) -> ConversionBackups:
     """One resource's inventory, as :func:`~rehuco_core.conversion_backups` would report it.
 
     :param files: how many backups it retains; ``0`` means none at all.
     :param total_bytes: what they occupy.
+    :param converted: whether the original ``info.tc.orig`` is among them -- a converted resource's -- or
+        only the overwritten-slot backups an image acquisition leaves (#73).
     :returns: the inventory.
     """
     backups = tuple(DIRECTORY / f"sample-{index:02}.jpg.orig" for index in range(files))
-    if files:
+    if files and converted:
         backups = (*backups, DIRECTORY / "info.tc.orig")
     return ConversionBackups(
         rehu_path=INFO_PATH,
@@ -293,6 +299,43 @@ def test_discarding_asks_first_and_names_what_it_frees(
     args, kwargs = discard.call_args
     assert args == (INFO_PATH,)
     assert isinstance(kwargs["deleter"], AskingDeleter)
+
+
+def test_a_converted_resources_discard_warns_its_original_tc_is_gone_for_good(
+    actions: ConversionBackupActions, answer_yes: Any, mocker: MockerFixture
+) -> None:
+    """Backups that include the ``info.tc.orig`` are the one truly irreversible discard -- the only copy
+    of the pre-``.rehu`` original -- so the question says so (#73).
+
+    **Test steps:**
+
+    * discard a converted resource's backups, ``info.tc.orig`` among them
+    * verify the question asked is the irreversible one, naming the bytes
+    """
+    mocker.patch(f"{ACTIONS_MODULE}.discard_conversion_backups", return_value=())
+
+    actions.discard()
+
+    assert question_of(answer_yes) == DISCARD_QUESTION_IRREVERSIBLE.format(size="14.0 MB")
+
+
+def test_an_acquisitions_backups_get_the_plain_question(
+    actions: ConversionBackupActions, inventory: Any, answer_yes: Any, mocker: MockerFixture
+) -> None:
+    """Backups an image acquisition left -- overwritten slots, no ``info.tc.orig`` -- lose nothing a
+    re-drop or re-download could not bring back, so the question makes no claim about a ``.tc`` (#73).
+
+    **Test steps:**
+
+    * discard a resource whose only backups are overwritten-slot ones
+    * verify the question asked is the plain one, naming the bytes
+    """
+    inventory.return_value = make_backups(converted=False)
+    mocker.patch(f"{ACTIONS_MODULE}.discard_conversion_backups", return_value=())
+
+    actions.discard()
+
+    assert question_of(answer_yes) == DISCARD_QUESTION.format(size="14.0 MB")
 
 
 def test_a_discard_bound_for_the_recycle_bin_asks_nothing(

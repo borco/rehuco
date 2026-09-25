@@ -20,6 +20,7 @@ from rehuco_agent.documents.document_fields import (
     composed_field_specs,
 )
 from rehuco_agent.documents.name_suggestion_model import NameSuggestionModel
+from rehuco_agent.documents.rehu_document_image_organizer import RehuDocumentImageOrganizer
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields import (
     PROVENANCE_ABANDONED_TYPE,
@@ -104,7 +105,7 @@ def viewer_tooltips(qtbot: QtBot, model: RehuDocumentModel) -> dict[str, str]:
     :param model: the model to build the form over.
     :returns: a ``{label text: tooltip}`` mapping of every unknown-flagged label on the viewer tab.
     """
-    grids = build_document_form(model, NameSuggestionModel(model)).make_viewer(model)
+    grids = build_document_form(model, NameSuggestionModel(model), RehuDocumentImageOrganizer(model)).make_viewer(model)
     qtbot.addWidget(grids[VIEWER_MAIN_TAB])
     return {
         label.text(): label.toolTip()
@@ -188,7 +189,9 @@ def test_a_foreign_block_can_be_dropped_from_the_editor(qtbot: QtBot, model: Reh
     * click that block's drop button
     * verify the block is gone from the document, the model is dirty, and the row is hidden
     """
-    editor = build_document_form(model, NameSuggestionModel(model)).make_editor(model)[EDITOR_MAIN_TAB]
+    editor = build_document_form(model, NameSuggestionModel(model), RehuDocumentImageOrganizer(model)).make_editor(
+        model
+    )[EDITOR_MAIN_TAB]
     qtbot.addWidget(editor)
     value = next(label for label in editor.findChildren(QLabel) if label.text() == "{'current_count': 12}")
     drop = drop_button_for(editor, "{'current_count': 12}")
@@ -225,7 +228,9 @@ def test_an_abandoned_block_has_no_drop_button(qtbot: QtBot) -> None:
         )
     )
     model.resource_type = "collection"
-    editor = build_document_form(model, NameSuggestionModel(model)).make_editor(model)[EDITOR_MAIN_TAB]
+    editor = build_document_form(model, NameSuggestionModel(model), RehuDocumentImageOrganizer(model)).make_editor(
+        model
+    )[EDITOR_MAIN_TAB]
     qtbot.addWidget(editor)
 
     assert drop_button_for(editor, "{'users': {'admin': {'rating': 4}}, 'format_version': 2}") is None
@@ -276,7 +281,7 @@ def test_the_viewer_splits_the_strip_and_the_description_off_the_record_fields(
     * verify the description view holds the strip and the Markdown view
     * verify the main view holds neither the strip nor the description
     """
-    grids = build_document_form(model, NameSuggestionModel(model)).make_viewer(model)
+    grids = build_document_form(model, NameSuggestionModel(model), RehuDocumentImageOrganizer(model)).make_viewer(model)
     for grid in grids.values():
         qtbot.addWidget(grid)
 
@@ -300,7 +305,9 @@ def test_the_description_viewer_fills_the_height_its_strip_leaves(qtbot: QtBot, 
     * build the description view over the sample model
     * verify exactly one grid row carries stretch, and that it is the one holding the Markdown view
     """
-    grid_widget = build_document_form(model, NameSuggestionModel(model)).make_viewer(model)[VIEWER_DESCRIPTION_TAB]
+    grid_widget = build_document_form(model, NameSuggestionModel(model), RehuDocumentImageOrganizer(model)).make_viewer(
+        model
+    )[VIEWER_DESCRIPTION_TAB]
     qtbot.addWidget(grid_widget)
     grid = cast(QGridLayout, grid_widget.layout())
 
@@ -326,7 +333,7 @@ def test_the_type_is_a_radio_group_in_the_editor_and_nothing_in_the_viewer(
     * build both surfaces
     * verify the editor holds the type radio group, and the viewer holds no radio group
     """
-    form = build_document_form(model, NameSuggestionModel(model))
+    form = build_document_form(model, NameSuggestionModel(model), RehuDocumentImageOrganizer(model))
     editor = form.make_editor(model)[EDITOR_MAIN_TAB]
     viewer = form.make_viewer(model)[VIEWER_MAIN_TAB]
     qtbot.addWidget(editor)
@@ -434,7 +441,9 @@ def main_editor(qtbot: QtBot, model: RehuDocumentModel) -> QWidget:
     :returns: the Main Editor grid; the caller keeps it referenced for as long as it inspects it, since
         ``qtbot`` tracks it only weakly.
     """
-    editor = build_document_form(model, NameSuggestionModel(model)).make_editor(model)[EDITOR_MAIN_TAB]
+    editor = build_document_form(model, NameSuggestionModel(model), RehuDocumentImageOrganizer(model)).make_editor(
+        model
+    )[EDITOR_MAIN_TAB]
     qtbot.addWidget(editor)
     return editor
 

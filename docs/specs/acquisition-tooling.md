@@ -36,7 +36,9 @@ whose QML drop areas and Scintilla drop override are the shape these follow.
   image file of a multi-file drop in turn. A drop carrying `image/*` data is written from that data. A URL whose own
   path ends in a recognized image extension is downloaded, with the page it came from as referrer where the drop names
   one ([[acquisition-tooling#drop-source-url]]) — a link and an image arrive as the same bare `text/uri-list` URL, so
-  the extension is the only signal that tells them apart. Any other URL is read as a **page**: a site scraper matching
+  the extension is the only signal that tells them apart. Any other URL, and every selection whatever its URL, is read
+  as a **page** — a selection's own `text/html` is that page, as on the main editor, rather than fetched again: a site
+  scraper matching
   its host ([[acquisition-tooling#scraper-registry]]) is run for its `images` alone, its fields and description thrown
   away, and every image it names is downloaded into the slot it assigns — how a resource's screenshots are re-fetched
   from their source page without touching the rest of its record. A page no scraper matches is refused, with a banner
@@ -53,7 +55,9 @@ whose QML drop areas and Scintilla drop override are the shape these follow.
   `<stem>NN.2.<ext>.orig`, `.3.`, and so on — the counter sits before the extension so every backup still ends in
   `.orig`, and the one Discard of [[acquisition-tooling#convert-mechanics]] covers these and a conversion's alike.
   The set holds `<stem>00` to `<stem>99`: an image that would need a slot past `99` is refused, logged as a warning
-  in the document's log, and named in a warning row on the document's banner. A download runs on the scrape job's own
+  in the document's log, and named in a warning row on the document's banner — as is every other acquisition that
+  fails: a download, a page read, a dropped file that will not read, a write refused or failed. Each distinct failure
+  of one drop gets its own row, and the next drop's outcome replaces them. A download runs on the scrape job's own
   pool ([[acquisition-tooling#scrape-job]]), not the app-wide task queue, and its result is written only if the
   document is still open, at the same path, and unlocked. A legacy `.tc` refuses the drop, as it refuses every other
   screenshot edit. The browser's own cache is not reachable from a drop, so an image already on screen is fetched

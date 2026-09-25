@@ -11,6 +11,7 @@ download was in flight simply discards the result, logged under the scope it was
 """
 
 import logging
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Final, cast
 
@@ -23,9 +24,10 @@ from ..scraping.image_download_job import ImageDownloadJob
 from ..scraping.image_pipeline import AcquiredImage, ImageBytes, NotAnImageError, acquire
 from ..scraping.protocols import PageFetcher
 from ..scraping.registry import ScraperRegistry, shared_scraper_registry
-from ..scraping.results import ScrapeResult
-from ..scraping.scrape_job import ScrapeError, ScrapeJob
+from ..scraping.results import Page, ScrapeResult
+from ..scraping.scrape_job import ScrapeJob
 from ..scraping.scraper_executor import ScraperExecutor, shared_scraper_executor
+from ..scraping.url_drop import UrlDrop
 from .rehu_document_model import RehuDocumentModel
 
 LOG: Final = logging.getLogger(__name__)
@@ -36,6 +38,13 @@ BUSY_MESSAGE: Final = "Downloading an image…"
 BUSY_PAGE_MESSAGE: Final = "Reading a page for its images…"
 """What the banner says while a dropped page is being scraped for :meth:`ImageDownloads.submit_page`."""
 
+READ_FAILURE: Final = "Could not acquire a dropped image: {error}"
+LOCAL_WRITE_FAILURE: Final = "Could not write a dropped image to disk: {error}"
+DOWNLOAD_WRITE_FAILURE: Final = "Could not write a downloaded image to disk: {error}"
+"""What an acquisition that fails on this side of the network says -- a dropped file that would not
+read, or bytes in hand that would not write. The same sentence goes to the document's log and to its
+banner, so a row on the banner can be found again in the log, traceback and all."""
+
 
 class ImageDownloads(QObject):  # pylint: disable=too-many-instance-attributes
     """One document's acquired screenshots, however they arrived (#73).
@@ -44,16 +53,22 @@ class ImageDownloads(QObject):  # pylint: disable=too-many-instance-attributes
     writes the result to disk once it lands -- the single entry point for every URL this document ever
     downloads a screenshot from, whether it is a URL dropped directly on the images sub-dock or one of
     the ``ScrapedImage`` entries a scrape result carries (`.ScrapeActions`). :meth:`acquire_local` writes
-    a local file or a drop's own image data the same way, synchronously, since there is no network wait
-    to keep off the GUI thread for either. Both write through the same
+    a drop's local files or its own image data the same way, synchronously, since there is no network
+    wait to keep off the GUI thread for either. Both write through the same
     `~rehuco_agent.fields.image_organizer.ImageOrganizer` and the same discard rules.
 
-    :meth:`submit_page` is the third entry point: a page URL (rather than an image URL) dropped
-    directly on the images sub-dock, scraped the same way `.ScrapeActions` scrapes one, but with its
-    ``fields`` and ``description`` thrown away -- only its ``images`` are handed to :meth:`submit`, one
-    per image. What lets a user re-fetch a resource's screenshots from their source page -- a redesign,
-    a broken link fixed, a higher-resolution asset -- without touching anything else the ``.rehu``
-    carries.
+    :meth:`submit_page` is the third entry point: a page URL (rather than an image URL), or a selection,
+    dropped directly on the images sub-dock, scraped the same way `.ScrapeActions` scrapes one -- a
+    selection's own HTML as the page, a bare URL fetched -- but with its ``fields`` and ``description``
+    thrown away: only its ``images`` are handed to :meth:`submit`, one per image. What lets a user
+    re-fetch a resource's screenshots from their source page -- a redesign, a broken link fixed, a
+    higher-resolution asset -- without touching anything else the ``.rehu`` carries.
+
+    **Every failure is a warning row on the banner**, not only a line in the log: a download that failed,
+    a page no scraper reads, a dropped file that would not read, a write that was refused or failed.
+    Failures are kept per **batch** -- everything one gesture set off: a drop's files, a page's images, a
+    scrape's images -- so a batch that fails several ways shows each way once, and the next batch
+    replaces them (:meth:`__begin_batch`).
 
     :param model: the document these downloads are about.
     :param image_organizer: what writes an acquired image's bytes to disk; ``None`` (a document with no
@@ -103,7 +118,10 @@ class ImageDownloads(QObject):  # pylint: disable=too-many-instance-attributes
         """The page scrapes :meth:`submit_page` is waiting to hear back from, the same shape as
         :attr:`__pending` but for the job kind that only reads a page for its images."""
 
-        self.__last_failure = ""
+        self.__failures: Final[list[str]] = []
+        """What the current batch has failed with so far, in the order it happened -- see
+        :meth:`__begin_batch` for where a batch starts."""
+
         self.__detached = False
         """Set by :meth:`detach`. Checked explicitly for the same reason `.ScrapeActions.__detached`
         is: a job is kept alive by the very signal connection its result would arrive through."""
@@ -112,15 +130,19 @@ class ImageDownloads(QObject):  # pylint: disable=too-many-instance-attributes
 
     @property
     def notice(self) -> list[MessageBannerRow]:
-        """The document's inline strip rows for a download or a page scrape in flight, followed by the
-        last failure, if one stands and nothing is running."""
+        """The document's inline strip rows for a download or a page scrape in flight, then -- once
+        nothing is running -- one warning row per distinct failure of the last batch."""
         rows: list[MessageBannerRow] = []
         if self.__pending_pages:
             rows.append(MessageBannerRow(MessageBannerSeverity.INFO, BUSY_PAGE_MESSAGE))
         if self.__pending:
             rows.append(MessageBannerRow(MessageBannerSeverity.INFO, BUSY_MESSAGE))
-        if not self.__pending and not self.__pending_pages and self.__last_failure:
-            rows.append(MessageBannerRow(MessageBannerSeverity.WARNING, self.__last_failure))
+        if not self.__pending and not self.__pending_pages:
+            # distinct, in the order they happened: a page whose every image hit the same full set
+            # says so once, not once per image
+            rows.extend(
+                MessageBannerRow(MessageBannerSeverity.WARNING, failure) for failure in dict.fromkeys(self.__failures)
+            )
         return rows
 
     def detach(self) -> None:
@@ -148,9 +170,9 @@ class ImageDownloads(QObject):  # pylint: disable=too-many-instance-attributes
         path = self.__model.path
         if path is None:
             return
+        self.__begin_batch()
         job = ImageDownloadJob(url, referrer, slot)
         self.__pending[job] = path  # pylint: disable=unsupported-assignment-operation
-        self.__last_failure = ""
         job.result_ready.connect(lambda result: self.__on_result(job, path, result))
         job.failed.connect(lambda error: self.__on_failed(job, error))
         self.changed.emit()
@@ -158,7 +180,7 @@ class ImageDownloads(QObject):  # pylint: disable=too-many-instance-attributes
             LOG.info("Downloading %s…", url)
             self.__executor.submit(job)
 
-    def submit_page(self, url: str) -> None:
+    def submit_page(self, drop: UrlDrop) -> None:
         """Scrape one page for its images, under this document's log scope.
 
         Re-fetches a resource's screenshots from the page they came from, without touching anything
@@ -167,51 +189,97 @@ class ImageDownloads(QObject):  # pylint: disable=too-many-instance-attributes
         still assigns the same way overwrites (backing the old file up first, never losing it outright)
         while every other field stays exactly as it was.
 
-        :param url: the page's URL, not an image's -- a URL `.ScrapeActions.submit` would recognize.
+        :param drop: the parsed drop (`UrlDrop.parse`): a page's URL, not an image's, or a selection,
+            whose own ``fragment`` is scraped as the page rather than fetched again -- exactly what
+            `.ScrapeActions.submit` does with the same drop on the Main Editor.
         """
         path = self.__model.path
         if path is None:
             return
-        job = ScrapeJob(url, self.__registry, fetcher=self.__fetcher)
+        self.__begin_batch()
+        page = Page(url=drop.url, final_url=drop.url, html=drop.fragment) if drop.fragment is not None else None
+        job = ScrapeJob(drop.url, self.__registry, page=page, fetcher=self.__fetcher)
         self.__pending_pages[job] = path  # pylint: disable=unsupported-assignment-operation
-        self.__last_failure = ""
         job.result_ready.connect(lambda result: self.__on_page_result(job, path, result))
         job.failed.connect(lambda error: self.__on_page_failed(job, error))
         self.changed.emit()
         with LogScope.open(path):
-            LOG.info("Reading %s for its images…", url)
+            LOG.info("Reading %s for its images…", drop.url)
             self.__executor.submit(job)
 
-    def acquire_local(self, source: Path | ImageBytes) -> None:
-        """Write a local file or a drop's own image data straight to disk, no download involved.
+    def acquire_local(self, sources: Sequence[Path | ImageBytes]) -> None:
+        """Write a drop's local files, or its own image data, straight to disk -- no download involved.
 
         Synchronous, unlike :meth:`submit`: there is no network wait to keep off the GUI thread, only a
-        read and a write. Refuses the same way :meth:`__on_result` discards a download's result -- no
-        path, no organizer, or locked -- and reports the same way it does, under the same log scope.
+        read and a write per source. Takes the whole drop at once rather than one source per call, so a
+        multi-file drop is one batch -- each file that fails keeps its own banner row -- and the resource
+        is rescanned once, after the last write, rather than once per file. Refuses the same way
+        :meth:`__on_result` discards a download's result -- no path, no organizer, or locked -- and
+        reports the same way it does, under the same log scope.
 
-        :param source: the local file or the drop's own image bytes to acquire.
+        :param sources: the drop's local files, or its own image bytes, in the order to acquire them.
         """
         path = self.__model.path
-        if path is None or self.__model.locked or self.__image_organizer is None:
+        organizer = self.__image_organizer
+        if path is None or self.__model.locked or organizer is None:
             return
+        self.__begin_batch()
+        written = False
         with LogScope.open(path):
-            try:
-                acquired = acquire(source)
-            except (OSError, NotAnImageError) as error:
-                LOG.warning("Could not acquire a dropped image: %s", error)
-                return
-            try:
-                self.__image_organizer.acquire(acquired.data, acquired.extension)
-            except OSError:
-                LOG.exception("Could not write a dropped image to disk.")
-                return
-            except ValueError as error:
-                LOG.warning("Could not write a dropped image to disk: %s", error)
-                return
-        self.__model.rescan_images()
-        self.acquired.emit()
+            for source in sources:
+                written = self.__acquire_one(organizer, source) or written
+        if written:
+            self.__model.rescan_images()
+            self.acquired.emit()
+        self.changed.emit()
 
     # endregion
+
+    def __begin_batch(self) -> None:
+        """Forget the last batch's failures, when nothing is still running.
+
+        A submission made while anything is still in flight joins the batch already running instead:
+        a page's images are submitted one after another, and the second must not erase what the first
+        has already failed with.
+        """
+        if not self.__pending and not self.__pending_pages:
+            self.__failures.clear()
+
+    def __fail(self, message: str, *, with_traceback: bool = False) -> None:
+        """Log ``message`` and keep it for the banner (:attr:`notice`).
+
+        :param message: what failed -- the same sentence in the log and on the banner.
+        :param with_traceback: log the exception being handled along with it: an unexpected ``OSError``
+            from a write, rather than a refusal the message already explains in full.
+        """
+        if with_traceback:
+            LOG.exception("%s", message)
+        else:
+            LOG.warning("%s", message)
+        self.__failures.append(message)
+
+    def __acquire_one(self, organizer: ImageOrganizer, source: Path | ImageBytes) -> bool:
+        """Read one of :meth:`acquire_local`'s sources and write it, recording a failure rather than
+        raising, so the rest of the drop still gets its turn.
+
+        :param organizer: what writes the bytes.
+        :param source: the local file or the drop's own image bytes.
+        :returns: whether it was written.
+        """
+        try:
+            acquired = acquire(source)
+        except (OSError, NotAnImageError) as error:
+            self.__fail(READ_FAILURE.format(error=error))
+            return False
+        try:
+            organizer.acquire(acquired.data, acquired.extension)
+        except OSError as error:
+            self.__fail(LOCAL_WRITE_FAILURE.format(error=error), with_traceback=True)
+            return False
+        except ValueError as error:
+            self.__fail(LOCAL_WRITE_FAILURE.format(error=error))
+            return False
+        return True
 
     def __on_result(self, job: ImageDownloadJob, submitted_path: Path, result: object) -> None:
         """Write a finished download's bytes to disk, or discard them, on the GUI thread.
@@ -239,17 +307,22 @@ class ImageDownloads(QObject):  # pylint: disable=too-many-instance-attributes
             acquired = cast(AcquiredImage, result)
             try:
                 self.__image_organizer.acquire(acquired.data, acquired.extension, job.slot)
-            except OSError:
-                LOG.exception("Could not write a downloaded image to disk.")
+            except OSError as error:
+                self.__fail(DOWNLOAD_WRITE_FAILURE.format(error=error), with_traceback=True)
+                self.changed.emit()
                 return
             except ValueError as error:
-                LOG.warning("Could not write a downloaded image to disk: %s", error)
+                self.__fail(DOWNLOAD_WRITE_FAILURE.format(error=error))
+                self.changed.emit()
                 return
             self.__model.rescan_images()
         self.acquired.emit()
 
     def __on_failed(self, job: ImageDownloadJob, error: object) -> None:
         """Record a download's failure for the banner, on the GUI thread.
+
+        Not logged here: `~rehuco_agent.scraping.image_download_job.ImageDownloadJob.run` already logged
+        it, on the worker, under the scope the download was submitted in.
 
         :param job: the job that just failed, dropped from :attr:`__pending` either way.
         :param error: the exception `~rehuco_agent.scraping.image_download_job.ImageDownloadJob.run`
@@ -258,7 +331,7 @@ class ImageDownloads(QObject):  # pylint: disable=too-many-instance-attributes
         self.__pending.pop(job, None)
         if self.__detached:
             return
-        self.__last_failure = str(error)
+        self.__failures.append(str(error))
         self.changed.emit()
 
     def __on_page_result(self, job: ScrapeJob, submitted_path: Path, result: object) -> None:
@@ -298,6 +371,5 @@ class ImageDownloads(QObject):  # pylint: disable=too-many-instance-attributes
         self.__pending_pages.pop(job, None)
         if self.__detached:
             return
-        # not a runtime check -- see __on_page_result's matching cast
-        self.__last_failure = str(cast(ScrapeError, error))
+        self.__failures.append(str(error))
         self.changed.emit()

@@ -83,28 +83,16 @@ def acquire(source: Path | ImageBytes | str, referrer: str | None = None) -> Acq
         if extension is None:
             raise NotAnImageError(f"{source.mime_type} is not a recognized image format")
         return AcquiredImage(data=source.data, extension=extension)
-    return _download(source, referrer)
-
-
-def _download(url: str, referrer: str | None) -> AcquiredImage:
-    """Fetch ``url`` over plain HTTP and read its bytes and extension.
-
-    :param url: the address to fetch.
-    :param referrer: the page to send as ``Referer``, or ``None`` to send none.
-    :returns: the fetched bytes and extension.
-    :raises requests.RequestException: the fetch failed.
-    :raises NotAnImageError: the response was not recognizable as an image.
-    """
     headers = {"User-Agent": USER_AGENT}
     if referrer is not None:
         headers["Referer"] = referrer
-    response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
+    response = requests.get(source, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
     response.raise_for_status()
     content_type = response.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
     extension = MIME_EXTENSIONS.get(content_type)
     if extension is None:
-        url_suffix = Path(url.split("?", 1)[0].split("#", 1)[0]).suffix.lower()
+        url_suffix = Path(source.split("?", 1)[0].split("#", 1)[0]).suffix.lower()
         if url_suffix not in IMAGE_EXTENSIONS:
-            raise NotAnImageError(f"{url} did not answer an image ({content_type or 'no content type'})")
+            raise NotAnImageError(f"{source} did not answer an image ({content_type or 'no content type'})")
         extension = url_suffix
     return AcquiredImage(data=response.content, extension=extension)

@@ -12,6 +12,7 @@ from rehuco_agent.documents.document_fields import (
     build_document_form,
 )
 from rehuco_agent.documents.name_suggestion_model import NameSuggestionModel
+from rehuco_agent.documents.rehu_document_image_organizer import RehuDocumentImageOrganizer
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields.fields_form import LABEL_COLUMN
 from rehuco_agent.fields.widgets.learning_paths_table_model import LearningPathsTableModel
@@ -55,7 +56,7 @@ def test_build_document_form_leads_with_type_then_location_then_the_record_field
     * verify the main editor tab leads with ``Type`` then ``Location`` then the configured rows in order
     * verify the description lands on its own editor tab
     """
-    grids = build_document_form(model, NameSuggestionModel(model)).make_editor(model)
+    grids = build_document_form(model, NameSuggestionModel(model), RehuDocumentImageOrganizer(model)).make_editor(model)
     main = grids[EDITOR_MAIN_TAB]
     description = grids[EDITOR_DESCRIPTION_TAB]
     qtbot.addWidget(main)
@@ -112,7 +113,9 @@ def test_build_document_form_puts_the_record_list_rows_where_tc4_had_them(qtbot:
             }
         )
     )
-    viewer = build_document_form(model, NameSuggestionModel(model)).make_viewer(model)[VIEWER_MAIN_TAB]
+    viewer = build_document_form(model, NameSuggestionModel(model), RehuDocumentImageOrganizer(model)).make_viewer(
+        model
+    )[VIEWER_MAIN_TAB]
     qtbot.addWidget(viewer)
 
     labels = form_labels(viewer)
@@ -133,7 +136,9 @@ def test_build_document_form_trails_unknown_fields_after_the_record_fields(qtbot
       (``Learning Paths``)
     """
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial", "tutorial": {"mystery": 1}}))
-    main = build_document_form(model, NameSuggestionModel(model)).make_editor(model)[EDITOR_MAIN_TAB]
+    main = build_document_form(model, NameSuggestionModel(model), RehuDocumentImageOrganizer(model)).make_editor(model)[
+        EDITOR_MAIN_TAB
+    ]
     qtbot.addWidget(main)
 
     labels = form_labels(main)
@@ -171,7 +176,9 @@ def test_build_document_form_hands_the_learning_paths_editor_the_document_and_se
             username="curator",
         )
     )
-    main = build_document_form(model, NameSuggestionModel(model)).make_editor(model)[EDITOR_MAIN_TAB]
+    main = build_document_form(model, NameSuggestionModel(model), RehuDocumentImageOrganizer(model)).make_editor(model)[
+        EDITOR_MAIN_TAB
+    ]
     qtbot.addWidget(main)
     editor = main.findChild(LearningPathsEditor)
     assert editor is not None
