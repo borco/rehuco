@@ -27,19 +27,20 @@ from functools import lru_cache
 from typing import Final
 
 from borco_pyside.core import SimpleProperty
-from PySide6.QtCore import QObject, QSettings
+from PySide6.QtCore import QObject, QSettings, Signal
 from rehuco_core import SCREENSHOT_NAME_PATTERNS, ScreenshotNamePattern, ScreenshotNamePatterns
 
 from .persistent_settings import persistent_settings, read_stored_strings
 
 GROUP: Final = "screenshot_patterns"
 PATTERNS_KEY: Final = "patterns"
+SAMPLES_KEY: Final = "samples"
+"""The try-it table's sample filenames -- the key #287 first wrote them under, so a list typed back then
+comes back rather than being orphaned."""
 
 DEFAULT_SAMPLES: Final = ("cover.jpg", "sample-03.jpg", "image-07.jpg")
 """What the settings page's try-it table starts out holding -- real matches of the shipped patterns, so
-a fresh page shows the convention working rather than an empty table. Scratch, not a setting: the page
-seeds the table with these and never saves what is typed there (#322). A ``samples`` key an earlier
-build (#287) wrote beside the patterns is simply never read again."""
+a fresh page shows the convention working rather than an empty table."""
 
 
 def pattern_is_valid(pattern: str) -> bool:
@@ -89,13 +90,29 @@ def normalize_screenshot_name_patterns(patterns: object) -> tuple[str, ...]:
     return tuple(normalized) or tuple(pattern.pattern for pattern in SCREENSHOT_NAME_PATTERNS)
 
 
+def normalize_screenshot_samples(samples: object) -> tuple[str, ...]:
+    """Coerce a stored or edited try-it sample list into its **stored** shape.
+
+    Blank entries go, and the order is kept; a list left with nothing falls back to
+    :data:`DEFAULT_SAMPLES`, the same policy :func:`normalize_screenshot_name_patterns` applies. Dropping
+    blanks is what lets a freshly inserted row sit open for typing under "Apply changes as they're made":
+    as long as it is blank it is not a change, so no commit reloads the table out from under its editor
+    (#53's hazard, which the patterns avoid the same way).
+
+    :param samples: the stored samples, or the samples as edited.
+    :returns: the non-blank samples in order, or :data:`DEFAULT_SAMPLES` when there are none.
+    """
+    return tuple(sample for sample in read_stored_strings(samples) if sample.strip()) or DEFAULT_SAMPLES
+
+
 class ScreenshotPatternsSettings(QObject):
     """The naming patterns every legacy screenshot scan is handed (#53, #287).
 
-    One stored field, raw as the page left it: the patterns. The page stages against
+    Two stored fields. **Patterns**, raw as the page left it: the page stages against
     :attr:`stored_patterns`; every scan consumes :attr:`screenshot_name_patterns`, the effective set the
-    patterns resolve to. The page's try-it samples are deliberately **not** here: they preview the
-    patterns and are not a setting, so they are never saved (#322).
+    patterns resolve to. **Samples**, the page's try-it filenames: staged, dirtied and applied like the
+    patterns, so the table reopens on the names last applied. Nothing but the page's try-it table reads
+    them.
 
     :param parent: optional Qt parent.
     """
@@ -103,6 +120,12 @@ class ScreenshotPatternsSettings(QObject):
     patterns = SimpleProperty[tuple[str, ...]](())
     """The patterns as stored -- empty on a fresh install, where the effective set is the shipped default
     one rather than nothing."""
+
+    samples_changed = Signal(object)
+    """Fires whenever :attr:`samples` changes -- a tuple value, hence ``Signal(object)``."""
+
+    samples = SimpleProperty[tuple[str, ...]](DEFAULT_SAMPLES)
+    """The try-it sample filenames as stored -- :data:`DEFAULT_SAMPLES` until any is applied."""
 
     @property
     def stored_patterns(self) -> tuple[str, ...]:
@@ -118,25 +141,28 @@ class ScreenshotPatternsSettings(QObject):
         return tuple(ScreenshotNamePattern(pattern) for pattern in usable) or SCREENSHOT_NAME_PATTERNS
 
     def load(self, settings: QSettings) -> None:
-        """Replace the stored patterns with what's in persistent storage.
+        """Replace the stored patterns and try-it samples with what's in persistent storage.
 
-        The value is normalized on the way in, so a never-saved, empty, or unreadable one comes back as
-        the shipped defaults rather than as an empty set that a later save would then persist
-        (:func:`normalize_screenshot_name_patterns`).
+        Both are normalized on the way in, so a never-saved, empty, or unreadable one comes back as the
+        shipped defaults rather than as an empty list that a later save would then persist
+        (:func:`normalize_screenshot_name_patterns`, :func:`normalize_screenshot_samples`).
 
         :param settings: the ``QSettings`` to read from.
         """
         settings.beginGroup(GROUP)
         self.patterns = normalize_screenshot_name_patterns(settings.value(PATTERNS_KEY))
+        self.samples = normalize_screenshot_samples(settings.value(SAMPLES_KEY))
         settings.endGroup()
 
     def save(self, settings: QSettings) -> None:
-        """Save the patterns to persistent storage, as a list the ini backend can round-trip.
+        """Save the patterns and try-it samples to persistent storage, as lists the ini backend can
+        round-trip.
 
         :param settings: the ``QSettings`` to write to.
         """
         settings.beginGroup(GROUP)
         settings.setValue(PATTERNS_KEY, list(self.patterns))
+        settings.setValue(SAMPLES_KEY, list(self.samples))
         settings.endGroup()
 
 

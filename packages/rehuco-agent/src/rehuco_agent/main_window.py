@@ -75,6 +75,7 @@ from .settings.ui.files_page import FilesPage
 from .settings.ui.identity_page import IdentityPage
 from .settings.ui.images_display_page import ImagesDisplayPage
 from .settings.ui.images_files_page import ImagesFilesPage
+from .settings.ui.location_replacements_page import LocationReplacementsPage
 from .settings.ui.location_templates_page import LocationTemplatesPage
 from .settings.ui.logs_page import LogsPage
 from .settings.ui.scrapers_page import ScrapersPage
@@ -686,6 +687,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         no further edit here -- the one place in this method where "one line per page" would mean
         editing this file for every future resource type.
 
+        **"Location Replacements" sorts just ahead of "Locations"** (a space precedes ``s`` in ASCII),
+        which is also right by subject: `LocationReplacementsPage` is one global rule table, not a page
+        per resource type, so it reads as its own row beside the group rather than inside it (#350).
+
         **The titles are here, not on the pages** (#277). A page used to name itself through a
         ``title`` property, which put the tree's labels in a dozen classes that each knew only
         themselves -- so no one place could be read, or sorted, to see the tree. `add_page` takes the
@@ -740,6 +745,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__settings_dialog.add_page("Images", "Display", ImagesDisplayPage())
         self.__settings_dialog.add_page("Images", "Sidecar Extensions", ImagesFilesPage())
         self.__settings_dialog.add_page("Images", "Sidecar Names", ScreenshotPatternsPage())
+        self.__settings_dialog.add_page("Location Replacements", LocationReplacementsPage())
         # one page per *installed* plugin main key, not a fixed enumeration (#322): a plugin declared
         # later needs no edit here, unlike every other group above. The group holds pages, so each
         # title is plural -- `type_label` is singular everywhere else it's used (the type radio group,

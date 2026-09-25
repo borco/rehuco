@@ -35,6 +35,7 @@ from rehuco_agent.settings import (
     excluded_files_settings,
     identity_settings,
     image_viewer_settings,
+    location_replacements_settings,
     location_templates_settings,
     logs_settings,
     markdown_rendering_settings,
@@ -51,6 +52,7 @@ from rehuco_agent.settings.description_editor_settings import shared_description
 from rehuco_agent.settings.excluded_files_settings import shared_excluded_files_settings
 from rehuco_agent.settings.identity_settings import shared_identity_settings
 from rehuco_agent.settings.image_viewer_settings import shared_image_viewer_settings
+from rehuco_agent.settings.location_replacements_settings import shared_location_replacements_settings
 from rehuco_agent.settings.location_templates_settings import shared_location_templates_settings
 from rehuco_agent.settings.logs_settings import shared_logs_settings
 from rehuco_agent.settings.markdown_rendering_settings import shared_markdown_rendering_settings
@@ -58,7 +60,14 @@ from rehuco_agent.settings.reference_images_settings import shared_reference_ima
 from rehuco_agent.settings.scrapers_settings import shared_scrapers_settings
 from rehuco_agent.settings.screenshot_patterns_settings import shared_screenshot_patterns_settings
 from rehuco_agent.settings.tray_settings import shared_tray_settings
-from rehuco_agent.settings.ui import checksums_page, settings_dialog, tasks_page, tray_block
+from rehuco_agent.settings.ui import (
+    checksums_page,
+    location_templates_page,
+    screenshot_patterns_page,
+    settings_dialog,
+    tasks_page,
+    tray_block,
+)
 from rehuco_agent.settings.videos_settings import shared_videos_settings
 from rehuco_core import DEFAULT_DELETER_PROVIDER
 
@@ -369,11 +378,17 @@ def isolate_shared_screenshot_patterns_settings(mocker: MockerFixture) -> Iterat
     from the developer's real on-disk settings for the rest of the session -- and decide, from that
     file, which images every later test's conversion and content walk treat as legacy screenshots.
 
+    `ScreenshotPatternsPage` is patched too, with the same stand-in: it saves through its own import of
+    ``persistent_settings``, so a test committing it -- directly, or through ``MainWindow``'s settings
+    dialog under "Apply changes as they're made" -- would otherwise reach the developer's real file.
+
     Tests that specifically exercise the screenshot-pattern settings patch ``persistent_settings``
     themselves.
     """
     shared_screenshot_patterns_settings.cache_clear()
-    mocker.patch.object(screenshot_patterns_settings, "persistent_settings", return_value=FakeSettings())
+    fake = FakeSettings()
+    mocker.patch.object(screenshot_patterns_settings, "persistent_settings", return_value=fake)
+    mocker.patch.object(screenshot_patterns_page, "persistent_settings", return_value=fake)
     yield
     shared_screenshot_patterns_settings.cache_clear()
 
@@ -387,13 +402,36 @@ def isolate_shared_location_templates_settings(mocker: MockerFixture) -> Iterato
     pin an instance loaded from the developer's real on-disk settings for the rest of the session -- and
     decide, from that file, which rename suggestions every later test's `PathField` offers.
 
+    `LocationTemplatesPage` is patched too, with the same stand-in, for the reason
+    :func:`isolate_shared_screenshot_patterns_settings` gives.
+
     Tests that specifically exercise the location-templates settings patch ``persistent_settings``
     themselves.
     """
     shared_location_templates_settings.cache_clear()
-    mocker.patch.object(location_templates_settings, "persistent_settings", return_value=FakeSettings())
+    fake = FakeSettings()
+    mocker.patch.object(location_templates_settings, "persistent_settings", return_value=fake)
+    mocker.patch.object(location_templates_page, "persistent_settings", return_value=fake)
     yield
     shared_location_templates_settings.cache_clear()
+
+
+@fixture(autouse=True)
+def isolate_shared_location_replacements_settings(mocker: MockerFixture) -> Iterator[None]:
+    """Isolate every test from the process-wide `LocationReplacementsSettings` singleton (#350).
+
+    Same rationale as :func:`isolate_shared_location_templates_settings`: whichever test first builds a
+    `NameSuggestionModel` or a `LocationTemplatesPage`/`LocationReplacementsPage` (directly, or via
+    ``MainWindow``) would otherwise pin an instance loaded from the developer's real on-disk settings for
+    the rest of the session.
+
+    Tests that specifically exercise the location-replacements settings patch ``persistent_settings``
+    themselves.
+    """
+    shared_location_replacements_settings.cache_clear()
+    mocker.patch.object(location_replacements_settings, "persistent_settings", return_value=FakeSettings())
+    yield
+    shared_location_replacements_settings.cache_clear()
 
 
 @fixture(autouse=True)

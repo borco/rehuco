@@ -376,12 +376,11 @@ where three copies would drift into a real defect rather than a cosmetic one.
   Register push button holds nothing, #342 — `QSpinBox`, and any `ItemListEditor`,
   read as every cell's `EditRole` value — so a derived, read-only column such as the try-it table's slot
   never paints its frame when a pattern above it changes, #287) at
-  construction, and `dirty_frames()` compares the live values against that snapshot. A frame, or a
-  single control, carrying the `scratch` dynamic property (`SettingsFrameFilter.SCRATCH_PROPERTY`, set
-  in the `.ui`) never counts: a **try-it** input previews a setting and is not one, so it never paints
-  its frame — the same reason it never stages a change and is never saved (#322). Only a value that
-  has an effect on the app earns a highlight or an Apply. (A scratch *frame* is still snapshotted, so
-  its own Reset/Defaults buttons have something to put back, #342; a scratch *control* is not.)
+  construction, and `dirty_frames()` compares the live values against that snapshot. A **Try it**
+  frame is no exception: its sample (the Locations record, the Sidecar Names filenames) is a setting
+  like the patterns it previews — staged in its widgets, dirtying its frame and the page, committed by
+  Apply or "Apply changes as they're made", put back by Reset and Defaults. Only the preview beside it
+  never waits: it expands the patterns with the sample as typed, applied or not.
   A control whose value the built-in types cannot express says so itself through the `ValueControl`
   protocol (`settings_value()`/`set_settings_value()`), and is read and written like any other —
   `ColorSwatchButton` (`settings/ui/color_swatch_button.py`), the lightbox backdrop swatch, is the
@@ -432,10 +431,7 @@ the filter `capture_defaults()`, then calls `drop_changes()` and `resync_baselin
 never left showing anything but what it arrived with, and `frames_at_defaults()` mirrors `dirty_frames()`
 against the other reference point. Enablement rides the same poll: Apply and Reset while the frame
 differs from its saved values, Defaults while it differs from its defaults; every button starts disabled,
-since the poll refreshes only the pages on screen. A `scratch` try-it frame gets Reset and Defaults but
-no Apply — its sample was never going to be saved, and its "saved" reference is simply what it showed at
-the last commit, which `resync_baseline()` re-adopts — while typing into it never tints it, dirties the
-page or lights the toolbar's Defaults. A frame with no value widget (`has_values()` — Windows
+since the poll refreshes only the pages on screen. A frame with no value widget (`has_values()` — Windows
 Integration's Register/Unregister, push buttons that hold nothing) gets no row; nor does one without a
 `<frame>_label` to build the row around (the Scrapers table frame). The row itself
 (`SettingsFrameHeader`, `settings/ui/settings_frame_header.py`) is **injected by the dialog, not declared
@@ -514,10 +510,7 @@ now folded into a group (`"Images"`) finds the group row it became.
   object — `VideosSettings()`, `LogsSettings()` — which holds exactly the field defaults, dataclass or
   `SimpleProperty` `QObject` alike. Share the widget-filling body with `drop_changes()` (a private
   `__show(settings)` taking either object), so the two can never disagree about which widget shows
-  which field. A status label or registry table reflects saved state and is left alone. A try-it
-  sample (`scratch`) is put back to its shipped value too — not because it is a setting (it is never
-  saved, and `drop_changes()` leaves it as typed) but so its frame's own Defaults button has a factory
-  state to return to.
+  which field. A status label or registry table reflects saved state and is left alone.
 - Keep every staged value **in a widget**. A value a page holds in an attribute beside its widget is
   invisible to the frame snapshot: the frame never tints, its buttons never enable, and the change
   still rides along with another frame's Apply. Where none of the built-in control types fits, give the

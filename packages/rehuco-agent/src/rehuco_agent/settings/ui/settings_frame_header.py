@@ -8,8 +8,6 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QToolButton, QWidget
 
-from .settings_frame_filter import SCRATCH_PROPERTY
-
 APPLY_ICON_RESOURCE: Final = ":/icons/settings_apply.svg"
 """The per-frame Apply button's glyph: commit this group's edits, and only this group's."""
 
@@ -59,11 +57,10 @@ class SettingsFrameHeader(QWidget):
     same thing Defaults now says from the title row -- so the dialog hides the editor's copy rather
     than leave two buttons inviting the question of how they differ.
 
-    The buttons are **not settings**: each carries `SettingsFrameFilter.SCRATCH_PROPERTY`, so the
-    frame's dirty snapshot never counts them (a ``QToolButton`` is a ``QAbstractButton``, which the
-    snapshot otherwise reads), and `ActionButtonColumn.NOT_A_CAPTION_PROPERTY`, so the filter's
-    searchable text never includes them. They are the same two dynamic properties the try-it inputs
-    (#322) and the list editors' shared action buttons (#302) already wear for the same two reasons.
+    The buttons are **not settings**: none is checkable, so the frame's dirty snapshot -- which reads a
+    ``QAbstractButton`` only when it holds a checked state -- never counts them, and each carries
+    `ActionButtonColumn.NOT_A_CAPTION_PROPERTY`, so the filter's searchable text never includes them,
+    the same property the list editors' shared action buttons (#302) wear for the same reason.
 
     Enablement is the dialog's to drive through :meth:`set_state` on its dirty poll: Apply and Reset
     while the frame differs from its saved values, Defaults while it differs from its factory values.
@@ -74,10 +71,9 @@ class SettingsFrameHeader(QWidget):
     :param label: the frame's existing ``<frame>_label``. This row is parented to the label's own
         parent, takes the label's place in that parent's layout (when it sits in one), and then
         reparents the label into itself.
-    :param with_apply: whether the row offers Apply.
     """
 
-    def __init__(self, label: QLabel, *, with_apply: bool = True) -> None:
+    def __init__(self, label: QLabel) -> None:
         frame = label.parentWidget()
         super().__init__(frame)
         self.__apply_action: Final = QAction("Apply", self)
@@ -97,18 +93,14 @@ class SettingsFrameHeader(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(label)
         layout.addStretch()
-        if with_apply:
-            layout.addWidget(self.__tool_button(self.__apply_action))
+        layout.addWidget(self.__tool_button(self.__apply_action))
         layout.addWidget(self.__tool_button(self.__reset_action))
         layout.addWidget(self.__tool_button(self.__defaults_action))
         self.set_state(dirty=False, at_defaults=True)
 
     @property
     def apply_action(self) -> QAction:
-        """The Apply button's action -- ``triggered`` is what the dialog wires to committing this frame.
-
-        Present whether or not the row shows a button for it, so the dialog wires every row alike; a
-        row built without Apply simply has nothing that triggers it."""
+        """The Apply button's action -- ``triggered`` is what the dialog wires to committing this frame."""
         return self.__apply_action
 
     @property
@@ -132,7 +124,7 @@ class SettingsFrameHeader(QWidget):
         self.__defaults_action.setEnabled(not at_defaults)
 
     def __tool_button(self, action: QAction) -> QToolButton:
-        """A flat, icon-only button driven by ``action``, flagged as neither a setting nor a caption.
+        """A flat, icon-only button driven by ``action``, flagged as not a caption.
 
         :param action: the action the button shows and triggers.
         :returns: the button, parented here.
@@ -141,6 +133,5 @@ class SettingsFrameHeader(QWidget):
         button.setDefaultAction(action)
         button.setAutoRaise(True)
         button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
-        button.setProperty(SCRATCH_PROPERTY, True)
         button.setProperty(ActionButtonColumn.NOT_A_CAPTION_PROPERTY, True)
         return button

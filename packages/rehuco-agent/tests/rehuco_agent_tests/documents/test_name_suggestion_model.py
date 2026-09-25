@@ -5,6 +5,7 @@ RehuDocumentModel (#46).
 from pytest import fixture, mark, param
 from rehuco_agent.documents.name_suggestion_model import NameSuggestionModel
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
+from rehuco_agent.settings.location_replacements_settings import ReplacementRule, shared_location_replacements_settings
 from rehuco_agent.settings.location_templates_settings import (
     NAME_SUGGESTION_PATTERNS,
     shared_location_templates_settings,
@@ -287,6 +288,40 @@ def test_changed_fires_when_the_location_templates_settings_apply(name_suggestio
 
     settings = shared_location_templates_settings()
     settings.patterns = {**settings.patterns, "tutorial": ("{title}",)}
+
+    assert fired == [True]
+
+
+def test_suggestions_run_through_the_saved_replacement_rules(model: RehuDocumentModel) -> None:
+    """A rendered name goes through `LocationReplacementsSettings.rules` before it reaches a `PathField`
+    (#350).
+
+    **Test steps:**
+
+    * customize the tutorial pattern list to interpolate a colon-space
+    * set the shared replacement rules to the shipped seed
+    * verify the suggestion carries the replaced separator, not the original
+    """
+    settings = shared_location_templates_settings()
+    settings.patterns = {**settings.patterns, "tutorial": ("{publisher}: {title}",)}
+    shared_location_replacements_settings().rules = (ReplacementRule(": ", " - "),)
+
+    assert NameSuggestionModel(model).suggestions() == ["Bar - Foo"]
+
+
+def test_changed_fires_when_the_location_replacements_settings_apply(name_suggestions: NameSuggestionModel) -> None:
+    """Applying a Location Replacements settings page re-emits ``changed`` without a reopen (#350).
+
+    **Test steps:**
+
+    * connect to ``changed``
+    * reassign the shared `LocationReplacementsSettings.rules`, as a save would
+    * verify the signal fired
+    """
+    fired: list[bool] = []
+    name_suggestions.changed.connect(lambda: fired.append(True))
+
+    shared_location_replacements_settings().rules = (ReplacementRule(":", "-"),)
 
     assert fired == [True]
 

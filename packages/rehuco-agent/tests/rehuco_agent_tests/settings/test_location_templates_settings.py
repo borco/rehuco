@@ -14,10 +14,12 @@ from pytest_mock import MockerFixture
 from rehuco_agent.settings import location_templates_settings
 from rehuco_agent.settings.location_templates_settings import (
     BLANK_PATTERN_PROBLEM,
+    DEFAULT_SAMPLE,
     EMPTY_GROUP_PROBLEM,
     KNOWN_PLACEHOLDERS,
     MALFORMED_PATTERN_PROBLEM,
     NAME_SUGGESTION_PATTERNS,
+    SAMPLE_FIELDS,
     STRAY_GROUP_MARKER_PROBLEM,
     UNKNOWN_PLACEHOLDER_PROBLEM,
     LocationTemplatesSettings,
@@ -548,6 +550,74 @@ def test_saving_drops_a_type_no_longer_present(settings: FakeSettings) -> None:
     both.save(settings)  # type: ignore[arg-type]
 
     assert settings.keys() == ["location_templates/reference_images/patterns"]
+
+
+def test_samples_round_trip_through_their_own_group(settings: FakeSettings) -> None:
+    """Each type's Try-it record is stored field by field under ``location_try_it/<type>``, apart from
+    the patterns -- whose load reads every sub-group of theirs as a customized type.
+
+    **Test steps:**
+
+    * save one type's sample record (and no patterns), a comma-holding authors field included
+    * verify it landed in its own group and nothing appeared under the patterns group
+    * load a fresh object and verify the record came back, and no type reads as customized
+    """
+    saved = LocationTemplatesSettings()
+    sample = ("Title", "Publisher", "Jane Doe, John Roe", "2024", "12")
+    samples: dict[str, tuple[str, ...]] = {"reference_images": sample}
+    saved.samples = samples
+    saved.save(settings)  # type: ignore[arg-type]
+
+    assert settings.keys() == [f"location_try_it/reference_images/{field}" for field in sorted(SAMPLE_FIELDS)]
+
+    loaded = LocationTemplatesSettings()
+    loaded.load(settings)  # type: ignore[arg-type]
+
+    assert loaded.sample_for("reference_images") == sample
+    assert not loaded.patterns
+
+
+def test_a_type_with_no_stored_sample_shows_the_shipped_one() -> None:
+    """A type never applied reads as :data:`DEFAULT_SAMPLE`."""
+    assert LocationTemplatesSettings().sample_for("tutorial") == DEFAULT_SAMPLE
+
+
+def test_saving_writes_patterns_and_samples_together(settings: FakeSettings) -> None:
+    """One ``save``, one Apply: the patterns and the sample record go to storage together.
+
+    **Test steps:**
+
+    * save an object holding a pattern list and a sample record for one type
+    * verify both groups were written
+    """
+    saved = LocationTemplatesSettings()
+    saved.patterns = {"tutorial": ("{title}",)}
+    saved.samples = {"tutorial": DEFAULT_SAMPLE}
+    saved.save(settings)  # type: ignore[arg-type]
+
+    assert settings.keys() == [
+        "location_templates/tutorial/patterns",
+        *(f"location_try_it/tutorial/{field}" for field in sorted(SAMPLE_FIELDS)),
+    ]
+
+
+def test_saving_drops_a_sample_no_longer_present(settings: FakeSettings) -> None:
+    """A type popped from :attr:`~LocationTemplatesSettings.samples` leaves storage on the next save,
+    the same pruning the patterns get.
+
+    **Test steps:**
+
+    * save samples for two types, then drop one and save again
+    * verify only the remaining type's sample group is left
+    """
+    both = LocationTemplatesSettings()
+    both.samples = {"tutorial": DEFAULT_SAMPLE, "reference_images": DEFAULT_SAMPLE}
+    both.save(settings)  # type: ignore[arg-type]
+
+    both.samples = {"reference_images": DEFAULT_SAMPLE}
+    both.save(settings)  # type: ignore[arg-type]
+
+    assert settings.keys() == [f"location_try_it/reference_images/{field}" for field in sorted(SAMPLE_FIELDS)]
 
 
 # endregion

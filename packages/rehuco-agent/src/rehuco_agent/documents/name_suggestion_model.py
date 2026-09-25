@@ -9,6 +9,7 @@ from borco_pyside.core import SimpleProperty
 from PySide6.QtCore import QObject, Signal
 from rehuco_core import author_name
 
+from ..settings.location_replacements_settings import apply_location_replacements, shared_location_replacements_settings
 from ..settings.location_templates_settings import (
     known_placeholders_for,
     render_location_pattern,
@@ -29,10 +30,11 @@ class NameSuggestionModel(QObject):
     """Builds rename-candidate names from a `RehuDocumentModel`'s record fields ([[plugins#field-toolkit]]).
 
     Subscribes to :data:`NAME_SUGGESTION_SOURCE_FIELDS`' notify signals on ``model``, to
-    ``model.resource_type_changed``, and to `LocationTemplatesSettings.patterns_changed`, so
-    :attr:`changed` fires whenever a field :meth:`suggestions` is built from changes -- editing
-    ``authors``, switching the document's type, or applying a Locations settings page all update the
-    offered names without a reopen (#322). This is the **compute** role in the field toolkit's
+    ``model.resource_type_changed``, to `LocationTemplatesSettings.patterns_changed`, and to
+    `LocationReplacementsSettings.rules_changed` (#350), so :attr:`changed` fires whenever a field
+    :meth:`suggestions` is built from changes -- editing ``authors``, switching the document's type, or
+    applying a Locations or Location Replacements settings page all update the offered names without a
+    reopen (#322). This is the **compute** role in the field toolkit's
     compute/present-command/execute split (§13.2.1): a `PathField` presents :meth:`suggestions` and
     forwards a clicked one as a command, and ``model.rename_location`` executes it -- this class
     never touches the filesystem.
@@ -55,15 +57,17 @@ class NameSuggestionModel(QObject):
             getattr(model, signal_name).connect(lambda *_: self.changed.emit())
         model.resource_type_changed.connect(self.changed)  # type: ignore[attr-defined]
         shared_location_templates_settings().patterns_changed.connect(self.changed)
+        shared_location_replacements_settings().rules_changed.connect(self.changed)
 
     def suggestions(self) -> list[str]:
         """Build the rename-candidate names via this document type's `LocationTemplatesSettings` list.
 
-        Raw strings only -- interpolated from ``title`` / ``publisher`` / joined ``authors`` / the
-        released ``year`` / the advertised ``count`` -- left unsanitized; the `PathField` editor transliterates and
-        filesystem-sanitizes them before display, and drops any that reduce to nothing. ``released``
-        may be ``None`` (absent, [[field-schema#deferred-items]]) -- the year is empty then, same as
-        for a too-short ``released`` string, and a pattern's ``{{ [{year}]}}`` group drops out with it.
+        Interpolated from ``title`` / ``publisher`` / joined ``authors`` / the released ``year`` / the
+        advertised ``count``, then run through `LocationReplacementsSettings.rules` (#350) -- but still
+        unsanitized; the `PathField` editor transliterates and filesystem-sanitizes them before display,
+        and drops any that reduce to nothing. ``released`` may be ``None`` (absent,
+        [[field-schema#deferred-items]]) -- the year is empty then, same as for a too-short ``released``
+        string, and a pattern's ``{{ [{year}]}}`` group drops out with it.
 
         Two patterns rendering the same name are **merged** here, where the names are computed: a
         title-only record renders every shipped default to the bare title, which is one suggestion,
@@ -89,5 +93,9 @@ class NameSuggestionModel(QObject):
             main_key = FALLBACK_RESOURCE_TYPE
         known_placeholders = known_placeholders_for(plugins.field_names(main_key))
         patterns = shared_location_templates_settings().patterns_for(main_key, known_placeholders)
-        rendered = (render_location_pattern(pattern, values, known_placeholders) for pattern in patterns)
+        rules = shared_location_replacements_settings().rules
+        rendered = (
+            apply_location_replacements(render_location_pattern(pattern, values, known_placeholders), rules)
+            for pattern in patterns
+        )
         return list(dict.fromkeys(name for name in rendered if name))

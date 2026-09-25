@@ -8,8 +8,11 @@ from PySide6.QtWidgets import QWidget
 from rehuco_core import DEFAULT_PLUGIN_REGISTRY
 
 from ...fields.widgets.path_editor import PathEditor
+from ..location_replacements_settings import apply_location_replacements, shared_location_replacements_settings
 from ..location_templates_settings import (
+    DEFAULT_SAMPLE,
     NAME_SUGGESTION_PATTERNS,
+    SAMPLE_FIELDS,
     LocationTemplatesSettings,
     effective_location_templates,
     known_placeholders_for,
@@ -19,12 +22,6 @@ from ..location_templates_settings import (
 )
 from ..persistent_settings import persistent_settings
 from .location_templates_page_ui import Ui_LocationTemplatesPage
-
-DEFAULT_SAMPLE: Final[tuple[str, ...]] = ("Sample Title", "Sample Publisher", "Jane Doe, John Roe", "2025", "900+")
-"""What the Try-it sample record starts out as -- ``title`` / ``publisher`` / ``authors`` / ``year`` /
-``count`` in that order -- so a fresh page shows the patterns naming something rather than an empty
-preview. ``count`` is seeded the same as the others even on a type that hides its row (#349): the field
-is never read for such a type, since no pattern of its own can name ``{count}``."""
 
 
 class LocationTemplatesPage(QWidget):
@@ -49,11 +46,11 @@ class LocationTemplatesPage(QWidget):
     afterwards, which is what lets it also gate the Try-it sample record's Count row: one instance, one
     type, one placeholder set for its lifetime.
 
-    **The sample record is scratch space, not a setting.** It previews the patterns and changes nothing
-    the app does, so it is seeded from :data:`DEFAULT_SAMPLE`, never saved, never part of
-    :meth:`is_dirty`, and untouched by :meth:`save_changes` and :meth:`drop_changes`; its frame carries
-    `SettingsFrameFilter.SCRATCH_PROPERTY` so the dialog's dirty highlight leaves it alone too. Only a
-    value that has an effect on the app earns Apply.
+    **The sample record is a setting like the patterns**: staged in its fields, part of :meth:`is_dirty`,
+    saved by :meth:`save_changes`, put back by :meth:`drop_changes` and :meth:`seed_defaults` -- so its
+    frame dirties, and takes Apply, Reset, Defaults and "Apply changes as they're made", the way every
+    other frame does. The preview, though, never waits for any of that: it expands the patterns with the
+    record as typed, applied or not.
 
     **The ordering column stays visible**, unlike a list whose order is presentation: patterns are
     offered top to bottom, so moving one changes which suggestion a resource sees first.
@@ -101,31 +98,33 @@ class LocationTemplatesPage(QWidget):
             self.__ui.sample_year_edit,
             self.__ui.sample_count_edit,
         )
-        """The sample record's fields, in :data:`DEFAULT_SAMPLE`'s ``(title, publisher, authors, year,
-        count)`` order -- ``sample_count_edit`` stays in this tuple even when hidden, since it is simply
-        never named by a pattern this type's patterns editor would accept."""
-        for edit, value in zip(self.__sample_edits, DEFAULT_SAMPLE, strict=True):
-            edit.setText(value)
+        """The sample record's fields, in :data:`SAMPLE_FIELDS` order -- ``sample_count_edit`` stays in
+        this tuple even when hidden, since it is simply never named by a pattern this type's patterns
+        editor would accept."""
 
         self.__ui.patterns_editor.values_changed.connect(self.__refresh_try_it)
         for edit in self.__sample_edits:
             edit.textChanged.connect(self.__refresh_try_it)
+        shared_location_replacements_settings().rules_changed.connect(self.__refresh_try_it)
 
         self.drop_changes()
 
     def is_dirty(self) -> bool:
-        """Whether applying would change this type's stored patterns.
+        """Whether applying would change this type's stored patterns or sample record.
 
         The staged patterns are normalized before the comparison, so a row that saving would drop
         anyway -- blank, or an exact repeat -- is not yet a change; an invalid row *is* one, since saving
-        keeps it. The sample record is not consulted: it is not a setting.
+        keeps it. The sample record is compared as typed.
         """
+        settings = shared_location_templates_settings()
         staged = normalize_location_templates(self.__ui.patterns_editor.values, NAME_SUGGESTION_PATTERNS)
-        return staged != shared_location_templates_settings().stored_for(self.__resource_type)
+        return staged != settings.stored_for(self.__resource_type) or self.__sample() != settings.sample_for(
+            self.__resource_type
+        )
 
     def save_changes(self) -> None:
-        """Push this type's staged patterns into the shared settings object, persist them, and show the
-        result.
+        """Push this type's staged patterns and sample record into the shared settings object, persist
+        them, and show the result.
 
         The list is reloaded from the stored set afterwards rather than left as typed: normalization can
         change it, and a page still showing what was typed would disagree with what the next Apply
@@ -134,41 +133,58 @@ class LocationTemplatesPage(QWidget):
         settings = shared_location_templates_settings()
         staged = normalize_location_templates(self.__ui.patterns_editor.values, NAME_SUGGESTION_PATTERNS)
         settings.patterns = {**settings.patterns, self.__resource_type: staged}
+        settings.samples = {**settings.samples, self.__resource_type: self.__sample()}
         settings.save(persistent_settings())
         self.drop_changes()
 
     def drop_changes(self) -> None:
-        """Discard the staged pattern edits, refilling the editor from this type's stored set -- invalid
-        rows included, flagged; the sample record stays as typed."""
-        self.__ui.patterns_editor.values = shared_location_templates_settings().stored_for(self.__resource_type)
+        """Discard the staged edits, refilling the patterns editor from this type's stored set -- invalid
+        rows included, flagged -- and the sample record from the stored one."""
+        settings = shared_location_templates_settings()
+        self.__ui.patterns_editor.values = settings.stored_for(self.__resource_type)
+        self.__show_sample(settings.sample_for(self.__resource_type))
         self.__refresh_try_it()
 
     def seed_defaults(self) -> None:
         """Stage the factory state: the patterns an unloaded `LocationTemplatesSettings` resolves to
         for this type -- the shipped `NAME_SUGGESTION_PATTERNS`, the same for every type -- and the
-        shipped sample record (#342). The sample is a try-it input, not a setting, and is put back
-        here only so its frame's own Defaults button has a factory state to return to; nothing about
-        it is ever saved."""
+        shipped sample record (#342)."""
         self.__ui.patterns_editor.values = LocationTemplatesSettings().stored_for(self.__resource_type)
-        for edit, value in zip(self.__sample_edits, DEFAULT_SAMPLE, strict=True):
-            edit.setText(value)
+        self.__show_sample(DEFAULT_SAMPLE)
         self.__refresh_try_it()
 
+    def __sample(self) -> tuple[str, ...]:
+        """The sample record as typed, in :data:`SAMPLE_FIELDS` order."""
+        return tuple(edit.text() for edit in self.__sample_edits)
+
+    def __show_sample(self, sample: tuple[str, ...]) -> None:
+        """Show ``sample`` in the record's fields.
+
+        :param sample: the record to show, in :data:`SAMPLE_FIELDS` order.
+        """
+        for edit, value in zip(self.__sample_edits, sample, strict=True):
+            edit.setText(value)
+
     def __refresh_try_it(self) -> None:
-        """Recompute the Try-it preview from the staged (not yet saved) patterns and the sample record.
+        """Recompute the Try-it preview from the staged patterns and the sample record as typed -- both
+        read off the widgets, never off the settings object, so an edit shows here before any Apply.
 
         The same pipeline a document's suggestions go through -- the effective list
         (:func:`~rehuco_agent.settings.location_templates_settings.effective_location_templates`, so a
-        list with no valid row previews the shipped set a document would fall back to), rendered,
-        sanitized, what reduced to nothing dropped, exact repeats merged in first-seen order -- so what
-        shows here is exactly what a `PathField` would offer. An invalid pattern contributes nothing;
-        its row is flagged above.
+        list with no valid row previews the shipped set a document would fall back to), rendered, run
+        through the saved location-replacement rules (#350), sanitized, what reduced to nothing
+        dropped, exact repeats merged in first-seen order -- so what shows here is exactly what a
+        `PathField` would offer. An invalid pattern contributes nothing; its row is flagged above. The
+        replacement rules are the *saved* ones, not staged: they belong to the separate Location
+        Replacements page, and this preview follows a save there live via ``rules_changed``.
         """
-        sample = (edit.text() for edit in self.__sample_edits)
-        values: dict[str, str] = dict(zip(("title", "publisher", "authors", "year", "count"), sample, strict=True))
+        values: dict[str, str] = dict(zip(SAMPLE_FIELDS, self.__sample(), strict=True))
         usable = effective_location_templates(self.__ui.patterns_editor.values, self.__known_placeholders)
+        rules = shared_location_replacements_settings().rules
         sanitized = (
-            PathEditor.sanitize(render_location_pattern(pattern, values, self.__known_placeholders))
+            PathEditor.sanitize(
+                apply_location_replacements(render_location_pattern(pattern, values, self.__known_placeholders), rules)
+            )
             for pattern in usable
         )
         names = dict.fromkeys(name for name in sanitized if name is not None)

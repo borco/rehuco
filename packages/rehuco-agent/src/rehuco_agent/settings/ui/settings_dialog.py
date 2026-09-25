@@ -451,8 +451,7 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         around, and at least one value widget for the buttons to write into
         (`SettingsFrameFilter.has_values`) -- a frame of push buttons (Windows Integration's
         Register/Unregister), or the Scrapers table frame, has no setting to reset and, in the latter
-        case, no label of that name either, and stays as its ``.ui`` drew it. A ``scratch`` try-it
-        frame's row has no Apply (nothing in it is ever saved). A list editor inside a headed frame
+        case, no label of that name either, and stays as its ``.ui`` drew it. A list editor inside a headed frame
         loses its own restore button: the row's Defaults now says the same thing, from one place.
 
         :param page: the page being registered.
@@ -463,7 +462,7 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
                 continue
             if (label := header_label_of(frame)) is None:
                 continue
-            header = SettingsFrameHeader(label, with_apply=not frame_filter.is_scratch(frame))
+            header = SettingsFrameHeader(label)
             for editor in frame_filter.list_editors(frame):
                 editor.item_actions.reset_action.setVisible(False)
             header.apply_action.triggered.connect(lambda _checked=False, block=frame: self.__apply_frame(page, block))
@@ -826,10 +825,7 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         """
         frame_filter = self.__frame_filters[cast(QWidget, page)]
         at_defaults = set(frame_filter.frames_at_defaults())
-        return any(
-            frame_filter.has_values(frame) and not frame_filter.is_scratch(frame) and frame not in at_defaults
-            for frame in frame_filter.blocks()
-        )
+        return any(frame_filter.has_values(frame) and frame not in at_defaults for frame in frame_filter.blocks())
 
     def __refresh_current_frame_state(self) -> None:
         """Refresh the pink dirty highlight of every frame the stack is currently showing (#77), and
@@ -840,11 +836,9 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
             dirty_frames = set(frame_filter.dirty_frames())
             for frame in frame_filter.blocks():
                 self.__set_frame_dirty(frame, frame in dirty_frames)
-                # asked per frame rather than off dirty_frames: a scratch frame is never *dirty*
-                # (never tinted, never a page verdict), yet its own Reset/Defaults still follow it
                 if (header := self.__frame_headers.get(frame)) is not None:
                     header.set_state(
-                        dirty=frame_filter.differs_from_saved(frame),
+                        dirty=frame in dirty_frames,
                         at_defaults=not frame_filter.differs_from_defaults(frame),
                     )
 

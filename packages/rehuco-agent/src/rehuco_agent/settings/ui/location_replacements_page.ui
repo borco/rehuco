@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>LocationReplacementsPage</class>
+ <widget class="QWidget" name="LocationReplacementsPage">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>420</width>
+    <height>420</height>
+   </rect>
+  </property>
+  <layout class="QVBoxLayout" name="main_layout">
+   <property name="leftMargin">
+    <number>0</number>
+   </property>
+   <property name="topMargin">
+    <number>0</number>
+   </property>
+   <property name="rightMargin">
+    <number>0</number>
+   </property>
+   <property name="bottomMargin">
+    <number>0</number>
+   </property>
+   <item>
+    <widget class="QFrame" name="rules_frame">
+     <property name="frameShape">
+      <enum>QFrame::Shape::StyledPanel</enum>
+     </property>
+     <property name="frameShadow">
+      <enum>QFrame::Shadow::Raised</enum>
+     </property>
+     <layout class="QVBoxLayout" name="rules_frame_layout">
+      <item>
+       <widget class="QLabel" name="rules_frame_label">
+        <property name="font">
+         <font>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string>Location replacements</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="LocationReplacementsEditor" name="rules_editor">
+        <property name="toolTip">
+         <string>Each rule looks for its Text anywhere in a rendered location name and replaces it with Replace with. Check Regexp to match Text as a regular expression instead of a literal. Rules run in table order. Double-click a cell to edit it.</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="WrappingLabel" name="rules_note_label">
+        <property name="text">
+         <string>Applied to a location name after its fields are filled in and before it is made into a valid filesystem name -- which is what lets a rule turn a separator like &quot;: &quot; or &quot;|&quot; into something the filesystem keeps, since sanitizing on its own would simply delete either. Rules run top to bottom, so a later one sees what an earlier one left behind. Text is matched literally unless Regexp is checked, in which case it is a regular expression (e.g. &quot; *\| *&quot; matches a pipe with any spaces around it) and Replace with may use its backreferences. A rule with no text, or a Regexp that does not parse, is shown in red and never applied.</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <spacer name="bottom_spacer">
+     <property name="orientation">
+      <enum>Qt::Orientation::Vertical</enum>
+     </property>
+    </spacer>
+   </item>
+  </layout>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>LocationReplacementsEditor</class>
+   <extends>QWidget</extends>
+   <header>rehuco_agent.settings.ui.location_replacements_editor</header>
+  </customwidget>
+  <customwidget>
+   <class>WrappingLabel</class>
+   <extends>QLabel</extends>
+   <header>borco_pyside.widgets</header>
+  </customwidget>
+ </customwidgets>
+ <resources/>
+ <connections/>
+</ui>

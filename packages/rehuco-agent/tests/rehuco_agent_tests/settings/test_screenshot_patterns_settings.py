@@ -12,8 +12,10 @@ from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from rehuco_agent.settings import screenshot_patterns_settings
 from rehuco_agent.settings.screenshot_patterns_settings import (
+    DEFAULT_SAMPLES,
     ScreenshotPatternsSettings,
     normalize_screenshot_name_patterns,
+    normalize_screenshot_samples,
     pattern_is_valid,
     shared_screenshot_patterns_settings,
 )
@@ -326,24 +328,87 @@ def test_the_patterns_are_saved_as_a_list(settings: FakeSettings) -> None:
     assert settings.value("screenshot_patterns/patterns") == ["^cover$", "^file$"]
 
 
-def test_a_samples_key_an_earlier_build_wrote_is_ignored(settings: FakeSettings) -> None:
-    """The try-it samples were saved beside the patterns until they stopped being a setting (#322); a
-    stale key is neither read nor a reason to fail.
+def test_a_samples_key_an_earlier_build_wrote_is_read_back(settings: FakeSettings) -> None:
+    """The try-it samples live under the key #287 first wrote them to, so a list typed back then comes
+    back rather than being orphaned.
 
     **Test steps:**
 
-    * seed storage with a pattern list and the old samples key
+    * seed storage with a pattern list and the samples key
     * load a settings object from it
-    * verify the patterns loaded and nothing about the samples surfaced
+    * verify both came back
     """
     settings.setValue("screenshot_patterns/patterns", ["^cover$"])
-    settings.setValue("screenshot_patterns/samples", ["shot-3.jpg"])
+    settings.setValue("screenshot_patterns/samples", ["shot-3.jpg", "foo.jpg"])
 
     loaded = ScreenshotPatternsSettings()
     loaded.load(settings)  # type: ignore[arg-type]
 
     assert loaded.patterns == ("^cover$",)
-    assert not hasattr(loaded, "samples")
+    assert loaded.samples == ("shot-3.jpg", "foo.jpg")
+
+
+def test_the_samples_round_trip_through_save_with_the_patterns(settings: FakeSettings) -> None:
+    """One ``save``, one Apply: the patterns and the try-it samples go to storage together.
+
+    **Test steps:**
+
+    * save an object holding patterns and samples
+    * verify both keys were written, and a fresh load reads them back
+    """
+    saved = ScreenshotPatternsSettings()
+    saved.patterns = ("^cover$",)
+    saved.samples = ("a.jpg", "b.jpg")
+    saved.save(settings)  # type: ignore[arg-type]
+
+    assert settings.value("screenshot_patterns/patterns") == ["^cover$"]
+    assert settings.value("screenshot_patterns/samples") == ["a.jpg", "b.jpg"]
+
+    loaded = ScreenshotPatternsSettings()
+    loaded.load(settings)  # type: ignore[arg-type]
+    assert loaded.samples == ("a.jpg", "b.jpg")
+
+
+@mark.parametrize("stored", [None, []], ids=["absent", "emptied"])
+def test_no_stored_samples_read_as_the_shipped_ones(settings: FakeSettings, stored: object) -> None:
+    """Nothing to show reads as the shipped samples, the way an emptied pattern list reads as the
+    shipped patterns.
+
+    **Test steps:**
+
+    * seed storage with no usable samples
+    * verify loading yields :data:`DEFAULT_SAMPLES`
+    """
+    if stored is not None:
+        settings.setValue("screenshot_patterns/samples", stored)
+
+    loaded = ScreenshotPatternsSettings()
+    loaded.load(settings)  # type: ignore[arg-type]
+
+    assert loaded.samples == DEFAULT_SAMPLES
+
+
+@mark.parametrize(
+    ("samples", "expected"),
+    [
+        (["a.jpg", "", "  ", "b.jpg"], ("a.jpg", "b.jpg")),
+        (["", " "], DEFAULT_SAMPLES),
+        ("a.jpg", ("a.jpg",)),
+        (["a.jpg", "a.jpg"], ("a.jpg", "a.jpg")),
+    ],
+    ids=["blanks-dropped", "all-blank", "bare-string", "duplicates-kept"],
+)
+def test_normalize_screenshot_samples(samples: object, expected: tuple[str, ...]) -> None:
+    """Blank entries go and order is kept -- a blank row is an insert still open for typing, not a
+    sample -- and a list left with nothing is the shipped one. Duplicates are left alone: two rows
+    naming one file are harmless in a preview.
+
+    **Test steps:**
+
+    * normalize each input
+    * verify the stored shape
+    """
+    assert normalize_screenshot_samples(samples) == expected
 
 
 def test_load_repairs_an_unusable_stored_value(settings: FakeSettings) -> None:
