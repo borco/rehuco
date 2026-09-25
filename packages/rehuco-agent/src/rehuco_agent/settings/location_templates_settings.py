@@ -54,19 +54,39 @@ title sits in an optional group, so a record carrying only a title renders all f
 which `NameSuggestionModel` then merges into one suggestion."""
 
 KNOWN_PLACEHOLDERS: Final = frozenset({"title", "publisher", "authors", "year"})
-"""The four fields a pattern may interpolate ([[field-schema#field-mapping]]) -- adding placeholders is
-out of scope for #322, so this set is exactly what `location_pattern_problem` checks a pattern against."""
+"""The four fields every type's pattern may interpolate ([[field-schema#field-mapping]]), regardless of
+which plugin it belongs to -- :func:`known_placeholders_for` is what a type's *full* set is, this plus
+whichever :data:`PLUGIN_PLACEHOLDERS` entries that type's declared fields back (#349)."""
+
+PLUGIN_PLACEHOLDERS: Final[Mapping[str, str]] = {"count": "advertised_count"}
+"""Placeholders beyond the base four, each gated on the type actually declaring the field it renders
+(#349) -- ``{count}`` needs ``advertised_count``, so it is offered on a reference-images pattern and
+refused on a tutorial one, without either page's declaration knowing the other's shape. Keyed by
+placeholder name, which is what a pattern spells and what :func:`known_placeholders_for` returns."""
 
 BLANK_PATTERN_PROBLEM: Final = "A pattern is a format string interpolating {title} / {publisher} / {authors} / {year}."
 MALFORMED_PATTERN_PROBLEM: Final = (
     "This does not parse as a format string: a { or } is unbalanced, or a placeholder carries a "
     "format spec or conversion, which a name never needs."
 )
-UNKNOWN_PLACEHOLDER_PROBLEM: Final = "This names a placeholder other than {title} / {publisher} / {authors} / {year}."
+UNKNOWN_PLACEHOLDER_PROBLEM: Final = "This names a placeholder this type's patterns do not accept."
 EMPTY_GROUP_PROBLEM: Final = "A {{ ... }} group must name at least one placeholder, or it could never be left out."
 STRAY_GROUP_MARKER_PROBLEM: Final = (
     "A {{ is not closed, a }} is not opened, or one {{ ... }} group sits inside another."
 )
+
+
+def known_placeholders_for(declared_field_names: Iterable[str]) -> frozenset[str]:
+    """The placeholders usable by a type whose plugin declares ``declared_field_names``
+    (`~rehuco_core.PluginRegistry.field_names`, #349).
+
+    :param declared_field_names: the type's declared field names.
+    :returns: :data:`KNOWN_PLACEHOLDERS` plus every :data:`PLUGIN_PLACEHOLDERS` entry whose backing
+        field is among ``declared_field_names``.
+    """
+    declared = frozenset(declared_field_names)
+    extra = (name for name, field in PLUGIN_PLACEHOLDERS.items() if field in declared)
+    return KNOWN_PLACEHOLDERS.union(extra)
 
 
 class LocationPattern:
@@ -77,13 +97,16 @@ class LocationPattern:
     knows it is inside a placeholder can tell that pattern's ``}}}`` apart from a group closing early.
 
     :param pattern: the raw pattern string, trimmed or not.
+    :param known_placeholders: the placeholders this pattern may name -- :data:`KNOWN_PLACEHOLDERS`
+        unless the caller's type accepts more (#349).
     """
 
-    def __init__(self, pattern: str) -> None:
+    def __init__(self, pattern: str, known_placeholders: frozenset[str] = KNOWN_PLACEHOLDERS) -> None:
         self.__parts: list[tuple[str, bool]] = []
         """Each part's text and whether it is an optional group."""
         self.__placeholders: list[tuple[str, ...]] = []
         """Each part's placeholder names, parallel to :attr:`__parts`."""
+        self.__known_placeholders: Final = known_placeholders
         self.__problem: Final = self.__parse(pattern.strip())
 
     @property
@@ -138,7 +161,7 @@ class LocationPattern:
         if any(spec or conversion for _, _, spec, conversion in fields):
             return MALFORMED_PATTERN_PROBLEM
         names = tuple(name for _, name, _, _ in fields if name is not None)
-        if any(name not in KNOWN_PLACEHOLDERS for name in names):
+        if any(name not in self.__known_placeholders for name in names):
             return UNKNOWN_PLACEHOLDER_PROBLEM
         if optional and not names:
             return EMPTY_GROUP_PROBLEM
@@ -201,46 +224,54 @@ class LocationPattern:
         current.clear()
 
 
-def location_pattern_problem(pattern: str) -> str:
+def location_pattern_problem(pattern: str, known_placeholders: frozenset[str] = KNOWN_PLACEHOLDERS) -> str:
     """Why ``pattern`` is unusable, or ``""`` when it is fine -- one spelling shared by
     :func:`normalize_location_templates`, the settings page's per-row flag and its Try-it preview.
 
     :param pattern: the raw pattern string, trimmed or not.
+    :param known_placeholders: the placeholders this pattern may name (#349).
     :returns: one of the ``*_PROBLEM`` strings, or ``""``.
     """
-    return LocationPattern(pattern).problem
+    return LocationPattern(pattern, known_placeholders).problem
 
 
-def location_pattern_is_valid(pattern: str) -> bool:
+def location_pattern_is_valid(pattern: str, known_placeholders: frozenset[str] = KNOWN_PLACEHOLDERS) -> bool:
     """Whether ``pattern`` renders: names only known placeholders, balances its braces, and gives every
     ``{{ ... }}`` group a placeholder to depend on.
 
     :param pattern: the raw pattern string, trimmed or not.
-    :returns: ``not location_pattern_problem(pattern)``.
+    :param known_placeholders: the placeholders this pattern may name (#349).
+    :returns: ``not location_pattern_problem(pattern, known_placeholders)``.
     """
-    return not location_pattern_problem(pattern)
+    return not location_pattern_problem(pattern, known_placeholders)
 
 
-def render_location_pattern(pattern: str, values: Mapping[str, str]) -> str:
+def render_location_pattern(
+    pattern: str, values: Mapping[str, str], known_placeholders: frozenset[str] = KNOWN_PLACEHOLDERS
+) -> str:
     """Interpolate ``values`` into ``pattern``, dropping every optional group whose placeholders are not
     all filled.
 
     :param pattern: the raw pattern string.
     :param values: the record's fields, keyed by placeholder name; every known placeholder present.
+    :param known_placeholders: the placeholders this pattern may name (#349).
     :returns: the rendered name, possibly empty; ``""`` for an invalid pattern.
     """
-    return LocationPattern(pattern).render(values)
+    return LocationPattern(pattern, known_placeholders).render(values)
 
 
-def effective_location_templates(patterns: Iterable[str]) -> tuple[str, ...]:
+def effective_location_templates(
+    patterns: Iterable[str], known_placeholders: frozenset[str] = KNOWN_PLACEHOLDERS
+) -> tuple[str, ...]:
     """The patterns among ``patterns`` that render, or the shipped set when none does -- the one
     spelling of "what a document is offered", shared by :meth:`LocationTemplatesSettings.patterns_for`
     and the settings page's Try-it preview so the two can never disagree.
 
     :param patterns: a stored or staged list, invalid rows included.
+    :param known_placeholders: the placeholders this type's patterns may name (#349).
     :returns: the renderable patterns in order, or :data:`NAME_SUGGESTION_PATTERNS` when there are none.
     """
-    usable = tuple(pattern for pattern in patterns if location_pattern_is_valid(pattern))
+    usable = tuple(pattern for pattern in patterns if location_pattern_is_valid(pattern, known_placeholders))
     return usable or NAME_SUGGESTION_PATTERNS
 
 
@@ -297,20 +328,24 @@ class LocationTemplatesSettings(QObject):
         """
         return normalize_location_templates(self.patterns.get(resource_type, ()), NAME_SUGGESTION_PATTERNS)
 
-    def patterns_for(self, resource_type: str) -> tuple[str, ...]:
+    def patterns_for(
+        self, resource_type: str, known_placeholders: frozenset[str] = KNOWN_PLACEHOLDERS
+    ) -> tuple[str, ...]:
         """The **effective** list for ``resource_type``: :meth:`stored_for` without the rows that cannot
         render.
 
         No plugin knowledge is needed here: a type this settings class has never seen simply reads as
         "nothing stored yet". Resolving a *foreign* or typeless document's type to a fallback type
-        (e.g. ``"tutorial"``) is the caller's job (`NameSuggestionModel`), which is the one place that
-        already talks to the plugin registry.
+        (e.g. ``"tutorial"``), and which placeholders that type accepts beyond the base four
+        (:func:`known_placeholders_for`, #349), is the caller's job (`NameSuggestionModel`), which is the
+        one place that already talks to the plugin registry.
 
         :param resource_type: a plugin main key (e.g. ``"tutorial"``).
+        :param known_placeholders: the placeholders ``resource_type``'s patterns may name (#349).
         :returns: the renderable patterns in offer order, or :data:`NAME_SUGGESTION_PATTERNS` when the
             stored list holds none.
         """
-        return effective_location_templates(self.stored_for(resource_type))
+        return effective_location_templates(self.stored_for(resource_type), known_placeholders)
 
     def load(self, settings: QSettings) -> None:
         """Replace every type's stored list with what's in persistent storage.

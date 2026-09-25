@@ -15,11 +15,13 @@ from rehuco_agent.settings import location_templates_settings
 from rehuco_agent.settings.location_templates_settings import (
     BLANK_PATTERN_PROBLEM,
     EMPTY_GROUP_PROBLEM,
+    KNOWN_PLACEHOLDERS,
     MALFORMED_PATTERN_PROBLEM,
     NAME_SUGGESTION_PATTERNS,
     STRAY_GROUP_MARKER_PROBLEM,
     UNKNOWN_PLACEHOLDER_PROBLEM,
     LocationTemplatesSettings,
+    known_placeholders_for,
     location_pattern_is_valid,
     location_pattern_problem,
     normalize_location_templates,
@@ -176,6 +178,35 @@ def test_a_well_formed_pattern_is_valid(pattern: str) -> None:
     usable -- including a group that is nothing but its placeholder."""
     assert location_pattern_problem(pattern) == ""
     assert location_pattern_is_valid(pattern) is True
+
+
+def test_count_is_refused_by_default_but_accepted_when_declared() -> None:
+    """``{count}`` is not one of the base four, so it is refused unless the caller's known-placeholder
+    set includes it -- gated on the type declaring ``advertised_count`` (#349).
+
+    **Test steps:**
+
+    * check ``{count}`` against the default (base-four) known placeholders
+    * check it again against a set that includes ``count``
+    """
+    assert location_pattern_problem("{title} ({count})") == UNKNOWN_PLACEHOLDER_PROBLEM
+    assert location_pattern_problem("{title} ({count})", KNOWN_PLACEHOLDERS | {"count"}) == ""
+    assert location_pattern_is_valid("{title} ({count})", KNOWN_PLACEHOLDERS | {"count"}) is True
+
+
+# endregion
+
+# region known_placeholders_for
+
+
+def test_known_placeholders_for_is_the_base_four_without_advertised_count() -> None:
+    """A type that declares no count field gets only the base four (#349)."""
+    assert known_placeholders_for(("rating", "favorite")) == KNOWN_PLACEHOLDERS
+
+
+def test_known_placeholders_for_adds_count_when_advertised_count_is_declared() -> None:
+    """A type declaring ``advertised_count`` (ReferenceImages) also accepts ``{count}`` (#349)."""
+    assert known_placeholders_for(("advertised_count", "current_count")) == KNOWN_PLACEHOLDERS | {"count"}
 
 
 # endregion
@@ -353,6 +384,23 @@ def test_patterns_for_a_never_seen_type_resolves_to_the_shipped_defaults() -> No
     settings = LocationTemplatesSettings()
 
     assert settings.patterns_for("some_future_plugin") == NAME_SUGGESTION_PATTERNS
+
+
+def test_patterns_for_accepts_count_only_when_passed_a_wider_known_set() -> None:
+    """`LocationTemplatesSettings` itself knows nothing of plugins (#349) -- the caller decides which
+    placeholders a type accepts by what it passes as ``known_placeholders``.
+
+    **Test steps:**
+
+    * store a reference-images row naming ``{count}``
+    * verify it is dropped against the default (base-four) known set
+    * verify it survives against a set that includes ``count``
+    """
+    settings = LocationTemplatesSettings()
+    settings.patterns = {"reference_images": ("{title} ({count})",)}
+
+    assert settings.patterns_for("reference_images") == NAME_SUGGESTION_PATTERNS
+    assert settings.patterns_for("reference_images", KNOWN_PLACEHOLDERS | {"count"}) == ("{title} ({count})",)
 
 
 def test_patterns_for_a_customized_type_returns_its_own_list_only() -> None:

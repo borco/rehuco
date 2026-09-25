@@ -203,6 +203,76 @@ def test_changed_fires_when_the_resource_type_changes(
     assert fired == [True]
 
 
+def test_count_renders_on_a_type_declaring_advertised_count(model: RehuDocumentModel) -> None:
+    """``{count}`` interpolates ``advertised_count`` on ReferenceImages, whose plugin declares it (#349).
+
+    **Test steps:**
+
+    * customize the reference-images list to a pattern naming ``{count}``
+    * switch the model to that type and set ``advertised_count``
+    * verify the suggestion carries the count claim
+    """
+    settings = shared_location_templates_settings()
+    settings.patterns = {**settings.patterns, "reference_images": ("{title} ({count})",)}
+    model.resource_type = "reference_images"
+    model.advertised_count = "900+"
+
+    assert NameSuggestionModel(model).suggestions() == ["Foo (900+)"]
+
+
+def test_an_absent_count_drops_its_optional_group(model: RehuDocumentModel) -> None:
+    """A ``None`` ``advertised_count`` reads as empty, so a ``{{ ({count})}}`` group drops out the way a
+    missing year does -- no ``Foo ()`` (#349).
+
+    **Test steps:**
+
+    * customize the reference-images list to a pattern wrapping ``{count}`` in a group
+    * switch the model to that type, leaving ``advertised_count`` unset
+    * verify the bare title is offered, with no empty parentheses
+    """
+    settings = shared_location_templates_settings()
+    settings.patterns = {**settings.patterns, "reference_images": ("{title}{{ ({count})}}",)}
+    model.resource_type = "reference_images"
+    assert model.advertised_count is None
+
+    assert NameSuggestionModel(model).suggestions() == ["Foo"]
+
+
+def test_a_count_pattern_is_not_offered_on_a_type_without_advertised_count(model: RehuDocumentModel) -> None:
+    """A tutorial's plugin does not declare ``advertised_count``, so a stored ``{count}`` row is invalid
+    for it and contributes nothing (#349) -- the same "kept but not effective" rule any unknown
+    placeholder gets.
+
+    **Test steps:**
+
+    * customize the tutorial list to a pattern naming ``{count}`` alongside a good one
+    * verify only the good pattern's name is offered
+    """
+    settings = shared_location_templates_settings()
+    settings.patterns = {**settings.patterns, "tutorial": ("{title} ({count})", "{title}")}
+
+    assert NameSuggestionModel(model).suggestions() == ["Foo"]
+
+
+def test_changed_fires_when_advertised_count_changes(
+    model: RehuDocumentModel, name_suggestions: NameSuggestionModel
+) -> None:
+    """A change to ``advertised_count`` re-emits ``changed`` without a reopen (#349).
+
+    **Test steps:**
+
+    * connect to ``changed``
+    * change the wrapped model's ``advertised_count``
+    * verify the signal fired
+    """
+    fired: list[bool] = []
+    name_suggestions.changed.connect(lambda: fired.append(True))
+
+    model.advertised_count = "500"
+
+    assert fired == [True]
+
+
 def test_changed_fires_when_the_location_templates_settings_apply(name_suggestions: NameSuggestionModel) -> None:
     """Applying a Locations settings page re-emits ``changed`` without a reopen (#322).
 

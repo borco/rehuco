@@ -13,9 +13,9 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QAbstractItemView, QHeaderView, QLineEdit
 from pytest import fixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.settings.location_templates_settings import NAME_SUGGESTION_PATTERNS
+from rehuco_agent.settings.location_templates_settings import KNOWN_PLACEHOLDERS, NAME_SUGGESTION_PATTERNS
 from rehuco_agent.settings.ui.location_template_patterns_editor import LocationTemplatePatternsEditor
-from rehuco_agent.settings.ui.location_template_patterns_model import PATTERN_COLUMN
+from rehuco_agent.settings.ui.location_template_patterns_model import PATTERN_COLUMN, LocationTemplatePatternsModel
 
 
 @fixture(name="editor")
@@ -77,6 +77,25 @@ def test_reset_is_hidden_when_there_is_nothing_to_restore(editor: LocationTempla
     editor.defaults = NAME_SUGGESTION_PATTERNS
     assert editor.defaults == NAME_SUGGESTION_PATTERNS
     assert editor.item_actions.reset_action.isVisible() is True
+
+
+def test_known_placeholders_reach_the_model(editor: LocationTemplatePatternsEditor) -> None:
+    """The editor forwards its placeholder set to the model it checks rows with (#349).
+
+    **Test steps:**
+
+    * verify the editor starts on the base four
+    * widen it to include ``count``
+    * verify the editor and its model both report the wider set
+    """
+    assert editor.known_placeholders == KNOWN_PLACEHOLDERS
+
+    editor.known_placeholders = KNOWN_PLACEHOLDERS | {"count"}
+
+    assert editor.known_placeholders == KNOWN_PLACEHOLDERS | {"count"}
+    model = editor.model
+    assert isinstance(model, LocationTemplatePatternsModel)
+    assert model.known_placeholders == KNOWN_PLACEHOLDERS | {"count"}
 
 
 def test_the_keys_fire_while_the_view_has_focus(editor: LocationTemplatePatternsEditor) -> None:

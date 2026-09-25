@@ -13,6 +13,7 @@ from pytest import fixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.settings.location_templates_settings import (
     BLANK_PATTERN_PROBLEM,
+    KNOWN_PLACEHOLDERS,
     NAME_SUGGESTION_PATTERNS,
     UNKNOWN_PLACEHOLDER_PROBLEM,
 )
@@ -317,6 +318,26 @@ def test_a_cell_naming_an_unknown_placeholder_explains_and_colours_itself(
 
     assert model.data(index, Qt.ItemDataRole.ToolTipRole) == UNKNOWN_PLACEHOLDER_PROBLEM
     assert model.data(index, Qt.ItemDataRole.ForegroundRole) is not None
+
+
+def test_a_wider_placeholder_set_accepts_what_the_default_one_flags(model: LocationTemplatePatternsModel) -> None:
+    """A row is checked against the model's own placeholder set, so a type accepting ``{count}`` stops
+    flagging it (#349).
+
+    **Test steps:**
+
+    * set a cell to a pattern naming ``{count}`` and verify the default set flags it
+    * widen the model's set to include ``count``
+    * verify the setter took and the same row is no longer flagged
+    """
+    model.setData(model.index(0, PATTERN_COLUMN), "{title} ({count})")
+    assert model.known_placeholders == KNOWN_PLACEHOLDERS
+    assert model.invalid_reason(0) == UNKNOWN_PLACEHOLDER_PROBLEM
+
+    model.known_placeholders = KNOWN_PLACEHOLDERS | {"count"}
+
+    assert model.known_placeholders == KNOWN_PLACEHOLDERS | {"count"}
+    assert model.invalid_reason(0) == ""
 
 
 def test_a_usable_cell_carries_no_tooltip_and_no_colour(model: LocationTemplatePatternsModel) -> None:

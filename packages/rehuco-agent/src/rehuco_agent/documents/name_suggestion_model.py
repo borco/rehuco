@@ -9,10 +9,14 @@ from borco_pyside.core import SimpleProperty
 from PySide6.QtCore import QObject, Signal
 from rehuco_core import author_name
 
-from ..settings.location_templates_settings import render_location_pattern, shared_location_templates_settings
+from ..settings.location_templates_settings import (
+    known_placeholders_for,
+    render_location_pattern,
+    shared_location_templates_settings,
+)
 from .rehu_document_model import RehuDocumentModel
 
-NAME_SUGGESTION_SOURCE_FIELDS: Final = ("title", "authors", "publisher", "released")
+NAME_SUGGESTION_SOURCE_FIELDS: Final = ("title", "authors", "publisher", "released", "advertised_count")
 """The fields a pattern from `LocationTemplatesSettings` interpolates; a change to any of them re-emits
 :attr:`NameSuggestionModel.changed` so a `PathField` re-pulls the suggestions live."""
 
@@ -33,7 +37,7 @@ class NameSuggestionModel(QObject):
     forwards a clicked one as a command, and ``model.rename_location`` executes it -- this class
     never touches the filesystem.
 
-    :param model: the record fields (``title`` / ``publisher`` / ``authors`` / ``released`` /
+    :param model: the record fields (``title`` / ``publisher`` / ``authors`` / ``released`` / ``advertised_count`` /
         ``resource_type``) to build suggestions from.
     :param parent: optional Qt parent; the caller typically parents this to ``model`` so its lifetime
         matches.
@@ -56,7 +60,7 @@ class NameSuggestionModel(QObject):
         """Build the rename-candidate names via this document type's `LocationTemplatesSettings` list.
 
         Raw strings only -- interpolated from ``title`` / ``publisher`` / joined ``authors`` / the
-        released ``year`` -- left unsanitized; the `PathField` editor transliterates and
+        released ``year`` / the advertised ``count`` -- left unsanitized; the `PathField` editor transliterates and
         filesystem-sanitizes them before display, and drops any that reduce to nothing. ``released``
         may be ``None`` (absent, [[field-schema#deferred-items]]) -- the year is empty then, same as
         for a too-short ``released`` string, and a pattern's ``{{ [{year}]}}`` group drops out with it.
@@ -65,6 +69,11 @@ class NameSuggestionModel(QObject):
         title-only record renders every shipped default to the bare title, which is one suggestion,
         not four. A pattern rendering to nothing at all is dropped for the same reason.
 
+        ``count`` is always in ``values`` -- the model carries `~RehuDocumentModel.advertised_count`
+        whatever the type -- but only a type declaring it (ReferenceImages, #349) has it among its
+        :func:`~rehuco_agent.settings.location_templates_settings.known_placeholders_for`, so a pattern
+        naming ``{count}`` never reaches here for any other type.
+
         :returns: the distinct candidate strings, in the order their patterns first produced them.
         """
         values = {
@@ -72,11 +81,13 @@ class NameSuggestionModel(QObject):
             "publisher": self.__model.publisher,
             "authors": ", ".join(author_name(entry) for entry in self.__model.authors),
             "year": (self.__model.released or "")[:4],
+            "count": self.__model.advertised_count or "",
         }
         plugins = self.__model.document.plugins
         main_key = plugins.main_key(self.__model.resource_type)
         if main_key not in plugins:
             main_key = FALLBACK_RESOURCE_TYPE
-        patterns = shared_location_templates_settings().patterns_for(main_key)
-        rendered = (render_location_pattern(pattern, values) for pattern in patterns)
+        known_placeholders = known_placeholders_for(plugins.field_names(main_key))
+        patterns = shared_location_templates_settings().patterns_for(main_key, known_placeholders)
+        rendered = (render_location_pattern(pattern, values, known_placeholders) for pattern in patterns)
         return list(dict.fromkeys(name for name in rendered if name))

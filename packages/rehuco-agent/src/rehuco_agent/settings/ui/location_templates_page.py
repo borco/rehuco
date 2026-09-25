@@ -5,12 +5,14 @@
 from typing import Final
 
 from PySide6.QtWidgets import QWidget
+from rehuco_core import DEFAULT_PLUGIN_REGISTRY
 
 from ...fields.widgets.path_editor import PathEditor
 from ..location_templates_settings import (
     NAME_SUGGESTION_PATTERNS,
     LocationTemplatesSettings,
     effective_location_templates,
+    known_placeholders_for,
     normalize_location_templates,
     render_location_pattern,
     shared_location_templates_settings,
@@ -18,9 +20,11 @@ from ..location_templates_settings import (
 from ..persistent_settings import persistent_settings
 from .location_templates_page_ui import Ui_LocationTemplatesPage
 
-DEFAULT_SAMPLE: Final[tuple[str, ...]] = ("Sample Title", "Sample Publisher", "Jane Doe, John Roe", "2025")
-"""What the Try-it sample record starts out as -- ``title`` / ``publisher`` / ``authors`` / ``year`` in
-that order -- so a fresh page shows the patterns naming something rather than an empty preview."""
+DEFAULT_SAMPLE: Final[tuple[str, ...]] = ("Sample Title", "Sample Publisher", "Jane Doe, John Roe", "2025", "900+")
+"""What the Try-it sample record starts out as -- ``title`` / ``publisher`` / ``authors`` / ``year`` /
+``count`` in that order -- so a fresh page shows the patterns naming something rather than an empty
+preview. ``count`` is seeded the same as the others even on a type that hides its row (#349): the field
+is never read for such a type, since no pattern of its own can name ``{count}``."""
 
 
 class LocationTemplatesPage(QWidget):
@@ -31,13 +35,19 @@ class LocationTemplatesPage(QWidget):
     Two frames. **Location name patterns** is the editable list, a
     :class:`~rehuco_agent.settings.ui.location_template_patterns_editor.LocationTemplatePatternsEditor` of
     one column each: a format string interpolating ``{title}`` / ``{publisher}`` / ``{authors}`` /
-    ``{year}``, with ``{{ ... }}`` groups that drop out when a field is missing. **Try it** is a sample
-    record (title / publisher / authors / year, editable) beside a read-only preview of the names the
-    staged patterns would offer it -- exactly the list a `PathField` would show on a document with these
-    fields: sanitized (:meth:`~rehuco_agent.fields.widgets.path_editor.PathEditor.sanitize`), merged, an
-    invalid or all-dropped pattern contributing nothing -- refreshed on every edit to either the patterns
-    or the sample. The names alone, not the pattern each came from: the row above is where a pattern is
-    read and flagged, and the preview's job is to show the outcome the way the document will.
+    ``{year}``, plus ``{count}`` on a type whose plugin declares ``advertised_count`` (ReferenceImages,
+    #349), with ``{{ ... }}`` groups that drop out when a field is missing. **Try it** is a sample record
+    (title / publisher / authors / year, plus count on such a type, editable) beside a read-only preview
+    of the names the staged patterns would offer it -- exactly the list a `PathField` would show on a
+    document with these fields: sanitized (:meth:`~rehuco_agent.fields.widgets.path_editor.PathEditor.sanitize`),
+    merged, an invalid or all-dropped pattern contributing nothing -- refreshed on every edit to either
+    the patterns or the sample. The names alone, not the pattern each came from: the row above is where a
+    pattern is read and flagged, and the preview's job is to show the outcome the way the document will.
+
+    :attr:`__known_placeholders` is fixed at construction from ``resource_type``'s plugin declaration
+    (`~rehuco_agent.settings.location_templates_settings.known_placeholders_for`) and never changes
+    afterwards, which is what lets it also gate the Try-it sample record's Count row: one instance, one
+    type, one placeholder set for its lifetime.
 
     **The sample record is scratch space, not a setting.** It previews the patterns and changes nothing
     the app does, so it is seeded from :data:`DEFAULT_SAMPLE`, never saved, never part of
@@ -66,17 +76,34 @@ class LocationTemplatesPage(QWidget):
     def __init__(self, resource_type: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.__resource_type: Final = resource_type
+        self.__known_placeholders: Final = known_placeholders_for(DEFAULT_PLUGIN_REGISTRY.field_names(resource_type))
+        """This type's full placeholder set (#349): the base four plus ``count`` when its plugin
+        declares ``advertised_count``."""
         self.__ui: Final = Ui_LocationTemplatesPage()
         self.__ui.setupUi(self)
         self.__ui.patterns_editor.defaults = NAME_SUGGESTION_PATTERNS
+        self.__ui.patterns_editor.known_placeholders = self.__known_placeholders
+        has_count = "count" in self.__known_placeholders
+        self.__ui.sample_count_label.setVisible(has_count)
+        self.__ui.sample_count_edit.setVisible(has_count)
+        if has_count:
+            self.__ui.patterns_editor.setToolTip(
+                self.__ui.patterns_editor.toolTip() + " This type also accepts {count}, its advertised count."
+            )
+            self.__ui.placeholders_label.setText(
+                self.__ui.placeholders_label.text()
+                + " This type also accepts a fifth: {count}, the pack's advertised image count."
+            )
         self.__sample_edits: Final = (
             self.__ui.sample_title_edit,
             self.__ui.sample_publisher_edit,
             self.__ui.sample_authors_edit,
             self.__ui.sample_year_edit,
+            self.__ui.sample_count_edit,
         )
-        """The sample record's fields, in :data:`DEFAULT_SAMPLE`'s ``(title, publisher, authors, year)``
-        order."""
+        """The sample record's fields, in :data:`DEFAULT_SAMPLE`'s ``(title, publisher, authors, year,
+        count)`` order -- ``sample_count_edit`` stays in this tuple even when hidden, since it is simply
+        never named by a pattern this type's patterns editor would accept."""
         for edit, value in zip(self.__sample_edits, DEFAULT_SAMPLE, strict=True):
             edit.setText(value)
 
@@ -138,8 +165,11 @@ class LocationTemplatesPage(QWidget):
         its row is flagged above.
         """
         sample = (edit.text() for edit in self.__sample_edits)
-        values: dict[str, str] = dict(zip(("title", "publisher", "authors", "year"), sample, strict=True))
-        usable = effective_location_templates(self.__ui.patterns_editor.values)
-        sanitized = (PathEditor.sanitize(render_location_pattern(pattern, values)) for pattern in usable)
+        values: dict[str, str] = dict(zip(("title", "publisher", "authors", "year", "count"), sample, strict=True))
+        usable = effective_location_templates(self.__ui.patterns_editor.values, self.__known_placeholders)
+        sanitized = (
+            PathEditor.sanitize(render_location_pattern(pattern, values, self.__known_placeholders))
+            for pattern in usable
+        )
         names = dict.fromkeys(name for name in sanitized if name is not None)
         self.__ui.try_it_result_label.setText("\n".join(names))
