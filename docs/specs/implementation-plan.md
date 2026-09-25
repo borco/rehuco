@@ -388,7 +388,7 @@ open document ([[acquisition-tooling#drag-drop-aids]]), with site knowledge in s
 | --- | --- | --- |
 | **WebScrapping1** (tracer) | a spike on what a browser drop actually carries per platform ([[acquisition-tooling#drop-source-url]]), then the HTML→Markdown drop on the description editor — the first drop handler and the first HTML dependency | LocalEdit |
 | WebScrapping2 | the scraper Protocols, typed results, the registry with the user's scripts folder and its settings page, the scrape job, and the URL drop on the main editor; ArtStation and Udemy as the built-ins ([[acquisition-tooling#scraper-protocols]], [[acquisition-tooling#scraper-registry]], [[acquisition-tooling#scrape-job]]) | WebScrapping1 |
-| WebScrapping3 | the image pipeline — local copy, image URL or data, referrer, rescale, next `<stem>NN` — and the picker for page and selection drops on the images sub-dock | WebScrapping2 |
+| WebScrapping3 | the image pipeline — local copy, image URL or data, referrer, bytes written as acquired, next `<stem>NN` or a scraper's own slot with the occupant backed up to `.orig`, a matched page's scraped images — and the picker for a Ctrl-held page or selection drop on the images sub-dock | WebScrapping2 |
 | WebScrappingX | polish catch-all, never "next" | — |
 
 **Exit criteria:** a course page dropped on an empty tutorial fills its title, authors, publisher, description and

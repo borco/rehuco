@@ -323,6 +323,30 @@ def test_rename_location_reinstalls_the_image_scanner_on_success(mocker: MockerF
     assert lister_of(model.image_scanner) is scan_rehu_screenshot_files
 
 
+def test_rescan_images_reinstalls_the_image_scanner() -> None:
+    """`rescan_images` reinstalls a **fresh** scanner, the same seam a screenshot-pattern change and a
+    successful rename already reinstall it through -- what an image acquired outside this model's own
+    editors (a drop's own write, a scrape's downloaded URL) calls once its bytes have landed, since
+    neither wrote through anything that would otherwise notice (#73).
+
+    **Test steps:**
+
+    * connect to ``image_scanner_changed`` and call ``rescan_images``
+    * verify the signal fired once and the scanner object was replaced, still over the `.rehu` lister
+    """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("C:/tutorials/info.rehu")))
+    original = model.image_scanner
+    received: list[object] = []
+    model.image_scanner_changed.connect(received.append)  # type: ignore[attr-defined]
+
+    model.rescan_images()
+
+    assert len(received) == 1
+    assert model.image_scanner is not original
+    assert model.image_scanner is not None
+    assert lister_of(model.image_scanner) is scan_rehu_screenshot_files
+
+
 def test_rename_location_logs_the_attempt_before_the_move_runs(
     mocker: MockerFixture, caplog: pytest.LogCaptureFixture
 ) -> None:

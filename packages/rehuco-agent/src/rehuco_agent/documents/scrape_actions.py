@@ -23,10 +23,11 @@ from ..scraping.markdown_images import substitute_image_stem
 from ..scraping.protocols import PageFetcher
 from ..scraping.registry import ScraperRegistry, shared_scraper_registry
 from ..scraping.results import Page, ScrapeResult
-from ..scraping.scrape_job import NoScraperError, ScrapeError, ScrapeJob
+from ..scraping.scrape_job import ScrapeJob
 from ..scraping.scraper_executor import ScraperExecutor, shared_scraper_executor
 from ..scraping.url_drop import UrlDrop
 from .document_fields import declared_field_names
+from .image_downloads import ImageDownloads
 from .rehu_document_model import RehuDocumentModel
 
 LOG: Final = logging.getLogger(__name__)
@@ -44,11 +45,12 @@ class ScrapeActions(QObject):  # pylint: disable=too-many-instance-attributes
     so this class only decides *which* fields this document's active type declares -- a field the result
     carries that the type does not is skipped, logged, never written.
 
-    **Images are not downloaded here.** The image pipeline that does (#73) is a separate, later piece of
-    work; a result carrying ``images`` is applied for its fields and description, and the image count is
-    only logged.
+    **Images go through `.ImageDownloads`** (#73), the same seam a URL dropped directly on the images
+    sub-dock uses: this class only hands over each `~rehuco_agent.scraping.results.ScrapedImage`'s URL,
+    referrer and slot, and never touches a file itself.
 
     :param model: the document these actions are about.
+    :param image_downloads: where a result's images are handed off.
     :param registry: where to look up a matching scraper; `None` uses the shared, process-wide instance.
     :param executor: what runs the scrape; `None` uses the shared, process-wide instance.
     :param fetcher: what fetches a URL drop's page when it carries no fragment; `None` uses
@@ -60,9 +62,10 @@ class ScrapeActions(QObject):  # pylint: disable=too-many-instance-attributes
     changed = Signal()
     """Fires when :attr:`notice` may have changed -- what the document's banner rebuilds on."""
 
-    def __init__(
+    def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
         model: RehuDocumentModel,
+        image_downloads: ImageDownloads,
         registry: ScraperRegistry | None = None,
         executor: ScraperExecutor | None = None,
         fetcher: PageFetcher | None = None,
@@ -70,6 +73,7 @@ class ScrapeActions(QObject):  # pylint: disable=too-many-instance-attributes
     ) -> None:
         super().__init__(parent)
         self.__model: Final = model
+        self.__image_downloads: Final = image_downloads
         self.__registry: Final = registry if registry is not None else shared_scraper_registry()
         self.__executor: Final = executor if executor is not None else shared_scraper_executor()
         self.__fetcher: Final = fetcher
@@ -79,7 +83,6 @@ class ScrapeActions(QObject):  # pylint: disable=too-many-instance-attributes
         signal is delivered), and read back to decide whether the document is still the one that asked."""
 
         self.__last_failure = ""
-        self.__last_error: ScrapeError | None = None
         self.__detached = False
         """Set by :meth:`detach`. Checked explicitly, rather than relying on dropping this object's own
         reference to a pending job: a job is kept alive by the very signal connection its result would
@@ -91,17 +94,14 @@ class ScrapeActions(QObject):  # pylint: disable=too-many-instance-attributes
     @property
     def notice(self) -> list[MessageBannerRow]:
         """The document's inline strip rows for the scrape currently in flight, if any, followed by the
-        last failure, if one stands and nothing is running -- replaced by the next drop's own outcome."""
+        last failure as a warning, if one stands and nothing is running -- replaced by the next drop's own
+        outcome. A page no scraper matches is a failure like any other: the drop did not do what it was
+        dropped for."""
         rows: list[MessageBannerRow] = []
         for host in self.__pending.values():
             rows.append(MessageBannerRow(MessageBannerSeverity.INFO, BUSY_MESSAGE.format(host=host)))
         if not self.__pending and self.__last_failure:
-            severity = (
-                MessageBannerSeverity.INFO
-                if isinstance(self.__last_error, NoScraperError)
-                else MessageBannerSeverity.WARNING
-            )
-            rows.append(MessageBannerRow(severity, self.__last_failure))
+            rows.append(MessageBannerRow(MessageBannerSeverity.WARNING, self.__last_failure))
         return rows
 
     def detach(self) -> None:
@@ -177,8 +177,6 @@ class ScrapeActions(QObject):  # pylint: disable=too-many-instance-attributes
         self.__pending.pop(job, None)
         if self.__detached:
             return
-        # not a runtime check -- see __on_result's matching cast
-        self.__last_error = cast(ScrapeError, error)
         self.__last_failure = str(error)
         self.changed.emit()
 
@@ -209,8 +207,5 @@ class ScrapeActions(QObject):  # pylint: disable=too-many-instance-attributes
         # not a runtime check: both are set together, unconditionally, by the time scrape() returns the
         # result __apply is only ever called with -- see ScrapeJob.publisher/page_url's own docstrings
         self.__model.add_source(cast(str, job.publisher), cast(str, job.page_url))
-        if result.images:
-            LOG.info(
-                "%d image(s) found; downloading them is not implemented yet (#73).",
-                len(result.images),
-            )
+        for image in result.images:
+            self.__image_downloads.submit(image.url, image.referrer, image.slot)

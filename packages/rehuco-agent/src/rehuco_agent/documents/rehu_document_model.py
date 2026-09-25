@@ -983,6 +983,17 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.dirty = True
         self.sources_changed.emit()
 
+    def rescan_images(self) -> None:
+        """Send this resource's ``<stem>NN`` set back to the directory (#73).
+
+        Reinstalls :attr:`image_scanner`, the same seam :meth:`__on_screenshot_patterns_changed`
+        reinstalls it through for a saved patterns edit -- the strip, the curation editor and the
+        Markdown view all rebuild from disk on that signal. What an image acquired outside this
+        model's own editors -- a drop's own write, or a scrape's downloaded URL -- calls once its
+        bytes have landed, since neither wrote through anything that would otherwise notice.
+        """
+        self.image_scanner = self.__make_image_scanner()
+
     def drop_inactive_block(self, name: str) -> None:
         """Drop a whole inactive plugin block the user chooses not to carry ([[plugins#fallback-editor]],
         #84).

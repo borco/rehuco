@@ -52,6 +52,26 @@ class ImageOrganizer(Protocol):
         :raises ValueError: the numbered set is full.
         """
 
+    def acquire(self, data: bytes, extension: str, slot: int | None = None) -> Path:
+        """Write newly-acquired image bytes into a ``<stem>NN`` slot (#73).
+
+        The fourth way this resource's screenshots come to exist, and the only one whose bytes come
+        from outside the resource entirely -- a local file dropped on the images sub-dock, a drop's own
+        image data, or a scraper's downloaded URL. ``data`` is written exactly as given: nothing here
+        decodes, rescales or re-encodes it.
+
+        :param data: the image's raw bytes.
+        :param extension: the file's extension, leading dot included (e.g. ``".jpg"``).
+        :param slot: the ``<stem>NN`` slot to write into; ``None`` (a plain drop) takes the next free
+            one. An explicit slot (a scrape result's own numbering) may already be occupied, in which
+            case the file already there is backed up first, never overwritten.
+        :returns: the new file's path.
+        :raises OSError: the write failed, or was refused -- including the refusal a path-less
+            document or a legacy ``.tc`` raises, the same one :meth:`reorder` and :meth:`convert` do.
+        :raises ValueError: ``slot`` is ``None`` and the numbered set is already full.
+        """
+        ...  # pylint: disable=unnecessary-ellipsis  # a long signature is what makes an inline pyright-ignore too long
+
     def remove(self, path: Path, remaining: Sequence[Path], deleter: Deleter | None = None) -> dict[str, str]:
         """Delete one screenshot and close the gap it leaves.
 

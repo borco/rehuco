@@ -162,6 +162,7 @@ from .rehu_rename import (
     rehu_rename_conflict,
     rename_rehu_resource,
 )
+from .rehu_screenshot_acquisition import save_screenshot, screenshot_backup_path
 from .rehu_screenshot_ordering import (
     DEFAULT_DELETER,
     Deleter,
@@ -507,10 +508,12 @@ __all__ = [
     "restore_backup",
     "retire_legacy_manifests",
     "rewrite_description_images",
+    "save_screenshot",
     "scan_conversion_backups",
     "scan_rehu_screenshot_files",
     "scan_tc_screenshots",
     "scan_unconverted_screenshots",
+    "screenshot_backup_path",
     "save_checksum_record",
     "screenshot_name_patterns_from_state",
     "screenshot_name_patterns_state",

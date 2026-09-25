@@ -24,7 +24,14 @@ from borco_core.logging import LogScope
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import QMessageBox, QWidget
-from rehuco_core import ConversionBackups, NoTrashBinError, conversion_backups, discard_conversion_backups
+from rehuco_core import (
+    BACKUP_SUFFIX,
+    LEGACY_SUFFIX,
+    ConversionBackups,
+    NoTrashBinError,
+    conversion_backups,
+    discard_conversion_backups,
+)
 
 from ..asking_deleter import AskingDeleter
 from ..delete_confirmation import confirm_delete
@@ -44,16 +51,26 @@ which is the point of it, and the handler exists for the icons drawn *without* a
 them one."""
 
 DISCARD_LABEL: Final = "&Discard Backups"
-DISCARD_TOOLTIP: Final = "Delete this resource's .orig backups, making the conversion permanent."
+DISCARD_TOOLTIP: Final = "Delete this resource's .orig backups."
+"""One kind of backup, not two ([[acquisition-tooling#tc-to-rehu]], #73): a ``.tc`` conversion's own
+retained originals and an image acquisition's overwritten-slot backups are both plain ``.orig``
+siblings, so this one action and this one sentence cover either -- there is nothing left here that is
+true of a conversion's backups and not of the other kind."""
 
-NOTICE: Final = "This resource still has its conversion backups — {summary}."
+NOTICE: Final = "This resource still has backups — {summary}."
 """What the document's inline strip says while backups are retained."""
 
 DISCARD_TITLE: Final = "Discard Backups"
-DISCARD_QUESTION: Final = (
+DISCARD_QUESTION: Final = "Permanently delete this resource's backups, freeing {size}?\n\nThis cannot be undone."
+DISCARD_QUESTION_IRREVERSIBLE: Final = (
     "Permanently delete this resource's backups, freeing {size}?\n\n"
-    "This cannot be undone. Its original .tc and screenshots are gone for good."
+    "Its original .tc and screenshots are gone for good.\n\nThis cannot be undone."
 )
+"""Asked instead of :data:`DISCARD_QUESTION` when the backups being discarded include the ``.tc``
+conversion made of it: for a resource acquired outside a conversion (a plain overwritten-slot backup,
+#73), the original bytes are still the live file being backed up, so nothing is lost that a re-download
+or a re-drop couldn't get back -- but a converted resource's ``.tc`` is the only copy of the pre-``.rehu``
+original left, and this is the last chance to say so before it goes."""
 
 DISCARD_FAILED_TITLE: Final = "Discard Failed"
 
@@ -103,12 +120,12 @@ class ConversionBackupActions(QObject):
 
     @property
     def discard_action(self) -> QAction:
-        """Deletes this resource's retained backups, making the conversion permanent."""
+        """Deletes this resource's retained backups."""
         return self.__discard_action
 
     @property
     def retained(self) -> bool:
-        """Whether this resource still holds conversion backups -- what decides whether Discard is
+        """Whether this resource still holds retained backups -- what decides whether Discard is
         offered, and whether the banner has anything to say."""
         return self.__retained_backups() is not None
 
@@ -163,7 +180,8 @@ class ConversionBackupActions(QObject):
         backups = self.__retained_backups()
         if backups is None:
             return
-        question = DISCARD_QUESTION.format(size=self.__size(backups))
+        template = DISCARD_QUESTION_IRREVERSIBLE if self.__irreversible(backups) else DISCARD_QUESTION
+        question = template.format(size=self.__size(backups))
         if not confirm_delete(self.__parent, DeletionKind.BACKUPS, DISCARD_TITLE, question):
             return
         with LogScope.open(backups.rehu_path):
@@ -189,6 +207,20 @@ class ConversionBackupActions(QObject):
                 return
             LOG.info("Discarded %d backup(s) beside %s.", len(discarded), backups.rehu_path)
         self.refresh()
+
+    @staticmethod
+    def __irreversible(backups: ConversionBackups) -> bool:
+        """Whether ``backups`` includes the resource's original ``.tc`` -- the point-of-no-return case.
+
+        A plain acquisition's overwritten-slot backup is a copy of a file still present in the resource
+        (a re-download or a re-drop gets it back); a conversion's own ``.tc.orig`` is the only surviving
+        copy of the pre-``.rehu`` original, so discarding it is the one truly irreversible step.
+
+        :param backups: the retained inventory to check.
+        :returns: whether the discard this describes would lose the original ``.tc``.
+        """
+        tc_backup_suffix = f"{LEGACY_SUFFIX}{BACKUP_SUFFIX}"
+        return any(path.name.endswith(tc_backup_suffix) for path in backups.backups)
 
     @staticmethod
     def __summary(backups: ConversionBackups) -> str:

@@ -32,16 +32,36 @@ whose QML drop areas and Scintilla drop override are the shape these follow.
   ([[acquisition-tooling#drop-source-url]]). A selection with no URL anywhere in it — every Firefox selection,
   §15.1.1 — has nothing to route a scrape by and is refused outright, the same as any drop this rule doesn't
   recognize.
-- **Anything dropped on the images sub-dock ends as screenshots.** A local image file is copied in. A drop carrying
-  `image/*` data is written from that data; an image URL is downloaded, with the page it came from as referrer where
-  known. A page URL, or a selection, is **parsed for candidates** — `<img>` sources, the largest `srcset` entry,
-  `data-src`, `og:image`, with a matching site scraper allowed to rewrite thumbnail URLs to their full-size originals —
-  and shown in a **picker**: a checkable list with thumbnails, nothing downloaded until the user chooses. Every image
-  then takes the same path: rescaled to a configurable maximum width (300 px by default, Pillow) and saved under the
-  next free `<stem>NN.jpg` ([[data-model#image-meanings]]), which makes the drop the second client of the screenshot
-  naming the conversion already serves ([[acquisition-tooling#tc-to-rehu]]). A legacy `.tc` refuses the drop, as it
-  refuses every other screenshot edit. The browser's own cache is not reachable from a drop, so an image already on
-  screen is fetched again rather than copied out of it.
+- **Anything dropped on the images sub-dock ends as screenshots.** A local image file is copied in, every recognized
+  image file of a multi-file drop in turn. A drop carrying `image/*` data is written from that data. A URL whose own
+  path ends in a recognized image extension is downloaded, with the page it came from as referrer where the drop names
+  one ([[acquisition-tooling#drop-source-url]]) — a link and an image arrive as the same bare `text/uri-list` URL, so
+  the extension is the only signal that tells them apart. Any other URL, and every selection whatever its URL, is read
+  as a **page** — a selection's own `text/html` is that page, as on the main editor, rather than fetched again: a site
+  scraper matching
+  its host ([[acquisition-tooling#scraper-registry]]) is run for its `images` alone, its fields and description thrown
+  away, and every image it names is downloaded into the slot it assigns — how a resource's screenshots are re-fetched
+  from their source page without touching the rest of its record. A page no scraper matches is refused, with a banner
+  row that says so and points at the picker. Holding **Ctrl** while dropping a page URL or a selection, matched or
+  not, has it **parsed for candidates** instead — `<img>` sources, the largest `srcset` entry, `data-src`,
+  `og:image`, with a matching site scraper allowed to rewrite thumbnail URLs to their full-size originals — and shown
+  in a **picker**: a checkable list with thumbnails, nothing downloaded until the user chooses. Ctrl is the modifier
+  for now, configurable once the shortcut settings exist. Every image then takes the same path: its bytes are
+  **written exactly as acquired**, never decoded, rescaled or re-encoded, so a GIF keeps its animation and the file
+  keeps its own extension. A plain drop lands on the next free `<stem>NN` ([[data-model#image-meanings]]), one past
+  the highest, which makes the drop the second client of the screenshot naming the conversion already serves
+  ([[acquisition-tooling#tc-to-rehu]]). A scraped image lands on the slot its scraper assigned, and a file already
+  there is **backed up, never overwritten**: renamed to `<stem>NN.<ext>.orig`, or, when that is taken, to
+  `<stem>NN.2.<ext>.orig`, `.3.`, and so on — the counter sits before the extension so every backup still ends in
+  `.orig`, and the one Discard of [[acquisition-tooling#convert-mechanics]] covers these and a conversion's alike.
+  The set holds `<stem>00` to `<stem>99`: an image that would need a slot past `99` is refused, logged as a warning
+  in the document's log, and named in a warning row on the document's banner — as is every other acquisition that
+  fails: a download, a page read, a dropped file that will not read, a write refused or failed. Each distinct failure
+  of one drop gets its own row, and the next drop's outcome replaces them. A download runs on the scrape job's own
+  pool ([[acquisition-tooling#scrape-job]]), not the app-wide task queue, and its result is written only if the
+  document is still open, at the same path, and unlocked. A legacy `.tc` refuses the drop, as it refuses every other
+  screenshot edit. The browser's own cache is not reachable from a drop, so an image already on screen is fetched
+  again rather than copied out of it.
 
 ### §15.1.1 What a drop carries, and where the page URL is
 
@@ -379,13 +399,14 @@ any image at all, 317 resources reference none, and every referenced `cover` is 
 cannot be read off the text either. Hence a dumb rename to the number each file already carries, and a hand
 correction where that was wrong.
 
-No screenshot is ever backed up to an `.orig` of its own — a rename is not a write, so nothing is lost by it, and
-the only backup a conversion produces is `info.tc.orig`, kept for reference. This is the **first concrete use of
-the read/import upgrade path ([[data-model#schema-version]])** rather than a one-off script — though a `.tc` is
-*not* itself "format v0": it is a different file format that never carried a `.rehu` version to upgrade from, so
-the adapter reads one and emits the **current** `.rehu` layout, stamp included (v0 means an *unstamped* `.rehu`,
-[[data-model#schema-version]]). Checksum generate/verify ([[data-model#checksums]]) belongs alongside the migration
-action in the same tooling.
+A conversion never backs a screenshot up to an `.orig` of its own — a rename is not a write, so nothing is lost by it,
+and the only backup a conversion produces is `info.tc.orig`, kept for reference; an image acquisition reusing an
+occupied slot is the one writer that does back a screenshot up ([[acquisition-tooling#drag-drop-aids]]). This is the
+**first concrete use of the read/import upgrade path ([[data-model#schema-version]])** rather than a one-off script —
+though a `.tc` is *not* itself "format v0": it is a different file format that never carried a `.rehu` version to
+upgrade from, so the adapter reads one and emits the **current** `.rehu` layout, stamp included (v0 means an *unstamped*
+`.rehu`, [[data-model#schema-version]]). Checksum generate/verify ([[data-model#checksums]]) belongs alongside the
+migration action in the same tooling.
 
 ### §15.3.1 Convert, Discard and the rollback contract
 
@@ -485,9 +506,11 @@ task-queue job whatever the selection size. There is nothing here to filter by o
 has none to report — the only question a row answers is *keep this small backup, or reclaim its bytes*.
 
 The same action sits on an open converted document, as a toolbar action offered exactly while it has something to
-do — the mirror of Convert's own visible-while-`legacy_tc` rule: **Discard is offered while `info.tc.orig` is
-present.** A save never discards it on its own — discarding is deliberate and confirmed or it is not discarding at
-all, and the `.orig` pair is the only copy of the original `.tc` (and, once retired, of the legacy manifest).
+do — the mirror of Convert's own visible-while-`legacy_tc` rule: **Discard is offered while any `.orig` backup is
+present** — `info.tc.orig`, or a screenshot an image acquisition backed up before reusing its slot
+([[acquisition-tooling#drag-drop-aids]]). A save never discards it on its own — discarding is deliberate and confirmed
+or it is not discarding at all, and the `.orig` pair is the only copy of the original `.tc` (and, once retired, of the
+legacy manifest).
 
 ### §15.3.2 Legacy screenshot backups, retired
 

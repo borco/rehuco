@@ -9,6 +9,7 @@ from collections.abc import Hashable, Mapping
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Final, cast, override
+from urllib.parse import urlsplit
 
 import cbor2
 import PySide6QtAds as QtAds
@@ -16,10 +17,10 @@ from borco_pyside.logging import LogWidget
 from borco_pyside.qtads import QtAdsAutoHideButtonSuppressor, QtAdsFocusTracker
 from borco_pyside.theming import ActionIconThemeHandler
 from borco_pyside.widgets import MessageBanner, MessageBannerRow, MessageBannerSeverity, ToolBarStretch
-from PySide6.QtCore import QByteArray, QEvent, QObject, Qt, Signal
+from PySide6.QtCore import QByteArray, QEvent, QMimeData, QObject, Qt, Signal
 from PySide6.QtGui import QAction, QColor, QDropEvent, QIcon, QKeySequence
 from PySide6.QtWidgets import QApplication, QMainWindow, QMenu, QMessageBox, QVBoxLayout, QWidget
-from rehuco_core import REFERENCE_IMAGES_PLUGIN, TaskQueue, backup_path, originals_to_back_up
+from rehuco_core import IMAGE_EXTENSIONS, REFERENCE_IMAGES_PLUGIN, TaskQueue, backup_path, originals_to_back_up
 
 from ..app_logging import LOG_VIEW_ICON_RESOURCE, build_log_widget, shared_log_bridge
 from ..asking_deleter import AskingDeleter
@@ -30,6 +31,7 @@ from ..fields.type_field import type_label
 from ..fields.widgets import ImageLightbox, ImageSource, ImageViewerMode, PathImageSource, ThumbnailLoader, TypeBadge
 from ..glyphs import TAB_CLOSE_GLYPH
 from ..recycle_bin_deleter import configured_deleter
+from ..scraping.image_pipeline import MIME_EXTENSIONS, ImageBytes
 from ..scraping.url_drop import UrlDrop
 from ..settings.default_layout_settings import shared_default_layout_settings
 from ..settings.deletion_settings import DeletionKind
@@ -43,7 +45,9 @@ from .content_images import ContentDisplayFlags, ContentImagesModel, ContentImag
 from .conversion_backup_actions import ConversionBackupActions
 from .document_fields import EDITOR_IMAGES_TAB, EDITOR_MAIN_TAB, VIEWER_DESCRIPTION_TAB, build_document_form
 from .files_view import FilesView
+from .image_downloads import ImageDownloads
 from .name_suggestion_model import NameSuggestionModel
+from .rehu_document_image_organizer import RehuDocumentImageOrganizer
 from .rehu_document_model import RehuDocumentModel
 from .save_or_prompt_retry import save_or_prompt_retry
 from .scrape_actions import ScrapeActions
@@ -209,6 +213,144 @@ class UrlDropFilter(QObject):
         if event.type() == QEvent.Type.Drop:
             self.__actions.submit(drop)
         return True
+
+
+RENDERER_TAINT_FORMAT: Final = 'application/x-qt-windows-mime;value="chromium/x-renderer-taint"'
+"""Chromium's only drop-carried hint of where an image or a selection came from -- the source page's
+origin, scheme and host only, never the full path ([[acquisition-tooling#drop-source-url]], §15.1.1).
+Present on every Chromium image drop tried; absent from Firefox and from an address-bar drag."""
+
+
+class ImageDropFilter(QObject):
+    """Turns anything dropped on the Images sub-dock into an acquired screenshot
+    ([[acquisition-tooling#drag-drop-aids]], #73).
+
+    The same `~PySide6QtAds.CDockWidget`-level event filter idiom `UrlDropFilter` uses, and for the same
+    reason: this dock survives a type switch or a revert's wholesale grid rebuild, a filter installed on
+    its content would not. Tried in order -- the first that matches wins:
+
+    1. every local file (``file:`` in ``text/uri-list``) with a recognized image extension, read and
+       written synchronously -- a multi-file drop acquires every one of them, as one batch;
+    2. a drop carrying its own ``image/*`` data, written synchronously from those bytes;
+    3. an ``http(s)`` link, not a selection (the same reading
+       `~rehuco_agent.scraping.url_drop.UrlDrop.parse` does for the
+       Main Editor) whose own path also carries a recognized image extension, downloaded through
+       :attr:`__image_downloads`;
+    4. any other recognized ``http(s)`` URL, and every selection, read as a **page** -- a selection's own
+       ``text/html`` scraped as that page rather than fetched again, exactly as the Main Editor scrapes
+       one ([[acquisition-tooling#drag-drop-aids]]) -- and scraped for its images through
+       :meth:`~rehuco_agent.documents.image_downloads.ImageDownloads.submit_page` -- so a resource's
+       screenshots can be re-fetched from their source page (a redesign, a fixed link, a higher-resolution
+       asset) without a scrape's fields or description touching the ``.rehu`` at all.
+
+    **A link and an image are told apart by extension, not by drop shape.** Both reach Qt as a plain
+    ``text/uri-list`` URL with nothing else distinguishing them ([[acquisition-tooling#drop-source-url]],
+    §15.1.1), so the one signal available is the URL's own path -- a recognized image suffix takes case
+    3, anything else (including no suffix at all) takes case 4. A selection is always case 4, whatever its
+    URL: it carries markup of its own, and that markup is the page. Parsing an arbitrary page for image
+    *candidates* and letting the user pick among them is the picker's job (#275), not this filter's:
+    every image case 4 finds is downloaded outright, the same as a scrape's own images already are.
+
+    :param image_downloads: where a recognized drop is written or submitted.
+    :param model: the document, read for :attr:`~.RehuDocumentModel.locked` and
+        :attr:`~.RehuDocumentModel.path` -- a locked document, or one with no path yet, refuses the
+        drop outright.
+    """
+
+    def __init__(self, image_downloads: ImageDownloads, model: RehuDocumentModel) -> None:
+        super().__init__()
+        self.__image_downloads: Final = image_downloads
+        self.__model: Final = model
+
+    @override
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802 (Qt override)
+        """See :meth:`QObject.eventFilter`: accept a recognized image drop, act on it, and stop it from
+        reaching the dock's own (nonexistent) drop handling; let anything else through unchanged.
+
+        :param watched: the dock this filter is installed on.
+        :param event: the event to inspect.
+        :returns: whether the event was consumed here.
+        """
+        del watched
+        if event.type() not in (QEvent.Type.DragEnter, QEvent.Type.DragMove, QEvent.Type.Drop):
+            return False
+        drop_event = cast(QDropEvent, event)
+        if self.__model.locked or self.__model.path is None:
+            return False
+        data = drop_event.mimeData()
+        local_files = self.__local_files(data)
+        image_bytes = None if local_files else self.__image_bytes(data)
+        drop = None if local_files or image_bytes is not None else UrlDrop.parse(data)
+        if not local_files and image_bytes is None and drop is None:
+            return False
+        drop_event.acceptProposedAction()
+        if event.type() == QEvent.Type.Drop:
+            if local_files:
+                self.__image_downloads.acquire_local(local_files)
+            elif image_bytes is not None:
+                self.__image_downloads.acquire_local([image_bytes])
+            elif drop is not None:  # pragma: no branch -- the guard above already excludes all-None
+                if drop.fragment is None and self.__looks_like_image(drop.url):
+                    self.__image_downloads.submit(drop.url, self.__referrer(data))
+                else:
+                    self.__image_downloads.submit_page(drop)
+        return True
+
+    @staticmethod
+    def __local_files(data: QMimeData) -> list[Path]:
+        """Every ``file:`` URL in ``data`` with a recognized image extension (#73).
+
+        A multi-file drop -- several images selected in a file manager and dropped together -- acquires
+        every one of them, not only the first.
+
+        :param data: the drop's mime data.
+        :returns: the local paths, in the drop's own order; empty when none match.
+        """
+        if not data.hasUrls():
+            return []
+        files: list[Path] = []
+        for url in data.urls():
+            if url.isLocalFile():
+                candidate = Path(url.toLocalFile())
+                if candidate.suffix.lower() in IMAGE_EXTENSIONS:
+                    files.append(candidate)
+        return files
+
+    @staticmethod
+    def __image_bytes(data: QMimeData) -> ImageBytes | None:
+        """The drop's own ``image/*`` payload, if it carries one this pipeline recognizes.
+
+        :param data: the drop's mime data.
+        :returns: the raw bytes and the mime type they were read under, or ``None``.
+        """
+        for mime_type in MIME_EXTENSIONS:
+            if data.hasFormat(mime_type):
+                return ImageBytes(data=bytes(data.data(mime_type).data()), mime_type=mime_type)
+        return None
+
+    @staticmethod
+    def __looks_like_image(url: str) -> bool:
+        """Whether ``url``'s own path carries a recognized image extension -- case 3 rather than case 4
+        of the class docstring's list.
+
+        :param url: the dropped URL.
+        :returns: whether it looks like an image rather than a page.
+        """
+        return Path(urlsplit(url).path).suffix.lower() in IMAGE_EXTENSIONS
+
+    @staticmethod
+    def __referrer(data: QMimeData) -> str | None:
+        """The source page's origin, if Chromium's own drop-carried hint names one
+        ([[acquisition-tooling#drop-source-url]], §15.1.1).
+
+        :param data: the drop's mime data.
+        :returns: the origin URL, or ``None`` when the drop carries no such hint (every Firefox drop,
+            and Chromium's own address-bar drag) or it does not decode into one.
+        """
+        if not data.hasFormat(RENDERER_TAINT_FORMAT):
+            return None
+        origin = bytes(data.data(RENDERER_TAINT_FORMAT).data()).decode("utf-8", errors="replace").strip("\x00").strip()
+        return origin if origin.startswith(("http://", "https://")) else None
 
 
 class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attributes
@@ -381,7 +523,13 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         # (not discarded after building) so its fields outlive the widgets they built -- a field's
         # binding connections (Field.bind_external) are cleared when its widgets are destroyed, which
         # needs the field still alive at that moment (a form rebuild on a type switch/revert).
-        self.__form = build_document_form(model, name_suggestions=self.__name_suggestions)
+        # built once and shared with ImageDownloads below (#73): both are stateless writers of the same
+        # directory, so one instance covers the curation editor's reorders/removals and an acquisition's
+        # writes alike, rather than the form minting a second, redundant one of its own
+        self.__image_organizer: Final = RehuDocumentImageOrganizer(model)
+        self.__form = build_document_form(
+            model, name_suggestions=self.__name_suggestions, image_organizer=self.__image_organizer
+        )
         # a field that reports a transient status message (the authors viewer's hovered-link URL, a
         # StatusReporter) emits it rather than reaching for the status bar itself; collect those and
         # bubble them up through status_message, which DocumentsDock relays on to MainWindow's real bar.
@@ -498,15 +646,33 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         self.__conversion_backups: Final = ConversionBackupActions(model, self)
         self.__conversion_backups.changed.connect(self.__on_conversion_backups_changed)
 
+        # what a scraped image, or an image dropped directly on the images sub-dock, is downloaded and
+        # written to disk through (#73). Built before ScrapeActions, which hands every scraped image's
+        # URL over to it, and before the first __banner_rows call below, which asks what it found.
+        self.__image_downloads: Final = ImageDownloads(model, self.__image_organizer, parent=self)
+        self.__image_downloads.changed.connect(self.__on_image_download_notice_changed)
+        # an acquisition writing into an occupied slot backs the file already there up first (#73),
+        # which is not a seam ConversionBackupActions.refresh already runs at on its own -- it reacts
+        # to a path change, a save or a lock-reason change, none of which this is
+        self.__image_downloads.acquired.connect(self.__conversion_backups.refresh)
+
         # a URL (or a selection carrying one) dropped on the Main Editor dock queues a scrape and applies
         # its result as an ordinary dirty edit ([[acquisition-tooling#drag-drop-aids]], #272). Built
         # before the first __banner_rows call below, which asks what it found.
-        self.__scrapes: Final = ScrapeActions(model, parent=self)
+        self.__scrapes: Final = ScrapeActions(model, self.__image_downloads, parent=self)
         self.__scrapes.changed.connect(self.__on_scrape_notice_changed)
         main_editor_dock: QtAds.CDockWidget = self.__editor_docks[EDITOR_MAIN_TAB]
         main_editor_dock.setAcceptDrops(True)  # pylint: disable=no-member
         self.__url_drop_filter: Final = UrlDropFilter(self.__scrapes, model)
         main_editor_dock.installEventFilter(self.__url_drop_filter)  # pylint: disable=no-member
+
+        # anything dropped directly on the images sub-dock ends as a screenshot too
+        # ([[acquisition-tooling#drag-drop-aids]], #73): a local file or image data is written
+        # synchronously, an image URL goes through the same ImageDownloads a scrape's images do
+        images_dock: QtAds.CDockWidget = self.__editor_docks[EDITOR_IMAGES_TAB]
+        images_dock.setAcceptDrops(True)  # pylint: disable=no-member
+        self.__image_drop_filter: Final = ImageDropFilter(self.__image_downloads, model)
+        images_dock.installEventFilter(self.__image_drop_filter)  # pylint: disable=no-member
 
         self.__set_editors_locked(model.locked)
         self.__update_write_action_visibility()
@@ -655,6 +821,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         if self.__checksums is not None:
             self.__checksums.detach()
         self.__scrapes.detach()
+        self.__image_downloads.detach()
 
     def toggle_action(self, tab: FieldsTab) -> QAction:
         """The visibility-toggle action for ``tab``'s dock -- whichever viewer or editor tab it is.
@@ -910,6 +1077,13 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         """
         self.__banner.set_rows(self.__banner_rows())
 
+    def __on_image_download_notice_changed(self) -> None:
+        """Rebuild the inline notice strip as an image acquisition starts, finishes, or fails (#73).
+
+        The same shape as :meth:`__on_scrape_notice_changed`, and for the same reason: an acquisition's
+        outcome changes nothing about what this document can do."""
+        self.__banner.set_rows(self.__banner_rows())
+
     def __on_rename_error_changed(self) -> None:
         """Rebuild the inline notice strip as a failed rename is reported or cleared (#162).
 
@@ -966,7 +1140,9 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         # destroyed -- deterministically, while its fields are still alive -- so no stale lambda fires into
         # a deleted widget later (a subsequent revert/switch). Then replace the retained form.
         self.__form.clear_external()
-        self.__form = build_document_form(self.__model, name_suggestions=self.__name_suggestions)
+        self.__form = build_document_form(
+            self.__model, name_suggestions=self.__name_suggestions, image_organizer=self.__image_organizer
+        )
         # re-route the rebuilt form's fresh fields' status messages; the outgoing form's fields drop
         # their connection as they are collected (Qt severs a dead QObject sender's connections).
         self.__form.connect_status_messages(self.status_message)
@@ -1123,7 +1299,8 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             upgrade row when :attr:`~RehuDocumentModel.upgradable` is set, then a rename row when
             :attr:`~RehuDocumentModel.rename_error` is non-empty, then the checksum and conversion-backup
             rows, then whatever `.ScrapeActions.notice` says about the current or last dropped scrape
-            (#272).
+            (#272), then whatever `.ImageDownloads.notice` says about an image acquisition in flight or
+            its last failure (#73).
         """
         rows = [MessageBannerRow(MessageBannerSeverity.WARNING, reason.message) for reason in self.__model.lock_reasons]
         if self.__model.upgradable:
@@ -1138,6 +1315,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             # screenshots, worth knowing about but nothing here is at risk (#193, #290)
             rows.append(MessageBannerRow(MessageBannerSeverity.INFO, self.__conversion_backups.notice))
         rows.extend(self.__scrapes.notice)
+        rows.extend(self.__image_downloads.notice)
         return rows
 
     def __set_editors_locked(self, locked: bool) -> None:

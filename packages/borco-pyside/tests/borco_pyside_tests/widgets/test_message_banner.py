@@ -8,10 +8,12 @@ widening the strip.
 """
 
 from collections.abc import Iterator
+from typing import override
 
 from borco_pyside.widgets import MessageBanner, MessageBannerRow, MessageBannerSeverity, MessageBannerSeverityStyle
+from PySide6.QtCore import QEvent, QObject
 from PySide6.QtGui import QColor, QIcon, QPixmap
-from PySide6.QtWidgets import QLabel
+from PySide6.QtWidgets import QLabel, QWidget
 from pytest import fixture
 from pytestqt.qtbot import QtBot
 
@@ -218,6 +220,61 @@ def test_set_rows_replaces_the_previous_rows(qtbot: QtBot) -> None:
     texts = {label.text() for label in banner.findChildren(QLabel)}
     assert "Stale notice" not in texts
     assert "Fresh notice" in texts
+
+
+class ShowRecorder(QObject):
+    """Records, for every ``Show`` a watched widget receives, whether it was a top-level window then."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.shown_as_window: list[bool] = []
+
+    @override
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802 (Qt override)
+        """Record a ``Show``, and let every event through.
+
+        :param watched: the watched widget.
+        :param event: the event it is about to receive.
+        :returns: always ``False``.
+        """
+        if event.type() == QEvent.Type.Show and isinstance(watched, QWidget):
+            self.shown_as_window.append(watched.isWindow())
+        return False
+
+
+def test_a_row_removed_before_its_deferred_show_is_never_shown_as_a_window(qtbot: QtBot) -> None:
+    """A row added while the strip is visible, then removed before the event loop runs, is never shown
+    on its own as a top-level window.
+
+    Adding a widget to a visible parent's layout queues a deferred show for it, and a removed row is
+    unparented at once -- so without an explicit hide, that deferred show pops it up as a bare window:
+    the flash a short-lived busy row made, replaced before its first paint.
+
+    **Test steps:**
+
+    * show a banner with one row, so the strip is visible
+    * replace that row with another, then clear the strip before any event is processed
+    * let the event loop run, and verify the removed row was never shown at all
+    """
+    banner = MessageBanner()
+    qtbot.addWidget(banner)
+    banner.set_rows([row(text="first")])
+    banner.show()
+    qtbot.waitExposed(banner)
+    banner.set_rows([row(text="second")])
+    layout = banner.layout()
+    assert layout is not None
+    item = layout.itemAt(0)
+    assert item is not None
+    recorder = ShowRecorder()
+    removed = item.widget()
+    assert removed is not None
+    removed.installEventFilter(recorder)
+
+    banner.set_rows([])
+    qtbot.wait(50)
+
+    assert not recorder.shown_as_window
 
 
 def test_an_empty_row_list_shows_nothing(qtbot: QtBot) -> None:
