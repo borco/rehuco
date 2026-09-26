@@ -14,7 +14,7 @@ from typing import Final, cast
 
 from PySide6.QtCore import QSettings
 
-from .persistent_settings import APPLICATION_NAME, persistent_settings
+from .persistent_settings import config_folder, persistent_settings
 
 GROUP: Final = "scrapers"
 SCRIPTS_FOLDER_KEY: Final = "scripts_folder"
@@ -30,20 +30,6 @@ class Browser(StrEnum):
     FIREFOX = "firefox"
     CHROME = "chrome"
     EDGE = "edge"
-
-
-def config_folder() -> Path:
-    """This app's own config directory.
-
-    Derived from `persistent_settings`'s own `.ini` location rather than `QStandardPaths.AppConfigLocation`
-    -- that call needs an organization/application name set on `QCoreApplication`, which nothing in this
-    app does today, while the `.ini`'s path already carries both. Its *parent* alone is the
-    **organization** directory (``…/borco/``, shared by every borco app), so the application name is
-    appended here to land under this app's own config directory specifically.
-
-    :returns: this app's config directory. Not created by this call.
-    """
-    return Path(persistent_settings().fileName()).parent / APPLICATION_NAME
 
 
 def default_scripts_folder() -> Path:

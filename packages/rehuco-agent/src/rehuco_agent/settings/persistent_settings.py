@@ -1,6 +1,7 @@
 """App-wide persistent settings storage, shared by every settings section (e.g. `DocumentSessionSettings`)."""
 
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Final
 
 from PySide6.QtCore import QSettings
@@ -14,6 +15,22 @@ def persistent_settings() -> QSettings:
     return QSettings(
         QSettings.Format.IniFormat, QSettings.Scope.UserScope, ORGANIZATION_NAME, application=APPLICATION_NAME
     )
+
+
+def config_folder() -> Path:
+    """This app's own config directory -- where every file the app owns lives, apart from the ``.ini``
+    itself (#361).
+
+    Derived from `persistent_settings`'s own `.ini` location rather than `QStandardPaths.AppConfigLocation`
+    -- that call needs an organization/application name set on `QCoreApplication`, which nothing in this
+    app does today, while the `.ini`'s path already carries both. Its *parent* alone is the
+    **organization** directory (``…/borco/``, shared by every borco app), so the application name is
+    appended here to land under this app's own config directory specifically. A file written straight into
+    the parent would sit loose among other apps' settings.
+
+    :returns: this app's config directory. Not created by this call.
+    """
+    return Path(persistent_settings().fileName()).parent / APPLICATION_NAME
 
 
 def read_stored_strings(value: object) -> tuple[str, ...]:

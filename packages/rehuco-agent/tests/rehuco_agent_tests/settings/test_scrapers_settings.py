@@ -12,6 +12,7 @@ from typing import Any
 
 from pytest import fixture
 from pytest_mock import MockerFixture
+from rehuco_agent.settings import persistent_settings as persistent_settings_module
 from rehuco_agent.settings import scrapers_settings
 from rehuco_agent.settings.scrapers_settings import (
     Browser,
@@ -66,8 +67,10 @@ def settings() -> FakeSettings:
 def clear_shared_instance_cache(mocker: MockerFixture) -> Iterator[None]:
     """Clear the ``lru_cache``-backed singleton before and after every test, and patch
     ``persistent_settings`` so :func:`default_scripts_folder` never reaches the developer's real
-    config directory (see ``test_markdown_rendering_settings.py`` for the full rationale)."""
+    config directory (see ``test_markdown_rendering_settings.py`` for the full rationale) -- patched
+    where :func:`~rehuco_agent.settings.persistent_settings.config_folder` resolves it too (#361)."""
     mocker.patch.object(scrapers_settings, "persistent_settings", return_value=FakeSettings())
+    mocker.patch.object(persistent_settings_module, "persistent_settings", return_value=FakeSettings())
     shared_scrapers_settings.cache_clear()
     yield
     shared_scrapers_settings.cache_clear()

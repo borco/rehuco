@@ -576,7 +576,7 @@ What a **reference-images** resource's content *is* was settled by #197: content
   as *never*. The agent resolves all four when a run is enqueued and captures them into the job — core never reads a
   setting, and a restored job is *the job that was queued*. **The per-location trust cache has no page here**
   (#358): it is a per-machine implementation detail behind the *checked recently* glyph, not a choice to configure.
-  Today it is `checksum-trust.json` beside the settings file, next to the saved task queue; its eventual home is the
+  Today it is `checksum-trust.json` in the app's own config folder, next to the saved task queue; its eventual home is the
   `.rehudb` cache of [[data-model#local-file-trio]], being derived and disposable in exactly that table's sense.
 - **A sweep verifies a folder recursively, skipping what was checked recently** (#242). The user points it at a
   folder, a walk finds every `.rehu` under it, and each resource is verified with the staleness window in force —

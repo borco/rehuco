@@ -22,25 +22,26 @@ from rehuco_core import (
     TaskQueueItem,
 )
 
-from ..settings.persistent_settings import persistent_settings
+from ..settings.persistent_settings import config_folder
 
 LOG: Final = logging.getLogger(__name__)
 
 TASK_QUEUE_FILENAME: Final = "task-queue.json"
-"""What the saved queue is called, beside the settings file."""
+"""What the saved queue is called, in the app's own config folder."""
 
 
 def task_queue_path() -> Path:
     """Where the saved queue lives.
 
-    **Beside the settings file rather than inside it**: this is a list of records with a shape of its
+    **A file of its own rather than inside the settings**: this is a list of records with a shape of its
     own, and `QSettings`' flat key space would spell every job's opaque state as
-    ``tasks/3/state/paths/7``. Sharing the settings directory is what keeps it per-user and per-scope
-    without this module knowing what either means on this OS.
+    ``tasks/3/state/paths/7``. Living in :func:`~rehuco_agent.settings.persistent_settings.config_folder`
+    is what keeps it per-user and per-scope without this module knowing what either means on this OS --
+    and keeps it out of the organization folder every borco app shares (#361).
 
     :returns: the queue file's path, whether or not it exists.
     """
-    return Path(persistent_settings().fileName()).parent / TASK_QUEUE_FILENAME
+    return config_folder() / TASK_QUEUE_FILENAME
 
 
 class TaskQueueStore:
@@ -146,6 +147,8 @@ class TaskQueueStore:
         items = self.__queue.serialize()
         with self.__lock:
             try:
+                # the config folder does not exist until something is first written there (#361)
+                self.__path.parent.mkdir(parents=True, exist_ok=True)
                 atomic_write_text(self.__path, json.dumps(items, indent=2))
             except OSError:
                 LOG.exception("The task queue could not be saved to %s.", self.__path)

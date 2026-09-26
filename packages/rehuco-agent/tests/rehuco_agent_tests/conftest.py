@@ -39,6 +39,7 @@ from rehuco_agent.settings import (
     location_templates_settings,
     logs_settings,
     markdown_rendering_settings,
+    persistent_settings,
     reference_images_settings,
     scrapers_settings,
     screenshot_patterns_settings,
@@ -309,11 +310,15 @@ def isolate_shared_scrapers_settings(mocker: MockerFixture) -> Iterator[None]:
     on `shared_logs_settings`.
 
     Tests that specifically exercise the scrapers settings patch ``persistent_settings`` themselves.
+
+    Also patched where :func:`~rehuco_agent.settings.persistent_settings.config_folder` resolves it, which
+    is what the scripts and persona folders -- and every other app-owned file -- are derived from (#361).
     """
     shared_scrapers_settings.cache_clear()
     shared_scraper_registry.cache_clear()
     shared_scraper_executor.cache_clear()
     mocker.patch.object(scrapers_settings, "persistent_settings", return_value=FakeSettings())
+    mocker.patch.object(persistent_settings, "persistent_settings", return_value=FakeSettings())
     yield
     shared_scrapers_settings.cache_clear()
     shared_scraper_registry.cache_clear()
