@@ -4736,7 +4736,12 @@ def test_a_type_switch_closes_the_outgoing_types_open_dock(
     """
     content_images_dock(refimages_widget).toggleView(True)
     toggle = content_images_dock(refimages_widget).toggleViewAction()
-    toolbar = refimages_widget.findChildren(QToolBar)[0]
+    # not findChildren(QToolBar)[0]: an *open* Content Images now carries a QToolBar of its own (#359),
+    # nested under the dock manager -- which this DFS search reaches before the widget's own "View"
+    # toolbar, a sibling added later. Found by its title instead of position.
+    toolbar = next(
+        candidate for candidate in refimages_widget.findChildren(QToolBar) if candidate.windowTitle() == "View"
+    )
     assert toggle in toolbar.actions()
 
     refimages_model.resource_type = "tutorial"
@@ -5018,6 +5023,78 @@ def test_a_document_with_no_archive_opens_and_edits_with_an_empty_dock(
     assert len(content_images_view(refimages_widget).source) == 0
     assert not refimages_widget.model.locked
     assert all(surface.isEnabled() for surface in field_surfaces(refimages_widget))
+
+
+def test_refresh_is_always_enabled_and_picks_up_a_zip_packed_outside_the_app(
+    refimages_widget: DocumentWidget, refimages_model: RehuDocumentModel, mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """The Refresh action re-lists from disk on demand, so a zip packed outside the app while the dock
+    was already open is not stuck until it is closed and reopened (#359).
+
+    **Test steps:**
+
+    * bind the model to a path and show the dock with no archive found
+    * verify the action is enabled with an empty list
+    * make the next enumeration find one entry, then trigger Refresh
+    * verify the enumeration ran again and the grid picked up the new entry
+    """
+    enumeration = mocker.patch.object(content_images_model, "enumerate_content_images", return_value=[])
+    refimages_model.path = Path("/fake/refimages/info.rehu")
+    content_images_dock(refimages_widget).toggleView(True)
+    qtbot.waitUntil(lambda: content_images_view(refimages_widget).layout_table is not None)
+    panel = content_images_dock(refimages_widget).widget()
+    assert isinstance(panel, ContentImagesPanel)
+    assert panel.refresh_action.isEnabled()
+
+    found = [ContentImageEntry(Path("/fake/refimages/pack.zip"), "a.jpg", 0, 0)]
+    enumeration.return_value = found
+    content_model = refimages_widget._DocumentWidget__content_images_model  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    with qtbot.waitSignal(content_model.modelReset, timeout=WAIT_TIMEOUT_MS):
+        panel.refresh_action.trigger()
+
+    assert enumeration.call_count == 2
+    assert len(content_images_view(refimages_widget).source) == 1
+
+
+def test_refresh_is_enabled_on_an_unsaved_document(refimages_widget: DocumentWidget) -> None:
+    """Refresh stays enabled for a document that has never been saved, where the dock has never had a
+    path to enumerate (#359).
+
+    **Test steps:**
+
+    * verify the action is enabled while the model has no path yet
+    """
+    assert refimages_widget.model.path is None
+    panel = content_images_dock(refimages_widget).widget()
+    assert isinstance(panel, ContentImagesPanel)
+    assert panel.refresh_action.isEnabled()
+
+
+def test_the_first_save_re_lists_the_content_images(
+    refimages_widget: DocumentWidget, refimages_model: RehuDocumentModel, mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """A brand-new resource's first save re-lists its content images: for one bound to a path by
+    ``create_new`` (the directory-open-with-no-``info.rehu`` flow), ``path_changed`` never fires on
+    that save, since the path was already set (#359).
+
+    **Test steps:**
+
+    * with the dock open and nothing found yet, drop the model back to not-yet-saved (a loaded document
+      starts ``saved_on_disk``, so the flip to ``False`` here stands in for that starting state)
+    * mark it saved on disk, as ``save()`` does on its first run
+    * verify the enumeration ran again
+    """
+    enumeration = mocker.patch.object(content_images_model, "enumerate_content_images", return_value=[])
+    refimages_model.path = Path("/fake/refimages/info.rehu")
+    content_images_dock(refimages_widget).toggleView(True)
+    qtbot.waitUntil(lambda: content_images_view(refimages_widget).layout_table is not None)
+    assert enumeration.call_count == 1
+    refimages_model.saved_on_disk = False
+    enumeration.reset_mock()
+
+    refimages_model.saved_on_disk = True
+
+    enumeration.assert_called_once()
 
 
 def test_a_content_image_activated_in_the_dock_opens_the_lightbox_over_the_pack(

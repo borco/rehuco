@@ -642,6 +642,12 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         # the archives are found relative to the path, so a path change re-enumerates them; connected
         # once here rather than by the dock that needs it, which a type change removes and rebuilds
         model.path_changed.connect(lambda _path: self.__on_content_images_path_changed())  # type: ignore[attr-defined]
+        # a brand-new resource's first save (#359): the path was already set by create_new, so
+        # path_changed never fires, and a reader who packed zips outside the app while the document sat
+        # unsaved would otherwise see them only after closing and reopening the dock
+        model.saved_on_disk_changed.connect(  # type: ignore[attr-defined]
+            lambda _saved: self.__refresh_content_images()
+        )
 
         # unlike the checksum pair, these need no queue: both operations are a handful of renames over
         # one directory, run inline the way `RehuDocumentModel.convert` -- their exact mirror -- is
@@ -2045,17 +2051,24 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         dock is shown**, not at construction: enumeration opens every archive the resource holds, over
         a NAS mount for the packs that matter, and a document opened to read its fields should not pay
         that. Re-enumerated on every show, which is also how a changed extension set (the Images /
-        Files page) reaches it, and on a path change (connected at construction, since the archives
-        are found relative to it).
+        Files page) reaches it; on a path change (connected at construction, since the archives are
+        found relative to it); on the document's first save; and on the panel's own Refresh (#359),
+        the one seam a reader controls -- what picks up a zip packed outside the app.
 
         :param view: the grid.
         :returns: the dock, hidden.
         """
+        panel = ContentImagesPanel(view, self)
+        # always enabled (#359): the dock's own toggle-and-path-change refresh seams miss a stacked-tab
+        # switch and a document's first save, so this is the one way to pick up a change made outside
+        # the app on demand -- and the isClosed() guard `__refresh_content_images` otherwise keeps is
+        # moot here, since the action only fires while this panel is on screen to be clicked or focused
+        panel.refresh_requested.connect(self.__refresh_content_images)
         dock = self.__add_hidden_inspection_dock(
             CONTENT_IMAGES_DOCK_NAME,
             CONTENT_IMAGES_DOCK_TITLE,
             CONTENT_IMAGES_ICON_RESOURCE,
-            ContentImagesPanel(view, self),
+            panel,
             insert_mode=QtAds.CDockWidget.eInsertMode.ForceNoScrollArea,
             min_content_height=CONTENT_IMAGES_DOCK_MIN_HEIGHT,
         )
