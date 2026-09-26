@@ -10,8 +10,16 @@ from borco_pyside.logging import DEFAULT_LOG_LIMIT
 from pytest import fixture
 from rehuco_agent.settings.logs_settings import (
     APP_LIMIT_KEY,
+    DEFAULT_FILE_BACKUPS,
+    DEFAULT_FILE_SIZE_MB,
+    FILE_BACKUPS_KEY,
+    FILE_SIZE_MB_KEY,
     GROUP,
+    MAXIMUM_FILE_BACKUPS,
+    MAXIMUM_FILE_SIZE_MB,
     MINIMUM_APP_LIMIT,
+    MINIMUM_FILE_BACKUPS,
+    MINIMUM_FILE_SIZE_MB,
     MINIMUM_RESOURCE_LIMIT,
     RESOURCE_LIMIT_KEY,
     LogsSettings,
@@ -79,6 +87,21 @@ def test_both_limits_default_to_the_librarys_own(settings: FakeSettings) -> None
     assert logs.resource_limit == DEFAULT_LOG_LIMIT
 
 
+def test_the_run_log_files_default_to_a_small_size_and_two_backups(settings: FakeSettings) -> None:
+    """A fresh install keeps the run log small -- it exists to survive a crash, not to be a scroll-back
+    (#362).
+
+    **Test steps:**
+
+    * Load from empty storage.
+    * Assert the size and backup count are this section's own defaults.
+    """
+    logs = LogsSettings()
+    logs.load(settings)  # type: ignore[arg-type]  # the stand-in mirrors the QSettings API used
+    assert logs.file_size_mb == DEFAULT_FILE_SIZE_MB
+    assert logs.file_backups == DEFAULT_FILE_BACKUPS
+
+
 # endregion
 
 
@@ -97,6 +120,8 @@ def test_saves_and_reloads_both_limits(settings: FakeSettings) -> None:
     logs = LogsSettings()
     logs.app_limit = 1200
     logs.resource_limit = 80
+    logs.file_size_mb = 5
+    logs.file_backups = 4
     logs.save(settings)  # type: ignore[arg-type]  # the stand-in mirrors the QSettings API used
 
     reloaded = LogsSettings()
@@ -104,6 +129,8 @@ def test_saves_and_reloads_both_limits(settings: FakeSettings) -> None:
 
     assert reloaded.app_limit == 1200
     assert reloaded.resource_limit == 80
+    assert reloaded.file_size_mb == 5
+    assert reloaded.file_backups == 4
 
 
 def test_writes_both_limits_under_the_logs_group(settings: FakeSettings) -> None:
@@ -121,6 +148,8 @@ def test_writes_both_limits_under_the_logs_group(settings: FakeSettings) -> None
     settings.beginGroup(GROUP)
     assert settings.value(APP_LIMIT_KEY) == 7
     assert settings.value(RESOURCE_LIMIT_KEY) == DEFAULT_LOG_LIMIT
+    assert settings.value(FILE_SIZE_MB_KEY) == DEFAULT_FILE_SIZE_MB
+    assert settings.value(FILE_BACKUPS_KEY) == DEFAULT_FILE_BACKUPS
 
 
 def test_a_stored_limit_below_its_minimum_is_raised_to_it(settings: FakeSettings) -> None:
@@ -183,6 +212,50 @@ def test_a_stored_zero_resource_limit_is_kept(settings: FakeSettings) -> None:
     logs.load(settings)  # type: ignore[arg-type]  # the stand-in mirrors the QSettings API used
 
     assert logs.resource_limit == MINIMUM_RESOURCE_LIMIT
+
+
+def test_a_stored_run_log_size_or_backup_count_below_its_minimum_is_raised_to_it(settings: FakeSettings) -> None:
+    """Same floor as the two record limits above, for the same reason: an unreadable preference must
+    not stop the run log from being written at all.
+
+    **Test steps:**
+
+    * Store a value below each minimum.
+    * Load.
+    * Assert each came back at its own minimum.
+    """
+    settings.beginGroup(GROUP)
+    settings.setValue(FILE_SIZE_MB_KEY, 0)
+    settings.setValue(FILE_BACKUPS_KEY, 0)
+    settings.endGroup()
+
+    logs = LogsSettings()
+    logs.load(settings)  # type: ignore[arg-type]  # the stand-in mirrors the QSettings API used
+
+    assert logs.file_size_mb == MINIMUM_FILE_SIZE_MB
+    assert logs.file_backups == MINIMUM_FILE_BACKUPS
+
+
+def test_a_stored_run_log_size_or_backup_count_above_its_maximum_is_lowered_to_it(settings: FakeSettings) -> None:
+    """Unlike the two record limits above, these two are clamped at **both** ends: an unbounded file or
+    backup count is a disk-space runaway, not a reader's preference to honour as typed (#362).
+
+    **Test steps:**
+
+    * Store a value above each maximum.
+    * Load.
+    * Assert each came back at its own maximum.
+    """
+    settings.beginGroup(GROUP)
+    settings.setValue(FILE_SIZE_MB_KEY, 1_000_000)
+    settings.setValue(FILE_BACKUPS_KEY, 1_000_000)
+    settings.endGroup()
+
+    logs = LogsSettings()
+    logs.load(settings)  # type: ignore[arg-type]  # the stand-in mirrors the QSettings API used
+
+    assert logs.file_size_mb == MAXIMUM_FILE_SIZE_MB
+    assert logs.file_backups == MAXIMUM_FILE_BACKUPS
 
 
 # endregion
@@ -280,6 +353,41 @@ def test_reports_a_changed_resource_limit() -> None:
     logs.resource_limit = 9
 
     assert seen == [9]
+
+
+def test_reports_a_changed_run_log_file_size() -> None:
+    """Watchable the same way, so the shared `SharedRotatingFileHandler`'s ``maxBytes`` can follow a
+    Save without rebuilding it (#362).
+
+    **Test steps:**
+
+    * Watch the notify signal and change the size.
+    * Assert it fired with the new value.
+    """
+    logs = LogsSettings()
+    seen: list[int] = []
+    logs.file_size_mb_changed.connect(seen.append)  # type: ignore[attr-defined]  # synthesized by SimpleProperty
+
+    logs.file_size_mb = 10
+
+    assert seen == [10]
+
+
+def test_reports_a_changed_run_log_backup_count() -> None:
+    """Same for the backup count, which the handler's ``backupCount`` follows the same way.
+
+    **Test steps:**
+
+    * Watch the notify signal and change the count.
+    * Assert it fired with the new value.
+    """
+    logs = LogsSettings()
+    seen: list[int] = []
+    logs.file_backups_changed.connect(seen.append)  # type: ignore[attr-defined]  # synthesized by SimpleProperty
+
+    logs.file_backups = 5
+
+    assert seen == [5]
 
 
 # endregion

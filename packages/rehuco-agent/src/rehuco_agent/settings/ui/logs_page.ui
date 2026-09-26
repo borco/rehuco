@@ -40,7 +40,7 @@
          </font>
         </property>
         <property name="text">
-         <string>How much log to keep</string>
+         <string>Log docks (in-app logging)</string>
         </property>
        </widget>
       </item>
@@ -49,14 +49,14 @@
         <item>
          <widget class="QLabel" name="app_limit_label">
           <property name="text">
-           <string>Records in the app log:</string>
+           <string>Records in the main log dock:</string>
           </property>
          </widget>
         </item>
         <item>
          <widget class="QSpinBox" name="app_limit_spin_box">
           <property name="toolTip">
-           <string>How many records the app-wide log dock keeps. This is also how far back a log dock opened later can replay.</string>
+           <string>How many records the main window's log dock keeps. This is also how far back any log dock opened later can replay.</string>
           </property>
           <property name="minimum">
            <number>1</number>
@@ -89,14 +89,14 @@
         <item>
          <widget class="QLabel" name="resource_limit_label">
           <property name="text">
-           <string>Records in each resource's log:</string>
+           <string>Records in other log docks:</string>
           </property>
          </widget>
         </item>
         <item>
          <widget class="QSpinBox" name="resource_limit_spin_box">
           <property name="toolTip">
-           <string>How many records each open resource's own log dock keeps. One value, applied to every one of them. Set it to 0 to keep everything, with no limit.</string>
+           <string>How many records each document's log dock and the Tasks dock's log keep. One value, applied to every one of them. Set it to 0 to keep everything, with no limit.</string>
           </property>
           <property name="specialValueText">
            <string>Keep everything</string>
@@ -130,7 +130,7 @@
       <item>
        <widget class="WrappingLabel" name="clamp_note_label">
         <property name="toolTip">
-         <string>Whether a resource log is being held to the app log's limit rather than its own.</string>
+         <string>Whether the other log docks are being held to the main log dock's limit rather than their own.</string>
         </property>
         <property name="wordWrap">
          <bool>true</bool>
@@ -140,7 +140,162 @@
       <item>
        <widget class="WrappingLabel" name="limits_note_label">
         <property name="text">
-         <string>Older records are dropped once a log is full. A new limit applies at once, including to logs already open. Lowering one discards what no longer fits.</string>
+         <string>Older records are dropped once a log dock is full. A new limit applies at once, including to log docks already open. Lowering one discards what no longer fits.</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QFrame" name="log_file_frame">
+     <property name="frameShape">
+      <enum>QFrame::Shape::StyledPanel</enum>
+     </property>
+     <property name="frameShadow">
+      <enum>QFrame::Shadow::Raised</enum>
+     </property>
+     <layout class="QVBoxLayout" name="log_file_frame_layout">
+      <item>
+       <widget class="QLabel" name="log_file_frame_label">
+        <property name="font">
+         <font>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string>Log file</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <layout class="QHBoxLayout" name="log_file_size_layout">
+        <item>
+         <widget class="QLabel" name="log_file_size_label">
+          <property name="text">
+           <string>Size of each file:</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QSpinBox" name="log_file_size_spin_box">
+          <property name="toolTip">
+           <string>How large the log file grows before it is renamed to a backup and a new one is started.</string>
+          </property>
+          <property name="suffix">
+           <string> MB</string>
+          </property>
+          <property name="minimum">
+           <number>1</number>
+          </property>
+          <property name="maximum">
+           <number>100</number>
+          </property>
+          <property name="value">
+           <number>1</number>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="log_file_size_spacer">
+          <property name="orientation">
+           <enum>Qt::Orientation::Horizontal</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>0</width>
+            <height>0</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <layout class="QHBoxLayout" name="log_file_backups_layout">
+        <item>
+         <widget class="QLabel" name="log_file_backups_label">
+          <property name="text">
+           <string>Backups to keep:</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QSpinBox" name="log_file_backups_spin_box">
+          <property name="toolTip">
+           <string>How many full log files are kept beside the current one. The oldest is deleted when a new one is started.</string>
+          </property>
+          <property name="minimum">
+           <number>1</number>
+          </property>
+          <property name="maximum">
+           <number>10</number>
+          </property>
+          <property name="value">
+           <number>2</number>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="log_file_backups_spacer">
+          <property name="orientation">
+           <enum>Qt::Orientation::Horizontal</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>0</width>
+            <height>0</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <layout class="QHBoxLayout" name="log_file_path_layout" stretch="0,1">
+        <item>
+         <widget class="QLabel" name="log_file_path_caption">
+          <property name="text">
+           <string>Location:</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="ElidedLabel" name="log_file_path_link"/>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <layout class="QHBoxLayout" name="log_file_usage_layout" stretch="0,1,0">
+        <item>
+         <widget class="QLabel" name="log_file_usage_caption">
+          <property name="text">
+           <string>Space used:</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="log_file_usage_label"/>
+        </item>
+        <item>
+         <widget class="QPushButton" name="clear_log_files_button">
+          <property name="toolTip">
+           <string>Empty the log file and delete its backups.</string>
+          </property>
+          <property name="text">
+           <string>Clear log files</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <widget class="WrappingLabel" name="log_file_note_label">
+        <property name="text">
+         <string>Every launch of the app writes here, including one that only hands a file to the copy already running. How each run ended is recorded, so the file is where to look after the app closes unexpectedly.</string>
         </property>
         <property name="wordWrap">
          <bool>true</bool>
@@ -168,6 +323,11 @@
  <customwidgets>
   <customwidget>
    <class>WrappingLabel</class>
+   <extends>QLabel</extends>
+   <header>borco_pyside.widgets</header>
+  </customwidget>
+  <customwidget>
+   <class>ElidedLabel</class>
    <extends>QLabel</extends>
    <header>borco_pyside.widgets</header>
   </customwidget>

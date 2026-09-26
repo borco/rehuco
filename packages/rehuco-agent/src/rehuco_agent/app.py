@@ -29,6 +29,7 @@ from .fields.colors import ERROR_COLOR, INFO_COLOR, WARNING_COLOR
 from .glyphs import CLEAR_ACTION_GLYPH
 from .linux_registration import DESKTOP_FILE_NAME
 from .main_window import MainWindow
+from .run_log import shared_run_log
 from .settings.persistent_settings import persistent_settings
 
 LOG: Final = logging.getLogger(__name__)
@@ -211,45 +212,62 @@ def run(argv: list[str]) -> int:
     # be read once a dock is first opened. It must also come *after* setup_console_logging, which
     # basicConfig makes a no-op once any handler is on the root logger
     shared_log_bridge()
-    QGuiApplication.setDesktopFileName(DESKTOP_FILE_NAME)
-    LOG.info("Settings file: %s", persistent_settings().fileName())
-    app = Application(argv)
-    singleton = ApplicationSingleton(app)
-    # resolved here, in the launching process, rather than left to whichever process ends up opening
-    # them: a relative path is only ever meaningful against *this* process's cwd, and once forwarded
-    # to a running primary it would resolve against that primary's cwd instead (#297)
-    resolved_paths = [str(Path(path).resolve()) for path in argv[1:]]
-    leave_launch_directory()
-    # ``resolved_paths`` is passed explicitly rather than left to setup()'s own ``sys.argv[1:]``
-    # default: the two are the same in production (``run(sys.argv)``), but this function's contract
-    # is that its *parameter* is the argv -- honored when primary (opened below), so also honored
-    # when forwarding, rather than silently substituting the process's real command line
-    if not singleton.setup(APP_ID, resolved_paths):
-        # not primary: setup() already forwarded the resolved paths to the existing primary
-        return 0
+    # same reasoning, one layer further: everything above (and everything below, until this run's role
+    # is known) belongs in the persistent run log too, not only the in-app surfaces (#362)
+    run_log = shared_run_log()
+    run_log.start(argv)
+    exit_code: int | None = None
+    try:
+        QGuiApplication.setDesktopFileName(DESKTOP_FILE_NAME)
+        LOG.info("Settings file: %s", persistent_settings().fileName())
+        app = Application(argv)
+        singleton = ApplicationSingleton(app)
+        # resolved here, in the launching process, rather than left to whichever process ends up opening
+        # them: a relative path is only ever meaningful against *this* process's cwd, and once forwarded
+        # to a running primary it would resolve against that primary's cwd instead (#297)
+        resolved_paths = [str(Path(path).resolve()) for path in argv[1:]]
+        leave_launch_directory()
+        # ``resolved_paths`` is passed explicitly rather than left to setup()'s own ``sys.argv[1:]``
+        # default: the two are the same in production (``run(sys.argv)``), but this function's contract
+        # is that its *parameter* is the argv -- honored when primary (opened below), so also honored
+        # when forwarding, rather than silently substituting the process's real command line
+        if not singleton.setup(APP_ID, resolved_paths):
+            # not primary: setup() already forwarded the resolved paths to the existing primary
+            run_log.become_forwarder()
+            exit_code = 0
+            return exit_code
+        run_log.become_primary()
+        run_log.watch(app)
 
-    def open_forwarded(paths: list[str]) -> None:
-        """Bring this instance forward, then open whatever it was handed.
+        def open_forwarded(paths: list[str]) -> None:
+            """Bring this instance forward, then open whatever it was handed.
 
-        **The raise is unconditional, and comes first.** Starting the app again while it is already
-        running is a request to see it, whether or not the launch carried a path -- and with tray
-        mode on (#205) the window it should come back to may be hidden, with only a tray icon left
-        to say the app is there at all. ``paths`` is empty for exactly that launch (a plain
-        double-click on the app itself), so the loop below is never what shows the window; without
-        this call, such a launch would look like nothing happened.
+            **The raise is unconditional, and comes first.** Starting the app again while it is already
+            running is a request to see it, whether or not the launch carried a path -- and with tray
+            mode on (#205) the window it should come back to may be hidden, with only a tray icon left
+            to say the app is there at all. ``paths`` is empty for exactly that launch (a plain
+            double-click on the app itself), so the loop below is never what shows the window; without
+            this call, such a launch would look like nothing happened.
 
-        Also this process's own startup path, so the window is shown once, here, rather than by a
-        separate call that the forwarded case would have to remember to repeat.
+            Also this process's own startup path, so the window is shown once, here, rather than by a
+            separate call that the forwarded case would have to remember to repeat.
 
-        :param paths: the launching process's arguments -- filesystem paths to open; empty for a
-            bare relaunch.
-        """
-        app.show_main_window()
-        for path in paths:
-            app.open_path(path)
+            :param paths: the launching process's arguments -- filesystem paths to open; empty for a
+                bare relaunch.
+            """
+            app.show_main_window()
+            for path in paths:
+                app.open_path(path)
 
-    # connected before the first call below, so a forward arriving during startup is never missed
-    singleton.other_instance_run.connect(open_forwarded)
-    open_forwarded(resolved_paths)  # this (primary) process's own paths, e.g. from Windows ProgID "%1"
+        # connected before the first call below, so a forward arriving during startup is never missed
+        singleton.other_instance_run.connect(open_forwarded)
+        open_forwarded(resolved_paths)  # this (primary) process's own paths, e.g. from Windows ProgID "%1"
 
-    return app.exec()
+        try:
+            exit_code = app.exec()
+        except Exception as error:
+            run_log.log_exception(error, "app.exec()")
+            raise
+        return exit_code
+    finally:
+        run_log.finish(exit_code)

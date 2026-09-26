@@ -13,11 +13,15 @@ a different 33 depending on how the scheduler happened to split the work (#262).
 """
 
 import logging
+import sys
+import threading
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
+from borco_core.logging import SharedRotatingFileHandler
 from borco_pyside.logging import LogBridge
+from PySide6.QtCore import qInstallMessageHandler
 from pytest import fixture
 from pytest_mock import MockerFixture
 from rehuco_agent import main_rc  # noqa: F401  # pylint: disable=unused-import  # registers :/icons/... resources
@@ -25,6 +29,7 @@ from rehuco_agent.app_logging import shared_log_bridge
 from rehuco_agent.dialogs import conversion_backups_dialog
 from rehuco_agent.documents import document_widget
 from rehuco_agent.fields.widgets.markdown_view import render_markdown
+from rehuco_agent.run_log import shared_run_log
 from rehuco_agent.scraping.registry import shared_scraper_registry
 from rehuco_agent.scraping.scraper_executor import shared_scraper_executor
 from rehuco_agent.settings import (
@@ -76,7 +81,11 @@ from rehuco_core import DEFAULT_CHECKSUM_TRUST, DEFAULT_DELETER_PROVIDER
 # Mirrors every dedicated settings test's own FakeSettings exactly (see e.g.
 # test_markdown_rendering_settings.py) -- kept as a separate copy rather than a shared import,
 # matching this codebase's settings-test convention.
-# pylint: disable=duplicate-code
+# unsupported-assignment-operation/unsupported-delete-operation: false positives on this class's
+# plain dict/list attributes, seen only once a PySide6.QtCore import appears anywhere else in this
+# module (see isolate_shared_run_log's own note) -- astroid's inference for this file, not a real
+# issue with FakeSettings's own (correct) item assignment/deletion.
+# pylint: disable=duplicate-code,unsupported-assignment-operation,unsupported-delete-operation
 class FakeSettings:  # pylint: disable=invalid-name,missing-function-docstring,redefined-builtin
     """An in-memory stand-in for the ``QSettings`` group, value and array API.
 
@@ -157,7 +166,7 @@ class FakeSettings:  # pylint: disable=invalid-name,missing-function-docstring,r
         self.__data[f"{outer}{prefix}/size"] = count
 
 
-# pylint: enable=duplicate-code
+# pylint: enable=duplicate-code,unsupported-assignment-operation,unsupported-delete-operation
 
 
 @fixture(autouse=True)
@@ -614,6 +623,28 @@ def isolate_shared_log_bridge() -> Iterator[None]:
         root.removeHandler(handler)
         handler.close()
     shared_log_bridge.cache_clear()
+
+
+@fixture(autouse=True)
+def isolate_shared_run_log() -> Iterator[None]:
+    """Isolate every test from the process-wide `RunLog` singleton (#362).
+
+    Same rationale as :func:`isolate_shared_log_bridge`, plus more to undo: whichever test first
+    starts one installs real ``sys.excepthook``/``threading.excepthook``/``sys.unraisablehook`` and a
+    Qt message handler, and attaches a `SharedRotatingFileHandler` pointed at the developer's real
+    config folder -- all of that would otherwise survive into every later test in the session.
+    """
+    shared_run_log.cache_clear()
+    yield
+    root = logging.getLogger()
+    for handler in [handler for handler in root.handlers if isinstance(handler, SharedRotatingFileHandler)]:
+        root.removeHandler(handler)
+        handler.close()
+    sys.excepthook = sys.__excepthook__
+    threading.excepthook = threading.__excepthook__
+    sys.unraisablehook = sys.__unraisablehook__
+    qInstallMessageHandler(None)
+    shared_run_log.cache_clear()
 
 
 @fixture(autouse=True)

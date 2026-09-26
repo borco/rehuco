@@ -12,6 +12,8 @@ from .persistent_settings import persistent_settings
 GROUP: Final = "logs"
 APP_LIMIT_KEY: Final = "app_limit"
 RESOURCE_LIMIT_KEY: Final = "resource_limit"
+FILE_SIZE_MB_KEY: Final = "file_size_mb"
+FILE_BACKUPS_KEY: Final = "file_backups"
 
 MINIMUM_APP_LIMIT: Final = 1
 """The smallest the app-wide limit can be set to -- one record, which is what the models themselves
@@ -27,6 +29,25 @@ Zero is free to mean that here because :data:`MINIMUM_APP_LIMIT` already rules o
 otherwise collide with: no surface can be asked to hold nothing, so a number that cannot mean *"keep
 none"* is available to mean *"keep all"* instead. The library is told in its own terms
 (:attr:`~borco_pyside.logging.LogModel.limit` is ``None``); this is the spelling a spin box can offer."""
+
+MINIMUM_FILE_SIZE_MB: Final = 1
+MAXIMUM_FILE_SIZE_MB: Final = 100
+DEFAULT_FILE_SIZE_MB: Final = 1
+"""The run log file's own size, in MB, before it rotates (#362) -- deliberately much smaller than the
+in-app surfaces' record counts above: a run that never opens a document still fills it with the
+startup banner, the singleton check and whatever a crash's traceback added, and a reader after a
+crash wants the file that holds it, not a thousand-record buffer of records nobody asked to keep."""
+
+MINIMUM_FILE_BACKUPS: Final = 1
+MAXIMUM_FILE_BACKUPS: Final = 10
+DEFAULT_FILE_BACKUPS: Final = 2
+"""How many rotated run log files are kept alongside the live one (#362). Never zero: stdlib's own
+`~logging.handlers.RotatingFileHandler` does not rotate at all with a backup count of zero, so "none"
+is not a size to shrink to -- turning file logging off entirely isn't offered here, the way an app-wide
+in-app limit can't be either."""
+
+BYTES_PER_MB: Final = 1_000_000
+"""Decimal MB, matching the units `humanize.naturalsize` reports the file's own usage in."""
 
 
 class LogsSettings(QObject):
@@ -57,6 +78,13 @@ class LogsSettings(QObject):
     :data:`MINIMUM_RESOURCE_LIMIT` for all of them.
 
     What a surface is actually given is :attr:`effective_resource_limit`."""
+
+    file_size_mb = SimpleProperty(DEFAULT_FILE_SIZE_MB)
+    """How large the run log file (#362, [[appendices.logging#run-log-file]]) grows before it rotates,
+    in MB."""
+
+    file_backups = SimpleProperty(DEFAULT_FILE_BACKUPS)
+    """How many rotated run log files are kept alongside the live one."""
 
     @property
     def effective_resource_limit(self) -> int | None:
@@ -94,6 +122,20 @@ class LogsSettings(QObject):
         self.resource_limit = max(
             MINIMUM_RESOURCE_LIMIT, cast(int, settings.value(RESOURCE_LIMIT_KEY, DEFAULT_LOG_LIMIT, type=int))
         )
+        self.file_size_mb = max(
+            MINIMUM_FILE_SIZE_MB,
+            min(
+                MAXIMUM_FILE_SIZE_MB,
+                cast(int, settings.value(FILE_SIZE_MB_KEY, DEFAULT_FILE_SIZE_MB, type=int)),
+            ),
+        )
+        self.file_backups = max(
+            MINIMUM_FILE_BACKUPS,
+            min(
+                MAXIMUM_FILE_BACKUPS,
+                cast(int, settings.value(FILE_BACKUPS_KEY, DEFAULT_FILE_BACKUPS, type=int)),
+            ),
+        )
         settings.endGroup()
 
     def save(self, settings: QSettings) -> None:
@@ -104,6 +146,8 @@ class LogsSettings(QObject):
         settings.beginGroup(GROUP)
         settings.setValue(APP_LIMIT_KEY, self.app_limit)
         settings.setValue(RESOURCE_LIMIT_KEY, self.resource_limit)
+        settings.setValue(FILE_SIZE_MB_KEY, self.file_size_mb)
+        settings.setValue(FILE_BACKUPS_KEY, self.file_backups)
         settings.endGroup()
 
 
