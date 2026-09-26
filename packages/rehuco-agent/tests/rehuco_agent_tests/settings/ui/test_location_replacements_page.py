@@ -288,6 +288,20 @@ def test_seed_defaults_stages_the_shipped_rules_over_saved_ones(page: LocationRe
     assert page.is_dirty() is True
 
 
+def test_the_editors_defaults_can_be_read_back(page: LocationReplacementsPage) -> None:
+    """What Reset restores is readable off the editor too, not just settable.
+
+    **Test steps:**
+
+    * set the editor's defaults to a custom set
+    * verify reading them back answers the same set
+    """
+    editor = editor_of(page)
+    editor.defaults = (ReplacementRule("_", " "),)
+
+    assert editor.defaults == (ReplacementRule("_", " "),)
+
+
 def test_reset_restores_the_shipped_rules(page: LocationReplacementsPage) -> None:
     """Reset is the shipped set, offered because there genuinely is a default to go back to.
 
