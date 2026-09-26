@@ -23,6 +23,7 @@ from rehuco_core import (
     DEFAULT_TASK_JOB_REGISTRY,
     PROGRESS_UNIT_RESOURCES,
     SCREENSHOT_NAME_PATTERNS,
+    ChecksumTrust,
     ContentUnreachableError,
     JobPaused,
     SweepChecksumsJob,
@@ -806,6 +807,37 @@ def test_a_retry_drops_the_last_sweep_s_findings(catalog: FakeCatalog) -> None:
     job.reset()
 
     assert job.tally is None
+
+
+# endregion
+
+
+# region Per-location trust (#357)
+
+
+def test_a_sweep_over_a_moved_catalog_re_reads_it_and_trusts_every_resource(
+    catalog: FakeCatalog, mocker: MockerFixture
+) -> None:
+    """A catalog copied to a new place brings last week's dates with it, and a sweep there reads every
+    file anyway -- registering each resource as it finishes, with the writes held back for the whole run.
+
+    **Test steps:**
+
+    * sweep the library, inside the window, with a trust store that has never seen any of it
+    * check every content file was read, every resource was registered, and all of it inside one
+      deferred block
+    """
+    trust = mocker.create_autospec(ChecksumTrust, instance=True)
+    trust.trusted_since.return_value = None
+    events: list[str] = []
+    trust.deferred_saves.return_value.__enter__.side_effect = lambda: events.append("defer")
+    trust.deferred_saves.return_value.__exit__.side_effect = lambda *_args: events.append("save")
+    trust.register.side_effect = lambda path, _at: events.append(path.parent.name)
+
+    run(sweep(stale_after=WEEK, trust=trust))
+
+    assert len(catalog.reads) == 4
+    assert events == ["defer", "packs", "painting", "sculpting", "save"]
 
 
 # endregion

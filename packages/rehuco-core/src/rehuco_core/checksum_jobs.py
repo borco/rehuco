@@ -32,6 +32,7 @@ from typing import Any, Final
 from .checksum_algorithms import CHECKSUM_ALGORITHMS, DEFAULT_CHECKSUM_ALGORITHM
 from .checksum_record import ChecksumRecordError, checksum_record_path
 from .checksum_seeding import legacy_manifest_for, log_legacy_seed
+from .checksum_trust import DEFAULT_CHECKSUM_TRUST, ChecksumTrust
 from .constants import EXCLUDED_FILE_PATTERNS
 from .rehu_catalog import enumerate_catalog_resources
 from .rehu_checksums import ChecksumReport, generate_checksums, verify_checksums
@@ -137,6 +138,9 @@ class ChecksumJob(TaskJobBase):
         (#243). Off is the *check what is already recorded* mode a bulk import queues (#256), where the
         seeding has already happened without reading a byte. Meaningless to a generate, which never
         seeds.
+    :param trust: where this machine has verified which record (#357); the process-wide one unless a test
+        says otherwise -- which is also what a job rebuilt from the saved queue gets, so it is never part
+        of the saved state.
     :param label: how the job is named to a reader, or ``None`` for one derived from the path.
     """
 
@@ -172,10 +176,12 @@ class ChecksumJob(TaskJobBase):
         stale_after: timedelta | None = None,
         migrate_to: str | None = None,
         seed_legacy: bool = True,
+        trust: ChecksumTrust | None = None,
         label: str | None = None,
     ) -> None:
         super().__init__()
         self.__coordinator: Final = coordinator if coordinator is not None else DEFAULT_RENAME_COORDINATOR
+        self.__trust: Final = trust if trust is not None else DEFAULT_CHECKSUM_TRUST
         self.__location = self.__coordinator.track(rehu_path) if rehu_path is not None else None
         self.algorithm = algorithm
         self.only: tuple[str, ...] | None = None if only is None else tuple(only)
@@ -323,6 +329,11 @@ class ChecksumJob(TaskJobBase):
         """The rename barrier this job's reads go through (#241)."""
         return self.__coordinator
 
+    @property
+    def trust(self) -> ChecksumTrust:
+        """Where this machine has verified which record (#357) -- what this job's run asks and tells."""
+        return self.__trust
+
     # endregion
 
     # region Being written down
@@ -443,6 +454,7 @@ class GenerateChecksumsJob(ChecksumJob):
             create_if_missing=self.create_if_missing,
             excluded_patterns=self.excluded_patterns,
             screenshot_name_patterns=self.screenshot_name_patterns,
+            trust=self.trust,
             progress=control.report,
             checkpoint=self.checkpoint,
         )
@@ -482,6 +494,7 @@ class VerifyChecksumsJob(ChecksumJob):
             migrate_to=self.migrate_to,
             excluded_patterns=self.excluded_patterns,
             screenshot_name_patterns=self.screenshot_name_patterns,
+            trust=self.trust,
             progress=control.report,
             checkpoint=self.checkpoint,
         )
@@ -677,6 +690,8 @@ class SweepChecksumsJob(TaskJobBase):
         resolved by the caller alongside ``excluded_patterns``.
     :param excluded_patterns: the filename globs each resource's content walk leaves out (#226),
         resolved by the caller -- core never reads a setting.
+    :param trust: where this machine has verified which record (#357); the process-wide one unless a test
+        says otherwise, and never part of the saved state, for :class:`ChecksumJob`'s reason.
     :param label: how the job is named to a reader, or ``None`` for one derived from the folder.
     """
 
@@ -700,10 +715,12 @@ class SweepChecksumsJob(TaskJobBase):
         migrate_to: str | None = None,
         excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS,
         screenshot_name_patterns: tuple[ScreenshotNamePattern, ...] = SCREENSHOT_NAME_PATTERNS,
+        trust: ChecksumTrust | None = None,
         label: str | None = None,
     ) -> None:
         super().__init__()
         self.__coordinator: Final = coordinator if coordinator is not None else DEFAULT_RENAME_COORDINATOR
+        self.__trust: Final = trust if trust is not None else DEFAULT_CHECKSUM_TRUST
         self.__location = self.__coordinator.track(root) if root is not None else None
         self.algorithm = algorithm
         self.stale_after = stale_after
@@ -772,6 +789,11 @@ class SweepChecksumsJob(TaskJobBase):
         row is looking at (#248). Each resource's own byte progress is not forwarded, since a bar that
         reset per resource would say less than one that advanced once per resource.
 
+        **Trust is written down in batches** (#357): a sweep over a moved or never-verified catalog
+        registers every resource it finishes, and one write each would rewrite a growing file thousands
+        of times. What a stop or a crash loses is at most a minute of registrations, which costs those
+        resources a re-verification and nothing worse.
+
         :param control: the engine's face to this job.
         :raises ContentUnreachableError: the folder itself would not list (#245).
         """
@@ -780,10 +802,11 @@ class SweepChecksumsJob(TaskJobBase):
         tally = SweepTally(resources=len(enumeration.resources), unreadable_branches=len(enumeration.unreadable))
         self.__tally = tally
         control.report(0, tally.resources)
-        for done, rehu_path in enumerate(enumeration.resources, start=1):
-            self.checkpoint()
-            self.__verify_one(rehu_path, tally)
-            control.report(done, tally.resources)
+        with self.trust.deferred_saves():
+            for done, rehu_path in enumerate(enumeration.resources, start=1):
+                self.checkpoint()
+                self.__verify_one(rehu_path, tally)
+                control.report(done, tally.resources)
         LOG.info("%s: %s", self.label, sweep_summary(tally))
 
     def __verify_one(self, rehu_path: Path, tally: SweepTally) -> None:
@@ -809,6 +832,7 @@ class SweepChecksumsJob(TaskJobBase):
                 migrate_to=self.migrate_to,
                 excluded_patterns=self.excluded_patterns,
                 screenshot_name_patterns=self.screenshot_name_patterns,
+                trust=self.trust,
                 checkpoint=self.checkpoint,
             )
         except FileNotFoundError:
@@ -844,6 +868,12 @@ class SweepChecksumsJob(TaskJobBase):
     def coordinator(self) -> RenameCoordinator:
         """The rename barrier this sweep's reads go through (#241)."""
         return self.__coordinator
+
+    @property
+    def trust(self) -> ChecksumTrust:
+        """Where this machine has verified which record (#357) -- what each verify this sweep makes asks
+        and tells."""
+        return self.__trust
 
     # endregion
 

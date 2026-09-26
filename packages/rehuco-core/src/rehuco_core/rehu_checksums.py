@@ -75,6 +75,7 @@ from .checksum_record import (
     CHECKSUM_NAME_KEY,
     CHECKSUM_STATUS_KEY,
     CHECKSUM_VERIFIED_KEY,
+    TRUST_NOT_TRACKED,
     ChecksumEntry,
     ChecksumStatus,
     checksum_entry_name,
@@ -87,6 +88,7 @@ from .checksum_record import (
     verified_stamp,
 )
 from .checksum_seeding import LegacySeed, retire_legacy_manifests, seed_from_legacy_manifest
+from .checksum_trust import ChecksumTrust
 from .constants import EXCLUDED_FILE_PATTERNS
 from .content_reading import read_content_chunks
 from .rehu_content_files import (
@@ -187,6 +189,9 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
         through the same way.
     :param excluded_patterns: filename globs the content walk leaves out, passed straight through to
         :func:`~rehuco_core.enumerate_content_files` (#226).
+    :param trust: where this machine has verified which record (#357), or ``None`` for a run that does
+        not ask -- freshness is then the window's alone. Asked once, as the run starts; told once, when a
+        run at a location it did not trust has written its record there.
     :param progress: told how far the run has got, in bytes; ``None`` for nobody.
     :param checkpoint: the run's place to stop; ``None`` for a run that cannot be stopped.
     """
@@ -204,6 +209,7 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
         migrate_to: str | None,
         excluded_patterns: tuple[str, ...],
         screenshot_name_patterns: tuple[ScreenshotNamePattern, ...],
+        trust: ChecksumTrust | None,
         progress: ChecksumProgress | None,
         checkpoint: ChecksumCheckpoint | None,
     ) -> None:
@@ -224,6 +230,8 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
         self.__checkpoint: Final = checkpoint
         self.__now: Final = datetime.now(UTC)
         self.__stamp: Final = verified_stamp(self.__now)
+        self.__trust: Final = trust
+        self.__trusted_since: Final = TRUST_NOT_TRACKED if trust is None else trust.trusted_since(rehu_path)
         # the walk before the record, and its reachability before anything else: *the mount is away*
         # outranks *this resource has no checksums*, which is the sentence an unreachable resource used
         # to get (or, with ``create_if_missing``, a clean report over an empty record it invented) (#245)
@@ -306,6 +314,7 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
         rewritten = [entry for raw in self.__entries if (entry := self.__verify_entry(raw)) is not None]
         rewritten.extend(entry for entry in map(self.__adopt, adoptees) if entry is not None)
         self.__save(rewritten)
+        self.__register_trust()
         self.__retire_seeded_manifests()
         return self.__report()
 
@@ -329,6 +338,7 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
             self.__save(self.__generate_baseline())
         else:
             self.__save(self.__generate_targeted(self.__only))
+        self.__register_trust()
         return self.__report()
 
     # endregion
@@ -759,7 +769,23 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
         would do nothing*, and a second copy of the arithmetic is exactly how that glyph would come to
         promise something this run does not honour.
         """
-        return is_checksum_fresh(entry, self.__stale_after, self.__now)
+        return is_checksum_fresh(entry, self.__stale_after, self.__now, self.__trusted_since)
+
+    def __register_trust(self) -> None:
+        """Tell the trust store this record was verified where it is now -- once written, and only here (#357).
+
+        **After the record is written, never before**: a run stopped or failed before :meth:`__save` has
+        verified nothing here, and trusting the location on its account would let the next run skip what
+        it never read. Registered at the resource's location *as of now*, so a rename that landed mid-run
+        is trusted where the record ended up. A location already trusted is left alone -- the store would
+        refuse to move its instant forward anyway, and asking is a ``.rehu`` load.
+
+        Registered at this run's start instant, which every stamp it wrote carries: entries it rewrote are
+        fresh from here on, and entries it carried untouched -- unselected, unreadable -- keep their older
+        dates and stay unverified until a run reads them.
+        """
+        if self.__trust is not None and self.__trusted_since is None:
+            self.__trust.register(self.__rehu_location.path, self.__now)
 
     def __plan(self, reads: list[ResourceLocation]) -> None:
         """Add up what the run is about to read, and say so.
@@ -891,6 +917,7 @@ def generate_checksums(  # pylint: disable=too-many-arguments
     create_if_missing: bool = True,
     excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS,
     screenshot_name_patterns: tuple[ScreenshotNamePattern, ...] = SCREENSHOT_NAME_PATTERNS,
+    trust: ChecksumTrust | None = None,
     progress: ChecksumProgress | None = None,
     checkpoint: ChecksumCheckpoint | None = None,
 ) -> ChecksumReport:
@@ -910,6 +937,8 @@ def generate_checksums(  # pylint: disable=too-many-arguments
         default here, because creating the record is what a first generate is *for*.
     :param excluded_patterns: filename globs the content walk leaves out (#226).
     :param screenshot_name_patterns: the naming rules a ``.tc``'s screenshots are recognized by (#53).
+    :param trust: where this machine has verified which record (#357); ``None`` asks nothing and
+        registers nothing.
     :param progress: told how far the run has got, in bytes.
     :param checkpoint: the run's place to stop, called between chunks and never caught.
     :returns: what the run established.
@@ -934,6 +963,7 @@ def generate_checksums(  # pylint: disable=too-many-arguments
         migrate_to=None,
         excluded_patterns=excluded_patterns,
         screenshot_name_patterns=screenshot_name_patterns,
+        trust=trust,
         progress=progress,
         checkpoint=checkpoint,
     ).generate()
@@ -951,6 +981,7 @@ def verify_checksums(  # pylint: disable=too-many-arguments
     migrate_to: str | None = None,
     excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS,
     screenshot_name_patterns: tuple[ScreenshotNamePattern, ...] = SCREENSHOT_NAME_PATTERNS,
+    trust: ChecksumTrust | None = None,
     progress: ChecksumProgress | None = None,
     checkpoint: ChecksumCheckpoint | None = None,
 ) -> ChecksumReport:
@@ -991,6 +1022,9 @@ def verify_checksums(  # pylint: disable=too-many-arguments
         never a verdict.
     :param screenshot_name_patterns: the naming rules a ``.tc``'s screenshots are recognized by (#53),
         deciding the same thing and equally never a verdict.
+    :param trust: where this machine has verified which record (#357): an entry is fresh only at a
+        location it trusts, and a run at one it does not makes it trusted. ``None`` asks nothing and
+        registers nothing.
     :param progress: told how far the run has got, in bytes.
     :param checkpoint: the run's place to stop, called between chunks and never caught.
     :returns: what the run established.
@@ -1020,6 +1054,7 @@ def verify_checksums(  # pylint: disable=too-many-arguments
         migrate_to=migrate_to,
         excluded_patterns=excluded_patterns,
         screenshot_name_patterns=screenshot_name_patterns,
+        trust=trust,
         progress=progress,
         checkpoint=checkpoint,
     ).verify()

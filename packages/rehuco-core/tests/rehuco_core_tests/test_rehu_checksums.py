@@ -24,8 +24,10 @@ from pytest_mock import MockerFixture
 from rehuco_core import (
     CHECKSUM_ALGORITHMS,
     DEFAULT_CHECKSUM_ALGORITHM,
+    TRUST_NOT_TRACKED,
     ChecksumRecordError,
     ChecksumReport,
+    ChecksumTrust,
     ContentUnreachableError,
     CoveringRecord,
     checksum_entry_name,
@@ -1693,6 +1695,31 @@ def test_an_entry_this_build_cannot_read_is_never_fresh() -> None:
     assert not is_checksum_fresh(None, WEEK, RECORDED_AT)
 
 
+@mark.parametrize(
+    ("trusted_since", "fresh"),
+    [
+        (TRUST_NOT_TRACKED, True),
+        (RECORDED_AT - timedelta(days=1), True),
+        (RECORDED_AT, True),
+        (RECORDED_AT + timedelta(seconds=1), False),
+        (None, False),
+    ],
+    ids=["not tracked", "trusted before the stamp", "trusted from the stamp", "trusted after it", "not trusted"],
+)
+def test_a_stamp_counts_only_where_and_since_it_was_earned(trusted_since: datetime | None, fresh: bool) -> None:
+    """Freshness asks where the record is as well as how old its stamp is (#357): a stamp written before
+    this machine trusted the location describes bytes somewhere else, and a location it does not trust
+    has no fresh entries at all.
+
+    **Test steps:**
+
+    * ask about an entry checked a day ago, inside a week's window, against each kind of trust
+    """
+    parsed = parse_checksum_entry({"name": VIDEO, "crc32": "42342424", "verified": NOW, "status": "matched"})
+
+    assert is_checksum_fresh(parsed, WEEK, RECORDED_AT + timedelta(days=1), trusted_since) is fresh
+
+
 def test_a_hash_recorded_in_upper_case_still_compares(disk: FakeDisk) -> None:
     """A value seeded from a legacy ``.sfv`` is hex in the other case, and matches all the same.
 
@@ -1746,6 +1773,149 @@ def test_the_default_algorithm_is_the_measured_one() -> None:
     """
     assert DEFAULT_CHECKSUM_ALGORITHM == "xxh3"
     assert digest_of(VIDEO_BYTES) == xxhash.xxh3_64(VIDEO_BYTES).hexdigest()
+
+
+# endregion
+
+
+# region Per-location trust
+
+
+@fixture(name="trust")
+def fixture_trust(mocker: MockerFixture) -> Any:
+    """A trust store that has never seen this resource's location -- what a copied folder meets (#357).
+
+    :param mocker: pytest-mock fixture.
+    :returns: a :class:`~rehuco_core.ChecksumTrust` stand-in answering ``None``; a test that wants a
+        trusted location sets :attr:`trusted_since`'s answer.
+    """
+    trust = mocker.create_autospec(ChecksumTrust, instance=True)
+    trust.trusted_since.return_value = None
+    return trust
+
+
+def test_a_verify_at_an_untrusted_location_re_reads_everything_and_trusts_it(
+    disk: FakeDisk, freezer: FrozenDateTimeFactory, trust: Any
+) -> None:
+    """A copied folder brings dates that describe the original's bytes, so inside the window or not, a
+    verify where this machine has never verified the record reads every file -- and then trusts the
+    location from the instant it started (#357).
+
+    **Test steps:**
+
+    * seed a record checked yesterday, at a location the store does not trust
+    * verify with a week's window
+    * check both files were read, nothing was skipped, and the location was registered at the run's start
+    """
+    disk.seed_record([entry(VIDEO, VIDEO_BYTES), entry(ARCHIVE, ARCHIVE_BYTES)])
+    freezer.move_to(LATER)
+
+    report = verify_checksums(INFO_PATH, stale_after=WEEK, trust=trust)
+
+    assert sorted(disk.reads) == sorted([VIDEO, ARCHIVE])
+    assert not report.skipped
+    trust.register.assert_called_once_with(INFO_PATH, datetime(2026, 8, 6, 12, 0, tzinfo=UTC))
+
+
+def test_a_verify_at_a_trusted_location_skips_what_it_verified_there(
+    disk: FakeDisk, freezer: FrozenDateTimeFactory, trust: Any
+) -> None:
+    """Stamps written since the location was trusted are fresh as they always were, and a run that found
+    the location trusted leaves the store alone (#357).
+
+    **Test steps:**
+
+    * seed a record checked yesterday, at a location trusted since before then
+    * verify with a week's window
+    * check nothing was read and nothing was registered
+    """
+    disk.seed_record([entry(VIDEO, VIDEO_BYTES), entry(ARCHIVE, ARCHIVE_BYTES)])
+    trust.trusted_since.return_value = RECORDED_AT - timedelta(days=1)
+    freezer.move_to(LATER)
+
+    report = verify_checksums(INFO_PATH, stale_after=WEEK, trust=trust)
+
+    assert disk.reads == []
+    assert sorted(report.skipped) == sorted([VIDEO, ARCHIVE])
+    trust.register.assert_not_called()
+
+
+def test_a_stamp_older_than_the_trust_is_read_again(disk: FakeDisk, freezer: FrozenDateTimeFactory, trust: Any) -> None:
+    """An entry dated before this machine trusted the location was verified somewhere else, and is read
+    however recent its date (#357).
+
+    **Test steps:**
+
+    * seed one entry checked before the location was trusted and one checked since
+    * verify with a sixty-day window
+    * check only the older one was read
+    """
+    disk.seed_record([entry(VIDEO, VIDEO_BYTES), entry(ARCHIVE, ARCHIVE_BYTES, verified=LATER)])
+    trust.trusted_since.return_value = RECORDED_AT + timedelta(hours=1)
+    freezer.move_to(MUCH_LATER)
+
+    verify_checksums(INFO_PATH, stale_after=timedelta(days=60), trust=trust)
+
+    assert disk.reads == [VIDEO]
+
+
+def test_a_partial_verify_after_a_move_freshens_only_what_it_read(
+    disk: FakeDisk, freezer: FrozenDateTimeFactory, trust: Any
+) -> None:
+    """Verifying one file of a moved resource trusts the location, and the stamps it did not rewrite stay
+    older than that trust -- so the file it did not read is still owed a read (#357).
+
+    **Test steps:**
+
+    * seed a record checked yesterday, at an untrusted location
+    * verify the video alone
+    * check against the instant registered: the video is fresh, the archive is not
+    """
+    disk.seed_record([entry(VIDEO, VIDEO_BYTES), entry(ARCHIVE, ARCHIVE_BYTES)])
+    freezer.move_to(LATER)
+
+    verify_checksums(INFO_PATH, only=[VIDEO], stale_after=WEEK, trust=trust)
+
+    registered = trust.register.call_args.args[1]
+    now = datetime(2026, 8, 6, 13, 0, tzinfo=UTC)
+    assert is_checksum_fresh(parse_checksum_entry(disk.entries[VIDEO]), WEEK, now, registered)
+    assert not is_checksum_fresh(parse_checksum_entry(disk.entries[ARCHIVE]), WEEK, now, registered)
+
+
+def test_a_generate_at_an_untrusted_location_trusts_it(disk: FakeDisk, trust: Any) -> None:
+    """A baseline hashes the bytes where they are, which is as much verification as a verify's (#357).
+
+    **Test steps:**
+
+    * generate at a location the store does not trust
+    * check the location was registered
+    """
+    del disk
+    generate_checksums(INFO_PATH, trust=trust)
+
+    trust.register.assert_called_once_with(INFO_PATH, RECORDED_AT)
+
+
+def test_a_run_that_could_not_write_its_record_trusts_nothing(
+    disk: FakeDisk, freezer: FrozenDateTimeFactory, trust: Any
+) -> None:
+    """The record is what a trusted location's next run believes, so a run that failed to write it has
+    verified nothing there (#357).
+
+    **Test steps:**
+
+    * seed a record at an untrusted location, and make it unwritable
+    * verify, which fails on the write
+    * check nothing was registered
+    """
+    disk.seed_record([entry(VIDEO, VIDEO_BYTES), entry(ARCHIVE, ARCHIVE_BYTES)])
+    disk.write_errors[RECORD_PATH] = PermissionError(str(RECORD_PATH))
+    freezer.move_to(LATER)
+
+    with raises(PermissionError):
+        verify_checksums(INFO_PATH, trust=trust)
+
+    trust.register.assert_not_called()
 
 
 # endregion
