@@ -15,13 +15,26 @@ one -- is reported through :attr:`ContentImagesView.status_changed` for the dock
 from collections import Counter
 from typing import Final, override
 
+from borco_pyside.theming import ActionIconThemeHandler
 from borco_pyside.widgets.elided_label import ElidedLabel
 from PySide6.QtCore import QEvent, QPoint, QRect, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QCursor, QKeyEvent, QMouseEvent, QPainter, QPainterPath, QPaintEvent, QPalette, QResizeEvent
-from PySide6.QtWidgets import QAbstractScrollArea, QFrame, QVBoxLayout, QWidget
+from PySide6.QtGui import (
+    QAction,
+    QCursor,
+    QKeyEvent,
+    QKeySequence,
+    QMouseEvent,
+    QPainter,
+    QPainterPath,
+    QPaintEvent,
+    QPalette,
+    QResizeEvent,
+)
+from PySide6.QtWidgets import QAbstractScrollArea, QFrame, QToolBar, QVBoxLayout, QWidget
 
 from ...fields.widgets.image_strip import THUMBNAIL_BORDER
 from ...fields.widgets.thumbnail_loader import ThumbnailLoader, thumbnail_cache_key
+from ..files_view import REFRESH_ICON_RESOURCE
 from .banners import ContentDisplayFlags, banner_rows, group_of
 from .content_images_model import ArchiveImageSource, ContentImagesModel
 from .justified_layout import LayoutItem, PackedLayout, Row, pack_rows
@@ -780,16 +793,37 @@ class ContentImagesView(QAbstractScrollArea):  # pylint: disable=too-many-instan
 
 
 class ContentImagesPanel(QWidget):
-    """The dock's content: the grid over a one-line status bar that names the selected image, or the
-    hovered one while nothing is selected (#221).
+    """The dock's content: a toolbar over the grid over a one-line status bar that names the selected
+    image, or the hovered one while nothing is selected (#221).
 
     :param view: the grid.
     :param parent: optional Qt parent.
     """
 
+    refresh_requested: Signal = Signal()
+    """Fires when the toolbar's Refresh action (``F5``) is triggered.
+
+    **Always enabled** (#359): a pack changed from outside the app -- zips added, a folder repacked --
+    has no other way to reach a dock that already opened it, since neither switching tabs back to it nor
+    a document's first save fires anything this dock listens to. The document owns the actual re-read,
+    so this only reports the ask, the same owner-routed shape as :attr:`~ContentImagesView.image_activated`.
+    """
+
     def __init__(self, view: ContentImagesView, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.__view: Final = view
+        self.__refresh_action: Final = QAction("&Refresh", self)
+        ActionIconThemeHandler(self.__refresh_action, REFRESH_ICON_RESOURCE)
+        self.__refresh_action.setToolTip("Read this resource's archives again.")
+        self.__refresh_action.setShortcut(QKeySequence(Qt.Key.Key_F5))
+        # scoped to this widget's own subtree, not the window: every open reference pack has a grid of
+        # its own, and a WindowShortcut would make two of them ambiguous on one key, the trap
+        # `FilesView`'s own refresh action and `DocumentWidget`'s save action both document
+        self.__refresh_action.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        self.addAction(self.__refresh_action)
+        self.__refresh_action.triggered.connect(self.refresh_requested)
+        toolbar = QToolBar(self)
+        toolbar.addAction(self.__refresh_action)
         # elided to the dock's width -- a member path inside a deep archive can be far longer than
         # the dock is wide; the inset is the strip's, not the label's, so it elides to its real width
         self.__status: Final = ElidedLabel(self)
@@ -804,6 +838,7 @@ class ContentImagesPanel(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
+        layout.addWidget(toolbar)
         layout.addWidget(view, 1)
         layout.addWidget(strip)
         view.status_changed.connect(self.__status.set_text)
@@ -812,6 +847,11 @@ class ContentImagesPanel(QWidget):
     def view(self) -> ContentImagesView:
         """The grid."""
         return self.__view
+
+    @property
+    def refresh_action(self) -> QAction:
+        """Reads this resource's archives again; always enabled, also bound to ``F5``."""
+        return self.__refresh_action
 
     @property
     def status(self) -> ElidedLabel:
