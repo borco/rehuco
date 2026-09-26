@@ -41,7 +41,7 @@ def locked(winerror: int = 32) -> PermissionError:
     :returns: the error.
     """
     error = PermissionError(13, "The process cannot access the file because it is being used by another process")
-    error.winerror = winerror  # type: ignore[attr-defined]  # pylint: disable=attribute-defined-outside-init
+    setattr(error, "winerror", winerror)
     return error
 
 
