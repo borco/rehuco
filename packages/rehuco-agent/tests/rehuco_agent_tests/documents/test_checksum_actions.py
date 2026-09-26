@@ -285,6 +285,39 @@ def test_a_document_with_no_path_at_all_is_offered_neither(queue: TaskQueue) -> 
     assert queue.jobs() == ()
 
 
+def test_a_document_not_yet_saved_is_offered_neither(mocker: MockerFixture, queue: TaskQueue) -> None:
+    """A brand-new document has a path but nothing on disk yet to hash (#360).
+
+    *Create missing checksum on verify* is set because it is what made Verify offerable over a
+    recordless resource at all (#242) -- without it, Verify was disabled here before the fix too, and
+    its assertion would pin nothing.
+
+    **Test steps:**
+
+    * build the actions over a document bound to a path it has never saved to
+    * check both actions are disabled, and that triggering one anyway queues nothing
+    * save the document, and check the actions become offered
+    """
+    mocker.patch.object(Path, "exists", autospec=True, side_effect=lambda self: self != RECORD_PATH)
+    mocker.patch("rehuco_core.rehu_document.RehuDocument.save")
+    shared_checksum_settings().create_missing_on_verify = True
+    model = RehuDocumentModel.create_new(INFO_PATH)
+    actions = ChecksumActions(model, queue)
+
+    assert not actions.generate_action.isEnabled()
+    assert not actions.verify_action.isEnabled()
+
+    actions.generate()
+    actions.verify()
+
+    assert queue.jobs() == ()
+
+    model.save()
+
+    assert actions.generate_action.isEnabled()
+    assert actions.verify_action.isEnabled()
+
+
 def test_a_pending_placeholder_stats_no_record_until_loaded(mocker: MockerFixture, queue: TaskQueue) -> None:
     """A session-restore placeholder takes not even the record's single ``stat`` (#66) -- it can block
     on an offline mount -- and the deferred load's ``reloaded`` re-offers the actions once the

@@ -202,6 +202,9 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
         # equal value, so no `path_changed` fires, yet it is the moment the record's stat below
         # becomes worth taking
         model.reloaded.connect(self.__update_enabled)
+        # a brand-new document has a path but nothing on disk yet (#360): the first save is what makes
+        # the actions offerable, and it flips this rather than `path`
+        model.saved_on_disk_changed.connect(self.__update_enabled)  # type: ignore[attr-defined]
         self.__update_enabled()
         queue.add_listener(self)
 
@@ -344,7 +347,7 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
             everything.
         """
         path = self.__model.path
-        if path is None:
+        if path is None or not self.__model.saved_on_disk:
             return
         checksums = shared_checksum_settings()
         job = job_class(
@@ -497,11 +500,13 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
     def __update_enabled(self) -> None:
         """Offer each action exactly while it means something.
 
-        Neither is offered for a document with no path -- a never-saved one has nothing on disk to
-        hash -- and Verify is offered only once there is a record to verify against, or a legacy
-        manifest to seed one from (#243), which is the rule [[data-model#checksums]] states as *a
-        resource with no manifest offers Generate*. The record is one ``stat``, re-taken whenever the
-        queue moves, so a first generate turns Verify on without the document having to be reopened.
+        Neither is offered for a document with no path, nor for one that has a path but has never been
+        saved (:attr:`~RehuDocumentModel.saved_on_disk`, #360) -- a document not yet written has nothing
+        on disk to hash, and the two actions re-enable on the first save's ``saved_on_disk_changed``.
+        Verify is offered only once there is a record to verify against, or a legacy manifest to seed
+        one from (#243), which is the rule [[data-model#checksums]] states as *a resource with no
+        manifest offers Generate*. The record is one ``stat``, re-taken whenever the queue moves, so a
+        first generate turns Verify on without the document having to be reopened.
 
         Unless *Create missing checksum on verify* is set (#242), which makes a verify over a resource
         with no record a legitimate run rather than a refusal. The setting is re-read here rather than
@@ -513,7 +518,7 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
         [[mounts-and-storage#offline-mounts]]), and the deferred load's ``reloaded`` -- wired in
         ``__init__`` -- re-runs this once the document is real.
         """
-        path = self.__model.path if not self.__model.pending else None
+        path = self.__model.path if not self.__model.pending and self.__model.saved_on_disk else None
         checksums = shared_checksum_settings()
         has_record = path is not None and self.__has_something_to_verify(path)
         self.__generate_action.setEnabled(path is not None)
