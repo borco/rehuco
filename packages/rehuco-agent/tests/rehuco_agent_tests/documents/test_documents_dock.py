@@ -304,6 +304,32 @@ def test_dock_tab_tooltip_always_shows_the_full_path(mocker: MockerFixture, qtbo
     assert cdock.tabWidget().toolTip() == str(FAKE_PATH)
 
 
+def test_dock_title_and_tooltip_update_after_a_rename(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A completed rename (#356) redraws the dock's title and tooltip from the document's new path,
+    not just its persisted :meth:`~QtAds.CDockWidget.objectName`.
+
+    **Test steps:**
+
+    * open a document and mock the core rename to move it to a new folder name
+    * call ``rename_location``
+    * verify the dock's tab title and tooltip both show the new name/path
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    widget = dock.open_document(FAKE_PATH)
+    assert widget is not None
+    cdock = dock_for(dock, widget)
+    renamed = FAKE_PATH.parent.with_name("new_name") / "info.rehu"
+    mocker.patch("rehuco_agent.documents.rehu_document_model.rename_rehu_resource", return_value=renamed)
+
+    assert widget.model.rename_location("new_name") is True
+
+    assert cdock.windowTitle() == "new_name/"
+    assert cdock.tabWidget().toolTip() == str(renamed)
+
+
 def test_document_focus_changed_emits_the_widget_when_opening_a_document(mocker: MockerFixture, qtbot: QtBot) -> None:
     """Opening a document emits ``document_focus_changed`` with its widget.
 
