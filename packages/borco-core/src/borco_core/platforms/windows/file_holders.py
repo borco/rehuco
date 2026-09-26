@@ -107,7 +107,7 @@ def file_holders(paths: Sequence[Path]) -> tuple[FileHolder, ...]:
     """
     if not paths:
         return ()
-    session = wintypes.DWORD()
+    session = wintypes.DWORD(0)
     key = ctypes.create_unicode_buffer(CCH_RM_SESSION_KEY + 1)
     raise_for_result(RM_START_SESSION(ctypes.byref(session), 0, key))
     try:
@@ -127,7 +127,7 @@ def list_session_holders(session: wintypes.DWORD) -> tuple[FileHolder, ...]:
     """
     capacity = 0
     for _ in range(LIST_ATTEMPTS):
-        needed, count, reasons = wintypes.UINT(), wintypes.UINT(capacity), wintypes.DWORD()
+        needed, count, reasons = wintypes.UINT(0), wintypes.UINT(capacity), wintypes.DWORD(0)
         infos = (RmProcessInfo * capacity)()
         result = RM_GET_LIST(session, ctypes.byref(needed), ctypes.byref(count), infos, ctypes.byref(reasons))
         if result == ERROR_MORE_DATA:
