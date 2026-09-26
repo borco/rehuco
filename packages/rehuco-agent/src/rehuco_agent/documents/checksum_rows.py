@@ -35,6 +35,8 @@ from PySide6.QtCore import (
 )
 from rehuco_core import (
     CHECKSUM_FILES_KEY,
+    DEFAULT_CHECKSUM_TRUST,
+    ChecksumEntry,
     ChecksumRecordError,
     ScreenshotNamePattern,
     checksum_record_path,
@@ -43,7 +45,7 @@ from rehuco_core import (
     parse_checksum_entry,
 )
 
-from .files_rows import CHECKSUM_STATE_TOOLTIPS, FileChecksumState, checksum_state_for
+from .files_rows import FileChecksumState, checksum_tooltip_for, checksum_verdict_for
 
 type ModelIndex = QModelIndex | QPersistentModelIndex
 """What Qt hands a model method; the persistent form arrives from a view holding onto an index."""
@@ -88,12 +90,15 @@ class ChecksumRow:
     :param checksum_state: what the Status column draws for this row -- the same
         :class:`~rehuco_agent.documents.files_rows.FileChecksumState` the file browser resolves an entry
         to (#303), so a file's verdict reads the same glyph in both docks.
+    :param untrusted_location: whether an :data:`~FileChecksumState.OLD_OK`/:data:`~FileChecksumState.OLD_BAD`
+        ``checksum_state`` is old because of this record's *location* rather than the check's age (#358).
     """
 
     name: str
     status: str = ""
     verified: datetime | None = None
     checksum_state: FileChecksumState = FileChecksumState.MISSING
+    untrusted_location: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,6 +118,26 @@ class ChecksumRows:
     rows: tuple[ChecksumRow, ...] = ()
     reachable: bool = True
     error: str = ""
+
+
+def checksum_row_for(
+    entry: ChecksumEntry, stale_after: timedelta, now: datetime, trusted_since: datetime | None
+) -> ChecksumRow:
+    """Build one row from a parsed record entry (#358).
+
+    Kept apart from :func:`read_checksum_rows` so the read's own loop stays short: the entry's state and
+    whether it is old because of its location are one row's worth of resolving, not the walk's.
+
+    :param entry: the parsed record entry.
+    :param stale_after: the staleness window a run would use, so a row's state matches what
+        *Verify Old* would actually do with it (#303).
+    :param now: the instant to measure freshness against.
+    :param trusted_since: when this machine began trusting the record's current location
+        (:meth:`~rehuco_core.ChecksumTrust.trusted_since`).
+    :returns: the row.
+    """
+    state, untrusted_location = checksum_verdict_for(entry, stale_after, now, trusted_since)
+    return ChecksumRow(entry.name, entry.status or "", entry.verified, state, untrusted_location)
 
 
 def read_checksum_rows(
@@ -157,13 +182,14 @@ def read_checksum_rows(
         )
     rows: list[ChecksumRow] = []
     if record is not None:
+        # one location for the whole record, asked once rather than per entry (#358)
+        trusted_since = DEFAULT_CHECKSUM_TRUST.trusted_since(rehu_path)
         # an entry this build cannot name is left out: a row that cannot say which file it is about is
         # not one a reader can select, verify or forget, and core already carries it through untouched
         for raw in record[CHECKSUM_FILES_KEY]:
             entry = parse_checksum_entry(raw)
             if entry is not None:
-                state = checksum_state_for(entry, stale_after, now)
-                rows.append(ChecksumRow(entry.name, entry.status or "", entry.verified, state))
+                rows.append(checksum_row_for(entry, stale_after, now, trusted_since))
     recorded = {row.name for row in rows}
     rows.extend(ChecksumRow(name, checksum_state=FileChecksumState.MISSING) for name in content if name not in recorded)
     return ChecksumRows(rows=tuple(rows))
@@ -380,7 +406,7 @@ class ChecksumTableModel(QAbstractTableModel):
         :returns: the tooltip.
         """
         if column == STATUS_COLUMN:
-            return CHECKSUM_STATE_TOOLTIPS.get(row.checksum_state, "")
+            return checksum_tooltip_for(row.checksum_state, row.untrusted_location) or ""
         return row.name
 
     @override

@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
     QWidgetAction,
 )
 from rehuco_core import (
+    DEFAULT_CHECKSUM_TRUST,
     DEFAULT_DELETER_PROVIDER,
     DEFAULT_PLUGIN_REGISTRY,
     DEFAULT_RENAME_COORDINATOR,
@@ -56,6 +57,7 @@ from .glyphs import TAB_CLOSE_GLYPH
 from .main_window_ui import Ui_MainWindow
 from .recycle_bin_deleter import configured_deleter
 from .settings.checksum_settings import shared_checksum_settings
+from .settings.checksum_trust_store import checksum_trust_path
 from .settings.document_session_settings import DocumentSessionSettings
 from .settings.excluded_files_settings import shared_excluded_files_settings
 from .settings.identity_settings import shared_identity_settings
@@ -264,6 +266,9 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # to re-seed from a moment later
         self.__task_queue: Final = TaskQueue()
         self.__task_queue_store: Final = TaskQueueStore(self.__task_queue)
+        # the process-wide trust cache every checksum job and rename already falls back to when built
+        # with no `trust=` of its own (#358) -- attaching it here is the whole of the agent's wiring
+        DEFAULT_CHECKSUM_TRUST.attach(checksum_trust_path())
         # the discard job resolves its deleter when it runs, through this process-wide provider (#298):
         # installed before the queue is restored, so a discard rebuilt from the saved queue honours the
         # Recycle Bin setting exactly as one enqueued from the dialog does -- a job the registry rebuilt

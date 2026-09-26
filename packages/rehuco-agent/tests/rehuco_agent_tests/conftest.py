@@ -69,7 +69,7 @@ from rehuco_agent.settings.ui import (
     tray_block,
 )
 from rehuco_agent.settings.videos_settings import shared_videos_settings
-from rehuco_core import DEFAULT_DELETER_PROVIDER
+from rehuco_core import DEFAULT_CHECKSUM_TRUST, DEFAULT_DELETER_PROVIDER
 
 
 # Mirrors every dedicated settings test's own FakeSettings exactly (see e.g.
@@ -349,6 +349,19 @@ def reset_deleter_provider() -> Iterator[None]:
     """
     yield
     DEFAULT_DELETER_PROVIDER.reset()
+
+
+@fixture(autouse=True)
+def reset_checksum_trust() -> Iterator[None]:
+    """Detach the process-wide `ChecksumTrust` after every test (#358).
+
+    `MainWindow` attaches it to a real cache file when it wires up the queue, and the singleton outlives
+    the window -- so without this, every test built after a ``MainWindow`` test (rehuco-core's own job
+    tests included, when the packages run in one session) would find a location this machine has
+    supposedly already verified, rather than the untracked default a checksum-state test assumes.
+    """
+    yield
+    DEFAULT_CHECKSUM_TRUST.attach(None)
 
 
 @fixture(autouse=True)
