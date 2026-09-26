@@ -45,6 +45,10 @@ NOW: Final = datetime(2026, 9, 12, 12, 0, tzinfo=UTC)
 WEEK: Final = timedelta(days=7)
 FRESH: Final = "2026-09-11T12:00:00Z"
 OLD: Final = "2026-06-11T12:00:00Z"
+FRESH_DT: Final = datetime(2026, 9, 11, 12, 0, tzinfo=UTC)
+TRUSTED_AFTER_FRESH: Final = datetime(2026, 9, 11, 18, 0, tzinfo=UTC)
+"""A trust that began *after* the fresh stamp was written: what a partial verify after a move leaves
+behind for every entry it did not re-hash (#358)."""
 
 MTIME: Final = 1_700_000_000.0
 
@@ -121,6 +125,15 @@ def entry(name: str, verified: str = FRESH, status: str = "matched") -> dict[str
     :returns: the raw entry.
     """
     return {"name": name, "xxh3": "0" * 16, "verified": verified, "status": status}
+
+
+def mock_trust(mocker: MockerFixture, trusted_since: datetime | None) -> None:
+    """Mock what this machine trusts the resource's record's location since (#358).
+
+    :param mocker: pytest-mock fixture.
+    :param trusted_since: what :meth:`~rehuco_core.ChecksumTrust.trusted_since` answers for this read.
+    """
+    mocker.patch("rehuco_agent.documents.files_rows.DEFAULT_CHECKSUM_TRUST.trusted_since", return_value=trusted_since)
 
 
 def read(mocker: MockerFixture, directory: Path = DIRECTORY, record: Path = INFO_PATH) -> dict[str, FileRow]:
@@ -387,6 +400,119 @@ def test_a_dateless_entry_is_never_current(mocker: MockerFixture) -> None:
     mock_record(mocker, [{"name": "notes.pdf", "xxh3": "0" * 16, "status": "matched"}])
 
     assert read(mocker)["notes.pdf"].checksum_state is FileChecksumState.OLD_OK
+
+
+def test_an_unknown_location_reads_old_and_flags_the_location(mocker: MockerFixture) -> None:
+    """A location this machine has never verified is untrusted, whatever the entry's own date (#358) --
+    a copy of a verified folder must not read as verified where it now sits.
+
+    **Test steps:**
+
+    * record a freshly-checked entry, but at a location this machine has not registered
+    * verify it reads as stale-ok, and is flagged as old *because of the location*
+    """
+    mock_listing(mocker)
+    mock_record(mocker, [entry("notes.pdf")])
+    mock_trust(mocker, None)
+
+    row = read(mocker)["notes.pdf"]
+
+    assert row.checksum_state is FileChecksumState.OLD_OK
+    assert row.untrusted_location
+
+
+def test_a_trusted_but_old_entry_is_flagged_by_age_alone(mocker: MockerFixture) -> None:
+    """A stale entry at a trusted location is old because of *when* it was checked, not *where* -- the
+    two reasons must stay distinguishable so the tooltip never blames the wrong one (#358).
+
+    **Test steps:**
+
+    * record an entry checked months ago, at a location trusted since before that check
+    * verify it reads as stale-ok, and is not flagged as a location problem
+    """
+    mock_listing(mocker)
+    mock_record(mocker, [entry("notes.pdf", verified=OLD)])
+    mock_trust(mocker, datetime(2020, 1, 1, tzinfo=UTC))
+
+    row = read(mocker)["notes.pdf"]
+
+    assert row.checksum_state is FileChecksumState.OLD_OK
+    assert not row.untrusted_location
+
+
+def test_a_stamp_older_than_the_trust_is_flagged_as_the_location(mocker: MockerFixture) -> None:
+    """A partial verify after a move re-trusts the location from that moment on, but an entry whose own
+    stamp predates it was never re-checked *here* -- that is a location reason, not an age one (#358).
+
+    **Test steps:**
+
+    * record an entry checked recently, but before this machine started trusting the location
+    * verify it reads as stale-ok, flagged as a location problem
+    """
+    mock_listing(mocker)
+    mock_record(mocker, [entry("notes.pdf")])
+    mock_trust(mocker, TRUSTED_AFTER_FRESH)
+
+    row = read(mocker)["notes.pdf"]
+
+    assert row.checksum_state is FileChecksumState.OLD_OK
+    assert row.untrusted_location
+
+
+def test_an_old_stamp_at_an_unknown_location_is_flagged_by_age_alone(mocker: MockerFixture) -> None:
+    """The location flag means *age alone would call this current*: a check that is old anyway would run
+    again at any location, so the ordinary wording is the honest one (#358).
+
+    **Test steps:**
+
+    * record an entry checked months ago, at a location this machine has not registered
+    * verify it reads as stale-ok, and is not flagged as a location problem
+    """
+    mock_listing(mocker)
+    mock_record(mocker, [entry("notes.pdf", verified=OLD)])
+    mock_trust(mocker, None)
+
+    row = read(mocker)["notes.pdf"]
+
+    assert row.checksum_state is FileChecksumState.OLD_OK
+    assert not row.untrusted_location
+
+
+def test_a_dateless_entry_at_a_trusted_location_is_not_blamed_on_the_location(mocker: MockerFixture) -> None:
+    """A claim seeded from a legacy manifest has never been checked anywhere; at a trusted location the
+    location is not what stands between it and *current* (#358).
+
+    **Test steps:**
+
+    * record a matched entry with no stamp, at a trusted location
+    * verify it reads as stale-ok, and is not flagged as a location problem
+    """
+    mock_listing(mocker)
+    mock_record(mocker, [{"name": "notes.pdf", "xxh3": "0" * 16, "status": "matched"}])
+    mock_trust(mocker, datetime(2020, 1, 1, tzinfo=UTC))
+
+    row = read(mocker)["notes.pdf"]
+
+    assert row.checksum_state is FileChecksumState.OLD_OK
+    assert not row.untrusted_location
+
+
+def test_the_untrusted_location_tooltip_replaces_the_age_ones_wording(mocker: MockerFixture) -> None:
+    """The glyph stays the ordinary stale one; only the tooltip says why (#358).
+
+    **Test steps:**
+
+    * read a folder against an entry this machine has never verified at this location
+    * verify the checksum cell's tooltip names the location rather than the age
+    """
+    mock_listing(mocker)
+    mock_record(mocker, [entry("notes.pdf")])
+    mock_trust(mocker, None)
+    model = FilesTableModel()
+    model.set_rows(FilesRowsReader(INFO_PATH, (), (), WEEK).read(DIRECTORY, NOW).rows)
+    row = [model.index(position, NAME_COLUMN).data() for position in range(model.rowCount())].index("notes.pdf")
+
+    assert model.index(row, CHECKSUM_COLUMN).data(Qt.ItemDataRole.ToolTipRole) == "Not yet verified at this location."
 
 
 def test_an_unexpected_entry_is_not_folded_into_bad(mocker: MockerFixture) -> None:

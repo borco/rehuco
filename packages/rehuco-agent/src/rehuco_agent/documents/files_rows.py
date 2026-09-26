@@ -42,7 +42,9 @@ from PySide6.QtCore import (
 )
 from rehuco_core import (
     CHECKSUM_FILES_KEY,
+    DEFAULT_CHECKSUM_TRUST,
     MATCHED_STATUS,
+    TRUST_NOT_TRACKED,
     ChecksumEntry,
     ChecksumRecordError,
     DirectoryClassifier,
@@ -167,6 +169,15 @@ CHECKSUM_STATE_TOOLTIPS: Final[dict[FileChecksumState, str]] = {
 }
 """What each glyph means, in a sentence -- what makes an icon-only column readable on first meeting."""
 
+OLD_CHECKSUM_STATES: Final = frozenset({FileChecksumState.OLD_OK, FileChecksumState.OLD_BAD})
+"""The pair a location can be the reason for -- only these two carry a ``verified`` stamp worth aging
+against a location's trust (#358)."""
+
+UNTRUSTED_LOCATION_TOOLTIP: Final = "Not yet verified at this location."
+"""What an :data:`~FileChecksumState.OLD_OK`/:data:`~FileChecksumState.OLD_BAD` row says instead of its
+usual :data:`CHECKSUM_STATE_TOOLTIPS` entry when :func:`checksum_verdict_for` says the *location*, not the
+check's age, is why a fresh run would not skip it (#358)."""
+
 FILE_TYPE_ICONS: Final[dict[FileType, str]] = {
     FileType.DIRECTORY: ":/icons/file_browser_folder.svg",
     FileType.RECORD: ":/icons/file_browser_rehu.svg",
@@ -231,6 +242,8 @@ class FileRow:  # pylint: disable=too-many-instance-attributes
     :param kind: what it is to this resource.
     :param file_type: what it is by shape, which picks its glyph.
     :param checksum_state: what this resource's record says about it.
+    :param untrusted_location: whether an :data:`~FileChecksumState.OLD_OK`/:data:`~FileChecksumState.OLD_BAD`
+        ``checksum_state`` is old because of this record's *location* rather than the check's age (#358).
     :param size: its size in bytes, or ``None`` for a directory and for an entry that would not
         ``stat``.
     :param modified: when it last changed, or ``None`` for the same reasons.
@@ -243,6 +256,7 @@ class FileRow:  # pylint: disable=too-many-instance-attributes
     kind: FileKind
     file_type: FileType
     checksum_state: FileChecksumState = FileChecksumState.NONE
+    untrusted_location: bool = False
     size: int | None = None
     modified: float | None = None
     enabled: bool = True
@@ -292,7 +306,12 @@ class FilesRows:
     record_error: str = ""
 
 
-def checksum_state_for(entry: ChecksumEntry, stale_after: timedelta, now: datetime) -> FileChecksumState:
+def checksum_state_for(
+    entry: ChecksumEntry,
+    stale_after: timedelta,
+    now: datetime,
+    trusted_since: datetime | None = TRUST_NOT_TRACKED,
+) -> FileChecksumState:
     """What one record entry says about a file, resolved to the one glyph state it draws (#266, #303).
 
     Shared by the file browser and the checksum dock, so an entry's verdict cannot read one way in one
@@ -302,6 +321,9 @@ def checksum_state_for(entry: ChecksumEntry, stale_after: timedelta, now: dateti
     :param stale_after: the staleness window a run would use, so *fresh* here means what it means there.
     :param now: the instant to measure freshness against, so every entry in one read is judged against
         one moment.
+    :param trusted_since: when this machine began trusting the record's current location
+        (:meth:`~rehuco_core.ChecksumTrust.trusted_since`, #358); the untracked default keeps age the
+        only gate, matching every caller with no trust source of its own.
     :returns: the state.
     """
     if entry.status == UNEXPECTED_STATUS:
@@ -309,9 +331,50 @@ def checksum_state_for(entry: ChecksumEntry, stale_after: timedelta, now: dateti
     if entry.status == MALFORMED_STATUS:
         return FileChecksumState.MALFORMED
     matched = entry.status == MATCHED_STATUS
-    if is_checksum_fresh(entry, stale_after, now):
+    if is_checksum_fresh(entry, stale_after, now, trusted_since):
         return FileChecksumState.OK if matched else FileChecksumState.BAD
     return FileChecksumState.OLD_OK if matched else FileChecksumState.OLD_BAD
+
+
+def checksum_verdict_for(
+    entry: ChecksumEntry,
+    stale_after: timedelta,
+    now: datetime,
+    trusted_since: datetime | None = TRUST_NOT_TRACKED,
+) -> tuple[FileChecksumState, bool]:
+    """An entry's glyph state, and whether it is old because of *where* its record is rather than *when*
+    it was last checked (#358).
+
+    The second answer is defined by what it means, not by which input produced it: **age alone would call
+    this entry current, and trust here does not** -- so a dateless entry, or one whose check is simply old,
+    is old for the ordinary reason at any location, and a report-state entry is never old at all. Kept as
+    a flag beside the state rather than folded into a third glyph state: the record's verdict (matched or
+    not) is one axis, and *why* a check would run again is a second one that only the tooltip says.
+
+    One resolver for both docks, the same reason :func:`checksum_state_for` is: computed once, here, so
+    neither table has to re-derive the invariant that the flag only ever accompanies an ``old_`` state.
+
+    :param entry: the parsed record entry.
+    :param stale_after: the staleness window a run would use.
+    :param now: the instant to measure freshness against.
+    :param trusted_since: when this machine began trusting the record's current location.
+    :returns: the state, and whether the location is the one reason it is not current.
+    """
+    state = checksum_state_for(entry, stale_after, now, trusted_since)
+    untrusted_location = state in OLD_CHECKSUM_STATES and is_checksum_fresh(entry, stale_after, now)
+    return state, untrusted_location
+
+
+def checksum_tooltip_for(state: FileChecksumState, untrusted_location: bool) -> str | None:
+    """What the checksum glyph says on hover, in both docks (#358).
+
+    :param state: the resolved state.
+    :param untrusted_location: :func:`checksum_verdict_for`'s second answer.
+    :returns: the sentence; ``None`` for :data:`FileChecksumState.NONE`, which draws nothing.
+    """
+    if untrusted_location:
+        return UNTRUSTED_LOCATION_TOOLTIP
+    return CHECKSUM_STATE_TOOLTIPS.get(state)
 
 
 class FileChecksumStates:
@@ -322,11 +385,12 @@ class FileChecksumStates:
     :func:`~rehuco_core.checksum_entry_name` writes -- so a subdirectory's rows look themselves up as
     ``sub/movie.mp4``.
 
-    :param entries: the recorded states by name, already resolved.
+    :param entries: the recorded states by name, already resolved, each paired with whether it is old
+        because of its location rather than its age (:func:`checksum_verdict_for`, #358).
     :param error: why the record could not be read, or ``""``.
     """
 
-    def __init__(self, entries: dict[str, FileChecksumState], error: str = "") -> None:
+    def __init__(self, entries: dict[str, tuple[FileChecksumState, bool]], error: str = "") -> None:
         self.__entries: Final = entries
         self.__error: Final = error
 
@@ -345,7 +409,19 @@ class FileChecksumStates:
         """
         if self.__error or kind is not FileKind.CONTENT:
             return FileChecksumState.NONE
-        return self.__entries.get(name, FileChecksumState.MISSING)
+        return self.__entries.get(name, (FileChecksumState.MISSING, False))[0]
+
+    def untrusted_location_for(self, name: str, kind: FileKind) -> bool:
+        """Whether the record says this entry is old because of its location rather than its age (#358).
+
+        :param name: the entry's record-relative, POSIX-separated name.
+        :param kind: what the entry is to this resource -- only content has a verdict to carry.
+        :returns: ``False`` for anything :meth:`state_for` would answer :data:`FileChecksumState.NONE`
+            or :data:`FileChecksumState.MISSING` for.
+        """
+        if self.__error or kind is not FileKind.CONTENT:
+            return False
+        return self.__entries.get(name, (FileChecksumState.MISSING, False))[1]
 
     @staticmethod
     def read(rehu_path: Path, stale_after: timedelta, now: datetime) -> FileChecksumStates:
@@ -368,14 +444,16 @@ class FileChecksumStates:
             return FileChecksumStates({})
         except (OSError, ChecksumRecordError) as error:
             return FileChecksumStates({}, str(error))
-        states: dict[str, FileChecksumState] = {}
+        # one location for the whole record, asked once rather than per entry (#358)
+        trusted_since = DEFAULT_CHECKSUM_TRUST.trusted_since(rehu_path)
+        states: dict[str, tuple[FileChecksumState, bool]] = {}
         for raw in record[CHECKSUM_FILES_KEY]:
             entry = parse_checksum_entry(raw)
             if entry is None:
                 # an entry this build cannot read says nothing about the file, which leaves the row at
                 # MISSING -- the same thing a record with no entry for it says, and equally true
                 continue
-            states[entry.name] = checksum_state_for(entry, stale_after, now)
+            states[entry.name] = checksum_verdict_for(entry, stale_after, now, trusted_since)
         return FileChecksumStates(states)
 
 
@@ -465,12 +543,14 @@ class FilesRowsReader:
         :returns: the row.
         """
         path = directory / entry.name
+        relative_name = path.relative_to(root).as_posix()
         return FileRow(
             name=entry.name,
             path=path,
             kind=entry.kind,
             file_type=entry.file_type,
-            checksum_state=states.state_for(path.relative_to(root).as_posix(), entry.kind),
+            checksum_state=states.state_for(relative_name, entry.kind),
+            untrusted_location=states.untrusted_location_for(relative_name, entry.kind),
             size=entry.size,
             modified=entry.modified,
             enabled=navigable if entry.is_directory else entry.kind in INTERACTIVE_KINDS,
@@ -680,7 +760,7 @@ class FilesTableModel(QAbstractTableModel):
         :returns: the tooltip, or ``None`` where there is nothing worth saying.
         """
         if column == CHECKSUM_COLUMN:
-            return CHECKSUM_STATE_TOOLTIPS.get(row.checksum_state)
+            return checksum_tooltip_for(row.checksum_state, row.untrusted_location)
         return str(row.path)
 
     @override

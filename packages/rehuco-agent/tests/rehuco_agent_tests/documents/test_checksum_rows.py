@@ -31,7 +31,7 @@ from rehuco_agent.documents.checksum_rows import (
     tally_rows,
     tally_text,
 )
-from rehuco_agent.documents.files_rows import CHECKSUM_STATE_TOOLTIPS, FileChecksumState
+from rehuco_agent.documents.files_rows import CHECKSUM_STATE_TOOLTIPS, UNTRUSTED_LOCATION_TOOLTIP, FileChecksumState
 from rehuco_core import SCREENSHOT_NAME_PATTERNS
 
 
@@ -91,6 +91,8 @@ Far above anything the read needs and far below a suite that looks hung, so a wa
 genuine failure rather than a slow runner -- the same meaning `tests/concurrency.py` gives it core-side."""
 
 STAMP: Final = "2026-08-05T12:00:00Z"
+RECENT: Final = "2026-09-01T12:00:00Z"
+RECENT_DT: Final = datetime(2026, 9, 1, 12, 0, tzinfo=UTC)
 
 STALE_AFTER: Final = timedelta(days=30)
 NOW: Final = datetime(2026, 9, 12, 12, 0, tzinfo=UTC)
@@ -207,6 +209,17 @@ def entry(name: str, **extra: Any) -> dict[str, Any]:
     return {"name": name, "crc32": "deadbeef", **extra}
 
 
+def mock_trust(mocker: MockerFixture, trusted_since: datetime | None) -> None:
+    """Mock what this machine trusts the resource's record's location since (#358).
+
+    :param mocker: pytest-mock fixture.
+    :param trusted_since: what :meth:`~rehuco_core.ChecksumTrust.trusted_since` answers for this read.
+    """
+    mocker.patch(
+        "rehuco_agent.documents.checksum_rows.DEFAULT_CHECKSUM_TRUST.trusted_since", return_value=trusted_since
+    )
+
+
 # region Where the rows come from
 
 
@@ -313,6 +326,43 @@ def test_a_record_this_build_cannot_read_still_lists_the_files(disk: FakeDisk) -
     assert rows.error
 
 
+def test_an_untrusted_location_reads_old_and_flags_the_location(disk: FakeDisk, mocker: MockerFixture) -> None:
+    """A location this machine has never verified is untrusted, whatever the entry's own date (#358) --
+    a copy of a verified folder must not read as verified where it now sits.
+
+    **Test steps:**
+
+    * record a recently-checked entry, but at a location this machine has not registered
+    * verify it reads as stale-ok, and is flagged as old *because of the location*
+    """
+    disk.put_record([entry(VIDEO, verified=RECENT, status="matched")])
+    mock_trust(mocker, None)
+
+    rows = read_checksum_rows(INFO_PATH, PATTERNS, RULES, STALE_AFTER, NOW)
+
+    row = next(row for row in rows.rows if row.name == VIDEO)
+    assert row.checksum_state is FileChecksumState.OLD_OK
+    assert row.untrusted_location
+
+
+def test_a_trusted_recent_entry_is_not_flagged(disk: FakeDisk, mocker: MockerFixture) -> None:
+    """A recently-checked entry at a trusted location reads current, with nothing to explain (#358).
+
+    **Test steps:**
+
+    * record a recently-checked entry at a location trusted since before that check
+    * verify it reads current, and carries no location flag
+    """
+    disk.put_record([entry(VIDEO, verified=RECENT, status="matched")])
+    mock_trust(mocker, datetime(2020, 1, 1, tzinfo=UTC))
+
+    rows = read_checksum_rows(INFO_PATH, PATTERNS, RULES, STALE_AFTER, NOW)
+
+    row = next(row for row in rows.rows if row.name == VIDEO)
+    assert row.checksum_state is FileChecksumState.OK
+    assert not row.untrusted_location
+
+
 def test_an_entry_this_build_cannot_name_is_not_a_row(disk: FakeDisk) -> None:
     """A row that cannot say which file it is about is not one a reader can act on (#244).
 
@@ -370,6 +420,20 @@ def test_an_unchecked_row_draws_no_date_and_the_missing_glyphs_tooltip() -> None
         model.index(0, STATUS_COLUMN).data(Qt.ItemDataRole.ToolTipRole)
         == CHECKSUM_STATE_TOOLTIPS[FileChecksumState.MISSING]
     )
+
+
+def test_the_untrusted_location_tooltip_replaces_the_age_ones_wording() -> None:
+    """The glyph stays the ordinary stale one; only the tooltip says why (#358).
+
+    **Test steps:**
+
+    * put an old row flagged as an untrusted location
+    * check its Status tooltip names the location rather than the age
+    """
+    model = ChecksumTableModel()
+    model.set_rows((ChecksumRow(VIDEO, "matched", RECENT_DT, FileChecksumState.OLD_OK, untrusted_location=True),))
+
+    assert model.index(0, STATUS_COLUMN).data(Qt.ItemDataRole.ToolTipRole) == UNTRUSTED_LOCATION_TOOLTIP
 
 
 def test_sorting_by_status_orders_by_the_resolved_state() -> None:

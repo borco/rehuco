@@ -225,7 +225,11 @@ What a **reference-images** resource's content *is* was settled by #197: content
   is **read** by one more surface than the runs: the files sub-dock reports it per file
   ([[plugins#files-subdock]]), and its *checked recently* glyph is defined as *what a verify would skip* — which is why
   the staleness rule is one shared predicate rather than arithmetic each caller repeats, since a second copy is how
-  that glyph would come to promise something a run does not honour. It is JSON,
+  that glyph would come to promise something a run does not honour. **Trust is per location and per machine**
+  (#357, #358): a folder copied or moved elsewhere carries its record's dates along, but a stamp only counts where
+  it was earned, so the copy reads unverified until re-verified where it now sits. That trust is tracked in a local
+  cache rather than in the record itself — every machine keeps its own, so two machines seeing one share under
+  different mount points never distrust and rewrite each other's anchor. The record itself is JSON,
   sits beside the `.rehu` under the same stem (`info.rehu` → `info.checksum`), and carries its own `version` for the
   migration chain to climb:
 
@@ -570,7 +574,10 @@ What a **reference-images** resource's content *is* was settled by #197: content
   all of it — and adoption is the decision the bullet below keeps deliberate. **A window of 0 days means nothing is
   ever fresh**, so every sweep re-reads everything; the page has to say so out loud, since `0` reads just as naturally
   as *never*. The agent resolves all four when a run is enqueued and captures them into the job — core never reads a
-  setting, and a restored job is *the job that was queued*.
+  setting, and a restored job is *the job that was queued*. **The per-location trust cache has no page here**
+  (#358): it is a per-machine implementation detail behind the *checked recently* glyph, not a choice to configure.
+  Today it is `checksum-trust.json` beside the settings file, next to the saved task queue; its eventual home is the
+  `.rehudb` cache of [[data-model#local-file-trio]], being derived and disposable in exactly that table's sense.
 - **A sweep verifies a folder recursively, skipping what was checked recently** (#242). The user points it at a
   folder, a walk finds every `.rehu` under it, and each resource is verified with the staleness window in force —
   which is what makes a multi-terabyte library checkable more than once. Four things follow:
