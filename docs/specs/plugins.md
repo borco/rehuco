@@ -237,10 +237,11 @@ over the same view-model and toggled independently:
   of it until the two tall, scrolling halves were split apart from the record fields they sat around.
 - Three editor surfaces — **Main Editor**, **Description**, and **Images**.
 - **viewer only**, **editor only**, or **both** — chosen by toggle actions; "both" is the live case
-  above. A resource **opens as a reader**: the two viewers are shown side by side, Main View left and
-  Description View right, and every editor starts hidden behind its toggle. A user who prefers
-  otherwise saves the arrangement they want as that type's default layout, which every document of the
-  type with none of its own then opens into.
+  above. A typed resource **opens as a reader**: the two viewers are shown side by side, Main View left
+  and Description View right, and every editor starts hidden behind its toggle. A resource with **no
+  type** — brand new, about to be filled in — opens the other way round, on the Main Editor alone. A
+  user who prefers otherwise saves the arrangement they want as that type's default layout, "(no type)"
+  included, which every document of the type with none of its own then opens into.
 - The surfaces are hosted as docks inside a per-resource nested dock area ([[plugins#dock-shell]]), so "both" is
   arrangeable docks, not a fixed split. See [[component-decomposition]] for the containment hierarchy this produces.
 
@@ -273,7 +274,11 @@ stored**, and only if that cannot restore does the type's current layout step in
 when the type is first known — at open, or at a session-restore placeholder's deferred first read — and swapped by a
 later type switch in the editor, which closes and removes the outgoing type's own docks, their toolbar toggles with
 them, and adds the incoming type's hidden. A switch applies no layout — the docks the user is switching from stay as
-they are; the layout button afterwards applies the *new* type's default. A layout restores onto a dock set other than the one it was
+they are; the layout button afterwards applies the *new* type's default. The one exception is **leaving (no type)**:
+the empty type is a type like any other here, with its own saved default and an as-built layout of the Main Editor
+alone, and that layout only ever meant "no type yet" — so picking a type for a type-less document applies the new
+type's default (saved, else as-built). A session-restored document's stored layout still wins over this: its type
+arriving from the deferred first read is not a switch. A layout restores onto a dock set other than the one it was
 written against: a dock it names that isn't built is skipped, and a built dock it never names is put back hidden
 where it always lives (QtAds would otherwise leave it area-less, to open floating). That tolerance is what retires
 the hand-bumped layout version: adding a dock to one type no longer resets anyone's layouts.

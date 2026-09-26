@@ -120,6 +120,18 @@ def test_a_duplicated_rule_lands_below_its_source(model: LocationReplacementsMod
     assert model.entries == (FIRST, FIRST, SECOND)
 
 
+def test_duplicate_with_a_negative_row_does_nothing(model: LocationReplacementsModel) -> None:
+    """No row named is a no-op, not an error.
+
+    **Test steps:**
+
+    * duplicate with a negative row
+    * verify nothing changed and the row came back as given
+    """
+    assert model.duplicate(-1) == -1
+    assert model.entries == (FIRST, SECOND)
+
+
 def test_deleting_drops_one_rule(model: LocationReplacementsModel) -> None:
     """Delete removes the row it names and leaves the rest in order.
 
@@ -131,6 +143,19 @@ def test_deleting_drops_one_rule(model: LocationReplacementsModel) -> None:
     model.delete(0)
 
     assert model.entries == (SECOND,)
+
+
+def test_deleting_a_negative_row_does_nothing(model: LocationReplacementsModel) -> None:
+    """No row named is a no-op, not an error.
+
+    **Test steps:**
+
+    * delete with a negative row
+    * verify nothing changed
+    """
+    model.delete(-1)
+
+    assert model.entries == (FIRST, SECOND)
 
 
 def test_reset_restores_the_defaults(model: LocationReplacementsModel) -> None:
@@ -145,6 +170,20 @@ def test_reset_restores_the_defaults(model: LocationReplacementsModel) -> None:
     model.reset()
 
     assert model.entries == DEFAULT_RULES
+
+
+def test_the_defaults_can_be_read_back(model: LocationReplacementsModel) -> None:
+    """What Reset restores is itself readable, not just settable -- the settings page reads it back to
+    decide whether Reset has anything to offer.
+
+    **Test steps:**
+
+    * set the defaults to a custom set
+    * verify reading them back answers the same set
+    """
+    model.defaults = (FIRST,)
+
+    assert model.defaults == (FIRST,)
 
 
 # endregion
@@ -174,6 +213,21 @@ def test_a_move_off_either_end_is_a_no_op(model: LocationReplacementsModel) -> N
     """
     assert model.move_up(0) == 0
     assert model.move_down(1) == 1
+    assert model.entries == (FIRST, SECOND)
+
+
+def test_move_to_top_and_to_bottom_take_a_rule_straight_to_either_end(model: LocationReplacementsModel) -> None:
+    """The jump moves skip the one-at-a-time walk `move_up`/`move_down` do.
+
+    **Test steps:**
+
+    * move the second rule to the top, then move it to the bottom
+    * verify the row each returns and the resulting order
+    """
+    assert model.move_to_top(1) == 0
+    assert model.entries == (SECOND, FIRST)
+
+    assert model.move_to_bottom(0) == 1
     assert model.entries == (FIRST, SECOND)
 
 
@@ -343,6 +397,38 @@ def test_an_edit_outside_the_model_or_under_another_role_is_refused(model: Locat
     """
     assert model.setData(QModelIndex(), ":") is False
     assert model.setData(model.index(0, TEXT_COLUMN), ":", Qt.ItemDataRole.DisplayRole) is False
+
+
+def test_a_row_operation_under_a_parent_or_outside_the_list_is_refused(model: LocationReplacementsModel) -> None:
+    """There is nothing under a row, and a range past the end names nothing to act on.
+
+    **Test steps:**
+
+    * insert, remove and move under a valid index, and insert/remove nothing
+    * verify all were refused and the list is untouched
+    """
+    parent = model.index(0, TEXT_COLUMN)
+
+    assert model.insertRows(0, 1, parent) is False
+    assert model.removeRows(0, 1, parent) is False
+    assert model.moveRows(parent, 0, 1, QModelIndex(), 1) is False
+    assert model.moveRows(QModelIndex(), 0, 1, parent, 1) is False
+    assert model.insertRows(0, 0) is False
+    assert model.removeRows(0, 0) is False
+    assert model.entries == (FIRST, SECOND)
+
+
+def test_a_move_into_its_own_source_range_is_refused(model: LocationReplacementsModel) -> None:
+    """Qt refuses a move whose destination falls inside the range being moved -- there is nowhere for
+    it to land that isn't where it already is.
+
+    **Test steps:**
+
+    * move the first row to a destination inside its own one-row range
+    * verify the model refused it
+    """
+    assert model.moveRows(QModelIndex(), 0, 1, QModelIndex(), 0) is False
+    assert model.entries == (FIRST, SECOND)
 
 
 # endregion
