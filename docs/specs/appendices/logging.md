@@ -245,3 +245,85 @@ Records made about a resource are placed under its **path** ([[appendices.loggin
 renamed mid-session re-scopes its surface to the new path and keeps the rows it already showed: the
 thing was renamed, not replaced. A resource with no path yet — a never-saved document — is the log of
 nothing, and its first save is what gives it one.
+
+## 8. The run log file
+
+[[[appendices.logging#run-log-file]]]
+
+Everything above is an in-app surface: it exists only once a `LogBridge` is installed and a dock is
+open to show it. The run log file (`rehuco-agent.log`, in the app's own `config_folder()`, #362) is the
+one surface that survives a run neither of those requires — a launch that only forwards its argv and
+exits, or a crash hard enough to take every in-app surface down with it. It records DEBUG and up, built
+on stdlib's own `logging.handlers`.
+
+### 8.1 Several processes share the file, and only one rotates
+
+[[[appendices.logging#run-log-file-roles]]]
+
+The processes are one long-lived **primary** plus any number of short-lived **forwarders** — the same
+split [[nodes#single-instance]] makes for the window itself. Every record carries the writing process's
+pid and role (`?` before the role is known, `primary`, or `forward`), so an interleaved file still reads
+as two stories rather than one confused one.
+
+**Only the primary rotates.** A forwarder opens the file, appends its one record, and closes it again —
+never holding it open — because a rename fails on Windows while another process has the file open. The
+primary starts the same way, before the single-instance check resolves its role, and only *becomes*
+rotating once confirmed: the same handler instance starts holding its stream open and rolling over,
+rather than a second handler replacing the first, which would leave a gap and something to tear down.
+If the primary's rename still fails — a forwarder mid-write — it keeps appending to what it has and
+retries on the next record that crosses the size limit, rather than raising from inside a log call.
+**There are no lock files.** A crash leaves nothing to clean up, at the cost of a rename racing a
+forwarder rather than waiting on it — the retry above is what that cost buys back.
+
+The file's size and backup count are ordinary settings ([[appendices.logging#configured-limits]]'s
+Logs page holds them too, in a **Log file** frame of its own), read fresh on every record, so a change
+applies from the very next one.
+
+### 8.2 How a run ends is always recorded
+
+[[[appendices.logging#run-outcome]]]
+
+A run opens with a banner — its own id, pid, argv, and the app/platform/Python/Qt/PySide versions — and
+every process installs the same hooks over `sys.excepthook`, `threading.excepthook`,
+`sys.unraisablehook` and `qInstallMessageHandler`, chaining to whatever was installed before. An
+uncaught exception — including one PySide re-raises from inside a Qt slot — is logged CRITICAL with its
+traceback under whichever of those caught it, deduplicated so the same exception seen by more than one
+layer on its way out is written once. **An exception that keeps recurring is counted, not rewritten**: a
+slot raising on every repaint recurs several times a second, and its traceback written each time would
+rotate the whole file away within the hour while saying nothing new — so the file gets it once, then a
+count at most once a minute, and the pending count ahead of the next different exception. A `qFatal`
+flushes every handler before Qt aborts, so the record that explains it is never left sitting in a buffer.
+
+**An unclean-exit sentinel is the primary's alone.** It writes `primary.run`, naming its own run, on
+becoming primary, and removes it on a clean exit. A sentinel still there at the next start names a run
+that never got to say why — a native crash, End Task, or power loss — and produces a WARNING rather
+than silence.
+
+`faulthandler` is enabled on that same sentinel file, appended after its own `run=` line: a native
+crash's own stack shows every thread's native frames but not one line of Python, so the dump is what
+faulthandler adds — appended to the one file a fatal signal can still safely write, since it needs a
+handle held open for the run's whole life, which the rotating log itself cannot offer. On an unclean
+exit the next start's warning reads the sentinel back whole, so the dump rides along with the warning
+it produces rather than needing a file of its own.
+
+POSIX only, SIGTERM/SIGINT are handled through `set_wakeup_fd` + `QSocketNotifier`, turning either into
+an orderly `QCoreApplication.exit`. On Windows the packaged GUI build receives no console signals at
+all, and `TerminateProcess` cannot be caught from inside the process it kills — the sentinel above is
+what covers those there instead.
+
+### 8.3 What is kept out, and what is cut
+
+[[[appendices.logging#run-log-noise]]]
+
+Three third-party loggers are raised to INFO for every surface, not only the file — the WebDriver
+traffic a scrape drives (`selenium.webdriver.remote.remote_connection`, whole page sources included),
+the local HTTP calls behind it (`urllib3.connectionpool`), and a "successfully loaded extension" line
+markdown writes on every render. Raising the level rather than filtering only the file keeps the same
+page source out of the bridge's replay cache and the console too, not only out of this one surface.
+
+**A single formatted line is cut past a fixed length**, with a trailing `[N chars cut]` rather than
+being dropped whole — one library logging an entire payload at DEBUG should not be able to crowd a
+run's earlier history out of a size-bounded file on its own, but the line that did it is still worth a
+line. **A warning or worse is never cut**: a CRITICAL traceback, or the warning carrying a crashed run's
+every-thread stack dump, is the record the file exists for, and it is the one a cap would otherwise
+have taken the end off.

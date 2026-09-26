@@ -7,7 +7,7 @@ from typing import Final
 from unittest.mock import MagicMock
 
 from PySide6.QtGui import QFileOpenEvent, QGuiApplication
-from pytest import LogCaptureFixture, fixture
+from pytest import LogCaptureFixture, fixture, raises
 from pytest_mock import MockerFixture
 from rehuco_agent.app import APP_ID, Application, leave_launch_directory, run
 from rehuco_agent.linux_registration import DESKTOP_FILE_NAME
@@ -24,6 +24,17 @@ def chdir(mocker: MockerFixture) -> MagicMock:
     :returns: the stand-in.
     """
     return mocker.patch("rehuco_agent.app.os.chdir")
+
+
+@fixture(autouse=True)
+def run_log(mocker: MockerFixture) -> MagicMock:
+    """Stand in for the shared `~rehuco_agent.run_log.RunLog`, so ``run`` never installs real
+    excepthooks/a Qt message handler or writes under the fake config folder these tests otherwise
+    only ever *read* from (#362) -- exactly what ``test_run_log.py`` exercises for real.
+
+    :returns: the stand-in.
+    """
+    return mocker.patch("rehuco_agent.app.shared_run_log").return_value
 
 
 def test_leaving_the_launch_directory_goes_home(chdir: MagicMock, mocker: MockerFixture) -> None:
@@ -179,6 +190,113 @@ def test_run_forwards_when_not_primary(mocker: MockerFixture) -> None:
     assert result == 0
     app_cls.return_value.exec.assert_not_called()
     singleton.setup.assert_called_once_with(APP_ID, [str(Path("a.rehu").resolve())])
+
+
+def test_run_starts_the_run_log_before_building_the_application(mocker: MockerFixture, run_log: MagicMock) -> None:
+    """The run log starts before anything worth keeping happens, including building the
+    `QApplication` itself -- a failure that early is still in the file (#362).
+
+    **Test steps:**
+
+    * mock ``Application``/``ApplicationSingleton``
+    * call ``run``
+    * verify ``start`` ran, and before ``Application`` was ever constructed
+    """
+    app_cls = mocker.patch("rehuco_agent.app.Application")
+    singleton_cls = mocker.patch("rehuco_agent.app.ApplicationSingleton")
+    singleton_cls.return_value.setup.return_value = False
+    order: list[str] = []
+    run_log.start.side_effect = lambda argv: order.append("start")  # noqa: ARG005
+    app_cls.side_effect = lambda argv: order.append("Application") or mocker.MagicMock()  # noqa: ARG005
+
+    run(["rehuco-agent"])
+
+    assert order == ["start", "Application"]
+
+
+def test_run_marks_a_forwarder_and_never_becomes_primary(mocker: MockerFixture, run_log: MagicMock) -> None:
+    """A process that forwards its argv to an existing primary is a forwarder for its whole (short)
+    life, and never rotates the file or touches the sentinel.
+
+    **Test steps:**
+
+    * make ``setup`` report this process is not primary
+    * call ``run``
+    * verify ``become_forwarder`` ran and ``become_primary``/``watch`` never did
+    """
+    mocker.patch("rehuco_agent.app.Application")
+    singleton_cls = mocker.patch("rehuco_agent.app.ApplicationSingleton")
+    singleton_cls.return_value.setup.return_value = False
+
+    run(["rehuco-agent"])
+
+    run_log.become_forwarder.assert_called_once_with()
+    run_log.become_primary.assert_not_called()
+    run_log.watch.assert_not_called()
+
+
+def test_run_marks_the_primary_and_watches_the_application(mocker: MockerFixture, run_log: MagicMock) -> None:
+    """The process that wins the single-instance role becomes the run log's primary, and is watched
+    for how its `QGuiApplication` shuts down.
+
+    **Test steps:**
+
+    * make ``setup`` report this process is primary
+    * call ``run``
+    * verify ``become_primary`` ran, and ``watch`` was handed the built ``Application``
+    """
+    app_cls = mocker.patch("rehuco_agent.app.Application")
+    singleton_cls = mocker.patch("rehuco_agent.app.ApplicationSingleton")
+    singleton_cls.return_value.setup.return_value = True
+
+    run(["rehuco-agent"])
+
+    run_log.become_primary.assert_called_once_with()
+    run_log.watch.assert_called_once_with(app_cls.return_value)
+
+
+def test_run_finishes_the_run_log_with_execs_return_value(mocker: MockerFixture, run_log: MagicMock) -> None:
+    """The exit code ``run`` itself returns is what ``finish`` is told, whichever role this process
+    played.
+
+    **Test steps:**
+
+    * make ``exec`` return a code
+    * call ``run``
+    * verify ``finish`` was called with that same code
+    """
+    app_cls = mocker.patch("rehuco_agent.app.Application")
+    app_cls.return_value.exec.return_value = 42
+    singleton_cls = mocker.patch("rehuco_agent.app.ApplicationSingleton")
+    singleton_cls.return_value.setup.return_value = True
+
+    result = run(["rehuco-agent"])
+
+    assert result == 42
+    run_log.finish.assert_called_once_with(42)
+
+
+def test_run_logs_and_reraises_an_exception_from_exec(mocker: MockerFixture, run_log: MagicMock) -> None:
+    """An exception that escapes ``app.exec()`` is logged before it propagates, and ``finish`` still
+    runs -- with no exit code, since none was ever produced.
+
+    **Test steps:**
+
+    * make ``exec`` raise
+    * call ``run``
+    * verify the exception was logged, re-raised, and ``finish`` was called with ``None``
+    """
+    error = RuntimeError("boom")
+    app_cls = mocker.patch("rehuco_agent.app.Application")
+    app_cls.return_value.exec.side_effect = error
+    singleton_cls = mocker.patch("rehuco_agent.app.ApplicationSingleton")
+    singleton_cls.return_value.setup.return_value = True
+
+    with raises(RuntimeError):
+        run(["rehuco-agent"])
+
+    run_log.log_exception.assert_called_once_with(error, "app.exec()")
+    run_log.finish.assert_called_once_with(None)
 
 
 def test_run_resolves_a_relative_path_against_this_processs_cwd(mocker: MockerFixture) -> None:

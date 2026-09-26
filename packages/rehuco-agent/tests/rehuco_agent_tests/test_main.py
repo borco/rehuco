@@ -153,3 +153,24 @@ def test_scrape_flag_dispatches_to_the_scraping_cli_and_never_launches_the_gui(
     assert main() == 0
     scrape_url_to_json.assert_called_once_with(url, scrapers_folder=None, output=None)
     run.assert_not_called()
+
+
+def test_a_gui_launch_exception_is_logged_and_reraised(monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture) -> None:
+    """An exception from ``run()`` itself -- rather than from ``app.exec()``, which ``run()`` already
+    logs on its own way out -- would otherwise reach here having never been logged at all (#362).
+
+    **Test steps:**
+
+    * set ``sys.argv`` to argv[0] with no flags, a plain GUI launch
+    * make ``run`` raise
+    * verify the exception was logged through the shared run log, then re-raised
+    """
+    monkeypatch.setattr("sys.argv", [FAKE_ARGV0])
+    error = RuntimeError("boom")
+    mocker.patch("rehuco_agent.app.run", side_effect=error)
+    run_log = mocker.patch("rehuco_agent.run_log.shared_run_log").return_value
+
+    with pytest.raises(RuntimeError):
+        main()
+
+    run_log.log_exception.assert_called_once_with(error, "main()")

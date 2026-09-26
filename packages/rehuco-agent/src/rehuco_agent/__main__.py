@@ -232,7 +232,17 @@ def main() -> int:
     # pylint: disable-next=import-outside-toplevel
     from rehuco_agent.app import run
 
-    return run([str(exe_path), *args.paths])
+    # pylint: disable-next=import-outside-toplevel
+    from rehuco_agent.run_log import shared_run_log
+
+    try:
+        return run([str(exe_path), *args.paths])
+    except Exception as error:
+        # ``run()`` itself already logs and re-raises an exception from ``app.exec()`` -- this instead
+        # covers one from anywhere else inside ``run()`` (before ``app.exec()``, or its own ``finally``),
+        # which would otherwise reach here having never been logged at all
+        shared_run_log().log_exception(error, "main()")
+        raise
 
 
 if __name__ == "__main__":  # pragma: no cover

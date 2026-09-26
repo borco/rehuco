@@ -218,6 +218,8 @@ one pinned version of a package published minutes earlier, which is the case it 
 window every time a `.rehu` file is opened from Explorer. The consequence is that the packaged Windows build
 emits no console output: `Rehuco.exe --version` and `--info` print nothing to a terminal, to a pipe, or into a
 redirect, even though both flags run and exit correctly (a bad flag still exits `2`, as argparse intends).
+What a GUI launch logs still lands in the run log file ([[appendices.logging#run-log-file]]), which is where
+to look after the packaged build closes unexpectedly — its console handler's stderr goes nowhere.
 
 This is specific to the packaged build. From a source checkout the same flags print normally, because the
 `rehuco-agent` console script is a console-subsystem executable:
