@@ -14,6 +14,10 @@ STATE_KEY: Final = "state"
 """Each type's blob sits at ``default_layout/<type>/state``. Before #320 one untyped blob sat at
 ``default_layout/state``; it was written against the pre-split dock set, so it is dropped rather than
 migrated -- :meth:`DefaultLayoutSettings.load` ignores it and :meth:`DefaultLayoutSettings.save` removes it."""
+UNTYPED_GROUP: Final = "_untyped"
+"""The group the empty type's blob sits under (#354): ``default_layout//state`` is malformed, and the
+pre-#320 ``default_layout/state`` is the blob :meth:`DefaultLayoutSettings.save` drops. Translated at
+this storage boundary only -- in :attr:`DefaultLayoutSettings.states` the empty type keys by ``""``."""
 
 
 @dataclass
@@ -31,7 +35,7 @@ class DefaultLayoutSettings:
     resource type, keyed by the type's main key
     (:attr:`~rehuco_agent.documents.document_widget.DocumentWidget.layout_type`). A type with no entry
     has no default: no inheritance across types, so a tutorial layout never lands on a reference pack
-    (#320)."""
+    (#320). A type-less document keys by ``""``, stored under :data:`UNTYPED_GROUP` (#354)."""
 
     def state_for(self, layout_type: str) -> bytes:
         """The saved default of one type.
@@ -48,11 +52,12 @@ class DefaultLayoutSettings:
         """
         settings.beginGroup(GROUP)
         self.states.clear()
-        for layout_type in settings.childGroups():
-            settings.beginGroup(layout_type)
+        for group in settings.childGroups():
+            settings.beginGroup(group)
             state = bytes(cast(QByteArray, settings.value(STATE_KEY, QByteArray(), type=QByteArray)).data())
             settings.endGroup()
             if state:
+                layout_type = "" if group == UNTYPED_GROUP else group
                 self.states[layout_type] = state  # pylint: disable=unsupported-assignment-operation
         settings.endGroup()
 
@@ -64,11 +69,12 @@ class DefaultLayoutSettings:
         """
         settings.beginGroup(GROUP)
         settings.remove(STATE_KEY)
+        groups = {layout_type or UNTYPED_GROUP: state for layout_type, state in self.states.items()}
         for stale in settings.childGroups():
-            if stale not in self.states:
+            if stale not in groups:
                 settings.remove(stale)
-        for layout_type, state in self.states.items():
-            settings.beginGroup(layout_type)
+        for group, state in groups.items():
+            settings.beginGroup(group)
             settings.setValue(STATE_KEY, QByteArray(state))
             settings.endGroup()
         settings.endGroup()

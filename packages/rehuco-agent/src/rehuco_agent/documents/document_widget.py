@@ -362,11 +362,13 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
     hidden) editor still reaches the (possibly hidden) viewer through the model's signals, making
     "both" work even when only one is on screen. A document **opens as a reader** (#299): the two
     viewer docks -- Main View on the left, Description View on the right -- are the only ones shown,
-    with the editors and the inspection set hidden behind their toolbar toggles. The dock **set** is
+    with the editors and the inspection set hidden behind their toolbar toggles -- except a **type-less**
+    document, a resource about to be filled in, which opens on the Main Editor alone (#354). The dock **set** is
     the common shell plus whatever the resource's type declares (:data:`TYPE_DOCK_NAMES`, #320),
     decided **once**, when the type is first known -- at construction, or at the deferred first read
-    of a session-restore placeholder (#66) -- and never touched by a later type switch; a default
-    layout is saved per type, and a restore tolerates a blob written against another set. Carries the
+    of a session-restore placeholder (#66) -- and swapped by a later type switch, which applies no
+    layout unless it leaves the empty type (#354); a default layout is saved per type, the empty type
+    included, and a restore tolerates a blob written against another set. Carries the
     closed-dock-size workaround
     ([[packaging-deployment#qml-regression]]): `CDockManager.splitterSizes` are stashed on
     ``viewToggled(False)`` -- confirmed, against this QtAds version, to still fire with the area at
@@ -550,7 +552,8 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         # (#299). The editors are built first so the left area exists for Main View to stack into, and
         # hidden right after: a document opens as a **reader** -- the two viewers side by side and
         # nothing else -- with every editor one toolbar toggle away, the same way the inspection docks
-        # have always started hidden. A user who wants the editors up at open saves that as their
+        # have always started hidden (a type-less document is laid out otherwise once every dock
+        # exists, #354). A user who wants the editors up at open saves that as their
         # default layout (#62), which `DocumentsDock` applies to every document with none of its own.
         self.__editor_docks: Final = self.__add_docks(
             self.__form.make_editor(model),
@@ -753,9 +756,19 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         # what "Apply default layout" falls back to (:meth:`apply_default_layout`) while no usable
         # default is saved (#62): this document's own as-built layout, not an arbitrary one.
         # Layout-only, same subset the saved default itself is, so the fallback resets docks without
-        # also resetting per-widget state the user has since changed. Recaptured when a placeholder's
-        # first read completes the dock set, since the as-built layout is the set's.
-        self.__factory_state = self.save_layout_state()
+        # also resetting per-widget state the user has since changed. Captured once, reader-shaped:
+        # a later dock set restores from it all the same (restore_state's tolerance, #320), and the
+        # untyped variant is derived from it rather than captured (__restore_as_built, #354).
+        self.__factory_state: Final = self.save_layout_state()
+        # a type-less document is a resource about to be filled in, so it opens on the Main Editor
+        # alone rather than as a reader (#354); a pending placeholder is type-less only until its
+        # first read, and keeps the reader build its stored layout is restored over
+        if not model.pending and not self.layout_type:
+            self.__show_main_editor_alone()
+
+        self.__shown_layout_type = self.layout_type
+        """The type the dock set was last brought in step with (:meth:`__rebuild_type_docks`), so a
+        switch can tell it is leaving the empty type (#354)."""
 
         self.__opened_with_state: bytes | None = None
         """The session blob a :attr:`~RehuDocumentModel.pending` placeholder was opened with (#66,
@@ -1108,9 +1121,9 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         the incoming type's are built hidden -- so a pack switched to a tutorial loses Content Images
         and its toolbar button, and the reverse switch gets them back. No layout is applied by a
         switch: the docks the user is working in, the one the switch was made from among them, stay
-        as they are. A session-restore placeholder's first read completes its set the same way, and is
-        also when the session blob it was opened with is restored onto the completed set
-        (:attr:`__opened_with_state`).
+        as they are -- unless it leaves the empty type, which applies the new type's layout (#354). A
+        session-restore placeholder's first read completes its set the same way, and is also when the
+        session blob it was opened with is restored onto the completed set (:attr:`__opened_with_state`).
 
         A stateful widget's own UI state (e.g. the path editor's expand toggle) is captured before the
         swap and restored into its freshly-built counterpart afterwards -- keyed by object name, the same
@@ -1167,8 +1180,11 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         The docks the outgoing type declared and the incoming one doesn't are closed and removed, their
         toolbar toggles with them; the ones the incoming type adds are built hidden, exactly as a
         loaded document builds them, their toggles closing the toolbar's common run. A dock both
-        declare is kept as it is, since nothing about it changed. The as-built layout is recaptured
-        whenever the set changes, since it is the set's. No layout is applied by a switch.
+        declare is kept as it is, since nothing about it changed. No layout is applied by a switch,
+        except one **leaving the empty type** (#354): a type-less document was on the Main Editor alone
+        only because it had no type, so picking one gives it that type's current layout -- its saved
+        default, else as-built -- once the type's docks exist for it to land on. A revert that moves a
+        type-less document onto a typed file leaves the empty type the same way.
 
         A placeholder is built typeless, so its first read is where its real type's docks arrive; then,
         **once**, the same rule as at open (:meth:`adopt_layout`): the stored layout it was opened
@@ -1177,6 +1193,8 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         """
         if self.__model.pending:
             return
+        left_untyped = not self.__shown_layout_type and bool(self.layout_type)
+        self.__shown_layout_type = self.layout_type
         wanted = type_dock_names(self.layout_type)
         built = frozenset(self.__type_docks)
         if wanted != built:
@@ -1185,11 +1203,12 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             for dock in added.values():
                 self.__toolbar.insertAction(self.__toolbar_stretch_action, dock.toggleViewAction())
             self.__type_docks.update(added)
-            self.__factory_state = self.save_layout_state()
         if self.__awaiting_type:
             self.__awaiting_type = False
             opened_with, self.__opened_with_state = self.__opened_with_state, None
             self.adopt_layout(opened_with)
+        elif left_untyped:
+            self.apply_default_layout()
 
     def __remove_type_docks(self, names: frozenset[str]) -> None:
         """Close and tear down the type docks ``names`` (#320), the mirror of :meth:`__add_type_docks`.
@@ -1399,7 +1418,9 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             return
         if state is not None and self.restore_state(state):
             return
-        if shared_default_layout_settings().state_for(self.layout_type):
+        # the empty type's as-built is not the reader build a placeholder was made with, so it is
+        # applied even with no default saved -- a placeholder whose first read is untyped (#354)
+        if shared_default_layout_settings().state_for(self.layout_type) or not self.layout_type:
             self.apply_default_layout()
 
     def apply_default_layout(self) -> None:
@@ -1415,7 +1436,24 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         a permanent silent no-op rather than the reset the action promises.
         """
         if not self.restore_state(shared_default_layout_settings().state_for(self.layout_type)):
-            self.restore_state(self.__factory_state)
+            self.__restore_as_built()
+
+    def __restore_as_built(self) -> None:
+        """Restore this document's as-built layout for the type it has now: the reader build captured
+        at construction, narrowed to the Main Editor alone for the empty type (#354)."""
+        self.restore_state(self.__factory_state)
+        if not self.layout_type:
+            self.__show_main_editor_alone()
+
+    def __show_main_editor_alone(self) -> None:
+        """Lay this document out as a type-less one opens (#354): the Main Editor shown and current,
+        both viewers hidden. Every other editor, the inspection set and the type's own docks are
+        hidden as-built already; everything stays one toolbar toggle away."""
+        for viewer_dock in self.__viewer_docks.values():
+            self.__hide_dock(viewer_dock)
+        main_editor_dock = self.__editor_docks[EDITOR_MAIN_TAB]
+        self.__show_dock(main_editor_dock)
+        main_editor_dock.setAsCurrentTab()  # pylint: disable=no-member
 
     def __on_save_default_layout(self) -> None:
         """Save this document's current dock layout as the default every newly opened document of its
@@ -1433,15 +1471,11 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         settings.save(persistent_settings())
 
     def __update_default_layout_actions(self) -> None:
-        """Label the Save/Reset entries with the type whose default they touch, and offer them only
-        while there is one (#320): a type-less document -- brand new, its type not picked yet -- has
-        nothing to key a default by, so Apply falls back to as-built and neither entry is enabled."""
-        layout_type = self.layout_type
-        label = type_label(layout_type)
+        """Label the Save/Reset entries with the type whose default they touch (#320) -- "(no type)"
+        included: the empty type's layout is saved and reset like any other's (#354)."""
+        label = type_label(self.layout_type)
         self.__save_default_layout_action.setText(SAVE_DEFAULT_LAYOUT_LABEL.format(type=label))
         self.__reset_default_layout_action.setText(RESET_DEFAULT_LAYOUT_LABEL.format(type=label))
-        self.__save_default_layout_action.setEnabled(bool(layout_type))
-        self.__reset_default_layout_action.setEnabled(bool(layout_type))
 
     def __on_image_activated(self, path: Path) -> None:
         """Open ``path`` maximized, on whichever surface the user's settings ask for (#160).
@@ -1826,6 +1860,18 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         self.__restoring_layout = True
         try:
             dock.toggleView(False)
+        finally:
+            self.__restoring_layout = False
+
+    def __show_dock(self, dock: QtAds.CDockWidget) -> None:
+        """Show ``dock`` as part of building a layout -- :meth:`__hide_dock`'s twin, guarded the same
+        way so :meth:`__on_view_toggled` does not re-apply stashed sizes from some unrelated toggle.
+
+        :param dock: the dock to show.
+        """
+        self.__restoring_layout = True
+        try:
+            dock.toggleView(True)
         finally:
             self.__restoring_layout = False
 

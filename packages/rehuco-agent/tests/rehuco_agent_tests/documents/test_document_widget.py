@@ -92,6 +92,7 @@ from rehuco_agent.documents.name_suggestion_model import NameSuggestionModel
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields import PROVENANCE_ABANDONED_TYPE, FieldsForm, FieldsTab, StatefulWidget
 from rehuco_agent.fields.image_scanner import AfterConversion
+from rehuco_agent.fields.type_field import NO_TYPE_LABEL
 from rehuco_agent.fields.widgets import (
     AuthorsEditor,
     ImageLightbox,
@@ -1384,6 +1385,40 @@ def test_a_document_opens_as_a_reader_with_every_editor_hidden(widget: DocumentW
 
     assert all(dock.toggleViewAction().isChecked() for dock in viewers.values())
     assert not any(dock.toggleViewAction().isChecked() for dock in editors.values())
+
+
+def open_field_tabs(widget: DocumentWidget) -> list[FieldsTab]:
+    """The viewer and editor tabs whose docks are open, viewers first.
+
+    :param widget: the document widget to inspect.
+    :returns: the tabs whose toggle reports checked.
+    """
+    docks = {
+        **widget._DocumentWidget__viewer_docks,  # type: ignore[attr-defined]  # pylint: disable=protected-access
+        **widget._DocumentWidget__editor_docks,  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    }
+    return [tab for tab, dock in docks.items() if dock.toggleViewAction().isChecked()]
+
+
+def test_a_type_less_document_opens_on_the_main_editor_alone(new_widget: DocumentWidget) -> None:
+    """A brand-new, type-less document is a resource about to be filled in, so it opens on the Main
+    Editor alone rather than as a reader (#354) -- every other dock hidden, still one toggle away.
+
+    **Test steps:**
+
+    * build a widget over a ``create_new`` model
+    * verify the Main Editor is the only open viewer or editor, and it is its area's current tab
+    * verify the inspection docks stay hidden and Main View can still be toggled back on
+    """
+    main_editor = new_widget._DocumentWidget__editor_docks[EDITOR_MAIN_TAB]  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    assert open_field_tabs(new_widget) == [EDITOR_MAIN_TAB]
+    assert main_editor.isCurrentTab()  # pylint: disable=no-member
+    assert on_disk_dock(new_widget).toggleViewAction().isChecked() is False
+
+    new_widget.toggle_action(VIEWER_MAIN_TAB).trigger()
+
+    assert open_field_tabs(new_widget) == [VIEWER_MAIN_TAB, EDITOR_MAIN_TAB]
 
 
 def test_the_images_editor_dock_has_a_minimum_height_a_splitter_drag_cant_cross(widget: DocumentWidget) -> None:
@@ -3868,12 +3903,12 @@ def test_the_save_and_reset_entries_follow_the_type(
     widget: DocumentWidget, model: RehuDocumentModel, new_widget: DocumentWidget
 ) -> None:
     """The two entries name the type whose default they touch and follow a switch (#320); a type-less
-    document has nothing to key a default by, so its entries are disabled.
+    document's name "(no type)" and are enabled like any other's (#354).
 
     **Test steps:**
 
     * switch the tutorial to a reference pack; verify both entries now name Reference Images
-    * verify a brand-new, type-less document's entries are disabled
+    * verify a brand-new, type-less document's entries name "(no type)" and are enabled
     """
     menu = cast(QMenu, widget._DocumentWidget__apply_default_layout_action.menu())  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
@@ -3884,7 +3919,11 @@ def test_the_save_and_reset_entries_follow_the_type(
         RESET_DEFAULT_LAYOUT_LABEL.format(type="Reference Images"),
     ]
     new_menu = cast(QMenu, new_widget._DocumentWidget__apply_default_layout_action.menu())  # type: ignore[attr-defined]  # pylint: disable=protected-access
-    assert all(not entry.isEnabled() for entry in new_menu.actions())
+    assert [entry.text() for entry in new_menu.actions()] == [
+        SAVE_DEFAULT_LAYOUT_LABEL.format(type=NO_TYPE_LABEL),
+        RESET_DEFAULT_LAYOUT_LABEL.format(type=NO_TYPE_LABEL),
+    ]
+    assert all(entry.isEnabled() for entry in new_menu.actions())
 
 
 def test_save_current_layout_as_default_writes_the_current_layout(widget: DocumentWidget) -> None:
@@ -4022,6 +4061,53 @@ def test_apply_default_layout_falls_back_when_the_saved_default_is_stale(widget:
     widget._DocumentWidget__apply_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     assert on_disk_dock(widget).toggleViewAction().isChecked() is False
+
+
+def test_the_type_less_default_is_saved_reset_and_applied_like_any_types(new_widget: DocumentWidget) -> None:
+    """ "(no type)" is a layout the user owns (#354): Save writes it under the empty type and no other,
+    Apply restores it, and after Reset Apply falls back to the type-less as-built -- the Main Editor
+    alone, not the reader build.
+
+    **Test steps:**
+
+    * open Main View beside the Main Editor and trigger Save; verify only the empty type holds a default
+    * hide Main View, trigger Apply; verify it is open again
+    * trigger Reset, then Apply; verify no default is held and the Main Editor is alone again
+    """
+    new_widget.toggle_action(VIEWER_MAIN_TAB).trigger()
+    new_widget._DocumentWidget__save_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert shared_default_layout_settings().states == {"": new_widget.save_layout_state()}
+
+    new_widget.toggle_action(VIEWER_MAIN_TAB).trigger()
+    new_widget._DocumentWidget__apply_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert open_field_tabs(new_widget) == [VIEWER_MAIN_TAB, EDITOR_MAIN_TAB]
+
+    new_widget._DocumentWidget__reset_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    new_widget._DocumentWidget__apply_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    assert not shared_default_layout_settings().states
+    assert open_field_tabs(new_widget) == [EDITOR_MAIN_TAB]
+
+
+def test_a_saved_type_less_default_is_what_the_next_new_document_opens_with(
+    new_widget: DocumentWidget, qtbot: QtBot
+) -> None:
+    """A new document opened with no stored layout adopts the saved "(no type)" default (#354).
+
+    **Test steps:**
+
+    * open On Disk on one type-less document and save that as the default
+    * build a second type-less document and adopt no stored layout
+    * verify its On Disk is open
+    """
+    on_disk_dock(new_widget).toggleView(True)
+    new_widget._DocumentWidget__save_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    second = DocumentWidget(RehuDocumentModel.create_new(TARGET_PATH))
+    qtbot.addWidget(second)
+    second.adopt_layout(None)
+
+    assert on_disk_dock(second).toggleViewAction().isChecked() is True
 
 
 # endregion
@@ -4687,6 +4773,89 @@ def test_apply_default_layout_on_a_switched_document_applies_the_new_types_defau
 
     assert on_disk_dock(widget).toggleViewAction().isChecked() is True
     assert content_images_dock(widget).toggleViewAction().isChecked() is True
+
+
+def test_leaving_the_empty_type_applies_the_new_types_default(
+    new_widget: DocumentWidget, new_model: RehuDocumentModel, refimages_widget: DocumentWidget
+) -> None:
+    """Picking a type for a type-less document applies that type's saved default, onto the docks the
+    pick built (#354) -- the one switch that lays out, since the Main Editor alone was only ever the
+    layout of having no type.
+
+    **Test steps:**
+
+    * save a reference-images default with On Disk and Content Images open
+    * set the type-less document's type to a reference pack
+    * verify both are open and the layout is the pack default's reader, not the Main Editor alone
+    """
+    on_disk_dock(refimages_widget).toggleView(True)
+    content_images_dock(refimages_widget).toggleView(True)
+    refimages_widget._DocumentWidget__save_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    new_model.resource_type = "reference_images"
+
+    assert on_disk_dock(new_widget).toggleViewAction().isChecked() is True
+    assert content_images_dock(new_widget).toggleViewAction().isChecked() is True
+    assert open_field_tabs(new_widget) == [VIEWER_MAIN_TAB, VIEWER_DESCRIPTION_TAB]
+
+
+def test_leaving_the_empty_type_with_no_default_saved_opens_the_reader(
+    new_widget: DocumentWidget, new_model: RehuDocumentModel
+) -> None:
+    """With no default saved for the picked type, leaving the empty type gives its as-built layout --
+    the reader, the same one a typed document opens as (#354) -- and a later typed-to-typed switch
+    lays nothing out.
+
+    **Test steps:**
+
+    * set the type-less document's type to a tutorial; verify the two viewers are the open docks
+    * open On Disk, switch to a collection; verify On Disk is still open
+    """
+    new_model.resource_type = "tutorial"
+
+    assert open_field_tabs(new_widget) == [VIEWER_MAIN_TAB, VIEWER_DESCRIPTION_TAB]
+
+    on_disk_dock(new_widget).toggleView(True)
+    new_model.resource_type = "collection"
+
+    assert on_disk_dock(new_widget).toggleViewAction().isChecked() is True
+
+
+def test_a_pending_type_less_document_keeps_its_stored_layout(
+    new_widget: DocumentWidget, qtbot: QtBot, mocker: MockerFixture
+) -> None:
+    """A session-restored document whose first read is type-less gets its stored layout, not the
+    empty type's as-built (#354); one with an unusable stored layout gets the Main Editor alone.
+
+    **Test steps:**
+
+    * capture a type-less layout with Main View and On Disk open
+    * build a widget over a pending placeholder, adopt the stored blob, then load it as type-less
+    * verify Main View and On Disk are open and the Main Editor is not
+    * build a second placeholder handed garbage, load it; verify the Main Editor is alone
+    """
+    new_widget.toggle_action(VIEWER_MAIN_TAB).trigger()
+    new_widget.toggle_action(EDITOR_MAIN_TAB).trigger()
+    on_disk_dock(new_widget).toggleView(True)
+    stored = new_widget.save_state()
+    mocker.patch.object(Path, "read_text", return_value=json.dumps({"sources": []}))
+
+    pending = RehuDocumentModel.create_pending(Path("/fake/new/info.rehu"))
+    widget = DocumentWidget(pending)
+    qtbot.addWidget(widget)
+    widget.adopt_layout(stored)
+    pending.load_pending()
+
+    assert open_field_tabs(widget) == [VIEWER_MAIN_TAB]
+    assert on_disk_dock(widget).toggleViewAction().isChecked() is True
+
+    garbled = RehuDocumentModel.create_pending(Path("/fake/other/info.rehu"))
+    garbled_widget = DocumentWidget(garbled)
+    qtbot.addWidget(garbled_widget)
+    garbled_widget.adopt_layout(b"not a layout blob")
+    garbled.load_pending()
+
+    assert open_field_tabs(garbled_widget) == [EDITOR_MAIN_TAB]
 
 
 def test_a_pending_documents_stored_layout_lands_on_the_docks_its_first_read_builds(
