@@ -390,7 +390,8 @@ wear: the file is tens of KB and endurance is a non-issue, but an atomic write i
 by design (~0.1–1 ms on SSD, 5–15 ms on spinning disk, worse on an SMB mount) and the page cache cannot
 absorb it.
 
-The file is **JSON beside the settings file** — `task-queue.json` in the settings directory, written
+The file is **JSON in the app's own config folder** — `task-queue.json` in `rehuco-agent/` beside the
+settings file, not loose in the organization folder every borco app shares (#361), written
 through `borco_core.atomic_write_text`. Not `QSettings`, whose flat key space would spell an opaque job
 state as `tasks/3/state/paths/7`. A corrupt or unreadable file logs and starts empty; it never blocks
 startup.

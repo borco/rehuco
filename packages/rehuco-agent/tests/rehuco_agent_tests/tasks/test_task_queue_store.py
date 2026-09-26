@@ -17,6 +17,8 @@ from typing import Any, Final
 import pytest
 from pytest import fixture
 from pytest_mock import MockerFixture
+from rehuco_agent.settings import persistent_settings as persistent_settings_module
+from rehuco_agent.settings.persistent_settings import APPLICATION_NAME
 from rehuco_agent.tasks import TASK_QUEUE_FILENAME, TaskQueueStore, task_queue_path
 from rehuco_agent.tasks import task_queue_store as store_module
 from rehuco_core import JobControl, JobState, TaskJobBase, TaskJobRegistry, TaskQueue
@@ -117,6 +119,21 @@ class FakeDisk:
     def __init__(self, text: str | None = None) -> None:
         self.text = text
         self.writes = 0
+        self.folders: list[Path] = []
+        self.events: list[str] = []
+        """``"mkdir"``/``"write"`` in call order -- what lets a test assert the folder is asked for
+        *before* the file is written, not merely alongside it (#361)."""
+
+    def make_folder(self, path: Path, *, parents: bool = False, exist_ok: bool = False) -> None:
+        """Stand in for ``Path.mkdir``, recording the folder rather than creating it.
+
+        :param path: the folder asked for.
+        :param parents: must be set: the config folder's own parent need not exist either.
+        :param exist_ok: must be set: the folder is there from the second save on.
+        """
+        assert parents and exist_ok
+        self.folders.append(path)
+        self.events.append("mkdir")
 
     def write(self, path: Path | str, text: str, *, encoding: str = "utf-8") -> None:
         """Stand in for `atomic_write_text`.
@@ -128,6 +145,7 @@ class FakeDisk:
         del path, encoding
         self.text = text
         self.writes += 1
+        self.events.append("write")
 
     def read(self, *args: Any, **kwargs: Any) -> str:
         """Stand in for ``Path.read_text``.
@@ -171,6 +189,7 @@ def disk_fixture(mocker: MockerFixture) -> FakeDisk:
     disk = FakeDisk()
     mocker.patch.object(store_module, "atomic_write_text", disk.write)
     mocker.patch.object(Path, "read_text", disk.read)
+    mocker.patch.object(Path, "mkdir", autospec=True, side_effect=disk.make_folder)
     return disk
 
 
@@ -236,19 +255,20 @@ def settles_fixture() -> Callable[[Callable[[], bool]], None]:
 # region Where the file lives
 
 
-def test_the_queue_file_sits_beside_the_settings_file(mocker: MockerFixture) -> None:
-    """Per-user and per-scope without this module knowing what either means on this OS.
+def test_the_queue_file_sits_in_the_app_config_folder(mocker: MockerFixture) -> None:
+    """Per-user and per-scope without this module knowing what either means on this OS, and in the app's
+    own folder rather than loose in the organization one every borco app shares (#361).
 
     **Test steps:**
 
     * point the settings at a known file
-    * verify the queue file is named beside it
+    * verify the queue file is named in the app's folder beside it
     """
     settings = mocker.Mock()
     settings.fileName.return_value = str(Path.cwd() / "fake" / "rehuco-agent.ini")
-    mocker.patch.object(store_module, "persistent_settings", return_value=settings)
+    mocker.patch.object(persistent_settings_module, "persistent_settings", return_value=settings)
 
-    assert task_queue_path() == Path.cwd() / "fake" / TASK_QUEUE_FILENAME
+    assert task_queue_path() == Path.cwd() / "fake" / APPLICATION_NAME / TASK_QUEUE_FILENAME
 
 
 # endregion
@@ -358,6 +378,23 @@ def test_the_file_is_written_atomically(store: TaskQueueStore, queue: TaskQueue,
     queue.enqueue(CounterJob("saved"))
 
     assert [item["label"] for item in disk.items()] == ["saved"]
+
+
+def test_a_save_creates_the_folder_it_writes_into(store: TaskQueueStore, queue: TaskQueue, disk: FakeDisk) -> None:
+    """The app's config folder does not exist until something is first written there (#361).
+
+    **Test steps:**
+
+    * attach the store and enqueue a job
+    * verify the file's folder was asked for before the file was written
+    """
+    queue.pause()
+    store.restore([])
+
+    queue.enqueue(CounterJob("saved"))
+
+    assert disk.folders == [QUEUE_PATH.parent]
+    assert disk.events == ["mkdir", "write"]
 
 
 def test_a_structural_change_is_written_and_progress_is_not(

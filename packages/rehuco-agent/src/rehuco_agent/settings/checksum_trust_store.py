@@ -7,16 +7,17 @@
 from pathlib import Path
 from typing import Final
 
-from .persistent_settings import persistent_settings
+from .persistent_settings import config_folder
 
 CHECKSUM_TRUST_FILENAME: Final = "checksum-trust.json"
-"""What the trust cache is called, beside the settings file -- the same placement
+"""What the trust cache is called, in the app's own config folder -- the same placement
 :func:`~rehuco_agent.tasks.task_queue_store.task_queue_path` gives the saved task queue."""
 
 
 def checksum_trust_path() -> Path:
-    """Where the checksum trust cache lives.
+    """Where the checksum trust cache lives: :func:`~.persistent_settings.config_folder`, not loose
+    beside the ``.ini`` in the organization folder every borco app shares (#361).
 
     :returns: the cache file's path, whether or not it exists.
     """
-    return Path(persistent_settings().fileName()).parent / CHECKSUM_TRUST_FILENAME
+    return config_folder() / CHECKSUM_TRUST_FILENAME

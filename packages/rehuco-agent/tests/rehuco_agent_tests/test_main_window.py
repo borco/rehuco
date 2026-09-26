@@ -125,18 +125,19 @@ def mock_persistent_settings(mocker: MockerFixture) -> Any:
     ``MainWindow()`` in these tests spuriously call ``restoreGeometry`` with junk bytes.
     ``beginReadArray`` must return an int (``DocumentSessionSettings.load`` feeds it to ``range()``).
 
-    Patched at **three** import sites: this module's own, ``rehuco_agent.tasks.task_queue_store``'s --
-    ``TaskQueueStore`` resolves ``task_queue_path()`` off its own imported name, not this module's, so a
-    window's task queue would otherwise compute a path from the real per-user settings file (#202) -- and
-    ``rehuco_agent.settings.checksum_trust_store``'s, the same reason: ``checksum_trust_path()`` is
-    resolved the same way for the checksum trust cache a window attaches at startup (#358).
+    Patched at **two** import sites: this module's own, and ``rehuco_agent.settings.persistent_settings``'s
+    -- the one ``config_folder()`` resolves through, which is where ``task_queue_path()`` and
+    ``checksum_trust_path()`` both land (#361). Without it, a window's task queue (#202) and the checksum
+    trust cache it attaches at startup (#358) would compute their paths from the real per-user settings
+    file.
     """
     settings = mocker.MagicMock()
     settings.value.side_effect = lambda key, default=None, type=None: default  # noqa: A002
     settings.beginReadArray.return_value = 0
-    settings.fileName.return_value = "/dev/null/settings.ini"
-    mocker.patch("rehuco_agent.tasks.task_queue_store.persistent_settings", return_value=settings)
-    mocker.patch("rehuco_agent.settings.checksum_trust_store.persistent_settings", return_value=settings)
+    # under this very test *file*, so the config folder's parent is a file on every OS and each store's
+    # mkdir/write fails and is logged -- ``/dev/null/…`` is a creatable ``C:\dev\null\…`` on Windows (#361)
+    settings.fileName.return_value = str(Path(__file__) / "settings.ini")
+    mocker.patch("rehuco_agent.settings.persistent_settings.persistent_settings", return_value=settings)
     return mocker.patch("rehuco_agent.main_window.persistent_settings", return_value=settings)
 
 
