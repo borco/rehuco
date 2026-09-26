@@ -281,6 +281,14 @@ class ContentImagesModel(QAbstractListModel):  # pylint: disable=too-many-instan
         """
         self.__cache.release_handles()
 
+    def close_idle_archives(self) -> None:
+        """Close every archive handle nobody is reading, for a dock that is no longer shown (#355).
+
+        Never waits on a read in flight -- see :meth:`ArchiveCache.close_idle_handles`, whose idle check
+        closes that one once its read is done.
+        """
+        self.__cache.close_idle_handles()
+
     def set_entries(self, entries: Sequence[ContentImageEntry], rehu_directory: Path | None) -> None:
         """Replace the entries wholesale.
 

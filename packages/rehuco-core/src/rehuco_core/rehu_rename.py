@@ -22,12 +22,25 @@ what its sibling set *would* have been is exactly the guess a rename must not ma
 """
 
 import os
+import time
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Final
 
 from .constants import REHU_SUFFIX
 from .resource_scoping import is_directory_scoped
+
+TRANSIENT_LOCK_ERRORS: Final = frozenset({5, 32})
+"""The Windows errors a refused rename step is retried on (#355): ``ERROR_ACCESS_DENIED`` and
+``ERROR_SHARING_VIOLATION``. They are what a file briefly held by someone else answers -- Defender or the
+Search indexer scanning a freshly scraped image, a thumbnail extractor -- and what it stops answering a
+moment later. Any other error is a fact about the rename and fails at once."""
+
+RETRY_DELAYS: Final = (0.05, 0.1, 0.2, 0.4)
+"""How long to wait before each retry of a step refused with a :data:`TRANSIENT_LOCK_ERRORS` error, in
+seconds -- ~0.75 s in all. Long enough for a scanner to finish with a file; short enough that a lock that
+is *not* transient (an Explorer window open on the folder) is still reported promptly, since the rename
+blocks the GUI thread that asked for it."""
 
 
 class PartialRenameError(OSError):
@@ -426,19 +439,43 @@ class RehuRenamer:
         completed: list[tuple[Path, Path]] = []
         try:
             for source, destination in plan:
-                source.rename(destination)
+                self.__rename_step(source, destination)
                 completed.append((source, destination))
         except OSError as error:
             self.__roll_back(completed, error)
             raise
         self.__executed = completed
 
+    @staticmethod
+    def __rename_step(current: Path, wanted: Path) -> None:
+        """Perform one rename, retrying it while it is refused over a transient lock (#355).
+
+        Safe to retry at any point: a refused rename changed nothing, so the plan is exactly as far along
+        as before, and only a failure that outlasts :data:`RETRY_DELAYS` reaches the rollback. Named
+        for either direction, since a rollback step is a forward step's pair the other way round.
+
+        :param current: the file or folder as it is named now.
+        :param wanted: the name it should have.
+        :raises OSError: the rename was refused for good, or for a reason no retry changes.
+        """
+        for delay in RETRY_DELAYS:
+            try:
+                current.rename(wanted)
+                return
+            except OSError as error:
+                if getattr(error, "winerror", None) not in TRANSIENT_LOCK_ERRORS:
+                    raise
+            time.sleep(delay)
+        current.rename(wanted)
+
     def __roll_back(self, completed: Sequence[tuple[Path, Path]], error: OSError) -> None:
         """Rename every completed step back to its original name, most recent first.
 
         Every step is attempted even after one of them fails, so a rollback recovers as much as the
         filesystem still allows and reports the whole remainder at once, rather than stopping at the
-        first refusal and stranding files it could have restored.
+        first refusal and stranding files it could have restored. Each restore is retried over a
+        transient lock the same way a forward step is (#355): a scanner tends to open a file right after
+        it was renamed, which is exactly when the rollback wants it back.
 
         :param completed: the renames that did succeed, in the order they ran.
         :param error: the failure that stopped the run; reported as the raised error's cause.
@@ -447,7 +484,7 @@ class RehuRenamer:
         stranded: list[str] = []
         for source, destination in reversed(completed):
             try:
-                destination.rename(source)
+                self.__rename_step(destination, source)
             except OSError as restore_error:
                 reason = restore_error.strerror or restore_error
                 stranded.append(f'"{destination.name}" could not be restored to "{source.name}" ({reason})')

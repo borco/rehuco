@@ -40,6 +40,7 @@ from ..recycle_bin_deleter import configured_deleter
 from ..settings.excluded_files_settings import shared_excluded_files_settings
 from ..settings.screenshot_patterns_settings import shared_screenshot_patterns_settings
 from .rehu_document_image_scanner import RehuDocumentImageScanner
+from .rename_holders import RenameHolderReport
 from .tc_conversion_outcomes import scan_after_conversion
 
 LOG: Final = logging.getLogger(__name__)
@@ -1185,8 +1186,11 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         try:
             new_path = self.__renamed(path, new_name)
         except (OSError, ValueError) as error:
+            # a refusal over an open handle also says whose handle it is, when that can be found (#355)
+            holders = RenameHolderReport.describe(path, error)
             return self.__rename_failed(
                 f'Could not rename "{current_name}" to "{new_name}": {self.__failure_reason(error)}'
+                + (f" {holders}" if holders else "")
             )
         self.__document.rebind_path(new_path)
         self.path = new_path

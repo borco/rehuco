@@ -217,6 +217,23 @@ def test_releasing_the_archives_releases_the_cache_handles(
     released.assert_called_once()
 
 
+def test_closing_the_idle_archives_closes_the_caches_idle_handles(
+    content_model: ContentImagesModel, mocker: MockerFixture
+) -> None:
+    """A hidden dock lets go of whatever nobody is reading, through the cache (#355).
+
+    **Test steps:**
+
+    * spy on the cache's idle close, and close the model's idle archives
+    * verify the cache closed its idle handles once
+    """
+    closed = mocker.spy(content_model.archive_cache, "close_idle_handles")
+
+    content_model.close_idle_archives()
+
+    closed.assert_called_once()
+
+
 def test_a_stale_enumeration_is_dropped(content_model: ContentImagesModel, mocker: MockerFixture) -> None:
     """An answer to an older refresh never overwrites the newer request's.
 

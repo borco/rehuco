@@ -570,6 +570,30 @@ def test_a_palette_change_repins_and_puts_the_stylesheet_back(
     assert '[tracked_focus="true"]' in manager.styleSheet()
 
 
+def test_a_palette_change_re_marks_the_tracked_docks(manager: QtAds.CDockManager, qtbot: QtBot) -> None:
+    """After a theme switch the current dock's tab is re-marked on the deferred tick, since QtAds
+    re-polishes the chrome under the reloaded sheet.
+
+    **Test steps:**
+
+    * add a dock (making it current), then clear the tracked-focus property off its tab by hand,
+      standing in for that re-polish
+    * emit the shared palette-change notifier and let the deferred restyle run
+    * verify the tab carries the tracked-focus property again
+    """
+    tracker = QtAdsFocusTracker(manager)
+    dock = add_dock(manager, "one")
+    assert tracker.current_dock is dock
+    dock.tabWidget().setProperty(QtAdsFocusTracker.TRACKED_FOCUS_PROPERTY, False)
+
+    app = QApplication.instance()
+    assert isinstance(app, QApplication)
+    ApplicationPaletteChangeNotifier.for_application(app).palette_changed.emit()
+    qtbot.wait(50)
+
+    assert dock.tabWidget().property(QtAdsFocusTracker.TRACKED_FOCUS_PROPERTY) is True
+
+
 def test_a_palette_change_leaves_a_hosted_manager_carrying_nothing(manager: QtAds.CDockManager, qtbot: QtBot) -> None:
     """A hosted manager stays unstyled across a theme switch, however QtAds reloads it (#234).
 

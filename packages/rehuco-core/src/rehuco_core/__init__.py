@@ -157,6 +157,7 @@ from .rehu_parse_limits import (
     oversized_file_reason,
 )
 from .rehu_rename import (
+    TRANSIENT_LOCK_ERRORS,
     PartialRenameError,
     RehuRenamer,
     rehu_rename_conflict,
@@ -419,6 +420,7 @@ __all__ = [
     "SweepTally",
     "TC_DISCARD_KIND",
     "TC_IMPORT_KIND",
+    "TRANSIENT_LOCK_ERRORS",
     "TUTORIAL_FIELD_NAMES",
     "TUTORIAL_PLUGIN",
     "TaskJob",

@@ -193,6 +193,16 @@ never waits on a reader: the GUI thread is usually the one renaming. Archives op
 so a read paused by the rename resumes at the new name instead of failing, which matters because a
 failed read is recorded as unreadable for good.
 
+**An idle app holds no handle under a resource** ([#355](https://github.com/borco/rehuco/issues/355)),
+because only an in-app rename can ask a reader to let go. Explorer, a second host on the same share, or a
+swarm node cannot. So the archive cache closes its handles a couple of seconds after the last read, and at
+once when the dock is hidden. The same goes for the process's **working directory**, which is a handle
+too: Explorer starts the app inside the folder it opens. So the app leaves that directory at startup, and
+a rename steps out of any directory it is about to move. When a rename is still refused, the banner says
+who holds the resource — a program found through the Restart Manager, Rehuco itself, or, when nothing can
+be found, a hint about an Explorer window showing the folder. A step refused over a transient lock (a
+scanner reading a freshly scraped file) is retried for under a second before anything is reported.
+
 ### 3.3 One pause concept, and requests kept apart from states
 
 [[[appendices.task-queue#pause-concept]]]

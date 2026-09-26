@@ -393,6 +393,34 @@ def test_rename_location_reports_a_failed_move_without_touching_the_document(moc
     assert model.rename_error == 'Could not rename "old_file" to "new_name": Permission denied.'
 
 
+def test_rename_location_says_who_holds_a_refused_resource(mocker: MockerFixture) -> None:
+    """A refusal over an open handle ends by naming whoever holds the resource, so the user has
+    something to act on (#355).
+
+    **Test steps:**
+
+    * make the core rename raise a sharing violation, and the holder report name a program
+    * call ``rename_location``
+    * verify the report was asked about the resource and that failure, and its sentence ends the banner
+    """
+    path = Path("C:/tutorials/old_file.rehu")
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, path))
+    refusal = PermissionError(13, "The process cannot access the file because it is being used by another process")
+    mocker.patch("rehuco_agent.documents.rehu_document_model.rename_rehu_resource", side_effect=refusal)
+    describe = mocker.patch(
+        "rehuco_agent.documents.rehu_document_model.RenameHolderReport.describe",
+        return_value="It is open in Windows Explorer.",
+    )
+
+    assert model.rename_location("new_name") is False
+
+    describe.assert_called_once_with(path, refusal)
+    assert model.rename_error == (
+        'Could not rename "old_file" to "new_name": The process cannot access the file because it is being used '
+        "by another process. It is open in Windows Explorer."
+    )
+
+
 def test_rename_location_reports_a_refused_name(mocker: MockerFixture) -> None:
     """A name the core renamer refuses outright (a ``ValueError``, not an ``OSError``) reports through
     the same channel -- the banner explains, nothing is moved.

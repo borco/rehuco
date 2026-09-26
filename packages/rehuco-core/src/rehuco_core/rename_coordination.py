@@ -16,6 +16,13 @@ it is a rule about the subtree, and the only way through it is for the reader to
 is :func:`~rehuco_core.readers_must_yield_for_directory_rename`'s to say, so a backend that does not
 lock costs its readers nothing.
 
+**The process's own working directory is a handle too** (#355), and the one no reader owns: nothing
+holds it inside :meth:`RenameCoordinator.holding` and no yield listener can close it. Explorer starts
+the app inside the folder it opens, and a native file dialog may move it into one later, so a rename
+steps the process out of a directory it is about to move before anything else. Leaving is always
+possible and costs nothing -- the parent is outside the subtree, and nothing reads the working
+directory once startup has resolved its arguments.
+
 **A job holds a** :class:`ResourceLocation`\\ **, never a bare** ``Path``. That is what makes "the job
 continues at the new location" true rather than aspirational, and it holds across any number of renames
 during one job -- the coordinator rewrites every tracked path through
@@ -29,6 +36,7 @@ hosts is swarm-era, and belongs with the rename being addressed by resource UUID
 """
 
 import logging
+import os
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from pathlib import Path
@@ -37,6 +45,8 @@ from typing import Final
 from weakref import ReferenceType, ref
 
 from .rehu_rename import RehuRenamer
+from .resource_scoping import is_directory_scoped
+from .storage_traits import readers_must_yield_for_directory_rename
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -280,6 +290,7 @@ class RenameCoordinator:
             a plain name, a missing ``.rehu``, an occupied destination, a failure part-way through.
         """
         with self.__renaming:
+            self.__step_out_of(path)
             self.__wait_for_readers(timeout)
             try:
                 renamer = RehuRenamer(path, new_name)
@@ -289,6 +300,30 @@ class RenameCoordinator:
                 self.__release_readers()
         self.__announce()
         return renamed
+
+    @staticmethod
+    def __step_out_of(path: Path) -> None:
+        """Move this process's working directory out of the directory a rename is about to move (#355).
+
+        Only a directory-scoped resource renames a directory, and only where a handle beneath one blocks
+        that (:func:`~rehuco_core.readers_must_yield_for_directory_rename`); a file-scoped rename
+        respells files, which a working directory beside them never blocks. The parent is where it goes:
+        outside the subtree, and always there. A failure is logged and the rename goes on to report
+        whatever the operating system then says.
+
+        :param path: the resource's ``.rehu`` file.
+        """
+        if not is_directory_scoped(path) or not readers_must_yield_for_directory_rename(path):
+            return
+        directory = path.parent
+        try:
+            if not Path.cwd().is_relative_to(directory):
+                return
+            os.chdir(directory.parent)
+        except OSError:
+            LOG.warning("Could not leave %s, the working directory, before renaming it.", directory, exc_info=True)
+            return
+        LOG.info("Left %s, the working directory, so it can be renamed.", directory)
 
     def __wait_for_readers(self, timeout: float) -> None:
         """Raise the yield flag and wait for every holder to leave.

@@ -4975,6 +4975,28 @@ def test_a_path_change_releases_the_archive_handles_even_with_the_dock_closed(
     enumeration.assert_not_called()
 
 
+def test_hiding_the_content_images_dock_closes_its_idle_archives(
+    refimages_widget: DocumentWidget, mocker: MockerFixture
+) -> None:
+    """Nothing reads the archives while the grid is off screen, so hiding the dock lets go of them at
+    once rather than after the cache's idle period (#355).
+
+    **Test steps:**
+
+    * show the dock, then spy on the cache's idle close
+    * hide the dock
+    * verify the idle handles were closed once
+    """
+    mocker.patch.object(content_images_model, "enumerate_content_images", return_value=[])
+    content_model = refimages_widget._DocumentWidget__content_images_model  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    content_images_dock(refimages_widget).toggleView(True)
+    closed = mocker.spy(content_model.archive_cache, "close_idle_handles")
+
+    content_images_dock(refimages_widget).toggleView(False)
+
+    closed.assert_called_once()
+
+
 def test_a_document_with_no_archive_opens_and_edits_with_an_empty_dock(
     refimages_widget: DocumentWidget, mocker: MockerFixture, qtbot: QtBot
 ) -> None:

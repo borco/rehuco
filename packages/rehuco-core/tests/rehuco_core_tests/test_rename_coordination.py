@@ -530,3 +530,117 @@ def test_a_removed_yield_listener_is_not_called(coordinator: RenameCoordinator, 
 
 
 # endregion
+
+
+# region the working directory
+@fixture(name="chdir")
+def fixture_chdir(mocker: MockerFixture) -> Any:
+    """Stand in for ``os.chdir`` -- the test process's own working directory is never moved -- and make
+    this platform one where a handle beneath a directory blocks renaming it (#355).
+
+    :param mocker: pytest-mock fixture.
+    :returns: the ``os.chdir`` stand-in.
+    """
+    mocker.patch("rehuco_core.rename_coordination.readers_must_yield_for_directory_rename", return_value=True)
+    return mocker.patch("rehuco_core.rename_coordination.os.chdir")
+
+
+def test_a_rename_steps_out_of_the_directory_it_moves_first(
+    coordinator: RenameCoordinator, filesystem: Any, chdir: Any, mocker: MockerFixture
+) -> None:
+    """A working directory inside the folder is left for the folder's parent *before* the rename runs:
+    it is a handle nobody can ask to yield, and NTFS refuses the rename over it (#355).
+
+    **Test steps:**
+
+    * put the working directory in a subfolder of the resource, recording chdir and rename in order
+    * rename the directory-scoped resource
+    * verify the process moved to the folder's parent, and did so before the rename
+    """
+    mocker.patch.object(Path, "cwd", return_value=FOLDER / "images")
+    events: list[str] = []
+    chdir.side_effect = lambda _path: events.append("chdir")
+    filesystem.side_effect = lambda *_args: events.append("rename")
+
+    coordinator.rename(INFO_PATH, NEW_NAME)
+
+    chdir.assert_called_once_with(DIRECTORY)
+    assert events == ["chdir", "rename"]
+
+
+def test_a_rename_leaves_a_working_directory_outside_the_resource_alone(
+    coordinator: RenameCoordinator, filesystem: Any, chdir: Any, mocker: MockerFixture
+) -> None:
+    """Only a working directory the rename would trip over is moved.
+
+    **Test steps:**
+
+    * put the working directory beside the resource, not in it
+    * rename, and verify the working directory was not changed
+    """
+    del filesystem
+    mocker.patch.object(Path, "cwd", return_value=DIRECTORY / "another_folder")
+
+    coordinator.rename(INFO_PATH, NEW_NAME)
+
+    chdir.assert_not_called()
+
+
+def test_a_file_scoped_rename_never_moves_the_working_directory(
+    coordinator: RenameCoordinator, filesystem: Any, chdir: Any, mocker: MockerFixture
+) -> None:
+    """A file-scoped rename respells files, which a working directory beside them does not block.
+
+    **Test steps:**
+
+    * put the working directory in the folder a file-scoped resource sits in, with the renamer stood
+      in for (a file-scoped plan lists the folder for the resource's siblings)
+    * rename it, and verify the working directory was not changed
+    """
+    del filesystem
+    mocker.patch("rehuco_core.rename_coordination.RehuRenamer")
+    mocker.patch.object(Path, "cwd", return_value=FOLDER)
+
+    coordinator.rename(FOLDER / "pack.rehu", NEW_NAME)
+
+    chdir.assert_not_called()
+
+
+def test_a_platform_that_renames_under_open_handles_never_moves_the_working_directory(
+    coordinator: RenameCoordinator, filesystem: Any, chdir: Any, mocker: MockerFixture
+) -> None:
+    """Where a directory renames under any handle (POSIX), there is nothing to step out of.
+
+    **Test steps:**
+
+    * make this a platform whose readers need not yield, with the working directory inside the resource
+    * rename, and verify the working directory was not changed
+    """
+    del filesystem
+    mocker.patch("rehuco_core.rename_coordination.readers_must_yield_for_directory_rename", return_value=False)
+    mocker.patch.object(Path, "cwd", return_value=FOLDER)
+
+    coordinator.rename(INFO_PATH, NEW_NAME)
+
+    chdir.assert_not_called()
+
+
+def test_failing_to_step_out_is_logged_and_the_rename_still_runs(
+    coordinator: RenameCoordinator, filesystem: Any, chdir: Any, mocker: MockerFixture
+) -> None:
+    """The rename goes on to report whatever the operating system then says, rather than a failure of
+    its own making.
+
+    **Test steps:**
+
+    * put the working directory inside the resource, and make leaving it fail
+    * rename, and verify the rename still ran
+    """
+    mocker.patch.object(Path, "cwd", return_value=FOLDER)
+    chdir.side_effect = OSError("denied")
+
+    assert coordinator.rename(INFO_PATH, NEW_NAME) == RENAMED / "info.rehu"
+    assert filesystem.call_args.args == (FOLDER, RENAMED)
+
+
+# endregion

@@ -54,6 +54,26 @@ def mock_zipfile(mocker: MockerFixture, payload: bytes = PAYLOAD) -> list[MagicM
     return handles
 
 
+@fixture(name="timer", autouse=True)
+def fixture_timer(mocker: MockerFixture) -> MagicMock:
+    """Stand in for the idle check's timer (#355) in every test here: a real one would close handles
+    two seconds into whichever test was then running. The idle-close tests run its callback by hand.
+
+    :param mocker: pytest-mock fixture.
+    :returns: the stand-in ``threading.Timer`` class.
+    """
+    return mocker.patch(f"{MODULE}.threading.Timer")
+
+
+def idle_check(timer: MagicMock) -> Callable[[], None]:
+    """The callback the most recently started idle check would run.
+
+    :param timer: the stand-in ``threading.Timer`` class.
+    :returns: the callback.
+    """
+    return timer.call_args.args[1]
+
+
 def planted(cache: ArchiveCache) -> Any:
     """``cache``'s private handle table, for a test planting a handle of its own.
 
@@ -243,7 +263,7 @@ def test_close_closes_every_handle(mocker: MockerFixture) -> None:
     **Test steps:**
 
     * read from two archives, then close the cache
-    * verify both handles were closed and a later read reopens
+    * verify both handles were closed and forgotten
     """
     handles = mock_zipfile(mocker)
     cache = ArchiveCache()
@@ -252,11 +272,10 @@ def test_close_closes_every_handle(mocker: MockerFixture) -> None:
 
     cache.close()
 
-    for handle in handles[:2]:
+    for handle in handles:
         handle.close.assert_called_once()
         handle.file.close.assert_called_once()
-    cache.read(MEMBER)
-    assert len(handles) == 3
+    assert not planted(cache)
 
 
 # region rename barrier (#347)
@@ -580,6 +599,182 @@ def test_the_listener_leaves_a_handle_someone_else_already_dropped(
     handles[0].close.assert_called_once()
     handles[1].close.assert_called_once()
     assert planted(cache) == {ARCHIVE: stand_in}
+
+
+# endregion
+
+
+# region idle close (#355)
+def test_reads_start_one_idle_check(mocker: MockerFixture, timer: MagicMock) -> None:
+    """A burst of reads keeps a single check pending rather than one per read, and it is a daemon so
+    it never holds the app open at exit.
+
+    **Test steps:**
+
+    * read three times from a cache with a known idle period
+    * verify one timer was started, for that period, as a daemon
+    """
+    mock_zipfile(mocker)
+    cache = ArchiveCache(idle_after=7.0)
+
+    for _ in range(3):
+        cache.read(MEMBER)
+
+    timer.assert_called_once()
+    assert timer.call_args.args[0] == 7.0
+    assert timer.return_value.daemon is True
+    timer.return_value.start.assert_called_once_with()
+
+
+def test_an_idle_cache_closes_every_handle(mocker: MockerFixture, timer: MagicMock) -> None:
+    """Once reads stop, nothing stays open -- including a handle no rename would ask to close, since
+    Explorer or another host renaming the folder cannot ask at all.
+
+    **Test steps:**
+
+    * read from two archives, one of them on storage whose readers need not yield for a rename
+    * run the idle check once the idle period has passed
+    * verify both handles closed, no further check was started, and a later read reopens
+    """
+    mocker.patch(f"{MODULE}.readers_must_yield_for_directory_rename", side_effect=lambda path: path == ARCHIVE)
+    handles = mock_zipfile(mocker)
+    cache = ArchiveCache(idle_after=0.0)
+    cache.read(MEMBER)
+    cache.read(OTHER_MEMBER)
+
+    idle_check(timer)()
+
+    for handle in handles:
+        handle.close.assert_called_once()
+        handle.file.close.assert_called_once()
+    timer.assert_called_once()
+    cache.read(MEMBER)
+    assert len(handles) == 3
+
+
+def test_a_check_that_comes_too_early_waits_out_the_rest(mocker: MockerFixture, timer: MagicMock) -> None:
+    """A read since the check was started pushes the close back rather than cutting a burst short.
+
+    **Test steps:**
+
+    * read from a cache whose idle period has not yet run out
+    * run the idle check
+    * verify nothing closed, and a new check was started for no longer than the period
+    """
+    handles = mock_zipfile(mocker)
+    cache = ArchiveCache(idle_after=1000.0)
+    cache.read(MEMBER)
+
+    idle_check(timer)()
+
+    handles[0].close.assert_not_called()
+    assert timer.call_count == 2
+    assert 0 < timer.call_args.args[0] <= 1000.0
+
+
+def test_a_handle_being_read_is_left_for_the_next_check(mocker: MockerFixture, timer: MagicMock) -> None:
+    """The idle check never waits on a reader: it skips the handle, closes the rest, and checks again.
+
+    **Test steps:**
+
+    * read from two archives, then take the first handle's lock as a reader mid-read would
+    * run the idle check once the period has passed
+    * verify the busy handle stayed open, the other closed, and another check was started
+    """
+    handles = mock_zipfile(mocker)
+    cache = ArchiveCache(idle_after=0.0)
+    cache.read(MEMBER)
+    cache.read(OTHER_MEMBER)
+    busy = planted(cache)[ARCHIVE]
+
+    with busy.lock:
+        idle_check(timer)()
+
+    handles[0].close.assert_not_called()
+    handles[1].close.assert_called_once()
+    assert timer.call_count == 2
+
+
+def test_close_idle_handles_skips_a_handle_being_read(mocker: MockerFixture) -> None:
+    """What hiding the Content Images dock asks for closes whatever nobody is reading, at once.
+
+    **Test steps:**
+
+    * read from two archives, and take the first handle's lock as a reader would
+    * close the idle handles
+    * verify only the unlocked one closed and left the cache
+    """
+    handles = mock_zipfile(mocker)
+    cache = ArchiveCache()
+    cache.read(MEMBER)
+    cache.read(OTHER_MEMBER)
+    busy = planted(cache)[ARCHIVE]
+
+    with busy.lock:
+        cache.close_idle_handles()
+
+    handles[0].close.assert_not_called()
+    handles[1].close.assert_called_once()
+    assert list(planted(cache)) == [ARCHIVE]
+
+
+def test_a_closed_cache_starts_no_more_checks(mocker: MockerFixture, timer: MagicMock) -> None:
+    """A cache going away cancels its pending check, and neither that check nor a late read starts
+    another.
+
+    **Test steps:**
+
+    * read once, so a check is pending, then close the cache
+    * verify the pending check was cancelled
+    * run it anyway and read again, and verify no second check was started
+    """
+    mock_zipfile(mocker)
+    cache = ArchiveCache(idle_after=0.0)
+    cache.read(MEMBER)
+    check = idle_check(timer)
+
+    cache.close()
+
+    timer.return_value.cancel.assert_called_once_with()
+    check()
+    cache.read(MEMBER)
+    timer.assert_called_once()
+
+
+def test_a_closed_cache_opens_nothing(mocker: MockerFixture) -> None:
+    """A read that reaches a closed cache -- a pool job finishing after the document went away -- gets
+    nothing, rather than a handle no one will close.
+
+    **Test steps:**
+
+    * close a cache, then read through it
+    * verify the read answered nothing and no archive was opened
+    """
+    handles = mock_zipfile(mocker)
+    cache = ArchiveCache()
+    cache.close()
+
+    assert cache.read(MEMBER) is None
+    assert not handles
+
+
+def test_an_open_that_lands_after_the_close_is_closed_not_kept(mocker: MockerFixture) -> None:
+    """An archive opened while the cache was closing is closed on arrival, the same as one that lost the
+    race to another thread.
+
+    **Test steps:**
+
+    * make the archive's open close the cache first, as a close on another thread would
+    * read, and verify the read answered nothing and the handle was closed rather than cached
+    """
+    handles = mock_zipfile(mocker)
+    cache = ArchiveCache()
+    mocker.patch(f"{MODULE}.shared_read_open", side_effect=lambda path: (cache.close(), mocker.MagicMock(path=path))[1])
+
+    assert cache.read(MEMBER) is None
+    assert len(handles) == 1
+    handles[0].close.assert_called_once()
+    assert not planted(cache)
 
 
 # endregion
