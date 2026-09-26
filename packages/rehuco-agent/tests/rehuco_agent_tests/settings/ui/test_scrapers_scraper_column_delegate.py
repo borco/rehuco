@@ -134,7 +134,11 @@ def test_a_linked_row_draws_something_and_never_reaches_the_base_delegate(
     painter.end()
 
     base_paint.assert_not_called()
-    assert any(image.pixelColor(x, CELL.height() // 2).alpha() > 0 for x in range(CELL.width()))
+    # scans the whole cell, not one exact row: which row the glyphs' ink actually lands on shifts with
+    # the platform's font metrics and baseline (measured -- CI's offscreen Windows runner draws the
+    # same text a couple of pixels off this delegate's own dev-box rendering), and the contract here is
+    # only that *something* was drawn, never where within the cell
+    assert any(image.pixelColor(x, y).alpha() > 0 for x in range(CELL.width()) for y in range(CELL.height()))
 
 
 def test_link_at_finds_the_anchor_under_the_drawn_text(delegate: ScrapersScraperColumnDelegate) -> None:
