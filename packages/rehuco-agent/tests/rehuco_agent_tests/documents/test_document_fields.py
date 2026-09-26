@@ -55,6 +55,7 @@ from rehuco_core import (
     DurationProbeError,
     MediaInfoDurationProbe,
     RehuDocument,
+    RenameCoordinator,
 )
 
 PACK_PATH = Path("/library/anatomy-pack.rehu")
@@ -553,13 +554,16 @@ def test_compute_counts_the_resources_content_images_with_the_configured_extensi
     qtbot: QtBot, mocker: MockerFixture
 ) -> None:
     """The count row's Compute action enumerates *this* document's archives, with the extension set the
-    user configured -- the wiring the toolkit cannot build for itself (#197, #222, #198).
+    user configured -- the wiring the toolkit cannot build for itself (#197, #222, #198) -- inside the
+    document's own rename barrier, so a rename asked for mid-count is not refused over it (#355).
 
     **Test steps:**
 
     * select a custom extension list in the shared reference-images settings
-    * build a reference-images document's editor, with the enumeration mocked to find two entries
-    * press Compute and verify the enumeration was handed the document's own path and that set
+    * build a reference-images document with a rename coordinator, and its editor, with the enumeration
+      mocked to find two entries
+    * press Compute and verify the enumeration was handed the document's own path, that set, and that
+      coordinator
     * verify the measured count reached the row, without touching the stored one
     """
     settings = shared_reference_images_settings()
@@ -568,13 +572,16 @@ def test_compute_counts_the_resources_content_images_with_the_configured_extensi
         "rehuco_agent.documents.document_fields.enumerate_content_images",
         return_value=[object(), object()],
     )
-    model = RehuDocumentModel(RehuDocument({"core": {"type": "reference_images"}}, PACK_PATH))
+    coordinator = RenameCoordinator()
+    model = RehuDocumentModel(
+        RehuDocument({"core": {"type": "reference_images"}}, PACK_PATH), rename_coordinator=coordinator
+    )
     grid = main_editor(qtbot, model)
     editor = content_count_editor(grid)
 
     compute(qtbot, editor, COMPUTE_TOOLTIP)
 
-    enumerate_content_images.assert_called_once_with(PACK_PATH, (".bmp", ".tif"))
+    enumerate_content_images.assert_called_once_with(PACK_PATH, (".bmp", ".tif"), coordinator)
     assert editor.computed == 2
     assert model.current_count is None
 

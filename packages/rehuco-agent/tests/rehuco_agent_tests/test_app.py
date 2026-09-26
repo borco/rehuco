@@ -1,15 +1,87 @@
 """Tests for QApplication wiring: single-instance guard and open-path routing."""
 
+import logging
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Final
+from unittest.mock import MagicMock
 
 from PySide6.QtGui import QFileOpenEvent, QGuiApplication
+from pytest import LogCaptureFixture, fixture
 from pytest_mock import MockerFixture
-from rehuco_agent.app import APP_ID, Application, run
+from rehuco_agent.app import APP_ID, Application, leave_launch_directory, run
 from rehuco_agent.linux_registration import DESKTOP_FILE_NAME
 
 FAKE_PATH: Final = "/fake/tutorials/sculpting/info.rehu"
+FAKE_HOME: Final = Path("/fake/home")
+
+
+@fixture(autouse=True)
+def chdir(mocker: MockerFixture) -> MagicMock:
+    """Stand in for ``os.chdir``, so ``run`` leaving its launch directory (#355) never moves the test
+    process itself -- path-resolving fixtures elsewhere depend on the suite's working directory.
+
+    :returns: the stand-in.
+    """
+    return mocker.patch("rehuco_agent.app.os.chdir")
+
+
+def test_leaving_the_launch_directory_goes_home(chdir: MagicMock, mocker: MockerFixture) -> None:
+    """The app steps out of the folder Explorer started it in, which it would otherwise hold against a
+    rename for its whole life (#355).
+
+    **Test steps:**
+
+    * point the home directory at a fake path
+    * leave the launch directory
+    * verify the working directory was changed to home
+    """
+    mocker.patch.object(Path, "home", return_value=FAKE_HOME)
+
+    leave_launch_directory()
+
+    chdir.assert_called_once_with(FAKE_HOME)
+
+
+def test_failing_to_leave_the_launch_directory_is_logged_not_raised(
+    chdir: MagicMock, mocker: MockerFixture, caplog: LogCaptureFixture
+) -> None:
+    """Staying put costs a rename later, which then says why -- no reason not to start (#355).
+
+    **Test steps:**
+
+    * make changing directory fail, then make resolving home fail
+    * leave the launch directory each time
+    * verify neither raised, and each logged a warning
+    """
+    chdir.side_effect = OSError("gone")
+    with caplog.at_level(logging.WARNING, logger="rehuco_agent.app"):
+        leave_launch_directory()
+        mocker.patch.object(Path, "home", side_effect=RuntimeError("no home"))
+        leave_launch_directory()
+
+    assert len(caplog.records) == 2
+
+
+def test_run_leaves_the_launch_directory(chdir: MagicMock, mocker: MockerFixture) -> None:
+    """Every launch leaves the directory it was started in (#355), and a relative argv path is still
+    handed on resolved against that directory (#297).
+
+    **Test steps:**
+
+    * mock ``Application``/``ApplicationSingleton``
+    * call ``run`` with a relative path
+    * verify the directory changed once, and ``setup`` got the path resolved against the launch directory
+    """
+    mocker.patch("rehuco_agent.app.Application")
+    singleton_cls = mocker.patch("rehuco_agent.app.ApplicationSingleton")
+    singleton_cls.return_value.setup.return_value = True
+    resolved = str(Path("sub/a.rehu").resolve())
+
+    run(["rehuco-agent", "sub/a.rehu"])
+
+    chdir.assert_called_once()
+    singleton_cls.return_value.setup.assert_called_once_with(APP_ID, [resolved])
 
 
 def test_show_main_window_builds_it_once_and_reuses_it(mocker: MockerFixture) -> None:

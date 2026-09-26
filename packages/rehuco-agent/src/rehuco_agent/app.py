@@ -3,6 +3,7 @@
 """
 
 import logging
+import os
 from pathlib import Path
 from typing import Final, override
 
@@ -167,6 +168,27 @@ class Application(QApplication):
         self.show_main_window().open_path(path)
 
 
+def leave_launch_directory() -> None:
+    """Step out of the directory this process was started in, into the user's home (#355).
+
+    Explorer starts the app *inside* the folder it was asked to open -- the folder-background verb
+    and a double-clicked ``.rehu`` both do -- and a process's working directory is an open handle on
+    that folder: NTFS refuses to rename it for as long as the process lives (WinError 32, measured),
+    and no :class:`~rehuco_core.RenameCoordinator` yield reaches it. So an app meant to sit in the tray
+    for a whole session would keep the first folder it was opened from locked all session. argv, the
+    one relative input the app takes, is already resolved against the launch directory by the time
+    this runs (#297), so nothing is lost by leaving it.
+
+    A failure is logged and otherwise ignored: staying put costs a rename later, which then says so
+    (#355), and is no reason not to start.
+    """
+    try:
+        os.chdir(Path.home())
+    except OSError, RuntimeError:
+        # RuntimeError: Path.home() with no home directory to resolve
+        LOG.warning("Could not leave the launch directory for the home directory", exc_info=True)
+
+
 def run(argv: list[str]) -> int:
     """Claim the single-instance role (or forward to the existing one) and start the event loop.
 
@@ -197,6 +219,7 @@ def run(argv: list[str]) -> int:
     # them: a relative path is only ever meaningful against *this* process's cwd, and once forwarded
     # to a running primary it would resolve against that primary's cwd instead (#297)
     resolved_paths = [str(Path(path).resolve()) for path in argv[1:]]
+    leave_launch_directory()
     # ``resolved_paths`` is passed explicitly rather than left to setup()'s own ``sys.argv[1:]``
     # default: the two are the same in production (``run(sys.argv)``), but this function's contract
     # is that its *parameter* is the argv -- honored when primary (opened below), so also honored

@@ -2059,8 +2059,22 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             insert_mode=QtAds.CDockWidget.eInsertMode.ForceNoScrollArea,
             min_content_height=CONTENT_IMAGES_DOCK_MIN_HEIGHT,
         )
-        dock.viewToggled.connect(lambda visible: self.__refresh_content_images() if visible else None)
+        dock.viewToggled.connect(self.__on_content_images_toggled)
         return dock
+
+    def __on_content_images_toggled(self, visible: bool) -> None:
+        """Re-enumerate when the Content Images dock is shown; let go of its archives when it is hidden.
+
+        Nothing reads the archives while the grid is off screen, so the handles close then rather than
+        after the cache's own idle period (#355) -- a folder is renameable from Explorer the moment
+        the dock goes.
+
+        :param visible: whether the dock is now shown.
+        """
+        if visible:
+            self.__refresh_content_images()
+        else:
+            self.__let_go_of_archives(wait_for_readers=False)
 
     def __on_content_images_path_changed(self) -> None:
         """Let go of the archives at the old path and re-enumerate at the new one (#347).
@@ -2068,9 +2082,22 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         The handles are released whether or not the dock is up to show anything: a closed dock's cache
         still holds whatever it last read, and those are exactly the files that moved.
         """
-        if self.__content_images_model is not None:
-            self.__content_images_model.release_archives()
+        self.__let_go_of_archives(wait_for_readers=True)
         self.__refresh_content_images()
+
+    def __let_go_of_archives(self, wait_for_readers: bool) -> None:
+        """Close the Content Images dock's open archives, if this type has the dock (#347, #355).
+
+        :param wait_for_readers: close every handle, each once the read on it finishes -- a path
+            change, whose handles name files that moved -- rather than only the ones nobody is reading
+            now, which is all a hidden dock needs and never waits.
+        """
+        if self.__content_images_model is None:
+            return
+        if wait_for_readers:
+            self.__content_images_model.release_archives()
+        else:
+            self.__content_images_model.close_idle_archives()
 
     def __refresh_content_images(self) -> None:
         """Re-enumerate this resource's content images, if the dock exists and is up to show them

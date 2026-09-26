@@ -388,6 +388,10 @@ def build_document_form(
         (#197), so this is where the user's choice is read (#222) -- at every measurement, so a list edited
         in Settings takes effect on the next Compute without rebuilding the form.
 
+        Each archive is read inside the document's rename barrier (#347), so a rename asked for while a
+        Compute is counting waits one central-directory read rather than running into the open archive
+        (#355).
+
         :returns: the count, or ``None`` when the document has no path yet -- there is nothing on disk to
             count, which is not the same as counting zero.
         """
@@ -395,7 +399,7 @@ def build_document_form(
         if path is None:
             return None
         extensions = shared_reference_images_settings().content_image_extensions
-        return len(enumerate_content_images(path, extensions))
+        return len(enumerate_content_images(path, extensions, model.rename_coordinator))
 
     def measure_size_on_disk() -> int | None:
         """Sum what this resource's content occupies on disk ([[data-model#resource-scoping]], #223).

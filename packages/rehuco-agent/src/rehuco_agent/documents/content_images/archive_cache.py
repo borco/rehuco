@@ -12,9 +12,15 @@ out when a rename wants through, and a handle nobody is reading is closed by a y
 archive is opened at a tracked :class:`~rehuco_core.ResourceLocation` rather than at the entry's path, so
 a read that paused for the rename resumes at the new name instead of failing -- a failure here would be
 recorded as *unreadable for good* under a tier-0 key that names no archive, and outlive the rename.
+
+**And an idle cache holds nothing** (#355). Only an in-app rename can ask a handle to close; Explorer, a
+second host on the same share, or a future swarm node cannot. So handles are pooled across a burst of
+reads and closed once reads stop (:data:`IDLE_CLOSE_SECONDS`), on every platform, since a handle kept
+open on an SMB share blocks the server's other clients whatever the reader's own operating system.
 """
 
 import threading
+import time
 import zipfile
 from collections import OrderedDict
 from collections.abc import Callable
@@ -40,6 +46,12 @@ HEADER_BYTES: Final = 64 * 1024
 format states its dimensions within the first few hundred bytes, except a JPEG carrying a large EXIF
 preview ahead of its frame header, for which 64 KiB is the usual ceiling. A header not found in this
 much is read in full by the caller."""
+
+IDLE_CLOSE_SECONDS: Final = 2.0
+"""How long after the last read every handle is closed (#355). A browse reads in bursts -- a scroll
+through the grid, a step in the lightbox -- and a burst reuses one open handle per archive, which is
+what the cache is for. Two seconds spans the gaps inside a burst; past it the next read reopens, at the
+cost of one central-directory read per archive."""
 
 READ_ATTEMPTS: Final = 3
 """How often a read looks its handle up again after finding it closed under it: once for an eviction
@@ -76,7 +88,7 @@ class ArchiveHandle:
         self.file.close()
 
 
-class ArchiveCache:
+class ArchiveCache:  # pylint: disable=too-many-instance-attributes
     """A bounded LRU of open `zipfile.ZipFile` handles, each read under its own lock (#221).
 
     Every failure -- an offline mount, a truncated zip, a member gone from a re-packed archive -- is
@@ -87,21 +99,37 @@ class ArchiveCache:
     the renaming thread with none of them held and never *waits* on a handle's lock, so the GUI thread a
     rename is asked from is never parked behind a member read.
 
+    The idle close (#355) runs on a daemon timer thread, one at a time and only while reads have
+    happened since the last one closed everything -- a cache nobody reads has no timer at all, which is
+    what an app left in the tray all session wants.
+
     :param coordinator: the rename barrier to take part in (#347), or ``None`` for none -- a document
         renamed without one.
     :param limit: how many handles to keep open.
+    :param idle_after: how long after the last read every handle is closed, in seconds.
     """
 
-    def __init__(self, coordinator: RenameCoordinator | None = None, limit: int = HANDLE_LIMIT) -> None:
+    def __init__(
+        self,
+        coordinator: RenameCoordinator | None = None,
+        limit: int = HANDLE_LIMIT,
+        idle_after: float = IDLE_CLOSE_SECONDS,
+    ) -> None:
         self.__coordinator: Final = coordinator
         self.__limit: Final = limit
+        self.__idle_after: Final = idle_after
         self.__lock: Final = threading.Lock()
         self.__handles: Final[OrderedDict[Path, ArchiveHandle]] = OrderedDict()
         # held strongly for the cache's life: the coordinator tracks weakly, and a location dropped
         # between two reads would stop following the resource
         self.__locations: Final[dict[Path, ResourceLocation]] = {}
+        # the idle close's state, all under the cache lock: when the last read finished, the one pending
+        # check (if any), and whether the cache has gone away so no check may start again
+        self.__last_read = 0.0
+        self.__idle_timer: threading.Timer | None = None
+        self.__closed = False
         # a stable callable, so removing it finds the one that was added
-        self.__on_yield: Final[Callable[[], None]] = self.__close_idle_handles
+        self.__on_yield: Final[Callable[[], None]] = self.__close_handles_for_rename
         if coordinator is not None:
             coordinator.add_yield_listener(self.__on_yield)
 
@@ -137,15 +165,41 @@ class ArchiveCache:
             with handle.lock:
                 handle.close()
 
+    def close_idle_handles(self) -> None:
+        """Close every handle no reader is on, without waiting for one that is (#355).
+
+        What the idle check calls, and what hiding the Content Images dock asks for: nothing on screen
+        will read the archives now. A handle a reader is on is left, and its read reschedules the idle
+        check on the way out, so it closes once that reader is done.
+        """
+        self.__close_unused(lambda _handle: True)
+
     def close(self) -> None:
         """Close every open handle and leave the rename barrier, for a cache that is going away."""
+        with self.__lock:
+            self.__closed = True
+            timer, self.__idle_timer = self.__idle_timer, None
+        if timer is not None:
+            timer.cancel()
         if self.__coordinator is not None:
             self.__coordinator.remove_yield_listener(self.__on_yield)
         self.release_handles()
 
     def __read(self, entry: ContentImageEntry, limit: int | None) -> bytes | None:
         """Read ``limit`` bytes (or all) of ``entry`` through its archive's handle, under that handle's
-        lock, inside the rename barrier.
+        lock, inside the rename barrier -- and, however it ends, make sure the idle check is pending.
+
+        :param entry: the member.
+        :param limit: how many bytes, or ``None`` for all.
+        :returns: the bytes, or ``None`` on any failure.
+        """
+        try:
+            return self.__read_through_handle(entry, limit)
+        finally:
+            self.__note_read()
+
+    def __read_through_handle(self, entry: ContentImageEntry, limit: int | None) -> bytes | None:
+        """The read itself, retried when its handle was closed under it; see :meth:`__read`.
 
         :param entry: the member.
         :param limit: how many bytes, or ``None`` for all.
@@ -183,7 +237,7 @@ class ArchiveCache:
         """Close ``handle`` before the hold ends when a rename is waiting for it to.
 
         Asked **after** the handle's lock is released and still inside the hold. That order is what
-        closes the race with :meth:`__close_idle_handles`: a listener that fails to take the lock has
+        closes the race with :meth:`__close_handles_for_rename`: a listener that fails to take the lock has
         found a reader on it, and that reader asks here only afterwards -- when the flag the listener
         was called for is already up. A handle this read opened while the flag was up is covered the
         same way.
@@ -199,15 +253,63 @@ class ArchiveCache:
         with handle.lock:
             handle.close()
 
-    def __close_idle_handles(self) -> None:
-        """Close every handle no reader is on, for a rename that wants through (#347).
+    def __close_handles_for_rename(self) -> None:
+        """Close every handle no reader is on that stands in a directory rename's way (#347).
 
         The yield listener, called on the renaming thread -- usually the GUI one -- so it never waits:
         a handle whose lock is taken belongs to a reader inside the hold, which closes it itself on the
         way out (:meth:`__let_go_if_wanted`), and the rename's own bounded wait covers that reader.
         """
+        self.__close_unused(lambda handle: handle.must_close)
+
+    def __note_read(self) -> None:
+        """Record that a read just finished, and start the idle check unless one is already pending
+        (#355)."""
         with self.__lock:
-            candidates = [(path, handle) for path, handle in self.__handles.items() if handle.must_close]
+            self.__last_read = time.monotonic()
+            if self.__idle_timer is None and not self.__closed:
+                self.__start_idle_timer(self.__idle_after)
+
+    def __start_idle_timer(self, delay: float) -> None:
+        """Start the one pending idle check; the cache lock is held.
+
+        A daemon thread, so a check still pending at exit never holds the process open.
+
+        :param delay: seconds until it runs.
+        """
+        timer = threading.Timer(delay, self.__on_idle)
+        timer.daemon = True
+        self.__idle_timer = timer
+        timer.start()
+
+    def __on_idle(self) -> None:
+        """The idle check, on its timer thread (#355): once reads have stopped for ``idle_after``,
+        close every handle nobody is on; while they have not, check again when they might have.
+
+        A handle a reader was still on is left to the next check, which that reader's own
+        :meth:`__note_read` has already started -- or, if it finished between the two, this one starts
+        -- so the last handle open always closes eventually.
+        """
+        with self.__lock:
+            self.__idle_timer = None
+            if self.__closed:
+                return
+            remaining = self.__last_read + self.__idle_after - time.monotonic()
+            if remaining > 0:
+                self.__start_idle_timer(remaining)
+                return
+        self.close_idle_handles()
+        with self.__lock:
+            if self.__handles and self.__idle_timer is None and not self.__closed:
+                self.__start_idle_timer(self.__idle_after)
+
+    def __close_unused(self, wanted: Callable[[ArchiveHandle], bool]) -> None:
+        """Close every ``wanted`` handle no reader is on, without waiting for one that is.
+
+        :param wanted: which handles to close.
+        """
+        with self.__lock:
+            candidates = [(path, handle) for path, handle in self.__handles.items() if wanted(handle)]
         for path, handle in candidates:
             if not handle.lock.acquire(blocking=False):
                 continue
@@ -234,21 +336,31 @@ class ArchiveCache:
     def __handle(self, path: Path) -> ArchiveHandle | None:
         """The open handle for ``path``, opening it (and evicting the least recently used) if needed.
 
+        A closed cache opens nothing (#355): a read still on the pool when the document went away would
+        otherwise leave a handle that nothing closes, since :meth:`close` has already run.
+
         :param path: the archive, as its entries name it.
-        :returns: the handle, or ``None`` when the archive cannot be opened.
+        :returns: the handle, or ``None`` when the archive cannot be opened, or the cache is closed.
         """
         with self.__lock:
+            if self.__closed:
+                return None
             if path in self.__handles:
                 self.__handles.move_to_end(path)
                 return self.__handles[path]
             current = self.__location(path).path
         # opened outside the cache lock: a NAS open can take a while, and it need not stall a read
-        # of another archive already open. Kept open on purpose -- the cache is what closes it.
+        # of another archive already open. Kept open past this read on purpose -- the cache is what
+        # closes it, on eviction, for a rename, or once reads go idle (#355).
         opened = self.__open(current)
         if opened is None:
             return None
         evicted: list[ArchiveHandle] = []
         with self.__lock:
+            if self.__closed:
+                # the cache closed while this was opening: nothing would close it later
+                opened.close()
+                return None
             if path in self.__handles:
                 # another thread opened it first: keep theirs, drop ours
                 opened.close()
