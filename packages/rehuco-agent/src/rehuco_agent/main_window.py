@@ -356,9 +356,17 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
         :param widget: the newly-focused document's widget, or ``None`` when no document is focused.
         """
+        self.__update_window_title(widget)
+        self.__ui.close_action.setEnabled(widget is not None)
+
+    def __update_window_title(self, widget: DocumentWidget | None) -> None:
+        """Set this window's title from ``widget``'s document label, or the base title if ``widget`` is
+        ``None``.
+
+        :param widget: the document whose label drives the title, or ``None`` for the base title.
+        """
         label = widget.model.label if widget is not None else ""
         self.setWindowTitle(f"{label} - {self.__base_window_title}" if label else self.__base_window_title)
-        self.__ui.close_action.setEnabled(widget is not None)
 
     def __on_status_message(self, text: str) -> None:
         """Show a document field's transient status message on this window's status bar, or clear it for
@@ -1462,7 +1470,8 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             self.open_path(path)
 
     def __on_document_path_changed(self, old_path: Path | None, new_path: Path | None) -> None:
-        """Keep ``Open recents`` (#64) pointed at a document's current path when it moves -- a
+        """Re-read the window title when the moved document is the focused one (#356), and keep
+        ``Open recents`` (#64) pointed at a document's current path when it moves -- a
         :meth:`~RehuDocumentModel.convert` in place, or a completed rename (#241).
 
         The moved document is the same resource, not a fresh open, so each candidate swap is in place
@@ -1492,6 +1501,9 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         :param old_path: the path the document moved from.
         :param new_path: the path it moved to.
         """
+        focused = self.__documents_dock.focused_document_widget()
+        if focused is not None and focused.model.path == new_path:
+            self.__update_window_title(focused)
         if old_path is None or new_path is None:
             return
         self.__recent_files.replace(old_path, new_path)

@@ -1665,6 +1665,54 @@ def test_a_document_gaining_its_first_path_leaves_recents_alone(qtbot: QtBot) ->
     assert recent_files.newest_first() == [recorded]
 
 
+def test_a_focused_documents_path_change_updates_the_window_title(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """When the *focused* document moves (a completed rename), the window title picks up its new
+    label instead of keeping the one it had before the move (#356).
+
+    **Test steps:**
+
+    * stand in the focused document with a label reflecting its new path
+    * raise ``document_path_changed`` for that document's old path moving to its new one
+    * verify the window title picked up the new label
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    base_title = window.windowTitle()
+    documents_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    old_path = Path("old_name/info.rehu").resolve()
+    new_path = Path("new_name/info.rehu").resolve()
+    focused_widget = mocker.MagicMock(model=mocker.MagicMock(label="new_name/", path=new_path))
+    mocker.patch.object(documents_dock, "focused_document_widget", return_value=focused_widget)
+
+    documents_dock.document_path_changed.emit(old_path, new_path)
+
+    assert window.windowTitle() == f"new_name/ - {base_title}"
+
+
+def test_an_unfocused_documents_path_change_leaves_the_window_title_alone(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A path change on a document that is not the focused one does not touch the window title --
+    it only reflects the *focused* document's label (#356).
+
+    **Test steps:**
+
+    * stand in the focused document, unrelated to the path change
+    * raise ``document_path_changed`` for a different, unrelated document's move
+    * verify the window title kept the focused document's own label
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    base_title = window.windowTitle()
+    documents_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    focused_path = Path("focused/info.rehu").resolve()
+    focused_widget = mocker.MagicMock(model=mocker.MagicMock(label="focused/", path=focused_path))
+    mocker.patch.object(documents_dock, "focused_document_widget", return_value=focused_widget)
+    window._MainWindow__on_document_focus_changed(focused_widget)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    documents_dock.document_path_changed.emit(Path("old.rehu").resolve(), Path("new.rehu").resolve())
+
+    assert window.windowTitle() == f"focused/ - {base_title}"
+
+
 def test_recents_menu_lists_remembered_paths_newest_first(qtbot: QtBot) -> None:
     """``Open recents`` lists every remembered path, most-recently-opened first (#64).
 

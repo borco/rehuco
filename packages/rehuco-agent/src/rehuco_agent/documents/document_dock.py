@@ -83,6 +83,7 @@ class DocumentDock(QtAds.CDockWidget):  # pylint: disable=too-few-public-methods
         model.dirty_changed.connect(self.__update_title)  # type: ignore[attr-defined]
         model.lock_reasons_changed.connect(self.__update_title)  # type: ignore[attr-defined]
         model.path_changed.connect(self.__resync_object_name)  # type: ignore[attr-defined]
+        model.path_changed.connect(self.__update_title)  # type: ignore[attr-defined]
         tab_label(self).doubleClicked.connect(self.__on_tab_label_double_clicked)
         self.__update_title()
 
@@ -104,7 +105,8 @@ class DocumentDock(QtAds.CDockWidget):  # pylint: disable=too-few-public-methods
         disabled editors mean it can never be dirty too. The tooltip always shows the full path.
 
         Takes no arguments and re-reads the model itself -- Qt lets a slot accept fewer arguments than
-        the signal emits, and both ``dirty_changed`` and ``lock_reasons_changed`` drive it.
+        the signal emits, and ``dirty_changed``, ``lock_reasons_changed`` and ``path_changed`` all drive
+        it (a rename redraws it with the label and tooltip a fresh :meth:`RehuDocumentModel.path` gives).
         """
         name = self.__model.label
         if self.__model.locked:
