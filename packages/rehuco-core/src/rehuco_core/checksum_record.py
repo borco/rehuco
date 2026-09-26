@@ -285,7 +285,18 @@ def parse_verified(value: Any) -> datetime | None:
     return stamp if stamp.tzinfo is not None else stamp.replace(tzinfo=UTC)
 
 
-def is_checksum_fresh(entry: ChecksumEntry | None, stale_after: timedelta | None, now: datetime) -> bool:
+TRUST_NOT_TRACKED: Final = datetime.min.replace(tzinfo=UTC)
+"""The trust instant of a caller that does not track where a record was verified (#357): every stamp is at
+or after it, so freshness is the staleness window's alone -- the rule as it stood before trust was per
+location, and what a caller with no :class:`~rehuco_core.ChecksumTrust` attached still gets."""
+
+
+def is_checksum_fresh(
+    entry: ChecksumEntry | None,
+    stale_after: timedelta | None,
+    now: datetime,
+    trusted_since: datetime | None = TRUST_NOT_TRACKED,
+) -> bool:
     """Whether ``stale_after`` says this entry was verified recently enough to leave alone.
 
     ``None`` -- no window -- means nothing is fresh: *force*, spelled as the absence of a skip rather
@@ -297,13 +308,24 @@ def is_checksum_fresh(entry: ChecksumEntry | None, stale_after: timedelta | None
     stale pair means exactly *it would not* ([[plugins#files-subdock]], #266). Asked of the parsed entry
     rather than of a raw one, since a malformed entry has no readable stamp and is never fresh.
 
+    **A stamp only counts where it was earned** (#357). A folder copied elsewhere carries its record
+    along, and the record's dates describe bytes that were hashed *there*, not the copy's -- so an entry
+    is fresh only when this machine trusts the record's current location, and only for a stamp written
+    at or after the moment that trust began. The second half keeps a partial verify honest: re-checking
+    three files after a move makes those three fresh, not the two hundred whose dates predate it.
+
     :param entry: the parsed entry, or ``None`` -- no entry at all, or one this build cannot read.
     :param stale_after: the staleness window; ``None`` makes nothing fresh.
     :param now: the moment to measure against, injected rather than read here so a run measures every
         entry against one instant and a test needs no clock.
-    :returns: whether the entry was verified within the window.
+    :param trusted_since: when this machine began trusting the record where it is now
+        (:meth:`~rehuco_core.ChecksumTrust.trusted_since`), ``None`` for a location it does not trust --
+        which makes nothing fresh -- or :data:`TRUST_NOT_TRACKED` for a caller that does not ask.
+    :returns: whether the entry was verified within the window, here.
     """
-    if stale_after is None or entry is None or entry.verified is None:
+    if stale_after is None or entry is None or entry.verified is None or trusted_since is None:
+        return False
+    if entry.verified < trusted_since:
         return False
     return now - entry.verified < stale_after
 

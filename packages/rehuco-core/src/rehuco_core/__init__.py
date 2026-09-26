@@ -24,6 +24,7 @@ from .checksum_jobs import (
 from .checksum_record import (
     CHECKSUM_FILES_KEY,
     MATCHED_STATUS,
+    TRUST_NOT_TRACKED,
     ChecksumEntry,
     ChecksumRecordError,
     ChecksumStatus,
@@ -49,6 +50,7 @@ from .checksum_seeding import (
     seed_checksum_record,
     seed_from_legacy_manifest,
 )
+from .checksum_trust import DEFAULT_CHECKSUM_TRUST, ChecksumTrust
 from .collection_entries import CollectionEntry, collection_entries, collection_records
 from .constants import (
     ARCHIVE_EXTENSIONS,
@@ -318,6 +320,7 @@ __all__ = [
     "ChecksumRecordError",
     "ChecksumReport",
     "ChecksumStatus",
+    "ChecksumTrust",
     "CollectionEntry",
     "ContentEnumeration",
     "ContentExclusionTier",
@@ -330,6 +333,7 @@ __all__ = [
     "ConversionBackupsTreeScan",
     "CoveringRecord",
     "DEFAULT_CHECKSUM_ALGORITHM",
+    "DEFAULT_CHECKSUM_TRUST",
     "DEFAULT_CONTENT_CHUNK_SIZE",
     "DEFAULT_CURRENT_USERNAME",
     "DEFAULT_DELETER",
@@ -421,6 +425,7 @@ __all__ = [
     "TC_DISCARD_KIND",
     "TC_IMPORT_KIND",
     "TRANSIENT_LOCK_ERRORS",
+    "TRUST_NOT_TRACKED",
     "TUTORIAL_FIELD_NAMES",
     "TUTORIAL_PLUGIN",
     "TaskJob",

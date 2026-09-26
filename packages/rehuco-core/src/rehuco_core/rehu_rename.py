@@ -27,6 +27,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Final
 
+from .checksum_trust import DEFAULT_CHECKSUM_TRUST, ChecksumTrust
 from .constants import REHU_SUFFIX
 from .resource_scoping import is_directory_scoped
 
@@ -102,11 +103,14 @@ class RehuRenamer:
 
     :param path: the resource's ``.rehu`` file.
     :param new_name: the destination folder/file name; see :func:`rename_rehu_resource`.
+    :param trust: the checksum trust a completed rename carries to the new name (#357); the process-wide
+        one unless a test says otherwise.
     """
 
-    def __init__(self, path: Path, new_name: str) -> None:
+    def __init__(self, path: Path, new_name: str, trust: ChecksumTrust = DEFAULT_CHECKSUM_TRUST) -> None:
         self.__path: Final = path
         self.__new_name: Final = new_name
+        self.__trust: Final = trust
         self.__executed: list[tuple[Path, Path]] = []
         """The plan :meth:`rename` actually carried out, and what :meth:`relocate` answers from. Empty
         until a rename succeeds -- including after one that was rolled back, so a failure leaves every
@@ -133,7 +137,11 @@ class RehuRenamer:
         plan = self.__plan()
         self.__check_no_collisions(plan)
         self.__execute(plan)
-        return self.__new_document_path()
+        renamed = self.__new_document_path()
+        # a rename rewrites no bytes, so what was verified under the old name still holds under the new
+        # one -- a copy or move made outside the app is never heard of here, and re-verifies (#357)
+        self.__trust.moved(self.__path, renamed)
+        return renamed
 
     def relocate(self, candidate: Path) -> Path:
         """Where ``candidate`` ended up once this rename ran, or ``candidate`` itself if it did not move

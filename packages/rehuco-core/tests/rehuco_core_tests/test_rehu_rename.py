@@ -7,7 +7,7 @@ from typing import Any, Final
 
 from pytest import mark, param, raises
 from pytest_mock import MockerFixture
-from rehuco_core import PartialRenameError, RehuRenamer, rehu_rename_conflict, rename_rehu_resource
+from rehuco_core import ChecksumTrust, PartialRenameError, RehuRenamer, rehu_rename_conflict, rename_rehu_resource
 from rehuco_core.rehu_rename import RETRY_DELAYS
 
 DIRECTORY: Final = Path("/fake/library")
@@ -565,6 +565,59 @@ def test_relocate_answers_unchanged_after_a_rolled_back_rename(mocker: MockerFix
         renamer.rename()
 
     assert renamer.relocate(FILE_PATH) == FILE_PATH
+
+
+# endregion
+
+
+# region carrying checksum trust (#357)
+def test_a_completed_rename_carries_the_checksum_trust(mocker: MockerFixture) -> None:
+    """A rename rewrites no bytes, so what was verified under the old name holds under the new one.
+
+    **Test steps:**
+
+    * rename a directory-scoped resource through a renamer holding a trust store
+    * verify the store was told the resource moved from its old ``.rehu`` to its new one
+    """
+    mock_environment(mocker)
+    trust = mocker.create_autospec(ChecksumTrust, instance=True)
+
+    result = RehuRenamer(INFO_PATH, NEW_NAME, trust).rename()
+
+    trust.moved.assert_called_once_with(INFO_PATH, result)
+
+
+def test_a_refused_rename_carries_nothing(mocker: MockerFixture) -> None:
+    """Nothing moved, so the trust stays where the resource still is.
+
+    **Test steps:**
+
+    * mock the destination as occupied and rename, expecting ``FileExistsError``
+    * verify the store was never told of a move
+    """
+    mock_environment(mocker, existing=frozenset({DIRECTORY / NEW_NAME}))
+    trust = mocker.create_autospec(ChecksumTrust, instance=True)
+
+    with raises(FileExistsError):
+        RehuRenamer(INFO_PATH, NEW_NAME, trust).rename()
+
+    trust.moved.assert_not_called()
+
+
+def test_a_no_op_rename_carries_nothing(mocker: MockerFixture) -> None:
+    """A rename to the name the resource already has moves nothing.
+
+    **Test steps:**
+
+    * rename a resource to its own name
+    * verify the store was never told of a move
+    """
+    mock_environment(mocker)
+    trust = mocker.create_autospec(ChecksumTrust, instance=True)
+
+    RehuRenamer(INFO_PATH, FOLDER.name, trust).rename()
+
+    trust.moved.assert_not_called()
 
 
 # endregion
