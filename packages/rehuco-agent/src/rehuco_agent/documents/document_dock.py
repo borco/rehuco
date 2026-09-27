@@ -136,11 +136,14 @@ class DocumentDock(QtAds.CDockWidget):  # pylint: disable=too-few-public-methods
         Just the path itself, not the resource's UUID ([[data-model#stable-identity]]) -- a
         ``.tc``-backed document has no UUID until a live :meth:`~RehuDocumentModel.convert` mints
         one partway through an already-open dock's lifetime. Renaming an already-registered dock's
-        ``objectName()`` is itself safe and propagates correctly (confirmed empirically:
+        ``objectName()`` propagates to what a layout capture records (confirmed empirically:
         ``CDockManager.saveState()`` reads ``objectName()`` fresh, not from a stale add-time cache),
         so this dock resyncs it on every :attr:`~RehuDocumentModel.path_changed`
         (:meth:`__resync_object_name`) instead of needing the identifier to be transition-immune by
-        construction.
+        construction. The manager's own dock registry does **not** follow a rename -- it stays keyed by
+        the name the dock was added under -- which is why the area takes the dock out through
+        :func:`~borco_pyside.qtads.remove_dock_widget` rather than ``removeDockWidget`` (#364,
+        [[appendices.qt-ads#dock-registry-keys]]).
 
         :param path: the document's current path.
         :returns: the path as a string, or a placeholder if it has no path yet.
