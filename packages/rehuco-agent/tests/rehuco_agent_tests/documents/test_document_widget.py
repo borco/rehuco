@@ -5094,6 +5094,7 @@ def test_the_first_save_re_lists_the_content_images(
 
     refimages_model.saved_on_disk = True
 
+    qtbot.waitUntil(lambda: enumeration.call_count >= 1)
     enumeration.assert_called_once()
 
 

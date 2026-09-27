@@ -644,9 +644,11 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         model.path_changed.connect(lambda _path: self.__on_content_images_path_changed())  # type: ignore[attr-defined]
         # a brand-new resource's first save (#359): the path was already set by create_new, so
         # path_changed never fires, and a reader who packed zips outside the app while the document sat
-        # unsaved would otherwise see them only after closing and reopening the dock
+        # unsaved would otherwise see them only after closing and reopening the dock. Guarded on the
+        # transition to True -- the only one that ever fires in practice -- so nothing re-enumerates on
+        # the way back to not-yet-saved
         model.saved_on_disk_changed.connect(  # type: ignore[attr-defined]
-            lambda _saved: self.__refresh_content_images()
+            lambda saved: self.__refresh_content_images() if saved else None
         )
 
         # unlike the checksum pair, these need no queue: both operations are a handful of renames over
