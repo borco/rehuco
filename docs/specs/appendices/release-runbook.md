@@ -18,10 +18,10 @@ hand-typed, build jobs split per platform, TestPyPI ahead of PyPI — is in
 [[appendices.briefcase-packaging#linux-backends]].
 
 > [!NOTE]
-> One release has been cut so far: `rehuco-agent-0.1.0` on 2026-07-29, which ran `release-agent.yml` to a
-> GitHub Release carrying all three installers. `publish-packages.yml` has published nothing yet — it
-> arrived after that tag — so what sits on PyPI is still the `0.0.x` name-reservation stubs described in
-> section 1.
+> Every release so far is listed in the packages' changelogs. The first, `rehuco-agent-0.1.0`
+> (2026-07-29), predates `publish-packages.yml` and so reached GitHub Releases but not PyPI;
+> `rehuco-agent-0.1.1` was the first agent release on PyPI, and `rehuco-core`, `borco-core` and
+> `borco-pyside` reached it at `0.1.0`. `rehuco-node` has only its `0.0.x` name-reservation stubs.
 
 Both workflows read the same tag, so releasing a package is one push either way; the difference is only how
 much a tag produces. `rehuco-agent` is the only package with installers and the only one whose changelog

@@ -72,10 +72,10 @@ and its utilities are reimplemented under rehuco's own conventions in `borco-cor
 | Windows registry helpers | `borco_core/platforms/windows/` — `file_association`, `hkcu_registry`, `file_extension_context_menu`, `directory_context_menu`; exercised by the file-association pre-work spike (LocalEdit1 depends on it) |
 | **In-app logging stack** (bridge + log widget) | **Carried, reworked** — `borco_pyside/logging/` has the bridge, the models, the view, the delegates and the widget ([[appendices.logging]]); rehuco hosts it as an app-wide log dock and one per open resource — see below for what was and was not carried |
 | `widgets/flow_layout`, `line_edit` | `borco_pyside/widgets/` (`flow_layout`, `line_edit_helpers`, `line_edit_clear_action`, …) — a wider set than either snapshot |
-| `markdown/` editor + viewer (1st only) | Not carried as-is: `rich_text_view` covers viewing; the Markdown **editor** is planned on **pyside6-scintilla** |
-| `image_browser/` (1st only) | Not carried: the image strip/lightbox is tutorial-plugin work (**LocalEdit5**), and the image grid is a planned QML surface |
-| Atomic write — *no pyside-ibo equivalent* | `borco_core/atomic_write.py` — new (LocalEdit1's atomic save) |
-| Theming, QtAds helpers, dockable dialogs — *no pyside-ibo equivalent* | `borco_pyside/theming`, `qtads`, `dialogs` — new in rehuco |
+| `markdown/` editor + viewer (1st only) | Not carried as-is: `rich_text_view` covers viewing; the Markdown **editor** is built on **pyside6-scintilla** (`fields/widgets/markdown_edit.py`) |
+| `image_browser/` (1st only) | Not carried: the screenshot strip/lightbox is built (tutorial plugin, click-to-maximize with prev/next); a browsable image **grid** over a whole folder/library is still a planned QML surface |
+| — | `borco_core/atomic_write.py` — Atomic write |
+| — | `borco_pyside/theming`, `qtads`, `dialogs` — Theming, QtAds helpers, dockable dialogs |
 
 ### The in-app log surface
 

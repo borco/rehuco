@@ -9,19 +9,39 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-27
+
 ### Added
 
-- `natural_path_sort_key` — a natural sort over `/`-separated paths, component by component.
-- `ContentImageEntry` carries each member's uncompressed size and CRC32 off the central directory, and
-  exposes them as its tier-0 `key`.
+- Checksums — a `.checksum` record beside the `.rehu` with five algorithms, generate/verify that skip
+  recently checked files, a resumable folder sweep, adoption of legacy `.sfv`/`.md5`/`.sha*` manifests,
+  and per-location trust.
+- Content enumeration — which files a resource covers (exclusive between nested records), the images
+  inside a reference pack's archives, and measured size on disk and video duration.
+- Per-type field schemas declared by each plugin.
+- A task-queue engine: one job at a time, pause/cancel/reorder, optional persistence, per-job log scope.
+- A rename barrier (`RenameCoordinator`) that makes running jobs and open archives stand aside for a
+  rename.
+- Bulk `.tc` migration: a dry-run plan over a folder tree, conversion with `.orig` backups, and discarding
+  them.
+- Screenshot naming patterns as a configurable regex list, and on-disk move/delete/convert of screenshots.
+- A `Deleter` protocol for choosing how files are removed (e.g. to the Recycle Bin).
+- Record-list editing helpers for authors, collections and learning paths.
 
 ### Changed
 
-- `enumerate_content_images` returns each archive's members in natural order of their paths, and the
-  archives in natural order too — never the central directory's order, which is whatever the packer
-  wrote.
-- `natural_sort_key` breaks a numeric tie by leading zeros (`image9` before `image009`); a legacy
-  screenshot scan with both spellings of one number now gives the slot to the unpadded one.
+- Converting a `.tc` keeps each screenshot's own number instead of inferring its slot.
+
+### Fixed
+
+- A malformed `core.type`, or a required string field holding JSON `null`, locks the document instead of
+  reading as the text `"None"`.
+- A typeless document's empty block key is no longer treated as an active block.
+- Switching a document's type normalizes the block being activated.
+- `created` is stamped when a `.rehu` is first written.
+- `.rehu`/`.tc` parsing enforces size, depth and entry-count limits.
+- An unparseable legacy duration no longer imports as `0`.
+- `info.tc` is treated as directory-scoped, like `info.rehu`.
 
 ## [0.1.0] - 2026-07-29
 

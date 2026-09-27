@@ -9,6 +9,26 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-27
+
+### Added
+
+- `borco_core.logging` — `LogScope` for tagging log records with nested scopes, and
+  `SharedRotatingFileHandler`, a rotating log file several processes can append to.
+- `shared_read_open` — open a file for reading without blocking its rename on Windows.
+- `borco_core.file_holders` — which processes hold a file open (Windows Restart Manager).
+
+### Changed
+
+- `FileAssociation` takes extensions with their leading dot (`".rehu"`), like the other Windows
+  registration APIs.
+
+### Fixed
+
+- `atomic_write_bytes` logs a failed directory `fsync` instead of raising after the file was already
+  replaced.
+- `delete_key_tree` no longer re-enumerates a registry key while deleting from it.
+
 ## [0.1.0] - 2026-07-29
 
 The first version with anything in it: `0.0.1` and `0.0.2` held the name and shipped no code, so

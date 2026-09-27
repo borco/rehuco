@@ -101,10 +101,13 @@ or from the app — and it appears as a set of dockable panels you can rearrange
 | Panel | What it shows |
 | --- | --- |
 | **Main View** | The resource's fields, read-only, under its location. Shown when a resource opens, alongside the description view; the editors below start hidden behind their toolbar buttons. The type badge leads the document toolbar, not this panel. |
-| **Description View** | The rest of the resource read-only: its screenshots as a thumbnail strip, over the rendered Markdown description. Clicking a thumbnail fills the window with it; arrow keys or the wheel move through the set. |
+| **Description View** | The rest of the resource read-only: its screenshots as a thumbnail strip, over the rendered Markdown description. Double-clicking a thumbnail fills the window with it; arrow keys or the wheel move through the set. |
 | **Main Editor** | The same fields, editable, plus the type selector that decides which block is active. Its path row offers names built from the record — title, publisher, authors, year — and picking one renames the resource on disk: the folder for a directory-scoped resource, and for a standalone one every file named after it, archives and screenshots alike. |
 | **Description** | The Markdown description in its own panel, so prose can be written with room. |
-| **Images** | Which screenshots the strip shows: every sibling image, checkable, beside a preview. |
+| **Images** | Which screenshots the strip shows: every sibling image, checkable, beside a preview; screenshots can be moved, deleted (to the Recycle Bin) or converted to the numbered naming from here. |
+| **Files** | The resource's own folder as a file browser, with Reveal in the system's file manager. |
+| **Checksums** | Each content file's last check, its date and result, with generate and verify. |
+| **Log** | The app's log, narrowed to this resource. |
 | **Save Preview** / **On Disk** | Hidden by default: exactly what a save would write, and the file as it is on disk right now. The pair is how you see a migration or a preserved unknown field with your own eyes. |
 | **Content Images** | On a reference pack only, hidden by default: the images *inside* its archives, in rows justified to the panel's width and in natural order, each archive opening with a banner naming it and counting its images; a banner click folds its group away, and the banner of the group being scrolled through stays pinned at the top. Read-only — those images live in a checksummed archive and the app never touches them. A click selects one and a status line names it; a double-click fills the window with it, like a screenshot, where `I` shows its name, pixel size and file size. |
 
@@ -127,20 +130,27 @@ Which panels you had open, how you'd arranged them, and which file was in front 
 resource and restored when you open it again.
 
 Work that takes minutes runs on a **task queue** rather than in the window: one job at a time, each row
-showing its progress, pausable, cancellable, reorderable, and written down so it survives quitting. What
-uses it today is **checksums**. Beside each resource sits a `.checksum` record of *when each of its files
-was last checked and what the answer was* — not a manifest for an external tool, which is what lets a run
-skip a file checked recently instead of re-hashing a terabyte to learn nothing. A document's toolbar
+showing its progress and its own log, pausable, cancellable, reorderable, and written down so it survives
+quitting. Checksums, `.tc` imports, scrapes and image downloads all run on it; an app-wide **Tasks** panel
+shows the queue, beside an app-wide **Log**.
+
+The biggest user is **checksums**. Beside each resource sits a `.checksum` record of *when each of its
+files was last checked and what the answer was* — not a manifest for an external tool, which is what lets
+a run skip a file checked recently instead of re-hashing a terabyte to learn nothing. A document's toolbar
 generates and verifies its own resource; `File` > `Sweep checksums…` points a run at a folder, finds every
 resource under it, and checks only what has gone stale. Because each record is written as its resource
 finishes, a sweep interrupted halfway carries on from where it was the next time it runs, with nothing
 kept in memory to lose. How long a check stays good for, and which hash is used, are settings.
 
+Details can also be **scraped** instead of typed: drop a page's URL on the editor and a scraper — built in
+for ArtStation and Udemy, or a script of your own — fills the fields and fetches the screenshots, as an
+ordinary edit you read before saving.
+
 ## Where the pieces live
 
 ```text
 packages/
-├── rehuco-core/     the .rehu document, its blocks, migrations, atomic I/O, legacy .tc reading — no GUI
+├── rehuco-core/     the .rehu document, migrations, .tc conversion, checksums, the task queue — no GUI
 ├── rehuco-agent/    the desktop app: the field toolkit, the panels, the settings
 ├── rehuco-node/     a reserved name; nothing implemented
 ├── borco-core/      generic non-GUI utilities, on their way out of this repo
@@ -155,7 +165,8 @@ concern, and keeping it that way is what would let something without a screen re
 The predecessors used a YAML sidecar, `info.tc`. rehuco reads that format and converts it: JSON parses
 far faster at the sizes involved, which was the reason for changing. Conversion writes the `.rehu`,
 renames screenshots to the current convention, and keeps backups it can roll back if any step fails. It
-never writes `.tc` — the older format is read-only here.
+never writes `.tc` — the older format is read-only here. `File` > `Import Legacy Catalog…` converts a
+whole folder tree at once, and `File` > `Conversion Backups…` discards the backups once you're satisfied.
 
 ## What does not exist yet
 
@@ -163,12 +174,13 @@ Everything above is implemented. None of the following is, and the design docume
 length, which is exactly why this section is here:
 
 **No database and no search.** rehuco opens files you point it at, one at a time. There is no library
-view. `.rehudb` is a name in the design, not a file any code writes. One recursive walk does exist — the
-checksum sweep, over a folder you hand it — but it verifies as it goes and remembers nothing about what
-it found.
+view. `.rehudb` is a name in the design, not a file any code writes. Recursive walks do exist — the
+checksum sweep and the legacy import, over a folder you hand them — but they act as they go and remember
+nothing about what they found.
 
-**No network, in any form.** No node, no REST API, no discovery, no sync between machines, no accounts
-or access rules, no web or tablet interface. `rehuco-node` is an empty package holding its name.
+**No network beyond fetching a page you drop.** No node, no REST API, no discovery, no sync between
+machines, no accounts or access rules, no web or tablet interface. `rehuco-node` is an empty package
+holding its name.
 
 **No playback and no progress tracking.** rehuco describes a tutorial; it does not play one.
 

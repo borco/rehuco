@@ -9,6 +9,34 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-27
+
+### Added
+
+- `borco_pyside.logging` — an in-app log viewer: `LogBridge` caches records and replays them to any
+  number of scoped `LogModel`s, shown by `LogView`/`LogWidget` with level filtering.
+- `StringListEditor` and `ItemListEditor` for editing lists and tables with insert/delete/reorder
+  actions.
+- QtAds helpers: a per-tab maximize toggle, sidebar pinning that remembers each dock's side, a guard
+  against floating docks showing before the main window, and safe dock removal.
+- `RecycleBin` — move files to the Recycle Bin/Trash, refusing instead of deleting permanently where no
+  bin exists.
+- `reveal_in_file_browser` — show a path in Explorer, Finder or the Linux file manager.
+
+### Changed
+
+- Themed icons pick their color while painting, so every window agrees after a theme switch.
+- Requires `pyside6-qtads` 5.0.0.2 or later.
+
+### Fixed
+
+- `ElidedLabel` no longer HTML-escapes plain text.
+- `UnboundedSpinBox` no longer reverts valid input such as `+5` or `007` while typing.
+- `ApplicationSingleton` no longer hands its arguments to an unrelated instance when a failed rebind
+  falls back to its previous name.
+- `MessageBanner` no longer flashes a discarded row as a stray window.
+- A line edit's clear action no longer crash-loops after its action is deleted.
+
 ## [0.1.0] - 2026-07-29
 
 `ApplicationSingleton` was the whole package through `0.0.2`; everything below joined it since.

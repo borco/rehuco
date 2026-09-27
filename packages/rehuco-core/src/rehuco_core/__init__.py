@@ -277,7 +277,7 @@ from .tc_screenshots import (
 )
 from .titled_index import INDEX_KEY, TITLE_KEY, titled_index, with_titled_index
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 # plain `sorted()` order -- uppercase names, then `__version__`, then the lowercase ones -- so a new
 # export has exactly one correct place and no convention to remember (`borco_core.__init__` is the same)

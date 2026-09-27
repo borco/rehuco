@@ -31,12 +31,12 @@ usable end-to-end catalog, its energy spent on the toolkit rather than a working
 
 | Capability | TutCatalog5 | rehuco |
 | --- | --- | --- |
-| Typed field toolkit (editor/viewer pairs) | Yes (TOML-driven) | LocalEdit2 — tc5 is the design reference |
-| `.tc` view / edit | Yes | LocalEdit1 / LocalEdit2 |
-| YAML **and** TOML sidecars | Yes | rehuco standardizes on JSON `.rehu`; reads legacy `.tc` (YAML) via adapter (LocalEdit3) |
-| Reached usable end-to-end | **No** (the cautionary case) | Tracer-bullet-first methodology exists to avoid exactly this |
-| SQLite cache / browser | Not really | `.rehudb` (CacheDB3) / browsers (CacheDB4) |
-| Scraping, web, borrow, multi-node | No | deferred (acquisition tooling) / WatchTutorial, Borrowing, Swarm |
+| Typed field toolkit (editor/viewer pairs) | Yes (TOML-driven) | Yes — built, with tc5's toolkit as the design reference rather than carried code |
+| `.tc` view / edit | Yes | Yes — generic editor plus the typed field toolkit |
+| YAML **and** TOML sidecars | Yes | rehuco standardizes on JSON `.rehu`; reads and converts legacy `.tc` (YAML), never writes TOML or `.tc` |
+| Reached usable end-to-end | **No** (the cautionary case) | **Yes** — tracer-bullet-first methodology delivered a daily-usable local editor |
+| SQLite cache / browser | — | Planned |
+| Scraping, web, borrow, multi-node | — | Scraping: **yes** (ArtStation, Udemy, browser/URL drops); web, borrow, multi-node: planned |
 | `ApplicationSingleton` etc. | via pyside-ibo | reimplemented in `borco-core`/`borco-pyside` |
 
 ## Can rehuco work for its `.tc`?

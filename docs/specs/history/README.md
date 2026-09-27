@@ -17,7 +17,7 @@ predecessors).
 | [daz3d Personal Database 2](https://gitlab.com/iborco-software/daz3d/daz3d-personal-database-2) | [notes](daz3d-personal-database.md) | 2023/05 | 4 months | 1053 | Python | Qt6 |
 | [TutCatalog5](https://gitlab.com/iborco-software/tutcatalog/tutcatalog5) | [notes](tutcatalog5.md) | 2024/12 | 4 months | 408 | Python | Qt6 |
 | [Resource Hub](https://gitlab.com/iborco-software/tutcatalog/resource-hub) | [notes](resource-hub.md) | 2026/04 | 2 months | 449 | Python | Qt6 |
-| [rehuco](https://github.com/borco/rehuco) | | 2026/06 | | | Python | Qt6 |
+| [rehuco](https://github.com/borco/rehuco) | | 2026/06 | 3 months | 1060 | Python | Qt6 |
 
 Shared library: [pyside-ibo](pyside-ibo.md) — not an app, but the PySide6 utility library
 TutCatalog5 and Resource Hub consumed as a submodule, in two same-named generations.

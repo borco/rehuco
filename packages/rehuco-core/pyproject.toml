@@ -1,7 +1,7 @@
 [project]
 name = "rehuco-core"
 dynamic = ["version"]
-description = "rehuco shared library: models, .rehu I/O, legacy .tc reading"
+description = "rehuco shared library: models, .rehu I/O, legacy .tc conversion, checksums, a task queue"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
