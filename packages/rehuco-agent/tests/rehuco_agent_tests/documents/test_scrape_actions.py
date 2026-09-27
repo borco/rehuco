@@ -90,6 +90,14 @@ def model(resource_type: str = "Tutorial") -> RehuDocumentModel:
     return result
 
 
+def sourceless_model(resource_type: str = "Tutorial") -> RehuDocumentModel:
+    """A view-model over a fresh document with no source at all, at :data:`PATH` -- the case a first
+    scrape lands on."""
+    result = RehuDocumentModel(RehuDocument({"type": resource_type}))
+    result.path = PATH
+    return result
+
+
 def drop(fragment: str | None = None) -> UrlDrop:
     """A parsed drop for :data:`URL`."""
     return UrlDrop(url=URL, fragment=fragment)
@@ -213,6 +221,71 @@ def test_a_source_is_added_from_the_scraper_and_page(qtbot: QtBot, image_downloa
 
     assert doc_model.sources[-1]["url"] == URL
     assert doc_model.sources[-1]["publisher"] == "Example Publisher"
+
+
+def test_a_scraped_url_field_becomes_primary_and_the_dropped_url_is_added_second(
+    qtbot: QtBot, image_downloads: ImageDownloads
+) -> None:
+    """A scraper that returns a canonical ``url`` field distinct from the page dropped (e.g. ArtStation
+    reconstructing the `www.artstation.com` URL from a store host, #366) has it added as a source ahead of
+    the page actually dropped -- not written as a field -- so on a fresh document it fills the empty
+    primary, publisher included, and the dropped page is appended as a second, non-primary source
+    ([[acquisition-tooling#scraper-protocols]])."""
+    doc_model = sourceless_model()
+    canonical_url = "https://www.artstation.com/marketplace/p/aBcDe/example-product-tutorial"
+    result = ScrapeResult(fields={"url": canonical_url}, description=None, images=())
+    doc_actions = actions(doc_model, FakeScraper(publisher="ArtStation", result=result), image_downloads)
+
+    with qtbot.waitSignal(doc_actions.changed, timeout=WAIT_TIMEOUT_MS):
+        doc_actions.submit(drop())
+    qtbot.wait(20)
+
+    assert doc_model.url == canonical_url
+    assert doc_model.sources[0]["url"] == canonical_url
+    assert doc_model.sources[0]["publisher"] == "ArtStation"
+    assert doc_model.sources[-1]["url"] == URL
+    assert doc_model.sources[-1]["publisher"] == "ArtStation"
+    assert len(doc_model.sources) == 2
+    assert doc_model.publisher == "ArtStation"
+
+
+def test_a_scraped_url_field_is_kept_beside_an_existing_primary_not_written_over_it(
+    qtbot: QtBot, image_downloads: ImageDownloads
+) -> None:
+    """On a document that already has a primary source, a canonical ``url`` and the dropped page are
+    both appended and the primary is left exactly as it was -- URL and publisher alike (#366)."""
+    doc_model = model()
+    canonical_url = "https://www.artstation.com/marketplace/p/aBcDe/example-product-tutorial"
+    result = ScrapeResult(fields={"url": canonical_url}, description=None, images=())
+    doc_actions = actions(doc_model, FakeScraper(publisher="ArtStation", result=result), image_downloads)
+
+    with qtbot.waitSignal(doc_actions.changed, timeout=WAIT_TIMEOUT_MS):
+        doc_actions.submit(drop())
+    qtbot.wait(20)
+
+    assert [source["url"] for source in doc_model.sources] == ["https://original.example", canonical_url, URL]
+    assert doc_model.sources[0]["publisher"] == "Original Co"
+    assert doc_model.sources[1]["publisher"] == "ArtStation"
+    assert doc_model.sources[2]["publisher"] == "ArtStation"
+
+
+def test_a_scraped_url_field_equal_to_the_dropped_url_adds_no_second_source(
+    qtbot: QtBot, image_downloads: ImageDownloads
+) -> None:
+    """A scraper whose canonical ``url`` field is the same string as the page dropped fills the primary
+    source once, publisher included, and the second add finds it already there -- no second source
+    appears."""
+    doc_model = sourceless_model()
+    result = ScrapeResult(fields={"url": URL}, description=None, images=())
+    doc_actions = actions(doc_model, FakeScraper(publisher="ArtStation", result=result), image_downloads)
+
+    with qtbot.waitSignal(doc_actions.changed, timeout=WAIT_TIMEOUT_MS):
+        doc_actions.submit(drop())
+    qtbot.wait(20)
+
+    assert doc_model.url == URL
+    assert doc_model.publisher == "ArtStation"
+    assert len(doc_model.sources) == 1
 
 
 def test_a_drop_carrying_a_fragment_is_scraped_without_a_fetch(qtbot: QtBot, image_downloads: ImageDownloads) -> None:

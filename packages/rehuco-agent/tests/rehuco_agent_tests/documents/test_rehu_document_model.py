@@ -804,14 +804,77 @@ def test_add_source_fills_an_empty_primary() -> None:
     assert model.dirty is True
 
 
-def test_add_source_leaves_an_existing_primary_publisher_alone() -> None:
-    """A primary source's own non-empty `publisher` is not overwritten by a later fill (#272)."""
+def test_add_source_leaves_a_primary_with_a_publisher_but_no_url_alone() -> None:
+    """A primary that names a publisher but has no URL -- a site closed for years, its address gone --
+    is a real source, not an empty slot to fill (#272, #366): the scraped page is appended beside it,
+    and neither its publisher nor its missing URL is touched."""
     document = RehuDocument({"type": "Tutorial", "sources": [{"publisher": "Original", "primary": True}]})
     model = RehuDocumentModel(document)
 
     model.add_source("Scraped Publisher", "https://example.com/page")
 
-    assert document.publisher == "Original"
+    assert document.sources[0] == {"publisher": "Original", "primary": True}
+    assert document.sources[1] == {"title": "", "publisher": "Scraped Publisher", "url": "https://example.com/page"}
+    assert model.dirty is True
+
+
+def test_add_source_fills_only_the_empty_publisher_of_the_matching_entry() -> None:
+    """The three cases `add_source` decides by `url` alone (#366): an existing URL with a publisher is
+    left as it is, an existing URL with an empty publisher gets this one, a new URL is appended -- and a
+    publisher is never written onto an entry whose URL did not match, primary or not.
+
+    **Test steps:**
+
+    * start from a primary that already names a publisher and a second entry with an empty one
+    * add the first URL again under another publisher: nothing changes
+    * add the second URL again: only its empty publisher is filled, and ``sources_changed`` fires
+    * add a third URL: appended with its publisher
+    """
+    document = RehuDocument(
+        {
+            "type": "Tutorial",
+            "sources": [
+                {"title": "T", "url": "https://www.foo.com/1", "publisher": "Foo123", "primary": True},
+                {"title": "T", "url": "https://www.bar.com/123", "publisher": ""},
+            ],
+        }
+    )
+    model = RehuDocumentModel(document)
+    received = 0
+
+    def _record() -> None:
+        nonlocal received
+        received += 1
+
+    model.sources_changed.connect(_record)
+
+    model.add_source("Foo", "https://www.foo.com/1")
+    assert document.sources[0]["publisher"] == "Foo123"
+    assert model.dirty is False
+    assert received == 0
+
+    model.add_source("Bar", "https://www.bar.com/123")
+    assert document.sources[1]["publisher"] == "Bar"
+    assert document.sources[0]["publisher"] == "Foo123"
+    assert model.dirty is True
+    assert received == 1
+
+    model.add_source("Baz", "https://www.baz.com/456")
+    assert document.sources[2] == {"title": "T", "publisher": "Baz", "url": "https://www.baz.com/456"}
+    assert len(document.sources) == 3
+    assert received == 2
+
+
+def test_add_source_fills_the_primary_publisher_when_its_own_url_matches() -> None:
+    """The matching entry being the primary goes through the `publisher` setter, so the fill dirties and
+    notifies exactly as an edit through that field does (#366)."""
+    document = RehuDocument({"type": "Tutorial", "sources": [{"url": "https://example.com/page", "primary": True}]})
+    model = RehuDocumentModel(document)
+
+    model.add_source("Scraped Publisher", "https://example.com/page")
+
+    assert document.publisher == "Scraped Publisher"
+    assert model.dirty is True
 
 
 def test_add_source_appends_when_the_primary_already_has_a_url(

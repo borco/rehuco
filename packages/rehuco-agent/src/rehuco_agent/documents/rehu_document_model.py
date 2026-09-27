@@ -971,23 +971,39 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         """Add a scraped page as a source ([[field-schema#sources]], #272), never a duplicate of one
         already there by ``url``.
 
-        Fills the primary source when it has no ``url`` yet, through the existing
-        `~RehuDocumentModel.url`/`~RehuDocumentModel.publisher` properties so dirty tracking and the
-        Save Preview refresh exactly as an edit through those fields already does. Otherwise appends a
-        new, non-primary entry -- the document already has a primary source, e.g. from an earlier drop
-        or a `.tc` migration, that a second scrape must not overwrite -- and emits
-        :attr:`sources_changed` itself, since that write bypasses the field setters.
+        Three cases, decided by ``url`` alone (#366): a source with this ``url`` **already exists** --
+        its ``publisher`` is filled in if empty and it is otherwise left as it is, so a re-scrape never
+        duplicates it and never relabels a publisher the document already names; the primary source
+        **has neither url nor publisher** (a fresh document) -- it is filled with both, through the
+        existing `~RehuDocumentModel.url`/`~RehuDocumentModel.publisher` properties so dirty tracking
+        and the Save Preview refresh exactly as an edit through those fields already does; or the
+        ``url`` is **new** -- appended as a non-primary entry, beside whatever the document already has,
+        never overwriting a source from an earlier drop or a `.tc` migration. A primary that names a
+        publisher but no URL is that third case, not the second: a document may well record a site
+        closed for years, its address gone or not worth recovering, and that is a real source in its own
+        right -- the scraped page goes beside it rather than lending it an address it never had. Writes
+        that bypass the field setters emit :attr:`sources_changed` themselves.
 
-        :param publisher: the scraper's publisher, used only when filling the primary source's own
-            empty ``publisher``, or seeding a new entry's.
-        :param url: the scraped page's URL. No-op if a source with this ``url`` already exists.
+        :param publisher: the scraper's publisher -- fills the matching or primary source's own empty
+            ``publisher``, and seeds a new entry's.
+        :param url: the scraped page's URL.
         """
-        if any(isinstance(source, dict) and source.get("url") == url for source in self.sources):
-            return
-        if not self.url:
-            self.url = url
-            if not self.publisher:
+        existing = next(
+            (source for source in self.sources if isinstance(source, dict) and source.get("url") == url), None
+        )
+        if existing is not None:
+            if existing.get("publisher"):
+                return
+            if existing is self.__document.primary_source:
                 self.publisher = publisher
+                return
+            existing["publisher"] = publisher
+            self.dirty = True
+            self.sources_changed.emit()
+            return
+        if not self.url and not self.publisher:
+            self.url = url
+            self.publisher = publisher
             return
         self.__document.sources.append({"title": self.title, "publisher": publisher, "url": url})
         self.dirty = True

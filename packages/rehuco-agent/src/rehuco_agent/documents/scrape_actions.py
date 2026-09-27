@@ -190,12 +190,20 @@ class ScrapeActions(QObject):  # pylint: disable=too-many-instance-attributes
         """
         declared = declared_field_names(self.__model)
         for name, value in result.fields.items():
-            if name == "description":
+            if name in {"description", "url"}:
                 continue
             if name not in declared:
                 LOG.info("%s is not a field of this document's type; left unset.", name)
                 continue
             setattr(self.__model, name, value)
+        # a scraped `url` is a source, not a field write: a scraper that recognizes a canonical URL for
+        # the page it read (ArtStation's store host, #366) hands it over here, and it goes through the
+        # same add-or-fill path as the page itself, ahead of it -- so it fills an empty primary, or is
+        # kept beside whatever sources the document already has, never overwriting one
+        # ([[field-schema#sources]])
+        canonical_url = result.fields.get("url")
+        if isinstance(canonical_url, str) and canonical_url:
+            self.__model.add_source(cast(str, job.publisher), canonical_url)
         description = result.description
         if description is None:
             raw = result.fields.get("description")

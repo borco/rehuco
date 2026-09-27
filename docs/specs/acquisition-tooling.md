@@ -218,6 +218,19 @@ and Udemy's instructor block does the same (#274). A scraper emits the record fo
 present and falls back to the plain name only when the page has none; this is the one rule, stated here rather than
 re-derived per scraper. The record's `url` must be an `http(s)` address, and the schema rejects any other.
 
+A scraper that recognizes more than one URL for the same page — ArtStation's marketplace host and an artist's own
+store host serve the identical product, #366 — returns the canonical one as `fields["url"]`. A scraped `url` is
+**a source, not a field write**: the applier adds it through the same path as the page actually fetched, ahead of
+it, and that path is decided by URL alone — a URL the document already lists has its empty publisher filled and is
+otherwise left alone, a primary with no URL yet (a fresh document) is filled, and a new URL is appended beside
+whatever sources are there. So a fresh document ends up with the canonical URL primary and the page dropped
+beside it; one with sources already keeps them all and gains both; and no scrape ever overwrites a source from an
+earlier drop or a `.tc` migration. The two URLs are not guaranteed to be the same markup, though: ArtStation's
+own store host is a white-label storefront template, not a re-skin of the marketplace page, so #366 gave the
+scraper a second parsing path with its own selectors rather than reuse the marketplace ones over a different host
+check alone — verify against a saved real page before assuming otherwise for the next site a scraper like this
+covers.
+
 ### §15.2.2 Legacy `.tc` author-URL upgrade
 
 [[[acquisition-tooling#legacy-author-url]]]
