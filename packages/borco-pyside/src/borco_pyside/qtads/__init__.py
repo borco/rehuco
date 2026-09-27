@@ -1,6 +1,7 @@
 """Generic helpers for `pyside6-qtads` (QtAds), not tied to any particular application."""
 
 from .qtads_auto_hide_button_suppressor import QtAdsAutoHideButtonSuppressor
+from .qtads_dock_removal import remove_dock_widget
 from .qtads_floating_show_guard import QtAdsFloatingShowGuard
 from .qtads_focus_tracker import QtAdsFocusTracker
 from .qtads_maximize_handler import QtAdsMaximizeHandler
@@ -13,6 +14,7 @@ __all__ = [
     "QtAdsFocusTracker",
     "QtAdsMaximizeHandler",
     "QtAdsPinSideHandler",
+    "remove_dock_widget",
     "tab_close_button",
     "tab_label",
     "tab_maximize_button",

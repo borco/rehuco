@@ -7,7 +7,7 @@ from typing import Final
 
 import PySide6QtAds as QtAds
 from borco_core.logging import LogScope
-from borco_pyside.qtads import QtAdsAutoHideButtonSuppressor, QtAdsFocusTracker
+from borco_pyside.qtads import QtAdsAutoHideButtonSuppressor, QtAdsFocusTracker, remove_dock_widget
 from PySide6.QtCore import QByteArray, Signal
 from PySide6.QtWidgets import QMainWindow, QMessageBox, QWidget
 from rehuco_core import (
@@ -682,7 +682,9 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         # gone would reach a deleted QObject (#204). The work itself is untouched -- closing a document
         # does not cancel a run over its files.
         self.__document_docks[dock].detach()
-        self.__dock_manager.removeDockWidget(dock)
+        # not the manager's own removeDockWidget: a renamed document's dock is registered under the path it
+        # was opened with, and would otherwise be left there, dangling once deleted (#364)
+        remove_dock_widget(self.__dock_manager, dock)
         # deleting the dock frees the whole document with it: the `DocumentDock` owns its model (parented
         # to it) and widget, so their children -- the NameSuggestionModel, the field bindings' data --
         # go too, ending the session-long per-document leak (#148). The model -> dock title connections

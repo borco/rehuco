@@ -803,3 +803,32 @@ other children as current-ness moves — a descendant rule takes only on the re-
 itself, and a button inserted while its tab was current would otherwise keep the highlight's white on a
 tab no longer highlighted (measured). The buttons are re-walked from `dockWidgetsMap()` on
 `dockWidgetAdded` and `stateRestored`, the deferred way `QtAdsAutoHideButtonSuppressor` walks its areas.
+
+## 13. The dock registry is keyed by the name a dock was *added* under
+
+[[[appendices.qt-ads#dock-registry-keys]]]
+
+`CDockManager` keeps every dock in a by-name registry — `dockWidgetsMap()`, the one `findDockWidget` and
+`restoreState` look docks up in — and fills it in `addDockWidget` from the dock's `objectName()` **at that
+moment**. Nothing re-keys it afterwards, and `removeDockWidget` drops the entry under the name the dock has
+**now**. Measured against the installed binding: add a dock as `path-a`, rename it `path-a-renamed`, remove
+it, and the registry still lists `path-a`; `findDockWidget("path-a")` finds the renamed dock, while
+`findDockWidget("path-a-renamed")` finds nothing.
+
+**Once that dock is deleted, the stale entry is a dangling pointer**, and every later reader of the registry
+converts it (#364). That is `QtAdsMaximizeHandler`'s deferred button walk, run on the next `dockWidgetAdded`:
+depending on what the freed memory holds by then, it either sees a bare `QObject` (`'QObject' object has no
+attribute 'tabWidget'`) or dies natively inside `dockWidgetsMap()` itself (`_purecall`, an access violation).
+Neither is reachable by a Python guard — the crash is in the conversion, before any Python sees the dock.
+The app hit it because a document's dock resyncs its `objectName()` to the document's path, which a rename
+on disk changes: close that document, open another, and the walk reads the renamed one's freed dock.
+
+**The fix is at the removal**, since a rename can't re-key: there is no key-only removal, and removing and
+re-adding the dock to re-register it would tear down its area whenever it stands alone there.
+`borco_pyside.qtads.remove_dock_widget` finds the key the dock is registered under, gives the dock that
+name for the `removeDockWidget` call, and puts its current name back after — so the entry goes with the
+dock. Any dock whose `objectName()` can change after it is added must leave its manager that way.
+
+Either way, a removed dock comes out parentless and is deleted with `deleteLater()`: freed on the spot —
+which is what Python dropping its last reference does to a removed dock it owns — it goes ahead of the
+events the removal posted, and the next `processEvents` was measured to crash or hang.

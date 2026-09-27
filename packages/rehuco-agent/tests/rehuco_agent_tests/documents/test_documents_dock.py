@@ -1417,6 +1417,29 @@ def test_a_document_losing_its_path_keeps_the_last_known_one_for_the_next_move(
     assert spy.at(1) == [FAKE_PATH, moved_to]
 
 
+def test_closing_a_moved_document_takes_its_dock_out_of_the_registry(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A document whose path moved after it was opened -- its dock renamed with it -- leaves the area's dock
+    registry when closed, not only the screen (#364). QtAds keys the registry by the name a dock was added
+    under, so a plain ``removeDockWidget`` would leave the opened-as path registered, and the dock's
+    deletion would make that entry a dangling pointer for the next open to crash on.
+
+    **Test steps:**
+
+    * open a document and move its model to a new path
+    * close it
+    * verify, before the deferred delete runs, that the area's manager has no dock registered
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.open_document(FAKE_PATH)
+    widget.model.path = FAKE_PATH.with_name("moved.rehu")
+
+    dock.close_focused_document()
+
+    assert managers_of(dock)[0].dockWidgetsMap() == {}
+
+
 def test_open_folder_with_existing_info_rehu_opens_it(mocker: MockerFixture, qtbot: QtBot) -> None:
     """Opening a folder whose ``info.rehu`` already exists behaves exactly like ``open_document``.
 
