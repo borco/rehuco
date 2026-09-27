@@ -458,11 +458,13 @@ generates `requirements.txt` with **absolute paths** to the four workspace packa
 `requirements.txt` line *separately*, so a bare package name would resolve against PyPI's own unrelated
 **0.0.1 stub** releases of the same four names rather than this checkout's code. `rehuco-agent` installing
 last then finds the first three already satisfied locally and reaches PyPI only for its real third-party
-dependencies (`PySide6-Essentials`, etc.). `python-appimage build app -p 3.14` (a release-tag version,
-"3.14" — not the patch version "3.14.6" the resolved runtime turns out to be) auto-selected the more
-portable `manylinux2014_x86_64` base over the `manylinux_2_28` this repo's docs otherwise reference,
-since python-appimage's own release picks the lowest compatible manylinux tag published for that Python
-version; either way the *build host* still needs glibc ≥ 2.34 to install the Qt stack into it.
+dependencies (`PySide6-Essentials`, etc.). The base runtime is python-appimage's
+`cp314-cp314-manylinux2014_x86_64` build, the most portable one published for Python 3.14; the *build
+host* still needs glibc ≥ 2.34 to install the Qt stack into it. `tools/fetch_appimage_base.py` downloads it
+and passes it as `--base-image`, rather than letting `build app -p 3.14` resolve it: that lookup calls the
+GitHub API with no way to authenticate and fails on CI's shared rate limit. The `python3.14` release is a
+rolling tag whose assets are replaced on each CPython patch release, so no fixed URL can be pinned either —
+the script finds the current asset each time, authenticated by `GITHUB_TOKEN` when set.
 
 **A hatchling gap this surfaced, unrelated to the AppImage format itself:** hatchling's default file
 selection follows VCS tracking, so `packages/rehuco-agent`'s gitignored `*_ui.py`/`*_rc.py`

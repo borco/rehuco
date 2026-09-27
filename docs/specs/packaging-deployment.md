@@ -372,7 +372,7 @@ turn out to buy nothing ([[appendices.briefcase-packaging#linux-backends]], Brie
    build ever falls out of other work they can be added as a convenience, but they buy no coverage the channel above
    lacks.
 5. **An AppImage is the second channel, for users who want one file and no toolchain** — hand-rolled over
-   python-appimage's relocatable **Python 3.14.6** runtime (manylinux2014/2_28, x86_64 and aarch64) —
+   python-appimage's relocatable **Python 3.14** runtime (manylinux2014/2_28, x86_64 and aarch64) —
    never Briefcase's backend, whose `linuxdeploy` step is the whole problem in point 2. Built (#210) in CI beside the
    other platforms' artifacts, and cheap: the recipe is a `requirements.txt`, a `.desktop` and an icon. One file
    for every distro, at the price of: FUSE (libfuse2 is not installed by default on Ubuntu 24.04+, so

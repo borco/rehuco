@@ -289,16 +289,18 @@ agent-dist-clean:
 	rm -rf packages/rehuco-agent/build packages/rehuco-agent/dist
 
 # agent-appimage-*: the Linux artifact ([[packaging-deployment#linux-format]] point 5) -- a python-appimage
-# recipe over a relocatable manylinux_2_28 CPython, never Briefcase's own AppImage backend (which reprocesses
+# recipe over a relocatable manylinux2014 CPython, never Briefcase's own AppImage backend (which reprocesses
 # already-relocated PySide6 libraries and can break them, [[appendices.briefcase-packaging#linux-backends]]).
 # Only built on a tagged release ([[appendices.continuous-integration#release-agent]]), so this target is not
 # part of qa/tests/publish either -- it downloads a ~50 MB base runtime and pip-installs the whole Qt stack
 # into it, same cost profile as agent-dist-build.
 AGENT_APPIMAGE_DIR    := packages/rehuco-agent/appimage
 AGENT_APPIMAGE_OUT    := .dist/appimage
-# python-appimage's `-p` matches a *release tag* ("3.14"), not a patch version -- the runtime
-# it resolves to (currently 3.14.6) is picked up from the release's own asset filenames.
-AGENT_APPIMAGE_PYTHON := 3.14
+# The base runtime is fetched by tools/fetch_appimage_base.py rather than by python-appimage's own `-p`
+# lookup, which calls the GitHub API with no way to authenticate; the script uses GITHUB_TOKEN when set.
+# The release tag is rolling, so this always gets its current CPython patch version.
+AGENT_APPIMAGE_BASE_TAG := python3.14
+AGENT_APPIMAGE_BASE_ABI := cp314-cp314-manylinux2014_x86_64
 AGENT_APPIMAGE        := $(AGENT_APPIMAGE_OUT)/rehuco-agent-x86_64.AppImage
 
 PYTHON_APPIMAGE := uv run --group appimage --directory $(AGENT_APPIMAGE_OUT) python-appimage
@@ -319,7 +321,9 @@ agent-appimage-build: uis $(ICON_FILES)
 		"$(CURDIR)/packages/rehuco-agent" \
 		> $(AGENT_APPIMAGE_DIR)/requirements.txt
 	mkdir -p $(AGENT_APPIMAGE_OUT)
-	$(PYTHON_APPIMAGE) build app -p $(AGENT_APPIMAGE_PYTHON) $(CURDIR)/$(AGENT_APPIMAGE_DIR)
+	base=$$(uv run python tools/fetch_appimage_base.py $(AGENT_APPIMAGE_BASE_TAG) $(AGENT_APPIMAGE_BASE_ABI) \
+		$(AGENT_APPIMAGE_OUT)) && \
+	$(PYTHON_APPIMAGE) build app --base-image "$$base" $(CURDIR)/$(AGENT_APPIMAGE_DIR)
 	mv $(AGENT_APPIMAGE_OUT)/Rehuco-*.AppImage $(AGENT_APPIMAGE)
 	chmod +x $(AGENT_APPIMAGE)
 

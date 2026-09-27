@@ -152,7 +152,11 @@ jobs:
       - name: Install dependencies
         run: uv sync --group appimage
 
+      # The token only authenticates tools/fetch_appimage_base.py's release lookup, which is otherwise
+      # rate-limited per runner IP.
       - name: Build the AppImage
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: make agent-appimage-build
 
       - name: Smoke check -- --version
