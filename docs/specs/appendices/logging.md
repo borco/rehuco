@@ -311,6 +311,18 @@ an orderly `QCoreApplication.exit`. On Windows the packaged GUI build receives n
 all, and `TerminateProcess` cannot be caught from inside the process it kills — the sentinel above is
 what covers those there instead.
 
+**A Windows native crash leaves a dump only when asked to.** Windows writes a minidump for every such
+crash and then deletes it, so what survives by default is the sentinel's warning and a fault offset in
+the Event Log. A dump is kept only while a per-executable `LocalDumps` key exists under `HKLM`, which the
+**Windows crash dumps** frame on the Windows *System Integration* page writes and removes (#363) — through
+one elevated PowerShell prompted by UAC, the GUI itself never running elevated. Enabling names the
+*running* executable (`rehuco-agent-dev.exe` or `Rehuco.exe`), keeps ten minidumps (`DumpType` 1, a few
+MB each; never a full dump) and points them at `crashdumps/` beside the run log in `config_folder()`,
+which Windows creates with the first dump. The frame's status is always read back from the registry, so a
+cancelled prompt reads as *not kept* rather than as whatever the subprocess claimed; the same frame shows
+the folder, what its dumps use, and clears them. Not running from a real `.exe` disables the switch, as
+the key would otherwise name `python.exe` and keep dumps of every Python process on the machine.
+
 ### 8.3 What is kept out, and what is cut
 
 [[[appendices.logging#run-log-noise]]]

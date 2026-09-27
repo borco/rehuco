@@ -737,7 +737,8 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         Files", #226) it shares that top-level subject with.
 
         The "System Integration" page is per-platform, and **every** platform has one:
-        Windows gets the `RegistryPage` wrapping ``winreg``-backed HKCU registration (#47), Linux
+        Windows gets the `RegistryPage` wrapping ``winreg``-backed HKCU registration (#47) and
+        HKLM-backed crash-dump retention (#363), Linux
         the `DesktopIntegrationPage` wrapping the XDG desktop entry / MIME type / icon (#209), and
         macOS the `SystemIntegrationPage` -- which registers nothing, since there the association
         comes from the app bundle itself ([[packaging-deployment#app-identity]]). macOS gets a page

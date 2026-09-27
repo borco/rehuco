@@ -32,7 +32,7 @@
          </font>
         </property>
         <property name="text">
-         <string>Windows Integration</string>
+         <string>Windows File Explorer integration</string>
         </property>
        </widget>
       </item>
@@ -72,6 +72,109 @@
           </property>
           <property name="toolTip">
            <string>Verify the expected registry entries are present</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QFrame" name="crash_dumps_frame">
+     <property name="frameShape">
+      <enum>QFrame::Shape::StyledPanel</enum>
+     </property>
+     <property name="frameShadow">
+      <enum>QFrame::Shadow::Raised</enum>
+     </property>
+     <layout class="QVBoxLayout" name="crash_dumps_frame_layout">
+      <item>
+       <widget class="QLabel" name="crash_dumps_frame_label">
+        <property name="font">
+         <font>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string>Windows crash dumps</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="crash_dumps_status_label">
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <layout class="QHBoxLayout" name="crash_dumps_buttons_layout">
+        <item>
+         <widget class="QPushButton" name="enable_dumps_button">
+          <property name="text">
+           <string>Enable crash dumps</string>
+          </property>
+          <property name="toolTip">
+           <string>Keep a minidump the next 10 times this app crashes natively</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="disable_dumps_button">
+          <property name="text">
+           <string>Disable crash dumps</string>
+          </property>
+          <property name="toolTip">
+           <string>Stop keeping crash dumps for this app</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="check_dumps_button">
+          <property name="text">
+           <string>Check crash dumps</string>
+          </property>
+          <property name="toolTip">
+           <string>Verify whether crash dumps are currently kept, and where</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <layout class="QHBoxLayout" name="crash_dumps_path_layout" stretch="0,1">
+        <item>
+         <widget class="QLabel" name="crash_dumps_path_caption">
+          <property name="text">
+           <string>Location:</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="ElidedLabel" name="crash_dumps_path_link"/>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <layout class="QHBoxLayout" name="crash_dumps_usage_layout" stretch="0,1,0">
+        <item>
+         <widget class="QLabel" name="crash_dumps_usage_caption">
+          <property name="text">
+           <string>Space used:</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="crash_dumps_usage_label"/>
+        </item>
+        <item>
+         <widget class="QPushButton" name="clear_dumps_button">
+          <property name="toolTip">
+           <string>Delete the crash dumps in that folder</string>
+          </property>
+          <property name="text">
+           <string>Clear crash dumps</string>
           </property>
          </widget>
         </item>
@@ -139,6 +242,13 @@
    </item>
   </layout>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>ElidedLabel</class>
+   <extends>QLabel</extends>
+   <header>borco_pyside.widgets</header>
+  </customwidget>
+ </customwidgets>
  <resources/>
  <connections/>
 </ui>
