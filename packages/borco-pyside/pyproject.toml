@@ -51,6 +51,15 @@ build-backend = "hatchling.build"
 [tool.hatch.version]
 path = "src/borco_pyside/__init__.py"
 
+# hatchling's default file selection follows VCS tracking, so the gitignored *_ui.py/*_rc.py
+# pyside6-uic/-rcc generate (`make uis`) would be dropped from the sdist and wheel;
+# `artifacts` force-includes them (same reason as rehuco-agent's pyproject).
+[tool.hatch.build]
+artifacts = [
+    "*_ui.py",
+    "*_rc.py",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/borco_pyside"]
 
