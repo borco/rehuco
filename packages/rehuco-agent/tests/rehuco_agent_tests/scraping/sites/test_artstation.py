@@ -55,6 +55,7 @@ PRODUCT_HTML: Final = """
 `ArtStation.scrape_page` reads, not a copy of a real page."""
 
 STORE_HTML: Final = """
+<div class="site-title title-font"><a href="/">Example Store</a></div>
 <div class="product-page digital">
   <h1 class="product-title text-center">Example Store Product</h1>
   <div class="product-carousel-row js-product-carousel">
@@ -70,13 +71,29 @@ STORE_HTML: Final = """
     </div>
   </div>
   <div class="product-description">
-    <p>A wide-ranging store description that mentions the artist by name and links to their own
-    ArtStation profile inline, prose the scraper does not mine for a structured author.</p>
+    <p>A wide-ranging store description that mentions a different artist by name and links to their
+    own ArtStation profile inline (<a href="https://www.artstation.com/someoneelse">Someone Else</a>),
+    prose the scraper does not mine for the author -- it reads the site title and the "Report"
+    dropdown's link instead.</p>
+  </div>
+  <div class="report-section">
+    <div class="dropdown">
+      <ul class="dropdown-menu">
+        <li class="dropdown-menu-item">
+          <a href="https://www.artstation.com/examplestore" target="_blank">Content</a>
+        </li>
+        <li class="dropdown-menu-item">
+          <a href="https://www.artstation.com/examplestore" target="_blank">User</a>
+        </li>
+      </ul>
+    </div>
   </div>
 </div>
 """
 """A minimal, hand-written stand-in for an artist store host's product page (#366) -- the storefront
-template a saved real page turned out to use, distinct from :data:`PRODUCT_HTML`'s marketplace shape."""
+template a saved real page turned out to use, distinct from :data:`PRODUCT_HTML`'s marketplace shape. The
+description's inline profile link is a decoy: a different name/URL than the site title's, so a test catching
+the wrong one fails loudly."""
 
 EXPECTED_STORE_IMAGE_URLS: Final = (
     "https://cdna.artstation.com/p/marketplace/presentation_assets/001/large/file.jpg?1",
@@ -147,18 +164,19 @@ def test_scrape_page_on_the_store_host_sets_the_reconstructed_marketplace_url() 
 
 def test_scrape_page_on_the_store_host_reads_the_storefront_templates_own_markup() -> None:
     """The store template's own selectors (#366) -- `.product-title`, `.product-carousel-row` `<img
-    src>` -- are read; `authors` and `advertised_tags` stay unset, since this template carries neither a
-    structured author link nor the marketplace's tag vocabulary."""
+    src>`, the site title paired with the "Report" dropdown's link for `authors` -- are read;
+    `advertised_tags` stays unset, since this template carries only broad site sections, not the
+    marketplace's tag vocabulary."""
     result = ArtStation().scrape_page(Page(url=STORE_URL, final_url=STORE_URL, html=STORE_HTML))
 
     assert result.fields["title"] == "Example Store Product"
-    assert "authors" not in result.fields
+    assert result.fields["authors"] == [{"name": "Example Store", "url": "https://www.artstation.com/examplestore"}]
     assert "advertised_tags" not in result.fields
     assert [image.slot for image in result.images] == [0, 1]
     assert [image.url for image in result.images] == list(EXPECTED_STORE_IMAGE_URLS)
     assert all(image.referrer == STORE_URL for image in result.images)
     assert result.description is not None
-    assert "does not mine for a structured author" in result.description
+    assert "does not mine for the author" in result.description
 
 
 def test_scrape_page_reads_title_and_authors() -> None:
@@ -304,6 +322,52 @@ def test_scrape_page_store_carousel_img_without_src_is_skipped() -> None:
     result = ArtStation().scrape_page(Page(url=STORE_URL, final_url=STORE_URL, html=html))
 
     assert not result.images
+
+
+def test_scrape_page_store_host_without_a_site_title_sets_no_authors() -> None:
+    """Neither a `.site-title a` nor an `og:site_name` leaves `authors` unset (#366) -- there is no name to
+    report even a plain-name fallback for."""
+    html = '<div class="report-section"><a href="https://www.artstation.com/someone">User</a></div>'
+
+    result = ArtStation().scrape_page(Page(url=STORE_URL, final_url=STORE_URL, html=html))
+
+    assert "authors" not in result.fields
+
+
+def test_scrape_page_store_host_without_a_report_link_sets_a_plain_name() -> None:
+    """A site title with no matching "Report" dropdown link falls back to a plain name, not a record
+    (#366) -- the same fallback the marketplace page's author link uses for a missing `href`."""
+    html = '<div class="site-title title-font"><a href="/">Example Store</a></div>'
+
+    result = ArtStation().scrape_page(Page(url=STORE_URL, final_url=STORE_URL, html=html))
+
+    assert result.fields["authors"] == ["Example Store"]
+
+
+def test_scrape_page_store_host_without_a_site_title_falls_back_to_og_site_name() -> None:
+    """No `.site-title a` at all falls back to the `og:site_name` meta tag for the name (#366) -- present
+    for social sharing regardless of which preset theme the store uses."""
+    html = (
+        '<meta property="og:site_name" content="Meta Studio" />'
+        '<div class="report-section"><a href="https://www.artstation.com/metastudio">User</a></div>'
+    )
+
+    result = ArtStation().scrape_page(Page(url=STORE_URL, final_url=STORE_URL, html=html))
+
+    assert result.fields["authors"] == [{"name": "Meta Studio", "url": "https://www.artstation.com/metastudio"}]
+
+
+def test_scrape_page_store_host_prefers_the_site_title_over_og_site_name() -> None:
+    """A non-empty `.site-title` wins over `og:site_name` -- the meta tag is a fallback for a theme
+    without a site title, not a second opinion on one that has it."""
+    html = (
+        '<meta property="og:site_name" content="Meta Studio" />'
+        '<div class="site-title title-font"><a href="/">Real Store</a></div>'
+    )
+
+    result = ArtStation().scrape_page(Page(url=STORE_URL, final_url=STORE_URL, html=html))
+
+    assert result.fields["authors"] == ["Real Store"]
 
 
 # endregion

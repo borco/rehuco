@@ -14,15 +14,17 @@ unrelated artists' stores), a wholly different, artist-branded template, not a r
 page above. :meth:`ArtStation.matches` accepts both shapes; :meth:`ArtStation.scrape_page` dispatches to
 whichever parsing the host calls for -- :meth:`__scrape_marketplace_page` (this module's original selectors)
 or :meth:`__scrape_store_page` (the storefront theme's own: ``.product-title``, ``.product-carousel-row``,
-and the same ``.product-description`` class name by what is presumably coincidence). The theme carries **no**
-structured author markup and its ``.product-categories`` are broad site sections (``Resources``), not the
-marketplace's tag vocabulary, so `authors` and `advertised_tags` are simply left unset on a store-host result
-rather than guessed from description prose -- a different preset theme, unconfirmed, would fall back to the
-same empty-field behaviour any unrecognized markup gets. Either way, `fields["url"]` carries the reconstructed
-``www.artstation.com`` URL, so it lands as the primary source while the store URL actually fetched is
-appended as a second one ([[acquisition-tooling#scraper-protocols]]) -- `ScrapeActions.__apply` and
-`RehuDocumentModel.add_source` already do that ordering for any scraper that returns a ``url`` field, so
-nothing beyond this reconstruction is needed there.
+and the same ``.product-description`` class name by what is presumably coincidence). The theme's author is
+the header's site title paired with the platform's own "Report" dropdown link -- no ``itemprop`` to rely on
+here, unlike the marketplace page, so name and URL come from two unrelated corners of the page rather than
+one element. Its ``.product-categories`` are broad site sections (``Resources``), not the marketplace's tag
+vocabulary, so `advertised_tags` alone is left unset on a store-host result rather than guessed from
+description prose -- a different preset theme, unconfirmed, would fall back to the same empty-field
+behaviour any unrecognized markup gets. Either way, `fields["url"]` carries the reconstructed
+``www.artstation.com`` URL: `ScrapeActions.__apply` adds it as a source ahead of the store URL actually
+fetched, so on a fresh document it becomes the primary and the store URL a second entry, and on one that
+already has sources both are kept beside them ([[acquisition-tooling#scraper-protocols]]) -- nothing
+beyond this reconstruction is needed here.
 """
 
 import re
@@ -127,10 +129,9 @@ class ArtStation:
 
     def __scrape_store_page(self, page: Page, store_match: re.Match[str]) -> ScrapeResult:
         """Parse an artist store host's product page (#366) -- a different, white-label storefront
-        template, not a re-skin of the marketplace one. No structured author link exists on this
-        template, and its ``.product-categories`` name broad site sections rather than the marketplace's
-        tag vocabulary, so `authors` and `advertised_tags` are left unset rather than guessed from
-        description prose.
+        template, not a re-skin of the marketplace one. Its ``.product-categories`` name broad site
+        sections rather than the marketplace's tag vocabulary, so `advertised_tags` is left unset rather
+        than guessed from description prose.
         """
         soup = BeautifulSoup(page.html, "html.parser")
         product_id, slug = store_match.groups()
@@ -140,10 +141,40 @@ class ArtStation:
         if isinstance(title, Tag):
             fields["title"] = title.get_text(strip=True)
 
+        author = self.__scrape_store_author(soup)
+        if author is not None:
+            fields["authors"] = [author]
+
         images = self.__scrape_store_images(soup, page.final_url)
         description = self.__scrape_description(soup)
 
         return ScrapeResult(fields=fields, description=description, images=images)
+
+    @staticmethod
+    def __scrape_store_author(soup: BeautifulSoup) -> object | None:
+        """The store's own seller, the same identity the marketplace page's author link names (#366): the
+        header's site title for the name, no ``itemprop`` to rely on here, so paired with the platform's
+        own "Report" dropdown for the profile link -- present on every product page, unlike the footer's
+        social icons, which turn out to be an artist's optional choice. Falls back to the page's
+        ``og:site_name`` meta tag for the name when the site title is missing -- a different preset theme
+        need not use ``.site-title`` at all, and the Open Graph tag is there for social sharing regardless
+        of theme.
+
+        :param soup: the store page's parsed markup.
+        :returns: a name+url record, a plain name when no report-dropdown link is found, or `None` when
+            neither the site title nor ``og:site_name`` names anyone.
+        """
+        title_link = soup.select_one(".site-title a")
+        name = title_link.get_text(strip=True) if isinstance(title_link, Tag) else ""
+        if not name:
+            site_name_meta = soup.select_one('meta[property="og:site_name"]')
+            content = site_name_meta.get("content") if isinstance(site_name_meta, Tag) else None
+            name = content.strip() if isinstance(content, str) else ""
+        if not name:
+            return None
+        author_link = soup.select_one('.report-section a[href*="artstation.com"]')
+        url = author_link.get("href") if isinstance(author_link, Tag) else None
+        return {"name": name, "url": url} if isinstance(url, str) else name
 
     @staticmethod
     def __scrape_marketplace_images(gallery: Tag, referrer: str) -> tuple[ScrapedImage, ...]:
