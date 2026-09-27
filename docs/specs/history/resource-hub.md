@@ -31,14 +31,14 @@ than *port*.
 
 | Capability | Resource Hub | rehuco |
 | --- | --- | --- |
-| `.tc` reader (YAML) | Yes | reused as the design/read reference for the `.tc`→`.rehu` adapter (LocalEdit3) |
-| SQLite cache + scan | Yes (QtSql) | `.rehudb` built by the node (CacheDB3) |
-| Browsers (docked tables) | Yes | CacheDB4 |
-| QtAds docking + QML surface | Yes | Adopted — QtAds document-dock shell landed with LocalEdit2.0; first QML dock still ahead ([QtAds appendix](../appendices/qt-ads.md)) |
-| `ApplicationSingleton` / file-association helpers | via pyside-ibo | reimplemented in `borco-core`/`borco-pyside`; file-association proven by the pre-work spike |
-| Standalone packaging | PyInstaller (+ post-commit build) | native installers deferred; **Briefcase** evaluated in pre-work; `uv tool install` meanwhile |
-| Node / web / tablet | No | WatchTutorial |
-| Borrow offline, multi-node sync | No | Borrowing / Swarm |
+| `.tc` reader (YAML) | Yes | Yes — `.tc`→`.rehu` conversion (single-file and bulk legacy-catalog import wizard), read-only, never writes `.tc` |
+| SQLite cache + scan | Yes (QtSql) | Planned |
+| Browsers (docked tables) | Yes | Planned |
+| QtAds docking + QML surface | Yes | Adopted — QtAds document-dock shell is built and in daily use; the first QML dock (image grid) is still ahead ([QtAds appendix](../appendices/qt-ads.md)) |
+| `ApplicationSingleton` / file-association helpers | via pyside-ibo | Built — reimplemented in `borco-core`/`borco-pyside`; Windows ProgID/AUMID and macOS `QFileOpenEvent` file association both ship |
+| Standalone packaging | PyInstaller (+ post-commit build) | Built — Briefcase-based installers (Windows/macOS) with declarative file association/icon/AUMID; `uv tool install` also works |
+| Node / web / tablet | — | Planned |
+| Borrow offline, multi-node sync | — | Planned |
 
 ## Can rehuco work for its `.tc`?
 

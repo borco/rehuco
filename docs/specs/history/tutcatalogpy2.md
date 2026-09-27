@@ -27,13 +27,13 @@ implemented. Carried a dedicated **scrapper** tool for seeding metadata from pub
 
 | Capability | TutCatalogPy2 | rehuco |
 | --- | --- | --- |
-| `info.tc` sidecar | Yes (YAML) | `.rehu` (JSON); `.tc` adapter (LocalEdit3) |
-| Display fields | Yes | LocalEdit1 / LocalEdit2 |
-| Edit fields | TODO (never landed) | LocalEdit1 atomic save; LocalEdit2 typed toolkit |
-| SQLite cache + search | Yes | `.rehudb` (CacheDB3), browsers (CacheDB4) |
-| `.tc` file-type association | Yes (Linux MIME) | LocalEdit1 + file-association pre-work spike (macOS `QFileOpenEvent`, Windows ProgID/AUMID) |
-| Scraping | Yes (scrapper tool) | deferred (acquisition tooling) |
-| Duration via ffprobe | Yes | field LocalEdit2; auto-measure **TBD** |
+| `info.tc` sidecar | Yes (YAML) | `.rehu` (JSON); reads and converts `.tc`, never writes it |
+| Display fields | Yes | Yes — generic and typed field toolkit |
+| Edit fields | TODO (never landed) | Yes — atomic-saved edits through the typed field toolkit |
+| SQLite cache + search | Yes | Planned |
+| `.tc` file-type association | Yes (Linux MIME) | Yes — Windows ProgID/AUMID and macOS `QFileOpenEvent`, single-instance forwarding |
+| Scraping | Yes (scrapper tool) | Yes — built-in scrapers (ArtStation, Udemy), browser-drop and URL-drop handling |
+| Duration via ffprobe | Yes | Yes — stored field, can also measure itself from the media |
 
 ## Can rehuco work for its `info.tc`?
 

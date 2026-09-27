@@ -25,6 +25,8 @@ Currently provides:
   forwarding argv to the first process), `ConnectionList`, `SimpleProperty`/`TypedProperty`.
 - **`borco_pyside.dialogs`** — a modeless, dockable dialog framework: `DockableDialog`,
   `DockableDialogFrame`, `DockableDialogManager`.
+- **`borco_pyside.file_browser`** — `reveal_in_file_browser`, showing a path in Explorer, Finder or the
+  Linux file manager.
 - **`borco_pyside.logging`** — logging for a GUI app: `LogBridge`, `LogModel`, `LogWidget`, `LogView`, plus
   console setup via `setup_console_logging`.
 - **`borco_pyside.platforms`** — platform-specific modules, each imported only on its own platform (e.g.

@@ -17,7 +17,7 @@ describes, one per resource. That's the whole storage model, and the name is its
 **[How it works](specs/how-it-works.md)** is one page on the whole system as it stands: the file, the
 rules that keep it trustworthy, the app's panels, and what isn't built.
 
-![The rehuco-agent editor: fields on the left, rendered viewer on the right](assets/images/rehuco-agent.png)
+![The rehuco-agent editor with a reference-images resource open: edit fields and a read-only viewer alongside description, checksums, content images, files, and an app-wide log dock](assets/images/rehuco-agent.png)
 
 ## What it does
 
@@ -26,10 +26,15 @@ rules that keep it trustworthy, the app's panels, and what isn't built.
   description.
 - **Fills those fields from a dropped page.** Drop a URL — ArtStation, Udemy, or a user's own scraper
   script — on the editor to scrape it, and review the result as an ordinary edit before saving.
-- **Shows its screenshots.** A thumbnail strip beside the fields — click one to fill the window,
-  arrow keys or the wheel to move through the set, and pick which of them the strip shows.
-- **Converts legacy `.tc` catalogs.** Reads the older format, writes `.rehu`, and keeps backups it
-  can roll back if the conversion goes wrong.
+- **Shows its screenshots.** A thumbnail strip beside the fields — double-click one to fill the window,
+  arrow keys or the wheel to move through the set, and pick which of them the strip shows. A reference
+  pack also shows the images inside its archives.
+- **Checks its files.** Generates and verifies checksums for one resource or a whole folder, remembering
+  when each file was last checked so a re-run skips what is still fresh.
+- **Converts legacy `.tc` catalogs.** One file or a whole folder tree at once: reads the older format,
+  writes `.rehu`, and keeps backups it can roll back if the conversion goes wrong.
+- **Works in the background.** Checksums, imports and scrapes run on a task queue you can pause,
+  reorder and cancel, with a log beside it.
 - **Doesn't damage what it doesn't understand.** Unrecognized fields survive a save untouched, and a
   file written by a newer version of the format opens read-only rather than being rewritten.
 - **Keeps your workspace.** Atomic saves, and each file's panel layout remembered between sessions.
@@ -41,10 +46,12 @@ Tested on Windows, macOS, and Linux.
 
 ## Where it's going
 
-The **editor plus a basic browser** is the part worth finishing: the remaining editor work (a
-reference-images resource type, a log dock and task queue, tray and preferences), and then a view over
-a folder of resources — a rebuildable cache with search, so a collection can be looked through rather
-than opened one file at a time. See the [implementation plan](specs/implementation-plan.md).
+What's left of the editor is small: a settings page for customizable keyboard shortcuts and a page
+image picker (a scraping helper, not an editor feature).
+
+The next real piece is **a basic browser**: a view over a folder of resources, a rebuildable cache with
+search, so a collection can be looked through rather than opened one file at a time. See the
+[implementation plan](specs/implementation-plan.md).
 
 Past that point the design reaches further — playback with progress tracking, a headless node with a
 REST API, sync and offline borrowing between machines, multi-user access rules, a browser interface,

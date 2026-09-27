@@ -5,467 +5,230 @@
 > [!NOTE]
 > **Tracer-Bullet First Slices**
 >
-> Each milestone opens with a **tracer bullet** — the thinnest real, kept, production-grade path through every
-> layer, proving they connect end-to-end. Later iterations thicken one part at a time without breaking the
-> working spine. This counters the failure mode of building layers deeply in isolation before anything works
-> as a whole. LocalEdit1, CacheDB1, WatchTutorial1, and Borrowing1 are the tracer bullets; everything else thickens them.
+> Each feature area opens with a **tracer bullet** — the thinnest real, kept, production-grade path through
+> every layer, proving they connect end-to-end. Later iterations thicken one part at a time without breaking
+> the working spine. This counters the failure mode of building layers deeply in isolation before anything
+> works as a whole.
 >
 > *Concept from [The Pragmatic Programmer](https://en.wikipedia.org/wiki/The_Pragmatic_Programmer)
 > (Thomas & Hunt); further discussion at [wiki.c2.com](https://wiki.c2.com/?TracerBullets).*
 
-Companion to `architecture-design.md`. This plan covers the **near-term build** scoped to the stated personal
+Companion to `architecture-design.md`. What was planned and how it landed is in git history and each
+package's `CHANGELOG.md`; this page tracks only what's still ahead, against the original personal
 priorities:
 
-1. View/edit local `.rehu` for basic tutorials and reference images.
-2. Scan folders into a cached catalog and search it — close to the original tutcatalog.
-3. Watch a tutorial from a tablet/local browser.
-4. (later) Borrow a local copy for offline viewing on leave.
-
-## Before you create the monorepo (one-time, cheap-now/costly-later)
-
-These are settled; listed so nothing is forgotten at `uv init`:
-
-- **Name: `rehuco`** (decided). It propagates into package names (`rehuco-core`, `rehuco-node`, `rehuco-agent`), PyPI
-  namespace, import paths, file extensions (`.rehu`/`.rehuco`/`.rehudb`/`.rehusw`), config dirs, and the swarm-ID scheme
-  — which is exactly why it's chosen before init.
-- **Reserve PyPI names** via throwaway `0.0.0` stub repos (the same move used for `pyside6-scintilla`/`-lexilla`): claim
-  `rehuco`, `rehuco-core`, `rehuco-node`, `rehuco-agent` before anyone squats them.
-- **Root `pyproject.toml` is a *virtual* workspace** — no `[project]` table, only `[tool.uv.workspace]`
-  ([[packaging-deployment#three-packages]]). Decided.
-- **`rehuco-node` `requires-python` floor** — set at creation; no constraint from the TS-230 since the node runs on
-  capable hardware ([[packaging-deployment#ts230-as-nas]]).
-- **Fresh git history** — start clean, old repos kept read-only as archive ([[packaging-deployment#migrating-repos]]).
-  Decided.
+1. View/edit local `.rehu` for tutorials and reference images — **done** (`rehuco-agent` 0.1.0–0.2.0).
+2. Scan folders into a cached catalog and search it — close to the original tutcatalog — **not started**.
+3. Watch a tutorial from a tablet/local browser — **superseded**: the work queue now builds an in-app
+   player first (see "Tutorials — direction revised" below); the node/web approach is further out, not
+   dropped.
+4. (later) Borrow a local copy for offline viewing on leave — **not started**.
 
 ## Methodology: agile cadence, tracer-bullet spines
 
 [[[implementation-plan#methodology]]]
 
-**Agile** and **tracer bullets** are not alternatives — agile is the *cadence* (short iterations, something usable each
-cycle, adjust as you learn), tracer bullets are a *technical strategy* used within it (build a thin, real, kept
-end-to-end skeleton through every layer first, then thicken). This plan uses **agile iterations whose first slice of
-each milestone is a tracer bullet.**
+**Agile** and **tracer bullets** are not alternatives — agile is the *cadence* (short iterations, something
+usable each cycle, adjust as you learn), tracer bullets are a *technical strategy* used within it (build a
+thin, real, kept end-to-end skeleton through every layer first, then thicken). This plan uses **agile
+iterations whose first slice of each feature area is a tracer bullet.**
 
 Why tracer bullets specifically fit here:
 
-- The risk is **integration, not features** — the architecture doc shows the features are understood; what's unproven is
-  that the layers *connect* (agent↔node client split, the field/block model rendering end-to-end). **UI approach: both
-  QML and QtWidgets**, each where it's strongest — QWidgets (with pyqtads docking) for dense sortable/filterable tables
-  and trees (the browsers, [[plugins#browsers]]) and the app shell; QML for the image grid and animated lightbox. This
-  needs the pyqtads-hosts-QML integration to hold (the spike below). Note: the "NVIDIA overlay" prompt seen on app start
-  is the GeForce/NVIDIA App **in-game overlay** reacting to the GPU context — a per-machine NVIDIA-software setting to
-  toggle off, *not* an app concern and not a rendering problem; it imposes no architectural constraint.
+- The risk is **integration, not features** — the architecture doc shows the features are understood;
+  what's unproven is that the layers *connect* (agent↔node client split, the field/block model rendering
+  end-to-end). **UI approach: both QML and QtWidgets**, each where it's strongest — QWidgets (with QtAds
+  docking) for dense sortable/filterable tables and trees (the browsers, [[plugins#browsers]]) and the app
+  shell; QML for the image grid and animated lightbox.
 - It **counters the prior failure mode** — earlier versions built layers deeply (a full field/type system in
-  TutCatalog5) without reaching a usable end-to-end whole. A tracer bullet keeps a usable-if-minimal thing alive from
-  iteration one.
-- Tracer bullets are **kept production code**, not throwaway prototypes — exactly the discipline wanted after three
-  discarded attempts.
+  TutCatalog5) without reaching a usable end-to-end whole. A tracer bullet keeps a usable-if-minimal thing
+  alive from iteration one.
+- Tracer bullets are **kept production code**, not throwaway prototypes — exactly the discipline wanted
+  after three discarded attempts.
 
-**Rule for every milestone:** the first iteration is the thinnest end-to-end path that *works and is kept*. Later
-iterations thicken one part without breaking the working spine.
+**Rule for every feature area:** the first iteration is the thinnest end-to-end path that *works and is
+kept*. Later iterations thicken one part without breaking the working spine.
 
-**The plan is a guide, not a contract — life beats any planning.** Slices grow, split, and gain ad-hoc features as
-implementation teaches (LocalEdit2 already did; see its sub-slices on the GH milestone). Introducing a feature ad-hoc when
-it's needed is expected, not a deviation: the GH milestones/issues are the live record of what a milestone actually
-contains, and this plan catches up after the fact.
+**The plan is a guide, not a contract — life beats any planning.** A slice grows, splits, and gains ad-hoc
+features as implementation teaches. Introducing a feature ad-hoc when it's needed is expected, not a
+deviation: the GH issues (grouped by category label, [[appendices.project-management#category-labels]]) are
+the live record of what's actually being built, and this plan catches up after the fact.
 
 ### Spikes vs. tracer bullets (a related but different distinction)
 
-A third term, **spike** (from XP), is often confused with a tracer bullet. They're distinguished by **what you keep**,
-which follows from **what question each answers**:
+A third term, **spike** (from XP), is often confused with a tracer bullet. They're distinguished by **what
+you keep**, which follows from **what question each answers**:
 
-- **Spike** — answers *"I don't know how/whether X works — let me find out."* Time-boxed, quick-and-dirty, **throwaway
-  by intent.** Its product is *knowledge*; the code is deleted afterward (keep the lesson, not the toy).
-- **Tracer bullet** — answers *"do my layers connect end-to-end?"* Minimal but **real, production-grade, and kept.** Its
-  product is a *working skeleton* you build on.
-- **Prototype** — like a spike (throwaway), but broader/UX-exploratory rather than one sharp technical question.
+- **Spike** — answers *"I don't know how/whether X works — let me find out."* Time-boxed, quick-and-dirty,
+  **throwaway by intent.** Its product is *knowledge*; the code is deleted afterward (keep the lesson, not
+  the toy).
+- **Tracer bullet** — answers *"do my layers connect end-to-end?"* Minimal but **real, production-grade,
+  and kept.** Its product is a *working skeleton* you build on.
+- **Prototype** — like a spike (throwaway), but broader/UX-exploratory rather than one sharp technical
+  question.
 
-**The trap:** letting a spike quietly become load-bearing — building on quick-and-dirty exploration code written
-*before* you understood the problem. Decide up front which you're writing and honor it. Quick test: *"if this works, do
-I keep the code or just the lesson?"* Keep the code → tracer bullet (write it properly). Keep the lesson → spike (write
-it fast and **delete it**).
+**The trap:** letting a spike quietly become load-bearing — building on quick-and-dirty exploration code
+written *before* you understood the problem. Decide up front which you're writing and honor it. Quick test:
+*"if this works, do I keep the code or just the lesson?"* Keep the code → tracer bullet (write it properly).
+Keep the lesson → spike (write it fast and **delete it**).
 
-**They sequence:** for a layer with genuine unknowns → **spike** (learn, discard) → **tracer bullet** (build the thin
-real spine, now informed) → **thicken** (iterations). Skip the spike where there are no real unknowns.
-
-In this plan, **LocalEdit1/CacheDB1/WatchTutorial1/Borrowing1 are tracer bullets** (kept spines). The items flagged *(spike)* below are throwaway — keep the
-lesson, delete the code.
+**They sequence:** for a layer with genuine unknowns → **spike** (learn, discard) → **tracer bullet** (build
+the thin real spine, now informed) → **thicken** (iterations). Skip the spike where there are no real
+unknowns. Each feature area below opens with a kept tracer bullet; items flagged *(spike)* are throwaway —
+keep the lesson, delete the code.
 
 ### Model strategy (Claude Code): `opusplan` backbone, manual escalation for the hard cores
 
 [[[implementation-plan#model-strategy]]]
 
 > [!NOTE]
-> **Use `opusplan` as the default** (set `/model opusplan` at the start of each session). It ties model choice to mode:
-> **Opus in plan mode** (architecture, edge cases, tradeoffs), then **automatically switches to Sonnet in execution
-> mode** for code generation. For ~90% of rehuco — field widgets, UI wiring, REST endpoints, web templates, migration
-> tooling — this gives Opus-quality planning and Sonnet-speed execution with no micromanagement, and it's *better* than
-> hand-switching for routine work.
+> **Use `opusplan` as the default** (set `/model opusplan` at the start of each session). It ties model
+> choice to mode: **Opus in plan mode** (architecture, edge cases, tradeoffs), then **automatically switches
+> to Sonnet in execution mode** for code generation. For ~90% of rehuco — field widgets, UI wiring, REST
+> endpoints, web templates, migration tooling — this gives Opus-quality planning and Sonnet-speed execution
+> with no micromanagement, and it's *better* than hand-switching for routine work.
 >
-> **Its one blind spot matters for this app:** `opusplan` switches on *mode*, not on *how hard the code is*. It assumes
-> "execution = mechanical." But rehuco has a few cores where the *implementation itself* is reasoning-dense and a subtle
-> error silently corrupts data. For those, **manually switch to Opus (`/model opus`) even while implementing** — context
-> carries over, so you can drop back to `opusplan`/Sonnet after. These cores are marked with `> [!NOTE]` blocks in
-> `architecture-design.md`; they are:
+> **Its one blind spot matters for this app:** `opusplan` switches on *mode*, not on *how hard the code is*.
+> It assumes "execution = mechanical." But rehuco has a few cores where the *implementation itself* is
+> reasoning-dense and a subtle error silently corrupts data. For those, **manually switch to Opus (`/model
+> opus`) even while implementing** — context carries over, so you can drop back to `opusplan`/Sonnet after.
+> These cores are marked with `> [!NOTE]` blocks in `architecture-design.md`; they are:
 >
 > - **Sync engine** — version vector + activity log, conflict/merge, tombstones ([[sync#overview]]).
-> - **Plugin block save invariant** — the active/inactive/claim-then-abandon rule ([[plugins#plugin-blocks]]).
+> - **Plugin block save invariant** — the active/inactive/claim-then-abandon rule
+>   ([[plugins#plugin-blocks]]).
 > - **Registry resolution & serve-after-resync** — preferred-authority/chatter, version-marker comparison
 > ([[discovery-trust-access#registry-home]], [[discovery-trust-access#serve-after-resync]]).
 > - **Cross-filesystem safe move** — checksum-gated, data-loss-sensitive ([[mounts-and-storage#safe-move-rename]]).
 >
-> Don't micro-manage beyond that — constant hand-switching for ordinary work wastes effort; the point of `opusplan` is
-> to handle the common case so attention goes only to these few exceptions. Feeding the relevant `§` section into
-> context makes even Sonnet reliable on the routine parts and Opus more reliable on the hard ones. (Model names/aliases
-> shift over time and by plan/provider — verify the current `/model` list in Claude Code; the *strategy* is stable
-> regardless of version numbers.)
+> Don't micro-manage beyond that — constant hand-switching for ordinary work wastes effort; the point of
+> `opusplan` is to handle the common case so attention goes only to these few exceptions. Feeding the
+> relevant `§` section into context makes even Sonnet reliable on the routine parts and Opus more reliable
+> on the hard ones. (Model names/aliases shift over time and by plan/provider — verify the current `/model`
+> list in Claude Code; the *strategy* is stable regardless of version numbers.)
 
 ---
 
-## Pre-work (do before/around the first slice)
-
-These unblock or de-risk everything after; small but high-leverage.
-
-| Task | Kind | Why now | Notes |
-| --- | --- | --- | --- |
-| Stand up the monorepo (uv workspaces) | setup (kept) | The dev environment for everything; fixes the venv-confusion immediately ([[packaging-deployment#overview]]) | Root virtual workspace + `packages/rehuco-core`, `packages/rehuco-agent`; add `rehuco-node` later when the WatchTutorial milestone starts |
-| Decide the **tutorial** and **reference-image** field lists | decision | Specific-field rendering is the one thing blocked on schema ([[appendices.open-questions#still-open]]) | The generic editor does *not* need this; only the rich per-type view does. Decide enough to start, refine later |
-| Decide access-rule grammar | decision | Not needed for LocalEdit–WatchTutorial (single user, local or trusted-LAN) | Can defer to the Borrowing milestone or past it; noted so it's not forgotten |
-| **pyqtads + QML integration (regression check)** | **spike** | Confirms the "both QML and QtWidgets" approach still holds on current Qt/PySide6/pyqtads versions | QML-in-pyqtads already worked previously; this re-verifies it on current versions, focused on the parts the app will depend on: a QQuickWidget dock that **detaches to a floating window and re-docks** without glitches (the classic QML cross-window trouble spot), a **QWidgets dock and QML dock coexisting** in one layout, and **layout save/restore** with a QML dock present — including **whether closed/hidden docks restore their size** (a known soft spot across all Qt docking; likely needs stashing dock size on close keyed by object name and restoring on show, rather than relying solely on the layout blob). Keep a tiny reference snippet of the working wiring; discard the rest. If a QML dock's detach glitches, the response is to **keep QML surfaces in non-detachable docks or reduce the QML footprint** — *not* switch to KDDockWidgets, which is foreclosed by its GPL license (architecture [[packaging-deployment#licensing-policy]]). pyqtads stays (LGPL, prebuilt PySide6 bindings). **Result:** approach holds on PySide6 6.11.1 + pyside6-qtads 5.0.0; one caveat — a closed dock's size needs a `splitterSizes` stash/reapply workaround — carried forward — it landed with the LocalEdit2.0 document-dock shell (#20). Recorded in [[packaging-deployment#qml-regression]] |
-| **QNAP/glibc dependency canary** | **spike** | De-risks WatchTutorial's node deps early | Build a glibc-2.23 container; confirm FastAPI/uvicorn/zeroconf/pydantic-core/cryptography wheels load. Keep the lesson (a pinned compatible-versions list); the container/script is throwaway |
-| **File association + app identity** | **spike** | De-risks LocalEdit1's "double-click → opens" before LocalEdit1 depends on it ([[packaging-deployment#app-identity]]) | macOS: a minimal `.app` (built via Briefcase) that's the default opener for `.rehu` and delivers the path as a **`QFileOpenEvent`** into a single running PySide6 instance ([[nodes#single-instance]]) — macOS does *not* pass it as `argv`. Windows: an HKCU **ProgID** for default double-click + an explicit **AUMID** (`SetCurrentProcessExplicitAppUserModelID`) so a pinned taskbar button shows the app's icon and lights up as running (the gap `resource-hub` only papered over with a PyInstaller exe), with `DefaultIcon` from a shipped `.ico`. Second double-click routes to the existing instance, not a new process. Keep the bundle/ProgID recipe + AUMID line; discard the toy GUI. Confirms Briefcase as the end-user packager as a side effect |
-
----
-
-## Milestone shape at a glance
-
-The four detailed near-term milestones map onto the personal priorities above, each introducing exactly **one new
-architectural spine** — isolating integration risk (the architecture's thesis is that the risk is *integration, not
-features*). LocalEdit and CacheDB stay on a single machine (LocalEdit edits one file; CacheDB adds the cached catalog);
-WatchTutorial and Borrowing then **climb the distribution ladder one rung at a time** — WatchTutorial a single serving
-node, Borrowing a second party. **Swarm** and **Daz3D** are further milestones, detailed later.
-
-| | **LocalEdit** | **CacheDB** | **WatchTutorial** | **Borrowing** |
-| --- | --- | --- | --- | --- |
-| **Use-case** | View/edit a local `.rehu` | Scan, cache, and search the catalog | Watch a tutorial from a browser | Borrow a copy, watch offline |
-| **Topology** | 1 machine, no network | 1 machine, no network | 1 node + thin browser clients (LAN) | 2 parties (home node ↔ laptop) |
-| **New spine** | Field/block/plugin rendering + local file I/O | SQLite cache (`.rehudb`) + incremental scan ([[data-model#scan-and-staleness]]) + browsers | The node + agent-as-node-client refactor ([[nodes#two-roles]]) + web stack | Version-vector + activity-log sync ([[sync#overview]]), two-party |
-| **Deliberately absent** | No node, swarm, or login | No node, network, or login | No swarm, pairing, multi-node sync, or auth-propagation | No general swarm — just two-party reconcile |
-| **New skill / risk** | Rendering the data model end-to-end | Scan/cache correctness + table/search UI | Web stack (FastAPI/HTMX/Pico), video serving | Conflict/merge machinery |
-
-Three principles hold across the split:
-
-- **Monotonically increasing distribution complexity.** LocalEdit and CacheDB are standalone (no network) — CacheDB adds
-  the cached catalog on the same single machine; WatchTutorial adds a single node serving thin clients; Borrowing adds
-  two-party sync — the first real reconcile, but the minimal topology. The full **N-node swarm** (discovery, pairing,
-  registry, safe-move — [[discovery-trust-access]], [[mounts-and-storage#fingerprint-map]]–[[mounts-and-storage#safe-move-rename]])
-  is the later **Swarm** milestone.
-- **One new integration risk per milestone.** Each isolates a single unproven spine so nothing tackles two at once;
-  within each, the first slice (LocalEdit1/CacheDB1/WatchTutorial1/Borrowing1) is a kept **tracer bullet** and the rest thicken it.
-- **Each is independently useful and shippable.** LocalEdit is a standalone editor even if the rest never ship; CacheDB
-  makes it a real searchable catalog; WatchTutorial adds tablet watching; Borrowing adds offline borrow. Value lands at
-  every milestone boundary.
-
-Heavier work beyond these four — the LLM extraction fallback ([[acquisition-tooling#llm-url-extract]]), reference-image richness,
-3D objects, multi-user auth, native installers — is deferred (see
-[What is deliberately deferred](#what-is-deliberately-deferred-past-these-four)); the full swarm and Daz3D are further
-milestones (**Swarm**, **Daz3D**), not part of the near-term four. **WebScrapping** — browser drops and site scrapers
-feeding the editor ([[acquisition-tooling#drag-drop-aids]]) — is a small single-machine family of its own, sliced
-below, that can start any time after LocalEdit.
-
----
-
-## LocalEdit — Local view/edit (no node, no swarm, no login)
-
-**Goal:** a standalone, usable tool that opens, displays, and edits a local `.rehu` for tutorials and reference images.
-This is the agent's local-file mode ([[nodes#local-vs-swarm]]), and a genuinely useful product on its own.
-
-### LocalEdit1 — Tracer bullet (the spine)
-
-> Double-click a `.rehu` in File Explorer → single-instance agent opens → reads the file off disk → renders common
-> fields + Markdown + a basic image strip → edit one field → atomic-save back.
-
-Deliberately minimal: one resource shown via the **generic field editor** (not yet a rich plugin), no field toolkit
-depth, no block lifecycle, no cache. It only has to prove the spine: **file-association → single-instance forward → read
-→ render → edit → atomic-write.** Keep this code.
-
-Touches, thinly: [[nodes#single-instance]] (single-instance/association), [[data-model#write-integrity]] (atomic write),
-[[nodes#local-vs-swarm]] (local-file mode), [[plugins#fallback-editor]] (generic editor), [[plugins#tutorial-plugin]]
-(Markdown + image strip).
-
-### LocalEdit2–LocalEditX — Thicken the spine (iterations, each shippable)
-
-- **LocalEdit2 — Field toolkit.** Real field widgets (text, switch, tag-list, date, rating, duration, size, choice, path,
-  image-count) with editor/viewer variants — the shared toolkit plugins compose from ([[plugins#core-vs-plugin]]); the
-  toolkit and viewer/editor/both surfaces are designed in [[plugins#toolkit-surfaces]]. (TutCatalog5 has prior art here
-  to draw on as a *design* reference.) In practice LocalEdit2 is wider than the field widgets alone: it opened with its own
-  mini-tracer — LocalEdit2.0/#20, the document-dock shell + reactive view-model + text-field spine ([[plugins#dock-shell]],
-  [[plugins#view-model]]) — and is broken into sub-slices LocalEdit2.0–LocalEdit2.8, tracked as issues on the GH `LocalEdit2` milestone
-  (session/close-guard persistence, the per-type field widgets, multi-source and image-selection editors,
-  unknown-field fallback).
-- **LocalEdit3 — `.rehu` format + versioning.** JSON read/write, per-file format-version field, preserve-unknown-fields rule
-  ([[data-model#schema-version]]). Bring `.tc`→`.rehu` migration in as the oldest *source* format
-  ([[acquisition-tooling#tc-to-rehu]]) — opening a `.tc` offers migration + screenshot-name normalization. (It is not
-  "format v0": a `.tc` is a different file format, not an old `.rehu`, and the mapping emits the current `.rehu` layout
-  stamp included — v0 means an unstamped `.rehu`, [[data-model#schema-version]].)
-- **LocalEdit4 — Plugin block model.** Keyed per-plugin blocks, single-active-type rule, the save-persistence invariant (active
-  type or never-claimed foreign payload; claim-then-abandon drops on save), generic fallback for inactive/unknown blocks with
-  carry-or-drop ([[plugins#plugin-blocks]]/[[plugins#fallback-editor]]). This is the genuinely new core logic.
-- **LocalEdit5 — Tutorial plugin (rich).** Real tutorial viewer/editor: full image lightbox (click-to-maximize, prev/next,
-  hideable strip, ESC), folder-rename-from-suggestions ([[plugins#tutorial-plugin]]).
-- **LocalEdit6 — Reference-images plugin (basic).** Type + fields + viewer; defer redaction/slideshow/search to later (they're
-  [[plugins#refimages-plugin]] richness, not needed for "view/edit").
-- **LocalEdit7 — Log dock, task queue, checksums.** Three items, in dependency order — each is the one before it
-  made useful:
-  1. **In-app log viewer** — a log dock fed by a caching `logging.Handler` bridge (records logged before
-     the GUI exists are replayed, not lost) plus a level-filterable log widget. rehuco has only colorized
-     console logging today, while every recent predecessor shipped this; prior art, including the
-     cache-then-replay design, is in [[pyside-ibo#log-stack]]. **First** — it is the simplest real dock,
-     and it is what makes the two items below observable when they misbehave.
-  2. **Task queue / dock** ([[architecture-design#components]]) — the visible, app-wide queue of slow
-     operations (checksum, sync, scans, copies, node-notify, safe moves) with pause/resume/cancel/reorder,
-     multi-select serializing work rather than running it all at once. Specified as a component since the
-     architecture doc but never scheduled; LocalEdit7 is where it lands, because checksums are its first real
-     client and every later milestone (CacheDB scans, Borrowing sync/copies) assumes it exists.
-  3. **Checksums** — generate/verify with algorithm-tagging, as task-queue jobs ([[data-model#checksums]])
-     — pairs naturally with migration.
-- **LocalEdit8 — Legacy catalog import.** Bulk `.tc`→`.rehu` conversion across a folder tree, run as task-queue jobs
-  (LocalEdit7) over a dry-run plan, with the `info.tc.orig` backup retained by default and an in-app discard surface
-  replacing the file-manager round-trip ([[acquisition-tooling#tc-to-rehu]]). This is the one-time migration of an
-  existing tc4 catalog, and doing it here is what keeps `.tc` out of CacheDB's scanner entirely.
-- **LocalEdit9 — Migration correctness.** What pointing LocalEdit8's wizard at a real catalog surfaced, and the scoping
-  rule it forced. The `.tc` walk halts at the first record it finds, so a template at a tree root — or any tc4
-  **collection**, which *is* a parent record over member directories — hides everything beneath it. Conversion backups
-  count as a resource's own content, so a bulk import bakes each resource's `.orig` into its first baseline and every
-  measured size shrinks the moment the backups are discarded. And content scoping **overlaps** by design: a nested
-  record's files are counted by its ancestors too, which makes a library's size unsummable from its records — the
-  aggregation CacheDB exists to do. So content becomes **exclusive** — a record counts only what it covers — a verify
-  prunes what it no longer covers and moves the claim to whichever record now does, and a legacy `.sfv` is retired once
-  its claim is in the `.checksum` instead of shadowing it forever ([[data-model#resource-scoping]],
-  [[data-model#checksums]]). Carries the task dock's own polish alongside it, and is where a `.tc`-era resource stops
-  being a special case anywhere but the importer.
-- **LocalEdit10 — Docks that were missing.** Four surfaces the editor turned out to need once it was used daily, none
-  of them a new spine: the documents area becomes a hideable dock that any file open shows and raises
-  ([[plugins#dock-shell]]); the Tasks dock grows a Log sub-dock following the selected job, which needs a record to
-  carry every scope open when it was written and the queue to open a per-job scope
-  ([[appendices.logging#scopes]], [[appendices.task-queue#scopes]]); a Files sub-dock over the resource's own folder
-  ([[plugins#files-subdock]]); and un-converted pattern-matched images listed in the images sub-dock, alongside the
-  numbered set, with Convert/Delete per row ([[plugins#tutorial-plugin]]).
-- **LocalEditX — Tray + polish.** Close-to-tray/explicit-quit ([[nodes#single-instance]]), preferences. Last in the
-  milestone by construction: the catch-all polish slice, named like an audit run because it is never "next", only "after
-  everything else".
-
-**Exit criteria:** open any tutorial or ref-image `.rehu` (or migrate a whole `.tc` catalog), view it richly, edit and
-atomic-save, generate/verify checksums. Standalone, no infrastructure.
-
-**Rough size:** ~3–5 focused dev-weeks (front-loaded refactoring against prior-version design knowledge, not
-greenfield).
-
----
-
-## CacheDB — Cached database (scan, cache, search; still local, no node)
-
-**Goal:** point the agent at your folders, have it scan the `.rehu` files into a `.rehudb` cache, and browse/search the
-catalog on the desktop. This brings the app close to the original tutcatalog: a real, searchable library view over
-everything on disk. Still **one machine, no network, no node, no login** — the cache is built and read by the agent
-itself.
-
-> Note: the cache is a rebuildable derivative of the `.rehu` files, never a source of truth
-> ([[data-model#local-file-trio]]). WatchTutorial later moves cache ownership to the node; here the agent owns it.
-
-### CacheDB1 — Tracer bullet (the spine)
-
-> Point the agent at one folder → it scans the `.rehu` files into `.rehudb` → a table lists them → type a query → the
-> table filters live.
-
-Minimal: one scan pass (no incremental yet), the common columns only, a single text filter. Proves the spine: **scan →
-cache → list → search.** Keep this code.
-
-Touches, thinly: [[data-model#scan-and-staleness]] (scan), [[data-model#local-file-trio]] (`.rehudb` as derived cache),
-[[plugins#browsers]] (table view).
-
-### CacheDB2–CacheDB4 — Thicken
-
-- **CacheDB2 — Incremental, version-aware scan.** Rescan only what changed (mtime/size/format-version), prune vanished
-  entries, keep `.rehudb` current across edits ([[data-model#scan-and-staleness]]). Scans run as task-queue jobs (LocalEdit7).
-- **CacheDB3 — Generic + tutorial browsers.** Table view with common columns + tutorial columns (duration, progress); click
-  opens the viewer; click-to-filter on tag/author/publisher ([[plugins#browsers]]).
-- **CacheDB4 — Search.** Query the cache by text and by field (type, author, publisher, tags, rating), with combinable
-  filters, fast enough over a large library to feel live.
-
-**Exit criteria:** point the agent at your real folders, get a searchable catalog on the desktop, and click through to
-view or edit any resource. Standalone, no node.
-
-**Rough size:** ~2–3 focused dev-weeks (the cache/scan is the new correctness-sensitive part; the browsers reuse the
-field toolkit from LocalEdit).
-
----
-
-## WatchTutorial — Watch a tutorial from a tablet/local browser
-
-**Goal:** from the iPad (thin browser client, [[borrowing#vacation-topology]]), browse the tutorials a node serves and
-watch one, with progress recorded. Single node, on the LAN — **no swarm, no pairing, no multi-node sync, no
-auth-propagation** (single-node base case, [[multiplicity#single-node-base]]).
-
-> Note: this introduces the **node** and the **agent-as-node-client** refactor ([[nodes#two-roles]]) — the first
-> architecturally new spine beyond the single-machine milestones. Cache ownership moves from the agent (CacheDB) to
-> the node here.
-
-### WatchTutorial1 — Tracer bullet (the spine)
-
-> A single headless node serves an HTTP page listing one configured tutorial → tap it → browser plays the video →
-> progress is recorded server-side and survives a reload.
-
-Minimal: one node, one hard-configured folder, no auth, plain video serving. Proves the spine: **node serves → browser
-lists → browser plays → progress persists.**
-
-Touches, thinly: [[nodes#overview]] (REST node), [[multiplicity#single-node-base]] (single-node), web stack
-(FastAPI/HTMX/Pico — new skill), [[plugins#tutorial-plugin]] web/follow, progress write
-([[sync#overview]]/[[mounts-and-storage#node-handoff]] minimal).
-
-### WatchTutorial2–WatchTutorial6 — Thicken
-
-- **WatchTutorial2 — Agent-as-node-client refactor.** Move the agent's catalog reads to go through the node ([[nodes#two-roles]]);
-  the node now owns and serves the `.rehudb` built in CacheDB. The local-file viewer (LocalEdit) stays node-free;
-  only catalog operations route through the node. (`rehuco-node` package created now.)
-- **WatchTutorial3 — Generic + tutorial web browsers.** The CacheDB table view, mirrored in the browser for the tablet
-  ([[plugins#browsers]]).
-- **WatchTutorial4 — Web follow mode.** Sequential playback, progress/duration tracking, notes, bookmarks in the browser
-  ([[plugins#tutorial-plugin]] web).
-- **WatchTutorial5 — Progress sync frequency + handoff basics.** Frequent progress writes so a reload/resume is current
-  ([[mounts-and-storage#node-handoff]]) — even single-node benefits.
-- **WatchTutorial6 — Minimal auth (optional this milestone).** Even single-user, a login gate for the web UI
-  ([[discovery-trust-access#user-auth]]) if you want the tablet to require it; can defer if it's just you on a trusted
-  LAN.
-
-**Exit criteria:** open the web UI on the iPad over the LAN, see your tutorials, watch one, progress is remembered
-across sessions and devices.
-
-**Rough size:** ~4–6 focused dev-weeks, much of it the web-stack learning curve (new to you) rather than architecture.
-The node runs on a capable box (Mac mini or always-on Linux node); the TS-230 is accessed via its existing SMB share
-([[packaging-deployment#ts230-as-nas]]).
-
----
-
-## Borrowing — Borrow a local copy for offline viewing
-
-**Goal:** before leaving, borrow a tutorial onto a laptop; watch it offline (the laptop runs its own node,
-[[borrowing#vacation-topology]]); sync progress/notes back on return. This is a **two-party** sync (home node ↔ laptop),
-far simpler than general swarm sync.
-
-### Borrowing1 — Tracer bullet (the spine)
-
-> Mark a tutorial "borrow" → its files + `.rehu` copy onto the laptop, borrow recorded in the user meta block
-> ([[borrowing#recording-borrows]]) → laptop node serves it offline → on return, progress/notes reconcile back.
-
-Touches, thinly: [[borrowing#another-instance-role]] (borrow as instance role),
-[[instances-and-dedup#instance-registry]] (instance tracking),
-[[sync#overview]]/[[offline-editing#overview]] (two-party reconcile), [[borrowing#recording-borrows]] (borrow-in-meta).
-
-### Borrowing2–Borrowing5 — Thicken
-
-- **Borrowing2 — Instance registry (minimal).** Track where a UUID's copies live + roles; enough for borrow/return
-  ([[instances-and-dedup#instance-registry]]).
-- **Borrowing3 — Version-vector + activity-log sync.** The real reconcile machinery ([[sync#overview]]), scoped to two parties
-  first.
-- **Borrowing4 — Return/reconcile UI.** Merge progress/notes; handle the borrow-vs-changed cases
-  ([[borrowing#borrow-vs-delete]]) if they arise.
-- **Borrowing5 — Scheduled archival.** Borrow→archive-on-return, full or selective ([[borrowing#scheduled-archival]]).
-
-**Exit criteria:** borrow → go offline → watch + take notes → return → changes reconciled.
-
-**Rough size:** ~3–5 focused dev-weeks in the minimal (laptop + one home node) topology.
-
----
-
-## WebScrapping — Browser drops and site scrapers (single machine, after LocalEdit)
-
-**Goal:** feed the editor from a browser instead of by hand — a selection, a URL, or a page's images dropped on the
-open document ([[acquisition-tooling#drag-drop-aids]]), with site knowledge in scrapers the user can override
-([[acquisition-tooling#url-extract]]). No node, no network beyond the fetch the drop asks for, no LLM.
-
-| Slice | Spine | Depends on |
-| --- | --- | --- |
-| **WebScrapping1** (tracer) | a spike on what a browser drop actually carries per platform ([[acquisition-tooling#drop-source-url]]), then the HTML→Markdown drop on the description editor — the first drop handler and the first HTML dependency | LocalEdit |
-| WebScrapping2 | the scraper Protocols, typed results, the registry with the user's scripts folder and its settings page, the scrape job, and the URL drop on the main editor; ArtStation and Udemy as the built-ins ([[acquisition-tooling#scraper-protocols]], [[acquisition-tooling#scraper-registry]], [[acquisition-tooling#scrape-job]]) | WebScrapping1 |
-| WebScrapping3 | the image pipeline — local copy, image URL or data, referrer, bytes written as acquired, next `<stem>NN` or a scraper's own slot with the occupant backed up to `.orig`, a matched page's scraped images — and the picker for a Ctrl-held page or selection drop on the images sub-dock | WebScrapping2 |
-| WebScrappingX | polish catch-all, never "next" | — |
-
-**Exit criteria:** a course page dropped on an empty tutorial fills its title, authors, publisher, description and
-screenshots, and a selection dropped on the description lands as clean Markdown — with the user reading each before
-saving.
-
----
-
-## What is deliberately deferred past these four
-
-Everything that isn't on the personal critical path, per the architecture doc's own scoping. (The full multi-node
-**Swarm** and **Daz3D** support are themselves later milestones, not part of the near-term four — see the roadmap.)
-
-- **LLM URL extraction** — [[acquisition-tooling#llm-url-extract]], the fallback for hosts no scraper matches. The
-  drops and the site scrapers themselves are the **WebScrapping** family above, no longer deferred. Explicitly
-  deferred until a real run of unmatched hosts says it is worth a model; a user-written scraper covers the gap
-  meanwhile.
-- **Reference-image richness** (auto-tagging, blur, tag/semantic search, practice mode, drawing critique) —
-  [[plugins#refimages-plugin]], designed in full in [[reference-images]]. It is its own milestone family,
-  **RefImages**, whose slices hang off the near-term four by dependency rather than sitting at one fixed
-  position. The order is **browser first, blur second, Pinterest third**; the first five are single-machine
-  and can start any time after LocalEdit. 360° identification and practice mode are deliberately last:
-
-  | Slice | Spine | Depends on |
-  | --- | --- | --- |
-  | **RefImages1** (tracer) | **the image browser dock** — #221: open a pack → a grid over the archive's members in natural zip order → click opens the lightbox on the original, decoded on demand. No sidecar, no models; the lightbox's path-based seam widens to an image source ([[reference-images#modes]]) | LocalEdit |
-  | RefImages2 | **the sidecar skeleton** — `.rehuimg` with its `application_id` and migration chain; a decode-only, resumable task-queue job writes tier 0 and the working images, so a 20 000-image grid fills from the sidecar instead of decoding on every open ([[reference-images#scan-sidecar]]) | RefImages1 |
-  | RefImages3 | **blur, render-only** — the `rehuco-vision` skeleton with one stage, the blur-region detector; boxes stored with probabilities and the model stamp; blur/mosaic drawn in grid and lightbox behind the toggle and shortcut, threshold and default-off as plugin settings ([[reference-images#inference-package]], [[reference-images#model-contracts]]) | RefImages2 |
-  | RefImages3b | **batch scan trigger** — a directory-scan wizard (`import_legacy_catalog_wizard.py`'s shape: scan → plan → enqueue → result) that finds packs under a chosen root and enqueues one claimable scan job per pack on the task queue's inference lane ([[reference-images#dispatch]]) | RefImages3 |
-  | RefImages4 | **blur, authored** — the admin default inline and per-user overrides in the block (a block-version bump + migration), the three-layer toggle, and the minimal sub-dock: add / move / scale / delete a blur box ([[reference-images#layers]], [[reference-images#region-editor]]) | RefImages3 |
-  | RefImages4b | **redaction scope cascade** — the tri-state app/document/image visibility override (the four-checkbox group) plus effect-type override, storage in the per-user layer ([[reference-images#redaction-scope]]) | RefImages4 |
-  | RefImages4c | **cover effect** — the inpainting stage contract, precomputed cover patches stored in the sidecar, effect-type picker wired into render and the sub-dock ([[reference-images#modes]], [[reference-images#region-editor]]) | RefImages4, rehuco-vision inpainting stage |
-  | RefImages5 | **Pinterest, in-pack** — the tagger and embedding stages; similar-image walls by brute-force cosine over one sidecar, fuzzy text over tags, random start; per-user favorites ([[reference-images#modes]]) | RefImages3 |
-  | RefImages6 | **Pinterest, cross-pack** — the index built from sidecars into `.rehudb`; the text encoder for text→vector queries ([[reference-images#cross-pack-index]]) | RefImages5, **CacheDB** |
-  | RefImages7 | **pose on the working image, and ranking** — keypoints, part boxes with their size in frame, posture and head-angle tags, no crops; the ranking rule with the part hierarchy, subject-first objects and view diversification ([[reference-images#modes]]) | RefImages5 |
-  | RefImages8 | the web fronts served by a node | RefImages6, **WatchTutorial** |
-  | RefImages9 | scan dispatch across nodes, capability advertisement, the streaming fallback ([[reference-images#dispatch]]) | **Swarm** |
-  | *deferred* | 360° identification ([[reference-images#sequences]]); practice mode with its session document and the shared timed-presentation capability ([[reference-images#practice-sessions]], [[plugins#shared-capability]]) | — |
-  | RefImagesX | polish catch-all, never "next" | — |
-
-- **3D objects, dedup review UI, access-control grammar, multi-user auth propagation, web for non-tutorial types.**
-- **Auto-update** (the installers themselves landed in #206, [[appendices.briefcase-packaging#status]]) — Briefcase-built installers with declarative file association / icon /
-  AUMID, MSIX later, and self-update against a public release oracle
-  ([[packaging-deployment#app-identity]]/[[packaging-deployment#auto-update]]). `uv tool install` covers the author's
-  own machines regardless; the file-association *mechanics* are proven earlier by the Pre-work spike, but
-  *release* delivery — a published artifact (#208), update delivery, and code-signing/notarization — still waits.
-
-## Sequencing gates (decide-before-you-start)
-
-- **Before LocalEdit2:** enough of the tutorial + ref-image field lists to render them (the generic editor needs nothing).
-- **Before the dock manager + mixed QML/QWidgets UI is adopted:** the pyqtads + QML integration *spike*
-  (pre-work, issue #4) — confirms a QML dock detaches/re-docks and coexists with QWidgets docks on current
-  versions. Done; the dock-manager half is already adopted — the QtAds document-dock shell landed with
-  the LocalEdit2.0 tracer (#20, [[plugins#dock-shell]]) — while the first QML dock is still ahead.
-- **Before LocalEdit1 relies on "double-click → opens":** the file-association + app-identity *spike* (pre-work) — macOS
-  `.app`/`QFileOpenEvent` and Windows ProgID/AUMID, so default-double-click open and taskbar pin/running actually work;
-  also settles Briefcase as the end-user packager.
-- **Before WatchTutorial (serving NAS content):** no glibc gate — the node runs on capable hardware with the TS-230 mounted via SMB
-  ([[packaging-deployment#ts230-as-nas]]). The glibc canary findings ([[packaging-deployment#glibc-canary]]) are kept as
-  a reference if direct QNAP deployment is ever reconsidered.
-- **Before WatchTutorial web work:** a short FastAPI/HTMX/Pico **spike**, since it's a new stack — answer "can I build the
-  follow-mode page the way I need?", keep the lesson, discard the toy.
-- **Before WatchTutorial1 promises "browser plays the video":** an iPad-playback **spike** — serve a representative sample of the
-  real catalog to the actual tablet: container/codec coverage (Safari plays H.264/HEVC in MP4/MOV; MKV — common in
-  tutorial catalogs — does not play natively), the self-signed-HTTPS trust story
-  ([[appendices.open-questions#still-open]]), and HTTP Range seeking. The outcome decides whether WatchTutorial grows a
-  remux/transcode task-queue job.
-- **Before Borrowing:** nothing new architecturally — it reuses [[sync#overview]]'s reconcile, scoped to two parties.
+## Local edit — remaining work
+
+The editor is built (`packages/rehuco-agent/CHANGELOG.md`). What's left is filed: shortcut customization
+(a command registry, a Shortcuts settings page, app-wide routing — #343–#345) and improved dark/light
+theming (#285). See those issues for the actual scope; this is only an index.
+
+## Web scrapping — remaining work
+
+Scraping itself is built (`packages/rehuco-agent/CHANGELOG.md`). What's left is filed: an image picker for
+a page or selection dropped on the images sub-dock (#275) and a console-only CLI companion app so
+`--scrape`/`--scrape-schema` work from a packaged install (#346).
+
+## Cache DB — not started
+
+**Goal:** point the agent at your folders, have it scan the `.rehu` files into a `.rehudb` cache, and
+browse/search the catalog on the desktop — close to the original tutcatalog. Still **one machine, no
+network, no node, no login**; the cache is a rebuildable derivative of the `.rehu` files, never a source of
+truth ([[data-model#local-file-trio]]).
+
+Tracer bullet: point the agent at one folder → it scans the `.rehu` files into `.rehudb` → a table lists
+them → a text filter narrows it live.
+
+Then thicken: incremental, version-aware rescanning that only touches what changed and prunes vanished
+entries ([[data-model#scan-and-staleness]]); generic and tutorial browsers with click-to-filter on
+tag/author/publisher ([[plugins#browsers]]); combinable field search (type, author, publisher, tags,
+rating) fast enough over a large library to feel live.
+
+**Exit criteria:** point the agent at real folders, get a searchable catalog on the desktop, and click
+through to view or edit any resource.
+
+## Tutorials — direction revised
+
+The original design here was a single node serving thin browser clients on the LAN (the
+**agent-as-node-client** refactor, [[nodes#two-roles]]) — no swarm, no pairing, no auth-propagation. That
+is superseded for now: an **in-app player comes first** instead, and is already filed and in progress
+(#315–#319 — watch progress, the in-app player dock, video settings, external VLC). No node exists yet, and
+none is scheduled ahead of that in-app work.
+
+The node/web approach below is unfiled and further out — kept here only as an outline, once a node exists:
+
+**Goal:** from a tablet (thin browser client), browse the tutorials a node serves and watch one, with
+progress recorded. Single node, on the LAN — no swarm, no pairing, no multi-node sync, no
+auth-propagation ([[multiplicity#single-node-base]]). Cache ownership moves from the agent (Cache DB above)
+to the node here.
+
+Tracer bullet: a single headless node serves an HTTP page listing one configured tutorial → tap it → the
+browser plays the video → progress is recorded server-side and survives a reload.
+
+Then thicken: the **agent-as-node-client refactor**, moving catalog reads through the node
+([[nodes#two-roles]]; `rehuco-node` gets its first real code here); the Cache DB table view mirrored for
+the browser ([[plugins#browsers]]); sequential web playback with progress/duration tracking, notes and
+bookmarks; frequent-enough progress writes for a reload to stay current
+([[mounts-and-storage#node-handoff]]); an optional login gate for the web UI if the tablet should require
+one ([[discovery-trust-access#user-auth]]).
+
+**Exit criteria:** open the web UI on a tablet over the LAN, see the tutorials a node serves, watch one, and
+have progress remembered across sessions and devices.
+
+## Borrowing — not started
+
+**Goal:** before leaving, borrow a tutorial onto a laptop; watch it offline (the laptop runs its own node);
+sync progress/notes back on return. A **two-party** sync (home node ↔ laptop), simpler than general swarm
+sync, and depends on Tutorials' node existing first.
+
+Tracer bullet: mark a tutorial "borrow" → its files + `.rehu` copy onto the laptop, borrow recorded in the
+user meta block ([[borrowing#recording-borrows]]) → the laptop's node serves it offline → on return,
+progress/notes reconcile back.
+
+Then thicken: a minimal instance registry tracking where a UUID's copies live and their roles
+([[instances-and-dedup#instance-registry]]); the version-vector + activity-log reconcile machinery
+([[sync#overview]]), scoped to two parties; a return/reconcile UI handling the borrow-vs-changed case if it
+arises ([[borrowing#borrow-vs-delete]]); scheduled archival on return, full or selective
+([[borrowing#scheduled-archival]]).
+
+**Exit criteria:** borrow → go offline → watch and take notes → return → changes reconciled.
+
+## Reference images — richness not started
+
+Viewing and editing a reference-images resource is done and genuinely usable: the resource type, its
+fields, checksums, and the **Content Images** dock (#221 — a grid over a pack's archive members, a
+decode-on-demand lightbox) all shipped. What's unbuilt is the *richness* layer on top:
+the `.rehuimg` sidecar skeleton, a `rehuco-vision` inference package, redaction (blur, per-user overrides,
+a region sub-dock, the scope cascade, a cover/inpainting effect), tagging and embeddings, a Pinterest-style
+in-pack and cross-pack search, and pose-driven ranking ([[reference-images]]). This is its own wave of GH
+issues (category `reference images`); the current sequencing lives in the work queue and on those issues
+rather than here, since it has since overtaken the slice-by-slice breakdown this page used to carry. Order
+decided at filing: sidecar and vision skeleton first, then **redaction** and **search** interleave; 360°
+identification and practice mode are deliberately last.
+
+## Deferred
+
+- **LLM URL extraction** — [[acquisition-tooling#llm-url-extract]], a fallback for hosts no scraper
+  matches. Deferred until a real run of unmatched hosts says it's worth a model; a user-written scraper
+  covers the gap meanwhile.
+- **3D objects, a dedup review UI, an access-control grammar, multi-user auth propagation, web for
+  non-tutorial types.**
+- **Auto-update** — the installers themselves landed (#206,
+  [[appendices.briefcase-packaging#status]]): Briefcase-built installers with declarative file
+  association/icon/AUMID. MSIX packaging and self-update against a public release oracle still wait on
+  code-signing/notarization ([[packaging-deployment#app-identity]]/[[packaging-deployment#auto-update]]).
+- **Swarm** (full multi-node: discovery, pairing, registry, safe-move —
+  [[discovery-trust-access]], [[mounts-and-storage#fingerprint-map]]–[[mounts-and-storage#safe-move-rename]])
+  and **Daz3D library migration** are their own further-out efforts, out of scope for everything above.
+
+## Sequencing gates still open
+
+- **Before Tutorials' web/node work:** a short FastAPI/HTMX/Pico **spike**, since it's a new stack — answer
+  "can the follow-mode page be built the way it's needed", keep the lesson, discard the toy.
+- **Before promising "the browser plays the video" to a tablet:** an iPad-playback **spike** over a
+  representative sample of the real catalog — container/codec coverage (Safari plays H.264/HEVC in MP4/MOV;
+  MKV, common in these catalogs, does not play natively), the self-signed-HTTPS trust story
+  ([[appendices.open-questions#still-open]]), and HTTP Range seeking. The outcome decides whether Tutorials'
+  node needs a remux/transcode task-queue job.
+- **Before Borrowing:** nothing new architecturally — it reuses [[sync#overview]]'s reconcile, scoped to two
+  parties.
 
 ## Honest caveats
 
-- Estimates are *focused dev-weeks* (uninterrupted equivalent), not calendar time, and assume the design holds under
-  implementation — building always surfaces changes (as the design conversation itself repeatedly showed). Treat them as
-  ordering and relative-size guidance, not promises.
-- The prior versions de-risk **design** (you know what you want, you've tried approaches) more than they supply
-  **droppable code** — especially since only the oldest (TutCatalog4, C++/Qt5) reached "usable," and the Python ones are
-  ideas/scaffolding to redesign.
-- Personal-priority path to a genuinely useful **standalone** tool: **LocalEdit + CacheDB** (local edit, then a searchable
-  cached catalog — ~5–8 focused dev-weeks), with a *standalone-usable* result already at the end of LocalEdit. Tablet
-  watching (WatchTutorial) and offline borrow (Borrowing) build on top.
+- The prior versions de-risked **design** more than they supplied droppable code — only the oldest
+  (TutCatalog4, C++/Qt5) reached "usable," and the Python ones were ideas/scaffolding to redesign
+  (see [project history](history/README.md)).
+- Nothing above is estimated in dev-time; the size a piece of work turns out to be is tracked on its GH
+  issue (`XS`–`XL` labels, [[appendices.project-management#category-labels]]) once it's actually filed.

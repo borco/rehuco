@@ -24,14 +24,14 @@ rehuco formalizes as `.rehu` + `.rehudb`.
 
 | Capability | TutCatalogPy | rehuco |
 | --- | --- | --- |
-| `info.tc` sidecar | Yes (YAML) | `.rehu` (JSON); `.tc` adapter (LocalEdit3) |
-| SQLite cache of the catalog | Yes | `.rehudb`, built by the node (CacheDB3) |
-| Incremental scan | Basic | CacheDB3 (version-aware incremental scan) |
-| Catalog browser (sortable/filterable) | Yes | CacheDB4 |
-| Separate viewer app | Yes | Single agent; viewer surfaces LocalEdit1/LocalEdit5 |
+| `info.tc` sidecar | Yes (YAML) | `.rehu` (JSON); reads and converts `.tc`, never writes it |
+| SQLite cache of the catalog | Yes | Planned |
+| Incremental scan | Basic | Planned |
+| Catalog browser (sortable/filterable) | Yes | Planned |
+| Separate viewer app | Yes | Single agent; viewing and editing are both built into it |
 | App state persistence | `.ini` (QSettings) | `.rehuco` (per-machine) + app settings |
-| Duration via ffprobe | Yes | field LocalEdit2; auto-measure **TBD** |
-| Scraping | Yes | deferred (acquisition tooling) |
+| Duration via ffprobe | Yes | Yes — stored field, can also measure itself from the media |
+| Scraping | Yes | Yes — built-in scrapers (ArtStation, Udemy), browser-drop and URL-drop handling |
 
 ## Can rehuco work for its data?
 

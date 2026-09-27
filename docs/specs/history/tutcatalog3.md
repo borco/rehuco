@@ -27,11 +27,11 @@ mapping is the same:
 
 | Capability | Tutcatalog 3 | rehuco |
 | --- | --- | --- |
-| `info.tc` sidecar | Yes (YAML) | `.rehu` (JSON); `.tc` adapter (LocalEdit3) |
-| View / edit | Partial (incomplete rewrite) | LocalEdit1 / LocalEdit2 |
-| Catalog browser | Partial | CacheDB4 over `.rehudb` (CacheDB3) |
-| Duration via ffprobe | Yes | field LocalEdit2; auto-measure **TBD** |
-| Scraping (cygwin/BeautifulSoup) | Yes | deferred (acquisition tooling) |
+| `info.tc` sidecar | Yes (YAML) | `.rehu` (JSON); reads and converts `.tc`, never writes it |
+| View / edit | Partial (incomplete rewrite) | Yes — generic and typed field toolkit, both complete |
+| Catalog browser | Partial | Planned |
+| Duration via ffprobe | Yes | Yes — stored field, can also measure itself from the media |
+| Scraping (cygwin/BeautifulSoup) | Yes | Yes — built-in scrapers (ArtStation, Udemy), browser-drop and URL-drop handling |
 | Per-machine config | `.tutcatalogrc` (YAML) | `.rehuco` |
 
 ## Can rehuco work for its `info.tc`?

@@ -24,12 +24,12 @@ app. It never grew into a full catalog/editor before being set aside.
 
 | Capability | TutCatalogPy3 | rehuco |
 | --- | --- | --- |
-| `info.tc` sidecar | Yes (YAML) | `.rehu` (JSON); `.tc` adapter (LocalEdit3) |
-| Viewer | Yes | LocalEdit1 / LocalEdit5 |
-| `.tc` association + double-click open | Yes (Linux MIME) | LocalEdit1 + file-association pre-work spike |
-| Standalone packaging | PyInstaller | native installers deferred; **Briefcase** evaluated in pre-work spike |
-| Scraping | Yes (scrapper) | deferred (acquisition tooling) |
-| SQLite cache / browser | Basic | `.rehudb` (CacheDB3) / browsers (CacheDB4) |
+| `info.tc` sidecar | Yes (YAML) | `.rehu` (JSON); reads and converts `.tc`, never writes it |
+| Viewer | Yes | Yes — read-only panels plus a screenshot lightbox |
+| `.tc` association + double-click open | Yes (Linux MIME) | Yes — Windows ProgID/AUMID and macOS `QFileOpenEvent`, single-instance forwarding |
+| Standalone packaging | PyInstaller | Yes — Briefcase-built installers (Windows/macOS) with declarative file association/icon/AUMID |
+| Scraping | Yes (scrapper) | Yes — built-in scrapers (ArtStation, Udemy), browser-drop and URL-drop handling |
+| SQLite cache / browser | Basic | Planned |
 
 ## Can rehuco work for its `info.tc`?
 

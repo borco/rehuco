@@ -31,10 +31,10 @@ Different problem, so most rows are N/A rather than "planned later":
 | --- | --- | --- |
 | Domain | Offline disk/volume contents | Per-resource tutorials / reference images / assets |
 | Data model | One monolithic XML catalog | One `.rehu` sidecar per resource + rebuildable `.rehudb` cache |
-| Rich per-item metadata | No | Yes — typed field schema (LocalEdit2) |
-| Search a cache when media is offline | Yes (its whole point) | Partial, differently framed — mounts may be offline ([mounts & storage](../mounts-and-storage.md)); the cache is rebuildable, not a hand-made index |
-| Web scraping / metadata enrichment | No | Deferred (acquisition tooling) |
-| Distribution / multi-node | No | The Swarm milestone |
+| Rich per-item metadata | — | Yes — typed field toolkit (text, date, rating, duration, size, tag list, path, image count, …) |
+| Search a cache when media is offline | Yes (its whole point) | Planned |
+| Web scraping / metadata enrichment | — | Yes — built-in scrapers (ArtStation, Udemy), browser-drop and URL-drop handling, an image pipeline |
+| Distribution / multi-node | — | Planned |
 
 ## Can rehuco work for its data?
 

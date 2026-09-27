@@ -19,6 +19,17 @@ If you use `borco-core` from PyPI, this move will be handled automatically.
 `borco-core` holds small, general-purpose building blocks that carry **no GUI (PySide/Qt) dependency**, so they
 are usable on headless servers and low-spec hardware. Qt-dependent counterparts live in `borco-pyside`.
 
+Currently provides:
+
+- **`borco_core.atomic_write`** — crash-safe file writes: a temporary sibling, flushed and `fsync`ed, then
+  replaced atomically.
+- **`borco_core.logging`** — `LogScope`, nested scopes carried on log records, and
+  `SharedRotatingFileHandler`, a rotating log file several processes can append to.
+- **`borco_core.shared_read`** — `shared_read_open`, reading a file without blocking its rename on Windows.
+- **`borco_core.file_holders`** — which processes hold a file open (Windows Restart Manager).
+- **`borco_core.platforms`** — Windows registry, file association and shell context menus; Linux XDG
+  desktop entries, MIME packages and icon-theme installation.
+
 ## Installation
 
 ```bash

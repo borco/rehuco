@@ -10,52 +10,62 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-27
+
 ### Added
 
-- `rehuco-agent --scrape URL [--scrapers-folder DIR] [--output PATH]` scrapes a page from the console and
-  prints the result as JSON, and `rehuco-agent --scrape-schema PATH` writes the JSON Schema every scrape
-  result is checked against — both for developing a scraper script without opening the GUI.
-- A **Content Images** panel on every reference-images document, hidden by default: the images inside
-  the pack's archives, in rows justified to the panel's width and in natural order, each archive opening with a
-  banner naming it and counting its images. A banner click folds its images away and a second click
-  brings them back; the banner of the group being scrolled through stays pinned at the top. A click
-  selects an image and a status line under the grid names it, or the one under the pointer; the arrow
-  keys move the selection, `+`/`-` fold the current group, `Esc` clears it. Read-only,
-  since those images live in a checksummed archive. Thumbnails decode off the interface thread as they
-  scroll into view; nothing is written to disk.
-- Double-clicking a content image opens it maximized in the same viewer screenshots use, navigating the
-  whole pack. The viewer's `I` key (or its corner button) shows the image's name, pixel size and file
-  size in a corner overlay, hovering a thumbnail names it in a box right above the row (no tooltip
-  delay), `T` toggles the thumbnail row, and a double-click on the image closes it. A screenshot is
-  named relative to the `.rehu`, the way an archive member is.
-- Holding a key while double-clicking picks the viewer's surface for that one open, whatever Images /
-  Display says: `Shift` for the document overlay, `Ctrl` for the app-window overlay, `Ctrl+Shift` for
-  full screen.
-- Images / Display gains the Content Images row-height clamp and two banner boxes — zip file names,
-  folder names in zips — plus the viewer's info overlay, its background colour, whether a double-click
-  closes it and whether closing it selects the image it was on back in the panel (scrolled into view,
-  its group expanded), all applied live to open panels and viewers.
+- Each resource type shows only its own fields; a reference pack gains an image count.
+- A **Content Images** panel on reference packs: the images inside the pack's archives, in a grid that
+  opens any of them in the maximized viewer.
+- Size on disk, video duration and image count can be measured from the content and applied on request.
+- **Checksums**: generate and verify a resource, sweep a whole folder, a per-resource Checksums panel,
+  legacy `.sfv`/`.md5`/`.sha*` manifests adopted, and trust tracked per location.
+- A **Tasks** panel running long jobs one at a time — pause, cancel, reorder, kept across restarts — with
+  a status-bar indicator and each job's own log.
+- A **Log** panel for the app and one per resource.
+- **Import Legacy Catalog**: bulk `.tc`→`.rehu` conversion over a folder tree, plus a Conversion Backups
+  manager to discard the backups it keeps.
+- **Web scraping**: drop a URL on the editor to fill it from ArtStation, Udemy or your own scraper script;
+  a dropped HTML selection lands in the description as Markdown; `--scrape` and `--scrape-schema` on the
+  command line.
+- Screenshots can be moved, deleted (to the Recycle Bin) and converted from the Images panel; the
+  screenshot name patterns are a setting.
+- A **Files** panel over the resource's folder, and Reveal in the system's file browser.
+- Location name templates per resource type, with replacements.
+- A tray icon, off by default: closing hides to the tray, and Quit is explicit.
+- Panels can be hidden, pinned to a window sidebar, or maximized in their tab; the default layout is
+  saved per resource type.
+- `Ctrl+W` closes the current document, with Close Missing and Close All beside it; the View menu marks
+  the focused and unsaved documents.
+- Table editors for authors, collections and learning paths.
+- Windows crash dumps can be switched on from System Integration, and every run is recorded in a
+  rotating log file.
 
 ### Changed
 
-- A document's panels are the common set plus what its type adds — today the Content Images panel on a
-  reference pack — and the **default layout is saved per type**: *Save current layout as default for
-  Tutorial* and *Reset default layout for Tutorial* name the type they act on, and a type with no default
-  opens as built. A document restored with the session keeps the layout that was stored for it; one opened
-  fresh gets its type's default; changing a document's type in the editor leaves its panels and layout as
-  they are, and the layout button then applies the new type's default. The previous single default layout
-  is dropped. Saved layouts survive a panel being added to one type: a layout now restores onto a document
-  whose panels differ from the ones it was saved with.
-- The maximized viewer paints an opaque background (the dark grey code editors use, configurable) instead
-  of dimming the document underneath, and its close, thumbnail-row and info buttons appear only while the
-  pointer is near them, like the prev/next bands.
-- Screenshots in a document's strip open maximized on a double-click, not a single click.
-- The app-wide *Image Previews* toggle (`Ctrl+Shift+`\`) now hides every image: the Content Images panel
-  keeps only its banners, and a description's embedded images stand in as `[image: name]` placeholders.
-- The maximized viewer's thumbnail row decodes lazily, only what is in view, so it opens as fast over a
-  pack of thousands as over three screenshots.
-- `.avif` still counts as a content image but does **not** decode in the shipped Qt plugin set (`webp`
-  does): such members show as a broken placeholder in the panel rather than an image.
+- Settings is a regular panel that reopens if it was open at exit (its "Restore on start" option is
+  gone), returns to the last page shown, marks unsaved pages, and has many new pages.
+- Screenshots open maximized on a double-click instead of a single click; the viewer's background is
+  opaque and its buttons show on hover.
+- The Image Previews toggle hides every image, including the Content Images grid and images in a
+  description.
+- Session restore can be switched off, and a restored document is read only when its tab is first shown.
+- Switching document tabs is about twice as fast.
+- Toolbar icons recolor at once on a theme switch.
+
+### Fixed
+
+- The unsaved-changes prompt names the document instead of `info.rehu`.
+- After a rename, the document tab, the window title and Open Recents show the new name.
+- An unconverted `info.tc` gets its folder's name on its tab, like an `info.rehu`.
+- Converting a `.tc` keeps each screenshot's number, and swaps its Open Recents entry for the new `.rehu`.
+- Relative paths given to a second launch are resolved before being handed to the running instance.
+- Oversized or deeply nested `.rehu`/`.tc` files are refused instead of exhausting memory.
+
+### Known limitations
+
+- `.avif` images count as content images but do not display.
+- The installers are still neither code-signed nor notarized.
 
 ## [0.1.1] - 2026-07-29
 

@@ -59,9 +59,9 @@ it is done in is recorded on neither.
 
 The per-family and per-slice milestones this replaced are gone from GH: `Pre-work`, `LocalEdit`,
 `WebScrapping`, `RefImages`, their `LocalEdit1`/`LocalEdit2`/`<Milestone>X` slices, and the `Audit1`/`Audit2`
-audit runs (`X1`/`X2` in their earlier form). Those names survive as planning vocabulary in
-`implementation-plan.md`, which still describes the roadmap that way, and as nothing on GitHub — so there is
-no longer anything to keep in step between the two.
+audit runs (`X1`/`X2` in their earlier form). The naming convention is retired everywhere, not just on
+GitHub — `implementation-plan.md` no longer uses it either, organizing remaining work by category label
+instead.
 
 ## Monorepo layout
 
