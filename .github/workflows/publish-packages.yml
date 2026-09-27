@@ -168,7 +168,7 @@ jobs:
       # Pinned to a release rather than PyPA's recommended floating `release/v1`: this is the one job
       # holding an OIDC token, and a floating tag is repointable by anyone who takes over the action
       # -- the same reasoning that pinned setup-uv ([[appendices.continuous-integration#fix-node20-warning]]).
-      - uses: pypa/gh-action-pypi-publish@v1.14.1
+      - uses: pypa/gh-action-pypi-publish@v1.14.2
         with:
           repository-url: https://test.pypi.org/legacy/
           # A tag re-run uploads a version the dry run already put here; identical files are not an
@@ -200,4 +200,4 @@ jobs:
       # the tag to the source file and knows nothing about what is already published
       # ([[appendices.release-runbook#version-source]]). Failing loudly beats a green run that
       # uploaded nothing.
-      - uses: pypa/gh-action-pypi-publish@v1.14.1
+      - uses: pypa/gh-action-pypi-publish@v1.14.2

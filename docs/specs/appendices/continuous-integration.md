@@ -285,11 +285,12 @@ number is the only thing standing between a mis-cut tag and a green run that sil
 ends red on its last job; that is documented rather than smoothed over
 ([[appendices.release-runbook#tagged-run]]).
 
-**`pypa/gh-action-pypi-publish` is pinned to `@v1.14.1`**, not the floating `release/v1` the PyPA docs
+**`pypa/gh-action-pypi-publish` is pinned to `@v1.14.2`**, not the floating `release/v1` the PyPA docs
 recommend and `pyside6-scintilla` uses. This is the one job holding an OIDC token, and a floating tag
 can be repointed by whoever comes to control the action — the same reasoning that pinned `setup-uv`
 ([[appendices.continuous-integration#fix-node20-warning]]). The accepted cost is that security fixes
-arrive by a deliberate bump rather than automatically.
+arrive by a deliberate bump rather than automatically — and so do format changes: hatchling began
+writing core metadata 2.5, which v1.14.1's Twine 6 refused at upload, and only v1.14.2 (Twine 7) accepts.
 
 **What is not git-tracked**: the `testpypi` and `pypi` GitHub Environments, and a trusted publisher per
 package on each index — ten registrations, all naming this workflow file. The step-by-step is in
