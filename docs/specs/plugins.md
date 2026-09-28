@@ -217,6 +217,13 @@ makes **live "both"** work: an edit in the editor surface updates the view-model
 viewer surface is bound to, so the viewer re-renders without the two surfaces knowing about each
 other. Keeping the reactive layer in the agent preserves the core's non-GUI purity ([[plugins#core-vs-plugin]]).
 
+**One view-model per open resource, app-wide** (#375). The same bindings that keep two surfaces of one document in
+step keep *two hosts* in step: a resource shown both as a Documents dock and as the Rehuco dock's current resource
+([[plugins#browsers]]) is **one** view-model held by both, so an edit in either shows in the other before anything is
+saved. A registry keyed by path owns the view-models and hands the same one to every holder; a view-model lives until
+its last holder lets go, and the unsaved-changes prompt belongs to that last release, not to closing one of several
+views. A rename relocates every held view-model at or beneath the renamed paths ([[mounts-and-storage#out-of-band]]).
+
 Common-core `title` / `publisher` / `url` are attributes of a **source record** ([[field-schema#sources]]), and
 `sources` is a list; the view-model exposes that list explicitly and, for now, edits the **primary**
 entry. The multi-source record-list *editor* is still unbuilt — the view-model is the seam it plugs
@@ -289,6 +296,12 @@ later slice (LocalEdit2.1/#21). A nested surface toggle must carry the [[packagi
 workaround
 (stash `splitterSizes` on `viewToggled(False)` — `closeRequested` never fires on a toggle-hide — reapply on
 `viewToggled(True)`).
+
+**A second host for the same sub-docks.** Beside Documents, the window holds a **Rehuco** dock ([[plugins#browsers]]),
+whose own nested manager hosts the sub-docks of the *current* resource next to the browsing views. So the sub-docks,
+the document toolbar and the layout button are one reusable piece that any dock manager can host and rebuild for
+another resource (#380), not something only a Documents dock owns. Each host keeps **its own per-type default
+layouts**: a layout saved in the Rehuco dock never changes how Documents opens that type, and the other way round.
 
 ### §13.2.5 The files sub-dock
 
@@ -481,7 +494,41 @@ columns plus type-specific columns.
   This couples the viewer dock to the browser's filter state — natural under the dockable-UI model — and was the primary
   filtering affordance in the usable older version.
 
-### §13.5.1 Click-to-filter URL convention
+### §13.5.1 The Rehuco dock
+
+[[[plugins#rehuco-dock]]]
+
+The first browser is a top-level **Rehuco** dock beside Documents, showing one opened `.rehuco`
+([[data-model#local-file-trio]], #377). Its nested dock manager holds three kinds of sub-dock:
+
+- **Roots** (#378) — a column view: the first column is the `.rehuco`'s roots by label
+  ([[mounts-and-storage#rehuco-scope]]), each further column one folder's listing, drawn like the files sub-dock
+  ([[plugins#files-subdock]]) but with no `..` row, which a column view has no use for. It is **navigation, not
+  membership**: what the catalog holds is still decided by records, never by the tree ([[plugins#grouping-entities]]).
+  A vertical toolbar on its left adds a root (a folder picker), removes one (after a confirmation), and moves the
+  current root to the top, up, down or bottom — the ordering actions and icons the settings lists use, but not their
+  list editor, whose inline insert, rename, duplicate and reset have no meaning for a root. The toolbar acts only
+  while the root column is current. `F5` re-lists the visible columns: a folder deleted outside the app disappears,
+  and the selection falls back to its nearest surviving ancestor. The model lists off the GUI thread, holds no
+  handle between listings and never uses `QFileSystemModel` — the files sub-dock's reasons, plus that browsing must
+  never block a rename ([[mounts-and-storage#out-of-band]]). A node is root, folder, file, loading or unreachable, so
+  an offline root is a state the model already has ([[mounts-and-storage#offline-mounts]]).
+- **Browser** (#379) — the generic resource browser above as a table over the cache ([[data-model#cache-schema]]):
+  every `.rehu` under the roots, and every `.tc` no `.rehu` covers. A header context menu chooses the columns,
+  remembered in settings, all shown by default. A **filter line** takes free text plus `field="value"` tokens
+  (`folder`, `authors`, `tags`, `publishers`, `type`); a folder's context menu in Roots — *Show only rehu in this
+  folder* — sets `folder="<root label>/<relative path>"`, and click-to-filter links set the same tokens
+  ([[plugins#filter-urls]]). Roots and Browser are otherwise independent.
+- **The current resource's sub-docks** (#381) — exactly one selected row makes that resource *current*, and the
+  document sub-docks ([[plugins#dock-shell]]) show it, with its document toolbar beside the Rehuco toolbar; none or
+  several selected leaves them empty. The view-model is the one any Documents dock of the same file holds
+  ([[plugins#view-model]]), so the two stay in step unsaved. **Moving off a resource with unsaved edits opens it in
+  Documents** (or focuses it there) carrying those edits, then shows the new current resource.
+
+Every view here updates in place when the app moves or changes files — rows and nodes are renamed, moved, inserted
+or removed, never reset — by the in-process announcements of [[mounts-and-storage#out-of-band]].
+
+### §13.5.2 Click-to-filter URL convention
 
 [[[plugins#filter-urls]]]
 
@@ -507,6 +554,8 @@ filter://publishers?name=Example%20Publisher
   dispatch branch is a logged no-op seam. Link handling never enables the label's own external-link opening: one
   handler dispatches on scheme — `filter://` internally, validated `http(s)` to the system browser — so a `filter://`
   link can never leak to the OS, and no other scheme is ever followed.
+- **A link is a filter-line token.** Dispatching `filter://authors?name=Foo%20Bar` sets `authors="Foo Bar"` on the
+  Rehuco dock's filter line ([[plugins#rehuco-dock]]) — one filter grammar, reached by typing or by clicking.
 
 ## §13.6 Tutorial plugin
 

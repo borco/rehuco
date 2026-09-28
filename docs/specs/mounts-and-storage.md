@@ -64,6 +64,13 @@ different machines even having a given share mounted at all), so a shared/centra
 machine's reality. This also removes any cold-start ambiguity: the mount-to-node relationship is known immediately at
 startup, not discovered after the fact.
 
+**Per `.rehuco`, not per machine singleton.** A machine may keep several `.rehuco` files — each a set of roots
+browsed together — and the agent opens one at a time ([[data-model#local-file-trio]], #371). Each root carries a
+**label**, defaulting to its folder's name and made unique with a suffix on a clash; the label is what the browser
+shows and what a folder filter addresses (`folder="<label>/<relative path>"`, [[plugins#browsers]]), and changing it
+touches nothing on disk. Removing a root from a `.rehuco` asks first, states that its files stay where they are, and
+drops only the root's cached entries ([[data-model#cache-schema]]).
+
 **Do not put swarm-identical data in `.rehuco`.** Users, hashes, and access rules are swarm-wide and must be identical
 on every node; they belong with the propagated swarm registry ([[discovery-trust-access#user-auth]],
 [[discovery-trust-access#access-control]]), *not* in this per-machine file. The dividing line: `.rehuco` holds what is
@@ -102,6 +109,22 @@ discovery paths, ordered by immediacy:
 On any of the three, the node re-reads just that file, updates its cache, and propagates the change onward through the
 swarm as for any other metadata update, with the version-vector comparison deciding fast-forward vs. concurrent
 ([[data-model#write-integrity]]).
+
+**Inside one agent, the explicit notification is an in-process event** (#376). Whatever the agent does to files
+itself — a resource rename, a save, a `.tc` conversion, a screenshot moved or deleted, a checksum run finishing — is
+announced app-wide, and every view of those files (the cache, the browser, the roots column view, the files
+sub-dock, open documents) updates **in place**, with no rescan and no model reset. **A move is announced as the
+rename's executed plan**, the `(source, destination)` pairs actually renamed, not as one old/new pair: each holder
+applies the rule *a path at or beneath a renamed source lands at the same offset beneath its destination* to
+everything it holds. That one rule covers every scoping case ([[data-model#resource-scoping]]) — a directory-scoped
+resource (a collection's folder included) carries every record nested under it, a file-scoped `foo.rehu` carries its
+`foo.*` siblings, screenshots and sidecars, and a file-scoped record inside a renamed folder moves with the folder.
+Changes made outside the app reach the views by the same three paths as above, plus an explicit refresh (`F5`) in
+each browsing view; there is still no watcher.
+
+**Browsing never blocks a rename.** A directory-scoped rename on NTFS fails while any handle is open beneath the
+directory, so no browsing view or scan holds one between reads: every directory listing is one chunk under the rename
+coordinator's hold, closed before the next, and yields when a rename asks (#241, #372, #378).
 
 ## §9.6 Node handoff during active viewing
 

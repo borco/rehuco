@@ -128,8 +128,8 @@ browse/search the catalog on the desktop — close to the original tutcatalog. S
 network, no node, no login**; the cache is a rebuildable derivative of the `.rehu` files, never a source of
 truth ([[data-model#local-file-trio]]).
 
-Tracer bullet: point the agent at one folder → it scans the `.rehu` files into `.rehudb` → a table lists
-them → a text filter narrows it live.
+Tracer bullet (#377): open a `.rehuco` naming the folders → the agent scans their `.rehu` files into `.rehudb` → a table lists
+them → opening a row opens the resource. The live text filter comes with the browser table.
 
 Then thicken: incremental, version-aware rescanning that only touches what changed and prunes vanished
 entries ([[data-model#scan-and-staleness]]); generic and tutorial browsers with click-to-filter on
@@ -138,6 +138,17 @@ rating) fast enough over a large library to feel live.
 
 **Exit criteria:** point the agent at real folders, get a searchable catalog on the desktop, and click
 through to view or edit any resource.
+
+**Filed** (label `cache db`; the shape is [[plugins#rehuco-dock]] and [[data-model#cache-schema]]):
+
+- core — the `.rehuco` file (#371); the versioned `.rehudb` schema and full scan (#372); incremental rescan and
+  targeted updates, renames included (#373).
+- shared plumbing — a header menu for column visibility (#374); one view-model per open resource shared by every
+  host (#375); in-place propagation of the app's own moves and changes (#376); `DocumentWidget` split so another
+  dock can host a resource's sub-docks (#380).
+- the Rehuco dock — the tracer above (#377); the roots column view (#378); the browser table with its filter line
+  (#379); the current resource's sub-docks (#381).
+- public docs once it runs (#382).
 
 ## Tutorials — direction revised
 

@@ -708,8 +708,8 @@ Each node keeps three files of the same basename, sitting together, with sharply
 
 | File | Holds | Category | Lifecycle |
 | --- | --- | --- | --- |
-| `.rehuco` | Per-machine config: folder roots, mounts, primary/remote ownership flags ([[mounts-and-storage#folder-add]]), plugin list ([[plugins#overview]]), retention opt-ins ([[mounts-and-storage#durable-retention]]), auth-trusted flag | Local, legitimately *different* per box | Authored locally; never propagated |
-| `.rehudb` | The SQLite catalog cache | Derived cache | Rebuildable within the [[architecture-design#why-distributed]] boundary; disposable/regenerable |
+| `.rehuco` | Machine-local config, opened as a file: its own `id` (the **rehuco id**), labeled folder roots, mounts, primary/remote ownership flags ([[mounts-and-storage#folder-add]]), plugin list ([[plugins#overview]]), retention opt-ins ([[mounts-and-storage#durable-retention]]), auth-trusted flag | Local, legitimately *different* per box | Authored locally; never propagated |
+| `.rehudb` | The SQLite catalog cache of one `.rehuco`'s roots ([[data-model#cache-schema]]) | Derived cache | Rebuildable within the [[architecture-design#why-distributed]] boundary; disposable/regenerable |
 | `.rehusw` | Swarm info: membership, users + salted hashes, access rules | Swarm-identical, *propagated* | **Durable, not disposable** — updated by resync, never regenerated from scratch |
 
 `.rehusw` is the concrete on-disk home of the propagated registry that [[discovery-trust-access#membership-model]]–6.9
@@ -718,6 +718,46 @@ that is offline (and may rebuild its cache) must still remember the last-known u
 until it can resync ([[discovery-trust-access#serve-after-resync]]). It is persisted state that gets *updated*, not
 regenerated. Because it carries the user list with salted password hashes ([[discovery-trust-access#user-auth]]), a node
 creates it owner-readable only (0600-equivalent).
+
+**A `.rehuco` is a file the agent opens, and a machine may keep several** — one per set of roots a user wants to
+browse together — with **one open at a time** in the agent's Rehuco dock ([[plugins#browsers]]) (#371). Its
+contents stay machine-local for the reasons in [[mounts-and-storage#rehuco-scope]]; what changes is only that the
+declaration is a document rather than a single fixed file. The word *collection* is deliberately not used for it:
+that is already a resource type ([[plugins#grouping-entities]]).
+
+**The three files no longer sit together.** `.rehudb` lives in the user's **local cache directory**, named by the
+**rehuco id** rather than by the `.rehuco`'s path — so moving or renaming a `.rehuco` keeps its cache, and the cache
+is never on a network share, where SQLite's locking is unsafe (#372). `.rehusw` keeps its own durable home.
+
+### §4.8.1 The `.rehudb` cache schema
+
+[[[data-model#cache-schema]]]
+
+The cache is the stdlib `sqlite3` module in rehuco-core, Qt-free, one connection per thread (#372). Its shape:
+
+| Table | Holds |
+| --- | --- |
+| `roots` | One row per root of the `.rehuco`: its label, path and position |
+| `resources` | One row per record found under a root — FK to its root with `ON DELETE CASCADE`; the root-relative path, both as spelled and **normalized** (`os.path.normcase`) for matching; kind `rehu` or `tc`; UUID; type; the common core fields a browser shows; the record's stat signature and a content hash at last read ([[data-model#scan-and-staleness]]); when it was scanned |
+| `authors`, `tags`, `publishers` | Values plus their join tables to `resources`, so a filter on any of them is an indexed lookup |
+
+- **A `.tc` gets a row only where no `.rehu` covers it** ([[data-model#resource-scoping]]); converting one replaces
+  its row in place.
+- **Versioned, and upgraded forward only.** `PRAGMA user_version` holds the schema version, and upgrades are a
+  migration chain of `(version, upgrade)` steps whose head *is* the current version — the shape of the `.rehu`
+  chains ([[data-model#schema-version]]). Each step runs in one transaction; a step may simply be *drop and
+  rebuild*, which a disposable cache can always afford. There is no downgrade: a cache **newer** than the build is
+  never written, but discarded and rebuilt from the `.rehu` files, the reason logged.
+- **Created with `PRAGMA auto_vacuum = INCREMENTAL`** (it must precede the first table), so removing a root —
+  whose resources cascade away — returns its space with a cheap `PRAGMA incremental_vacuum` rather than a full
+  `VACUUM` rewrite.
+- **A move is applied, not rescanned** (#373). A rename's executed plan — its `(source, destination)` pairs — is
+  applied by the one rule the renamer already relocates with: *a path at or beneath a renamed source lands at the
+  same offset beneath its destination*. Exact and prefix matches on the normalized path are rewritten in one
+  transaction, and no moved record is re-read; a directory-scoped rename rebases every nested record, a file-scoped
+  one only its own.
+- **Scanning never blocks a rename.** Each directory read is one chunk under the rename coordinator's hold, closed
+  before the next ([[mounts-and-storage#out-of-band]]).
 
 ## §4.9 Write integrity: atomic writes + single-writer-per-managed-file
 
