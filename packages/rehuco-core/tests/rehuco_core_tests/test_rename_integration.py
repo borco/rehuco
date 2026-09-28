@@ -68,7 +68,8 @@ class HashingJob(TaskJobBase):
         self.__content: Final = coordinator.track(content_path)
         self.__permits: Final = Semaphore(0)
         self.parked: Final = Event()
-        """Set once the first chunk has been hashed and the job is waiting to be let on."""
+        """Set while the job waits to be let on after a chunk -- still inside the reader's hold, since the
+        generator is suspended at its ``yield`` -- and cleared by :meth:`step`."""
         self.digest = ""
         """The finished hash, written by ``run`` on its way out."""
 
@@ -82,6 +83,8 @@ class HashingJob(TaskJobBase):
 
         :param chunks: how many to allow.
         """
+        # cleared before the permits go out, so the set that follows the job's next chunk is never lost
+        self.parked.clear()
         for _ in range(chunks):
             self.__permits.release()
 
@@ -135,6 +138,9 @@ def rename_parked(job: HashingJob, coordinator: RenameCoordinator, record: Path,
     :returns: the seconds from the reader being let take its step to the rename landing -- the honest
         measure of "a rename waits one chunk", with the test's own deliberate parking excluded.
     """
+    # the reader re-enters its hold on its own thread after the previous rename; a rename started
+    # before it is back finds no holder, lands at once, and its flag is gone before anyone sees it
+    assert job.parked.wait(SETTLE)
     landed = Event()
     with running(lambda: (coordinator.rename(record, new_name), landed.set())):
         assert wait_until(lambda: coordinator.yield_wanted)
