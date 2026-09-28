@@ -4,9 +4,14 @@
 import subprocess
 from unittest.mock import MagicMock
 
-from pytest import raises
+from pytest import mark, param, raises
 from pytest_mock import MockerFixture
-from rehuco_agent.scraping.browser_fetcher import BrowserPageFetcher, PersonaBrowser, shared_persona_browser
+from rehuco_agent.scraping.browser_fetcher import (
+    RESPONSE_STATUS_SCRIPT,
+    BrowserPageFetcher,
+    PersonaBrowser,
+    shared_persona_browser,
+)
 from rehuco_agent.scraping.protocols import FetchError
 from rehuco_agent.scraping.results import Page
 from rehuco_agent.settings.scrapers_settings import Browser, ScrapersSettings, persona_folder
@@ -15,10 +20,17 @@ from selenium.common.exceptions import WebDriverException
 URL = "https://example.com/page"
 
 
-def fake_driver(mocker: MockerFixture, *, final_url: str = URL, html: str = "<html></html>") -> MagicMock:
-    """A `WebDriver` stand-in whose navigation resolves immediately with a ready page."""
+def fake_driver(
+    mocker: MockerFixture, *, final_url: str = URL, html: str = "<html></html>", status: object = None
+) -> MagicMock:
+    """A `WebDriver` stand-in whose navigation resolves immediately with a ready page.
+
+    :param status: what the page's Navigation Timing entry reports as its ``responseStatus``
+        (:data:`~rehuco_agent.scraping.browser_fetcher.RESPONSE_STATUS_SCRIPT`); every other script
+        answers ``"complete"``, the ready state the navigation waits for.
+    """
     driver = mocker.Mock()
-    driver.execute_script.return_value = "complete"
+    driver.execute_script.side_effect = lambda script: status if script == RESPONSE_STATUS_SCRIPT else "complete"
     driver.current_url = final_url
     driver.page_source = html
     return driver
@@ -221,6 +233,52 @@ def test_fetch_returns_the_fetched_page(mocker: MockerFixture) -> None:
     page = browser.fetch(URL, Browser.FIREFOX, headless=True)
 
     assert page == Page(url=URL, final_url="https://example.com/final", html="<p>hi</p>")
+
+
+@mark.parametrize("status", [param(200, id="200"), param(503, id="503"), param(429, id="429")])
+def test_fetch_carries_the_status_the_browser_reports(mocker: MockerFixture, status: int) -> None:
+    """The page's HTTP status comes from its Navigation Timing entry, so a scraper can read a refusal
+    through the browser the same way it does over plain HTTP (#369)."""
+    mocker.patch("rehuco_agent.scraping.browser_drivers.start_driver", return_value=fake_driver(mocker, status=status))
+
+    page = PersonaBrowser().fetch(URL, Browser.FIREFOX, headless=True)
+
+    assert page.status == status
+
+
+@mark.parametrize(
+    "reported",
+    [param(None, id="no-entry"), param(0, id="zero"), param(True, id="bool"), param("503", id="string")],
+)
+def test_a_status_the_browser_cannot_give_is_unknown(mocker: MockerFixture, reported: object) -> None:
+    """Anything but a positive integer -- no entry, the ``0`` a browser without the field reports, a
+    stray bool or string -- reads as an unknown status rather than a made-up one (#369)."""
+    mocker.patch(
+        "rehuco_agent.scraping.browser_drivers.start_driver", return_value=fake_driver(mocker, status=reported)
+    )
+
+    page = PersonaBrowser().fetch(URL, Browser.FIREFOX, headless=True)
+
+    assert page.status is None
+
+
+def test_a_status_script_that_raises_does_not_fail_the_fetch(mocker: MockerFixture) -> None:
+    """The status is extra information: a browser refusing the script still returns the loaded page,
+    with an unknown status (#369)."""
+    driver = fake_driver(mocker)
+
+    def run(script: str) -> object:
+        if script == RESPONSE_STATUS_SCRIPT:
+            raise WebDriverException("no performance API")
+        return "complete"
+
+    driver.execute_script.side_effect = run
+    mocker.patch("rehuco_agent.scraping.browser_drivers.start_driver", return_value=driver)
+
+    page = PersonaBrowser().fetch(URL, Browser.FIREFOX, headless=True)
+
+    assert page.status is None
+    assert page.html == "<html></html>"
 
 
 def test_a_driver_that_fails_to_quit_is_tolerated(mocker: MockerFixture) -> None:

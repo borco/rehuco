@@ -33,7 +33,13 @@ from ..scraping.markdown_images import substitute_image_stem
 from ..scraping.protocols import PageFetcher, RefetchRequestedError
 from ..scraping.registry import ScraperRegistry, shared_scraper_registry
 from ..scraping.results import Page, ScrapeResult
-from ..scraping.scrape_job import MAX_REFETCHES, REFETCH_COUNTDOWN_MESSAGE, REFETCH_GAVE_UP_MESSAGE, ScrapeJob
+from ..scraping.scrape_job import (
+    MAX_REFETCHES,
+    REFETCH_COUNTDOWN_MESSAGE,
+    REFETCH_GAVE_UP_MESSAGE,
+    ScrapeJob,
+    refetch_delay,
+)
 from ..scraping.scraper_executor import ScraperExecutor, shared_scraper_executor
 from ..scraping.url_drop import UrlDrop
 from .document_fields import declared_field_names
@@ -77,8 +83,9 @@ class ScrapeActions(QObject):  # pylint: disable=too-many-instance-attributes
     :param fetcher: what fetches a URL drop's page when it carries no fragment; `None` uses
         `~.scrape_job.ScrapeJob`'s own default (`~.http_fetcher.HttpPageFetcher`) -- a real network
         fetch. Overridable for tests, the same reason `ScrapeJob` itself takes one.
-    :param choose_delay: draws a re-fetch's pause, in seconds, from its ``(min, max)`` range; `None` uses
-        `random.uniform`. Overridable so a test never really waits.
+    :param choose_delay: draws from a re-fetch's ``(min, max)`` range, which `~.scrape_job.refetch_delay`
+        scales by how many re-fetches came before; `None` uses `random.uniform`. Overridable so a test
+        never really waits.
     :param clock: a monotonic clock in seconds, what a countdown is measured against; `None` uses
         `time.monotonic`. Overridable so a test can read the countdown at a moment of its choosing.
     :param parent: optional Qt parent.
@@ -311,12 +318,12 @@ class ScrapeActions(QObject):  # pylint: disable=too-many-instance-attributes
                 return
             if chain.attempt > MAX_REFETCHES:
                 self.__end(chain)
-                self.__last_failure = REFETCH_GAVE_UP_MESSAGE.format(message=refetch.message, count=MAX_REFETCHES)
+                self.__last_failure = REFETCH_GAVE_UP_MESSAGE.format(message=refetch.message, count=MAX_REFETCHES + 1)
                 LOG.warning(self.__last_failure)
                 self.changed.emit()
                 return
-            low, high = cast(tuple[float, float], refetch.delay)
-            delay = self.__choose_delay(low, high)
+            # the attempt that just asked is the re-fetch count so far plus one, so it names this re-fetch
+            delay = refetch_delay(cast(tuple[float, float], refetch.delay), chain.attempt, self.__choose_delay)
             chain.attempt += 1
             chain.url = cast(str, refetch.url)
             chain.message = refetch.message

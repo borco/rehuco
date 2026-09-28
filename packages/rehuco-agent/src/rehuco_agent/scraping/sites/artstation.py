@@ -32,6 +32,11 @@ beyond this reconstruction is needed here.
 naming the marketplace URL the same reconstruction builds. The reverse has nothing to go on -- a
 marketplace URL never names the artist whose store serves it -- so a refused marketplace page asks for
 itself again.
+
+The refusal is read from the page's HTTP status when the fetcher could report one, and from the page
+itself otherwise: ArtStation's refusal is its front server's stock error page, titled
+``503 Service Temporarily Unavailable`` with the same line as its only heading -- confirmed against a copy
+saved from the persona browser (:data:`STOCK_ERROR_TITLE`).
 """
 
 import re
@@ -60,6 +65,14 @@ STORE_PATH: Final = re.compile(r"^/store/([^/]+)/([^/]+)/?$")
 RETRYABLE_STATUSES: Final = frozenset({429}) | frozenset(range(500, 600))
 """The statuses a scrape asks to re-fetch (#369): a server error or the rate-limit answer, each worth
 asking again, as opposed to a permanent refusal (``404``, a login wall)."""
+
+STOCK_ERROR_TITLE: Final = re.compile(
+    r"(\d{3}) (?:Internal Server Error|Bad Gateway|Service (?:Temporarily )?Unavailable|Gateway Time-?out"
+    r"|Too Many Requests)"
+)
+"""The ``<title>`` of a web server's stock error page -- nginx's wording (``503 Service Temporarily
+Unavailable``, ``504 Gateway Time-out``) and the standard one alike -- matched whole, so a product that
+merely starts its name with a number is never taken for one (#369). The capture is the status it names."""
 
 
 class ArtStation:
@@ -91,18 +104,40 @@ class ArtStation:
         :returns: whatever fields, description and images the page has; an unrelated page (no
             recognizable product markup, of either shape) yields an empty result rather than an
             exception.
-        :raises RefetchRequestedError: the page answered one of :data:`RETRYABLE_STATUSES` -- asking
-            for the marketplace URL when a store host refused, the same URL again otherwise (#369).
+        :raises RefetchRequestedError: the page is a transient refusal (:meth:`__refusal_status`) --
+            asking for the marketplace URL when a store host refused, the same URL again otherwise (#369).
         """
+        soup = BeautifulSoup(page.html, "html.parser")
         store_match = self.__store_path_match(page.final_url)
-        if page.status in RETRYABLE_STATUSES:
+        refusal = self.__refusal_status(page, soup)
+        if refusal is not None:
             raise RefetchRequestedError(
-                f"ArtStation answered {page.status}",
+                f"ArtStation answered {refusal}",
                 url=self.__marketplace_url(store_match) if store_match is not None else None,
             )
         if store_match is not None:
-            return self.__scrape_store_page(page, store_match)
-        return self.__scrape_marketplace_page(page)
+            return self.__scrape_store_page(page, soup, store_match)
+        return self.__scrape_marketplace_page(page, soup)
+
+    @staticmethod
+    def __refusal_status(page: Page, soup: BeautifulSoup) -> int | None:
+        """The transient refusal ``page`` is, if it is one (#369): its HTTP status when that is one of
+        :data:`RETRYABLE_STATUSES`, else the status a stock error page names in its title
+        (:data:`STOCK_ERROR_TITLE`) -- what a fetcher that reports no status, or a server that served its
+        error page as ``200``, leaves to go on.
+
+        :param page: the fetched page.
+        :param soup: its parsed markup.
+        :returns: the refusal's status, or `None` when the page is not one.
+        """
+        if page.status in RETRYABLE_STATUSES:
+            return page.status
+        title = soup.title.get_text(strip=True) if isinstance(soup.title, Tag) else ""
+        match = STOCK_ERROR_TITLE.fullmatch(title)
+        if match is None:
+            return None
+        status = int(match.group(1))
+        return status if status in RETRYABLE_STATUSES else None
 
     @staticmethod
     def __marketplace_url(store_match: re.Match[str]) -> str:
@@ -128,9 +163,8 @@ class ArtStation:
             return None
         return STORE_PATH.match(parsed.path) if parsed.netloc.endswith(".artstation.com") else None
 
-    def __scrape_marketplace_page(self, page: Page) -> ScrapeResult:
+    def __scrape_marketplace_page(self, page: Page, soup: BeautifulSoup) -> ScrapeResult:
         """Parse a ``www.artstation.com`` product page -- this module's original shape (#273)."""
-        soup = BeautifulSoup(page.html, "html.parser")
         fields: dict[str, object] = {}
 
         header = soup.select_one(".productPage-header")
@@ -156,13 +190,12 @@ class ArtStation:
 
         return ScrapeResult(fields=fields, description=description, images=images)
 
-    def __scrape_store_page(self, page: Page, store_match: re.Match[str]) -> ScrapeResult:
+    def __scrape_store_page(self, page: Page, soup: BeautifulSoup, store_match: re.Match[str]) -> ScrapeResult:
         """Parse an artist store host's product page (#366) -- a different, white-label storefront
         template, not a re-skin of the marketplace one. Its ``.product-categories`` name broad site
         sections rather than the marketplace's tag vocabulary, so `advertised_tags` is left unset rather
         than guessed from description prose.
         """
-        soup = BeautifulSoup(page.html, "html.parser")
         fields: dict[str, object] = {"url": self.__marketplace_url(store_match)}
 
         title = soup.select_one(".product-title")

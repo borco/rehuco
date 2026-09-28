@@ -22,6 +22,7 @@ from .scrape_job import (
     REFETCH_GAVE_UP_MESSAGE,
     ScrapeError,
     ScrapeJob,
+    refetch_delay,
 )
 
 
@@ -42,8 +43,8 @@ def write_scrape_schema(path: Path) -> int:
 
 def scrape_with_refetches(url: str, registry: ScraperRegistry) -> ScrapeResult:
     """Run one scrape's attempts synchronously: the first at once, and each re-fetch the scraper asks for
-    (`~.protocols.RefetchRequestedError`) after sleeping a delay drawn from its range, up to
-    `~.scrape_job.MAX_REFETCHES` of them ([[acquisition-tooling#scrape-job]]).
+    (`~.protocols.RefetchRequestedError`) after sleeping a pause that grows with each one
+    (`~.scrape_job.refetch_delay`), up to `~.scrape_job.MAX_REFETCHES` of them ([[acquisition-tooling#scrape-job]]).
 
     The CLI's counterpart of `rehuco_agent.documents.scrape_actions.ScrapeActions`' timer-driven loop: a
     console call has no event loop to wait on and no pool slot to spare, so sleeping here is the plain
@@ -61,13 +62,12 @@ def scrape_with_refetches(url: str, registry: ScraperRegistry) -> ScrapeResult:
         except RefetchRequestedError as request:
             if attempt > MAX_REFETCHES:
                 raise ScrapeError(
-                    REFETCH_GAVE_UP_MESSAGE.format(message=request.message, count=MAX_REFETCHES)
+                    REFETCH_GAVE_UP_MESSAGE.format(message=request.message, count=MAX_REFETCHES + 1)
                 ) from request
             # not runtime checks: ScrapeJob.scrape fills both before raising (its own :raises: says so)
             url = cast(str, request.url)
-            low, high = cast(tuple[float, float], request.delay)
             # a jitter between polite retries, not anything security-sensitive
-            delay = random.uniform(low, high)  # nosec B311
+            delay = refetch_delay(cast(tuple[float, float], request.delay), attempt, random.uniform)  # nosec B311
             attempt += 1
             countdown = REFETCH_COUNTDOWN_MESSAGE.format(
                 message=request.message, url=url, seconds=round(delay), attempt=attempt, attempts=MAX_REFETCHES + 1

@@ -166,9 +166,12 @@ structural, both plain classes:
   `FetchError` on a failed fetch, or `LoginRequiredError` when the page it landed on is a login wall rather than the
   one it asked for — `HttpPageFetcher` raises the latter itself on a `401`/`403`, the one generic signal a plain HTTP
   fetch has; a scraper's own parsing raises it too, since only the scraper knows what its site's login wall looks
-  like when the status is a plain `200`. A `Page` also carries its HTTP **status** (`None` from the browser fetcher,
-  which cannot see one). A transient refusal — any `5xx`, or `429` — is not a fetch failure: `HttpPageFetcher`
-  hands the page over with its status, since only the site's scraper knows whether asking again is worth it.
+  like when the status is a plain `200`. A `Page` also carries its HTTP **status** — from the response over plain
+  HTTP, and from the page's Navigation Timing entry (`responseStatus`) in the persona browser, since WebDriver has no
+  command for it (#369); `None` for a dropped fragment, or a browser that does not report it. A transient refusal —
+  any `5xx`, or `429` — is not a fetch failure: both fetchers hand the page over with its status, since only the
+  site's scraper knows whether asking again is worth it, and it may recognize the refusal from the page itself when
+  the status is missing or wrong.
 - **`SiteScraper`** — what every scraper is: `matches(url) -> bool`, a host or prefix test as tc4's `can_scrap` was, a
   `label`, the `publisher` it fills in, `site_name`/`site_url` — what the Scrapers table's link for this scraper
   shows and where it takes the user, opened through the persona browser's `open_for_login`, never Selenium
@@ -242,7 +245,10 @@ covers.
 often not what the marketplace answers at the same moment, and the store URL alone is enough to build the
 marketplace one, so the ArtStation scraper asks for that instead of the same page again. The reverse has nothing
 to go on: a marketplace URL never names the artist whose store serves it, and a refused page is no page to read
-the author from, so a refused marketplace page asks for itself. A product id → artist table learned from earlier
+the author from, so a refused marketplace page asks for itself. The refusal is read from the page's status, or,
+when that is missing or a `200`, from the page itself: ArtStation's is its front server's stock error page, titled
+`503 Service Temporarily Unavailable` (seen through the persona browser), and only a whole stock title for a
+retryable status counts, never a product whose name starts with a number. A product id → artist table learned from earlier
 scrapes was tried and dropped: it only ever helps a product scraped before, and a re-scraped document already
 names its store in its own sources and author link.
 
@@ -371,9 +377,11 @@ dependencies of `rehuco-agent` ([[acquisition-tooling#browser-persona]] for why 
 **A re-fetch is the next attempt, never a sleeping worker.** Each `ScrapeJob` is one attempt, ending in a result, a
 failure, or a re-fetch request ([[acquisition-tooling#scraper-protocols]]); a sleep inside one would hold a pool slot
 for nothing. So every attempt is scheduled on a single-shot timer on the GUI thread — the drop's first with no
-delay, each re-fetch after a pause drawn from the scraper's range (a few seconds, `DEFAULT_REFETCH_DELAY`, when it
-names none) — and submitted when it fires. The re-fetches per drop are capped (`MAX_REFETCHES`); past the cap, the
-last reason becomes the drop's ordinary failure row. While a re-fetch waits, the drop's banner row is a warning
+delay, each re-fetch after a pause that grows with each one (`refetch_delay`): the n-th waits n times a draw from
+the scraper's range (`DEFAULT_REFETCH_DELAY` when it names none), so a site still refusing is
+given longer each time rather than the same few seconds again (#369) — and submitted when it fires. The re-fetches
+per drop are capped (`MAX_REFETCHES`); past the cap, the last reason becomes the drop's ordinary failure row,
+counting every attempt the user saw fail — `MAX_REFETCHES + 1` of them (`… — gave up after N failed fetches`). While a re-fetch waits, the drop's banner row is a warning
 counting down to it — `ArtStation answered 503 — trying <url> in 4 s (attempt 2 of N)` — with a **Cancel** action; the waiting re-fetch is also dropped when the
 document closes or its path changes, the same staleness a landing result is already checked for. The
 `--scrape` CLI runs the same attempts synchronously, sleeping between them and announcing each wait on stderr.
