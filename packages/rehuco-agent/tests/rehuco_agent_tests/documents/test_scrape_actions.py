@@ -87,6 +87,21 @@ class SequenceFetcher:  # pylint: disable=missing-function-docstring,too-few-pub
         return Page(url=url, final_url=url, html="<html></html>", status=status)
 
 
+class HoldingExecutor:
+    """Accepts each job and holds it, for the test to run once it has changed something mid-flight."""
+
+    def __init__(self) -> None:
+        self.jobs: list[object] = []
+
+    def submit(self, job: object) -> None:
+        """Hold ``job`` unrun."""
+        self.jobs.append(job)
+
+    def run_next(self) -> None:
+        """Run the oldest held job, inline."""
+        self.jobs.pop(0).run()  # type: ignore[attr-defined]
+
+
 class RefetchingScraper(FakeScraper):
     """Asks for the same URL again on every page answered with a 503, and scrapes every other page."""
 
@@ -161,18 +176,21 @@ def build_actions(  # pylint: disable=too-many-arguments
     )
 
 
-def refetching_actions(
+def refetching_actions(  # pylint: disable=too-many-arguments
     doc_model: RehuDocumentModel,
     fetcher: SequenceFetcher,
     image_downloads: ImageDownloads,
     *,
     delay: float = 0.0,
     clock: FakeClock | None = None,
+    executor: object | None = None,
 ) -> ScrapeActions:
-    """`ScrapeActions` whose scraper asks for a re-fetch of every 503 ``fetcher`` answers."""
+    """`ScrapeActions` whose scraper asks for a re-fetch of every 503 ``fetcher`` answers, run inline
+    unless an ``executor`` is given."""
     result = ScrapeResult(fields={"title": "New Title"}, description=None, images=())
     registry = FakeRegistry({URL: RefetchingScraper(result=result)})
-    return build_actions(doc_model, registry, SyncExecutor(), fetcher, image_downloads, delay=delay, clock=clock)
+    executor = executor if executor is not None else SyncExecutor()
+    return build_actions(doc_model, registry, executor, fetcher, image_downloads, delay=delay, clock=clock)
 
 
 def countdown_row(doc_actions: ScrapeActions) -> MessageBannerRow | None:
@@ -459,14 +477,16 @@ def test_a_path_change_before_the_result_arrives_discards_it(qtbot: QtBot, image
 def test_detach_discards_a_result_that_arrives_afterward(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
     """A detached document's in-flight scrape is never applied once it lands (#272)."""
     doc_model = model()
-    doc_actions = actions(
-        doc_model,
-        FakeScraper(result=ScrapeResult(fields={"title": "New"}, description=None, images=())),
-        image_downloads,
+    registry = FakeRegistry(
+        {URL: FakeScraper(result=ScrapeResult(fields={"title": "New"}, description=None, images=()))}
     )
-
+    executor = HoldingExecutor()
+    doc_actions = build_actions(doc_model, registry, executor, FakeFetcher(), image_downloads)
     doc_actions.submit(drop())
+    qtbot.waitUntil(lambda: bool(executor.jobs), timeout=WAIT_TIMEOUT_MS)
+
     doc_actions.detach()
+    executor.run_next()
     qtbot.wait(50)
 
     assert doc_model.title == "Original"
@@ -475,10 +495,13 @@ def test_detach_discards_a_result_that_arrives_afterward(qtbot: QtBot, image_dow
 def test_detach_discards_a_failure_that_arrives_afterward(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
     """A detached document's in-flight scrape never records its failure once it lands, either (#272)."""
     doc_model = model()
-    doc_actions = actions(doc_model, None, image_downloads)
-
+    executor = HoldingExecutor()
+    doc_actions = build_actions(doc_model, FakeRegistry({}), executor, FakeFetcher(), image_downloads)
     doc_actions.submit(drop())
+    qtbot.waitUntil(lambda: bool(executor.jobs), timeout=WAIT_TIMEOUT_MS)
+
     doc_actions.detach()
+    executor.run_next()
     qtbot.wait(50)
 
     assert not doc_actions.notice
@@ -662,6 +685,73 @@ def test_the_countdown_row_ticks(qtbot: QtBot, image_downloads: ImageDownloads) 
 
     assert f"in 58 s (attempt 2 of {MAX_REFETCHES + 1})" in cast(MessageBannerRow, countdown_row(doc_actions)).text
     doc_actions.detach()
+
+
+def test_two_waiting_drops_each_show_a_countdown(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
+    """Two drops waiting to re-fetch at once each keep their own countdown row, on one shared tick (#368)."""
+    doc_model = model()
+    doc_actions = refetching_actions(doc_model, SequenceFetcher(503), image_downloads, delay=60.0)
+
+    doc_actions.submit(drop())
+    doc_actions.submit(drop())
+    qtbot.waitUntil(lambda: sum(row.action is not None for row in doc_actions.notice) == 2, timeout=WAIT_TIMEOUT_MS)
+
+    assert len(doc_actions.notice) == 2
+    doc_actions.detach()
+
+
+def test_a_path_change_mid_attempt_drops_its_refetch_request(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
+    """A document moved while an attempt is in flight discards that attempt's re-fetch request: the
+    drop ends, with no further fetch and no row left behind (#368)."""
+    doc_model = model()
+    fetcher = SequenceFetcher(503, 200)
+    executor = HoldingExecutor()
+    doc_actions = refetching_actions(doc_model, fetcher, image_downloads, executor=executor)
+    doc_actions.submit(drop())
+    qtbot.waitUntil(lambda: bool(executor.jobs), timeout=WAIT_TIMEOUT_MS)
+
+    doc_model.path = Path("/fake/library/sculpting/moved.rehu")
+    executor.run_next()
+    qtbot.waitUntil(lambda: not doc_actions.notice, timeout=WAIT_TIMEOUT_MS)
+    qtbot.wait(50)
+
+    assert fetcher.calls == [URL]
+    assert not executor.jobs
+
+
+def test_detach_mid_attempt_ignores_its_refetch_request(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
+    """A document closed while an attempt is in flight never schedules the re-fetch that attempt asks
+    for (#368)."""
+    doc_model = model()
+    fetcher = SequenceFetcher(503, 200)
+    executor = HoldingExecutor()
+    doc_actions = refetching_actions(doc_model, fetcher, image_downloads, executor=executor)
+    doc_actions.submit(drop())
+    qtbot.waitUntil(lambda: bool(executor.jobs), timeout=WAIT_TIMEOUT_MS)
+
+    doc_actions.detach()
+    executor.run_next()
+    qtbot.wait(50)
+
+    assert fetcher.calls == [URL]
+    assert not doc_actions.notice
+
+
+def test_a_cancel_arriving_after_its_drop_ended_is_ignored(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
+    """Cancel is delivered queued, so the drop can end first -- here, by the document closing between the
+    click and its delivery; the late cancel then finds nothing to drop (#368)."""
+    doc_model = model()
+    doc_actions = refetching_actions(doc_model, SequenceFetcher(503, 200), image_downloads, delay=60.0)
+    doc_actions.submit(drop())
+    qtbot.waitUntil(lambda: countdown_row(doc_actions) is not None, timeout=WAIT_TIMEOUT_MS)
+    action = cast(MessageBannerRow, countdown_row(doc_actions)).action
+    assert action is not None
+
+    action.trigger()
+    doc_actions.detach()
+    qtbot.wait(50)
+
+    assert not doc_actions.notice
 
 
 # endregion

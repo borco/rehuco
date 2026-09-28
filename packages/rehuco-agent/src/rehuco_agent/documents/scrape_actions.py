@@ -217,10 +217,9 @@ class ScrapeActions(QObject):  # pylint: disable=too-many-instance-attributes
     def __launch(self, chain: ScrapeActions.Chain) -> None:
         """Run a chain's next attempt: one `ScrapeJob`, submitted under the document's log scope.
 
-        :param chain: the chain whose timer just fired.
+        :param chain: the chain whose timer just fired -- always still pending, since ending a chain stops
+            its timer first (`Chain.dispose`).
         """
-        if chain not in self.__chains:
-            return
         job = ScrapeJob(chain.url, self.__registry, page=chain.page, fetcher=self.__fetcher)
         chain.page = None
         chain.job = job
