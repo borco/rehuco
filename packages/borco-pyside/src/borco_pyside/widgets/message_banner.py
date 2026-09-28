@@ -7,8 +7,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import ClassVar, Final, cast
 
-from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtGui import QAction, QIcon
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QToolButton, QVBoxLayout, QWidget
 
 
 class MessageBannerSeverity(StrEnum):
@@ -47,25 +47,32 @@ class MessageBannerSeverityStyle:
 
 @dataclass(frozen=True)
 class MessageBannerRow:
-    """One notice: its severity and word-wrapping message.
+    """One notice: its severity, word-wrapping message, and optionally one remedy.
 
     :param severity: the row's severity, selecting its marker and accent color
         (:attr:`MessageBanner.SEVERITY_STYLES`).
     :param text: the notice's message; word-wraps rather than widening the strip.
+    :param action: a remedy for the condition, shown as a button after the message -- `None` for a
+        message-only row. The caller owns it, and keeps passing the **same** action for as long as the row
+        stands: that identity is what lets :meth:`MessageBanner.set_rows` update the row in place.
     """
 
     severity: MessageBannerSeverity
     text: str
+    action: QAction | None = None
 
 
 class MessageBanner(QWidget):
     """A vertical strip of :class:`MessageBannerRow` notices, one row per still-active condition.
 
-    Rebuilt wholesale on every :meth:`set_rows` call rather than diffed -- a row's condition is
-    recomputed by the caller on every relevant change, so there is no partial-update case to optimize
-    for. Carries **no** dismiss button: a row is state, not a one-shot notification, and clears itself
-    the next time :meth:`set_rows` is called with its condition gone. Shows nothing, and takes no
-    layout space, while empty.
+    Rebuilt wholesale on a :meth:`set_rows` call that changes the strip's shape -- a row's condition is
+    recomputed by the caller on every relevant change, so there is nothing to diff. The one exception is
+    a call that only rewords the rows it already shows (same count, severities and actions): those are
+    updated in place, so a row re-said every second, such as a countdown, never rebuilds its action
+    button under a press and loses the click. Carries **no** dismiss button: a row is state, not a
+    one-shot notification, and clears itself the next time :meth:`set_rows` is called with its condition
+    gone. A row's own :attr:`~MessageBannerRow.action` is a remedy for the condition, not a dismiss.
+    Shows nothing, and takes no layout space, while empty.
 
     :param parent: optional Qt parent.
     :param styles: per-instance severity styles, taking precedence over the class-wide
@@ -106,13 +113,21 @@ class MessageBanner(QWidget):
         self.__styles: Final = styles
         self.__layout: Final = QVBoxLayout(self)
         self.__layout.setContentsMargins(0, 0, 0, 0)
+        self.__shown: list[tuple[MessageBannerRow, QLabel]] = []
+        """The rows currently shown, each beside the label carrying its text."""
         self.setVisible(False)
 
     def set_rows(self, rows: Sequence[MessageBannerRow]) -> None:
-        """Replace the strip's rows wholesale, hiding the whole strip when ``rows`` is empty.
+        """Replace the strip's rows, hiding the whole strip when ``rows`` is empty -- rewording the shown
+        rows in place when only their texts changed, rebuilding them otherwise.
 
         :param rows: the notices to show, one row each, in order.
         """
+        if self.__rewords_shown_rows(rows):
+            for (_, label), row in zip(self.__shown, rows, strict=True):
+                label.setText(row.text)
+            self.__shown = [(row, label) for (_, label), row in zip(self.__shown, rows, strict=True)]
+            return
         while (item := self.__layout.takeAt(0)) is not None:
             # __layout only ever holds widgets added via addWidget below, never a spacer or nested
             # layout, so item.widget() is never None here
@@ -127,9 +142,24 @@ class MessageBanner(QWidget):
             # next event loop turn, which would leak a stale row into whatever set_rows builds next
             widget.setParent(None)
             widget.deleteLater()
+        self.__shown = []
         for row in rows:
-            self.__layout.addWidget(self.__build_row(row))
+            container, label = self.__build_row(row)
+            self.__layout.addWidget(container)
+            self.__shown.append((row, label))
         self.setVisible(bool(rows))
+
+    def __rewords_shown_rows(self, rows: Sequence[MessageBannerRow]) -> bool:
+        """Whether ``rows`` differ from the shown ones in their texts at most -- same count, and each
+        with the same severity and the very same action.
+
+        :param rows: the rows :meth:`set_rows` was just given.
+        :returns: whether they can be applied by rewording the shown rows in place.
+        """
+        return len(rows) == len(self.__shown) and all(
+            row.severity == shown.severity and row.action is shown.action
+            for row, (shown, _) in zip(rows, self.__shown, strict=True)
+        )
 
     def __resolve_style(self, severity: MessageBannerSeverity) -> MessageBannerSeverityStyle:
         """Pick a severity's style: this instance's own ``styles`` first (for whichever severities it
@@ -143,14 +173,14 @@ class MessageBanner(QWidget):
             return self.__styles[severity]
         return self.SEVERITY_STYLES.get(severity, self.__DEFAULT_STYLE)
 
-    def __build_row(self, row: MessageBannerRow) -> QWidget:
-        """Build one row: an accent-bordered container holding the severity's marker and the
-        word-wrapping message (the only child stretched -- the same discipline as
+    def __build_row(self, row: MessageBannerRow) -> tuple[QWidget, QLabel]:
+        """Build one row: an accent-bordered container holding the severity's marker, the word-wrapping
+        message (the only child stretched -- the same discipline as
         :class:`~borco_pyside.widgets.WrappingCheckBox`, so a long message grows the row taller, never
-        the strip wider).
+        the strip wider), and the row's action as a button, if it has one.
 
         :param row: the notice to render.
-        :returns: the built row widget, ready to add to the strip.
+        :returns: the built row widget, ready to add to the strip, and its message label.
         """
         style = self.__resolve_style(row.severity)
         container = QWidget()
@@ -176,4 +206,9 @@ class MessageBanner(QWidget):
         text.setWordWrap(True)
         layout.addWidget(text, 1)
 
-        return container
+        if row.action is not None:
+            button = QToolButton(container)
+            button.setDefaultAction(row.action)
+            layout.addWidget(button, 0)
+
+        return container, text

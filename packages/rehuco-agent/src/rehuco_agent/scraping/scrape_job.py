@@ -12,11 +12,26 @@ from requests import RequestException
 from ..settings.scrapers_settings import ScrapersSettings, shared_scrapers_settings
 from .browser_fetcher import BrowserPageFetcher
 from .http_fetcher import HttpPageFetcher
-from .protocols import FetchError, LoginRequiredError, PageFetcher
+from .protocols import FetchError, LoginRequiredError, PageFetcher, RefetchRequestedError
 from .registry import ScraperRegistry
 from .results import InvalidScrapeResultError, Page, ScrapeResult
 
 LOG: Final = logging.getLogger(__name__)
+
+MAX_REFETCHES: Final = 5
+"""How many re-fetches one scrape may ask for (`~.protocols.RefetchRequestedError`), so a scrape makes at
+most ``MAX_REFETCHES + 1`` attempts. Past it, the last request's reason becomes an ordinary failure
+(:data:`REFETCH_GAVE_UP_MESSAGE`)."""
+
+DEFAULT_REFETCH_DELAY: Final = (3.0, 6.0)
+"""The ``(min, max)`` seconds a re-fetch waits when its `~.protocols.RefetchRequestedError` names no range
+of its own -- a few seconds, drawn at random, rather than a fixed beat a rate limiter could lock onto."""
+
+REFETCH_COUNTDOWN_MESSAGE: Final = "{message} — trying {url} in {seconds} s (attempt {attempt} of {attempts})"
+"""What a scrape waiting to re-fetch says, in the document's banner and on the ``--scrape`` CLI's stderr."""
+
+REFETCH_GAVE_UP_MESSAGE: Final = "{message} — gave up after {count} re-fetches"
+"""The failure a scrape ends with once it has used all :data:`MAX_REFETCHES` of its re-fetches."""
 
 
 class ScrapeError(Exception):
@@ -107,10 +122,11 @@ class ScrapeJob:  # pylint: disable=too-many-instance-attributes
         `rehuco_agent.tasks.TaskQueueModel.Marshaller` is: a mangled class name is not one Qt or the
         linters will accept, and nothing outside `ScrapeJob` has a reason to build one.
 
-        Two pairs of signals rather than two: :attr:`scraped`/:attr:`failure` fire on whichever thread
-        the scrape ran on and are each connected, with an explicit `Qt.ConnectionType.QueuedConnection`,
-        to a relay that re-emits :attr:`result_ready`/:attr:`failed` -- so those two always fire on the
-        GUI thread, whatever kind of object connects to them (a plain callable included, which
+        Three pairs of signals rather than three: :attr:`scraped`/:attr:`failure`/:attr:`refetch` fire on
+        whichever thread the scrape ran on and are each connected, with an explicit
+        `Qt.ConnectionType.QueuedConnection`, to a relay that re-emits
+        :attr:`result_ready`/:attr:`failed`/:attr:`refetch_requested` -- so those always fire on the GUI
+        thread, whatever kind of object connects to them (a plain callable included, which
         `AutoConnection` would run on the worker thread instead).
         """
 
@@ -127,10 +143,19 @@ class ScrapeJob:  # pylint: disable=too-many-instance-attributes
         failed = Signal(object)
         """Fires with the `ScrapeError`, always on the GUI thread. What `ScrapeJob.failed` exposes."""
 
+        refetch = Signal(object)
+        """Fires with the normalized `~.protocols.RefetchRequestedError`, on the worker thread. Not for
+        callers outside `ScrapeJob`."""
+
+        refetch_requested = Signal(object)
+        """Fires with the normalized `~.protocols.RefetchRequestedError`, always on the GUI thread. What
+        `ScrapeJob.refetch_requested` exposes."""
+
         def __init__(self) -> None:
             super().__init__()
             self.scraped.connect(self.__relay_result, Qt.ConnectionType.QueuedConnection)
             self.failure.connect(self.__relay_failure, Qt.ConnectionType.QueuedConnection)
+            self.refetch.connect(self.__relay_refetch, Qt.ConnectionType.QueuedConnection)
 
         def __relay_result(self, result: object) -> None:
             """Re-emit :attr:`result_ready`, on the GUI thread by construction of the connection above.
@@ -146,6 +171,13 @@ class ScrapeJob:  # pylint: disable=too-many-instance-attributes
             """
             self.failed.emit(error)
 
+        def __relay_refetch(self, request: object) -> None:
+            """Re-emit :attr:`refetch_requested`, on the GUI thread by construction of the connection above.
+
+            :param request: the `~.protocols.RefetchRequestedError` :attr:`refetch` carried.
+            """
+            self.refetch_requested.emit(request)
+
     @property
     def result_ready(self) -> SignalInstance:
         """Fires on the GUI thread with the scraped `ScrapeResult`, exactly once, only on success.
@@ -160,13 +192,23 @@ class ScrapeJob:  # pylint: disable=too-many-instance-attributes
 
     @property
     def failed(self) -> SignalInstance:
-        """Fires on the GUI thread with the `ScrapeError`, exactly once, whenever :attr:`result_ready`
-        does not -- no scraper matched, the fetch failed or landed on a login wall, or the result failed
-        the scrape-result schema. Fires alongside the same `LOG.warning`/
-        `LOG.exception` call :meth:`run` always made; this is what lets a caller show the refusal beside
-        an open document (e.g. a `MessageBanner` row) rather than read it only from the log.
+        """Fires on the GUI thread with the `ScrapeError`, exactly once, whenever neither
+        :attr:`result_ready` nor :attr:`refetch_requested` does -- no scraper matched, the fetch failed
+        or landed on a login wall, or the result failed the scrape-result schema. Fires alongside the
+        same `LOG.warning`/`LOG.exception` call :meth:`run` always made; this is what lets a caller show
+        the refusal beside an open document (e.g. a `MessageBanner` row) rather than read it only from
+        the log.
         """
         return self.__marshaller.failed
+
+    @property
+    def refetch_requested(self) -> SignalInstance:
+        """Fires on the GUI thread, exactly once, when the scraper asked for the page again
+        (`~.protocols.RefetchRequestedError`) -- carrying the request with its ``url`` and ``delay``
+        already filled in. Scheduling the next attempt, and capping how many there are
+        (:data:`MAX_REFETCHES`), is the caller's job: this job is one attempt and never waits.
+        """
+        return self.__marshaller.refetch_requested
 
     @property
     def publisher(self) -> str | None:
@@ -194,10 +236,14 @@ class ScrapeJob:  # pylint: disable=too-many-instance-attributes
         is printed by the pool and reaches no log dock, and the document's log is the one place a
         broken script can be diagnosed from. A `ScrapeError` -- an expected refusal or a bad result --
         is logged as a warning rather than with a traceback; anything else still gets `LOG.exception`
-        and is wrapped as a `ScrapeError` before reaching :attr:`failed`.
+        and is wrapped as a `ScrapeError` before reaching :attr:`failed`. A re-fetch request is neither:
+        it is logged as information and reaches :attr:`refetch_requested`.
         """
         try:
             self.__marshaller.scraped.emit(self.scrape())
+        except RefetchRequestedError as request:
+            LOG.info("%s; a re-fetch of %s was requested.", request.message, request.url)
+            self.__marshaller.refetch.emit(request)
         except ScrapeError as error:
             LOG.warning(str(error))
             self.__marshaller.failure.emit(error)
@@ -213,8 +259,12 @@ class ScrapeJob:  # pylint: disable=too-many-instance-attributes
 
         :returns: the scraper's result, validated against `~.results.SCRAPE_RESULT_SCHEMA`
             (`~.results.ScrapeResult.coerce`).
-        :raises ScrapeError: no scraper matches, the fetch failed, the fetch landed on a login wall, or
-            the result failed the schema.
+        :raises ScrapeError: no scraper matches, the fetch failed, the fetch landed on a login wall, the
+            page came back with an error status its scraper did not ask to re-fetch, or the result failed
+            the schema.
+        :raises RefetchRequestedError: the scraper asked for the page again -- normalized, so its ``url``
+            (this job's own URL for a plain retry) and ``delay`` (:data:`DEFAULT_REFETCH_DELAY`) are both
+            set.
         """
         scraper = self.__registry.find(self.__url)
         if scraper is None:
@@ -240,6 +290,16 @@ class ScrapeJob:  # pylint: disable=too-many-instance-attributes
             raise LoginRequiredScrapeError(
                 scraper.label, urlsplit(page.final_url).hostname or page.final_url
             ) from error
+        except RefetchRequestedError as request:
+            raise RefetchRequestedError(
+                request.message,
+                url=request.url if request.url is not None else self.__url,
+                delay=request.delay if request.delay is not None else DEFAULT_REFETCH_DELAY,
+            ) from request
+        if page.status is not None and page.status >= 400:
+            # the fetcher hands a transient error page over for the scraper to read; one that parsed it
+            # anyway, rather than asking again, fails exactly the way the fetch used to on its own
+            raise ScrapeError(f"Could not fetch {page.url}: HTTP {page.status}")
         try:
             result = ScrapeResult.coerce(raw_result)
         except InvalidScrapeResultError as error:

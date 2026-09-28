@@ -1,13 +1,20 @@
 """Tests for `ScrapeJob` (#269, #278)."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from pytest import LogCaptureFixture, raises
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.scraping.protocols import FetchError, LoginRequiredError
+from rehuco_agent.scraping.protocols import FetchError, LoginRequiredError, RefetchRequestedError
 from rehuco_agent.scraping.results import Page, ScrapeResult
-from rehuco_agent.scraping.scrape_job import LoginRequiredScrapeError, NoScraperError, ScrapeError, ScrapeJob
+from rehuco_agent.scraping.scrape_job import (
+    DEFAULT_REFETCH_DELAY,
+    LoginRequiredScrapeError,
+    NoScraperError,
+    ScrapeError,
+    ScrapeJob,
+)
 from rehuco_agent.settings.scrapers_settings import ScrapersSettings, scraper_key
 from requests import RequestException
 
@@ -49,17 +56,21 @@ class FakeRegistry:  # pylint: disable=missing-function-docstring,too-few-public
 
 
 class FakeFetcher:  # pylint: disable=missing-function-docstring,too-few-public-methods
-    """A `PageFetcher` stand-in: returns a fixed page, or raises a fixed error."""
+    """A `PageFetcher` stand-in: returns a fixed page, the next of a sequence of pages, or raises a fixed
+    error."""
 
-    def __init__(self, page: Page | None = None, error: Exception | None = None) -> None:
+    def __init__(self, page: Page | None = None, error: Exception | None = None, pages: Sequence[Page] = ()) -> None:
         self.__page = page
         self.__error = error
+        self.__pages = list(pages)
         self.calls: list[str] = []
 
     def fetch(self, url: str) -> Page:
         self.calls.append(url)
         if self.__error is not None:
             raise self.__error
+        if self.__pages:
+            return self.__pages.pop(0)
         assert self.__page is not None
         return self.__page
 
@@ -549,3 +560,89 @@ def test_a_redirect_onto_an_unclaimed_host_keeps_the_original_scraper(qtbot: QtB
 
     assert registry.calls == [URL, REDIRECTED_URL]
     assert blocker.args == [original_result]
+
+
+class RefetchingScraper(FakeScraper):
+    """Asks for a re-fetch of every page answered with a 503, and scrapes every other page normally."""
+
+    def __init__(self, request: RefetchRequestedError) -> None:
+        super().__init__(result=ScrapeResult(fields={"title": "T"}, description=None, images=()))
+        self.request = request
+
+    def scrape_page(self, page: Page) -> object:
+        if page.status == 503:
+            raise self.request
+        return self.result
+
+
+def test_a_refetch_request_emits_refetch_requested_with_its_url_range_and_message(qtbot: QtBot) -> None:
+    """A scraper raising `RefetchRequestedError` is neither a result nor a failure: `refetch_requested`
+    fires on the GUI thread, carrying the request as the scraper made it (#368).
+
+    **Test steps:**
+
+    * build a job whose fetch answers 503 and whose scraper asks for another URL on it
+    * run the job
+    * verify `refetch_requested` carried the URL, range and message, and nothing else fired
+    """
+    request = RefetchRequestedError("Site answered 503", url=REDIRECTED_URL, delay=(1.0, 2.0))
+    registry = FakeRegistry({URL: RefetchingScraper(request)})
+    fetcher = FakeFetcher(page=Page(url=URL, final_url=URL, html="", status=503))
+    job = ScrapeJob(URL, registry, fetcher=fetcher)  # type: ignore[arg-type]
+    others: list[object] = []
+    job.result_ready.connect(others.append)
+    job.failed.connect(others.append)
+
+    with qtbot.waitSignal(job.refetch_requested, timeout=1000) as blocker:
+        job.run()
+    qtbot.wait(20)
+
+    assert blocker.args is not None
+    emitted = blocker.args[0]
+    assert isinstance(emitted, RefetchRequestedError)
+    assert (emitted.url, emitted.delay, emitted.message) == (REDIRECTED_URL, (1.0, 2.0), "Site answered 503")
+    assert not others
+
+
+def test_a_bare_refetch_request_is_filled_with_the_same_url_and_the_default_delay() -> None:
+    """A request naming neither a URL nor a range is a plain retry of the same URL after the job-wide
+    default pause (#368)."""
+    registry = FakeRegistry({URL: RefetchingScraper(RefetchRequestedError("busy"))})
+    fetcher = FakeFetcher(page=Page(url=URL, final_url=URL, html="", status=503))
+    job = ScrapeJob(URL, registry, fetcher=fetcher)  # type: ignore[arg-type]
+
+    with raises(RefetchRequestedError) as caught:
+        job.scrape()
+
+    assert (caught.value.url, caught.value.delay, caught.value.message) == (URL, DEFAULT_REFETCH_DELAY, "busy")
+
+
+def test_a_scraper_ignoring_an_error_status_fails_as_the_fetch_used_to() -> None:
+    """A scraper that parses a 503 page instead of asking again fails with the same "Could not fetch"
+    the fetcher itself used to raise, so a scraper unaware of statuses behaves exactly as before (#368)."""
+    registry = FakeRegistry({URL: FakeScraper()})
+    fetcher = FakeFetcher(page=Page(url=URL, final_url=URL, html="", status=503))
+    job = ScrapeJob(URL, registry, fetcher=fetcher)  # type: ignore[arg-type]
+
+    with raises(ScrapeError, match=f"Could not fetch {URL}: HTTP 503"):
+        job.scrape()
+
+
+def test_a_page_after_a_503_is_scraped_normally() -> None:
+    """The next attempt's fetch is independent of the last: a sequence of pages from one fetcher reaches
+    the scraper in order, the 200 one producing a result (#368)."""
+    scraper = RefetchingScraper(RefetchRequestedError("busy"))
+    fetcher = FakeFetcher(
+        pages=[
+            Page(url=URL, final_url=URL, html="", status=503),
+            Page(url=URL, final_url=URL, html="", status=200),
+        ]
+    )
+    registry = FakeRegistry({URL: scraper})
+
+    with raises(RefetchRequestedError):
+        ScrapeJob(URL, registry, fetcher=fetcher).scrape()  # type: ignore[arg-type]
+    result = ScrapeJob(URL, registry, fetcher=fetcher).scrape()  # type: ignore[arg-type]
+
+    assert result == scraper.result
+    assert fetcher.calls == [URL, URL]

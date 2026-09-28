@@ -20,16 +20,36 @@ def test_fetch_asks_with_a_browser_user_agent_and_reports_where_it_landed(mocker
 
     * stand in for ``requests.get`` with a response that redirected
     * fetch
-    * verify the request's headers and timeout, and the page's three fields
+    * verify the request's headers and timeout, and the page's fields, its status included
     """
-    response = mocker.Mock(url=FINAL_URL, text="<html>hi</html>")
+    response = mocker.Mock(url=FINAL_URL, text="<html>hi</html>", status_code=200)
     get = mocker.patch("rehuco_agent.scraping.http_fetcher.requests.get", return_value=response)
 
     page = HttpPageFetcher().fetch(URL)
 
     get.assert_called_once_with(URL, headers={"User-Agent": USER_AGENT}, timeout=REQUEST_TIMEOUT_SECONDS)
     response.raise_for_status.assert_called_once_with()
-    assert page == Page(url=URL, final_url=FINAL_URL, html="<html>hi</html>")
+    assert page == Page(url=URL, final_url=FINAL_URL, html="<html>hi</html>", status=200)
+
+
+@mark.parametrize("status_code", [429, 500, 503])
+def test_a_transient_status_hands_the_page_over_with_its_status(mocker: MockerFixture, status_code: int) -> None:
+    """A 5xx or 429 is not a failure at the fetcher: the page reaches its scraper, which alone knows
+    whether asking again is worth it (#368).
+
+    **Test steps:**
+
+    * stand in for ``requests.get`` with a response carrying the transient status
+    * fetch
+    * verify the page carries the status, and `raise_for_status` is never reached
+    """
+    response = mocker.Mock(url=URL, text="<html>busy</html>", status_code=status_code)
+    mocker.patch("rehuco_agent.scraping.http_fetcher.requests.get", return_value=response)
+
+    page = HttpPageFetcher().fetch(URL)
+
+    assert page == Page(url=URL, final_url=URL, html="<html>busy</html>", status=status_code)
+    response.raise_for_status.assert_not_called()
 
 
 def test_an_error_status_raises_rather_than_handing_over_error_html(mocker: MockerFixture) -> None:
