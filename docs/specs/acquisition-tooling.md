@@ -363,10 +363,10 @@ dependencies of `rehuco-agent` ([[acquisition-tooling#browser-persona]] for why 
 **A re-fetch is the next attempt, never a sleeping worker.** Each `ScrapeJob` is one attempt, ending in a result, a
 failure, or a re-fetch request ([[acquisition-tooling#scraper-protocols]]); a sleep inside one would hold a pool slot
 for nothing. So every attempt is scheduled on a single-shot timer on the GUI thread — the drop's first with no
-delay, each re-fetch after a pause drawn from the scraper's range (3–6 s when it names none) — and submitted when
-it fires. At most six re-fetches are made per drop; after that, the last reason becomes the drop's ordinary failure
-row. While a re-fetch waits, the drop's banner row is a warning counting down to it — `ArtStation answered 503 —
-trying <url> in 4 s (attempt 2 of 7)` — with a **Cancel** action; the waiting re-fetch is also dropped when the
+delay, each re-fetch after a pause drawn from the scraper's range (a few seconds, `DEFAULT_REFETCH_DELAY`, when it
+names none) — and submitted when it fires. The re-fetches per drop are capped (`MAX_REFETCHES`); past the cap, the
+last reason becomes the drop's ordinary failure row. While a re-fetch waits, the drop's banner row is a warning
+counting down to it — `ArtStation answered 503 — trying <url> in 4 s (attempt 2 of N)` — with a **Cancel** action; the waiting re-fetch is also dropped when the
 document closes or its path changes, the same staleness a landing result is already checked for. The
 `--scrape` CLI runs the same attempts synchronously, sleeping between them and announcing each wait on stderr.
 

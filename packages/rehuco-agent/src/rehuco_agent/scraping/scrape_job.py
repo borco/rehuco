@@ -18,7 +18,7 @@ from .results import InvalidScrapeResultError, Page, ScrapeResult
 
 LOG: Final = logging.getLogger(__name__)
 
-MAX_REFETCHES: Final = 6
+MAX_REFETCHES: Final = 5
 """How many re-fetches one scrape may ask for (`~.protocols.RefetchRequestedError`), so a scrape makes at
 most ``MAX_REFETCHES + 1`` attempts. Past it, the last request's reason becomes an ordinary failure
 (:data:`REFETCH_GAVE_UP_MESSAGE`)."""
