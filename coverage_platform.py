@@ -20,6 +20,7 @@ WINDOWS_ONLY_OMIT: Final = [
     # `pytest.importorskip("winreg")`, leaving no non-Windows exerciser to give them coverage.
     "*/rehuco_agent/windows_registration.py",
     "*/rehuco_agent/settings/ui/registry_page.py",
+    "*/rehuco_agent/crash_dumps.py",
 ]
 """Globs for wholly-Windows modules to omit from the report off Windows."""
 
