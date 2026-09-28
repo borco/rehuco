@@ -107,6 +107,11 @@ that a caller can see and change beats a `QSortFilterProxyModel` layer over the 
 which would also complicate the current-row and restore-on-show paths (#228, #230) to take the decision
 away from the one place that has the context to make it.
 
+**"General" is the one exception to alphabetical order, at any level.** A group whose pages would read as one
+broad page plus a set of specific ones names the broad one "General" and registers it first, ahead of where
+its title would sort — "Scrapers/General" before "Scrapers/ArtStation", were Scrapers ever to split. No
+group has a "General" page today; the rule is written down so the first one does not reinvent it.
+
 **"Images" is the one group in use** (#294) — the `group=` machinery kept dormant since #277 for "the
 next tree that wants a tier" finally has one. Until #277 the four pages a resource type owns —
 Descriptions, Files, Images, Videos — nested under a **Plugins** group row. What that bought
