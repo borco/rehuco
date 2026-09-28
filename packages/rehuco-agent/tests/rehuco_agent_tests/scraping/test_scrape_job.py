@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
-from pytest import LogCaptureFixture, raises
+from pytest import LogCaptureFixture, mark, param, raises
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.scraping.protocols import FetchError, LoginRequiredError, RefetchRequestedError
@@ -14,6 +14,7 @@ from rehuco_agent.scraping.scrape_job import (
     NoScraperError,
     ScrapeError,
     ScrapeJob,
+    refetch_delay,
 )
 from rehuco_agent.settings.scrapers_settings import ScrapersSettings, scraper_key
 from requests import RequestException
@@ -646,3 +647,30 @@ def test_a_page_after_a_503_is_scraped_normally() -> None:
 
     assert result == scraper.result
     assert fetcher.calls == [URL, URL]
+
+
+# region the pause before a re-fetch (#369)
+
+
+@mark.parametrize(
+    ("refetch", "expected"), [param(1, 5.0, id="first"), param(2, 10.0, id="second"), param(5, 25.0, id="fifth")]
+)
+def test_each_refetch_waits_its_number_times_a_draw_from_the_range(refetch: int, expected: float) -> None:
+    """The n-th re-fetch waits n times a draw, so the waits run 5, 10, 15... for a draw of 5."""
+    assert refetch_delay((4.0, 6.0), refetch, lambda _low, _high: 5.0) == expected
+
+
+def test_the_draw_is_taken_from_the_requested_range() -> None:
+    """The range the request named is what is drawn from -- the growth multiplies the draw, not the range."""
+    seen: list[tuple[float, float]] = []
+
+    def choose(low: float, high: float) -> float:
+        seen.append((low, high))
+        return low
+
+    refetch_delay(DEFAULT_REFETCH_DELAY, 3, choose)
+
+    assert seen == [DEFAULT_REFETCH_DELAY]
+
+
+# endregion

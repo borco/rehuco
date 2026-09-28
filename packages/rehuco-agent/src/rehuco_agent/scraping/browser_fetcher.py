@@ -42,6 +42,14 @@ PAGE_LOAD_TIMEOUT_SECONDS: Final = 30
 READY_STATE_POLL_SECONDS: Final = 15
 """How long `fetch` waits for ``document.readyState`` to reach ``"complete"`` after a navigation."""
 
+RESPONSE_STATUS_SCRIPT: Final = (
+    "const entry = performance.getEntriesByType('navigation')[0]; return entry ? entry.responseStatus : null;"
+)
+"""Reads the loaded document's HTTP status from its Navigation Timing entry -- WebDriver itself has no
+command for it. Verified against Firefox 156 (#369): ``200``, ``503``, and after a ``302`` the final
+page's ``503``, which is what `~.results.Page.status` means. A browser without ``responseStatus``
+answers `None` or ``0``, both read as "unknown"."""
+
 LOGIN_PROCESS_TERMINATE_TIMEOUT_SECONDS: Final = 10
 """How long `PersonaBrowser.reset` waits for a still-open login window to exit after asking it to,
 before giving up on asking nicely."""
@@ -149,16 +157,42 @@ class PersonaBrowser:
             LOG.warning("The persona browser did not exit after being killed; the reset may fail to delete it.")
 
     def __navigate(self, driver: WebDriver, url: str) -> Page:
-        """Load ``url`` in ``driver``'s current tab and return it as a `Page`."""
+        """Load ``url`` in ``driver``'s current tab and return it as a `Page`, with its HTTP status when
+        the browser reports one -- so a scraper can read a transient refusal the same way it does from
+        `~.http_fetcher.HttpPageFetcher` (#369)."""
         try:
             driver.set_page_load_timeout(PAGE_LOAD_TIMEOUT_SECONDS)
             driver.get(url)
             WebDriverWait(driver, READY_STATE_POLL_SECONDS).until(
                 lambda d: d.execute_script("return document.readyState") == "complete"
             )
-            return Page(url=url, final_url=driver.current_url, html=driver.page_source)
+            return Page(
+                url=url,
+                final_url=driver.current_url,
+                html=driver.page_source,
+                status=self.__response_status(driver),
+            )
         except WebDriverException as error:
             raise FetchError(f"Could not fetch {url} with the persona browser: {error}") from error
+
+    @staticmethod
+    def __response_status(driver: WebDriver) -> int | None:
+        """The loaded document's HTTP status (:data:`RESPONSE_STATUS_SCRIPT`), or `None` when the browser
+        cannot say -- never a reason to fail a fetch that loaded.
+
+        :param driver: the session that just loaded the page.
+        :returns: the status, or `None`.
+        """
+        try:
+            status = driver.execute_script(RESPONSE_STATUS_SCRIPT)
+        except WebDriverException:
+            LOG.debug("The persona browser could not report the page's HTTP status.", exc_info=True)
+            return None
+        # bool is an int subclass, and 0 is what a browser without the field (or a cross-origin entry)
+        # reports -- neither is a status
+        if isinstance(status, bool) or not isinstance(status, int) or status <= 0:
+            return None
+        return status
 
     @staticmethod
     def __start_scrape_driver(browser: Browser, *, headless: bool) -> WebDriver:

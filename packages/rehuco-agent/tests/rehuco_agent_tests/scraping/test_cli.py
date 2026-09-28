@@ -201,7 +201,7 @@ def test_scrape_url_to_json_gives_up_after_the_last_refetch(
 
     assert fetch.call_count == MAX_REFETCHES + 1
     assert sleep.call_count == MAX_REFETCHES
-    assert f"Example answered 503 — gave up after {MAX_REFETCHES} re-fetches" in capsys.readouterr().err
+    assert f"Example answered 503 — gave up after {MAX_REFETCHES + 1} failed fetches" in capsys.readouterr().err
 
 
 @mark.disk
@@ -222,3 +222,19 @@ def test_scrapers_folder_builds_the_registry_over_that_folder_only(
 
 
 # endregion
+
+
+def test_each_refetch_waits_longer_than_the_last(mocker: MockerFixture) -> None:
+    """The n-th re-fetch sleeps n times a draw from the range, so a site still refusing is given more room
+    each time rather than the same few seconds again (#369)."""
+    _mock_registry(mocker, RefetchingScraper(result=ScrapeResult(fields={}, description=None, images=())))
+    mocker.patch(
+        "rehuco_agent.scraping.http_fetcher.HttpPageFetcher.fetch",
+        return_value=Page(url=URL, final_url=URL, html="", status=503),
+    )
+    mocker.patch("rehuco_agent.scraping.cli.random.uniform", return_value=5.0)
+    sleep = mocker.patch("rehuco_agent.scraping.cli.time.sleep")
+
+    scrape_url_to_json(URL, scrapers_folder=None, output=None)
+
+    assert [entry.args[0] for entry in sleep.call_args_list] == [5.0 * n for n in range(1, MAX_REFETCHES + 1)]

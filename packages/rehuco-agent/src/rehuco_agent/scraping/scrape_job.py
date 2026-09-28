@@ -3,6 +3,7 @@
 """
 
 import logging
+from collections.abc import Callable
 from typing import Final
 from urllib.parse import urlsplit
 
@@ -18,20 +19,39 @@ from .results import InvalidScrapeResultError, Page, ScrapeResult
 
 LOG: Final = logging.getLogger(__name__)
 
-MAX_REFETCHES: Final = 5
+MAX_REFETCHES: Final = 9
 """How many re-fetches one scrape may ask for (`~.protocols.RefetchRequestedError`), so a scrape makes at
 most ``MAX_REFETCHES + 1`` attempts. Past it, the last request's reason becomes an ordinary failure
 (:data:`REFETCH_GAVE_UP_MESSAGE`)."""
 
-DEFAULT_REFETCH_DELAY: Final = (3.0, 6.0)
-"""The ``(min, max)`` seconds a re-fetch waits when its `~.protocols.RefetchRequestedError` names no range
-of its own -- a few seconds, drawn at random, rather than a fixed beat a rate limiter could lock onto."""
+DEFAULT_REFETCH_DELAY: Final = (5.0, 10.0)
+"""The ``(min, max)`` seconds the *first* re-fetch waits when its `~.protocols.RefetchRequestedError` names
+no range of its own -- drawn at random rather than a fixed beat a rate limiter could lock onto. Each
+later re-fetch waits longer (:func:`refetch_delay`)."""
 
 REFETCH_COUNTDOWN_MESSAGE: Final = "{message} — trying {url} in {seconds} s (attempt {attempt} of {attempts})"
 """What a scrape waiting to re-fetch says, in the document's banner and on the ``--scrape`` CLI's stderr."""
 
-REFETCH_GAVE_UP_MESSAGE: Final = "{message} — gave up after {count} re-fetches"
-"""The failure a scrape ends with once it has used all :data:`MAX_REFETCHES` of its re-fetches."""
+REFETCH_GAVE_UP_MESSAGE: Final = "{message} — gave up after {count} failed fetches"
+"""The failure a scrape ends with once all ``MAX_REFETCHES + 1`` of its attempts were refused -- counted
+as fetches, the first included, since that is what the user saw fail."""
+
+
+def refetch_delay(delay: tuple[float, float], refetch: int, choose: Callable[[float, float], float]) -> float:
+    """The pause before a scrape's ``refetch``-th re-fetch: a draw from ``delay``, times ``refetch`` -- one
+    draw's worth before the first, two before the second, and so on. A site still refusing after one short
+    wait is more likely to need a longer one than the same one again (#369).
+
+    One rule for every loop that schedules attempts -- the document's `ScrapeActions` and the
+    ``--scrape`` CLI alike.
+
+    :param delay: the ``(min, max)`` range the request named, already normalized by :meth:`ScrapeJob.scrape`.
+    :param refetch: which re-fetch this is, ``1`` for the first.
+    :param choose: draws a value from a ``(min, max)`` range -- `random.uniform`, or a test's stand-in.
+    :returns: the pause, in seconds.
+    """
+    low, high = delay
+    return refetch * choose(low, high)
 
 
 class ScrapeError(Exception):

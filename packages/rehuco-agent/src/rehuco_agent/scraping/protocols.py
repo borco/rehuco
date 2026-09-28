@@ -39,7 +39,8 @@ class RefetchRequestedError(Exception):
 
     :param message: a short, user-facing reason, e.g. ``"ArtStation answered 503"``.
     :param url: the URL to fetch next; `None` fetches the same one again.
-    :param delay: the ``(min, max)`` range in seconds the pause is drawn from; `None` uses
+    :param delay: the ``(min, max)`` range in seconds the *first* re-fetch's pause is drawn from -- the
+        n-th waits n times a draw (`~.scrape_job.refetch_delay`); `None` uses
         `~.scrape_job.DEFAULT_REFETCH_DELAY`.
     """
 

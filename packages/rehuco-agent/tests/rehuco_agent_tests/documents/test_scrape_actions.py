@@ -9,6 +9,7 @@ from borco_pyside.widgets import MessageBannerRow, MessageBannerSeverity
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
+from rehuco_agent.documents import scrape_actions
 from rehuco_agent.documents.image_downloads import ImageDownloads
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.documents.scrape_actions import ScrapeActions
@@ -17,6 +18,7 @@ from rehuco_agent.scraping.registry import ScraperRegistry
 from rehuco_agent.scraping.results import Page, ScrapedImage, ScrapeResult
 from rehuco_agent.scraping.scrape_job import MAX_REFETCHES
 from rehuco_agent.scraping.scraper_executor import ScraperExecutor
+from rehuco_agent.scraping.sites.artstation import ArtStation
 from rehuco_agent.scraping.url_drop import UrlDrop
 from rehuco_core import LockReason, LockReasonKind, RehuDocument
 
@@ -50,10 +52,10 @@ class FakeScraper:  # pylint: disable=missing-function-docstring,duplicate-code
 class FakeRegistry:  # pylint: disable=missing-function-docstring,too-few-public-methods
     """A minimal registry: `find` answers from a fixed mapping, by URL."""
 
-    def __init__(self, by_url: dict[str, FakeScraper | None]) -> None:
+    def __init__(self, by_url: dict[str, object]) -> None:
         self.__by_url = by_url
 
-    def find(self, url: str) -> FakeScraper | None:
+    def find(self, url: str) -> object:
         return self.__by_url.get(url)
 
 
@@ -610,7 +612,7 @@ def test_a_chain_out_of_refetches_ends_as_a_failure_row(qtbot: QtBot, image_down
 
     assert len(fetcher.calls) == MAX_REFETCHES + 1
     assert doc_actions.notice[0].severity == MessageBannerSeverity.WARNING
-    assert doc_actions.notice[0].text == f"Example answered 503 — gave up after {MAX_REFETCHES} re-fetches"
+    assert doc_actions.notice[0].text == f"Example answered 503 — gave up after {MAX_REFETCHES + 1} failed fetches"
     assert doc_model.title == "Original"
 
 
@@ -665,6 +667,21 @@ def test_a_path_change_mid_countdown_drops_the_retry(qtbot: QtBot, image_downloa
     assert fetcher.calls == [URL]
     assert not doc_actions.notice
     assert doc_model.title == "Original"
+
+
+def test_each_refetch_is_scheduled_by_its_own_number(
+    mocker: MockerFixture, qtbot: QtBot, image_downloads: ImageDownloads
+) -> None:
+    """The pause grows with each re-fetch (`refetch_delay`): the chain hands it 1 for the first, 2 for the
+    second, so the waits lengthen rather than repeat (#369)."""
+    spy = mocker.spy(scrape_actions, "refetch_delay")
+    doc_model = model()
+    doc_actions = refetching_actions(doc_model, SequenceFetcher(503, 503, 200), image_downloads)
+
+    doc_actions.submit(drop())
+    qtbot.waitUntil(lambda: doc_model.title == "New Title", timeout=WAIT_TIMEOUT_MS)
+
+    assert [entry.args[1] for entry in spy.call_args_list] == [1, 2]
 
 
 def test_the_countdown_row_ticks(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
@@ -752,6 +769,78 @@ def test_a_cancel_arriving_after_its_drop_ended_is_ignored(qtbot: QtBot, image_d
     qtbot.wait(50)
 
     assert not doc_actions.notice
+
+
+# endregion
+
+# region ArtStation's refused store page (#369)
+
+ARTSTATION_STORE_URL: Final = "https://anartist.artstation.com/store/12345/example"
+ARTSTATION_MARKETPLACE_URL: Final = "https://www.artstation.com/marketplace/p/12345/example"
+
+
+def artstation_actions(
+    doc_model: RehuDocumentModel, fetcher: SequenceFetcher, image_downloads: ImageDownloads
+) -> ScrapeActions:
+    """`ScrapeActions` over the real `ArtStation` scraper, found for either of its URL shapes."""
+    registry = FakeRegistry({ARTSTATION_STORE_URL: ArtStation(), ARTSTATION_MARKETPLACE_URL: ArtStation()})
+    return build_actions(doc_model, registry, SyncExecutor(), fetcher, image_downloads)
+
+
+def test_a_refused_store_page_is_retried_on_the_marketplace_url(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
+    """The real scraper through the whole chain: a 503 from the store host, and the next attempt fetches
+    the marketplace URL, whose 200 lands as the result."""
+    doc_model = model()
+    fetcher = SequenceFetcher(503, 200)
+    doc_actions = artstation_actions(doc_model, fetcher, image_downloads)
+
+    doc_actions.submit(UrlDrop(url=ARTSTATION_STORE_URL, fragment=None))
+    qtbot.waitUntil(lambda: not doc_actions.notice, timeout=WAIT_TIMEOUT_MS)
+
+    assert fetcher.calls == [ARTSTATION_STORE_URL, ARTSTATION_MARKETPLACE_URL]
+    assert doc_model.sources[-1]["url"] == ARTSTATION_MARKETPLACE_URL
+
+
+def test_a_refused_marketplace_page_is_retried_on_itself(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
+    """A marketplace 503 has no store URL to fall back on, so the same URL is fetched again."""
+    doc_model = model()
+    fetcher = SequenceFetcher(503, 200)
+    doc_actions = artstation_actions(doc_model, fetcher, image_downloads)
+
+    doc_actions.submit(UrlDrop(url=ARTSTATION_MARKETPLACE_URL, fragment=None))
+    qtbot.waitUntil(lambda: not doc_actions.notice, timeout=WAIT_TIMEOUT_MS)
+
+    assert fetcher.calls == [ARTSTATION_MARKETPLACE_URL, ARTSTATION_MARKETPLACE_URL]
+    assert doc_model.sources[-1]["url"] == ARTSTATION_MARKETPLACE_URL
+
+
+class StockErrorPageFetcher:  # pylint: disable=missing-function-docstring,too-few-public-methods
+    """Answers the first fetch with ArtStation's stock 503 page and no status -- how a browser that cannot
+    report one leaves it -- and every later fetch with an ordinary page."""
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def fetch(self, url: str) -> Page:
+        self.calls.append(url)
+        if len(self.calls) == 1:
+            html = "<html><head><title>503 Service Temporarily Unavailable</title></head><body></body></html>"
+            return Page(url=url, final_url=url, html=html)
+        return Page(url=url, final_url=url, html="<html></html>", status=200)
+
+
+def test_a_stock_error_page_with_no_status_is_retried(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
+    """The page itself is enough: a stock 503 page carrying no status still sends the retry to the
+    marketplace URL (#369)."""
+    doc_model = model()
+    fetcher = StockErrorPageFetcher()
+    registry = FakeRegistry({ARTSTATION_STORE_URL: ArtStation(), ARTSTATION_MARKETPLACE_URL: ArtStation()})
+    doc_actions = build_actions(doc_model, registry, SyncExecutor(), fetcher, image_downloads)
+
+    doc_actions.submit(UrlDrop(url=ARTSTATION_STORE_URL, fragment=None))
+    qtbot.waitUntil(lambda: not doc_actions.notice, timeout=WAIT_TIMEOUT_MS)
+
+    assert fetcher.calls == [ARTSTATION_STORE_URL, ARTSTATION_MARKETPLACE_URL]
 
 
 # endregion

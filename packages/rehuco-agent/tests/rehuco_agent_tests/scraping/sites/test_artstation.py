@@ -2,7 +2,8 @@
 
 from typing import Final
 
-from pytest import mark, param
+from pytest import mark, param, raises
+from rehuco_agent.scraping.protocols import RefetchRequestedError
 from rehuco_agent.scraping.results import Page, ScrapeResult
 from rehuco_agent.scraping.sites.artstation import FULL_SIZE_REWRITE, ArtStation
 
@@ -391,6 +392,100 @@ def test_scrape_page_reconstructs_the_marketplace_url_from_any_store_host(store_
     result = ArtStation().scrape_page(Page(url=store_url, final_url=store_url, html="<html></html>"))
 
     assert result.fields["url"] == expected
+
+
+# endregion
+
+
+# region re-fetching a refused page (#369)
+@mark.parametrize("status", [param(503, id="503"), param(429, id="429")])
+def test_a_refused_store_page_asks_for_the_marketplace_url(status: int) -> None:
+    """A store host answering a transient refusal is retried on the marketplace URL, which the store URL
+    alone is enough to rebuild."""
+    with raises(RefetchRequestedError) as caught:
+        ArtStation().scrape_page(Page(url=STORE_URL, final_url=STORE_URL, html="", status=status))
+
+    assert caught.value.url == PRODUCT_URL
+    assert caught.value.message == f"ArtStation answered {status}"
+    assert caught.value.delay is None
+
+
+def test_a_refused_marketplace_page_asks_for_itself_again() -> None:
+    """A marketplace URL never names the artist whose store serves the product, so there is nowhere else
+    to go: ``url`` is left `None`, which `ScrapeJob` fills with the same URL."""
+    with raises(RefetchRequestedError) as caught:
+        ArtStation().scrape_page(Page(url=PRODUCT_URL, final_url=PRODUCT_URL, html="", status=503))
+
+    assert caught.value.url is None
+    assert caught.value.message == "ArtStation answered 503"
+
+
+@mark.parametrize("status", [param(None, id="unknown"), param(200, id="200"), param(404, id="404")])
+def test_a_page_outside_the_retryable_statuses_is_parsed(status: int | None) -> None:
+    """Only a transient refusal is retried; any other page is parsed as before, and a permanent error
+    status is left for `ScrapeJob`'s own check to fail."""
+    result = ArtStation().scrape_page(Page(url=STORE_URL, final_url=STORE_URL, html=STORE_HTML, status=status))
+
+    assert result.fields["url"] == PRODUCT_URL
+
+
+STOCK_503_HTML: Final = """<html><head>
+<meta http-equiv="content-type" content="text/html; charset=windows-1252">
+<title>503 Service Temporarily Unavailable</title><script src="api.js" async="" defer="defer"></script>
+</head>
+<body>
+<center><h1>503 Service Temporarily Unavailable</h1></center>
+</body></html>"""
+"""ArtStation's refusal as the persona browser shows it: its front server's stock error page, copied from
+a page saved in Firefox (#369) -- only the script's local path shortened, and lines broken to fit."""
+
+
+@mark.parametrize("status", [param(None, id="no-status"), param(200, id="served-as-200")])
+def test_a_stock_error_page_is_a_refusal_whatever_the_status_says(status: int | None) -> None:
+    """A fetcher that reports no status, or a server that served its error page as ``200``, still leaves
+    the page itself: its title names the refusal (#369)."""
+    with raises(RefetchRequestedError) as caught:
+        ArtStation().scrape_page(Page(url=STORE_URL, final_url=STORE_URL, html=STOCK_503_HTML, status=status))
+
+    assert caught.value.url == PRODUCT_URL
+    assert caught.value.message == "ArtStation answered 503"
+
+
+@mark.parametrize(
+    ("title", "status"),
+    [
+        param("502 Bad Gateway", 502, id="502"),
+        param("503 Service Unavailable", 503, id="503-standard-wording"),
+        param("504 Gateway Time-out", 504, id="504-nginx-wording"),
+        param("429 Too Many Requests", 429, id="429"),
+    ],
+)
+def test_each_stock_refusal_title_names_its_own_status(title: str, status: int) -> None:
+    """nginx's wording and the standard one alike, the status taken from the title."""
+    html = f"<html><head><title>{title}</title></head><body><h1>{title}</h1></body></html>"
+
+    with raises(RefetchRequestedError) as caught:
+        ArtStation().scrape_page(Page(url=PRODUCT_URL, final_url=PRODUCT_URL, html=html))
+
+    assert caught.value.message == f"ArtStation answered {status}"
+
+
+@mark.parametrize(
+    "title",
+    [
+        param("404 Not Found", id="permanent-error"),
+        param("500 Poses for Artists", id="product-named-with-a-number"),
+        param("503 Service Temporarily Unavailable Poses", id="title-only-starting-with-the-wording"),
+    ],
+)
+def test_a_title_that_is_not_a_transient_refusal_is_parsed(title: str) -> None:
+    """Only a whole stock title for a retryable status counts: a permanent error is left for `ScrapeJob`,
+    and a product whose name happens to start with a number is a product."""
+    html = f"<html><head><title>{title}</title></head><body></body></html>"
+
+    result = ArtStation().scrape_page(Page(url=PRODUCT_URL, final_url=PRODUCT_URL, html=html))
+
+    assert result == ScrapeResult(fields={}, description=None, images=())
 
 
 # endregion

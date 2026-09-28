@@ -19,9 +19,10 @@ class Page:
         when nothing redirected.
     :param html: the page's markup.
     :param status: the HTTP status the page was served with, or `None` when the fetch could not see one
-        (the persona browser, a dropped fragment). A page reaches its scraper whatever this is -- a
-        transient error such as a ``503`` is the scraper's to read, since only it knows whether its site
-        is worth asking again ([[acquisition-tooling#scraper-protocols]]).
+        (a dropped fragment, or a persona browser that does not report it). A page reaches its scraper
+        whatever this is -- a transient error such as a ``503`` is the scraper's to read, since only it
+        knows whether its site is worth asking again, from this status or from the page itself
+        ([[acquisition-tooling#scraper-protocols]]).
     """
 
     url: str
