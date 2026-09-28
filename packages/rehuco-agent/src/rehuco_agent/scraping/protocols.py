@@ -8,7 +8,7 @@ still be picked up, as long as its shape matches.
 """
 
 from collections.abc import Mapping
-from typing import Protocol, runtime_checkable
+from typing import Final, Protocol, runtime_checkable
 
 from .results import Page, ScrapeResult
 
@@ -27,6 +27,27 @@ class LoginRequiredError(Exception):
     scraper's job, not the fetcher's -- `~.http_fetcher.HttpPageFetcher` raises it too, but only for the
     one generic signal a plain HTTP fetch has: a ``401``/``403`` status.
     """
+
+
+class RefetchRequestedError(Exception):
+    """Raised by :meth:`SiteScraper.scrape_page` to ask for the page again after a pause, optionally from
+    another URL ([[acquisition-tooling#scrape-job]]) -- the answer to a transient refusal, such as a
+    ``503`` (:attr:`~.results.Page.status`), that only the site's own scraper knows how to read.
+
+    Not a failure: `~.scrape_job.ScrapeJob` turns it into a re-fetch request, and whoever runs the scrape
+    schedules the next attempt, up to `~.scrape_job.MAX_REFETCHES` of them.
+
+    :param message: a short, user-facing reason, e.g. ``"ArtStation answered 503"``.
+    :param url: the URL to fetch next; `None` fetches the same one again.
+    :param delay: the ``(min, max)`` range in seconds the pause is drawn from; `None` uses
+        `~.scrape_job.DEFAULT_REFETCH_DELAY`.
+    """
+
+    def __init__(self, message: str, *, url: str | None = None, delay: tuple[float, float] | None = None) -> None:
+        super().__init__(message)
+        self.message: Final = message
+        self.url: Final = url
+        self.delay: Final = delay
 
 
 @runtime_checkable
@@ -110,4 +131,6 @@ class SiteScraper(Protocol):
             or as its JSON-shaped mapping ([[acquisition-tooling#scraper-protocols]]) -- a plain script
             can return the mapping directly, with no import of this package at all.
             `~.results.ScrapeResult.coerce` normalizes either form, and validates it, before it is used.
+        :raises LoginRequiredError: the page is a login wall.
+        :raises RefetchRequestedError: the page is a transient refusal worth asking for again.
         """

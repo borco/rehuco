@@ -5,16 +5,17 @@ from pathlib import Path
 from typing import Final, cast
 from unittest.mock import call
 
-from borco_pyside.widgets import MessageBannerSeverity
+from borco_pyside.widgets import MessageBannerRow, MessageBannerSeverity
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.image_downloads import ImageDownloads
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.documents.scrape_actions import ScrapeActions
-from rehuco_agent.scraping.protocols import PageFetcher
+from rehuco_agent.scraping.protocols import PageFetcher, RefetchRequestedError
 from rehuco_agent.scraping.registry import ScraperRegistry
 from rehuco_agent.scraping.results import Page, ScrapedImage, ScrapeResult
+from rehuco_agent.scraping.scrape_job import MAX_REFETCHES
 from rehuco_agent.scraping.scraper_executor import ScraperExecutor
 from rehuco_agent.scraping.url_drop import UrlDrop
 from rehuco_core import LockReason, LockReasonKind, RehuDocument
@@ -72,6 +73,39 @@ class FakeFetcher:  # pylint: disable=missing-function-docstring,too-few-public-
         return Page(url=url, final_url=url, html="<html></html>")
 
 
+class SequenceFetcher:  # pylint: disable=missing-function-docstring,too-few-public-methods
+    """A `PageFetcher` stand-in answering each fetch with the next of ``statuses``, repeating the last
+    one once they run out -- a site that answers 503 a few times, then 200 (or never)."""
+
+    def __init__(self, *statuses: int) -> None:
+        self.__statuses = list(statuses)
+        self.calls: list[str] = []
+
+    def fetch(self, url: str) -> Page:
+        self.calls.append(url)
+        status = self.__statuses.pop(0) if len(self.__statuses) > 1 else self.__statuses[0]
+        return Page(url=url, final_url=url, html="<html></html>", status=status)
+
+
+class RefetchingScraper(FakeScraper):
+    """Asks for the same URL again on every page answered with a 503, and scrapes every other page."""
+
+    def scrape_page(self, page: Page) -> object:
+        if page.status == 503:
+            raise RefetchRequestedError("Example answered 503")
+        return self.result
+
+
+class FakeClock:  # pylint: disable=too-few-public-methods
+    """A monotonic clock a test sets by hand."""
+
+    def __init__(self) -> None:
+        self.now = 100.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
 def document(resource_type: str = "Tutorial") -> RehuDocument:
     """An in-memory, path-bearing document with a primary source."""
     doc = RehuDocument(
@@ -103,22 +137,47 @@ def drop(fragment: str | None = None) -> UrlDrop:
     return UrlDrop(url=URL, fragment=fragment)
 
 
-def build_actions(
+def build_actions(  # pylint: disable=too-many-arguments
     doc_model: RehuDocumentModel,
     registry: object,
     executor: object,
     fetcher: object,
     image_downloads: ImageDownloads,
+    *,
+    delay: float = 0.0,
+    clock: FakeClock | None = None,
 ) -> ScrapeActions:
     """Construct `ScrapeActions` over test doubles, casting past their structural mismatch with the
-    concrete `ScraperRegistry`/`ScraperExecutor` types (`PageFetcher` alone is a real Protocol)."""
+    concrete `ScraperRegistry`/`ScraperExecutor` types (`PageFetcher` alone is a real Protocol). Every
+    re-fetch waits ``delay`` seconds, whatever range it asked for."""
     return ScrapeActions(
         doc_model,
         image_downloads,
         registry=cast(ScraperRegistry, registry),
         executor=cast(ScraperExecutor, executor),
         fetcher=cast(PageFetcher, fetcher),
+        choose_delay=lambda *_: delay,
+        clock=clock,
     )
+
+
+def refetching_actions(
+    doc_model: RehuDocumentModel,
+    fetcher: SequenceFetcher,
+    image_downloads: ImageDownloads,
+    *,
+    delay: float = 0.0,
+    clock: FakeClock | None = None,
+) -> ScrapeActions:
+    """`ScrapeActions` whose scraper asks for a re-fetch of every 503 ``fetcher`` answers."""
+    result = ScrapeResult(fields={"title": "New Title"}, description=None, images=())
+    registry = FakeRegistry({URL: RefetchingScraper(result=result)})
+    return build_actions(doc_model, registry, SyncExecutor(), fetcher, image_downloads, delay=delay, clock=clock)
+
+
+def countdown_row(doc_actions: ScrapeActions) -> MessageBannerRow | None:
+    """The banner's waiting re-fetch row, if one shows."""
+    return next((row for row in doc_actions.notice if row.action is not None), None)
 
 
 def actions(
@@ -496,6 +555,113 @@ def test_the_busy_row_appears_while_a_scrape_is_in_flight(image_downloads: Image
     assert len(doc_actions.notice) == 1
     assert doc_actions.notice[0].severity == MessageBannerSeverity.INFO
     assert "example.com" in doc_actions.notice[0].text
+
+
+# endregion
+# region re-fetching
+
+
+def test_a_retry_chain_that_succeeds_applies_the_result(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
+    """Two 503s the scraper asks to re-fetch, then a 200: the third attempt's result is applied, and
+    the banner is left clear (#368)."""
+    doc_model = model()
+    fetcher = SequenceFetcher(503, 503, 200)
+    doc_actions = refetching_actions(doc_model, fetcher, image_downloads)
+
+    doc_actions.submit(drop())
+    qtbot.waitUntil(lambda: doc_model.title == "New Title", timeout=WAIT_TIMEOUT_MS)
+
+    assert fetcher.calls == [URL, URL, URL]
+    assert not doc_actions.notice
+
+
+def test_a_chain_out_of_refetches_ends_as_a_failure_row(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
+    """A scraper still asking after `MAX_REFETCHES` re-fetches ends the drop with its last reason as the
+    failure row, having fetched ``MAX_REFETCHES + 1`` times (#368)."""
+    doc_model = model()
+    fetcher = SequenceFetcher(503)
+    doc_actions = refetching_actions(doc_model, fetcher, image_downloads)
+
+    doc_actions.submit(drop())
+    qtbot.waitUntil(lambda: any("gave up" in row.text for row in doc_actions.notice), timeout=WAIT_TIMEOUT_MS)
+
+    assert len(fetcher.calls) == MAX_REFETCHES + 1
+    assert doc_actions.notice[0].severity == MessageBannerSeverity.WARNING
+    assert doc_actions.notice[0].text == f"Example answered 503 — gave up after {MAX_REFETCHES} re-fetches"
+    assert doc_model.title == "Original"
+
+
+def test_cancel_stops_a_waiting_chain(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
+    """Triggering a waiting re-fetch's banner action drops it: the row clears and nothing more is
+    fetched (#368)."""
+    doc_model = model()
+    fetcher = SequenceFetcher(503, 200)
+    doc_actions = refetching_actions(doc_model, fetcher, image_downloads, delay=0.2)
+    doc_actions.submit(drop())
+    qtbot.waitUntil(lambda: countdown_row(doc_actions) is not None, timeout=WAIT_TIMEOUT_MS)
+
+    action = cast(MessageBannerRow, countdown_row(doc_actions)).action
+    assert action is not None
+    action.trigger()
+    qtbot.waitUntil(lambda: not doc_actions.notice, timeout=WAIT_TIMEOUT_MS)
+    qtbot.wait(400)
+
+    assert fetcher.calls == [URL]
+    assert doc_model.title == "Original"
+
+
+def test_detach_mid_countdown_drops_the_retry(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
+    """A document closed while a re-fetch waits never fetches again (#368)."""
+    doc_model = model()
+    fetcher = SequenceFetcher(503, 200)
+    doc_actions = refetching_actions(doc_model, fetcher, image_downloads, delay=0.2)
+    doc_actions.submit(drop())
+    qtbot.waitUntil(lambda: countdown_row(doc_actions) is not None, timeout=WAIT_TIMEOUT_MS)
+
+    doc_actions.detach()
+    qtbot.wait(400)
+
+    assert fetcher.calls == [URL]
+    assert not doc_actions.notice
+    assert doc_model.title == "Original"
+
+
+def test_a_path_change_mid_countdown_drops_the_retry(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
+    """A document moved while a re-fetch waits drops it -- the next attempt would land on a document
+    that is no longer the one that asked (#368)."""
+    doc_model = model()
+    fetcher = SequenceFetcher(503, 200)
+    doc_actions = refetching_actions(doc_model, fetcher, image_downloads, delay=0.2)
+    doc_actions.submit(drop())
+    qtbot.waitUntil(lambda: countdown_row(doc_actions) is not None, timeout=WAIT_TIMEOUT_MS)
+
+    with qtbot.waitSignal(doc_actions.changed, timeout=WAIT_TIMEOUT_MS):
+        doc_model.path = Path("/fake/library/sculpting/moved.rehu")
+    qtbot.wait(400)
+
+    assert fetcher.calls == [URL]
+    assert not doc_actions.notice
+    assert doc_model.title == "Original"
+
+
+def test_the_countdown_row_ticks(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
+    """A waiting re-fetch's row is a WARNING naming the reason, the URL, the seconds left and the
+    attempt, re-said each second as the clock runs down (#368)."""
+    doc_model = model()
+    clock = FakeClock()
+    doc_actions = refetching_actions(doc_model, SequenceFetcher(503, 200), image_downloads, delay=60.0, clock=clock)
+    doc_actions.submit(drop())
+    qtbot.waitUntil(lambda: countdown_row(doc_actions) is not None, timeout=WAIT_TIMEOUT_MS)
+    row = cast(MessageBannerRow, countdown_row(doc_actions))
+    assert row.severity == MessageBannerSeverity.WARNING
+    assert row.text == f"Example answered 503 — trying {URL} in 60 s (attempt 2 of {MAX_REFETCHES + 1})"
+
+    clock.now += 2.5
+    with qtbot.waitSignal(doc_actions.changed, timeout=WAIT_TIMEOUT_MS):
+        pass
+
+    assert f"in 58 s (attempt 2 of {MAX_REFETCHES + 1})" in cast(MessageBannerRow, countdown_row(doc_actions)).text
+    doc_actions.detach()
 
 
 # endregion

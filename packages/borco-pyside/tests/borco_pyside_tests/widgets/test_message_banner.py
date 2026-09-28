@@ -1,19 +1,20 @@
 """Tests for MessageBanner: a strip of state notices, one row per still-active condition.
 
-Rows carry no dismiss affordance (state, not a one-shot notification) and rebuild wholesale on every
-``set_rows`` call, so what these tests exercise is: a row renders its severity's marker and its
-message, a severity's style is overridable (icon or fallback glyph, accent color) both class-wide and
-per-instance, an empty row list shows nothing, multiple rows stack, and long text wraps rather than
-widening the strip.
+Rows carry no dismiss affordance (state, not a one-shot notification) and rebuild wholesale on a
+``set_rows`` call that changes the strip's shape, so what these tests exercise is: a row renders its
+severity's marker and its message, a severity's style is overridable (icon or fallback glyph, accent
+color) both class-wide and per-instance, an empty row list shows nothing, multiple rows stack, long text
+wraps rather than widening the strip, a row's action shows as a button, and a call that only rewords the
+shown rows updates them in place.
 """
 
 from collections.abc import Iterator
 from typing import override
 
 from borco_pyside.widgets import MessageBanner, MessageBannerRow, MessageBannerSeverity, MessageBannerSeverityStyle
-from PySide6.QtCore import QEvent, QObject
-from PySide6.QtGui import QColor, QIcon, QPixmap
-from PySide6.QtWidgets import QLabel, QWidget
+from PySide6.QtCore import QEvent, QObject, Qt
+from PySide6.QtGui import QAction, QColor, QIcon, QPixmap
+from PySide6.QtWidgets import QLabel, QToolButton, QWidget
 from pytest import fixture
 from pytestqt.qtbot import QtBot
 
@@ -253,7 +254,8 @@ def test_a_row_removed_before_its_deferred_show_is_never_shown_as_a_window(qtbot
     **Test steps:**
 
     * show a banner with one row, so the strip is visible
-    * replace that row with another, then clear the strip before any event is processed
+    * replace that row with one of another severity (so it is rebuilt, not reworded in place), then
+      clear the strip before any event is processed
     * let the event loop run, and verify the removed row was never shown at all
     """
     banner = MessageBanner()
@@ -261,7 +263,7 @@ def test_a_row_removed_before_its_deferred_show_is_never_shown_as_a_window(qtbot
     banner.set_rows([row(text="first")])
     banner.show()
     qtbot.waitExposed(banner)
-    banner.set_rows([row(text="second")])
+    banner.set_rows([MessageBannerRow(MessageBannerSeverity.INFO, "second")])
     layout = banner.layout()
     assert layout is not None
     item = layout.itemAt(0)
@@ -318,6 +320,83 @@ def test_a_rows_message_word_wraps(qtbot: QtBot) -> None:
     labels = [label for label in banner.findChildren(QLabel) if label.text().startswith("A rather long")]
     assert len(labels) == 1
     assert labels[0].wordWrap() is True
+
+
+# endregion
+
+
+# region actions and rewording
+def test_a_rows_action_shows_as_a_button_that_triggers_it(qtbot: QtBot) -> None:
+    """A row carrying an action shows it as a button after the message; clicking it triggers the action.
+
+    **Test steps:**
+
+    * build a banner with one row carrying an action
+    * click its button
+    * verify the action fired once
+    """
+    banner = MessageBanner()
+    qtbot.addWidget(banner)
+    action = QAction("Cancel", banner)
+    fired: list[bool] = []
+    action.triggered.connect(lambda: fired.append(True))
+
+    banner.set_rows([MessageBannerRow(MessageBannerSeverity.WARNING, "Waiting", action)])
+
+    buttons = banner.findChildren(QToolButton)
+    assert len(buttons) == 1
+    assert buttons[0].defaultAction() is action
+    qtbot.mouseClick(buttons[0], Qt.MouseButton.LeftButton)
+    assert len(fired) == 1
+
+
+def test_a_row_without_an_action_shows_no_button(qtbot: QtBot) -> None:
+    """A message-only row shows no button at all."""
+    banner = MessageBanner()
+    qtbot.addWidget(banner)
+
+    banner.set_rows([row()])
+
+    assert banner.findChildren(QToolButton) == []
+
+
+def test_rewording_the_shown_rows_updates_them_in_place(qtbot: QtBot) -> None:
+    """Rows differing only in their texts reword the shown widgets rather than rebuild them -- so a
+    countdown re-said every second never replaces the button under a press.
+
+    **Test steps:**
+
+    * show a row carrying an action
+    * set the same row again with a new text
+    * verify the button is the very same widget, and the label shows the new text
+    """
+    banner = MessageBanner()
+    qtbot.addWidget(banner)
+    action = QAction("Cancel", banner)
+    banner.set_rows([MessageBannerRow(MessageBannerSeverity.WARNING, "in 5 s", action)])
+    button = banner.findChildren(QToolButton)[0]
+
+    banner.set_rows([MessageBannerRow(MessageBannerSeverity.WARNING, "in 4 s", action)])
+
+    assert banner.findChildren(QToolButton) == [button]
+    texts = {label.text() for label in banner.findChildren(QLabel)}
+    assert "in 4 s" in texts
+    assert "in 5 s" not in texts
+
+
+def test_a_different_action_rebuilds_the_row(qtbot: QtBot) -> None:
+    """A row whose action is not the very same one is rebuilt, so its button is bound to the new action."""
+    banner = MessageBanner()
+    qtbot.addWidget(banner)
+    first = QAction("Cancel", banner)
+    second = QAction("Cancel", banner)
+    banner.set_rows([MessageBannerRow(MessageBannerSeverity.WARNING, "Waiting", first)])
+
+    banner.set_rows([MessageBannerRow(MessageBannerSeverity.WARNING, "Waiting", second)])
+
+    buttons = banner.findChildren(QToolButton)
+    assert len(buttons) == 1
+    assert buttons[0].defaultAction() is second
 
 
 # endregion

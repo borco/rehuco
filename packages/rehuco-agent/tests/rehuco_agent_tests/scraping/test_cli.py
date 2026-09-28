@@ -8,8 +8,10 @@ import pytest
 from pytest import mark
 from pytest_mock import MockerFixture
 from rehuco_agent.scraping.cli import scrape_url_to_json, write_scrape_schema
+from rehuco_agent.scraping.protocols import RefetchRequestedError
 from rehuco_agent.scraping.registry import ScraperRegistry
 from rehuco_agent.scraping.results import SCRAPE_RESULT_SCHEMA_TEXT, Page, ScrapeResult
+from rehuco_agent.scraping.scrape_job import MAX_REFETCHES
 from requests import RequestException
 
 URL = "https://example.com/page"
@@ -147,6 +149,59 @@ def test_scrape_url_to_json_exits_1_when_the_result_is_invalid(
 
     assert scrape_url_to_json(URL, scrapers_folder=None, output=None) == 1
     assert "Bad returned an invalid result" in capsys.readouterr().err
+
+
+class RefetchingScraper(FakeScraper):
+    """Asks for the next URL on every page answered with a 503."""
+
+    def scrape_page(self, page: Page) -> object:
+        if page.status == 503:
+            raise RefetchRequestedError("Example answered 503", url=f"{URL}?retry", delay=(1.0, 2.0))
+        return self.result
+
+
+def test_scrape_url_to_json_retries_after_sleeping_then_succeeds(
+    mocker: MockerFixture, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A re-fetch request sleeps a delay drawn from its range and fetches the URL it named; the first
+    attempt that produces a result is printed (#368)."""
+    _mock_registry(mocker, RefetchingScraper(result=ScrapeResult(fields={"title": "T"}, description=None, images=())))
+    fetch = mocker.patch(
+        "rehuco_agent.scraping.http_fetcher.HttpPageFetcher.fetch",
+        side_effect=[
+            Page(url=URL, final_url=URL, html="", status=503),
+            Page(url=f"{URL}?retry", final_url=f"{URL}?retry", html="", status=200),
+        ],
+    )
+    mocker.patch("rehuco_agent.scraping.cli.random.uniform", return_value=1.5)
+    sleep = mocker.patch("rehuco_agent.scraping.cli.time.sleep")
+
+    assert scrape_url_to_json(URL, scrapers_folder=None, output=None) == 0
+
+    sleep.assert_called_once_with(1.5)
+    assert [entry.args[0] for entry in fetch.call_args_list] == [URL, f"{URL}?retry"]
+    captured = capsys.readouterr()
+    assert json.loads(captured.out)["fields"] == {"title": "T"}
+    assert f"Example answered 503 — trying {URL}?retry in 2 s (attempt 2 of {MAX_REFETCHES + 1})" in captured.err
+
+
+def test_scrape_url_to_json_gives_up_after_the_last_refetch(
+    mocker: MockerFixture, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A scraper still asking after `MAX_REFETCHES` re-fetches ends the scrape with exit 1 and the last
+    reason (#368)."""
+    _mock_registry(mocker, RefetchingScraper(result=ScrapeResult(fields={}, description=None, images=())))
+    fetch = mocker.patch(
+        "rehuco_agent.scraping.http_fetcher.HttpPageFetcher.fetch",
+        return_value=Page(url=URL, final_url=URL, html="", status=503),
+    )
+    sleep = mocker.patch("rehuco_agent.scraping.cli.time.sleep")
+
+    assert scrape_url_to_json(URL, scrapers_folder=None, output=None) == 1
+
+    assert fetch.call_count == MAX_REFETCHES + 1
+    assert sleep.call_count == MAX_REFETCHES
+    assert f"Example answered 503 — gave up after {MAX_REFETCHES} re-fetches" in capsys.readouterr().err
 
 
 @mark.disk

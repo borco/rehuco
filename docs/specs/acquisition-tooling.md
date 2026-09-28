@@ -166,7 +166,9 @@ structural, both plain classes:
   `FetchError` on a failed fetch, or `LoginRequiredError` when the page it landed on is a login wall rather than the
   one it asked for — `HttpPageFetcher` raises the latter itself on a `401`/`403`, the one generic signal a plain HTTP
   fetch has; a scraper's own parsing raises it too, since only the scraper knows what its site's login wall looks
-  like when the status is a plain `200`.
+  like when the status is a plain `200`. A `Page` also carries its HTTP **status** (`None` from the browser fetcher,
+  which cannot see one). A transient refusal — any `5xx`, or `429` — is not a fetch failure: `HttpPageFetcher`
+  hands the page over with its status, since only the site's scraper knows whether asking again is worth it.
 - **`SiteScraper`** — what every scraper is: `matches(url) -> bool`, a host or prefix test as tc4's `can_scrap` was, a
   `label`, the `publisher` it fills in, `site_name`/`site_url` — what the Scrapers table's link for this scraper
   shows and where it takes the user, opened through the persona browser's `open_for_login`, never Selenium
@@ -178,7 +180,12 @@ structural, both plain classes:
   plain mapping rather than pre-filtered to one type's declared set (below) — so there is nothing left for three
   near-identical methods to decide that one doesn't. A concrete scraper's `matches(url)` alone decides whether it
   runs; ArtStation selling tutorials and reference packs from the same product page returns whatever fields that
-  page has, and the reader picks out what applies.
+  page has, and the reader picks out what applies. Besides `LoginRequiredError`, `scrape_page` has one more way
+  to answer: **`RefetchRequestedError`** — "fetch again after a pause" — carrying a short user-facing `message`
+  (e.g. "ArtStation answered 503"), the `url` to fetch next (the same one for a plain retry) and a `(min, max)`
+  `delay` in seconds, both optional ([[acquisition-tooling#scrape-job]] for how it is carried out). A scraper
+  that ignores the status and returns normally from an error page fails with the same "Could not fetch" the
+  fetcher itself used to raise, so a scraper that never heard of statuses behaves exactly as before.
 
 A `ScrapeResult` holds three things. **`fields`** is a plain mapping spelled from `SCRAPED_FIELD_NAMES`
 ([[field-schema#resource-types]], e.g. `"title"`, `"advertised_duration"`) — the part of the plugin field-name
@@ -344,7 +351,7 @@ is running gets a free worker immediately, and two scrapes dropped close togethe
 serializing behind each other. A scrape is submitted under the document's log scope, so its fetch and its parse are
 readable in that document's log alongside the app-wide one ([[appendices.logging#scopes]]) — the one piece of the
 task queue's machinery still needed, since a pool thread otherwise inherits no context from whoever submitted the
-work to it. Not a `TaskJob`: with no pause/resume/cancel worth the machinery for one fetch-and-parse, a scrape has no
+work to it. Not a `TaskJob`: with no pause/resume worth the machinery for one fetch-and-parse, a scrape has no
 row on the Tasks dock. Its trace is its log lines, plus one banner row on the document while it runs — the same
 message-only inline strip every other condition already uses — and, if it did not succeed, one more naming why: the
 no-scraper-matched host, worded exactly as `rehuco-agent --scrape URL` prints it
@@ -352,6 +359,16 @@ no-scraper-matched host, worded exactly as `rehuco-agent --scrape URL` prints it
 and only if the document is still open at the same path; a document closed or renamed while its page was being
 fetched simply discards the result. `markdownify`, `beautifulsoup4`, `requests` and `selenium` are all plain runtime
 dependencies of `rehuco-agent` ([[acquisition-tooling#browser-persona]] for why Selenium is not an opt-in extra).
+
+**A re-fetch is the next attempt, never a sleeping worker.** Each `ScrapeJob` is one attempt, ending in a result, a
+failure, or a re-fetch request ([[acquisition-tooling#scraper-protocols]]); a sleep inside one would hold a pool slot
+for nothing. So every attempt is scheduled on a single-shot timer on the GUI thread — the drop's first with no
+delay, each re-fetch after a pause drawn from the scraper's range (3–6 s when it names none) — and submitted when
+it fires. At most six re-fetches are made per drop; after that, the last reason becomes the drop's ordinary failure
+row. While a re-fetch waits, the drop's banner row is a warning counting down to it — `ArtStation answered 503 —
+trying <url> in 4 s (attempt 2 of 7)` — with a **Cancel** action; the waiting re-fetch is also dropped when the
+document closes or its path changes, the same staleness a landing result is already checked for. The
+`--scrape` CLI runs the same attempts synchronously, sleeping between them and announcing each wait on stderr.
 
 ### §15.2.6 The LLM fallback, deferred
 
