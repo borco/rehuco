@@ -2,7 +2,8 @@
 
 from typing import Final
 
-from pytest import mark, param
+from pytest import mark, param, raises
+from rehuco_agent.scraping.protocols import RefetchRequestedError
 from rehuco_agent.scraping.results import Page, ScrapeResult
 from rehuco_agent.scraping.sites.artstation import FULL_SIZE_REWRITE, ArtStation
 
@@ -391,6 +392,41 @@ def test_scrape_page_reconstructs_the_marketplace_url_from_any_store_host(store_
     result = ArtStation().scrape_page(Page(url=store_url, final_url=store_url, html="<html></html>"))
 
     assert result.fields["url"] == expected
+
+
+# endregion
+
+
+# region re-fetching a refused page (#369)
+@mark.parametrize("status", [param(503, id="503"), param(429, id="429")])
+def test_a_refused_store_page_asks_for_the_marketplace_url(status: int) -> None:
+    """A store host answering a transient refusal is retried on the marketplace URL, which the store URL
+    alone is enough to rebuild."""
+    with raises(RefetchRequestedError) as caught:
+        ArtStation().scrape_page(Page(url=STORE_URL, final_url=STORE_URL, html="", status=status))
+
+    assert caught.value.url == PRODUCT_URL
+    assert caught.value.message == f"ArtStation answered {status}"
+    assert caught.value.delay is None
+
+
+def test_a_refused_marketplace_page_asks_for_itself_again() -> None:
+    """A marketplace URL never names the artist whose store serves the product, so there is nowhere else
+    to go: ``url`` is left `None`, which `ScrapeJob` fills with the same URL."""
+    with raises(RefetchRequestedError) as caught:
+        ArtStation().scrape_page(Page(url=PRODUCT_URL, final_url=PRODUCT_URL, html="", status=503))
+
+    assert caught.value.url is None
+    assert caught.value.message == "ArtStation answered 503"
+
+
+@mark.parametrize("status", [param(None, id="unknown"), param(200, id="200"), param(404, id="404")])
+def test_a_page_outside_the_retryable_statuses_is_parsed(status: int | None) -> None:
+    """Only a transient refusal is retried; any other page is parsed as before, and a permanent error
+    status is left for `ScrapeJob`'s own check to fail."""
+    result = ArtStation().scrape_page(Page(url=STORE_URL, final_url=STORE_URL, html=STORE_HTML, status=status))
+
+    assert result.fields["url"] == PRODUCT_URL
 
 
 # endregion

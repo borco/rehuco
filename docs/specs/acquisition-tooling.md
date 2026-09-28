@@ -238,6 +238,14 @@ scraper a second parsing path with its own selectors rather than reuse the marke
 check alone — verify against a saved real page before assuming otherwise for the next site a scraper like this
 covers.
 
+**A refused store page is retried on the marketplace** (#369). A `503` or `429` from an artist's store host is
+often not what the marketplace answers at the same moment, and the store URL alone is enough to build the
+marketplace one, so the ArtStation scraper asks for that instead of the same page again. The reverse has nothing
+to go on: a marketplace URL never names the artist whose store serves it, and a refused page is no page to read
+the author from, so a refused marketplace page asks for itself. A product id → artist table learned from earlier
+scrapes was tried and dropped: it only ever helps a product scraped before, and a re-scraped document already
+names its store in its own sources and author link.
+
 ### §15.2.2 Legacy `.tc` author-URL upgrade
 
 [[[acquisition-tooling#legacy-author-url]]]

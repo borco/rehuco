@@ -25,6 +25,13 @@ behaviour any unrecognized markup gets. Either way, `fields["url"]` carries the 
 fetched, so on a fresh document it becomes the primary and the store URL a second entry, and on one that
 already has sources both are kept beside them ([[acquisition-tooling#scraper-protocols]]) -- nothing
 beyond this reconstruction is needed here.
+
+**A transient refusal on the store host is retried on the marketplace** (#369): a ``503`` or ``429``
+(:data:`RETRYABLE_STATUSES`) makes :meth:`ArtStation.scrape_page` raise
+`~.protocols.RefetchRequestedError` itself, ahead of `~.scrape_job.ScrapeJob.scrape`'s generic status check,
+naming the marketplace URL the same reconstruction builds. The reverse has nothing to go on -- a
+marketplace URL never names the artist whose store serves it -- so a refused marketplace page asks for
+itself again.
 """
 
 import re
@@ -35,6 +42,7 @@ from bs4 import BeautifulSoup
 from bs4.element import Tag
 
 from ..html_markdown import HtmlMarkdown
+from ..protocols import RefetchRequestedError
 from ..results import Page, ScrapedImage, ScrapeResult
 
 FULL_SIZE_REWRITE: Final = re.compile(
@@ -48,6 +56,10 @@ asks for. A `data-src` already at `large` (or some other pattern) is left untouc
 STORE_PATH: Final = re.compile(r"^/store/([^/]+)/([^/]+)/?$")
 """An artist store host's product path, ``/store/<id>/<slug>`` -- the two captures
 :meth:`ArtStation.__scrape_store_page` reassembles into the ``www.artstation.com`` marketplace URL."""
+
+RETRYABLE_STATUSES: Final = frozenset({429}) | frozenset(range(500, 600))
+"""The statuses a scrape asks to re-fetch (#369): a server error or the rate-limit answer, each worth
+asking again, as opposed to a permanent refusal (``404``, a login wall)."""
 
 
 class ArtStation:
@@ -79,11 +91,28 @@ class ArtStation:
         :returns: whatever fields, description and images the page has; an unrelated page (no
             recognizable product markup, of either shape) yields an empty result rather than an
             exception.
+        :raises RefetchRequestedError: the page answered one of :data:`RETRYABLE_STATUSES` -- asking
+            for the marketplace URL when a store host refused, the same URL again otherwise (#369).
         """
         store_match = self.__store_path_match(page.final_url)
+        if page.status in RETRYABLE_STATUSES:
+            raise RefetchRequestedError(
+                f"ArtStation answered {page.status}",
+                url=self.__marketplace_url(store_match) if store_match is not None else None,
+            )
         if store_match is not None:
             return self.__scrape_store_page(page, store_match)
         return self.__scrape_marketplace_page(page)
+
+    @staticmethod
+    def __marketplace_url(store_match: re.Match[str]) -> str:
+        """The ``www.artstation.com`` URL of the product a store-host path names (#366).
+
+        :param store_match: :meth:`__store_path_match` of a store-host URL.
+        :returns: ``https://www.artstation.com/marketplace/p/<id>/<slug>``.
+        """
+        product_id, slug = store_match.groups()
+        return f"https://www.artstation.com/marketplace/p/{product_id}/{slug}"
 
     @staticmethod
     def __store_path_match(url: str) -> re.Match[str] | None:
@@ -134,8 +163,7 @@ class ArtStation:
         than guessed from description prose.
         """
         soup = BeautifulSoup(page.html, "html.parser")
-        product_id, slug = store_match.groups()
-        fields: dict[str, object] = {"url": f"https://www.artstation.com/marketplace/p/{product_id}/{slug}"}
+        fields: dict[str, object] = {"url": self.__marketplace_url(store_match)}
 
         title = soup.select_one(".product-title")
         if isinstance(title, Tag):

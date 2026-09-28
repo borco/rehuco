@@ -17,6 +17,7 @@ from rehuco_agent.scraping.registry import ScraperRegistry
 from rehuco_agent.scraping.results import Page, ScrapedImage, ScrapeResult
 from rehuco_agent.scraping.scrape_job import MAX_REFETCHES
 from rehuco_agent.scraping.scraper_executor import ScraperExecutor
+from rehuco_agent.scraping.sites.artstation import ArtStation
 from rehuco_agent.scraping.url_drop import UrlDrop
 from rehuco_core import LockReason, LockReasonKind, RehuDocument
 
@@ -50,10 +51,10 @@ class FakeScraper:  # pylint: disable=missing-function-docstring,duplicate-code
 class FakeRegistry:  # pylint: disable=missing-function-docstring,too-few-public-methods
     """A minimal registry: `find` answers from a fixed mapping, by URL."""
 
-    def __init__(self, by_url: dict[str, FakeScraper | None]) -> None:
+    def __init__(self, by_url: dict[str, object]) -> None:
         self.__by_url = by_url
 
-    def find(self, url: str) -> FakeScraper | None:
+    def find(self, url: str) -> object:
         return self.__by_url.get(url)
 
 
@@ -752,6 +753,49 @@ def test_a_cancel_arriving_after_its_drop_ended_is_ignored(qtbot: QtBot, image_d
     qtbot.wait(50)
 
     assert not doc_actions.notice
+
+
+# endregion
+
+# region ArtStation's refused store page (#369)
+
+ARTSTATION_STORE_URL: Final = "https://anartist.artstation.com/store/12345/example"
+ARTSTATION_MARKETPLACE_URL: Final = "https://www.artstation.com/marketplace/p/12345/example"
+
+
+def artstation_actions(
+    doc_model: RehuDocumentModel, fetcher: SequenceFetcher, image_downloads: ImageDownloads
+) -> ScrapeActions:
+    """`ScrapeActions` over the real `ArtStation` scraper, found for either of its URL shapes."""
+    registry = FakeRegistry({ARTSTATION_STORE_URL: ArtStation(), ARTSTATION_MARKETPLACE_URL: ArtStation()})
+    return build_actions(doc_model, registry, SyncExecutor(), fetcher, image_downloads)
+
+
+def test_a_refused_store_page_is_retried_on_the_marketplace_url(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
+    """The real scraper through the whole chain: a 503 from the store host, and the next attempt fetches
+    the marketplace URL, whose 200 lands as the result."""
+    doc_model = model()
+    fetcher = SequenceFetcher(503, 200)
+    doc_actions = artstation_actions(doc_model, fetcher, image_downloads)
+
+    doc_actions.submit(UrlDrop(url=ARTSTATION_STORE_URL, fragment=None))
+    qtbot.waitUntil(lambda: not doc_actions.notice, timeout=WAIT_TIMEOUT_MS)
+
+    assert fetcher.calls == [ARTSTATION_STORE_URL, ARTSTATION_MARKETPLACE_URL]
+    assert doc_model.sources[-1]["url"] == ARTSTATION_MARKETPLACE_URL
+
+
+def test_a_refused_marketplace_page_is_retried_on_itself(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
+    """A marketplace 503 has no store URL to fall back on, so the same URL is fetched again."""
+    doc_model = model()
+    fetcher = SequenceFetcher(503, 200)
+    doc_actions = artstation_actions(doc_model, fetcher, image_downloads)
+
+    doc_actions.submit(UrlDrop(url=ARTSTATION_MARKETPLACE_URL, fragment=None))
+    qtbot.waitUntil(lambda: not doc_actions.notice, timeout=WAIT_TIMEOUT_MS)
+
+    assert fetcher.calls == [ARTSTATION_MARKETPLACE_URL, ARTSTATION_MARKETPLACE_URL]
+    assert doc_model.sources[-1]["url"] == ARTSTATION_MARKETPLACE_URL
 
 
 # endregion
