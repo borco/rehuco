@@ -180,6 +180,60 @@ def test_moving_rows(model: WebSearchEnginesModel) -> None:
     assert model.move_up(0) == 0
 
 
+def test_the_flags_say_which_cells_are_typed_into_and_which_are_checked(model: WebSearchEnginesModel) -> None:
+    """The radio cell is checkable and not editable, the text cells the other way round, and no index
+    has no flags.
+
+    **Test steps:**
+
+    * read the flags of an invalid index, a radio cell and a name cell
+    * verify each
+    """
+    assert model.flags(QModelIndex()) == Qt.ItemFlag.NoItemFlags
+    radio = model.flags(cell(model, 0, ACTIVE_COLUMN))
+    assert radio & Qt.ItemFlag.ItemIsUserCheckable
+    assert not radio & Qt.ItemFlag.ItemIsEditable
+    text = model.flags(cell(model, 0, NAME_COLUMN))
+    assert text & Qt.ItemFlag.ItemIsEditable
+    assert not text & Qt.ItemFlag.ItemIsUserCheckable
+
+
+def test_a_role_or_an_index_the_model_has_no_answer_for_gets_none(model: WebSearchEnginesModel) -> None:
+    """No index, and a role a flagged cell has no style for, both answer nothing.
+
+    **Test steps:**
+
+    * ask for the data of an invalid index and set data on one
+    * break a URL and ask for its decoration role
+    * verify nothing was answered or changed
+    """
+    assert model.data(QModelIndex()) is None
+    assert not model.setData(QModelIndex(), "x")
+    model.setData(cell(model, 0, URL_COLUMN), "https://one.example/")
+    assert model.data(cell(model, 0, URL_COLUMN), Qt.ItemDataRole.DecorationRole) is None
+
+
+def test_requests_that_make_no_sense_are_refused(model: WebSearchEnginesModel) -> None:
+    """A flat list has no children, and a row cannot be inserted, removed or moved out of range.
+
+    **Test steps:**
+
+    * insert, remove and move under a valid parent, with a zero count, and onto its own place
+    * verify each is refused and the rows are unchanged
+    """
+    child_parent = model.index(0, 0)
+    before = model.entries
+    assert not model.insertRows(0, 1, child_parent)
+    assert not model.insertRows(0, 0)
+    assert not model.removeRows(0, 1, child_parent)
+    assert not model.removeRows(0, 0)
+    assert not model.removeRows(0, 4)
+    assert not model.moveRows(child_parent, 0, 1, QModelIndex(), 2)
+    assert not model.moveRows(QModelIndex(), 0, 1, child_parent, 2)
+    assert not model.moveRows(QModelIndex(), 0, 1, QModelIndex(), 0)
+    assert model.entries == before
+
+
 def test_defaults_can_be_replaced_and_a_same_list_is_not_a_reset() -> None:
     """Reset restores whatever defaults were set, and setting an equal list emits nothing.
 

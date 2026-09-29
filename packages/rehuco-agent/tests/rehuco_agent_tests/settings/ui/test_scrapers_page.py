@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from borco_pyside.widgets import ElidedLabel
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import QPoint, Qt, QUrl
 from PySide6.QtWidgets import QMessageBox
 from pytest import fixture
 from pytest_mock import MockerFixture
@@ -704,6 +704,49 @@ def test_the_radio_leads_the_row_on_screen_while_add_still_opens_the_name(qtbot:
     assert editor.row_is_blank(row)
     model.setData(model.index(row, NAME_COLUMN), "Mine", Qt.ItemDataRole.EditRole)
     assert not editor.row_is_blank(row)
+
+
+def test_the_editors_reset_target_can_be_read_and_replaced(qtbot: QtBot) -> None:
+    """Reset goes back to the shipped engines unless the owner says otherwise.
+
+    **Test steps:**
+
+    * verify the editor's defaults are the shipped engines
+    * replace them and verify the new ones are read back
+    """
+    page = ScrapersPage()
+    qtbot.addWidget(page)
+    editor = page_ui(page).web_search_engines_editor
+    assert editor.defaults == DEFAULT_ENGINES
+
+    editor.defaults = (MINE,)
+
+    assert editor.defaults == (MINE,)
+
+
+def test_the_radio_delegate_paints_and_a_click_on_the_radio_checks_the_row(qtbot: QtBot) -> None:
+    """The Use column draws a radio and a click on it -- and only on it -- makes the row the active one.
+
+    **Test steps:**
+
+    * show the page's engine table and grab it, which paints every cell
+    * click beside the second row's radio and verify nothing changed
+    * click on the second row's radio and verify that row is active
+    """
+    page = ScrapersPage()
+    qtbot.addWidget(page)
+    page.resize(700, 900)
+    page.show()
+    view = page_ui(page).web_search_engines_editor.view
+    assert not view.grab().isNull()
+    model = engines_model(page)
+    cell = view.visualRect(model.index(1, ACTIVE_COLUMN))
+
+    qtbot.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=cell.topLeft() + QPoint(1, 1))
+    assert [engine.active for engine in page_ui(page).web_search_engines_editor.values] == [True, False, False]
+
+    qtbot.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=cell.center())
+    assert [engine.active for engine in page_ui(page).web_search_engines_editor.values] == [False, True, False]
 
 
 def test_checking_another_radio_switches_the_active_engine_and_dirties_the_page(qtbot: QtBot) -> None:

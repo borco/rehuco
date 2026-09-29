@@ -86,6 +86,20 @@ def test_triggering_opens_the_chosen_engine_with_the_encoded_query(
     ]
 
 
+def test_searching_with_nothing_to_search_for_opens_nothing(mocker: MockerFixture, qapp: QApplication) -> None:
+    """The action is disabled then, and a direct call is still a no-op.
+
+    **Test steps:**
+
+    * mock ``QDesktopServices.openUrl`` and build the action over a path-less document
+    * call ``search`` and verify no URL was opened
+    """
+    del qapp
+    opened = mocker.patch.object(QDesktopServices, "openUrl")
+    WebSearchAction(RehuDocumentModel(RehuDocument(DOCUMENT)), WebSearchSettings()).search()
+    opened.assert_not_called()
+
+
 def test_a_file_scoped_document_searches_its_stem() -> None:
     """A standalone ``foo.rehu`` is named by its stem, not by its folder.
 

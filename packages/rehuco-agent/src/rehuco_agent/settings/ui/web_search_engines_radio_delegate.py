@@ -29,8 +29,6 @@ class WebSearchEnginesRadioDelegate(QStyledItemDelegate):
         self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex | QPersistentModelIndex
     ) -> None:
         state = index.data(Qt.ItemDataRole.CheckStateRole)
-        if state is None:
-            return
         painter.save()
         try:
             style = option.widget.style() if option.widget is not None else QApplication.style()
