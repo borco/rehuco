@@ -12,10 +12,12 @@ from rehuco_agent.settings.image_viewer_settings import (
     CONTENT_FOLDER_NAMES_KEY,
     CONTENT_ROWS_MAX_HEIGHT_KEY,
     CONTENT_ROWS_MIN_HEIGHT_KEY,
+    CONTENT_STRIP_ZIP_FOLDER_KEY,
     CONTENT_ZIP_NAMES_KEY,
     DEFAULT_CONTENT_FOLDER_NAMES,
     DEFAULT_CONTENT_ROWS_MAX_HEIGHT,
     DEFAULT_CONTENT_ROWS_MIN_HEIGHT,
+    DEFAULT_CONTENT_STRIP_ZIP_FOLDER,
     DEFAULT_CONTENT_ZIP_NAMES,
     DEFAULT_EDITOR_PREVIEW_HEIGHT,
     DEFAULT_LIGHTBOX_BACKDROP,
@@ -320,6 +322,7 @@ def test_load_defaults_the_content_images_choices_when_nothing_was_saved(setting
     viewer_settings.content_rows_max_height = 2
     viewer_settings.content_zip_names = False
     viewer_settings.content_folder_names = True
+    viewer_settings.content_strip_zip_folder = False
     viewer_settings.lightbox_info_visible = True
     viewer_settings.lightbox_double_click_closes = False
     viewer_settings.lightbox_select_last_viewed = False
@@ -332,6 +335,7 @@ def test_load_defaults_the_content_images_choices_when_nothing_was_saved(setting
     assert viewer_settings.content_rows_max_height == DEFAULT_CONTENT_ROWS_MAX_HEIGHT == 260
     assert viewer_settings.content_zip_names is DEFAULT_CONTENT_ZIP_NAMES is True
     assert viewer_settings.content_folder_names is DEFAULT_CONTENT_FOLDER_NAMES is False
+    assert viewer_settings.content_strip_zip_folder is DEFAULT_CONTENT_STRIP_ZIP_FOLDER is True
     assert viewer_settings.lightbox_info_visible is DEFAULT_LIGHTBOX_INFO_VISIBLE is False
 
 
@@ -349,6 +353,7 @@ def test_save_then_load_round_trips_the_content_images_choices(settings: FakeSet
     viewer_settings.content_rows_max_height = 400
     viewer_settings.content_zip_names = False
     viewer_settings.content_folder_names = True
+    viewer_settings.content_strip_zip_folder = False
     viewer_settings.lightbox_info_visible = True
     viewer_settings.lightbox_double_click_closes = False
     viewer_settings.lightbox_select_last_viewed = False
@@ -364,6 +369,7 @@ def test_save_then_load_round_trips_the_content_images_choices(settings: FakeSet
     assert restored.content_rows_max_height == 400
     assert restored.content_zip_names is False
     assert restored.content_folder_names is True
+    assert restored.content_strip_zip_folder is False
     assert restored.lightbox_info_visible is True
 
 
@@ -415,6 +421,7 @@ def test_saving_writes_every_choice_together(settings: FakeSettings) -> None:
     viewer_settings.content_rows_max_height = 400
     viewer_settings.content_zip_names = False
     viewer_settings.content_folder_names = True
+    viewer_settings.content_strip_zip_folder = False
     viewer_settings.save(settings)  # type: ignore[arg-type]
 
     settings.beginGroup(GROUP)
@@ -430,3 +437,4 @@ def test_saving_writes_every_choice_together(settings: FakeSettings) -> None:
     assert settings.value(CONTENT_ROWS_MAX_HEIGHT_KEY) == 400
     assert settings.value(CONTENT_ZIP_NAMES_KEY) is False
     assert settings.value(CONTENT_FOLDER_NAMES_KEY) is True
+    assert settings.value(CONTENT_STRIP_ZIP_FOLDER_KEY) is False

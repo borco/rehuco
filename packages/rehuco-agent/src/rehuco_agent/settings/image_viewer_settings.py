@@ -28,6 +28,7 @@ CONTENT_ROWS_MIN_HEIGHT_KEY: Final = "content_rows_min_height"
 CONTENT_ROWS_MAX_HEIGHT_KEY: Final = "content_rows_max_height"
 CONTENT_ZIP_NAMES_KEY: Final = "content_zip_names"
 CONTENT_FOLDER_NAMES_KEY: Final = "content_folder_names"
+CONTENT_STRIP_ZIP_FOLDER_KEY: Final = "content_strip_zip_folder"
 
 DEFAULT_MODE: Final = ImageViewerMode.DOCUMENT_OVERLAY
 """What a fresh install (no ``.ini`` yet) opens screenshots on: the least disruptive of the three --
@@ -88,6 +89,10 @@ archives with no marker between them is the confusion the dock's banners exist t
 DEFAULT_CONTENT_FOLDER_NAMES: Final = False
 """Whether the Content Images dock banners each folder change inside an archive (#221). Off: most packs
 are flat, and a banner per folder on the ones that are not is a choice, not a default."""
+
+DEFAULT_CONTENT_STRIP_ZIP_FOLDER: Final = True
+"""Whether the Content Images dock drops a top folder named like its zip from the banners (#367). On:
+``foo.zip:/foo/bar`` says ``foo`` twice, and a pack zipped with its own folder inside is the common shape."""
 
 
 class ImageViewerSettings(QObject):  # pylint: disable=too-many-instance-attributes
@@ -167,6 +172,10 @@ class ImageViewerSettings(QObject):  # pylint: disable=too-many-instance-attribu
     content_folder_names = SimpleProperty(DEFAULT_CONTENT_FOLDER_NAMES)
     """Which boundaries the Content Images dock banners (#221); applying either re-packs every open dock."""
 
+    content_strip_zip_folder = SimpleProperty(DEFAULT_CONTENT_STRIP_ZIP_FOLDER)
+    """Whether the Content Images dock's banners drop a top folder named like its zip (#367); applying it
+    re-packs every open dock."""
+
     def load(self, settings: QSettings) -> None:
         """Replace the current choices with what's in persistent storage.
 
@@ -214,6 +223,9 @@ class ImageViewerSettings(QObject):  # pylint: disable=too-many-instance-attribu
         self.content_folder_names = cast(
             bool, settings.value(CONTENT_FOLDER_NAMES_KEY, DEFAULT_CONTENT_FOLDER_NAMES, type=bool)
         )
+        self.content_strip_zip_folder = cast(
+            bool, settings.value(CONTENT_STRIP_ZIP_FOLDER_KEY, DEFAULT_CONTENT_STRIP_ZIP_FOLDER, type=bool)
+        )
         settings.endGroup()
         try:
             self.mode = ImageViewerMode(stored)
@@ -241,6 +253,7 @@ class ImageViewerSettings(QObject):  # pylint: disable=too-many-instance-attribu
         settings.setValue(CONTENT_ROWS_MAX_HEIGHT_KEY, self.content_rows_max_height)
         settings.setValue(CONTENT_ZIP_NAMES_KEY, self.content_zip_names)
         settings.setValue(CONTENT_FOLDER_NAMES_KEY, self.content_folder_names)
+        settings.setValue(CONTENT_STRIP_ZIP_FOLDER_KEY, self.content_strip_zip_folder)
         settings.endGroup()
 
 
