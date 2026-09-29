@@ -174,7 +174,7 @@ class ArtStation:
                 fields["title"] = title.get_text(strip=True)
             author_link = header.select_one(".productPage-header-author a[itemprop='url']")
             if isinstance(author_link, Tag):
-                name = author_link.get_text(strip=True)
+                name = self.__seller_name(author_link)
                 url = author_link.get("href")
                 fields["authors"] = [{"name": name, "url": url} if isinstance(url, str) else name]
 
@@ -189,6 +189,20 @@ class ArtStation:
                 fields["advertised_tags"] = tags
 
         return ScrapeResult(fields=fields, description=description, images=images)
+
+    @staticmethod
+    def __seller_name(author_link: Tag) -> str:
+        """The seller's name alone (#384): the link can carry more text than the name -- a "Learn more about
+        this seller" label -- and ``get_text`` over the whole link would glue it on. Reads the
+        ``itemprop="name"`` node when there is one, else only the link's own direct text nodes.
+
+        :param author_link: the header's ``itemprop="url"`` author link.
+        :returns: the name, empty when the link holds none.
+        """
+        name_node = author_link.select_one("[itemprop='name']")
+        if isinstance(name_node, Tag):
+            return name_node.get_text(strip=True)
+        return " ".join(text.strip() for text in author_link.find_all(string=True, recursive=False) if text.strip())
 
     def __scrape_store_page(self, page: Page, soup: BeautifulSoup, store_match: re.Match[str]) -> ScrapeResult:
         """Parse an artist store host's product page (#366) -- a different, white-label storefront
