@@ -188,6 +188,26 @@ def test_scrape_page_reads_title_and_authors() -> None:
     assert result.fields["authors"] == [{"name": "Ann Author", "url": "https://www.artstation.com/annauthor/store"}]
 
 
+@mark.parametrize(
+    "link_html",
+    [
+        param('<span itemprop="name">Ann Author</span><span>Learn more about this seller</span>', id="name-node"),
+        param('Ann Author<span class="hint">Learn more about this seller</span>', id="own-text"),
+    ],
+)
+def test_scrape_page_author_name_excludes_the_label_inside_the_link(link_html: str) -> None:
+    """A "Learn more about this seller" label inside the author link is not glued onto the name (#384);
+    the `url` is unchanged."""
+    html = (
+        '<div class="productPage-header"><div class="productPage-header-author">'
+        f'<a itemprop="url" href="https://www.artstation.com/annauthor/store">{link_html}</a></div></div>'
+    )
+
+    result = ArtStation().scrape_page(Page(url=PRODUCT_URL, final_url=PRODUCT_URL, html=html))
+
+    assert result.fields["authors"] == [{"name": "Ann Author", "url": "https://www.artstation.com/annauthor/store"}]
+
+
 def test_scrape_page_reads_tags_excluding_the_generic_ones() -> None:
     """The generic `Tutorials`/`Other Tutorials` tags are dropped; the rest are lower-cased."""
     result = ArtStation().scrape_page(Page(url=PRODUCT_URL, final_url=PRODUCT_URL, html=PRODUCT_HTML))
