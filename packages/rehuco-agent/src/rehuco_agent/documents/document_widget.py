@@ -1665,6 +1665,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             (settings.content_rows_max_height_changed, self.__on_content_rows_changed),
             (settings.content_zip_names_changed, self.__on_content_banners_changed),
             (settings.content_folder_names_changed, self.__on_content_banners_changed),
+            (settings.content_strip_zip_folder_changed, self.__on_content_banners_changed),
         )
         for signal, slot in subscriptions:
             signal.connect(slot)
@@ -1718,7 +1719,9 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         :returns: the flags.
         """
         settings = shared_image_viewer_settings()
-        return ContentDisplayFlags(settings.content_zip_names, settings.content_folder_names)
+        return ContentDisplayFlags(
+            settings.content_zip_names, settings.content_folder_names, settings.content_strip_zip_folder
+        )
 
     def __on_previews_visible_changed(self, visible: bool) -> None:
         """Blank the Content Images grid's thumbnails, and dismiss this document's maximized viewer,

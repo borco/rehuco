@@ -441,6 +441,19 @@
         </property>
        </widget>
       </item>
+      <item row="5" column="0" colspan="2">
+       <widget class="QCheckBox" name="content_strip_zip_folder_check_box">
+        <property name="text">
+         <string>Hide a top folder named like its zip</string>
+        </property>
+        <property name="toolTip">
+         <string>When all of a zip's images sit in one top folder with the zip's own name, leave that folder out of the banners: foo.zip:/bar rather than foo.zip:/foo/bar.</string>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
      </layout>
     </widget>
    </item>

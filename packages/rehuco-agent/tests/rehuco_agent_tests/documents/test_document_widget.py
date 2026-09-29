@@ -5202,7 +5202,7 @@ def test_applying_a_new_clamp_or_banner_choice_reaches_the_open_dock(refimages_w
 
     **Test steps:**
 
-    * change each of the four settings on the shared object
+    * change each of the five settings on the shared object
     * verify the grid took them
     """
     settings = shared_image_viewer_settings()
@@ -5212,9 +5212,10 @@ def test_applying_a_new_clamp_or_banner_choice_reaches_the_open_dock(refimages_w
     settings.content_rows_max_height = 300
     settings.content_zip_names = False
     settings.content_folder_names = True
+    settings.content_strip_zip_folder = False
 
     assert view.clamp == (90, 300)
-    assert view.flags == ContentDisplayFlags(zip_names=False, folder_names=True)
+    assert view.flags == ContentDisplayFlags(zip_names=False, folder_names=True, strip_zip_folder=False)
 
 
 @mark.parametrize(

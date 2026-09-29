@@ -499,6 +499,56 @@ def test_drop_changes_reverts_the_staged_content_images_choices(page: ImagesDisp
     assert check_box(page, "lightbox_info_check_box").isChecked() == settings.lightbox_info_visible
 
 
+def test_the_strip_zip_folder_box_stages_applies_and_resets(page: ImagesDisplayPage) -> None:
+    """ "Hide a top folder named like its zip" starts on the saved value, marks the page dirty when
+    toggled, reaches the shared settings on apply, and goes back on reset (#367).
+
+    **Test steps:**
+
+    * verify the box starts on the saved value
+    * toggle it and reset; verify it is back and nothing is pending
+    * toggle it again and apply; verify the shared settings took it
+    """
+    settings = shared_image_viewer_settings()
+    box = check_box(page, "content_strip_zip_folder_check_box")
+    assert box.isChecked() == settings.content_strip_zip_folder
+
+    box.setChecked(not settings.content_strip_zip_folder)
+    assert page.is_dirty()
+    page.drop_changes()
+    assert box.isChecked() == settings.content_strip_zip_folder
+    assert not page.is_dirty()
+
+    box.setChecked(False)
+    page.save_changes()
+    assert settings.content_strip_zip_folder is False
+    assert not page.is_dirty()
+
+
+def test_the_strip_zip_folder_box_is_enabled_only_with_both_banner_boxes(page: ImagesDisplayPage) -> None:
+    """The box changes nothing unless zip and folder names are both shown, so it is enabled only then,
+    following the two boxes as they are toggled and as a reset re-seeds them (#367).
+
+    **Test steps:**
+
+    * walk the four combinations of the two banner boxes
+    * verify the box is enabled only with both checked
+    * check both, reset to the saved pair, and verify the box follows
+    """
+    zip_names = check_box(page, "content_zip_names_check_box")
+    folder_names = check_box(page, "content_folder_names_check_box")
+    box = check_box(page, "content_strip_zip_folder_check_box")
+
+    for zips, folders in ((False, False), (True, False), (False, True), (True, True)):
+        zip_names.setChecked(zips)
+        folder_names.setChecked(folders)
+        assert box.isEnabled() == (zips and folders)
+
+    page.drop_changes()
+    settings = shared_image_viewer_settings()
+    assert box.isEnabled() == (settings.content_zip_names and settings.content_folder_names)
+
+
 def test_a_staged_backdrop_makes_its_own_frame_dirty(page: ImagesDisplayPage) -> None:
     """The swatch holds the colour itself, so the settings dialog's generic frame snapshot sees a
     backdrop change like any other -- which is what tints the frame and enables its Apply/Reset (#342).
