@@ -1,5 +1,7 @@
 """Tests for AuthorsEditor: the comma line while it is lossless, the record rows otherwise (#97)."""
 
+from typing import Any
+
 from PySide6.QtWidgets import QLineEdit
 from pytest import fixture
 from pytestqt.qtbot import QtBot
@@ -361,3 +363,49 @@ def test_the_first_line_is_a_stable_height(editor: AuthorsEditor) -> None:
     editor.set_advanced(True)
 
     assert editor.header_height == in_simple
+
+
+# region a row pending a name
+
+
+def test_an_edit_to_a_row_pending_a_name_is_not_reported(editor: AuthorsEditor) -> None:
+    """A half-typed author is not in the value, so typing into it changes nothing to report.
+
+    **Test steps:**
+
+    * switch to the rows, insert one and give it only a URL
+    * verify nothing was reported and the value is the two names
+    """
+    editor.set_advanced(True)
+    reported: list[Any] = []
+    editor.value_changed.connect(reported.append)
+    model = rows(editor).model
+
+    model.insertRows(2, 1)
+    model.setData(model.index(2, URL_COLUMN), "https://example.com/carol")
+
+    assert not reported
+    assert editor.value == ["Alice", "Bob"]
+
+
+def test_naming_a_pending_row_reports_it(editor: AuthorsEditor) -> None:
+    """The name is what makes the row an author, and that is the edit reported.
+
+    **Test steps:**
+
+    * switch to the rows, insert one, give it a URL and then a name
+    * verify one report arrived, carrying the new author last
+    """
+    editor.set_advanced(True)
+    reported: list[Any] = []
+    editor.value_changed.connect(reported.append)
+    model = rows(editor).model
+    model.insertRows(2, 1)
+    model.setData(model.index(2, URL_COLUMN), "https://example.com/carol")
+
+    model.setData(model.index(2, NAME_COLUMN), "Carol")
+
+    assert reported == [["Alice", "Bob", {"name": "Carol", "url": "https://example.com/carol"}]]
+
+
+# endregion

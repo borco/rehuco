@@ -23,8 +23,8 @@ COLUMN_COUNT: Final = 2
 COLUMN_TITLES: Final = ("Name", "URL")
 
 MISSING_NAME_REASON: Final = "An author entry needs a name."
-"""Shown on a row whose name has been emptied ([[field-schema#authors]]: the editor enforces a
-non-empty name on what it writes)."""
+"""Shown on a row with no name ([[field-schema#authors]]: flagged, never refused -- and a row added here
+is left out of the value until it has one)."""
 
 INVALID_URL_REASON: Final = "A link must be a full http:// or https:// address, or empty."
 """Shown on a row whose URL is present but not a strict http/https address -- the value would render
@@ -86,6 +86,13 @@ class AuthorsTableModel(QAbstractTableModel):
     complaint mid-typing would fight the user for every intermediate state a URL passes through, and a
     silent revert would be worse.
 
+    **A row added here is pending until it has a name.** Its cells can be filled in any order, so a row
+    can hold a URL and no name yet; it stays on screen, flagged, and is left out of :attr:`entries` --
+    an author with no name is not an entry of anything, and writing one would put a half-typed row in the
+    document. It becomes an entry the moment a name lands, and stays one after that: clearing the name
+    of an entry later is flagged like any other, not taken back out of the value. Rows read in through
+    :meth:`set_entries` are never pending, whatever they hold -- they are the document's, not a gesture.
+
     **Also an `ItemEditor`/`ItemOrderingEditor`** (structurally -- no explicit `Protocol` inheritance,
     since mixing `Protocol`'s metaclass with Shiboken's raises a metaclass conflict): :meth:`insert`,
     :meth:`delete`, :meth:`move_to_top` and friends are the row-number-in, row-number-out shape both
@@ -103,6 +110,9 @@ class AuthorsTableModel(QAbstractTableModel):
         self.__entries: list[AuthorEntry] = []
         """The rows, in order. Every write to it below carries a pylint suppression: the checker reads
         an ``AuthorEntry`` element as unsubscriptable and reports the *list* operation as the error."""
+        self.__pending: list[bool] = []
+        """Per row, alongside :attr:`__entries`: whether it was added here and has no name yet. Its writes
+        carry the same pylint suppression, for the same false positive."""
         self.rowsInserted.connect(self.count_changed)
         self.rowsRemoved.connect(self.count_changed)
         self.modelReset.connect(self.count_changed)
@@ -138,6 +148,8 @@ class AuthorsTableModel(QAbstractTableModel):
         target = at + 1
         self.beginInsertRows(QModelIndex(), target, target)
         self.__entries.insert(target, {**source} if isinstance(source, dict) else source)
+        # a copy of a pending row has no name either
+        self.__pending.insert(target, self.__pending[at])
         self.endInsertRows()
         return target
 
@@ -206,23 +218,26 @@ class AuthorsTableModel(QAbstractTableModel):
 
     @property
     def entries(self) -> tuple[AuthorEntry, ...]:
-        """Every entry, in row order, in canonical minimal form ([[field-schema#authors]])."""
-        return tuple(self.__entries)
+        """Every entry, in row order, in canonical minimal form ([[field-schema#authors]]), leaving out
+        the rows still pending a name."""
+        return tuple(entry for entry, pending in zip(self.__entries, self.__pending, strict=True) if not pending)
 
     def set_entries(self, entries: Sequence[AuthorEntry]) -> None:
         """Replace every row, as one model reset, if the entries actually differ.
 
         Canonicalized on the way in (:func:`canonical_author_entry`), so what is stored is what
         :attr:`entries` reports: a caller can hand back what it just read without that round trip
-        counting as a change and rebuilding the rows under an open editor.
+        counting as a change and rebuilding the rows under an open editor -- or throwing away the pending
+        rows, which that read left out.
 
         :param entries: the authors list to show, in order.
         """
         replacement = [canonical_author_entry(entry) for entry in entries]
-        if replacement == self.__entries:
+        if replacement == list(self.entries):
             return
         self.beginResetModel()
         self.__entries = replacement
+        self.__pending = [False] * len(replacement)
         self.endResetModel()
 
     def invalid_reason(self, row: int, column: int) -> str:
@@ -298,6 +313,8 @@ class AuthorsTableModel(QAbstractTableModel):
         if replacement == entry:
             return False
         self.__entries[row] = replacement  # pylint: disable=unsupported-assignment-operation
+        if author_name(replacement).strip():
+            self.__pending[row] = False  # pylint: disable=unsupported-assignment-operation
         # both cells: a name typed onto a record can change what the URL cell's validity means, and
         # an emptied URL turns the record back into a plain string
         self.dataChanged.emit(index.sibling(row, NAME_COLUMN), index.sibling(row, URL_COLUMN))
@@ -310,6 +327,7 @@ class AuthorsTableModel(QAbstractTableModel):
         self.beginInsertRows(QModelIndex(), row, row + count - 1)
         # a blank *string*, not a blank record: an entry with no name is not a record of anything yet
         self.__entries[row:row] = [""] * count  # pylint: disable=unsupported-assignment-operation
+        self.__pending[row:row] = [True] * count  # pylint: disable=unsupported-assignment-operation
         self.endInsertRows()
         return True
 
@@ -319,6 +337,7 @@ class AuthorsTableModel(QAbstractTableModel):
             return False
         self.beginRemoveRows(QModelIndex(), row, row + count - 1)
         del self.__entries[row : row + count]  # pylint: disable=unsupported-delete-operation
+        del self.__pending[row : row + count]  # pylint: disable=unsupported-delete-operation
         self.endRemoveRows()
         return True
 
@@ -338,10 +357,13 @@ class AuthorsTableModel(QAbstractTableModel):
         if not self.beginMoveRows(QModelIndex(), sourceRow, sourceRow + count - 1, QModelIndex(), destinationChild):
             return False
         block = self.__entries[sourceRow : sourceRow + count]
+        pending = self.__pending[sourceRow : sourceRow + count]
         del self.__entries[sourceRow : sourceRow + count]  # pylint: disable=unsupported-delete-operation
+        del self.__pending[sourceRow : sourceRow + count]  # pylint: disable=unsupported-delete-operation
         # the destination was read in the pre-move row space, so taking the block out first shifts it
         at = destinationChild if destinationChild < sourceRow else destinationChild - count
         self.__entries[at:at] = block  # pylint: disable=unsupported-assignment-operation
+        self.__pending[at:at] = pending  # pylint: disable=unsupported-assignment-operation
         self.endMoveRows()
         return True
 

@@ -16,7 +16,7 @@ from ...fields.colors import WARNING_COLOR
 from ..location_replacements_settings import DEFAULT_RULES, ReplacementRule, rule_problem
 
 TEXT_COLUMN: Final = 0
-"""The text a rule looks for -- the cell an insert opens, and the one an empty row is abandoned on."""
+"""The text a rule looks for -- the cell an insert opens."""
 
 REPLACEMENT_COLUMN: Final = 1
 """What the text becomes; empty is a legitimate rule (delete the matched text outright)."""

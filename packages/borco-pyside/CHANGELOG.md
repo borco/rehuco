@@ -9,6 +9,14 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ## [Unreleased]
 
+### Changed
+
+- `ItemListEditor` abandons a freshly inserted blank row when the user *leaves* it (the current row moves,
+  or focus goes outside the view) rather than when its first editor closes, and a row counts as blank only
+  while every editable cell is, so a row can be filled in any order. Cancelling the first editor, and any
+  close on a one-column list, still abandon it at once. An edit to another row while a blank insert waits
+  is now reported.
+
 ## [0.2.0] - 2026-09-27
 
 ### Added

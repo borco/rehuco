@@ -69,6 +69,9 @@ class MembershipsEditor(ItemListEditor):
         self.__echoing = False
         """Held while :meth:`set_value` seeds the rows, so the model changes that causes are not reported
         back to the owner that caused them."""
+        self.__reported: Any = None
+        """The value last reported or seeded -- an edit that leaves it as it was (one to a row still
+        pending a title, which the value leaves out) is not reported again."""
 
         # a row is one membership, so a click anywhere on it acts on that membership; multi-select would
         # promise a bulk edit none of the actions here can carry out
@@ -111,7 +114,8 @@ class MembershipsEditor(ItemListEditor):
 
         :param value: the newly edited value to report.
         """
-        if not self.__echoing:
+        if not self.__echoing and value != self.__reported:
+            self.__reported = value
             self.value_changed.emit(value)
 
     def seed(self, seed_rows: Callable[[], None]) -> None:
@@ -124,6 +128,7 @@ class MembershipsEditor(ItemListEditor):
             seed_rows()
         finally:
             self.__echoing = False
+            self.__reported = self.value
 
     def __on_values_changed(self) -> None:
         """Turn the base's per-edit signal into the `ValueWidget` one, carrying the value."""

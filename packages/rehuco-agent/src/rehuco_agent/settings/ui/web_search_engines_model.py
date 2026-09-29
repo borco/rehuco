@@ -16,9 +16,8 @@ from ...fields.colors import WARNING_COLOR
 from ..web_search_settings import DEFAULT_ENGINES, EMPTY_NAME_PROBLEM, SearchEngine, engine_problem
 
 NAME_COLUMN: Final = 0
-"""The engine's name -- the cell an insert opens, and the one an empty row is abandoned on. Column 0
-in the *model* because that is the cell `ItemListEditor` opens and tests for blankness; the radio
-column is moved ahead of it in the view alone."""
+"""The engine's name -- the cell an insert opens. Column 0 in the *model* because that is the cell
+`ItemListEditor` opens on Add; the radio column is moved ahead of it in the view alone."""
 
 URL_COLUMN: Final = 1
 """The URL template, holding the query placeholder."""

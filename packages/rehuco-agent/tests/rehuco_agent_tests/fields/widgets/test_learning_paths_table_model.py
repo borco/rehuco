@@ -506,7 +506,7 @@ def test_an_insert_mints_a_path_of_this_identitys_own(model: LearningPathsTableM
 
     assert row == 3
     assert model.scope(row) == USERNAME
-    assert model.entries["admin"][-1] == {"title": "", "index": 0, "ref": 4}
+    assert model.record(row) == {"title": "", "index": 0, "ref": 4}
 
 
 def test_an_insert_into_an_identity_with_no_scope_yet_creates_one() -> None:
@@ -514,14 +514,15 @@ def test_an_insert_into_an_identity_with_no_scope_yet_creates_one() -> None:
 
     **Test steps:**
 
-    * insert into a model holding nothing
+    * insert into a model holding nothing, and title the new path
     * verify the scope was created around it
     """
     model = LearningPathsTableModel(USERNAME, lambda: 7, UNKNOWN)
 
     model.insert(-1)
+    model.setData(model.index(0, TITLE_COLUMN), "Intro", Qt.ItemDataRole.EditRole)
 
-    assert model.entries == {USERNAME: [{"title": "", "index": 0, "ref": 7}]}
+    assert model.entries == {USERNAME: [{"title": "Intro", "index": 0, "ref": 7}]}
 
 
 def test_only_an_append_of_one_is_accepted(model: LearningPathsTableModel) -> None:
@@ -684,6 +685,71 @@ def test_the_filter_accepts_everything_over_a_model_it_does_not_know() -> None:
     * verify it accepts
     """
     assert LearningPathScopeFilterProxyModel().filterAcceptsRow(0, QModelIndex()) is True
+
+
+# endregion
+
+
+# region a path minted here is pending until it has a title
+
+
+def test_a_minted_path_with_no_title_is_left_out_of_the_entries(model: LearningPathsTableModel) -> None:
+    """A path nobody has named is a row, not a record in the file.
+
+    **Test steps:**
+
+    * mint a path and give it only a position
+    * verify the entries are the ones read in
+    """
+    row = model.insert(-1)
+
+    model.setData(model.index(row, INDEX_COLUMN), 5, Qt.ItemDataRole.EditRole)
+
+    assert model.entries == RECORDS
+
+
+def test_a_minted_path_becomes_a_record_once_titled(model: LearningPathsTableModel) -> None:
+    """Titling it, after the position, puts it in this identity's scope.
+
+    **Test steps:**
+
+    * mint a path, give it a position and then a title
+    * verify it is the last record of this identity's scope
+    """
+    row = model.insert(-1)
+    model.setData(model.index(row, INDEX_COLUMN), 5, Qt.ItemDataRole.EditRole)
+
+    model.setData(model.index(row, TITLE_COLUMN), "Next Order", Qt.ItemDataRole.EditRole)
+
+    assert model.entries[USERNAME][-1] == {"title": "Next Order", "index": 5, "ref": 4}
+
+
+def test_a_titled_path_whose_title_is_cleared_stays_a_record(model: LearningPathsTableModel) -> None:
+    """Only a path minted here is pending: clearing an existing path's title is flagged, not withdrawn.
+
+    **Test steps:**
+
+    * clear the title of this identity's own path
+    * verify its record, with its ref, is still in the entries
+    """
+    model.setData(model.index(OWN_ROW, TITLE_COLUMN), "", Qt.ItemDataRole.EditRole)
+
+    assert model.entries[USERNAME][-1] == {"title": "", "index": 7, "ref": 2}
+
+
+def test_handing_back_the_entries_keeps_a_minted_path(model: LearningPathsTableModel) -> None:
+    """The echo guard compares against what was read, so a pending path survives the round trip.
+
+    **Test steps:**
+
+    * mint a path and hand the entries back
+    * verify the row is still there
+    """
+    model.insert(-1)
+
+    model.set_entries(model.entries)
+
+    assert model.rowCount() == 4
 
 
 # endregion
