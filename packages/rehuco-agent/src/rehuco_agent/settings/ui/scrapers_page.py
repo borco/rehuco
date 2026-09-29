@@ -15,6 +15,7 @@ from ...scraping.browser_fetcher import PersonaAction, shared_persona_browser
 from ...scraping.registry import shared_scraper_registry
 from ..persistent_settings import persistent_settings
 from ..scrapers_settings import Browser, ScrapersSettings, persona_folder, shared_scrapers_settings
+from ..web_search_settings import WebSearchSettings, shared_web_search_settings
 from .scrapers_checkbox_delegate import ScrapersCheckboxDelegate
 from .scrapers_page_ui import Ui_ScrapersPage
 from .scrapers_row_delegate import ScrapersRowDelegate
@@ -87,6 +88,7 @@ class ScrapersPage(QWidget):
             or self.__staged_browser() != settings.browser
             or self.__ui.show_browser_check.isChecked() != settings.show_browser
             or self.__model.browser_scrapers() != settings.browser_scrapers
+            or self.__ui.web_search_engines_editor.values != shared_web_search_settings().engines
         )
 
     def save_changes(self) -> None:
@@ -97,6 +99,9 @@ class ScrapersPage(QWidget):
         settings.show_browser = self.__ui.show_browser_check.isChecked()
         settings.browser_scrapers = self.__model.browser_scrapers()
         settings.save(persistent_settings())
+        search_settings = shared_web_search_settings()
+        search_settings.engines = self.__ui.web_search_engines_editor.values
+        search_settings.save(persistent_settings())
         shared_scraper_registry().reload()
         self.__refresh_table()
 
@@ -108,6 +113,7 @@ class ScrapersPage(QWidget):
         self.__ui.show_browser_check.setChecked(settings.show_browser)
         self.__refresh_table()
         self.__model.set_browser_scrapers(settings.browser_scrapers)
+        self.__show_web_search(shared_web_search_settings())
 
     def seed_defaults(self) -> None:
         """Stage every factory value: what an unloaded `ScrapersSettings` holds (#342). The table's
@@ -117,6 +123,14 @@ class ScrapersPage(QWidget):
         self.__set_staged_browser(defaults.browser)
         self.__ui.show_browser_check.setChecked(defaults.show_browser)
         self.__model.set_browser_scrapers(defaults.browser_scrapers)
+        self.__show_web_search(WebSearchSettings())
+
+    def __show_web_search(self, settings: WebSearchSettings) -> None:
+        """Fill the engine list -- the active radio included -- from ``settings``.
+
+        :param settings: the values to show -- the shared object's saved ones, or a fresh one's defaults.
+        """
+        self.__ui.web_search_engines_editor.values = settings.engines
 
     def __refresh_table(self) -> None:
         """Show the registry's current rows, and name the folder they came from."""

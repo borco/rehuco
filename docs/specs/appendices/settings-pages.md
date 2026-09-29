@@ -615,3 +615,10 @@ not — `isolate_shared_image_viewer_settings` is the second reactive one, and
 `isolate_shared_identity_settings` / `isolate_shared_reference_images_settings` /
 `isolate_shared_excluded_files_settings` / `isolate_shared_legacy_screenshots_settings` /
 `isolate_shared_videos_settings` the plain-dataclass counterparts, all sitting right beside it.
+  A page may carry more than one settings object: the Scrapers page also holds the **web search engines**
+  (#388) — a `WebSearchSettings` list of name + URL-template rows (`{query}` is where the URL-encoded
+  words of the location name go), staged in a `WebSearchEnginesEditor` whose first column is a radio
+  button. The active flag lives on the row and the model keeps exactly one on, so it moves, duplicates and
+  deletes with its row and the frame's Reset/Defaults restore it with the rows. Its
+  `isolate_shared_web_search_settings` sits beside the others, and the document toolbar's Search the Web
+  action searches through the active engine.

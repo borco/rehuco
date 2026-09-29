@@ -180,6 +180,47 @@
     </widget>
    </item>
    <item>
+    <widget class="QFrame" name="web_search_frame">
+     <property name="frameShape">
+      <enum>QFrame::Shape::StyledPanel</enum>
+     </property>
+     <property name="frameShadow">
+      <enum>QFrame::Shadow::Raised</enum>
+     </property>
+     <layout class="QVBoxLayout" name="web_search_frame_layout">
+      <item>
+       <widget class="QLabel" name="web_search_frame_label">
+        <property name="font">
+         <font>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string>Web search</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="WrappingLabel" name="web_search_note_label">
+        <property name="text">
+         <string>The document toolbar's Search the Web action opens the engine whose radio button is on in your default browser, with the words of the resource's location name (its folder, or the file's name) put where {query} is in its URL. Add an engine with its name and the URL of its search page; a row without http(s) or {query} is shown in red and is never searched with.</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="WebSearchEnginesEditor" name="web_search_engines_editor">
+        <property name="toolTip">
+         <string>Each engine is a name and the URL of its search page, holding {query} where the search text goes. The radio button picks the engine used. Double-click a cell to edit it.</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
     <widget class="QFrame" name="scrapers_frame">
      <property name="frameShape">
       <enum>QFrame::Shape::StyledPanel</enum>
@@ -257,6 +298,11 @@
    <class>ScrapersTableView</class>
    <extends>QTableView</extends>
    <header>rehuco_agent.settings.ui.scrapers_table_view</header>
+  </customwidget>
+  <customwidget>
+   <class>WebSearchEnginesEditor</class>
+   <extends>QWidget</extends>
+   <header>rehuco_agent.settings.ui.web_search_engines_editor</header>
   </customwidget>
  </customwidgets>
  <resources/>

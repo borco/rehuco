@@ -62,6 +62,7 @@ from .rehu_document_model import RehuDocumentModel
 from .save_or_prompt_retry import save_or_prompt_retry
 from .scrape_actions import ScrapeActions
 from .source_views import OnDiskView, SavePreviewView
+from .web_search_action import WebSearchAction
 
 STATE_VERSION_KEY: Final = "version"
 STATE_VERSION: Final = 9
@@ -734,6 +735,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         self.__default_layout_menu.addAction(self.__reset_default_layout_action)
         self.__apply_default_layout_action.setMenu(self.__default_layout_menu)
 
+        self.__web_search: Final = WebSearchAction(model, parent=self)
         toolbar = self.addToolBar("View")
         # the resource's type badge leads the toolbar (#309): first in add order, not merely first in
         # visual position, so a QToolBar squeezed for room (a restored split layout's narrower pane,
@@ -754,6 +756,8 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             # visible only while there is no record for it to overwrite (#244)
             toolbar.addAction(self.__checksums.verify_old_action)
             toolbar.addAction(self.__checksums.generate_action)
+        # the last of the document's own actions, so an action added to the group later goes before it
+        toolbar.addAction(self.__web_search.action)
         # the dock toggles follow the document's own actions behind a separator, so the bar reads
         # "act on the document | show or hide its docks" (#311)
         toolbar.addSeparator()

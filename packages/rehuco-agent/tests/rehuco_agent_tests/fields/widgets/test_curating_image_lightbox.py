@@ -265,6 +265,33 @@ def test_every_other_key_is_still_the_viewers_own(document: QWidget, qtbot: QtBo
     assert not requests
 
 
+def test_an_emptied_set_sends_no_request_and_leaves_the_keys_to_the_viewer(document: QWidget, qtbot: QtBot) -> None:
+    """Curating the last image away leaves nothing to act on: the curating keys send nothing, and Esc
+    still closes the viewer.
+
+    **Test steps:**
+
+    * reveal a curating viewer, then re-point it at an empty set
+    * press Del, Space, C and Ctrl+Up and verify no request was sent
+    * press Esc and verify the viewer closed
+    """
+    lightbox = curating(qtbot, document, 0)
+    requests = recorded(lightbox)
+    lightbox.set_source(ScreenshotRowsImageSource([]))
+
+    for key, modifier in (
+        (Qt.Key.Key_Delete, Qt.KeyboardModifier.NoModifier),
+        (Qt.Key.Key_Space, Qt.KeyboardModifier.NoModifier),
+        (Qt.Key.Key_C, Qt.KeyboardModifier.NoModifier),
+        (Qt.Key.Key_Up, Qt.KeyboardModifier.ControlModifier),
+    ):
+        qtbot.keyClick(lightbox, key, modifier)
+    assert not requests
+
+    with qtbot.waitSignal(lightbox.closed):
+        qtbot.keyClick(lightbox, Qt.Key.Key_Escape)
+
+
 def test_a_re_pointed_viewer_follows_the_line_as_the_row_changes(document: QWidget, qtbot: QtBot) -> None:
     """The owner re-points the viewer after every request; the line then says the row's new state.
 

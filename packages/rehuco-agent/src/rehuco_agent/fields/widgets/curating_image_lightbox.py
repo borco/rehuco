@@ -129,8 +129,7 @@ class CuratingImageLightbox(ImageLightbox):
     def __current_visibility(self) -> ImageVisibility | None:
         """Where the current image stands in the curation.
 
-        :returns: its visibility, or ``None`` on an empty set.
+        :returns: its visibility, or ``None`` for a source that does not curate. Only asked of once
+            :meth:`__current_path` found an image, so the set is never empty here.
         """
-        if len(self.source) == 0:
-            return None
         return self.source.describe(self.current_index).visibility
