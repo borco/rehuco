@@ -50,6 +50,7 @@ from rehuco_agent.settings import (
     screenshot_patterns_settings,
     tray_settings,
     videos_settings,
+    web_search_settings,
 )
 from rehuco_agent.settings.checksum_settings import shared_checksum_settings
 from rehuco_agent.settings.default_layout_settings import shared_default_layout_settings
@@ -75,6 +76,7 @@ from rehuco_agent.settings.ui import (
     tray_block,
 )
 from rehuco_agent.settings.videos_settings import shared_videos_settings
+from rehuco_agent.settings.web_search_settings import shared_web_search_settings
 from rehuco_core import DEFAULT_CHECKSUM_TRUST, DEFAULT_DELETER_PROVIDER
 
 
@@ -459,6 +461,22 @@ def isolate_shared_location_replacements_settings(mocker: MockerFixture) -> Iter
     mocker.patch.object(location_replacements_settings, "persistent_settings", return_value=FakeSettings())
     yield
     shared_location_replacements_settings.cache_clear()
+
+
+@fixture(autouse=True)
+def isolate_shared_web_search_settings(mocker: MockerFixture) -> Iterator[None]:
+    """Isolate every test from the process-wide `WebSearchSettings` singleton (#388).
+
+    Same rationale as :func:`isolate_shared_location_replacements_settings`: whichever test first builds a
+    `DocumentWidget` or the Scrapers page would otherwise pin an instance loaded from the developer's real
+    on-disk settings for the rest of the session.
+
+    Tests that specifically exercise the web search settings patch ``persistent_settings`` themselves.
+    """
+    shared_web_search_settings.cache_clear()
+    mocker.patch.object(web_search_settings, "persistent_settings", return_value=FakeSettings())
+    yield
+    shared_web_search_settings.cache_clear()
 
 
 @fixture(autouse=True)

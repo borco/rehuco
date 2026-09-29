@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from borco_pyside.widgets import ElidedLabel
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import Qt, QUrl
 from PySide6.QtWidgets import QMessageBox
 from pytest import fixture
 from pytest_mock import MockerFixture
@@ -21,6 +21,14 @@ from rehuco_agent.settings.ui.scrapers_page import ScrapersPage
 from rehuco_agent.settings.ui.scrapers_scraper_column_delegate import ScrapersScraperColumnDelegate
 from rehuco_agent.settings.ui.scrapers_table_model import SCRAPER_COLUMN
 from rehuco_agent.settings.ui.settings_dialog import SettingsDialog
+from rehuco_agent.settings.ui.settings_frame_filter import SettingsFrameFilter
+from rehuco_agent.settings.ui.web_search_engines_model import ACTIVE_COLUMN, NAME_COLUMN
+from rehuco_agent.settings.web_search_settings import (
+    DEFAULT_ENGINES,
+    SearchEngine,
+    WebSearchSettings,
+    shared_web_search_settings,
+)
 
 HREF_PATTERN = re.compile(r'href="([^"]+)"')
 
@@ -125,6 +133,15 @@ def clear_shared_instance_cache() -> Iterator[None]:
     shared_scrapers_settings.cache_clear()
     yield
     shared_scrapers_settings.cache_clear()
+
+
+@fixture(autouse=True)
+def web_search_save(mocker: MockerFixture) -> Any:
+    """Stand in for `WebSearchSettings.save`, whose array writes the fake above does not implement.
+
+    :returns: the mock, for asserting on what the page saved.
+    """
+    return mocker.patch.object(WebSearchSettings, "save")
 
 
 def page_ui(page: ScrapersPage) -> Any:
@@ -637,3 +654,154 @@ def test_activating_a_path_link_reveals_it_in_the_file_browser(qtbot: QtBot, moc
     ui.persona_path_link.linkActivated.emit(href)
 
     reveal.assert_called_once_with(Path(QUrl(href).toLocalFile()))
+
+
+# region web search engines (#388)
+MINE = SearchEngine("Mine", "https://example.com/find?q={query}")
+
+
+def engines_model(page: ScrapersPage) -> Any:
+    """The engine table's model, for driving its radio column like a click would.
+
+    :param page: the page to reach into.
+    :returns: the model behind the engines editor.
+    """
+    return page_ui(page).web_search_engines_editor.model
+
+
+def test_a_fresh_install_shows_the_shipped_engines_with_google_active_and_nothing_to_apply(qtbot: QtBot) -> None:
+    """The shipped list, its first engine's radio on, and a clean page.
+
+    **Test steps:**
+
+    * build the page
+    * verify the list, the active row and the dirty state
+    """
+    page = ScrapersPage()
+    qtbot.addWidget(page)
+    assert page_ui(page).web_search_engines_editor.values == DEFAULT_ENGINES
+    assert page.is_dirty() is False
+
+
+def test_the_radio_leads_the_row_on_screen_while_add_still_opens_the_name(qtbot: QtBot) -> None:
+    """The radio is the first *visual* column only: `ItemListEditor` opens model column 0 on Add and
+    abandons a row whose column 0 stays blank, so that column has to be the name.
+
+    **Test steps:**
+
+    * verify the radio section is shown first and the name is model column 0
+    * add a row through the editor protocol, verify it counts as blank, name it, verify it no longer does
+    """
+    page = ScrapersPage()
+    qtbot.addWidget(page)
+    editor = page_ui(page).web_search_engines_editor
+    header = editor.view.horizontalHeader()
+    assert header.visualIndex(ACTIVE_COLUMN) == 0
+    assert NAME_COLUMN == 0
+
+    model = engines_model(page)
+    row = model.insert(-1)
+    assert editor.row_is_blank(row)
+    model.setData(model.index(row, NAME_COLUMN), "Mine", Qt.ItemDataRole.EditRole)
+    assert not editor.row_is_blank(row)
+
+
+def test_checking_another_radio_switches_the_active_engine_and_dirties_the_page(qtbot: QtBot) -> None:
+    """One radio is on at a time: picking a row turns the previous one off.
+
+    **Test steps:**
+
+    * check the second row's radio through the model, as a click on it does
+    * verify only that row is active and the page is dirty
+    """
+    page = ScrapersPage()
+    qtbot.addWidget(page)
+    model = engines_model(page)
+
+    assert model.setData(model.index(1, ACTIVE_COLUMN), Qt.CheckState.Checked, Qt.ItemDataRole.CheckStateRole)
+
+    assert [engine.active for engine in page_ui(page).web_search_engines_editor.values] == [False, True, False]
+    assert page.is_dirty() is True
+
+
+def test_saving_pushes_the_engines_and_the_active_one_into_the_shared_settings(
+    qtbot: QtBot, web_search_save: Any
+) -> None:
+    """Apply stores the list with its active row, and the page is clean again.
+
+    **Test steps:**
+
+    * add an engine and make it the active one
+    * save
+    * verify the shared settings, the persisted save and the clean page
+    """
+    page = ScrapersPage()
+    qtbot.addWidget(page)
+    ui = page_ui(page)
+    ui.web_search_engines_editor.values = (*DEFAULT_ENGINES, MINE)
+    model = engines_model(page)
+    model.setData(model.index(3, ACTIVE_COLUMN), True, Qt.ItemDataRole.EditRole)
+    assert page.is_dirty() is True
+
+    page.save_changes()
+
+    settings = shared_web_search_settings()
+    assert settings.selected.name == "Mine"
+    assert [engine.name for engine in settings.engines] == ["Google", "DuckDuckGo", "Bing", "Mine"]
+    web_search_save.assert_called_once()
+    assert page.is_dirty() is False
+
+
+def test_a_frame_reset_puts_back_the_saved_list_and_its_active_radio(qtbot: QtBot) -> None:
+    """The Web search frame's own Reset restores the rows *and* which of them was active.
+
+    **Test steps:**
+
+    * save the shipped list with the second engine active, and capture the frame baseline
+    * add an engine at the top and make it active
+    * restore the frame's saved values and verify the list and the second row's radio are back
+    """
+    page = ScrapersPage()
+    qtbot.addWidget(page)
+    ui = page_ui(page)
+    model = engines_model(page)
+    model.setData(model.index(1, ACTIVE_COLUMN), True, Qt.ItemDataRole.EditRole)
+    page.save_changes()
+    frame_filter = SettingsFrameFilter(page, "Scrapers")
+    ui.web_search_engines_editor.values = (MINE._replace(active=True), *DEFAULT_ENGINES)
+    assert frame_filter.dirty_frames() == [ui.web_search_frame]
+
+    frame_filter.restore_saved(ui.web_search_frame)
+
+    assert [(engine.name, engine.active) for engine in ui.web_search_engines_editor.values] == [
+        ("Google", False),
+        ("DuckDuckGo", True),
+        ("Bing", False),
+    ]
+    assert not frame_filter.dirty_frames()
+
+
+def test_drop_and_defaults_restore_the_saved_and_the_shipped_engines(qtbot: QtBot) -> None:
+    """Drop goes back to what is saved; Defaults stages the shipped list and its active engine.
+
+    **Test steps:**
+
+    * save a custom list, then stage another edit and drop it, verifying the saved list is back
+    * seed the defaults and verify the shipped list is staged and the page dirty
+    """
+    page = ScrapersPage()
+    qtbot.addWidget(page)
+    ui = page_ui(page)
+    ui.web_search_engines_editor.values = (MINE,)
+    page.save_changes()
+    ui.web_search_engines_editor.values = ()
+    page.drop_changes()
+    assert ui.web_search_engines_editor.values == (MINE._replace(active=True),)
+
+    page.seed_defaults()
+
+    assert ui.web_search_engines_editor.values == WebSearchSettings().engines
+    assert page.is_dirty() is True
+
+
+# endregion
