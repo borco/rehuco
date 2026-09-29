@@ -1,19 +1,23 @@
 """The machinery a list editor is made of: a view over a model, and the two action columns."""
 
-from typing import Final
+from typing import Final, override
 
 from PySide6.QtCore import (
     QAbstractItemModel,
     QAbstractProxyModel,
+    QEvent,
     QModelIndex,
+    QObject,
     QPersistentModelIndex,
     Qt,
+    QTimer,
     Signal,
 )
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QAbstractItemDelegate,
     QAbstractItemView,
+    QApplication,
     QHBoxLayout,
     QSizePolicy,
     QWidget,
@@ -23,6 +27,10 @@ from .item_action_button_column import ItemEditActionsColumn, ItemOrderingAction
 from .item_protocols import ItemEditor, ItemOrderingEditor
 
 
+# the two attributes past the limit are the abandoned-insert rule's: state of one rule that only this
+# widget can see, which is why it is kept here rather than in a helper object holding half of the view's
+# signals
+# pylint: disable-next=too-many-instance-attributes
 class ItemListEditor(QWidget):
     """Edit an ordered list in place, with buttons and keys for both halves of the job.
 
@@ -53,6 +61,21 @@ class ItemListEditor(QWidget):
     treatment, which is the more honest generic behavior. `row_is_blank` decides what "still blank"
     means; abandoning it is the model's own `QAbstractItemModel.removeRow`, called directly rather than
     through `ItemEditor.delete` -- an abandoned insert was never a choice the way a real delete is.
+
+    **When a blank insert is abandoned.** At once when its editor is cancelled, and at once when the
+    editor closes on a row with no second editable cell to go on to (a one-column list). Otherwise the
+    editor closed because the user is heading for another cell of the row, so the row waits: it is
+    abandoned only when the user *leaves* it still blank -- the current row moves to another row, or the
+    focus goes to something outside the view -- and then on the next pass through the event loop, never
+    from inside the signal that reported the leaving: the view moves the current row off a row it is
+    about to remove, and Qt goes on to open the next cell's editor by the index it computed before the
+    row went, so a row taken out *during* either would take the wrong row with it or leave the next
+    editor unopened. Focus is watched through an event filter this widget installs on the application
+    while a row waits (:meth:`eventFilter`), not a connection to ``focusChanged``: Qt drops a destroyed
+    object from every filter list, where a connected slot would outlive the view it reads and be called
+    on the next focus change with nothing behind it. A row is blank only while **every** editable cell is
+    (`row_is_blank`), so a row can be filled in any order: text in any one cell keeps it. Whether a row
+    that is kept but still incomplete counts as a value is the model's business, not this widget's.
 
     :param view: the view to show the rows in, built by the subclass and reparented here. A view sized
         to its rows (`ContentSizedListView`, `ContentSizedTableView`) keeps an enclosing page's scroll
@@ -90,6 +113,12 @@ class ItemListEditor(QWidget):
         proxy: QAbstractProxyModel | None = None,
     ) -> None:
         super().__init__(parent)
+        # the application this widget filters focus events on while a blank insert waits to be left,
+        # else None
+        self.__leave_watch: QApplication | None = None
+        # set between rowsAboutToBeRemoved and rowsRemoved when the removal takes the blank pending row
+        # with it -- a Delete on it, say -- which is that insert abandoned, and not an edit to report
+        self.__removing_pending = False
         # the row an insert just made, until its editor closes -- persistent, so it still names that
         # entry if anything shifts the rows underneath it (see __on_editor_closed)
         self.__pending_entry = QPersistentModelIndex()
@@ -195,6 +224,23 @@ class ItemListEditor(QWidget):
 
     # endregion
 
+    @override
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802 (Qt override)
+        """Abandon a waiting blank insert once the focus lands somewhere outside the view.
+
+        Installed on the application only while a row waits (:meth:`__wait_for_leave`). Focus landing
+        nowhere -- the window deactivating, say to fetch a link from a browser and drop it here -- sends
+        no ``FocusIn``, and so is not leaving the row.
+
+        :param watched: the object the event is for.
+        :param event: the event; only a widget's ``FocusIn`` is read, and nothing is ever consumed.
+        :returns: ``False``, always -- this filter only watches.
+        """
+        if event.type() == QEvent.Type.FocusIn and isinstance(watched, QWidget):
+            if watched is not self.__view and not self.__view.isAncestorOf(watched):
+                self.__abandon_later()
+        return False
+
     def set_ordering_visible(self, visible: bool) -> None:
         """Show or hide the ordering column.
 
@@ -210,23 +256,40 @@ class ItemListEditor(QWidget):
     def row_is_blank(self, row: int) -> bool:
         """Whether ``row`` holds nothing yet -- what makes an insert abandonable rather than an entry.
 
-        The **first column** by default, because that is the cell an insert opens: a row is abandoned
-        exactly when the editor that insert opened closes with nothing typed into it, and by then no
-        other cell has been reachable. Override where a row needs more than that to count as one.
-        Deliberately not "every column": `QAbstractListModel` makes ``columnCount`` private, so a
-        column sweep is not something a *generic* editor can even ask its model for.
+        **Every editable cell** by default: a row is abandoned when it is cancelled or left with this
+        still true, so text typed into any cell keeps it, in whatever order the cells were filled. Cells
+        the user cannot type into -- a checkbox, a column derived from the others -- say nothing about
+        whether anything was entered, and are not read. Override where a row needs a different test.
 
         :param row: the row to test.
-        :returns: whether its first cell strips to nothing.
+        :returns: whether every editable cell's text strips to nothing.
         """
-        return not str(self.__model.index(row, 0).data() or "").strip()
+        return not any(str(cell.data() or "").strip() for cell in self.__editable_cells(row))
+
+    def __editable_cells(self, row: int) -> list[QModelIndex]:
+        """The cells of ``row`` a user can type into, left to right.
+
+        Found by walking the columns until the model hands back an invalid index, rather than by asking
+        ``columnCount``: `QAbstractListModel` makes that private, and its ``index`` already answers
+        invalid past the one column it has.
+
+        :param row: the row to read.
+        :returns: its editable cells.
+        """
+        cells = []
+        column = 0
+        while (cell := self.__model.index(row, column)).isValid():
+            if self.__model.flags(cell) & Qt.ItemFlag.ItemIsEditable:
+                cells.append(cell)
+            column += 1
+        return cells
 
     def __wire(self) -> None:
         """Arm the item/ordering shortcuts on the view, and watch the model and the selection.
 
-        ``__on_row_inserted`` is connected to ``rowsInserted`` **before** ``__on_model_changed`` --
+        ``__on_row_inserted`` is connected to ``rowsInserted`` **before** ``__on_rows_inserted`` --
         connection order is emission order, so the newly-inserted row is already recorded as pending by
-        the time ``__on_model_changed`` asks whether to suppress reporting it.
+        the time ``__on_rows_inserted`` asks whether to suppress reporting it.
         """
         for action in (
             self.__item_actions.insert_action,
@@ -236,13 +299,11 @@ class ItemListEditor(QWidget):
         ):
             self.__view.addAction(action)
         self.__model.rowsInserted.connect(self.__on_row_inserted)
-        for signal in (
-            self.__model.rowsInserted,
-            self.__model.rowsRemoved,
-            self.__model.rowsMoved,
-            self.__model.modelReset,
-            self.__model.dataChanged,
-        ):
+        self.__model.rowsInserted.connect(self.__on_rows_inserted)
+        self.__model.rowsAboutToBeRemoved.connect(self.__on_rows_about_to_be_removed)
+        self.__model.rowsRemoved.connect(self.__on_rows_removed)
+        self.__model.dataChanged.connect(self.__on_data_changed)
+        for signal in (self.__model.rowsMoved, self.__model.modelReset):
             signal.connect(self.__on_model_changed)
         # current_index can shift without the selection model itself ever reporting a change: a move
         # carries the current row along by persistent index, silently, and a reset can invalidate it
@@ -287,22 +348,92 @@ class ItemListEditor(QWidget):
         """
         del parent, last
         if self.row_is_blank(first):
+            # a blank row still waiting to be left is left now: the insert made the new row current
+            stale = self.__pending_entry if self.__leave_watch is not None else None
+            self.__end_pending()
             self.__pending_entry = QPersistentModelIndex(self.__model.index(first, 0))
+            if stale is not None and stale.isValid():
+                QTimer.singleShot(0, self, lambda: self.__abandon_stale(stale))
 
     def __on_model_changed(self, *args: object) -> None:
-        """Report the edit the model just made, unless it was the silent half of an abandoned insert.
+        """Report a move or a reset.
 
         :param args: whichever signal's arguments arrived; unused, a reader asks for the values.
         """
         del args
-        if self.__quiet or self.__pending_entry_is_blank():
+        self.values_changed.emit()
+
+    def __on_rows_about_to_be_removed(self, parent: QModelIndex, first: int, last: int) -> None:
+        """Take a removal of the blank pending row as that insert being abandoned.
+
+        Read here, before the rows go, because the removal invalidates the persistent index that names
+        the pending row -- and forgotten here, so the current row moving off the doomed row (which the
+        view does next, from inside this same removal) finds nothing left to abandon.
+
+        :param parent: the parent index; unused, this model is flat.
+        :param first: the first row about to go.
+        :param last: the last row about to go.
+        """
+        del parent
+        if self.__touches_blank_pending(first, last):
+            self.__end_pending()
+            self.__removing_pending = True
+
+    def __on_rows_removed(self, parent: QModelIndex, first: int, last: int) -> None:
+        """Report a removal, unless it was an abandoned insert's -- silent, like the insert itself.
+
+        :param parent: the parent index; unused.
+        :param first: the first removed row; unused.
+        :param last: the last removed row; unused.
+        """
+        del parent, first, last
+        if self.__removing_pending:
+            self.__removing_pending = False
+            return
+        if not self.__quiet:
+            self.values_changed.emit()
+
+    def __on_rows_inserted(self, parent: QModelIndex, first: int, last: int) -> None:
+        """Report an insert, unless it made the blank pending row -- a gesture, not yet a value.
+
+        :param parent: the parent index; unused, this model is flat.
+        :param first: the first inserted row.
+        :param last: the last inserted row.
+        """
+        del parent
+        if not self.__quiet and not self.__touches_blank_pending(first, last):
+            self.values_changed.emit()
+
+    def __on_data_changed(self, top_left: QModelIndex, bottom_right: QModelIndex, roles: list[int]) -> None:
+        """Report a cell edit, unless it left the pending row blank (a whitespace commit, say).
+
+        Only an edit to the pending row itself is held back: another row edited while a blank insert
+        waits to be left is an edit like any other.
+
+        :param top_left: the first changed cell.
+        :param bottom_right: the last changed cell.
+        :param roles: the roles that changed; unused.
+        """
+        del roles
+        first, last = top_left.row(), bottom_right.row()
+        if self.__quiet or self.__touches_blank_pending(first, last):
             return
         # a pending insert that has been typed into is a value from now on, not a gesture: forget it
         # here rather than only when an editor closes, since a row can be inserted and filled with no
         # editor ever opening (a settings frame restoring a snapshotted list row by row) -- left armed,
         # it would turn the next clearing of that row into a silent removal
-        self.__pending_entry = QPersistentModelIndex()
+        if self.__pending_entry.isValid() and first <= self.__pending_entry.row() <= last:
+            self.__end_pending()
         self.values_changed.emit()
+
+    def __touches_blank_pending(self, first: int, last: int) -> bool:
+        """Whether rows ``first``..``last`` include the pending insert while it is still blank.
+
+        :param first: the first row of the change.
+        :param last: the last row of the change.
+        :returns: whether the change is to that row.
+        """
+        return self.__pending_entry_is_blank() and first <= self.__pending_entry.row() <= last
 
     def __pending_entry_is_blank(self) -> bool:
         """Whether an inserted entry is still open and still blank -- a gesture, not yet a value.
@@ -318,22 +449,88 @@ class ItemListEditor(QWidget):
         :param previous: the index left behind; unused.
         """
         del current, previous
+        if self.__leave_watch is not None and self.current_index != self.__pending_entry.row():
+            self.__abandon_later()
         self.current_index_changed.emit()
 
     def __on_editor_closed(self, editor: QWidget, hint: QAbstractItemDelegate.EndEditHint) -> None:
-        """Undo an insert whose entry was left blank -- an abandoned gesture, not an empty value.
+        """Undo an insert whose entry was left blank -- an abandoned gesture, not an empty value -- or
+        keep it waiting to be left, when its first editor closed on the way to another cell.
 
         :param editor: the editor widget that closed; unused, only one entry is ever pending.
-        :param hint: what the delegate wants done next; unused, a cancelled and a committed-blank
-            edit are both "no entry was typed".
+        :param hint: what the delegate wants done next; a cancel ends the gesture at once, where a
+            commit or a focus loss only does when there is no second cell to go on to.
         """
-        del editor, hint
-        pending, self.__pending_entry = self.__pending_entry, QPersistentModelIndex()
-        if not pending.isValid() or not self.row_is_blank(pending.row()):
+        del editor
+        if not self.__pending_entry_is_blank():
+            self.__end_pending()
             return
+        row = self.__pending_entry.row()
+        # cancelled, or nothing further in the row to type into, or already left: the gesture is over.
+        # Otherwise the editor closed because the user is heading for another cell of the same row.
+        no_more_cells = len(self.__editable_cells(row)) < 2
+        if hint == QAbstractItemDelegate.EndEditHint.RevertModelCache or no_more_cells or self.current_index != row:
+            self.__abandon_pending()
+        else:
+            self.__wait_for_leave()
+
+    def __abandon_pending(self) -> None:
+        """Undo the pending insert and forget it."""
+        pending = self.__pending_entry
+        self.__end_pending()
+        self.__remove_quietly(pending)
+
+    def __remove_quietly(self, pending: QPersistentModelIndex) -> None:
+        """Take an abandoned row out of the model without reporting an edit.
+
+        :param pending: the row to remove.
+        """
         # silent, like the insert that made it: the two together left the list exactly as it was
         self.__quiet = True
         try:
             self.__model.removeRow(pending.row())
         finally:
             self.__quiet = False
+
+    def __wait_for_leave(self) -> None:
+        """Keep a blank pending row until the user leaves it, instead of abandoning it now.
+
+        Armed by filtering the application's focus events (:meth:`eventFilter`), disarmed by
+        :meth:`__end_pending`; the other half of "leaving" -- the current row moving away -- is read in
+        :meth:`__on_current_changed`.
+        """
+        app = QApplication.instance()
+        if self.__leave_watch is None and isinstance(app, QApplication):
+            self.__leave_watch = app
+            app.installEventFilter(self)
+
+    def __end_pending(self) -> None:
+        """Forget the pending insert, and stop waiting for it to be left."""
+        self.__pending_entry = QPersistentModelIndex()
+        if self.__leave_watch is not None:
+            self.__leave_watch.removeEventFilter(self)
+            self.__leave_watch = None
+
+    def __abandon_later(self) -> None:
+        """Abandon the pending insert on the next pass through the event loop, if it is still blank then.
+
+        Deferred rather than done here, for the reason the class docstring gives: this is called from
+        inside a signal of the view's or the application's, and a row removed from inside one is removed
+        under whatever that signal's sender does next.
+        """
+        QTimer.singleShot(0, self, self.__abandon_if_blank)
+
+    def __abandon_if_blank(self) -> None:
+        """Abandon the pending insert if there still is one and it is still blank; forget it either way."""
+        if self.__pending_entry_is_blank():
+            self.__abandon_pending()
+        else:
+            self.__end_pending()
+
+    def __abandon_stale(self, stale: QPersistentModelIndex) -> None:
+        """Abandon a blank row that a later insert overtook, if it is still blank.
+
+        :param stale: the row that was pending when the later insert landed.
+        """
+        if stale.isValid() and self.row_is_blank(stale.row()):
+            self.__remove_quietly(stale)

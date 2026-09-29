@@ -437,11 +437,13 @@ author-page URL is a `{ "name": …, "url": … }` record instead. Decided with
   `url` — a later schema version's addition — survives an edit to the name beside it. Reconstructing the entry from
   the two cells would drop it on an entry nobody meant to touch, which is an *invisible* loss; an extra key is an
   unknown field, not a coercion failure, so it does not lock the document either ([[data-model#schema-version]]).
-- **Validation splits by side.** The editor enforces what it writes: a non-empty name, and a URL that parses strictly
-  as http/https. The viewer is the safety boundary for what it reads ([[data-model#write-integrity]]): names are
-  HTML-escaped before rich-text display (HTML is never *interpreted*, so no character is banned from a name), and the
-  trailing `(url)` link renders only for a valid http/https value — anything else displays as if no URL were present.
-  The URL shows as a tooltip and a status-bar message on hover, and opens in the external browser on click.
+- **Validation splits by side.** The editor flags an empty name and a URL that does not parse strictly as
+  http/https, and never refuses either. A row added in the editor can be started from its URL; until it has a name it
+  stays on screen, flagged, and is left out of the value, and it is dropped only when it is left with both cells
+  empty. The viewer is the safety boundary for what it reads ([[data-model#write-integrity]]): names are HTML-escaped
+  before rich-text display (HTML is never *interpreted*, so no character is banned from a name), and the trailing
+  `(url)` link renders only for a valid http/https value — anything else displays as if no URL were present. The URL
+  shows as a tooltip and a status-bar message on hover, and opens in the external browser on click.
 - **No aliases in documents.** An alias set is catalog-level identity, deferred to a future metadata-only
   **author record** type on the Collection precedent ([[field-schema#resource-types]],
   [[daz3d-personal-database#authors-urls]]); per-document URLs fold into it then. Author names additionally render as

@@ -10,8 +10,8 @@ HTTP_SCHEMES: Final = ("http", "https")
 def is_http_author_url(value: str) -> bool:
     """Whether ``value`` parses strictly as an absolute http/https URL.
 
-    One predicate for a rule that "splits by side" ([[field-schema#authors]]): the **editor** enforces
-    it on what it writes (a row whose URL fails it is flagged invalid), and the **viewer** applies it as
+    One predicate for a rule that "splits by side" ([[field-schema#authors]]): the **editor** flags
+    what fails it (a row whose URL fails it is flagged invalid, never refused), and the **viewer** applies it as
     the safety boundary on what it reads (anything failing renders as if the entry carried no URL at
     all, [[data-model#write-integrity]]). Split in two, the two sides could disagree about a single
     value -- and the disagreement's shape is an editor happily writing a link the viewer then refuses

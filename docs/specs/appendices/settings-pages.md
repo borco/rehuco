@@ -552,10 +552,10 @@ now folded into a group (`"Images"`) finds the group row it became.
   table — a sample filename beside the read-only slot the pattern list assigns it, re-evaluated as either
   table changes (#287) — is the worked example: a small `QAbstractTableModel` over the
   domain objects supplies the columns, and everything about *how* the list is edited still comes from
-  `ItemListEditor`, so it behaves exactly as a `StringListEditor` does. Override the editor's
-  `row_is_blank` when a row is only abandonable with *every* cell empty; the base reads the first column
-  alone, which would discard an insert somebody had typed a second field into. `AuthorsListEditor`
-  (#97) is the same construction in a document field.
+  `ItemListEditor`, so it behaves exactly as a `StringListEditor` does. An inserted row is abandoned only
+  when it is left with every editable cell empty, so its cells can be filled in any order (#387); a row
+  that is kept but incomplete is flagged, and whether it counts as a value is the model's call.
+  `AuthorsListEditor` (#97) is the same construction in a document field.
 - Use `ContentSizedListView` (`borco_pyside.widgets`) for any *other* list, not a plain `QListView`
   (`StringListEditor` already uses one inside, over a `QStringListModel`). A list
   that scrolls inside a page that scrolls gives two vertical scrollbars and a list the reader has to

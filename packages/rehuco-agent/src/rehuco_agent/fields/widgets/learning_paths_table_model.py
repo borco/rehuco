@@ -115,14 +115,24 @@ class LearningPathsTableModel(MembershipTableModel):
         """Every scope's records, the value this model holds and hands back. Records that are neither an
         owned path nor a usable subscription are in here too, and have no row: unshowable is not the same
         as unwanted, and the merge contract's whole point is that a record nobody edited survives."""
+        self.__pending_refs: set[int] = set()
+        """The ``ref`` of every path minted here that has no title yet: kept as a row, left out of
+        :attr:`entries` -- a path nobody has named is not a path yet, and once written it would be an
+        unshowable record nobody could reach again. A ref, not a row, because the rows move and the ref
+        is what the record is known by."""
         self.__rows: list[LearningPathRow] = []
         """The owned records, in scope-then-stored order -- maintained alongside :attr:`__records` rather
         than recomputed, so an edit never resets the model out from under an open cell editor."""
 
     @property
     def entries(self) -> dict[str, list[dict[str, Any]]]:
-        """Every scope's records, ready to store ([[field-schema#learning-path-ownership]])."""
-        return {scope: list(records) for scope, records in self.__records.items()}
+        """Every scope's records, ready to store ([[field-schema#learning-path-ownership]]), leaving out
+        the paths minted here that have no title yet (:attr:`__pending_refs`)."""
+        entries = {
+            scope: [record for record in records if learning_path_ref(record) not in self.__pending_refs]
+            for scope, records in self.__records.items()
+        }
+        return {scope: records for scope, records in entries.items() if records}
 
     def set_entries(self, records_by_scope: Mapping[str, Sequence[dict[str, Any]]]) -> None:
         """Replace every row, as one model reset, if the records actually differ.
@@ -134,10 +144,11 @@ class LearningPathsTableModel(MembershipTableModel):
             (:attr:`~rehuco_core.RehuDocument.learning_path_records`).
         """
         replacement = {scope: list(records) for scope, records in records_by_scope.items() if records}
-        if replacement == self.__records:
+        if replacement == self.entries:
             return
         self.beginResetModel()
         self.__records = replacement
+        self.__pending_refs = set()
         self.__rows = [
             LearningPathRow(scope, record)
             for scope, records in self.__records.items()
@@ -234,6 +245,8 @@ class LearningPathsTableModel(MembershipTableModel):
         position = next(at for at, stored in enumerate(records) if stored is entry.record)
         records[position] = record
         entry.record = record
+        if titled_index(record) is not None:
+            self.__pending_refs.discard(learning_path_ref(record))
 
     @override
     def row_is_editable(self, row: int) -> bool:
@@ -328,7 +341,9 @@ class LearningPathsTableModel(MembershipTableModel):
         if parent.isValid() or count != 1 or row != len(self.__rows):
             return False
         self.beginInsertRows(QModelIndex(), row, row)
-        record = {"title": "", "index": UNPLACED_INDEX, REF_KEY: self.__next_ref()}
+        ref = self.__next_ref()
+        record = {"title": "", "index": UNPLACED_INDEX, REF_KEY: ref}
+        self.__pending_refs.add(ref)
         self.__records.setdefault(self.__username, []).append(record)
         self.__rows.append(LearningPathRow(self.__username, record))
         self.endInsertRows()

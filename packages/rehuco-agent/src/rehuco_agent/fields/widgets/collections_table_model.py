@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from typing import Any, override
 
 from PySide6.QtCore import QModelIndex
+from rehuco_core import titled_index
 
 from ..indexed_list_field import UNPLACED_INDEX
 from .membership_table_model import MembershipTableModel, ModelIndex
@@ -38,15 +39,19 @@ class CollectionsTableModel(MembershipTableModel):
         """The rows, in stored order. Every write to it below carries a pylint suppression: the checker
         reads the ``dict`` element as unsubscriptable and reports the *list* operation as the error, the
         same false positive ``AuthorsTableModel`` records."""
+        self.__pending: list[bool] = []
+        """Per row, alongside :attr:`__records`: whether it was added here and has no title yet -- kept on
+        screen, left out of :attr:`entries`, the same rule the authors rows follow."""
 
     @property
     def entries(self) -> list[dict[str, Any]]:
-        """Every membership record, in row order, ready to store ([[field-schema#sources]]).
+        """Every membership record, in row order, ready to store ([[field-schema#sources]]) -- leaving out
+        the rows added here that have no title yet.
 
         A **list**, matching what the document holds: a tuple would read as a change to every value
         comparison downstream even where nothing was edited.
         """
-        return list(self.__records)
+        return [record for record, pending in zip(self.__records, self.__pending, strict=True) if not pending]
 
     def set_entries(self, records: Sequence[dict[str, Any]]) -> None:
         """Replace every row, as one model reset, if the records actually differ.
@@ -57,10 +62,11 @@ class CollectionsTableModel(MembershipTableModel):
         :param records: the membership records to show, in stored order.
         """
         replacement = [dict(record) for record in records]
-        if replacement == self.__records:
+        if replacement == self.entries:
             return
         self.beginResetModel()
         self.__records = replacement
+        self.__pending = [False] * len(replacement)
         self.endResetModel()
 
     # region MembershipTableModel contract
@@ -72,6 +78,8 @@ class CollectionsTableModel(MembershipTableModel):
     @override
     def replace_record(self, row: int, record: dict[str, Any]) -> None:
         self.__records[row] = record  # pylint: disable=unsupported-assignment-operation
+        if titled_index(record) is not None:
+            self.__pending[row] = False  # pylint: disable=unsupported-assignment-operation
 
     # endregion
 
@@ -87,9 +95,10 @@ class CollectionsTableModel(MembershipTableModel):
             return False
         self.beginInsertRows(QModelIndex(), row, row + count - 1)
         # a blank title and no position: a membership with no series named is not a membership in anything
-        # yet, which is also what makes the row abandonable while its editor is still open
+        # yet, which is also what keeps the row out of the value until it has a title
         blank: list[dict[str, Any]] = [{"title": "", "index": UNPLACED_INDEX} for _ in range(count)]
         self.__records[row:row] = blank  # pylint: disable=unsupported-assignment-operation
+        self.__pending[row:row] = [True] * count  # pylint: disable=unsupported-assignment-operation
         self.endInsertRows()
         return True
 
@@ -99,6 +108,7 @@ class CollectionsTableModel(MembershipTableModel):
             return False
         self.beginRemoveRows(QModelIndex(), row, row + count - 1)
         del self.__records[row : row + count]  # pylint: disable=unsupported-delete-operation
+        del self.__pending[row : row + count]  # pylint: disable=unsupported-delete-operation
         self.endRemoveRows()
         return True
 

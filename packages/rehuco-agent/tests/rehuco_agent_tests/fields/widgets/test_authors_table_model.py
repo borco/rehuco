@@ -391,13 +391,14 @@ def test_an_inserted_row_is_a_blank_name(model: AuthorsTableModel) -> None:
     **Test steps:**
 
     * insert a row between the two entries
-    * verify it is an empty plain string, and the others kept their places
+    * verify it shows an empty name and no URL, and the others kept their places
     """
     assert model.insertRow(1) is True
 
     assert model.rowCount() == 3
-    assert model.entries[1] == ""
-    assert model.entries[0] == "Alice"
+    assert (cell(model, 1, NAME_COLUMN), cell(model, 1, URL_COLUMN)) == ("", "")
+    assert cell(model, 0, NAME_COLUMN) == "Alice"
+    assert cell(model, 2, NAME_COLUMN) == "Bob"
 
 
 def test_a_removed_row_takes_its_entry_with_it(model: AuthorsTableModel) -> None:
@@ -557,7 +558,7 @@ def test_insert_lands_after_the_given_row_and_returns_it(model: AuthorsTableMode
     new_row = model.insert(0)
 
     assert new_row == 1
-    assert model.entries[1] == ""
+    assert cell(model, 1, NAME_COLUMN) == ""
     assert model.count == 3
 
 
@@ -572,7 +573,7 @@ def test_insert_appends_with_no_current_row(model: AuthorsTableModel) -> None:
     new_row = model.insert(-1)
 
     assert new_row == 2
-    assert model.entries[2] == ""
+    assert cell(model, 2, NAME_COLUMN) == ""
 
 
 def test_duplicate_copies_a_record_entry_rather_than_sharing_it(model: AuthorsTableModel) -> None:
@@ -730,6 +731,127 @@ def test_count_does_not_change_on_a_move(model: AuthorsTableModel) -> None:
     model.move_down(0)
 
     assert not counts
+
+
+# endregion
+
+
+# region a row added here is pending until it has a name
+
+
+def test_a_row_added_here_is_left_out_of_the_entries(model: AuthorsTableModel) -> None:
+    """A half-typed author is on screen, not in the value.
+
+    **Test steps:**
+
+    * insert a row between the two entries and give it only a URL
+    * verify the row shows the URL, its name is flagged, and the entries are the two there were
+    """
+    model.insert(0)
+
+    edit(model, 1, URL_COLUMN, "https://example.com/carol")
+
+    assert cell(model, 1, URL_COLUMN) == "https://example.com/carol"
+    assert cell(model, 1, NAME_COLUMN, Qt.ItemDataRole.ToolTipRole) == MISSING_NAME_REASON
+    assert model.entries == ("Alice", {"name": "Bob", "url": "https://example.com/bob"})
+
+
+def test_a_pending_row_becomes_an_entry_once_named(model: AuthorsTableModel) -> None:
+    """Filling the name, in whatever order, is what makes the row an author.
+
+    **Test steps:**
+
+    * insert a row, give it a URL, then a name
+    * verify it is in the entries, in its place, carrying both
+    """
+    model.insert(0)
+    edit(model, 1, URL_COLUMN, "https://example.com/carol")
+
+    edit(model, 1, NAME_COLUMN, "Carol")
+
+    assert model.entries[1] == {"name": "Carol", "url": "https://example.com/carol"}
+
+
+def test_an_entry_whose_name_is_cleared_stays_in_the_entries(model: AuthorsTableModel) -> None:
+    """Only a row added here is pending: clearing an existing author's name is flagged, not withdrawn.
+
+    **Test steps:**
+
+    * clear the second author's name
+    * verify it is still in the entries, nameless, with its URL
+    """
+    edit(model, 1, NAME_COLUMN, "")
+
+    assert model.entries[1] == {"name": "", "url": "https://example.com/bob"}
+
+
+def test_handing_back_the_entries_keeps_a_pending_row(model: AuthorsTableModel) -> None:
+    """The echo guard compares against what was read, so the round trip is not a change.
+
+    **Test steps:**
+
+    * insert a row and give it a URL
+    * hand the entries back
+    * verify the pending row is still there
+    """
+    model.insert(0)
+    edit(model, 1, URL_COLUMN, "https://example.com/carol")
+
+    model.set_entries(model.entries)
+
+    assert model.rowCount() == 3
+    assert cell(model, 1, URL_COLUMN) == "https://example.com/carol"
+
+
+def test_a_pending_row_keeps_its_state_through_a_move(model: AuthorsTableModel) -> None:
+    """Pending belongs to the row, not to the position it was added at.
+
+    **Test steps:**
+
+    * append a row, give it a URL, and move it to the top
+    * verify the entries still leave it out, and naming it there puts it first
+    """
+    model.insert(-1)
+    edit(model, 2, URL_COLUMN, "https://example.com/carol")
+    model.move_to_top(2)
+    assert model.entries == ("Alice", {"name": "Bob", "url": "https://example.com/bob"})
+
+    edit(model, 0, NAME_COLUMN, "Carol")
+
+    assert model.entries[0] == {"name": "Carol", "url": "https://example.com/carol"}
+
+
+def test_a_copy_of_a_pending_row_is_pending_too(model: AuthorsTableModel) -> None:
+    """Duplicating a nameless row makes another nameless row.
+
+    **Test steps:**
+
+    * insert a row with only a URL and duplicate it
+    * verify neither is in the entries
+    """
+    model.insert(0)
+    edit(model, 1, URL_COLUMN, "https://example.com/carol")
+
+    model.duplicate(1)
+
+    assert model.rowCount() == 4
+    assert len(model.entries) == 2
+
+
+def test_removing_a_pending_row_leaves_the_others_as_they_were(model: AuthorsTableModel) -> None:
+    """The per-row state is dropped with its row.
+
+    **Test steps:**
+
+    * insert a row between the entries, then delete it
+    * verify the entries are unchanged and a later name on the second row is still an edit of it
+    """
+    model.insert(0)
+
+    model.delete(1)
+    edit(model, 1, NAME_COLUMN, "Robert")
+
+    assert model.entries == ("Alice", {"name": "Robert", "url": "https://example.com/bob"})
 
 
 # endregion

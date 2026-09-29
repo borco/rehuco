@@ -43,9 +43,7 @@ class WebSearchEnginesEditor(ItemListEditor):
         header = table.horizontalHeader()
         table.setItemDelegateForColumn(ACTIVE_COLUMN, WebSearchEnginesRadioDelegate(table))
         # the radio leads the row on screen, but stays the last *model* column: `ItemListEditor` opens
-        # model column 0 on Add and abandons a row whose column 0 is blank, and a radio cell is neither
-        # editable nor ever non-blank -- an insert would open nothing, and the name typed into it later
-        # would be thrown away as an abandoned row
+        # model column 0 on Add, and a radio cell is not editable -- an insert would open nothing
         header.moveSection(header.visualIndex(ACTIVE_COLUMN), 0)
         header.setSectionResizeMode(ACTIVE_COLUMN, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(NAME_COLUMN, QHeaderView.ResizeMode.ResizeToContents)

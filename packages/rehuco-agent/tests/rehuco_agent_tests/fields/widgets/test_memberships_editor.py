@@ -353,3 +353,47 @@ def test_an_edit_reports_the_scoped_records(learning_paths: LearningPathsEditor)
 
 
 # endregion
+
+
+# region a row pending a title
+
+
+def test_an_edit_to_a_row_pending_a_title_is_not_reported(collections: CollectionsEditor) -> None:
+    """A position with no series named is not in the value, so it changes nothing to report.
+
+    **Test steps:**
+
+    * insert a membership and give it only a position
+    * verify nothing was reported and the value is the one membership
+    """
+    reported: list[Any] = []
+    collections.value_changed.connect(reported.append)
+    model = collections.model
+
+    model.insertRows(1, 1)
+    model.setData(model.index(1, INDEX_COLUMN), 3)
+
+    assert not reported
+    assert collections.value == [{"title": "Series", "index": 2, "url": "https://example.com"}]
+
+
+def test_titling_a_pending_row_reports_it(collections: CollectionsEditor) -> None:
+    """Titling it, after the position, is the edit that adds the membership.
+
+    **Test steps:**
+
+    * insert a membership, give it a position and then a title
+    * verify one report arrived, carrying both memberships
+    """
+    reported: list[Any] = []
+    collections.value_changed.connect(reported.append)
+    model = collections.model
+    model.insertRows(1, 1)
+    model.setData(model.index(1, INDEX_COLUMN), 3)
+
+    model.setData(model.index(1, TITLE_COLUMN), "Other")
+
+    assert reported == [[{"title": "Series", "index": 2, "url": "https://example.com"}, {"title": "Other", "index": 3}]]
+
+
+# endregion

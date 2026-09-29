@@ -309,17 +309,18 @@ def test_only_the_edit_role_writes(model: CollectionsTableModel) -> None:
 
 def test_an_insert_makes_a_blank_membership(model: CollectionsTableModel) -> None:
     """A blank title and no position: a membership naming no series is not a membership in anything yet,
-    which is also what makes the row abandonable while its editor is still open.
+    which is also what keeps the row out of the entries until it has a title.
 
     **Test steps:**
 
     * insert after the first row
-    * verify the new row landed there, blank
+    * verify the new row landed there, blank, and is not in the entries
     """
     row = model.insert(0)
 
     assert row == 1
-    assert model.entries[1] == {"title": "", "index": 0}
+    assert model.record(1) == {"title": "", "index": 0}
+    assert model.entries == STORED
 
 
 def test_an_insert_at_a_negative_row_appends(model: CollectionsTableModel) -> None:
@@ -483,6 +484,74 @@ def test_the_base_says_nothing_about_what_a_row_is() -> None:
         base.record(0)
     with raises(NotImplementedError):
         base.replace_record(0, {})
+
+
+# endregion
+
+
+# region a row added here is pending until it has a title
+
+
+def test_a_row_given_only_a_position_is_left_out_of_the_entries(model: CollectionsTableModel) -> None:
+    """A position with no series named is on screen, flagged, not in the value.
+
+    **Test steps:**
+
+    * insert a row and give it only a position
+    * verify its title is flagged and the entries are the stored two
+    """
+    model.insert(0)
+
+    model.setData(model.index(1, INDEX_COLUMN), 4, Qt.ItemDataRole.EditRole)
+
+    assert cell(model, 1, TITLE_COLUMN, Qt.ItemDataRole.ToolTipRole) == MISSING_TITLE_REASON
+    assert model.entries == STORED
+
+
+def test_a_pending_row_becomes_an_entry_once_titled(model: CollectionsTableModel) -> None:
+    """Titling it, after the position, makes it a membership.
+
+    **Test steps:**
+
+    * insert a row, give it a position and then a title
+    * verify it is in the entries, in its place
+    """
+    model.insert(0)
+    model.setData(model.index(1, INDEX_COLUMN), 4, Qt.ItemDataRole.EditRole)
+
+    model.setData(model.index(1, TITLE_COLUMN), "Rigging Series", Qt.ItemDataRole.EditRole)
+
+    assert model.entries[1] == {"title": "Rigging Series", "index": 4}
+
+
+def test_handing_back_the_entries_keeps_a_pending_membership(model: CollectionsTableModel) -> None:
+    """The echo guard compares against what was read, so a pending row survives the round trip.
+
+    **Test steps:**
+
+    * insert a row and hand the entries back
+    * verify the row is still there
+    """
+    model.insert(0)
+
+    model.set_entries(model.entries)
+
+    assert model.rowCount() == 3
+
+
+def test_removing_a_pending_membership_keeps_the_others_in_the_entries(model: CollectionsTableModel) -> None:
+    """The per-row state is dropped with its row.
+
+    **Test steps:**
+
+    * insert a row after the first and delete it
+    * verify the entries are the stored two
+    """
+    model.insert(0)
+
+    model.delete(1)
+
+    assert model.entries == STORED
 
 
 # endregion

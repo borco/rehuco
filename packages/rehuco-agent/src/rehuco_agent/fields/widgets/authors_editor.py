@@ -145,8 +145,11 @@ class AuthorsEditor(QWidget):
         self.__set_and_report(TextListString.split(text))
 
     def __on_advanced_edited(self) -> None:
-        """Report the rows' entries as an authors list."""
-        self.__set_and_report(self.__advanced.entries)
+        """Report the rows' entries as an authors list, unless they did not change -- an edit to a row
+        still pending a name is left out of them (:class:`AuthorsTableModel`)."""
+        entries = list(self.__advanced.entries)
+        if entries != self.__value:
+            self.__set_and_report(entries)
 
     def __set_and_report(self, value: Sequence[AuthorEntry]) -> None:
         """Take an edit from one mode, keep the other in step with it, and report it once.
