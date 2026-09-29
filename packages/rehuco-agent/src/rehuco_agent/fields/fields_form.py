@@ -16,9 +16,11 @@ from .field import (
     FieldViewerWidgets,
     HeaderPinned,
     ImageActivator,
+    ImageCurator,
     LockAware,
     StatusReporter,
 )
+from .widgets import ImageSelector
 
 LABEL_COLUMN: Final = 0
 MISC_COLUMN: Final = 1
@@ -107,6 +109,22 @@ class FieldsForm:
             if isinstance(field, ImageActivator):
                 field.image_activated.connect(activated)
                 field.curated_images_changed.connect(curated_changed)
+
+    def connect_image_curations(
+        self, requested: Callable[[ImageSelector, int], None], rows_changed: Callable[[ImageSelector], None]
+    ) -> None:
+        """Route every image-curating field's `ImageCurator` contract into the owner's handlers (#370).
+
+        The editor-side counterpart of :meth:`connect_image_activations`, wired the same way and for
+        the same reason: the owner opens the viewer, the field only reports the ask.
+
+        :param requested: the owner's handler, called with the editor and the row to open on.
+        :param rows_changed: the owner's handler, called with the editor whenever its rows change.
+        """
+        for field in self.__fields:
+            if isinstance(field, ImageCurator):
+                field.curation_viewer_requested.connect(requested)
+                field.curation_rows_changed.connect(rows_changed)
 
     def set_locked(self, locked: bool) -> None:
         """Hand the document's lock state to every lock-aware field (`LockAware`, #292).

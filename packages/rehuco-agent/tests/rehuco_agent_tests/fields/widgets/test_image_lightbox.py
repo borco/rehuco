@@ -4,13 +4,12 @@
 # reads better than an arbitrary split (same precedent as test_rehu_document_model.py).
 # pylint: disable=too-many-lines
 
-from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, Final
 
 from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, QSize, Qt
 from PySide6.QtGui import QColor, QEnterEvent, QImage, QWheelEvent
-from PySide6.QtWidgets import QApplication, QLineEdit, QMainWindow, QToolButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QLineEdit, QMainWindow, QToolButton, QWidget
 from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -38,7 +37,7 @@ from rehuco_agent.fields.widgets.image_lightbox import (
     OverlayButton,
 )
 from rehuco_agent.fields.widgets.image_selector import PreviewLabel
-from rehuco_agent.fields.widgets.image_source import PathImageSource
+from rehuco_agent.fields.widgets.image_source import ImageVisibility, PathImageSource, ScreenshotRowsImageSource
 from rehuco_agent.fields.widgets.thumbnail_row import ThumbnailRow
 
 from rehuco_agent_tests.qt_waits import wait_destroyed
@@ -75,33 +74,6 @@ def loadable_image(mocker: MockerFixture) -> None:
         return QImage(round(IMAGE_WIDTH * height / IMAGE_HEIGHT), height, QImage.Format.Format_RGB32)
 
     mocker.patch.object(PathImageSource, "load", side_effect=load)
-
-
-@fixture
-def document(qtbot: QtBot) -> Iterator[QWidget]:
-    """A stand-in for the open document a viewer belongs to, inside a main window's client area.
-
-    Shaped like the real host chain -- a document widget nested in a `QMainWindow`'s central widget --
-    so both overlay modes have a genuine surface to resolve and cover.
-
-    A generator fixture, not a plain one: the window is a local, and yielding from inside the fixture
-    is what keeps it alive for the test -- returning only its descendant would let Python collect the
-    window, taking the document down with it.
-
-    :param qtbot: pytest-qt fixture.
-    :returns: the document stand-in, shown.
-    """
-    window = QMainWindow()
-    central = QWidget()
-    layout = QVBoxLayout(central)
-    document = QWidget()
-    layout.addWidget(document)
-    window.setCentralWidget(central)
-    qtbot.addWidget(window)
-    window.resize(800, 600)
-    window.show()
-    qtbot.waitExposed(window)
-    yield document
 
 
 def control(lightbox: ImageLightbox, name: str) -> QToolButton:
@@ -1471,6 +1443,51 @@ def test_the_info_toggle_sits_under_the_box_and_toggles_it(document: QWidget, qt
     qtbot.keyClick(lightbox, Qt.Key.Key_I)
     assert toggle.isChecked()
     assert lightbox.info_visible
+
+
+def test_the_read_only_viewer_names_no_visibility_even_over_the_editors_rows(document: QWidget, qtbot: QtBot) -> None:
+    """The visibility line is the curating viewer's alone (#370): a source that reports one does not
+    make the default viewer show it.
+
+    **Test steps:**
+
+    * reveal a plain viewer, info shown, over the screenshots editor's rows source
+    * verify the info box is the plain four lines, with nothing bold above them
+    """
+    rows = ScreenshotRowsImageSource([(PATHS[0], ImageVisibility.HIDDEN), (PATHS[1], ImageVisibility.UNCONVERTED)])
+    lightbox = ImageLightbox(rows, 0, ImageViewerMode.DOCUMENT_OVERLAY, document, info_visible=True)
+    qtbot.addWidget(lightbox)
+    lightbox.reveal()
+
+    info = info_of(lightbox)
+    assert info.textFormat() == Qt.TextFormat.PlainText
+    assert info.text().split("\n")[0] == str(PATHS[0])
+    assert "hidden" not in info.text()
+
+
+def test_the_read_only_viewer_has_no_curating_keys(document: QWidget, qtbot: QtBot) -> None:
+    """Del, Space, C and the Ctrl moves curate nothing in the default viewer (#370) -- it has no requests
+    to send, and none of those keys dismisses it or moves it off its image.
+
+    **Test steps:**
+
+    * reveal a plain viewer over the editor's rows, on the second image
+    * press Del, Space, C, Ctrl+Up and Ctrl+Down
+    * verify it is still up, on the same image
+    """
+    rows = ScreenshotRowsImageSource([(path, ImageVisibility.VISIBLE) for path in PATHS])
+    lightbox = ImageLightbox(rows, 1, ImageViewerMode.DOCUMENT_OVERLAY, document)
+    qtbot.addWidget(lightbox)
+    lightbox.reveal()
+
+    for key in (Qt.Key.Key_Delete, Qt.Key.Key_Space, Qt.Key.Key_C):
+        qtbot.keyClick(lightbox, key)
+    for key in (Qt.Key.Key_Up, Qt.Key.Key_Down):
+        qtbot.keyClick(lightbox, key, Qt.KeyboardModifier.ControlModifier)
+
+    assert lightbox.isVisible()
+    assert lightbox.current_index == 1
+    assert not hasattr(lightbox, "delete_requested")
 
 
 def test_the_backdrop_is_opaque_and_follows_the_owner(document: QWidget, qtbot: QtBot, mocker: MockerFixture) -> None:

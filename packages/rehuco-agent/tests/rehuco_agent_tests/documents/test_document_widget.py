@@ -21,6 +21,7 @@ import json
 import logging
 from collections.abc import Iterator
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Final, cast
 
 import cbor2
@@ -91,10 +92,11 @@ from rehuco_agent.documents.files_view import FilesView
 from rehuco_agent.documents.name_suggestion_model import NameSuggestionModel
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields import PROVENANCE_ABANDONED_TYPE, FieldsForm, FieldsTab, StatefulWidget
-from rehuco_agent.fields.image_scanner import AfterConversion
+from rehuco_agent.fields.image_scanner import AfterConversion, ScreenshotSet
 from rehuco_agent.fields.type_field import NO_TYPE_LABEL
 from rehuco_agent.fields.widgets import (
     AuthorsEditor,
+    CuratingImageLightbox,
     ImageLightbox,
     ImageSelector,
     ImageStrip,
@@ -128,6 +130,7 @@ from rehuco_core import (
     LockReasonKind,
     RehuDocument,
     TaskQueue,
+    plan_screenshot_renumbering,
 )
 
 from rehuco_agent_tests.qt_waits import wait_destroyed
@@ -359,6 +362,8 @@ def test_activating_a_screenshot_opens_it_maximized_over_the_document(
     lightbox = widget.findChild(ImageLightbox)
     assert isinstance(lightbox, ImageLightbox)
     assert lightbox.parentWidget() is widget
+    # the read-only viewer exactly, never the one the images editor opens (#370)
+    assert type(lightbox) is ImageLightbox  # pylint: disable=unidiomatic-typecheck
     # not isVisible(): this widget is never shown in these tests, and a child of a hidden parent can
     # never be visible -- isHidden() is what says the viewer was actually revealed rather than built
     assert not lightbox.isHidden()
@@ -520,6 +525,279 @@ def test_a_screenshot_activated_after_a_type_switch_still_opens(
     activate_screenshot(widget, Path("/fake/info00.jpg"))
 
     assert isinstance(widget.findChild(ImageLightbox), ImageLightbox)
+
+
+# endregion
+
+
+# region the curating viewer the images editor opens (#370)
+
+
+class ScreenshotFolder:
+    """A resource's screenshots in memory -- the images editor's scanner and organizer in one, and the
+    files' identities, so a rename keeps a file the file it was.
+
+    Each file carries an id that follows it through every rename, which :meth:`stat` reports as its
+    inode: what a real rename keeps, and so what the viewer's rows key a file by (`ScreenshotKey`).
+    The renames come from the real `plan_screenshot_renumbering`.
+    """
+
+    def __init__(self, names: list[str], unconverted: list[str] | None = None) -> None:
+        self.names = list(names)
+        self.unconverted = list(unconverted or [])
+        self.ids = {name: number for number, name in enumerate([*self.names, *self.unconverted])}
+
+    def screenshots(self) -> ScreenshotSet:
+        """Both row kinds (`ImageScanner`)."""
+        return ScreenshotSet(
+            numbered=tuple(SCREENSHOT_DIRECTORY / name for name in self.names),
+            unconverted=tuple(SCREENSHOT_DIRECTORY / name for name in self.unconverted),
+        )
+
+    def after_conversion(self) -> None:
+        """Nothing: this is a ``.rehu`` (`ImageScanner`)."""
+
+    def reorder(self, ordered: list[Path]) -> dict[str, str]:
+        """Renumber to ``ordered`` (`ImageOrganizer`).
+
+        :param ordered: the screenshots in the order wanted.
+        :returns: what was renamed.
+        """
+        return self.__renumber(ordered)
+
+    def remove(self, path: Path, remaining: list[Path], deleter: Any = None) -> dict[str, str]:
+        """Drop ``path`` and renumber the survivors (`ImageOrganizer`).
+
+        :param path: the screenshot deleted.
+        :param remaining: the survivors, in the order wanted.
+        :param deleter: how ``path`` is removed.
+        :returns: what was renamed.
+        """
+        if deleter is not None:
+            deleter.delete(path)
+        self.ids.pop(path.name)
+        if path.name in self.unconverted:
+            self.unconverted.remove(path.name)
+        return self.__renumber(remaining)
+
+    def convert(self, path: Path) -> dict[str, str]:
+        """Number an un-converted image into the next free slot (`ImageOrganizer`).
+
+        :param path: the image.
+        :returns: its rename.
+        """
+        converted = f"{SCREENSHOT_STEM}{len(self.names):02d}{path.suffix}"
+        self.unconverted.remove(path.name)
+        self.names.append(converted)
+        # through a local: pylint_qt reads any `obj.attr[key]` in a PySide-importing module as a signal
+        ids = self.ids
+        ids[converted] = ids.pop(path.name)
+        return {path.name: converted}
+
+    def stat(self, path: Path) -> SimpleNamespace:
+        """The file's stat, identified by its id -- raising, like a missing file, for anything else.
+
+        :param path: the file.
+        :returns: its stat.
+        :raises FileNotFoundError: when ``path`` is none of these screenshots.
+        """
+        if path.parent != SCREENSHOT_DIRECTORY or path.name not in self.ids:
+            raise FileNotFoundError(path)
+        return SimpleNamespace(st_dev=1, st_ino=self.ids[path.name], st_size=1_000, st_mtime_ns=1, st_mode=0o100644)
+
+    def __renumber(self, ordered: list[Path]) -> dict[str, str]:
+        """Apply the real rename plan for ``ordered``, carrying each file's id to its new name.
+
+        :param ordered: the numbered screenshots, in the order wanted.
+        :returns: what was renamed.
+        """
+        renames = plan_screenshot_renumbering(SCREENSHOT_STEM, ordered)
+        self.names = [renames.get(path.name, path.name) for path in ordered]
+        self.ids = {renames.get(name, name): number for name, number in self.ids.items()}
+        return renames
+
+
+SCREENSHOT_DIRECTORY: Final = Path("/fake/curated")
+SCREENSHOT_STEM: Final = "info"
+
+
+def curating_editor(
+    widget: DocumentWidget, mocker: MockerFixture, folder: ScreenshotFolder, hidden: list[str] | None = None
+) -> ImageSelector:
+    """The document's images editor, over ``folder``, with deletes answered yes and going nowhere.
+
+    :param widget: the document widget.
+    :param mocker: pytest-mock fixture.
+    :param folder: the in-memory screenshots.
+    :param hidden: filenames to start curated out, if any.
+    :returns: the editor.
+    """
+    loadable_lightbox_image(mocker)
+    mocker.patch.object(Path, "stat", autospec=True, side_effect=lambda path, **_: folder.stat(path))
+    mocker.patch("rehuco_agent.fields.widgets.image_selector.confirm_delete", return_value=True)
+    mocker.patch(
+        "rehuco_agent.fields.widgets.image_selector.configured_deleter",
+        return_value=mocker.Mock(delete=mocker.Mock()),
+    )
+    selector = image_selector(widget)
+    selector.image_scanner = folder  # type: ignore[assignment]
+    selector.image_organizer = folder  # type: ignore[assignment]
+    selector.set_screenshots(folder.screenshots(), hidden or [])
+    return selector
+
+
+def open_curating(selector: ImageSelector, widget: DocumentWidget, row: int) -> CuratingImageLightbox:
+    """Ask for the viewer from the images editor, as a double-click does, and return what opened.
+
+    :param selector: the images editor.
+    :param widget: the document widget.
+    :param row: the row double-clicked.
+    :returns: the viewer.
+    """
+    selector.viewer_requested.emit(row)
+    viewer = widget._DocumentWidget__image_viewer  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert isinstance(viewer, CuratingImageLightbox)
+    return viewer
+
+
+def viewer_names(viewer: ImageLightbox) -> list[str]:
+    """The filenames a viewer over the editor's rows navigates, in order.
+
+    :param viewer: the viewer.
+    :returns: the names.
+    """
+    source = viewer.source
+    return [source.name(index) for index in range(len(source))]
+
+
+def test_the_editor_opens_the_curating_viewer_over_every_row(
+    widget: DocumentWidget, mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """Hidden and not-yet-numbered screenshots are what the editor is for, so its viewer steps through
+    them too, in list order.
+
+    **Test steps:**
+
+    * seed the editor with a visible and a hidden screenshot and an unconverted image
+    * ask for the viewer on the first row
+    * verify a curating viewer opened over all three, and stepping reaches the last
+    """
+    folder = ScreenshotFolder(["info00.jpg", "info01.jpg"], ["cover.jpg"])
+    selector = curating_editor(widget, mocker, folder, ["info01.jpg"])
+
+    viewer = open_curating(selector, widget, 0)
+
+    assert viewer_names(viewer) == ["info00.jpg", "info01.jpg", "cover.jpg"]
+    qtbot.keyClick(viewer, Qt.Key.Key_End)
+    assert viewer.current_index == 2
+
+
+def test_space_in_the_viewer_toggles_the_row_and_dirties_the_document(
+    widget: DocumentWidget, model: RehuDocumentModel, mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """A request the viewer sends is the editor's edit, reported exactly as a click would be.
+
+    **Test steps:**
+
+    * open the curating viewer on the second of two screenshots
+    * press Space
+    * verify the row was curated out, the document went dirty, and the viewer stayed on the image
+    """
+    folder = ScreenshotFolder(["info00.jpg", "info01.jpg"])
+    selector = curating_editor(widget, mocker, folder)
+    viewer = open_curating(selector, widget, 1)
+
+    qtbot.keyClick(viewer, Qt.Key.Key_Space)
+
+    assert selector.hidden_filenames() == ["info01.jpg"]
+    assert model.dirty
+    assert viewer.current_index == 1
+
+
+def test_a_convert_and_a_delete_through_the_viewer_re_point_it(
+    widget: DocumentWidget, mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """Both rename or remove files, and the viewer follows the editor's rows afterwards.
+
+    **Test steps:**
+
+    * open the curating viewer on an unconverted image after one numbered screenshot
+    * press C and verify it was numbered, and the viewer is on it under its new name
+    * press Del and verify it went, and the viewer is on the screenshot left
+    """
+    folder = ScreenshotFolder(["info00.jpg"], ["cover.jpg"])
+    selector = curating_editor(widget, mocker, folder)
+    viewer = open_curating(selector, widget, 1)
+
+    qtbot.keyClick(viewer, Qt.Key.Key_C)
+
+    assert viewer_names(viewer) == ["info00.jpg", "info01.jpg"]
+    assert viewer.current_index == 1
+
+    qtbot.keyClick(viewer, Qt.Key.Key_Delete)
+
+    assert viewer_names(viewer) == ["info00.jpg"]
+    assert viewer.current_index == 0
+
+
+def test_ctrl_up_in_the_viewer_moves_the_row_and_keeps_the_viewer_on_it(
+    widget: DocumentWidget, mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """A move swaps two files' names; the viewer stays on the image it was on, at its new position.
+
+    **Test steps:**
+
+    * open the curating viewer on the last of three screenshots
+    * press Ctrl+Up
+    * verify the editor moved the row up, and the viewer is on the same file at position one
+    """
+    folder = ScreenshotFolder(["info00.jpg", "info01.jpg", "info02.jpg"])
+    selector = curating_editor(widget, mocker, folder)
+    viewer = open_curating(selector, widget, 2)
+    moved = folder.ids["info02.jpg"]
+
+    qtbot.keyClick(viewer, Qt.Key.Key_Up, Qt.KeyboardModifier.ControlModifier)
+
+    assert selector.current_index == 1
+    assert viewer.current_index == 1
+    assert folder.ids["info01.jpg"] == moved
+    assert viewer.source.name(1) == "info01.jpg"
+
+
+def test_emptying_the_editor_through_the_viewer_closes_it(
+    widget: DocumentWidget, mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """There is nothing left to look at once the last row is deleted.
+
+    **Test steps:**
+
+    * open the curating viewer over a single screenshot
+    * press Del and verify the viewer closed
+    """
+    folder = ScreenshotFolder(["info00.jpg"])
+    selector = curating_editor(widget, mocker, folder)
+    viewer = open_curating(selector, widget, 0)
+
+    with qtbot.waitSignal(viewer.closed, timeout=WAIT_TIMEOUT_MS):
+        qtbot.keyClick(viewer, Qt.Key.Key_Delete)
+
+
+def test_a_curating_viewer_ignores_a_later_curated_set_change(widget: DocumentWidget, mocker: MockerFixture) -> None:
+    """The strip's curated set says nothing about the editor's rows, so it re-points nothing here.
+
+    **Test steps:**
+
+    * open the curating viewer over two screenshots
+    * report a different curated set, as the strip does
+    * verify the viewer still browses the editor's rows
+    """
+    folder = ScreenshotFolder(["info00.jpg", "info01.jpg"])
+    selector = curating_editor(widget, mocker, folder)
+    viewer = open_curating(selector, widget, 0)
+
+    widget._DocumentWidget__on_curated_images_changed(SCREENSHOTS)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    assert viewer_names(viewer) == ["info00.jpg", "info01.jpg"]
 
 
 # endregion
@@ -4216,7 +4494,9 @@ def test_converting_in_place_hands_the_images_dock_back(mocker: MockerFixture, q
 
     **Test steps:**
 
-    * build a widget over a legacy ``.tc`` and mock the core conversion to return an unlocked document
+    * build a widget over a legacy ``.tc`` and mock the core conversion to return an unlocked document,
+      whose directory then lists the images numbered -- what a conversion leaves behind, and the only
+      rows with a check box to hand back (#370)
     * trigger a convert action for real
     * verify the same selector is editable again, check boxes included
     """
@@ -4224,6 +4504,8 @@ def test_converting_in_place_hands_the_images_dock_back(mocker: MockerFixture, q
     selector = image_selector(widget)
     converted = RehuDocument({"type": "Tutorial", "sources": [{"title": "Foo", "primary": True}]}, TARGET_PATH)
     mocker.patch("rehuco_agent.documents.rehu_document_model.convert_tc", return_value=converted)
+    mocker.patch("rehuco_agent.documents.rehu_document_model.scan_rehu_screenshot_files", return_value=SCREENSHOTS)
+    mocker.patch("rehuco_agent.documents.rehu_document_model.scan_unconverted_screenshots", return_value=[])
     keep_backups = widget._DocumentWidget__convert_keep_backups_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     keep_backups.trigger()
@@ -4437,6 +4719,7 @@ def test_an_image_activated_in_the_browser_opens_against_the_folder(widget: Docu
 
     viewer = widget._DocumentWidget__image_viewer  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert viewer is not None
+    assert type(viewer) is ImageLightbox  # pylint: disable=unidiomatic-typecheck  # read-only, #370
     assert lightbox_paths(viewer) == folder
 
 
@@ -4479,6 +4762,7 @@ def test_a_curation_edit_does_not_re_point_a_folder_viewer(widget: DocumentWidge
     widget._DocumentWidget__on_curated_images_changed(curated)  # type: ignore[attr-defined]  # pylint: disable=protected-access
     viewer = widget._DocumentWidget__image_viewer  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert viewer is not None
+    assert type(viewer) is ImageLightbox  # pylint: disable=unidiomatic-typecheck  # read-only, #370
     assert lightbox_paths(viewer) == folder
 
     viewer.close()
@@ -5119,6 +5403,7 @@ def test_a_content_image_activated_in_the_dock_opens_the_lightbox_over_the_pack(
 
     lightbox = refimages_widget.findChild(ImageLightbox)
     assert isinstance(lightbox, ImageLightbox)
+    assert type(lightbox) is ImageLightbox  # pylint: disable=unidiomatic-typecheck  # read-only, #370
     assert lightbox.current_index == 1
     assert len(lightbox.source) == 2
     assert lightbox.current_key == entries[1].key

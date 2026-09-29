@@ -18,6 +18,7 @@ says what converting would do to each pattern-matched image -- the name it gets,
 import logging
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import Any, Final, override
 
@@ -29,13 +30,14 @@ from PIL import Image
 from PySide6.QtCore import (
     QAbstractTableModel,
     QByteArray,
+    QEvent,
     QModelIndex,
     QObject,
     QPersistentModelIndex,
     Qt,
     Signal,
 )
-from PySide6.QtGui import QAction, QPixmap, QResizeEvent, QShowEvent
+from PySide6.QtGui import QAction, QKeyEvent, QKeySequence, QMouseEvent, QPixmap, QResizeEvent, QShowEvent
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QGridLayout,
@@ -57,6 +59,7 @@ from ...item_action_icons import apply_action_column_icons
 from ...recycle_bin_deleter import configured_deleter
 from ..image_organizer import ImageOrganizer
 from ..image_scanner import AfterConversion, ImageScanner, ScreenshotSet
+from .image_source import ImageVisibility
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -109,6 +112,24 @@ PREVIEW_HEIGHT: Final = 100
 choice reaches this widget from the owner (the "Images" settings page); the number lives next to the widget it
 sizes, and the settings section reads it from here as its default -- the same arrangement
 :data:`~rehuco_agent.fields.images_field.IMAGE_STRIP_HEIGHT` already has with the strip."""
+
+
+CHECK_TOOLTIP: Final = "Shown in the lightbox (Space)"
+"""The check cell's tooltip -- where the Space key that toggles it is named (#370), since the action
+behind it has no button of its own: the check box already is its button."""
+
+
+class MoveDirection(StrEnum):
+    """Where a move sends one screenshot -- the ordering column's four actions, by name (#370).
+
+    What the curating viewer asks the editor for; it lives beside the actions it names rather than
+    beside the viewer, which already reads this module and so cannot be read by it.
+    """
+
+    TOP = "top"
+    UP = "up"
+    DOWN = "down"
+    BOTTOM = "bottom"
 
 
 class PreviewLabel(QLabel):
@@ -188,8 +209,8 @@ class ScreenshotRow:
     :ivar dimensions: its ``W x H`` pixel size, blank when unreadable.
     :ivar size: its humanized file size, blank when unreadable.
     :ivar numbered: whether it holds a ``<stem>NN`` slot (#270). The un-converted rows are the ones
-        that do not: they are screenshots by the name patterns and are curated like any other, but
-        there is no position for the move buttons to change, and Convert is offered instead.
+        that do not: they are screenshots by the name patterns, but there is no position for the move
+        buttons to change and nothing yet to curate (#370) -- Convert and Delete are what is offered.
     """
 
     path: Path
@@ -216,9 +237,9 @@ class ScreenshotListModel(QAbstractTableModel):
     Four columns, plus one shown only on a legacy ``.tc`` (#293), right after the name: the curation
     check box on its own (checked means shown in the lightbox), the filename, what converting would do
     to the file, the pixel dimensions, and the file size. The rows come in **two kinds** (#270) -- the
-    ``<stem>NN`` set first, then the pattern-matched images that hold no slot yet, which carry the same
-    check box and can be neither moved nor moved past. Which kind a row is shows in where it sits and in
-    which buttons light up on it; nothing decorates it (see :data:`CONVERT_ICON`).
+    ``<stem>NN`` set first, then the pattern-matched images that hold no slot yet, whose check box is
+    greyed (#370) and which can be neither moved nor moved past. Which kind a row is shows in where it
+    sits and in which buttons light up on it; nothing decorates it (see :data:`CONVERT_ICON`).
 
     :param parent: optional Qt parent.
     """
@@ -311,15 +332,31 @@ class ScreenshotListModel(QAbstractTableModel):
         if role == Qt.ItemDataRole.DisplayRole:
             after_conversion = outcome.name if outcome is not None else ""
             return ("", row.path.name, after_conversion, row.dimensions, row.size)[index.column()]
-        if role == Qt.ItemDataRole.ToolTipRole and index.column() == AFTER_CONVERSION_COLUMN:
-            # the cell says what the file *becomes*; why it keeps its own name is the tooltip's to say,
-            # so a kept row reads as a name like every other and still answers the question (#293)
-            return f"Kept under its own name: {outcome.reason}" if outcome is not None and outcome.kept else None
+        if role == Qt.ItemDataRole.ToolTipRole:
+            return self.__tooltip(row, index.column(), outcome)
         if role == PATH_ROLE and index.column() == NAME_COLUMN:
             return row.path
         if role == Qt.ItemDataRole.CheckStateRole and index.column() == CHECK_COLUMN:
             # the UI is the inverse of storage: checked = visible ([[data-model#image-meanings]])
             return Qt.CheckState.Unchecked if row.hidden else Qt.CheckState.Checked
+        return None
+
+    @staticmethod
+    def __tooltip(row: ScreenshotRow, column: int, outcome: AfterConversion | None) -> str | None:
+        """One cell's tooltip.
+
+        :param row: the cell's row.
+        :param column: the cell's column.
+        :param outcome: what converting does to the row's file, when the document is a legacy ``.tc``.
+        :returns: the tooltip, or ``None`` for a cell with none.
+        """
+        if column == AFTER_CONVERSION_COLUMN:
+            # the cell says what the file *becomes*; why it keeps its own name is the tooltip's to say,
+            # so a kept row reads as a name like every other and still answers the question (#293)
+            return f"Kept under its own name: {outcome.reason}" if outcome is not None and outcome.kept else None
+        if column == CHECK_COLUMN and row.numbered:
+            # the Space key has no button of its own to be named on (#370)
+            return CHECK_TOOLTIP
         return None
 
     @override
@@ -329,7 +366,8 @@ class ScreenshotListModel(QAbstractTableModel):
         """Curate one screenshot in or out of the lightbox.
 
         The check box is the only thing a user edits here -- a screenshot's name is its position in
-        the set, not text to type -- so every other role is refused.
+        the set, not text to type -- so every other role is refused, and so is an un-converted row's
+        check box (:meth:`flags`, #370).
 
         :param index: the cell being set.
         :param value: the new check state.
@@ -338,6 +376,8 @@ class ScreenshotListModel(QAbstractTableModel):
         """
         row = self.__row(index)
         if row is None or self.__read_only or role != Qt.ItemDataRole.CheckStateRole or index.column() != CHECK_COLUMN:
+            return False
+        if not row.numbered:
             return False
         hidden = Qt.CheckState(value) == Qt.CheckState.Unchecked
         if hidden == row.hidden:
@@ -350,10 +390,12 @@ class ScreenshotListModel(QAbstractTableModel):
     def flags(self, index: QModelIndex | QPersistentModelIndex) -> Qt.ItemFlag:
         """What can be done with one cell.
 
-        The check column is checkable, on **both** row kinds -- a picture the patterns recognize is a
-        screenshot whether or not it has a slot yet (#270), so it is curated like any other. Nothing
-        is editable, since there is no text here a user writes -- a screenshot's name is its position
-        in the set, which the move buttons decide.
+        The check column is checkable on a **numbered** row only (#370). An un-converted image is
+        taken into the set (Convert) or deleted, and nothing else: converting a picture just to delete
+        it makes no sense, while curating one that holds no slot yet decides nothing worth keeping
+        apart from those two. Its check box greys, like a read-only list's, rather than taking clicks.
+        Nothing is editable, since there is no text here a user writes -- a screenshot's name is its
+        position in the set, which the move buttons decide.
 
         A **read-only** list (:meth:`set_read_only`, #292) keeps every row selectable and readable and
         gives up only its check boxes: the cell loses both its checkability and its enabled state, so
@@ -366,7 +408,7 @@ class ScreenshotListModel(QAbstractTableModel):
             return Qt.ItemFlag.NoItemFlags
         if index.column() != CHECK_COLUMN:
             return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
-        if self.__read_only:
+        if self.__read_only or not self.is_numbered(index.row()):
             return Qt.ItemFlag.ItemIsSelectable
         return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsUserCheckable
 
@@ -412,6 +454,25 @@ class ScreenshotListModel(QAbstractTableModel):
         :returns: the hidden filenames.
         """
         return [row.path.name for row in self.__rows if row.hidden]
+
+    def states(self) -> list[tuple[Path, ImageVisibility]]:
+        """Every screenshot and where it stands in the curation, in row order (#370).
+
+        :returns: each row's path and visibility -- un-converted before hidden, since a row with no
+            slot is not curated either way (:meth:`flags`).
+        """
+        return [(row.path, self.__visibility(row)) for row in self.__rows]
+
+    @staticmethod
+    def __visibility(row: ScreenshotRow) -> ImageVisibility:
+        """Where one row stands in the curation.
+
+        :param row: the row.
+        :returns: its visibility.
+        """
+        if not row.numbered:
+            return ImageVisibility.UNCONVERTED
+        return ImageVisibility.HIDDEN if row.hidden else ImageVisibility.VISIBLE
 
     def set_rows(
         self,
@@ -692,7 +753,7 @@ class ScreenshotOrdering(QObject):
         return self.__selector.move_screenshot(at, self.count - 1)
 
 
-class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
+class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes,too-many-public-methods
     """A sized preview above a checkable screenshot list ([[plugins#field-toolkit]], #27).
 
     Top pane -- the selected screenshot scaled to fit, with a ``W x H`` pixel-dimension overlay pinned
@@ -728,6 +789,16 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
     columns read to know which screenshot they act on -- and whenever what may be *done* to that row
     changes without the row itself moving (a lock appearing or clearing, #292), since recomputing
     against the current row is the same answer either way."""
+
+    viewer_requested = Signal(int)
+    """Fires with a row the user double-clicked -- on the list, or on the preview of the current row
+    -- for the **owner to open** maximized over every row (#370). The same owner-routes-it shape the
+    strip's own activation has: this editor decides *that* an image was picked, never what opens."""
+
+    rows_changed = Signal()
+    """Fires whenever what :meth:`screenshot_states` answers may have changed -- every
+    :attr:`screenshots_changed`, and a check box toggled, which rebuilds nothing and so is not one
+    (#370). What a viewer opened over these rows is re-pointed on."""
 
     image_scanner = SimpleProperty[ImageScanner | None](None)
     """The strategy resolving this resource's screenshots; ``None`` shows nothing."""
@@ -799,9 +870,14 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
         self.__convert_action: Final = self.__item_actions.add_action(
             "Convert",
             "Take this image into the numbered set, under the number its own name already carries",
+            QKeySequence(Qt.Key.Key_C),
         )
         ActionIconThemeHandler(self.__convert_action, CONVERT_ICON)
         self.__convert_action.triggered.connect(self.__on_convert)
+        self.__visibility_action: Final = self.__make_visibility_action()
+        # armed on the list like Delete and the moves, so the keys reach them only with the list focused
+        for action in (self.__convert_action, self.__visibility_action):
+            self.__list.addAction(action)
 
         self.addWidget(self.__build_list_pane())
 
@@ -814,6 +890,14 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
 
         self.__list_model.dataChanged.connect(self.__on_data_changed)
         self.__list.selectionModel().currentChanged.connect(self.__on_current_changed)
+        self.__list.doubleClicked.connect(self.__on_double_clicked)
+        # the preview is a passive label, so its double-click is caught here rather than subclassed in:
+        # the same label class paints the maximized viewer, where a double-click means something else
+        self.__preview.installEventFilter(self)
+        # the list too: a curating key its action is not taking must not fall through to the view's own
+        # handling -- a bare C would otherwise type-ahead to the first row starting with "c" (#370)
+        self.__list.installEventFilter(self)
+        self.screenshots_changed.connect(self.rows_changed)
         self.image_scanner_changed.connect(lambda _scanner: self.__refresh())  # type: ignore[attr-defined]
         self.image_organizer_changed.connect(lambda _organizer: self.__apply_organizer())  # type: ignore[attr-defined]
         # the same handler as the organizer above: read-only and "nothing to rearrange with" are one
@@ -822,6 +906,23 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
         self.current_index_changed.connect(self.__apply_row_actions)
         self.screenshots_changed.connect(self.__apply_row_actions)
         self.__apply_organizer()
+
+    def __make_visibility_action(self) -> QAction:
+        """Build the action Space fires on the list: the current row's check box, from the keyboard (#370).
+
+        Not a button in the item column, unlike Convert: the check box on the row already is its
+        button, and its tooltip (:data:`CHECK_TOOLTIP`) is where the key is named. The shortcut is
+        armed the way the column's own actions are -- `Qt.ShortcutContext.WidgetShortcut`, inert until
+        the list adopts it.
+
+        :returns: the action, wired to toggle the current row.
+        """
+        action = QAction("Toggle visibility", self)
+        action.setShortcut(QKeySequence(Qt.Key.Key_Space))
+        action.setShortcutContext(Qt.ShortcutContext.WidgetShortcut)
+        action.setToolTip(CHECK_TOOLTIP)
+        action.triggered.connect(self.__on_toggle_visibility)
+        return action
 
     def __configure_list(self) -> None:
         """Set the screenshot view up: nothing typed into it, one row acted on at a time, and how the
@@ -885,7 +986,7 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
             return
         self.__rebuild(hidden)
 
-    # region rearranging the screenshots on disk (#72)
+    # region rearranging and curating the screenshots, from the list or a viewer over it (#72, #370)
 
     @property
     def screenshot_count(self) -> int:
@@ -995,6 +1096,115 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
         """Convert the current row -- what the Convert button and its action trigger."""
         self.convert_screenshot(self.current_index)
 
+    def __on_toggle_visibility(self) -> None:
+        """Flip the current row's check box, exactly as a click on it would -- so the document hears
+        of it through :attr:`hidden_changed` and goes dirty the same way (#370)."""
+        index = self.__list_model.index(self.current_index, CHECK_COLUMN)
+        checked = index.data(Qt.ItemDataRole.CheckStateRole) == Qt.CheckState.Checked
+        new_state = Qt.CheckState.Unchecked if checked else Qt.CheckState.Checked
+        self.__list_model.setData(index, new_state, Qt.ItemDataRole.CheckStateRole)
+
+    def screenshot_states(self) -> list[tuple[Path, ImageVisibility]]:
+        """Every screenshot and where it stands in the curation, in list order -- what a viewer over
+        these rows is built from (`~rehuco_agent.fields.widgets.image_source.ScreenshotRowsImageSource`).
+
+        :returns: each row's path and visibility.
+        """
+        return self.__list_model.states()
+
+    def delete_requested_at(self, path: Path) -> None:
+        """Delete the screenshot at ``path`` through the Delete action, as Del on the list would.
+
+        :param path: the screenshot, as the viewer's rows named it.
+        """
+        self.__trigger_at(path, self.__item_actions.delete_action)
+
+    def toggle_visibility_at(self, path: Path) -> None:
+        """Show or hide the screenshot at ``path`` through the Space action.
+
+        :param path: the screenshot, as the viewer's rows named it.
+        """
+        self.__trigger_at(path, self.__visibility_action)
+
+    def convert_requested_at(self, path: Path) -> None:
+        """Convert the screenshot at ``path`` through the Convert action, as C on the list would.
+
+        :param path: the screenshot, as the viewer's rows named it.
+        """
+        self.__trigger_at(path, self.__convert_action)
+
+    def move_requested_at(self, path: Path, direction: str) -> None:
+        """Move the screenshot at ``path`` through one of the ordering actions.
+
+        :param path: the screenshot, as the viewer's rows named it.
+        :param direction: a :class:`MoveDirection` value.
+        """
+        top, up, down, bottom = self.__ordering_action_list()
+        actions = {MoveDirection.TOP: top, MoveDirection.UP: up, MoveDirection.DOWN: down, MoveDirection.BOTTOM: bottom}
+        self.__trigger_at(path, actions[MoveDirection(direction)])
+
+    def __trigger_at(self, path: Path, action: QAction) -> None:
+        """Make ``path``'s row current and fire ``action`` on it, if the action is on offer there.
+
+        Every request goes through the list's own actions rather than straight to the model, so what
+        greys a button out -- an un-converted row, either end of the numbered set, a legacy ``.tc``, a
+        locked document -- refuses the viewer's key too, decided once in :meth:`__apply_row_actions`.
+        Making the row current first is what recomputes those rules for it.
+
+        :param path: the screenshot; one no longer listed is a no-op.
+        :param action: the action to fire.
+        """
+        paths = self.screenshot_paths()
+        if path not in paths:
+            return
+        self.set_current_index(paths.index(path))
+        if action.isEnabled():
+            action.trigger()
+
+    def __on_double_clicked(self, index: QModelIndex) -> None:
+        """Ask for the viewer on a double-clicked row -- anywhere but its check box.
+
+        The view reports a double-click before its delegate sees it, so one landing on the check box
+        has toggled it as well; opening the viewer on top of that would make it two gestures at once.
+
+        :param index: the cell double-clicked.
+        """
+        if index.column() != CHECK_COLUMN:
+            self.viewer_requested.emit(index.row())
+
+    @override
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        """Ask for the viewer on a left double-click over the preview, and swallow a curating key the
+        list's actions did not take (#370).
+
+        A key press reaches the list only when no enabled shortcut claimed it first, so a bare C or
+        Space arriving here is one whose action is disabled -- on a numbered row, an un-converted one,
+        a read-only list. "Does nothing" has to be made true by hand: left alone, the view's type-ahead
+        would take C to the first row starting with that letter.
+
+        :param watched: the object the event was sent to.
+        :param event: the event.
+        :returns: ``True`` for a swallowed key; ``False`` otherwise, the double-click being observed
+            rather than consumed.
+        """
+        if (
+            watched is self.__preview
+            and event.type() == QEvent.Type.MouseButtonDblClick
+            and isinstance(event, QMouseEvent)
+            and event.button() == Qt.MouseButton.LeftButton
+            and self.current_index >= 0
+        ):
+            self.viewer_requested.emit(self.current_index)
+        if (
+            watched is self.__list
+            and event.type() == QEvent.Type.KeyPress
+            and isinstance(event, QKeyEvent)
+            and event.key() in (Qt.Key.Key_C, Qt.Key.Key_Space)
+            and not event.modifiers() & ~Qt.KeyboardModifier.KeypadModifier
+        ):
+            return True
+        return super().eventFilter(watched, event)
+
     def __confirmed_delete(self, path: Path, *, numbered: bool) -> bool:
         """Ask before permanently deleting ``path`` (#291, #312, #313).
 
@@ -1103,6 +1313,9 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
         if not rearrangeable:
             self.__item_actions.delete_action.setEnabled(False)
         self.__convert_action.setEnabled(rearrangeable and self.current_index >= 0 and not numbered)
+        # the check box's own rule (`ScreenshotListModel.flags`): a numbered row on an editable list --
+        # no organizer needed, since curating renames nothing (#370)
+        self.__visibility_action.setEnabled(not self.read_only and numbered)
 
     def __ordering_action_list(self) -> tuple[QAction, ...]:
         """The ordering column's four actions, in column order.
@@ -1304,7 +1517,8 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
     def __on_data_changed(
         self, _top_left: QModelIndex, _bottom_right: QModelIndex, roles: list[int] | None = None
     ) -> None:
-        """Re-emit :attr:`hidden_changed` when a row's check box changed, and only then.
+        """Re-emit :attr:`hidden_changed` -- and :attr:`rows_changed`, #370 -- when a row's check box
+        changed, and only then.
 
         The role is what tells a *user* curating a screenshot apart from this widget relabelling a
         row after a rename -- both are data changes on the same rows, and only the first is an edit
@@ -1318,6 +1532,7 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
         if roles and Qt.ItemDataRole.CheckStateRole not in roles:
             return
         self.hidden_changed.emit(self.hidden_filenames())
+        self.rows_changed.emit()
 
     def __on_current_changed(self, current: QModelIndex, _previous: QModelIndex) -> None:
         """Load and preview the newly-selected screenshot.

@@ -5,7 +5,7 @@
 # (same precedent as test_rehu_document_model.py, [[appendices.code-conventions]])
 # pylint: disable=too-many-lines
 
-from collections.abc import Hashable, Mapping
+from collections.abc import Callable, Hashable, Mapping
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Final, cast, override
@@ -28,7 +28,17 @@ from ..delete_confirmation import confirm_delete
 from ..dock_maximize import attach_maximize_handler
 from ..fields import FieldsTab, StatefulWidget
 from ..fields.type_field import type_label
-from ..fields.widgets import ImageLightbox, ImageSource, ImageViewerMode, PathImageSource, ThumbnailLoader, TypeBadge
+from ..fields.widgets import (
+    CuratingImageLightbox,
+    ImageLightbox,
+    ImageSelector,
+    ImageSource,
+    ImageViewerMode,
+    PathImageSource,
+    ScreenshotRowsImageSource,
+    ThumbnailLoader,
+    TypeBadge,
+)
 from ..glyphs import TAB_CLOSE_GLYPH
 from ..recycle_bin_deleter import configured_deleter
 from ..scraping.image_pipeline import MIME_EXTENSIONS, ImageBytes
@@ -463,6 +473,11 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         a curation edit says nothing about. Without this, unchecking a screenshot while a folder viewer
         was up would silently swap its whole set for the strip's."""
 
+        self.__curation_selector: ImageSelector | None = None
+        """The screenshots editor an open **curating** viewer was opened from (#370), and so the one
+        whose rows re-point it and whose actions carry out its requests; ``None`` while the open viewer,
+        if any, came from anywhere else."""
+
         self.__curated_images: list[Path] = []
         """This document's current curated screenshot set ([[data-model#image-meanings]]), kept in step
         with the viewer strip's own by the `ImageActivator` contract's ``curated_images_changed`` (#161).
@@ -540,6 +555,8 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         # knows the document the viewer belongs to, and it is the one that reads the user's surface
         # preference (#160)
         self.__form.connect_image_activations(self.__on_image_activated, self.__on_curated_images_changed)
+        # and a screenshot double-clicked in the images editor, over every row of it (#370)
+        self.__form.connect_image_curations(self.__on_curation_viewer_requested, self.__on_curation_rows_changed)
         # sever the current form's long-lived-signal connections when this widget is destroyed, so no
         # field's lambda outlives it (the field itself is retained via self.__form, so it is still alive
         # to be cleared). Rebuilds clear the outgoing form themselves (__rebuild_field_docks). A lambda,
@@ -1168,6 +1185,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         # their connection as they are collected (Qt severs a dead QObject sender's connections).
         self.__form.connect_status_messages(self.status_message)
         self.__form.connect_image_activations(self.__on_image_activated, self.__on_curated_images_changed)
+        self.__form.connect_image_curations(self.__on_curation_viewer_requested, self.__on_curation_rows_changed)
         editor_min_heights = {EDITOR_IMAGES_TAB: IMAGES_DOCK_MIN_HEIGHT}
         self.__swap_dock_contents(self.__editor_docks, self.__form.make_editor(self.__model), editor_min_heights)
         self.__swap_dock_contents(self.__viewer_docks, self.__form.make_viewer(self.__model))
@@ -1559,23 +1577,29 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             return
         self.__content_images_view.reveal(viewer.current_index)
 
-    def __open_image_viewer(self, source: ImageSource, index: int) -> ImageLightbox:
+    def __open_image_viewer[Viewer: ImageLightbox](
+        self, source: ImageSource, index: int, viewer_class: Callable[..., Viewer] = ImageLightbox
+    ) -> Viewer:
         """Open ``source[index]`` maximized, on whichever surface the settings ask for.
 
-        Shared by the three activation routes -- the viewer strip's curated set (#161), the Files
-        sub-dock's folder (#266) and the Content Images dock's archives (#221) -- so where a maximized
-        image opens, what it is parented to and how it is tracked are decided once rather than per
-        caller.
+        Shared by the four activation routes -- the viewer strip's curated set (#161), the Files
+        sub-dock's folder (#266), the Content Images dock's archives (#221) and the images editor's
+        rows (#370) -- so where a maximized image opens, what it is parented to and how it is tracked
+        are decided once rather than per caller. Every route gets the read-only `ImageLightbox` unless
+        it names another class: only the images editor does, for its `CuratingImageLightbox`.
 
         :param source: the set the viewer navigates.
         :param index: where in that set to start.
+        :param viewer_class: what to build -- `ImageLightbox` or a subclass taking the same arguments.
         :returns: the viewer, revealed.
         """
+        # whichever route opens this one, it is not the editor's until that route says so (#370)
+        self.__curation_selector = None
         settings = shared_image_viewer_settings()
         # resolved here, not at construction: a document that has never shown a row follows whatever
         # the shared setting says right now, including a change applied while it sat open (#161)
         strip_visible = settings.strip_visible if self.__image_strip_visible is None else self.__image_strip_visible
-        viewer = ImageLightbox(
+        viewer = viewer_class(
             source,
             index,
             viewer_mode_for(QApplication.keyboardModifiers(), settings.mode),
@@ -1607,6 +1631,49 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         self.__curated_images = list(images)
         if self.__image_viewer is not None and self.__viewer_follows_curation:
             self.__image_viewer.set_source(self.__path_source(self.__curated_images))
+
+    def __on_curation_viewer_requested(self, selector: ImageSelector, row: int) -> None:
+        """Open a curating viewer over every row of the images editor, on ``row`` (#370).
+
+        Every row, not the curated set: a hidden screenshot and one not yet numbered are exactly what
+        the editor is for. The viewer's four requests go straight to the editor's own slots, which
+        carry them out through the list's actions -- so the viewer answers the same rules the buttons
+        do and never touches a file itself. Both ends are QObjects, so either one dying drops them; and
+        the editor dying first (a form rebuild) closes the viewer, which would otherwise browse rows
+        nothing could act on any more.
+
+        :param selector: the images editor asking.
+        :param row: the row double-clicked.
+        """
+        self.__viewer_follows_curation = False
+        viewer = self.__open_image_viewer(self.__rows_source(selector), row, CuratingImageLightbox)
+        self.__curation_selector = selector
+        viewer.delete_requested.connect(selector.delete_requested_at)
+        viewer.visibility_toggle_requested.connect(selector.toggle_visibility_at)
+        viewer.convert_requested.connect(selector.convert_requested_at)
+        viewer.move_requested.connect(selector.move_requested_at)
+        selector.destroyed.connect(viewer.close)
+
+    def __on_curation_rows_changed(self, selector: ImageSelector) -> None:
+        """Re-point an open curating viewer at the editor's rebuilt rows (#370).
+
+        The rows' keys are the files themselves, so the viewer keeps the image it was on through a
+        move or a convert -- both renames -- and falls back to the position a delete emptied, which is
+        the row the editor made current in its place; an emptied list closes it.
+
+        :param selector: the images editor whose rows changed.
+        """
+        if self.__image_viewer is not None and self.__curation_selector is selector:
+            self.__image_viewer.set_source(self.__rows_source(selector))
+
+    def __rows_source(self, selector: ImageSelector) -> ScreenshotRowsImageSource:
+        """An image source over every row of ``selector``, naming each relative to this document's directory.
+
+        :param selector: the images editor.
+        :returns: the source.
+        """
+        path = self.__model.path
+        return ScreenshotRowsImageSource(selector.screenshot_states(), path.parent if path is not None else None)
 
     def __on_strip_visible_changed(self, visible: bool) -> None:
         """Remember the viewer's thumbnail-row choice as the user toggles it (#161).
@@ -1750,6 +1817,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         """
         if self.__image_viewer is viewer:
             self.__image_viewer = None
+            self.__curation_selector = None
 
     def __on_convert_triggered(self, *, keep_backups: bool) -> None:
         """Convert this document, confirming first if it would overwrite an already-converted ``.rehu``,
