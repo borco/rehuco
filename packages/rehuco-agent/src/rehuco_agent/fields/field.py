@@ -215,6 +215,26 @@ class ImageActivator(Protocol):  # pylint: disable=too-few-public-methods
 
 
 @runtime_checkable
+class ImageCurator(Protocol):  # pylint: disable=too-few-public-methods
+    """A field whose **editor** asks for a curating viewer over its rows (#370) -- the ``images``
+    field's screenshots editor, opened on a double-click.
+
+    `ImageActivator`'s shape once more, for the editor rather than the strip: the field reports the ask
+    and the owner (`DocumentWidget`) builds the viewer, since only it knows the document the viewer
+    covers and the surface the user's settings name. Both signals carry the editor itself, which is
+    what the owner builds the viewer's rows from and routes the viewer's requests back to
+    (:meth:`FieldsForm.connect_image_curations`).
+    """
+
+    curation_viewer_requested: SignalInstance
+    """Fires with the editor and the row the user asked to see maximized."""
+
+    curation_rows_changed: SignalInstance
+    """Fires with the editor whenever its rows, or where one of them stands, may have changed -- what
+    an open curating viewer is re-pointed on."""
+
+
+@runtime_checkable
 class LockAware(Protocol):  # pylint: disable=too-few-public-methods
     """A field whose editor **stays usable while the document is locked**, deciding for itself which
     of its controls the lock reaches ([[plugins#field-toolkit]], #292).

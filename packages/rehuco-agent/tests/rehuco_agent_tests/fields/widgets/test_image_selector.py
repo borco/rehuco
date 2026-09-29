@@ -12,6 +12,7 @@ from typing import Any
 from borco_pyside.widgets import ActionButtonColumn
 from PySide6.QtCore import QModelIndex, Qt
 from PySide6.QtGui import QAction, QColor, QPixmap
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QLabel,
     QMessageBox,
@@ -27,6 +28,7 @@ from rehuco_agent.fields.image_scanner import AfterConversion, ScreenshotSet
 from rehuco_agent.fields.widgets.image_selector import (
     AFTER_CONVERSION_COLUMN,
     CHECK_COLUMN,
+    CHECK_TOOLTIP,
     DESCRIPTION_HINT,
     DESCRIPTION_HINT_NAME,
     DIMENSIONS_COLUMN,
@@ -37,10 +39,12 @@ from rehuco_agent.fields.widgets.image_selector import (
     PREVIEW_PANE,
     SIZE_COLUMN,
     ImageSelector,
+    MoveDirection,
     PreviewLabel,
     ScreenshotListModel,
     ScreenshotOrdering,
 )
+from rehuco_agent.fields.widgets.image_source import ImageVisibility
 from rehuco_agent.settings.deletion_settings import DeletionKind, shared_deletion_settings
 from rehuco_core import Deleter, NoTrashBinError, plan_screenshot_renumbering
 
@@ -1799,24 +1803,31 @@ def test_unconverted_images_are_listed_after_the_numbered_set_and_start_checked(
     assert selector.screenshot_count == 4
 
 
-def test_an_unconverted_row_is_curated_like_any_other(qtbot: QtBot) -> None:
-    """The check box is the same one on both kinds, and a hidden un-converted name is remembered.
+def test_an_unconverted_row_accepts_no_curation(qtbot: QtBot) -> None:
+    """An un-converted row is converted or deleted, nothing else: its check box greys (#370), while a
+    hidden un-converted name it was seeded with is still what it shows.
 
     **Test steps:**
 
     * seed with the un-converted image already curated out
     * verify its row is the unchecked one
-    * check it back and verify the hidden list empties
+    * verify its check cell is neither checkable nor enabled, while the numbered row's is both
+    * check it back straight through the model and verify it is refused, the hidden list unchanged
     """
     resource = FakeResource(["info00.jpg"], ["cover.jpg"])
     selector = seeded(qtbot, resource, ["cover.jpg"])
     model = checkable_model(selector)
 
     assert [check_state(model, row) for row in range(2)] == [Qt.CheckState.Checked, Qt.CheckState.Unchecked]
+    unconverted = model.flags(model.index(1, CHECK_COLUMN))
+    assert not unconverted & (Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
+    numbered = model.flags(model.index(0, CHECK_COLUMN))
+    assert numbered & Qt.ItemFlag.ItemIsUserCheckable
+    assert numbered & Qt.ItemFlag.ItemIsEnabled
 
-    model.setData(model.index(1, CHECK_COLUMN), Qt.CheckState.Checked, Qt.ItemDataRole.CheckStateRole)
+    assert model.setData(model.index(1, CHECK_COLUMN), Qt.CheckState.Checked, Qt.ItemDataRole.CheckStateRole) is False
 
-    assert not selector.hidden_filenames()
+    assert selector.hidden_filenames() == ["cover.jpg"]
 
 
 def test_an_unconverted_row_offers_convert_and_no_move(qtbot: QtBot) -> None:
@@ -2087,6 +2098,309 @@ def test_the_dock_says_it_never_rewrites_the_description(qtbot: QtBot) -> None:
     assert isinstance(hint, QLabel)
     assert hint.text() == DESCRIPTION_HINT
     assert "never rewritten" in hint.text()
+
+
+# endregion
+
+
+# region keys, double-clicks and a viewer's requests (#370)
+
+
+def shown(qtbot: QtBot, resource: FakeResource, hidden: list[str] | None = None) -> ImageSelector:
+    """A seeded selector on screen with its list focused -- where its keys are armed.
+
+    :param qtbot: pytest-qt fixture, which takes ownership of the widget.
+    :param resource: the in-memory resource to show and rearrange.
+    :param hidden: filenames to start curated out, if any.
+    :returns: the selector under test.
+    """
+    selector = seeded(qtbot, resource, hidden)
+    selector.resize(400, 400)
+    with qtbot.waitExposed(selector):
+        selector.show()
+    list_view(selector).setFocus()
+    return selector
+
+
+def list_view(selector: ImageSelector) -> QTreeView:
+    """The selector's screenshot list.
+
+    :param selector: the selector under test.
+    :returns: the list view.
+    """
+    view = selector.findChild(QTreeView)
+    assert isinstance(view, QTreeView)
+    return view
+
+
+def press(selector: ImageSelector, key: Qt.Key) -> None:
+    """Press ``key`` on the list, the way a user with the list focused does.
+
+    :param selector: the selector under test.
+    :param key: the key.
+    """
+    QTest.keyClick(list_view(selector), key)
+
+
+def double_click(qtbot: QtBot, view: QTreeView, index: QModelIndex) -> None:
+    """Double-click one cell the way a mouse does: a click, then the double-click.
+
+    The click is not ceremony -- a view reports ``doubleClicked`` only on the cell the press before it
+    landed on, and a synthetic double-click on its own carries no such press.
+
+    :param qtbot: pytest-qt fixture.
+    :param view: the list.
+    :param index: the cell.
+    """
+    centre = view.visualRect(index).center()
+    qtbot.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=centre)
+    qtbot.mouseDClick(view.viewport(), Qt.MouseButton.LeftButton, pos=centre)
+
+
+def test_double_clicking_a_row_asks_for_the_viewer_on_it(qtbot: QtBot) -> None:
+    """A row's name opens the viewer on that row, while its check box stays a check box.
+
+    **Test steps:**
+
+    * show a selector over three screenshots
+    * double-click the second row's name and verify the viewer was asked for on row 1
+    * double-click the third row's check box and verify nothing more was asked for
+    """
+    selector = shown(qtbot, FakeResource(["info00.jpg", "info01.png", "info02.gif"]))
+    view = list_view(selector)
+    model = checkable_model(selector)
+    requested: list[int] = []
+    selector.viewer_requested.connect(requested.append)
+
+    double_click(qtbot, view, model.index(1, NAME_COLUMN))
+    assert requested == [1]
+
+    double_click(qtbot, view, model.index(2, CHECK_COLUMN))
+    assert requested == [1]
+
+
+def test_double_clicking_the_preview_asks_for_the_viewer_on_the_current_row(qtbot: QtBot) -> None:
+    """The preview is the current row's picture, so that is the row it opens.
+
+    **Test steps:**
+
+    * show a selector over two screenshots and select the second
+    * double-click the preview and verify the viewer was asked for on row 1
+    """
+    selector = shown(qtbot, FakeResource(["info00.jpg", "info01.png"]))
+    selector.set_current_index(1)
+    preview = selector.findChild(PreviewLabel)
+    assert isinstance(preview, PreviewLabel)
+
+    with qtbot.waitSignal(selector.viewer_requested) as blocker:
+        qtbot.mouseDClick(preview, Qt.MouseButton.LeftButton)
+
+    assert blocker.args == [1]
+
+
+def test_space_toggles_the_current_row_and_reports_it_as_a_click_would(qtbot: QtBot) -> None:
+    """Space is the check box from the keyboard: the same edit, reported the same way.
+
+    **Test steps:**
+
+    * show a selector over two screenshots and select the second
+    * press Space and verify it was curated out, with the new hidden list and a rows change reported
+    * press Space again and verify it came back
+    """
+    selector = shown(qtbot, FakeResource(["info00.jpg", "info01.png"]))
+    selector.set_current_index(1)
+    rows_changed: list[None] = []
+    selector.rows_changed.connect(lambda: rows_changed.append(None))
+
+    with qtbot.waitSignal(selector.hidden_changed) as blocker:
+        press(selector, Qt.Key.Key_Space)
+
+    assert blocker.args == [["info01.png"]]
+    assert rows_changed
+    press(selector, Qt.Key.Key_Space)
+    assert not selector.hidden_filenames()
+
+
+def test_an_unconverted_row_offers_convert_and_delete_and_nothing_else(confirm: Any, qtbot: QtBot) -> None:
+    """Converting a picture just to delete it would make no sense, so both stay; the rest go.
+
+    **Test steps:**
+
+    * show a selector with a numbered screenshot and an un-converted image, and select the latter
+    * verify Space and every move are disabled, while Convert and Delete are enabled
+    * press Space and verify nothing was curated
+    * press Del and verify the image was deleted
+    """
+    del confirm
+    resource = FakeResource(["info00.jpg", "info01.png"], ["cover.jpg"])
+    selector = shown(qtbot, resource)
+    selector.set_current_index(2)
+
+    assert not list_action(selector, "Toggle visibility").isEnabled()
+    assert not any(list_action(selector, text).isEnabled() for text in ("Move to Top", "Move Up", "Move Down"))
+    assert list_action(selector, "Convert").isEnabled()
+    assert list_action(selector, "Delete").isEnabled()
+
+    press(selector, Qt.Key.Key_Space)
+    assert not selector.hidden_filenames()
+
+    press(selector, Qt.Key.Key_Delete)
+    assert resource.removed == ["cover.jpg"]
+
+
+def test_c_converts_the_row_and_hands_it_its_check_box(qtbot: QtBot) -> None:
+    """Once converted, the row is a numbered one like any other -- curated with a click or Space.
+
+    **Test steps:**
+
+    * show a selector with a numbered screenshot and an un-converted image, and select the latter
+    * press C and verify it was taken into the set and is still current
+    * verify its check box and Space are available, and Space curates it out
+    """
+    resource = FakeResource(["info00.jpg"], ["info-01.png"])
+    selector = shown(qtbot, resource)
+    selector.set_current_index(1)
+
+    press(selector, Qt.Key.Key_C)
+
+    assert row_names(selector) == ["info00.jpg", "info01.png"]
+    assert selector.current_index == 1
+    model = checkable_model(selector)
+    assert model.flags(model.index(1, CHECK_COLUMN)) & Qt.ItemFlag.ItemIsUserCheckable
+    assert list_action(selector, "Toggle visibility").isEnabled()
+    press(selector, Qt.Key.Key_Space)
+    assert selector.hidden_filenames() == ["info01.png"]
+
+
+def test_c_is_disabled_on_a_numbered_row_and_on_a_read_only_list(qtbot: QtBot) -> None:
+    """There is nothing to convert on a numbered row, and nothing may be on a locked ``.tc``.
+
+    **Test steps:**
+
+    * select a numbered row and verify Convert is off, and C renames nothing -- nor moves the
+      selection, which the view's own type-ahead would otherwise take to the row starting with "c"
+    * make the list read-only, select the un-converted row, and verify Convert is off there too
+    """
+    resource = FakeResource(["info00.jpg"], ["cover.png"])
+    selector = shown(qtbot, resource)
+    selector.set_current_index(0)
+
+    assert not list_action(selector, "Convert").isEnabled()
+    press(selector, Qt.Key.Key_C)
+    assert row_names(selector) == ["info00.jpg", "cover.png"]
+    assert selector.current_index == 0
+
+    selector.read_only = True
+    selector.set_current_index(1)
+    assert not list_action(selector, "Convert").isEnabled()
+    assert not list_action(selector, "Toggle visibility").isEnabled()
+
+
+def test_del_still_deletes_a_numbered_row(confirm: Any, qtbot: QtBot) -> None:
+    """The key that was already there keeps doing what it did.
+
+    **Test steps:**
+
+    * show a selector over three screenshots and select the second
+    * press Del and verify it went and the set closed up
+    """
+    del confirm
+    resource = FakeResource(["info00.jpg", "info01.png", "info02.gif"])
+    selector = shown(qtbot, resource)
+    selector.set_current_index(1)
+
+    press(selector, Qt.Key.Key_Delete)
+
+    assert resource.removed == ["info01.png"]
+    assert resource.names == ["info00.jpg", "info01.gif"]
+
+
+def test_the_check_cell_names_the_space_key(qtbot: QtBot) -> None:
+    """Space has no button of its own, so the check box it toggles is where it is named.
+
+    **Test steps:**
+
+    * seed a numbered screenshot and an un-converted image
+    * verify the numbered row's check cell tooltip names Space, and the un-converted one's says nothing
+    """
+    selector = seeded(qtbot, FakeResource(["info00.jpg"], ["cover.jpg"]))
+    model = checkable_model(selector)
+
+    assert model.index(0, CHECK_COLUMN).data(Qt.ItemDataRole.ToolTipRole) == CHECK_TOOLTIP
+    assert "(Space)" in CHECK_TOOLTIP
+    assert model.index(1, CHECK_COLUMN).data(Qt.ItemDataRole.ToolTipRole) is None
+
+
+def test_screenshot_states_say_where_every_row_stands(qtbot: QtBot) -> None:
+    """Un-converted wins over hidden: a row with no slot is not curated either way.
+
+    **Test steps:**
+
+    * seed a shown and a hidden numbered screenshot, and an un-converted image seeded as hidden
+    * verify each row's state
+    """
+    selector = seeded(qtbot, FakeResource(["info00.jpg", "info01.png"], ["cover.jpg"]), ["info01.png", "cover.jpg"])
+
+    assert selector.screenshot_states() == [
+        (DIRECTORY / "info00.jpg", ImageVisibility.VISIBLE),
+        (DIRECTORY / "info01.png", ImageVisibility.HIDDEN),
+        (DIRECTORY / "cover.jpg", ImageVisibility.UNCONVERTED),
+    ]
+
+
+def test_a_viewers_requests_act_on_the_row_they_name(confirm: Any, qtbot: QtBot) -> None:
+    """Each request finds its row by path and goes through the list's own action.
+
+    **Test steps:**
+
+    * seed three numbered screenshots and an un-converted image, with the first row current
+    * request a visibility toggle on the second and verify it was curated out
+    * request a move up on the third and verify the pair swapped and it is current where it landed
+    * request a convert on the un-converted image and verify it was numbered
+    * request a delete on the first and verify it went
+    """
+    del confirm
+    resource = FakeResource(["info00.jpg", "info01.png", "info02.gif"], ["info-05.jpg"])
+    selector = seeded(qtbot, resource)
+    selector.set_current_index(0)
+
+    selector.toggle_visibility_at(DIRECTORY / "info01.png")
+    assert selector.hidden_filenames() == ["info01.png"]
+
+    selector.move_requested_at(DIRECTORY / "info02.gif", MoveDirection.UP.value)
+    assert row_names(selector) == ["info00.jpg", "info01.gif", "info02.png", "info-05.jpg"]
+    assert selector.current_index == 1
+
+    selector.convert_requested_at(DIRECTORY / "info-05.jpg")
+    assert row_names(selector) == ["info00.jpg", "info01.gif", "info02.png", "info05.jpg"]
+
+    selector.delete_requested_at(DIRECTORY / "info00.jpg")
+    assert resource.removed == ["info00.jpg"]
+
+
+def test_a_viewers_request_the_row_refuses_does_nothing(confirm: Any, qtbot: QtBot) -> None:
+    """A request reaches only what the row's own buttons offer -- and a path no longer listed, nothing.
+
+    **Test steps:**
+
+    * seed two numbered screenshots and an un-converted image
+    * request a move to the top on the first row, a toggle and a move on the un-converted image, a
+      convert on a numbered one, and a delete on a path that is not listed
+    * verify nothing was renamed, curated or deleted
+    """
+    resource = FakeResource(["info00.jpg", "info01.png"], ["cover.jpg"])
+    selector = seeded(qtbot, resource)
+
+    selector.move_requested_at(DIRECTORY / "info00.jpg", MoveDirection.TOP.value)
+    selector.toggle_visibility_at(DIRECTORY / "cover.jpg")
+    selector.move_requested_at(DIRECTORY / "cover.jpg", MoveDirection.UP.value)
+    selector.convert_requested_at(DIRECTORY / "info01.png")
+    selector.delete_requested_at(DIRECTORY / "gone.jpg")
+
+    assert row_names(selector) == ["info00.jpg", "info01.png", "cover.jpg"]
+    assert not selector.hidden_filenames()
+    assert not resource.removed
+    confirm.assert_not_called()
 
 
 # endregion

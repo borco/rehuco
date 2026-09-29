@@ -2,6 +2,7 @@
 
 import io
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Final
 
 from PIL import Image
@@ -9,7 +10,11 @@ from PySide6.QtCore import QBuffer, QIODevice, QSize, Qt
 from PySide6.QtGui import QImage, QImageReader, QImageWriter
 from pytest_mock import MockerFixture
 from rehuco_agent.fields.widgets.image_source import (
+    ImageDescription,
+    ImageVisibility,
     PathImageSource,
+    ScreenshotKey,
+    ScreenshotRowsImageSource,
     decode_image,
     image_size,
     image_size_at,
@@ -228,3 +233,85 @@ def test_a_path_source_yields_a_null_image_for_an_unreadable_file(mocker: Mocker
     mocker.patch.object(Path, "read_bytes", side_effect=OSError("offline"))
 
     assert PathImageSource([PATH]).load(0, None).isNull()
+
+
+def file_stat(inode: int, size: int = 1_000) -> SimpleNamespace:
+    """A stand-in for one file's ``os.stat_result``, identified by ``inode``.
+
+    :param inode: the file's inode -- what a rename keeps.
+    :param size: its size in bytes.
+    :returns: the stat.
+    """
+    return SimpleNamespace(st_dev=1, st_ino=inode, st_size=size, st_mtime_ns=123)
+
+
+def test_a_screenshot_key_is_the_file_so_it_survives_a_rename(mocker: MockerFixture) -> None:
+    """A move renames files, so the key the viewer re-points by is the file, not its name (#370).
+
+    **Test steps:**
+
+    * key one file under its old name and again under its new one, with the same stat
+    * verify the two keys are equal, and their ``repr`` -- what a thumbnail is cached under -- names no path
+    * key a different file under the old name and verify it is a different key
+    """
+    old, new = Path("/fake/info02.png"), Path("/fake/info01.png")
+    mocker.patch.object(Path, "stat", return_value=file_stat(7))
+    before, after = ScreenshotKey.of(old), ScreenshotKey.of(new)
+
+    assert before == after
+    assert hash(before) == hash(after)
+    assert "info0" not in repr(before)
+    assert after.path == new
+
+    mocker.patch.object(Path, "stat", return_value=file_stat(8))
+    assert ScreenshotKey.of(old) != before
+
+
+def test_a_screenshot_key_falls_back_to_the_path_when_the_file_cannot_be_read(mocker: MockerFixture) -> None:
+    """An offline mount has no stat to read, and the key is then the path, like every other source's.
+
+    **Test steps:**
+
+    * make every stat fail and key two files
+    * verify each key is its own path, and the two differ
+    """
+    mocker.patch.object(Path, "stat", side_effect=OSError("offline"))
+    first, second = Path("/fake/info00.png"), Path("/fake/info01.png")
+
+    assert ScreenshotKey.of(first).identity == first
+    assert ScreenshotKey.of(first) != ScreenshotKey.of(second)
+
+
+def test_a_rows_source_describes_each_row_with_its_visibility(mocker: MockerFixture) -> None:
+    """The editor's rows are the one source that says where an image stands (#370).
+
+    **Test steps:**
+
+    * build a rows source over a visible and an unconverted file, based at the ``.rehu``'s directory
+    * verify its path, name and key per row, and a description carrying the visibility
+    """
+    mocker.patch.object(Path, "stat", return_value=file_stat(3, size=2_048))
+    unconverted = Path("/fake/cover.jpg")
+    source = ScreenshotRowsImageSource(
+        [(PATH, ImageVisibility.VISIBLE), (unconverted, ImageVisibility.UNCONVERTED)], Path("/fake")
+    )
+
+    assert len(source) == 2
+    assert source.path(1) == unconverted
+    assert source.name(1) == "cover.jpg"
+    assert source.key(1) == ScreenshotKey.of(unconverted)
+    assert source.describe(0) == ImageDescription("info00.png", 2_048, ImageVisibility.VISIBLE)
+    assert source.describe(1).visibility is ImageVisibility.UNCONVERTED
+
+
+def test_a_path_source_reports_no_visibility(mocker: MockerFixture) -> None:
+    """Every source but the editor's leaves the visibility unsaid (#370).
+
+    **Test steps:**
+
+    * describe a file through a plain path source
+    * verify its visibility is ``None``
+    """
+    mocker.patch.object(Path, "stat", return_value=file_stat(3))
+
+    assert PathImageSource([PATH]).describe(0).visibility is None

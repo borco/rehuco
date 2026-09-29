@@ -14,6 +14,7 @@ The enum lives here, next to the widget that implements it, and the settings sec
 # overlay): splitting them off would scatter one surface's chrome over several modules
 # pylint: disable=too-many-lines
 
+import html
 from collections.abc import Hashable
 from enum import StrEnum
 from typing import Final, cast, override
@@ -47,7 +48,7 @@ from PySide6.QtWidgets import (
 
 from ...glyphs import LIGHTBOX_CLOSE_GLYPH
 from .image_selector import PreviewLabel
-from .image_source import ImageSource
+from .image_source import ImageDescription, ImageSource
 from .thumbnail_loader import ThumbnailLoader
 from .thumbnail_row import ThumbnailRow
 
@@ -324,6 +325,7 @@ class ImageInfoOverlay(QLabel):
     def __init__(self, parent: QWidget | None = None, name: str = INFO_OVERLAY_NAME) -> None:
         super().__init__(parent)
         self.__lines: list[str] = []
+        self.__emphasis: str | None = None
         self.__max_width = 0
         self.setObjectName(name)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
@@ -338,16 +340,28 @@ class ImageInfoOverlay(QLabel):
             f" border-radius: {INFO_OVERLAY_RADIUS}px; padding: {INFO_OVERLAY_PADDING}px; }}"
         )
 
-    def describe(self, path_text: str, pixel_size: QSize, byte_size: int | None, position: int, count: int) -> None:
+    def describe(  # pylint: disable=too-many-arguments
+        self,
+        path_text: str,
+        pixel_size: QSize,
+        byte_size: int | None,
+        position: int,
+        count: int,
+        *,
+        emphasis: str | None = None,
+    ) -> None:
         """Set the lines: where the image is, its ``W × H px`` (or that it is unknown), its size on
-        disk, and where it stands in the list it is being browsed in (#321).
+        disk, and where it stands in the list it is being browsed in (#321) -- then a bold
+        ``emphasis`` line when one is given (#370).
 
         :param path_text: the image's path as a person would name it.
         :param pixel_size: the image's pixel size; an invalid one reads as unknown.
         :param byte_size: the image's byte size, or ``None`` when unknown.
         :param position: the image's 1-based position in the browsed list.
         :param count: how many images the browsed list holds.
+        :param emphasis: a line set in bold below the rest (keyword-only), or ``None`` for none.
         """
+        self.__emphasis = emphasis
         lines = [
             path_text,
             f"{pixel_size.width()} × {pixel_size.height()} px" if pixel_size.isValid() else "size unknown",
@@ -370,14 +384,25 @@ class ImageInfoOverlay(QLabel):
 
     def __render(self) -> None:
         """Show the lines, each middle-elided to the bound: a member path inside a deep archive can be
-        far wider than the viewer, and the box must never run off its edge."""
+        far wider than the viewer, and the box must never run off its edge.
+
+        Plain text unless there is a bold line to set (#370): only then does the box need rich text,
+        and every line is escaped for it, since a path is free to contain ``<`` or ``&``. A box with no
+        bold line reads exactly as it always has.
+        """
         text_width = self.__max_width - 2 * INFO_OVERLAY_PADDING
         if self.__max_width > 0 and text_width > 0:
             metrics = self.fontMetrics()
             shown = [metrics.elidedText(line, Qt.TextElideMode.ElideMiddle, text_width) for line in self.__lines]
         else:
             shown = self.__lines
-        self.setText("\n".join(shown))
+        if self.__emphasis is None:
+            self.setTextFormat(Qt.TextFormat.PlainText)
+            self.setText("\n".join(shown))
+        else:
+            self.setTextFormat(Qt.TextFormat.RichText)
+            escaped = [*(html.escape(line) for line in shown), f"<b>{html.escape(self.__emphasis)}</b>"]
+            self.setText("<br>".join(escaped))
         self.adjustSize()
 
 
@@ -898,7 +923,14 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes,to
         image = self.__source.load(index, None)
         self.__preview.set_source(QPixmap.fromImage(image))
         description = self.__source.describe(index)
-        self.__info.describe(description.path_text, image.size(), description.byte_size, index + 1, len(self.__source))
+        self.__info.describe(
+            description.path_text,
+            image.size(),
+            description.byte_size,
+            index + 1,
+            len(self.__source),
+            emphasis=self._info_emphasis(description),
+        )
         self.__strip.set_current(index)
         # hidden, not merely faded out, at either end: an always-present band would be a 50 px strip of
         # the screenshot that swallows clicks and answers nothing
@@ -983,9 +1015,27 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes,to
             return
         description = self.__source.describe(index)
         self.__hover_info.describe(
-            description.path_text, self.__source.pixel_size(index), description.byte_size, index + 1, len(self.__source)
+            description.path_text,
+            self.__source.pixel_size(index),
+            description.byte_size,
+            index + 1,
+            len(self.__source),
+            emphasis=self._info_emphasis(description),
         )
         self.__hover_info.show()
+
+    def _info_emphasis(self, description: ImageDescription) -> str | None:
+        """The bold line both info boxes end an image's description with -- none, here (#370).
+
+        A hook for a subclass rather than a flag on this class: this viewer is read-only and shows
+        what every source describes the same way, even a source that says more (a screenshot's
+        visibility), while `~rehuco_agent.fields.widgets.curating_image_lightbox.CuratingImageLightbox`
+        is the one that curates, and so the one that names it.
+
+        :param description: the image's description.
+        :returns: the line, or ``None`` for none.
+        """
+        del description
 
     def __make_hover_corner(self) -> QWidget:
         """Hold the hovered thumbnail's info box a corner margin in from the bottom-left (#221) -- the

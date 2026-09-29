@@ -5,16 +5,35 @@ none ([[data-model#image-meanings]]). Rather than widen every image widget to kn
 :class:`ImageSource`: a sequence of images that each have a stable key, a name, a description, and can
 be decoded -- at full size or downscaled -- from whatever holds them. :class:`PathImageSource` is the
 file-backed one; the archive-backed one lives beside the dock that owns the archives
-(`rehuco_agent.documents.content_images`).
+(`rehuco_agent.documents.content_images`). :class:`ScreenshotRowsImageSource` is the screenshots editor's
+own (#370): every row of it, each saying whether it is shown, hidden or not yet numbered.
 """
 
 from collections.abc import Hashable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
+from enum import StrEnum
 from pathlib import Path
 from typing import Final, Protocol
 
 from PySide6.QtCore import QBuffer, QIODevice, QSize, Qt
 from PySide6.QtGui import QImage, QImageIOHandler, QImageReader
+
+
+class ImageVisibility(StrEnum):
+    """Where one of a resource's screenshots stands in its curation ([[data-model#image-meanings]], #370).
+
+    The value is the word the curating viewer shows for it.
+    """
+
+    VISIBLE = "visible"
+    """Numbered and shown in the lightbox."""
+
+    HIDDEN = "hidden"
+    """Numbered and curated out of the lightbox."""
+
+    UNCONVERTED = "unconverted"
+    """Recognized by the name patterns but holding no ``<stem>NN`` slot yet (#270) -- whatever its
+    check box last said, since an image with no slot is not curated either way until it has one."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,10 +43,13 @@ class ImageDescription:
     :ivar path_text: where the image is, as a person would name it -- a file's path, or an archive
         member's ``<archive relative to the .rehu>:<member path>``.
     :ivar byte_size: the image's size in bytes as stored, or ``None`` when it cannot be known.
+    :ivar visibility: where the image stands in its resource's curation (#370); ``None`` from every
+        source but the screenshots editor's, which is the only one that curates.
     """
 
     path_text: str
     byte_size: int | None
+    visibility: ImageVisibility | None = None
 
 
 class ImageSource(Protocol):
@@ -241,3 +263,88 @@ class PathImageSource:
         except OSError:
             return QImage()
         return decode_image(data, max_height)
+
+
+@dataclass(frozen=True, slots=True)
+class ScreenshotKey:
+    """A screenshot's identity as the file it is, whatever it is named right now (#370).
+
+    A screenshot's name is its position -- moving one renames it and its neighbour, converting one
+    renames it into a slot -- so a path is exactly what does **not** identify it across an edit. Two
+    things read the key and both need the file: a re-pointed viewer staying on the image it was on
+    (`ImageLightbox.set_source`), and a thumbnail cached under it (`thumbnail_cache_key`), which a path
+    key would paint under the neighbour's name after a swap. A rename keeps the file's device, inode,
+    size and modification time, so those are what compare; the path rides along for whoever needs to
+    name the file, and is left out of equality and of the ``repr`` the cache key is built from.
+
+    :ivar path: the file as it is named in this snapshot.
+    :ivar identity: what compares -- the file's ``(st_dev, st_ino, st_size, st_mtime_ns)``, or its path
+        when it cannot be stat'ed (an offline mount, [[mounts-and-storage#offline-mounts]]), which is
+        no worse than the path key every other source has.
+    """
+
+    path: Path = field(compare=False, repr=False)
+    identity: Hashable
+
+    @classmethod
+    def of(cls, path: Path) -> ScreenshotKey:
+        """The key of the file at ``path``, read off disk now.
+
+        :param path: the file.
+        :returns: its key.
+        """
+        try:
+            stat = path.stat()
+        except OSError:
+            return cls(path, path)
+        return cls(path, (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns))
+
+
+class ScreenshotRowsImageSource:
+    """An :class:`ImageSource` over the screenshots editor's rows, every one of them (#370).
+
+    A **snapshot**: the owner builds a fresh one whenever the rows change and re-points its viewer at
+    it, so the keys are read once, here, and a viewer comparing the old snapshot's key against the new
+    one's is comparing two files rather than two names. Everything but the key and the visibility is
+    a `PathImageSource`'s, which this wraps rather than repeats.
+
+    :param rows: every screenshot and where it stands in the curation, in list order.
+    :param base: the directory descriptions name a file relative to (see `PathImageSource`).
+    """
+
+    def __init__(self, rows: Sequence[tuple[Path, ImageVisibility]], base: Path | None = None) -> None:
+        self.__paths: Final = [path for path, _visibility in rows]
+        self.__visibilities: Final = [visibility for _path, visibility in rows]
+        self.__keys: Final = [ScreenshotKey.of(path) for path in self.__paths]
+        self.__files: Final = PathImageSource(self.__paths, base)
+
+    def __len__(self) -> int:
+        return len(self.__paths)
+
+    def key(self, index: int) -> ScreenshotKey:
+        """The file's identity, which survives a rename (:class:`ScreenshotKey`)."""
+        return self.__keys[index]
+
+    def path(self, index: int) -> Path:
+        """The file's path as of this snapshot -- what the editor finds its row by.
+
+        :param index: the position.
+        :returns: the path.
+        """
+        return self.__paths[index]
+
+    def name(self, index: int) -> str:
+        """The file's name."""
+        return self.__files.name(index)
+
+    def describe(self, index: int) -> ImageDescription:
+        """What `PathImageSource` says, plus where the image stands in the curation."""
+        return replace(self.__files.describe(index), visibility=self.__visibilities[index])
+
+    def pixel_size(self, index: int) -> QSize:
+        """The file's pixel size off its header (#321)."""
+        return self.__files.pixel_size(index)
+
+    def load(self, index: int, max_height: int | None) -> QImage:
+        """Decode the file; null when it cannot be read or is not an image."""
+        return self.__files.load(index, max_height)

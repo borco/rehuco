@@ -5,13 +5,24 @@ from .authors_list_editor import AuthorsListEditor
 from .choice_check_boxes import ChoiceCheckBoxes
 from .collections_table_model import CollectionsTableModel
 from .content_count_edit import ContentCountEdit
+from .curating_image_lightbox import CuratingImageLightbox
 from .date_edit import DateEdit
 from .duration_edit import DurationEdit
 from .duration_measurement_edit import DurationMeasurementEdit
 from .expand_toggle_button import ExpandToggleButton
 from .image_lightbox import ImageLightbox, ImageViewerMode
 from .image_selector import ImageSelector
-from .image_source import ImageDescription, ImageSource, PathImageSource, decode_image, image_size, image_size_at
+from .image_source import (
+    ImageDescription,
+    ImageSource,
+    ImageVisibility,
+    PathImageSource,
+    ScreenshotKey,
+    ScreenshotRowsImageSource,
+    decode_image,
+    image_size,
+    image_size_at,
+)
 from .image_strip import ImageStrip
 from .index_spin_box_delegate import IndexSpinBoxDelegate
 from .learning_paths_table_model import LearningPathScopeFilterProxyModel, LearningPathsTableModel
@@ -45,6 +56,7 @@ __all__ = [
     "AuthorsListEditor",
     "ChoiceCheckBoxes",
     "ContentCountEdit",
+    "CuratingImageLightbox",
     "DateEdit",
     "DurationEdit",
     "DurationMeasurementEdit",
@@ -56,7 +68,10 @@ __all__ = [
     "ImageSource",
     "ImageStrip",
     "ImageViewerMode",
+    "ImageVisibility",
     "PathImageSource",
+    "ScreenshotKey",
+    "ScreenshotRowsImageSource",
     "ThumbnailLoader",
     "ThumbnailRow",
     "decode_image",

@@ -8,6 +8,7 @@ Pure wiring only: `ImageStrip`/`ImageSelector` each hold their own `image_scanne
 re-fetch and rebuild themselves, so this field never touches a screenshot path list directly.
 """
 
+from functools import partial
 from pathlib import Path
 from typing import Final, override
 
@@ -42,7 +43,8 @@ class ImagesField(Field[list[str]], QObject):  # pylint: disable=too-many-instan
     them here as well. Given an ``image_organizer`` it also **rearranges** the set (#72): moving or
     deleting a screenshot renames files, since a resource's screenshot order is its numbering -- so
     those edits land on disk immediately rather than waiting for a Save, and the strip is sent back
-    to the directory afterwards.
+    to the directory afterwards. A double-click in it asks the owner for a **curating** viewer over
+    every row (`ImageCurator`, #370), whose keys the editor carries out.
 
     **Lock-aware** (`LockAware`, #292): a locked document -- a legacy ``.tc`` above all -- leaves this
     editor *shown* and only its editing controls greyed, so the resource whose conversion is being
@@ -109,6 +111,15 @@ class ImagesField(Field[list[str]], QObject):  # pylint: disable=too-many-instan
     rebuilt -- a curation edit here, or a scanner swap ([[acquisition-tooling#tc-to-rehu]]). The other
     half of the `ImageActivator` contract (#161): the activation names *where* to start, this keeps an
     already-open viewer on the same live set the strip itself shows."""
+
+    curation_viewer_requested: Signal = Signal(ImageSelector, int)
+    """Fires with the curation editor and a row double-clicked in it, for the **owner to open** a
+    curating viewer over every row (the `ImageCurator` contract, #370)."""
+
+    curation_rows_changed: Signal = Signal(ImageSelector)
+    """Fires with the curation editor whenever its rows, or where one of them stands, may have changed
+    -- the other half of the `ImageCurator` contract, which keeps an open curating viewer on the live
+    rows."""
 
     # every argument is one value-plus-its-signal pair the owner has to pass through, and each is
     # simply stashed for whichever of the two widgets reads it -- there is no logic here to extract
@@ -217,6 +228,10 @@ class ImagesField(Field[list[str]], QObject):  # pylint: disable=too-many-instan
         # relayed through the field so the strip (and, through it, an open maximized viewer) re-reads
         # the disk rather than painting thumbnails from names that no longer exist (#72)
         selector.screenshots_changed.connect(self.screenshots_changed)
+        # the editor rides along, since it is what the owner routes the viewer's requests back to; the
+        # selector is the sender, so both connections die with it on a form rebuild (#370)
+        selector.viewer_requested.connect(partial(self.curation_viewer_requested.emit, selector))
+        selector.rows_changed.connect(partial(self.curation_rows_changed.emit, selector))
         binding.changed.connect(selector.set_hidden)
         if self.__image_scanner_changed is not None:
             # through bind_external for the reason the strip's own scanner connection gives
