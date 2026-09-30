@@ -1,4 +1,4 @@
-"""The special `path` field: a native-path link viewer and a `PathEditor` for its editor
+"""The special `path` field: a native-path viewer and a `PathEditor` for its editor
 ([[plugins#field-toolkit]]).
 """
 
@@ -8,16 +8,15 @@ from pathlib import Path
 from typing import Final, override
 
 from borco_pyside.file_browser import reveal_in_file_browser
-from borco_pyside.widgets import ElidedLabel
-from PySide6.QtCore import QUrl, SignalInstance
+from PySide6.QtCore import SignalInstance
 
 from .field import Field, FieldBinding, FieldEditorWidgets, FieldsTab, FieldViewerWidgets
-from .widgets import ExpandToggleButton, PathEditor
+from .widgets import ExpandToggleButton, OpenLinkLine, PathEditor
 
 REVEAL_HINT: Final = {"win32": "Show in Explorer", "darwin": "Reveal in Finder"}.get(
     sys.platform, "Show in file manager"
 )
-"""What a click on the location link does, named for the tooltip -- the OS's own term where the two
+"""What a click on the ``(open)`` link does, named for the tooltip -- the OS's own term where the two
 main desktops have one, else the generic phrase (#314)."""
 
 
@@ -28,13 +27,15 @@ class PathField(Field[str]):
     therefore constructed directly by its owner (`DocumentWidget`) with model-aware callbacks, not
     resolved generically through the field list.
 
-    **Viewer** -- a ``file://`` hyperlink whose text is the value rendered with the OS-native path
-    separators (backslashes on Windows), even though the bound value itself is stored posix-style.
+    **Viewer** -- plain text followed by an ``(open)`` link that reveals the folder; the text is the value
+    rendered with the OS-native path separators (backslashes on Windows), even though the bound value
+    itself is stored posix-style.
 
-    **Editor** -- a :class:`~rehuco_agent.fields.widgets.PathEditor` (current name + collapsible
-    clickable rename suggestions). ``suggestions`` and ``current_name`` are pushed into it on build,
-    on every bound-value change, and whenever ``suggestions_changed`` fires -- so editing a field a
-    suggestion is built from (title/authors/publisher/released) updates the list live. A clicked
+    **Editor** -- a :class:`~rehuco_agent.fields.widgets.PathEditor` (current name, then the same
+    ``(open)`` link, over collapsible clickable rename suggestions). ``suggestions`` and ``current_name``
+    are pushed into it on build, on every bound-value change, and whenever ``suggestions_changed``
+    fires -- so editing a field a suggestion is built from (title/authors/publisher/released) updates
+    the list live. A clicked
     suggestion is forwarded to ``on_suggestion_selected``; this field never touches the filesystem.
 
     :param name: the field's identifier on its model.
@@ -75,18 +76,23 @@ class PathField(Field[str]):
         self.__suggestions_changed = suggestions_changed
         self.__conflicts = conflicts
         self.__expanded = expanded
+        self.__location = ""
+        """The bound location as last seen, for ``(open)`` to reveal: a `FieldBinding` holds only its value
+        at bind time, so a click reads this, kept current by ``__track``."""
 
     @override
     def make_viewer(self, binding: FieldBinding[str]) -> FieldViewerWidgets:
-        return FieldViewerWidgets(self.viewer_tab, self.make_label(), self.__make_link_label(binding))
+        return FieldViewerWidgets(self.viewer_tab, self.make_label(), self.__make_location_line(binding))
 
     @override
     def make_editor(self, binding: FieldBinding[str]) -> FieldEditorWidgets:
         if self.__suggestions is None:
-            # read-only variant: the same native-path link as the viewer, no rename panel or toggle
-            return FieldEditorWidgets(self.editor_tab, self.make_label(), self.__make_link_label(binding))
+            # read-only variant: the same native-path line as the viewer, no rename panel or toggle
+            return FieldEditorWidgets(self.editor_tab, self.make_label(), self.__make_location_line(binding))
 
-        editor = PathEditor()
+        editor = PathEditor(open_hint=REVEAL_HINT)
+        editor.open_requested.connect(self.__reveal)
+        self.__track(binding)
         editor.setObjectName(self.name)
         editor.expanded = self.__expanded
         # set before the first __refresh below, so the opening render already marks the taken names
@@ -94,8 +100,9 @@ class PathField(Field[str]):
         if self.__on_suggestion_selected is not None:
             editor.suggestion_selected.connect(self.__on_suggestion_selected)
 
+        editor.set_openable(bool(binding.value))
         self.__refresh(editor)
-        self.bind_external(binding.changed, lambda _value: self.__refresh(editor))
+        self.bind_external(binding.changed, lambda value: self.__on_value_changed(editor, value))
         if self.__suggestions_changed is not None:
             self.bind_external(self.__suggestions_changed, lambda *_: self.__refresh(editor))
 
@@ -106,18 +113,48 @@ class PathField(Field[str]):
         editor.expanded_changed.connect(toggle.setChecked)
         return FieldEditorWidgets(self.editor_tab, self.make_label(), editor, toggle)
 
-    def __make_link_label(self, binding: FieldBinding[str]) -> ElidedLabel:
-        """Build the ``file://`` native-path link label bound to ``binding`` -- the viewer, and the
-        read-only (no-suggestions) editor variant.
+    def __make_location_line(self, binding: FieldBinding[str]) -> OpenLinkLine:
+        """Build the native path as plain text followed by an ``(open)`` link, bound to ``binding`` --
+        the viewer, and the read-only (no-suggestions) editor variant.
 
         :param binding: the value/signal to bind.
-        :returns: an `ElidedLabel` that re-renders the link on every change.
+        :returns: an `OpenLinkLine` that re-renders on every change.
         """
-        label = ElidedLabel()
-        label.linkActivated.connect(lambda href: reveal_in_file_browser(Path(QUrl(href).toLocalFile())))
-        self.__render_link(label, binding.value)
-        self.bind_external(binding.changed, lambda value: self.__render_link(label, value))
-        return label
+        line = OpenLinkLine(hint=REVEAL_HINT)
+        line.open_requested.connect(self.__reveal)
+        self.__track(binding)
+        self.__render_line(line, binding.value)
+        self.bind_external(binding.changed, lambda value: self.__render_line(line, value))
+        return line
+
+    def __track(self, binding: FieldBinding[str]) -> None:
+        """Keep the remembered location current with ``binding``.
+
+        :param binding: the location's binding.
+        """
+        self.__location = binding.value
+        self.bind_external(binding.changed, self.__set_location)
+
+    def __set_location(self, value: str) -> None:
+        """Remember the new location.
+
+        :param value: the new location.
+        """
+        self.__location = value
+
+    def __reveal(self) -> None:
+        """Reveal the location in the system file browser; nothing while there is none."""
+        if self.__location:
+            reveal_in_file_browser(Path(self.__location))
+
+    def __on_value_changed(self, editor: PathEditor, value: str) -> None:
+        """Show ``(open)`` only while there is a path, then re-pull the name and suggestions.
+
+        :param editor: the editor to update.
+        :param value: the new location.
+        """
+        editor.set_openable(bool(value))
+        self.__refresh(editor)
 
     def __refresh(self, editor: PathEditor) -> None:
         """Re-pull the current name and raw suggestions into the editor.
@@ -128,14 +165,12 @@ class PathField(Field[str]):
         editor.set_suggestions(self.__suggestions() if self.__suggestions is not None else [])
 
     @staticmethod
-    def __render_link(label: ElidedLabel, value: str) -> None:
-        """Show ``value`` as a middle-elided ``file://`` hyperlink with native-separator display text,
-        or nothing when empty.
+    def __render_line(line: OpenLinkLine, value: str) -> None:
+        """Show ``value`` as middle-elided plain text with native-separator display, and the ``(open)``
+        link after it -- or nothing when empty, since there is nothing to reveal.
 
-        :param label: the viewer label to update.
+        :param line: the viewer line to update.
         :param value: the new path (stored posix-style; displayed OS-native).
         """
-        if not value:
-            label.set_text("")
-            return
-        label.set_text(str(Path(value)), href=QUrl.fromLocalFile(value).toString(), hint=REVEAL_HINT)
+        line.set_text(str(Path(value)) if value else "")
+        line.set_openable(bool(value))
