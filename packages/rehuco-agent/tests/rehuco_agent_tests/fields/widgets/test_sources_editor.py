@@ -1,10 +1,10 @@
 """Tests for SourcesEditor and SourceCardContent: one card per source, flagged never refused (#391)."""
 
-from typing import Any
+from typing import Any, override
 
-from PySide6.QtCore import QMimeData, QPoint, QPointF, Qt, QUrl
+from PySide6.QtCore import QEvent, QMimeData, QObject, QPoint, QPointF, Qt, QUrl
 from PySide6.QtGui import QDragEnterEvent, QDropEvent
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget
 from pytest import fixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
@@ -423,3 +423,80 @@ def test_every_source_is_always_shown_and_the_label_is_pinned_to_the_first_row(
     assert height > 0
     editor.model.insert(1)
     assert editor.header_height == height
+
+
+class DragRecorder(QObject):
+    """Records the drag events that reach the widget it watches -- what a dock's own drop filter would see.
+
+    :param watched: the widget to watch.
+    """
+
+    def __init__(self, watched: QWidget) -> None:
+        super().__init__(watched)
+        self.seen: list[QEvent.Type] = []
+        watched.installEventFilter(self)
+
+    @override
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802  (Qt override)
+        del watched
+        if event.type() in (QEvent.Type.DragEnter, QEvent.Type.Drop):
+            self.seen.append(event.type())
+        return False
+
+
+def test_a_link_reaches_the_dock_unless_it_is_dropped_on_the_url_edit(
+    qtbot: QtBot, two_sources: RehuDocumentModel
+) -> None:
+    """Through Qt's own routing, a link dropped on the sources editor goes on to the widget holding it -- the Main
+    Editor dock, whose scrape takes it -- except over a URL edit, which takes the link for itself (#391).
+
+    **Test steps:**
+
+    * hold the editor in a window that accepts drops, and watch the drags that reach that window
+    * drop a link on the Title edit, the Publisher edit and the gap between the cards' edges, and verify each
+      reached the window
+    * drop a link on the URL edit and verify the window saw nothing, and the edit took the link
+    """
+    window = QWidget()
+    qtbot.addWidget(window)
+    window.setAcceptDrops(True)
+    editor = make_editor(qtbot, two_sources)
+    QVBoxLayout(window).addWidget(editor)
+    recorder = DragRecorder(window)
+    window.resize(480, 360)
+    with qtbot.waitExposed(window):
+        window.show()
+    handle = window.windowHandle()
+    body = content(editor, 0)
+    mime = link_mime("https://dropped.example/page")
+
+    def drag_over(widget: QWidget, at: QPoint) -> QDragEnterEvent:
+        enter = QDragEnterEvent(
+            widget.mapTo(window, at),
+            Qt.DropAction.CopyAction,
+            mime,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        QApplication.sendEvent(handle, enter)
+        return enter
+
+    for widget in (body.title_edit, body.publisher_edit, editor.cards[0]):
+        recorder.seen.clear()
+        drag_over(widget, QPoint(3, 3))
+        assert recorder.seen == [QEvent.Type.DragEnter]
+
+    recorder.seen.clear()
+    enter = drag_over(body.url_edit, QPoint(3, 3))
+    assert enter.isAccepted()
+    assert not recorder.seen
+    drop = QDropEvent(
+        QPointF(body.url_edit.mapTo(window, QPoint(3, 3))),
+        Qt.DropAction.CopyAction,
+        mime,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    QApplication.sendEvent(handle, drop)
+    assert body.url_edit.text() == "https://dropped.example/page"
+    assert not recorder.seen
