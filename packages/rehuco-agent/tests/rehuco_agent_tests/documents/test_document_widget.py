@@ -105,6 +105,7 @@ from rehuco_agent.fields.widgets import (
     PathEditor,
     PathImageSource,
     SingleChoiceRadioButtons,
+    SourcesEditor,
     ThumbnailRow,
     TypeBadge,
 )
@@ -836,6 +837,36 @@ def test_builds_a_viewer_and_an_editor_from_the_document_field_list(widget: Docu
         text.startswith('<a href="https://example.com" style="color:') and text.endswith(">https://example.com</a>")
         for text in viewer_texts
     )
+
+
+def test_the_main_editor_edits_the_sources_as_cards_and_the_viewer_keeps_its_rows(widget: DocumentWidget) -> None:
+    """The Main Editor has the sources editor and no Title, Publisher or URL editor of its own; the viewer keeps
+    those rows, showing the primary source (#391).
+
+    **Test steps:**
+
+    * find the sources editor on the editor surfaces
+    * verify the three values of the primary source are edited only inside it
+    * verify the viewer still labels and shows the primary source's title and publisher
+    """
+    sources = find_on_surfaces(widget, SourcesEditor)
+    assert len(sources) == 1
+    edits = [
+        edit for edit in find_on_surfaces(widget, QLineEdit) if edit.text() in {"Foo", "Bar", "https://example.com"}
+    ]
+    assert len(edits) == 3
+    assert all(sources[0].isAncestorOf(edit) for edit in edits)
+
+    viewer_labels = {label.text() for label in field_surfaces(widget)[0].findChildren(QLabel)}
+    assert {"Title", "Publisher", "Url", "Foo", "Bar"} <= viewer_labels
+
+
+def test_a_locked_documents_sources_editor_is_disabled(legacy_widget: DocumentWidget) -> None:
+    """The sources editor sits in the Main Editor, which a locked document disables as a whole (#391)."""
+    sources = find_on_surfaces(legacy_widget, SourcesEditor)
+
+    assert len(sources) == 1
+    assert not sources[0].isEnabled()
 
 
 def test_a_field_status_message_bubbles_up_through_the_widget(qtbot: QtBot, model: RehuDocumentModel) -> None:

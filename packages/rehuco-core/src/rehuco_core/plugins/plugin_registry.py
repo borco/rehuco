@@ -10,6 +10,7 @@ CORE_FIELD_NAMES: Final = (
     "title",
     "publisher",
     "url",
+    "sources",
     "authors",
     "released",
     "description",
@@ -26,7 +27,8 @@ its plugin. Declared by :data:`CORE_PLUGIN`, so a surface composing a type's fie
 declaration and the type's own, and gets the union (#195).
 
 ``title``/``publisher``/``url`` are the **primary source's** ([[field-schema#sources]]), which the core
-block stores under one ``sources`` list rather than three keys -- these name the *fields* a form composes
+block stores under one ``sources`` list rather than three keys (``sources`` being that whole list) --
+these name the *fields* a form composes
 and a browser column reads, which is not always the key a block stores them under
 (:attr:`~rehuco_core.PluginSpec.field_names`)."""
 

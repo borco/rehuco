@@ -27,6 +27,7 @@ from rehuco_agent.fields.multiple_choice_field import MultipleChoiceField
 from rehuco_agent.fields.path_field import PathField
 from rehuco_agent.fields.rating_field import RatingField
 from rehuco_agent.fields.size_pair_field import SizePairField
+from rehuco_agent.fields.sources_field import SourcesField
 from rehuco_agent.fields.text_field import TextField
 from rehuco_agent.fields.text_list_field import TextListField
 from rehuco_agent.fields.type_field import TypeField
@@ -55,6 +56,13 @@ class TextFieldTester(TextField):
 
 class UrlFieldTester(UrlField):
     """`UrlField` with fixed test tabs."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, viewer_tab=TEST_VIEWER_TAB, editor_tab=TEST_EDITOR_TAB, **kwargs)
+
+
+class SourcesFieldTester(SourcesField):
+    """`SourcesField` with fixed test tabs."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, viewer_tab=TEST_VIEWER_TAB, editor_tab=TEST_EDITOR_TAB, **kwargs)

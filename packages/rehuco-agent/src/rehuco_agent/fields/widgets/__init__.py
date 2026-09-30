@@ -38,6 +38,8 @@ from .rating_slider import RatingSlider
 from .single_choice_combo_box import SingleChoiceComboBox
 from .single_choice_radio_buttons import SingleChoiceRadioButtons
 from .size_measurement_edit import SizeMeasurementEdit
+from .source_card_content import SourceCardContent, UrlEditDropFilter
+from .sources_editor import SourcesEditor
 from .thumbnail_loader import ThumbnailLoader
 from .thumbnail_row import ThumbnailRow
 from .type_badge import TypeBadge
@@ -62,6 +64,9 @@ __all__ = [
     "DurationMeasurementEdit",
     "ExpandToggleButton",
     "SizeMeasurementEdit",
+    "SourceCardContent",
+    "SourcesEditor",
+    "UrlEditDropFilter",
     "ImageDescription",
     "ImageLightbox",
     "ImageSelector",

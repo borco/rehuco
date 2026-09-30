@@ -41,12 +41,17 @@ class PaletteSvgIconEngine(QIconEngine):
     :param flat: draw the checked state in the plain unchecked color -- for an action whose context
         paints no filled chrome behind the glyph at all, e.g. a menu row, where its own native
         checkmark communicates checked-ness instead.
+    :param role: the palette role the unchecked glyph is drawn in -- ``ButtonText`` by default; another
+        for a glyph that sits on a fill of its own, e.g. ``HighlightedText`` on a selected card.
     """
 
-    def __init__(self, svg: bytes, *, flat: bool = False) -> None:
+    def __init__(
+        self, svg: bytes, *, flat: bool = False, role: QPalette.ColorRole = QPalette.ColorRole.ButtonText
+    ) -> None:
         super().__init__()
         self.__svg: Final = svg
         self.__flat: Final = flat
+        self.__role: Final = role
         self.__palette_key: int | None = None
         self.__renderers: dict[tuple[QIcon.Mode, QIcon.State], QSvgRenderer] = {}
 
@@ -55,7 +60,7 @@ class PaletteSvgIconEngine(QIconEngine):
         group = QPalette.ColorGroup.Disabled if disabled else QPalette.ColorGroup.Active
         if state == QIcon.State.On and not self.__flat:
             return CheckedToolButtonChrome.glyph_color(palette, enabled=not disabled)
-        return palette.color(group, QPalette.ColorRole.ButtonText)
+        return palette.color(group, self.__role)
 
     def __renderer_for(self, mode: QIcon.Mode, state: QIcon.State) -> QSvgRenderer:
         palette = QApplication.palette()
@@ -79,7 +84,7 @@ class PaletteSvgIconEngine(QIconEngine):
 
     @override
     def clone(self) -> QIconEngine:
-        return PaletteSvgIconEngine(self.__svg, flat=self.__flat)
+        return PaletteSvgIconEngine(self.__svg, flat=self.__flat, role=self.__role)
 
 
 class ThemedIcons(QObject):
@@ -96,7 +101,7 @@ class ThemedIcons(QObject):
 
     def __init__(self, app: QApplication) -> None:
         super().__init__(app)
-        self.__icons: Final[dict[tuple[str, bool], QIcon]] = {}
+        self.__icons: Final[dict[tuple[str, bool, QPalette.ColorRole], QIcon]] = {}
         self.__glyph_icons: Final[dict[tuple[str, str, QPalette.ColorRole], QIcon]] = {}
         self.__engines: Final[list[QIconEngine]] = []
 
@@ -123,23 +128,24 @@ class ThemedIcons(QObject):
         self.__glyph_icons.clear()
         self.__engines.clear()
 
-    def icon(self, path: str, *, flat: bool = False) -> QIcon:
+    def icon(self, path: str, *, flat: bool = False, role: QPalette.ColorRole = QPalette.ColorRole.ButtonText) -> QIcon:
         """Return the shared themed icon for ``path``, building it on first request.
 
-        The same ``(path, flat)`` always returns the same ``QIcon``, so every action drawn from one
+        The same ``(path, flat, role)`` always returns the same ``QIcon``, so every action drawn from one
         source SVG shares a single engine and they cannot disagree about its color.
 
         :param path: the source SVG, Qt resource or filesystem path.
         :param flat: draw the checked state in the plain unchecked color; see
             :class:`PaletteSvgIconEngine`.
+        :param role: the palette role the unchecked glyph is drawn in; see :class:`PaletteSvgIconEngine`.
         :returns: the shared icon.
         :raises RuntimeError: if ``path`` cannot be opened for reading.
         """
-        key = (path, flat)
+        key = (path, flat, role)
         cached = self.__icons.get(key)
         if cached is not None:
             return cached
-        engine = PaletteSvgIconEngine(read_resource_bytes(path), flat=flat)
+        engine = PaletteSvgIconEngine(read_resource_bytes(path), flat=flat, role=role)
         self.__engines.append(engine)
         icon = QIcon(engine)
         self.__icons[key] = icon  # pylint: disable=unsupported-assignment-operation
@@ -167,19 +173,22 @@ class ThemedIcons(QObject):
         return icon
 
 
-def themed_svg_icon(path: str, *, flat: bool = False) -> QIcon:
+def themed_svg_icon(
+    path: str, *, flat: bool = False, role: QPalette.ColorRole = QPalette.ColorRole.ButtonText
+) -> QIcon:
     """Return the application-wide shared themed icon for ``path``.
 
     :param path: the source SVG, Qt resource or filesystem path.
     :param flat: draw the checked state in the plain unchecked color; see
         :class:`PaletteSvgIconEngine`.
+    :param role: the palette role the unchecked glyph is drawn in; see :class:`PaletteSvgIconEngine`.
     :returns: the shared icon.
     :raises RuntimeError: if there is no running ``QApplication``, or ``path`` cannot be read.
     """
     app = QApplication.instance()
     if not isinstance(app, QApplication):
         raise RuntimeError("themed_svg_icon requires a running QApplication")
-    return ThemedIcons.for_application(app).icon(path, flat=flat)
+    return ThemedIcons.for_application(app).icon(path, flat=flat, role=role)
 
 
 def themed_glyph_icon(glyph: str, family: str, color_role: QPalette.ColorRole) -> QIcon:

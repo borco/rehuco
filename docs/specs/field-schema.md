@@ -243,6 +243,22 @@ sources:
 - **Resolution is permissive.** Normally exactly one item is flagged. If **none** is, the
   **first item** is primary; if **several** are, the **first** flagged one wins. Neither should
   happen — `.rehu` is not hand-written — but the reader tolerates it rather than erroring.
+- **The top entry is the primary.** What an editor reads and writes is the list top-first with the flag
+  stripped; a write puts `primary: true` on the first entry alone, and `title` / `publisher` / `url` are that
+  entry's own values, empty or not. The permissive rule above still governs reading a file.
+- **A scrape fills the primary's missing URL** — with or without a publisher — and never adds a URL a source
+  already has (compared after trimming); any other new URL is appended below.
+- **A repeated URL is a duplicate, and is only ever shown.** The 2nd, 3rd, … row carrying the same non-empty
+  URL is flagged for the editor; nothing is deleted, merged or reordered automatically, a file holding
+  duplicates opens clean, and a save writes what is there. An empty URL is never a duplicate.
+- **The Main Editor edits the sources as cards** — one per source, holding `Title`, `URL` and `Publisher`
+  line edits; the top card is the primary (nothing on the card marks it: moving a card must not make another look changed). `[+]` (on the Title row) inserts
+  a card after it and `[x]` (on the Publisher row) deletes it; a card is moved by its grip or Ctrl+arrows, and
+  the grip is hidden while there is a single source. Every source shows, always.
+  A card whose trimmed URL a card above already has is tinted pink and stays until the user deletes it. An
+  empty title, or a non-empty URL that is not `http(s)`, is flagged in the warning colour with a tooltip and is
+  **never refused**; a card may be started from its URL. A link dropped on a URL edit replaces its text.
+  Editing merges into the source (keys the card does not show are kept; an emptied edit deletes its key).
 - **`authors` are not part of a source** — one shared list serves the resource. The same course
   under a slightly different name elsewhere is still the same course; a *different* author set
   means it is probably a *different* tutorial, not another source of this one.

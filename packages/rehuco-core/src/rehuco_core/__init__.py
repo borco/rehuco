@@ -139,6 +139,7 @@ from .rehu_document import (
     RehuFormatError,
     author_name,
     authors_comma_editable,
+    duplicate_source_rows,
 )
 from .rehu_file_kinds import (
     DirectoryClassifier,
@@ -469,6 +470,7 @@ __all__ = [
     "current_block_version",
     "delete_screenshot",
     "discard_conversion_backups",
+    "duplicate_source_rows",
     "enumerate_catalog_resources",
     "enumerate_content_files",
     "excluded_content_names",

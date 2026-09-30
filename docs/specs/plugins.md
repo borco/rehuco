@@ -191,7 +191,8 @@ The **record-list machinery** ships as `ItemListEditor` (`borco_pyside.widgets`)
 plus the insert/edit/delete/reset and top/up/down/bottom action columns, with the keys armed on the
 view alone. Its two clients are the settings pages' `StringListEditor` and the `authors` record rows
 (#97). Declarative group/subtype *config* — a composite an admin describes rather than one a field
-builds — is still unbuilt, as are drag-to-reorder and nesting past one level. A composite field
+builds — is still unbuilt, as is nesting past one level. Drag-to-reorder ships in the card list
+(`CardListEditor`, #390), which the `sources` editor uses (#391). A composite field
 returns **one** editor widget from
 `make_editor()` — a container holding its stacked subtypes — so owning child fields needs no base
 change, and never a list of editors.
@@ -225,9 +226,10 @@ its last holder lets go, and the unsaved-changes prompt belongs to that last rel
 views. A rename relocates every held view-model at or beneath the renamed paths ([[mounts-and-storage#out-of-band]]).
 
 Common-core `title` / `publisher` / `url` are attributes of a **source record** ([[field-schema#sources]]), and
-`sources` is a list; the view-model exposes that list explicitly and, for now, edits the **primary**
-entry. The multi-source record-list *editor* is still unbuilt — the view-model is the seam it plugs
-into, and the machinery it would be built on is `authors`' (#97).
+`sources` is a list; the view-model exposes it top-first, the top entry being the **primary**, and the Main
+Editor edits it as **one card per source** (Title, URL, Publisher) on the reusable card list
+(`borco_pyside.widgets.CardListEditor`, #390, #391). The viewer keeps its Title, Publisher and URL rows,
+showing the primary.
 
 ### §13.2.3 Viewer / editor / both surfaces
 

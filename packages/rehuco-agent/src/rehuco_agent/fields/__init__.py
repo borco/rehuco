@@ -35,6 +35,7 @@ from .multiple_choice_field import MultipleChoiceField
 from .path_field import PathField
 from .rating_field import RatingField
 from .size_pair_field import SizePairField
+from .sources_field import SourcesField
 from .text_field import TextField
 from .text_list_field import TextListField
 from .type_field import TypeField
@@ -76,6 +77,7 @@ __all__ = [
     "DurationField",
     "DurationPairField",
     "SizePairField",
+    "SourcesField",
     "MultipleChoiceField",
     "PathField",
     "TypeField",

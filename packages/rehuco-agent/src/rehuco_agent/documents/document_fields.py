@@ -149,12 +149,13 @@ class FieldSpec(NamedTuple):
 
 
 MODEL_AGNOSTIC_FIELD_SPECS: Final[tuple[FieldSpec, ...]] = (
-    FieldSpec("text", "title"),
+    FieldSpec("sources", "sources"),
+    FieldSpec("text", "title", {"viewer_only": True}),
     FieldSpec("authors", "authors"),
     FieldSpec("date", "released"),
-    FieldSpec("text", "publisher"),
+    FieldSpec("text", "publisher", {"viewer_only": True}),
     FieldSpec("collections", "collections"),
-    FieldSpec("url", "url"),
+    FieldSpec("url", "url", {"viewer_only": True}),
     FieldSpec("duration", "advertised_duration"),
     FieldSpec("duration_pair", "original_duration", partner_name="current_duration"),
     FieldSpec("count_claim", "advertised_count"),
