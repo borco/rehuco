@@ -252,7 +252,7 @@ sources:
   URL is flagged for the editor; nothing is deleted, merged or reordered automatically, a file holding
   duplicates opens clean, and a save writes what is there. An empty URL is never a duplicate.
 - **The Main Editor edits the sources as cards** — one per source, holding `Title`, `URL` and `Publisher`
-  line edits; the top card is the primary and its three captions are bold. `[+]` (on the Title row) inserts
+  line edits; the top card is the primary (nothing on the card marks it: moving a card must not make another look changed). `[+]` (on the Title row) inserts
   a card after it and `[x]` (on the Publisher row) deletes it; a card is moved by its grip or Ctrl+arrows, and
   the grip is hidden while there is a single source. Every source shows, always.
   A card whose trimmed URL a card above already has is tinted pink and stays until the user deletes it. An

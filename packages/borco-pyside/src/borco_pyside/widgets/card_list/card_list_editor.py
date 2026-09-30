@@ -40,9 +40,10 @@ class CardListEditor(QWidget):
     **Current card.** The card holding focus is current: painted in the selection colour, its buttons shown.
     It stops being current when focus leaves the editor, but not when the window merely loses activation.
 
-    **Drag.** A card's grip drags it; a ghost as tall as the card opens a gap where it would land, except at
-    the two slots that would leave the order unchanged. A drag this editor did not start is not accepted, so
-    it goes on to whatever holds the editor.
+    **Drag.** A card's grip drags it. The card leaves the list for the length of the drag and a ghost, as tall as
+    it, stands in its place, following the pointer to where the card would land -- so the list always shows as
+    many items as it has, and over its own place the ghost is simply where the card was. A drag this editor did
+    not start is not accepted, so it goes on to whatever holds the editor.
 
     **Value.** :attr:`value` is the model's value -- every row but the blank ones just inserted -- and
     :attr:`value_changed` fires whenever it changes through an edit here. :meth:`set_value` never fires it,
@@ -84,6 +85,7 @@ class CardListEditor(QWidget):
         self.__current: Card | None = None
         self.__last_value: list[Any] = model.value
         self.__ghost_slot = -1
+        self.__dragged: Card | None = None
 
         self.__layout: Final = QVBoxLayout(self)
         self.__layout.setContentsMargins(0, 0, 0, 0)
@@ -126,7 +128,7 @@ class CardListEditor(QWidget):
 
     @property
     def ghost_slot(self) -> int:
-        """Where a drag would land -- the number of cards above the gap -- or ``-1`` with no gap shown."""
+        """The row the dragged card would end up at, where the ghost stands -- or ``-1`` while nothing is dragged."""
         return self.__ghost_slot
 
     @property
@@ -446,16 +448,43 @@ class CardListEditor(QWidget):
     def __start_drag(self, card: Card) -> None:
         """Drag ``card`` by its grip.
 
+        The card leaves the list for the length of the drag -- its place is the ghost, which follows the pointer
+        to where the card would land -- so the list never shows the dragged card twice.
+
         :param card: the card being dragged.
         """
+        row = self.__cards.index(card)
         mime = QMimeData()
-        mime.setData(self.MIME_TYPE, QByteArray(f"{id(self)}:{self.__cards.index(card)}".encode()))
+        mime.setData(self.MIME_TYPE, QByteArray(f"{id(self)}:{row}".encode()))
         drag = QDrag(card.grip)
         drag.setMimeData(mime)
+        # before the card is hidden: a hidden widget grabs as nothing
         drag.setPixmap(card.grab())
         drag.setHotSpot(card.grip.mapTo(card, QPoint(card.grip.width() // 2, card.grip.height() // 2)))
+        self.__begin_drag(row)
         drag.exec(Qt.DropAction.MoveAction)
+        self.__end_drag()
+
+    def __begin_drag(self, row: int) -> None:
+        """Take the dragged card out of the list and put the ghost where it was; a no-op once begun.
+
+        :param row: the dragged row.
+        """
+        if self.__dragged is not None:
+            return
+        card = self.__cards[row]
+        self.__dragged = card
+        self.__ghost.setFixedHeight(card.height())
+        card.hide()
+        self.__show_ghost_at(row)
+
+    def __end_drag(self) -> None:
+        """Bring the dragged card back and close the gap: after a drop, a cancel, or a drag that left."""
         self.__hide_ghost()
+        if self.__dragged is not None:
+            if self.__dragged in self.__cards:
+                self.__dragged.show()
+            self.__dragged = None
 
     def __dragged_row(self, event: QDropEvent) -> int | None:
         """The row a drag of this editor carries.
@@ -472,30 +501,42 @@ class CardListEditor(QWidget):
         return int(row)
 
     def __slot_at(self, y: float) -> int:
-        """The slot a drop at ``y`` lands in: how many cards have their middle above it.
+        """The row the dragged card would end up at for a drop at ``y``: how many of the *other* cards have
+        their middle above it.
+
+        The ghost holds the dragged card's place in the layout, so these are the positions the cards would have
+        once it is dropped there -- the answer does not shift as the ghost moves.
 
         :param y: the pointer's height, in this editor's coordinates.
-        :returns: the slot, from ``0`` (above every card) to the card count (below every card).
+        :returns: the row, from ``0`` (above every other card) to the number of other cards.
         """
-        return sum(1 for card in self.__cards if card.geometry().center().y() < y)
+        return sum(1 for card in self.__cards if card is not self.__dragged and card.geometry().center().y() < y)
 
-    def __place_ghost(self, row: int, y: float) -> None:
-        """Open the gap where ``row`` would land, or close it where the drop would change nothing.
+    def __show_ghost_at(self, slot: int) -> None:
+        """Put the ghost where the dragged card would end up at row ``slot``, closing any gap it left.
 
-        :param row: the dragged row.
+        :param slot: the row among the cards other than the dragged one.
+        """
+        self.__hide_ghost()
+        others = [card for card in self.__cards if card is not self.__dragged]
+        if slot < len(others):
+            index = self.__layout.indexOf(others[slot])
+        elif others:
+            index = self.__layout.indexOf(others[-1]) + 1
+        else:
+            index = 0
+        self.__layout.insertWidget(index, self.__ghost)
+        self.__ghost.show()
+        self.__ghost_slot = slot
+
+    def __place_ghost(self, y: float) -> None:
+        """Move the ghost to where a drop at ``y`` would land the dragged card.
+
         :param y: the pointer's height, in this editor's coordinates.
         """
         slot = self.__slot_at(y)
-        if slot in (row, row + 1):
-            self.__hide_ghost()
-            return
-        if slot == self.__ghost_slot:
-            return
-        self.__hide_ghost()
-        self.__ghost.setFixedHeight(self.__cards[row].height())
-        self.__layout.insertWidget(slot, self.__ghost)
-        self.__ghost.show()
-        self.__ghost_slot = slot
+        if slot != self.__ghost_slot:
+            self.__show_ghost_at(slot)
 
     def __hide_ghost(self) -> None:
         """Close the gap, if one is open."""
@@ -512,7 +553,8 @@ class CardListEditor(QWidget):
             event.ignore()
             return
         event.acceptProposedAction()
-        self.__place_ghost(row, event.position().y())
+        self.__begin_drag(row)
+        self.__place_ghost(event.position().y())
 
     @override
     def dragMoveEvent(self, event: QDragMoveEvent) -> None:  # noqa: N802  (Qt override)
@@ -521,11 +563,14 @@ class CardListEditor(QWidget):
             event.ignore()
             return
         event.acceptProposedAction()
-        self.__place_ghost(row, event.position().y())
+        self.__begin_drag(row)
+        self.__place_ghost(event.position().y())
 
     @override
     def dragLeaveEvent(self, event: QDragLeaveEvent) -> None:  # noqa: N802  (Qt override)
-        self.__hide_ghost()
+        # the pointer is elsewhere: the gap goes back to where the card came from, and stays until the drag ends
+        if self.__dragged is not None:
+            self.__show_ghost_at(self.__cards.index(self.__dragged))
         super().dragLeaveEvent(event)
 
     @override
@@ -534,10 +579,11 @@ class CardListEditor(QWidget):
         if row is None:
             event.ignore()
             return
-        slot = self.__slot_at(event.position().y()) if self.__ghost_slot < 0 else self.__ghost_slot
-        self.__hide_ghost()
+        self.__begin_drag(row)
+        slot = self.__slot_at(event.position().y())
         event.acceptProposedAction()
-        if slot not in (row, row + 1):
-            self.__model.move(row, slot if slot < row else slot - 1)
+        self.__end_drag()
+        if slot != row:
+            self.__model.move(row, slot)
 
     # endregion

@@ -4,7 +4,7 @@ from typing import Any, Final, cast, override
 
 from borco_pyside.widgets import toggle_dynamic_property
 from PySide6.QtCore import QEvent, QObject, Signal
-from PySide6.QtGui import QDropEvent, QFont
+from PySide6.QtGui import QDropEvent
 from PySide6.QtWidgets import QFormLayout, QLabel, QWidget
 
 from ...scraping.url_drop import UrlDrop
@@ -61,7 +61,8 @@ class SourceCardContent(QWidget):
     not an http(s) one, are painted in the warning colour with the reason as a tooltip; the value is kept
     either way. A card holding nothing yet is not flagged -- it is just started.
 
-    **The top card is the primary**, told through :meth:`set_primary`: all three captions turn bold.
+    **The top card is the primary**, but nothing on the card says so: the captions stay plain, so dragging a
+    card never makes a different one look changed.
 
     A link dropped on the URL edit replaces its text (:class:`UrlEditDropFilter`); the title and publisher
     edits accept no drops, so a link dropped on them reaches the dock behind the editor.
@@ -160,16 +161,6 @@ class SourceCardContent(QWidget):
         :returns: the delete button's buddy, then the insert button's.
         """
         return self.__publisher, self.__title
-
-    def set_primary(self, primary: bool) -> None:
-        """Bold the three captions on the top card.
-
-        :param primary: whether this card is the first one.
-        """
-        for caption in self.__captions:
-            font = QFont(caption.font())
-            font.setBold(primary)
-            caption.setFont(font)
 
     def __on_edited(self) -> None:
         """Re-flag the source and pass the edit on."""

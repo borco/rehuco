@@ -101,19 +101,19 @@ def two_sources() -> RehuDocumentModel:
 # endregion
 
 
-def test_one_card_per_source_and_only_the_top_one_is_bold(qtbot: QtBot, two_sources: RehuDocumentModel) -> None:
-    """Each source is a card; the top card's three captions are bold, the others' are not.
+def test_one_card_per_source_with_plain_captions(qtbot: QtBot, two_sources: RehuDocumentModel) -> None:
+    """Each source is a card, captioned Title, URL and Publisher, none of them bold -- the primary is not
+    marked on the card, so dragging never makes a different card look changed.
 
     **Test steps:**
 
     * build the editor over two sources
-    * verify two cards, with the top one's Title/URL/Publisher captions bold and the second one's plain
+    * verify two cards, each with plain Title/URL/Publisher captions
     """
     editor = make_editor(qtbot, two_sources)
 
     assert len(editor.cards) == 2
-    assert [caption.font().bold() for caption in content(editor, 0).captions] == [True, True, True]
-    assert [caption.font().bold() for caption in content(editor, 1).captions] == [False, False, False]
+    assert not any(caption.font().bold() for row in (0, 1) for caption in content(editor, row).captions)
     assert [caption.text() for caption in content(editor, 0).captions] == ["Title", "URL", "Publisher"]
 
 
@@ -124,7 +124,7 @@ def test_moving_a_card_to_the_top_makes_it_the_primary(qtbot: QtBot, two_sources
 
     * move the second card to the top
     * verify the document's sources lead with it, flagged ``primary``, and it alone
-    * verify the model's title, and the bold captions, moved with it, and the model is dirty
+    * verify the model's title moved with it, and the model is dirty
     """
     editor = make_editor(qtbot, two_sources)
 
@@ -135,9 +135,6 @@ def test_moving_a_card_to_the_top_makes_it_the_primary(qtbot: QtBot, two_sources
         {"title": "First", "publisher": "A", "url": "https://a.example/1"},
     ]
     assert two_sources.title == "Second"
-    top, second = (content(editor, row).captions[0] for row in (0, 1))
-    assert top.font().bold()
-    assert not second.font().bold()
     assert two_sources.dirty is True
 
 

@@ -105,9 +105,7 @@ def apply_card_icons(card: Card) -> None:
         """
         role = QPalette.ColorRole.HighlightedText if current else QPalette.ColorRole.ButtonText
         for action in actions:
-            path = ICONS_BY_ACTION_TYPE.get(type(action))
-            if path is not None:
-                action.setIcon(themed_svg_icon(path, role=role))
+            action.setIcon(themed_svg_icon(ICONS_BY_ACTION_TYPE[type(action)], role=role))
 
     dress(card.current)
     card.current_changed.connect(dress)

@@ -52,9 +52,8 @@ class SourcesEditor(CardListEditor):
         fill = QColor(border)
         fill.setAlpha(self.FLAGGED_ALPHA)
         self.style_map.register("flagged", CardStateStyle(fill=fill, border=border))
+        # the list starts empty, so every card is one this announces
         self.card_added.connect(apply_card_icons)
-        for card in self.cards:
-            apply_card_icons(card)
         # after the base class's own slots, so a card it has just built is already there to be dressed
         model.rowsInserted.connect(self.__show_grips)
         model.rowsRemoved.connect(self.__show_grips)

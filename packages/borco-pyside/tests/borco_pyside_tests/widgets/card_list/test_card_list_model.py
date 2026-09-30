@@ -4,6 +4,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from borco_pyside.widgets import CardListModel, ItemEditor, ItemOrderingEditor
+from PySide6.QtCore import QModelIndex, Qt
 from pytest import fixture, mark, param
 from pytestqt.qtbot import QtBot
 
@@ -121,7 +122,7 @@ def test_an_insert_is_pending_and_left_out_of_the_value(model: CardListModel) ->
     assert model.value[1] == {"name": "x"}
 
     model.set_item(1, {})
-    assert model.value[1] == {}
+    assert not model.value[1]
 
 
 def test_insert_with_a_negative_row_appends(model: CardListModel) -> None:
@@ -246,3 +247,66 @@ def test_states_follow_the_rows_and_announce_only_a_change(model: CardListModel,
 
     model.move_to_top(2)
     assert [model.states(row) for row in range(3)] == [{}, {"flagged": "Duplicate"}, {"flagged": "Duplicate"}]
+
+
+def test_setting_an_equal_item_changes_nothing(model: CardListModel, qtbot: QtBot) -> None:
+    """Replacing a row's item with an equal one announces nothing.
+
+    **Test steps:**
+
+    * set the first row to the item it already holds
+    * verify no data change was emitted
+    """
+    with qtbot.assertNotEmitted(model.dataChanged):
+        model.set_item(0, {"name": "a"})
+
+
+def test_a_negative_row_is_a_no_op_for_duplicate_and_delete(model: CardListModel) -> None:
+    """Duplicating or deleting "no row" leaves the list alone, and duplicate says so.
+
+    **Test steps:**
+
+    * duplicate and delete row ``-1``
+    * verify the returned row and that nothing changed
+    """
+    assert model.duplicate(-1) == -1
+    model.delete(-1)
+    assert names(model) == ["a", "b", "c"]
+
+
+def test_reset_is_a_no_op_and_a_duplicated_blank_stays_pending(model: CardListModel) -> None:
+    """A list with no defaults has nothing to reset, and a copy of a pending row is pending too.
+
+    **Test steps:**
+
+    * insert a blank row, duplicate it, and reset
+    * verify both blanks are still pending and the rows are unchanged
+    """
+    model.insert(-1)
+    model.duplicate(3)
+    model.reset()
+
+    assert model.count == 5
+    assert model.is_pending(3)
+    assert model.is_pending(4)
+
+
+def test_the_model_answers_the_qt_interface(model: CardListModel) -> None:
+    """The item is reachable through Qt's item-data role and nothing else; bad ranges are refused.
+
+    **Test steps:**
+
+    * read a row through the user role, another role, and an invalid index
+    * remove and move rows with an invalid range and a valid parent, and verify each is refused
+    """
+    index = model.index(1)
+    assert model.data(index, Qt.ItemDataRole.UserRole) == {"name": "b"}
+    assert model.data(index, Qt.ItemDataRole.DisplayRole) is None
+    assert model.data(QModelIndex(), Qt.ItemDataRole.UserRole) is None
+    assert model.rowCount(index) == 0
+
+    assert model.removeRows(2, 5) is False
+    assert model.removeRows(0, 1, index) is False
+    assert model.moveRows(index, 0, 1, QModelIndex(), 2) is False
+    assert model.moveRows(QModelIndex(), 0, 1, QModelIndex(), 0) is False
+    assert names(model) == ["a", "b", "c"]

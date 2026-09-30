@@ -1,16 +1,28 @@
 """Tests for the card list's widgets: `BuddyButtonStrip` as a `Card` uses it, and `CardListEditor` -- in-place
 updates, keys, focus, drag with a ghost, and the value contract."""
 
+# the two widgets and their sample content share one set of helpers and fixtures; splitting the module would
+# copy them, so the module-length cap is lifted here rather than fragmenting it.
+# pylint: disable=too-many-lines
+
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 from borco_pyside.widgets import Card, CardListEditor, CardListModel, CardStateStyle, CardStyle
 from PySide6.QtCore import QByteArray, QEvent, QMimeData, QPoint, QPointF, Qt, Signal
-from PySide6.QtGui import QColor, QDragEnterEvent, QDragMoveEvent, QDropEvent, QEnterEvent, QPalette
+from PySide6.QtGui import (
+    QColor,
+    QDragEnterEvent,
+    QDragLeaveEvent,
+    QDragMoveEvent,
+    QDropEvent,
+    QEnterEvent,
+    QPalette,
+)
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QCheckBox, QFormLayout, QLineEdit, QVBoxLayout, QWidget
-from pytest import fixture, mark, param
+from PySide6.QtWidgets import QApplication, QCheckBox, QFormLayout, QLabel, QLineEdit, QVBoxLayout, QWidget
+from pytest import fixture, mark, param, raises
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 
@@ -725,58 +737,97 @@ def test_an_edit_the_content_adds_later_is_wired_like_the_others(page: Page, qtb
     ("row", "position", "slot"),
     [
         param(2, "top-of-first", 0, id="top"),
-        param(0, "bottom-of-last", 3, id="bottom"),
-        param(0, "bottom-of-second", 2, id="middle"),
+        param(0, "bottom-of-last", 2, id="bottom"),
+        param(0, "bottom-of-second", 1, id="middle"),
     ],
 )
-def test_the_ghost_opens_where_the_card_would_land(page: Page, row: int, position: str, slot: int) -> None:
-    """A drag over a slot that changes the order opens the gap there, at the top and bottom too.
+def test_the_ghost_takes_the_dragged_cards_place_and_follows_the_pointer(
+    page: Page, row: int, position: str, slot: int
+) -> None:
+    """While a card is dragged it leaves the list and the ghost stands where it would land -- at the top and
+    bottom too -- so the list never shows more items than it has.
 
     **Test steps:**
 
     * send a drag enter and move for ``row`` at the given height
-    * verify the ghost's slot
+    * verify the ghost's slot is the row the card would end up at
+    * verify the dragged card is hidden, and that the visible cards plus the ghost still make three
     """
     heights = {
         "top-of-first": card_top(page.editor, 0),
         "bottom-of-last": card_bottom(page.editor, 2),
         "bottom-of-second": card_bottom(page.editor, 1),
     }
+    dragged = page.card(row)
     enter, enter_mime = drop_event(page.editor, QDragEnterEvent, row, heights[position])
     QApplication.sendEvent(page.editor, enter)
     move, move_mime = drop_event(page.editor, QDragMoveEvent, row, heights[position])
     QApplication.sendEvent(page.editor, move)
 
     assert page.editor.ghost_slot == slot
+    assert dragged.isHidden()
+    assert sum(not card.isHidden() for card in page.editor.cards) == 2
     assert enter_mime is not None and move_mime is not None
 
 
 @mark.parametrize("position", [param("top", id="above-itself"), param("bottom", id="below-itself")])
-def test_no_ghost_where_the_drop_would_change_nothing(page: Page, position: str) -> None:
-    """The two slots beside the dragged card itself open no gap.
+def test_dragged_over_itself_the_ghost_stands_in_its_original_place(page: Page, position: str) -> None:
+    """Over its own place the card is not shown twice: it is hidden and the ghost sits where it was.
 
     **Test steps:**
 
     * drag the middle card over its own top and bottom half
-    * verify no ghost is shown
+    * verify the ghost is at row 1, the card is hidden, and two cards plus the ghost are visible
+    * drop it there and verify the order is unchanged and the card is back
     """
     y = card_top(page.editor, 1) if position == "top" else card_bottom(page.editor, 1)
+    card = page.card(1)
     enter, mime = drop_event(page.editor, QDragEnterEvent, 1, y)
     QApplication.sendEvent(page.editor, enter)
 
+    assert page.editor.ghost_slot == 1
+    assert card.isHidden()
+    assert sum(not c.isHidden() for c in page.editor.cards) == 2
+
+    drop, drop_mime = drop_event(page.editor, QDropEvent, 1, y)
+    QApplication.sendEvent(page.editor, drop)
+
+    assert page.names() == ["a", "b", "c"]
+    assert not card.isHidden()
     assert page.editor.ghost_slot == -1
+    assert mime is not None and drop_mime is not None
+
+
+def test_a_drag_that_leaves_puts_the_gap_back_where_the_card_came_from(page: Page) -> None:
+    """When the pointer leaves the editor the ghost returns to the card's original place, and the card
+    stays out of the list until the drag ends.
+
+    **Test steps:**
+
+    * drag the first card to the bottom, then leave the editor
+    * verify the ghost is back at row 0 and the card is still hidden
+    """
+    dragged = page.card(0)
+    enter, mime = drop_event(page.editor, QDragEnterEvent, 0, card_bottom(page.editor, 2))
+    QApplication.sendEvent(page.editor, enter)
+    assert page.editor.ghost_slot == 2
+
+    QApplication.sendEvent(page.editor, QDragLeaveEvent())
+
+    assert page.editor.ghost_slot == 0
+    assert dragged.isHidden()
     assert mime is not None
 
 
 def test_a_drop_moves_the_card_and_closes_the_gap(page: Page) -> None:
-    """Dropping the first card below the last moves it there.
+    """Dropping the first card below the last moves it there, and brings the card back into the list.
 
     **Test steps:**
 
     * drag the first card to below the last and drop it
-    * verify the order and that the ghost is gone
+    * verify the order, that the card is shown again, and that the ghost is gone
     """
-    first = page.editor.cards[0]
+    first = page.card(0)
     y = card_bottom(page.editor, 2)
     enter, enter_mime = drop_event(page.editor, QDragEnterEvent, 0, y)
     QApplication.sendEvent(page.editor, enter)
@@ -784,7 +835,8 @@ def test_a_drop_moves_the_card_and_closes_the_gap(page: Page) -> None:
     QApplication.sendEvent(page.editor, drop)
 
     assert page.names() == ["b", "c", "a"]
-    assert page.editor.cards[2] is first
+    assert page.card(2) is first
+    assert not first.isHidden()
     assert page.editor.ghost_slot == -1
     assert enter_mime is not None and drop_mime is not None
 
@@ -826,5 +878,287 @@ def test_the_grip_starts_a_drag_of_its_card(page: Page, mocker: MockerFixture) -
 
 
 # endregion
+
+# endregion
+
+
+# region coverage of the remaining paths
+
+
+class BareContent(QWidget):
+    """A `CardContent` with nothing to type into: a caption only.
+
+    :param parent: optional Qt parent.
+    """
+
+    value_changed = Signal()
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.item: Any = {}
+        self.caption = QLabel("nothing to edit", self)
+        QVBoxLayout(self).addWidget(self.caption)
+
+    def set_item(self, item: Any) -> None:
+        """Keep ``item``.
+
+        :param item: the item.
+        """
+        self.item = item
+
+    def item_values(self) -> Any:
+        """The item as it was given.
+
+        :returns: the item.
+        """
+        return self.item
+
+    def buddies(self) -> tuple[QWidget, QWidget]:
+        """Both buttons beside the caption.
+
+        :returns: the two buddies.
+        """
+        return self.caption, self.caption
+
+
+def make_page(qtbot: QtBot, factory: Any, *items: dict[str, Any]) -> tuple[QWidget, CardListEditor]:
+    """A shown editor over ``items`` built from ``factory``.
+
+    :param qtbot: pytest-qt bot, which holds the window only weakly -- the caller keeps it alive.
+    :param factory: builds one card's content.
+    :param items: the rows' items.
+    :returns: the window holding the editor, and the editor.
+    """
+    window = QWidget()
+    qtbot.addWidget(window)
+    model = CardListModel(dict, lambda item: not item, parent=window)
+    model.set_items(list(items))
+    editor = CardListEditor(model, factory)
+    QVBoxLayout(window).addWidget(editor)
+    with qtbot.waitExposed(window):
+        window.show()
+    window.activateWindow()
+    return window, editor
+
+
+def test_a_card_needs_a_card_content(qapp: QApplication) -> None:  # pylint: disable=unused-argument
+    """A widget that is not a `CardContent` is refused, naming its class.
+
+    **Test steps:**
+
+    * build a card over a plain widget
+    * verify it raises ``TypeError``
+    """
+    with raises(TypeError, match="QWidget is not a CardContent"):
+        Card(QWidget(), CardStyle())
+
+
+def test_setting_the_same_current_state_again_announces_nothing(page: Page, qtbot: QtBot) -> None:
+    """A card made current twice, or not current twice, announces once.
+
+    **Test steps:**
+
+    * make a card current twice and not current twice, watching for the announcement
+    * verify each real change was announced once
+    """
+    card = page.card(1)
+    card.set_current(False)
+    with qtbot.waitSignal(card.current_changed):
+        card.set_current(True)
+    with qtbot.assertNotEmitted(card.current_changed):
+        card.set_current(True)
+    with qtbot.waitSignal(card.current_changed):
+        card.set_current(False)
+    with qtbot.assertNotEmitted(card.current_changed):
+        card.set_current(False)
+
+
+def test_the_editor_is_an_item_viewer(page: Page) -> None:
+    """The current row can be read, set, cleared and edited through the `ItemViewer` contract.
+
+    **Test steps:**
+
+    * set the current row to 1 and verify focus and the reported row
+    * ``edit_current`` and verify focus is in that card
+    * set the current row to ``-1`` and verify none is current, and ``edit_current`` then does nothing
+    """
+    page.editor.set_current_index(1)
+    assert page.editor.current_index == 1
+    assert QApplication.focusWidget() is page.content(1).name
+
+    page.other.setFocus()
+    page.editor.edit_current()
+    assert QApplication.focusWidget() is page.content(1).name
+
+    page.editor.set_current_index(-1)
+    assert page.editor.current_index == -1
+    page.other.setFocus()
+    page.editor.edit_current()
+    assert QApplication.focusWidget() is page.other
+
+
+def test_deleting_the_only_focused_card_hands_focus_to_the_add_button(qtbot: QtBot) -> None:
+    """Removing the last card while it holds focus leaves focus on the add button, not nowhere.
+
+    **Test steps:**
+
+    * focus the only card's edit and delete its row
+    * verify the add button shows and holds focus
+    """
+    _window, editor = make_page(qtbot, SampleContent, {"name": "solo"})
+    cards = editor.cards
+    first = cards[0].content
+    assert isinstance(first, SampleContent)
+    first.name.setFocus()
+
+    editor.model.delete(0)
+
+    assert not editor.add_button.isHidden()
+    assert QApplication.focusWidget() is editor.add_button
+
+
+def test_a_card_with_nothing_to_type_into_can_still_be_current(qtbot: QtBot) -> None:
+    """A content with no edit widget is a card all the same; focusing it just has nowhere to land.
+
+    **Test steps:**
+
+    * build an editor over contents that hold only a caption
+    * set the current row and verify it is reported
+    """
+    _window, editor = make_page(qtbot, BareContent, {"a": 1})
+
+    editor.set_current_index(0)
+
+    assert editor.current_index == 0
+
+
+def test_events_for_a_card_that_is_gone_are_ignored(page: Page, qtbot: QtBot) -> None:
+    """A late edit or a late widget from a removed card touches nothing.
+
+    **Test steps:**
+
+    * remember a card's content, add a widget to it, and delete its row before the event loop runs
+    * emit its edit signal and let the loop run
+    * verify the remaining cards and the model are untouched
+    """
+    content = page.content(2)
+    layout = content.layout()
+    assert isinstance(layout, QFormLayout)
+    layout.addRow("Late", QLineEdit())
+    page.model.delete(2)
+
+    content.value_changed.emit()
+    qtbot.wait(5)
+
+    assert page.names() == ["a", "b"]
+    assert page.model.value == [{"name": "a"}, {"name": "b"}]
+
+
+def test_a_single_card_can_be_dragged_and_a_drag_can_end_two_ways(
+    page: Page, qtbot: QtBot, mocker: MockerFixture
+) -> None:
+    """The ghost of a lone card stands alone, and a drag that ends after a drop or after its card was
+    removed finishes cleanly.
+
+    **Test steps:**
+
+    * drag over an editor holding one card and verify its ghost is at row 0
+    * start a drag whose ``exec`` drops the card, and one whose ``exec`` deletes its row
+    * verify the cards are shown again where they still exist and no ghost is left
+    """
+    _window, single = make_page(qtbot, SampleContent, {"name": "solo"})
+    enter, mime = drop_event(single, QDragEnterEvent, 0, 3)
+    QApplication.sendEvent(single, enter)
+    assert single.ghost_slot == 0
+    QApplication.sendEvent(single, QDragLeaveEvent())
+    assert mime is not None
+
+    drag_class = mocker.patch("borco_pyside.widgets.card_list.card_list_editor.QDrag")
+    y = card_bottom(page.editor, 2)
+    kept: list[QMimeData] = []
+
+    def dropping(*_args: Any) -> Qt.DropAction:
+        enter, enter_data = drop_event(page.editor, QDragEnterEvent, 0, y)
+        drop, data = drop_event(page.editor, QDropEvent, 0, y)
+        kept.extend((enter_data, data))
+        QApplication.sendEvent(page.editor, enter)
+        QApplication.sendEvent(page.editor, drop)
+        return Qt.DropAction.MoveAction
+
+    drag_class.return_value.exec.side_effect = dropping
+    page.card(0).drag_requested.emit()
+    assert page.names() == ["b", "c", "a"]
+    assert page.editor.ghost_slot == -1
+
+    drag_class.return_value.exec.side_effect = lambda *_args: page.model.delete(0)
+    page.card(0).drag_requested.emit()
+    assert page.names() == ["c", "a"]
+    assert page.editor.ghost_slot == -1
+
+
+def test_a_foreign_move_leave_or_drop_is_ignored(page: Page) -> None:
+    """Only this editor's own drag is handled: a foreign move and drop are ignored, and a leave with no drag
+    in progress is harmless.
+
+    **Test steps:**
+
+    * send a move and a drop carrying another owner's payload, and a drag leave
+    * verify neither event was accepted and no ghost opened
+    """
+    # straight to the handlers: Qt does not deliver a move or a drop after an enter that was ignored
+    move, move_mime = drop_event(page.editor, QDragMoveEvent, 0, 5, owner=1)
+    page.editor.dragMoveEvent(move)
+    drop, drop_mime = drop_event(page.editor, QDropEvent, 0, 5, owner=1)
+    page.editor.dropEvent(drop)
+    QApplication.sendEvent(page.editor, QDragLeaveEvent())
+
+    assert not move.isAccepted()
+    assert not drop.isAccepted()
+    assert page.editor.ghost_slot == -1
+    assert move_mime is not None and drop_mime is not None
+
+
+def test_the_grip_asks_for_a_drag_only_after_a_left_press_and_a_real_move(page: Page, qtbot: QtBot) -> None:
+    """A right press, a short move, or a move after the button was released never asks for a drag.
+
+    **Test steps:**
+
+    * press with the right button and move far; press left and move a pixel; press, release, move far
+    * verify no drag was requested, then press left and move far and verify one was
+    """
+    grip = page.card(0).grip
+    centre = grip.rect().center()
+    far = centre + QPoint(40, 40)
+    with qtbot.assertNotEmitted(grip.drag_requested):
+        QTest.mousePress(grip, Qt.MouseButton.RightButton, Qt.KeyboardModifier.NoModifier, centre)
+        QTest.mouseMove(grip, far)
+        QTest.mouseRelease(grip, Qt.MouseButton.RightButton, Qt.KeyboardModifier.NoModifier, centre)
+        QTest.mousePress(grip, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, centre)
+        QTest.mouseMove(grip, centre + QPoint(1, 0))
+        QTest.mouseRelease(grip, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, centre)
+        QTest.mouseMove(grip, far)
+    with qtbot.waitSignal(grip.drag_requested):
+        QTest.mousePress(grip, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, centre)
+        QTest.mouseMove(grip, far)
+
+
+def test_a_style_colour_may_be_a_function_of_the_palette() -> None:
+    """A colour given as a callable is called with the palette at paint time.
+
+    **Test steps:**
+
+    * resolve a fixed colour, a palette role, a function of the palette, and ``None``
+    * verify each resolves as it should
+    """
+    palette = QPalette()
+
+    def dimmed(given: QPalette) -> QColor:
+        return given.color(QPalette.ColorRole.Window).darker()
+
+    assert CardStateStyle.resolve(QColor("red"), palette) == QColor("red")
+    assert CardStateStyle.resolve(QPalette.ColorRole.Highlight, palette) == palette.color(QPalette.ColorRole.Highlight)
+    assert CardStateStyle.resolve(dimmed, palette) == dimmed(palette)
+    assert CardStateStyle.resolve(None, palette) is None
+
 
 # endregion
