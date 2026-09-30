@@ -1002,6 +1002,55 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         return next((source for source in sources if isinstance(source, dict)), None)
 
     @property
+    def source_records(self) -> list[Any]:
+        """The ``sources`` entries as an editor shows them, **primary first** ([[field-schema#sources]]).
+
+        The entry :attr:`primary_source` resolves (the first one flagged ``primary``, else the first
+        object) leads, the rest follow in stored order, and each object comes back as a **copy with the
+        ``primary`` key stripped**: position says which is primary, so an editor holds no flag to keep in
+        step. Non-object entries are carried through in order behind it, so a save writes them back untouched.
+        Writing the list back is :meth:`set_source_records`.
+        """
+        primary = self.primary_source
+        records: list[Any] = [
+            {key: value for key, value in source.items() if key != PRIMARY_KEY} if isinstance(source, dict) else source
+            for source in self.sources
+        ]
+        if primary is not None:
+            top = next(row for row, source in enumerate(self.sources) if source is primary)
+            records.insert(0, records.pop(top))
+        return records
+
+    def set_source_records(self, records: Sequence[Any]) -> None:
+        """Replace ``sources`` with ``records``, the **top object entry** becoming the primary
+        ([[field-schema#sources]]).
+
+        The whole list at once, like :meth:`set_collection_records`. Every object entry is copied without a
+        stale ``primary`` key and the first one is flagged ``primary: true`` -- the same entry
+        :attr:`primary_source` would resolve, so :attr:`title`/:attr:`publisher`/:attr:`url` read the top
+        row's own values, empty or not. Non-object entries are carried through unflagged. An **empty** list
+        removes the key rather than storing ``[]`` ([[field-schema#deferred-items]]). Nothing is deduplicated
+        or merged here: :func:`duplicate_source_rows` only names the repeats.
+
+        :param records: the entries to store, top first; copied, so a caller's own list is not adopted.
+        """
+        if not records:
+            self.core.pop("sources", None)
+            return
+        stored: list[Any] = []
+        flagged = False
+        for record in records:
+            if isinstance(record, dict):
+                entry = {key: value for key, value in record.items() if key != PRIMARY_KEY}
+                if not flagged:
+                    entry[PRIMARY_KEY] = True
+                    flagged = True
+                stored.append(entry)
+            else:
+                stored.append(record)
+        self.__core_or_create()["sources"] = stored
+
+    @property
     def title(self) -> str:
         """The display title -- the primary source's ``title`` ([[field-schema#sources]]); empty if there
         is no source, or its ``title`` is present but not a string (which locks,
@@ -1974,3 +2023,27 @@ def authors_comma_editable(authors: Sequence[AuthorEntry]) -> bool:
     :returns: whether the comma line editor can represent every entry without loss.
     """
     return all(isinstance(entry, str) and "," not in entry for entry in authors)
+
+
+def duplicate_source_rows(records: Sequence[Any]) -> list[int]:
+    """The rows of ``records`` that repeat a URL an earlier row already has ([[field-schema#sources]]).
+
+    A pure rule, never acted on by the document: the editor shows these rows so the user can delete them,
+    and a file holding duplicates opens clean and saves as it is. URLs are compared after trimming, an
+    empty URL is never a duplicate (any number of sources may be address-less), and the first row with a
+    URL is never marked -- only the 2nd, 3rd, ... are, counted top to bottom. Non-object entries have no
+    URL and are skipped.
+
+    :param records: the source entries, top to bottom, as :attr:`RehuDocument.source_records` yields them.
+    :returns: the indexes of the duplicate rows, ascending.
+    """
+    seen: set[str] = set()
+    rows: list[int] = []
+    for row, record in enumerate(records):
+        url = coerced_str(record.get("url")).strip() if isinstance(record, dict) else ""
+        if not url:
+            continue
+        if url in seen:
+            rows.append(row)
+        seen.add(url)
+    return rows

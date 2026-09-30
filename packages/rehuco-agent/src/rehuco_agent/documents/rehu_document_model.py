@@ -121,6 +121,11 @@ The **write-through** subset of the core block's own declaration
 by the document rather than edited, so they carry no `SimpleProperty` and no handler here."""
 
 
+PRIMARY_SOURCE_FIELD_NAMES: Final = ("title", "publisher", "url")
+"""The members of :data:`COMMON_FIELD_NAMES` that are the **top source's own** values
+([[field-schema#sources]]): writing one changes an entry of :attr:`RehuDocumentModel.sources`, which is
+re-read after it so the list never lags its own top row."""
+
 UNTITLED_LABEL: Final = "Untitled"
 """Stand-in display label for a document with no path yet -- :attr:`RehuDocumentModel.label` is empty
 for one, and every dialog that names a document falls back to this, so the wording lives in one place."""
@@ -152,9 +157,9 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     the core non-GUI ([[plugins#core-vs-plugin]]). Setting ``title`` / ``publisher`` / ``url`` writes
     through to the document's **primary** source ([[field-schema#sources]]), marks the model dirty,
     and emits the field's ``<name>_changed`` signal -- which is what makes live "both" work: an edit
-    in the editor updates the model, whose signal the viewer is bound to. ``sources`` is exposed as
-    the list it is; the
-    multi-source record-list editor is a later slice (#26) that plugs into this seam. ``authors``
+    in the editor updates the model, whose signal the viewer is bound to. ``sources`` is the whole list,
+    top entry first -- that entry is the primary -- and a write to it moves ``title`` / ``publisher`` /
+    ``url`` with it (#386); the multi-source record-list editor plugs into this seam. ``authors``
     / ``advertised_tags`` / ``extra_tags`` are common-core top-level lists, not source-scoped, so they
     write straight through to the document instead of through the primary source (#23).
     :meth:`revert` is the write-through's mirror image: it re-reads the document from disk and
@@ -171,11 +176,6 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     unknown_fields_changed = Signal()
     """Fires when the set of unrecognized active-block fields changes -- i.e. one is dropped via
     :meth:`remove_unknown_field` ([[plugins#fallback-editor]], #28)."""
-
-    sources_changed = Signal()
-    """Fires when a non-primary source is appended via :meth:`add_source` (#272) -- the primary source's
-    own `title`/`publisher`/`url` changes are covered by their own `SimpleProperty` notify signals
-    instead, since those are what `__on_common_field_changed` already write through."""
 
     reloaded = Signal()
     """Fires when the document's **file seam** was crossed -- the bytes this model stands for were
@@ -232,6 +232,13 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
     title = SimpleProperty("")
     """The primary source's display title ([[field-schema#sources]])."""
+
+    sources = SimpleProperty[list[Any]](default_factory=list)
+    """The document's ``sources`` entries, **top first** ([[field-schema#sources]]): each object without
+    a ``primary`` key, because the top entry *is* the primary -- :attr:`title`/:attr:`publisher`/:attr:`url`
+    are its own values, empty or not, and an assignment here rewrites the flag onto whichever entry ends up
+    on top (:meth:`~rehuco_core.RehuDocument.set_source_records`). Duplicated URLs are kept as they are;
+    :func:`~rehuco_core.duplicate_source_rows` names them for an editor to show (#386)."""
 
     authors = SimpleProperty[Sequence[AuthorEntry]](default_factory=list)
     """The shared ``authors`` list ([[field-schema#authors]]); entries are tolerantly
@@ -449,6 +456,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         for name in (*TYPE_FIELD_BOOL_NAMES, *TYPE_FIELD_INT_NAMES, *TYPE_FIELD_STR_NAMES, *TYPE_FIELD_STR_LIST_NAMES):
             signal_name = SimpleProperty.notify_signal_name(type(self), name)
             getattr(self, signal_name).connect(lambda value, key=name: self.__on_type_field_changed(key, value))
+        self.sources_changed.connect(self.__on_sources_changed)  # type: ignore[attr-defined]
         for name in RECORD_LIST_FIELD_NAMES:
             signal_name = SimpleProperty.notify_signal_name(type(self), name)
             getattr(self, signal_name).connect(lambda value, key=name: self.__on_record_list_changed(key, value))
@@ -598,11 +606,6 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         if path is None:
             return ""
         return path.parent.name if is_directory_scoped(path) else path.stem
-
-    @property
-    def sources(self) -> list[dict[str, Any]]:
-        """The document's ``sources`` list ([[field-schema#sources]]); the model edits its primary entry."""
-        return self.__document.sources
 
     def save(self) -> None:
         """Atomically save the document ([[data-model#write-integrity]]) and clear the dirty flag.
@@ -971,43 +974,45 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         """Add a scraped page as a source ([[field-schema#sources]], #272), never a duplicate of one
         already there by ``url``.
 
-        Three cases, decided by ``url`` alone (#366): a source with this ``url`` **already exists** --
-        its ``publisher`` is filled in if empty and it is otherwise left as it is, so a re-scrape never
-        duplicates it and never relabels a publisher the document already names; the primary source
-        **has neither url nor publisher** (a fresh document) -- it is filled with both, through the
-        existing `~RehuDocumentModel.url`/`~RehuDocumentModel.publisher` properties so dirty tracking
-        and the Save Preview refresh exactly as an edit through those fields already does; or the
-        ``url`` is **new** -- appended as a non-primary entry, beside whatever the document already has,
-        never overwriting a source from an earlier drop or a `.tc` migration. A primary that names a
-        publisher but no URL is that third case, not the second: a document may well record a site
-        closed for years, its address gone or not worth recovering, and that is a real source in its own
-        right -- the scraped page goes beside it rather than lending it an address it never had. Writes
-        that bypass the field setters emit :attr:`sources_changed` themselves.
+        Three cases, decided by ``url`` alone (#366, #386), with URLs compared after trimming: a source
+        with this ``url`` **already exists** -- its ``publisher`` is filled in if empty and it is
+        otherwise left as it is, so a re-scrape never duplicates it and never relabels a publisher the
+        document already names; the top source (the primary) **has no url** -- it takes this one, with or
+        without a publisher, and takes the scraper's publisher only if it names none; or the ``url`` is
+        **new** -- appended below whatever the document already has, never overwriting a source from an
+        earlier drop or a `.tc` migration. The primary is filled through the
+        `~RehuDocumentModel.url`/`~RehuDocumentModel.publisher` properties, so dirty tracking and the Save
+        Preview refresh exactly as an edit through those fields already does; the other writes go through
+        :attr:`sources`.
 
         :param publisher: the scraper's publisher -- fills the matching or primary source's own empty
             ``publisher``, and seeds a new entry's.
         :param url: the scraped page's URL.
         """
-        existing = next(
-            (source for source in self.sources if isinstance(source, dict) and source.get("url") == url), None
+        url = url.strip()
+        sources = self.sources
+        match = next(
+            (
+                row
+                for row, source in enumerate(sources)
+                if isinstance(source, dict) and str(source.get("url") or "").strip() == url
+            ),
+            None,
         )
-        if existing is not None:
-            if existing.get("publisher"):
+        if match is not None:
+            if sources[match].get("publisher"):
                 return
-            if existing is self.__document.primary_source:
+            if match == 0:
                 self.publisher = publisher
-                return
-            existing["publisher"] = publisher
-            self.dirty = True
-            self.sources_changed.emit()
+            else:
+                self.sources = [*sources[:match], {**sources[match], "publisher": publisher}, *sources[match + 1 :]]
             return
-        if not self.url and not self.publisher:
+        if not self.url.strip():
             self.url = url
-            self.publisher = publisher
+            if not self.publisher:
+                self.publisher = publisher
             return
-        self.__document.sources.append({"title": self.title, "publisher": publisher, "url": url})
-        self.dirty = True
-        self.sources_changed.emit()
+        self.sources = [*sources, {"title": self.title, "publisher": publisher, "url": url}]
 
     def rescan_images(self) -> None:
         """Send this resource's ``<stem>NN`` set back to the directory (#73).
@@ -1094,6 +1099,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             self.path = self.__document.path
             self.location = self.__document.path.as_posix() if self.__document.path is not None else ""
             self.resource_type = self.__document.type
+            self.sources = self.__document.source_records
             self.title = self.__document.title
             self.authors = self.__document.authors
             self.publisher = self.__document.publisher
@@ -1355,6 +1361,29 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         if self.__seeding:
             return
         setattr(self.__document, key, value)
+        if key in PRIMARY_SOURCE_FIELD_NAMES:
+            with self.__seeding_guard():
+                self.sources = self.__document.source_records
+        self.dirty = True
+
+    def __on_sources_changed(self, value: list[Any]) -> None:
+        """Write an edited ``sources`` list through to the document and mark dirty (#386).
+
+        The document takes the list whole (:meth:`~rehuco_core.RehuDocument.set_source_records`), so the
+        top entry becomes the primary; :attr:`title`/:attr:`publisher`/:attr:`url` are then re-read from it,
+        under the seeding guard so that re-read is not written back, since a reorder or a deleted top row
+        changes all three at once. No-op while the model is seeding (construction, :meth:`revert`, or
+        :meth:`convert`) -- see the comment there.
+
+        :param value: the new entries, top first.
+        """
+        if self.__seeding:
+            return
+        self.__document.set_source_records(value)
+        with self.__seeding_guard():
+            self.title = self.__document.title
+            self.publisher = self.__document.publisher
+            self.url = self.__document.url
         self.dirty = True
 
     def __on_type_field_changed(self, key: str, value: Any) -> None:

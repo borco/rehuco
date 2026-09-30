@@ -804,18 +804,37 @@ def test_add_source_fills_an_empty_primary() -> None:
     assert model.dirty is True
 
 
-def test_add_source_leaves_a_primary_with_a_publisher_but_no_url_alone() -> None:
-    """A primary that names a publisher but has no URL -- a site closed for years, its address gone --
-    is a real source, not an empty slot to fill (#272, #366): the scraped page is appended beside it,
-    and neither its publisher nor its missing URL is touched."""
+def test_add_source_gives_a_primary_with_a_publisher_but_no_url_the_url() -> None:
+    """A primary that names a publisher but has no URL takes the scraped page's URL and keeps its own
+    publisher (#386) -- the page is not appended as a second source, so the URL is never stored twice.
+
+    **Test steps:**
+
+    * build a model over a primary holding a publisher and no URL
+    * call ``add_source``
+    * verify the URL is on the primary at once, the publisher is untouched, and there is one source
+    * set the same URL by hand, as the editor's URL line does, and verify there is still one source
+    """
     document = RehuDocument({"type": "Tutorial", "sources": [{"publisher": "Original", "primary": True}]})
     model = RehuDocumentModel(document)
 
     model.add_source("Scraped Publisher", "https://example.com/page")
 
-    assert document.sources[0] == {"publisher": "Original", "primary": True}
-    assert document.sources[1] == {"title": "", "publisher": "Scraped Publisher", "url": "https://example.com/page"}
+    assert model.url == "https://example.com/page"
+    assert document.sources == [{"publisher": "Original", "url": "https://example.com/page", "primary": True}]
     assert model.dirty is True
+
+    model.url = "https://example.com/page"
+
+    assert len(document.sources) == 1
+
+
+def test_add_source_compares_urls_after_trimming(model: RehuDocumentModel, document: RehuDocument) -> None:
+    """A scraped URL with stray whitespace still matches the source that has it (#386)."""
+    model.add_source("Whatever", "  https://example.com  ")
+
+    assert len(document.sources) == 1
+    assert model.dirty is False
 
 
 def test_add_source_fills_only_the_empty_publisher_of_the_matching_entry() -> None:
@@ -842,11 +861,11 @@ def test_add_source_fills_only_the_empty_publisher_of_the_matching_entry() -> No
     model = RehuDocumentModel(document)
     received = 0
 
-    def _record() -> None:
+    def _record(*_args: object) -> None:
         nonlocal received
         received += 1
 
-    model.sources_changed.connect(_record)
+    model.sources_changed.connect(_record)  # type: ignore[attr-defined]
 
     model.add_source("Foo", "https://www.foo.com/1")
     assert document.sources[0]["publisher"] == "Foo123"
@@ -891,11 +910,11 @@ def test_add_source_appends_when_the_primary_already_has_a_url(
     """
     received = 0
 
-    def _record() -> None:
+    def _record(*_args: object) -> None:
         nonlocal received
         received += 1
 
-    model.sources_changed.connect(_record)
+    model.sources_changed.connect(_record)  # type: ignore[attr-defined]
 
     model.add_source("Other Publisher", "https://other.example.com")
 
@@ -1873,15 +1892,85 @@ def test_document_exposes_the_wrapped_document(model: RehuDocumentModel, documen
     assert model.document is document
 
 
-def test_sources_exposes_the_document_list(model: RehuDocumentModel, document: RehuDocument) -> None:
-    """The model exposes the document's ``sources`` list explicitly (the list-aware seam).
+def test_sources_exposes_the_document_records(model: RehuDocumentModel, document: RehuDocument) -> None:
+    """The model exposes the document's ``source_records`` (the list-aware seam).
 
     **Test steps:**
 
     * read ``model.sources``
-    * verify it is the document's ``sources`` list (multi-source editor plugs in here)
+    * verify it is the document's records, top first and without the ``primary`` key
     """
-    assert model.sources == document.sources
+    assert model.sources == document.source_records
+    assert "primary" not in model.sources[0]
+
+
+def test_a_file_with_duplicate_sources_opens_clean_and_saves_as_it_is(mocker: MockerFixture) -> None:
+    """Duplicates are never acted on automatically (#386): opening does not dirty the model, and a save
+    writes both entries.
+
+    **Test steps:**
+
+    * open a document holding the same URL twice
+    * verify the model is clean and both entries are listed
+    * save, with the atomic write mocked, and verify both entries were written
+    """
+    url = "https://example.com/page"
+    sources = [{"title": "T", "url": url, "primary": True}, {"title": "T", "url": url}]
+    mocker.patch.object(
+        Path,
+        "read_text",
+        return_value=json.dumps(
+            {"format_version": CURRENT_FORMAT_VERSION, "core": {"type": "tutorial", "sources": sources}, "tutorial": {}}
+        ),
+    )
+    model = RehuDocumentModel(RehuDocument.load(Path("/fake/info.rehu")))
+    write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+
+    assert model.dirty is False
+    assert len(model.sources) == 2
+
+    model.save()
+
+    assert write.call_args.args[1].count(url) == 2
+
+
+def test_assigning_sources_makes_the_top_entry_the_primary() -> None:
+    """Moving a source to the top changes ``title``, and the flag follows it in the document (#386).
+
+    **Test steps:**
+
+    * open a document with two sources, then assign them in the other order
+    * verify ``title`` is the new top's, the flag sits on that entry alone, and the model is dirty
+    """
+    document = RehuDocument({"type": "Tutorial", "sources": [{"title": "First", "primary": True}, {"title": "Second"}]})
+    model = RehuDocumentModel(document)
+
+    model.sources = list(reversed(model.sources))
+
+    assert model.title == "Second"
+    assert document.sources == [{"title": "Second", "primary": True}, {"title": "First"}]
+    assert model.dirty is True
+
+
+def test_an_empty_title_on_the_top_source_stays_the_title() -> None:
+    """The model's fields are the top source's own values, even when empty (#386)."""
+    document = RehuDocument({"type": "Tutorial", "sources": [{"url": "https://a.example", "primary": True}]})
+    model = RehuDocumentModel(document)
+
+    model.sources = [{"url": "https://b.example"}, {"title": "Lower"}]
+
+    assert model.title == ""
+    assert model.url == "https://b.example"
+
+
+def test_editing_the_title_updates_the_top_source_entry() -> None:
+    """A scalar edit is reflected in ``sources`` at once (#386)."""
+    document = RehuDocument({"type": "Tutorial", "sources": [{"title": "Old", "primary": True}]})
+    model = RehuDocumentModel(document)
+
+    model.title = "New"
+
+    assert model.sources[0]["title"] == "New"
 
 
 def test_path_passes_through_to_the_document() -> None:

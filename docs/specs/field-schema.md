@@ -243,6 +243,14 @@ sources:
 - **Resolution is permissive.** Normally exactly one item is flagged. If **none** is, the
   **first item** is primary; if **several** are, the **first** flagged one wins. Neither should
   happen — `.rehu` is not hand-written — but the reader tolerates it rather than erroring.
+- **The top entry is the primary.** What an editor reads and writes is the list top-first with the flag
+  stripped; a write puts `primary: true` on the first entry alone, and `title` / `publisher` / `url` are that
+  entry's own values, empty or not. The permissive rule above still governs reading a file.
+- **A scrape fills the primary's missing URL** — with or without a publisher — and never adds a URL a source
+  already has (compared after trimming); any other new URL is appended below.
+- **A repeated URL is a duplicate, and is only ever shown.** The 2nd, 3rd, … row carrying the same non-empty
+  URL is flagged for the editor; nothing is deleted, merged or reordered automatically, a file holding
+  duplicates opens clean, and a save writes what is there. An empty URL is never a duplicate.
 - **`authors` are not part of a source** — one shared list serves the resource. The same course
   under a slightly different name elsewhere is still the same course; a *different* author set
   means it is probably a *different* tutorial, not another source of this one.

@@ -32,6 +32,7 @@ from rehuco_core import (
     RehuFormatError,
     authors_comma_editable,
     current_block_version,
+    duplicate_source_rows,
 )
 
 # A Tutorial document exercising multi-source, a plugin block, and unknown keys ([[field-schema#example-files]]).
@@ -902,6 +903,73 @@ def test_primary_source_is_none_when_no_entry_is_an_object() -> None:
     doc = RehuDocument({"sources": ["junk"]})
     assert doc.primary_source is None
     assert doc.title == ""
+
+
+def test_source_records_lead_with_the_primary_and_strip_its_flag() -> None:
+    """``source_records`` is top-first, without ``primary``, copies, with non-objects carried through (#386).
+
+    **Test steps:**
+
+    * build sources whose flagged entry is second, with a junk entry between the others
+    * verify the flagged entry leads, no record holds ``primary``, and the junk keeps its place
+    * mutate a record and verify the stored sources are unchanged
+    """
+    doc = RehuDocument({"sources": [{"title": "A"}, "junk", {"title": "B", "primary": True}]})
+
+    records = doc.source_records
+
+    assert records == [{"title": "B"}, {"title": "A"}, "junk"]
+    records[0]["title"] = "changed"
+    assert doc.sources[2] == {"title": "B", "primary": True}
+
+
+def test_source_records_are_empty_without_sources() -> None:
+    """No ``sources`` reads as an empty list (#386)."""
+    assert RehuDocument({}).source_records == []
+
+
+def test_set_source_records_flags_the_first_entry_only() -> None:
+    """The top object entry becomes the primary and no other keeps a stale flag (#386).
+
+    **Test steps:**
+
+    * write records where a lower one still carries ``primary`` and a non-object comes first
+    * verify ``primary: true`` sits on the first object alone, the junk is carried, and the accessors follow
+    """
+    doc = RehuDocument({})
+
+    doc.set_source_records(["junk", {"title": "Top"}, {"title": "Low", "primary": True}])
+
+    assert doc.sources == ["junk", {"title": "Top", "primary": True}, {"title": "Low"}]
+    assert doc.title == "Top"
+
+
+def test_set_source_records_with_no_records_removes_the_key() -> None:
+    """An empty list is stored as absent, not ``[]`` (#386)."""
+    doc = RehuDocument({"sources": [{"title": "A", "primary": True}]})
+
+    doc.set_source_records([])
+
+    assert "sources" not in doc.core
+
+
+@mark.parametrize(
+    ("urls", "expected"),
+    [
+        param(["a", "b", "a"], [2], id="repeat-marks-later-row"),
+        param(["a", " a ", "a"], [1, 2], id="trimmed"),
+        param(["", "", "  "], [], id="empty-never-duplicate"),
+        param(["a", "b"], [], id="first-not-marked"),
+    ],
+)
+def test_duplicate_source_rows(urls: list[str], expected: list[int]) -> None:
+    """Rows repeating an earlier trimmed, non-empty URL are named, first occurrences never (#386)."""
+    assert duplicate_source_rows([{"url": url} for url in urls]) == expected
+
+
+def test_duplicate_source_rows_ignores_non_objects() -> None:
+    """A non-object entry has no URL and is never a duplicate, nor hides one (#386)."""
+    assert duplicate_source_rows(["a", {"url": "a"}, "a", {"url": "a"}, {}]) == [3]
 
 
 def test_title_setter_creates_primary_source_when_absent() -> None:
