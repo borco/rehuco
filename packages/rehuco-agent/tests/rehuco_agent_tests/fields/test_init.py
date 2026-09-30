@@ -53,7 +53,8 @@ def test_build_document_form_leads_with_type_then_location_then_the_record_field
     **Test steps:**
 
     * build the document form's editor grids for the model
-    * verify the main editor tab leads with ``Type`` then ``Location`` then the configured rows in order
+    * verify the main editor tab leads with ``Type`` then ``Location`` then the configured rows in order --
+      ``Sources`` where Title, Publisher and Url were, since the top source's own three are edited on its card
     * verify the description lands on its own editor tab
     """
     grids = build_document_form(model, NameSuggestionModel(model), RehuDocumentImageOrganizer(model)).make_editor(model)
@@ -65,12 +66,10 @@ def test_build_document_form_leads_with_type_then_location_then_the_record_field
     assert form_labels(main) == [
         "Type",
         "Location",
-        "Title",
+        "Sources",
         "Authors",
         "Released",
-        "Publisher",
         "Collections",
-        "Url",
         "Advertised Duration",
         "Original Duration",
         "Current Duration",

@@ -62,6 +62,10 @@ class CardListEditor(QWidget):
     current_index_changed = Signal(int)
     """Fires with the new :attr:`current_index` -- the `ItemViewer` contract."""
 
+    card_added = Signal(object)
+    """Fires with each :class:`~.card.Card` built after construction, so an app can dress it -- the icons on its
+    actions, say. The cards that already exist when a subclass finishes its own construction are :attr:`cards`."""
+
     MIME_TYPE: Final = "application/x-borco-card-list"
     """The drag payload format: this editor's identity and the dragged row."""
 
@@ -299,6 +303,7 @@ class CardListEditor(QWidget):
         card.drag_requested.connect(lambda: self.__start_drag(card))
         self.__wire(content)
         card.set_states(self.__model.states(row))
+        self.card_added.emit(card)
         return card
 
     def __wire(self, content: QWidget) -> None:

@@ -34,6 +34,10 @@ DIRTY_COLOR: Final = "#F48FB1"
 none of the severity tokens above already claim. The lighter 200 step, not 400: the latter reads as a
 cold, saturated magenta at any real strength, where this one stays a soft, warm blush."""
 
+FLAGGED_COLOR: Final = DIRTY_COLOR
+"""The tint of a card flagged in a card list -- a source repeating the address of one above it (#391). The
+same soft pink as :data:`DIRTY_COLOR`: both say "look at this one", and neither is a severity."""
+
 DIRTY_BACKGROUND: Final = "rgba(244, 143, 177, 24)"
 """:data:`DIRTY_COLOR` at low alpha, for tinting a dirty settings frame's background without
 overpowering the labels and controls painted on top of it."""

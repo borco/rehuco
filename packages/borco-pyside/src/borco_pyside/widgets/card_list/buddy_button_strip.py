@@ -2,7 +2,7 @@
 
 from typing import Final, override
 
-from PySide6.QtCore import QEvent, QObject, QPoint, QSize, Qt, QTimer
+from PySide6.QtCore import QEvent, QObject, QPoint, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QToolButton, QWidget
 
@@ -21,8 +21,14 @@ class BuddyButtonStrip(QObject):
     :param frame: the widget the buttons sit beside.
     """
 
+    size_changed = Signal()
+    """Fires when :meth:`reserved_width` changed -- an action gained an icon, so its button grew or shrank."""
+
     SPACING: Final = 4
     """The gap between the frame and the buttons, in pixels."""
+
+    UNBOUNDED: Final = 16777215
+    """Qt's ``QWIDGETSIZE_MAX``, which PySide does not export -- the size that lifts a fixed size again."""
 
     def __init__(self, host: QWidget, frame: QWidget) -> None:
         super().__init__(host)
@@ -49,13 +55,34 @@ class BuddyButtonStrip(QObject):
         button.setDefaultAction(action)
         button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         button.setAutoRaise(True)
-        side = button.sizeHint().height()
-        button.setFixedSize(QSize(side, side))
         button.setVisible(self.__revealed)
+        self.__square(button)
         buddy.installEventFilter(self)
         self.__buttons.append((button, buddy))
+        # an icon arriving after the button was built (an app dresses the actions once the card exists)
+        # changes its natural size
+        action.changed.connect(self.__refit)
         self.reposition()
         return button
+
+    def __square(self, button: QToolButton) -> None:
+        """Make ``button`` a square of its own natural height.
+
+        :param button: the button.
+        """
+        button.setMinimumSize(0, 0)
+        button.setMaximumSize(self.UNBOUNDED, self.UNBOUNDED)
+        side = button.sizeHint().height()
+        button.setFixedSize(QSize(side, side))
+
+    def __refit(self) -> None:
+        """Re-square every button after an action changed, telling the host when the strip's width did."""
+        before = self.reserved_width()
+        for button, _ in self.__buttons:
+            self.__square(button)
+        if self.reserved_width() != before:
+            self.size_changed.emit()
+        self.reposition()
 
     def reserved_width(self) -> int:
         """The room the host's layout keeps free right of the frame, so a revealed strip never moves it.

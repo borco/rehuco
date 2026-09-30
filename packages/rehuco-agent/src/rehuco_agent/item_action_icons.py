@@ -16,9 +16,10 @@ action (#104), so applying them is a single call with nothing to hold on to afte
 
 from typing import Final
 
-from borco_pyside.theming import ActionIconThemeHandler
+from borco_pyside.theming import ActionIconThemeHandler, themed_svg_icon
 from borco_pyside.widgets import (
     ActionButtonColumn,
+    Card,
     DeleteItemAction,
     DuplicateItemAction,
     EditItemAction,
@@ -30,6 +31,7 @@ from borco_pyside.widgets import (
     MoveUpItemAction,
     ResetItemAction,
 )
+from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import QToolButton
 
 ICONS_BY_ACTION_TYPE: Final = {
@@ -71,3 +73,41 @@ def apply_action_column_icons(*columns: ActionButtonColumn) -> None:
             if icon is not None:
                 # parents itself to the action, which is what makes this a call with nothing to keep
                 ActionIconThemeHandler(action, icon)
+
+
+def apply_card_icons(card: Card) -> None:
+    """Give every action a card of a card list carries this app's icon, kept theme-recolored.
+
+    The card's two buttons (delete, insert) pick their icon up from their action, and re-size themselves
+    to it; its four move actions have no button but are dressed all the same, for whatever a host shows
+    them in.
+
+    A **current** card is filled in the selection colour, on which the usual button colour would not read:
+    while it is current every glyph is drawn in the palette's ``HighlightedText`` instead, and back again
+    when it is not. Both icons are the shared themed ones, which read the palette as they paint, so a theme
+    switch needs nothing from here.
+
+    :param card: the card to dress.
+    """
+    actions = (
+        card.delete_action,
+        card.insert_action,
+        card.move_to_top_action,
+        card.move_up_action,
+        card.move_down_action,
+        card.move_to_bottom_action,
+    )
+
+    def dress(current: bool) -> None:
+        """Set every action's icon for a card that is, or is not, current.
+
+        :param current: whether the card is the current one.
+        """
+        role = QPalette.ColorRole.HighlightedText if current else QPalette.ColorRole.ButtonText
+        for action in actions:
+            path = ICONS_BY_ACTION_TYPE.get(type(action))
+            if path is not None:
+                action.setIcon(themed_svg_icon(path, role=role))
+
+    dress(card.current)
+    card.current_changed.connect(dress)

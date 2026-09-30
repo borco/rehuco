@@ -41,8 +41,28 @@ class Card(QWidget):  # pylint: disable=too-many-instance-attributes
     drag_requested = Signal()
     """Fires when the grip is dragged."""
 
+    current_changed = Signal(bool)
+    """Fires with the new :attr:`current` -- for an app that dresses the buttons differently on the selected fill."""
+
     RADIUS: Final = 4
     """The corner radius of the card's fill and outline."""
+
+    MARGIN: Final = 2
+    """The gap, in pixels, between the card's edge and its grip, frame and buttons."""
+
+    FRAME_MARGIN: Final = 6
+    """The gap, in pixels, between the frame's edge and the content inside it."""
+
+    @classmethod
+    def content_offset(cls) -> int:
+        """How far below the card's top edge its content starts: the card's own margin, the frame's line, and
+        the gap inside it. What a host pins something to the content's first row against.
+
+        :returns: the offset, in pixels.
+        """
+        frame = QFrame()
+        frame.setFrameShape(QFrame.Shape.StyledPanel)
+        return cls.MARGIN + frame.frameWidth() + cls.FRAME_MARGIN
 
     def __init__(self, content: QWidget, style: CardStyle, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -60,6 +80,7 @@ class Card(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__frame: Final = QFrame(self)
         self.__frame.setFrameShape(QFrame.Shape.StyledPanel)
         frame_layout = QVBoxLayout(self.__frame)
+        frame_layout.setContentsMargins(self.FRAME_MARGIN, self.FRAME_MARGIN, self.FRAME_MARGIN, self.FRAME_MARGIN)
         frame_layout.addWidget(content)
 
         self.delete_action: Final = self.__keyed(DeleteItemAction(self), "Delete this entry", Qt.Key.Key_Delete)
@@ -76,10 +97,11 @@ class Card(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__strip.add_button(self.delete_action, delete_buddy)
         self.__strip.add_button(self.insert_action, insert_buddy)
 
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(2, 2, 2 + self.__strip.reserved_width(), 2)
-        layout.addWidget(self.__grip)
-        layout.addWidget(self.__frame, 1)
+        self.__layout: Final = QHBoxLayout(self)
+        self.__layout.addWidget(self.__grip)
+        self.__layout.addWidget(self.__frame, 1)
+        self.__reserve_strip()
+        self.__strip.size_changed.connect(self.__reserve_strip)
 
     @property
     def content(self) -> QWidget:
@@ -127,6 +149,7 @@ class Card(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__current = current
         self.__update_strip()
         self.update()
+        self.current_changed.emit(current)
 
     @property
     def states(self) -> Mapping[str, str]:
@@ -170,6 +193,12 @@ class Card(QWidget):  # pylint: disable=too-many-instance-attributes
         """
         set_tooltip_and_shortcut(action, tooltip, QKeySequence(Qt.KeyboardModifier.ControlModifier | key))
         return action
+
+    def __reserve_strip(self) -> None:
+        """Keep the room right of the frame the buttons' width, so revealing them never moves the frame."""
+        self.__layout.setContentsMargins(
+            self.MARGIN, self.MARGIN, self.MARGIN + self.__strip.reserved_width(), self.MARGIN
+        )
 
     def __update_strip(self) -> None:
         """Reveal the buttons while the card is hovered or current."""
