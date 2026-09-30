@@ -16,6 +16,7 @@ from PySide6.QtWidgets import QVBoxLayout, QWidget
 from unidecode import unidecode
 
 from ..colors import WARNING_COLOR
+from .open_link_line import OpenLinkLine
 
 WARNING_STYLESHEET: Final = f"QLabel {{ color: {WARNING_COLOR}; }}"
 """Applied to the current-name label when the name matches none of the suggestions ([[plugins#field-toolkit]])."""
@@ -56,16 +57,19 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
     decides *that* it needs something, never how the answer is obtained ([[plugins#field-toolkit]]).
     With no predicate set, nothing is unavailable, which is what keeps the widget usable on its own.
 
+    :param open_hint: tooltip of the ``(open)`` link after the current name.
     :param parent: optional Qt parent.
     """
 
     suggestion_selected = Signal(str)
+    open_requested = Signal()
+    """The ``(open)`` link after the current name was clicked (#389); the owner reveals the resource."""
     expanded_changed = Signal(bool)
     expanded = SimpleProperty(False)
     """Whether the suggestions panel is open; ``set_expanded`` is the slot-usable setter (the owner
     restores it per ``.rehu`` from persisted session state, and the misc-column toggle drives it)."""
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, open_hint: str = "", parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.__current_name = ""
         self.__suggestions: list[str] = []
@@ -74,7 +78,8 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
         """Answers whether a candidate name is already taken, supplied by the owner
         (:meth:`set_conflict_check`); ``None`` until one is, so every name reads as available."""
 
-        self.__name_label: Final = ElidedLabel()
+        self.__name_line: Final = OpenLinkLine(hint=open_hint)
+        self.__name_line.open_requested.connect(self.open_requested)
 
         self.__suggestions_widget: Final = QWidget()
         self.__suggestions_layout: Final = QVBoxLayout(self.__suggestions_widget)
@@ -82,7 +87,7 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.__name_label)
+        layout.addWidget(self.__name_line)
         layout.addWidget(self.__suggestions_widget)
 
         self.expanded_changed.connect(self.__on_expanded_changed)
@@ -92,7 +97,7 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
     def header_height(self) -> int:
         """The current-name line's natural height, stable regardless of :attr:`expanded`
         (`HeaderPinned` contract, [[plugins#field-toolkit]])."""
-        return self.__name_label.sizeHint().height()
+        return self.__name_line.sizeHint().height()
 
     def set_current_name(self, name: str) -> None:
         """Set the resource's current name and re-render.
@@ -101,6 +106,13 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
         """
         self.__current_name = name
         self.__render()
+
+    def set_openable(self, openable: bool) -> None:
+        """Show the ``(open)`` link after the current name only while there is a path to reveal.
+
+        :param openable: whether the resource has a path yet.
+        """
+        self.__name_line.set_openable(openable)
 
     def set_conflict_check(self, conflicts: Callable[[str], bool] | None) -> None:
         """Supply the predicate deciding whether a candidate name is already taken (#162).
@@ -176,9 +188,9 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
         widget subcontrols like ``::indicator``). ``name`` stays the dict key and the value
         :attr:`suggestion_selected` would carry, so the marker never leaks into what a rename renames to.
         """
-        self.__name_label.set_text(self.__current_name)
+        self.__name_line.set_text(self.__current_name)
         unmatched = bool(self.__current_name) and self.__current_name not in self.__suggestions
-        self.__name_label.setStyleSheet(WARNING_STYLESHEET if unmatched else "")
+        self.__name_line.text_label.setStyleSheet(WARNING_STYLESHEET if unmatched else "")
         for name, label in self.__suggestion_labels.items():
             is_current = name == self.__current_name
             unavailable = not is_current and self.__conflicts is not None and self.__conflicts(name)

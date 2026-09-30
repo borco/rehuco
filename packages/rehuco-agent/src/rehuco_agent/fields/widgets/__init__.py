@@ -33,6 +33,7 @@ from .measured_value_edit import MeasuredValueEdit
 from .measurement_result import MeasurementResult
 from .membership_table_model import MembershipTableModel
 from .memberships_editor import CollectionsEditor, LearningPathsEditor, MembershipsEditor
+from .open_link_line import OpenLinkLine
 from .path_editor import PathEditor
 from .rating_slider import RatingSlider
 from .single_choice_combo_box import SingleChoiceComboBox
@@ -87,6 +88,7 @@ __all__ = [
     "MarkdownView",
     "MeasuredValueEdit",
     "MeasurementResult",
+    "OpenLinkLine",
     "PathEditor",
     "RatingSlider",
     "SingleChoiceComboBox",

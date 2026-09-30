@@ -14,7 +14,7 @@ def name_label(editor: PathEditor) -> ElidedLabel:
     :param editor: the widget to inspect.
     :returns: the internal current-name ``ElidedLabel``.
     """
-    return editor._PathEditor__name_label  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    return editor._PathEditor__name_line.text_label  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
 
 def suggestion_labels(editor: PathEditor) -> dict[str, ElidedLabel]:
@@ -58,6 +58,46 @@ def test_set_current_name_shows_it_in_the_name_label(qtbot: QtBot) -> None:
     editor.set_current_name("some_folder")
 
     assert name_label(editor).text() == "some_folder"
+
+
+def test_open_link_follows_openable_and_emits_open_requested(qtbot: QtBot) -> None:
+    """The ``(open)`` link after the name shows only while openable, and a click is forwarded (#389).
+
+    **Test steps:**
+
+    * build an editor with a hint: the link is hidden, since nothing is openable yet
+    * mark it openable and verify the link is shown with the hint as its tooltip
+    * activate the link and verify ``open_requested`` fires once
+    """
+    editor = PathEditor(open_hint="Show in Explorer")
+    qtbot.addWidget(editor)
+    link = editor._PathEditor__name_line.link_label  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert link.isHidden()
+
+    editor.set_openable(True)
+    assert not link.isHidden()
+    assert link.toolTip() == "Show in Explorer"
+
+    with qtbot.waitSignal(editor.open_requested, timeout=1000):
+        link.linkActivated.emit("#open")
+
+
+def test_header_height_is_the_same_with_or_without_the_open_link(qtbot: QtBot) -> None:
+    """Showing the ``(open)`` link does not change ``header_height``, which the form reads once at build.
+
+    **Test steps:**
+
+    * build an editor with a current name and read ``header_height`` with the link hidden
+    * mark it openable and verify ``header_height`` is unchanged
+    """
+    editor = PathEditor()
+    qtbot.addWidget(editor)
+    editor.set_current_name("some_folder")
+    hidden_height = editor.header_height
+
+    editor.set_openable(True)
+
+    assert editor.header_height == hidden_height
 
 
 def test_current_name_warns_when_it_matches_no_suggestion(qtbot: QtBot) -> None:
