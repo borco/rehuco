@@ -40,7 +40,8 @@ Currently provides:
   (on Windows, decided per drive up front via `SHQueryRecycleBinW`) rather than deleting permanently.
 - **`borco_pyside.theming`** — theme switching, SVG recoloring, and themed action icons: `ThemeManager`,
   `ThemeMenu`, `ThemeModel`, `ActionIconThemeHandler`.
-- **`borco_pyside.widgets`** — reusable widgets: `ItemListEditor`, `MessageBanner`, `Rating`,
+- **`borco_pyside.widgets`** — reusable widgets: `CardListEditor` (items edited as draggable cards),
+  `ItemListEditor`, `MessageBanner`, `Rating`,
   `RichTextView`, `StringListEditor`, `UnboundedSpinBox`, and other small building blocks.
 
 ## Installation
