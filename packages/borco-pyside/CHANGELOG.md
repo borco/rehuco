@@ -9,6 +9,11 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ## [Unreleased]
 
+### Added
+
+- `RowBandDelegate`, which paints a selected row as one band with padded text instead of a box per cell.
+  `ItemListEditor` installs it on its view.
+
 ### Changed
 
 - `ItemListEditor` abandons a freshly inserted blank row when the user *leaves* it (the current row moves,

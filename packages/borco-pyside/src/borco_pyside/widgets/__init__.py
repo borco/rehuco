@@ -43,6 +43,7 @@ from .message_banner import (
 )
 from .rating import Rating
 from .rich_text_view import RichTextView
+from .row_band_delegate import RowBandDelegate
 from .string_item_list_model import StringItemListModel
 from .string_list_editor import StringListEditor
 from .tool_bar_stretch import ToolBarStretch
@@ -88,6 +89,7 @@ __all__ = [
     "Rating",
     "ResetItemAction",
     "RichTextView",
+    "RowBandDelegate",
     "StringItemListModel",
     "StringListEditor",
     "ToolBarStretch",

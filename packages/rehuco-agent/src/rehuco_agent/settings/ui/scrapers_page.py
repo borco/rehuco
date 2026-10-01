@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Final
 
 from borco_pyside.file_browser import reveal_in_file_browser
-from borco_pyside.widgets import ElidedLabel
+from borco_pyside.widgets import ElidedLabel, RowBandDelegate
 from PySide6.QtCore import QUrl
 from PySide6.QtWidgets import QFileDialog, QMessageBox, QWidget
 
@@ -18,7 +18,6 @@ from ..scrapers_settings import Browser, ScrapersSettings, persona_folder, share
 from ..web_search_settings import WebSearchSettings, shared_web_search_settings
 from .scrapers_checkbox_delegate import ScrapersCheckboxDelegate
 from .scrapers_page_ui import Ui_ScrapersPage
-from .scrapers_row_delegate import ScrapersRowDelegate
 from .scrapers_scraper_column_delegate import ScrapersScraperColumnDelegate
 from .scrapers_table_model import SCRAPER_COLUMN, USE_BROWSER_COLUMN, ScrapersTableModel
 
@@ -66,7 +65,7 @@ class ScrapersPage(QWidget):
             self.__ui.browser_combo.addItem(label)
         self.__model: Final = ScrapersTableModel(self)
         self.__ui.scrapers_table.setModel(self.__model)
-        self.__ui.scrapers_table.setItemDelegate(ScrapersRowDelegate(self))
+        self.__ui.scrapers_table.setItemDelegate(RowBandDelegate(self))
         self.__ui.scrapers_table.setItemDelegateForColumn(USE_BROWSER_COLUMN, ScrapersCheckboxDelegate(self))
         scraper_column_delegate = ScrapersScraperColumnDelegate(self)
         scraper_column_delegate.link_activated.connect(self.__on_site_link_activated)

@@ -42,7 +42,7 @@ Currently provides:
   `ThemeMenu`, `ThemeModel`, `ActionIconThemeHandler`.
 - **`borco_pyside.widgets`** — reusable widgets: `CardListEditor` (items edited as draggable cards),
   `ItemListEditor`, `MessageBanner`, `Rating`,
-  `RichTextView`, `StringListEditor`, `UnboundedSpinBox`, and other small building blocks.
+  `RichTextView`, `RowBandDelegate`, `StringListEditor`, `UnboundedSpinBox`, and other small building blocks.
 
 ## Installation
 

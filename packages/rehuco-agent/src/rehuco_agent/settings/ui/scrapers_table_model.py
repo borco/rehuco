@@ -128,7 +128,7 @@ class ScrapersTableModel(QAbstractTableModel):
             return QBrush(QColor(ERROR_COLOR))
         if role == Qt.ItemDataRole.ToolTipRole and index.column() == ERROR_COLUMN and row.error:
             # the column is nowhere near wide enough for a real import error (a syntax error's file,
-            # line and message), and `~.scrapers_row_delegate.ScrapersRowDelegate` elides it -- the
+            # line and message), and `~borco_pyside.widgets.RowBandDelegate` elides it -- the
             # tooltip is where the whole message actually lives
             return row.error
         return None

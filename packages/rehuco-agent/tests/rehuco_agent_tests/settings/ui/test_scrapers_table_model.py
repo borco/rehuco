@@ -168,7 +168,7 @@ def test_the_error_cell_carries_its_full_message_as_a_tooltip(model: ScrapersTab
 
 def test_the_use_browser_column_carries_no_text_alignment_role(model: ScrapersTableModel) -> None:
     """Centering the checkbox is the row delegate's own job now
-    (`~rehuco_agent.settings.ui.scrapers_row_delegate.ScrapersRowDelegate`, which paints it directly via
+    (`~rehuco_agent.settings.ui.scrapers_checkbox_delegate.ScrapersCheckboxDelegate`, which paints it directly via
     `QStyle.drawPrimitive` at a manually-computed centered rect), not something the base delegate reads
     off a `Qt.ItemDataRole.TextAlignmentRole` -- so the model answers that role for neither column
     (#278).
