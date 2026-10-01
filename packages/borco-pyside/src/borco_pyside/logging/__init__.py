@@ -9,7 +9,7 @@ from .log_level_delegate import BAND_TINT_ALPHA, LogLevelDelegate
 from .log_message_delegate import LogMessageDelegate
 from .log_model import LEVEL_COLUMN, MESSAGE_COLUMN, LogModel
 from .log_record_sink import LogRecordSink
-from .log_view import LogView
+from .log_view import LOG_COMMANDS, LOG_COPY_COMMAND, LogView
 from .log_widget import LogWidget, LogWidgetIcons
 
 __all__ = [
@@ -17,6 +17,8 @@ __all__ = [
     "DEFAULT_CONSOLE_LEVEL",
     "DEFAULT_LOG_LIMIT",
     "LEVEL_COLUMN",
+    "LOG_COMMANDS",
+    "LOG_COPY_COMMAND",
     "MESSAGE_COLUMN",
     "LogBridge",
     "LogEntry",

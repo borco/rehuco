@@ -8,10 +8,11 @@ from borco_pyside.logging.log_level_band import LogLevelBand
 from borco_pyside.logging.log_level_delegate import LogLevelDelegate
 from borco_pyside.logging.log_message_delegate import LogMessageDelegate
 from borco_pyside.logging.log_model import LEVEL_COLUMN, MESSAGE_COLUMN, LogModel
-from borco_pyside.logging.log_view import COPY_COLUMN_SEPARATOR, LogView
+from borco_pyside.logging.log_view import COPY_COLUMN_SEPARATOR, LOG_COMMANDS, LOG_COPY_COMMAND, LogView
+from borco_pyside.shortcuts import CommandRegistry, Keymap
 from borco_pyside.widgets import StringItemListModel
 from PySide6.QtCore import QItemSelectionModel, Qt
-from PySide6.QtGui import QColor, QGuiApplication
+from PySide6.QtGui import QColor, QGuiApplication, QKeySequence
 from pytest import fixture
 from pytestqt.qtbot import QtBot
 
@@ -420,6 +421,29 @@ def test_the_copy_shortcut_copies_the_selection(view: LogView, model: LogModel, 
     view.selectRow(1)
     qtbot.keyClick(view, Qt.Key.Key_C, Qt.KeyboardModifier.ControlModifier)
     assert QGuiApplication.clipboard().text() == f"INFO{COPY_COLUMN_SEPARATOR}record 1"
+
+
+def test_an_installed_registry_rekeys_copy(qtbot: QtBot) -> None:
+    """A host keeping a keymap rebinds the view's copy key; the scope stays the view's own subtree.
+
+    **Test steps:**
+
+    * Install a registry holding the log commands, overriding copy to Ctrl+Shift+C.
+    * Build a view.
+    * Assert its copy action carries the override, subtree-scoped.
+    """
+    registry = CommandRegistry()
+    registry.register(*LOG_COMMANDS)
+    keymap = Keymap()
+    keymap.set_keys(LOG_COPY_COMMAND, [QKeySequence("Ctrl+Shift+C")])
+    registry.set_keymap(keymap)
+    registry.install()
+
+    view = LogView()
+    qtbot.addWidget(view)
+
+    assert view.copy_action.shortcuts() == [QKeySequence("Ctrl+Shift+C")]
+    assert view.copy_action.shortcutContext() == Qt.ShortcutContext.WidgetWithChildrenShortcut
 
 
 def test_the_context_menu_offers_copy(view: LogView, model: LogModel) -> None:

@@ -49,6 +49,7 @@ from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.app_logging import LOG_VIEW_ICON_RESOURCE, shared_log_bridge
 from rehuco_agent.asking_deleter import AskingDeleter
+from rehuco_agent.commands import SAVE_DOCUMENT, shared_command_registry
 from rehuco_agent.documents.content_images import (
     ArchiveImageSource,
     ContentDisplayFlags,
@@ -975,6 +976,70 @@ def test_save_action_is_scoped_to_this_widgets_own_subtree(widget: DocumentWidge
     * verify the save action's shortcut context is ``WidgetWithChildrenShortcut``
     """
     assert widget.save_action.shortcutContext() == Qt.ShortcutContext.WidgetWithChildrenShortcut
+
+
+def test_two_documents_save_actions_are_bound_and_rekeyed_independently(qtbot: QtBot, widget: DocumentWidget) -> None:
+    """One Save action per open document, each tracked by the registry on its own: a keymap change
+    reaches both, and closing one leaves the other bound (#343).
+
+    **Test steps:**
+
+    * build a second document widget
+    * verify both Save actions are bound to ``document.save``
+    * override its key, verify both follow
+    * destroy the second widget, verify only the first is still bound
+    """
+    other = DocumentWidget(RehuDocumentModel(RehuDocument({"type": "Tutorial"})))
+    registry = shared_command_registry()
+
+    assert registry.bound_actions(SAVE_DOCUMENT.id) == [widget.save_action, other.save_action]
+
+    keymap = registry.keymap
+    keymap.set_keys(SAVE_DOCUMENT, [QKeySequence("Ctrl+Alt+S")])
+    registry.set_keymap(keymap)
+    assert widget.save_action.shortcuts() == other.save_action.shortcuts() == [QKeySequence("Ctrl+Alt+S")]
+
+    with wait_destroyed(qtbot, other):
+        other.deleteLater()
+
+    assert registry.bound_actions(SAVE_DOCUMENT.id) == [widget.save_action]
+
+
+def test_the_maximize_action_toggles_the_current_dock(widget: DocumentWidget) -> None:
+    """Ctrl+Shift+M does what the current dock's tab button does: maximize it, then restore (#343).
+
+    **Test steps:**
+
+    * make a dock current
+    * trigger the maximize action, verify that dock is maximized
+    * trigger it again, verify nothing is
+    """
+    tracker = widget._DocumentWidget__tracker  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    dock = next(dock for dock in widget.findChildren(QtAds.CDockWidget) if not dock.isClosed())
+    tracker.set_current_dock(dock)
+
+    widget.maximize_action.trigger()
+    assert widget.maximized_dock is dock
+
+    widget.maximize_action.trigger()
+    assert widget.maximized_dock is None
+
+
+def test_the_maximize_action_does_nothing_with_no_current_dock(widget: DocumentWidget) -> None:
+    """With no dock current there is nothing to maximize.
+
+    **Test steps:**
+
+    * clear the current dock
+    * trigger the maximize action
+    * verify nothing is maximized
+    """
+    widget._DocumentWidget__tracker.set_current_dock(None)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    widget.maximize_action.trigger()
+
+    assert widget.maximized_dock is None
+    assert widget.maximize_action.shortcuts() == [QKeySequence("Ctrl+Shift+M")]
 
 
 def test_revert_action_triggers_the_models_revert(

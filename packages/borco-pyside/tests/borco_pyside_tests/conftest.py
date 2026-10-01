@@ -4,9 +4,20 @@ from collections.abc import Callable, Iterator
 from typing import Any
 
 from borco_pyside.core import ApplicationSingleton
+from borco_pyside.shortcuts import CommandRegistry
 from PySide6.QtCore import QCoreApplication, QEvent
 from pytest import fixture
 from pytestqt.qtbot import QtBot
+
+
+@fixture(autouse=True)
+def no_installed_command_registry() -> Iterator[None]:
+    """Run every test with no `CommandRegistry` installed, and leave none behind: a generic widget binds
+    through the installed one, so a test installing its own would otherwise re-key every later test's
+    actions."""
+    CommandRegistry.uninstall()
+    yield
+    CommandRegistry.uninstall()
 
 
 @fixture

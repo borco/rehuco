@@ -12,6 +12,7 @@ from typing import Any, Final
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices
+from PySide6.QtWidgets import QTableView
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -197,6 +198,26 @@ def test_the_refresh_action_reads_again(qtbot: QtBot, view: FilesView, listing: 
     * verify a second listing ran
     """
     view.refresh_action.trigger()
+    settle(qtbot, view)
+
+    assert listing.call_count == 2
+
+
+def test_f5_on_the_browser_reads_again(qtbot: QtBot, view: FilesView, listing: Any) -> None:
+    """F5 comes from the catalog now (#343), and still reaches the browser from inside its subtree.
+
+    **Test steps:**
+
+    * focus the browser's table and press F5
+    * verify a second listing ran
+    """
+    table = view.findChild(QTableView)
+    assert table is not None
+    view.activateWindow()
+    table.setFocus()
+    qtbot.waitUntil(table.hasFocus)
+
+    qtbot.keyClick(table, Qt.Key.Key_F5)
     settle(qtbot, view)
 
     assert listing.call_count == 2

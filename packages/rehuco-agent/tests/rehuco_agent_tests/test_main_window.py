@@ -34,6 +34,7 @@ from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent import main_window
 from rehuco_agent.app_logging import shared_log_bridge
+from rehuco_agent.commands import QUIT, shared_command_registry
 from rehuco_agent.documents.document_widget import LOG_DOCK_MIN_HEIGHT
 from rehuco_agent.glyphs import TAB_CLOSE_GLYPH
 from rehuco_agent.main_window import (
@@ -4472,6 +4473,59 @@ def test_the_image_previews_shortcut_is_application_wide(qtbot: QtBot) -> None:
     ui = window._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
     assert ui.image_previews_action.shortcutContext() == Qt.ShortcutContext.ApplicationShortcut
+
+
+def test_the_ui_actions_carry_the_catalog_keys_and_follow_a_keymap(qtbot: QtBot) -> None:
+    """The `.ui` holds no key: every one comes from the catalog, and a new keymap re-keys them live (#343).
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * verify the File actions carry their catalog defaults and name them in their tooltips
+    * set a keymap overriding Quit
+    * verify the live action follows
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    ui = window._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    registry = shared_command_registry()
+
+    for action, keys in (
+        (ui.open_rehu_action, "Ctrl+O"),
+        (ui.close_action, "Ctrl+W"),
+        (ui.close_all_action, "Ctrl+Shift+W"),
+        (ui.save_all_action, "Ctrl+Shift+S"),
+        (ui.quit_action, "Ctrl+Q"),
+    ):
+        assert action.shortcuts() == [QKeySequence(keys)]
+        assert action.shortcutContext() == Qt.ShortcutContext.WindowShortcut
+        assert action.toolTip().endswith(f"({QKeySequence(keys).toString(QKeySequence.SequenceFormat.NativeText)})")
+    assert ui.open_folder_action.shortcuts() == []
+
+    keymap = registry.keymap
+    keymap.set_keys(QUIT, [QKeySequence("Ctrl+Shift+Q")])
+    registry.set_keymap(keymap)
+
+    assert ui.quit_action.shortcuts() == [QKeySequence("Ctrl+Shift+Q")]
+
+
+def test_the_image_previews_toolbar_toggle_names_the_key_without_carrying_it(qtbot: QtBot) -> None:
+    """Only the menu companion carries Ctrl+Shift+` -- two actions on one app-wide key would cancel out --
+    but the toolbar button, the one a user hovers, still says it (#343).
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * verify the toggle has no keys and both tooltips end in the key
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    ui = window._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    suffix = f"({QKeySequence('Ctrl+Shift+`').toString(QKeySequence.SequenceFormat.NativeText)})"
+
+    assert ui.image_previews_toggle_action.shortcuts() == []
+    assert ui.image_previews_toggle_action.toolTip().endswith(suffix)
+    assert ui.image_previews_action.toolTip().endswith(suffix)
 
 
 def test_toggling_image_previews_off_hides_every_open_documents_strip(qtbot: QtBot) -> None:

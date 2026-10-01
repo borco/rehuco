@@ -10,6 +10,16 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 ## [Unreleased]
 
+### Added
+
+- **Ctrl+Shift+M** maximizes the focused document's current dock, and restores it, as its tab button does.
+
+### Changed
+
+- Every keyboard shortcut is now read from the settings file's `shortcuts` group, falling back to its
+  default, so a changed key reaches every open window and document. The defaults are unchanged.
+- The Save and Refresh buttons' tooltips name their keys.
+
 ## [0.2.0] - 2026-09-27
 
 ### Added

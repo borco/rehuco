@@ -5,7 +5,7 @@ deleted as one unit."""
 # borco_pyside.widgets re-exports every name below, so its __all__ repeats this one.
 
 from .buddy_button_strip import BuddyButtonStrip
-from .card import Card
+from .card import CARD_LIST_COMMANDS, Card
 from .card_content import CardContent
 from .card_ghost import CardGhost
 from .card_grip import CardGrip
@@ -14,6 +14,7 @@ from .card_list_model import CardListModel
 from .card_style import CardStateStyle, CardStyle
 
 __all__ = [
+    "CARD_LIST_COMMANDS",
     "BuddyButtonStrip",
     "Card",
     "CardContent",

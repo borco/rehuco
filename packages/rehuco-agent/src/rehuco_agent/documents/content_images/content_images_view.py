@@ -22,7 +22,6 @@ from PySide6.QtGui import (
     QAction,
     QCursor,
     QKeyEvent,
-    QKeySequence,
     QMouseEvent,
     QPainter,
     QPainterPath,
@@ -32,6 +31,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QAbstractScrollArea, QFrame, QToolBar, QVBoxLayout, QWidget
 
+from ...commands import REFRESH_CONTENT_IMAGES, shared_command_registry
 from ...fields.widgets.image_strip import THUMBNAIL_BORDER
 from ...fields.widgets.thumbnail_loader import ThumbnailLoader, thumbnail_cache_key
 from ..files_view import REFRESH_ICON_RESOURCE
@@ -814,12 +814,11 @@ class ContentImagesPanel(QWidget):
         self.__view: Final = view
         self.__refresh_action: Final = QAction("&Refresh", self)
         ActionIconThemeHandler(self.__refresh_action, REFRESH_ICON_RESOURCE)
-        self.__refresh_action.setToolTip("Read this resource's archives again.")
-        self.__refresh_action.setShortcut(QKeySequence(Qt.Key.Key_F5))
-        # scoped to this widget's own subtree, not the window: every open reference pack has a grid of
-        # its own, and a WindowShortcut would make two of them ambiguous on one key, the trap
-        # `FilesView`'s own refresh action and `DocumentWidget`'s save action both document
-        self.__refresh_action.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        # scoped to this widget's own subtree: every open reference pack has a grid of its own
+        # (`REFRESH_CONTENT_IMAGES`)
+        shared_command_registry().bind(
+            self.__refresh_action, REFRESH_CONTENT_IMAGES.id, tooltip="Read this resource's archives again."
+        )
         self.addAction(self.__refresh_action)
         self.__refresh_action.triggered.connect(self.refresh_requested)
         toolbar = QToolBar(self)

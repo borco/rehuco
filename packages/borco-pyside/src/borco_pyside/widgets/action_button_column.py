@@ -39,7 +39,9 @@ class ActionButtonColumn(QWidget):
         self.__layout.setContentsMargins(0, 0, 0, 0)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
-    def add_action(self, text: str, tooltip: str, shortcut: QKeySequence | None = None) -> QAction:
+    def add_action(
+        self, text: str, tooltip: str, shortcut: QKeySequence | None = None, *, command_id: str | None = None
+    ) -> QAction:
         """Build an action, append a button showing it, and hand the action back.
 
         The shortcut is set with `Qt.ShortcutContext.WidgetShortcut`, which is inert until the
@@ -54,10 +56,12 @@ class ActionButtonColumn(QWidget):
         :param tooltip: what the action does, in words -- the shortcut is appended to it, since an
             icon-only button is otherwise the only place a user could discover the key.
         :param shortcut: the key that fires it, or ``None`` for an action with no shortcut.
+        :param command_id: the command the action fires, bound through the installed registry when it
+            knows it (see :func:`~.item_actions.set_tooltip_and_shortcut`); ``shortcut`` is then unused.
         :returns: the action, parented here, and the place its enabled state and icon live.
         """
         action = QAction(text, self)
-        set_tooltip_and_shortcut(action, tooltip, shortcut)
+        set_tooltip_and_shortcut(action, tooltip, shortcut, command_id=command_id)
         self.add_action_button(action)
         return action
 

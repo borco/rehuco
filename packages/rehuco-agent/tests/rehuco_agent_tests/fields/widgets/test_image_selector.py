@@ -11,7 +11,7 @@ from typing import Any
 
 from borco_pyside.widgets import ActionButtonColumn
 from PySide6.QtCore import QModelIndex, Qt
-from PySide6.QtGui import QAction, QColor, QPixmap
+from PySide6.QtGui import QAction, QColor, QKeySequence, QPixmap
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QLabel,
@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
+from rehuco_agent.commands import CONVERT_SCREENSHOT, shared_command_registry
 from rehuco_agent.fields.image_scanner import AfterConversion, ScreenshotSet
 from rehuco_agent.fields.widgets.image_selector import (
     AFTER_CONVERSION_COLUMN,
@@ -2296,6 +2297,28 @@ def test_c_is_disabled_on_a_numbered_row_and_on_a_read_only_list(qtbot: QtBot) -
     assert not list_action(selector, "Toggle visibility").isEnabled()
 
 
+def test_a_rebound_convert_key_is_swallowed_where_convert_is_off(qtbot: QtBot) -> None:
+    """The list swallows Convert's key as the keymap has it, not a hard-coded C (#343).
+
+    **Test steps:**
+
+    * rebind Convert to X
+    * select a numbered row, where Convert is off, and press X
+    * verify the selection stayed -- the view's type-ahead would take it to the row starting with "x"
+    """
+    registry = shared_command_registry()
+    keymap = registry.keymap
+    keymap.set_keys(CONVERT_SCREENSHOT, [QKeySequence("X")])
+    registry.set_keymap(keymap)
+    selector = shown(qtbot, FakeResource(["info00.jpg"], ["xcover.png"]))
+    selector.set_current_index(0)
+
+    assert list_action(selector, "Convert").shortcuts() == [QKeySequence("X")]
+    press(selector, Qt.Key.Key_X)
+
+    assert selector.current_index == 0
+
+
 def test_del_still_deletes_a_numbered_row(confirm: Any, qtbot: QtBot) -> None:
     """The key that was already there keeps doing what it did.
 
@@ -2326,8 +2349,8 @@ def test_the_check_cell_names_the_space_key(qtbot: QtBot) -> None:
     selector = seeded(qtbot, FakeResource(["info00.jpg"], ["cover.jpg"]))
     model = checkable_model(selector)
 
-    assert model.index(0, CHECK_COLUMN).data(Qt.ItemDataRole.ToolTipRole) == CHECK_TOOLTIP
-    assert "(Space)" in CHECK_TOOLTIP
+    space = QKeySequence(Qt.Key.Key_Space).toString(QKeySequence.SequenceFormat.NativeText)
+    assert model.index(0, CHECK_COLUMN).data(Qt.ItemDataRole.ToolTipRole) == f"{CHECK_TOOLTIP} ({space})"
     assert model.index(1, CHECK_COLUMN).data(Qt.ItemDataRole.ToolTipRole) is None
 
 

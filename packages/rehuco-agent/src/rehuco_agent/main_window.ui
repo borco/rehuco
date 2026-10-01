@@ -83,9 +83,6 @@
    <property name="text">
     <string>Open &amp;rehu...</string>
    </property>
-   <property name="shortcut">
-    <string>Ctrl+O</string>
-   </property>
   </action>
   <action name="open_folder_action">
    <property name="text">
@@ -104,9 +101,6 @@
    <property name="text">
     <string>&amp;Close</string>
    </property>
-   <property name="shortcut">
-    <string>Ctrl+W</string>
-   </property>
   </action>
   <action name="close_missing_action">
    <property name="enabled">
@@ -123,16 +117,10 @@
    <property name="text">
     <string>Close &amp;All</string>
    </property>
-   <property name="shortcut">
-    <string>Ctrl+Shift+W</string>
-   </property>
   </action>
   <action name="save_all_action">
    <property name="text">
     <string>&amp;Save all</string>
-   </property>
-   <property name="shortcut">
-    <string>Ctrl+Shift+S</string>
    </property>
   </action>
   <action name="sweep_checksums_action">
@@ -199,13 +187,7 @@
     <string>&amp;Image Previews</string>
    </property>
    <property name="toolTip">
-    <string>Show or hide the images of every open document -- its screenshot strip and its Content Images panel (Ctrl+Shift+`)</string>
-   </property>
-   <property name="shortcut">
-    <string>Ctrl+Shift+`</string>
-   </property>
-   <property name="shortcutContext">
-    <enum>Qt::ShortcutContext::ApplicationShortcut</enum>
+    <string>Show or hide the images of every open document -- its screenshot strip and its Content Images panel</string>
    </property>
   </action>
   <action name="image_previews_toggle_action">
@@ -219,15 +201,12 @@
     <string>Image Previews</string>
    </property>
    <property name="toolTip">
-    <string>Show or hide the images of every open document -- its screenshot strip and its Content Images panel (Ctrl+Shift+`)</string>
+    <string>Show or hide the images of every open document -- its screenshot strip and its Content Images panel</string>
    </property>
   </action>
   <action name="quit_action">
    <property name="text">
     <string>&amp;Quit</string>
-   </property>
-   <property name="shortcut">
-    <string>Ctrl+Q</string>
    </property>
   </action>
  </widget>
