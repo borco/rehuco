@@ -89,7 +89,8 @@ which that manager's `saveState()` already records, the same deal the Log and Ta
 **Today the tree is a flat list, in alphabetical order, with one group** (#277, #294, #298):
 "Checksums" (`ChecksumsPage`, #242), "Descriptions" (`DescriptionsPage`), "Files" (`FilesPage`, #226,
 #291, #298), "Identity" (`IdentityPage`, #99), "Images" (a group, below), "Logs" (`LogsPage`, #200),
-"Session" (`SessionPage`, #65), "System Integration", "Tasks" (`TasksPage`, #202) and "Videos"
+"Session" (`SessionPage`, #65), "Shortcuts" (`ShortcutsPage`, #344), "System Integration", "Tasks"
+(`TasksPage`, #202) and "Videos"
 (`VideosPage`, #225). "Images" nests three children: "Display" (`ImagesDisplayPage`), "Sidecar
 Extensions" (`ImagesFilesPage`) and "Sidecar Names" (`ScreenshotPatternsPage`, #53, #287).
 
@@ -442,8 +443,8 @@ Integration's Register/Unregister, push buttons that hold nothing) gets no row; 
 (`SettingsFrameHeader`, `settings/ui/settings_frame_header.py`) is **injected by the dialog, not declared
 by the page**: it takes the label's place in the frame's layout via `QLayout.replaceWidget` — which
 lands it wherever the label sat, a box item or a `QFormLayout`'s spanning row alike — and adopts the
-label, so every page gained the buttons with no `.ui` change. Its buttons wear `SCRATCH_PROPERTY` and
-`NOT_A_CAPTION_PROPERTY` so the snapshot never counts them and the filter never searches them. A list
+label, so every page gained the buttons with no `.ui` change. Its buttons wear `NOT_A_CAPTION_PROPERTY`,
+so the filter never searches them (they are tool buttons, which the snapshot never counts anyway). A list
 editor inside a headed frame has its own restore button hidden (`item_actions.reset_action`): the
 row's Defaults now says the same thing, from one place. A page the generic path cannot see all of —
 an editor the filter cannot read (a table model), or state kept off its widgets — takes over all three
@@ -561,6 +562,22 @@ now folded into a group (`"Images"`) finds the group row it became.
   that scrolls inside a page that scrolls gives two vertical scrollbars and a list the reader has to
   scroll *to* before they can scroll *in*; this one is sized to its rows (one row as the floor) and lets
   the page's scroll area do the scrolling (#229).
+- Mark a widget that holds **no setting** with the dynamic property `scratch`
+  (`SCRATCH_PROPERTY`, `settings_frame_filter.py`) — a search box, or an editor that follows a table's
+  selection. The frame snapshot passes over it and everything inside it, so typing in it does not tint
+  the frame dirty or enable Apply. Set it in the `.ui` as a dynamic property (Designer shows it), or in
+  code for a widget built at runtime. `ShortcutsPage` (#344) is the worked example: its search box, and
+  the selected command's scope combo and key buttons, are scratch, and the table itself is the frame's one
+  value, a `ValueControl` whose value is the draft keymap. The editor frame below the table has only scratch
+  controls, so the dialog gives it no header; the page builds its own `SettingsFrameHeader` there, whose
+  Apply / Reset / Defaults act on the selected command alone.
+- A page whose staged values can be **invalid to save** implements `can_save() -> bool`
+  (`SaveGatedPage`, `settings_page.py`; optional, a page without it can always save). The dialog keeps
+  Apply and Apply All disabled — and each frame's own Apply — while a dirty page answers no, and
+  auto-apply skips it, so the page stays dirty, showing what it holds, until it is fixed or reset. The
+  page should also refuse in its own `save_changes`. `ShortcutsPage` answers no while two commands share a
+  key in overlapping scopes -- a safety net only, since every edit that would take another command's key
+  asks to reassign it first.
 - Use `WrappingLabel` (`borco_pyside.widgets`) for a paragraph of explanatory text, not a `QLabel` with
   `wordWrap` on. A plain wrapping `QLabel` hints as though its text were one wide line, and the frame
   around it is sized from that hint — so the paragraph paints past the border (#226, fixed in #229).

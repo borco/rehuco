@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from pytestqt.qtbot import QtBot
-from rehuco_agent.settings.ui.settings_frame_filter import SettingsFrameFilter
+from rehuco_agent.settings.ui.settings_frame_filter import SCRATCH_PROPERTY, SettingsFrameFilter
 
 
 def make_page(qtbot: QtBot, groups: list[list[str]]) -> tuple[QWidget, list[QFrame]]:
@@ -874,3 +874,32 @@ def test_restore_empties_a_string_list_editor_whose_snapshot_was_empty(qtbot: Qt
 
 
 # endregion
+
+
+def test_a_scratch_widget_is_not_a_value_of_its_frame(qtbot: QtBot) -> None:
+    """A widget marked scratch -- and anything inside a scratch container -- is passed over by the snapshot.
+
+    **Test steps:**
+
+    * build a frame holding a real line edit, a scratch line edit and a scratch container with a line edit
+    * edit the two scratch ones
+    * verify the frame is not dirty; edit the real one and verify it is
+    """
+    page, frames, edits = make_value_page(qtbot, 1)
+    frame_layout = frames[0].layout()
+    assert frame_layout is not None
+    scratch_edit = QLineEdit(frames[0])
+    scratch_edit.setProperty(SCRATCH_PROPERTY, True)
+    container = QWidget(frames[0])
+    container.setProperty(SCRATCH_PROPERTY, True)
+    nested_edit = QLineEdit(container)
+    frame_layout.addWidget(scratch_edit)
+    frame_layout.addWidget(container)
+    frame_filter = SettingsFrameFilter(page, "Page")
+
+    scratch_edit.setText("typed")
+    nested_edit.setText("typed")
+    assert frame_filter.dirty_frames() == []
+
+    edits[0].setText("changed")
+    assert frame_filter.dirty_frames() == [frames[0]]

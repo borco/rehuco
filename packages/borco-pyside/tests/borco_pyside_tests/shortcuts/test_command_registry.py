@@ -274,3 +274,16 @@ def test_bind_or_apply_binds_through_the_installed_registry(registry: CommandReg
 
 
 # endregion
+
+
+def test_every_scope_has_a_label_and_a_hint() -> None:
+    """The settings page can name any scope, and the window scope warns about floating docks.
+
+    **Test steps:**
+
+    * read the label and hint of every scope
+    * verify each is non-empty, the labels are distinct, and the window hint names the floating dock
+    """
+    assert all(scope.label and scope.hint for scope in CommandScope)
+    assert len({scope.label for scope in CommandScope}) == len(CommandScope)
+    assert "floating dock" in CommandScope.WINDOW.hint

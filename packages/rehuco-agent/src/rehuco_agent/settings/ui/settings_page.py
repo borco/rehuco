@@ -40,6 +40,20 @@ class SettingsPage(Protocol):
 
 
 @runtime_checkable
+class SaveGatedPage(Protocol):  # pylint: disable=too-few-public-methods
+    """The optional hook a page implements to refuse a commit while its staged values are not savable.
+
+    A page that does not satisfy this shape can always save. The dialog reads it in Apply enablement (the
+    toolbar and each frame's header) and in the auto-apply path, and skips a commit it forbids -- the page
+    stays dirty, showing what it holds, until the edits are fixed or reset. A page should also refuse in
+    ``save_changes`` itself, as a last line of defence.
+    """
+
+    def can_save(self) -> bool:  # pyright: ignore[reportReturnType]
+        """Whether the staged values may be committed now."""
+
+
+@runtime_checkable
 class FrameRestoringPage(Protocol):
     """The optional hooks a page implements to take over its frames' Apply, Reset and Defaults
     buttons (#342).

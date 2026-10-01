@@ -2960,3 +2960,54 @@ def test_defaults_actions_are_disabled_once_every_page_is_at_its_defaults(qtbot:
 
 # pylint: enable=no-member
 # endregion
+
+
+class SaveGatedFakePage(FakePage):
+    """A `FakePage` that is a `SaveGatedPage`, refusing to be saved while :attr:`savable` is false."""
+
+    def __init__(self, blocks: list[list[str]] | None = None, parent: QWidget | None = None) -> None:
+        super().__init__(blocks, parent)
+        self.savable = True
+
+    def can_save(self) -> bool:
+        """Whatever :attr:`savable` says."""
+        return self.savable
+
+
+def test_a_page_that_cannot_save_has_apply_disabled_and_is_skipped_by_auto_apply(qtbot: QtBot) -> None:
+    """The dialog reads ``can_save`` in Apply enablement, in every commit path and in auto-apply.
+
+    **Test steps:**
+
+    * register a gated page that is dirty and not savable
+    * verify Apply and Apply All are disabled while Reset is enabled
+    * send Apply All and the frame's Apply, and tick auto-apply, and verify nothing was saved
+    * make it savable and verify Apply is enabled and auto-apply saves it
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    gated = SaveGatedFakePage([["Block", "term"]])
+    page = register_page(dialog, "Gated", [["Block", "term"]], page=gated)
+    gated.savable = False
+    page.dirty = True
+    refresh_dirty_state(dialog)
+    actions = dialog_ui(dialog)
+
+    assert not actions.apply_current_page_action.isEnabled()  # type: ignore[attr-defined]
+    assert not actions.apply_all_action.isEnabled()  # type: ignore[attr-defined]
+    assert actions.reset_current_page_action.isEnabled()  # type: ignore[attr-defined]
+
+    # the actions are disabled, so each is sent directly, as a path that did not check the button would
+    actions.apply_all_action.triggered.emit()  # type: ignore[attr-defined]
+    header = frame_header(dialog, page.frames[0])
+    assert header is not None
+    header.apply_action.triggered.emit()
+    auto_apply_check_box(dialog).set_checked(True)
+    poll_dirty_state(dialog)
+    assert page.save_calls == 0
+
+    gated.savable = True
+    refresh_dirty_state(dialog)
+    assert actions.apply_current_page_action.isEnabled()  # type: ignore[attr-defined]
+    poll_dirty_state(dialog)
+    assert page.save_calls == 1

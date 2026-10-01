@@ -38,6 +38,9 @@ rules that keep it trustworthy, the app's panels, and what isn't built.
 - **Doesn't damage what it doesn't understand.** Unrecognized fields survive a save untouched, and a
   file written by a newer version of the format opens read-only rather than being rewritten.
 - **Keeps your workspace.** Atomic saves, and each file's panel layout remembered between sessions.
+- **Rebinds its shortcuts.** A Shortcuts page in Settings lists every command: search by name,
+  description or key, press a key to record it, give a command several keys, and choose where they reach.
+  A key another command already uses is offered to reassign.
 
 Self-describing by design: a `.rehu` sits next to the content it describes, so reading a resource's
 details needs nothing but the file itself — no index, no server, no account.
@@ -46,8 +49,7 @@ Tested on Windows, macOS, and Linux.
 
 ## Where it's going
 
-What's left of the editor is small: a settings page for customizable keyboard shortcuts and a page
-image picker (a scraping helper, not an editor feature).
+What's left of the editor is small: a page image picker (a scraping helper, not an editor feature).
 
 The next real piece is **a basic browser**: a view over a folder of resources, a rebuildable cache with
 search, so a collection can be looked through rather than opened one file at a time. See the

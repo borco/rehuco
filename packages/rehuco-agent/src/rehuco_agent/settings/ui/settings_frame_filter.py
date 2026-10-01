@@ -1,7 +1,7 @@
 """Frame-level filtering for one settings page: show only the QFrames whose text matches (#67)."""
 
 from collections.abc import Callable
-from typing import Protocol, cast, runtime_checkable
+from typing import Final, Protocol, cast, runtime_checkable
 
 from borco_pyside.widgets import ActionButtonColumn, ItemListEditor
 from PySide6.QtCore import QAbstractItemModel, QAbstractListModel, QModelIndex, Qt
@@ -16,6 +16,12 @@ from PySide6.QtWidgets import (
     QSpinBox,
     QWidget,
 )
+
+SCRATCH_PROPERTY: Final = "scratch"
+"""The dynamic property that marks a widget as scratch -- it holds no setting, so a frame's value snapshot
+passes over it and everything inside it. For a search box, or an editor that follows a table's selection:
+widgets whose content changes without the user having edited anything the page saves. Set from a ``.ui``
+file as a dynamic property, so Designer shows it, or in code for a widget built at runtime."""
 
 
 @runtime_checkable
@@ -278,6 +284,7 @@ class SettingsFrameFilter:
         for widget in frame.findChildren(QWidget):
             if (
                 isinstance(widget, ValueWidget)
+                and not widget.property(SCRATCH_PROPERTY)
                 and not (
                     isinstance(widget, QAbstractButton)
                     and not widget.isCheckable()
@@ -298,7 +305,7 @@ class SettingsFrameFilter:
         """
         ancestor = widget.parentWidget()
         while ancestor is not None and ancestor is not frame:
-            if isinstance(ancestor, ValueWidget):
+            if isinstance(ancestor, ValueWidget) or ancestor.property(SCRATCH_PROPERTY):
                 return True
             ancestor = ancestor.parentWidget()
         return False

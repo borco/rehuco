@@ -23,7 +23,7 @@ from .settings_block_column import SettingsBlockColumn
 from .settings_dialog_ui import Ui_SettingsDialog
 from .settings_frame_filter import SettingsFrameFilter
 from .settings_frame_header import SettingsFrameHeader, header_label_of
-from .settings_page import FrameRestoringPage, SettingsPage
+from .settings_page import FrameRestoringPage, SaveGatedPage, SettingsPage
 
 PAGE_ROLE: Final = Qt.ItemDataRole.UserRole + 1
 """Item-data role storing each category-tree row's page widget, for selection-driven page switching."""
@@ -478,6 +478,8 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         :param page: the page owning ``frame``.
         :param frame: the frame whose Apply button was pressed.
         """
+        if not self.__can_save(page):
+            return
         if isinstance(page, FrameRestoringPage):
             page.apply_frame(frame)
         else:
@@ -772,6 +774,8 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         :param save: ``True`` applies (``save_changes``), ``False`` discards (``drop_changes``).
         """
         if save:
+            if not self.__can_save(page):
+                return
             page.save_changes()
         else:
             page.drop_changes()
@@ -784,9 +788,18 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         """
         if self.__auto_apply_check_box.is_checked():
             for _, page in self.__page_items():
-                if page.is_dirty():
+                if page.is_dirty() and self.__can_save(page):
                     self.__commit_page(page, save=True)
         self.__refresh_dirty_ui()
+
+    @staticmethod
+    def __can_save(page: SettingsPage) -> bool:
+        """Whether ``page`` would accept a commit now: always, unless it is a `SaveGatedPage` that says not.
+
+        :param page: the page to ask.
+        :returns: whether Apply, auto-apply and a frame's Apply may commit it.
+        """
+        return not isinstance(page, SaveGatedPage) or page.can_save()
 
     def __refresh_dirty_ui(self) -> None:
         """Bring every dirty-driven bit of UI state back in sync with the pages' current `is_dirty` (#77)."""
@@ -810,9 +823,11 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         all_pages = self.__pages()
         current_dirty = any(page.is_dirty() for page in current_pages)
         any_dirty = any(page.is_dirty() for page in all_pages)
-        self.__ui.apply_current_page_action.setEnabled(current_dirty)
+        self.__ui.apply_current_page_action.setEnabled(
+            any(page.is_dirty() and self.__can_save(page) for page in current_pages)
+        )
         self.__ui.reset_current_page_action.setEnabled(current_dirty)
-        self.__ui.apply_all_action.setEnabled(any_dirty)
+        self.__ui.apply_all_action.setEnabled(any(page.is_dirty() and self.__can_save(page) for page in all_pages))
         self.__ui.reset_all_action.setEnabled(any_dirty)
         self.__ui.defaults_current_page_action.setEnabled(any(self.__off_defaults(page) for page in current_pages))
         self.__ui.defaults_all_action.setEnabled(any(self.__off_defaults(page) for page in all_pages))
@@ -840,6 +855,7 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
                     header.set_state(
                         dirty=frame in dirty_frames,
                         at_defaults=not frame_filter.differs_from_defaults(frame),
+                        savable=self.__can_save(page),
                     )
 
     @staticmethod
