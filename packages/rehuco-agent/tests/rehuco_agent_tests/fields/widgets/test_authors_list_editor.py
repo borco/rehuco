@@ -2,9 +2,19 @@
 
 from borco_pyside.widgets import ContentSizedTableView, ItemListEditor
 from PySide6.QtCore import QMimeData, QPointF, Qt, QUrl
-from PySide6.QtGui import QDragEnterEvent, QDropEvent
+from PySide6.QtGui import QDragEnterEvent, QDropEvent, QImage, QPainter
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QAbstractItemView, QApplication, QHeaderView, QLineEdit, QToolButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QApplication,
+    QHeaderView,
+    QLineEdit,
+    QStyle,
+    QStyleOptionViewItem,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
+)
 from pytest import fixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.fields.widgets import AuthorsListEditor
@@ -478,6 +488,40 @@ def test_a_link_dropped_on_a_url_cell_is_not_left_to_the_host(hosted: tuple[Auth
 
     assert not host.dropped
     assert list_editor.entries == ({"name": "Alice", "url": "https://example.com/x"},)
+
+
+# endregion
+
+
+# region selection band (#383)
+
+
+def test_a_selected_authors_row_is_one_band(editor: AuthorsListEditor) -> None:
+    """The default delegate fills a selected row cell by cell; this editor's own fills whole rects.
+
+    **Test steps:**
+
+    * paint both cells of a selected row into one image through the delegate the view picks
+    * verify the highlight covers the top line of the whole row, with no gap at the seam
+    """
+    view = editor.view
+    first, last = editor.model.index(0, NAME_COLUMN), editor.model.index(0, URL_COLUMN)
+    row_rect = view.visualRect(first).united(view.visualRect(last))
+    image = QImage(row_rect.width(), row_rect.height(), QImage.Format.Format_ARGB32)
+    image.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(image)
+    try:
+        for index in (first, last):
+            option = QStyleOptionViewItem()
+            option.rect = view.visualRect(index).translated(-row_rect.topLeft())
+            option.palette = view.palette()
+            option.state |= QStyle.StateFlag.State_Selected
+            view.itemDelegateForIndex(index).paint(painter, option, index)
+    finally:
+        painter.end()
+
+    highlight = view.palette().highlight().color().name()
+    assert all(image.pixelColor(x, 0).name() == highlight for x in range(image.width()))
 
 
 # endregion

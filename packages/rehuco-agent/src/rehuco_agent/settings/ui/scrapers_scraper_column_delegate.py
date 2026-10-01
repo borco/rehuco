@@ -9,26 +9,23 @@ exactly the way `~borco_pyside.widgets.ElidedLabel`'s rich-text link does -- col
 anchor -- with none of that, since nothing but this delegate ever draws the cell.
 
 Installed with `QTableView.setItemDelegateForColumn`, not the view's general delegate
-(`~.scrapers_row_delegate.ScrapersRowDelegate`): a non-link Scraper cell (a file row's ``"—"``) is left
-to the base `QStyledItemDelegate.paint`, exactly as `ScrapersRowDelegate`'s own module docstring
-explains the base class already does unaided -- the two paths share nothing worth factoring out.
+(`~borco_pyside.widgets.RowBandDelegate`), which this subclasses: a non-link Scraper cell (a file row's
+``"—"``) is left to the base paint, and a link cell takes the same selection band under its document.
 """
 
 from html import escape
-from typing import Final, override
+from typing import override
 
+from borco_pyside.widgets import RowBandDelegate
+from borco_pyside.widgets.row_band_delegate import TEXT_PADDING
 from PySide6.QtCore import QAbstractItemModel, QEvent, QModelIndex, QPersistentModelIndex, QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QFontMetricsF, QMouseEvent, QPainter, QPalette, QTextDocument
-from PySide6.QtWidgets import QStyle, QStyledItemDelegate, QStyleOptionViewItem
+from PySide6.QtGui import QColor, QFontMetricsF, QMouseEvent, QPainter, QPalette, QTextDocument
+from PySide6.QtWidgets import QStyle, QStyleOptionViewItem
 
 from .scrapers_table_model import SITE_URL_ROLE
 
-TEXT_PADDING: Final = 6
-"""Horizontal inset of a cell's text from its rect, in pixels -- the same width
-`~.scrapers_row_delegate.TEXT_PADDING` uses."""
 
-
-class ScrapersScraperColumnDelegate(QStyledItemDelegate):
+class ScrapersScraperColumnDelegate(RowBandDelegate):
     """Paints the Scraper column, and reports a click on its link.
 
     :param parent: optional Qt parent.
@@ -43,15 +40,15 @@ class ScrapersScraperColumnDelegate(QStyledItemDelegate):
     ) -> None:
         site_url = index.data(SITE_URL_ROLE)
         if not site_url:
-            # strips the hover highlight the base delegate would otherwise draw -- see
-            # `~.scrapers_row_delegate.ScrapersRowDelegate`'s module docstring for why
-            plain_option = QStyleOptionViewItem(option)
-            plain_option.state &= ~QStyle.StateFlag.State_MouseOver
-            super().paint(painter, plain_option, index)
+            super().paint(painter, option, index)
             return
-        document = self.__document_for(option, index)
         painter.save()
         try:
+            color = self.paint_band(painter, option, index)
+            # the link colour is unreadable on the highlight, so a selected row draws it in the
+            # highlighted-text colour
+            selected = QStyle.StateFlag.State_Selected in option.state
+            document = self.__document_for(option, index, color if selected else None)
             painter.translate(option.rect.topLeft())
             painter.translate(TEXT_PADDING, (option.rect.height() - document.size().height()) / 2)
             document.drawContents(painter, QRectF(0, 0, option.rect.width() - TEXT_PADDING, option.rect.height()))
@@ -95,15 +92,25 @@ class ScrapersScraperColumnDelegate(QStyledItemDelegate):
         self.link_activated.emit(link)
         return True
 
-    def __document_for(self, option: QStyleOptionViewItem, index: QModelIndex | QPersistentModelIndex) -> QTextDocument:
+    def __document_for(
+        self,
+        option: QStyleOptionViewItem,
+        index: QModelIndex | QPersistentModelIndex,
+        color: QColor | None = None,
+    ) -> QTextDocument:
         """The rich-text document a link cell is painted from and hit-tested against -- built the same
-        way every time, so :meth:`paint` and :meth:`link_at` never disagree about where the anchor is."""
+        way every time, so :meth:`paint` and :meth:`link_at` never disagree about where the anchor is.
+
+        :param option: the cell's style option.
+        :param index: the cell.
+        :param color: the link colour, or ``None`` for the palette's own.
+        :returns: the document."""
         site_url = str(index.data(SITE_URL_ROLE))
         site_name = str(index.data(Qt.ItemDataRole.DisplayRole) or "")
         metrics = QFontMetricsF(option.font)
         available = max(0.0, option.rect.width() - 2 * TEXT_PADDING)
         elided = metrics.elidedText(site_name, Qt.TextElideMode.ElideRight, available)
-        link_color = option.palette.color(QPalette.ColorRole.Link).name()
+        link_color = (color or option.palette.color(QPalette.ColorRole.Link)).name()
         document = QTextDocument()
         document.setDefaultFont(option.font)
         document.setDocumentMargin(0)

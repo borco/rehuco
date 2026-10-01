@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 
 from .item_action_button_column import ItemEditActionsColumn, ItemOrderingActionsColumn
 from .item_protocols import ItemEditor, ItemOrderingEditor
+from .row_band_delegate import RowBandDelegate
 
 
 # the two attributes past the limit are the abandoned-insert rule's: state of one rule that only this
@@ -140,6 +141,9 @@ class ItemListEditor(QWidget):
         # banded rows: the entries are short values with little other structure to read a row boundary
         # from, and these lists have no grid to supply one
         view.setAlternatingRowColors(True)
+        # a selected row as one band rather than per-cell boxes; installed before `__wire`, which connects
+        # the view's *current* delegate's `closeEditor`
+        view.setItemDelegate(RowBandDelegate(view))
 
         # the concrete model is expected to satisfy both protocols; QAbstractItemModel's own typing has
         # no way to express that intersection, so the two lines below are where it's asserted

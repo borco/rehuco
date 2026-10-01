@@ -1,14 +1,15 @@
 """Tests for ScrapersScraperColumnDelegate: the Scrapers table's Scraper column (#278).
 
 **A link cell's text is read from painted pixels' presence, never mocked `QPainter` calls**: unlike
-`~.scrapers_row_delegate`'s plain text, this delegate draws through a `QTextDocument`, whose own
+`RowBandDelegate`'s plain text, this delegate draws through a `QTextDocument`, whose own
 internal calls into `QPainter` are not this module's contract to assert against -- only that *something*
 was drawn, and that :meth:`link_at` agrees with where.
 """
 
+from borco_pyside.widgets import RowBandDelegate
 from PySide6.QtCore import QEvent, QModelIndex, QPointF, QRect, Qt
-from PySide6.QtGui import QImage, QMouseEvent, QPainter, QPalette
-from PySide6.QtWidgets import QStyledItemDelegate, QStyleOptionViewItem
+from PySide6.QtGui import QColor, QImage, QMouseEvent, QPainter, QPalette
+from PySide6.QtWidgets import QStyle, QStyledItemDelegate, QStyleOptionViewItem
 from pytest import fixture
 from pytest_mock import MockerFixture
 from rehuco_agent.scraping.registry import ScraperRow
@@ -105,7 +106,7 @@ def test_a_non_link_row_is_left_to_the_base_delegate(
     * paint the Scraper cell of a row with no `site_url`, with the base delegate's own paint spied on
     * verify the base delegate was reached
     """
-    base_paint = mocker.patch.object(QStyledItemDelegate, "paint")
+    base_paint = mocker.patch.object(RowBandDelegate, "paint")
     image, painter = new_painter()  # pylint: disable=unused-variable
     model, index = index_for(PLAIN_ROW)  # pylint: disable=unused-variable
 
@@ -113,6 +114,29 @@ def test_a_non_link_row_is_left_to_the_base_delegate(
     painter.end()
 
     base_paint.assert_called_once()
+
+
+def test_a_selected_linked_cell_is_filled_with_the_highlight(delegate: ScrapersScraperColumnDelegate) -> None:
+    """A link cell takes part in the row's selection band like every other cell (#383).
+
+    **Test steps:**
+
+    * paint a selected link cell
+    * verify the highlight reaches opposite corners
+    """
+    palette = QPalette()
+    palette.setColor(QPalette.ColorRole.Highlight, QColor("green"))
+    option = option_for()
+    option.palette = palette
+    option.state |= QStyle.StateFlag.State_Selected
+    image, painter = new_painter()
+    model, index = index_for(LINKED_ROW)  # pylint: disable=unused-variable
+
+    delegate.paint(painter, option, index)
+    painter.end()
+
+    assert image.pixelColor(0, 0).name() == QColor("green").name()
+    assert image.pixelColor(CELL.width() - 1, CELL.height() - 1).name() == QColor("green").name()
 
 
 def test_a_linked_row_draws_something_and_never_reaches_the_base_delegate(

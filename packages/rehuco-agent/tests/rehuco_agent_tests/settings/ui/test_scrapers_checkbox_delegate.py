@@ -9,7 +9,7 @@ the same rect both must agree on.
 """
 
 from PySide6.QtCore import QEvent, QModelIndex, QPoint, QPointF, QRect, Qt
-from PySide6.QtGui import QImage, QMouseEvent, QPainter
+from PySide6.QtGui import QColor, QImage, QMouseEvent, QPainter, QPalette
 from PySide6.QtWidgets import QApplication, QStyle, QStyleOptionViewItem
 from pytest import fixture
 from pytest_mock import MockerFixture
@@ -278,3 +278,26 @@ def test_a_disabled_rows_checkbox_is_painted_without_the_enabled_flag(
     draw_primitive.assert_called_once()
     _element, style_option = draw_primitive.call_args.args[:2]
     assert QStyle.StateFlag.State_Enabled not in style_option.state  # pylint: disable=no-member
+
+
+def test_a_selected_cell_is_filled_with_the_highlight(delegate: ScrapersCheckboxDelegate) -> None:
+    """The cell takes part in the row's selection band, with the checkbox drawn over it (#383).
+
+    **Test steps:**
+
+    * paint a selected checkbox cell
+    * verify the highlight reaches opposite corners
+    """
+    palette = QPalette()
+    palette.setColor(QPalette.ColorRole.Highlight, QColor("green"))
+    option = option_for()
+    option.palette = palette
+    option.state |= QStyle.StateFlag.State_Selected
+    model, index = index_for(TICKED_ROW, checked=False)  # pylint: disable=unused-variable
+    image, painter = new_painter()
+
+    delegate.paint(painter, option, index)
+    painter.end()
+
+    assert image.pixelColor(0, 0).name() == QColor("green").name()
+    assert image.pixelColor(CELL.width() - 1, CELL.height() - 1).name() == QColor("green").name()

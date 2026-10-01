@@ -4,8 +4,9 @@
 
 from typing import Final, override
 
+from borco_pyside.widgets import RowBandDelegate
 from PySide6.QtCore import QModelIndex, QPersistentModelIndex
-from PySide6.QtWidgets import QSpinBox, QStyledItemDelegate, QStyleOptionViewItem, QWidget
+from PySide6.QtWidgets import QSpinBox, QStyleOptionViewItem, QWidget
 
 from ..indexed_list_field import UNPLACED_INDEX
 from .membership_table_model import MAXIMUM_INDEX
@@ -38,7 +39,7 @@ def index_spin_box(parent: QWidget | None) -> QSpinBox:
     return spin
 
 
-class IndexSpinBoxDelegate(QStyledItemDelegate):
+class IndexSpinBoxDelegate(RowBandDelegate):
     """Opens a membership's position in a spin box rather than a line edit.
 
     Not a validation choice -- the model coerces whatever reaches it either way -- but a *keyboard* one:

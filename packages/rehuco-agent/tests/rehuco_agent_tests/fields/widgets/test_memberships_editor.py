@@ -4,7 +4,8 @@ from typing import Any
 
 from borco_pyside.widgets import ContentSizedTableView, ItemListEditor
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QAbstractItemView, QHeaderView, QSpinBox
+from PySide6.QtGui import QImage, QPainter
+from PySide6.QtWidgets import QAbstractItemView, QHeaderView, QLineEdit, QSpinBox, QStyle, QStyleOptionViewItem
 from pytest import fixture, raises
 from pytestqt.qtbot import QtBot
 from rehuco_agent.fields.field import HeaderPinned
@@ -394,6 +395,79 @@ def test_titling_a_pending_row_reports_it(collections: CollectionsEditor) -> Non
     model.setData(model.index(1, TITLE_COLUMN), "Other")
 
     assert reported == [[{"title": "Series", "index": 2, "url": "https://example.com"}, {"title": "Other", "index": 3}]]
+
+
+# endregion
+
+
+# region selection band (#383)
+
+
+def test_a_selected_row_is_one_band_including_the_index_cell(collections: CollectionsEditor) -> None:
+    """The style fills a selected row cell by cell, leaving gaps; every column's own delegate -- the Index
+    column's spin-box delegate included -- fills its whole rect instead.
+
+    **Test steps:**
+
+    * select the row and paint each of its cells through the delegate the view picks for it
+    * verify the highlight covers the whole row's top and bottom lines, with no gap at a seam
+    """
+    view = inner_view(collections)
+    view.selectRow(0)
+    first, last = view.model().index(0, 0), view.model().index(0, view.model().columnCount() - 1)
+    row_rect = view.visualRect(first).united(view.visualRect(last))
+    image = QImage(row_rect.width(), row_rect.height(), QImage.Format.Format_ARGB32)
+    image.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(image)
+    try:
+        for column in range(view.model().columnCount()):
+            index = view.model().index(0, column)
+            option = QStyleOptionViewItem()
+            option.rect = view.visualRect(index).translated(-row_rect.topLeft())
+            option.palette = view.palette()
+            option.state |= QStyle.StateFlag.State_Selected
+            view.itemDelegateForIndex(index).paint(painter, option, index)
+    finally:
+        painter.end()
+
+    highlight = view.palette().highlight().color().name()
+    for x in range(image.width()):
+        assert image.pixelColor(x, 0).name() == highlight
+        assert image.pixelColor(x, image.height() - 1).name() == highlight
+
+
+def test_the_index_cell_still_opens_a_spin_box_on_its_own_rect(collections: CollectionsEditor) -> None:
+    """Painting is the delegate's new job; editing is still the base class's.
+
+    **Test steps:**
+
+    * open the Index cell for editing
+    * verify the editor is a spin box inside the cell's rect
+    """
+    view = inner_view(collections)
+    index = view.model().index(0, INDEX_COLUMN)
+
+    view.edit(index)
+
+    spin = view.findChild(QSpinBox)
+    assert spin is not None
+    assert view.visualRect(index).contains(spin.geometry())
+
+
+def test_the_title_editor_lands_on_its_cell(collections: CollectionsEditor) -> None:
+    """**Test steps:**
+
+    * open the Title cell for editing
+    * verify its line edit is inside the cell's rect
+    """
+    view = inner_view(collections)
+    index = view.model().index(0, TITLE_COLUMN)
+
+    view.edit(index)
+
+    line_edit = view.findChild(QLineEdit)
+    assert line_edit is not None
+    assert view.visualRect(index).contains(line_edit.geometry())
 
 
 # endregion

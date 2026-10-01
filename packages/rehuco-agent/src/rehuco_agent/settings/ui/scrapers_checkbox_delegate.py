@@ -1,8 +1,8 @@
 """Draws the Scrapers table's **Use browser** checkbox, centered in its cell (#278).
 
 Installed with `QTableView.setItemDelegateForColumn`, not the view's general delegate
-(`~.scrapers_row_delegate.ScrapersRowDelegate`) -- the two draw nothing alike, so there is no shared
-code a single class would save.
+(`~borco_pyside.widgets.RowBandDelegate`), which this subclasses for the selection band behind the
+indicator.
 
 **Why not the base `QStyledItemDelegate.paint`?** It already draws a `CheckStateRole` cell's indicator
 with no code of this module's own -- but `QCommonStyle`'s own `SE_ItemViewItemCheckIndicator` layout
@@ -14,12 +14,13 @@ that same rect, rather than the base delegate's left-anchored one.
 
 from typing import override
 
+from borco_pyside.widgets import RowBandDelegate
 from PySide6.QtCore import QAbstractItemModel, QEvent, QModelIndex, QPersistentModelIndex, QRect, Qt
 from PySide6.QtGui import QMouseEvent, QPainter
-from PySide6.QtWidgets import QApplication, QStyle, QStyledItemDelegate, QStyleOptionButton, QStyleOptionViewItem
+from PySide6.QtWidgets import QApplication, QStyle, QStyleOptionButton, QStyleOptionViewItem
 
 
-class ScrapersCheckboxDelegate(QStyledItemDelegate):
+class ScrapersCheckboxDelegate(RowBandDelegate):
     """Paints and hit-tests the **Use browser** column's checkbox, centered in its cell.
 
     :param parent: optional Qt parent.
@@ -30,10 +31,14 @@ class ScrapersCheckboxDelegate(QStyledItemDelegate):
         self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex | QPersistentModelIndex
     ) -> None:
         state = index.data(Qt.ItemDataRole.CheckStateRole)
-        if state is None:
-            return
         painter.save()
         try:
+            color = self.paint_band(painter, option, index)
+            if state is None:
+                return
+            if QStyle.StateFlag.State_Selected in option.state:
+                self.paint_selected_indicator(painter, self.__checkbox_rect(option), color, Qt.CheckState(state))
+                return
             style = option.widget.style() if option.widget is not None else QApplication.style()
             check_option = QStyleOptionButton()
             check_option.rect = self.__checkbox_rect(option)

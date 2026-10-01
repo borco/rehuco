@@ -12,12 +12,13 @@ style's radio indicator instead, at a rect that both :meth:`WebSearchEnginesRadi
 
 from typing import override
 
+from borco_pyside.widgets import RowBandDelegate
 from PySide6.QtCore import QAbstractItemModel, QEvent, QModelIndex, QPersistentModelIndex, QRect, Qt
 from PySide6.QtGui import QMouseEvent, QPainter
-from PySide6.QtWidgets import QApplication, QStyle, QStyledItemDelegate, QStyleOptionButton, QStyleOptionViewItem
+from PySide6.QtWidgets import QApplication, QStyle, QStyleOptionButton, QStyleOptionViewItem
 
 
-class WebSearchEnginesRadioDelegate(QStyledItemDelegate):
+class WebSearchEnginesRadioDelegate(RowBandDelegate):
     """Paints and hit-tests the **Use** column's radio button. A click asks the model to check the row;
     the model is what makes the choice exclusive, and what refuses to clear it.
 
@@ -31,6 +32,12 @@ class WebSearchEnginesRadioDelegate(QStyledItemDelegate):
         state = index.data(Qt.ItemDataRole.CheckStateRole)
         painter.save()
         try:
+            color = self.paint_band(painter, option, index)
+            if QStyle.StateFlag.State_Selected in option.state:
+                self.paint_selected_indicator(
+                    painter, self.__radio_rect(option), color, Qt.CheckState(state), radio=True
+                )
+                return
             style = option.widget.style() if option.widget is not None else QApplication.style()
             radio = QStyleOptionButton()
             radio.rect = self.__radio_rect(option)
