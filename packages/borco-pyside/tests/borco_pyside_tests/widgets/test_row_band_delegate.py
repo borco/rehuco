@@ -11,7 +11,7 @@ from typing import Any, Final, override
 from borco_pyside.widgets import ItemListEditor, RowBandDelegate, StringListEditor
 from borco_pyside.widgets.row_band_delegate import TEXT_PADDING
 from PySide6.QtCore import QAbstractTableModel, QEvent, QModelIndex, QPersistentModelIndex, QPointF, QRect, Qt
-from PySide6.QtGui import QBrush, QColor, QFontMetricsF, QImage, QMouseEvent, QPainter, QPalette
+from PySide6.QtGui import QBrush, QColor, QFont, QFontMetricsF, QImage, QMouseEvent, QPainter, QPalette
 from PySide6.QtWidgets import QApplication, QStyle, QStyleOptionViewItem, QTableView, QWidget
 from pytest import fixture
 from pytest_mock import MockerFixture
@@ -24,12 +24,14 @@ HIGHLIGHTED_TEXT: Final = QColor("yellow")
 TINT: Final = QColor("blue")
 DISABLED_INK: Final = QColor("gray")
 BACKGROUND: Final = QColor("purple")
+LARGE_POINT_SIZE: Final = 48
+"""Row 1's text size: far enough from any default that its width differs whatever the platform's font."""
 
 # region Sample classes
 
 
 class SampleModel(QAbstractTableModel):
-    """Two columns: text with a tint on row 1, and a user-checkable cell; row 2 is disabled."""
+    """Two columns: text with a tint and a large font on row 1, and a user-checkable cell; row 2 is disabled."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -51,11 +53,15 @@ class SampleModel(QAbstractTableModel):
         return flags | Qt.ItemFlag.ItemIsUserCheckable if index.column() == 1 else flags | Qt.ItemFlag.ItemIsEditable
 
     @override
-    def data(self, index: QModelIndex | Any, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+    def data(self, index: QModelIndex | Any, role: int = Qt.ItemDataRole.DisplayRole) -> Any:  # pylint: disable=too-many-return-statements
         if role == Qt.ItemDataRole.DisplayRole and index.column() == 0:
             return "a long text " * 20 if index.row() == 0 else "text"
         if role == Qt.ItemDataRole.ForegroundRole and index.row() == 1 and index.column() == 0:
             return QBrush(TINT)
+        if role == Qt.ItemDataRole.FontRole and index.row() == 1 and index.column() == 0:
+            font = QFont()
+            font.setPointSize(LARGE_POINT_SIZE)
+            return font
         if role == Qt.ItemDataRole.BackgroundRole and index.row() == 1 and index.column() == 1:
             return QBrush(BACKGROUND)
         if role == Qt.ItemDataRole.CheckStateRole and index.column() == 1:
@@ -283,6 +289,27 @@ def test_the_hint_covers_the_text_and_its_padding(delegate: RowBandDelegate, mod
 
     available = hint.width() - 2 * TEXT_PADDING
     assert available >= ceil(QFontMetricsF(option.font).horizontalAdvance("text"))
+
+
+def test_the_hint_measures_in_the_models_font(delegate: RowBandDelegate, model: SampleModel) -> None:
+    """A cell the model gives its own font (a bold changed row) is measured in that font, so its column
+    grows to fit rather than eliding it.
+
+    **Test steps:**
+
+    * ask for the hints of the same text with and without the model's large font
+    * verify the large one is wider, and covers that font's advance
+    """
+    option = QStyleOptionViewItem()
+    large = model.index(1, 0)
+
+    hint = delegate.sizeHint(option, large)
+    plain = delegate.sizeHint(option, model.index(2, 0))
+
+    font = QFont()
+    font.setPointSize(LARGE_POINT_SIZE)
+    assert hint.width() > plain.width()
+    assert hint.width() - 2 * TEXT_PADDING >= ceil(QFontMetricsF(font).horizontalAdvance("text"))
 
 
 # endregion

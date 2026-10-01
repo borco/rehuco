@@ -99,6 +99,7 @@ from .settings.ui.scrapers_page import ScrapersPage
 from .settings.ui.screenshot_patterns_page import ScreenshotPatternsPage
 from .settings.ui.session_page import SessionPage
 from .settings.ui.settings_dialog import SettingsDialog
+from .settings.ui.shortcuts_page import ShortcutsPage
 from .settings.ui.tasks_page import TasksPage
 from .settings.ui.videos_page import VideosPage
 from .tasks import TaskQueueStatusIndicator, TaskQueueStore, TaskQueueWidget, job_already_queued
@@ -814,6 +815,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__settings_dialog.add_page("Logs", LogsPage())
         self.__settings_dialog.add_page("Scrapers", ScrapersPage())
         self.__settings_dialog.add_page("Session", SessionPage())
+        self.__settings_dialog.add_page("Shortcuts", ShortcutsPage(self.__command_registry))
 
         # the three system-integration pages, one per platform: registered here, between Session and
         # Tasks, because that is where the title all three share sorts

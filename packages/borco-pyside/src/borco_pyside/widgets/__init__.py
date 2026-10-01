@@ -34,6 +34,7 @@ from .item_actions import (
 )
 from .item_list_editor import ItemListEditor
 from .item_protocols import ItemEditor, ItemOrderingEditor, ItemViewer
+from .key_sequence_recorder import KeySequenceRecorder
 from .layout_helpers import equal_height_column, equal_width_row
 from .line_edit_clear_action import LineEditClearActionFilter
 from .line_edit_helpers import resync_line_edit, write_through_or_none
@@ -81,6 +82,7 @@ __all__ = [
     "ItemOrderingActionsColumn",
     "ItemOrderingEditor",
     "ItemViewer",
+    "KeySequenceRecorder",
     "LineEditClearActionFilter",
     "MessageBanner",
     "MessageBannerRow",

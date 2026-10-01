@@ -494,6 +494,7 @@ def test_the_category_tree_is_one_flat_alphabetical_list(qtbot: QtBot) -> None:
         "Locations",
         "Logs",
         "Session",
+        "Shortcuts",
         "Tasks",
         "Videos",
     }

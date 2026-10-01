@@ -12,6 +12,10 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 ### Added
 
+- A **Shortcuts** page in Settings: search every command by name, description or key, click a key and
+  press its replacement (the numeric keypad and a lone Esc included), give a command several keys, and
+  choose where its keys reach. Recording a key another command uses asks whether to reassign it. The table
+  sorts by any column, and the search text and sort are remembered.
 - **Ctrl+Shift+M** maximizes the focused document's current dock, and restores it, as its tab button does.
 
 ### Changed

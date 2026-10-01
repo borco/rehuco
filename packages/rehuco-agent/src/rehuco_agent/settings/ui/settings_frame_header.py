@@ -113,13 +113,15 @@ class SettingsFrameHeader(QWidget):
         """The Defaults button's action -- ``triggered`` is what the dialog wires to restoring the factory values."""
         return self.__defaults_action
 
-    def set_state(self, *, dirty: bool, at_defaults: bool) -> None:
+    def set_state(self, *, dirty: bool, at_defaults: bool, savable: bool = True) -> None:
         """Enable each button only while it has something to do.
 
         :param dirty: whether the frame differs from its saved values (enables Apply and Reset).
         :param at_defaults: whether the frame already holds its factory values (disables Defaults).
+        :param savable: whether the page would accept a commit now; a dirty frame that is not savable
+            keeps Reset but loses Apply.
         """
-        self.__apply_action.setEnabled(dirty)
+        self.__apply_action.setEnabled(dirty and savable)
         self.__reset_action.setEnabled(dirty)
         self.__defaults_action.setEnabled(not at_defaults)
 

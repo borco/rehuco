@@ -76,6 +76,7 @@ from rehuco_agent.settings.ui import (
     location_templates_page,
     screenshot_patterns_page,
     settings_dialog,
+    shortcuts_page,
     tasks_page,
     tray_block,
 )
@@ -705,6 +706,21 @@ def isolate_shared_run_log() -> Iterator[None]:
     sys.unraisablehook = sys.__unraisablehook__
     qInstallMessageHandler(None)
     shared_run_log.cache_clear()
+
+
+@fixture(autouse=True)
+def isolate_shortcuts_page_settings(mocker: MockerFixture) -> FakeSettings:
+    """Isolate every test building a `ShortcutsPage` from real persistent storage (#344).
+
+    The page restores its search text and sort on construction and saves them on every change, and saves
+    the keymap through the same import -- so any test building one, directly or via ``MainWindow``, would
+    otherwise read and write the developer's own settings.
+
+    :returns: the in-memory stand-in the page loads from and saves to.
+    """
+    fake = FakeSettings()
+    mocker.patch.object(shortcuts_page, "persistent_settings", return_value=fake)
+    return fake
 
 
 @fixture(autouse=True)

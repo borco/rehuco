@@ -49,6 +49,16 @@ class CommandScope(StrEnum):
         """The shortcut context a binding gives its action, or ``None`` where it carries no keys."""
         return SCOPE_CONTEXTS[self]
 
+    @property
+    def label(self) -> str:
+        """A short user-facing name, for a column that lists each command's scope."""
+        return SCOPE_LABELS[self]
+
+    @property
+    def hint(self) -> str:
+        """Where the keys reach, in a few words a user choosing between scopes can act on."""
+        return SCOPE_HINTS[self]
+
 
 SCOPE_CONTEXTS: Final[dict[CommandScope, Qt.ShortcutContext | None]] = {
     CommandScope.WIDGET: Qt.ShortcutContext.WidgetShortcut,
@@ -58,6 +68,25 @@ SCOPE_CONTEXTS: Final[dict[CommandScope, Qt.ShortcutContext | None]] = {
     CommandScope.APP_WIDE: Qt.ShortcutContext.ApplicationShortcut,
 }
 """Each scope's shortcut context; ``None`` for the one no binding carries keys for yet."""
+
+SCOPE_LABELS: Final[dict[CommandScope, str]] = {
+    CommandScope.WIDGET: "Focused widget",
+    CommandScope.DOCUMENT_FOCUSED: "Focused document",
+    CommandScope.DOCUMENT_APP_WIDE: "Focused document, app-wide",
+    CommandScope.WINDOW: "Main window",
+    CommandScope.APP_WIDE: "Anywhere in the app",
+}
+"""Each scope's :attr:`CommandScope.label`."""
+
+SCOPE_HINTS: Final[dict[CommandScope, str]] = {
+    CommandScope.WIDGET: "only while its list or editor has focus",
+    CommandScope.DOCUMENT_FOCUSED: "only while focus is inside the document",
+    CommandScope.DOCUMENT_APP_WIDE: "on the focused document, from anywhere in the app",
+    CommandScope.WINDOW: "while the main window is active, not while a floating dock has focus",
+    CommandScope.APP_WIDE: "from anywhere in the app, floating docks included",
+}
+"""Each scope's :attr:`CommandScope.hint` -- the `WINDOW` one says it goes deaf under a torn-out dock, the
+one thing about it a user cannot guess from its name."""
 
 
 class BindingRole(Enum):

@@ -199,3 +199,23 @@ def test_the_row_takes_a_form_layouts_spanning_label_row(qtbot: QtBot) -> None:
     assert label.parentWidget() is header
     field = layout.itemAt(1, QFormLayout.ItemRole.FieldRole)
     assert field is not None and field.widget() is edit
+
+
+def test_a_dirty_frame_that_cannot_be_saved_keeps_reset_but_loses_apply(qtbot: QtBot) -> None:
+    """``savable=False`` disables Apply alone.
+
+    **Test steps:**
+
+    * build a header and set it dirty and not savable
+    * verify Apply is disabled and Reset enabled
+    * set it savable and verify Apply is enabled
+    """
+    _frame, label, _edit = make_box_frame(qtbot)
+    header = SettingsFrameHeader(label)
+
+    header.set_state(dirty=True, at_defaults=False, savable=False)
+    assert not header.apply_action.isEnabled()
+    assert header.reset_action.isEnabled()
+
+    header.set_state(dirty=True, at_defaults=False)
+    assert header.apply_action.isEnabled()

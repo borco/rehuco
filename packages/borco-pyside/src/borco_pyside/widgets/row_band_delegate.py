@@ -123,6 +123,7 @@ class RowBandDelegate(QStyledItemDelegate):
         painter.save()
         try:
             self.paint_band(painter, opt, index)
+            painter.setFont(opt.font)  # the model's FontRole (a bold changed row) reaches the text drawn below
             cell = opt.rect
             if opt.features & QStyleOptionViewItem.ViewItemFeature.HasCheckIndicator:
                 cell = self.__paint_check(painter, opt)
@@ -186,12 +187,17 @@ class RowBandDelegate(QStyledItemDelegate):
         column sized from it elides the last character of every row whose advance rounds down. This
         measures in fractional pixels, rounded up, plus the padding :meth:`paint` insets by.
 
-        :param option: the item's option, for its font.
+        The font is the cell's own -- the model's ``FontRole`` laid over the view's, as :meth:`paint` draws
+        it -- so a row the model bolds widens its column instead of being elided.
+
+        :param option: the item's option, for the view's font.
         :param index: the cell.
         :returns: the hint.
         """
         base = super().sizeHint(option, index)
-        metrics = QFontMetricsF(option.font)
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        metrics = QFontMetricsF(opt.font)
         text = str(index.data(Qt.ItemDataRole.DisplayRole) or "")
         width = ceil(metrics.horizontalAdvance(text)) + 2 * TEXT_PADDING
         if index.data(Qt.ItemDataRole.CheckStateRole) is not None:
