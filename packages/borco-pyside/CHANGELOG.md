@@ -13,9 +13,18 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 - `RowBandDelegate`, which paints a selected row as one band with padded text instead of a box per cell.
   `ItemListEditor` installs it on its view.
+- `borco_pyside.shortcuts`: shortcuts as declared `Command`s with a scope and an optional focus group, a
+  `Keymap` of the user's overrides stored under a settings group, `find_conflicts`, and a
+  `CommandRegistry` that binds live actions to commands and re-keys every one of them when the keymap
+  changes. A host installs one registry for generic widgets to bind through.
+- `LIST_EDITOR_COMMANDS`, `CARD_LIST_COMMANDS` and `LOG_COMMANDS`, the commands behind the list editor's,
+  the card list's and the log view's keys, for a host to register.
 
 ### Changed
 
+- The list-editor, card and log-view actions take their keys from the installed `CommandRegistry` when
+  there is one; with none installed they keep their keys as before. `set_tooltip_and_shortcut` and
+  `ActionButtonColumn.add_action` take an optional `command_id`.
 - `ItemListEditor` abandons a freshly inserted blank row when the user *leaves* it (the current row moves,
   or focus goes outside the view) rather than when its first editor closes, and a row counts as blank only
   while every editable cell is, so a row can be filled in any order. Cancelling the first editor, and any

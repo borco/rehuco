@@ -24,6 +24,7 @@ from typing import Any, Final, override
 
 import humanize
 from borco_pyside.core import SimpleProperty
+from borco_pyside.shortcuts import keys_text
 from borco_pyside.theming import ActionIconThemeHandler
 from borco_pyside.widgets import ItemEditActionsColumn, ItemOrderingActionsColumn
 from PIL import Image
@@ -31,6 +32,7 @@ from PySide6.QtCore import (
     QAbstractTableModel,
     QByteArray,
     QEvent,
+    QKeyCombination,
     QModelIndex,
     QObject,
     QPersistentModelIndex,
@@ -54,6 +56,7 @@ from PySide6.QtWidgets import (
 from rehuco_core import Deleter
 
 from ...asking_deleter import AskingDeleter
+from ...commands import CONVERT_SCREENSHOT, TOGGLE_SCREENSHOT_VISIBILITY, shared_command_registry
 from ...delete_confirmation import DeletionKind, confirm_delete
 from ...item_action_icons import apply_action_column_icons
 from ...recycle_bin_deleter import configured_deleter
@@ -114,9 +117,18 @@ sizes, and the settings section reads it from here as its default -- the same ar
 :data:`~rehuco_agent.fields.images_field.IMAGE_STRIP_HEIGHT` already has with the strip."""
 
 
-CHECK_TOOLTIP: Final = "Shown in the lightbox (Space)"
-"""The check cell's tooltip -- where the Space key that toggles it is named (#370), since the action
-behind it has no button of its own: the check box already is its button."""
+CHECK_TOOLTIP: Final = "Shown in the lightbox"
+"""The check cell's tooltip, before the key that toggles it is appended (:func:`check_tooltip`)."""
+
+
+def check_tooltip() -> str:
+    """The check cell's tooltip -- where the key that toggles it is named (#370), since the action behind
+    it has no button of its own: the check box already is its button. The key is the keymap's (#343).
+
+    :returns: :data:`CHECK_TOOLTIP`, with the toggle's keys when it has any.
+    """
+    keys = shared_command_registry().keys(TOGGLE_SCREENSHOT_VISIBILITY.id)
+    return f"{CHECK_TOOLTIP} ({keys_text(keys)})" if keys else CHECK_TOOLTIP
 
 
 class MoveDirection(StrEnum):
@@ -355,8 +367,8 @@ class ScreenshotListModel(QAbstractTableModel):
             # so a kept row reads as a name like every other and still answers the question (#293)
             return f"Kept under its own name: {outcome.reason}" if outcome is not None and outcome.kept else None
         if column == CHECK_COLUMN and row.numbered:
-            # the Space key has no button of its own to be named on (#370)
-            return CHECK_TOOLTIP
+            # the toggle's key has no button of its own to be named on (#370)
+            return check_tooltip()
         return None
 
     @override
@@ -866,11 +878,13 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes,
         apply_action_column_icons(self.__ordering_actions, self.__item_actions)
         # Convert is this editor's own action rather than one of the toolkit's, so it is built and
         # dressed here: nothing else in the app takes a file into a numbered set (#270). It joins the
-        # item column because that is where a row's own actions live -- Delete is already there
+        # item column because that is where a row's own actions live -- Delete is already there. The
+        # column binds it through the installed registry, which asking for it here makes sure exists
+        shared_command_registry()
         self.__convert_action: Final = self.__item_actions.add_action(
             "Convert",
             "Take this image into the numbered set, under the number its own name already carries",
-            QKeySequence(Qt.Key.Key_C),
+            command_id=CONVERT_SCREENSHOT.id,
         )
         ActionIconThemeHandler(self.__convert_action, CONVERT_ICON)
         self.__convert_action.triggered.connect(self.__on_convert)
@@ -911,16 +925,14 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes,
         """Build the action Space fires on the list: the current row's check box, from the keyboard (#370).
 
         Not a button in the item column, unlike Convert: the check box on the row already is its
-        button, and its tooltip (:data:`CHECK_TOOLTIP`) is where the key is named. The shortcut is
-        armed the way the column's own actions are -- `Qt.ShortcutContext.WidgetShortcut`, inert until
-        the list adopts it.
+        button, and its tooltip (:func:`check_tooltip`) is where the key is named. The shortcut is
+        armed the way the column's own actions are -- `CommandScope.WIDGET`, inert until the list
+        adopts it.
 
         :returns: the action, wired to toggle the current row.
         """
         action = QAction("Toggle visibility", self)
-        action.setShortcut(QKeySequence(Qt.Key.Key_Space))
-        action.setShortcutContext(Qt.ShortcutContext.WidgetShortcut)
-        action.setToolTip(CHECK_TOOLTIP)
+        shared_command_registry().bind(action, TOGGLE_SCREENSHOT_VISIBILITY.id, tooltip=CHECK_TOOLTIP)
         action.triggered.connect(self.__on_toggle_visibility)
         return action
 
@@ -1177,10 +1189,11 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes,
         """Ask for the viewer on a left double-click over the preview, and swallow a curating key the
         list's actions did not take (#370).
 
-        A key press reaches the list only when no enabled shortcut claimed it first, so a bare C or
-        Space arriving here is one whose action is disabled -- on a numbered row, an un-converted one,
-        a read-only list. "Does nothing" has to be made true by hand: left alone, the view's type-ahead
-        would take C to the first row starting with that letter.
+        A key press reaches the list only when no enabled shortcut claimed it first, so Convert's or the
+        toggle's key (C and Space, unless the keymap says otherwise) arriving here is one whose action is
+        disabled -- on a numbered row, an un-converted one, a read-only list. "Does nothing" has to be
+        made true by hand: left alone, the view's type-ahead would take C to the first row starting with
+        that letter.
 
         :param watched: the object the event was sent to.
         :param event: the event.
@@ -1199,11 +1212,21 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes,
             watched is self.__list
             and event.type() == QEvent.Type.KeyPress
             and isinstance(event, QKeyEvent)
-            and event.key() in (Qt.Key.Key_C, Qt.Key.Key_Space)
-            and not event.modifiers() & ~Qt.KeyboardModifier.KeypadModifier
+            and self.__is_curating_key(event)
         ):
             return True
         return super().eventFilter(watched, event)
+
+    def __is_curating_key(self, event: QKeyEvent) -> bool:
+        """Whether ``event`` is one of Convert's or the toggle's keys, as the keymap has them now -- a
+        keypad press counting as its main-keyboard twin.
+
+        :param event: the key press.
+        :returns: whether one of the two curating actions carries it.
+        """
+        modifiers = event.modifiers() & ~Qt.KeyboardModifier.KeypadModifier
+        pressed = QKeySequence(QKeyCombination(modifiers, Qt.Key(event.key())))
+        return any(pressed in action.shortcuts() for action in (self.__convert_action, self.__visibility_action))
 
     def __confirmed_delete(self, path: Path, *, numbered: bool) -> bool:
         """Ask before permanently deleting ``path`` (#291, #312, #313).

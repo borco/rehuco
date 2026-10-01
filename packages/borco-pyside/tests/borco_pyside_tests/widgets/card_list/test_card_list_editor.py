@@ -9,7 +9,17 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from typing import Any, override
 
-from borco_pyside.widgets import Card, CardListEditor, CardListModel, CardStateStyle, CardStyle
+from borco_pyside.shortcuts import CommandRegistry, Keymap
+from borco_pyside.widgets import (
+    CARD_LIST_COMMANDS,
+    LIST_EDITOR_COMMANDS,
+    Card,
+    CardListEditor,
+    CardListModel,
+    CardStateStyle,
+    CardStyle,
+    MoveUpItemAction,
+)
 from PySide6.QtCore import QByteArray, QEvent, QMimeData, QPoint, QPointF, Qt, Signal
 from PySide6.QtGui import (
     QColor,
@@ -191,6 +201,20 @@ def page(qtbot: QtBot) -> Iterator[Page]:
         window.show()
     window.activateWindow()
     yield Page(editor, other)
+
+
+@fixture
+def installed_registry(qapp: QApplication) -> CommandRegistry:
+    """A registry holding the list-editor and card commands, installed for generic widgets to bind through.
+
+    :param qapp: pytest-qt's application fixture.
+    :returns: the registry; the package conftest uninstalls it after the test.
+    """
+    del qapp
+    registry = CommandRegistry()
+    registry.register(*LIST_EDITOR_COMMANDS, *CARD_LIST_COMMANDS)
+    registry.install()
+    return registry
 
 
 def drop_event(
@@ -501,6 +525,35 @@ def test_a_ctrl_key_acts_on_the_focused_card(page: Page, key: Qt.Key, order: lis
     QTest.keyClick(edit, key, Qt.KeyboardModifier.ControlModifier)
 
     assert page.names() == order
+
+
+def test_an_installed_registry_rekeys_the_cards_without_touching_list_editors(
+    installed_registry: CommandRegistry, page: Page
+) -> None:
+    """A card's keys are its own commands: overriding one re-keys the cards, and the list-editor command
+    with the same default keeps its key.
+
+    **Test steps:**
+
+    * with a registry holding both catalogs installed before the page is built
+    * override the card move-up key to Alt+Up
+    * press Alt+Up on the middle card
+    * verify the card moved, and a plain list-editor action still carries Ctrl+Up
+
+    :param installed_registry: the registry, installed before ``page`` -- fixtures build in argument order.
+    :param page: the page.
+    """
+    registry = installed_registry
+    keymap = Keymap()
+    keymap.set_keys(registry.command("card_list.move_up"), [QKeySequence("Alt+Up")])
+    registry.set_keymap(keymap)
+    edit = page.content(1).name
+    edit.setFocus()
+
+    QTest.keyClick(edit, Qt.Key.Key_Up, Qt.KeyboardModifier.AltModifier)
+
+    assert page.names() == ["b", "a", "c"]
+    assert MoveUpItemAction().shortcuts() == [QKeySequence("Ctrl+Up")]
 
 
 def test_ctrl_ins_focuses_the_new_card(page: Page) -> None:

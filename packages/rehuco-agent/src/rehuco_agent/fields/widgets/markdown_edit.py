@@ -10,10 +10,11 @@ from typing import Final, override
 from borco_pyside.core import SimpleProperty
 from borco_pyside.theming import ApplicationPaletteChangeNotifier
 from PySide6.QtCore import QMimeData, Qt
-from PySide6.QtGui import QDropEvent, QFontDatabase, QKeySequence, QPalette, QShortcut
+from PySide6.QtGui import QAction, QDropEvent, QFontDatabase, QPalette
 from PySide6.QtWidgets import QApplication, QWidget
 from pyside6_scintilla import Scintilla, ScintillaEdit
 
+from ...commands import COMPLETE_IMAGES, shared_command_registry
 from ...scraping.html_markdown import HtmlMarkdown
 from ..image_scanner import ImageScanner
 
@@ -244,8 +245,11 @@ class MarkdownEdit(ScintillaEdit):  # pylint: disable=too-few-public-methods
         self.autoCSetChooseSingle(True)
         self.charAdded.connect(self.__on_char_added)
 
-        show_all = QShortcut(QKeySequence("Ctrl+Space"), self)
-        show_all.activated.connect(lambda: self.__show_image_completions(0))
+        # an action rather than a QShortcut, so its key is the keymap's (`COMPLETE_IMAGES`, #343)
+        complete_images = QAction("Complete Image Names", self)
+        shared_command_registry().bind(complete_images, COMPLETE_IMAGES.id)
+        complete_images.triggered.connect(lambda: self.__show_image_completions(0))
+        self.addAction(complete_images)
 
     def __on_char_added(self, _ch: int) -> None:
         """Show the image-filename completion list when the caret sits inside an in-progress

@@ -7,6 +7,7 @@ from PySide6.QtCore import QAbstractItemModel, QAbstractProxyModel, QModelIndex,
 from PySide6.QtGui import QAction, QColor, QGuiApplication, QKeySequence, QResizeEvent
 from PySide6.QtWidgets import QAbstractItemView, QHeaderView, QTableView, QWidget
 
+from ..shortcuts import Command, CommandScope, bind_or_apply
 from .log_level_band import LogLevelBand
 from .log_level_delegate import LogLevelDelegate
 from .log_message_delegate import LogMessageDelegate
@@ -17,6 +18,20 @@ COPY_COLUMN_SEPARATOR: Final = "\t"
 
 A tab: what a spreadsheet, an editor and a chat box all accept, and what survives being pasted into a
 bug report as two columns rather than one run-on line."""
+
+LOG_COPY_COMMAND: Final = Command(
+    "log.copy",
+    "Copy log rows",
+    "Copy the selected log rows to the clipboard",
+    (QKeySequence.StandardKey.Copy,),
+    (CommandScope.DOCUMENT_FOCUSED,),
+    focus_group="log_view",
+)
+"""Copy from a log view -- scoped to the view's own subtree, so two log views in one window are never
+ambiguous about who Ctrl+C belongs to."""
+
+LOG_COMMANDS: Final = (LOG_COPY_COMMAND,)
+"""Every log-view command, for a host to register in its own registry."""
 
 
 class LogView(QTableView):
@@ -68,11 +83,9 @@ class LogView(QTableView):
         self.setItemDelegateForColumn(MESSAGE_COLUMN, LogMessageDelegate(self))
 
         # the visible affordance for copying -- a right-click menu holding the one action this view
-        # offers, which also carries the platform copy shortcut (scoped to this widget's subtree, so
-        # two log views in one window are never ambiguous about who Ctrl+C belongs to)
+        # offers, which also carries the copy shortcut (`LOG_COPY_COMMAND`)
         self.__copy_action: Final = QAction("&Copy", self)
-        self.__copy_action.setShortcut(QKeySequence.StandardKey.Copy)
-        self.__copy_action.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        bind_or_apply(self.__copy_action, LOG_COPY_COMMAND)
         self.__copy_action.triggered.connect(self.copy_selected)
         self.addAction(self.__copy_action)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)

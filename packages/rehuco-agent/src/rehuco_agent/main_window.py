@@ -15,6 +15,7 @@ import PySide6QtAds as QtAds
 from borco_core.logging import LogScope
 from borco_pyside.logging import LogWidget
 from borco_pyside.qtads import QtAdsFloatingShowGuard, QtAdsFocusTracker, QtAdsPinSideHandler
+from borco_pyside.shortcuts import BindingRole
 from borco_pyside.theming import ActionIconThemeHandler, ThemeManager, ThemeMenu, ThemeModel
 from borco_pyside.widgets import ToolBarStretch
 from PySide6.QtCore import QByteArray
@@ -43,6 +44,20 @@ from rehuco_core import (
 
 from .app_logging import LOG_VIEW_ICON_RESOURCE, build_log_widget, shared_log_bridge
 from .archives import ARCHIVE_EXTENSIONS
+from .commands import (
+    CLOSE_ALL,
+    CLOSE_DOCUMENT,
+    CLOSE_MISSING,
+    CYCLE_THEME,
+    IMAGE_PREVIEWS,
+    IMPORT_LEGACY_CATALOG,
+    OPEN_COMPANION,
+    OPEN_FOLDER,
+    OPEN_REHU,
+    QUIT,
+    SAVE_ALL,
+    shared_command_registry,
+)
 from .dialogs.conversion_backups_dialog import ConversionBackupsDialog
 from .dialogs.import_legacy_catalog_wizard import ImportLegacyCatalogWizard
 from .dock_maximize import attach_maximize_handler
@@ -207,9 +222,13 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
     def __init__(self) -> None:  # pylint: disable=too-many-statements
         super().__init__()
+        # first, so every widget built below -- generic ones included, through the installed registry --
+        # binds its keys under the user's keymap (#343)
+        self.__command_registry: Final = shared_command_registry()
 
         self.__ui: Final = Ui_MainWindow()
         self.__ui.setupUi(self)
+        self.__bind_ui_actions()
         self.centralWidget().hide()
         self.__base_window_title: Final = self.windowTitle()
         # every action __add_open_documents itself added on the last rebuild -- removed and
@@ -503,6 +522,29 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__ui.view_menu.addAction(self.__ui.tasks_action)
         self.__ui.view_menu.addAction(self.__ui.image_previews_action)
         self.__ui.view_menu.addSeparator()  # between the app docks above and the dynamic docks list below
+
+    def __bind_ui_actions(self) -> None:
+        """Bind the `.ui`'s actions to their commands (#343): the catalog, not the `.ui`, holds their keys.
+
+        The toolbar's image previews toggle only *names* its key: the menu companion carries it, and two
+        actions carrying one app-wide key would cancel each other out.
+        """
+        ui = self.__ui
+        for action, command in (
+            (ui.open_rehu_action, OPEN_REHU),
+            (ui.open_folder_action, OPEN_FOLDER),
+            (ui.open_companion_action, OPEN_COMPANION),
+            (ui.close_action, CLOSE_DOCUMENT),
+            (ui.close_missing_action, CLOSE_MISSING),
+            (ui.close_all_action, CLOSE_ALL),
+            (ui.save_all_action, SAVE_ALL),
+            (ui.import_legacy_catalog_action, IMPORT_LEGACY_CATALOG),
+            (ui.quit_action, QUIT),
+            (ui.theme_action, CYCLE_THEME),
+            (ui.image_previews_action, IMAGE_PREVIEWS),
+        ):
+            self.__command_registry.bind(action, command.id)
+        self.__command_registry.bind(ui.image_previews_toggle_action, IMAGE_PREVIEWS.id, role=BindingRole.LABEL)
 
     def __setup_file_menu(self) -> None:
         """Wire ``File``'s static actions -- open dialogs, close, save all, quit -- and the ``Open
@@ -841,12 +883,8 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # image_previews_toggle_action/image_previews_action follow the same primary/companion split
         # as the two pairs above, but neither wraps a dock: both are declared in main_window.ui, and
         # the app-wide ImageViewerSettings singleton -- not a dock's own visibility -- is what the
-        # *toggle* (the primary, on the toolbar) drives and is driven by (#71). The companion's
-        # shortcutContext is ApplicationShortcut (set in main_window.ui), not the default
-        # WindowShortcut: a torn-out QtAds dock is a genuine top-level window of its own (#41's
-        # ambiguous-shortcut concern doesn't apply -- there is exactly one action carrying this
-        # shortcut), so WindowShortcut would go deaf to Ctrl+Shift+` the moment a floated dock had
-        # focus instead of this window.
+        # *toggle* (the primary, on the toolbar) drives and is driven by (#71). The companion carries
+        # the key, app-wide by default (`IMAGE_PREVIEWS`); the toggle only names it (__bind_ui_actions).
         self.__image_previews_icon_handler = ActionIconThemeHandler(
             self.__ui.image_previews_toggle_action,
             IMAGE_PREVIEWS_ICON_RESOURCE,

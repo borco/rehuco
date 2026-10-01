@@ -2,7 +2,9 @@
 
 from typing import Any
 
+from borco_pyside.shortcuts import CommandRegistry, Keymap
 from borco_pyside.widgets import (
+    LIST_EDITOR_COMMANDS,
     DeleteItemAction,
     DuplicateItemAction,
     EditItemAction,
@@ -13,6 +15,7 @@ from borco_pyside.widgets import (
     MoveUpItemAction,
     ResetItemAction,
 )
+from borco_pyside.widgets.item_actions import INSERT_ITEM_COMMAND
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QKeySequence
 from pytest import mark
@@ -74,6 +77,31 @@ def test_the_shortcut_is_armed_by_the_widget_it_is_added_to_not_by_the_action(
     action = action_class()
 
     assert action.shortcutContext() == Qt.ShortcutContext.WidgetShortcut
+
+
+def test_an_installed_registry_rekeys_the_action_from_its_keymap(qapp: Any) -> None:
+    """A host keeping a keymap rebinds every list editor's keys; the tooltip follows.
+
+    **Test steps:**
+
+    * install a registry holding the list-editor commands, overriding Insert's key
+    * build the action
+    * verify it carries the override, still widget-scoped, and names it
+    """
+    del qapp
+    registry = CommandRegistry()
+    registry.register(*LIST_EDITOR_COMMANDS)
+    keymap = Keymap()
+    keymap.set_keys(INSERT_ITEM_COMMAND, [QKeySequence("Ctrl+N")])
+    registry.set_keymap(keymap)
+    registry.install()
+
+    action = InsertItemAction()
+
+    assert action.shortcuts() == [QKeySequence("Ctrl+N")]
+    assert action.shortcutContext() == Qt.ShortcutContext.WidgetShortcut
+    native = QKeySequence("Ctrl+N").toString(QKeySequence.SequenceFormat.NativeText)
+    assert action.toolTip() == f"Insert a new entry below the current one ({native})"
 
 
 def test_reset_carries_no_shortcut(qapp: Any) -> None:

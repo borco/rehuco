@@ -47,6 +47,7 @@ from PySide6.QtGui import QAction, QDesktopServices, QShowEvent
 from PySide6.QtWidgets import QHeaderView, QToolBar, QToolButton, QWidget
 from rehuco_core import IMAGE_EXTENSIONS, FileKind
 
+from ..commands import REFRESH_FILES, shared_command_registry
 from ..settings.checksum_settings import shared_checksum_settings
 from ..settings.excluded_files_settings import shared_excluded_files_settings
 from ..settings.screenshot_patterns_settings import shared_screenshot_patterns_settings
@@ -386,10 +387,8 @@ class FilesView(QWidget):
             (ui.refresh_action, REFRESH_ICON_RESOURCE),
         ):
             ActionIconThemeHandler(action, icon)
-        # scoped to this widget's own subtree, not the window: every open document has a browser of its
-        # own, and a WindowShortcut would make two of them ambiguous on one key -- firing neither, the
-        # trap `DocumentWidget`'s save action documents
-        ui.refresh_action.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        # scoped to this widget's own subtree: every open document has a browser of its own (`REFRESH_FILES`)
+        shared_command_registry().bind(ui.refresh_action, REFRESH_FILES.id)
         self.addAction(ui.refresh_action)
         ui.refresh_action.triggered.connect(self.refresh)
         ui.up_action.triggered.connect(self.__on_up_triggered)

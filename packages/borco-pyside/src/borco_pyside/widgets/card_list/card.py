@@ -1,12 +1,14 @@
 """One card of a card list: grip, framed content, and the buttons beside the frame."""
 
 from collections.abc import Mapping
+from dataclasses import replace
 from typing import Final, override
 
 from PySide6.QtCore import QEvent, QRectF, Qt, Signal
 from PySide6.QtGui import QAction, QEnterEvent, QKeySequence, QPainter, QPaintEvent, QPen
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QVBoxLayout, QWidget
 
+from ...shortcuts import Command
 from ..item_actions import (
     DeleteItemAction,
     InsertItemAction,
@@ -14,12 +16,61 @@ from ..item_actions import (
     MoveToBottomItemAction,
     MoveToTopItemAction,
     MoveUpItemAction,
-    set_tooltip_and_shortcut,
+    list_editor_command,
+    set_command,
 )
 from .buddy_button_strip import BuddyButtonStrip
 from .card_content import CardContent
 from .card_grip import CardGrip
 from .card_style import CardStateStyle, CardStyle
+
+CARD_LIST_FOCUS_GROUP: Final = "card_list"
+"""The focus group every card command shares: a card list routes their keys to its current card alone."""
+
+
+def card_list_command(command_id: str, name: str, description: str, key: Qt.Key) -> Command:
+    """One card command, on Ctrl+``key``: a list-editor command re-homed in the :data:`CARD_LIST_FOCUS_GROUP`.
+
+    :param command_id: the command's id.
+    :param name: its label.
+    :param description: what it does -- also the action's tooltip.
+    :param key: the key pressed with Ctrl.
+    :returns: the command.
+    """
+    command = list_editor_command(command_id, name, description, Qt.KeyboardModifier.ControlModifier | key)
+    return replace(command, focus_group=CARD_LIST_FOCUS_GROUP)
+
+
+CARD_DELETE_COMMAND: Final = card_list_command(
+    "card_list.delete", "Delete card", "Delete this entry", Qt.Key.Key_Delete
+)
+CARD_INSERT_COMMAND: Final = card_list_command(
+    "card_list.insert", "Insert card", "Insert a new entry below this one", Qt.Key.Key_Insert
+)
+CARD_MOVE_TO_TOP_COMMAND: Final = card_list_command(
+    "card_list.move_to_top", "Move card to top", "Move the current entry to the top", Qt.Key.Key_Home
+)
+CARD_MOVE_UP_COMMAND: Final = card_list_command(
+    "card_list.move_up", "Move card up", "Move the current entry up one place", Qt.Key.Key_Up
+)
+CARD_MOVE_DOWN_COMMAND: Final = card_list_command(
+    "card_list.move_down", "Move card down", "Move the current entry down one place", Qt.Key.Key_Down
+)
+CARD_MOVE_TO_BOTTOM_COMMAND: Final = card_list_command(
+    "card_list.move_to_bottom", "Move card to bottom", "Move the current entry to the bottom", Qt.Key.Key_End
+)
+
+CARD_LIST_COMMANDS: Final = (
+    CARD_DELETE_COMMAND,
+    CARD_INSERT_COMMAND,
+    CARD_MOVE_TO_TOP_COMMAND,
+    CARD_MOVE_UP_COMMAND,
+    CARD_MOVE_DOWN_COMMAND,
+    CARD_MOVE_TO_BOTTOM_COMMAND,
+)
+"""Every card action's command, for a host to register in its own registry. Commands of their own rather
+than the list editor's: a card list routes its keys differently (Ctrl+Del, so plain Del stays a text key),
+and rebinding one kind of list must not rebind the other."""
 
 
 class Card(QWidget):  # pylint: disable=too-many-instance-attributes
@@ -83,14 +134,12 @@ class Card(QWidget):  # pylint: disable=too-many-instance-attributes
         frame_layout.setContentsMargins(self.FRAME_MARGIN, self.FRAME_MARGIN, self.FRAME_MARGIN, self.FRAME_MARGIN)
         frame_layout.addWidget(content)
 
-        self.delete_action: Final = self.__keyed(DeleteItemAction(self), "Delete this entry", Qt.Key.Key_Delete)
-        self.insert_action: Final = self.__keyed(
-            InsertItemAction(self), "Insert a new entry below this one", Qt.Key.Key_Insert
-        )
-        self.move_to_top_action: Final = MoveToTopItemAction(self)
-        self.move_up_action: Final = MoveUpItemAction(self)
-        self.move_down_action: Final = MoveDownItemAction(self)
-        self.move_to_bottom_action: Final = MoveToBottomItemAction(self)
+        self.delete_action: Final = self.__keyed(DeleteItemAction(self), CARD_DELETE_COMMAND)
+        self.insert_action: Final = self.__keyed(InsertItemAction(self), CARD_INSERT_COMMAND)
+        self.move_to_top_action: Final = self.__keyed(MoveToTopItemAction(self), CARD_MOVE_TO_TOP_COMMAND)
+        self.move_up_action: Final = self.__keyed(MoveUpItemAction(self), CARD_MOVE_UP_COMMAND)
+        self.move_down_action: Final = self.__keyed(MoveDownItemAction(self), CARD_MOVE_DOWN_COMMAND)
+        self.move_to_bottom_action: Final = self.__keyed(MoveToBottomItemAction(self), CARD_MOVE_TO_BOTTOM_COMMAND)
 
         self.__strip: Final = BuddyButtonStrip(self, self.__frame)
         delete_buddy, insert_buddy = content.buddies()
@@ -132,7 +181,7 @@ class Card(QWidget):  # pylint: disable=too-many-instance-attributes
             self.move_down_action,
             self.move_to_bottom_action,
         )
-        return next((action for action in actions if action.shortcut() == key), None)
+        return next((action for action in actions if key in action.shortcuts()), None)
 
     @property
     def current(self) -> bool:
@@ -183,15 +232,15 @@ class Card(QWidget):  # pylint: disable=too-many-instance-attributes
         """
         return self.__style.style_for(self.__current, self.__states)
 
-    def __keyed(self, action: QAction, tooltip: str, key: Qt.Key) -> QAction:
-        """Give ``action`` its Ctrl+``key`` shortcut, naming it in the tooltip.
+    @staticmethod
+    def __keyed(action: QAction, command: Command) -> QAction:
+        """Re-key a list-editor ``action`` as the card ``command``'s, naming its keys in the tooltip.
 
         :param action: the action to rekey.
-        :param tooltip: what it does, in words.
-        :param key: the key pressed with Ctrl.
+        :param command: one of the :data:`CARD_LIST_COMMANDS`.
         :returns: ``action``.
         """
-        set_tooltip_and_shortcut(action, tooltip, QKeySequence(Qt.KeyboardModifier.ControlModifier | key))
+        set_command(action, command)
         return action
 
     def __reserve_strip(self) -> None:

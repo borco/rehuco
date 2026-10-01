@@ -5,7 +5,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QMimeData, QPointF, Qt
 from PySide6.QtGui import QColor, QDropEvent, QFontDatabase, QPalette
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QWidget
 from pyside6_scintilla import Scintilla
 from pytest import fixture, mark, param, raises
 from pytest_mock import MockerFixture
@@ -365,6 +365,37 @@ def test_autocomplete_offers_image_filenames_inside_an_image_link(qtbot: QtBot, 
     editor.charAdded.emit(ord("("))
 
     assert editor.autoCActive()
+
+
+def test_ctrl_space_offers_every_image_filename_once(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """Ctrl+Space, pressed on the focused editor, opens the full list exactly once and types nothing:
+    the key is the bound action's, not Scintilla's (#74, #343).
+
+    **Test steps:**
+
+    * show a focused editor over a scanner resolving two images
+    * press Ctrl+Space on whatever holds focus
+    * verify the popup is open, the list was built once, and the buffer is unchanged
+    """
+    scanner = mocker.Mock(files=mocker.Mock(return_value=[Path("/res/b.png"), Path("/res/a.jpg")]))
+    editor = MarkdownEdit(image_scanner=scanner)
+    qtbot.addWidget(editor)
+    editor.setText("prose")
+    with qtbot.waitExposed(editor):
+        editor.show()
+    editor.activateWindow()
+    QWidget.setFocus(editor)  # Scintilla's own setFocus(bool) shadows Qt's
+    qtbot.waitUntil(lambda: QApplication.focusWidget() is not None)
+
+    qtbot.keyClick(QApplication.focusWidget(), Qt.Key.Key_Space, Qt.KeyboardModifier.ControlModifier)
+
+    active = editor.autoCActive()
+    # closed before the event loop next turns: Scintilla's popup over a *shown* editor corrupts the heap
+    # under the offscreen platform once events are processed (measured: an `autoCShow` alone does it)
+    editor.autoCCancel()
+    assert active
+    scanner.files.assert_called_once_with()
+    assert editor.getText(editor.length()) == "prose"
 
 
 def test_autocomplete_is_not_shown_outside_an_image_link(qtbot: QtBot, mocker: MockerFixture) -> None:

@@ -79,9 +79,6 @@
    <property name="toolTip">
     <string>Read this folder again.</string>
    </property>
-   <property name="shortcut">
-    <string>F5</string>
-   </property>
   </action>
   <action name="home_action">
    <property name="text">

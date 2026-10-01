@@ -21,11 +21,13 @@ from typing import Any
 
 from borco_core.logging import SharedRotatingFileHandler
 from borco_pyside.logging import LogBridge
+from borco_pyside.shortcuts import CommandRegistry
 from PySide6.QtCore import qInstallMessageHandler
 from pytest import fixture
 from pytest_mock import MockerFixture
 from rehuco_agent import main_rc  # noqa: F401  # pylint: disable=unused-import  # registers :/icons/... resources
 from rehuco_agent.app_logging import shared_log_bridge
+from rehuco_agent.commands import shared_command_registry
 from rehuco_agent.dialogs import conversion_backups_dialog
 from rehuco_agent.documents import document_widget
 from rehuco_agent.fields.widgets.markdown_view import render_markdown
@@ -48,6 +50,7 @@ from rehuco_agent.settings import (
     reference_images_settings,
     scrapers_settings,
     screenshot_patterns_settings,
+    shortcuts_settings,
     tray_settings,
     videos_settings,
     web_search_settings,
@@ -66,6 +69,7 @@ from rehuco_agent.settings.markdown_rendering_settings import shared_markdown_re
 from rehuco_agent.settings.reference_images_settings import shared_reference_images_settings
 from rehuco_agent.settings.scrapers_settings import shared_scrapers_settings
 from rehuco_agent.settings.screenshot_patterns_settings import shared_screenshot_patterns_settings
+from rehuco_agent.settings.shortcuts_settings import shared_shortcuts_settings
 from rehuco_agent.settings.tray_settings import shared_tray_settings
 from rehuco_agent.settings.ui import (
     checksums_page,
@@ -136,6 +140,13 @@ class FakeSettings:  # pylint: disable=invalid-name,missing-function-docstring,r
         prefix = self.__prefix
         nested = (key[len(prefix) :] for key in self.__data if key.startswith(prefix))
         return sorted({rest.split("/")[0] for rest in nested if "/" in rest})
+
+    def childKeys(self) -> list[str]:  # noqa: N802
+        """Every key stored directly in the open group -- what a `Keymap` enumerates its overrides by
+        (#343)."""
+        prefix = self.__prefix
+        nested = (key[len(prefix) :] for key in self.__data if key.startswith(prefix))
+        return [rest for rest in nested if "/" not in rest]
 
     def remove(self, key: str) -> None:
         """Drop ``key`` and everything under it from the open group -- ``""`` empties the whole group,
@@ -254,6 +265,37 @@ def isolate_shared_description_editor_settings(mocker: MockerFixture) -> Iterato
     mocker.patch.object(description_editor_settings, "persistent_settings", return_value=FakeSettings())
     yield
     shared_description_editor_settings.cache_clear()
+
+
+@fixture(autouse=True)
+def isolate_shared_shortcuts_settings(mocker: MockerFixture) -> Iterator[None]:
+    """Isolate every test from the process-wide `ShortcutsSettings` singleton (#343).
+
+    Same rationale as :func:`isolate_shared_markdown_rendering_settings`, reached through
+    :func:`isolate_shared_command_registry`: the registry applies this keymap to every action it binds, so
+    a keymap loaded from the developer's real settings would re-key the whole suite.
+    """
+    shared_shortcuts_settings.cache_clear()
+    mocker.patch.object(shortcuts_settings, "persistent_settings", return_value=FakeSettings())
+    yield
+    shared_shortcuts_settings.cache_clear()
+
+
+@fixture(autouse=True)
+def isolate_shared_command_registry(isolate_shared_shortcuts_settings: None) -> Iterator[None]:
+    """Give every test a fresh command registry, and leave none installed behind it (#343).
+
+    The registry is installed for generic widgets to bind through, so one left over from an earlier test
+    would hand that test's keymap -- and its bindings -- to every widget built later on the worker.
+
+    :param isolate_shared_shortcuts_settings: the keymap the fresh registry is built from, isolated first.
+    """
+    del isolate_shared_shortcuts_settings
+    shared_command_registry.cache_clear()
+    CommandRegistry.uninstall()
+    yield
+    shared_command_registry.cache_clear()
+    CommandRegistry.uninstall()
 
 
 @fixture(autouse=True)

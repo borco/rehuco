@@ -18,12 +18,13 @@ from borco_pyside.qtads import QtAdsAutoHideButtonSuppressor, QtAdsFocusTracker
 from borco_pyside.theming import ActionIconThemeHandler
 from borco_pyside.widgets import MessageBanner, MessageBannerRow, MessageBannerSeverity, ToolBarStretch
 from PySide6.QtCore import QByteArray, QEvent, QMimeData, QObject, Qt, Signal
-from PySide6.QtGui import QAction, QColor, QDropEvent, QIcon, QKeySequence
+from PySide6.QtGui import QAction, QColor, QDropEvent, QIcon
 from PySide6.QtWidgets import QApplication, QMainWindow, QMenu, QMessageBox, QVBoxLayout, QWidget
 from rehuco_core import IMAGE_EXTENSIONS, REFERENCE_IMAGES_PLUGIN, TaskQueue, backup_path, originals_to_back_up
 
 from ..app_logging import LOG_VIEW_ICON_RESOURCE, build_log_widget, shared_log_bridge
 from ..asking_deleter import AskingDeleter
+from ..commands import MAXIMIZE_DOCK, SAVE_DOCUMENT, shared_command_registry
 from ..delete_confirmation import confirm_delete
 from ..dock_maximize import attach_maximize_handler
 from ..fields import FieldsTab, StatefulWidget
@@ -587,17 +588,18 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         self.__checksum_dock: QtAds.CDockWidget | None = None
 
         self.__save_action: Final = QAction("&Save", self)
-        self.__save_action.setShortcut(QKeySequence.StandardKey.Save)
-        # WidgetWithChildrenShortcut, not the default WindowShortcut: this widget is a QMainWindow
-        # embedded in a dock, not a genuine top-level window, so WindowShortcut resolves to the
-        # single real top-level window shared by every open document -- with two dirty documents
-        # open, Qt would see two enabled actions on the same key sequence in that shared scope and
-        # call it ambiguous, firing neither (#41). Scoping to this widget's own subtree instead
-        # means the shortcut only fires whichever document actually has focus.
-        self.__save_action.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        # scoped to this document's own subtree, so only the focused document's Save fires
+        # (`CommandScope.DOCUMENT_FOCUSED`, #41)
+        shared_command_registry().bind(self.__save_action, SAVE_DOCUMENT.id)
         ActionIconThemeHandler(self.__save_action, SAVE_ICON_RESOURCE)
         self.__save_action.triggered.connect(self.__on_save_triggered)
         self.addAction(self.__save_action)
+
+        # keyboard reach for the tab button's maximize (#341), on whichever dock is current
+        self.__maximize_action: Final = QAction("Maximize Current Dock", self)
+        shared_command_registry().bind(self.__maximize_action, MAXIMIZE_DOCK.id)
+        self.__maximize_action.triggered.connect(self.toggle_maximized_dock)
+        self.addAction(self.__maximize_action)
 
         self.__revert_action: Final = QAction("&Revert", self)
         ActionIconThemeHandler(self.__revert_action, REVERT_ICON_RESOURCE)
@@ -814,8 +816,29 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
 
     @property
     def save_action(self) -> QAction:
-        """Saves the document ([[data-model#write-integrity]]); bound to the platform's save shortcut."""
+        """Saves the document ([[data-model#write-integrity]]); bound to the ``document.save`` command."""
         return self.__save_action
+
+    @property
+    def maximize_action(self) -> QAction:
+        """Maximizes the current dock over this document's others, or restores them -- the tab button's
+        toggle from the keyboard (``document.maximize``, #343)."""
+        return self.__maximize_action
+
+    @property
+    def maximized_dock(self) -> QtAds.CDockWidget | None:
+        """The dock filling this document, or ``None`` while none is (#341)."""
+        return self.__maximize_handler.maximized_dock
+
+    def toggle_maximized_dock(self) -> None:
+        """Restore the maximized dock if there is one, else maximize the current one -- the dock the
+        focus tracker last saw focused. Nothing to do when no dock is current."""
+        if self.__maximize_handler.maximized_dock is not None:
+            self.__maximize_handler.restore()
+            return
+        dock = self.__tracker.current_dock
+        if dock is not None:
+            self.__maximize_handler.maximize(dock)
 
     @property
     def revert_action(self) -> QAction:
