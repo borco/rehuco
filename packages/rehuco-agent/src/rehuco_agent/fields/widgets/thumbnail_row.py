@@ -184,7 +184,7 @@ class ThumbnailRow(QListView):
         # over the row but over no item
         self.viewport().setMouseTracking(True)
         self.__hovered = -1
-        self.entered.connect(lambda index: self.__set_hovered(index.row()))
+        self.entered.connect(self.__on_entered)
         self.viewportEntered.connect(lambda: self.__set_hovered(-1))
         loader.ready.connect(self.__on_thumbnail_ready)
 
@@ -282,6 +282,19 @@ class ThumbnailRow(QListView):
         """
         super().leaveEvent(event)
         self.__set_hovered(-1)
+
+    def __on_entered(self, index: QModelIndex) -> None:
+        """Announce the thumbnail the pointer moved onto, unless the row is hidden.
+
+        The view re-reads the item under the cursor whenever it scrolls or re-lays out, from the cursor's
+        position alone and whether or not the row is shown. A hidden row has nothing under the pointer, and
+        announcing one would open the hovered thumbnail's info box (and read its header) over a row nobody
+        can see.
+
+        :param index: the item the view reports under the pointer.
+        """
+        # isHidden(), not isVisible(): the row's own explicit state, which holds before the viewer is shown
+        self.__set_hovered(-1 if self.isHidden() else index.row())
 
     def __set_hovered(self, index: int) -> None:
         """Announce the hovered position when it changes.

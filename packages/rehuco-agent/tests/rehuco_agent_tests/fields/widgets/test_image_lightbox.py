@@ -1306,6 +1306,34 @@ def test_navigating_never_reads_a_header_for_the_info_overlay(
     assert f"{IMAGE_WIDTH} × {IMAGE_HEIGHT} px" in info_of(lightbox).text()
 
 
+def test_a_hidden_thumbnail_row_never_names_a_hovered_thumbnail(
+    document: QWidget, qtbot: QtBot, mocker: MockerFixture
+) -> None:
+    """The view re-reads the item under the cursor whenever it scrolls, from the cursor's position alone
+    -- shown or not. A row that is hidden must not turn that into a hover: the info box would open over
+    nothing, and read a header (#321).
+
+    **Test steps:**
+
+    * reveal a viewer whose thumbnail row is hidden, and spy on the source's header read
+    * have the row's view report an item under the pointer
+    * verify no thumbnail was announced as hovered, the hover box stays hidden and no header was read
+    """
+    header = mocker.patch.object(PathImageSource, "pixel_size")
+    lightbox = reveal_over(document, PATHS, PATHS[1], strip_visible=False)
+    qtbot.addWidget(lightbox)
+    strip = strip_of(lightbox)
+    hover_info = lightbox.findChild(ImageInfoOverlay, HOVER_INFO_NAME)
+    assert isinstance(hover_info, ImageInfoOverlay)
+    assert strip.isHidden()
+
+    with qtbot.assertNotEmitted(strip.hovered_index):
+        strip.entered.emit(strip.model().index(0, 0))
+
+    assert hover_info.isHidden()
+    header.assert_not_called()
+
+
 def test_the_info_overlay_elides_a_path_wider_than_the_viewer(
     document: QWidget, qtbot: QtBot, mocker: MockerFixture
 ) -> None:
