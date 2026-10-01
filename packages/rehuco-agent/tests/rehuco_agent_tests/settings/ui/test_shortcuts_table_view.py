@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from borco_pyside.shortcuts import Command, CommandRegistry, CommandScope
+from borco_pyside.shortcuts import Command, CommandRegistry, CommandScope, Keymap
 from PySide6.QtGui import QKeySequence
 from pytest import fixture
 from pytestqt.qtbot import QtBot
@@ -62,3 +62,34 @@ def test_the_value_round_trips_through_the_draft(view: ShortcutsTableView) -> No
     view.set_settings_value(before)
     assert view.settings_value() == before
     assert model.keys_of(SAVE.id) == (QKeySequence("Ctrl+S"),)
+
+
+def test_a_value_that_is_not_a_keymap_is_ignored(view: ShortcutsTableView) -> None:
+    """Only a keymap `settings_value` returned is written back.
+
+    **Test steps:**
+
+    * write a string into the view
+    * verify the draft is unchanged
+    """
+    before = view.settings_value()
+
+    view.set_settings_value("not a keymap")
+
+    assert view.settings_value() == before
+
+
+def test_a_view_without_a_shortcuts_model_has_no_value(qtbot: QtBot) -> None:
+    """With no model there is nothing to read or write.
+
+    **Test steps:**
+
+    * build a view with no model
+    * verify its value is ``None`` and writing to it does nothing
+    """
+    bare = ShortcutsTableView()
+    qtbot.addWidget(bare)
+
+    bare.set_settings_value(Keymap())
+
+    assert bare.settings_value() is None

@@ -21,7 +21,7 @@ SETTLE_DELAY_MS: Final = 1000
 NATIVE: Final = QKeySequence.SequenceFormat.NativeText
 
 EMPTY_TEXT: Final = "None"
-"""What an idle button with no sequence reads, unless its owner sets :attr:`KeySequenceRecorder.empty_text`."""
+"""What an idle button with no sequence reads."""
 
 RECORDING_TEXT: Final = "Press keys…"
 """What the button reads while recording, before the first chord."""
@@ -62,7 +62,6 @@ class KeySequenceRecorder(QPushButton):
         self.__chords: list[QKeyCombination] = []
         self.__recording = False
         self.__sequence = QKeySequence()
-        self.__empty_text = EMPTY_TEXT
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.__settle_timer: Final = QTimer(self)
         self.__settle_timer.setSingleShot(True)
@@ -87,20 +86,6 @@ class KeySequenceRecorder(QPushButton):
         :param sequence: the sequence; an empty one shows :data:`EMPTY_TEXT`.
         """
         self.__sequence = QKeySequence(sequence)
-        self.__show()
-
-    @property
-    def empty_text(self) -> str:
-        """What the idle button reads while it has no sequence."""
-        return self.__empty_text
-
-    @empty_text.setter
-    def empty_text(self, text: str) -> None:
-        """Set what the idle button reads while it has no sequence -- ``"+"`` for a button that adds a key.
-
-        :param text: the text.
-        """
-        self.__empty_text = text
         self.__show()
 
     def start(self) -> None:
@@ -162,13 +147,11 @@ class KeySequenceRecorder(QPushButton):
         if self.__recording:
             text = QKeySequence(*self.__chords).toString(NATIVE) if self.__chords else RECORDING_TEXT
         else:
-            text = self.__sequence.toString(NATIVE) if not self.__sequence.isEmpty() else self.__empty_text
+            text = self.__sequence.toString(NATIVE) if not self.__sequence.isEmpty() else EMPTY_TEXT
         self.setText(text)
 
     def __settle(self) -> None:
-        """End the recording on what was pressed."""
-        if not self.__recording or not self.__chords:
-            return
+        """End the recording on what was pressed; only ever armed by a chord, while recording."""
         sequence = QKeySequence(*self.__chords)
         self.__finish()
         self.recorded.emit(sequence)

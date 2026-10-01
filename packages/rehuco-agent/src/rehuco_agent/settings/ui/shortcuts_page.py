@@ -158,6 +158,9 @@ class ShortcutsPage(QWidget):
         self.__proxy.set_filter_text(text)
         self.__view_settings.filter_text = text
         self.__view_settings.save(persistent_settings())
+        # filtering the current row out drops the table's current index without announcing it, and an editor
+        # still showing the command it was would then be live over nothing
+        self.__show_selected()
 
     def __on_sort_changed(self, column: int, order: Qt.SortOrder) -> None:
         """Remember the column the table was sorted by.

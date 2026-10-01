@@ -3,7 +3,7 @@
 from typing import Any
 
 from borco_pyside.shortcuts import Command, CommandRegistry, CommandScope, Keymap
-from borco_pyside.widgets import KeySequenceRecorder
+from borco_pyside.widgets import KeySequenceRecorder, key_sequence_recorder
 from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QAction, QFocusEvent, QKeyEvent, QKeySequence
 from PySide6.QtWidgets import (
@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QTableView,
     QToolButton,
     QWidget,
@@ -82,6 +83,7 @@ def page(qtbot: QtBot, registry: CommandRegistry, view_settings: FakeSettings, m
     :returns: the page, with the first command selected.
     """
     del view_settings
+    mocker.patch.object(key_sequence_recorder, "SETTLE_DELAY_MS", 10)  # a recording settles at once
     widget = ShortcutsPage(registry)
     qtbot.addWidget(widget)
     mocker.patch.object(widget, "confirm_reassign", return_value=False)
@@ -612,6 +614,145 @@ def test_the_search_text_and_sort_survive_a_new_page(
     header: QHeaderView = view.horizontalHeader()
     assert header.sortIndicatorSection() == KEYS_COLUMN
     assert header.sortIndicatorOrder() == Qt.SortOrder.DescendingOrder
+
+
+def conflicting_draft() -> Keymap:
+    """A keymap giving Open and Idle the same key in the same scope -- what a path that skipped the question
+    could leave behind.
+
+    :returns: the keymap.
+    """
+    keymap = Keymap()
+    keymap.set_keys(OPEN, [QKeySequence("Ctrl+K")])
+    keymap.set_keys(IDLE, [QKeySequence("Ctrl+K")])
+    return keymap
+
+
+def test_a_page_over_no_commands_selects_nothing(qtbot: QtBot, view_settings: FakeSettings) -> None:
+    """With nothing to list there is nothing to select, and the editor says so.
+
+    **Test steps:**
+
+    * build a page over an empty registry
+    * verify the editor frame is disabled and carries the no-selection title
+    """
+    del view_settings
+    empty = ShortcutsPage(CommandRegistry())
+    qtbot.addWidget(empty)
+
+    assert not child(empty, QWidget, "selected_frame").isEnabled()
+    assert child(empty, QLabel, "selected_frame_label").text() == "Select a command"
+
+
+def test_a_conflicted_draft_is_not_saved(page: ShortcutsPage) -> None:
+    """The net under the question: a draft with two commands on one key refuses to save.
+
+    **Test steps:**
+
+    * write a conflicting keymap into the table's value
+    * verify ``can_save`` is false, and ``save_changes`` leaves the saved keymap alone
+    """
+    child(page, QTableView, "shortcuts_table").set_settings_value(conflicting_draft())  # type: ignore[attr-defined]
+
+    assert not page.can_save()
+    page.save_changes()
+
+    assert shared_shortcuts_settings().keymap == Keymap()
+
+
+def test_the_editor_apply_refuses_a_conflicted_result(page: ShortcutsPage) -> None:
+    """Applying one command whose draft collides still saves nothing.
+
+    **Test steps:**
+
+    * save Open on ``Ctrl+K``, then stage a draft giving Idle the same key, and select Idle
+    * trigger the editor's Apply (the button is disabled, so the signal is sent directly)
+    * verify the saved keymap is untouched: Idle's key would collide with Open's
+    """
+    table = child(page, QTableView, "shortcuts_table")
+    saved = Keymap()
+    saved.set_keys(OPEN, [QKeySequence("Ctrl+K")])
+    table.set_settings_value(saved)  # type: ignore[attr-defined]
+    page.save_changes()
+    table.set_settings_value(conflicting_draft())  # type: ignore[attr-defined]
+    select(page, "Idle")
+
+    page.editor_header.apply_action.triggered.emit()
+
+    assert shared_shortcuts_settings().keymap == saved
+
+
+def test_every_editor_action_does_nothing_without_a_selection(page: ShortcutsPage) -> None:
+    """With the search matching nothing no command is current, and the editor's handlers are inert.
+
+    **Test steps:**
+
+    * search for text no command has
+    * send every editor signal
+    * verify the page is still clean
+    """
+    child(page, QLineEdit, "search_edit").setText("zzz no such command")
+    assert child(page, QTableView, "shortcuts_table").model().rowCount() == 0
+
+    child(page, QComboBox, "scope_combo").activated.emit(0)
+    keys_editor(page).key_recorded.emit(-1, QKeySequence("F9"))
+    keys_editor(page).key_removed.emit(0)
+    page.editor_header.apply_action.triggered.emit()
+    page.editor_header.reset_action.triggered.emit()
+    page.editor_header.defaults_action.triggered.emit()
+
+    assert not page.is_dirty()
+    assert not child(page, QWidget, "selected_frame").isEnabled()
+
+
+def test_the_reassign_question_names_what_it_takes_and_answers_by_button(
+    page: ShortcutsPage, mocker: MockerFixture
+) -> None:
+    """The real question lists each taken key and its owner, and is true only for the Reassign button.
+
+    **Test steps:**
+
+    * replace the message box with a stand-in whose clicked button the test chooses
+    * ask with Reassign clicked, then with Cancel clicked
+    * verify the text names Open and its key, and the answers are True then False
+    """
+    box = mocker.patch.object(shortcuts_page, "QMessageBox")
+    instance = box.return_value
+    reassign = mocker.MagicMock()
+    instance.addButton.side_effect = [reassign, mocker.MagicMock()]
+    instance.clickedButton.return_value = reassign
+
+    assert ShortcutsPage.confirm_reassign(page, [(OPEN, QKeySequence("Ctrl+O"))]) is True
+
+    shown = box.call_args.args[2]
+    assert f'"{native("Ctrl+O")}" is already used by "Open".' == shown
+    instance.setInformativeText.assert_called_with('Reassigning removes it from "Open".')
+    instance.exec.assert_called_once()
+
+    instance.addButton.side_effect = [reassign, mocker.MagicMock()]
+    instance.clickedButton.return_value = mocker.MagicMock()
+    assert ShortcutsPage.confirm_reassign(page, [(OPEN, QKeySequence("Ctrl+O"))]) is False
+    assert QMessageBox is not None  # the real class is only patched on the page's module
+
+
+def test_adding_a_key_while_one_is_being_recorded_opens_no_second_button(page: ShortcutsPage) -> None:
+    """One recording at a time: a second click on add while a new key button is open does nothing.
+
+    **Test steps:**
+
+    * select Open and click the add button twice
+    * verify the same pending button is still the only one
+    """
+    select(page, "Open")
+    editor = keys_editor(page)
+
+    editor.add_button.click()
+    first = editor.pending_button
+    editor.add_button.click()
+
+    assert first is not None
+    assert editor.pending_button is first
+    assert len(editor.findChildren(KeySequenceRecorder, "pending_key_button")) == 1
 
 
 # endregion

@@ -2981,7 +2981,7 @@ def test_a_page_that_cannot_save_has_apply_disabled_and_is_skipped_by_auto_apply
 
     * register a gated page that is dirty and not savable
     * verify Apply and Apply All are disabled while Reset is enabled
-    * trigger the actions and tick auto-apply, and verify nothing was saved
+    * send Apply All and the frame's Apply, and tick auto-apply, and verify nothing was saved
     * make it savable and verify Apply is enabled and auto-apply saves it
     """
     dialog = SettingsDialog()
@@ -2997,7 +2997,11 @@ def test_a_page_that_cannot_save_has_apply_disabled_and_is_skipped_by_auto_apply
     assert not actions.apply_all_action.isEnabled()  # type: ignore[attr-defined]
     assert actions.reset_current_page_action.isEnabled()  # type: ignore[attr-defined]
 
-    actions.apply_all_action.trigger()  # type: ignore[attr-defined]
+    # the actions are disabled, so each is sent directly, as a path that did not check the button would
+    actions.apply_all_action.triggered.emit()  # type: ignore[attr-defined]
+    header = frame_header(dialog, page.frames[0])
+    assert header is not None
+    header.apply_action.triggered.emit()
     auto_apply_check_box(dialog).set_checked(True)
     poll_dirty_state(dialog)
     assert page.save_calls == 0

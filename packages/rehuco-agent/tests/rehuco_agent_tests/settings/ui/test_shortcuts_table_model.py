@@ -3,9 +3,9 @@
 from typing import Any
 
 from borco_pyside.shortcuts import Command, CommandRegistry, CommandScope, Keymap
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QModelIndex, Qt
 from PySide6.QtGui import QKeySequence
-from pytest import fixture
+from pytest import fixture, raises
 from rehuco_agent.settings.ui.shortcuts_table_model import (
     COMMAND_COLUMN,
     CONFLICT_COLUMN,
@@ -244,3 +244,94 @@ def test_committing_one_command_brings_the_command_it_took_from(model: Shortcuts
     assert merged.keys[IDLE.id] == (QKeySequence("Ctrl+O"),)
     assert not merged.keys[OPEN.id]  # an explicit "no keys" override, not a missing one
     assert SAVE.id not in merged.keys
+
+
+def test_commands_in_different_focus_groups_do_not_collide(model: ShortcutsTableModel) -> None:
+    """A prospective key is not checked against a command whose scope cannot overlap its own.
+
+    **Test steps:**
+
+    * ask what giving List refresh ``F5`` in the widget scope would collide with, View refresh holding F5
+    * verify nothing
+    """
+    assert model.collisions(LIST_REFRESH.id, [QKeySequence("F5")], CommandScope.WIDGET) == []
+
+
+def test_a_command_outside_a_conflict_has_none(model: ShortcutsTableModel) -> None:
+    """Conflicts are listed per command: only the two involved read as conflicted.
+
+    **Test steps:**
+
+    * make Open and Idle collide
+    * verify Save, which is not part of it, has no conflicts while Open names Idle
+    """
+    model.set_entry(OPEN.id, [QKeySequence("Ctrl+K")], OPEN.default_scope)
+    model.set_entry(IDLE.id, [QKeySequence("Ctrl+K")], IDLE.default_scope)
+
+    assert model.conflicts_of(SAVE.id) == []
+    assert [other for other, _keys in model.conflicts_of(OPEN.id)] == [IDLE]
+
+
+def test_a_row_is_found_by_command_and_by_id(model: ShortcutsTableModel) -> None:
+    """``command_at`` and ``row_of`` are each other's inverse, and an unknown id has no row.
+
+    **Test steps:**
+
+    * look up the third row's command and that command's row
+    * look up an id no command has
+    """
+    assert model.command_at(2) == IDLE
+    assert model.row_of(IDLE.id) == 2
+    assert model.row_of("no.such.command") == -1
+
+
+def test_an_unknown_command_cannot_be_edited(model: ShortcutsTableModel) -> None:
+    """Editing a command the model does not list is a mistake worth a loud failure.
+
+    **Test steps:**
+
+    * set the entry of an id no command has
+    * verify a ``KeyError``
+    """
+    with raises(KeyError):
+        model.set_entry("no.such.command", [], CommandScope.WINDOW)
+
+
+def test_an_invalid_index_has_no_data_and_no_flags(model: ShortcutsTableModel) -> None:
+    """The model answers nothing for the invalid index a view may ask about.
+
+    **Test steps:**
+
+    * ask the data and flags of an invalid index
+    """
+    assert model.data(QModelIndex()) is None
+    assert model.flags(QModelIndex()) == Qt.ItemFlag.NoItemFlags
+
+
+def test_tooltips_describe_the_command_and_only_a_conflict_names_another(model: ShortcutsTableModel) -> None:
+    """Every cell but Conflict carries the command's description; Conflict has a tooltip only when it conflicts.
+
+    **Test steps:**
+
+    * read the Command cell's tooltip and the Conflict cell's tooltip of a conflict-free row
+    * verify the description and nothing
+    """
+    assert cell(model, 0, COMMAND_COLUMN, Qt.ItemDataRole.ToolTipRole) == SAVE.description
+    assert cell(model, 0, CONFLICT_COLUMN, Qt.ItemDataRole.ToolTipRole) is None
+
+
+def test_a_model_over_no_commands_is_empty(qapp: Any) -> None:
+    """Nothing to list is not an error: the draft can still be replaced.
+
+    **Test steps:**
+
+    * build a model over an empty registry and set a draft
+    * verify no rows
+    """
+    del qapp
+    registry = CommandRegistry()
+    empty = ShortcutsTableModel(registry)
+
+    empty.set_draft(Keymap())
+
+    assert empty.rowCount() == 0

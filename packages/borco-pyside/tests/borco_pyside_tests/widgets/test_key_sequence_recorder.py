@@ -207,3 +207,36 @@ def test_a_shortcut_override_is_accepted_while_recording(recorder: KeySequenceRe
     recorder.event(recording)
 
     assert recording.isAccepted()
+
+
+def test_cancelling_an_idle_button_does_nothing(recorder: KeySequenceRecorder) -> None:
+    """``cancel`` is for a recording in progress; idle it emits nothing.
+
+    **Test steps:**
+
+    * cancel a button that is not recording
+    * verify no ``cancelled`` signal and it is still idle
+    """
+    cancelled: list[bool] = []
+    recorder.cancelled.connect(lambda: cancelled.append(True))
+
+    recorder.cancel()
+
+    assert not cancelled
+    assert not recorder.is_recording
+
+
+def test_a_key_release_while_recording_is_swallowed(recorder: KeySequenceRecorder) -> None:
+    """The release that follows a recorded press must not reach the button, where Space would click it.
+
+    **Test steps:**
+
+    * start recording and send a Space release
+    * verify the event was consumed and the button is still recording
+    """
+    recorder.start()
+
+    consumed = recorder.event(QKeyEvent(QEvent.Type.KeyRelease, Qt.Key.Key_Space, Qt.KeyboardModifier.NoModifier))
+
+    assert consumed
+    assert recorder.is_recording
