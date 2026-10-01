@@ -18,6 +18,7 @@ from PySide6.QtGui import (
     QDragMoveEvent,
     QDropEvent,
     QEnterEvent,
+    QKeySequence,
     QPalette,
 )
 from PySide6.QtTest import QTest
@@ -352,14 +353,17 @@ def test_buttons_show_on_hover_or_when_the_card_is_current(card: Card) -> None:
 def test_the_buttons_carry_the_card_keys_in_their_tooltips(card: Card) -> None:
     """The tooltips name Ctrl+Del and Ctrl+Ins, since the keyboard is the only other way to them.
 
+    The keys are named the way the platform writes them (``⌘⌦`` on macOS), so the expectation is built the same way.
+
     **Test steps:**
 
     * verify each button's tooltip names its Ctrl key
     """
     delete, insert = card.strip.buttons
+    native = QKeySequence.SequenceFormat.NativeText
 
-    assert "Ctrl+Del" in delete.toolTip()
-    assert "Ctrl+Ins" in insert.toolTip()
+    assert QKeySequence(Qt.KeyboardModifier.ControlModifier | Qt.Key.Key_Delete).toString(native) in delete.toolTip()
+    assert QKeySequence(Qt.KeyboardModifier.ControlModifier | Qt.Key.Key_Insert).toString(native) in insert.toolTip()
 
 
 # endregion
