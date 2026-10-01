@@ -58,6 +58,33 @@ def canonical_author_entry(entry: AuthorEntry) -> AuthorEntry:
     return entry
 
 
+def merge_author_link(entries: Sequence[AuthorEntry], name: str, url: str) -> list[AuthorEntry]:
+    """``entries`` with a linked author added, or its URL updated if the name is already listed (#385).
+
+    Names compare exactly after trimming. A name not in the list is appended as a ``{"name", "url"}``
+    record; a listed one keeps its place and every other key it carries, and only its URL changes (a plain
+    name becomes a record). Nothing is mutated: the list and the entries are the caller's.
+
+    :param entries: the current authors list.
+    :param name: the dropped link's text.
+    :param url: the dropped link's URL.
+    :returns: the new list, equal to ``entries`` when nothing changed.
+    """
+    name = name.strip()
+    merged = list(entries)
+    for at, entry in enumerate(merged):
+        if author_name(entry).strip() != name:
+            continue
+        if isinstance(entry, dict):
+            if entry.get("url") != url:
+                merged[at] = {**entry, "url": url}
+        else:
+            merged[at] = {"name": entry, "url": url}
+        return merged
+    merged.append({"name": name, "url": url})
+    return merged
+
+
 # the count is `QAbstractTableModel`'s surface plus the two protocols `ItemListEditor` drives the model
 # through -- four ordering methods, four editing ones -- none of which this class chose; splitting it
 # would separate the rows from the operations performed on them
