@@ -23,6 +23,8 @@ class SourcesEditor(CardListEditor):
 
     What it adds to the generic card list:
 
+    * **never empty**: with no source the editor shows one blank card, and deleting the only card clears its
+      fields in place -- there is no button to add a first card, and the layout never changes under the user;
     * a card holding none of Title, URL and Publisher is **blank**, and stays out of the value until something
       is typed -- so a card may be started from its URL, before its title, and is kept;
     * a card whose trimmed URL a card above it already has is **flagged** (`flagged`, pink), live as URLs are
@@ -46,18 +48,21 @@ class SourcesEditor(CardListEditor):
     the captions and edits legible on both themes."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
-        model = CardListModel(dict, SourcesEditor.is_blank, SourcesEditor.card_states)
+        model = CardListModel(dict, SourcesEditor.is_blank, SourcesEditor.card_states, never_empty=True)
         super().__init__(model, SourceCardContent, parent=parent)
         border = QColor(FLAGGED_COLOR)
         fill = QColor(border)
         fill.setAlpha(self.FLAGGED_ALPHA)
         self.style_map.register("flagged", CardStateStyle(fill=fill, border=border))
-        # the list starts empty, so every card is one this announces
+        # the list starts with one blank card, built before this connection exists; every later card is announced
+        for card in self.cards:
+            apply_card_icons(card)
         self.card_added.connect(apply_card_icons)
         # after the base class's own slots, so a card it has just built is already there to be dressed
         model.rowsInserted.connect(self.__show_grips)
         model.rowsRemoved.connect(self.__show_grips)
         model.modelReset.connect(self.__show_grips)
+        self.__show_grips()
 
     @property
     def header_height(self) -> int:

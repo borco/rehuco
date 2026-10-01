@@ -6,7 +6,7 @@
 
 from collections.abc import Callable, Mapping, Sequence
 from copy import deepcopy
-from typing import Any, override
+from typing import Any, Final, override
 
 from PySide6.QtCore import QAbstractListModel, QModelIndex, QObject, QPersistentModelIndex, Qt, Signal
 
@@ -32,6 +32,10 @@ class CardListModel(QAbstractListModel):  # pylint: disable=too-many-public-meth
     :param new_item: builds the blank item :meth:`insert` adds.
     :param is_blank: whether an item holds nothing yet.
     :param card_states: the per-row states, recomputed from every row after each change; ``None`` for none.
+    :param never_empty: keep exactly-one-or-more rows: the model starts with one pending blank row, an empty
+        value shows one, and :meth:`delete` on the only row **clears** it (a new blank item, pending again)
+        instead of removing it -- so the cards never go from one to none and back, and a list needs no
+        button for its first entry.
     :param parent: optional Qt parent.
     """
 
@@ -47,18 +51,26 @@ class CardListModel(QAbstractListModel):  # pylint: disable=too-many-public-meth
         new_item: Callable[[], Any],
         is_blank: Callable[[Any], bool],
         card_states: CardStates | None = None,
+        *,
+        never_empty: bool = False,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
         self.__new_item = new_item
         self.__is_blank = is_blank
         self.__card_states = card_states
-        self.__items: list[Any] = []
-        self.__pending: list[bool] = []
+        self.__never_empty: Final = never_empty
+        self.__items: list[Any] = [new_item()] if never_empty else []
+        self.__pending: list[bool] = [True] if never_empty else []
         self.__states: list[Mapping[str, str]] = []
         self.rowsInserted.connect(self.count_changed)
         self.rowsRemoved.connect(self.count_changed)
         self.modelReset.connect(self.count_changed)
+
+    @property
+    def never_empty(self) -> bool:
+        """Whether the model always holds at least one row (a blank one, for an empty value)."""
+        return self.__never_empty
 
     @property
     def items(self) -> tuple[Any, ...]:
@@ -82,8 +94,12 @@ class CardListModel(QAbstractListModel):  # pylint: disable=too-many-public-meth
         if replacement == self.value:
             return
         self.beginResetModel()
-        self.__items = replacement
-        self.__pending = [False] * len(replacement)
+        if self.__never_empty and not replacement:
+            self.__items = [self.__new_item()]
+            self.__pending = [True]
+        else:
+            self.__items = replacement
+            self.__pending = [False] * len(replacement)
         changed = self.__recompute_states()
         self.endResetModel()
         self.__announce_states(changed)
@@ -155,11 +171,16 @@ class CardListModel(QAbstractListModel):  # pylint: disable=too-many-public-meth
         return at + 1
 
     def delete(self, at: int) -> None:
-        """Drop one row -- the `ItemEditor` contract.
+        """Drop one row -- the `ItemEditor` contract; the only row of a :attr:`never_empty` model is cleared
+        instead, in place.
 
         :param at: the row to drop; a negative row is a no-op.
         """
-        if at >= 0:
+        if not 0 <= at < len(self.__items):
+            return
+        if self.__never_empty and len(self.__items) == 1:
+            self.__clear_row(at)
+        else:
             self.removeRow(at)
 
     def reset(self) -> None:
@@ -225,6 +246,21 @@ class CardListModel(QAbstractListModel):  # pylint: disable=too-many-public-meth
         self.endInsertRows()
         self.__announce_states(changed)
 
+    def __clear_row(self, row: int) -> None:
+        """Reset ``row`` to a new pending blank item, announcing it as a change of that row.
+
+        :param row: the row.
+        """
+        item = self.__new_item()
+        if self.__pending[row] and item == self.__items[row]:
+            return
+        self.__items[row] = item  # pylint: disable=unsupported-assignment-operation
+        self.__pending[row] = True  # pylint: disable=unsupported-assignment-operation
+        changed = self.__recompute_states()
+        index = self.index(row)
+        self.dataChanged.emit(index, index)
+        self.__announce_states(changed)
+
     def __recompute_states(self) -> bool:
         """Recompute the per-row states from the rows as they now stand.
 
@@ -266,6 +302,8 @@ class CardListModel(QAbstractListModel):  # pylint: disable=too-many-public-meth
     @override
     def removeRows(self, row: int, count: int, parent: ModelIndex = QModelIndex()) -> bool:  # noqa: N802
         if parent.isValid() or count < 1 or not 0 <= row <= len(self.__items) - count:
+            return False
+        if self.__never_empty and count == len(self.__items):
             return False
         self.beginRemoveRows(QModelIndex(), row, row + count - 1)
         del self.__items[row : row + count]  # pylint: disable=unsupported-delete-operation

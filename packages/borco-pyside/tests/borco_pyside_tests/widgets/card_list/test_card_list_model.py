@@ -5,6 +5,7 @@ from typing import Any
 
 from borco_pyside.widgets import CardListModel, ItemEditor, ItemOrderingEditor
 from PySide6.QtCore import QModelIndex, Qt
+from PySide6.QtTest import QSignalSpy
 from pytest import fixture, mark, param
 from pytestqt.qtbot import QtBot
 
@@ -310,3 +311,142 @@ def test_the_model_answers_the_qt_interface(model: CardListModel) -> None:
     assert model.moveRows(index, 0, 1, QModelIndex(), 2) is False
     assert model.moveRows(QModelIndex(), 0, 1, QModelIndex(), 0) is False
     assert names(model) == ["a", "b", "c"]
+
+
+# region never_empty
+
+
+def make_never_empty(*names: str) -> CardListModel:
+    """A never-empty model over ``{"name": ...}`` rows.
+
+    :param names: the rows' names; none for an empty value.
+    :returns: the model.
+    """
+    model = CardListModel(dict, lambda item: not item, never_empty=True)
+    model.set_items([{"name": name} for name in names])
+    return model
+
+
+def test_a_never_empty_model_starts_with_one_pending_blank_row(qtbot: QtBot) -> None:  # pylint: disable=unused-argument
+    """The one row is shown, but it is not part of the value.
+
+    **Test steps:**
+
+    * build a never-empty model
+    * verify one pending row and an empty value
+    """
+    model = CardListModel(dict, lambda item: not item, never_empty=True)
+
+    assert model.never_empty
+    assert model.count == 1
+    assert model.is_pending(0)
+    assert model.value == []
+
+
+def test_an_empty_value_shows_one_pending_blank_row(qtbot: QtBot) -> None:  # pylint: disable=unused-argument
+    """Setting nothing resets the rows to the single blank one, and setting nothing again is a no-op.
+
+    **Test steps:**
+
+    * set two rows, then an empty value, watching for a reset
+    * verify one pending row and, for the same value again, no further reset
+    """
+    model = make_never_empty("a", "b")
+
+    model.set_items([])
+
+    assert model.count == 1
+    assert model.is_pending(0)
+    resets = QSignalSpy(model.modelReset)
+    model.set_items([])
+    assert resets.count() == 0
+
+
+def test_deleting_the_only_row_clears_it_in_place(qtbot: QtBot) -> None:  # pylint: disable=unused-argument
+    """The row is not removed: its item is reset, it is pending again, and it is announced as a change.
+
+    **Test steps:**
+
+    * delete the only row of a one-row model, watching the row signals
+    * verify one blank pending row, a data change for row 0 and no removal
+    """
+    model = make_never_empty("a")
+
+    changes = QSignalSpy(model.dataChanged)
+    removals = QSignalSpy(model.rowsRemoved)
+    model.delete(0)
+
+    assert model.count == 1
+    assert not model.item(0)
+    assert model.is_pending(0)
+    assert model.value == []
+    assert changes.count() == 1
+    assert removals.count() == 0
+
+
+def test_clearing_a_blank_row_announces_nothing(qtbot: QtBot) -> None:  # pylint: disable=unused-argument
+    """There is nothing to clear on a row that is already blank and pending.
+
+    **Test steps:**
+
+    * delete the only row of an empty never-empty model, watching for a data change
+    * verify none was announced
+    """
+    model = make_never_empty()
+
+    changes = QSignalSpy(model.dataChanged)
+    model.delete(0)
+
+    assert changes.count() == 0
+
+
+def test_deleting_one_of_several_rows_removes_it(qtbot: QtBot) -> None:  # pylint: disable=unused-argument
+    """Only the last remaining row is cleared; any other is removed as usual.
+
+    **Test steps:**
+
+    * delete the first of two rows, then the one left
+    * verify the first was removed and the second cleared
+    """
+    model = make_never_empty("a", "b")
+
+    model.delete(0)
+    assert names(model) == ["b"]
+    model.delete(0)
+
+    assert model.count == 1
+    assert model.value == []
+
+
+def test_deleting_a_row_that_does_not_exist_clears_nothing(qtbot: QtBot) -> None:  # pylint: disable=unused-argument
+    """An out-of-range row is a no-op here as everywhere, not a clear of the one row there is.
+
+    **Test steps:**
+
+    * delete row 3 of a one-row model, watching for a data change
+    * verify nothing was announced and the row is untouched
+    """
+    model = make_never_empty("a")
+
+    changes = QSignalSpy(model.dataChanged)
+    model.delete(3)
+
+    assert changes.count() == 0
+    assert names(model) == ["a"]
+
+
+def test_removing_every_row_is_refused(qtbot: QtBot) -> None:  # pylint: disable=unused-argument
+    """The model never goes to no rows, whatever asks.
+
+    **Test steps:**
+
+    * remove all rows of a two-row model through Qt's interface
+    * verify it was refused and both rows remain
+    """
+    model = make_never_empty("a", "b")
+
+    assert model.removeRows(0, 2) is False
+    assert names(model) == ["a", "b"]
+
+
+# endregion

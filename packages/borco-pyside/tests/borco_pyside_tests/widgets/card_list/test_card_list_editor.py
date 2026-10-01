@@ -7,7 +7,7 @@ updates, keys, focus, drag with a ghost, and the value contract."""
 
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, override
 
 from borco_pyside.widgets import Card, CardListEditor, CardListModel, CardStateStyle, CardStyle
 from PySide6.QtCore import QByteArray, QEvent, QMimeData, QPoint, QPointF, Qt, Signal
@@ -22,7 +22,17 @@ from PySide6.QtGui import (
     QPalette,
 )
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QCheckBox, QFormLayout, QLabel, QLineEdit, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QAbstractButton,
+    QApplication,
+    QCheckBox,
+    QFormLayout,
+    QLabel,
+    QLineEdit,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
+)
 from pytest import fixture, mark, param, raises
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -648,15 +658,17 @@ def test_an_empty_list_shows_only_the_add_button(page: Page) -> None:
     * set an empty value and verify the add button shows
     * click it and verify one focused card exists and the button hides
     """
-    assert page.editor.add_button.isHidden()
+    button = page.editor.add_button
+    assert button is not None
+    assert button.isHidden()
 
     page.editor.set_value([])
-    assert not page.editor.add_button.isHidden()
+    assert not button.isHidden()
 
-    page.editor.add_button.click()
+    button.click()
 
     assert len(page.editor.cards) == 1
-    assert page.editor.add_button.isHidden()
+    assert button.isHidden()
     assert QApplication.focusWidget() is page.content(0).name
 
 
@@ -1017,8 +1029,10 @@ def test_deleting_the_only_focused_card_hands_focus_to_the_add_button(qtbot: QtB
 
     editor.model.delete(0)
 
-    assert not editor.add_button.isHidden()
-    assert QApplication.focusWidget() is editor.add_button
+    button = editor.add_button
+    assert button is not None
+    assert not button.isHidden()
+    assert QApplication.focusWidget() is button
 
 
 def test_a_card_with_nothing_to_type_into_can_still_be_current(qtbot: QtBot) -> None:
@@ -1163,6 +1177,157 @@ def test_a_style_colour_may_be_a_function_of_the_palette() -> None:
     assert CardStateStyle.resolve(QPalette.ColorRole.Highlight, palette) == palette.color(QPalette.ColorRole.Highlight)
     assert CardStateStyle.resolve(dimmed, palette) == dimmed(palette)
     assert CardStateStyle.resolve(None, palette) is None
+
+
+# endregion
+
+
+# region never empty
+
+
+def make_never_empty_page(qtbot: QtBot, *items: dict[str, Any]) -> tuple[QWidget, CardListEditor]:
+    """A shown editor over a never-empty model holding ``items``.
+
+    :param qtbot: pytest-qt bot, which holds the window only weakly -- the caller keeps it alive.
+    :param items: the rows' items; none for an empty value.
+    :returns: the window holding the editor, and the editor.
+    """
+    window = QWidget()
+    qtbot.addWidget(window)
+    model = CardListModel(dict, lambda item: not item, never_empty=True, parent=window)
+    model.set_items(list(items))
+    editor = CardListEditor(model, SampleContent)
+    QVBoxLayout(window).addWidget(editor)
+    with qtbot.waitExposed(window):
+        window.show()
+    window.activateWindow()
+    return window, editor
+
+
+def test_a_never_empty_editor_has_no_add_button_and_starts_with_a_card(qtbot: QtBot) -> None:
+    """There is nothing to add a first card with: one blank card is already there.
+
+    **Test steps:**
+
+    * build an editor over a never-empty model with no items
+    * verify there is no add button, one card, and an empty value
+    """
+    _window, editor = make_never_empty_page(qtbot)
+
+    assert editor.add_button is None
+    assert len(editor.cards) == 1
+    assert editor.value == []
+
+
+def test_deleting_the_only_card_clears_its_fields_and_keeps_the_card_and_focus(qtbot: QtBot) -> None:
+    """The card is neither removed nor rebuilt: its fields are reset, and focus stays where it was.
+
+    **Test steps:**
+
+    * focus the only card's edit and delete its row
+    * verify it is the same card, its edit is empty, the edit still has focus, and the value is empty
+    """
+    _window, editor = make_never_empty_page(qtbot, {"name": "solo"})
+    cards = editor.cards
+    card = cards[0]
+    first = card.content
+    assert isinstance(first, SampleContent)
+    first.name.setFocus()
+    reported: list[Any] = []
+    editor.value_changed.connect(reported.append)
+
+    editor.model.delete(0)
+
+    assert editor.cards == (card,)
+    assert first.name.text() == ""
+    assert QApplication.focusWidget() is first.name
+    assert editor.value == []
+    assert reported == [[]]
+
+
+def test_ctrl_del_on_the_only_card_clears_it(qtbot: QtBot) -> None:
+    """The card key does what the button does.
+
+    **Test steps:**
+
+    * focus the only card's edit and press Ctrl+Del
+    * verify the card is still there, with an empty edit
+    """
+    _window, editor = make_never_empty_page(qtbot, {"name": "solo"})
+    cards = editor.cards
+    first = cards[0].content
+    assert isinstance(first, SampleContent)
+    first.name.setFocus()
+
+    QTest.keyClick(first.name, Qt.Key.Key_Delete, Qt.KeyboardModifier.ControlModifier)
+
+    assert len(editor.cards) == 1
+    assert first.name.text() == ""
+
+
+# endregion
+
+
+# region the empty-list add button is the app's to make
+
+
+class ToolButtonEditor(CardListEditor):
+    """An editor whose empty-list button is a tool button of its own, and which counts how often it is asked."""
+
+    made = 0
+
+    @override
+    def make_empty_list_add_button(self) -> QAbstractButton:
+        type(self).made += 1
+        button = QToolButton()
+        button.setText("Add the first one")
+        return button
+
+
+def test_an_app_can_supply_its_own_empty_list_add_button(qtbot: QtBot) -> None:
+    """A subclass reimplements :meth:`make_empty_list_add_button`; the editor wires it like the default.
+
+    **Test steps:**
+
+    * build a subclass over an empty list and verify its button is the add button, shown
+    * click it and verify one focused card exists and the button hides
+    """
+    ToolButtonEditor.made = 0
+    window = QWidget()
+    qtbot.addWidget(window)
+    model = CardListModel(dict, lambda item: not item, parent=window)
+    editor = ToolButtonEditor(model, SampleContent)
+    QVBoxLayout(window).addWidget(editor)
+    with qtbot.waitExposed(window):
+        window.show()
+    button = editor.add_button
+    assert isinstance(button, QToolButton)
+    assert not button.isHidden()
+
+    button.click()
+
+    assert ToolButtonEditor.made == 1
+    assert len(editor.cards) == 1
+    assert button.isHidden()
+
+
+def test_a_never_empty_editor_never_asks_for_the_button(qtbot: QtBot) -> None:
+    """Nothing shows the button there, so it is not made.
+
+    **Test steps:**
+
+    * build the subclass over a never-empty model
+    * verify no button was made
+    """
+    ToolButtonEditor.made = 0
+    window = QWidget()
+    qtbot.addWidget(window)
+    model = CardListModel(dict, lambda item: not item, never_empty=True, parent=window)
+
+    editor = ToolButtonEditor(model, SampleContent)
+
+    assert editor.add_button is None
+    assert ToolButtonEditor.made == 0
 
 
 # endregion

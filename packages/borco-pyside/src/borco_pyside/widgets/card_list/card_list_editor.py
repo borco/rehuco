@@ -16,7 +16,7 @@ from PySide6.QtGui import (
     QKeyEvent,
     QKeySequence,
 )
-from PySide6.QtWidgets import QApplication, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QAbstractButton, QApplication, QPushButton, QVBoxLayout, QWidget
 
 from .card import Card
 from .card_ghost import CardGhost
@@ -49,6 +49,10 @@ class CardListEditor(QWidget):
     :attr:`value_changed` fires whenever it changes through an edit here. :meth:`set_value` never fires it,
     and a value equal to the current one changes nothing, blank cards included: the echo guard a two-way
     binding needs.
+
+    **Never empty.** A model built with ``never_empty=True`` keeps one card at least: the editor then has no
+    add button, an empty value shows one blank card, and deleting the only card clears its fields in place
+    -- the card is never removed and rebuilt, so the layout around it never changes.
 
     :param model: the rows the cards edit.
     :param content_factory: builds one card's content, a widget satisfying
@@ -91,10 +95,7 @@ class CardListEditor(QWidget):
         self.__layout.setContentsMargins(0, 0, 0, 0)
         self.__ghost: Final = CardGhost(self)
         self.__ghost.hide()
-        self.__add_button: Final = QPushButton("+ Add", self)
-        self.__add_button.setToolTip("Add an entry")
-        self.__add_button.clicked.connect(self.__on_add)
-        self.__layout.addWidget(self.__add_button, 0, Qt.AlignmentFlag.AlignLeft)
+        self.__add_button: Final = None if model.never_empty else self.__install_add_button()
         self.__layout.addStretch(1)
         self.setAcceptDrops(True)
 
@@ -122,8 +123,9 @@ class CardListEditor(QWidget):
         return tuple(self.__cards)
 
     @property
-    def add_button(self) -> QPushButton:
-        """The button an empty list shows instead of cards."""
+    def add_button(self) -> QAbstractButton | None:
+        """The button an empty list shows instead of cards; ``None`` for a never-empty model, which has no
+        empty list to show it for."""
         return self.__add_button
 
     @property
@@ -199,17 +201,13 @@ class CardListEditor(QWidget):
         held_focus = focus is not None and any(card.isAncestorOf(focus) for card in removed)
         if self.__current in removed:
             self.__set_current(None)
-        if held_focus:
-            if self.__cards:
-                self.__focus_card(min(first, len(self.__cards) - 1))
-            else:
-                self.__add_button.show()
-                self.__add_button.setFocus(Qt.FocusReason.OtherFocusReason)
+        if held_focus and self.__cards:
+            self.__focus_card(min(first, len(self.__cards) - 1))
         for card in removed:
             self.__layout.removeWidget(card)
             card.hide()
             card.deleteLater()
-        self.__after_structure_change()
+        self.__after_structure_change(focus_add_button=held_focus)
 
     def __on_rows_moved(self, _parent: QModelIndex, start: int, end: int, _destination: QModelIndex, row: int) -> None:
         """Move the moved rows' cards to their new places, keeping focus where it is.
@@ -265,10 +263,17 @@ class CardListEditor(QWidget):
         for row, card in enumerate(self.__cards):
             card.set_states(self.__model.states(row))
 
-    def __after_structure_change(self) -> None:
+    def __after_structure_change(self, *, focus_add_button: bool = False) -> None:
         """What every insert, removal, move and rebuild ends with: the add button, the top card, the states,
-        the tab order and the value."""
-        self.__add_button.setVisible(not self.__cards)
+        the tab order and the value.
+
+        :param focus_add_button: whether focus was in a card that is gone, so the add button -- once the list
+            is empty and it shows -- takes it rather than leaving it nowhere.
+        """
+        if self.__add_button is not None:
+            self.__add_button.setVisible(not self.__cards)
+            if focus_add_button and not self.__cards:
+                self.__add_button.setFocus(Qt.FocusReason.OtherFocusReason)
         for row, card in enumerate(self.__cards):
             card.set_primary(row == 0)
         self.__apply_states()
@@ -336,6 +341,30 @@ class CardListEditor(QWidget):
         """
         if card in self.__cards:
             self.__model.set_item(self.__cards.index(card), card.content.item_values())  # type: ignore[attr-defined]
+
+    def make_empty_list_add_button(self) -> QAbstractButton:
+        """Build the button an empty list shows in place of its cards -- override it to give an app's own.
+
+        Called once, while this editor is being built, and only for a model that may be empty (never for a
+        ``never_empty`` one): a subclass must not rely on its own state being set yet. The editor connects the
+        button's ``clicked`` to inserting the first card, lays it out and shows it only while the list is
+        empty, so an override returns just the widget.
+
+        :returns: the button, not yet connected or laid out.
+        """
+        button = QPushButton("+ Add", self)
+        button.setToolTip("Add an entry")
+        return button
+
+    def __install_add_button(self) -> QAbstractButton:
+        """Build the empty-list button through :meth:`make_empty_list_add_button` and wire it in.
+
+        :returns: the button.
+        """
+        button = self.make_empty_list_add_button()
+        button.clicked.connect(self.__on_add)
+        self.__layout.addWidget(button, 0, Qt.AlignmentFlag.AlignLeft)
+        return button
 
     def __on_add(self) -> None:
         """Insert the first card of an empty list and focus it."""

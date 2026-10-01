@@ -500,3 +500,85 @@ def test_a_link_reaches_the_dock_unless_it_is_dropped_on_the_url_edit(
     QApplication.sendEvent(handle, drop)
     assert body.url_edit.text() == "https://dropped.example/page"
     assert not recorder.seen
+
+
+# region never empty
+
+
+def test_a_document_without_sources_starts_with_one_blank_card(qtbot: QtBot) -> None:
+    """There is no button to add a first card: the editor opens on an empty one, which is not a source.
+
+    **Test steps:**
+
+    * build the editor over a document with no sources
+    * verify one blank card shows, with no add button, no handle, the app's icons, and nothing in the value
+    """
+    editor = make_editor(qtbot, make_model())
+
+    cards = editor.cards
+    assert editor.add_button is None
+    assert len(cards) == 1
+    assert editor.value == []
+    assert cards[0].grip.isHidden()
+    assert not cards[0].delete_action.icon().isNull()
+    assert content(editor, 0).item_values() == {}
+
+
+def test_deleting_the_only_source_clears_its_card_instead_of_removing_it(qtbot: QtBot) -> None:
+    """The card, and the layout around it, stay; only its fields are reset, and the document is dirtied.
+
+    **Test steps:**
+
+    * build the editor over one source and focus its title
+    * delete the card and verify it is the same card, its fields are empty, and focus stayed in it
+    * verify the document now has no sources and is dirty
+    """
+    model = make_model({"title": "Only", "url": "https://only.example/x", "publisher": "Someone"})
+    editor = make_editor(qtbot, model)
+    card = editor.cards[0]
+    body = content(editor, 0)
+    body.title_edit.setFocus()
+
+    editor.model.delete(0)
+
+    assert editor.cards == (card,)
+    assert (body.title_edit.text(), body.url_edit.text(), body.publisher_edit.text()) == ("", "", "")
+    assert editor.value == []
+    assert model.document.sources == []
+    assert model.dirty is True
+
+
+def test_clearing_the_only_card_twice_changes_nothing_more(qtbot: QtBot) -> None:
+    """A blank card has nothing left to clear.
+
+    **Test steps:**
+
+    * build the editor over a document with no sources and delete its only card
+    * verify the card is untouched and the document is still clean
+    """
+    model = make_model()
+    editor = make_editor(qtbot, model)
+
+    editor.model.delete(0)
+
+    assert len(editor.cards) == 1
+    assert model.dirty is False
+
+
+def test_a_value_set_to_nothing_shows_one_blank_card(qtbot: QtBot, two_sources: RehuDocumentModel) -> None:
+    """Emptying the document's sources from outside leaves the editor with its one blank card.
+
+    **Test steps:**
+
+    * build the editor over two sources and set an empty value
+    * verify one blank card remains
+    """
+    editor = make_editor(qtbot, two_sources)
+
+    editor.set_value([])
+
+    assert len(editor.cards) == 1
+    assert editor.value == []
+
+
+# endregion
