@@ -3,15 +3,19 @@
 """
 
 from collections.abc import Sequence
-from typing import Final
+from typing import Final, cast, override
 
-from PySide6.QtCore import QSignalBlocker, Signal
+from PySide6.QtCore import QEvent, QObject, QSignalBlocker, Signal
+from PySide6.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent
 from PySide6.QtWidgets import QLineEdit, QVBoxLayout, QWidget
 from rehuco_core import AuthorEntry, author_name, authors_comma_editable
 
+from ...scraping.url_drop import UrlDrop
 from ..text_list_string import TextListString
 from .authors_list_editor import AuthorsListEditor
-from .authors_table_model import canonical_author_entry
+from .authors_table_model import canonical_author_entry, merge_author_link
+
+DROP_EVENT_TYPES: Final = (QEvent.Type.DragEnter, QEvent.Type.DragMove, QEvent.Type.Drop)
 
 SIMPLE_UNAVAILABLE_TOOLTIP: Final = (
     "Some authors have a link, or a comma in the name, that the simple editor can't show. Edit them as rows instead."
@@ -38,6 +42,11 @@ class AuthorsEditor(QWidget):
     editor is back where the user left it. The alternative, rewriting the choice whenever the value
     happened to change shape, is how a user ends up in an editor they never asked for and cannot
     account for.
+
+    **A link with text dropped on it is an author** (#385): the text is the name and the URL its link, merged
+    into the list (:func:`~.authors_table_model.merge_author_link`) in either mode. The editor accepts
+    drops itself, which is what keeps such a drop from reaching the Main Editor dock's scrape; any other
+    drop is left to the comma line's own text handling, or to the dock.
 
     Both halves write the same value out, so the owner binds one widget
     (:class:`~rehuco_agent.fields.field.ValueWidget`) and never learns which mode produced an edit.
@@ -68,6 +77,9 @@ class AuthorsEditor(QWidget):
         layout.addWidget(self.__simple)
         layout.addWidget(self.__advanced)
 
+        # accepting drops is what keeps a link dropped here from reaching the Main Editor dock's scrape
+        self.setAcceptDrops(True)
+        self.__simple.installEventFilter(self)
         self.__simple.textChanged.connect(self.__on_simple_edited)
         self.__advanced.values_changed.connect(self.__on_advanced_edited)
         self.__render()
@@ -136,6 +148,58 @@ class AuthorsEditor(QWidget):
             editor.
         """
         self.set_advanced(state[:1] == b"\x01")
+
+    @override
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802 (Qt override)
+        """See :meth:`QObject.eventFilter`: a link dropped on the comma line is taken like one dropped
+        anywhere else on the editor, while any other drop is left to the line's own text handling.
+
+        :param watched: the comma line.
+        :param event: the event to inspect.
+        :returns: whether the event was a link, and consumed here.
+        """
+        if watched is self.__simple and event.type() in DROP_EVENT_TYPES:
+            return self.__take_link(cast(QDropEvent, event))
+        return super().eventFilter(watched, event)
+
+    @override
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:  # noqa: N802 (Qt override)
+        """See :meth:`QWidget.dragEnterEvent`: accept a link, and hand every other drag on."""
+        if not self.__take_link(event):
+            event.ignore()
+
+    @override
+    def dragMoveEvent(self, event: QDragMoveEvent) -> None:  # noqa: N802 (Qt override)
+        """See :meth:`QWidget.dragMoveEvent`: accept a link, and hand every other drag on."""
+        if not self.__take_link(event):
+            event.ignore()
+
+    @override
+    def dropEvent(self, event: QDropEvent) -> None:  # noqa: N802 (Qt override)
+        """See :meth:`QWidget.dropEvent`: merge a link into the authors."""
+        if not self.__take_link(event):
+            event.ignore()
+
+    def __take_link(self, event: QDropEvent) -> bool:
+        """Accept a link with text and, when it is dropped, merge it into the value (#385).
+
+        A disabled editor -- a locked document's -- refuses, and so does anything that is not a link with a
+        name: it is not this editor's drop, and goes on to the text fields or the dock behind it.
+
+        :param event: the drag or drop event.
+        :returns: whether the event was a link, accepted here.
+        """
+        if not self.isEnabled():
+            return False
+        link = UrlDrop.parse_link(event.mimeData())
+        if link is None:
+            return False
+        event.acceptProposedAction()
+        if event.type() == QEvent.Type.Drop:
+            merged = merge_author_link(self.__value, cast(str, link.text), link.url)
+            if merged != self.__value:
+                self.__set_and_report(merged)
+        return True
 
     def __on_simple_edited(self, text: str) -> None:
         """Report the comma line's text as an authors list.

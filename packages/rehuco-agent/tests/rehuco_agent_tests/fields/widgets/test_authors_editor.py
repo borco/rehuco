@@ -2,11 +2,15 @@
 
 from typing import Any
 
-from PySide6.QtWidgets import QLineEdit
+from PySide6.QtCore import QMimeData, QPointF, Qt, QUrl
+from PySide6.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent
+from PySide6.QtWidgets import QApplication, QLineEdit, QVBoxLayout, QWidget
 from pytest import fixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.fields.widgets import AuthorsEditor, AuthorsListEditor
 from rehuco_agent.fields.widgets.authors_table_model import NAME_COLUMN, URL_COLUMN
+
+from .drop_host import DropHost
 
 RECORD = {"name": "Bob", "url": "https://example.com/bob"}
 
@@ -406,6 +410,230 @@ def test_naming_a_pending_row_reports_it(editor: AuthorsEditor) -> None:
     model.setData(model.index(2, NAME_COLUMN), "Carol")
 
     assert reported == [["Alice", "Bob", {"name": "Carol", "url": "https://example.com/carol"}]]
+
+
+# endregion
+
+# region a link dropped on the editor (#385)
+
+LINK_URL = "https://example.com/carol"
+
+
+def link_data(text: str = "Carol", url: str = LINK_URL) -> QMimeData:
+    """The mime data of a dragged link, as Firefox and Chromium write it.
+
+    :param text: the link's text.
+    :param url: the link's URL.
+    :returns: ``text/x-moz-url`` carrying both.
+    """
+    data = QMimeData()
+    data.setData("text/x-moz-url", f"{url}\n{text}".encode("utf-16"))
+    return data
+
+
+def drop_on(target: QWidget, data: QMimeData) -> bool:
+    """Drag ``data`` over the middle of ``target`` and drop it there.
+
+    :param target: the widget to drop on.
+    :param data: what is dragged; the caller keeps it alive.
+    :returns: whether the drop was accepted.
+    """
+    centre = QPointF(target.rect().center())
+    args = (Qt.DropAction.CopyAction, data, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+    QApplication.sendEvent(target, QDragEnterEvent(centre.toPoint(), *args))
+    drop = QDropEvent(centre, *args)
+    QApplication.sendEvent(target, drop)
+    return drop.isAccepted()
+
+
+@fixture
+def hosted(qtbot: QtBot) -> tuple[AuthorsEditor, DropHost]:
+    """An editor over two plain names, inside a widget that accepts drops, shown.
+
+    :param qtbot: the widget-owning fixture.
+    :returns: the editor and its host.
+    """
+    host = DropHost()
+    qtbot.addWidget(host)
+    editor = AuthorsEditor()
+    QVBoxLayout(host).addWidget(editor)
+    editor.set_value(["Alice", "Bob"])
+    with qtbot.waitExposed(host):
+        host.show()
+    return editor, host
+
+
+def test_a_link_dropped_on_the_comma_line_adds_the_author(hosted: tuple[AuthorsEditor, DropHost]) -> None:
+    """The line is a text field that would take the drop as text; a link is an author instead.
+
+    **Test steps:**
+
+    * drop a link on the comma line
+    * verify the author was added with the URL, reported once, and the host never saw the drop
+    """
+    editor, host = hosted
+    reported: list[Any] = []
+    editor.value_changed.connect(reported.append)
+
+    accepted = drop_on(simple(editor), link_data())
+
+    assert accepted
+    assert editor.value == ["Alice", "Bob", {"name": "Carol", "url": LINK_URL}]
+    assert len(reported) == 1
+    assert not host.dropped
+    assert editor.advanced  # the value no longer fits the line
+
+
+def test_a_link_dropped_on_the_rows_updates_the_author_listed(hosted: tuple[AuthorsEditor, DropHost]) -> None:
+    """In the rows a link on a name cell is the editor's drop, not the dock's.
+
+    **Test steps:**
+
+    * switch to the rows and drop a link named like the second author on the table
+    * verify that author got the URL, and the host never saw the drop
+    """
+    editor, host = hosted
+    editor.set_advanced(True)
+
+    accepted = drop_on(rows(editor).view.viewport(), link_data("Bob", "https://example.com/bob"))
+
+    assert accepted
+    assert editor.value == ["Alice", {"name": "Bob", "url": "https://example.com/bob"}]
+    assert not host.dropped
+
+
+def test_the_same_link_dropped_twice_is_one_edit(hosted: tuple[AuthorsEditor, DropHost]) -> None:
+    """Dropping what is already listed is accepted, and changes nothing.
+
+    **Test steps:**
+
+    * drop a link, then the same link again
+    * verify only the first was reported
+    """
+    editor, _ = hosted
+    reported: list[Any] = []
+    editor.value_changed.connect(reported.append)
+
+    drop_on(simple(editor), link_data())
+    assert editor.advanced
+    drop_on(rows(editor).view.viewport(), link_data())
+
+    assert len(reported) == 1
+
+
+def test_an_anchor_dropped_on_the_editor_adds_the_author(hosted: tuple[AuthorsEditor, DropHost]) -> None:
+    """The `text/html` of an anchor carries the same link.
+
+    **Test steps:**
+
+    * drop an anchor on the editor
+    * verify the author was added
+    """
+    editor, _ = hosted
+    data = QMimeData()
+    data.setHtml(f'<a href="{LINK_URL}">Carol</a>')
+
+    drop_on(simple(editor), data)
+
+    assert editor.value[-1] == {"name": "Carol", "url": LINK_URL}
+
+
+def test_a_drop_that_is_not_a_link_is_left_to_the_text_field(hosted: tuple[AuthorsEditor, DropHost]) -> None:
+    """Plain text, a lone URL as text, a bare uri-list and a `file:` link are not this editor's drop: the
+    comma line takes them as it always did.
+
+    **Test steps:**
+
+    * drop each on the comma line
+    * verify the line took the text itself and no author became a record
+    """
+    editor, _ = hosted
+    plain = QMimeData()
+    plain.setText("just some words")
+    url_text = QMimeData()
+    url_text.setText(LINK_URL)
+    uri_list = QMimeData()
+    uri_list.setUrls([QUrl(LINK_URL)])
+    file_link = link_data("A file", "file:///some/file.jpg")
+
+    for data in (plain, url_text, uri_list, file_link):
+        drop_on(simple(editor), data)
+
+    assert simple(editor).text() != "Alice, Bob"
+    assert all(isinstance(entry, str) for entry in editor.value)
+
+
+def test_a_non_link_dropped_on_the_editor_itself_reaches_the_host(hosted: tuple[AuthorsEditor, DropHost]) -> None:
+    """The editor hands on what it does not take, so the dock's own drops still work around it.
+
+    **Test steps:**
+
+    * drop plain text on the editor's own area
+    * verify the host took it
+    """
+    editor, host = hosted
+    plain = QMimeData()
+    plain.setText(LINK_URL)
+
+    drop_on(editor, plain)
+
+    assert host.dropped
+    assert editor.value == ["Alice", "Bob"]
+
+
+def test_a_locked_editor_refuses_the_drop(hosted: tuple[AuthorsEditor, DropHost]) -> None:
+    """A locked document disables its editor, and a disabled editor takes no link.
+
+    **Test steps:**
+
+    * disable the editor and hand its drag handlers a link (Qt may not deliver one to a disabled widget)
+    * verify none was accepted and the list is unchanged
+    """
+    editor, _ = hosted
+    editor.setEnabled(False)
+    data = link_data()
+    point = editor.rect().center()
+    args = (Qt.DropAction.CopyAction, data, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+    enter = QDragEnterEvent(point, *args)
+    move = QDragMoveEvent(point, *args)
+    drop = QDropEvent(QPointF(point), *args)
+
+    editor.dragEnterEvent(enter)
+    editor.dragMoveEvent(move)
+    editor.dropEvent(drop)
+
+    assert not (enter.isAccepted() or move.isAccepted() or drop.isAccepted())
+    assert editor.value == ["Alice", "Bob"]
+
+
+def test_a_drag_over_the_editor_is_accepted_for_a_link_and_ignored_otherwise(
+    hosted: tuple[AuthorsEditor, DropHost],
+) -> None:
+    """The cursor moving over the editor keeps the drop on offer for a link, and hands anything else on.
+
+    **Test steps:**
+
+    * move a link, then plain text, over the editor and drop plain text on it
+    * verify only the link was accepted, and the plain text drop changed nothing
+    """
+    editor, _ = hosted
+    link = link_data()
+    plain = QMimeData()
+    plain.setText("just some words")
+    point = editor.rect().center()
+    args = (Qt.DropAction.CopyAction, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+    over_link = QDragMoveEvent(point, args[0], link, *args[1:])
+    over_text = QDragMoveEvent(point, args[0], plain, *args[1:])
+    drop_text = QDropEvent(QPointF(point), args[0], plain, *args[1:])
+
+    editor.dragMoveEvent(over_link)
+    editor.dragMoveEvent(over_text)
+    editor.dropEvent(drop_text)
+
+    assert over_link.isAccepted()
+    assert not over_text.isAccepted()
+    assert not drop_text.isAccepted()
+    assert editor.value == ["Alice", "Bob"]
 
 
 # endregion

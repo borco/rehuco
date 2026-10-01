@@ -155,3 +155,60 @@ def test_html_with_no_url_at_all_is_refused() -> None:
 
 
 # endregion
+# region parse_link (#385)
+
+
+def test_an_x_moz_url_link_gives_its_url_and_text() -> None:
+    """`URL\\nTitle` is a link with text: both halves are read (#385)."""
+    drop = UrlDrop.parse_link(_moz_url_data(f"{URL}\n  Some   Title "))
+
+    assert drop == UrlDrop(url=URL, fragment=None, text="Some Title")
+
+
+def test_a_nul_terminated_x_moz_url_leaves_no_nul_in_the_text() -> None:
+    """Browsers end the UTF-16 text with a NUL; it is not part of the link's name (#385)."""
+    drop = UrlDrop.parse_link(_moz_url_data(f"{URL}\nSome Title\x00"))
+
+    assert drop == UrlDrop(url=URL, fragment=None, text="Some Title")
+
+
+def test_an_anchor_gives_its_url_and_text() -> None:
+    """The `text/html` of a dragged anchor is a link with text (#385)."""
+    data = QMimeData()
+    data.setHtml(f'<a href="{URL}">Some Title</a>')
+
+    assert UrlDrop.parse_link(data) == UrlDrop(url=URL, fragment=None, text="Some Title")
+
+
+def test_a_selection_around_an_anchor_is_not_a_link() -> None:
+    """An anchor inside more page content is a selection, not a link (#385)."""
+    data = QMimeData()
+    data.setHtml(f'<p>Some words and <a href="{URL}">a link</a> in them.</p>')
+
+    assert UrlDrop.parse_link(data) is None
+
+
+def test_html_with_no_anchor_is_not_a_link() -> None:
+    """`text/html` that holds no anchor at all has no link to read (#385)."""
+    data = QMimeData()
+    data.setHtml("<p>Just a paragraph.</p>")
+
+    assert UrlDrop.parse_link(data) is None
+
+
+def test_a_link_without_a_name_is_not_taken() -> None:
+    """A bare uri-list, a bare moz-url, plain text and a `file:` anchor carry no usable name (#385)."""
+    uri_list = QMimeData()
+    uri_list.setUrls([QUrl(URL)])
+    plain = QMimeData()
+    plain.setText(URL)
+    file_anchor = QMimeData()
+    file_anchor.setHtml('<a href="file:///some/file.jpg">A file</a>')
+
+    assert UrlDrop.parse_link(uri_list) is None
+    assert UrlDrop.parse_link(_moz_url_data(f"{URL}\n  ")) is None
+    assert UrlDrop.parse_link(plain) is None
+    assert UrlDrop.parse_link(file_anchor) is None
+
+
+# endregion

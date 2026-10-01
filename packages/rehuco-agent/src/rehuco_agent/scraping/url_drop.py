@@ -27,6 +27,48 @@ class UrlDrop:
 
     url: str
     fragment: str | None
+    text: str | None = None
+    """The link's own text, set only by :meth:`parse_link`."""
+
+    @staticmethod
+    def parse_link(data: QMimeData) -> UrlDrop | None:
+        """Read a **link with text** out of a drop's mime data, or answer that this drop is not one
+        (#385).
+
+        Stricter than :meth:`parse`: the drop must carry a name as well as an `http(s)` URL, from a
+        `text/x-moz-url` (``URL\\nTitle``) or from the `text/html` of a dragged anchor. A bare
+        `text/uri-list`, and plain text that happens to be a single URL, carry no name and answer `None`.
+
+        :param data: the drop's mime data.
+        :returns: the link, its :attr:`text` set and its :attr:`fragment` empty, or `None`.
+        """
+        link = UrlDrop.__read_moz_link(data) or UrlDrop.__read_anchor(data)
+        if link is None:
+            return None
+        return UrlDrop(url=link[0], fragment=None, text=link[1])
+
+    @staticmethod
+    def __read_moz_link(data: QMimeData) -> tuple[str, str] | None:
+        lines = UrlDrop.__moz_lines(data)
+        if len(lines) < 2 or not UrlDrop.__is_bare_url(lines[0]):
+            return None
+        text = " ".join(lines[1].split())
+        return (lines[0].strip(), text) if text else None
+
+    @staticmethod
+    def __read_anchor(data: QMimeData) -> tuple[str, str] | None:
+        if not data.hasHtml():
+            return None
+        soup = BeautifulSoup(data.html(), "html.parser")
+        anchor = soup.find("a", href=True)
+        if anchor is None:
+            return None
+        href = str(anchor["href"]).strip()
+        text = " ".join(anchor.get_text().split())
+        # a selection spanning more than the link is page content, not a link
+        if not text or not UrlDrop.__is_bare_url(href) or " ".join(soup.get_text().split()) != text:
+            return None
+        return href, text
 
     @staticmethod
     def parse(data: QMimeData) -> UrlDrop | None:
@@ -53,15 +95,26 @@ class UrlDrop:
             for candidate in data.urls():
                 if candidate.scheme() in ACCEPTED_SCHEMES:
                     return candidate.toString()
-        if data.hasFormat("text/x-moz-url"):
-            first_line = bytes(data.data("text/x-moz-url").data()).decode("utf-16", errors="replace").splitlines()
-            if first_line and UrlDrop.__is_bare_url(first_line[0]):
-                return first_line[0]
+        first_line = UrlDrop.__moz_lines(data)[:1]
+        if first_line and UrlDrop.__is_bare_url(first_line[0]):
+            return first_line[0]
         if data.hasText():
             text = data.text().strip()
             if UrlDrop.__is_bare_url(text):
                 return text
         return None
+
+    @staticmethod
+    def __moz_lines(data: QMimeData) -> list[str]:
+        if not data.hasFormat("text/x-moz-url"):
+            return []
+        # browsers terminate the UTF-16 text with a NUL, which would otherwise end up in the last line
+        return (
+            bytes(data.data("text/x-moz-url").data())
+            .decode("utf-16", errors="replace")
+            .replace("\x00", "")
+            .splitlines()
+        )
 
     @staticmethod
     def __is_bare_url(text: str) -> bool:

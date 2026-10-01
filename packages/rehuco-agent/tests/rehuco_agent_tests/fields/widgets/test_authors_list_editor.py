@@ -10,6 +10,8 @@ from pytestqt.qtbot import QtBot
 from rehuco_agent.fields.widgets import AuthorsListEditor
 from rehuco_agent.fields.widgets.authors_table_model import MISSING_NAME_REASON, NAME_COLUMN, URL_COLUMN
 
+from .drop_host import DropHost
+
 
 # region helpers
 @fixture
@@ -427,22 +429,6 @@ def test_a_drop_that_carries_no_link_is_left_alone(shown: AuthorsListEditor) -> 
 
     assert not drop.isAccepted()
     assert shown.entries[0] == "Alice"
-
-
-class DropHost(QWidget):
-    """A widget around the editor that accepts drops, like the Main Editor dock, and records the ones it got."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.dropped = False
-        self.setAcceptDrops(True)
-
-    def dragEnterEvent(self, event: QDragEnterEvent) -> None:  # noqa: N802 (Qt override)
-        event.acceptProposedAction()
-
-    def dropEvent(self, event: QDropEvent) -> None:  # noqa: N802 (Qt override)
-        self.dropped = True
-        event.acceptProposedAction()
 
 
 @fixture

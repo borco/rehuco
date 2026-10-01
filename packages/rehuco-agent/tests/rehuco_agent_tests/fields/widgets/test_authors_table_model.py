@@ -11,6 +11,7 @@ from rehuco_agent.fields.widgets.authors_table_model import (
     URL_COLUMN,
     AuthorsTableModel,
     canonical_author_entry,
+    merge_author_link,
 )
 
 
@@ -852,6 +853,90 @@ def test_removing_a_pending_row_leaves_the_others_as_they_were(model: AuthorsTab
     edit(model, 1, NAME_COLUMN, "Robert")
 
     assert model.entries == ("Alice", {"name": "Robert", "url": "https://example.com/bob"})
+
+
+# endregion
+
+# region merge_author_link (#385)
+
+BOB_URL = "https://example.com/bob"
+
+
+def test_a_new_name_is_appended_as_a_record() -> None:
+    """A name that is not listed joins the end, carrying the dropped URL.
+
+    **Test steps:**
+
+    * merge an unlisted name into a list
+    * verify it was appended as a ``{"name", "url"}`` record and the input was left alone
+    """
+    entries = ["Alice"]
+
+    merged = merge_author_link(entries, "Carol", "https://example.com/carol")
+
+    assert merged == ["Alice", {"name": "Carol", "url": "https://example.com/carol"}]
+    assert entries == ["Alice"]
+
+
+def test_a_known_name_with_another_url_gets_the_new_url() -> None:
+    """The author keeps its place and every other key; only the URL moves.
+
+    **Test steps:**
+
+    * merge a listed name with a different URL
+    * verify the record's URL changed in place and its other key stayed
+    """
+    entries = ["Alice", {"name": "Bob", "url": "https://old.example.com", "future": 1}]
+
+    merged = merge_author_link(entries, "Bob", BOB_URL)
+
+    assert merged == ["Alice", {"name": "Bob", "url": BOB_URL, "future": 1}]
+
+
+def test_the_same_name_and_url_changes_nothing() -> None:
+    """Dropping what is already there is not an edit.
+
+    **Test steps:**
+
+    * merge a listed name with its own URL
+    * verify the list is equal to the input
+    """
+    entries = ["Alice", {"name": "Bob", "url": BOB_URL}]
+
+    assert merge_author_link(entries, "Bob", BOB_URL) == entries
+
+
+def test_a_plain_name_gains_the_url() -> None:
+    """A name with no URL becomes a record, in place.
+
+    **Test steps:**
+
+    * merge a plain listed name with a URL
+    * verify it became a record at the same position
+    """
+    assert merge_author_link(["Alice", "Bob"], "Alice", BOB_URL) == [{"name": "Alice", "url": BOB_URL}, "Bob"]
+
+
+def test_a_padded_name_matches_its_entry() -> None:
+    """Names compare exactly after trimming, so padding neither duplicates nor misses.
+
+    **Test steps:**
+
+    * merge a whitespace-padded name that matches an entry
+    * verify the entry was updated, not duplicated
+    """
+    assert merge_author_link(["Alice"], "  Alice \n", BOB_URL) == [{"name": "Alice", "url": BOB_URL}]
+
+
+def test_a_name_that_differs_in_case_is_a_new_author() -> None:
+    """The comparison is exact: only whitespace is forgiven.
+
+    **Test steps:**
+
+    * merge a name differing only in case
+    * verify it was appended
+    """
+    assert len(merge_author_link(["Alice"], "alice", BOB_URL)) == 2
 
 
 # endregion
