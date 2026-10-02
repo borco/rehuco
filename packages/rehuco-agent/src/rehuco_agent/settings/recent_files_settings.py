@@ -26,6 +26,10 @@ class RecentFilesSettings:
     paths: Final[OrderedDict[Path, None]] = field(default_factory=OrderedDict)
     """Every remembered path, oldest first."""
 
+    group: str = GROUP
+    """The settings group the list lives under -- the ``File`` menu's recents by default; another list of
+    the same shape, such as the root catalogs', names its own (#377)."""
+
     def record(self, path: Path) -> None:
         """Move ``path`` to the most-recently-opened end, dropping the oldest entry past the cap.
 
@@ -61,7 +65,7 @@ class RecentFilesSettings:
 
         :param settings: the ``QSettings`` to read from.
         """
-        settings.beginGroup(GROUP)
+        settings.beginGroup(self.group)
         self.paths.clear()
         for index in range(settings.beginReadArray(PATHS_KEY)):
             settings.setArrayIndex(index)
@@ -75,7 +79,7 @@ class RecentFilesSettings:
 
         :param settings: the ``QSettings`` to write to.
         """
-        settings.beginGroup(GROUP)
+        settings.beginGroup(self.group)
         settings.beginWriteArray(PATHS_KEY)
         for index, path in enumerate(self.paths):
             settings.setArrayIndex(index)

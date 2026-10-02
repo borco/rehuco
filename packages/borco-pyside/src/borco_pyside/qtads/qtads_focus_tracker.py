@@ -579,7 +579,10 @@ ads--CDockWidget[{prop}="true"] {{
                 font.setFamily(self.__close_glyph.family)
             font.setPixelSize(self.__close_glyph_size)
             button.setFont(font)
-            side = button.height()
+            # the button's own size hint, never its current height: a tab that has not been laid out yet has
+            # its buttons stretched to the tab's 480 px top-level default, and a fixed size taken from that
+            # never comes back down (#377)
+            side = button.sizeHint().height()
             button.setFixedSize(side, side)
 
     @staticmethod

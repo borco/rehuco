@@ -1,10 +1,13 @@
 """App-wide persistent settings storage, shared by every settings section (e.g. `DocumentSessionSettings`)."""
 
+import logging
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Final
 
-from PySide6.QtCore import QSettings
+from PySide6.QtCore import QSettings, QStandardPaths
+
+LOG: Final = logging.getLogger(__name__)
 
 ORGANIZATION_NAME: Final = "borco"
 APPLICATION_NAME: Final = "rehuco-agent"
@@ -31,6 +34,25 @@ def config_folder() -> Path:
     :returns: this app's config directory. Not created by this call.
     """
     return Path(persistent_settings().fileName()).parent / APPLICATION_NAME
+
+
+def cache_folder() -> Path:
+    """This app's local cache directory -- where a rebuildable file lives that must not roam or sit on a
+    network share, such as a ``.rehudb`` ([[data-model#local-file-trio]], #377).
+
+    Not :func:`config_folder`: that one follows the ``.ini``, which a roaming profile carries between
+    machines, and a SQLite cache is neither portable nor safe there. Named like the config folder
+    (organization, then application) so a reader finds the two side by side.
+
+    :returns: the cache directory. Not created by this call; ``CatalogCache.open`` makes its own parent.
+    """
+    base = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.GenericCacheLocation)
+    if not base:
+        # Qt answers nothing on a host with no known cache location; a relative path would then put the
+        # cache wherever the app was launched from, so the config folder is the lesser evil
+        LOG.warning("No cache location is known on this host; the cache goes under the config folder.")
+        return config_folder() / "cache"
+    return Path(base) / ORGANIZATION_NAME / APPLICATION_NAME
 
 
 def read_stored_strings(value: object) -> tuple[str, ...]:

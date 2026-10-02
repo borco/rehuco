@@ -43,11 +43,13 @@ from rehuco_agent.main_window import (
     DOCUMENTS_DOCK_OBJECT_NAME,
     LOG_DOCK_OBJECT_NAME,
     LOG_DOCK_TITLE,
+    REHUCO_DOCK_OBJECT_NAME,
     SETTINGS_DIALOG_OBJECT_NAME,
     TASK_QUEUE_DOCK_OBJECT_NAME,
     MainWindow,
 )
 from rehuco_agent.recycle_bin_deleter import RecycleBinDeleter
+from rehuco_agent.rehuco import RehucoDock
 from rehuco_agent.settings.checksum_settings import shared_checksum_settings
 from rehuco_agent.settings.document_session_settings import DocumentSessionSettings
 from rehuco_agent.settings.identity_settings import shared_identity_settings
@@ -55,6 +57,7 @@ from rehuco_agent.settings.image_viewer_settings import PREVIEWS_VISIBLE_KEY, sh
 from rehuco_agent.settings.logs_settings import shared_logs_settings
 from rehuco_agent.settings.main_window_settings import MainWindowSettings
 from rehuco_agent.settings.recent_files_settings import RecentFilesSettings
+from rehuco_agent.settings.rehuco_settings import RehucoSettings
 from rehuco_agent.settings.session_restore_settings import SessionRestoreSettings
 from rehuco_agent.settings.tasks_settings import TasksSettings
 from rehuco_agent.settings.tray_settings import shared_tray_settings
@@ -1839,23 +1842,26 @@ def test_recents_menu_repopulates_on_every_show(qtbot: QtBot) -> None:
 
 
 def test_close_event_saves_recent_files(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """Closing the app persists the recent-files list (#64).
+    """Closing the app persists the recent-files list (#64) -- and the root catalogs' own recents, which are
+    a list of the same class (#377).
 
     **Test steps:**
 
     * construct ``MainWindow``
-    * mock ``RecentFilesSettings.save`` to detect the call
+    * mock ``RecentFilesSettings.save`` to detect the calls, keeping the instance each is on
     * dispatch a close event
-    * verify ``save`` was called once
+    * verify the window's recent files saved, and so did the root catalogs' recents
     """
     window = MainWindow()
     qtbot.addWidget(window)
-    save = mocker.patch.object(RecentFilesSettings, "save")
+    save = mocker.patch.object(RecentFilesSettings, "save", autospec=True)
     event = QCloseEvent()
 
     window.closeEvent(event)
 
-    save.assert_called_once()
+    saved = [call.args[0] for call in save.call_args_list]
+    assert window._MainWindow__recent_files in saved  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert window._MainWindow__rehuco_settings.recent in saved  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
 
 def test_close_event_saves_the_settings_dialogs_filter_state(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -3329,6 +3335,7 @@ def test_installs_a_documents_dock_and_no_central_widget(qtbot: QtBot) -> None:
     assert dock.widget() is documents_dock
     assert set(dock_manager.dockWidgetsMap()) == {
         DOCUMENTS_DOCK_OBJECT_NAME,
+        REHUCO_DOCK_OBJECT_NAME,
         LOG_DOCK_OBJECT_NAME,
         TASK_QUEUE_DOCK_OBJECT_NAME,
         SETTINGS_DIALOG_OBJECT_NAME,
@@ -5099,11 +5106,12 @@ def test_the_tasks_dock_s_nested_layout_is_restored_on_start(mocker: MockerFixtu
 
 MAIN_DOCK_NAMES: Final = (
     DOCUMENTS_DOCK_OBJECT_NAME,
+    REHUCO_DOCK_OBJECT_NAME,
     LOG_DOCK_OBJECT_NAME,
     TASK_QUEUE_DOCK_OBJECT_NAME,
     SETTINGS_DIALOG_OBJECT_NAME,
 )
-"""The window's four own docks -- the set pinning is an affordance of."""
+"""The window's five own docks -- the set pinning is an affordance of."""
 
 PIN_BUTTON_WAIT: Final = 10_000
 """How long a wait for the pin-button suppressor is given. Generous on purpose: the suppressor's hide
@@ -5140,7 +5148,7 @@ def main_dock(window: MainWindow, name: str) -> Any:
 
 
 def test_every_main_dock_is_pinnable(qtbot: QtBot) -> None:
-    """All four of the window's own docks can be collapsed into a sidebar (#279).
+    """All five of the window's own docks can be collapsed into a sidebar (#279).
 
     One flag, set the same way in all four builders since #307 made the Settings dock a plain
     ``CDockWidget`` like its three siblings -- it used to be the exception, turning pinning on by hand
@@ -5156,7 +5164,7 @@ def test_every_main_dock_is_pinnable(qtbot: QtBot) -> None:
 
     pinnable = QtAds.CDockWidget.DockWidgetFeature.DockWidgetPinnable
 
-    assert [bool(main_dock(window, name).features() & pinnable) for name in MAIN_DOCK_NAMES] == [True] * 4
+    assert [bool(main_dock(window, name).features() & pinnable) for name in MAIN_DOCK_NAMES] == [True] * 5
 
 
 def dict_backed_settings(settings: Any) -> dict[str, Any]:
@@ -5196,7 +5204,7 @@ def test_every_main_dock_starts_on_the_default_sidebar(qtbot: QtBot) -> None:
 
     sides = [main_dock(window, name).preferredAutoHideSideBarLocation() for name in MAIN_DOCK_NAMES]
 
-    assert sides == [DEFAULT_PIN_SIDE] * 4
+    assert sides == [DEFAULT_PIN_SIDE] * 5
 
 
 def test_a_dock_dropped_on_a_sidebar_pins_back_there(qtbot: QtBot) -> None:
@@ -5852,6 +5860,690 @@ def test_an_outer_dock_maximizes_and_the_close_time_capture_reads_it_undone(
 
     window_settings = window._MainWindow__window_settings  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     assert window_settings.outer_docks_state == unmaximized
+
+
+# region the Root Catalog dock (#377)
+
+REHUCO_FILE: Final = Path("/fake/home.rehuco")
+
+
+def rehuco_dock_widget(window: MainWindow) -> Any:
+    """The window's Root Catalog dock, found on the outer manager by object name.
+
+    :param window: the window to read.
+    :returns: the ``CDockWidget`` hosting the Root Catalog dock.
+    """
+    return main_dock(window, REHUCO_DOCK_OBJECT_NAME)
+
+
+def test_the_rehuco_dock_is_tabbed_with_documents_and_closed(qtbot: QtBot) -> None:
+    """Nothing is open on a fresh install, so the dock starts closed, in the Documents area (#377).
+
+    **Test steps:**
+
+    * construct a real ``MainWindow`` with nothing persisted
+    * verify the Root Catalog dock is closed and shares the Documents dock's area
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    dock = rehuco_dock_widget(window)
+
+    assert dock.isClosed()
+    assert dock.dockAreaWidget() is documents_dock_widget(window).dockAreaWidget()
+
+
+def test_the_root_catalog_toggle_leads_the_action_bar(qtbot: QtBot) -> None:
+    """The Root Catalog toggle is the first action on the bar, right above Documents (#377).
+
+    **Test steps:**
+
+    * construct a real ``MainWindow`` and read the action bar's actions
+    * verify the Root Catalog toggle is first, immediately followed by Documents then Log, and that it carries a
+      themed icon
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    actions = window._MainWindow__ui.action_bar.actions()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    rehuco_toggle = rehuco_dock_widget(window).toggleViewAction()
+    documents_toggle = documents_dock_widget(window).toggleViewAction()
+
+    assert actions.index(rehuco_toggle) == 0
+    assert actions.index(documents_toggle) == 1
+    assert actions.index(documents_toggle) < actions.index(log_dock(window).toggleViewAction())
+    assert not rehuco_toggle.icon().isNull()
+
+
+def test_the_root_catalog_companion_leads_the_dock_entries_in_the_view_menu(qtbot: QtBot) -> None:
+    """``View`` lists ``rehuco_action`` right before ``documents_action`` (#377).
+
+    **Test steps:**
+
+    * construct a real ``MainWindow`` and read the View menu's actions
+    * verify the Root Catalog companion immediately precedes the Documents one
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    ui = window._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    actions = ui.view_menu.actions()
+
+    assert actions.index(ui.rehuco_action) + 1 == actions.index(ui.documents_action)
+
+
+def test_new_rehuco_creates_the_chosen_file_and_reveals_the_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """``File > New Root Catalog...`` creates the file the user names, opens it, shows the dock and remembers it
+    (#377).
+
+    **Test steps:**
+
+    * mock the save dialog to name a path and the dock's ``new_rehuco`` to succeed
+    * trigger ``new_rehuco_action``
+    * verify the dock was asked for that path, is now open, and the path is in the recents
+    """
+    mocker.patch("rehuco_agent.main_window.QFileDialog.getSaveFileName", return_value=(str(REHUCO_FILE), ""))
+    window = MainWindow()
+    qtbot.addWidget(window)
+    dock = window._MainWindow__rehuco_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    new_rehuco = mocker.patch.object(dock, "new_rehuco", return_value=True)
+
+    window._MainWindow__ui.new_rehuco_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    new_rehuco.assert_called_once_with(REHUCO_FILE.resolve())
+    assert not rehuco_dock_widget(window).isClosed()
+    assert window._MainWindow__rehuco_settings.newest_first() == [REHUCO_FILE.resolve()]  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_new_rehuco_adds_the_suffix_the_user_left_off(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A name typed without ``.rehuco`` gets it, since that is what the open filter looks for (#377).
+
+    **Test steps:**
+
+    * mock the save dialog to name a path with no suffix
+    * trigger ``new_rehuco_action``
+    * verify the dock was asked for the suffixed path
+    """
+    mocker.patch("rehuco_agent.main_window.QFileDialog.getSaveFileName", return_value=("/fake/home", ""))
+    window = MainWindow()
+    qtbot.addWidget(window)
+    new_rehuco = mocker.patch.object(window._MainWindow__rehuco_dock, "new_rehuco", return_value=True)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    window._MainWindow__ui.new_rehuco_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    new_rehuco.assert_called_once_with(Path("/fake/home.rehuco").resolve())
+
+
+def test_new_rehuco_does_nothing_when_the_dialog_is_cancelled(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A cancelled save dialog creates nothing and leaves the dock closed (#377).
+
+    **Test steps:**
+
+    * mock the save dialog as cancelled
+    * trigger ``new_rehuco_action``
+    * verify the dock was never asked, and is still closed
+    """
+    mocker.patch("rehuco_agent.main_window.QFileDialog.getSaveFileName", return_value=("", ""))
+    window = MainWindow()
+    qtbot.addWidget(window)
+    new_rehuco = mocker.patch.object(window._MainWindow__rehuco_dock, "new_rehuco")  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    window._MainWindow__ui.new_rehuco_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    new_rehuco.assert_not_called()
+    assert rehuco_dock_widget(window).isClosed()
+
+
+def test_new_rehuco_that_fails_tells_the_user_and_remembers_nothing(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The dock's reason reaches a message box, and the file stays out of the recents (#377).
+
+    **Test steps:**
+
+    * mock the save dialog and make the dock refuse with a reason
+    * trigger ``new_rehuco_action``
+    * verify a critical box carried the reason and nothing was recorded
+    """
+    mocker.patch("rehuco_agent.main_window.QFileDialog.getSaveFileName", return_value=(str(REHUCO_FILE), ""))
+    critical = mocker.patch.object(QMessageBox, "critical")
+    window = MainWindow()
+    qtbot.addWidget(window)
+    dock = window._MainWindow__rehuco_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    mocker.patch.object(dock, "new_rehuco", return_value=False)
+    mocker.patch.object(RehucoDock, "load_error", new_callable=mocker.PropertyMock, return_value="disk full")
+
+    window._MainWindow__ui.new_rehuco_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    assert critical.call_args.args[2] == "disk full"
+    assert window._MainWindow__rehuco_settings.newest_first() == []  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_open_rehuco_action_opens_the_chosen_file(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """``File > Open Root Catalog...`` opens whatever ``.rehuco`` the user picks (#377).
+
+    **Test steps:**
+
+    * mock the open dialog to report a chosen path
+    * trigger ``open_rehuco_action``
+    * verify ``open_rehuco_path`` was called with that path
+    """
+    mocker.patch("rehuco_agent.main_window.QFileDialog.getOpenFileName", return_value=("picked.rehuco", ""))
+    window = MainWindow()
+    qtbot.addWidget(window)
+    open_rehuco_path = mocker.patch.object(window, "open_rehuco_path", return_value=True)
+
+    window._MainWindow__ui.open_rehuco_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    open_rehuco_path.assert_called_once_with("picked.rehuco")
+
+
+def test_open_rehuco_action_does_nothing_when_the_dialog_is_cancelled(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A cancelled open dialog opens nothing (#377).
+
+    **Test steps:**
+
+    * mock the open dialog as cancelled
+    * trigger ``open_rehuco_action``
+    * verify ``open_rehuco_path`` was never called
+    """
+    mocker.patch("rehuco_agent.main_window.QFileDialog.getOpenFileName", return_value=("", ""))
+    window = MainWindow()
+    qtbot.addWidget(window)
+    open_rehuco_path = mocker.patch.object(window, "open_rehuco_path")
+
+    window._MainWindow__ui.open_rehuco_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    open_rehuco_path.assert_not_called()
+
+
+def test_open_rehuco_action_reports_a_file_that_would_not_open(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The dock's reason reaches a message box (#377).
+
+    **Test steps:**
+
+    * mock the open dialog and make the open fail
+    * trigger ``open_rehuco_action``
+    * verify a critical box was shown
+    """
+    mocker.patch("rehuco_agent.main_window.QFileDialog.getOpenFileName", return_value=("picked.rehuco", ""))
+    critical = mocker.patch.object(QMessageBox, "critical")
+    window = MainWindow()
+    qtbot.addWidget(window)
+    mocker.patch.object(window._MainWindow__rehuco_dock, "open_rehuco", return_value=False)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    window._MainWindow__ui.open_rehuco_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    critical.assert_called_once()
+
+
+def test_open_rehuco_path_opens_reveals_and_remembers(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A ``.rehuco`` that opened is shown and remembered, by its resolved path (#377).
+
+    **Test steps:**
+
+    * mock the dock's ``open_rehuco`` to succeed
+    * call ``open_rehuco_path``
+    * verify the dock got the resolved path, is shown, and the path is the newest recent
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    open_rehuco = mocker.patch.object(window._MainWindow__rehuco_dock, "open_rehuco", return_value=True)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    assert window.open_rehuco_path("home.rehuco")
+
+    resolved = Path("home.rehuco").resolve()
+    open_rehuco.assert_called_once_with(resolved)
+    assert not rehuco_dock_widget(window).isClosed()
+    assert window._MainWindow__rehuco_settings.newest_first() == [resolved]  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_open_rehuco_path_that_fails_remembers_nothing(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A file that would not open is not one that was opened (#377).
+
+    **Test steps:**
+
+    * mock the dock's ``open_rehuco`` to fail
+    * call ``open_rehuco_path``
+    * verify it answers ``False``, the dock stays closed, and the recents stay empty
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    mocker.patch.object(window._MainWindow__rehuco_dock, "open_rehuco", return_value=False)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    assert not window.open_rehuco_path("home.rehuco")
+
+    assert rehuco_dock_widget(window).isClosed()
+    assert window._MainWindow__rehuco_settings.newest_first() == []  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_the_recent_rehuco_menu_lists_files_newest_first(qtbot: QtBot) -> None:
+    """``Open recent rehuco`` lists every remembered file, most recent first (#377).
+
+    **Test steps:**
+
+    * record two paths, oldest first, and emit the menu's ``aboutToShow``
+    * verify the entries read newest first
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    older, newer = Path("older.rehuco").resolve(), Path("newer.rehuco").resolve()
+    window._MainWindow__rehuco_settings.record(older)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    window._MainWindow__rehuco_settings.record(newer)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    menu = window._MainWindow__ui.open_recent_rehucos_menu  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    menu.aboutToShow.emit()
+
+    assert [action.text() for action in menu.actions()] == [str(newer), str(older)]
+
+
+def test_the_recent_rehuco_menu_shows_a_disabled_placeholder_when_empty(qtbot: QtBot) -> None:
+    """With nothing remembered the menu shows one disabled entry (#377).
+
+    **Test steps:**
+
+    * emit the menu's ``aboutToShow`` with nothing recorded
+    * verify exactly one, disabled action is present
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    menu = window._MainWindow__ui.open_recent_rehucos_menu  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    menu.aboutToShow.emit()
+
+    assert len(menu.actions()) == 1
+    assert not menu.actions()[0].isEnabled()
+
+
+def test_a_recent_rehuco_entry_reopens_that_file(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Choosing a remembered file opens it (#377).
+
+    **Test steps:**
+
+    * record one path and open the menu
+    * trigger its single entry
+    * verify ``open_rehuco_path`` got that path
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    path = Path("remembered.rehuco").resolve()
+    window._MainWindow__rehuco_settings.record(path)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    open_rehuco_path = mocker.patch.object(window, "open_rehuco_path", return_value=True)
+    menu = window._MainWindow__ui.open_recent_rehucos_menu  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    menu.aboutToShow.emit()
+
+    menu.actions()[0].trigger()
+
+    open_rehuco_path.assert_called_once_with(path)
+
+
+def test_a_recent_rehuco_that_will_not_open_is_reported(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A remembered file that has since gone shows the reason instead of failing silently (#377).
+
+    **Test steps:**
+
+    * record one path whose open fails
+    * trigger its menu entry
+    * verify a critical box was shown
+    """
+    critical = mocker.patch.object(QMessageBox, "critical")
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window._MainWindow__rehuco_settings.record(Path("gone.rehuco").resolve())  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    mocker.patch.object(window, "open_rehuco_path", return_value=False)
+    menu = window._MainWindow__ui.open_recent_rehucos_menu  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    menu.aboutToShow.emit()
+
+    menu.actions()[0].trigger()
+
+    critical.assert_called_once()
+
+
+def test_the_rehuco_open_at_the_last_close_is_reopened_on_start(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The file left open is opened again at start, and its dock revealed (#377).
+
+    **Test steps:**
+
+    * seed ``RehucoSettings.load`` to report one open file, and mock the dock's ``open_rehuco`` to succeed
+    * construct ``MainWindow``
+    * verify the dock was asked for that file and is shown
+    """
+
+    def fake_load(self: RehucoSettings, settings: object) -> None:
+        del settings
+        self.current_path = REHUCO_FILE
+
+    mocker.patch.object(RehucoSettings, "load", fake_load)
+    open_rehuco = mocker.patch("rehuco_agent.main_window.RehucoDock.open_rehuco", return_value=True)
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    open_rehuco.assert_called_once_with(REHUCO_FILE)
+    assert not rehuco_dock_widget(window).isClosed()
+
+
+def test_a_rehuco_that_will_not_reopen_is_forgotten_quietly(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Start asks nothing of the user: the failure is not shown, and the file is not tried again (#377).
+
+    **Test steps:**
+
+    * seed one open file whose reopening fails, and spy on the critical box
+    * construct ``MainWindow``
+    * verify no box was shown, the dock stays closed and the remembered open file is cleared
+    """
+
+    def fake_load(self: RehucoSettings, settings: object) -> None:
+        del settings
+        self.current_path = REHUCO_FILE
+
+    mocker.patch.object(RehucoSettings, "load", fake_load)
+    mocker.patch("rehuco_agent.main_window.RehucoDock.open_rehuco", return_value=False)
+    critical = mocker.patch.object(QMessageBox, "critical")
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    critical.assert_not_called()
+    assert rehuco_dock_widget(window).isClosed()
+    assert window._MainWindow__rehuco_settings.current_path is None  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_restore_on_startup_off_skips_reopening_the_rehuco(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The Session page's toggle governs the open ``.rehuco`` too (#377).
+
+    **Test steps:**
+
+    * seed one open file and the toggle off
+    * construct ``MainWindow``
+    * verify the dock was never asked to open anything
+    """
+
+    def fake_load(self: RehucoSettings, settings: object) -> None:
+        del settings
+        self.current_path = REHUCO_FILE
+
+    def fake_restore_settings_load(self: SessionRestoreSettings, settings: object) -> None:
+        del settings
+        self.restore_on_startup = False
+
+    mocker.patch.object(RehucoSettings, "load", fake_load)
+    mocker.patch.object(SessionRestoreSettings, "load", fake_restore_settings_load)
+    open_rehuco = mocker.patch("rehuco_agent.main_window.RehucoDock.open_rehuco", return_value=True)
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    open_rehuco.assert_not_called()
+
+
+def test_closing_remembers_the_open_rehuco_and_its_layout(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Closing the app persists which ``.rehuco`` was open, and the dock's nested layout (#377).
+
+    **Test steps:**
+
+    * make the dock report an open file, and capture what ``RehucoSettings.save`` is given
+    * dispatch a close event
+    * verify the open path was recorded before the save, and the layout blob is non-empty
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    mocker.patch.object(RehucoDock, "rehuco_path", new_callable=mocker.PropertyMock, return_value=REHUCO_FILE)
+    saved: list[Path | None] = []
+    mocker.patch.object(
+        RehucoSettings,
+        "save",
+        lambda self, settings: saved.append(self.current_path),  # noqa: ARG005
+    )
+
+    window.closeEvent(QCloseEvent())
+
+    assert saved == [REHUCO_FILE]
+    assert window._MainWindow__window_settings.rehuco_state  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_closing_detaches_the_rehuco_dock_from_the_queue(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The dock stops listening and closes its cache before the window goes (#377).
+
+    **Test steps:**
+
+    * spy on the dock's ``detach``
+    * dispatch a close event
+    * verify it ran once
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    detach = mocker.patch.object(window._MainWindow__rehuco_dock, "detach")  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    window.closeEvent(QCloseEvent())
+
+    detach.assert_called_once()
+
+
+def test_a_resource_double_clicked_in_the_rehuco_dock_opens_through_open_path(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """The browser's open request takes the window's ordinary route (#377).
+
+    **Test steps:**
+
+    * spy on ``open_path``
+    * emit the dock's ``open_requested`` with a path
+    * verify ``open_path`` got it
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    open_path = mocker.patch.object(MainWindow, "open_path")
+    path = Path("/fake/tutorials/info.rehu")
+
+    window._MainWindow__rehuco_dock.open_requested.emit(path)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    open_path.assert_called_once_with(path)
+
+
+def test_the_rehuco_dock_survives_an_outer_layout_round_trip_open(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """A Root Catalog dock left open is open again after a restart (#377).
+
+    **Test steps:**
+
+    * open the Root Catalog dock and save the outer layout
+    * build a second window from what the first saved
+    * verify the dock is open there
+    """
+    first = MainWindow()
+    qtbot.addWidget(first)
+    rehuco_dock_widget(first).toggleView(True)
+    first._MainWindow__save_window_state()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    saved = first._MainWindow__window_settings  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    def fake_load(self: MainWindowSettings, settings: object) -> None:
+        del settings
+        self.outer_docks_state = saved.outer_docks_state
+
+    mocker.patch.object(MainWindowSettings, "load", fake_load)
+    second = MainWindow()
+    qtbot.addWidget(second)
+
+    assert not rehuco_dock_widget(second).isClosed()
+
+
+def test_open_path_routes_a_rehuco_to_the_root_catalog_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A ``.rehuco`` arriving by the single outside entry point -- argv, a file manager's double-click, the
+    single-instance forward -- opens as a root catalog, not as a document (#377).
+
+    **Test steps:**
+
+    * spy on ``open_rehuco_path`` and ``open_file``
+    * call ``open_path`` with a ``.rehuco``
+    * verify the catalog route took it and the document route did not
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    open_rehuco_path = mocker.patch.object(window, "open_rehuco_path", return_value=True)
+    open_file = mocker.patch.object(window, "open_file")
+
+    window.open_path("home.rehuco")
+
+    open_rehuco_path.assert_called_once_with(Path("home.rehuco"))
+    open_file.assert_not_called()
+
+
+def test_open_path_reports_a_rehuco_that_would_not_open(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A double-clicked catalog that fails to open says why, as the File menu's routes do (#377).
+
+    **Test steps:**
+
+    * make the catalog open fail and spy on the critical box
+    * call ``open_path`` with a ``.rehuco``
+    * verify the box was shown
+    """
+    critical = mocker.patch.object(QMessageBox, "critical")
+    window = MainWindow()
+    qtbot.addWidget(window)
+    mocker.patch.object(window, "open_rehuco_path", return_value=False)
+
+    window.open_path("home.rehuco")
+
+    critical.assert_called_once()
+
+
+def test_the_root_catalog_dock_is_detached_before_the_queue_shuts_down(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Shutdown calls every listener still attached, so the dock leaves first, as the Tasks widget does (#377).
+
+    **Test steps:**
+
+    * record the order of the dock's ``detach`` and the queue's ``shutdown``
+    * dispatch a close event
+    * verify detach came first
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    order: list[str] = []
+    mocker.patch.object(window._MainWindow__rehuco_dock, "detach", side_effect=lambda: order.append("detach"))  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    queue = window._MainWindow__task_queue  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    real_shutdown = queue.shutdown
+    mocker.patch.object(queue, "shutdown", side_effect=lambda: (order.append("shutdown"), real_shutdown()))
+
+    window.closeEvent(QCloseEvent())
+
+    assert order == ["detach", "shutdown"]
+
+
+def test_revealing_a_floating_root_catalog_dock_raises_its_window(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A floated Root Catalog dock behind the main window is brought forward on open, as Documents is (#377).
+
+    **Test steps:**
+
+    * float the dock and spy on its container's ``raise_`` and ``activateWindow``
+    * open a catalog through ``open_rehuco_path``
+    * verify both were called
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    mocker.patch.object(window._MainWindow__rehuco_dock, "open_rehuco", return_value=True)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    dock = rehuco_dock_widget(window)
+    dock.toggleView(True)
+    dock.setFloating()
+    container = dock.floatingDockContainer()
+    assert container is not None
+    raise_ = mocker.patch.object(container, "raise_")
+    activate = mocker.patch.object(container, "activateWindow")
+
+    assert window.open_rehuco_path(REHUCO_FILE)
+
+    raise_.assert_called_once()
+    activate.assert_called_once()
+
+
+def test_new_rehuco_records_the_resolved_path(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """New and Open remember one file under one spelling: the resolved one (#377).
+
+    **Test steps:**
+
+    * mock the save dialog to name a relative path and the dock's ``new_rehuco`` to succeed
+    * trigger ``new_rehuco_action``
+    * verify the dock got, and the recents hold, the resolved path
+    """
+    mocker.patch("rehuco_agent.main_window.QFileDialog.getSaveFileName", return_value=("home.rehuco", ""))
+    window = MainWindow()
+    qtbot.addWidget(window)
+    new_rehuco = mocker.patch.object(window._MainWindow__rehuco_dock, "new_rehuco", return_value=True)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    window._MainWindow__ui.new_rehuco_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    resolved = Path("home.rehuco").resolve()
+    new_rehuco.assert_called_once_with(resolved)
+    assert window._MainWindow__rehuco_settings.newest_first() == [resolved]  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_new_rehuco_asks_before_replacing_a_file_the_suffix_lands_on(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The save dialog confirmed the name as typed; the name with ``.rehuco`` appended is another file, which
+    may already exist and must be asked about (#377).
+
+    **Test steps:**
+
+    * mock the dialog to name a path without the suffix, and the suffixed file to exist
+    * answer no, trigger, and verify nothing was created; answer yes, trigger, and verify it was
+    """
+    mocker.patch("rehuco_agent.main_window.QFileDialog.getSaveFileName", return_value=("/fake/home", ""))
+    mocker.patch.object(Path, "exists", autospec=True, side_effect=lambda self: self.name == "home.rehuco")
+    window = MainWindow()
+    qtbot.addWidget(window)
+    new_rehuco = mocker.patch.object(window._MainWindow__rehuco_dock, "new_rehuco", return_value=True)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    confirm = mocker.patch.object(window, "confirm_overwrite", return_value=False)
+
+    window._MainWindow__ui.new_rehuco_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    new_rehuco.assert_not_called()
+    confirm.assert_called_once_with(Path("/fake/home.rehuco").resolve())
+
+    confirm.return_value = True
+    window._MainWindow__ui.new_rehuco_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    new_rehuco.assert_called_once_with(Path("/fake/home.rehuco").resolve())
+
+
+def test_new_rehuco_does_not_ask_when_the_suffixed_file_is_new(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """No question for a file that does not exist yet (#377).
+
+    **Test steps:**
+
+    * mock the dialog to name a path without the suffix, nothing existing
+    * trigger ``new_rehuco_action``
+    * verify no question was asked and the file was created
+    """
+    mocker.patch("rehuco_agent.main_window.QFileDialog.getSaveFileName", return_value=("/fake/home", ""))
+    mocker.patch.object(Path, "exists", autospec=True, return_value=False)
+    window = MainWindow()
+    qtbot.addWidget(window)
+    new_rehuco = mocker.patch.object(window._MainWindow__rehuco_dock, "new_rehuco", return_value=True)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    confirm = mocker.patch.object(window, "confirm_overwrite")
+
+    window._MainWindow__ui.new_rehuco_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    confirm.assert_not_called()
+    new_rehuco.assert_called_once()
+
+
+@mark.parametrize(
+    ("answer", "expected"),
+    [(QMessageBox.StandardButton.Yes, True), (QMessageBox.StandardButton.No, False)],
+)
+def test_confirm_overwrite_is_the_question_boxs_answer(
+    mocker: MockerFixture, qtbot: QtBot, answer: QMessageBox.StandardButton, expected: bool
+) -> None:
+    """The real question box decides, with No as the default button (#377).
+
+    **Test steps:**
+
+    * patch the module's ``QMessageBox.question`` to answer
+    * ask ``confirm_overwrite``
+    * verify the answer and the default button
+    """
+    question = mocker.patch("rehuco_agent.main_window.QMessageBox.question", return_value=answer)
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert window.confirm_overwrite(REHUCO_FILE) is expected
+
+    assert question.call_args.args[-1] == QMessageBox.StandardButton.No
+
+
+# endregion
 
 
 # endregion

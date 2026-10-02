@@ -13,10 +13,11 @@ OUTER_DOCKS_STATE_VERSION_KEY: Final = "outer_docks_state_version"
 TOOLBARS_STATE_KEY: Final = "toolbars_state"
 LOG_WIDGET_STATE_KEY: Final = "log_widget_state"
 TASK_QUEUE_STATE_KEY: Final = "task_queue_state"
+REHUCO_STATE_KEY: Final = "rehuco_state"
 
-OUTER_DOCKS_STATE_VERSION: Final = 6
+OUTER_DOCKS_STATE_VERSION: Final = 7
 """Schema version of :attr:`MainWindowSettings.outer_docks_state`. The outer dock set (the Documents
-dock and its three sibling docks -- Log, Tasks and Settings) is keyed by dock object
+dock and its four sibling docks -- Log, Tasks, Settings and Root Catalog) is keyed by dock object
 name, so any change to that set makes an older blob incompatible: ``CDockManager.restoreState``
 would accept it and silently hide docks not present in the saved layout. Bump this whenever the
 outer dock set changes; :meth:`MainWindowSettings.load` discards a blob whose version differs,
@@ -47,7 +48,11 @@ says about Settings -- the build before #307 floated that dock *by default* and 
 checkbox saved it closed, so every install that never touched it carries a blob placing Settings in a
 floating window nobody chose. Restoring that would keep the whole installed base on the placement the
 release removed, and only fresh installs would ever see the new one. The guard's job is to refuse a blob
-that describes the wrong layout; this one describes the previous build's default."""
+that describes the wrong layout; this one describes the previous build's default.
+
+Bumped to 7 when the Root Catalog dock joined the outer set, tabbed beside Documents (#377). A v6 blob knows
+nothing of it, so restoring one would leave that dock in whatever state QtAds invents for a dock the layout
+never mentions, rather than the closed one the window builds."""
 
 TOOLBARS_STATE_VERSION: Final = 2
 """Version passed to Qt's own ``QMainWindow.saveState``/``restoreState`` (the toolbar-area/floating
@@ -69,8 +74,8 @@ class MainWindowSettings:
     """The window's ``saveGeometry()`` blob, or empty before any session has been saved."""
 
     outer_docks_state: bytes = field(default=b"")
-    """The outer ``CDockManager``'s ``saveState()`` blob (the Documents dock and its three siblings --
-    Log, Tasks and Settings), or empty before any session has been saved or after an incompatible
+    """The outer ``CDockManager``'s ``saveState()`` blob (the Documents dock and its four siblings --
+    Log, Tasks, Settings and Root Catalog), or empty before any session has been saved or after an incompatible
     :data:`OUTER_DOCKS_STATE_VERSION`."""
 
     toolbars_state: bytes = field(default=b"")
@@ -97,6 +102,12 @@ class MainWindowSettings:
     version of its own for the inner one
     (:data:`~rehuco_agent.tasks.task_queue_widget.STATE_VERSION`)."""
 
+    rehuco_state: bytes = field(default=b"")
+    """The Root Catalog dock's **nested** shell blob (#377), as :meth:`~rehuco_agent.rehuco.RehucoDock.save_state`
+    writes it. Outside :data:`OUTER_DOCKS_STATE_VERSION`'s guard for the same reason
+    :attr:`task_queue_state` is: that version is about the outer dock set, and this blob carries a version of
+    its own for the inner one."""
+
     def load(self, settings: QSettings) -> None:
         """Replace the current geometry, outer dock state, and toolbar state with what's in
         persistent storage.
@@ -122,6 +133,9 @@ class MainWindowSettings:
 
         task_queue_state = cast(QByteArray, settings.value(TASK_QUEUE_STATE_KEY, QByteArray(), type=QByteArray))
         self.task_queue_state = bytes(task_queue_state.data())
+
+        rehuco_state = cast(QByteArray, settings.value(REHUCO_STATE_KEY, QByteArray(), type=QByteArray))
+        self.rehuco_state = bytes(rehuco_state.data())
         settings.endGroup()
 
     def save(self, settings: QSettings) -> None:
@@ -136,6 +150,7 @@ class MainWindowSettings:
         settings.setValue(TOOLBARS_STATE_KEY, QByteArray(self.toolbars_state))
         settings.setValue(LOG_WIDGET_STATE_KEY, QByteArray(self.log_widget_state))
         settings.setValue(TASK_QUEUE_STATE_KEY, QByteArray(self.task_queue_state))
+        settings.setValue(REHUCO_STATE_KEY, QByteArray(self.rehuco_state))
         settings.endGroup()
 
 

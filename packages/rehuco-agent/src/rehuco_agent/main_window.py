@@ -36,6 +36,7 @@ from rehuco_core import (
     DEFAULT_PLUGIN_REGISTRY,
     DEFAULT_RENAME_COORDINATOR,
     FINISHED_JOB_STATES,
+    REHUCO_SUFFIX,
     JobState,
     SweepChecksumsJob,
     TaskQueue,
@@ -51,9 +52,11 @@ from .commands import (
     CYCLE_THEME,
     IMAGE_PREVIEWS,
     IMPORT_LEGACY_CATALOG,
+    NEW_REHUCO,
     OPEN_COMPANION,
     OPEN_FOLDER,
     OPEN_REHU,
+    OPEN_REHUCO,
     QUIT,
     SAVE_ALL,
     shared_command_registry,
@@ -72,6 +75,7 @@ from .fields.type_field import type_label
 from .glyphs import TAB_CLOSE_GLYPH
 from .main_window_ui import Ui_MainWindow
 from .recycle_bin_deleter import configured_deleter
+from .rehuco import RehucoDock
 from .settings.checksum_settings import shared_checksum_settings
 from .settings.checksum_trust_store import checksum_trust_path
 from .settings.document_session_settings import DocumentSessionSettings
@@ -82,6 +86,7 @@ from .settings.logs_settings import shared_logs_settings
 from .settings.main_window_settings import TOOLBARS_STATE_VERSION, MainWindowSettings
 from .settings.persistent_settings import persistent_settings
 from .settings.recent_files_settings import RecentFilesSettings
+from .settings.rehuco_settings import RehucoSettings
 from .settings.session_restore_settings import SessionRestoreSettings
 from .settings.tasks_settings import TasksSettings
 from .settings.theme_settings import ThemeSettings
@@ -162,6 +167,17 @@ TASK_QUEUE_DOCK_TITLE: Final = "Tasks"
 
 TASK_VIEW_ICON_RESOURCE: Final = ":/icons/task_view.svg"
 
+REHUCO_DOCK_OBJECT_NAME: Final = "rehuco_dock"
+"""The Root Catalog dock's ``objectName`` -- its identity in the outer `CDockManager`'s saved layout and the key
+its remembered pin side is stored under (#377). A fixed literal, like the other docks': it is not a
+document, so nothing here derives from a path."""
+
+REHUCO_DOCK_TITLE: Final = "Root Catalog"
+
+REHUCO_VIEW_ICON_RESOURCE: Final = ":/icons/rehuco_view.svg"
+
+REHUCO_FILE_FILTER: Final = "Root Catalog Files (*.rehuco);;All Files (*)"
+
 IMAGE_PREVIEWS_ICON_RESOURCE: Final = ":/icons/image_previews.svg"
 
 TRAY_ICON_RESOURCE: Final = ":/icons/rehuco-agent.svg"
@@ -211,9 +227,9 @@ def location_group_title(main_key: str) -> str:
 class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
     """The single top-level window: a `CDockManager` holding a **Documents** dock around
     :class:`DocumentsDock`, with a **Settings** dock (#47) registered on the same outer manager -- not
-    merged into `DocumentsDock`'s own nested one. Four peer docks in all, each placed once and each
+    merged into `DocumentsDock`'s own nested one. Five peer docks in all, each placed once and each
     leaving its own visibility to the manager's ``saveState()``, the Settings one included since #307
-    (see :meth:`__add_settings_dock`).
+    (see :meth:`__add_settings_dock`). The **Root Catalog** dock (#377) is tabbed beside Documents the same way.
 
     Dock-in-dock (a `CDockManager` inside the Documents dock's `DocumentsDock`, itself inside this
     window's own `CDockManager`) leaves room for a future resource browser to dock alongside the
@@ -321,6 +337,14 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # a document command set app-wide fires on the focused document from anywhere (#345); nothing
         # holds onto the router -- it parents itself to this window, which its actions are added to
         DocumentCommandRouter(self.__documents_dock, self.__command_registry, self)
+        self.__rehuco_dock: Final = RehucoDock(
+            self.__task_queue,
+            self,
+            stylesheet_host=self.__dock_manager,
+            rename_coordinator=self.__rename_coordinator,
+        )
+        # a resource double-clicked in the Root Catalog browser opens through the ordinary route (#377)
+        self.__rehuco_dock.open_requested.connect(self.open_path)
         self.__setup_docking_system()
         self.__ui.view_menu.aboutToShow.connect(lambda: self.__add_open_documents(self.__ui.view_menu))
         self.__setup_file_menu()
@@ -332,9 +356,12 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.restoreState(QByteArray(self.__window_settings.toolbars_state), TOOLBARS_STATE_VERSION)
         self.__log_widget.restore_state(self.__window_settings.log_widget_state)
         self.__task_queue_widget.restore_state(self.__window_settings.task_queue_state)
+        self.__rehuco_dock.restore_state(self.__window_settings.rehuco_state)
 
         self.__recent_files: Final = RecentFilesSettings()
         self.__recent_files.load(persistent_settings())
+        self.__rehuco_settings: Final = RehucoSettings()
+        self.__rehuco_settings.load(persistent_settings())
 
         self.__theme_settings: Final = ThemeSettings()
         self.__theme_settings.load(persistent_settings())
@@ -521,6 +548,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__ui.view_menu.addAction(theme_menu.light_action)
         self.__ui.view_menu.addAction(theme_menu.dark_action)
         self.__ui.view_menu.addSeparator()  # between the static theme entries above and the app docks below
+        self.__ui.view_menu.addAction(self.__ui.rehuco_action)
         self.__ui.view_menu.addAction(self.__ui.documents_action)
         self.__ui.view_menu.addAction(self.__ui.log_action)
         self.__ui.view_menu.addAction(self.__ui.tasks_action)
@@ -538,6 +566,8 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             (ui.open_rehu_action, OPEN_REHU),
             (ui.open_folder_action, OPEN_FOLDER),
             (ui.open_companion_action, OPEN_COMPANION),
+            (ui.new_rehuco_action, NEW_REHUCO),
+            (ui.open_rehuco_action, OPEN_REHUCO),
             (ui.close_action, CLOSE_DOCUMENT),
             (ui.close_missing_action, CLOSE_MISSING),
             (ui.close_all_action, CLOSE_ALL),
@@ -565,6 +595,9 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__ui.open_rehu_action.triggered.connect(self.__on_open_rehu)
         self.__ui.open_folder_action.triggered.connect(self.__on_open_folder)
         self.__ui.open_companion_action.triggered.connect(self.__on_open_companion)
+        self.__ui.new_rehuco_action.triggered.connect(self.__on_new_rehuco)
+        self.__ui.open_rehuco_action.triggered.connect(self.__on_open_rehuco)
+        self.__ui.open_recent_rehucos_menu.aboutToShow.connect(self.__populate_recent_rehucos_menu)
         self.__ui.close_action.triggered.connect(self.__documents_dock.close_focused_document)
         self.__ui.close_missing_action.triggered.connect(self.__documents_dock.close_missing)
         self.__ui.close_all_action.triggered.connect(self.__documents_dock.close_all)
@@ -630,6 +663,99 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         path, _ = QFileDialog.getOpenFileName(self, "Open Companion", "", f"Archives ({filters});;All Files (*)")
         if path:
             self.open_archive(path)
+
+    def __on_new_rehuco(self) -> None:
+        """Prompt for where to create a ``.rehuco`` and open it (``File`` > ``New Root Catalog...``, #377)."""
+        chosen, _ = QFileDialog.getSaveFileName(self, "New Root Catalog", "", REHUCO_FILE_FILTER)
+        if not chosen:
+            return
+        path = Path(chosen).resolve()
+        if path.suffix.lower() != REHUCO_SUFFIX:
+            # the dialog asked about overwriting the name as typed; the name with the suffix is a different
+            # file, which it has not asked about
+            path = path.with_name(path.name + REHUCO_SUFFIX)
+            if path.exists() and not self.confirm_overwrite(path):
+                return
+        if self.__rehuco_dock.new_rehuco(path):
+            self.__rehuco_opened(path)
+        else:
+            QMessageBox.critical(self, "New Root Catalog", self.__rehuco_dock.load_error)
+
+    def confirm_overwrite(self, path: Path) -> bool:
+        """Ask whether an existing root catalog may be replaced by an empty one.
+
+        A public method rather than an inline box, the way ``ShortcutsPage.confirm_reassign`` is, so a test
+        replaces the question on the instance rather than the module's ``QMessageBox``.
+
+        :param path: the file that would be replaced.
+        :returns: whether the user said yes.
+        """
+        answer = QMessageBox.question(
+            self,
+            "New Root Catalog",
+            f"{path.name} already exists. Replace it with an empty root catalog? Its roots will be forgotten.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return answer == QMessageBox.StandardButton.Yes
+
+    def __on_open_rehuco(self) -> None:
+        """Prompt for a ``.rehuco`` and open it (``File`` > ``Open Root Catalog...``, #377)."""
+        chosen, _ = QFileDialog.getOpenFileName(self, "Open Root Catalog", "", REHUCO_FILE_FILTER)
+        if chosen:
+            self.__open_rehuco_or_report(chosen)
+
+    def __open_rehuco_or_report(self, path: Path | str) -> None:
+        """Open a root catalog the user asked for by name, and say why when it would not open -- the one
+        shape every interactive route shares (the dialog, the recents, a file manager's double-click).
+
+        :param path: the ``.rehuco`` file.
+        """
+        if not self.open_rehuco_path(path):
+            QMessageBox.critical(self, "Open Root Catalog", self.__rehuco_dock.load_error)
+
+    def open_rehuco_path(self, path: Path | str) -> bool:
+        """Open the ``.rehuco`` at ``path`` in the Root Catalog dock, replacing the one open (#377).
+
+        Recorded into ``Open recent rehuco`` once opened -- and only then: a file that would not open is
+        not one that was opened. Says nothing about a failure itself, since a caller knows whether a person
+        is there to be told; the reason is the dock's :attr:`~rehuco_agent.rehuco.RehucoDock.load_error`.
+
+        :param path: the ``.rehuco`` file.
+        :returns: whether it was opened.
+        """
+        resolved = Path(path).resolve()
+        if not self.__rehuco_dock.open_rehuco(resolved):
+            return False
+        self.__rehuco_opened(resolved)
+        return True
+
+    def __rehuco_opened(self, path: Path) -> None:
+        """What an open ``.rehuco`` leaves behind: the dock shown, the file remembered."""
+        self.__reveal_rehuco_dock()
+        self.__rehuco_settings.record(path)
+
+    def __reveal_rehuco_dock(self) -> None:
+        """Show the Root Catalog dock if it is hidden, bring its tab to the front and, when it floats, its window
+        too -- the same reasons, and the same calls, as :meth:`__reveal_documents_dock`."""
+        self.__rehuco_dock_widget.toggleView(True)
+        self.__rehuco_dock_widget.setAsCurrentTab()
+        container = self.__rehuco_dock_widget.floatingDockContainer()
+        if container is not None:
+            container.raise_()
+            container.activateWindow()
+
+    def __populate_recent_rehucos_menu(self) -> None:
+        """Rebuild ``Open recent rehuco`` with the most recently opened files, newest first (#377)."""
+        menu = self.__ui.open_recent_rehucos_menu
+        menu.clear()
+        paths = self.__rehuco_settings.newest_first()
+        if not paths:
+            menu.addAction("No Recent Root Catalogs").setEnabled(False)
+            return
+        for path in paths:
+            action = menu.addAction(str(path))
+            action.triggered.connect(lambda _checked=False, path=path: self.__open_rehuco_or_report(path))
 
     def __on_save_all(self) -> None:
         """Save every currently dirty open document (``File`` > ``Save all``, reusing #41's
@@ -849,6 +975,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__documents_dock_widget = self.__add_documents_dock()
         self.__log_dock = self.__add_log_dock()
         self.__task_queue_dock = self.__add_task_queue_dock()
+        self.__rehuco_dock_widget = self.__add_rehuco_dock()
         # a local rather than an attribute, unlike the three above: nothing outside this method needs
         # the dock itself, and __main_docks below is what carries it for the rest of the window's life
         settings_dock = self.__add_settings_dock()
@@ -873,6 +1000,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__task_view_icon_handler = ActionIconThemeHandler(
             self.__task_queue_dock.toggleViewAction(), TASK_VIEW_ICON_RESOURCE, companion=self.__ui.tasks_action
         )
+        self.__rehuco_view_icon_handler = ActionIconThemeHandler(
+            self.__rehuco_dock_widget.toggleViewAction(), REHUCO_VIEW_ICON_RESOURCE, companion=self.__ui.rehuco_action
+        )
+        self.__ui.view_menu.aboutToShow.connect(self.__rehuco_view_icon_handler.resync_companion_checked_state)
         self.__ui.view_menu.aboutToShow.connect(self.__documents_view_icon_handler.resync_companion_checked_state)
         self.__ui.view_menu.aboutToShow.connect(self.__log_view_icon_handler.resync_companion_checked_state)
         self.__ui.view_menu.aboutToShow.connect(self.__task_view_icon_handler.resync_companion_checked_state)
@@ -905,6 +1036,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # __setup_docking_system rather than __init__
         self.__main_docks = (
             self.__documents_dock_widget,
+            self.__rehuco_dock_widget,
             self.__log_dock,
             self.__task_queue_dock,
             settings_dock,
@@ -935,7 +1067,9 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
         # the dock toggles lead the vertical action_bar, so the surfaces of the current work are the
         # first thing on it (#311). Settings is a dock too (#307) but reads as the app's preferences
-        # rather than a surface of the current work, so it stays with the bottom group.
+        # rather than a surface of the current work, so it stays with the bottom group. The Root Catalog leads
+        # the group: it is where a resource is found, ahead of Documents, where it is then worked on (#377).
+        self.__ui.action_bar.addAction(self.__rehuco_dock_widget.toggleViewAction())
         self.__ui.action_bar.addAction(self.__documents_dock_widget.toggleViewAction())
         self.__ui.action_bar.addAction(self.__log_dock.toggleViewAction())
         self.__ui.action_bar.addAction(self.__task_queue_dock.toggleViewAction())
@@ -1164,6 +1298,38 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         dock.toggleView(False)
         return dock
 
+    def __add_rehuco_dock(self) -> QtAds.CDockWidget:
+        """Build the Root Catalog dock on the outer manager, closed by default (#377).
+
+        **Tabbed into the Documents area**, exactly as the Settings dock is
+        (:meth:`__add_settings_dock`) and for the same reason: a third named dock in the bottom area would
+        have to join :meth:`__seed_bottom_dock_heights`'s measuring pair, while a tab adds no pane. The
+        area is non-None here -- ``__add_documents_dock`` runs first and its dock is never removed.
+
+        **Closed by default**, like Log, Tasks and Settings: no ``.rehuco`` is open on a fresh install, so
+        nothing is there to show until one is opened, which reveals it
+        (:meth:`__reveal_rehuco_dock`). Closing it here also puts Documents back in front, QtAds having
+        made this the area's current tab as the last one added.
+
+        :returns: the dock, closed.
+        """
+        dock = QtAds.CDockWidget(self.__dock_manager, REHUCO_DOCK_TITLE)
+        dock.setObjectName(REHUCO_DOCK_OBJECT_NAME)
+        features = QtAds.CDockWidget.DockWidgetFeature
+        dock.setFeatures(
+            features.DockWidgetClosable
+            | features.DockWidgetMovable
+            | features.DockWidgetFloatable
+            | features.DockWidgetFocusable
+            | features.DockWidgetPinnable
+        )
+        dock.setWidget(self.__rehuco_dock)
+        self.__dock_manager.addDockWidget(
+            QtAds.CenterDockWidgetArea, dock, self.__documents_dock_widget.dockAreaWidget()
+        )
+        dock.toggleView(False)
+        return dock
+
     def __add_settings_dock(self) -> QtAds.CDockWidget:
         """Build the Settings dock on the outer manager, closed by default (#47, #307).
 
@@ -1337,6 +1503,12 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             event.ignore()
             return
 
+        # the open catalog is remembered and its dock detached before the queue is shut down, for the
+        # reason the Tasks widget is detached first (__shutdown_task_queue): shutdown calls every listener
+        # still attached, and a listener whose cache is closing has nothing left to say (#377)
+        self.__rehuco_settings.current_path = self.__rehuco_dock.rehuco_path
+        self.__rehuco_settings.save(persistent_settings())
+        self.__rehuco_dock.detach()
         # pause, wait, save, shut down (#202, [[appendices.task-queue#teardown]]) -- before the outer
         # dock layout is captured below
         self.__shutdown_task_queue()
@@ -1377,6 +1549,22 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         session_restore_settings.load(persistent_settings())
         if session_restore_settings.restore_on_startup:
             self.__restore_session()
+            self.__restore_rehuco()
+
+    def __restore_rehuco(self) -> None:
+        """Reopen the ``.rehuco`` the last run left open (#377), quietly.
+
+        Nothing is asked of the user at start: a file that is gone or unreadable is logged by the dock and
+        forgotten here, so the next run does not trip over it again. Revealed like a session restore is --
+        the outer layout restored afterwards still has the last word on whether the dock ends up visible.
+        """
+        path = self.__rehuco_settings.current_path
+        if path is None:
+            return
+        if self.__rehuco_dock.open_rehuco(path):
+            self.__reveal_rehuco_dock()
+        else:
+            self.__rehuco_settings.current_path = None
 
     def __restore_session(self) -> None:
         """Reopen every document the last session left open, restoring its dock layout and focus --
@@ -1398,6 +1586,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             self.__window_settings.outer_docks_state = bytes(self.__dock_manager.saveState().data())
         self.__window_settings.log_widget_state = self.__log_widget.save_state()
         self.__window_settings.task_queue_state = self.__task_queue_widget.save_state()
+        self.__window_settings.rehuco_state = self.__rehuco_dock.save_state()
         self.__window_settings.save(persistent_settings())
 
     def __save_session(self) -> None:
@@ -1436,11 +1625,15 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         forwarding, a ``QFileOpenEvent``, #43) hands in without already knowing which kind it is.
 
         :param path: filesystem path to a ``.rehu`` file, to a directory-scoped resource's
-            directory, or to an archive file ([[data-model#resource-scoping]]).
+            directory, to an archive file ([[data-model#resource-scoping]]), or to a ``.rehuco`` root catalog.
         """
         resolved = Path(path)
         if resolved.is_dir():
             self.open_folder(path)
+        elif resolved.suffix.lower() == REHUCO_SUFFIX:
+            # a root catalog is not a resource: it opens in its own dock, and a failure is reported here
+            # because this is the one route a double-click in a file manager arrives by (#377)
+            self.__open_rehuco_or_report(resolved)
         elif resolved.suffix.lower() in ARCHIVE_EXTENSIONS:
             self.open_archive(path)
         else:

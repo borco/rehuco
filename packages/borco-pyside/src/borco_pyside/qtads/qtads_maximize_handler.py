@@ -351,10 +351,14 @@ class QtAdsMaximizeHandler(QObject):  # pylint: disable=too-many-instance-attrib
             font.setFamily(self.__glyph.family)
         font.setPixelSize(self.__glyph_size)
         button.setFont(font)
-        # squared to the tab's own height, the way the tracker squares the close button -- read off
-        # the tab rather than the close button, whose own squaring is deferred and may not have run
+        # squared to its own size hint, the way the tracker squares the close button, and never to the tab's
+        # or the close button's current height: a tab that has not been laid out yet still has Qt's top-level
+        # default size, 480 px tall, and fixing a button to that makes the tab a box 480 px square (#377). The
+        # glyph is set first because it is what the hint is of. The close button is only a cap -- its
+        # own squaring is deferred and may not have run, so it can still be the stretched height
         close_button = tab_close_button(dock)
-        side = tab.height() if tab.height() > 0 else button.sizeHint().height()
+        button.setText(self.__glyph.codepoint)
+        side = button.sizeHint().height()
         if close_button is not None:
             side = min(side, close_button.height()) if close_button.height() > 0 else side
             button.setFocusPolicy(close_button.focusPolicy())

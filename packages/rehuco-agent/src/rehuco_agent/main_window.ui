@@ -32,10 +32,19 @@
       <string>Open recen&amp;ts</string>
      </property>
     </widget>
+    <widget class="QMenu" name="open_recent_rehucos_menu">
+     <property name="title">
+      <string>Open recent root cata&amp;log</string>
+     </property>
+    </widget>
     <addaction name="open_rehu_action"/>
     <addaction name="open_folder_action"/>
     <addaction name="open_companion_action"/>
     <addaction name="open_recents_menu"/>
+    <addaction name="separator"/>
+    <addaction name="new_rehuco_action"/>
+    <addaction name="open_rehuco_action"/>
+    <addaction name="open_recent_rehucos_menu"/>
     <addaction name="separator"/>
     <addaction name="close_action"/>
     <addaction name="close_missing_action"/>
@@ -177,6 +186,24 @@
    </property>
    <property name="text">
     <string>&amp;Tasks</string>
+   </property>
+  </action>
+  <action name="rehuco_action">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>&amp;Root Catalog</string>
+   </property>
+  </action>
+  <action name="new_rehuco_action">
+   <property name="text">
+    <string>&amp;New Root Catalog...</string>
+   </property>
+  </action>
+  <action name="open_rehuco_action">
+   <property name="text">
+    <string>Open Root C&amp;atalog...</string>
    </property>
   </action>
   <action name="image_previews_action">

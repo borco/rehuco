@@ -42,6 +42,10 @@ OPEN_FOLDER: Final = Command("app.open_folder", "Open folder", "Open the resourc
 OPEN_COMPANION: Final = Command(
     "app.open_companion", "Open companion", "Open the resource a companion file belongs to", (), WINDOW
 )
+NEW_REHUCO: Final = Command(
+    "app.new_rehuco", "New root catalog", "Create a root catalog (.rehuco) and open it", (), WINDOW
+)
+OPEN_REHUCO: Final = Command("app.open_rehuco", "Open root catalog", "Open a root catalog (.rehuco)", (), WINDOW)
 CLOSE_DOCUMENT: Final = Command("app.close_document", "Close", "Close the focused document", ("Ctrl+W",), WINDOW)
 CLOSE_MISSING: Final = Command(
     "app.close_missing", "Close missing files", "Close every document whose file is gone", (), WINDOW
@@ -124,6 +128,8 @@ COMMANDS: Final = (
     OPEN_REHU,
     OPEN_FOLDER,
     OPEN_COMPANION,
+    NEW_REHUCO,
+    OPEN_REHUCO,
     CLOSE_DOCUMENT,
     CLOSE_MISSING,
     CLOSE_ALL,

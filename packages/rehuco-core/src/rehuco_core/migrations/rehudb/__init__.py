@@ -110,7 +110,26 @@ def create_schema_v1(connection: sqlite3.Connection) -> None:
         connection.execute(statement)
 
 
-CHAIN: Final[SchemaChain] = ((1, create_schema_v1),)
+V2_JOIN_TABLES: Final = ("resource_authors", "resource_tags", "resource_publishers")
+"""The join tables version 2 gives a spelling of their own -- frozen, like :data:`V1_STATEMENTS`."""
+
+
+def add_join_spellings_v2(connection: sqlite3.Connection) -> None:
+    """1 -> 2: each join row keeps the name **as its resource spells it** (#377).
+
+    The value tables hold one row per name, unique case-insensitively, so they can only ever keep one spelling: the
+    first one stored. A resource whose file changed ``foo bar`` to ``Foo Bar`` matched the old row and went on
+    showing the old case. The value tables stay what matching and filtering go through; the spelling shown moves to
+    the join, per resource. A row written before this step has no spelling of its own (``NULL``) and reads as the
+    shared one until its resource is scanned again.
+
+    :param connection: the cache, inside the transaction the caller opened.
+    """
+    for table in V2_JOIN_TABLES:
+        connection.execute(f"ALTER TABLE {table} ADD COLUMN name TEXT")  # nosec B608  # frozen literal names
+
+
+CHAIN: Final[SchemaChain] = ((1, create_schema_v1), (2, add_join_spellings_v2))
 """This target's ordered ``(target, step)`` chain."""
 
 CURRENT_VERSION: Final = chain_head(CHAIN, BASE_VERSION)

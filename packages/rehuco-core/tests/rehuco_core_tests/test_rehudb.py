@@ -25,7 +25,7 @@ from rehuco_core import (
     RehucoRoot,
     rehudb_path,
 )
-from rehuco_core.migrations.rehudb import CURRENT_VERSION
+from rehuco_core.migrations.rehudb import CHAIN, CURRENT_VERSION
 from rehuco_core.rehudb import BUSY_TIMEOUT_MS
 
 CACHE_PATH: Final = Path("/fake/cache/rehuco.rehudb")
@@ -410,6 +410,107 @@ def test_every_field_of_a_record_round_trips(cache: CatalogCache) -> None:
     (row,) = cache.rows()
     assert row.record == written
     assert (row.root_id, row.root_label, row.scanned_at) == (first.root_id, "tutorials", 5.0)
+
+
+def test_a_rescan_shows_a_value_whose_case_changed(cache: CatalogCache) -> None:
+    """A file that fixed an author's, tag's or publisher's case shows the new spelling after a rescan (#377).
+
+    The shared value rows are unique case-insensitively, so they keep the first spelling ever stored; what a
+    resource shows is its own.
+
+    **Test steps:**
+
+    * scan a record naming ``foo bar`` as author, tag and publisher
+    * rescan it naming ``Foo Bar``
+    * verify the row reads ``Foo Bar`` in all three
+    """
+    rehuco, first, _ = two_roots()
+    cache.reconcile_roots(rehuco.roots)
+    cache.apply_root_scan(
+        first.root_id, [record("a/info.rehu", authors=("foo bar",), tags=("foo bar",), publishers=("foo bar",))]
+    )
+
+    cache.apply_root_scan(
+        first.root_id, [record("a/info.rehu", authors=("Foo Bar",), tags=("Foo Bar",), publishers=("Foo Bar",))]
+    )
+
+    (row,) = cache.rows()
+    assert (row.record.authors, row.record.tags, row.record.publishers) == (("Foo Bar",), ("Foo Bar",), ("Foo Bar",))
+
+
+def test_two_resources_keep_their_own_spelling_of_one_name(cache: CatalogCache) -> None:
+    """Each resource shows its file's spelling, while a filter still finds both as one name.
+
+    **Test steps:**
+
+    * scan two records spelling one author differently
+    * verify each row reads its own spelling, and an ``authors`` token in either case matches both
+    """
+    rehuco, first, _ = two_roots()
+    cache.reconcile_roots(rehuco.roots)
+
+    cache.apply_root_scan(
+        first.root_id, [record("a/info.rehu", authors=("foo bar",)), record("b/info.rehu", authors=("Foo Bar",))]
+    )
+
+    assert {row.record.path: row.record.authors for row in cache.rows()} == {
+        "a/info.rehu": ("foo bar",),
+        "b/info.rehu": ("Foo Bar",),
+    }
+    matched = cache.rows(CatalogQuery(tokens=((CatalogField.AUTHORS, "FOO BAR"),)))
+    assert {row.record.path for row in matched} == {"a/info.rehu", "b/info.rehu"}
+
+
+def test_a_row_written_before_spellings_were_kept_reads_the_shared_one(
+    cache: CatalogCache, database: MemoryDatabase
+) -> None:
+    """A join row from a version-1 cache has no spelling of its own until its resource is scanned again.
+
+    **Test steps:**
+
+    * scan a record, then clear its join row's spelling as version 1 left it
+    * verify the shared spelling is read instead
+    """
+    rehuco, first, _ = two_roots()
+    cache.reconcile_roots(rehuco.roots)
+    cache.apply_root_scan(first.root_id, [record("a/info.rehu", authors=("Ann",))])
+
+    database.keeper.execute("UPDATE resource_authors SET name = NULL")
+
+    (row,) = cache.rows()
+    assert row.record.authors == ("Ann",)
+
+
+def test_a_version_1_cache_upgrades_and_keeps_its_rows(
+    memory: Callable[[], MemoryDatabase], mocker: MockerFixture
+) -> None:
+    """The version-2 step adds the spelling column without losing what version 1 held.
+
+    **Test steps:**
+
+    * build a version-1 cache holding one record with an author
+    * reopen it with the full chain
+    * verify the stamp is current and the record still reads its author
+    """
+    database = memory()
+    mocker.patch("rehuco_core.rehudb.sqlite3.connect", side_effect=database.connect)
+    mocker.patch.object(Path, "mkdir", autospec=True)
+    rehuco, first, _ = two_roots()
+    with CatalogCache.open(CACHE_PATH, chain=CHAIN[:1]) as old:
+        old.reconcile_roots(rehuco.roots)
+        database.keeper.execute("BEGIN")
+        old_id = database.keeper.execute(
+            "INSERT INTO resources (root_id, path, path_key, kind, mtime_ns, size, content_hash, scanned_at) "
+            "VALUES (?, 'a/info.rehu', 'a/info.rehu', 'rehu', 0, 0, '0', 0) RETURNING id",
+            (str(first.root_id),),
+        ).fetchone()[0]
+        database.keeper.execute("INSERT INTO authors (name) VALUES ('Ann')")
+        database.keeper.execute("INSERT INTO resource_authors VALUES (?, 1, 0)", (old_id,))
+        database.keeper.execute("COMMIT")
+
+    with CatalogCache.open(CACHE_PATH) as upgraded:
+        assert upgraded.schema_version == CURRENT_VERSION
+        assert [row.record.authors for row in upgraded.rows()] == [("Ann",)]
 
 
 # endregion
