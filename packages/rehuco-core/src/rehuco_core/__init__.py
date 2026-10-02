@@ -64,6 +64,7 @@ from .constants import (
     INFO_TC_FILENAME,
     LEGACY_SUFFIX,
     REHU_SUFFIX,
+    REHUCO_SUFFIX,
     VIDEO_EXTENSIONS,
 )
 from .content_reading import DEFAULT_CONTENT_CHUNK_SIZE, read_content_chunks
@@ -79,10 +80,12 @@ from .lock_reasons import LockReason, LockReasonKind
 from .migrations import (
     CURRENT_CHECKSUM_RECORD_VERSION,
     CURRENT_FORMAT_VERSION,
+    CURRENT_REHUCO_VERSION,
     current_block_version,
     migrate_block_data,
     migrate_checksum_data,
     migrate_rehu_data,
+    migrate_rehuco_data,
 )
 from .natural_sort import natural_path_sort_key, natural_sort_key
 from .plugins import (
@@ -178,6 +181,7 @@ from .rehu_screenshot_ordering import (
     renumber_screenshots,
 )
 from .rehu_screenshots import scan_rehu_screenshot_files
+from .rehuco_file import RehucoFile, RehucoFileError, RehucoRoot
 from .rename_coordination import (
     DEFAULT_RENAME_COORDINATOR,
     DEFAULT_RENAME_YIELD_TIMEOUT,
@@ -310,6 +314,7 @@ __all__ = [
     "CORE_PLUGIN",
     "CURRENT_CHECKSUM_RECORD_VERSION",
     "CURRENT_FORMAT_VERSION",
+    "CURRENT_REHUCO_VERSION",
     "CatalogCheckpoint",
     "CatalogEnumeration",
     "ChecksumAlgorithm",
@@ -402,6 +407,7 @@ __all__ = [
     "RECORD_SUFFIXES",
     "REFERENCE_IMAGES_FIELD_NAMES",
     "REFERENCE_IMAGES_PLUGIN",
+    "REHUCO_SUFFIX",
     "REHU_SUFFIX",
     "RESERVED_KEYS",
     "RESOURCE_FIELD_NAMES",
@@ -409,6 +415,9 @@ __all__ = [
     "RehuDocument",
     "RehuFormatError",
     "RehuRenamer",
+    "RehucoFile",
+    "RehucoFileError",
+    "RehucoRoot",
     "RenameCoordinator",
     "RenameYieldTimeout",
     "RetireLegacyManifestJob",
@@ -496,6 +505,7 @@ __all__ = [
     "migrate_block_data",
     "migrate_checksum_data",
     "migrate_rehu_data",
+    "migrate_rehuco_data",
     "natural_path_sort_key",
     "natural_sort_key",
     "new_checksum_record",

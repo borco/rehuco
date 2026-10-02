@@ -7,6 +7,10 @@ REHU_SUFFIX: Final = ".rehu"
 rather than one of the files a resource is named after, which is the distinction a stem-wide sweep
 (:mod:`rehuco_core.rehu_rename`) turns on."""
 
+REHUCO_SUFFIX: Final = ".rehuco"
+"""A rehuco file's extension ([[data-model#local-file-trio]], #371) -- the machine-local declaration of which
+folder roots to browse together (:mod:`rehuco_core.rehuco_file`)."""
+
 LEGACY_SUFFIX: Final = ".tc"
 """A legacy tc4 record's file extension -- the source format a conversion consumes
 ([[acquisition-tooling#convert-mechanics]]), and the second thing that makes a file *a resource*

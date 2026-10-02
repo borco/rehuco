@@ -15,6 +15,8 @@ vocabulary, because a migration is a frozen historical record).
   chain drops the ``viewed``/``todo`` progress flags).
 - :mod:`~rehuco_core.migrations.checksum` -- the ``.checksum`` record's chain (empty today: v1 is the
   first shape), stamped under the record's own ``version`` key (#203).
+- :mod:`~rehuco_core.migrations.rehuco` -- the ``.rehuco`` roots file's chain (empty today: v1 is the first
+  shape), stamped under ``format_version`` (#371).
 
 The direction is one-way: migrations know which plugin a chain belongs to (by key -- :data:`BLOCK_TARGETS`);
 a plugin knows nothing about its own history. Every chain is validated at import (:func:`validate_all_chains`).
@@ -22,7 +24,7 @@ a plugin knows nothing about its own history. Every chain is validated at import
 
 from typing import Final, Protocol
 
-from . import checksum, reference_images, rehu, tutorial
+from . import checksum, reference_images, rehu, rehuco, tutorial
 from .runner import Chain, Step, run, stamped_version, validate_chain
 
 
@@ -66,6 +68,10 @@ CURRENT_CHECKSUM_RECORD_VERSION = checksum.CURRENT_VERSION
 """The ``.checksum`` record ``version`` this build understands -- the head of the
 :mod:`~rehuco_core.migrations.checksum` chain ([[data-model#checksums]], #203)."""
 
+CURRENT_REHUCO_VERSION = rehuco.CURRENT_VERSION
+"""The ``.rehuco`` ``format_version`` this build understands -- the head of the
+:mod:`~rehuco_core.migrations.rehuco` chain ([[data-model#local-file-trio]], #371)."""
+
 
 def validate_all_chains() -> None:
     """Assert every registered chain is well-formed; called once at import (fail-fast on a declaration bug).
@@ -75,6 +81,7 @@ def validate_all_chains() -> None:
     """
     validate_chain(rehu.CHAIN, rehu.BASE_VERSION)
     validate_chain(checksum.CHAIN, checksum.BASE_VERSION)
+    validate_chain(rehuco.CHAIN, rehuco.BASE_VERSION)
     for target in BLOCK_TARGETS.values():
         validate_chain(target.CHAIN, target.BASE_VERSION)
 
@@ -98,6 +105,15 @@ def migrate_checksum_data(data: dict) -> None:
         own ``version`` key.
     """
     checksum.migrate_checksum_data(data)
+
+
+def migrate_rehuco_data(data: dict) -> None:
+    """Bring a parsed ``.rehuco`` payload up to :data:`CURRENT_REHUCO_VERSION`, in place
+    ([[data-model#local-file-trio]], #371).
+
+    :param data: the parsed JSON object; mutated to the current layout and stamped.
+    """
+    rehuco.migrate_rehuco_data(data)
 
 
 def migrate_block_data(block: dict, plugin_key: str, username: str) -> None:
@@ -130,6 +146,7 @@ __all__ = [
     "BLOCK_TARGETS",
     "CURRENT_CHECKSUM_RECORD_VERSION",
     "CURRENT_FORMAT_VERSION",
+    "CURRENT_REHUCO_VERSION",
     "Chain",
     "MigrationTarget",
     "Step",
@@ -137,6 +154,7 @@ __all__ = [
     "migrate_block_data",
     "migrate_checksum_data",
     "migrate_rehu_data",
+    "migrate_rehuco_data",
     "run",
     "stamped_version",
     "validate_all_chains",
