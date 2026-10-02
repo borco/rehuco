@@ -194,6 +194,9 @@ def test_the_key_pressed_outside_every_document_saves_the_focused_one(
     host.outside.setFocus()
 
     qtbot.keySequence(host.outside, SAVE_DOCUMENT.default_key_sequences()[0])
+    # QTest's last event still carries Ctrl, so QApplication.keyboardModifiers() reads it as held until
+    # the next key event -- and a later test opening an image viewer would pick its surface from it
+    qtbot.keyRelease(host.outside, Qt.Key.Key_Control)
 
     assert saved_widgets(saved) == [second]
 

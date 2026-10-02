@@ -1,4 +1,5 @@
-"""Repository-wide pytest configuration: headless Qt platform + platform-conditional test skipping.
+"""Repository-wide pytest configuration: headless Qt platform, per-test deferred deletion, and
+platform-conditional test skipping.
 
 CI runs each platform's test set on that platform's runner before building the matching
 Briefcase package (§16.8), so a marker/platform mismatch here means "not applicable on this
@@ -7,6 +8,7 @@ runner," not a failure.
 
 import os
 import sys
+from collections.abc import Iterator
 from typing import Final
 
 import pytest
@@ -28,6 +30,23 @@ PLATFORM_MARKERS: Final = {
     "linux": "linux",
 }
 """Maps a platform marker name to the ``sys.platform`` value it requires."""
+
+
+@pytest.hookimpl(hookwrapper=True, trylast=True)
+def pytest_runtest_teardown() -> Iterator[None]:
+    """Delete what the test left to ``deleteLater``, once every teardown -- pytest-qt's included -- ran.
+
+    pytest-qt closes a test's widgets with ``deleteLater`` and then only processes events, which runs
+    no deferred deletion outside an event loop. Left alone, the deletions pile up across the suite
+    until some later test's first wait drains them all inside its own timeout, and deleting gets
+    dearer the more objects are still alive: 17k command-bound actions behind a 120 s drain on WSL.
+
+    Qt is only touched when a test already loaded it, so non-Qt packages never import it here.
+    """
+    yield
+    qt_core = sys.modules.get("PySide6.QtCore")
+    if qt_core is not None and qt_core.QCoreApplication.instance() is not None:
+        qt_core.QCoreApplication.sendPostedEvents(None, qt_core.QEvent.Type.DeferredDelete)
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:

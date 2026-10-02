@@ -291,24 +291,35 @@ def test_the_hint_covers_the_text_and_its_padding(delegate: RowBandDelegate, mod
     assert available >= ceil(QFontMetricsF(option.font).horizontalAdvance("text"))
 
 
-def test_the_hint_measures_in_the_models_font(delegate: RowBandDelegate, model: SampleModel) -> None:
+def test_the_hint_measures_in_the_models_font(
+    delegate: RowBandDelegate, model: SampleModel, mocker: MockerFixture
+) -> None:
     """A cell the model gives its own font (a bold changed row) is measured in that font, so its column
     grows to fit rather than eliding it.
 
+    Which font the hint measures in is read off the metrics it builds, not off the widths: once the
+    theming tests load an icon font, plain text measures zero in every size and the two hints tie.
+
     **Test steps:**
 
-    * ask for the hints of the same text with and without the model's large font
-    * verify the large one is wider, and covers that font's advance
+    * ask for the hint of the text the model gives its large font
+    * verify it measured in that font, and covers that font's advance
     """
     option = QStyleOptionViewItem()
-    large = model.index(1, 0)
+    # sizes copied at the call: the font handed over belongs to the delegate's option, gone once it returns
+    sizes: list[int] = []
 
-    hint = delegate.sizeHint(option, large)
-    plain = delegate.sizeHint(option, model.index(2, 0))
+    def measure(font: QFont) -> QFontMetricsF:
+        sizes.append(font.pointSize())
+        return QFontMetricsF(font)
+
+    mocker.patch("borco_pyside.widgets.row_band_delegate.QFontMetricsF", side_effect=measure)
+
+    hint = delegate.sizeHint(option, model.index(1, 0))
 
     font = QFont()
     font.setPointSize(LARGE_POINT_SIZE)
-    assert hint.width() > plain.width()
+    assert sizes == [LARGE_POINT_SIZE]
     assert hint.width() - 2 * TEXT_PADDING >= ceil(QFontMetricsF(font).horizontalAdvance("text"))
 
 
