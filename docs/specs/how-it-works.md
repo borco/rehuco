@@ -176,9 +176,9 @@ Everything above is implemented. None of the following is, and the design docume
 length, which is exactly why this section is here:
 
 **No database and no search.** rehuco opens files you point it at, one at a time. There is no library
-view. `.rehudb` is a name in the design, not a file any code writes. Recursive walks do exist — the
-checksum sweep and the legacy import, over a folder you hand them — but they act as they go and remember
-nothing about what they found.
+view. rehuco-core can build a `.rehudb` cache from a `.rehuco`'s roots, but nothing in the app opens one
+yet. The other recursive walks — the checksum sweep and the legacy import, over a folder you hand them — act
+as they go and remember nothing about what they found.
 
 **No network beyond fetching a page you drop.** No node, no REST API, no discovery, no sync between
 machines, no accounts or access rules, no web or tablet interface. `rehuco-node` is an empty package

@@ -65,6 +65,7 @@ from .constants import (
     LEGACY_SUFFIX,
     REHU_SUFFIX,
     REHUCO_SUFFIX,
+    REHUDB_SUFFIX,
     VIDEO_EXTENSIONS,
 )
 from .content_reading import DEFAULT_CONTENT_CHUNK_SIZE, read_content_chunks
@@ -106,7 +107,13 @@ from .plugins import (
     PluginRegistry,
     PluginSpec,
 )
-from .rehu_catalog import CatalogCheckpoint, CatalogEnumeration, enumerate_catalog_resources
+from .rehu_catalog import (
+    CatalogCheckpoint,
+    CatalogDirectory,
+    CatalogEnumeration,
+    CatalogScanner,
+    enumerate_catalog_resources,
+)
 from .rehu_checksums import (
     ChecksumCheckpoint,
     ChecksumProgress,
@@ -182,6 +189,24 @@ from .rehu_screenshot_ordering import (
 )
 from .rehu_screenshots import scan_rehu_screenshot_files
 from .rehuco_file import RehucoFile, RehucoFileError, RehucoRoot
+from .rehudb import (
+    CatalogCache,
+    CatalogField,
+    CatalogQuery,
+    CatalogRecord,
+    CatalogRoot,
+    CatalogRow,
+    RecordKind,
+    rehudb_path,
+)
+from .rehudb_jobs import (
+    REHUDB_REMOVE_ROOT_KIND,
+    REHUDB_SCAN_KIND,
+    CatalogRootJob,
+    RemoveCatalogRootJob,
+    ScanCatalogRootJob,
+)
+from .rehudb_scan import CatalogRootScan, RootScanOutcome, RootScanResult, ScanProgress
 from .rename_coordination import (
     DEFAULT_RENAME_COORDINATOR,
     DEFAULT_RENAME_YIELD_TIMEOUT,
@@ -315,8 +340,18 @@ __all__ = [
     "CURRENT_CHECKSUM_RECORD_VERSION",
     "CURRENT_FORMAT_VERSION",
     "CURRENT_REHUCO_VERSION",
+    "CatalogCache",
     "CatalogCheckpoint",
+    "CatalogDirectory",
     "CatalogEnumeration",
+    "CatalogField",
+    "CatalogQuery",
+    "CatalogRecord",
+    "CatalogRoot",
+    "CatalogRootJob",
+    "CatalogRootScan",
+    "CatalogRow",
+    "CatalogScanner",
     "ChecksumAlgorithm",
     "ChecksumCheckpoint",
     "ChecksumDigest",
@@ -408,10 +443,14 @@ __all__ = [
     "REFERENCE_IMAGES_FIELD_NAMES",
     "REFERENCE_IMAGES_PLUGIN",
     "REHUCO_SUFFIX",
+    "REHUDB_REMOVE_ROOT_KIND",
+    "REHUDB_SCAN_KIND",
+    "REHUDB_SUFFIX",
     "REHU_SUFFIX",
     "RESERVED_KEYS",
     "RESOURCE_FIELD_NAMES",
     "RESTORED_UNFINISHED_STATES",
+    "RecordKind",
     "RehuDocument",
     "RehuFormatError",
     "RehuRenamer",
@@ -420,9 +459,14 @@ __all__ = [
     "RehucoRoot",
     "RenameCoordinator",
     "RenameYieldTimeout",
+    "RemoveCatalogRootJob",
     "RetireLegacyManifestJob",
     "ResourceLocation",
+    "RootScanOutcome",
+    "RootScanResult",
     "SCREENSHOT_NAME_PATTERNS",
+    "ScanCatalogRootJob",
+    "ScanProgress",
     "ScreenshotNamePattern",
     "ScreenshotNamePatterns",
     "ScreenshotRename",
@@ -520,6 +564,7 @@ __all__ = [
     "readable_legacy_manifest",
     "readers_must_yield_for_directory_rename",
     "rehu_rename_conflict",
+    "rehudb_path",
     "remediate_legacy_manifest",
     "rename_rehu_resource",
     "renumber_screenshots",

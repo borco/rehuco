@@ -17,6 +17,8 @@ vocabulary, because a migration is a frozen historical record).
   first shape), stamped under the record's own ``version`` key (#203).
 - :mod:`~rehuco_core.migrations.rehuco` -- the ``.rehuco`` roots file's chain (empty today: v1 is the first
   shape), stamped under ``format_version`` (#371).
+- :mod:`~rehuco_core.migrations.rehudb` -- the ``.rehudb`` cache's schema chain, whose steps take a database
+  connection rather than a payload and whose version is ``PRAGMA user_version`` (#372).
 
 The direction is one-way: migrations know which plugin a chain belongs to (by key -- :data:`BLOCK_TARGETS`);
 a plugin knows nothing about its own history. Every chain is validated at import (:func:`validate_all_chains`).
@@ -24,7 +26,7 @@ a plugin knows nothing about its own history. Every chain is validated at import
 
 from typing import Final, Protocol
 
-from . import checksum, reference_images, rehu, rehuco, tutorial
+from . import checksum, reference_images, rehu, rehuco, rehudb, tutorial
 from .runner import Chain, Step, run, stamped_version, validate_chain
 
 
@@ -82,6 +84,7 @@ def validate_all_chains() -> None:
     validate_chain(rehu.CHAIN, rehu.BASE_VERSION)
     validate_chain(checksum.CHAIN, checksum.BASE_VERSION)
     validate_chain(rehuco.CHAIN, rehuco.BASE_VERSION)
+    validate_chain(rehudb.CHAIN, rehudb.BASE_VERSION)
     for target in BLOCK_TARGETS.values():
         validate_chain(target.CHAIN, target.BASE_VERSION)
 

@@ -18,17 +18,21 @@ the work actually ended in.
 """
 
 import hashlib
+import os
 from pathlib import Path
 from threading import Event, Semaphore
 from time import monotonic
-from typing import Final
+from typing import Any, Final
 
 from pytest import mark
+from pytest_mock import MockerFixture
 from rehuco_core import (
     INFO_REHU_FILENAME,
+    CatalogRootScan,
     JobControl,
     JobState,
     RenameCoordinator,
+    RootScanResult,
     TaskJobBase,
     TaskQueue,
     read_content_chunks,
@@ -293,3 +297,38 @@ def test_a_rename_started_mid_park_waits_for_the_standing_aside(tmp_path: Path) 
     finally:
         job.step(len(PAYLOAD) // CHUNK + 2)
         queue.shutdown()
+
+
+@mark.disk
+def test_a_real_rename_lands_while_a_catalog_scan_is_listing_that_folder(tmp_path: Path, mocker: MockerFixture) -> None:
+    """A catalog scan holding a real listing handle on the folder stands aside for its rename (#372).
+
+    The scan is parked with ``old_folder``'s listing **open** -- the handle NTFS refuses a directory rename
+    over -- and the rename asked for meanwhile waits for that one listing, then lands on disk; the scan reads
+    the record under the folder's new name.
+    """
+    make_resource(tmp_path, "old_folder")
+    listing = os.scandir
+    inside, proceed = Event(), Event()
+
+    def parked(directory: Path) -> Any:
+        entries = listing(directory)
+        if Path(directory).name == "old_folder":
+            inside.set()
+            proceed.wait(SETTLE)
+        return entries
+
+    mocker.patch("rehuco_core.rehu_catalog.os.scandir", side_effect=parked)
+    coordinator = RenameCoordinator()
+    results: list[RootScanResult] = []
+
+    with running(lambda: results.append(CatalogRootScan(tmp_path, coordinator=coordinator).scan())):
+        assert inside.wait(SETTLE)
+        with running(lambda: coordinator.rename(tmp_path / "old_folder" / INFO_REHU_FILENAME, "new_name")):
+            assert wait_until(lambda: coordinator.yield_wanted)
+            proceed.set()
+            assert wait_until((tmp_path / "new_name").is_dir)
+        assert wait_until(lambda: bool(results))
+
+    assert not (tmp_path / "old_folder").exists()
+    assert [record.path for record in results[0].records] == [f"new_name/{INFO_REHU_FILENAME}"]

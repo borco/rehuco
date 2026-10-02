@@ -20,7 +20,8 @@ from rehuco_core import (
     migrate_block_data,
     migrate_rehu_data,
 )
-from rehuco_core.migrations import BLOCK_TARGETS, Chain, run, validate_chain
+from rehuco_core.migrations import BLOCK_TARGETS, Chain, rehudb, run, validate_chain
+from rehuco_core.migrations.runner import chain_head
 
 # A format-v1 document: the common fields still at the top level, beside the plugin blocks
 # ([[data-model#rehu-format]]).
@@ -1110,6 +1111,21 @@ def test_a_well_formed_chain_validates() -> None:
     """
     validate_chain(((2, lambda block, username: None), (1, lambda block, username: None)), 0)
     validate_chain(((1, lambda block, username: None),), 0)
+
+
+def test_the_cache_schema_chain_is_validated_and_its_head_derived() -> None:
+    """The ``.rehudb`` chain's steps take a connection rather than a payload (#372), and the generic chain
+    helpers serve it all the same.
+
+    **Test steps:**
+
+    * validate the cache chain from its base
+    * verify its current version is its head, starting from an empty file's ``user_version`` of 0
+    """
+    validate_chain(rehudb.CHAIN, rehudb.BASE_VERSION)
+
+    assert rehudb.BASE_VERSION == 0
+    assert rehudb.CURRENT_VERSION == chain_head(rehudb.CHAIN, rehudb.BASE_VERSION) == 1
 
 
 def test_every_block_migration_target_names_a_real_plugin() -> None:

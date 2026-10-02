@@ -1,0 +1,117 @@
+"""``.rehudb`` cache schema migrations ([[data-model#cache-schema]], #372).
+
+The one target whose steps reshape a **database** rather than a parsed payload, so a step takes a
+:class:`sqlite3.Connection` instead of a dict and the version lives in ``PRAGMA user_version`` instead of a
+key. Otherwise the shape every target has: a ``BASE_VERSION``, a ``CHAIN`` of ``(version, step)`` pairs, a head
+derived from it. :class:`~rehuco_core.rehudb.CatalogCache` walks the chain, one transaction per step, stamping
+``user_version`` inside the same transaction so a step that fails leaves the version it started from.
+
+Forward only. A cache stamped **newer** than :data:`CURRENT_VERSION` is never written: being derived and
+disposable, it is discarded and rebuilt from the records, which is always cheaper than understanding it. A step
+is free to be *drop and rebuild* for the same reason.
+
+Like every other step, these inline the literals they operate on: a migration is a frozen historical record,
+and a column renamed later must not rewrite what version 1 created.
+"""
+
+import sqlite3
+from collections.abc import Callable
+from typing import Final
+
+from ..runner import chain_head
+
+SchemaStep = Callable[[sqlite3.Connection], None]
+"""A cache migration step: reshapes the schema in place, inside the transaction its caller opened."""
+
+SchemaChain = tuple[tuple[int, SchemaStep], ...]
+"""An ordered ``(target, step)`` chain of cache steps -- the cache's counterpart of
+:data:`~rehuco_core.migrations.runner.Chain`."""
+
+BASE_VERSION: Final = 0
+"""What an empty file's ``user_version`` reads -- SQLite's own default, so a fresh cache is simply one every
+step is still ahead of."""
+
+V1_STATEMENTS: Final = (
+    """
+    CREATE TABLE roots (
+        id TEXT PRIMARY KEY,
+        label TEXT NOT NULL,
+        path TEXT NOT NULL,
+        position INTEGER NOT NULL,
+        removable INTEGER NOT NULL DEFAULT 0,
+        reachable INTEGER,
+        scanned_at REAL
+    )
+    """,
+    """
+    CREATE TABLE resources (
+        id INTEGER PRIMARY KEY,
+        root_id TEXT NOT NULL REFERENCES roots (id) ON DELETE CASCADE,
+        path TEXT NOT NULL,
+        path_key TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('rehu', 'tc')),
+        uuid TEXT NOT NULL DEFAULT '',
+        type TEXT NOT NULL DEFAULT '',
+        title TEXT NOT NULL DEFAULT '',
+        publisher TEXT NOT NULL DEFAULT '',
+        url TEXT NOT NULL DEFAULT '',
+        released TEXT,
+        current_size INTEGER,
+        updated TEXT NOT NULL DEFAULT '',
+        mtime_ns INTEGER NOT NULL,
+        size INTEGER NOT NULL,
+        content_hash TEXT NOT NULL,
+        error TEXT,
+        scanned_at REAL NOT NULL,
+        UNIQUE (root_id, path_key)
+    )
+    """,
+    "CREATE INDEX resources_uuid ON resources (uuid)",
+    "CREATE TABLE authors (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE)",
+    "CREATE TABLE tags (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE)",
+    "CREATE TABLE publishers (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE)",
+    """
+    CREATE TABLE resource_authors (
+        resource_id INTEGER NOT NULL REFERENCES resources (id) ON DELETE CASCADE,
+        value_id INTEGER NOT NULL REFERENCES authors (id) ON DELETE CASCADE,
+        position INTEGER NOT NULL,
+        PRIMARY KEY (resource_id, value_id)
+    )
+    """,
+    """
+    CREATE TABLE resource_tags (
+        resource_id INTEGER NOT NULL REFERENCES resources (id) ON DELETE CASCADE,
+        value_id INTEGER NOT NULL REFERENCES tags (id) ON DELETE CASCADE,
+        position INTEGER NOT NULL,
+        PRIMARY KEY (resource_id, value_id)
+    )
+    """,
+    """
+    CREATE TABLE resource_publishers (
+        resource_id INTEGER NOT NULL REFERENCES resources (id) ON DELETE CASCADE,
+        value_id INTEGER NOT NULL REFERENCES publishers (id) ON DELETE CASCADE,
+        position INTEGER NOT NULL,
+        PRIMARY KEY (resource_id, value_id)
+    )
+    """,
+    "CREATE INDEX resource_authors_value ON resource_authors (value_id)",
+    "CREATE INDEX resource_tags_value ON resource_tags (value_id)",
+    "CREATE INDEX resource_publishers_value ON resource_publishers (value_id)",
+)
+"""Version 1's schema, statement by statement -- frozen here rather than built from the live column names."""
+
+
+def create_schema_v1(connection: sqlite3.Connection) -> None:
+    """0 -> 1: the first schema -- roots, the resources under them, and the three value tables with their joins.
+
+    :param connection: the cache, inside the transaction the caller opened.
+    """
+    for statement in V1_STATEMENTS:
+        connection.execute(statement)
+
+
+CHAIN: Final[SchemaChain] = ((1, create_schema_v1),)
+"""This target's ordered ``(target, step)`` chain."""
+
+CURRENT_VERSION: Final = chain_head(CHAIN, BASE_VERSION)
+"""The newest cache schema this build understands -- the chain's head, derived so it cannot drift."""

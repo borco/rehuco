@@ -1,13 +1,16 @@
 """Tests for the catalog walk -- where the resources are, for the checksum sweep (#242)."""
 
 from pathlib import Path
-from typing import Final
+from typing import Any, Final
+from unittest.mock import MagicMock
 
 from pytest import raises
 from pytest_mock import MockerFixture
 from rehuco_core import (
     INFO_REHU_FILENAME,
+    CatalogScanner,
     ContentUnreachableError,
+    RenameCoordinator,
     enumerate_catalog_resources,
 )
 from rehuco_core.rehu_content_files import MAX_NAMED_UNREADABLE
@@ -25,7 +28,7 @@ def mock_catalog(  # pylint: disable=too-many-arguments
     unreadable: list[str] | None = None,
     irregular: list[str] | None = None,
     directory_links: list[str] | None = None,
-) -> None:
+) -> MagicMock:
     """Mock a directory tree under :data:`ROOT`, read one directory at a time via ``os.scandir``.
 
     The catalog walk's counterpart of `test_rehu_content_files.mock_tree`, and deliberately a second
@@ -41,6 +44,7 @@ def mock_catalog(  # pylint: disable=too-many-arguments
     :param irregular: fake paths that are neither a directory nor a regular file.
     :param directory_links: fake paths that are *symlinks to* directories; their target's listing is
         deliberately not modeled, so a test proves the walk never descends by what does not appear.
+    :returns: the ``os.scandir`` mock, whose ``side_effect`` a test may wrap.
     """
     offline = {ROOT / name for name in unreadable or []}
     listing: dict[Path, list[FakeDirEntry]] = {ROOT: []}
@@ -65,7 +69,17 @@ def mock_catalog(  # pylint: disable=too-many-arguments
             raise FileNotFoundError(directory)
         return FakeScandir(listing[Path(directory)])
 
-    mocker.patch("rehuco_core.rehu_catalog.os.scandir", side_effect=scandir)
+    return mocker.patch("rehuco_core.rehu_catalog.os.scandir", side_effect=scandir)
+
+
+def holders(coordinator: RenameCoordinator) -> int:
+    """How many readers are inside ``coordinator``'s hold right now.
+
+    Reaches for the private count, as `test_rename_coordination.tracked_count` does for its list: *every
+    listing runs inside the hold* is not observable from outside, and a public counter would exist for this
+    test alone.
+    """
+    return getattr(coordinator, "_RenameCoordinator__holders")  # noqa: B009  # name-mangled, see above
 
 
 # region What the walk finds
@@ -263,6 +277,92 @@ def test_whatever_the_checkpoint_raises_leaves_the_walk(mocker: MockerFixture) -
 
     with raises(Stop):
         enumerate_catalog_resources(ROOT, checkpoint=mocker.Mock(side_effect=Stop))
+
+
+# endregion
+
+# region Legacy records (#372)
+
+
+def test_a_legacy_record_is_not_collected_unless_asked_for(mocker: MockerFixture) -> None:
+    """The checksum sweep verifies ``.rehu`` resources only."""
+    mock_catalog(mocker, ["foo.tc", "bar.rehu"])
+
+    assert CatalogScanner(ROOT).scan().resources == [ROOT / "bar.rehu"]
+
+
+def test_a_legacy_record_counts_where_no_rehu_of_its_stem_sits_beside_it(mocker: MockerFixture) -> None:
+    """A ``.tc`` a conversion left behind is covered by the ``.rehu`` that replaced it, the stem compared
+    case-folded; a nested ``info.tc`` is a resource of its own."""
+    mock_catalog(
+        mocker,
+        [INFO_REHU_FILENAME, "info.tc", "Foo.tc", "foo.rehu", "bar.TC", "sub/info.tc"],
+        directories=["sub"],
+    )
+
+    found = CatalogScanner(ROOT, include_legacy=True).scan()
+
+    assert found.resources == [ROOT / "bar.TC", ROOT / "foo.rehu", ROOT / INFO_REHU_FILENAME, ROOT / "sub/info.tc"]
+
+
+# endregion
+
+# region Walking one listing at a time (#372)
+
+
+def test_the_walk_yields_every_directory_the_root_first(mocker: MockerFixture) -> None:
+    """One :class:`CatalogDirectory` per listing, an unreadable one included and marked."""
+    mock_catalog(mocker, ["a/foo.rehu"], directories=["a", "away"], unreadable=["away"])
+
+    directories = list(CatalogScanner(ROOT).walk())
+
+    assert directories[0].path == ROOT
+    assert {(directory.path, directory.listed) for directory in directories} == {
+        (ROOT, True),
+        (ROOT / "a", True),
+        (ROOT / "away", False),
+    }
+    assert next(directory for directory in directories if directory.path == ROOT / "a").records == (
+        ROOT / "a/foo.rehu",
+    )
+
+
+def test_every_listing_runs_inside_the_coordinators_hold(mocker: MockerFixture) -> None:
+    """Each directory read is one chunk under the hold, closed before the next ([[data-model#cache-schema]])."""
+    scandir = mock_catalog(mocker, ["a/foo.rehu"], directories=["a"])
+    listing = scandir.side_effect
+    coordinator = RenameCoordinator()
+    held: list[int] = []
+
+    def counted(directory: Path) -> Any:
+        held.append(holders(coordinator))
+        return listing(directory)
+
+    scandir.side_effect = counted
+
+    for _ in CatalogScanner(ROOT, coordinator=coordinator).walk():
+        assert holders(coordinator) == 0
+
+    assert held == [1, 1]
+
+
+def test_a_directory_renamed_between_listings_is_listed_under_its_new_name(mocker: MockerFixture) -> None:
+    """The directories still to visit are tracked, so a rename landing mid-walk moves them too."""
+    scandir = mock_catalog(mocker, ["old/info.rehu"], directories=["old"])
+    listing = scandir.side_effect
+    scandir.side_effect = lambda directory: listing(ROOT / "old" if Path(directory) == ROOT / "new" else directory)
+    mocker.patch.object(Path, "is_file", autospec=True, return_value=True)
+    mocker.patch.object(Path, "exists", autospec=True, return_value=False)
+    mocker.patch.object(Path, "rename", autospec=True)
+    coordinator = RenameCoordinator()
+    walk = CatalogScanner(ROOT, coordinator=coordinator).walk()
+
+    assert next(walk).path == ROOT
+    coordinator.rename(ROOT / "old/info.rehu", "new")
+    renamed = next(walk)
+
+    assert renamed.path == ROOT / "new"
+    assert renamed.records == (ROOT / "new/info.rehu",)
 
 
 # endregion

@@ -749,12 +749,23 @@ The cache is the stdlib `sqlite3` module in rehuco-core, Qt-free, one connection
 
 | Table | Holds |
 | --- | --- |
-| `roots` | One row per root of the `.rehuco`: its label, path and position |
-| `resources` | One row per record found under a root — FK to its root with `ON DELETE CASCADE`; the root-relative path, both as spelled and **normalized** (`os.path.normcase`) for matching; kind `rehu` or `tc`; UUID; type; the common core fields a browser shows; the record's stat signature and a content hash at last read ([[data-model#scan-and-staleness]]); when it was scanned |
+| `roots` | One row per root of the `.rehuco`, keyed by the root's stable id: its label, path, position and removable flag; whether the last scan could list it, and when its rows were last replaced |
+| `resources` | One row per record found under a root — FK to its root with `ON DELETE CASCADE`; the root-relative path, both as spelled and **normalized** (`os.path.normcase`) for matching; kind `rehu` or `tc`; UUID; type; the common core fields a browser shows; the record's stat signature and a content hash at last read ([[data-model#scan-and-staleness]]); why it could not be read, if it could not; when it was scanned |
 | `authors`, `tags`, `publishers` | Values plus their join tables to `resources`, so a filter on any of them is an indexed lookup |
 
-- **A `.tc` gets a row only where no `.rehu` covers it** ([[data-model#resource-scoping]]); converting one replaces
-  its row in place.
+- **A `.tc` gets a row only where no `.rehu` covers it** ([[data-model#resource-scoping]]) — a `.rehu` of the same
+  stem in the same directory, compared case-folded as the conversion plan compares it; a nested `info.tc` is a
+  resource of its own. Converting one replaces its row in place.
+- **Where the file goes is the app's to say.** Core takes a local cache folder and names the file in it by the rehuco
+  id; it reads no setting and knows no platform's cache location (#372).
+- **Roots are reconciled by id.** Opening a `.rehuco` brings `roots` in line with it: a relabeled, reordered or
+  re-pointed root updates its row and keeps its resources, a new id gets an empty row, a missing id is deleted and
+  its resources cascade away.
+- **A full scan replaces a root's rows; an offline root keeps them** ([[mounts-and-storage#offline-mounts]]). A root
+  that does not list is recorded as unreachable and nothing under it changes. One that lists is wholly online: what
+  the scan did not find is removed — including the contents of a branch that would not list, which the scan names.
+  The root is probed again when the walk ends, and a scan whose root went away meanwhile is not applied. A record
+  found again keeps its row id; one that could not be read keeps a row naming why.
 - **Versioned, and upgraded forward only.** `PRAGMA user_version` holds the schema version, and upgrades are a
   migration chain of `(version, upgrade)` steps whose head *is* the current version — the shape of the `.rehu`
   chains ([[data-model#schema-version]]). Each step runs in one transaction; a step may simply be *drop and
@@ -768,8 +779,9 @@ The cache is the stdlib `sqlite3` module in rehuco-core, Qt-free, one connection
   same offset beneath its destination*. Exact and prefix matches on the normalized path are rewritten in one
   transaction, and no moved record is re-read; a directory-scoped rename rebases every nested record, a file-scoped
   one only its own.
-- **Scanning never blocks a rename.** Each directory read is one chunk under the rename coordinator's hold, closed
-  before the next ([[mounts-and-storage#out-of-band]]).
+- **Scanning never blocks a rename.** Each directory read, and each record read, is one chunk under the rename
+  coordinator's hold, closed before the next ([[mounts-and-storage#out-of-band]]). The directories still to visit
+  and the records already read are tracked locations, so a folder renamed mid-scan is scanned under its new name.
 
 ## §4.9 Write integrity: atomic writes + single-writer-per-managed-file
 
