@@ -111,9 +111,8 @@ keep the lesson, delete the code.
 
 ## Local edit — remaining work
 
-The editor is built (`packages/rehuco-agent/CHANGELOG.md`). What's left is filed: shortcut customization
-(app-wide routing, #345; the command registry and the Shortcuts settings page are built) and improved dark/light
-theming (#285). See those issues for the actual scope; this is only an index.
+The editor is built (`packages/rehuco-agent/CHANGELOG.md`), shortcut customization included. What's left is
+filed: improved dark/light theming (#285). See that issue for the actual scope; this is only an index.
 
 ## Web scrapping — remaining work
 

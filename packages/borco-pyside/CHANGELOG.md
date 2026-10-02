@@ -16,7 +16,9 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 - `borco_pyside.shortcuts`: shortcuts as declared `Command`s with a scope and an optional focus group, a
   `Keymap` of the user's overrides stored under a settings group, `find_conflicts`, and a
   `CommandRegistry` that binds live actions to commands and re-keys every one of them when the keymap
-  changes. A host installs one registry for generic widgets to bind through.
+  changes. A host installs one registry for generic widgets to bind through. A `BindingRole.ROUTER` action
+  carries a command's keys app-wide while its scope is `CommandScope.DOCUMENT_APP_WIDE` and its instances
+  carry none, so one key is never on two actions; `bound_actions` filters by role.
 - `LIST_EDITOR_COMMANDS`, `CARD_LIST_COMMANDS` and `LOG_COMMANDS`, the commands behind the list editor's,
   the card list's and the log view's keys, for a host to register.
 

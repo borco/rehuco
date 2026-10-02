@@ -62,6 +62,7 @@ from .dialogs.conversion_backups_dialog import ConversionBackupsDialog
 from .dialogs.import_legacy_catalog_wizard import ImportLegacyCatalogWizard
 from .dock_maximize import attach_maximize_handler
 from .documents.confirm_and_save_dirty import confirm_and_save_dirty
+from .documents.document_command_router import DocumentCommandRouter
 from .documents.document_widget import LOG_DOCK_MIN_HEIGHT, DocumentWidget
 from .documents.documents_dock import DocumentsDock
 from .documents.rehu_document_menu_entry import RehuDocumentMenuEntry
@@ -317,6 +318,9 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__documents_dock.status_message.connect(self.__on_status_message)
         self.__documents_dock.document_path_changed.connect(self.__on_document_path_changed)
         self.__documents_dock.open_requested.connect(self.__on_open_requested)
+        # a document command set app-wide fires on the focused document from anywhere (#345); nothing
+        # holds onto the router -- it parents itself to this window, which its actions are added to
+        DocumentCommandRouter(self.__documents_dock, self.__command_registry, self)
         self.__setup_docking_system()
         self.__ui.view_menu.aboutToShow.connect(lambda: self.__add_open_documents(self.__ui.view_menu))
         self.__setup_file_menu()

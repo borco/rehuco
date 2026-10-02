@@ -33,8 +33,10 @@ class CommandScope(StrEnum):
     on one key would cancel out (#41). Scoped to its own subtree, only the document holding focus fires."""
 
     DOCUMENT_APP_WIDE = auto()
-    """A per-document command fired on the focused document from anywhere in the app. Declared for the
-    keymap and the settings page; a binding carries no keys for it until the app-wide router exists."""
+    """A per-document command fired on the focused document from anywhere in the app. Its per-document
+    actions carry no keys under it -- one per open document on one app-wide key would be ambiguous -- and a
+    single `BindingRole.ROUTER` action carries them instead, passing each press on to the focused
+    document's own action."""
 
     WINDOW = auto()
     """Armed while the action's window is active (`Qt.ShortcutContext.WindowShortcut`). Deaf while a
@@ -67,7 +69,8 @@ SCOPE_CONTEXTS: Final[dict[CommandScope, Qt.ShortcutContext | None]] = {
     CommandScope.WINDOW: Qt.ShortcutContext.WindowShortcut,
     CommandScope.APP_WIDE: Qt.ShortcutContext.ApplicationShortcut,
 }
-"""Each scope's shortcut context; ``None`` for the one no binding carries keys for yet."""
+"""Each scope's shortcut context for a `BindingRole.INSTANCE` action; ``None`` for the one whose keys only a
+`BindingRole.ROUTER` action carries."""
 
 SCOPE_LABELS: Final[dict[CommandScope, str]] = {
     CommandScope.WIDGET: "Focused widget",
@@ -98,6 +101,24 @@ class BindingRole(Enum):
     LABEL = auto()
     """The action only names the keys in its tooltip -- a toolbar companion of an action that carries
     them. Two actions carrying one key would be ambiguous; this one stays clickable and still says it."""
+
+    ROUTER = auto()
+    """The one action that carries the keys app-wide (`Qt.ShortcutContext.ApplicationShortcut`) while the
+    command's scope is `CommandScope.DOCUMENT_APP_WIDE`, and none under any other -- the inverse of the
+    command's instances, so exactly one side carries the keys whichever scope is in force. What it does
+    when triggered is its owner's: pass the press on to the focused document's own action."""
+
+    def context(self, scope: CommandScope) -> Qt.ShortcutContext | None:
+        """The shortcut context an action in this role gets under ``scope``.
+
+        :param scope: the command's effective scope.
+        :returns: the context, or ``None`` where the action carries no keys.
+        """
+        if self is BindingRole.INSTANCE:
+            return scope.context
+        if self is BindingRole.ROUTER and scope is CommandScope.DOCUMENT_APP_WIDE:
+            return Qt.ShortcutContext.ApplicationShortcut
+        return None
 
 
 @dataclass(frozen=True)
