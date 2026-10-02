@@ -51,11 +51,6 @@ from .resource_scoping import (
     is_record_name,
 )
 from .tc_conversion_backups import is_conversion_backup
-from .tc_screenshots import (
-    SCREENSHOT_NAME_PATTERNS,
-    ScreenshotNamePattern,
-    compiled_screenshot_name_patterns,
-)
 
 MAX_NAMED_UNREADABLE: Final = 3
 """How many unreadable directories an error names before it counts the rest.
@@ -68,10 +63,10 @@ ContentExclusionTier = Literal["structural", "junk"]
 ([[data-model#resource-scoping]], #226).
 
 ``structural`` -- a record, one of the files a record claims (its ``<record>NN`` screenshots, its
-manifest, a legacy record's tc4-schemed screenshots), or a retained ``.orig`` conversion backup. ``junk``
--- a caller's filename glob, the tier the ``Files`` settings page edits. Named rather than merely applied
-because a ``.checksum`` written under an older rule holds entries for such files, and a verify that drops
-one has to be able to say why (:func:`excluded_content_names`, #254).
+manifest), or a retained ``.orig`` conversion backup. ``junk`` -- a caller's filename glob, the tier the
+``Files`` settings page edits. Named rather than merely applied because a ``.checksum`` written under an
+older rule holds entries for such files, and a verify that drops one has to be able to say why
+(:func:`excluded_content_names`, #254).
 
 Neither tier covers a file **another record** now claims: those bytes are still somebody's content, and
 what happens to a record's entry for them is a migration rather than a deletion (#257)."""
@@ -210,15 +205,12 @@ class ContentFileScanner:
     that has nothing to do with its content. What makes one is
     :data:`~rehuco_core.resource_scoping.RECORD_SUFFIXES`, the same answer the scope question comes from.
 
-    **And a pattern-matched image is a screenshot beside any record, or none** (#289). tc4 named them
-    ``01.jpg``, ``cover.jpg``, ``sample-01.jpg``, ``file(2).jpg``, ``file-01.jpg`` -- never after the
-    record -- so the ``<record>NN`` rule cannot reach them; the caller's screenshot name patterns (#287)
-    are asked instead, the same recognition a conversion renumbers by and the images dock offers to
-    convert by, so what this walk skips is exactly what a conversion claims -- including the images it
-    leaves under their own names, which are screenshots before and after it runs (#288). No
-    ``.tc`` needs to sit beside it: a live tutorial's own ``01.jpg`` now reads as a screenshot too, and
-    the images dock is where that gets corrected by hand rather than the walk guessing from what else is
-    in the directory.
+    **A pattern-matched image is content** (#393). tc4 named its screenshots ``01.jpg``, ``cover.jpg``,
+    ``sample-01.jpg``, ``file(2).jpg``, ``file-01.jpg`` -- never after the record -- and those names are
+    only screenshot *candidates*: the images dock offers to convert one in the record's own directory,
+    and until a conversion renames it to ``<record>NN`` it is content like any other file. A shape alone
+    never makes a sidecar, here any more than below; a reference pack's own ``001.jpg`` is content at
+    every depth.
 
     **A record claims only its own directory.** Screenshots and manifests are a record's siblings by
     definition ([[data-model#resource-scoping]]), so ``baz00.jpg`` is bookkeeping where ``baz.rehu`` sits
@@ -250,9 +242,6 @@ class ContentFileScanner:
     :param rehu_path: the resource's ``.rehu`` file.
     :param excluded_patterns: filename globs to leave out of the directory-scoped walk, matched
         case-insensitively against the file name.
-    :param screenshot_name_patterns: the naming rules that decide whether an image beside a ``.tc`` is
-        one of its screenshots, resolved by the caller. The same set the conversion is handed, so the
-        names skipped here stay the ones a conversion renames aside.
     """
 
     __SCREENSHOT_NAME_PATTERN: Final = re.compile(r"^(?P<record>.*)\d{2}$")
@@ -261,17 +250,9 @@ class ContentFileScanner:
     record is what has to be looked up. Greedy, so ``info0000`` decomposes to ``info00`` + ``00`` and
     matches only a record actually named ``info00``."""
 
-    def __init__(
-        self,
-        rehu_path: Path,
-        excluded_patterns: tuple[str, ...],
-        screenshot_name_patterns: tuple[ScreenshotNamePattern, ...] = SCREENSHOT_NAME_PATTERNS,
-    ) -> None:
+    def __init__(self, rehu_path: Path, excluded_patterns: tuple[str, ...]) -> None:
         self.__rehu_path: Final = rehu_path
         self.__excluded_patterns: Final = tuple(pattern.lower() for pattern in excluded_patterns)
-        # compiled once here rather than asked for per candidate: a walk visits thousands of files, and
-        # the compiled set is what each of them is judged against
-        self.__screenshot_name_patterns: Final = compiled_screenshot_name_patterns(screenshot_name_patterns)
         self.__slug: Final = rehu_path.stem.lower()
 
     def scan(self) -> ContentEnumeration:
@@ -461,19 +442,10 @@ class ContentFileScanner:
         all (#253): what it is a backup *of* is whatever the directory holding it is, which is the rule
         :mod:`rehuco_core.tc_conversion_backups` restores by and the one asked here.
 
-        **A pattern-matched image is a screenshot beside any record, or none** (#289): the images dock
-        offers to convert one wherever it sits, so the walk agrees with it rather than with what a
-        conversion has or has not reached yet. tc4 wrote them by scheme -- ``01.jpg``, ``cover.jpg``,
-        ``sample-01.jpg``, ``file(2).jpg``, ``file-01.jpg`` -- none of which carries a record's name, so
-        the ``<record>NN`` rule below cannot see them; :meth:`__recognized_legacy_screenshot` is asked
-        instead, against the caller's own pattern set (#287). The trade this accepts: a genuine content
-        file named ``01.jpg`` beside a ``.rehu`` now reads as a screenshot too, and the images dock is
-        where that gets corrected by hand.
-
         :param filename: the candidate's file name.
         :param records: the record names found in that file's own directory, from :meth:`__record_names`.
-        :returns: whether it is a record, one of a record's screenshots -- ``<record>NN`` or a
-            pattern-matched name -- a record's checksum manifest, or a retained conversion backup.
+        :returns: whether it is a record, one of a record's ``<record>NN`` screenshots, a record's checksum
+            manifest, or a retained conversion backup.
         """
         if is_conversion_backup(filename) or is_record_name(filename):
             return True
@@ -483,24 +455,9 @@ class ContentFileScanner:
         if suffix in CHECKSUM_MANIFEST_EXTENSIONS:
             return stem in records
         if suffix in IMAGE_EXTENSIONS:
-            if self.__recognized_legacy_screenshot(stem):
-                return True
             screenshot = self.__SCREENSHOT_NAME_PATTERN.match(stem)
             return screenshot is not None and screenshot["record"] in records
         return False
-
-    def __recognized_legacy_screenshot(self, file_stem: str) -> bool:
-        """Whether ``file_stem`` is a legacy screenshot name under this walk's rules.
-
-        Asked through the set compiled in :meth:`__init__` rather than through
-        :func:`~rehuco_core.is_legacy_screenshot`, so a walk of thousands of files compiles the rules
-        once. The rules are the caller's -- the same set the conversion is handed -- which is what keeps
-        the names skipped here identical to the ones a conversion recognizes as screenshots.
-
-        :param file_stem: the candidate's stem, already lower-cased and known to carry an image suffix.
-        :returns: whether some rule recognizes it.
-        """
-        return self.__screenshot_name_patterns.recognizes(file_stem)
 
     def __is_excluded(self, filename: str) -> bool:
         """Whether ``filename`` matches one of the caller's junk globs.
@@ -701,7 +658,6 @@ class ContentFileScanner:
 def enumerate_content_files(
     rehu_path: Path,
     excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS,
-    screenshot_name_patterns: tuple[ScreenshotNamePattern, ...] = SCREENSHOT_NAME_PATTERNS,
 ) -> ContentEnumeration:
     """Enumerate ``rehu_path``'s content files: what it is a record *of*, never its own bookkeeping.
 
@@ -711,21 +667,18 @@ def enumerate_content_files(
         (:data:`~rehuco_core.constants.EXCLUDED_FILE_PATTERNS` by default), so the size scan and the
         checksums are handed the same answer instead of each deciding one. Ignored for a file-scoped
         resource, whose content is a whitelist of one.
-    :param screenshot_name_patterns: the naming rules a ``.tc``'s screenshots are recognized by, injected
-        for the same reason and from the same settings the conversion reads.
     :returns: the files, in a stable order (by name for a file-scoped resource, by full path for a
         directory-scoped one), **and the directories that would not list**. A missing or unreadable
         directory contributes nothing rather than raising -- a document-level condition, not a crash --
         but it is named, so no caller has to mistake it for an empty resource (#245).
     """
-    return ContentFileScanner(rehu_path, excluded_patterns, screenshot_name_patterns).scan()
+    return ContentFileScanner(rehu_path, excluded_patterns).scan()
 
 
 def excluded_content_names(
     rehu_path: Path,
     names: Collection[str],
     excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS,
-    screenshot_name_patterns: tuple[ScreenshotNamePattern, ...] = SCREENSHOT_NAME_PATTERNS,
 ) -> dict[str, ContentExclusionTier]:
     """Say which of ``names`` were never ``rehu_path``'s content, and under which tier (#254).
 
@@ -744,18 +697,15 @@ def excluded_content_names(
     :param excluded_patterns: the caller's junk globs, the same set the walk is given -- consulted for a
         directory-scoped resource only, since a file-scoped one's content is a whitelist no pattern
         reaches.
-    :param screenshot_name_patterns: the naming rules a ``.tc``'s screenshots are recognized by, the same
-        set the walk is given.
     :returns: the excluded names only, each with the tier that excluded it, in the order given.
     """
-    return ContentFileScanner(rehu_path, excluded_patterns, screenshot_name_patterns).excluded_names(names)
+    return ContentFileScanner(rehu_path, excluded_patterns).excluded_names(names)
 
 
 def covering_content_records(
     rehu_path: Path,
     names: Collection[str],
     excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS,
-    screenshot_name_patterns: tuple[ScreenshotNamePattern, ...] = SCREENSHOT_NAME_PATTERNS,
 ) -> dict[str, CoveringRecord]:
     """Say which of ``names`` another record covers now, and which record that is (#257).
 
@@ -769,18 +719,15 @@ def covering_content_records(
         resource (:func:`~rehuco_core.checksum_entry_name`).
     :param excluded_patterns: the caller's junk globs, the same set the walk is given -- consulted so a
         name no record's content could include is never reported as covered by one.
-    :param screenshot_name_patterns: the naming rules a ``.tc``'s screenshots are recognized by, the same
-        set the walk is given.
     :returns: the covered names only, each with the record covering it and the name that record spells it
         under, in the order given.
     """
-    return ContentFileScanner(rehu_path, excluded_patterns, screenshot_name_patterns).covering_records(names)
+    return ContentFileScanner(rehu_path, excluded_patterns).covering_records(names)
 
 
 def content_size_on_disk(
     rehu_path: Path,
     excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS,
-    screenshot_name_patterns: tuple[ScreenshotNamePattern, ...] = SCREENSHOT_NAME_PATTERNS,
 ) -> int:
     """Sum the sizes of ``rehu_path``'s content files -- the resource's footprint on disk
     ([[field-schema#duration-size]], #223).
@@ -802,14 +749,12 @@ def content_size_on_disk(
     :param rehu_path: the resource's ``.rehu`` file.
     :param excluded_patterns: filename globs to leave out of the directory-scoped walk, passed straight
         through to :func:`enumerate_content_files`.
-    :param screenshot_name_patterns: the naming rules a ``.tc``'s screenshots are recognized by, passed
-        through the same way.
     :returns: the total size in whole bytes; ``0`` when the resource has content files nowhere -- there
         is content and there is none of it, which is now a different answer from *unreachable*.
     :raises ContentUnreachableError: some directory under the resource would not list, or a content file
         that was listed refused to be measured.
     """
-    enumeration = enumerate_content_files(rehu_path, excluded_patterns, screenshot_name_patterns)
+    enumeration = enumerate_content_files(rehu_path, excluded_patterns)
     enumeration.require_complete()
     total = 0
     for path in enumeration.files:

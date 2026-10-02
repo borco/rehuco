@@ -38,7 +38,6 @@ from rehuco_core import (
     DEFAULT_CHECKSUM_TRUST,
     ChecksumEntry,
     ChecksumRecordError,
-    ScreenshotNamePattern,
     checksum_record_path,
     enumerate_content_files,
     load_checksum_record,
@@ -143,7 +142,6 @@ def checksum_row_for(
 def read_checksum_rows(
     rehu_path: Path,
     excluded_patterns: tuple[str, ...],
-    screenshot_name_patterns: tuple[ScreenshotNamePattern, ...],
     stale_after: timedelta,
     now: datetime,
 ) -> ChecksumRows:
@@ -156,15 +154,13 @@ def read_checksum_rows(
     :param rehu_path: the resource's ``.rehu`` file.
     :param excluded_patterns: the filename globs the content walk leaves out (#226), resolved by the
         caller the way every other core call takes them.
-    :param screenshot_name_patterns: the naming rules a ``.tc``'s screenshots are recognized by (#53),
-        resolved by the caller the same way.
     :param stale_after: the staleness window a run would use, so a row's state matches what
         *Verify Old* would actually do with it (#303).
     :param now: the instant to measure freshness against, so every row of one read is judged against
         one moment.
     :returns: the rows, and whether the resource was reachable at all.
     """
-    enumeration = enumerate_content_files(rehu_path, excluded_patterns, screenshot_name_patterns)
+    enumeration = enumerate_content_files(rehu_path, excluded_patterns)
     if not enumeration.reachable:
         return ChecksumRows(reachable=False)
     content = [path.relative_to(rehu_path.parent).as_posix() for path in enumeration.files]
@@ -226,14 +222,12 @@ class ChecksumRowsLoader(QObject):
         self,
         rehu_path: Path,
         excluded_patterns: tuple[str, ...],
-        screenshot_name_patterns: tuple[ScreenshotNamePattern, ...],
         stale_after: timedelta,
     ) -> None:
         """Read ``rehu_path``'s rows on a pool thread and emit :attr:`loaded` with them.
 
         :param rehu_path: the resource's ``.rehu`` file.
         :param excluded_patterns: the filename globs the content walk leaves out (#226).
-        :param screenshot_name_patterns: the naming rules a ``.tc``'s screenshots are recognized by (#53).
         :param stale_after: the staleness window a run would use (#303).
         """
         self.__generation += 1
@@ -242,14 +236,13 @@ class ChecksumRowsLoader(QObject):
         # frozen clock in a test needs no reach into the pool (the same reason FilesRowsLoader.start does)
         now = datetime.now(tz=UTC)
         QThreadPool.globalInstance().start(
-            lambda: self.__run(rehu_path, excluded_patterns, screenshot_name_patterns, stale_after, now, generation)
+            lambda: self.__run(rehu_path, excluded_patterns, stale_after, now, generation)
         )
 
-    def __run(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+    def __run(
         self,
         rehu_path: Path,
         excluded_patterns: tuple[str, ...],
-        screenshot_name_patterns: tuple[ScreenshotNamePattern, ...],
         stale_after: timedelta,
         now: datetime,
         generation: int,
@@ -267,13 +260,12 @@ class ChecksumRowsLoader(QObject):
 
         :param rehu_path: the resource's ``.rehu`` file.
         :param excluded_patterns: the filename globs the content walk leaves out.
-        :param screenshot_name_patterns: the naming rules a ``.tc``'s screenshots are recognized by.
         :param stale_after: the staleness window a run would use.
         :param now: the instant to measure freshness against.
         :param generation: which request this is, so a superseded answer can be dropped.
         """
         try:
-            rows = read_checksum_rows(rehu_path, excluded_patterns, screenshot_name_patterns, stale_after, now)
+            rows = read_checksum_rows(rehu_path, excluded_patterns, stale_after, now)
         except Exception as error:  # pylint: disable=broad-exception-caught
             rows = ChecksumRows(error=str(error))
         if generation != self.__generation:

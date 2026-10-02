@@ -575,9 +575,10 @@ conversion set aside" to "finish what conversion left alone."
 
 tc4 catalogs accumulated screenshots under several naming conventions, and which ones a given catalog holds is a
 property of that catalog rather than of the format. Recognizing them is **not only a migration-time concern** — a
-pattern-matched image is a screenshot beside any record, converted or not ([[data-model#image-meanings]]) — so the
-patterns are a **permanent classifier** the app carries beside every `.rehu`, consulted by the content walk and the
-images dock as much as by a conversion, and not put away once a catalog is fully migrated.
+pattern-matched image in the record's own directory is a screenshot *candidate* beside any record, converted or not
+([[data-model#image-meanings]]) — so the patterns are a **permanent classifier** the app carries beside every `.rehu`,
+consulted by the images dock as much as by a conversion, and not put away once a catalog is fully migrated. They do
+not reach the content walk (#393, below): a candidate is content until a conversion renames it.
 
 A pattern is an **ordinary regular expression** with a **slot convention**: one capture group names the slot the
 match belongs to, read as an integer and zero-padded to two digits; no capture group means slot `00`. Matching is
@@ -606,10 +607,10 @@ match wins) and, when two names want one slot, which of them takes it ([[acquisi
 reordering the list is a real edit for both reasons. With the shipped set that second rule reads as *`cover` first*,
 since `^cover$` leads the list.
 
-**The same pattern list reaches the content walk** (#289). [[data-model#resource-scoping]]'s coverage rule counts a
-pattern-matched image as a screenshot rather than content, and it is handed the same list conversion is handed —
-otherwise a file a user's added pattern matches would count as content before it is recognized and as bookkeeping
-after, moving `current_size` for no reason but a settings edit.
+**The pattern list does not reach the content walk** (#393). A pattern-matched image is a screenshot *candidate* in
+the record's own directory and content everywhere ([[data-model#resource-scoping]]), so a settings edit never moves
+`current_size` or a checksum. Conversion measures `current_size` after its renames, once the images it claims are
+`<record>NN` sidecars.
 
 ### §15.3.4 Legacy size and duration string parsing
 

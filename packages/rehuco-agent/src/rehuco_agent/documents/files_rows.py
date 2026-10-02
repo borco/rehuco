@@ -51,7 +51,6 @@ from rehuco_core import (
     DirectoryEntry,
     FileKind,
     FileType,
-    ScreenshotNamePattern,
     checksum_record_path,
     is_checksum_fresh,
     load_checksum_record,
@@ -469,8 +468,6 @@ class FilesRowsReader:
     :param rehu_path: the resource's record, whose directory is the root the browser is confined to.
     :param excluded_patterns: the filename globs the content walk leaves out (#226), resolved by the
         caller the way every other core call takes them.
-    :param screenshot_name_patterns: the naming rules a legacy screenshot is recognized by (#287),
-        resolved by the caller the same way.
     :param stale_after: the staleness window a checksum run would use, so *fresh* here means what it
         means there.
     """
@@ -479,12 +476,11 @@ class FilesRowsReader:
         self,
         rehu_path: Path,
         excluded_patterns: tuple[str, ...],
-        screenshot_name_patterns: tuple[ScreenshotNamePattern, ...],
         stale_after: timedelta,
     ) -> None:
         self.__rehu_path: Final = rehu_path
         self.__stale_after: Final = stale_after
-        self.__classifier: Final = DirectoryClassifier(rehu_path, excluded_patterns, screenshot_name_patterns)
+        self.__classifier: Final = DirectoryClassifier(rehu_path, excluded_patterns)
 
     def read(self, directory: Path, now: datetime) -> FilesRows:
         """Read one directory into rows.
