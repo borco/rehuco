@@ -53,10 +53,10 @@
       <item>
        <widget class="QCheckBox" name="restore_on_startup_check_box">
         <property name="text">
-         <string>Restore previously opened documents</string>
+         <string>Restore previously opened documents and root catalog</string>
         </property>
         <property name="toolTip">
-         <string>When off, the app starts with no documents open. Sessions keep being recorded on close either way.</string>
+         <string>When off, the app starts with no documents and no root catalog open. Sessions keep being recorded on close either way.</string>
         </property>
        </widget>
       </item>

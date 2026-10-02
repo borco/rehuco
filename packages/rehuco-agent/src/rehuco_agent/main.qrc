@@ -72,6 +72,7 @@
         <file alias="icons/measure_image_count.svg">../../../../design/icons/measure_image_count.svg</file>
         <file alias="icons/measure_size_on_disk.svg">../../../../design/icons/measure_size_on_disk.svg</file>
         <file alias="icons/refresh.svg">../../../../design/icons/refresh.svg</file>
+        <file alias="icons/rehuco_view.svg">../../../../design/icons/rehuco_view.svg</file>
         <file alias="icons/rehu_upgrade.svg">../../../../design/icons/rehu_upgrade.svg</file>
         <file alias="icons/rehuco-agent.svg">../../../../design/icons/rehuco-agent.svg</file>
         <file alias="icons/screenshot_convert.svg">../../../../design/icons/screenshot_convert.svg</file>

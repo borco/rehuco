@@ -538,7 +538,9 @@ class CatalogCache:
         :param table: the value table.
         :param join: its join table.
         :param resource_id: the resource.
-        :param names: its names, in order; an empty one is skipped, a repeat (case-insensitively) kept once.
+        :param names: its names, in order; an empty one is skipped, a repeat (case-insensitively) kept once. Each is
+            stored on the join exactly as spelled, since the value row it shares with other resources keeps only the
+            first spelling ever written.
         """
         insert_value = f"INSERT INTO {table} (name) VALUES (?) ON CONFLICT DO NOTHING"  # nosec B608  # fixed names
         select_value = f"SELECT id FROM {table} WHERE name = ?"  # nosec B608  # fixed names
@@ -547,8 +549,8 @@ class CatalogCache:
             connection.execute(insert_value, (name,))
             (value_id,) = connection.execute(select_value, (name,)).fetchone()
             connection.execute(
-                f"INSERT OR IGNORE INTO {join} (resource_id, value_id, position) VALUES (?, ?, ?)",
-                (resource_id, value_id, position),
+                f"INSERT OR IGNORE INTO {join} (resource_id, value_id, position, name) VALUES (?, ?, ?, ?)",
+                (resource_id, value_id, position, name),
             )
 
     @staticmethod
@@ -584,12 +586,14 @@ class CatalogCache:
         return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
     def __values(self, table: str, join: str, where: str, parameters: tuple[str, ...]) -> dict[int, tuple[str, ...]]:
-        """One value table's names for every matching resource, in each resource's own order.
+        """One value table's names for every matching resource, in each resource's own order and spelling -- the
+        join's own, falling back to the shared one for a row written before the join kept a spelling.
 
         :returns: the names, keyed by resource id.
         """
         cursor = self.__connection.execute(
-            f"SELECT j.resource_id, v.name FROM {join} j JOIN {table} v ON v.id = j.value_id "  # nosec B608  # fixed
+            "SELECT j.resource_id, COALESCE(j.name, v.name) "
+            f"FROM {join} j JOIN {table} v ON v.id = j.value_id "  # nosec B608  # fixed names
             f"WHERE j.resource_id IN (SELECT r.id FROM resources r JOIN roots ON roots.id = r.root_id WHERE {where}) "
             "ORDER BY j.resource_id, j.position",
             parameters,

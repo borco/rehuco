@@ -219,7 +219,7 @@ viewer surface is bound to, so the viewer re-renders without the two surfaces kn
 other. Keeping the reactive layer in the agent preserves the core's non-GUI purity ([[plugins#core-vs-plugin]]).
 
 **One view-model per open resource, app-wide** (#375). The same bindings that keep two surfaces of one document in
-step keep *two hosts* in step: a resource shown both as a Documents dock and as the Rehuco dock's current resource
+step keep *two hosts* in step: a resource shown both as a Documents dock and as the Root Catalog dock's current resource
 ([[plugins#browsers]]) is **one** view-model held by both, so an edit in either shows in the other before anything is
 saved. A registry keyed by path owns the view-models and hands the same one to every holder; a view-model lives until
 its last holder lets go, and the unsaved-changes prompt belongs to that last release, not to closing one of several
@@ -304,7 +304,7 @@ workaround
 whose own nested manager hosts the sub-docks of the *current* resource next to the browsing views. So the sub-docks,
 the document toolbar and the layout button are one reusable piece that any dock manager can host and rebuild for
 another resource (#380), not something only a Documents dock owns. Each host keeps **its own per-type default
-layouts**: a layout saved in the Rehuco dock never changes how Documents opens that type, and the other way round.
+layouts**: a layout saved in the Root Catalog dock never changes how Documents opens that type, and the other way round.
 
 ### §13.2.5 The files sub-dock
 
@@ -497,14 +497,18 @@ columns plus type-specific columns.
   This couples the viewer dock to the browser's filter state — natural under the dockable-UI model — and was the primary
   filtering affordance in the usable older version.
 
-### §13.5.1 The Rehuco dock
+### §13.5.1 The Root Catalog dock
 
 [[[plugins#rehuco-dock]]]
 
-The first browser is a top-level **Rehuco** dock beside Documents, showing one opened `.rehuco`
-([[data-model#local-file-trio]], #377). Its nested dock manager holds three kinds of sub-dock:
+The first browser is a top-level **Root Catalog** dock, first on the action bar and tabbed beside Documents, showing
+one opened `.rehuco` — a *root catalog* ([[data-model#local-file-trio]], #377). The word *collection* is not used for
+it: that is a resource type ([[plugins#grouping-entities]]). The dock works like the **Projects** of a code host: a
+toolbar over a nested dock manager whose sub-docks are one **Roots** dock and any number of **views**. Its toolbar has
+*Scan*, a *Roots* toggle that shows and hides the Roots sub-dock, and *New View*. Its nested dock manager holds three
+kinds of sub-dock:
 
-- **Roots** (#378) — a column view: the first column is the `.rehuco`'s roots by label
+- **Roots** (#378) — a column view, hidden by its own [x] and shown again by the toolbar's toggle: the first column is the `.rehuco`'s roots by label
   ([[mounts-and-storage#rehuco-scope]]), each further column one folder's listing, drawn like the files sub-dock
   ([[plugins#files-subdock]]) but with no `..` row, which a column view has no use for. It is **navigation, not
   membership**: what the catalog holds is still decided by records, never by the tree ([[plugins#grouping-entities]]).
@@ -516,14 +520,25 @@ The first browser is a top-level **Rehuco** dock beside Documents, showing one o
   handle between listings and never uses `QFileSystemModel` — the files sub-dock's reasons, plus that browsing must
   never block a rename ([[mounts-and-storage#out-of-band]]). A node is root, folder, file, loading or unreachable, so
   an offline root is a state the model already has ([[mounts-and-storage#offline-mounts]]).
-- **Browser** (#379) — the generic resource browser above as a table over the cache ([[data-model#cache-schema]]):
-  every `.rehu` under the roots, and every `.tc` no `.rehu` covers. A header context menu chooses the columns,
-  remembered in settings, all shown by default. A **filter line** takes free text plus `field="value"` tokens
-  (`folder`, `authors`, `tags`, `publishers`, `type`); a folder's context menu in Roots — *Show only rehu in this
-  folder* — sets `folder="<root label>/<relative path>"`, and click-to-filter links set the same tokens
-  ([[plugins#filter-urls]]). Roots and Browser are otherwise independent.
-- **The current resource's sub-docks** (#381) — exactly one selected row makes that resource *current*, and the
-  document sub-docks ([[plugins#dock-shell]]) show it, with its document toolbar beside the Rehuco toolbar; none or
+- **Views** (#379) — each view is a Browser sub-dock: the generic resource browser above as a table over the cache
+  ([[data-model#cache-schema]]), every `.rehu` under the roots and every `.tc` no `.rehu` covers. A view has a name, a
+  filter and a set of visible columns, remembered with the catalog, and several views exist at once, each with its
+  own filter. Double-clicking a view's tab renames it in place; the view's toolbar clones it (asking for a name; the
+  clone starts with the same filter and columns) or deletes it, and its [x] deletes it too.
+  - **Columns.** Every column the cache can show exists on every view, and a header context menu lists them all,
+    checked where visible. Type-specific columns — a tutorial's duration, a reference pack's image count — depend
+    on what the cache stores for them, which is the common core only today ([[data-model#cache-schema]]).
+  - **The filter line** is GitHub-style: free text plus `field:"value"` tokens (`folder`, `authors`, `tags`,
+    `publishers`, `type`). It filters the rows, and a column-selecting token chooses which columns show; an
+    unknown field is reported, never silently dropped. A folder's context menu in Roots — *Show only rehu in this
+    folder* — sets `folder="<root label>/<relative path>"` on the current view, and click-to-filter links set the
+    same tokens on it ([[plugins#filter-urls]]). Roots and the views are otherwise independent.
+  - **New View** offers presets: *Default* (the common columns), *Tutorials* (the tutorial columns shown, the
+    others hidden) and *Reference images* (likewise). A preset only picks the starting columns and filter; the view
+    is then an ordinary one.
+- **The current resource's sub-docks** (#381) — exactly one selected row in the focused view makes that resource
+  *current*, and the document sub-docks ([[plugins#dock-shell]]) show it, with its document toolbar beside the Root
+  Catalog toolbar; none or
   several selected leaves them empty. The view-model is the one any Documents dock of the same file holds
   ([[plugins#view-model]]), so the two stay in step unsaved. **Moving off a resource with unsaved edits opens it in
   Documents** (or focuses it there) carrying those edits, then shows the new current resource.
@@ -558,7 +573,8 @@ filter://publishers?name=Example%20Publisher
   handler dispatches on scheme — `filter://` internally, validated `http(s)` to the system browser — so a `filter://`
   link can never leak to the OS, and no other scheme is ever followed.
 - **A link is a filter-line token.** Dispatching `filter://authors?name=Foo%20Bar` sets `authors="Foo Bar"` on the
-  Rehuco dock's filter line ([[plugins#rehuco-dock]]) — one filter grammar, reached by typing or by clicking.
+  the current view's filter line in the Root Catalog dock ([[plugins#rehuco-dock]]) — one filter grammar, reached by
+  typing or by clicking.
 
 ## §13.6 Tutorial plugin
 

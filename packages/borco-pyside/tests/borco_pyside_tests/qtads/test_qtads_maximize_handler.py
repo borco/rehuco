@@ -680,4 +680,40 @@ def test_a_dock_with_no_close_button_still_gets_a_squared_button(
     assert button.width() == button.height() > 0
 
 
+def test_a_tab_that_was_never_laid_out_does_not_stretch_either_button(qtbot: QtBot) -> None:
+    """A dock built inside a window that has not been shown yet -- the Root Catalog's sub-docks, under a closed
+    outer dock -- keeps both buttons at their own size (#377).
+
+    Such a tab still has Qt's top-level default size (480 px tall), and its buttons are stretched to it. Squaring
+    a button to its *current* height fixed that for good: two 480 px squares made each tab a 600 px box. The
+    buttons are squared to their own size hint instead, which no layout changes.
+
+    **Test steps:**
+
+    * build a tracker and a handler on a manager inside a window that is never shown
+    * add a dock that is not closable, as those sub-docks are
+    * wait for both buttons to be squared
+    * verify neither is taller than a couple of text lines
+    """
+    host = QMainWindow()
+    qtbot.addWidget(host)
+    manager = QtAds.CDockManager(host)
+    QtAdsFocusTracker(manager)
+    handler = QtAdsMaximizeHandler(manager, GLYPH, MAXIMIZED_GLYPH)
+    dock = QtAds.CDockWidget(manager, "never-shown")
+    dock.setObjectName("never-shown")
+    dock.setFeatures(QtAds.CDockWidget.DockWidgetFeature.DockWidgetFocusable)
+    dock.setWidget(QWidget())
+    manager.addDockWidget(QtAds.CenterDockWidgetArea, dock)
+    button = button_of(handler, dock, qtbot)
+    close_button = tab_close_button(dock)
+    assert close_button is not None
+    qtbot.waitUntil(lambda: close_button.minimumHeight() == close_button.maximumHeight(), timeout=WAIT)
+
+    limit = 2 * button.fontMetrics().height()
+
+    assert button.height() <= limit
+    assert close_button.height() <= limit
+
+
 # endregion

@@ -145,8 +145,11 @@ through to view or edit any resource.
 - shared plumbing — a header menu for column visibility (#374); one view-model per open resource shared by every
   host (#375); in-place propagation of the app's own moves and changes (#376); `DocumentWidget` split so another
   dock can host a resource's sub-docks (#380).
-- the Rehuco dock — the tracer above (#377); the roots column view (#378); the browser table with its filter line
-  (#379); the current resource's sub-docks (#381).
+- the Root Catalog dock — the tracer above (#377); the roots column view (#378); the browser views with their filter
+  line and columns (#379 and the issues below); the current resource's sub-docks (#381).
+- the Projects-style views ([[plugins#rehuco-dock]]) — the views shell with New View, clone, delete and per-view
+  state (#396); tab rename in place (#397); the filter line (#398); type-specific cache columns (#399); the New View
+  presets (#400).
 - public docs once it runs (#382).
 
 ## Tutorials — direction revised

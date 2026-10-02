@@ -134,6 +134,15 @@ showing its progress and its own log, pausable, cancellable, reorderable, and wr
 quitting. Checksums, `.tc` imports, scrapes and image downloads all run on it; an app-wide **Tasks** panel
 shows the queue, beside an app-wide **Log**.
 
+A **root catalog** is a `.rehuco` file naming the folders to catalog — its **roots**, each with a label. `File` >
+`New Root Catalog…` or `Open Root Catalog…` opens one in the app-wide **Root Catalog** panel, one at a time, and it is
+reopened on start with the documents, under the same Session setting; a file written by a newer build opens read-only. The panel's **Scan** puts one job per root on the
+task queue. Each job walks its root and records every `.rehu` it finds, and every legacy `.tc` that no `.rehu`
+covers, in a **`.rehudb`** cache. The cache sits in the machine's local cache folder and is named by the
+`.rehuco`'s own id, so moving the `.rehuco` keeps its cache; it is only ever a copy, rebuilt by scanning again.
+A table lists what the cache holds — authors, title, type and path — and double-clicking a row opens that resource in
+Documents. The panel also lists the roots, which can be added and removed there.
+
 The biggest user is **checksums**. Beside each resource sits a `.checksum` record of *when each of its
 files was last checked and what the answer was* — not a manifest for an external tool, which is what lets
 a run skip a file checked recently instead of re-hashing a terabyte to learn nothing. A document's toolbar
@@ -152,7 +161,7 @@ template) on the Scrapers settings page.
 
 ```text
 packages/
-├── rehuco-core/     the .rehu document, migrations, .tc conversion, checksums, the task queue — no GUI
+├── rehuco-core/     the .rehu document, the .rehuco file and .rehudb cache, migrations, .tc conversion, checksums, the task queue — no GUI
 ├── rehuco-agent/    the desktop app: the field toolkit, the panels, the settings
 ├── rehuco-node/     a reserved name; nothing implemented
 ├── borco-core/      generic non-GUI utilities, on their way out of this repo
@@ -175,9 +184,9 @@ whole folder tree at once, and `File` > `Conversion Backups…` discards the bac
 Everything above is implemented. None of the following is, and the design documents discuss all of it at
 length, which is exactly why this section is here:
 
-**No database and no search.** rehuco opens files you point it at, one at a time. There is no library
-view. rehuco-core can build a `.rehudb` cache from a `.rehuco`'s roots, but nothing in the app opens one
-yet. The other recursive walks — the checksum sweep and the legacy import, over a folder you hand them — act
+**A bare browser, and no search.** The Root Catalog panel lists what a scan found and nothing more: no filter,
+no search, no choice of columns, and no update between scans — a change made outside the app shows only after
+the next scan. The other recursive walks — the checksum sweep and the legacy import, over a folder you hand them — act
 as they go and remember nothing about what they found.
 
 **No network beyond fetching a page you drop.** No node, no REST API, no discovery, no sync between
@@ -186,8 +195,8 @@ holding its name.
 
 **No playback and no progress tracking.** rehuco describes a tutorial; it does not play one.
 
-The next thing worth building is a **browser** — a view over a folder of resources, backed by a cache
-that can always be rebuilt from the `.rehu` files themselves, so a collection can be looked through
+The next thing worth building is a fuller **browser** — a column view of the roots, filtering and search over the
+table, the open resource's panels beside it, and a cache that follows files as they move, so a catalog can be looked through
 instead of opened one file at a time. Past that, the design reaches toward machines sharing a catalog;
 whether that is worth building is a question the editor and the browser have to answer first.
 

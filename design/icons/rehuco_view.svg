@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg width="100%" height="100%" viewBox="0 0 72 72" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:serif="http://www.serif.com/" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;">
+    <rect id="rehuco_view" x="0" y="-0" width="72" height="72" style="fill:none;"/>
+    <path d="M69.333,56C69.333,61.486 64.819,66 59.333,66L12.667,66C7.181,66 2.667,61.486 2.667,56L2.667,16C2.667,10.514 7.181,6 12.667,6L59.333,6C64.819,6 69.333,10.514 69.333,16L69.333,56ZM29.333,26L29.333,39.333L42.667,39.333L42.667,26L29.333,26ZM22.667,59.333L22.667,46L9.333,46L9.333,56C9.333,57.829 10.838,59.333 12.667,59.333L22.667,59.333ZM62.667,46L49.333,46L49.333,59.333L59.333,59.333C61.162,59.333 62.667,57.829 62.667,56L62.667,46ZM42.667,59.333L42.667,46L29.333,46L29.333,59.333L42.667,59.333ZM62.667,26L49.333,26L49.333,39.333L62.667,39.333L62.667,26ZM9.333,39.333L22.667,39.333L22.667,26L9.333,26L9.333,39.333Z"/>
+</svg>

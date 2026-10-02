@@ -12,6 +12,13 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 ### Added
 
+- A **Root Catalog** panel beside Documents, first on the action bar and closed until a `.rehuco` is opened.
+  `File` > `New Root Catalog…`, `Open Root Catalog…` and `Open recent root catalog` open one file at a time, as
+  does double-clicking a `.rehuco` in a file manager, and the one left open is reopened on start under the Session
+  page's restore toggle, like the documents. Its roots can be
+  added and removed, **Scan** puts one task-queue job per root that records the `.rehu` and uncovered `.tc` files
+  found into a `.rehudb` cache in the local cache folder, and a table lists what the cache holds. Double-clicking
+  a row opens that resource in Documents. A `.rehuco` written by a newer build opens read-only.
 - A **Shortcuts** page in Settings: search every command by name, description or key, click a key and
   press its replacement (the numeric keypad and a lone Esc included), give a command several keys, and
   choose where its keys reach. Recording a key another command uses asks whether to reassign it. The table

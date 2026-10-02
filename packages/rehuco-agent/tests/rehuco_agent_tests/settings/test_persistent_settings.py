@@ -1,10 +1,15 @@
 """Tests for the app-wide persistent settings storage helper."""
 
+import logging
+from pathlib import Path
+
 from PySide6.QtCore import QSettings
-from pytest import mark
+from pytest import LogCaptureFixture, mark
+from pytest_mock import MockerFixture
 from rehuco_agent.settings.persistent_settings import (
     APPLICATION_NAME,
     ORGANIZATION_NAME,
+    cache_folder,
     persistent_settings,
     read_stored_strings,
 )
@@ -71,3 +76,40 @@ def test_a_value_of_a_type_no_list_was_stored_as_reads_as_nothing(value: object)
     * verify each yields no entries
     """
     assert not read_stored_strings(value)
+
+
+def test_the_cache_folder_is_this_apps_own_under_the_local_cache_location(mocker: MockerFixture) -> None:
+    """A rebuildable cache lives in the platform's local cache directory, organization then application --
+    never beside the ``.ini``, which a roaming profile carries between machines (#377).
+
+    **Test steps:**
+
+    * point Qt's generic cache location at a fake folder
+    * verify the cache folder is that folder's organization/application subfolder
+    """
+    mocker.patch(
+        "rehuco_agent.settings.persistent_settings.QStandardPaths.writableLocation", return_value="/fake/cache"
+    )
+
+    assert cache_folder() == Path("/fake/cache") / ORGANIZATION_NAME / APPLICATION_NAME
+
+
+def test_the_cache_folder_falls_back_under_the_config_folder_when_the_host_knows_no_cache_location(
+    mocker: MockerFixture, caplog: LogCaptureFixture
+) -> None:
+    """Qt may answer nothing; a relative path would then land wherever the app was launched from, so the
+    config folder is used instead, and the fallback is logged (#377).
+
+    **Test steps:**
+
+    * make Qt's generic cache location empty and the config folder known
+    * verify the cache folder is a ``cache`` folder under the config folder, and a warning was logged
+    """
+    mocker.patch("rehuco_agent.settings.persistent_settings.QStandardPaths.writableLocation", return_value="")
+    mocker.patch("rehuco_agent.settings.persistent_settings.config_folder", return_value=Path("/fake/config"))
+
+    with caplog.at_level(logging.WARNING):
+        folder = cache_folder()
+
+    assert folder == Path("/fake/config/cache")
+    assert "No cache location" in caplog.text

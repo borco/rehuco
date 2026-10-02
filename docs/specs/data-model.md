@@ -732,7 +732,7 @@ regenerated. Because it carries the user list with salted password hashes ([[dis
 creates it owner-readable only (0600-equivalent).
 
 **A `.rehuco` is a file the agent opens, and a machine may keep several** — one per set of roots a user wants to
-browse together — with **one open at a time** in the agent's Rehuco dock ([[plugins#browsers]]) (#371). Its
+browse together — with **one open at a time** in the agent's Root Catalog dock ([[plugins#browsers]]) (#371). Its
 contents stay machine-local for the reasons in [[mounts-and-storage#rehuco-scope]]; what changes is only that the
 declaration is a document rather than a single fixed file. The word *collection* is deliberately not used for it:
 that is already a resource type ([[plugins#grouping-entities]]).
@@ -751,7 +751,7 @@ The cache is the stdlib `sqlite3` module in rehuco-core, Qt-free, one connection
 | --- | --- |
 | `roots` | One row per root of the `.rehuco`, keyed by the root's stable id: its label, path, position and removable flag; whether the last scan could list it, and when its rows were last replaced |
 | `resources` | One row per record found under a root — FK to its root with `ON DELETE CASCADE`; the root-relative path, both as spelled and **normalized** (`os.path.normcase`) for matching; kind `rehu` or `tc`; UUID; type; the common core fields a browser shows; the record's stat signature and a content hash at last read ([[data-model#scan-and-staleness]]); why it could not be read, if it could not; when it was scanned |
-| `authors`, `tags`, `publishers` | Values plus their join tables to `resources`, so a filter on any of them is an indexed lookup |
+| `authors`, `tags`, `publishers` | Values plus their join tables to `resources`, so a filter on any of them is an indexed lookup. A value is one row per name, matched case-insensitively; the join row keeps the name **as its resource spells it**, which is what a browser shows, so a file that fixes a name's case shows the fix after its next scan (schema v2, #377) |
 
 - **A `.tc` gets a row only where no `.rehu` covers it** ([[data-model#resource-scoping]]) — a `.rehu` of the same
   stem in the same directory, compared case-folded as the conversion plan compares it; a nested `info.tc` is a
