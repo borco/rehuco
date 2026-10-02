@@ -91,7 +91,8 @@ All three layers key an image the same way, and there are **two keys, for two co
   keying a whole archive costs one directory read and **inflates nothing** — the whole 3 TB is keyed in
   minutes. XXH3 ([[data-model#checksums]]) here would mean inflating every member first, which is the full read
   the tier-0 pass exists to avoid. `ContentImageScanner` (`rehuco_core.rehu_content_images`) already enumerates
-  a zip's central directory without decoding; today's archive set is `.zip`/`.cbz` (`ARCHIVE_EXTENSIONS`).
+  a zip's central directory without decoding; today's archive set is `.zip`/`.cbz` (`ARCHIVE_EXTENSIONS`). It keys
+  a pack's loose images too (#392), under the `file` kind with the degraded key below.
 
   The key is therefore **`(container kind, name, size, container fingerprint)`**, and each part is there for a
   reason the others cannot cover. The **name** is the address — it gives the zip-order browse and is what a

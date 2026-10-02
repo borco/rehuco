@@ -9,7 +9,7 @@ from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.content_images import ArchiveCache, ArchiveImageSource, ContentImagesModel
 from rehuco_agent.documents.content_images import content_images_model as model_module
-from rehuco_core import ContentImageEntry, RenameCoordinator
+from rehuco_core import EXCLUDED_FILE_PATTERNS, ContentImageEntry, RenameCoordinator
 from shiboken6 import isValid
 
 from rehuco_agent_tests.documents.content_images.conftest import (
@@ -105,10 +105,28 @@ def test_the_archive_image_source_describes_its_member_and_pixel_size(
     description = source.describe(0)
 
     read_head.assert_not_called()
-    assert description.path_text == "pack.zip:/a.png"
+    assert description.path_text == "pack.zip/a.png"
     assert description.byte_size == entry(PACK, "a.png", WIDE).size
     assert source.pixel_size(0).toTuple() == WIDE
     read_head.assert_called_once()
+
+
+def test_the_source_describes_a_loose_image_by_its_path_under_the_rehu() -> None:
+    """A loose image has no archive to name, so its line is its path relative to the ``.rehu`` -- the
+    same path an archive member's line spells with the archive as one more folder (#392).
+
+    **Test steps:**
+
+    * describe a loose image in a subfolder of the ``.rehu``'s directory
+    * verify the path and the size
+    """
+    image = ContentImageEntry(None, "foo/a.jpg", 42, file=REHU_DIRECTORY / "foo" / "a.jpg", mtime=1)
+    source = ArchiveImageSource([image], ArchiveCache(), REHU_DIRECTORY)
+
+    description = source.describe(0)
+
+    assert description.path_text == "foo/a.jpg"
+    assert description.byte_size == 42
 
 
 def test_the_model_exposes_its_own_archive_cache(content_model: ContentImagesModel) -> None:
@@ -173,7 +191,7 @@ def test_refresh_enumerates_off_the_gui_thread_and_adopts_the_result(
     with qtbot.waitSignal(content_model.modelReset, timeout=5000):
         content_model.refresh(REHU_DIRECTORY / "info.rehu", (".jpg",))
 
-    enumeration.assert_called_once_with(REHU_DIRECTORY / "info.rehu", (".jpg",), None)
+    enumeration.assert_called_once_with(REHU_DIRECTORY / "info.rehu", (".jpg",), None, EXCLUDED_FILE_PATTERNS)
     assert content_model.entries == found
     assert content_model.rehu_directory == REHU_DIRECTORY
 
@@ -196,7 +214,7 @@ def test_the_rename_barrier_reaches_the_enumeration_and_the_cache(qtbot: QtBot, 
         content_model.refresh(REHU_DIRECTORY / "info.rehu", (".jpg",))
 
     built.assert_called_once_with(coordinator)
-    enumeration.assert_called_once_with(REHU_DIRECTORY / "info.rehu", (".jpg",), coordinator)
+    enumeration.assert_called_once_with(REHU_DIRECTORY / "info.rehu", (".jpg",), coordinator, EXCLUDED_FILE_PATTERNS)
     content_model.archive_cache.close()
 
 
@@ -363,7 +381,7 @@ def test_the_source_describes_a_member_by_archive_and_path(content_model: Conten
     assert source.key(0) == member.key
     assert source.name(0) == "img.png"
     description = source.describe(0)
-    assert description.path_text == "sub/other.zip:/sub/dir/img.png"
+    assert description.path_text == "sub/other.zip/sub/dir/img.png"
     assert description.byte_size == member.size
     image = source.load(0, None)
     assert (image.width(), image.height()) == TALL
@@ -392,4 +410,4 @@ def test_the_source_over_no_directory_still_names_the_archive(content_model: Con
     """
     content_model.set_entries([entry(Path("/elsewhere/pack.zip"), "a.jpg")], None)
 
-    assert content_model.source.describe(0).path_text == "pack.zip:/a.jpg"
+    assert content_model.source.describe(0).path_text == "pack.zip/a.jpg"

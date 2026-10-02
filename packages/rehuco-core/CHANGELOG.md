@@ -9,6 +9,14 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ## [Unreleased]
 
+### Added
+
+- A reference pack's content images include its loose images as well as its archive members: whatever
+  images are among the files the content walk gives the record. A loose image is keyed by size and
+  modification time. Archives and folders of loose images sort together, case-insensitively, with the
+  pack's own folder first. The enumeration takes the excluded-files globs the checksums take, so the two
+  agree on every file.
+
 ### Changed
 
 - An image named by a legacy screenshot pattern (`01.jpg`, `cover.jpg`, `sample-01.jpg`, ...) is content

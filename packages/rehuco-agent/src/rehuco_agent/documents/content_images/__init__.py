@@ -1,11 +1,12 @@
-"""The Content Images dock: a justified-row browse over a reference-images resource's archives (#221).
+"""The Content Images dock: a justified-row browse over a reference-images resource's images (#221, #392).
 
-A document's own surface for the images a reference pack *is* -- its archive members, which have no
-path on disk and are never edited ([[data-model#image-meanings]]). The pieces, bottom up:
+A document's own surface for the images a reference pack *is* -- its archive members and its loose
+images, all checksummed content that is never edited ([[data-model#image-meanings]]). The pieces,
+bottom up:
 
 - `ArchiveCache` -- open archive handles, read through a lock each, so a directory-scoped resource's
-  many zips are not opened once per thumbnail.
-- `banner_rows` / `banner_text` -- the pure rule for which boundaries get a banner row.
+  many zips are not opened once per thumbnail; a loose image is read straight off its file.
+- `banner_rows` / `group_name` -- the pure rule for which boundaries get a banner row, and what it says.
 - `pack_rows` -- the pure justified-row packing pass, geometry precomputed for the whole sequence.
 - `ContentImagesModel` -- the entries, their dimensions read from headers on demand, and the
   `ArchiveImageSource` the lightbox and the thumbnail loader decode through.
@@ -13,7 +14,7 @@ path on disk and are never edited ([[data-model#image-meanings]]). The pieces, b
 """
 
 from .archive_cache import ArchiveCache
-from .banners import ContentDisplayFlags, banner_rows, banner_text
+from .banners import ContentDisplayFlags, banner_rows, group_name
 from .content_images_model import ArchiveImageSource, ContentImagesModel
 from .content_images_view import ContentImagesPanel, ContentImagesView
 from .justified_layout import LayoutItem, PackedLayout, Row, pack_rows
@@ -29,6 +30,6 @@ __all__ = [
     "PackedLayout",
     "Row",
     "banner_rows",
-    "banner_text",
+    "group_name",
     "pack_rows",
 ]

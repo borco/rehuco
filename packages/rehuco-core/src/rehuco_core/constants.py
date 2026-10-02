@@ -70,11 +70,11 @@ this list is about files that exist on a disk, that one is about hashes this bui
 SHA-1, and dropping it from here would silently turn it into content the size scan counts."""
 
 CONTENT_IMAGE_EXTENSIONS: Final = (".jpg", ".jpeg", ".png", ".webp", ".avif")
-"""Default image extensions to recognize inside a reference-images resource's archive(s), case-insensitively
-([[data-model#image-meanings]]) -- distinct from :data:`IMAGE_EXTENSIONS`, since a content image is a
-monolithic, checksummed archive member, never a screenshot. What
-:func:`~rehuco_core.rehu_content_images.enumerate_content_images` falls back to when no set is given; the
-agent's ``ReferenceImagesSettings`` (#222) is what makes the set the user's to change."""
+"""Default image extensions a reference-images resource's content images are recognized by, inside its
+archives and loose in its folders alike (#392), case-insensitively ([[data-model#image-meanings]]) --
+distinct from :data:`IMAGE_EXTENSIONS`, since a content image is checksummed content, never a screenshot.
+What :func:`~rehuco_core.rehu_content_images.enumerate_content_images` falls back to when no set is given;
+the agent's ``ReferenceImagesSettings`` (#222) is what makes the set the user's to change."""
 
 VIDEO_EXTENSIONS: Final = (
     ".asf",

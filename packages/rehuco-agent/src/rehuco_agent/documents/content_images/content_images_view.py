@@ -95,8 +95,8 @@ class ContentImagesView(QAbstractScrollArea):  # pylint: disable=too-many-instan
     :param parent: optional Qt parent.
     :param min_height: the shortest flush row.
     :param max_height: the tallest flush row.
-    :param flags: which boundaries are bannered; the defaults (zip names on, folder names off) when
-        ``None``.
+    :param flags: which boundaries are bannered; the defaults (banners on, a top folder named like its zip
+        hidden) when ``None``.
     """
 
     image_activated = Signal(int)
@@ -817,7 +817,7 @@ class ContentImagesPanel(QWidget):
         # scoped to this widget's own subtree: every open reference pack has a grid of its own
         # (`REFRESH_CONTENT_IMAGES`)
         shared_command_registry().bind(
-            self.__refresh_action, REFRESH_CONTENT_IMAGES.id, tooltip="Read this resource's archives again."
+            self.__refresh_action, REFRESH_CONTENT_IMAGES.id, tooltip="Read this resource's content images again."
         )
         self.addAction(self.__refresh_action)
         self.__refresh_action.triggered.connect(self.refresh_requested)
@@ -849,7 +849,7 @@ class ContentImagesPanel(QWidget):
 
     @property
     def refresh_action(self) -> QAction:
-        """Reads this resource's archives again; always enabled, also bound to ``F5``."""
+        """Reads this resource's content images again; always enabled, also bound to ``F5``."""
         return self.__refresh_action
 
     @property

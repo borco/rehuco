@@ -85,7 +85,7 @@ REFRESH_FILES: Final = Command(
 REFRESH_CONTENT_IMAGES: Final = Command(
     "document.content_images.refresh",
     "Refresh content images",
-    "Read the resource's archives again",
+    "Read the resource's content images again",
     (Qt.Key.Key_F5,),
     DOCUMENT,
     "content_images",

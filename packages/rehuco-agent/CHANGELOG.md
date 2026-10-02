@@ -17,12 +17,20 @@ released becomes the body of the GitHub Release, so each entry is written to be 
   choose where its keys reach. Recording a key another command uses asks whether to reassign it. The table
   sorts by any column, and the search text and sort are remembered.
 - **Ctrl+Shift+M** maximizes the focused document's current dock, and restores it, as its tab button does.
+- The **Content Images** panel and the measured image count include a reference pack's loose images, not
+  only those inside its archives. Folders and archives sort together, ignoring case, the pack's own
+  folder first. Both honour the Files page's excluded-files globs, as checksums do.
 
 ### Changed
 
 - Every keyboard shortcut is now read from the settings file's `shortcuts` group, falling back to its
   default, so a changed key reaches every open window and document. The defaults are unchanged.
 - The Save and Refresh buttons' tooltips name their keys.
+- Content Images banners name every folder the same way, by its path under the pack with an archive as one
+  more folder: `/`, `foo/`, `foo.zip/`, `foo.zip/bar/`. The status line and the viewer's info overlay
+  spell an image's path the same way (`foo.zip/bar/a.jpg`). The two banner boxes are now one, **Show
+  banners**, and *Hide a top folder named like its zip* follows it; a saved choice carries over, banners
+  on if either old box was. Inside an archive, a folder's images come before its subfolders'.
 - An image named by a legacy screenshot pattern (`01.jpg`, `cover.jpg`, ...) is content: the Files panel
   lists it as such, and checksums, size on disk and duration include it. Beside the `.rehu` it is still
   offered for conversion in the Images panel. The screenshot name patterns setting no longer affects

@@ -93,14 +93,14 @@ def test_rows_are_packed_from_the_headers_once_they_land(
 def test_banners_follow_the_flags_and_force_breaks(
     view: ContentImagesView, content_model: ContentImagesModel, qtbot: QtBot
 ) -> None:
-    """With zip names on, each archive opens with a banner row that breaks the flow; with both boxes
-    off there is one continuous row.
+    """With banners on, each archive opens with a banner row that breaks the flow; with banners off
+    there is one continuous row.
 
     **Test steps:**
 
     * set one member in each of two archives with no banners and let the pack settle
     * verify one row holds both
-    * turn zip names on and verify a banner row before each member
+    * turn banners on and verify a banner row before each member
     """
     content_model.set_entries([entry(PACK, "a.png"), entry(OTHER_PACK, "b.png")], REHU_DIRECTORY)
     settle(qtbot, view, content_model)
@@ -108,15 +108,15 @@ def test_banners_follow_the_flags_and_force_breaks(
     assert table is not None
     assert [(row.banner, row.first, row.last) for row in table.rows] == [(None, 0, 1)]
 
-    view.set_flags(ContentDisplayFlags(zip_names=True, folder_names=False))
+    view.set_flags(ContentDisplayFlags(banners=True))
     qtbot.waitUntil(lambda: view.layout_table is not None and len(view.layout_table.rows) == 4)
 
-    assert view.flags == ContentDisplayFlags(True, False)
+    assert view.flags == ContentDisplayFlags(banners=True)
     table = view.layout_table
     assert table is not None
-    assert [row.banner for row in table.rows] == ["pack.zip", None, "sub/other.zip", None]
+    assert [row.banner for row in table.rows] == ["pack.zip/", None, "sub/other.zip/", None]
     assert table.rows[0].height == BANNER_HEIGHT
-    assert view.banner_label("pack.zip") == "- pack.zip [1]"
+    assert view.banner_label("pack.zip/") == "- pack.zip/ [1]"
 
 
 def test_a_new_clamp_re_packs_the_open_view(
@@ -154,7 +154,7 @@ def test_a_double_click_on_an_image_reports_its_position(
       the image
     * verify one activation, for position one, which is now the selection
     """
-    view.set_flags(ContentDisplayFlags(zip_names=True, folder_names=False))
+    view.set_flags(ContentDisplayFlags(banners=True))
     content_model.set_entries([entry(PACK, "a.png"), entry(PACK, "b.png")], REHU_DIRECTORY)
     settle(qtbot, view, content_model)
     table = view.layout_table
@@ -282,7 +282,7 @@ def test_a_scroll_re_reads_what_is_under_the_resting_pointer(
     resting = QPoint(x + w // 2, y + h // 2)
     qtbot.mouseMove(view.viewport(), QPoint(5, table.height + 20))
     qtbot.mouseMove(view.viewport(), resting)
-    qtbot.waitUntil(lambda: view.status_text() == "pack.zip:/0.png")
+    qtbot.waitUntil(lambda: view.status_text() == "pack.zip/0.png")
     # the pointer stays exactly where it is, as read back through the cursor the scroll consults
     mocker.patch.object(QCursor, "pos", return_value=view.viewport().mapToGlobal(resting))
     mocker.patch.object(view.viewport(), "underMouse", return_value=True)
@@ -292,12 +292,12 @@ def test_a_scroll_re_reads_what_is_under_the_resting_pointer(
     under = view.index_at(resting)
     assert under is not None
     assert under != 0
-    assert view.status_text() == f"pack.zip:/{under}.png"
+    assert view.status_text() == f"pack.zip/{under}.png"
 
     # with the pointer elsewhere, a scroll re-reads nothing
     mocker.patch.object(view.viewport(), "underMouse", return_value=False)
     view.verticalScrollBar().setValue(0)
-    assert view.status_text() == f"pack.zip:/{under}.png"
+    assert view.status_text() == f"pack.zip/{under}.png"
 
 
 def test_hovering_a_banner_names_nothing(
@@ -311,7 +311,7 @@ def test_hovering_a_banner_names_nothing(
     * pack one bannered member and rest the pointer on its banner
     * verify the status line stays empty
     """
-    view.set_flags(ContentDisplayFlags(zip_names=True, folder_names=False))
+    view.set_flags(ContentDisplayFlags(banners=True))
     content_model.set_entries([entry(PACK, "a.png")], REHU_DIRECTORY)
     settle(qtbot, view, content_model)
     table = view.layout_table
@@ -339,7 +339,7 @@ def test_the_pointer_leaving_clears_the_hover(
     assert table is not None
     x, y, w, h = table.rects[0]
     qtbot.mouseMove(view.viewport(), QPoint(x + w // 2, y + h // 2))
-    qtbot.waitUntil(lambda: view.status_text() == "pack.zip:/a.png")
+    qtbot.waitUntil(lambda: view.status_text() == "pack.zip/a.png")
 
     QApplication.sendEvent(view, QEvent(QEvent.Type.Leave))
 
@@ -392,15 +392,15 @@ def test_the_status_names_the_selected_image_else_the_hovered_one(
     # would make the move to it a no-op
     qtbot.mouseMove(view.viewport(), QPoint(5, table.height + 20))
     qtbot.mouseMove(view.viewport(), centres[0])
-    qtbot.waitUntil(lambda: reported[-1:] == ["pack.zip:/a.png"])
+    qtbot.waitUntil(lambda: reported[-1:] == ["pack.zip/a.png"])
 
     qtbot.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=centres[1])
-    assert view.status_text() == "pack.zip:/b.png"
+    assert view.status_text() == "pack.zip/b.png"
     qtbot.mouseMove(view.viewport(), QPoint(5, table.height + 20))
     qtbot.mouseMove(view.viewport(), centres[0])
     qtbot.wait(20)
-    assert view.status_text() == "pack.zip:/b.png"
-    assert reported[-1] == "pack.zip:/b.png"
+    assert view.status_text() == "pack.zip/b.png"
+    assert reported[-1] == "pack.zip/b.png"
 
     view.set_selected(None)
     qtbot.mouseMove(view.viewport(), QPoint(5, table.height + 20))
@@ -415,12 +415,12 @@ def test_a_banner_click_collapses_its_group_and_a_second_expands_it(
 
     **Test steps:**
 
-    * pack one member in each of two archives with zip names on, select the first
+    * pack one member in each of two archives with banners on, select the first
     * click the first banner and verify only its images went, its label reads ``+``, and the
       selection cleared
     * click it again and verify the rows are back
     """
-    view.set_flags(ContentDisplayFlags(zip_names=True, folder_names=False))
+    view.set_flags(ContentDisplayFlags(banners=True))
     content_model.set_entries([entry(PACK, "a.png"), entry(OTHER_PACK, "b.png")], REHU_DIRECTORY)
     settle(qtbot, view, content_model)
     view.set_selected(0)
@@ -433,9 +433,9 @@ def test_a_banner_click_collapses_its_group_and_a_second_expands_it(
 
     table = view.layout_table
     assert table is not None
-    assert [row.banner for row in table.rows] == ["pack.zip", "sub/other.zip", None]
-    assert view.collapsed == {"pack.zip"}
-    assert view.banner_label("pack.zip") == "+ pack.zip [1]"
+    assert [row.banner for row in table.rows] == ["pack.zip/", "sub/other.zip/", None]
+    assert view.collapsed == {"pack.zip/"}
+    assert view.banner_label("pack.zip/") == "+ pack.zip/ [1]"
     assert view.selected is None
     assert table.rects[0] == (0, 0, 0, 0)
 
@@ -443,7 +443,7 @@ def test_a_banner_click_collapses_its_group_and_a_second_expands_it(
     qtbot.waitUntil(lambda: view.layout_table is not None and len(view.layout_table.rows) == 4)
 
     assert view.collapsed == frozenset()
-    assert view.banner_label("pack.zip") == "- pack.zip [1]"
+    assert view.banner_label("pack.zip/") == "- pack.zip/ [1]"
 
 
 def test_the_banner_label_stands_still_when_its_mark_changes(
@@ -458,20 +458,20 @@ def test_the_banner_label_stands_still_when_its_mark_changes(
     * verify the label column is pixel-identical (the mark column itself is not compared: the
       offscreen platform draws every glyph as the same box)
     """
-    view.set_flags(ContentDisplayFlags(zip_names=True, folder_names=False))
+    view.set_flags(ContentDisplayFlags(banners=True))
     content_model.set_entries([entry(PACK, "a.png")], REHU_DIRECTORY)
     settle(qtbot, view, content_model)
     label_left = BANNER_INSET + BANNER_MARK_WIDTH
     label_column = QRect(label_left, 0, view.viewport().width() - label_left, BANNER_HEIGHT)
     expanded = view.viewport().grab().toImage()
 
-    view.set_collapsed("pack.zip", True)
+    view.set_collapsed("pack.zip/", True)
     qtbot.waitUntil(lambda: view.layout_table is not None and len(view.layout_table.rows) == 1)
     collapsed = view.viewport().grab().toImage()
 
     assert expanded.copy(label_column) == collapsed.copy(label_column)
-    assert banner_parts("pack.zip", 1, collapsed=True) == ("+", "pack.zip [1]")
-    assert banner_parts("pack.zip", 1, collapsed=False) == ("-", "pack.zip [1]")
+    assert banner_parts("pack.zip/", 1, collapsed=True) == ("+", "pack.zip/ [1]")
+    assert banner_parts("pack.zip/", 1, collapsed=False) == ("-", "pack.zip/ [1]")
 
 
 def test_a_banner_too_long_for_the_width_is_elided_not_cut(
@@ -489,12 +489,12 @@ def test_a_banner_too_long_for_the_width_is_elided_not_cut(
 
     **Test steps:**
 
-    * pack one member under a very deep folder with both boxes on, in a narrow view
+    * pack one member under a very deep folder with banners on, in a narrow view
     * capture what the banner paint hands ``drawText`` and verify the label was shortened in the
       middle, keeps its count, and measures no wider than the row less its right inset
     * grab the row and verify the inset at its right edge carries no ink
     """
-    view.set_flags(ContentDisplayFlags(zip_names=True, folder_names=True))
+    view.set_flags(ContentDisplayFlags(banners=True))
     view.resize(200, 400)
     content_model.set_entries([entry(PACK, "/".join(["folder"] * 40) + "/a.png")], REHU_DIRECTORY)
     settle(qtbot, view, content_model)
@@ -527,7 +527,7 @@ def test_a_double_click_on_a_banner_toggles_its_group_once(
     * pack one bannered member and send the real double-click sequence over its banner
     * verify the group is collapsed and nothing was activated
     """
-    view.set_flags(ContentDisplayFlags(zip_names=True, folder_names=False))
+    view.set_flags(ContentDisplayFlags(banners=True))
     content_model.set_entries([entry(PACK, "a.png")], REHU_DIRECTORY)
     settle(qtbot, view, content_model)
     activated: list[int] = []
@@ -535,12 +535,12 @@ def test_a_double_click_on_a_banner_toggles_its_group_once(
     banner = QPoint(5, 2)
 
     qtbot.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=banner)
-    qtbot.waitUntil(lambda: view.collapsed == {"pack.zip"})
+    qtbot.waitUntil(lambda: view.collapsed == {"pack.zip/"})
     qtbot.mouseDClick(view.viewport(), Qt.MouseButton.LeftButton, pos=banner)
     qtbot.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=banner)
     qtbot.wait(20)
 
-    assert view.collapsed == {"pack.zip"}
+    assert view.collapsed == {"pack.zip/"}
     assert not activated
 
 
@@ -557,25 +557,25 @@ def test_the_current_groups_banner_is_pinned_while_its_own_row_is_scrolled_off(
     * scroll to its middle and verify the group is pinned and painted at the top
     * click the pinned banner and verify the group collapsed
     """
-    view.set_flags(ContentDisplayFlags(zip_names=True, folder_names=False))
+    view.set_flags(ContentDisplayFlags(banners=True))
     content_model.set_entries([entry(PACK, f"{index}.png", WIDE) for index in range(30)], REHU_DIRECTORY)
     qtbot.waitUntil(lambda: view.layout_table is not None and len(view.layout_table.rows) > 3)
     assert view.pinned_banner() is None
-    assert view.banner_at(QPoint(5, 5)) == "pack.zip"
+    assert view.banner_at(QPoint(5, 5)) == "pack.zip/"
 
     scrollbar = view.verticalScrollBar()
     scrollbar.setValue(scrollbar.maximum() // 2)
-    assert view.pinned_banner() == "pack.zip"
+    assert view.pinned_banner() == "pack.zip/"
     painted = view.grab().toImage()
     assert (
         painted.pixelColor(view.viewport().width() - 5, 2).name()
         == view.palette().color(QPalette.ColorRole.Window).name()
     )
-    assert view.banner_at(QPoint(5, 5)) == "pack.zip"
+    assert view.banner_at(QPoint(5, 5)) == "pack.zip/"
     assert view.index_at(QPoint(5, 5)) is None  # the pinned banner covers the row under it
 
     qtbot.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=QPoint(5, 5))
-    qtbot.waitUntil(lambda: view.collapsed == {"pack.zip"})
+    qtbot.waitUntil(lambda: view.collapsed == {"pack.zip/"})
 
 
 def test_collapsing_a_group_from_inside_it_scrolls_back_to_its_banner(
@@ -595,7 +595,7 @@ def test_collapsing_a_group_from_inside_it_scrolls_back_to_its_banner(
     * scroll into the middle of the second group, collapse it and verify the scroll landed as close
       to its banner row as the shortened layout allows, the row in view
     """
-    view.set_flags(ContentDisplayFlags(zip_names=True, folder_names=False))
+    view.set_flags(ContentDisplayFlags(banners=True))
     content_model.set_entries(
         [entry(PACK, f"{index}.png", WIDE) for index in range(30)]
         + [entry(OTHER_PACK, f"{index}.png", WIDE) for index in range(30)],
@@ -604,37 +604,37 @@ def test_collapsing_a_group_from_inside_it_scrolls_back_to_its_banner(
     qtbot.waitUntil(lambda: view.layout_table is not None and len(view.layout_table.rows) > 6)
     table = view.layout_table
     assert table is not None
-    second_banner = next(row for row in table.rows if row.banner == "sub/other.zip")
+    second_banner = next(row for row in table.rows if row.banner == "sub/other.zip/")
     scrollbar = view.verticalScrollBar()
     scrollbar.setValue(second_banner.y // 2)
-    assert view.pinned_banner() == "pack.zip"
+    assert view.pinned_banner() == "pack.zip/"
 
-    view.set_collapsed("pack.zip", True)
-    qtbot.waitUntil(lambda: view.collapsed == {"pack.zip"} and scrollbar.value() == 0)
+    view.set_collapsed("pack.zip/", True)
+    qtbot.waitUntil(lambda: view.collapsed == {"pack.zip/"} and scrollbar.value() == 0)
 
     assert view.pinned_banner() is None
-    assert view.banner_at(QPoint(5, 2)) == "pack.zip"
+    assert view.banner_at(QPoint(5, 2)) == "pack.zip/"
     table = view.layout_table
     assert table is not None
-    assert [row.banner for row in table.rows[:2]] == ["pack.zip", "sub/other.zip"]
-    assert view.banner_at(QPoint(5, table.rows[1].y + 2)) == "sub/other.zip"
+    assert [row.banner for row in table.rows[:2]] == ["pack.zip/", "sub/other.zip/"]
+    assert view.banner_at(QPoint(5, table.rows[1].y + 2)) == "sub/other.zip/"
 
-    view.set_collapsed("pack.zip", False)
+    view.set_collapsed("pack.zip/", False)
     qtbot.waitUntil(lambda: view.layout_table is not None and len(view.layout_table.rows) > 6)
     assert scrollbar.value() == 0
 
     scrollbar.setValue(second_banner.y + BANNER_HEIGHT * 3)
-    assert view.pinned_banner() == "sub/other.zip"
-    view.set_collapsed("sub/other.zip", True)
-    qtbot.waitUntil(lambda: view.layout_table is not None and view.layout_table.rows[-1].banner == "sub/other.zip")
+    assert view.pinned_banner() == "sub/other.zip/"
+    view.set_collapsed("sub/other.zip/", True)
+    qtbot.waitUntil(lambda: view.layout_table is not None and view.layout_table.rows[-1].banner == "sub/other.zip/")
     # the scrollbar's appearance or disappearance reflows the rows once more; let that settle
     qtbot.wait(50)
     table = view.layout_table
     assert table is not None
-    collapsed_banner = next(row for row in table.rows if row.banner == "sub/other.zip")
+    collapsed_banner = next(row for row in table.rows if row.banner == "sub/other.zip/")
     assert scrollbar.maximum() < collapsed_banner.y  # the collapsed tail no longer fills a viewport
     assert scrollbar.value() <= collapsed_banner.y
-    assert view.banner_at(QPoint(5, collapsed_banner.y - scrollbar.value() + 2)) == "sub/other.zip"
+    assert view.banner_at(QPoint(5, collapsed_banner.y - scrollbar.value() + 2)) == "sub/other.zip/"
 
 
 def test_reveal_selects_scrolls_to_and_uncollapses_an_image(
@@ -652,14 +652,14 @@ def test_reveal_selects_scrolls_to_and_uncollapses_an_image(
       verify the scroll did not move
     * reveal a stray index and verify nothing changed
     """
-    view.set_flags(ContentDisplayFlags(zip_names=True, folder_names=False))
+    view.set_flags(ContentDisplayFlags(banners=True))
     content_model.set_entries(
         [entry(PACK, f"{index}.png", WIDE) for index in range(30)]
         + [entry(OTHER_PACK, f"{index}.png", WIDE) for index in range(30)],
         REHU_DIRECTORY,
     )
     qtbot.waitUntil(lambda: view.layout_table is not None and len(view.layout_table.rows) > 6)
-    view.set_collapsed("sub/other.zip", True)
+    view.set_collapsed("sub/other.zip/", True)
     qtbot.waitUntil(lambda: view.layout_table is not None and view.layout_table.rects[59] == (0, 0, 0, 0))
     scrollbar = view.verticalScrollBar()
 
@@ -756,7 +756,7 @@ def test_the_keyboard_moves_the_selection_folds_the_group_and_clears(
     * select and press ESC; verify nothing is selected; press a letter and verify nothing changed
     * press DOWN with nothing selected and verify the first image; press UP at the top and verify it stays
     """
-    view.set_flags(ContentDisplayFlags(zip_names=True, folder_names=False))
+    view.set_flags(ContentDisplayFlags(banners=True))
     content_model.set_entries(
         [entry(PACK, f"{index}.png", WIDE) for index in range(6)] + [entry(OTHER_PACK, "z.png", WIDE)],
         REHU_DIRECTORY,
@@ -784,9 +784,9 @@ def test_the_keyboard_moves_the_selection_folds_the_group_and_clears(
     assert view.selected == 0
 
     qtbot.keyClick(view, Qt.Key.Key_Minus)
-    qtbot.waitUntil(lambda: view.collapsed == {"pack.zip"})
+    qtbot.waitUntil(lambda: view.collapsed == {"pack.zip/"})
     assert view.selected is None
-    assert view.current_group() == "pack.zip"
+    assert view.current_group() == "pack.zip/"
     qtbot.keyClick(view, Qt.Key.Key_Plus)
     qtbot.waitUntil(lambda: view.collapsed == frozenset())
 
@@ -829,9 +829,9 @@ def test_the_keyboard_does_nothing_over_an_empty_or_unbannered_grid(
     qtbot.keyClick(view, Qt.Key.Key_Plus)
     assert view.collapsed == frozenset()
 
-    view.set_flags(ContentDisplayFlags(zip_names=True, folder_names=False))
+    view.set_flags(ContentDisplayFlags(banners=True))
     qtbot.waitUntil(lambda: view.layout_table is not None and len(view.layout_table.rows) == 2)
-    assert view.current_group() == "pack.zip"
+    assert view.current_group() == "pack.zip/"
 
 
 def test_reveal_before_any_pack_selects_without_a_group(
@@ -862,12 +862,12 @@ def test_new_flags_open_every_group(view: ContentImagesView, content_model: Cont
     * collapse a group, then apply other flags
     * verify nothing is collapsed
     """
-    view.set_flags(ContentDisplayFlags(zip_names=True, folder_names=False))
+    view.set_flags(ContentDisplayFlags(banners=True))
     content_model.set_entries([entry(PACK, "a.png")], REHU_DIRECTORY)
     settle(qtbot, view, content_model)
-    view.set_collapsed("pack.zip", True)
+    view.set_collapsed("pack.zip/", True)
 
-    view.set_flags(ContentDisplayFlags(zip_names=True, folder_names=True))
+    view.set_flags(ContentDisplayFlags(banners=True, strip_zip_folder=False))
 
     assert view.collapsed == frozenset()
 
@@ -890,18 +890,18 @@ def test_the_panel_shows_the_status_under_the_grid(
     panel.show()
     qtbot.waitExposed(panel)
 
-    grid.status_changed.emit("pack.zip:/a.png")
+    grid.status_changed.emit("pack.zip/a.png")
 
-    assert panel.status.text() == "pack.zip:/a.png"
+    assert panel.status.text() == "pack.zip/a.png"
     assert panel.status.mapTo(panel, QPoint(0, 0)).y() >= grid.geometry().bottom()
     assert panel.view is grid
 
-    long_path = "pack.zip:/" + "/".join(["folder"] * 40) + "/a.png"
+    long_path = "pack.zip/" + "/".join(["folder"] * 40) + "/a.png"
     grid.status_changed.emit(long_path)
     shown = panel.status.text()
     assert shown != long_path
     assert "…" in shown
-    assert shown.startswith("pack.zip:/") and shown.endswith("/a.png")
+    assert shown.startswith("pack.zip/") and shown.endswith("/a.png")
     assert panel.status.width() < 400
 
 
@@ -1023,7 +1023,7 @@ def test_hidden_previews_leave_only_the_banners(
     * reveal the member while hidden (a viewer closing) and verify it is selected and nothing raised
     * show previews and verify the image row is back
     """
-    view.set_flags(ContentDisplayFlags(zip_names=True, folder_names=False))
+    view.set_flags(ContentDisplayFlags(banners=True))
     content_model.set_entries([entry(PACK, "a.png", WIDE)], REHU_DIRECTORY)
     settle(qtbot, view, content_model)
     requested = mocker.spy(loader, "request")
@@ -1034,7 +1034,7 @@ def test_hidden_previews_leave_only_the_banners(
     qtbot.waitUntil(lambda: view.layout_table is not None and len(view.layout_table.rows) == 1)
     table = view.layout_table
     assert table is not None
-    assert table.rows[0].banner == "pack.zip"
+    assert table.rows[0].banner == "pack.zip/"
     assert table.rects[0] == (0, 0, 0, 0)
     view.viewport().grab()
     requested.assert_not_called()

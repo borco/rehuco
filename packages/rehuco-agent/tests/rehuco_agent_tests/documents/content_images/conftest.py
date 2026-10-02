@@ -105,7 +105,7 @@ def view(qtbot: QtBot, content_model: ContentImagesModel, loader: ThumbnailLoade
     :returns: the view, shown and laid out.
     """
     built = ContentImagesView(
-        content_model, loader, min_height=100, max_height=200, flags=ContentDisplayFlags(False, False)
+        content_model, loader, min_height=100, max_height=200, flags=ContentDisplayFlags(banners=False)
     )
     qtbot.addWidget(built)
     built.resize(1000, 400)

@@ -4,6 +4,7 @@ import zipfile
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Final
 from unittest.mock import MagicMock
 
@@ -17,27 +18,65 @@ from rehuco_core import (
     scan_rehu_screenshot_files,
 )
 
+from rehuco_core_tests.fake_directories import FakeDirEntry, FakeScandir
+
 DIRECTORY: Final = Path("/fake/refimages")
 FILE_SCOPED_PATH: Final = DIRECTORY / "foo.rehu"
 DIRECTORY_SCOPED_PATH: Final = DIRECTORY / INFO_REHU_FILENAME
 
 
+def mock_tree(mocker: MockerFixture, paths: list[Path]) -> MagicMock:
+    """Mock the content walk's ``os.scandir`` so :data:`DIRECTORY`'s tree appears to hold ``paths``.
+
+    The scanner asks :func:`~rehuco_core.enumerate_content_files` which files are the resource's (#392),
+    so the tree is declared at that walk's own seam, one directory at a time: every folder between
+    :data:`DIRECTORY` and a path is a directory entry of its parent.
+
+    :param mocker: pytest-mock fixture.
+    :param paths: the fake files, all under :data:`DIRECTORY`.
+    :returns: the patched ``os.scandir``.
+    """
+    listing: dict[Path, list[FakeDirEntry]] = {DIRECTORY: []}
+    for path in paths:
+        for folder in reversed(path.parents):
+            if folder.is_relative_to(DIRECTORY) and folder != DIRECTORY and folder not in listing:
+                listing.setdefault(folder.parent, []).append(FakeDirEntry(folder.name, directory=True))
+                listing[folder] = []
+        listing[path.parent].append(FakeDirEntry(path.name))
+
+    def scandir(directory: Path) -> FakeScandir:
+        if Path(directory) not in listing:
+            raise FileNotFoundError(directory)
+        return FakeScandir(listing[Path(directory)])
+
+    return mocker.patch("rehuco_core.rehu_content_files.os.scandir", side_effect=scandir)
+
+
 def mock_siblings(mocker: MockerFixture, filenames: list[str]) -> None:
-    """Mock ``Path.iterdir`` so :data:`DIRECTORY` appears to hold ``filenames``.
+    """Mock :data:`DIRECTORY` as a flat directory holding ``filenames``.
 
     :param mocker: pytest-mock fixture.
     :param filenames: the fake filenames the directory should list.
     """
-    mocker.patch.object(Path, "iterdir", return_value=[DIRECTORY / name for name in filenames])
+    mock_tree(mocker, [DIRECTORY / name for name in filenames])
 
 
-def mock_tree(mocker: MockerFixture, paths: list[Path]) -> None:
-    """Mock ``Path.rglob`` so :data:`DIRECTORY`'s recursive tree appears to hold ``paths``.
+def mock_stats(mocker: MockerFixture, stats: dict[Path, tuple[int, int]]) -> MagicMock:
+    """Mock ``Path.stat`` so each loose image answers its declared size and mtime.
 
     :param mocker: pytest-mock fixture.
-    :param paths: the fake paths the recursive walk should yield.
+    :param stats: ``{path: (size, mtime_ns)}``; a path left out raises ``FileNotFoundError`` -- a file
+        deleted between the walk and the question.
+    :returns: the patched ``Path.stat``.
     """
-    mocker.patch.object(Path, "rglob", return_value=paths)
+
+    def stat(path: Path) -> SimpleNamespace:
+        if path not in stats:
+            raise FileNotFoundError(path)
+        size, mtime = stats[path]
+        return SimpleNamespace(st_size=size, st_mtime_ns=mtime)
+
+    return mocker.patch.object(Path, "stat", autospec=True, side_effect=stat)
 
 
 def mock_shared_read_open(mocker: MockerFixture) -> MagicMock:
@@ -106,6 +145,17 @@ def entry(archive: Path, name: str, size: int = 0, crc: int = 0) -> ContentImage
     return ContentImageEntry(archive, name, size, crc)
 
 
+def loose(name: str, size: int = 0, mtime: int = 0) -> ContentImageEntry:
+    """The :class:`ContentImageEntry` a loose image under :data:`DIRECTORY` enumerates to.
+
+    :param name: the image's path relative to :data:`DIRECTORY`.
+    :param size: its size.
+    :param mtime: its modification time in nanoseconds.
+    :returns: the expected entry.
+    """
+    return ContentImageEntry(None, name, size, file=DIRECTORY / name, mtime=mtime)
+
+
 # region file-scoped
 
 
@@ -146,15 +196,16 @@ def test_file_scoped_matches_stem_and_extension_case_insensitively(mocker: Mocke
 
 
 def test_file_scoped_lists_entries_in_natural_order_ignoring_non_images(mocker: MockerFixture) -> None:
-    """Non-image entries are dropped; recognized ones come back in natural order of their paths, never
-    the central directory's ([[reference-images#image-identity]]).
+    """Non-image entries are dropped; recognized ones come back in natural order, the archive's root
+    images before its folders' (#392), never in the central directory's order
+    ([[reference-images#image-identity]]).
 
     **Test steps:**
 
     * mock ``foo.zip`` to hold images in a shuffled central-directory order -- ``page10`` before
       ``page9``, a subfolder's member before the root's, a text file in between
     * enumerate
-    * verify the images come back natural-sorted component by component, the text file dropped
+    * verify the root images come back natural-sorted, then the subfolder's, the text file dropped
     """
     mock_siblings(mocker, ["foo.zip"])
     mock_archives(
@@ -173,10 +224,10 @@ def test_file_scoped_lists_entries_in_natural_order_ignoring_non_images(mocker: 
     entries = enumerate_content_images(FILE_SCOPED_PATH)
 
     assert entries == [
-        entry(DIRECTORY / "foo.zip", "extras/bonus.png"),
         entry(DIRECTORY / "foo.zip", "page9.jpg"),
         entry(DIRECTORY / "foo.zip", "page009.jpg"),
         entry(DIRECTORY / "foo.zip", "page10.jpg"),
+        entry(DIRECTORY / "foo.zip", "extras/bonus.png"),
     ]
 
 
@@ -199,8 +250,9 @@ def test_entries_carry_the_central_directory_size_and_crc(mocker: MockerFixture)
     assert entries[0].key == ("zip", "page01.jpg", 123_456, 0xDEADBEEF)
 
 
-def test_loose_sibling_images_are_never_counted(mocker: MockerFixture) -> None:
-    """Loose files beside the ``.rehu`` are never opened as archives, even if named like a screenshot.
+def test_a_file_scoped_records_screenshots_are_never_content(mocker: MockerFixture) -> None:
+    """``foo00.jpg`` beside ``foo.rehu`` is that record's screenshot, never a content image, and no loose
+    file is opened as an archive.
 
     **Test steps:**
 
@@ -469,6 +521,233 @@ def test_custom_extension_set_changes_what_is_counted(mocker: MockerFixture) -> 
 
 # endregion
 
+# region loose images
+
+
+def test_loose_images_enumerate_beside_the_archives(mocker: MockerFixture) -> None:
+    """A loose image is a content image too (#392), keyed by its size and mtime under the ``file`` kind
+    ([[reference-images#image-identity]]), with its path relative to the ``.rehu``'s directory.
+
+    **Test steps:**
+
+    * mock a tree holding a root image, one in a subfolder, an archive, and a non-image
+    * enumerate ``info.rehu``'s content images
+    * verify both loose images and the member came back, each loose one keyed ``("file", ...)``
+    """
+    archive = DIRECTORY / "pack.zip"
+    mock_tree(mocker, [DIRECTORY / "a.jpg", DIRECTORY / "foo" / "b.png", archive, DIRECTORY / "notes.txt"])
+    mock_archives(mocker, {archive: [zip_info("page01.jpg", 7, 0xBEEF)]})
+    mock_stats(mocker, {DIRECTORY / "a.jpg": (11, 1_000), DIRECTORY / "foo" / "b.png": (22, 2_000)})
+
+    entries = enumerate_content_images(DIRECTORY_SCOPED_PATH)
+
+    assert entries == [
+        loose("a.jpg", 11, 1_000),
+        loose("foo/b.png", 22, 2_000),
+        entry(archive, "page01.jpg", 7, 0xBEEF),
+    ]
+    assert entries[0].key == ("file", "a.jpg", 11, 1_000)
+    assert entries[2].key == ("zip", "page01.jpg", 7, 0xBEEF)
+
+
+def test_a_folders_own_images_come_before_its_subfolders_inside_an_archive(mocker: MockerFixture) -> None:
+    """Inside an archive, each folder's images come before its subfolders' -- the root's first -- so a
+    folder's images are contiguous whatever their names (#392): ``z.jpg`` at the root is not split from
+    ``a.jpg`` by a ``bar/`` folder sorting between them.
+
+    **Test steps:**
+
+    * mock ``foo.zip`` to hold ``z.jpg``, ``bar/sub/c.jpg``, ``bar/b.jpg`` and ``a.jpg``
+    * enumerate
+    * verify the root images, then ``bar``'s, then ``bar/sub``'s
+    """
+    mock_siblings(mocker, ["foo.zip"])
+    mock_archives(
+        mocker,
+        {
+            DIRECTORY / "foo.zip": [
+                zip_info("z.jpg"),
+                zip_info("bar/sub/c.jpg"),
+                zip_info("bar/b.jpg"),
+                zip_info("a.jpg"),
+            ]
+        },
+    )
+
+    assert [found.name for found in enumerate_content_images(FILE_SCOPED_PATH)] == [
+        "a.jpg",
+        "z.jpg",
+        "bar/b.jpg",
+        "bar/sub/c.jpg",
+    ]
+
+
+def test_groups_sort_case_insensitively_folders_and_archives_together(mocker: MockerFixture) -> None:
+    """The root's loose images come first, then every folder and archive in one natural,
+    case-insensitive order of their paths -- ``Bar.zip`` before ``foo``, ``foo`` before ``xxx/xyz.zip``
+    -- and each group's images in natural order (#392).
+
+    **Test steps:**
+
+    * mock a tree holding root images, a ``foo`` folder's images, ``Bar.zip`` and ``xxx/xyz.zip``,
+      listed out of order
+    * enumerate
+    * verify the groups come ``/``, ``Bar.zip``, ``foo``, ``xxx/xyz.zip``, images natural within each
+    """
+    bar_zip = DIRECTORY / "Bar.zip"
+    xyz_zip = DIRECTORY / "xxx" / "xyz.zip"
+    images = [DIRECTORY / "foo" / "b10.jpg", DIRECTORY / "foo" / "b2.jpg", DIRECTORY / "a.jpg"]
+    mock_tree(mocker, [xyz_zip, *images, bar_zip])
+    mock_archives(mocker, {bar_zip: [zip_info("x.jpg")], xyz_zip: [zip_info("y.jpg")]})
+    mock_stats(mocker, dict.fromkeys(images, (0, 0)))
+
+    entries = enumerate_content_images(DIRECTORY_SCOPED_PATH)
+
+    assert entries == [
+        loose("a.jpg"),
+        entry(bar_zip, "x.jpg"),
+        loose("foo/b2.jpg"),
+        loose("foo/b10.jpg"),
+        entry(xyz_zip, "y.jpg"),
+    ]
+
+
+def test_loose_dot_files_macosx_and_other_extensions_are_excluded(mocker: MockerFixture) -> None:
+    """A loose file is filtered the way an archive member is: no dot-files, nothing under a
+    ``__MACOSX`` folder, only the recognized extensions -- and the given set decides those.
+
+    **Test steps:**
+
+    * mock a tree holding a dot-file image, an image under ``__MACOSX``, a ``.TIFF`` and a ``.jpg``
+    * enumerate once with the default set and once naming only ``.tiff``
+    * verify each run kept only its own extension, and neither kept the dot-file or the sidecar
+    """
+    tiff = DIRECTORY / "scan.TIFF"
+    jpg = DIRECTORY / "keep.jpg"
+    mock_tree(mocker, [DIRECTORY / ".hidden.jpg", DIRECTORY / "__MACOSX" / "keep.jpg", tiff, jpg])
+    mock_stats(mocker, {tiff: (0, 0), jpg: (0, 0)})
+
+    assert enumerate_content_images(DIRECTORY_SCOPED_PATH) == [loose("keep.jpg")]
+    assert enumerate_content_images(DIRECTORY_SCOPED_PATH, extensions=(".tiff",)) == [loose("scan.TIFF")]
+
+
+def test_the_junk_globs_reach_the_walk(mocker: MockerFixture) -> None:
+    """The caller's excluded-files globs leave an image out here exactly as they do for the checksums
+    (#226, #392): what the one set skips, the other never shows.
+
+    **Test steps:**
+
+    * mock a tree holding ``a_thumb.jpg`` and ``a.jpg``
+    * enumerate with a ``*_thumb.jpg`` glob
+    * verify only ``a.jpg`` came back
+    """
+    mock_tree(mocker, [DIRECTORY / "a_thumb.jpg", DIRECTORY / "a.jpg"])
+    mock_stats(mocker, {DIRECTORY / "a_thumb.jpg": (0, 0), DIRECTORY / "a.jpg": (0, 0)})
+
+    entries = enumerate_content_images(DIRECTORY_SCOPED_PATH, excluded_patterns=("*_thumb.jpg",))
+
+    assert entries == [loose("a.jpg")]
+
+
+def test_a_loose_image_that_cannot_be_measured_is_skipped(mocker: MockerFixture) -> None:
+    """A file gone between the walk and its ``stat`` contributes nothing rather than raising.
+
+    **Test steps:**
+
+    * mock a tree holding two images, only one of which answers ``stat``
+    * enumerate
+    * verify only the measurable one came back
+    """
+    mock_tree(mocker, [DIRECTORY / "gone.jpg", DIRECTORY / "here.jpg"])
+    mock_stats(mocker, {DIRECTORY / "here.jpg": (5, 6)})
+
+    assert enumerate_content_images(DIRECTORY_SCOPED_PATH) == [loose("here.jpg", 5, 6)]
+
+
+def test_a_file_scoped_record_owns_its_own_stem_and_nothing_else(mocker: MockerFixture) -> None:
+    """``foo.rehu`` owns ``foo.*`` beside it: ``foo.jpg`` is its content image, ``foo00.jpg`` its
+    screenshot, and ``bar.jpg`` belongs to no record here.
+
+    **Test steps:**
+
+    * mock a flat directory holding ``foo.rehu``, ``foo.jpg``, ``foo00.jpg`` and ``bar.jpg``
+    * enumerate ``foo.rehu``'s content images
+    * verify only ``foo.jpg`` came back
+    """
+    mock_siblings(mocker, ["foo.rehu", "foo.jpg", "foo00.jpg", "bar.jpg"])
+    mock_stats(mocker, {DIRECTORY / "foo.jpg": (1, 2)})
+
+    assert enumerate_content_images(FILE_SCOPED_PATH) == [loose("foo.jpg", 1, 2)]
+
+
+def test_ownership_is_the_content_walks(mocker: MockerFixture) -> None:
+    """The images an ``info.rehu`` shows are the content its checksums cover (#392, #393): its own
+    screenshots and a neighbour's ``foo.*`` are not, a ``bar/foo01.jpg`` is -- a record claims only its
+    own directory -- and a nested resource's images are that resource's.
+
+    **Test steps:**
+
+    * mock a tree with ``info00.jpg``, a file-scoped ``foo.rehu`` with ``foo.jpg``/``foo00.jpg``, a
+      ``bar/foo01.jpg``, a legacy-named ``001.jpg``, and a nested ``child/info.rehu`` with an image
+    * enumerate the root ``info.rehu``'s content images
+    * verify only ``001.jpg`` and ``bar/foo01.jpg`` came back
+    """
+    mock_tree(
+        mocker,
+        [
+            DIRECTORY / INFO_REHU_FILENAME,
+            DIRECTORY / "info00.jpg",
+            DIRECTORY / "foo.rehu",
+            DIRECTORY / "foo.jpg",
+            DIRECTORY / "foo00.jpg",
+            DIRECTORY / "001.jpg",
+            DIRECTORY / "bar" / "foo01.jpg",
+            DIRECTORY / "child" / INFO_REHU_FILENAME,
+            DIRECTORY / "child" / "page.jpg",
+        ],
+    )
+    mock_stats(mocker, {DIRECTORY / "001.jpg": (0, 0), DIRECTORY / "bar" / "foo01.jpg": (0, 0)})
+
+    assert enumerate_content_images(DIRECTORY_SCOPED_PATH) == [loose("001.jpg"), loose("bar/foo01.jpg")]
+
+
+def test_each_loose_image_is_measured_inside_a_hold(mocker: MockerFixture) -> None:
+    """With a coordinator, a loose image's ``stat`` runs inside a
+    :meth:`~rehuco_core.RenameCoordinator.holding` of its own, as an archive's read does (#347).
+
+    **Test steps:**
+
+    * mock one loose image, and a coordinator whose hold records how deep the scan is
+    * enumerate with it, recording the depth at the ``stat``
+    * verify the ``stat`` ran inside exactly one hold
+    """
+    depth = [0]
+    seen: list[int] = []
+
+    @contextmanager
+    def holding() -> Generator[None]:
+        depth[0] += 1
+        try:
+            yield
+        finally:
+            depth[0] -= 1
+
+    coordinator = mocker.MagicMock(spec=RenameCoordinator)
+    coordinator.holding.side_effect = holding
+    mock_tree(mocker, [DIRECTORY / "a.jpg"])
+
+    def stat(_path: Path) -> SimpleNamespace:
+        seen.append(depth[0])
+        return SimpleNamespace(st_size=0, st_mtime_ns=0)
+
+    mocker.patch.object(Path, "stat", autospec=True, side_effect=stat)
+
+    assert enumerate_content_images(DIRECTORY_SCOPED_PATH, coordinator=coordinator) == [loose("a.jpg")]
+    assert seen == [1]
+
+
+# endregion
+
 # region archive failures
 
 
@@ -522,13 +801,11 @@ def test_missing_directory_reports_empty_without_raising(mocker: MockerFixture) 
 
     **Test steps:**
 
-    * mock ``Path.iterdir`` to raise ``FileNotFoundError`` (file-scoped)
-    * mock ``Path.rglob`` to raise ``FileNotFoundError`` (directory-scoped)
-    * enumerate both
+    * mock the walk's ``os.scandir`` to raise ``FileNotFoundError``
+    * enumerate a file-scoped and a directory-scoped record
     * verify both results are empty
     """
-    mocker.patch.object(Path, "iterdir", side_effect=FileNotFoundError)
-    mocker.patch.object(Path, "rglob", side_effect=FileNotFoundError)
+    mocker.patch("rehuco_core.rehu_content_files.os.scandir", side_effect=FileNotFoundError)
 
     assert not enumerate_content_images(FILE_SCOPED_PATH)
     assert not enumerate_content_images(DIRECTORY_SCOPED_PATH)
@@ -551,7 +828,9 @@ def test_content_images_and_screenshots_stay_disjoint(mocker: MockerFixture) -> 
     * run the screenshot scan and the content enumeration over the same directory
     * verify the screenshot scan returns only the loose screenshots and the enumeration only the zip entry
     """
-    mock_siblings(mocker, ["foo.rehu", "foo00.jpg", "foo01.png", "foo.zip"])
+    filenames = ["foo.rehu", "foo00.jpg", "foo01.png", "foo.zip"]
+    mock_siblings(mocker, filenames)
+    mocker.patch.object(Path, "iterdir", return_value=[DIRECTORY / name for name in filenames])
     mock_archives(mocker, {DIRECTORY / "foo.zip": [zip_info("page01.jpg")]})
 
     screenshots = scan_rehu_screenshot_files(DIRECTORY, "foo")

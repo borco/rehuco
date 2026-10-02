@@ -13,6 +13,10 @@ archive is opened at a tracked :class:`~rehuco_core.ResourceLocation` rather tha
 a read that paused for the rename resumes at the new name instead of failing -- a failure here would be
 recorded as *unreadable for good* under a tier-0 key that names no archive, and outlive the rename.
 
+**A loose image has no handle to keep** (#392). It is opened, read and closed in one go, inside the same
+hold and at the same kind of tracked location an archive is, so a rename never meets it open and a read
+paused for one resumes at the new name.
+
 **And an idle cache holds nothing** (#355). Only an in-app rename can ask a handle to close; Explorer, a
 second host on the same share, or a future swarm node cannot. So handles are pooled across a burst of
 reads and closed once reads stop (:data:`IDLE_CLOSE_SECONDS`), on every platform, since a handle kept
@@ -134,19 +138,19 @@ class ArchiveCache:  # pylint: disable=too-many-instance-attributes
             coordinator.add_yield_listener(self.__on_yield)
 
     def read(self, entry: ContentImageEntry) -> bytes | None:
-        """The member's whole bytes.
+        """The image's whole bytes -- an archive member's, or a loose file's (#392).
 
-        :param entry: the member.
-        :returns: its bytes, or ``None`` when the archive or the member cannot be read.
+        :param entry: the image.
+        :returns: its bytes, or ``None`` when the archive, the member or the file cannot be read.
         """
         return self.__read(entry, None)
 
     def read_head(self, entry: ContentImageEntry, limit: int = HEADER_BYTES) -> bytes | None:
-        """The member's leading ``limit`` bytes -- a partial inflate, enough for its header.
+        """The image's leading ``limit`` bytes -- for a member a partial inflate -- enough for its header.
 
-        :param entry: the member.
-        :param limit: how many bytes to inflate.
-        :returns: the bytes, or ``None`` when the archive or the member cannot be read.
+        :param entry: the image.
+        :param limit: how many bytes to read.
+        :returns: the bytes, or ``None`` when the archive, the member or the file cannot be read.
         """
         return self.__read(entry, limit)
 
@@ -186,22 +190,49 @@ class ArchiveCache:  # pylint: disable=too-many-instance-attributes
         self.release_handles()
 
     def __read(self, entry: ContentImageEntry, limit: int | None) -> bytes | None:
-        """Read ``limit`` bytes (or all) of ``entry`` through its archive's handle, under that handle's
-        lock, inside the rename barrier -- and, however it ends, make sure the idle check is pending.
+        """Read ``limit`` bytes (or all) of ``entry``: a member through its archive's handle, under that
+        handle's lock, inside the rename barrier -- and, however it ends, make sure the idle check is
+        pending -- or a loose file directly (:meth:`__read_loose`).
 
-        :param entry: the member.
+        :param entry: the image.
         :param limit: how many bytes, or ``None`` for all.
         :returns: the bytes, or ``None`` on any failure.
         """
+        archive = entry.archive
+        if archive is None:
+            return self.__read_loose(entry.file, limit) if entry.file is not None else None
         try:
-            return self.__read_through_handle(entry, limit)
+            return self.__read_through_handle(archive, entry.name, limit)
         finally:
             self.__note_read()
 
-    def __read_through_handle(self, entry: ContentImageEntry, limit: int | None) -> bytes | None:
+    def __read_loose(self, file: Path, limit: int | None) -> bytes | None:
+        """Read a loose image whole or in part, opening and closing it inside one hold (#392).
+
+        No handle is kept, so nothing is left for the idle check or a rename's yield to close. The file is
+        opened at its tracked location, as an archive is, so a read that paused for a rename resumes at
+        the new name rather than recording the image unreadable for good.
+
+        :param file: the image as its entry names it.
+        :param limit: how many bytes, or ``None`` for all.
+        :returns: the bytes, or ``None`` when the file cannot be read or the cache is closed.
+        """
+        with self.__holding():
+            with self.__lock:
+                if self.__closed:
+                    return None
+                current = self.__location(file).path
+            try:
+                with shared_read_open(current) as stream:
+                    return stream.read() if limit is None else stream.read(limit)
+            except OSError:
+                return None
+
+    def __read_through_handle(self, archive: Path, name: str, limit: int | None) -> bytes | None:
         """The read itself, retried when its handle was closed under it; see :meth:`__read`.
 
-        :param entry: the member.
+        :param archive: the archive, as its entries name it.
+        :param name: the member's path inside it.
         :param limit: how many bytes, or ``None`` for all.
         :returns: the bytes, or ``None`` on any failure.
         """
@@ -212,21 +243,21 @@ class ArchiveCache:  # pylint: disable=too-many-instance-attributes
         # is what waits for that
         for _ in range(READ_ATTEMPTS):
             with self.__holding():
-                handle = self.__handle(entry.archive)
+                handle = self.__handle(archive)
                 if handle is None:
                     return None
                 try:
                     with handle.lock:
                         if handle.closed:
                             continue
-                        with handle.archive.open(entry.name) as member:
+                        with handle.archive.open(name) as member:
                             return member.read() if limit is None else member.read(limit)
                 except OSError, zipfile.BadZipFile, KeyError, RuntimeError, ValueError:
                     # KeyError: the member is not in this archive any more; RuntimeError: encrypted;
                     # ValueError: a member whose compression this zipfile cannot inflate
                     return None
                 finally:
-                    self.__let_go_if_wanted(entry.archive, handle)
+                    self.__let_go_if_wanted(archive, handle)
         return None
 
     def __holding(self) -> AbstractContextManager[None]:
@@ -322,9 +353,9 @@ class ArchiveCache:  # pylint: disable=too-many-instance-attributes
                     del self.__handles[path]
 
     def __location(self, path: Path) -> ResourceLocation:
-        """Where the archive first seen at ``path`` is now; the cache lock is held.
+        """Where the archive or loose image first seen at ``path`` is now; the cache lock is held.
 
-        :param path: the archive's path as its entries name it.
+        :param path: the file's path as its entries name it.
         :returns: its location, tracked by the coordinator when there is one.
         """
         location = self.__locations.get(path)

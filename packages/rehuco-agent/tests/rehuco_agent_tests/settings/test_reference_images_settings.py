@@ -18,7 +18,7 @@ from rehuco_agent.settings.reference_images_settings import (
     read_extensions,
     shared_reference_images_settings,
 )
-from rehuco_core import CONTENT_IMAGE_EXTENSIONS, ContentImageEntry, enumerate_content_images
+from rehuco_core import CONTENT_IMAGE_EXTENSIONS, ContentEnumeration, ContentImageEntry, enumerate_content_images
 
 DIRECTORY: Final = Path("/fake/refimages")
 FILE_SCOPED_PATH: Final = DIRECTORY / "foo.rehu"
@@ -364,12 +364,15 @@ def test_the_saved_list_is_what_the_content_image_enumeration_counts(
 
     **Test steps:**
 
-    * mock ``foo.rehu``'s sibling archive to hold one ``.bmp`` and one ``.jpg``
+    * mock ``foo.rehu``'s content walk to hand back its archive, holding one ``.bmp`` and one ``.jpg``
     * enumerate under a freshly-loaded (empty) list, and verify only the ``.jpg`` counts
     * save a ``bmp``-only list, load it back, and enumerate under it
     * verify only the ``.bmp`` counts
     """
-    mocker.patch.object(Path, "iterdir", return_value=[ARCHIVE_PATH])
+    mocker.patch(
+        "rehuco_core.rehu_content_images.enumerate_content_files",
+        return_value=ContentEnumeration(ARCHIVE_PATH.parent, [ARCHIVE_PATH]),
+    )
     opened = mocker.MagicMock()
     members = [zipfile.ZipInfo("page01.bmp"), zipfile.ZipInfo("page02.jpg")]
     for member in members:

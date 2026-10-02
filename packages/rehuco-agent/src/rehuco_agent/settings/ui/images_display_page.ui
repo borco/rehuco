@@ -419,12 +419,12 @@
        </widget>
       </item>
       <item row="3" column="0" colspan="2">
-       <widget class="QCheckBox" name="content_zip_names_check_box">
+       <widget class="QCheckBox" name="content_banners_check_box">
         <property name="text">
-         <string>Show zip file names</string>
+         <string>Show banners</string>
         </property>
         <property name="toolTip">
-         <string>Start each archive's images with a banner naming it, as a path relative to the resource's folder.</string>
+         <string>Start each folder's images with a banner naming it, as a path relative to the resource's folder: / for the resource's own folder, foo/ for a folder, foo.zip/ for a zip, foo.zip/bar/ for a folder inside it.</string>
         </property>
         <property name="checked">
          <bool>true</bool>
@@ -432,22 +432,12 @@
        </widget>
       </item>
       <item row="4" column="0" colspan="2">
-       <widget class="QCheckBox" name="content_folder_names_check_box">
-        <property name="text">
-         <string>Show folder names in zips</string>
-        </property>
-        <property name="toolTip">
-         <string>Start each folder's images inside an archive with a banner naming the folder.</string>
-        </property>
-       </widget>
-      </item>
-      <item row="5" column="0" colspan="2">
        <widget class="QCheckBox" name="content_strip_zip_folder_check_box">
         <property name="text">
          <string>Hide a top folder named like its zip</string>
         </property>
         <property name="toolTip">
-         <string>When all of a zip's images sit in one top folder with the zip's own name, leave that folder out of the banners: foo.zip:/bar rather than foo.zip:/foo/bar.</string>
+         <string>When all of a zip's images sit in one top folder with the zip's own name, leave that folder out of the banners: foo.zip/bar/ rather than foo.zip/foo/bar/.</string>
         </property>
         <property name="checked">
          <bool>true</bool>

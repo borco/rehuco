@@ -28,7 +28,7 @@ rules that keep it trustworthy, the app's panels, and what isn't built.
   script — on the editor to scrape it, and review the result as an ordinary edit before saving.
 - **Shows its screenshots.** A thumbnail strip beside the fields — double-click one to fill the window,
   arrow keys or the wheel to move through the set, and pick which of them the strip shows. A reference
-  pack also shows the images inside its archives.
+  pack also shows its own images, inside its archives and loose in its folders.
 - **Checks its files.** Generates and verifies checksums for one resource or a whole folder, remembering
   when each file was last checked so a re-run skips what is still fresh.
 - **Converts legacy `.tc` catalogs.** One file or a whole folder tree at once: reads the older format,

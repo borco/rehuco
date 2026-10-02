@@ -137,7 +137,7 @@ only:
   is stripped by that chain's **v3** step ([[plugins#plugin-blocks]]), which is the first place the two
   block chains diverge.
 - **ReferenceImages only** — the count pair `advertised_count` / `current_count` (what the pack claims,
-  and what counting its archives finds — [[data-model#resource-scoping]]); declares **no** duration
+  and what counting its archived and loose images finds — [[data-model#resource-scoping]]); declares **no** duration
   ([[field-schema#duration-size]]), so the value
   that leaked as `720` in tc4 has nowhere to land.
 - **Collection** — a series/grouping node; its **`title` is the series name** that members
@@ -653,10 +653,10 @@ Field order, in the three groups the layout separates:
   with a vocabulary from `.rehuco` (scope, labels/icons), migrated via a plugin-block
   `format_version` bump ([[data-model#schema-version]]). `favorite` stays separate. v1 keeps individual bools.
 - **The image count on import — resolved (#198)** — a reference-images `.tc` imports with **neither** count
-  written (the old `duration` is not assumed to be one). `current_count` is filled by counting the content
-  zips' entries ([[data-model#resource-scoping]]), on an explicit action that fills a label beside the stored
-  value rather than overwriting it: a stored count disagreeing with the archive is evidence of a refreshed
-  zip, not a stale number to correct silently. `advertised_count` is hand-entered — nothing measures a claim.
+  written (the old `duration` is not assumed to be one). `current_count` is filled by counting the pack's
+  content images, archived and loose ([[data-model#resource-scoping]]), on an explicit action that fills a label
+  beside the stored value rather than overwriting it: a stored count disagreeing with the pack is evidence of a
+  refreshed pack, not a stale number to correct silently. `advertised_count` is hand-entered — nothing measures a claim.
 - **Size on disk — resolved ([#223](https://github.com/borco/rehuco/issues/223),
   [#232](https://github.com/borco/rehuco/issues/232))** — `original_size` and
   `current_size` are measured over the shared content-file set

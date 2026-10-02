@@ -19,7 +19,7 @@ COMPUTE_ICON_RESOURCE: Final = ":/icons/measure_image_count.svg"
 APPLY_TOOLTIP: Final = "Store the computed count"
 """Names the apply action; also how a test tells the row's two buttons apart, since both are icon-only."""
 
-COMPUTE_TOOLTIP: Final = "Count the images inside this resource's archive(s)"
+COMPUTE_TOOLTIP: Final = "Count this resource's content images, inside its archives and loose in its folders"
 """Names the compute action; see :data:`APPLY_TOOLTIP`."""
 
 COMPUTED_TOOLTIP: Final = "The counted number of images"
