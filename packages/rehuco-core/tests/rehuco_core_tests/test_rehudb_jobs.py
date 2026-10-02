@@ -9,7 +9,7 @@ from typing import Final
 from unittest.mock import MagicMock
 from uuid import uuid4
 
-from pytest import fixture, mark
+from pytest import fixture, mark, raises
 from pytest_mock import MockerFixture
 from rehuco_core import (
     DEFAULT_TASK_JOB_REGISTRY,
@@ -120,6 +120,32 @@ def test_a_scan_reads_through_its_coordinator_and_checkpoint(mocker: MockerFixtu
     assert scan_class.call_args.kwargs["coordinator"] is coordinator
     checkpoint = scan_class.call_args.kwargs["checkpoint"]
     assert (checkpoint.__self__, checkpoint.__name__) == (job, "checkpoint")
+
+
+def test_a_retried_scan_reports_its_own_run(mocker: MockerFixture, cache: MagicMock) -> None:
+    """Resetting drops the last scan's result along with the stop request."""
+    del cache
+    scan_returning(mocker, RootScanResult(ROOT, RootScanOutcome.SCANNED))
+    job = scan_job()
+    job.run(FakeControl())
+
+    job.reset()
+
+    assert job.result is None
+
+
+def test_a_scan_that_names_nothing_refuses_to_run() -> None:
+    """A job built bare and never restored says what it is missing rather than scanning nothing."""
+    with raises(ValueError, match="no folder"):
+        ScanCatalogRootJob().run(FakeControl())
+    with raises(ValueError, match="no root"):
+        ScanCatalogRootJob(CACHE, root=ROOT).run(FakeControl())
+
+
+def test_a_root_removal_with_no_cache_refuses_to_run() -> None:
+    """There is no file to remove the root from."""
+    with raises(ValueError, match="no cache"):
+        RemoveCatalogRootJob(None, ROOT_ID).run(FakeControl())
 
 
 def test_a_scan_counts_resources_and_is_named_for_its_root() -> None:

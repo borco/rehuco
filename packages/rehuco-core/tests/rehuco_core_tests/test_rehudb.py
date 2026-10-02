@@ -7,6 +7,7 @@ including after the cache under test has closed its own.
 
 import logging
 import sqlite3
+from collections.abc import Callable, Generator
 from pathlib import Path
 from typing import Any, Final
 from uuid import uuid4
@@ -57,28 +58,51 @@ class MemoryDatabase:
         return {name for (name,) in self.keeper.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
 
 
+@fixture(name="memory")
+def fixture_memory() -> Generator[Callable[[], MemoryDatabase]]:
+    """Make in-memory databases, and close every keeper when the test ends.
+
+    A keeper left open is a connection the garbage collector closes later, under whichever test happens to
+    be running -- a ``ResourceWarning`` blamed on a test that never touched SQLite.
+
+    :yields: the factory.
+    """
+    made: list[MemoryDatabase] = []
+
+    def make() -> MemoryDatabase:
+        database = MemoryDatabase()
+        made.append(database)
+        return database
+
+    yield make
+    for database in made:
+        database.keeper.close()
+
+
 @fixture(name="database")
-def fixture_database(mocker: MockerFixture) -> MemoryDatabase:
+def fixture_database(mocker: MockerFixture, memory: Callable[[], MemoryDatabase]) -> MemoryDatabase:
     """Route every connection the cache opens to one fresh in-memory database, and fake the folder.
 
     :param mocker: pytest-mock fixture.
+    :param memory: where the database comes from.
     :returns: the database.
     """
-    database = MemoryDatabase()
+    database = memory()
     mocker.patch("rehuco_core.rehudb.sqlite3.connect", side_effect=database.connect)
     mocker.patch.object(Path, "mkdir", autospec=True)
     return database
 
 
 @fixture(name="cache")
-def fixture_cache(database: MemoryDatabase) -> CatalogCache:
-    """A freshly created cache over :func:`fixture_database`.
+def fixture_cache(database: MemoryDatabase) -> Generator[CatalogCache]:
+    """A freshly created cache over :func:`fixture_database`, closed when the test ends.
 
     :param database: the database it is created in.
-    :returns: the open cache.
+    :yields: the open cache.
     """
     del database
-    return CatalogCache.open(CACHE_PATH)
+    with CatalogCache.open(CACHE_PATH) as cache:
+        yield cache
 
 
 def two_roots() -> tuple[RehucoFile, RehucoRoot, RehucoRoot]:
@@ -105,6 +129,7 @@ def test_a_fresh_cache_is_incremental_and_stamped_with_the_current_version(
     assert database.scalar("PRAGMA auto_vacuum") == INCREMENTAL
     assert database.scalar("PRAGMA user_version") == CURRENT_VERSION
     assert cache.schema_version == CURRENT_VERSION
+    assert cache.path == CACHE_PATH
     assert {"roots", "resources", "authors", "tags", "publishers"} <= database.tables()
 
 
@@ -113,9 +138,9 @@ def test_every_connection_enforces_foreign_keys(cache: CatalogCache) -> None:
     assert cache.connection.execute("PRAGMA foreign_keys").fetchone()[0] == 1
 
 
-def test_the_cache_folder_is_created(mocker: MockerFixture) -> None:
+def test_the_cache_folder_is_created(mocker: MockerFixture, memory: Callable[[], MemoryDatabase]) -> None:
     """A first run has no cache folder yet."""
-    database = MemoryDatabase()
+    database = memory()
     mocker.patch("rehuco_core.rehudb.sqlite3.connect", side_effect=database.connect)
     mkdir = mocker.patch.object(Path, "mkdir", autospec=True)
 
@@ -164,41 +189,43 @@ def test_a_failing_step_leaves_the_version_it_started_from(database: MemoryDatab
     assert "half" not in database.tables()
 
 
-def test_a_newer_cache_is_discarded_and_rebuilt_never_written(mocker: MockerFixture, caplog: LogCaptureFixture) -> None:
+def test_a_newer_cache_is_discarded_and_rebuilt_never_written(
+    mocker: MockerFixture, caplog: LogCaptureFixture, memory: Callable[[], MemoryDatabase]
+) -> None:
     """There is no downgrade: a cache from a newer build is thrown away, the reason logged."""
-    newer, rebuilt = MemoryDatabase(), MemoryDatabase()
+    newer, rebuilt = memory(), memory()
     newer.keeper.execute("PRAGMA user_version = 99")
     newer.keeper.execute("CREATE TABLE future (x)")
     mocker.patch("rehuco_core.rehudb.sqlite3.connect", side_effect=[newer.connect(), rebuilt.connect()])
     mocker.patch.object(Path, "mkdir", autospec=True)
     unlink = mocker.patch.object(Path, "unlink", autospec=True)
 
-    with caplog.at_level(logging.WARNING, logger="rehuco_core.rehudb"):
-        cache = CatalogCache.open(CACHE_PATH)
+    with caplog.at_level(logging.WARNING, logger="rehuco_core.rehudb"), CatalogCache.open(CACHE_PATH) as cache:
+        assert cache.schema_version == CURRENT_VERSION
 
     assert "newer than this build" in caplog.text
     unlinked = {call.args[0] for call in unlink.call_args_list}
     assert unlinked == {CACHE_PATH, Path(f"{CACHE_PATH}-wal"), Path(f"{CACHE_PATH}-shm")}
-    assert cache.schema_version == CURRENT_VERSION
     assert newer.scalar("PRAGMA user_version") == 99
     assert newer.tables() == {"future"}
 
 
-def test_a_file_that_is_not_a_database_is_rebuilt(mocker: MockerFixture, caplog: LogCaptureFixture) -> None:
+def test_a_file_that_is_not_a_database_is_rebuilt(
+    mocker: MockerFixture, caplog: LogCaptureFixture, memory: Callable[[], MemoryDatabase]
+) -> None:
     """A disposable cache that will not open is replaced rather than reported."""
     broken = mocker.Mock(spec=sqlite3.Connection)
     broken.execute.side_effect = sqlite3.DatabaseError("file is not a database")
-    rebuilt = MemoryDatabase()
+    rebuilt = memory()
     mocker.patch("rehuco_core.rehudb.sqlite3.connect", side_effect=[broken, rebuilt.connect()])
     mocker.patch.object(Path, "mkdir", autospec=True)
     mocker.patch.object(Path, "unlink", autospec=True)
 
-    with caplog.at_level(logging.WARNING, logger="rehuco_core.rehudb"):
-        cache = CatalogCache.open(CACHE_PATH)
+    with caplog.at_level(logging.WARNING, logger="rehuco_core.rehudb"), CatalogCache.open(CACHE_PATH) as cache:
+        assert cache.schema_version == CURRENT_VERSION
 
     assert "not a database" in caplog.text
     broken.close.assert_called_once_with()
-    assert cache.schema_version == CURRENT_VERSION
 
 
 def test_a_locked_cache_is_refused_not_deleted(mocker: MockerFixture) -> None:
@@ -216,9 +243,11 @@ def test_a_locked_cache_is_refused_not_deleted(mocker: MockerFixture) -> None:
     locked.close.assert_called_once_with()
 
 
-def test_a_connection_waits_for_a_busy_cache_from_its_first_statement(mocker: MockerFixture) -> None:
+def test_a_connection_waits_for_a_busy_cache_from_its_first_statement(
+    mocker: MockerFixture, memory: Callable[[], MemoryDatabase]
+) -> None:
     """The busy wait is set on the connection, not by a later pragma, so the version read on open has it."""
-    database = MemoryDatabase()
+    database = memory()
     connect = mocker.patch("rehuco_core.rehudb.sqlite3.connect", side_effect=database.connect)
     mocker.patch.object(Path, "mkdir", autospec=True)
 
