@@ -199,7 +199,8 @@ arises ([[borrowing#borrow-vs-delete]]); scheduled archival on return, full or s
 ## Reference images — richness not started
 
 Viewing and editing a reference-images resource is done and genuinely usable: the resource type, its
-fields, checksums, and the **Content Images** dock (#221 — a grid over a pack's archive members, a
+fields, checksums, and the **Content Images** dock (#221 — a grid over a pack's archive members and, since #392,
+its loose images, a
 decode-on-demand lightbox) all shipped. What's unbuilt is the *richness* layer on top:
 the `.rehuimg` sidecar skeleton, a `rehuco-vision` inference package, redaction (blur, per-user overrides,
 a region sub-dock, the scope cascade, a cover/inpainting effect), tagging and embeddings, a Pinterest-style

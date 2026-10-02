@@ -123,27 +123,37 @@ Two patterns for what a `.rehu` describes:
   left beside it is the case #243 exists for, and the record it seeds is the one the converted resource inherits.
   Refusing the actions while a document is locked would have been the cheaper fix and throws that away.
 
-What a **reference-images** resource's content *is* was settled by #197: content lives inside archives — `.zip` or
-`.cbz`, a comic-book zip being the same container under another name — never as loose image files beside the `.rehu`.
+What a **reference-images** resource's content *images* are is **every recognized image among its content files**
+(#392): the members of each `.zip`/`.cbz` it covers — a comic-book zip being the same container under another name —
+and every image lying loose in its folders. #197 first settled them as archive members only; packs that ship
+unzipped are as real, and the content walk already says which files a record owns, so the images follow it rather
+than a second rule. Which files those are is the walk's answer, the one checksums and size read, so a pack never
+shows an image its checksum does not cover:
 
-- File-scoped `foo.rehu` → the single same-stem archive (`foo.zip`/`foo.cbz`) **and nothing else**. Siblings in the
-  same directory belong to other resources or to none, and are never opened — a whitelist of one, not a directory walk
-  with filters.
-- Directory-scoped `info.rehu` of type `reference_images` → every archive under its directory **that no other record
-  covers**, root and
-  subdirectories, recursively. A nested `info.rehu` **is** a boundary (#254): a subdirectory carrying its own document
-  is another resource, handled per its own type, and its archives are counted there rather than here — as is an archive
-  sitting beside a same-stem `foo.rehu` of its own. The overlap this used to accept is resolved by the coverage rule
-  above, for the reason it gives.
+- File-scoped `foo.rehu` → its `foo.*` siblings and **nothing else**: the same-stem archive (`foo.zip`/`foo.cbz`) and
+  a loose `foo.jpg`, never its own `foo00.jpg` screenshots. Other siblings belong to other resources or to none, and
+  are never opened — a whitelist of one stem, not a directory walk with filters.
+- Directory-scoped `info.rehu` of type `reference_images` → every archive and loose image under its directory **that
+  no other record covers**, root and subdirectories, recursively, never its own `infoNN` screenshots. A nested
+  `info.rehu` **is** a boundary (#254): a subdirectory carrying its own document is another resource, handled per its
+  own type, and its images are counted there rather than here — as is a file sitting beside a same-stem `foo.rehu` of
+  its own. A record claims only its own directory, so a `bar/foo01.jpg` is the enclosing resource's image. The
+  overlap this used to accept is resolved by the coverage rule above, for the reason it gives.
+- **Every folder holding images is a group, on disk or inside an archive, named by its path relative to the
+  `.rehu`** with a trailing `/`, an archive counting as one more level: `/` for the `.rehu`'s own folder, `foo/`,
+  `foo.zip/`, `foo.zip/bar/`, `baz/foo.zip/bar/`. The pack's groups run in one natural, case-insensitive order of
+  their paths, folders and archives together, the root first (`/`, `Bar.zip/`, `foo/`, `xxx/xyz.zip/`); inside an
+  archive, each folder's images come before its subfolders', so every group is contiguous.
 - **Not** a curated list of member archives — a reference-images resource is one file or one directory; the manifest
   block contemplated above is not needed here.
-- **Which archive entries count as images is the user's to set** — the enumeration takes the recognized extension set
+- **Which files count as images is the user's to set** — inside an archive and out of one alike; the enumeration
+  takes the recognized extension set
   as a parameter, and the `Images / Files` settings page (#222, #294) supplies it — one editable list, one
   format per entry, starting from `jpg, jpeg, png, webp, avif` and resolving back to that shipped set whenever it names
   nothing ([[appendices.settings-pages#category-groups]]). A pack in a format the shipped set
   omits (`.bmp`, `.tif`, `.tga`, `.psd`) is a preference change, not a rebuild.
 - **Counting them fills `current_count`, and only when asked** (#198) — the editor shows the measured count beside
-  the stored one and stores it on an explicit apply, never on open. The two disagreeing is *information*: the archive
+  the stored one and stores it on an explicit apply, never on open. The two disagreeing is *information*: the pack
   was refreshed behind the app's back ([[data-model#image-meanings]]), which an automatic fill would erase before
   anyone saw it. What the pack itself claims lives separately, in `advertised_count` ([[field-schema#field-types]]).
 

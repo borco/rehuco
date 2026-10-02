@@ -561,8 +561,8 @@ def test_compute_counts_the_resources_content_images_with_the_configured_extensi
     * select a custom extension list in the shared reference-images settings
     * build a reference-images document with a rename coordinator, and its editor, with the enumeration
       mocked to find two entries
-    * press Compute and verify the enumeration was handed the document's own path, that set, and that
-      coordinator
+    * press Compute and verify the enumeration was handed the document's own path, that set, that
+      coordinator and the excluded-files globs
     * verify the measured count reached the row, without touching the stored one
     """
     settings = shared_reference_images_settings()
@@ -580,7 +580,9 @@ def test_compute_counts_the_resources_content_images_with_the_configured_extensi
 
     compute(qtbot, editor, COMPUTE_TOOLTIP)
 
-    enumerate_content_images.assert_called_once_with(PACK_PATH, (".bmp", ".tif"), coordinator)
+    enumerate_content_images.assert_called_once_with(
+        PACK_PATH, (".bmp", ".tif"), coordinator, shared_excluded_files_settings().excluded_file_patterns
+    )
     assert editor.computed == 2
     assert model.current_count is None
 

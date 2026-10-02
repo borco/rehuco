@@ -778,3 +778,134 @@ def test_an_open_that_lands_after_the_close_is_closed_not_kept(mocker: MockerFix
 
 
 # endregion
+
+
+# region loose images (#392)
+LOOSE: Final = ContentImageEntry(None, "img.jpg", 3, file=ARCHIVE.parent / "img.jpg", mtime=1)
+"""A loose image beside :data:`ARCHIVE`, in the folder the rename fixtures move."""
+
+
+def mock_loose(mocker: MockerFixture, payload: bytes = PAYLOAD) -> tuple[MagicMock, list[MagicMock]]:
+    """Mock the share-delete opener so a loose file reads as ``payload``, and ``zipfile.ZipFile`` so a
+    test can prove no archive was opened.
+
+    :param mocker: pytest-mock fixture.
+    :param payload: the file's bytes.
+    :returns: the patched opener, for call-arg assertions, and the files it opened so far, in order.
+    """
+    files: list[MagicMock] = []
+
+    def open_file(path: Path) -> MagicMock:
+        file = mocker.MagicMock(name=f"file:{path}")
+        stream = file.__enter__.return_value
+        stream.read.side_effect = lambda limit=None: payload if limit is None else payload[:limit]
+        files.append(file)
+        return file
+
+    mocker.patch(f"{MODULE}.zipfile.ZipFile", side_effect=AssertionError("no archive for a loose image"))
+    return mocker.patch(f"{MODULE}.shared_read_open", side_effect=open_file), files
+
+
+def test_a_loose_image_reads_whole_and_in_part_without_a_kept_handle(mocker: MockerFixture, timer: MagicMock) -> None:
+    """A loose image is read straight off its file, whole or its leading bytes, and nothing is kept
+    open -- so no idle check is started either.
+
+    **Test steps:**
+
+    * read a loose image whole, then its first byte
+    * verify the bytes, that each read opened the file once and closed it, and that no handle or idle
+      check was left behind
+    """
+    opener, files = mock_loose(mocker)
+    cache = ArchiveCache()
+
+    assert cache.read(LOOSE) == PAYLOAD
+    assert cache.read_head(LOOSE, 1) == PAYLOAD[:1]
+    assert [call.args for call in opener.call_args_list] == [(LOOSE.file,), (LOOSE.file,)]
+    assert len(files) == 2
+    for file in files:
+        file.__exit__.assert_called_once()
+    assert not planted(cache)
+    timer.assert_not_called()
+
+
+def test_an_unreadable_loose_image_reads_as_nothing(mocker: MockerFixture) -> None:
+    """A loose file that will not open -- deleted, or on a share gone away -- answers ``None``.
+
+    **Test steps:**
+
+    * make the opener raise ``OSError`` and read a loose image
+    * verify the read answered nothing
+    """
+    mocker.patch(f"{MODULE}.shared_read_open", side_effect=OSError("gone"))
+
+    assert ArchiveCache().read(LOOSE) is None
+
+
+def test_a_closed_cache_reads_no_loose_image(mocker: MockerFixture) -> None:
+    """A loose read reaching a closed cache gets nothing, as an archive read does.
+
+    **Test steps:**
+
+    * close a cache, then read a loose image through it
+    * verify nothing was answered and nothing opened
+    """
+    opener, _ = mock_loose(mocker)
+    cache = ArchiveCache()
+    cache.close()
+
+    assert cache.read(LOOSE) is None
+    opener.assert_not_called()
+
+
+def test_an_entry_naming_neither_an_archive_nor_a_file_reads_as_nothing(mocker: MockerFixture) -> None:
+    """An entry with no archive and no file has nothing to read, and answers ``None`` rather than raising.
+
+    **Test steps:**
+
+    * read an entry built with neither
+    * verify nothing was answered and nothing opened
+    """
+    opener, _ = mock_loose(mocker)
+
+    assert ArchiveCache().read(ContentImageEntry(None, "img.jpg", 3)) is None
+    opener.assert_not_called()
+
+
+def test_a_loose_read_during_the_rename_waits_and_opens_at_the_new_path(
+    mocker: MockerFixture, coordinator: RenameCoordinator, renamer: MagicMock
+) -> None:
+    """A loose read asked for while the rename runs waits for it, then reads the file where it went --
+    the same tracked location an archive is opened at (#392, #347).
+
+    **Test steps:**
+
+    * read the loose image once, so its location is tracked, then make the rename block until released
+    * start the rename, then a read, and check the read has not opened the file again
+    * release the rename, and check the read returned its bytes off the moved file
+    """
+    moved = RENAMED_ARCHIVE.parent / "img.jpg"
+    renamer.relocate.side_effect = lambda path: moved if path == LOOSE.file else path
+    opener, _ = mock_loose(mocker)
+    cache = ArchiveCache(coordinator)
+    cache.read(LOOSE)
+    release = threading.Event()
+    renamer.rename.side_effect = lambda: release.wait(SETTLE)
+    result: list[bytes | None] = []
+
+    renaming = start(lambda: rename(coordinator))
+    assert wait_until(lambda: coordinator.yield_wanted)
+    reader = start(lambda: result.append(cache.read(LOOSE)))
+    reader.join(BRIEF)
+    assert not result
+    assert opener.call_count == 1
+
+    release.set()
+    renaming.join(SETTLE)
+    reader.join(SETTLE)
+
+    assert result == [PAYLOAD]
+    assert opener.call_args.args == (moved,)
+
+
+# endregion

@@ -26,9 +26,12 @@ LIGHTBOX_DOUBLE_CLICK_CLOSES_KEY: Final = "lightbox_double_click_closes"
 LIGHTBOX_SELECT_LAST_VIEWED_KEY: Final = "lightbox_select_last_viewed"
 CONTENT_ROWS_MIN_HEIGHT_KEY: Final = "content_rows_min_height"
 CONTENT_ROWS_MAX_HEIGHT_KEY: Final = "content_rows_max_height"
-CONTENT_ZIP_NAMES_KEY: Final = "content_zip_names"
-CONTENT_FOLDER_NAMES_KEY: Final = "content_folder_names"
+CONTENT_BANNERS_KEY: Final = "content_banners"
 CONTENT_STRIP_ZIP_FOLDER_KEY: Final = "content_strip_zip_folder"
+LEGACY_CONTENT_ZIP_NAMES_KEY: Final = "content_zip_names"
+LEGACY_CONTENT_FOLDER_NAMES_KEY: Final = "content_folder_names"
+"""The two banner boxes :data:`CONTENT_BANNERS_KEY` replaced (#392): read only from an ``.ini`` that has
+no banner choice of its own yet, so the first save after #392 settles it for good."""
 
 DEFAULT_MODE: Final = ImageViewerMode.DOCUMENT_OVERLAY
 """What a fresh install (no ``.ini`` yet) opens screenshots on: the least disruptive of the three --
@@ -82,17 +85,14 @@ DEFAULT_CONTENT_ROWS_MAX_HEIGHT: Final = 260
 edge only while its flush height falls inside it, and left ragged otherwise. Tuned against real packs
 -- portrait figure references pack four or five to a row at these on a half-width dock."""
 
-DEFAULT_CONTENT_ZIP_NAMES: Final = True
-"""Whether the Content Images dock banners each archive's start with its name (#221). On: several
-archives with no marker between them is the confusion the dock's banners exist to prevent."""
-
-DEFAULT_CONTENT_FOLDER_NAMES: Final = False
-"""Whether the Content Images dock banners each folder change inside an archive (#221). Off: most packs
-are flat, and a banner per folder on the ones that are not is a choice, not a default."""
+DEFAULT_CONTENT_BANNERS: Final = True
+"""Whether the Content Images dock starts each folder's images -- on disk or inside an archive -- with a
+banner naming it (#221, #392). On: several archives and folders with no marker between them is the
+confusion the dock's banners exist to prevent."""
 
 DEFAULT_CONTENT_STRIP_ZIP_FOLDER: Final = True
 """Whether the Content Images dock drops a top folder named like its zip from the banners (#367). On:
-``foo.zip:/foo/bar`` says ``foo`` twice, and a pack zipped with its own folder inside is the common shape."""
+``foo.zip/foo/bar/`` says ``foo`` twice, and a pack zipped with its own folder inside is the common shape."""
 
 
 class ImageViewerSettings(QObject):  # pylint: disable=too-many-instance-attributes
@@ -168,9 +168,9 @@ class ImageViewerSettings(QObject):  # pylint: disable=too-many-instance-attribu
     content_rows_max_height = SimpleProperty(DEFAULT_CONTENT_ROWS_MAX_HEIGHT)
     """The Content Images dock's row-height clamp (#221); applying either re-packs every open dock."""
 
-    content_zip_names = SimpleProperty(DEFAULT_CONTENT_ZIP_NAMES)
-    content_folder_names = SimpleProperty(DEFAULT_CONTENT_FOLDER_NAMES)
-    """Which boundaries the Content Images dock banners (#221); applying either re-packs every open dock."""
+    content_banners = SimpleProperty(DEFAULT_CONTENT_BANNERS)
+    """Whether the Content Images dock banners each folder's images (#221, #392); applying it re-packs every
+    open dock."""
 
     content_strip_zip_folder = SimpleProperty(DEFAULT_CONTENT_STRIP_ZIP_FOLDER)
     """Whether the Content Images dock's banners drop a top folder named like its zip (#367); applying it
@@ -219,10 +219,7 @@ class ImageViewerSettings(QObject):  # pylint: disable=too-many-instance-attribu
         self.content_rows_max_height = cast(
             int, settings.value(CONTENT_ROWS_MAX_HEIGHT_KEY, DEFAULT_CONTENT_ROWS_MAX_HEIGHT, type=int)
         )
-        self.content_zip_names = cast(bool, settings.value(CONTENT_ZIP_NAMES_KEY, DEFAULT_CONTENT_ZIP_NAMES, type=bool))
-        self.content_folder_names = cast(
-            bool, settings.value(CONTENT_FOLDER_NAMES_KEY, DEFAULT_CONTENT_FOLDER_NAMES, type=bool)
-        )
+        self.content_banners = self.__stored_content_banners(settings)
         self.content_strip_zip_folder = cast(
             bool, settings.value(CONTENT_STRIP_ZIP_FOLDER_KEY, DEFAULT_CONTENT_STRIP_ZIP_FOLDER, type=bool)
         )
@@ -251,10 +248,24 @@ class ImageViewerSettings(QObject):  # pylint: disable=too-many-instance-attribu
         settings.setValue(LIGHTBOX_SELECT_LAST_VIEWED_KEY, self.lightbox_select_last_viewed)
         settings.setValue(CONTENT_ROWS_MIN_HEIGHT_KEY, self.content_rows_min_height)
         settings.setValue(CONTENT_ROWS_MAX_HEIGHT_KEY, self.content_rows_max_height)
-        settings.setValue(CONTENT_ZIP_NAMES_KEY, self.content_zip_names)
-        settings.setValue(CONTENT_FOLDER_NAMES_KEY, self.content_folder_names)
+        settings.setValue(CONTENT_BANNERS_KEY, self.content_banners)
         settings.setValue(CONTENT_STRIP_ZIP_FOLDER_KEY, self.content_strip_zip_folder)
         settings.endGroup()
+
+    @staticmethod
+    def __stored_content_banners(settings: QSettings) -> bool:
+        """Whether banners were on, reading an ``.ini`` written before #392 through the two boxes it had.
+
+        Either box on banners something, so either one on reads as banners on; neither stored is the
+        old default, which bannered each archive. The caller has the group open.
+
+        :param settings: the ``QSettings`` to read from.
+        :returns: the stored choice.
+        """
+        if settings.value(CONTENT_BANNERS_KEY) is not None:
+            return cast(bool, settings.value(CONTENT_BANNERS_KEY, DEFAULT_CONTENT_BANNERS, type=bool))
+        zip_names = cast(bool, settings.value(LEGACY_CONTENT_ZIP_NAMES_KEY, True, type=bool))
+        return zip_names or cast(bool, settings.value(LEGACY_CONTENT_FOLDER_NAMES_KEY, False, type=bool))
 
 
 @lru_cache(maxsize=1)

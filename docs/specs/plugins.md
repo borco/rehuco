@@ -270,7 +270,8 @@ existing dock** rather than opening a second. Each document dock is itself a nes
 [[plugins#core-vs-plugin]] applied to docks: the **common shell** every document has — the two viewers, main view
 and description view; the main editor, the description and the images editors; plus the hidden-by-default
 inspection set — save preview, on disk, log, checksums, files ([[plugins#files-subdock]]) — and then **the type's
-own**: a reference pack adds content images (the browse over its archives, [[reference-images#modes]]), a tutorial
+own**: a reference pack adds content images (the browse over its archived and loose images,
+[[reference-images#modes]]), a tutorial
 will add its player, a collection adds nothing. The images sub-dock doubles as the drop target of
 [[acquisition-tooling#drag-drop-aids]]. The surfaces are the viewer/editor pair ([[plugins#viewer-editor-both]]).
 This replaces the LocalEdit1 per-file window (#7) and is the same shell the catalog browser later opens viewers

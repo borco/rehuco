@@ -32,8 +32,7 @@ class ImageChoices(NamedTuple):
         selects the image it was on back in the dock (#221).
     :param content_min_height: the Content Images dock's shortest flush row (#221).
     :param content_max_height: the Content Images dock's tallest flush row (#221).
-    :param content_zip_names: whether the Content Images dock banners each archive (#221).
-    :param content_folder_names: whether the Content Images dock banners each folder (#221).
+    :param content_banners: whether the Content Images dock banners each folder's images (#221, #392).
     :param content_strip_zip_folder: whether the Content Images dock's banners drop a top folder named
         like its zip (#367).
     """
@@ -50,8 +49,7 @@ class ImageChoices(NamedTuple):
     lightbox_select_last_viewed: bool
     content_min_height: int
     content_max_height: int
-    content_zip_names: bool
-    content_folder_names: bool
+    content_banners: bool
     content_strip_zip_folder: bool
 
 
@@ -87,8 +85,8 @@ class ImagesDisplayPage(QWidget):
     A push rather than linked bounds, so re-seeding the pair (:meth:`drop_changes`) works in either
     order whatever the pair currently shows.
 
-    "Hide a top folder named like its zip" (#367) is enabled only while both banner boxes are checked,
-    since it changes nothing otherwise; disabled, it keeps its staged value.
+    "Hide a top folder named like its zip" (#367) is enabled only while "Show banners" is checked, since
+    it changes nothing otherwise; disabled, it keeps its staged value.
 
     :param parent: optional Qt parent.
     """
@@ -104,8 +102,7 @@ class ImagesDisplayPage(QWidget):
         }
         self.__ui.content_min_height_spin_box.valueChanged.connect(self.__on_content_min_height_changed)
         self.__ui.content_max_height_spin_box.valueChanged.connect(self.__on_content_max_height_changed)
-        self.__ui.content_zip_names_check_box.toggled.connect(self.__update_strip_zip_folder_enabled)
-        self.__ui.content_folder_names_check_box.toggled.connect(self.__update_strip_zip_folder_enabled)
+        self.__ui.content_banners_check_box.toggled.connect(self.__update_strip_zip_folder_enabled)
         self.drop_changes()
         self.__update_strip_zip_folder_enabled()
 
@@ -143,10 +140,8 @@ class ImagesDisplayPage(QWidget):
             self.__ui.content_min_height_spin_box.setValue(maximum)
 
     def __update_strip_zip_folder_enabled(self) -> None:
-        """Enable "Hide a top folder named like its zip" only while both banner boxes are checked (#367)."""
-        self.__ui.content_strip_zip_folder_check_box.setEnabled(
-            self.__ui.content_zip_names_check_box.isChecked() and self.__ui.content_folder_names_check_box.isChecked()
-        )
+        """Enable "Hide a top folder named like its zip" only while "Show banners" is checked (#367)."""
+        self.__ui.content_strip_zip_folder_check_box.setEnabled(self.__ui.content_banners_check_box.isChecked())
 
     def is_dirty(self) -> bool:
         """Whether any staged choice differs from what its own settings object currently holds."""
@@ -176,8 +171,7 @@ class ImagesDisplayPage(QWidget):
         settings.lightbox_select_last_viewed = staged.lightbox_select_last_viewed
         settings.content_rows_min_height = staged.content_min_height
         settings.content_rows_max_height = staged.content_max_height
-        settings.content_zip_names = staged.content_zip_names
-        settings.content_folder_names = staged.content_folder_names
+        settings.content_banners = staged.content_banners
         settings.content_strip_zip_folder = staged.content_strip_zip_folder
         settings.save(persistent_settings())
 
@@ -212,8 +206,7 @@ class ImagesDisplayPage(QWidget):
         self.__ui.lightbox_select_last_check_box.setChecked(choices.lightbox_select_last_viewed)
         self.__ui.content_min_height_spin_box.setValue(choices.content_min_height)
         self.__ui.content_max_height_spin_box.setValue(choices.content_max_height)
-        self.__ui.content_zip_names_check_box.setChecked(choices.content_zip_names)
-        self.__ui.content_folder_names_check_box.setChecked(choices.content_folder_names)
+        self.__ui.content_banners_check_box.setChecked(choices.content_banners)
         self.__ui.content_strip_zip_folder_check_box.setChecked(choices.content_strip_zip_folder)
         self.__ui.max_image_width_spin_box.setValue(max_image_width)
 
@@ -235,8 +228,7 @@ class ImagesDisplayPage(QWidget):
             self.__ui.lightbox_select_last_check_box.isChecked(),
             self.__ui.content_min_height_spin_box.value(),
             self.__ui.content_max_height_spin_box.value(),
-            self.__ui.content_zip_names_check_box.isChecked(),
-            self.__ui.content_folder_names_check_box.isChecked(),
+            self.__ui.content_banners_check_box.isChecked(),
             self.__ui.content_strip_zip_folder_check_box.isChecked(),
         )
 
@@ -268,8 +260,7 @@ class ImagesDisplayPage(QWidget):
             settings.lightbox_select_last_viewed,
             settings.content_rows_min_height,
             settings.content_rows_max_height,
-            settings.content_zip_names,
-            settings.content_folder_names,
+            settings.content_banners,
             settings.content_strip_zip_folder,
         )
 

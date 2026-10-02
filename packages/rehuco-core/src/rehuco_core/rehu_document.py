@@ -1894,8 +1894,8 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
 
     @property
     def current_count(self) -> int | None:
-        """The **measured** content-image count ([[field-schema#field-types]]) -- how many images the
-        resource's archive(s) actually hold ([[data-model#resource-scoping]]); a shared field on the active
+        """The **measured** content-image count ([[field-schema#field-types]]) -- how many content images
+        the resource actually holds, archived and loose ([[data-model#resource-scoping]]); a shared field on the active
         plugin block, filled by scanning rather than fabricated on import
         ([[field-schema#deferred-items]]). ``None`` when absent or JSON ``null``; a present non-int coerces
         to ``None`` and locks. Spelled ``images_count`` before the count split in two (#198), renamed on

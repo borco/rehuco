@@ -40,8 +40,8 @@ class ImageVisibility(StrEnum):
 class ImageDescription:
     """What the lightbox's info overlay says about one image (#221).
 
-    :ivar path_text: where the image is, as a person would name it -- a file's path, or an archive
-        member's ``<archive relative to the .rehu>:<member path>``.
+    :ivar path_text: where the image is, as a person would name it -- a file's path, or a content
+        image's path relative to its ``.rehu``, an archive counting as one more folder (#392).
     :ivar byte_size: the image's size in bytes as stored, or ``None`` when it cannot be known.
     :ivar visibility: where the image stands in its resource's curation (#370); ``None`` from every
         source but the screenshots editor's, which is the only one that curates.

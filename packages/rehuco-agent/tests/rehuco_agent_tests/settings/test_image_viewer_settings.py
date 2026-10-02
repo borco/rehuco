@@ -6,19 +6,17 @@ the same rationale) rather than a real one or ``tmp_path``.
 
 from typing import Any
 
-from pytest import fixture
+from pytest import fixture, mark
 from rehuco_agent.fields.widgets.image_lightbox import ImageViewerMode
 from rehuco_agent.settings.image_viewer_settings import (
-    CONTENT_FOLDER_NAMES_KEY,
+    CONTENT_BANNERS_KEY,
     CONTENT_ROWS_MAX_HEIGHT_KEY,
     CONTENT_ROWS_MIN_HEIGHT_KEY,
     CONTENT_STRIP_ZIP_FOLDER_KEY,
-    CONTENT_ZIP_NAMES_KEY,
-    DEFAULT_CONTENT_FOLDER_NAMES,
+    DEFAULT_CONTENT_BANNERS,
     DEFAULT_CONTENT_ROWS_MAX_HEIGHT,
     DEFAULT_CONTENT_ROWS_MIN_HEIGHT,
     DEFAULT_CONTENT_STRIP_ZIP_FOLDER,
-    DEFAULT_CONTENT_ZIP_NAMES,
     DEFAULT_EDITOR_PREVIEW_HEIGHT,
     DEFAULT_LIGHTBOX_BACKDROP,
     DEFAULT_LIGHTBOX_DOUBLE_CLICK_CLOSES,
@@ -30,6 +28,8 @@ from rehuco_agent.settings.image_viewer_settings import (
     DEFAULT_STRIP_VISIBLE,
     EDITOR_PREVIEW_HEIGHT_KEY,
     GROUP,
+    LEGACY_CONTENT_FOLDER_NAMES_KEY,
+    LEGACY_CONTENT_ZIP_NAMES_KEY,
     LIGHTBOX_BACKDROP_KEY,
     LIGHTBOX_DOUBLE_CLICK_CLOSES_KEY,
     LIGHTBOX_INFO_VISIBLE_KEY,
@@ -320,8 +320,7 @@ def test_load_defaults_the_content_images_choices_when_nothing_was_saved(setting
     viewer_settings = ImageViewerSettings()
     viewer_settings.content_rows_min_height = 1
     viewer_settings.content_rows_max_height = 2
-    viewer_settings.content_zip_names = False
-    viewer_settings.content_folder_names = True
+    viewer_settings.content_banners = False
     viewer_settings.content_strip_zip_folder = False
     viewer_settings.lightbox_info_visible = True
     viewer_settings.lightbox_double_click_closes = False
@@ -333,8 +332,7 @@ def test_load_defaults_the_content_images_choices_when_nothing_was_saved(setting
     assert viewer_settings.lightbox_select_last_viewed is DEFAULT_LIGHTBOX_SELECT_LAST_VIEWED is True
     assert viewer_settings.content_rows_min_height == DEFAULT_CONTENT_ROWS_MIN_HEIGHT == 140
     assert viewer_settings.content_rows_max_height == DEFAULT_CONTENT_ROWS_MAX_HEIGHT == 260
-    assert viewer_settings.content_zip_names is DEFAULT_CONTENT_ZIP_NAMES is True
-    assert viewer_settings.content_folder_names is DEFAULT_CONTENT_FOLDER_NAMES is False
+    assert viewer_settings.content_banners is DEFAULT_CONTENT_BANNERS is True
     assert viewer_settings.content_strip_zip_folder is DEFAULT_CONTENT_STRIP_ZIP_FOLDER is True
     assert viewer_settings.lightbox_info_visible is DEFAULT_LIGHTBOX_INFO_VISIBLE is False
 
@@ -351,8 +349,7 @@ def test_save_then_load_round_trips_the_content_images_choices(settings: FakeSet
     viewer_settings = ImageViewerSettings()
     viewer_settings.content_rows_min_height = 100
     viewer_settings.content_rows_max_height = 400
-    viewer_settings.content_zip_names = False
-    viewer_settings.content_folder_names = True
+    viewer_settings.content_banners = False
     viewer_settings.content_strip_zip_folder = False
     viewer_settings.lightbox_info_visible = True
     viewer_settings.lightbox_double_click_closes = False
@@ -367,8 +364,7 @@ def test_save_then_load_round_trips_the_content_images_choices(settings: FakeSet
     assert restored.lightbox_select_last_viewed is False
     assert restored.content_rows_min_height == 100
     assert restored.content_rows_max_height == 400
-    assert restored.content_zip_names is False
-    assert restored.content_folder_names is True
+    assert restored.content_banners is False
     assert restored.content_strip_zip_folder is False
     assert restored.lightbox_info_visible is True
 
@@ -419,8 +415,7 @@ def test_saving_writes_every_choice_together(settings: FakeSettings) -> None:
     viewer_settings.lightbox_select_last_viewed = False
     viewer_settings.content_rows_min_height = 100
     viewer_settings.content_rows_max_height = 400
-    viewer_settings.content_zip_names = False
-    viewer_settings.content_folder_names = True
+    viewer_settings.content_banners = False
     viewer_settings.content_strip_zip_folder = False
     viewer_settings.save(settings)  # type: ignore[arg-type]
 
@@ -435,6 +430,61 @@ def test_saving_writes_every_choice_together(settings: FakeSettings) -> None:
     assert settings.value(LIGHTBOX_INFO_VISIBLE_KEY) is True
     assert settings.value(CONTENT_ROWS_MIN_HEIGHT_KEY) == 100
     assert settings.value(CONTENT_ROWS_MAX_HEIGHT_KEY) == 400
-    assert settings.value(CONTENT_ZIP_NAMES_KEY) is False
-    assert settings.value(CONTENT_FOLDER_NAMES_KEY) is True
+    assert settings.value(CONTENT_BANNERS_KEY) is False
     assert settings.value(CONTENT_STRIP_ZIP_FOLDER_KEY) is False
+
+
+# region the banner boxes before #392
+
+
+@mark.parametrize(
+    ("zip_names", "folder_names", "banners"),
+    [(True, False, True), (False, True, True), (True, True, True), (False, False, False)],
+)
+def test_an_ini_from_before_the_banner_box_reads_its_two_old_boxes(
+    settings: FakeSettings, zip_names: bool, folder_names: bool, banners: bool
+) -> None:
+    """An ``.ini`` written before #392 holds the zip-names and folder-names boxes the one banner box
+    replaced; either one on bannered something, so either one on reads as banners on.
+
+    **Test steps:**
+
+    * store only the two old keys
+    * load, and verify the banner choice they amount to
+    """
+    settings.beginGroup(GROUP)
+    settings.setValue(LEGACY_CONTENT_ZIP_NAMES_KEY, zip_names)
+    settings.setValue(LEGACY_CONTENT_FOLDER_NAMES_KEY, folder_names)
+    settings.endGroup()
+    viewer_settings = ImageViewerSettings()
+
+    viewer_settings.load(settings)  # type: ignore[arg-type]
+
+    assert viewer_settings.content_banners is banners
+
+
+def test_a_saved_banner_choice_wins_over_the_old_boxes(settings: FakeSettings) -> None:
+    """Once the choice is stored under its own key, the two old ones left beside it are never read again
+    (#392).
+
+    **Test steps:**
+
+    * store the two old keys, load, turn banners off and save
+    * verify a fresh load keeps banners off, whatever the old keys still say
+    """
+    settings.beginGroup(GROUP)
+    settings.setValue(LEGACY_CONTENT_ZIP_NAMES_KEY, True)
+    settings.setValue(LEGACY_CONTENT_FOLDER_NAMES_KEY, True)
+    settings.endGroup()
+    viewer_settings = ImageViewerSettings()
+    viewer_settings.load(settings)  # type: ignore[arg-type]
+    viewer_settings.content_banners = False
+
+    viewer_settings.save(settings)  # type: ignore[arg-type]
+
+    restored = ImageViewerSettings()
+    restored.load(settings)  # type: ignore[arg-type]
+    assert restored.content_banners is False
+
+
+# endregion

@@ -382,11 +382,13 @@ def build_document_form(
     )
 
     def measure_content_images() -> int | None:
-        """Count the images inside this resource's archive(s) afresh ([[data-model#resource-scoping]]).
+        """Count this resource's content images afresh, archived and loose ([[data-model#resource-scoping]],
+        #392).
 
-        The enumeration takes its recognized extension set as an argument rather than reading a setting
-        (#197), so this is where the user's choice is read (#222) -- at every measurement, so a list edited
-        in Settings takes effect on the next Compute without rebuilding the form.
+        The enumeration takes its recognized extension set and the junk globs as arguments rather than
+        reading a setting (#197, #226), so this is where the user's choices are read (#222) -- at every
+        measurement, so a list edited in Settings takes effect on the next Compute without rebuilding the
+        form.
 
         Each archive is read inside the document's rename barrier (#347), so a rename asked for while a
         Compute is counting waits one central-directory read rather than running into the open archive
@@ -399,7 +401,8 @@ def build_document_form(
         if path is None:
             return None
         extensions = shared_reference_images_settings().content_image_extensions
-        return len(enumerate_content_images(path, extensions, model.rename_coordinator))
+        excluded = shared_excluded_files_settings().excluded_file_patterns
+        return len(enumerate_content_images(path, extensions, model.rename_coordinator, excluded))
 
     def measure_size_on_disk() -> int | None:
         """Sum what this resource's content occupies on disk ([[data-model#resource-scoping]], #223).

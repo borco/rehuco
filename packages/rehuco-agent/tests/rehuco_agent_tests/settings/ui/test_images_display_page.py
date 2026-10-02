@@ -420,7 +420,7 @@ def check_box(page: ImagesDisplayPage, name: str) -> QCheckBox:
 
 
 def test_the_page_starts_on_the_saved_content_images_choices(page: ImagesDisplayPage) -> None:
-    """A fresh page shows the clamp, both banner boxes and the info-overlay box as saved (#221).
+    """A fresh page shows the clamp, the banner box and the info-overlay box as saved (#221).
 
     **Test steps:**
 
@@ -431,8 +431,7 @@ def test_the_page_starts_on_the_saved_content_images_choices(page: ImagesDisplay
 
     assert spin_box(page, "content_min_height_spin_box").value() == settings.content_rows_min_height
     assert spin_box(page, "content_max_height_spin_box").value() == settings.content_rows_max_height
-    assert check_box(page, "content_zip_names_check_box").isChecked() == settings.content_zip_names
-    assert check_box(page, "content_folder_names_check_box").isChecked() == settings.content_folder_names
+    assert check_box(page, "content_banners_check_box").isChecked() == settings.content_banners
     assert check_box(page, "lightbox_info_check_box").isChecked() == settings.lightbox_info_visible
     assert check_box(page, "lightbox_double_click_check_box").isChecked() == settings.lightbox_double_click_closes
     assert check_box(page, "lightbox_select_last_check_box").isChecked() == settings.lightbox_select_last_viewed
@@ -440,7 +439,7 @@ def test_the_page_starts_on_the_saved_content_images_choices(page: ImagesDisplay
 
 
 def test_save_changes_pushes_the_content_images_choices_into_the_shared_settings(page: ImagesDisplayPage) -> None:
-    """Applying the page writes the clamp, the banner boxes and the info-overlay box (#221).
+    """Applying the page writes the clamp, the banner box and the info-overlay box (#221).
 
     **Test steps:**
 
@@ -449,8 +448,7 @@ def test_save_changes_pushes_the_content_images_choices_into_the_shared_settings
     """
     spin_box(page, "content_min_height_spin_box").setValue(100)
     spin_box(page, "content_max_height_spin_box").setValue(400)
-    check_box(page, "content_zip_names_check_box").setChecked(False)
-    check_box(page, "content_folder_names_check_box").setChecked(True)
+    check_box(page, "content_banners_check_box").setChecked(False)
     check_box(page, "lightbox_info_check_box").setChecked(True)
     check_box(page, "lightbox_double_click_check_box").setChecked(False)
     check_box(page, "lightbox_select_last_check_box").setChecked(False)
@@ -462,15 +460,14 @@ def test_save_changes_pushes_the_content_images_choices_into_the_shared_settings
     settings = shared_image_viewer_settings()
     assert settings.content_rows_min_height == 100
     assert settings.content_rows_max_height == 400
-    assert settings.content_zip_names is False
-    assert settings.content_folder_names is True
+    assert settings.content_banners is False
     assert settings.lightbox_info_visible is True
     assert settings.lightbox_double_click_closes is False
     assert not page.is_dirty()
 
 
 def test_drop_changes_reverts_the_staged_content_images_choices(page: ImagesDisplayPage) -> None:
-    """Resetting the page discards the staged clamp, banner boxes and info-overlay box (#221).
+    """Resetting the page discards the staged clamp, banner box and info-overlay box (#221).
 
     **Test steps:**
 
@@ -480,8 +477,7 @@ def test_drop_changes_reverts_the_staged_content_images_choices(page: ImagesDisp
     settings = shared_image_viewer_settings()
     spin_box(page, "content_min_height_spin_box").setValue(settings.content_rows_min_height - 20)
     spin_box(page, "content_max_height_spin_box").setValue(settings.content_rows_max_height + 20)
-    check_box(page, "content_zip_names_check_box").setChecked(not settings.content_zip_names)
-    check_box(page, "content_folder_names_check_box").setChecked(not settings.content_folder_names)
+    check_box(page, "content_banners_check_box").setChecked(not settings.content_banners)
     check_box(page, "lightbox_info_check_box").setChecked(not settings.lightbox_info_visible)
     check_box(page, "lightbox_double_click_check_box").setChecked(not settings.lightbox_double_click_closes)
     check_box(page, "lightbox_select_last_check_box").setChecked(not settings.lightbox_select_last_viewed)
@@ -494,8 +490,7 @@ def test_drop_changes_reverts_the_staged_content_images_choices(page: ImagesDisp
     assert not page.is_dirty()
     assert spin_box(page, "content_min_height_spin_box").value() == settings.content_rows_min_height
     assert spin_box(page, "content_max_height_spin_box").value() == settings.content_rows_max_height
-    assert check_box(page, "content_zip_names_check_box").isChecked() == settings.content_zip_names
-    assert check_box(page, "content_folder_names_check_box").isChecked() == settings.content_folder_names
+    assert check_box(page, "content_banners_check_box").isChecked() == settings.content_banners
     assert check_box(page, "lightbox_info_check_box").isChecked() == settings.lightbox_info_visible
 
 
@@ -525,28 +520,26 @@ def test_the_strip_zip_folder_box_stages_applies_and_resets(page: ImagesDisplayP
     assert not page.is_dirty()
 
 
-def test_the_strip_zip_folder_box_is_enabled_only_with_both_banner_boxes(page: ImagesDisplayPage) -> None:
-    """The box changes nothing unless zip and folder names are both shown, so it is enabled only then,
-    following the two boxes as they are toggled and as a reset re-seeds them (#367).
+def test_the_strip_zip_folder_box_is_enabled_only_with_banners(page: ImagesDisplayPage) -> None:
+    """The box changes nothing without banners, so it is enabled only while "Show banners" is checked,
+    following that box as it is toggled and as a reset re-seeds it (#367, #392).
 
     **Test steps:**
 
-    * walk the four combinations of the two banner boxes
-    * verify the box is enabled only with both checked
-    * check both, reset to the saved pair, and verify the box follows
+    * toggle "Show banners" off and on
+    * verify the box follows it
+    * reset to the saved value and verify the box follows that too
     """
-    zip_names = check_box(page, "content_zip_names_check_box")
-    folder_names = check_box(page, "content_folder_names_check_box")
+    banners = check_box(page, "content_banners_check_box")
     box = check_box(page, "content_strip_zip_folder_check_box")
 
-    for zips, folders in ((False, False), (True, False), (False, True), (True, True)):
-        zip_names.setChecked(zips)
-        folder_names.setChecked(folders)
-        assert box.isEnabled() == (zips and folders)
+    for shown in (False, True):
+        banners.setChecked(shown)
+        assert box.isEnabled() == shown
 
+    banners.setChecked(False)
     page.drop_changes()
-    settings = shared_image_viewer_settings()
-    assert box.isEnabled() == (settings.content_zip_names and settings.content_folder_names)
+    assert box.isEnabled() == shared_image_viewer_settings().content_banners
 
 
 def test_a_staged_backdrop_makes_its_own_frame_dirty(page: ImagesDisplayPage) -> None:

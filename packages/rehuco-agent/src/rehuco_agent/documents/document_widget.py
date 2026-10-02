@@ -46,6 +46,7 @@ from ..scraping.image_pipeline import MIME_EXTENSIONS, ImageBytes
 from ..scraping.url_drop import UrlDrop
 from ..settings.default_layout_settings import shared_default_layout_settings
 from ..settings.deletion_settings import DeletionKind
+from ..settings.excluded_files_settings import shared_excluded_files_settings
 from ..settings.image_viewer_settings import ImageViewerSettings, shared_image_viewer_settings
 from ..settings.logs_settings import shared_logs_settings
 from ..settings.persistent_settings import persistent_settings
@@ -116,7 +117,7 @@ FILES_DOCK_TITLE: Final = "Files"
 CONTENT_IMAGES_DOCK_TITLE: Final = "Content Images"
 """Tab titles of the read-only inspection docks (#111) -- the live model serialization (what a Save would
 write) and the verbatim on-disk file -- of this resource's own log (#200), of its own folder (#266), and
-of the images inside its archives (#221)."""
+of its content images (#221, #392)."""
 
 LOG_DOCK_MIN_HEIGHT: Final = 120
 CHECKSUM_DOCK_MIN_HEIGHT: Final = 90
@@ -1757,8 +1758,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             (settings.lightbox_double_click_closes_changed, self.__on_lightbox_double_click_closes_changed),
             (settings.content_rows_min_height_changed, self.__on_content_rows_changed),
             (settings.content_rows_max_height_changed, self.__on_content_rows_changed),
-            (settings.content_zip_names_changed, self.__on_content_banners_changed),
-            (settings.content_folder_names_changed, self.__on_content_banners_changed),
+            (settings.content_banners_changed, self.__on_content_banners_changed),
             (settings.content_strip_zip_folder_changed, self.__on_content_banners_changed),
         )
         for signal, slot in subscriptions:
@@ -1813,9 +1813,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         :returns: the flags.
         """
         settings = shared_image_viewer_settings()
-        return ContentDisplayFlags(
-            settings.content_zip_names, settings.content_folder_names, settings.content_strip_zip_folder
-        )
+        return ContentDisplayFlags(settings.content_banners, settings.content_strip_zip_folder)
 
     def __on_previews_visible_changed(self, visible: bool) -> None:
         """Blank the Content Images grid's thumbnails, and dismiss this document's maximized viewer,
@@ -2220,7 +2218,8 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         if self.__content_images_dock.isClosed():
             return
         extensions = shared_reference_images_settings().content_image_extensions
-        self.__content_images_model.refresh(self.__model.path, extensions)
+        excluded = shared_excluded_files_settings().excluded_file_patterns
+        self.__content_images_model.refresh(self.__model.path, extensions, excluded)
 
     def __on_log_scope_changed(self, path: Path | None) -> None:
         """Re-scope this resource's log surface when its path changes (#52's landmine, for a log).

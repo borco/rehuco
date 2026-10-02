@@ -1,5 +1,5 @@
-"""The Content Images dock's model: the entries, their dimensions on demand, and the archive-backed
-image source the lightbox and the thumbnail loader decode through (#221).
+"""The Content Images dock's model: the entries, their dimensions on demand, and the image source the
+lightbox and the thumbnail loader decode through, over archive members and loose images alike (#221, #392).
 
 Nothing here is persisted: dimensions are read off each member's header the first time a row needs
 them and held in memory, keyed by the tier-0 key ([[reference-images#image-identity]]) -- the shape
@@ -24,7 +24,7 @@ from PySide6.QtCore import (
     Slot,
 )
 from PySide6.QtGui import QImage
-from rehuco_core import ContentImageEntry, RenameCoordinator, enumerate_content_images
+from rehuco_core import EXCLUDED_FILE_PATTERNS, ContentImageEntry, RenameCoordinator, enumerate_content_images
 
 from ...fields.widgets.image_source import ImageDescription, decode_image, image_size
 from .archive_cache import ArchiveCache
@@ -35,9 +35,10 @@ type TierZeroKey = tuple[str, str, int, int]
 
 
 class ArchiveImageSource:
-    """An `ImageSource` over archive members, read through an `ArchiveCache` (#221).
+    """An `ImageSource` over a pack's content images -- archive members and loose files (#392) -- read
+    through an `ArchiveCache` (#221).
 
-    :param entries: the members, in browse order.
+    :param entries: the images, in browse order.
     :param cache: the open-handle cache to read them through.
     :param rehu_directory: the ``.rehu`` file's directory, which the description names archives
         relative to.
@@ -60,17 +61,21 @@ class ArchiveImageSource:
         return PurePosixPath(self.__entries[index].name).name
 
     def describe(self, index: int) -> ImageDescription:
-        """``<archive relative to the .rehu>:/<member path>`` and the member's stored size."""
+        """The image's path relative to the ``.rehu``, an archive counting as one more folder level --
+        ``foo.zip/bar/a.jpg`` for a member, ``foo/a.jpg`` for a loose image -- the way the banners name
+        its folder (#392); and the image's size."""
         entry = self.__entries[index]
+        if entry.archive is None:
+            return ImageDescription(entry.name, entry.size)
         archive = archive_relative_path(entry.archive, self.__rehu_directory)
-        return ImageDescription(f"{archive}:/{entry.name}", entry.size)
+        return ImageDescription(f"{archive}/{entry.name}", entry.size)
 
     def pixel_size(self, index: int) -> QSize:
         """The member's pixel size off its header, through the cache (#321)."""
         return member_pixel_size(self.__cache, self.__entries[index])
 
     def load(self, index: int, max_height: int | None) -> QImage:
-        """Decode the member through the cache; null when the archive or member cannot be read."""
+        """Decode the image through the cache; null when it cannot be read."""
         data = self.__cache.read(self.__entries[index])
         return decode_image(data, max_height) if data is not None else QImage()
 
@@ -130,15 +135,17 @@ class EnumerateJob(QRunnable):
     :param path: the ``.rehu`` file.
     :param extensions: the recognized image extensions.
     :param coordinator: the rename barrier each archive is read inside (#347), or ``None`` for none.
+    :param excluded_patterns: the junk globs the content walk leaves out (#226).
     """
 
-    def __init__(
+    def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
         signals: JobSignals,
         generation: int,
         path: Path,
         extensions: tuple[str, ...],
         coordinator: RenameCoordinator | None,
+        excluded_patterns: tuple[str, ...],
     ) -> None:
         super().__init__()
         self.__signals: Final = signals
@@ -146,10 +153,13 @@ class EnumerateJob(QRunnable):
         self.__path: Final = path
         self.__extensions: Final = extensions
         self.__coordinator: Final = coordinator
+        self.__excluded_patterns: Final = excluded_patterns
 
     def run(self) -> None:
         try:
-            entries = enumerate_content_images(self.__path, self.__extensions, self.__coordinator)
+            entries = enumerate_content_images(
+                self.__path, self.__extensions, self.__coordinator, self.__excluded_patterns
+            )
             self.__signals.enumerated.emit(self.__generation, entries)
         finally:
             self.__signals.deleteLater()
@@ -233,7 +243,8 @@ class ContentImagesModel(QAbstractListModel):  # pylint: disable=too-many-instan
 
     @property
     def archive_cache(self) -> ArchiveCache:
-        """The open-handle cache every read of this resource's archives goes through."""
+        """The cache every read of this resource's content images goes through -- an archive's kept-open
+        handle, or a loose file opened for the one read."""
         return self.__cache
 
     @property
@@ -256,12 +267,19 @@ class ContentImagesModel(QAbstractListModel):  # pylint: disable=too-many-instan
         """The `ImageSource` over the current entries."""
         return ArchiveImageSource(self.__entries, self.__cache, self.__rehu_directory or Path())
 
-    def refresh(self, path: Path | None, extensions: tuple[str, ...]) -> None:
+    def refresh(
+        self,
+        path: Path | None,
+        extensions: tuple[str, ...],
+        excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS,
+    ) -> None:
         """Re-enumerate ``path``'s content images on the pool, replacing the entries when it lands.
 
         :param path: the ``.rehu`` file, or ``None`` for a document with no path yet -- empties the
             model.
         :param extensions: the recognized image extensions.
+        :param excluded_patterns: the junk globs the content walk leaves out (#226), the user's -- the
+            same set the checksums are handed, so the grid never shows an image they skip.
         """
         self.__generation += 1
         if path is None:
@@ -269,7 +287,9 @@ class ContentImagesModel(QAbstractListModel):  # pylint: disable=too-many-instan
             return
         self.__rehu_directory = path.parent
         pool = self.__pool()
-        job = EnumerateJob(self.__job_signals(pool), self.__generation, path, extensions, self.__coordinator)
+        job = EnumerateJob(
+            self.__job_signals(pool), self.__generation, path, extensions, self.__coordinator, excluded_patterns
+        )
         job.setAutoDelete(True)
         pool.start(job)
 

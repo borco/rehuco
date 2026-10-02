@@ -117,6 +117,7 @@ from rehuco_agent.fields.widgets.path_editor import UNAVAILABLE_SUFFIX
 from rehuco_agent.scraping.url_drop import UrlDrop
 from rehuco_agent.settings.default_layout_settings import shared_default_layout_settings
 from rehuco_agent.settings.deletion_settings import DeletionKind, shared_deletion_settings
+from rehuco_agent.settings.excluded_files_settings import shared_excluded_files_settings
 from rehuco_agent.settings.image_viewer_settings import shared_image_viewer_settings
 from rehuco_agent.settings.logs_settings import shared_logs_settings
 from rehuco_agent.settings.reference_images_settings import shared_reference_images_settings
@@ -4987,7 +4988,7 @@ def test_a_document_with_no_content_images_dock_ignores_its_signals(widget: Docu
     widget._DocumentWidget__on_content_image_activated(0)  # type: ignore[attr-defined]  # pylint: disable=protected-access
     settings = shared_image_viewer_settings()
     settings.content_rows_min_height = 90
-    settings.content_zip_names = False
+    settings.content_banners = False
 
     assert widget.findChild(ImageLightbox) is None
 
@@ -5333,6 +5334,7 @@ def test_showing_the_dock_enumerates_the_resources_archives(
         refimages_model.path,
         shared_reference_images_settings().content_image_extensions,
         refimages_model.rename_coordinator,
+        shared_excluded_files_settings().excluded_file_patterns,
     )
     assert len(content_images_view(refimages_widget).source) == 1
 
@@ -5583,7 +5585,7 @@ def test_applying_a_new_clamp_or_banner_choice_reaches_the_open_dock(refimages_w
 
     **Test steps:**
 
-    * change each of the five settings on the shared object
+    * change each of the four settings on the shared object
     * verify the grid took them
     """
     settings = shared_image_viewer_settings()
@@ -5591,12 +5593,11 @@ def test_applying_a_new_clamp_or_banner_choice_reaches_the_open_dock(refimages_w
 
     settings.content_rows_min_height = 90
     settings.content_rows_max_height = 300
-    settings.content_zip_names = False
-    settings.content_folder_names = True
+    settings.content_banners = False
     settings.content_strip_zip_folder = False
 
     assert view.clamp == (90, 300)
-    assert view.flags == ContentDisplayFlags(zip_names=False, folder_names=True, strip_zip_folder=False)
+    assert view.flags == ContentDisplayFlags(banners=False, strip_zip_folder=False)
 
 
 @mark.parametrize(
