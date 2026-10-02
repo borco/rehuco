@@ -18,6 +18,7 @@ from borco_pyside.logging import LogWidget
 from borco_pyside.logging.log_model import MESSAGE_COLUMN
 from borco_pyside.qtads import tab_close_button
 from borco_pyside.qtads.qtads_pin_side_handler import DEFAULT_PIN_SIDE, PIN_SIDE_KEY
+from borco_pyside.shortcuts import BindingRole
 from PySide6.QtCore import QByteArray, QEvent, QModelIndex, QObject, Qt
 from PySide6.QtGui import QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
@@ -34,7 +35,7 @@ from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent import main_window
 from rehuco_agent.app_logging import shared_log_bridge
-from rehuco_agent.commands import QUIT, shared_command_registry
+from rehuco_agent.commands import QUIT, SAVE_DOCUMENT, shared_command_registry
 from rehuco_agent.documents.document_widget import LOG_DOCK_MIN_HEIGHT
 from rehuco_agent.glyphs import TAB_CLOSE_GLYPH
 from rehuco_agent.main_window import (
@@ -4527,6 +4528,24 @@ def test_the_image_previews_toolbar_toggle_names_the_key_without_carrying_it(qtb
     assert ui.image_previews_toggle_action.shortcuts() == []
     assert ui.image_previews_toggle_action.toolTip().endswith(suffix)
     assert ui.image_previews_action.toolTip().endswith(suffix)
+
+
+def test_the_window_routes_document_commands_app_wide(qtbot: QtBot) -> None:
+    """The window carries one router action per document command, armed only with a document open (#345).
+
+    **Test steps:**
+
+    * construct a real ``MainWindow`` with no document open
+    * verify Save has exactly one router action, on this window, disabled
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    routers = shared_command_registry().bound_actions(SAVE_DOCUMENT.id, BindingRole.ROUTER)
+
+    assert len(routers) == 1
+    assert routers[0] in window.actions()
+    assert not routers[0].isEnabled()
 
 
 def test_toggling_image_previews_off_hides_every_open_documents_strip(qtbot: QtBot) -> None:

@@ -17,6 +17,9 @@ released becomes the body of the GitHub Release, so each entry is written to be 
   choose where its keys reach. Recording a key another command uses asks whether to reassign it. The table
   sorts by any column, and the search text and sort are remembered.
 - **Ctrl+Shift+M** maximizes the focused document's current dock, and restores it, as its tab button does.
+- Save, Maximize current dock and the two Refresh commands can be set to **Focused document, app-wide** on the
+  Shortcuts page: their key then acts on the focused document from anywhere in the app, the Log dock and
+  floating docks included.
 - The **Content Images** panel and the measured image count include a reference pack's loose images, not
   only those inside its archives. Folders and archives sort together, ignoring case, the pack's own
   folder first. Both honour the Files page's excluded-files globs, as checksums do.

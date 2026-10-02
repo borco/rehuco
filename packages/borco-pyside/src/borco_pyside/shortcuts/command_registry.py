@@ -22,14 +22,15 @@ def apply_keys(
 
     :param action: the action to set up.
     :param keys: the keys the command has; none leaves the action unbound and the tooltip bare.
-    :param scope: the scope they reach; one with no context (`CommandScope.DOCUMENT_APP_WIDE`) leaves
-        the action carrying no keys, though its tooltip still names them.
+    :param scope: the scope they reach; where ``role`` gets no context under it (`BindingRole.context`) the
+        action carries no keys, though its tooltip still names them.
     :param tooltip: what the action does, in words -- the keys are appended to it, since an icon-only
         button is otherwise the only place a user could discover them.
-    :param role: `BindingRole.LABEL` names the keys without carrying them.
+    :param role: `BindingRole.LABEL` names the keys without carrying them; `BindingRole.ROUTER` carries
+        them only under `CommandScope.DOCUMENT_APP_WIDE`.
     """
     keys = tuple(keys)
-    context = scope.context if role is BindingRole.INSTANCE else None
+    context = role.context(scope)
     action.setShortcuts(list(keys) if context is not None else [])
     if context is not None:
         action.setShortcutContext(context)
@@ -198,13 +199,19 @@ class CommandRegistry(QObject):
         self.__apply(binding)
         return binding
 
-    def bound_actions(self, command_id: str) -> list[QAction]:
+    def bound_actions(self, command_id: str, role: BindingRole | None = None) -> list[QAction]:
         """Every live action bound to a command.
 
         :param command_id: the command to look up.
+        :param role: only the actions bound in this role -- e.g. a router asking for the instances it
+            passes a press on to, without itself or a toolbar label; ``None`` for every role.
         :returns: its actions, in binding order.
         """
-        return [binding.action for binding in self.__bindings.values() if binding.command_id == command_id]
+        return [
+            binding.action
+            for binding in self.__bindings.values()
+            if binding.command_id == command_id and (role is None or binding.role is role)
+        ]
 
     def __apply(self, binding: CommandBinding) -> None:
         """Re-apply the keymap in force to one binding's action.

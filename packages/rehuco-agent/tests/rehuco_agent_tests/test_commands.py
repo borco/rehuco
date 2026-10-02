@@ -79,6 +79,25 @@ def test_the_defaults_are_the_pre_migration_literals(command_id: str, key: Any, 
     assert command.default_scope is scope
 
 
+def test_the_document_commands_may_be_routed_app_wide() -> None:
+    """Each per-document command offers the app-wide scope (#345), and only those do.
+
+    **Test steps:**
+
+    * collect the commands allowing `CommandScope.DOCUMENT_APP_WIDE`
+    * verify they are the four document commands, each still focused-document by default
+    """
+    routable = [command for command in COMMANDS if CommandScope.DOCUMENT_APP_WIDE in command.scopes]
+
+    assert [command.id for command in routable] == [
+        "document.save",
+        "document.maximize",
+        "document.files.refresh",
+        "document.content_images.refresh",
+    ]
+    assert all(command.default_scope is CommandScope.DOCUMENT_FOCUSED for command in routable)
+
+
 def test_the_default_catalog_has_no_conflicts(qapp: Any) -> None:
     """Out of the box, no two commands collide where both are armed.
 

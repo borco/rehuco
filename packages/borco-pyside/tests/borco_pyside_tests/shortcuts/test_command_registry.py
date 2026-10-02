@@ -203,20 +203,83 @@ def test_a_label_binding_names_the_keys_without_carrying_them(registry: CommandR
     assert action.toolTip() == f"Quit ({native('Ctrl+Q')})"
 
 
-def test_an_app_wide_document_command_carries_no_keys_yet(registry: CommandRegistry) -> None:
-    """The routed scope has no carrier until the router exists, so its instances hold no keys.
+def test_under_the_routed_scope_the_router_carries_the_keys_and_the_instance_none(registry: CommandRegistry) -> None:
+    """Only the router holds an app-wide document command's keys, so one key never sits on two actions.
 
     **Test steps:**
 
-    * bind an action to a command scoped to the routed scope
-    * verify no keys, and the tooltip still names them
+    * bind an instance and a router to a command scoped to the routed scope
+    * verify the router carries the key app-wide, the instance none, and its tooltip still names it
     """
-    action = QAction("Routed")
+    instance, router = QAction("Routed"), QAction("Routed")
 
-    registry.bind(action, ROUTED.id, tooltip="Routed")
+    registry.bind(instance, ROUTED.id, tooltip="Routed")
+    registry.bind(router, ROUTED.id, role=BindingRole.ROUTER)
 
-    assert action.shortcuts() == []
-    assert action.toolTip() == f"Routed ({native('F7')})"
+    assert router.shortcuts() == [QKeySequence("F7")]
+    assert router.shortcutContext() == Qt.ShortcutContext.ApplicationShortcut
+    assert instance.shortcuts() == []
+    assert instance.toolTip() == f"Routed ({native('F7')})"
+
+
+def test_a_scope_flip_moves_the_keys_between_the_instances_and_the_router(registry: CommandRegistry) -> None:
+    """Switching a document command between its two scopes hands its keys from one side to the other.
+
+    **Test steps:**
+
+    * bind two instances and a router to a document command
+    * verify the instances carry the key in their own subtree, the router none
+    * route it app-wide, verify the router alone carries it
+    * set it back, verify the instances carry it again and the router none
+    """
+    routable = Command(
+        "document.routable",
+        "Routable",
+        "Saved wherever focus is",
+        ("Ctrl+S",),
+        (CommandScope.DOCUMENT_FOCUSED, CommandScope.DOCUMENT_APP_WIDE),
+    )
+    registry.register(routable)
+    first, second, router = QAction("Save"), QAction("Save"), QAction("Save")
+    registry.bind(first, routable.id)
+    registry.bind(second, routable.id)
+    registry.bind(router, routable.id, role=BindingRole.ROUTER)
+
+    assert first.shortcuts() == second.shortcuts() == [QKeySequence("Ctrl+S")]
+    assert first.shortcutContext() == Qt.ShortcutContext.WidgetWithChildrenShortcut
+    assert router.shortcuts() == []
+
+    keymap = Keymap()
+    keymap.set_scope(routable, CommandScope.DOCUMENT_APP_WIDE)
+    registry.set_keymap(keymap)
+
+    assert first.shortcuts() == second.shortcuts() == []
+    assert router.shortcuts() == [QKeySequence("Ctrl+S")]
+    assert router.shortcutContext() == Qt.ShortcutContext.ApplicationShortcut
+
+    registry.set_keymap(Keymap())
+
+    assert first.shortcuts() == second.shortcuts() == [QKeySequence("Ctrl+S")]
+    assert router.shortcuts() == []
+
+
+def test_bound_actions_filters_by_role(registry: CommandRegistry) -> None:
+    """A router asks for the instances it passes a press on to, without itself or a toolbar label.
+
+    **Test steps:**
+
+    * bind an instance, a label and a router to one command
+    * verify each role lists its own action, and no role lists all three
+    """
+    instance, label, router = QAction("Routed"), QAction("Routed"), QAction("Routed")
+    registry.bind(instance, ROUTED.id)
+    registry.bind(label, ROUTED.id, role=BindingRole.LABEL)
+    registry.bind(router, ROUTED.id, role=BindingRole.ROUTER)
+
+    assert registry.bound_actions(ROUTED.id, BindingRole.INSTANCE) == [instance]
+    assert registry.bound_actions(ROUTED.id, BindingRole.LABEL) == [label]
+    assert registry.bound_actions(ROUTED.id, BindingRole.ROUTER) == [router]
+    assert registry.bound_actions(ROUTED.id) == [instance, label, router]
 
 
 def test_install_makes_the_registry_the_one_generic_widgets_find(registry: CommandRegistry) -> None:
