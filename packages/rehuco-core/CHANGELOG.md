@@ -11,6 +11,11 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ### Added
 
+- The `.rehuco` file (`RehucoFile`): a rehuco id and an ordered list of folder roots, each with a stable id, a
+  label and a removable flag. Roots are added (a duplicate folder is refused, compared case-insensitively where
+  paths are), removed, relabeled and moved to the top, up, down or bottom. A label defaults to the folder's
+  name, numbered on a clash (`foo (2)`). Saves are atomic, unknown keys are kept, and a file newer than the
+  build opens read-only.
 - A reference pack's content images include its loose images as well as its archive members: whatever
   images are among the files the content walk gives the record. A loose image is keyed by size and
   modification time. Archives and folders of loose images sort together, case-insensitively, with the

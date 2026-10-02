@@ -69,7 +69,10 @@ browsed together — and the agent opens one at a time ([[data-model#local-file-
 **label**, defaulting to its folder's name and made unique with a suffix on a clash; the label is what the browser
 shows and what a folder filter addresses (`folder="<label>/<relative path>"`, [[plugins#browsers]]), and changing it
 touches nothing on disk. Removing a root from a `.rehuco` asks first, states that its files stay where they are, and
-drops only the root's cached entries ([[data-model#cache-schema]]).
+drops only the root's cached entries ([[data-model#cache-schema]]). A root also carries a stable **id**, which
+the cache keys its rows on, so relabeling, reordering or re-pointing it orphans nothing; and a **Removable** flag,
+off by default and changeable at any time, marking a folder that lives on whatever removable device — a CD, a USB
+stick or drive — is mounted there.
 
 **Do not put swarm-identical data in `.rehuco`.** Users, hashes, and access rules are swarm-wide and must be identical
 on every node; they belong with the propagated swarm registry ([[discovery-trust-access#user-auth]],
