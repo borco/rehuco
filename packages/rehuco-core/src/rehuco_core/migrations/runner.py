@@ -22,8 +22,11 @@ Chain = tuple[tuple[int, Step], ...]
 this build understands for that target."""
 
 
-def chain_head(chain: Chain, base_version: int) -> int:
+def chain_head[S](chain: tuple[tuple[int, S], ...], base_version: int) -> int:
     """The newest version a chain reaches -- what a target derives its ``CURRENT_VERSION`` from.
+
+    Generic over the step, because the walk is not the only thing with a chain: the ``.rehudb`` cache's
+    steps take a database connection rather than a payload (#372), and its head is derived the same way.
 
     Derived rather than declared, so a target's head cannot drift from the steps it actually has. A
     function rather than a ``max`` at each target because an **empty** chain has no head to take: a
@@ -83,7 +86,7 @@ def run(
     payload[version_key] = version
 
 
-def validate_chain(chain: Chain, base_version: int) -> None:
+def validate_chain[S](chain: tuple[tuple[int, S], ...], base_version: int) -> None:
     """Assert a chain is well-formed, at import time -- fail-fast on a declaration bug
     ([[plugins#plugin-blocks]]).
 

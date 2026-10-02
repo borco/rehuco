@@ -11,6 +11,10 @@ REHUCO_SUFFIX: Final = ".rehuco"
 """A rehuco file's extension ([[data-model#local-file-trio]], #371) -- the machine-local declaration of which
 folder roots to browse together (:mod:`rehuco_core.rehuco_file`)."""
 
+REHUDB_SUFFIX: Final = ".rehudb"
+"""The catalog cache's file extension ([[data-model#cache-schema]], #372) -- one SQLite file per ``.rehuco``,
+named by its rehuco id (:mod:`rehuco_core.rehudb`)."""
+
 LEGACY_SUFFIX: Final = ".tc"
 """A legacy tc4 record's file extension -- the source format a conversion consumes
 ([[acquisition-tooling#convert-mechanics]]), and the second thing that makes a file *a resource*

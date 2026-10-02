@@ -11,6 +11,21 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ### Added
 
+- The `.rehudb` catalog cache (`CatalogCache`): a SQLite file per `.rehuco`, named by its rehuco id inside a
+  cache folder the caller names. It holds the roots, keyed by their ids, and one row per record found under
+  them: the common core a browser shows, the authors, tags and publishers, and the record's size,
+  modification time and content hash. The schema is versioned through `PRAGMA user_version` and upgraded
+  forward only. A cache newer than the build, or a file that is not a database, is discarded and rebuilt.
+  Reconciling against a `.rehuco` keeps a relabeled or re-pointed root's rows. Removing a root deletes its
+  rows and frees their space. Rows can be read whole or narrowed by free text and `folder`, `authors`,
+  `tags`, `publishers` and `type` tokens.
+- A full scan of one root (`CatalogRootScan`, queued as `ScanCatalogRootJob`), and root removal as
+  `RemoveCatalogRootJob`. The scan reads every `.rehu`, and every `.tc` no same-stem `.rehu` sits beside. A
+  record that will not read keeps a row naming why. A root that does not list keeps its rows; a scan whose
+  root went away before it finished is not applied. Each listing and each record read is held under the
+  rename coordinator, so a rename waits for one read rather than the scan.
+- `CatalogScanner.walk()` yields one listing at a time. Given a coordinator, it lists each directory under
+  its hold and follows a folder renamed mid-walk. It can also collect uncovered `.tc` records.
 - The `.rehuco` file (`RehucoFile`): a rehuco id and an ordered list of folder roots, each with a stable id, a
   label and a removable flag. Roots are added (a duplicate folder is refused, compared case-insensitively where
   paths are), removed, relabeled and moved to the top, up, down or bottom. A label defaults to the folder's
