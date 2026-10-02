@@ -675,53 +675,75 @@ def test_a_nested_legacy_record_is_bookkeeping_to_the_resource_above_it(mocker: 
     assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["video.mp4"]
 
 
-def test_a_legacy_record_claims_its_screenshots_by_scheme(mocker: MockerFixture) -> None:
-    """tc4's screenshot names are bookkeeping too -- they are what a conversion renames aside (#250).
-
-    None of them carries the record's name (``01.jpg``, ``cover.jpg``, ``sample-01.jpg``,
-    ``file(2).jpg``, ``file-01.jpg``), so the ``<record>NN`` rule cannot see them. Counting them would
-    make the same directory measure differently the moment it was converted, since a conversion backs up
-    every recognized image -- winners and losing variants alike -- and installs the winners under names
-    this walk already excludes.
+def test_a_legacy_records_scheme_named_images_are_content(mocker: MockerFixture) -> None:
+    """tc4's screenshot names are content beside a ``.tc`` too: they are screenshot *candidates*, not
+    sidecars, until a conversion renames them to ``<record>NN`` (#393).
 
     **Test steps:**
 
     * mock a tree holding ``info.tc`` over one file of every recognized scheme, plus real content
     * enumerate ``info.tc``'s content files
-    * verify only the content came back
+    * verify every one of them came back
     """
     mock_tree(
         mocker,
         ["info.tc", "01.jpg", "cover.jpg", "sample-01.jpg", "file(2).jpg", "file-01.jpg", "video.mp4"],
     )
 
-    assert names(content_files(LEGACY_DIRECTORY_SCOPED_PATH)) == ["video.mp4"]
+    assert names(content_files(LEGACY_DIRECTORY_SCOPED_PATH)) == [
+        "01.jpg",
+        "cover.jpg",
+        "file(2).jpg",
+        "file-01.jpg",
+        "sample-01.jpg",
+        "video.mp4",
+    ]
 
 
-def test_a_pattern_matched_image_is_a_screenshot_beside_any_record_or_none(mocker: MockerFixture) -> None:
-    """The scheme alone is enough (#289) -- a live tutorial's own ``01.jpg`` is bookkeeping too, no ``.tc``
-    required beside it.
-
-    The images dock offers to convert a pattern-matched image wherever it sits, so the walk has to agree
-    with it: a `.tc` sitting in the directory can no longer be the difference between the same name being
-    content and being bookkeeping, since that difference would disappear the moment conversion finishes.
-    The trade this accepts is stated in #286: a genuine content file named ``01.jpg`` now reads as a
-    screenshot, and the images dock is where a wrong read is corrected by hand.
+def test_a_pattern_matched_image_is_content_at_every_depth(mocker: MockerFixture) -> None:
+    """A shape alone never makes a sidecar (#393): a reference pack's own ``001.jpg`` and a ``cover.jpg``
+    are content beside the record and below it, while the record's ``<record>NN`` stays its screenshot.
 
     **Test steps:**
 
-    * mock a tree whose root holds ``info.rehu`` over legacy-shaped image names, and a record-less
-      subdirectory holding the same names
+    * mock a tree whose root holds ``info.rehu`` and ``info00.jpg`` over legacy-shaped image names, and a
+      record-less subdirectory holding the same names
     * enumerate ``info.rehu``'s content files
-    * verify none of the pattern-matched names came back, in either directory
+    * verify every pattern-matched name came back, in both directories, and ``info00.jpg`` did not
     """
     mock_tree(
         mocker,
-        ["info.rehu", "01.jpg", "cover.jpg", "bar/01.jpg", "bar/cover.jpg", "bar/video.mp4"],
+        ["info.rehu", "info00.jpg", "001.jpg", "cover.jpg", "bar/001.jpg", "bar/cover.jpg", "bar/video.mp4"],
         directories=["bar"],
     )
 
-    assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["bar/video.mp4"]
+    assert names(content_files(DIRECTORY_SCOPED_PATH)) == [
+        "001.jpg",
+        "bar/001.jpg",
+        "bar/cover.jpg",
+        "bar/video.mp4",
+        "cover.jpg",
+    ]
+
+
+def test_a_file_scoped_record_claims_nothing_in_another_directory(mocker: MockerFixture) -> None:
+    """``foo.rehu`` owns ``foo.*`` and ``fooNN.*`` beside it, and nothing in a subdirectory: a
+    ``bar/foo01.jpg`` and a ``bar/foo.checksum`` share its name, not its directory, so they are the
+    enclosing ``info.rehu``'s content.
+
+    **Test steps:**
+
+    * mock a tree with ``info.rehu`` and ``foo.rehu`` side by side, and ``foo``-named files under ``bar``
+    * enumerate ``info.rehu``'s content files
+    * verify both ``bar`` files came back
+    """
+    mock_tree(
+        mocker,
+        ["info.rehu", "foo.rehu", "foo.zip", "foo00.jpg", "bar/foo01.jpg", "bar/foo.checksum"],
+        directories=["bar"],
+    )
+
+    assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["bar/foo.checksum", "bar/foo01.jpg"]
 
 
 def test_a_named_legacy_record_stays_file_scoped(mocker: MockerFixture) -> None:

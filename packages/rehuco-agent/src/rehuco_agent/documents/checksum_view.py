@@ -31,7 +31,6 @@ from PySide6.QtWidgets import QHeaderView, QMenu, QWidget
 
 from ..settings.checksum_settings import shared_checksum_settings
 from ..settings.excluded_files_settings import shared_excluded_files_settings
-from ..settings.screenshot_patterns_settings import shared_screenshot_patterns_settings
 from .checksum_actions import GENERATE_ICON_RESOURCE, VERIFY_ICON_RESOURCE, ChecksumActions
 from .checksum_row_delegate import ChecksumRowDelegate
 from .checksum_rows import (
@@ -158,7 +157,6 @@ class ChecksumView(QWidget):
         self.__loader.start(
             path,
             shared_excluded_files_settings().excluded_file_patterns,
-            shared_screenshot_patterns_settings().screenshot_name_patterns,
             shared_checksum_settings().stale_after,
         )
 

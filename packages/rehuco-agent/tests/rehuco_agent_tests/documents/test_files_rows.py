@@ -145,7 +145,7 @@ def read(mocker: MockerFixture, directory: Path = DIRECTORY, record: Path = INFO
     :returns: the rows by name.
     """
     del mocker
-    rows = FilesRowsReader(record, ("Thumbs.db",), (), WEEK).read(directory, NOW)
+    rows = FilesRowsReader(record, ("Thumbs.db",), WEEK).read(directory, NOW)
     return {row.name: row for row in rows.rows}
 
 
@@ -509,7 +509,7 @@ def test_the_untrusted_location_tooltip_replaces_the_age_ones_wording(mocker: Mo
     mock_record(mocker, [entry("notes.pdf")])
     mock_trust(mocker, None)
     model = FilesTableModel()
-    model.set_rows(FilesRowsReader(INFO_PATH, (), (), WEEK).read(DIRECTORY, NOW).rows)
+    model.set_rows(FilesRowsReader(INFO_PATH, (), WEEK).read(DIRECTORY, NOW).rows)
     row = [model.index(position, NAME_COLUMN).data() for position in range(model.rowCount())].index("notes.pdf")
 
     assert model.index(row, CHECKSUM_COLUMN).data(Qt.ItemDataRole.ToolTipRole) == "Not yet verified at this location."
@@ -570,7 +570,7 @@ def test_a_record_this_build_cannot_read_clears_every_cell(mocker: MockerFixture
     """
     mock_listing(mocker)
     mock_record(mocker, None, ChecksumRecordError("version 9 is newer than this build"))
-    rows = FilesRowsReader(INFO_PATH, ("Thumbs.db",), (), WEEK).read(DIRECTORY, NOW)
+    rows = FilesRowsReader(INFO_PATH, ("Thumbs.db",), WEEK).read(DIRECTORY, NOW)
 
     assert rows.record_error
     assert {row.checksum_state for row in rows.rows} == {FileChecksumState.NONE}
@@ -593,7 +593,7 @@ def test_a_folder_that_will_not_list_is_unreachable_rather_than_empty(mocker: Mo
     * verify the read reports unreachable with no rows
     """
     mock_listing(mocker, unreachable=True)
-    rows = FilesRowsReader(INFO_PATH, (), (), WEEK).read(DIRECTORY, NOW)
+    rows = FilesRowsReader(INFO_PATH, (), WEEK).read(DIRECTORY, NOW)
 
     assert not rows.reachable
     assert not rows.rows
@@ -609,7 +609,7 @@ def test_the_root_is_reported_as_the_root(mocker: MockerFixture) -> None:
     """
     mock_listing(mocker, ())
     mock_record(mocker, None)
-    reader = FilesRowsReader(INFO_PATH, (), (), WEEK)
+    reader = FilesRowsReader(INFO_PATH, (), WEEK)
 
     assert reader.read(DIRECTORY, NOW).at_root
     assert not reader.read(DIRECTORY / "sub", NOW).at_root
@@ -655,7 +655,7 @@ def table(mocker: MockerFixture) -> FilesTableModel:
     )
     mock_record(mocker, None)
     model = FilesTableModel()
-    model.set_rows(FilesRowsReader(INFO_PATH, (), (), WEEK).read(DIRECTORY / "sub", NOW).rows)
+    model.set_rows(FilesRowsReader(INFO_PATH, (), WEEK).read(DIRECTORY / "sub", NOW).rows)
     return model
 
 
@@ -720,7 +720,7 @@ def test_the_checksum_column_draws_no_text(mocker: MockerFixture) -> None:
     mock_listing(mocker)
     mock_record(mocker, [entry("notes.pdf")])
     model = FilesTableModel()
-    model.set_rows(FilesRowsReader(INFO_PATH, (), (), WEEK).read(DIRECTORY, NOW).rows)
+    model.set_rows(FilesRowsReader(INFO_PATH, (), WEEK).read(DIRECTORY, NOW).rows)
     row = [model.index(position, NAME_COLUMN).data() for position in range(model.rowCount())].index("notes.pdf")
 
     assert model.index(row, CHECKSUM_COLUMN).data() == ""
@@ -741,7 +741,7 @@ def test_the_checksum_cell_explains_its_glyph_on_hover(mocker: MockerFixture) ->
     mock_listing(mocker)
     mock_record(mocker, [entry("notes.pdf", status="mismatched")])
     model = FilesTableModel()
-    model.set_rows(FilesRowsReader(INFO_PATH, (), (), WEEK).read(DIRECTORY, NOW).rows)
+    model.set_rows(FilesRowsReader(INFO_PATH, (), WEEK).read(DIRECTORY, NOW).rows)
     row = [model.index(position, NAME_COLUMN).data() for position in range(model.rowCount())].index("notes.pdf")
 
     assert model.index(row, CHECKSUM_COLUMN).data(Qt.ItemDataRole.ToolTipRole) == (
@@ -868,7 +868,7 @@ def test_a_read_that_raises_still_reports_back(qtbot: QtBot, mocker: MockerFixtu
     * make the read raise
     * verify the loader still reported, as an unreachable answer naming the failure
     """
-    reader = FilesRowsReader(INFO_PATH, (), (), WEEK)
+    reader = FilesRowsReader(INFO_PATH, (), WEEK)
     mocker.patch.object(FilesRowsReader, "read", side_effect=RuntimeError("boom"))
     loader = FilesRowsLoader()
 
@@ -891,7 +891,7 @@ def test_a_superseded_read_is_dropped_rather_than_drawn(qtbot: QtBot, mocker: Mo
     * hold the first read until a second has been started, then release it
     * verify only the second directory was ever reported
     """
-    reader = FilesRowsReader(INFO_PATH, (), (), WEEK)
+    reader = FilesRowsReader(INFO_PATH, (), WEEK)
     started = Event()
     release = Event()
 
@@ -941,7 +941,7 @@ def test_a_listing_that_answers_after_its_dock_is_gone_reports_into_nothing(mock
 
     # generation 0 is the one a loader that has never been started is on, so this read is current
     # rather than superseded -- otherwise it returns before it ever tries to report
-    run(FilesRowsReader(INFO_PATH, (), (), WEEK), DIRECTORY, NOW, 0)
+    run(FilesRowsReader(INFO_PATH, (), WEEK), DIRECTORY, NOW, 0)
 
     assert not delivered
 

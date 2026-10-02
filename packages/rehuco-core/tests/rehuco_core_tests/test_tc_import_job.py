@@ -320,12 +320,8 @@ def test_a_run_carries_the_legacy_manifest_into_the_new_record(
 
     TcImportJob(TC_PATH, excluded_patterns=("*.tmp",)).run(control)  # pyright: ignore[reportArgumentType]
 
-    seed.assert_called_once_with(
-        DIRECTORY / "info.rehu", excluded_patterns=("*.tmp",), screenshot_name_patterns=SCREENSHOT_NAME_PATTERNS
-    )
-    remediate.assert_called_once_with(
-        DIRECTORY / "info.rehu", excluded_patterns=("*.tmp",), screenshot_name_patterns=SCREENSHOT_NAME_PATTERNS
-    )
+    seed.assert_called_once_with(DIRECTORY / "info.rehu", excluded_patterns=("*.tmp",))
+    remediate.assert_called_once_with(DIRECTORY / "info.rehu", excluded_patterns=("*.tmp",))
 
 
 def test_a_conversion_over_an_existing_record_merges_rather_than_leaving_the_manifest(

@@ -22,14 +22,12 @@ from rehuco_core import (
     CHECKSUM_SWEEP_KIND,
     DEFAULT_TASK_JOB_REGISTRY,
     PROGRESS_UNIT_RESOURCES,
-    SCREENSHOT_NAME_PATTERNS,
     ChecksumTrust,
     ContentUnreachableError,
     JobPaused,
     SweepChecksumsJob,
     SweepTally,
     generate_checksums,
-    screenshot_name_patterns_state,
     sweep_summary,
 )
 
@@ -714,7 +712,6 @@ def test_a_sweep_writes_down_what_it_needs_to_be_itself_again(catalog: FakeCatal
         "create_if_missing": True,
         "migrate_to": "crc32",
         "excluded_patterns": ["*.tmp"],
-        "screenshot_name_patterns": screenshot_name_patterns_state(SCREENSHOT_NAME_PATTERNS),
     }
 
 

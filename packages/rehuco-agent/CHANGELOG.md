@@ -23,6 +23,10 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 - Every keyboard shortcut is now read from the settings file's `shortcuts` group, falling back to its
   default, so a changed key reaches every open window and document. The defaults are unchanged.
 - The Save and Refresh buttons' tooltips name their keys.
+- An image named by a legacy screenshot pattern (`01.jpg`, `cover.jpg`, ...) is content: the Files panel
+  lists it as such, and checksums, size on disk and duration include it. Beside the `.rehu` it is still
+  offered for conversion in the Images panel. The screenshot name patterns setting no longer affects
+  checksums or measurements. The next verify of an existing `.checksum` adopts such files as unexpected.
 
 ## [0.2.0] - 2026-09-27
 

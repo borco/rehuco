@@ -81,7 +81,6 @@ from .settings.logs_settings import shared_logs_settings
 from .settings.main_window_settings import TOOLBARS_STATE_VERSION, MainWindowSettings
 from .settings.persistent_settings import persistent_settings
 from .settings.recent_files_settings import RecentFilesSettings
-from .settings.screenshot_patterns_settings import shared_screenshot_patterns_settings
 from .settings.session_restore_settings import SessionRestoreSettings
 from .settings.tasks_settings import TasksSettings
 from .settings.theme_settings import ThemeSettings
@@ -671,7 +670,6 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             create_if_missing=settings.create_missing_on_verify,
             migrate_to=settings.migrate_target,
             excluded_patterns=shared_excluded_files_settings().excluded_file_patterns,
-            screenshot_name_patterns=shared_screenshot_patterns_settings().screenshot_name_patterns,
         )
         if job_already_queued(self.__task_queue, label=job.label, source=job.source):
             LOG.info("%s is already in the task queue; it was not queued again.", job.label)

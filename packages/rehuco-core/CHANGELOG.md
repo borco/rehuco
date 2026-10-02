@@ -9,6 +9,21 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ## [Unreleased]
 
+### Changed
+
+- An image named by a legacy screenshot pattern (`01.jpg`, `cover.jpg`, `sample-01.jpg`, ...) is content
+  in every folder: enumerated, checksummed and measured like any other file. Only a `<record>NN` image
+  beside its record is a screenshot sidecar. A `.checksum` written before this lacks such files, and the
+  next verify adopts them as unexpected.
+- Converting a `.tc` measures `current_size` after renaming its screenshots, so the size never counts the
+  images the conversion itself claims.
+
+### Removed
+
+- The `screenshot_name_patterns` parameter of the content walk, the checksum runs, jobs and seeding, the
+  directory classifier, size on disk and video duration: the patterns no longer decide what is content.
+  Checksum, sweep and manifest jobs no longer save them in their state; an older saved state still loads.
+
 ## [0.2.0] - 2026-09-27
 
 ### Added

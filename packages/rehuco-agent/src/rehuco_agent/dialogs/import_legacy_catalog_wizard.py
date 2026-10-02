@@ -527,9 +527,7 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
             self.__model.set_row_outcome(row.path, "pending")
             job: TaskJob
             if isinstance(row.plan, StrandedManifestPlan):
-                job = RetireLegacyManifestJob(
-                    row.plan.rehu_path, excluded_patterns=excluded, screenshot_name_patterns=screenshot_rules
-                )
+                job = RetireLegacyManifestJob(row.plan.rehu_path, excluded_patterns=excluded)
             else:
                 job = TcImportJob(
                     row.plan.tc_path,
@@ -572,7 +570,6 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
         """
         checksums = shared_checksum_settings()
         excluded = shared_excluded_files_settings().excluded_file_patterns
-        screenshot_rules = shared_screenshot_patterns_settings().screenshot_name_patterns
         job: ChecksumJob
         if plan.legacy_manifest is not None:
             job = VerifyChecksumsJob(
@@ -582,14 +579,12 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
                 seed_legacy=False,
                 migrate_to=checksums.migrate_target,
                 excluded_patterns=excluded,
-                screenshot_name_patterns=screenshot_rules,
             )
         else:
             job = GenerateChecksumsJob(
                 plan.rehu_path,
                 algorithm=checksums.algorithm,
                 excluded_patterns=excluded,
-                screenshot_name_patterns=screenshot_rules,
             )
         with LogScope.open(plan.rehu_path):
             self.__checks.append(self.__queue.enqueue(job))

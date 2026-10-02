@@ -9,7 +9,6 @@ import pytest
 from pytest_mock import MockerFixture
 from rehuco_core import (
     EXCLUDED_FILE_PATTERNS,
-    SCREENSHOT_NAME_PATTERNS,
     ContentUnreachableError,
     NoTrashBinError,
     RehuDocument,
@@ -416,14 +415,15 @@ def test_stale_backup_raises_and_touches_nothing(mocker: MockerFixture) -> None:
 
 def test_failure_mid_sequence_undoes_every_rename_and_removes_new_files(mocker: MockerFixture) -> None:
     """A failure partway through renumbering undoes everything: the image already moved goes back to
-    its own name, the already-written `.rehu` is removed, and the `.tc` is restored.
+    its own name and the `.tc` is restored. The `.rehu` is written only after the renames (#393), so
+    none exists to remove.
 
     **Test steps:**
 
     * mock the second image rename to raise
     * convert
-    * verify the exception propagates, the new `.rehu` was unlinked, and both the moved image and the
-      `.tc` were renamed back
+    * verify the exception propagates, nothing was unlinked, and both the moved image and the `.tc`
+      were renamed back
     """
     mocks = mock_environment(mocker)
     attempts: list[object] = []
@@ -438,7 +438,7 @@ def test_failure_mid_sequence_undoes_every_rename_and_removes_new_files(mocker: 
     with pytest.raises(OSError, match="disk full"):
         convert_tc(TC_PATH, keep_backups=False)
 
-    assert {call.args[0] for call in mocks["unlink"].call_args_list} == {TARGET_PATH}
+    mocks["unlink"].assert_not_called()
     assert mocks["rename"].call_args_list == [
         mocker.call(TC_PATH, backup_path(TC_PATH)),
         *[mocker.call(source, destination) for source, destination in RENUMBERINGS],
@@ -520,7 +520,8 @@ def test_an_occupied_destination_refuses_rather_than_overwriting(mocker: MockerF
 
     * mock slot 0's destination as already existing
     * convert
-    * verify ``FileExistsError``, that nothing was renamed onto it, and that the `.tc` came back
+    * verify ``FileExistsError``, that nothing was renamed onto it or written, and that the `.tc`
+      came back
     """
     mocks = mock_environment(mocker, existing=frozenset({DIRECTORY / "info00.jpg"}))
 
@@ -531,7 +532,8 @@ def test_an_occupied_destination_refuses_rather_than_overwriting(mocker: MockerF
         mocker.call(TC_PATH, backup_path(TC_PATH)),
         mocker.call(backup_path(TC_PATH), TC_PATH),
     ]
-    assert {call.args[0] for call in mocks["unlink"].call_args_list} == {TARGET_PATH}
+    mocks["unlink"].assert_not_called()
+    mocks["write"].assert_not_called()
 
 
 def test_current_size_is_measured_rather_than_trusted(mocker: MockerFixture) -> None:
@@ -552,7 +554,7 @@ def test_current_size_is_measured_rather_than_trusted(mocker: MockerFixture) -> 
     saved = json.loads(mocks["write"].call_args[0][1])
     assert saved["core"]["current_size"] == 123
     assert document.current_size == 123
-    mocks["content_size_on_disk"].assert_called_once_with(TC_PATH, EXCLUDED_FILE_PATTERNS, SCREENSHOT_NAME_PATTERNS)
+    mocks["content_size_on_disk"].assert_called_once_with(TC_PATH, EXCLUDED_FILE_PATTERNS)
 
 
 def test_an_unreachable_resource_stores_no_current_size(mocker: MockerFixture) -> None:
@@ -590,4 +592,27 @@ def test_current_size_measurement_uses_the_given_excluded_patterns(mocker: Mocke
 
     convert_tc(TC_PATH, keep_backups=True, excluded_patterns=("*.tmp",))
 
-    mocks["content_size_on_disk"].assert_called_once_with(TC_PATH, ("*.tmp",), SCREENSHOT_NAME_PATTERNS)
+    mocks["content_size_on_disk"].assert_called_once_with(TC_PATH, ("*.tmp",))
+
+
+def test_current_size_is_measured_after_the_screenshots_are_renamed(mocker: MockerFixture) -> None:
+    """The measurement runs once the screenshots carry their ``<stem>NN`` names (#393): before that a
+    pattern-matched image is content, and the record would carry the size of files the conversion is
+    about to claim as screenshots.
+
+    **Test steps:**
+
+    * mock a `.tc` with two pattern-matched screenshots, recording the measurement's place among the
+      renames
+    * convert
+    * verify every screenshot rename came before the measurement
+    """
+    mocks = mock_environment(mocker)
+    order: list[str] = []
+    mocks["rename"].side_effect = lambda source, destination: order.append(f"rename {source.name}")
+    mocks["content_size_on_disk"].side_effect = lambda *args: order.append("measure") or 0
+
+    convert_tc(TC_PATH, keep_backups=True)
+
+    assert order.index("measure") > order.index("rename sample-01.jpg")
+    assert order.index("measure") > order.index("rename cover.jpg")

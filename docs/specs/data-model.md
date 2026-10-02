@@ -402,14 +402,13 @@ What a **reference-images** resource's content *is* was settled by #197: content
   (#250) — so an unconverted `info.tc` is its directory's bookkeeping and claims the `info.sfv`, `info.checksum` and
   `infoNN` siblings beside it, exactly as the `info.rehu` replacing it will. Otherwise the same directory measures a
   different set the moment it is converted, for a reason that has nothing to do with its content, and a claim seeded
-  from the old manifest (#243) would describe a resource that no longer exists. **A pattern-matched image is a
-  screenshot beside any record, `.tc` present or not** (#289, [[acquisition-tooling#screenshot-schemes]]) — `01.jpg`,
-  `cover.jpg`, `sample-01.jpg`, `file(2).jpg`, `file-01.jpg` under the shipped defaults, none of them named after the
-  record, so the `<record>NN` rule cannot reach them and the pattern list alone says whose they are. The list is a
-  permanent classifier the walk and the conversion share, not something a `.tc` sitting nearby switches on: that is
-  what makes *what is skipped* exactly *what a conversion would rename*, wherever it has or hasn't run yet. The
-  trade this accepts is stated, not hidden — a genuine content file that happens to be named `01.jpg` beside a
-  `.rehu` reads as a screenshot regardless of whether a legacy `.tc` was ever there.
+  from the old manifest (#243) would describe a resource that no longer exists. **A pattern-matched image is
+  content** (#393, [[acquisition-tooling#screenshot-schemes]]). `01.jpg`, `cover.jpg`, `sample-01.jpg`, `file(2).jpg`
+  and `file-01.jpg` carry no record's name, so they are screenshot *candidates* only: the images dock offers to convert
+  one in the record's own directory, and until a conversion renames it to `<record>NN` it is content like any other
+  file, checksummed and measured. Below the record's directory such a name is never even a candidate. A shape alone
+  never makes a sidecar, so a reference pack's own `001.jpg` counts at every depth. A conversion measures
+  `current_size` after its renames, when the screenshots it claims have become `<record>NN` sidecars.
   **A retained `.orig` conversion backup is
   structural as well** (#253) — `info.tc.orig` and, where #259 applied, `info.sfv.orig` — and is the one exception to
   that last condition: a backup belongs to the directory it sits in rather than to a stem, so there is no record to
@@ -641,12 +640,15 @@ explicitly:
   the canonical set is gap-free from `00`. Deleting therefore renumbers everything after the hole, and a
   set that arrives numbered from `01` is renumbered the first time it is rearranged. The one piece of
   screenshot state that *is* stored, the curated-out list (below), is filenames, so it follows the renames.
-  **An image the screenshot name patterns match but that has not been renamed into this set yet** —
-  `cover.jpg`, `image-01.jpg`, a rename collision left under its own name
-  ([[acquisition-tooling#tc-to-rehu]]) — is a screenshot too, by the same permanent classifier
-  ([[acquisition-tooling#screenshot-schemes]]), just not yet a member of the numbered, orderable set: the strip and
-  the lightbox show it after that set, the curated-out list governs it like any other, and the images dock lists it
-  separately with **Convert** (take it into the numbered set) and **Delete** ([[plugins#tutorial-plugin]]).
+  **An image beside the `.rehu` that the screenshot name patterns match but that has not been renamed into this
+  set yet** — `cover.jpg`, `image-01.jpg`, a rename collision left under its own name
+  ([[acquisition-tooling#tc-to-rehu]]) — is a screenshot **candidate**, by the same permanent classifier
+  ([[acquisition-tooling#screenshot-schemes]]): the strip and the lightbox show it after the numbered set, the
+  curated-out list governs it like any other, and the images dock lists it separately with **Convert** (take it into
+  the numbered set) and **Delete** ([[plugins#tutorial-plugin]]). Until converted it is still **content** (#393) —
+  checksummed, measured, and counted in the Files panel like any other file — because a shape alone never makes a
+  sidecar ([[data-model#resource-scoping]]); and only the record's own directory holds candidates at all, so a
+  `foo/001.jpg` in a reference pack is plain content.
 - **Content images inside a reference-image zip** — part of the **monolithic, immutable, checksummed resource**, exactly
   like a tutorial's video files. The app never edits these. Refreshing such a zip is a deliberate, manual, out-of-band
   action that also requires manually refreshing its checksum; it is not done through this app.

@@ -99,7 +99,6 @@ from .rehu_content_files import (
     excluded_content_names,
 )
 from .rename_coordination import RenameCoordinator, ResourceLocation
-from .tc_screenshots import SCREENSHOT_NAME_PATTERNS, ScreenshotNamePattern
 
 ChecksumProgress = Callable[[int, int | None], None]
 """How a run says how far it has got: bytes hashed so far, against the bytes it expects to read in all --
@@ -185,8 +184,6 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
         generate re-baselines whatever it is handed.
     :param migrate_to: re-record matched entries under this algorithm (*Update checksums on verify*),
         or ``None`` to leave every entry on its own; verify-only, see :meth:`verify`.
-    :param screenshot_name_patterns: the naming rules a ``.tc``'s screenshots are recognized by, passed
-        through the same way.
     :param excluded_patterns: filename globs the content walk leaves out, passed straight through to
         :func:`~rehuco_core.enumerate_content_files` (#226).
     :param trust: where this machine has verified which record (#357), or ``None`` for a run that does
@@ -208,7 +205,6 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
         seed_legacy: bool,
         migrate_to: str | None,
         excluded_patterns: tuple[str, ...],
-        screenshot_name_patterns: tuple[ScreenshotNamePattern, ...],
         trust: ChecksumTrust | None,
         progress: ChecksumProgress | None,
         checkpoint: ChecksumCheckpoint | None,
@@ -225,7 +221,6 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
         self.__seed_legacy: Final = seed_legacy
         self.__migrate_to: Final = migrate_to
         self.__excluded_patterns: Final = excluded_patterns
-        self.__screenshot_name_patterns: Final = screenshot_name_patterns
         self.__progress: Final = progress
         self.__checkpoint: Final = checkpoint
         self.__now: Final = datetime.now(UTC)
@@ -235,9 +230,7 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
         # the walk before the record, and its reachability before anything else: *the mount is away*
         # outranks *this resource has no checksums*, which is the sentence an unreachable resource used
         # to get (or, with ``create_if_missing``, a clean report over an empty record it invented) (#245)
-        self.__enumeration: Final = enumerate_content_files(
-            self.__rehu_location.path, self.__excluded_patterns, self.__screenshot_name_patterns
-        )
+        self.__enumeration: Final = enumerate_content_files(self.__rehu_location.path, self.__excluded_patterns)
         self.__enumeration.require_reachable()
         # the content before the record, because a seed may only carry names that are content today
         # (#243) -- and because the walk it reads has already happened either way
@@ -462,9 +455,7 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
         """
         if not unclaimed:
             return {}
-        covering = covering_content_records(
-            self.__rehu_location.path, unclaimed, self.__excluded_patterns, self.__screenshot_name_patterns
-        )
+        covering = covering_content_records(self.__rehu_location.path, unclaimed, self.__excluded_patterns)
         own = checksum_record_path(self.__rehu_location.path)
         claims = {name: found for name, found in covering.items() if checksum_record_path(found.record) != own}
         if not claims:
@@ -485,9 +476,7 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
         """
         if not unclaimed:
             return {}
-        return excluded_content_names(
-            self.__rehu_location.path, unclaimed, self.__excluded_patterns, self.__screenshot_name_patterns
-        )
+        return excluded_content_names(self.__rehu_location.path, unclaimed, self.__excluded_patterns)
 
     def __verify_reads(self) -> list[ResourceLocation]:
         """The locations :meth:`verify` will read, for the progress denominator.
@@ -916,7 +905,6 @@ def generate_checksums(  # pylint: disable=too-many-arguments
     stale_after: timedelta | None = None,
     create_if_missing: bool = True,
     excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS,
-    screenshot_name_patterns: tuple[ScreenshotNamePattern, ...] = SCREENSHOT_NAME_PATTERNS,
     trust: ChecksumTrust | None = None,
     progress: ChecksumProgress | None = None,
     checkpoint: ChecksumCheckpoint | None = None,
@@ -936,7 +924,6 @@ def generate_checksums(  # pylint: disable=too-many-arguments
     :param create_if_missing: whether a resource with no record yet starts from an empty one -- on by
         default here, because creating the record is what a first generate is *for*.
     :param excluded_patterns: filename globs the content walk leaves out (#226).
-    :param screenshot_name_patterns: the naming rules a ``.tc``'s screenshots are recognized by (#53).
     :param trust: where this machine has verified which record (#357); ``None`` asks nothing and
         registers nothing.
     :param progress: told how far the run has got, in bytes.
@@ -962,7 +949,6 @@ def generate_checksums(  # pylint: disable=too-many-arguments
         seed_legacy=False,
         migrate_to=None,
         excluded_patterns=excluded_patterns,
-        screenshot_name_patterns=screenshot_name_patterns,
         trust=trust,
         progress=progress,
         checkpoint=checkpoint,
@@ -980,7 +966,6 @@ def verify_checksums(  # pylint: disable=too-many-arguments
     seed_legacy: bool = True,
     migrate_to: str | None = None,
     excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS,
-    screenshot_name_patterns: tuple[ScreenshotNamePattern, ...] = SCREENSHOT_NAME_PATTERNS,
     trust: ChecksumTrust | None = None,
     progress: ChecksumProgress | None = None,
     checkpoint: ChecksumCheckpoint | None = None,
@@ -1020,8 +1005,6 @@ def verify_checksums(  # pylint: disable=too-many-arguments
         entry stays ``mismatched`` under its old key with the new hash discarded.
     :param excluded_patterns: filename globs deciding only which unlisted files exist to adopt (#226);
         never a verdict.
-    :param screenshot_name_patterns: the naming rules a ``.tc``'s screenshots are recognized by (#53),
-        deciding the same thing and equally never a verdict.
     :param trust: where this machine has verified which record (#357): an entry is fresh only at a
         location it trusts, and a run at one it does not makes it trusted. ``None`` asks nothing and
         registers nothing.
@@ -1053,7 +1036,6 @@ def verify_checksums(  # pylint: disable=too-many-arguments
         seed_legacy=seed_legacy,
         migrate_to=migrate_to,
         excluded_patterns=excluded_patterns,
-        screenshot_name_patterns=screenshot_name_patterns,
         trust=trust,
         progress=progress,
         checkpoint=checkpoint,

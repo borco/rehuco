@@ -11,8 +11,8 @@ answers it with a name.
 **The rules are that walk's, not a second set.** The record suffixes come from
 :mod:`rehuco_core.resource_scoping` (#250), the sibling rule is applied per listing exactly as the walk
 applies it -- a record claims only its own directory, and only where the record actually exists -- the
-``<record>NN`` shape is :mod:`rehuco_core.rehu_screenshots`', the pattern-matched legacy names are the
-caller's (#287, #289), and a ``.orig`` is :func:`~rehuco_core.tc_conversion_backups.is_conversion_backup`'s
+``<record>NN`` shape is :mod:`rehuco_core.rehu_screenshots`', a pattern-matched legacy name is content
+like the walk says (#393), and a ``.orig`` is :func:`~rehuco_core.tc_conversion_backups.is_conversion_backup`'s
 call. What is deliberately **not** shared is the recursion: this never descends, because a browser shows
 one directory and lets the reader walk.
 
@@ -27,8 +27,8 @@ directory-scoped record that is not this resource's own is another resource whol
 subdirectories beside it -- :attr:`DirectoryListing.foreign_directory_record` is what says so, once per
 listing, rather than each row guessing.
 
-Core-side and GUI-free: the caller supplies the junk globs and the screenshot patterns, as it does for
-the content walk, and gets back names, kinds and the ``stat`` fields a listing already knew.
+Core-side and GUI-free: the caller supplies the junk globs, as it does for the content walk, and gets back
+names, kinds and the ``stat`` fields a listing already knew.
 """
 
 import fnmatch
@@ -49,7 +49,6 @@ from .constants import (
 )
 from .resource_scoping import is_directory_scoped, is_directory_scoped_name, is_record_name
 from .tc_conversion_backups import is_conversion_backup
-from .tc_screenshots import SCREENSHOT_NAME_PATTERNS, ScreenshotNamePattern, compiled_screenshot_name_patterns
 
 SCREENSHOT_STEM_PATTERN: Final = re.compile(r"^(?P<record>.*)\d{2}$")
 """Splits a candidate screenshot's stem into the record it would belong to and its two-digit index.
@@ -73,9 +72,8 @@ class FileKind(StrEnum):
     view of the document already showing it."""
 
     OWN_SCREENSHOT = "own_screenshot"
-    """One of this record's screenshots -- ``<record>NN`` or a pattern-matched legacy name
-    ([[data-model#image-meanings]]). App-managed presentation metadata, not content, and not
-    checksummed."""
+    """One of this record's ``<record>NN`` screenshots ([[data-model#image-meanings]]). App-managed
+    presentation metadata, not content, and not checksummed."""
 
     OWN_MANIFEST = "own_manifest"
     """This record's ``.checksum``, or a legacy manifest suffix an external checker left beside it
@@ -184,27 +182,18 @@ class DirectoryClassifier:
 
     The naming half of :class:`~rehuco_core.rehu_content_files.ContentFileScanner`'s rules, over one
     listing: see the module docstring for which rules are shared and why the recursion is not. Built
-    once per browser and asked per directory, so the caller's screenshot patterns are compiled once
-    rather than per listing.
+    once per browser and asked per directory.
 
     :param record_path: the asking resource's own record, ``.rehu`` or ``.tc``. Its directory is the
         resource's, which is what makes a record found *here* this resource's own rather than a
         neighbour's.
     :param excluded_patterns: filename globs that take a file out of content, matched
         case-insensitively against the name -- the caller's, the same set the content walk is handed.
-    :param screenshot_name_patterns: the naming rules a legacy screenshot is recognized by, the caller's
-        for the same reason (#287): what this names a screenshot must be what a conversion would rename.
     """
 
-    def __init__(
-        self,
-        record_path: Path,
-        excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS,
-        screenshot_name_patterns: tuple[ScreenshotNamePattern, ...] = SCREENSHOT_NAME_PATTERNS,
-    ) -> None:
+    def __init__(self, record_path: Path, excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS) -> None:
         self.__record_path: Final = record_path
         self.__excluded_patterns: Final = tuple(pattern.lower() for pattern in excluded_patterns)
-        self.__screenshot_name_patterns: Final = compiled_screenshot_name_patterns(screenshot_name_patterns)
         self.__slug: Final = record_path.stem.lower()
         self.__file_scoped: Final = not is_directory_scoped(record_path)
         """Whether this resource's content is a whitelist of one stem rather than a directory
@@ -297,7 +286,7 @@ class DirectoryClassifier:
             return FileKind.OWN_RECORD if self.__is_own(filename, own_directory) else FileKind.FOREIGN_RECORD
         stem, suffix = os.path.splitext(filename)
         stem, suffix = stem.lower(), suffix.lower()
-        sidecar_of = self.__sidecar_owner(stem, suffix, records, own_directory=own_directory)
+        sidecar_of = self.__sidecar_owner(stem, suffix, records)
         if sidecar_of is not None:
             own = own_directory and sidecar_of == self.__slug
             if suffix in CHECKSUM_MANIFEST_EXTENSIONS:
@@ -312,32 +301,25 @@ class DirectoryClassifier:
             return FileKind.EXCLUDED
         return FileKind.CONTENT
 
-    def __sidecar_owner(self, stem: str, suffix: str, records: set[str], *, own_directory: bool) -> str | None:
+    @staticmethod
+    def __sidecar_owner(stem: str, suffix: str, records: set[str]) -> str | None:
         """Which record in this directory claims ``stem`` as a screenshot or a manifest.
 
         **The record has to exist**, which is the content walk's own rule: a name is bookkeeping because
         a record claims it, never because of its shape, so ``xxx00.jpg`` with no ``xxx.rehu`` beside it
-        is an ordinary file and so is a ``yyy.sfv`` with no ``yyy.rehu``.
-
-        A pattern-matched legacy screenshot is the exception the walk also makes (#289): tc4 wrote
-        ``01.jpg``/``cover.jpg``/``sample-01.jpg``, none of which carries a record's name, so the
-        ``<record>NN`` rule cannot see it and it is a screenshot beside any record, or none. Attributed
-        to *this* resource only in its own directory, which is the only place the images dock scans and
-        so the only place the offer to convert one is real; deeper down it is still bookkeeping -- the
-        walk skips it either way -- but it is nobody's to act on from here.
+        is an ordinary file and so is a ``yyy.sfv`` with no ``yyy.rehu``. A tc4-named ``01.jpg`` or
+        ``cover.jpg`` carries no record's name, so it is content too (#393) -- a screenshot candidate the
+        images dock may offer to convert, never a sidecar by shape.
 
         :param stem: the entry's lower-cased stem.
         :param suffix: its lower-cased suffix.
         :param records: the record stems found in this directory.
-        :param own_directory: whether this is the resource's own directory.
         :returns: the owning record's stem, or ``None`` when nothing here claims the name.
         """
         if suffix in CHECKSUM_MANIFEST_EXTENSIONS:
             return stem if stem in records else None
         if suffix not in IMAGE_EXTENSIONS:
             return None
-        if self.__screenshot_name_patterns.recognizes(stem):
-            return self.__slug if own_directory else ""
         numbered = SCREENSHOT_STEM_PATTERN.match(stem)
         if numbered is not None and numbered["record"] in records:
             return numbered["record"]
@@ -459,17 +441,15 @@ def classify_directory(
     record_path: Path,
     directory: Path,
     excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS,
-    screenshot_name_patterns: tuple[ScreenshotNamePattern, ...] = SCREENSHOT_NAME_PATTERNS,
 ) -> DirectoryListing:
     """Read one directory and name every entry from ``record_path``'s point of view (#266).
 
     The one-shot form of :class:`DirectoryClassifier`, for a caller listing a single directory; a
-    browser walking several holds the classifier instead, so the screenshot patterns compile once.
+    browser walking several holds the classifier instead.
 
     :param record_path: the asking resource's record, ``.rehu`` or ``.tc``.
     :param directory: the directory to read -- the resource's own, or one under it.
     :param excluded_patterns: the caller's junk globs, the same set the content walk is handed.
-    :param screenshot_name_patterns: the naming rules a legacy screenshot is recognized by, likewise.
     :returns: the classified listing; unreadable comes back empty and not reachable, never raising.
     """
-    return DirectoryClassifier(record_path, excluded_patterns, screenshot_name_patterns).classify(directory)
+    return DirectoryClassifier(record_path, excluded_patterns).classify(directory)

@@ -46,11 +46,11 @@ TREE: Final = {
         "foo00.jpg",
         "foo.zip",
     ],
-    DIRECTORY / "sub": ["deeper.mp4", "info00.jpg"],
+    DIRECTORY / "sub": ["deeper.mp4", "info00.jpg", "foo01.jpg", "foo.checksum"],
     DIRECTORY / "nested": ["info.rehu", "info00.jpg", "movie.mp4"],
 }
 """One directory-scoped resource's folder, holding every shape the rules distinguish: its own record and
-sidecars, a retained backup, a pattern-matched legacy screenshot, content of several types, a junk name,
+sidecars, a retained backup, a legacy-named image that is content (#393), content of several types, a junk name,
 a file-scoped neighbour with its own sidecar and content, a plain subdirectory and a nested resource."""
 
 DIRECTORIES: Final = (DIRECTORY / "sub", DIRECTORY / "nested")
@@ -105,7 +105,7 @@ def own(mocker: MockerFixture) -> dict[str, FileKind]:
         ("info.checksum", FileKind.OWN_MANIFEST),
         ("info.sfv", FileKind.OWN_MANIFEST),
         ("info.tc.orig", FileKind.CONVERSION_BACKUP),
-        ("cover.jpg", FileKind.OWN_SCREENSHOT),
+        ("cover.jpg", FileKind.CONTENT),
         ("lesson.jpg", FileKind.CONTENT),
         ("lesson01.mp4", FileKind.CONTENT),
         ("notes.pdf", FileKind.CONTENT),
@@ -179,6 +179,23 @@ def test_a_record_claims_only_its_own_directory(mocker: MockerFixture) -> None:
     mock_tree(mocker)
 
     assert kinds(DIRECTORY / "sub")["info00.jpg"] is FileKind.CONTENT
+
+
+def test_a_file_scoped_neighbour_claims_nothing_below_its_directory(mocker: MockerFixture) -> None:
+    """``foo.rehu`` beside ``info.rehu`` owns ``foo.*`` and ``fooNN.*`` in its own directory only: a
+    ``sub/foo01.jpg`` and a ``sub/foo.checksum`` are this resource's content.
+
+    **Test steps:**
+
+    * classify the subdirectory, which holds ``foo``-named files and no record
+    * verify both are content
+    """
+    mock_tree(mocker)
+
+    listing = kinds(DIRECTORY / "sub")
+
+    assert listing["foo01.jpg"] is FileKind.CONTENT
+    assert listing["foo.checksum"] is FileKind.CONTENT
 
 
 def test_a_nested_resources_files_are_its_own(mocker: MockerFixture) -> None:
@@ -434,8 +451,7 @@ def test_a_directory_that_will_not_list_is_unreachable_rather_than_empty(mocker:
 
 
 def test_the_classifier_is_reusable_across_directories(mocker: MockerFixture) -> None:
-    """A browser holds one and asks it per directory, which is what keeps the screenshot patterns
-    compiled once rather than per listing.
+    """A browser holds one and asks it per directory, and no listing's answer leaks into the next.
 
     **Test steps:**
 
@@ -445,7 +461,12 @@ def test_the_classifier_is_reusable_across_directories(mocker: MockerFixture) ->
     mock_tree(mocker)
     classifier = DirectoryClassifier(DIRECTORY_SCOPED_PATH)
 
-    assert {entry.name for entry in classifier.classify(DIRECTORY / "sub").entries} == {"deeper.mp4", "info00.jpg"}
+    assert {entry.name for entry in classifier.classify(DIRECTORY / "sub").entries} == {
+        "deeper.mp4",
+        "info00.jpg",
+        "foo01.jpg",
+        "foo.checksum",
+    }
     assert classifier.classify(DIRECTORY / "nested").foreign_directory_record == INFO_REHU_FILENAME
 
 

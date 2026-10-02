@@ -23,7 +23,6 @@ from rehuco_core import (
     FINISHED_JOB_STATES,
     PROGRESS_UNIT_BYTES,
     PRUNE_REASONS,
-    SCREENSHOT_NAME_PATTERNS,
     ChecksumJob,
     ChecksumReport,
     CoveringRecord,
@@ -37,7 +36,6 @@ from rehuco_core import (
     TaskQueue,
     VerifyChecksumsJob,
     checksum_report_summary,
-    screenshot_name_patterns_state,
 )
 
 DIRECTORY: Final = Path("/fake/library/sculpting")
@@ -533,7 +531,6 @@ def test_a_job_writes_down_what_it_needs_to_be_itself_again() -> None:
         "algorithm": DEFAULT_CHECKSUM_ALGORITHM,
         "only": [VIDEO, ARCHIVE],
         "excluded_patterns": ["Thumbs.db"],
-        "screenshot_name_patterns": screenshot_name_patterns_state(SCREENSHOT_NAME_PATTERNS),
         "create_if_missing": True,
         "stale_days": None,
         "migrate_to": None,
@@ -562,6 +559,24 @@ def test_a_restored_job_is_the_job_that_was_queued() -> None:
     assert restored.create_if_missing
     assert restored.migrate_to == "crc32"
     assert restored.label == "Verify checksums - sculpting"
+
+
+def test_a_state_carrying_screenshot_name_patterns_still_restores() -> None:
+    """A queue saved while the content walk still took screenshot naming rules restores as before (#393).
+
+    **Test steps:**
+
+    * restore a job from a state that still carries the retired ``screenshot_name_patterns`` key
+    * check it restored, and does not write the key back
+    """
+    restored = VerifyChecksumsJob()
+
+    restored.restore_state(
+        {"path": str(INFO_PATH), "algorithm": DEFAULT_CHECKSUM_ALGORITHM, "screenshot_name_patterns": [["x", "y"]]}
+    )
+
+    assert restored.source == INFO_PATH
+    assert "screenshot_name_patterns" not in restored.capture_state()
 
 
 @mark.parametrize(

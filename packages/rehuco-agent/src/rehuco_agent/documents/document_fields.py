@@ -41,7 +41,6 @@ from ..settings.identity_settings import shared_identity_settings
 from ..settings.image_viewer_settings import shared_image_viewer_settings
 from ..settings.markdown_rendering_settings import shared_markdown_rendering_settings
 from ..settings.reference_images_settings import shared_reference_images_settings
-from ..settings.screenshot_patterns_settings import shared_screenshot_patterns_settings
 from ..settings.videos_settings import shared_videos_settings
 from .name_suggestion_model import NameSuggestionModel
 from .rehu_document_image_organizer import RehuDocumentImageOrganizer
@@ -426,7 +425,6 @@ def build_document_form(
             return content_size_on_disk(
                 path,
                 shared_excluded_files_settings().excluded_file_patterns,
-                shared_screenshot_patterns_settings().screenshot_name_patterns,
             )
         except ContentUnreachableError:
             return None
@@ -458,7 +456,6 @@ def build_document_form(
                 videos.create_probe(),
                 video_extensions=videos.video_extensions,
                 excluded_patterns=shared_excluded_files_settings().excluded_file_patterns,
-                screenshot_name_patterns=shared_screenshot_patterns_settings().screenshot_name_patterns,
             )
         except DurationProbeError, ContentUnreachableError:
             return None

@@ -210,18 +210,10 @@ class TcImportJob(TaskJobBase):
         :raises ChecksumRecordError: a record this build cannot read at all.
         :raises OSError: the resource would not list, or the record could not be written.
         """
-        seed = seed_checksum_record(
-            rehu_path,
-            excluded_patterns=self.excluded_patterns,
-            screenshot_name_patterns=self.screenshot_name_patterns,
-        )
+        seed = seed_checksum_record(rehu_path, excluded_patterns=self.excluded_patterns)
         if seed is not None:
             return seed
-        return remediate_legacy_manifest(
-            rehu_path,
-            excluded_patterns=self.excluded_patterns,
-            screenshot_name_patterns=self.screenshot_name_patterns,
-        )
+        return remediate_legacy_manifest(rehu_path, excluded_patterns=self.excluded_patterns)
 
     def resource_path(self) -> Path:
         """This job's `.tc` file, refusing a job that has none.

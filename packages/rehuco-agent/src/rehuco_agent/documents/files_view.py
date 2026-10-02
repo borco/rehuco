@@ -50,7 +50,6 @@ from rehuco_core import IMAGE_EXTENSIONS, FileKind
 from ..commands import REFRESH_FILES, shared_command_registry
 from ..settings.checksum_settings import shared_checksum_settings
 from ..settings.excluded_files_settings import shared_excluded_files_settings
-from ..settings.screenshot_patterns_settings import shared_screenshot_patterns_settings
 from .files_row_delegate import CHECKSUM_COLUMN_WIDTH, FilesRowDelegate
 from .files_rows import (
     CHECKSUM_COLUMN,
@@ -202,7 +201,6 @@ class FilesView(QWidget):
         reader = FilesRowsReader(
             path,
             shared_excluded_files_settings().excluded_file_patterns,
-            shared_screenshot_patterns_settings().screenshot_name_patterns,
             shared_checksum_settings().stale_after,
         )
         self.__loader.start(reader, directory)

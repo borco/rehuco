@@ -82,8 +82,8 @@ def convert_tc(
         :data:`~rehuco_core.plugins.DEFAULT_UNKNOWN_USERNAME`, since a flag carried in from the ``.tc``
         was not set by this install's own identity.
     :param screenshot_name_patterns: the naming rules the legacy screenshots are recognized by (#53),
-        resolved by the caller for the same reason -- the walk measuring ``current_size`` and the rename
-        plan must agree on which files are screenshots, or converting would change the measurement.
+        resolved by the caller for the same reason. Only the rename plan reads them: ``current_size`` is
+        measured after the renames (#393), when the renamed screenshots are ``<stem>NN`` sidecars.
     :param excluded_patterns: filename globs the walk measuring ``current_size`` leaves out (#226),
         resolved by the caller -- core never reads a setting.
     :param deleter: how a discarded ``.orig`` backup is actually removed when ``keep_backups`` is
@@ -110,11 +110,11 @@ class TcConverter:  # pylint: disable=too-few-public-methods
 
     Two phases: **plan** (pure reads -- parse the ``.tc``, scan screenshots, build the new JSON
     payload in memory; nothing on disk changes) then **replace** (back up the ``.tc`` to a ``.orig``
-    sibling, write the ``.rehu``, rename each pattern-matched image to its own slot, and -- only once
-    everything new is confirmed written -- optionally delete the backup). Any failure during the write
-    phase undoes every image rename already applied, removes whatever new files were created and
-    restores the backups to their original names, so a crash or permission error never leaves the
-    resource half-converted.
+    sibling, rename each pattern-matched image to its own slot, measure ``current_size``, write the
+    ``.rehu``, and -- only once everything new is confirmed written -- optionally delete the backup). Any
+    failure during the write phase undoes every image rename already applied and restores the backups to
+    their original names, so a crash or permission error never leaves the resource half-converted. The
+    ``.rehu`` is the last write and an atomic one, so a failure never leaves one behind to remove.
 
     :param tc_path: the ``.tc`` file to convert.
     :param keep_backups: whether to keep the ``.orig`` backup after a successful conversion.
@@ -165,15 +165,16 @@ class TcConverter:  # pylint: disable=too-few-public-methods
         originals = originals_to_back_up(self.__tc_path, target)
         self.__check_no_stale_backups(originals)
         backups = self.__backed_up(originals)
-        installed: list[Path] = []
         renamed: list[tuple[Path, Path]] = []
         try:
+            self.__renumber_images(plan.renames, renamed)
+            # measured once the renames are done: until then a pattern-matched image is content (#393),
+            # and the record would carry the size of screenshots the conversion itself is about to claim
+            self.__put_measured_current_size(data[CORE_BLOCK_KEY])
             document = RehuDocument(data, username=self.__username)
             document.save(target)
-            installed.append(target)
-            self.__renumber_images(plan.renames, renamed)
         except Exception:
-            self.__undo(installed, renamed, backups)
+            self.__undo(renamed, backups)
             raise
         if not self.__keep_backups:
             self.__delete_backups(backups)
@@ -193,7 +194,6 @@ class TcConverter:  # pylint: disable=too-few-public-methods
         seeded = self.__seeded_timestamp()
         core["created"] = seeded
         core["updated"] = seeded
-        self.__put_measured_current_size(core)
         return data
 
     def __put_measured_current_size(self, core: dict[str, Any]) -> None:
@@ -210,9 +210,7 @@ class TcConverter:  # pylint: disable=too-few-public-methods
         """
         core.pop("current_size", None)
         try:
-            core["current_size"] = content_size_on_disk(
-                self.__tc_path, self.__excluded_patterns, self.__screenshot_name_patterns
-            )
+            core["current_size"] = content_size_on_disk(self.__tc_path, self.__excluded_patterns)
         except ContentUnreachableError:
             pass
 
@@ -275,9 +273,7 @@ class TcConverter:  # pylint: disable=too-few-public-methods
             source.rename(destination)
             renamed.append((source, destination))
 
-    def __undo(
-        self, installed: Sequence[Path], renamed: Sequence[tuple[Path, Path]], backups: dict[Path, Path]
-    ) -> None:
+    def __undo(self, renamed: Sequence[tuple[Path, Path]], backups: dict[Path, Path]) -> None:
         """Put the directory back exactly as it was found.
 
         In the reverse order of the write phase: the image renames first, since a restored ``.tc``
@@ -287,7 +283,6 @@ class TcConverter:  # pylint: disable=too-few-public-methods
         something on disk failed, and restoring what can be restored beats abandoning the rest to let
         a second error hide the first.
 
-        :param installed: new files actually created before the failure.
         :param renamed: the ``(source, destination)`` pairs already renamed before the failure.
         :param backups: this conversion's ``{original: backup}`` map.
         """
@@ -296,8 +291,6 @@ class TcConverter:  # pylint: disable=too-few-public-methods
                 destination.rename(source)
             except OSError:
                 continue
-        for path in installed:
-            path.unlink(missing_ok=True)
         self.__restore(backups)
 
     def __restore(self, backups: dict[Path, Path]) -> None:
