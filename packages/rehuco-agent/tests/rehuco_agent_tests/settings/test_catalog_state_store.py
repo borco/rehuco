@@ -175,6 +175,22 @@ def test_malformed_and_repeated_browsers_are_skipped(mocker: MockerFixture, writ
     assert CatalogStateStore().load(REHUCO_ID).browsers == [FIRST]
 
 
+def test_a_browsers_value_that_is_not_a_list_is_no_browsers(mocker: MockerFixture) -> None:
+    """A damaged list costs the browsers, not the layout.
+
+    **Test steps:**
+
+    * serve a file whose ``browsers`` is a string but whose roots header is intact
+    * verify no browsers and the roots header read
+    """
+    serve(mocker, json.dumps({"version": 1, "browsers": "nope", "roots_header": "cm9vdHM="}))
+
+    state = CatalogStateStore().load(REHUCO_ID)
+
+    assert not state.browsers
+    assert state.roots_header == b"roots"
+
+
 def test_damaged_bytes_read_as_empty(mocker: MockerFixture, written: MagicMock) -> None:
     """A base64 value that does not decode is an empty blob, not an error.
 

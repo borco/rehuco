@@ -1448,6 +1448,70 @@ def test_the_root_edits_do_nothing_with_no_catalog_open(mocker: MockerFixture, d
     saves.assert_not_called()
 
 
+def test_the_browser_slots_do_nothing_with_nothing_to_act_on(
+    mocker: MockerFixture, qtbot: QtBot, dock: RehucoDock
+) -> None:
+    """The slots behind the disabled New and Rename actions refuse on their own too.
+
+    **Test steps:**
+
+    * call the new, rename, close and fill slots with no catalog open, and with the Roots list in place of a browser
+    * verify no browser appeared, the name box never opened, the unfilled browser has no rows and nothing raised
+    """
+    ask = mocker.patch.object(dock, "ask_browser_name")
+    stray = TableBrowser()
+    qtbot.addWidget(stray)
+
+    dock._RehucoDock__on_new_browser()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    dock._RehucoDock__on_rename_current_browser()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    dock._RehucoDock__close_browser(dock.roots_dock)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    dock._RehucoDock__fill(stray)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    assert not dock.browsers
+    ask.assert_not_called()
+    assert stray.model.rowCount() == 0
+
+
+@mark.usefixtures("served")
+def test_a_new_browser_whose_rows_cannot_be_read_is_still_added(
+    mocker: MockerFixture, dock: RehucoDock, caplog: LogCaptureFixture
+) -> None:
+    """A failed read is logged and the new browser starts empty -- the next scan rebuilds the cache.
+
+    **Test steps:**
+
+    * open a catalog, make ``rows`` raise and trigger New Table Browser
+    * verify an error was logged and the browser exists, with no rows
+    """
+    dock.open_rehuco(REHUCO_PATH)
+    mocker.patch.object(CatalogCache, "rows", side_effect=sqlite3.OperationalError("locked"))
+
+    with caplog.at_level(logging.ERROR):
+        dock.new_browser_action.trigger()
+
+    assert "Could not read the cache" in caplog.text
+    _, added = dock.browsers
+    assert added.model.rowCount() == 0
+
+
+@mark.parametrize(("accepted", "expected"), [(True, "Typed"), (False, None)])
+def test_ask_browser_name_returns_the_typed_name_or_none(
+    mocker: MockerFixture, dock: RehucoDock, accepted: bool, expected: str | None
+) -> None:
+    """The real name box yields its text when accepted and ``None`` when cancelled, opened on the offered name.
+
+    **Test steps:**
+
+    * patch ``QInputDialog.getText`` to accept, then to cancel
+    * verify the name or ``None``, and that the box was given the title and the current name
+    """
+    get_text = mocker.patch("rehuco_agent.rehuco.rehuco_dock.QInputDialog.getText", return_value=("Typed", accepted))
+
+    assert dock.ask_browser_name("Current", "Clone Browser") == expected
+    assert get_text.call_args.args[1] == "Clone Browser"
+    assert get_text.call_args.kwargs["text"] == "Current"
+
+
 @mark.usefixtures("served")
 def test_removing_with_no_root_selected_does_nothing(dock: RehucoDock, saves: MagicMock) -> None:
     """The remove slot with no selection writes nothing.
