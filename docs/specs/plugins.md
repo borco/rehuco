@@ -526,8 +526,8 @@ kinds of sub-dock:
   own filter. Double-clicking a view's tab renames it in place; the view's toolbar clones it (asking for a name; the
   clone starts with the same filter and columns) or deletes it, and its [x] deletes it too.
   - **Columns.** Every column the cache can show exists on every view, and a header context menu lists them all,
-    checked where visible. Type-specific columns — a tutorial's duration, a reference pack's image count — depend
-    on what the cache stores for them, which is the common core only today ([[data-model#cache-schema]]).
+    checked where visible. Type-specific columns — a tutorial's durations and level, a reference pack's image
+    counts — are the fields the cache stores that the type's plugin declares ([[data-model#cache-schema]], #399).
   - **The filter line** is GitHub-style: free text plus `field:"value"` tokens (`folder`, `authors`, `tags`,
     `publishers`, `type`). It filters the rows, and a column-selecting token chooses which columns show; an
     unknown field is reported, never silently dropped. A folder's context menu in Roots — *Show only rehu in this
