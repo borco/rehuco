@@ -147,9 +147,9 @@ through to view or edit any resource.
   dock can host a resource's sub-docks (#380).
 - the Root Catalog dock — the tracer above (#377); the roots column view (#378); the browser views with their filter
   line and columns (#379 and the issues below); the current resource's sub-docks (#381).
-- the Projects-style views ([[plugins#rehuco-dock]]) — the views shell with New View, clone, delete and per-view
-  state (#396); tab rename in place (#397); the filter line (#398); type-specific cache columns (#399); the New View
-  presets (#400).
+- the Projects-style browsers ([[plugins#rehuco-dock]]) — the browsers shell with New Table Browser, clone, delete and
+  per-browser state kept by the agent (#396); renaming a browser (#397); the filter line (#398); type-specific cache
+  columns (#399); the New Table Browser presets (#400).
 - public docs once it runs (#382).
 
 ## Tutorials — direction revised
