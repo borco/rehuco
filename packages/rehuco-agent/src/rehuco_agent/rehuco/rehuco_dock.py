@@ -13,12 +13,12 @@ import cbor2
 import humanize
 import PySide6QtAds as QtAds
 from borco_core.logging import LogScope
-from borco_pyside.qtads import QtAdsAutoHideButtonSuppressor, QtAdsFocusTracker
+from borco_pyside.qtads import QtAdsAutoHideButtonSuppressor, QtAdsFocusTracker, QtAdsTabContextActions
 from borco_pyside.theming import ActionIconThemeHandler
 from borco_pyside.widgets import MessageBanner, MessageBannerRow, MessageBannerSeverity, RowBandDelegate
 from PySide6.QtCore import QAbstractItemModel, QByteArray, QItemSelectionModel, QModelIndex, QObject, Qt, Signal
 from PySide6.QtGui import QAction
-from PySide6.QtWidgets import QFileDialog, QMainWindow, QMessageBox, QStatusBar, QTableView, QWidget
+from PySide6.QtWidgets import QFileDialog, QInputDialog, QMainWindow, QMessageBox, QStatusBar, QTableView, QWidget
 from rehuco_core import (
     DEFAULT_RENAME_COORDINATOR,
     FINISHED_JOB_STATES,
@@ -47,9 +47,10 @@ from .rehuco_roots_panel_ui import Ui_RehucoRootsPanel
 
 LOG: Final = logging.getLogger(__name__)
 
-SCAN_ICON: Final = ":/icons/refresh.svg"
-ADD_ROOT_ICON: Final = ":/icons/items_add.svg"
-REMOVE_ROOT_ICON: Final = ":/icons/items_delete.svg"
+SCAN_ICON: Final = ":/icons/roots_scan.svg"
+ADD_ROOT_ICON: Final = ":/icons/roots_add.svg"
+REMOVE_ROOT_ICON: Final = ":/icons/roots_delete.svg"
+RENAME_BROWSER_ICON: Final = ":/icons/browser_rename.svg"
 
 ROOTS_DOCK_NAME: Final = "roots"
 BROWSER_DOCK_NAME: Final = "browser"
@@ -174,8 +175,9 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         self.__update_resource_count()
 
         self.__dock_manager: Final = QtAds.CDockManager(self)
-        # nothing holds onto the tracker: it parents itself to the manager it tracks
-        QtAdsFocusTracker(self.__dock_manager, close_glyph=TAB_CLOSE_GLYPH, stylesheet_host=stylesheet_host)
+        self.__focus_tracker: Final = QtAdsFocusTracker(
+            self.__dock_manager, close_glyph=TAB_CLOSE_GLYPH, stylesheet_host=stylesheet_host
+        )
         # pinning belongs to the window's own docks, and this shell's sub-docks live inside one of them
         QtAdsAutoHideButtonSuppressor(self.__dock_manager)
         self.__maximize_handler: Final = attach_maximize_handler(self.__dock_manager)
@@ -187,6 +189,7 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         self.__roots_selection: Final = cast(QItemSelectionModel, self.__roots_ui.roots_view.selectionModel())
         self.__roots_selection.selectionChanged.connect(self.__update_enablement)
         self.__roots_model.modelReset.connect(self.__update_enablement)
+        self.__focus_tracker.current_dock_changed.connect(self.__update_enablement)
         self.__update_enablement()
         queue.add_listener(self)
         if resource_events is not None:
@@ -366,6 +369,20 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         """Removes the selected root."""
         return self.__roots_ui.remove_root_action
 
+    @property
+    def rename_browser_action(self) -> QAction:
+        """Renames the current browser."""
+        return self.__browser_ui.rename_browser_action
+
+    def ask_browser_name(self, current: str) -> str | None:
+        """Ask for a browser's new name; the one modal behind the rename, so a test replaces it per instance.
+
+        :param current: the name the box opens on.
+        :returns: the typed name, or ``None`` if the box was cancelled.
+        """
+        name, accepted = QInputDialog.getText(self, "Rename Browser", "Name:", text=current)
+        return name if accepted else None
+
     def __refresh(self) -> None:
         """Show what the file and the cache hold now.
 
@@ -413,6 +430,13 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         browser.setObjectName(BROWSER_DOCK_NAME)
         browser.setFeatures(features.DockWidgetFocusable | features.DockWidgetMovable)
         browser.setWidget(self.__browser_panel)
+        self.__browser_dock = browser
+        # right-clicking the browser's tab also makes it current, so Rename reads enabled in the menu it opens
+        QtAdsTabContextActions(self.__dock_manager).add(
+            browser,
+            [self.__browser_ui.rename_browser_action],
+            lambda: self.__focus_tracker.set_current_dock(browser),
+        )
         self.__dock_manager.addDockWidget(QtAds.CenterDockWidgetArea, browser)
 
         roots = QtAds.CDockWidget(self.__dock_manager, ROOTS_DOCK_TITLE)
@@ -428,30 +452,48 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         toolbar.addAction(ui.scan_action)
         toolbar.addSeparator()
         toolbar.addActions([ui.add_root_action, ui.remove_root_action])
+        toolbar.addSeparator()
+        toolbar.addAction(self.__browser_ui.rename_browser_action)
         for action, icon in (
             (ui.scan_action, SCAN_ICON),
             (ui.add_root_action, ADD_ROOT_ICON),
             (ui.remove_root_action, REMOVE_ROOT_ICON),
+            (self.__browser_ui.rename_browser_action, RENAME_BROWSER_ICON),
         ):
             ActionIconThemeHandler(action, icon)
         ui.scan_action.triggered.connect(self.scan)
         ui.add_root_action.triggered.connect(self.__on_add_root)
         ui.remove_root_action.triggered.connect(self.__on_remove_root)
+        self.__browser_ui.rename_browser_action.triggered.connect(self.__on_rename_browser)
 
     def __update_enablement(self) -> None:
         """Enable Scan while a file is open, and the two root edits only while it can also be saved -- Remove
-        needing a selected root besides."""
+        needing a selected root besides -- and Rename Browser only while a browser is the current sub-dock."""
         file = self.__file
         editable = file is not None and file.lock_reason is None
         has_root = self.__roots_model.root_at(self.__selected_row()) is not None
         self.__roots_ui.scan_action.setEnabled(file is not None)
         self.__roots_ui.add_root_action.setEnabled(editable)
         self.__roots_ui.remove_root_action.setEnabled(editable and has_root)
+        # a browser's own action: only while a browser is the current sub-dock, not the Roots one
+        self.__browser_ui.rename_browser_action.setEnabled(self.__focus_tracker.current_dock is self.__browser_dock)
 
     def __selected_row(self) -> int:
         """The selected root's row, or ``-1`` while none is selected."""
         rows = self.__roots_selection.selectedRows()
         return rows[0].row() if rows else -1
+
+    def __on_rename_browser(self) -> None:
+        """Rename the current browser: ask for a name and set the dock's ``windowTitle``, which is all a name
+        is. Never its ``objectName``: ``CDockManager`` keys its registry by the name a dock was added under,
+        and a changed one dangles (#364). An empty or unchanged name is a cancel. Kept for the session only,
+        until browsers are saved with the catalog (#396).
+        """
+        dock = self.__browser_dock
+        name = self.ask_browser_name(dock.windowTitle())
+        name = name.strip() if name is not None else ""
+        if name and name != dock.windowTitle():
+            dock.setWindowTitle(name)
 
     def __on_row_activated(self, index: QModelIndex) -> None:
         """Ask for the double-clicked resource to be opened, by its absolute path.

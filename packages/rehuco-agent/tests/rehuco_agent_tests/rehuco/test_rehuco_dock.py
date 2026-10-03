@@ -23,9 +23,11 @@ from uuid import uuid4
 
 import cbor2
 import PySide6QtAds as QtAds
-from borco_pyside.qtads import tab_close_button, tab_maximize_button
+from borco_pyside.qtads import tab_close_button, tab_label, tab_maximize_button
 from borco_pyside.widgets import MessageBanner, RowBandDelegate
-from PySide6.QtCore import QModelIndex, Qt
+from PySide6.QtCore import QModelIndex, QPoint, Qt
+from PySide6.QtGui import QContextMenuEvent
+from PySide6.QtWidgets import QApplication, QMenu
 from pytest import LogCaptureFixture, fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -1364,6 +1366,141 @@ def test_with_nothing_open_an_announcement_is_nothing(qtbot: QtBot, queue: TaskQ
     events.announce_changed((TUTORIALS / "info.rehu",))
 
     assert dock.catalog_model.rowCount() == 0
+
+
+# endregion
+
+
+# region Renaming the browser (#397)
+
+
+def browser_dock_widget(dock: RehucoDock) -> QtAds.CDockWidget:
+    """The Browser sub-dock, found by the object name it is registered under.
+
+    :param dock: the Root Catalog dock.
+    :returns: the sub-dock.
+    """
+    found = next(widget for widget in dock.findChildren(QtAds.CDockWidget) if widget.objectName() == BROWSER_DOCK_NAME)
+    return found
+
+
+def make_current(qtbot: QtBot, widget: QtAds.CDockWidget) -> None:
+    """Make ``widget`` the focus tracker's current sub-dock the way a user does, by clicking its tab title.
+
+    :param qtbot: the Qt test driver.
+    :param widget: the sub-dock to make current.
+    """
+    qtbot.mouseClick(tab_label(widget), Qt.MouseButton.LeftButton)
+
+
+@mark.parametrize(
+    ("answer", "expected"),
+    [
+        ("Renamed", "Renamed"),
+        ("  Padded  ", "Padded"),
+        (None, "Browser"),
+        ("   ", "Browser"),
+        ("Browser", "Browser"),
+    ],
+)
+def test_rename_browser_sets_only_the_window_title(
+    mocker: MockerFixture, qtbot: QtBot, dock: RehucoDock, answer: str | None, expected: str
+) -> None:
+    """A real new name becomes the title; a cancel, a blank or an unchanged name changes nothing -- and the
+    object name the registry keys on is never touched.
+
+    **Test steps:**
+
+    * make the browser current, answer the name box with each case and trigger Rename Browser
+    * verify the Browser sub-dock's window title, and that its object name is unchanged
+    """
+    mocker.patch.object(dock, "ask_browser_name", return_value=answer)
+    browser = browser_dock_widget(dock)
+    make_current(qtbot, browser)
+
+    dock.rename_browser_action.trigger()
+
+    assert browser.windowTitle() == expected
+    assert browser.objectName() == BROWSER_DOCK_NAME
+
+
+def test_rename_browser_opens_on_the_current_title(mocker: MockerFixture, qtbot: QtBot, dock: RehucoDock) -> None:
+    """The name box is offered the browser's current title.
+
+    **Test steps:**
+
+    * make the browser current and trigger Rename Browser with the box cancelled
+    * verify it was asked with "Browser"
+    """
+    ask = mocker.patch.object(dock, "ask_browser_name", return_value=None)
+    make_current(qtbot, browser_dock_widget(dock))
+
+    dock.rename_browser_action.trigger()
+
+    ask.assert_called_once_with("Browser")
+
+
+def test_rename_browser_is_enabled_only_while_a_browser_is_current(qtbot: QtBot, dock: RehucoDock) -> None:
+    """The Roots sub-dock is not a browser: Rename follows which of the two is current.
+
+    **Test steps:**
+
+    * make the Roots list current and verify Rename is disabled
+    * make the browser current and verify it is enabled
+    * make the Roots list current again and verify it is disabled
+    """
+    docks = {widget.objectName(): widget for widget in dock.findChildren(QtAds.CDockWidget)}
+    make_current(qtbot, docks[ROOTS_DOCK_NAME])
+    assert not dock.rename_browser_action.isEnabled()
+
+    make_current(qtbot, docks[BROWSER_DOCK_NAME])
+    assert dock.rename_browser_action.isEnabled()
+
+    make_current(qtbot, docks[ROOTS_DOCK_NAME])
+    assert not dock.rename_browser_action.isEnabled()
+
+
+def test_ask_browser_name_returns_the_typed_name_or_none(mocker: MockerFixture, dock: RehucoDock) -> None:
+    """The real box yields its text when accepted and ``None`` when cancelled.
+
+    **Test steps:**
+
+    * patch ``QInputDialog.getText`` to accept, then to cancel
+    * verify the name, then ``None``
+    """
+    get_text = mocker.patch("rehuco_agent.rehuco.rehuco_dock.QInputDialog.getText")
+    get_text.return_value = ("Typed", True)
+    assert dock.ask_browser_name("Browser") == "Typed"
+
+    get_text.return_value = ("Typed", False)
+    assert dock.ask_browser_name("Browser") is None
+
+
+def test_the_browser_tab_menu_offers_rename_above_detach(mocker: MockerFixture, qtbot: QtBot, dock: RehucoDock) -> None:
+    """Right-clicking the browser's tab lists Rename Browser first, apart from QtAds' own entries, and makes it
+    current so the entry is enabled.
+
+    **Test steps:**
+
+    * make the Roots list current, so Rename Browser is disabled
+    * right-click the browser's tab title and build its menu through the helper's seam
+    * verify Rename Browser is first, followed by a separator and Detach, and now enabled
+    """
+    docks = {widget.objectName(): widget for widget in dock.findChildren(QtAds.CDockWidget)}
+    make_current(qtbot, docks[ROOTS_DOCK_NAME])
+    assert not dock.rename_browser_action.isEnabled()
+
+    mocker.patch.object(QMenu, "popup")
+    QApplication.sendEvent(
+        docks[BROWSER_DOCK_NAME].tabWidget(),
+        QContextMenuEvent(QContextMenuEvent.Reason.Mouse, QPoint(5, 5), QPoint(5, 5)),
+    )
+
+    entries = docks[BROWSER_DOCK_NAME].tabWidget().findChildren(QMenu)[0].actions()
+    assert entries[0] is dock.rename_browser_action
+    assert entries[1].isSeparator()
+    assert entries[2].text() == "Detach"
+    assert dock.rename_browser_action.isEnabled()
 
 
 # endregion

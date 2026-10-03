@@ -6,6 +6,7 @@ from .qtads_floating_show_guard import QtAdsFloatingShowGuard
 from .qtads_focus_tracker import QtAdsFocusTracker
 from .qtads_maximize_handler import QtAdsMaximizeHandler
 from .qtads_pin_side_handler import QtAdsPinSideHandler
+from .qtads_tab_context_actions import QtAdsTabContextActions
 from .qtads_widgets import tab_close_button, tab_label, tab_maximize_button
 
 __all__ = [
@@ -14,6 +15,7 @@ __all__ = [
     "QtAdsFocusTracker",
     "QtAdsMaximizeHandler",
     "QtAdsPinSideHandler",
+    "QtAdsTabContextActions",
     "remove_dock_widget",
     "tab_close_button",
     "tab_label",

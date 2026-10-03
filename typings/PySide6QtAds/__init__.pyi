@@ -175,6 +175,10 @@ class CDockWidgetTab(QWidget):
     """The clickable tab representing a `CDockWidget` within its `CDockAreaWidget`'s tab bar.
     `toolTip()` (inherited from `QWidget`) reflects `CDockWidget.setTabToolTip`."""
 
+    def buildContextMenu(self, menu: QMenu) -> QMenu:
+        """Fill ``menu`` with the entries QtAds' own right-click menu on this tab holds (*Detach*, a
+        separator, *Close*, ...) and return it, without showing it."""
+
 class CFloatingDockContainer(QWidget):
     """The top-level window hosting one or more docks torn out of a `CDockManager` (drag-out, or
     `CDockManager.addDockWidgetFloating`). Mostly a plain `QWidget` for typing purposes -- callers

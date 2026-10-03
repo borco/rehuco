@@ -7,6 +7,9 @@
         <file alias="icons/banner_error.svg">../../../../design/icons/banner_error.svg</file>
         <file alias="icons/banner_info.svg">../../../../design/icons/banner_info.svg</file>
         <file alias="icons/banner_warning.svg">../../../../design/icons/banner_warning.svg</file>
+        <file alias="icons/browser_add.svg">../../../../design/icons/browser_add.svg</file>
+        <file alias="icons/browser_delete.svg">../../../../design/icons/browser_delete.svg</file>
+        <file alias="icons/browser_rename.svg">../../../../design/icons/browser_rename.svg</file>
         <file alias="icons/checksum_bad.svg">../../../../design/icons/checksum_bad.svg</file>
         <file alias="icons/checksum_generate.svg">../../../../design/icons/checksum_generate.svg</file>
         <file alias="icons/checksum_malformed.svg">../../../../design/icons/checksum_malformed.svg</file>
@@ -75,6 +78,9 @@
         <file alias="icons/rehuco_view.svg">../../../../design/icons/rehuco_view.svg</file>
         <file alias="icons/rehu_upgrade.svg">../../../../design/icons/rehu_upgrade.svg</file>
         <file alias="icons/rehuco-agent.svg">../../../../design/icons/rehuco-agent.svg</file>
+        <file alias="icons/roots_add.svg">../../../../design/icons/roots_add.svg</file>
+        <file alias="icons/roots_delete.svg">../../../../design/icons/roots_delete.svg</file>
+        <file alias="icons/roots_scan.svg">../../../../design/icons/roots_scan.svg</file>
         <file alias="icons/screenshot_convert.svg">../../../../design/icons/screenshot_convert.svg</file>
         <file alias="icons/settings_apply.svg">../../../../design/icons/settings_apply.svg</file>
         <file alias="icons/settings_reset_to_defaults.svg">../../../../design/icons/settings_reset_to_defaults.svg</file>
