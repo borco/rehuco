@@ -30,7 +30,7 @@ same Retry Failed. It reads no content, so the option above does not reach it.
 import logging
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Final, override
+from typing import Final, cast, override
 
 from borco_core.logging import LogScope
 from PySide6.QtCore import QByteArray, QObject, Qt, QThread, Signal
@@ -420,8 +420,6 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
         self.__scan_worker.finished.connect(self.__on_scan_finished)
         self.__scan_worker.failed.connect(self.__on_scan_failed)
         self.__scan_worker.cancelled.connect(self.__on_scan_cancelled)
-        for done_signal in (self.__scan_worker.finished, self.__scan_worker.failed, self.__scan_worker.cancelled):
-            done_signal.connect(self.__thread.quit)
         self.__thread.finished.connect(self.__scan_worker.deleteLater)
         self.__thread.start()
 
@@ -429,7 +427,7 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
         self.__scan_page.ui.status_label.setText(f"Scanning… {count:,} found")
 
     def __on_scan_finished(self, plan: TcConversionTreePlan) -> None:
-        self.__scan_worker = None
+        self.__stop_scan_thread()
         # A scan only starts from a root and nothing clears one, so the recording always happens; the
         # check narrows `Path | None` for `record_root`.
         if self.__root is not None:  # pragma: no branch
@@ -442,14 +440,29 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
         self.__update_nav()
 
     def __on_scan_failed(self, message: str) -> None:
-        self.__scan_worker = None
+        self.__stop_scan_thread()
         self.__scan_page.ui.status_label.setText(f"Scan failed: {message}")
         self.__scan_page.ui.scan_progress_bar.setRange(0, 1)
 
     def __on_scan_cancelled(self) -> None:
-        self.__scan_worker = None
+        self.__stop_scan_thread()
         self.__ui.page_stack.setCurrentWidget(self.__root_page)
         self.__update_nav()
+
+    def __stop_scan_thread(self) -> None:
+        """Retire the scan whose worker just reported its end, waiting for its thread to stop first.
+
+        Every way a scan ends funnels through here, so *no scan in flight* (``__scan_worker`` is
+        ``None``) always means *no scan thread running* too. Clearing the worker on its report alone, with
+        the thread left to a queued ``quit``, opened a window in which the wizard could be destroyed --
+        every test tears it down without :meth:`done` -- around a ``QThread`` still unwinding, which Qt
+        answers by aborting the process. The wait is short: the worker has emitted its last signal, and
+        all that is left on its thread is returning from its ``run``.
+        """
+        self.__scan_worker = None
+        thread = cast(QThread, self.__thread)  # set by __begin_scan, which started the scan reporting here
+        thread.quit()
+        thread.wait()
 
     @staticmethod
     def __summary_text(plan: TcConversionTreePlan) -> str:

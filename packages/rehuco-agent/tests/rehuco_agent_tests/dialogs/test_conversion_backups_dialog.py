@@ -11,6 +11,7 @@ what the confirmation says, and that nothing destructive happens without one.
 # an arbitrary split, so the module-length cap is lifted here (same precedent as test_rehu_document_model.py)
 # pylint: disable=too-many-lines
 
+import time
 from collections.abc import Sequence
 from pathlib import Path
 from threading import Event
@@ -21,7 +22,7 @@ from PySide6.QtWidgets import QFileDialog, QMessageBox
 from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.dialogs.conversion_backups_dialog import NOTHING_RETAINED, ConversionBackupsDialog
+from rehuco_agent.dialogs.conversion_backups_dialog import NOTHING_RETAINED, ConversionBackupsDialog, ScanWorker
 from rehuco_agent.dialogs.conversion_backups_table_model import TIE_BREAK_FLAG
 from rehuco_agent.settings.conversion_backups_dialog_settings import ConversionBackupsDialogSettings
 from rehuco_agent.settings.deletion_settings import DeletionKind, shared_deletion_settings
@@ -397,6 +398,40 @@ def test_a_failed_scan_reports_the_reason_rather_than_an_empty_table(
 
     assert "Scan failed" in ui_of(dialog).status_label.text()
     assert not dialog.model.rows()
+
+
+def test_a_finished_scan_leaves_no_thread_running(qtbot: QtBot, queue: TaskQueue, mocker: MockerFixture) -> None:
+    """Once the dialog counts a scan as over, its thread has stopped too.
+
+    A worker thread starved under load can still be unwinding after the scan reported; a dialog destroyed
+    around that running ``QThread`` -- every test tears it down without ``done`` -- takes the process
+    down with it, which is how this module once crashed an xdist worker.
+
+    **Test steps:**
+
+    * scan with a worker that keeps its thread busy for a moment after reporting
+    * verify that once the scan is over, the thread is no longer running
+    """
+
+    class LingeringWorker(ScanWorker):
+        """Stays on its thread for a moment after the real scan has reported."""
+
+        def run(self) -> None:
+            """Report as the real worker does, then linger."""
+            super().run()
+            time.sleep(0.2)
+
+    mocker.patch(f"{DIALOG_MODULE}.scan_conversion_backups", return_value=make_scan([]))
+    mocker.patch(f"{DIALOG_MODULE}.ScanWorker", LingeringWorker)
+    dialog = ConversionBackupsDialog(queue)
+    qtbot.addWidget(dialog)
+
+    choose_root(qtbot, dialog, ROOT)
+
+    thread = dialog._ConversionBackupsDialog__thread  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    running = thread.isRunning()
+    thread.wait()  # a failing run must not also abort the process at teardown
+    assert not running
 
 
 # endregion

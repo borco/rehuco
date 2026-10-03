@@ -14,6 +14,7 @@ that would actually run it.
 # the result step recorded. One cohesive module per subject, so the length cap is lifted here.
 # pylint: disable=too-many-lines
 
+import time
 from collections.abc import Iterator
 from pathlib import Path
 from threading import Event
@@ -24,6 +25,7 @@ from PySide6.QtGui import QGuiApplication
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
+from rehuco_agent.dialogs import import_legacy_catalog_wizard
 from rehuco_agent.dialogs.import_legacy_catalog_wizard import ImportLegacyCatalogWizard
 from rehuco_agent.dialogs.tc_conversion_plan_table_model import CHECKED_COLUMN
 from rehuco_agent.settings.import_legacy_catalog_wizard_settings import ImportLegacyCatalogWizardSettings
@@ -506,6 +508,39 @@ def test_closing_the_wizard_mid_scan_stops_the_worker_thread(
     thread = wizard._ImportLegacyCatalogWizard__thread  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert thread is not None
     assert not thread.isRunning()
+
+
+def test_a_finished_scan_leaves_no_thread_running(
+    mocker: MockerFixture, qtbot: QtBot, wizard: ImportLegacyCatalogWizard
+) -> None:
+    """Once the wizard has moved on from a scan, its thread has stopped too.
+
+    A worker thread starved under load can still be unwinding after the scan reported; a wizard destroyed
+    around that running ``QThread`` -- every test tears it down without ``done`` -- takes the process
+    down with it, which is how this module once crashed an xdist worker.
+
+    **Test steps:**
+
+    * scan with a worker that keeps its thread busy for a moment after reporting
+    * verify that once the plan step shows, the thread is no longer running
+    """
+
+    class LingeringWorker(import_legacy_catalog_wizard._ScanWorker):  # pylint: disable=protected-access
+        """Stays on its thread for a moment after the real scan has reported."""
+
+        def run(self) -> None:
+            """Report as the real worker does, then linger."""
+            super().run()
+            time.sleep(0.2)
+
+    mocker.patch.object(import_legacy_catalog_wizard, "_ScanWorker", LingeringWorker)
+
+    go_to_plan(qtbot, wizard, mocker, TcConversionTreePlan(root=ROOT, resources=()))
+
+    thread = wizard._ImportLegacyCatalogWizard__thread  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    running = thread.isRunning()
+    thread.wait()  # a failing run must not also abort the process at teardown
+    assert not running
 
 
 # endregion

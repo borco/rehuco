@@ -28,7 +28,7 @@ import logging
 import sys
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Final, override
+from typing import Any, Final, cast, override
 
 from borco_core.logging import LogScope
 from PySide6.QtCore import QByteArray, QObject, Qt, QThread, Signal
@@ -386,8 +386,6 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
         self.__scan_worker.finished.connect(self.__on_scan_finished)
         self.__scan_worker.failed.connect(self.__on_scan_failed)
         self.__scan_worker.cancelled.connect(self.__on_scan_cancelled)
-        for done_signal in (self.__scan_worker.finished, self.__scan_worker.failed, self.__scan_worker.cancelled):
-            done_signal.connect(self.__thread.quit)
         self.__thread.finished.connect(self.__scan_worker.deleteLater)
         self.__thread.start()
         self.__update_controls()
@@ -396,7 +394,7 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
         self.__ui.status_label.setText(SCANNING_STATUS.format(count=count))
 
     def __on_scan_finished(self, scan: ConversionBackupsTreeScan) -> None:
-        self.__scan_worker = None
+        self.__stop_scan_thread()
         self.__scan = scan
         # the scan's own root, not this dialog's: it is the folder that was actually walked, which is
         # the one worth remembering even if the field has moved on since
@@ -407,12 +405,27 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
         self.__end_scan("")
 
     def __on_scan_failed(self, message: str) -> None:
-        self.__scan_worker = None
+        self.__stop_scan_thread()
         self.__end_scan(SCAN_FAILED_STATUS.format(message=message))
 
     def __on_scan_cancelled(self) -> None:
-        self.__scan_worker = None
+        self.__stop_scan_thread()
         self.__end_scan("Scan cancelled.")
+
+    def __stop_scan_thread(self) -> None:
+        """Retire the scan whose worker just reported its end, waiting for its thread to stop first.
+
+        Every way a scan ends funnels through here, so *no scan in flight* (``__scan_worker`` is
+        ``None``) always means *no scan thread running* too. Clearing the worker on its report alone, with
+        the thread left to a queued ``quit``, opened a window in which the dialog could be destroyed --
+        every test tears it down without :meth:`done` -- around a ``QThread`` still unwinding, which Qt
+        answers by aborting the process. The wait is short: the worker has emitted its last signal, and
+        all that is left on its thread is returning from :meth:`ScanWorker.run`.
+        """
+        self.__scan_worker = None
+        thread = cast(QThread, self.__thread)  # set by __begin_scan, which started the scan reporting here
+        thread.quit()
+        thread.wait()
 
     def __end_scan(self, status: str) -> None:
         """Leave the scanning state, however it ended.
