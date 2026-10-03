@@ -13,7 +13,6 @@ OUTER_DOCKS_STATE_VERSION_KEY: Final = "outer_docks_state_version"
 TOOLBARS_STATE_KEY: Final = "toolbars_state"
 LOG_WIDGET_STATE_KEY: Final = "log_widget_state"
 TASK_QUEUE_STATE_KEY: Final = "task_queue_state"
-REHUCO_STATE_KEY: Final = "rehuco_state"
 
 OUTER_DOCKS_STATE_VERSION: Final = 7
 """Schema version of :attr:`MainWindowSettings.outer_docks_state`. The outer dock set (the Documents
@@ -102,12 +101,6 @@ class MainWindowSettings:
     version of its own for the inner one
     (:data:`~rehuco_agent.tasks.task_queue_widget.STATE_VERSION`)."""
 
-    rehuco_state: bytes = field(default=b"")
-    """The Root Catalog dock's **nested** shell blob (#377), as :meth:`~rehuco_agent.rehuco.RehucoDock.save_state`
-    writes it. Outside :data:`OUTER_DOCKS_STATE_VERSION`'s guard for the same reason
-    :attr:`task_queue_state` is: that version is about the outer dock set, and this blob carries a version of
-    its own for the inner one."""
-
     def load(self, settings: QSettings) -> None:
         """Replace the current geometry, outer dock state, and toolbar state with what's in
         persistent storage.
@@ -133,9 +126,6 @@ class MainWindowSettings:
 
         task_queue_state = cast(QByteArray, settings.value(TASK_QUEUE_STATE_KEY, QByteArray(), type=QByteArray))
         self.task_queue_state = bytes(task_queue_state.data())
-
-        rehuco_state = cast(QByteArray, settings.value(REHUCO_STATE_KEY, QByteArray(), type=QByteArray))
-        self.rehuco_state = bytes(rehuco_state.data())
         settings.endGroup()
 
     def save(self, settings: QSettings) -> None:
@@ -150,7 +140,6 @@ class MainWindowSettings:
         settings.setValue(TOOLBARS_STATE_KEY, QByteArray(self.toolbars_state))
         settings.setValue(LOG_WIDGET_STATE_KEY, QByteArray(self.log_widget_state))
         settings.setValue(TASK_QUEUE_STATE_KEY, QByteArray(self.task_queue_state))
-        settings.setValue(REHUCO_STATE_KEY, QByteArray(self.rehuco_state))
         settings.endGroup()
 
 

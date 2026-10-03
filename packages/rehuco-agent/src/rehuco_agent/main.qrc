@@ -8,7 +8,7 @@
         <file alias="icons/banner_info.svg">../../../../design/icons/banner_info.svg</file>
         <file alias="icons/banner_warning.svg">../../../../design/icons/banner_warning.svg</file>
         <file alias="icons/browser_add.svg">../../../../design/icons/browser_add.svg</file>
-        <file alias="icons/browser_delete.svg">../../../../design/icons/browser_delete.svg</file>
+        <file alias="icons/browser_clone.svg">../../../../design/icons/browser_clone.svg</file>
         <file alias="icons/browser_rename.svg">../../../../design/icons/browser_rename.svg</file>
         <file alias="icons/checksum_bad.svg">../../../../design/icons/checksum_bad.svg</file>
         <file alias="icons/checksum_generate.svg">../../../../design/icons/checksum_generate.svg</file>

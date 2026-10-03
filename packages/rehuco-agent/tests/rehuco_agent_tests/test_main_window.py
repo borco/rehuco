@@ -6293,14 +6293,14 @@ def test_restore_on_startup_off_skips_reopening_the_rehuco(mocker: MockerFixture
     open_rehuco.assert_not_called()
 
 
-def test_closing_remembers_the_open_rehuco_and_its_layout(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """Closing the app persists which ``.rehuco`` was open, and the dock's nested layout (#377).
+def test_closing_remembers_the_open_rehuco(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Closing the app persists which ``.rehuco`` was open (#377).
 
     **Test steps:**
 
     * make the dock report an open file, and capture what ``RehucoSettings.save`` is given
     * dispatch a close event
-    * verify the open path was recorded before the save, and the layout blob is non-empty
+    * verify the open path was recorded before the save
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -6315,7 +6315,6 @@ def test_closing_remembers_the_open_rehuco_and_its_layout(mocker: MockerFixture,
     window.closeEvent(QCloseEvent())
 
     assert saved == [REHUCO_FILE]
-    assert window._MainWindow__window_settings.rehuco_state  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
 
 def test_closing_detaches_the_rehuco_dock_from_the_queue(mocker: MockerFixture, qtbot: QtBot) -> None:

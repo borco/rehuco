@@ -18,6 +18,7 @@ import threading
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 from borco_core.logging import SharedRotatingFileHandler
 from borco_pyside.logging import LogBridge
@@ -31,6 +32,7 @@ from rehuco_agent.commands import shared_command_registry
 from rehuco_agent.dialogs import conversion_backups_dialog
 from rehuco_agent.documents import document_sub_docks
 from rehuco_agent.fields.widgets.markdown_view import render_markdown
+from rehuco_agent.rehuco import rehuco_dock
 from rehuco_agent.run_log import shared_run_log
 from rehuco_agent.scraping.registry import shared_scraper_registry
 from rehuco_agent.scraping.scraper_executor import shared_scraper_executor
@@ -55,6 +57,7 @@ from rehuco_agent.settings import (
     videos_settings,
     web_search_settings,
 )
+from rehuco_agent.settings.catalog_state_store import CatalogState, CatalogStateStore
 from rehuco_agent.settings.checksum_settings import shared_checksum_settings
 from rehuco_agent.settings.default_layout_settings import shared_default_layout_settings_in
 from rehuco_agent.settings.deletion_settings import shared_deletion_settings
@@ -231,6 +234,34 @@ def warm_the_markdown_extension_cache() -> None:
     exists, so the cache is always populated from the real filesystem, which is what production does.
     """
     render_markdown("")
+
+
+class MemoryCatalogStateStore(CatalogStateStore):
+    """A :class:`~rehuco_agent.settings.catalog_state_store.CatalogStateStore` that keeps every catalog's state in
+    memory, so no test reads or writes the developer's real config folder."""
+
+    def __init__(self) -> None:
+        self.states: dict[UUID, CatalogState] = {}
+        """What each catalog was last saved as, by its rehuco id."""
+
+    def load(self, rehuco_id: UUID) -> CatalogState:
+        return self.states.get(rehuco_id, CatalogState())
+
+    def save(self, rehuco_id: UUID, state: CatalogState) -> None:
+        self.states[rehuco_id] = state  # pylint: disable=unsupported-assignment-operation
+
+
+@fixture(name="catalog_store", autouse=True)
+def isolate_catalog_state_store(mocker: MockerFixture) -> MemoryCatalogStateStore:
+    """Give every Root Catalog dock built without a store of its own one in-memory store, shared by the docks of a
+    test -- so a catalog closed in one and reopened in another finds its browsers, and nothing touches disk.
+
+    :param mocker: pytest-mock fixture.
+    :returns: the store, for a test that wants to look inside.
+    """
+    store = MemoryCatalogStateStore()
+    mocker.patch.object(rehuco_dock, "CatalogStateStore", return_value=store)
+    return store
 
 
 @fixture(autouse=True)

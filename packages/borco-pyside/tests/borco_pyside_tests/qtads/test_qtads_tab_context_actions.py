@@ -123,3 +123,20 @@ def test_another_docks_tab_keeps_qtads_own_menu(manager: QtAds.CDockManager, hel
     event = QContextMenuEvent(QContextMenuEvent.Reason.Mouse, QPoint(5, 5), QPoint(5, 5))
 
     assert helper.eventFilter(other.tabWidget(), event) is False
+
+
+def test_a_removed_dock_is_forgotten(
+    manager: QtAds.CDockManager, helper: QtAdsTabContextActions, extended: QtAds.CDockWidget
+) -> None:
+    """Once its dock leaves the manager, the helper holds nothing for it and its tab is no longer filtered.
+
+    **Test steps:**
+
+    * remove the registered dock from the manager
+    * verify the helper no longer consumes a context-menu event sent to the tab it had
+    """
+    tab = extended.tabWidget()
+    manager.removeDockWidget(extended)
+    event = QContextMenuEvent(QContextMenuEvent.Reason.Mouse, QPoint(5, 5), QPoint(5, 5))
+
+    assert helper.eventFilter(tab, event) is False

@@ -369,7 +369,6 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.restoreState(QByteArray(self.__window_settings.toolbars_state), TOOLBARS_STATE_VERSION)
         self.__log_widget.restore_state(self.__window_settings.log_widget_state)
         self.__task_queue_widget.restore_state(self.__window_settings.task_queue_state)
-        self.__rehuco_dock.restore_state(self.__window_settings.rehuco_state)
 
         self.__recent_files: Final = RecentFilesSettings()
         self.__recent_files.load(persistent_settings())
@@ -1599,7 +1598,6 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             self.__window_settings.outer_docks_state = bytes(self.__dock_manager.saveState().data())
         self.__window_settings.log_widget_state = self.__log_widget.save_state()
         self.__window_settings.task_queue_state = self.__task_queue_widget.save_state()
-        self.__window_settings.rehuco_state = self.__rehuco_dock.save_state()
         self.__window_settings.save(persistent_settings())
 
     def __save_session(self) -> None:

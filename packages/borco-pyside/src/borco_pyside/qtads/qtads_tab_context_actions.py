@@ -19,6 +19,8 @@ class QtAdsTabContextActions(QObject):
     before it is shown (``popup``, not ``exec``: nothing blocks, and the menu deletes itself on
     close). Only the docks passed to :meth:`add` are touched; every other tab keeps QtAds' own menu.
 
+    A dock removed from the manager is forgotten, so nothing keeps it alive.
+
     A ``QObject``, parented to ``dock_manager``, so the filters it installs go with it.
 
     :param dock_manager: the manager whose docks may be extended.
@@ -29,6 +31,7 @@ class QtAdsTabContextActions(QObject):
         self.__docks: Final[dict[QObject, QtAds.CDockWidget]] = {}
         self.__actions: Final[dict[QtAds.CDockWidget, Sequence[QAction]]] = {}
         self.__on_open: Final[dict[QtAds.CDockWidget, Callable[[], None] | None]] = {}
+        dock_manager.dockWidgetAboutToBeRemoved.connect(self.__forget)
 
     def add(
         self, dock: QtAds.CDockWidget, actions: Sequence[QAction], on_open: Callable[[], None] | None = None
@@ -45,6 +48,18 @@ class QtAdsTabContextActions(QObject):
         self.__actions[dock] = actions  # pylint: disable=unsupported-assignment-operation
         self.__on_open[dock] = on_open  # pylint: disable=unsupported-assignment-operation
         tab.installEventFilter(self)
+
+    def __forget(self, dock: QtAds.CDockWidget) -> None:
+        """Drop ``dock``, as it leaves the manager.
+
+        :param dock: the dock QtAds is about to remove.
+        """
+        if self.__actions.pop(dock, None) is None:
+            return
+        self.__on_open.pop(dock, None)
+        tab = dock.tabWidget()
+        self.__docks.pop(tab, None)
+        tab.removeEventFilter(self)
 
     def menu_for(self, dock: QtAds.CDockWidget) -> QMenu:
         """``dock``'s tab menu: QtAds' own, with the added actions and a separator in front.
