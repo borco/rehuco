@@ -41,8 +41,8 @@ class NameSuggestionModel(QObject):
 
     :param model: the record fields (``title`` / ``publisher`` / ``authors`` / ``released`` / ``advertised_count`` /
         ``resource_type``) to build suggestions from.
-    :param parent: optional Qt parent; the caller typically parents this to ``model`` so its lifetime
-        matches.
+    :param parent: optional Qt parent; the caller parents this to the view it serves, which the model
+        may outlive (#375) -- every subscription here is severed when this object is destroyed.
     """
 
     changed = Signal()
@@ -54,7 +54,7 @@ class NameSuggestionModel(QObject):
         self.__model: Final = model
         for name in NAME_SUGGESTION_SOURCE_FIELDS:
             signal_name = SimpleProperty.notify_signal_name(type(model), name)
-            getattr(model, signal_name).connect(lambda *_: self.changed.emit())
+            getattr(model, signal_name).connect(self.__on_source_field_changed)
         model.resource_type_changed.connect(self.changed)  # type: ignore[attr-defined]
         shared_location_templates_settings().patterns_changed.connect(self.changed)
         shared_location_replacements_settings().rules_changed.connect(self.changed)
@@ -99,3 +99,12 @@ class NameSuggestionModel(QObject):
             for pattern in patterns
         )
         return list(dict.fromkeys(name for name in rendered if name))
+
+    def __on_source_field_changed(self) -> None:
+        """Announce that a field the suggestions are built from changed.
+
+        A bound method rather than a lambda, so Qt drops the model's connections to it when this object
+        is destroyed -- the model may outlive the view this serves (#375). Takes no arguments: Qt lets a
+        slot accept fewer than the notify signal emits.
+        """
+        self.changed.emit()

@@ -6,26 +6,17 @@ from pathlib import Path
 from typing import Final
 
 import PySide6QtAds as QtAds
-from borco_core.logging import LogScope
 from borco_pyside.qtads import QtAdsAutoHideButtonSuppressor, QtAdsFocusTracker, remove_dock_widget
 from PySide6.QtCore import QByteArray, Signal
 from PySide6.QtWidgets import QMainWindow, QMessageBox, QWidget
-from rehuco_core import (
-    INFO_REHU_FILENAME,
-    LockReasonKind,
-    RehuDocument,
-    RehuFormatError,
-    RenameCoordinator,
-    TaskQueue,
-    load_tc,
-)
+from rehuco_core import INFO_REHU_FILENAME, LockReasonKind, TaskQueue
 
 from ..dock_maximize import attach_maximize_handler
 from ..glyphs import TAB_CLOSE_GLYPH
 from ..settings.document_session_settings import DocumentSessionSettings
-from ..settings.identity_settings import shared_identity_settings
 from .confirm_and_save_dirty import confirm_and_save_dirty
 from .document_dock import DocumentDock
+from .document_registry import DocumentRegistry
 from .document_widget import DocumentWidget
 from .rehu_document_model import UNTITLED_LABEL, RehuDocumentModel
 from .save_or_prompt_retry import save_or_prompt_retry
@@ -37,9 +28,11 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
     """A dock area holding one :class:`DocumentWidget` per open document, tabbed in the focused area.
 
     Reopening an already-open path focuses its existing dock rather than opening a second one
-    ([[nodes#single-instance]]). Which dock is current -- and the highlight/close-button styling
-    that marks it, plus every signal needed to catch a tab switch (tab-bar, tabs-menu, tab-label
-    click, real keyboard focus into a split area) -- is delegated to a
+    ([[nodes#single-instance]]). Each dock holds its document's view-model through the app's
+    :class:`~rehuco_agent.documents.document_registry.DocumentRegistry` (#375), which is what finds an open
+    path and what owns the model -- another holder of the same path shares it. Which dock is current --
+    and the highlight/close-button styling that marks it, plus every signal needed to catch a tab switch
+    (tab-bar, tabs-menu, tab-label click, real keyboard focus into a split area) -- is delegated to a
     :class:`~borco_pyside.qtads.QtAdsFocusTracker`, the same tracker each nested
     :class:`DocumentWidget` uses for its own viewer/editor surfaces.
 
@@ -50,10 +43,9 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         evaluated once per repolish instead of once per manager ([[appendices.qt-ads#per-manager-stylesheet]],
         #234, and see
         :class:`~borco_pyside.qtads.QtAdsFocusTracker`). ``None`` leaves every manager styling itself.
-    :param rename_coordinator: handed to every document this dock opens, so a rename from the location
-        editor stands the running jobs aside instead of being refused while they finish (#241). Held
-        here rather than built here: it is the **app's** coordinator, and a job and a document that
-        disagreed about which one to use would coordinate with nobody.
+    :param registry: the app's registry every document this dock opens is held through (#375) -- the same
+        one every other holder uses, or the sharing it exists for doesn't happen. ``None`` builds a private
+        one with no rename coordinator, which is enough for a dock that is the only holder.
     :param task_queue: the app-wide queue every document's slow work goes on (#204), handed on for the
         same reason: there is one queue, and a serial one, which is the whole point of running the
         checksum work through it. ``None`` opens documents that offer no such work.
@@ -90,28 +82,24 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
     moves -- a :meth:`~RehuDocumentModel.convert` swapping a ``.tc`` for its ``.rehu``, or a completed
     rename (#241) -- so ``MainWindow`` can keep ``Open recents`` (#64) pointed at the file that
     actually exists instead of the one that was opened (#295). ``old_path`` is the path this dock was
-    built with or last reported here, never ``None`` -- every dock this signal fires for is created
-    from a concrete path (:meth:`__make_new_dock`)."""
+    built with or last reported here, never ``None`` -- relayed from :attr:`DocumentDock.path_moved`."""
 
     def __init__(
         self,
         parent: QWidget | None = None,
         stylesheet_host: QWidget | None = None,
-        rename_coordinator: RenameCoordinator | None = None,
+        registry: DocumentRegistry | None = None,
         task_queue: TaskQueue | None = None,
     ) -> None:
         super().__init__(parent)
         self.__stylesheet_host: Final = stylesheet_host
-        self.__rename_coordinator: Final = rename_coordinator
+        self.__registry: Final = registry if registry is not None else DocumentRegistry(self)
         self.__task_queue: Final = task_queue
         self.__dock_manager: Final = QtAds.CDockManager(self)
         self.__document_docks: Final[dict[QtAds.CDockWidget, DocumentWidget]] = {}
-        self.__last_known_paths: Final[dict[QtAds.CDockWidget, Path]] = {}
-        """Each open dock's path as last reported through :attr:`document_path_changed` (or, before
-        the first move, the path it was created with) -- kept here rather than read off the model
-        directly because :attr:`~RehuDocumentModel.path_changed` carries only the *new* value, and
-        this signal needs the *old* one too (#295). Entries are seeded in :meth:`__make_new_dock` and
-        dropped in :meth:`__remove_dock`."""
+        self.__model_docks: Final[dict[RehuDocumentModel, QtAds.CDockWidget]] = {}
+        """The dock showing each held model -- what turns the registry's answer to "is this path open"
+        into the dock to focus. Seeded in :meth:`__make_new_dock`, dropped in :meth:`__remove_dock`."""
         self.__pending_docks: Final[set[QtAds.CDockWidget]] = set()
         """Docks made by :meth:`restore_session` whose document has not been read yet (#66) -- each is
         loaded (:meth:`__load_pending`) the first time it actually reaches the screen. Two triggers
@@ -154,7 +142,7 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         :returns: the document's widget. A file that cannot be read opens as an empty **locked** dock
             standing in for it ([[data-model#write-integrity]]).
         """
-        return self.__activate(self.__find_dock_by_path(path) or self.__make_new_dock(path, state=state))
+        return self.__activate(self.__find_dock(path) or self.__make_new_dock(path, state=state))
 
     def open_folder(self, folder: Path) -> DocumentWidget:
         """Open the directory-scoped resource in ``folder`` ([[data-model#resource-scoping]]).
@@ -205,7 +193,7 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         tc_path = info_path.with_suffix(".tc")
         if tc_path.exists():
             return self.open_document(tc_path)
-        return self.__activate(self.__find_dock_by_path(info_path) or self.__make_new_dock(info_path, new=True))
+        return self.__activate(self.__find_dock(info_path) or self.__make_new_dock(info_path, new=True))
 
     def restore_session(self, session: DocumentSessionSettings) -> None:
         """Recreate every document the last session left open (#21), restoring its dock layout and
@@ -243,7 +231,7 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
                 # the remembered layout rides the open itself (#62): the dock applies exactly one
                 # layout per document -- this one, or the saved default only where this one fails to
                 # restore -- instead of adopting the default first and having this overwrite it later
-                opened[path] = self.__find_dock_by_path(path) or self.__make_new_dock(path, state=item.state, lazy=True)
+                opened[path] = self.__find_dock(path) or self.__make_new_dock(path, state=item.state, lazy=True)
             self.restore_state(session.docks_state)
         finally:
             self.__restoring_session = False
@@ -303,11 +291,12 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         :meth:`MainWindow.closeEvent`. Cancelling it leaves every dirty document open and nothing
         saved (the already-closed clean documents stay closed regardless). Otherwise the checked
         documents are saved, and every remaining (dirty) document closes; an unchecked one's edits
-        are discarded along with the close, same as a whole-app quit.
+        are discarded along with the close, same as a whole-app quit. A dirty document another holder
+        still shows closes here as a clean one does: its edits live on there (#375).
         """
         dirty_models: list[RehuDocumentModel] = []
         for dock, widget in list(self.__document_docks.items()):
-            if widget.model.dirty:
+            if self.__registry.release_discards_edits(widget.model):
                 dirty_models.append(widget.model)
             else:
                 self.__remove_dock(dock)
@@ -428,93 +417,36 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         self.__tracker.set_current_dock(dock)
         return self.__document_docks[dock]
 
-    @staticmethod
-    def __load_or_locked(path: Path) -> RehuDocument:
-        """Load ``path``, or an empty locked stub bound to it when the file cannot be read.
-
-        Routes a ``.tc`` through :func:`rehuco_core.load_tc` and everything else through
-        :meth:`RehuDocument.load`, but funnels *both* loaders' failures through the one seam that draws
-        the missing-vs-unparseable line (:meth:`RehuDocument.locked_stub_for_error`) -- so the dock is
-        built around a locked, never-savable stub instead of the caller seeing an exception
-        ([[data-model#write-integrity]]). Each branch is handed the identity that matches its provenance
-        (:func:`~rehuco_agent.settings.identity_settings.shared_identity_settings`, #109), read here at
-        open time -- the document keeps it for its whole life, so a later identity-setting change
-        affects only documents opened afterwards. A ``.tc`` import files its per-user state under the
-        **unknown** user, since a flag carried in from the file was not set by this install's identity; a
-        ``.rehu`` (whose per-user writes this UI makes) is opened under the **current** user. A locked stub
-        adopts whichever name its branch would have used, so a hand-fix-and-revert retries under the same
-        identity the open was asked for.
-
-        **The read is logged, under this resource's own scope** (#200): this is the one funnel both
-        loaders and both failure kinds pass through, so it is the one place that can say *"this file was
-        read"* or *"this file could not be"* once rather than per branch. The failure is an **error**, not
-        a warning: it is not the shape of the document that is in question, it is that there is no
-        document -- the stub stands in for one.
-
-        :param path: the file to load (a ``.rehu``, or a legacy ``.tc``).
-        :returns: the loaded document, or a locked stub bound to ``path``.
-        """
-        settings = shared_identity_settings()
-        is_tc = path.suffix.lower() == ".tc"
-        username = settings.unknown_username if is_tc else settings.current_username
-        with LogScope.open(path):
-            try:
-                document = load_tc(path, username=username) if is_tc else RehuDocument.load(path, username=username)
-            except (OSError, RehuFormatError) as error:
-                LOG.error("Could not read %s: %s", path, error)
-                return RehuDocument.locked_stub_for_error(path, error, username=username)
-            LOG.info("Read %s as %s", path, document.type or "an untyped resource")
-            return document
-
     def __make_new_dock(
         self, path: Path, *, new: bool = False, state: bytes | None = None, lazy: bool = False
     ) -> QtAds.CDockWidget:
-        """Load ``path`` and build its document dock -- **always** a dock, never an error dialog.
+        """Hold ``path``'s document and build its dock -- **always** a dock, never an error dialog.
 
         Every open attempt yields a document view ([[data-model#write-integrity]]): a file that is
         missing, unparseable, or refused opens as an **empty, locked** dock bound to the path
-        (:meth:`RehuDocument.open_or_locked` / :meth:`~RehuDocument.locked_stub_for_error`) whose lock
-        reason names the failure, rather than a modal box the user dismisses with nowhere left to fix the
-        file. Hand-fixing it and reverting retries in place (:meth:`RehuDocumentModel.revert`).
+        (:meth:`DocumentRegistry.acquire`) whose lock reason names the failure, rather than a modal box the
+        user dismisses with nowhere left to fix the file. Hand-fixing it and reverting retries in place
+        (:meth:`RehuDocumentModel.revert`).
 
         :param path: absolute filesystem path to the ``.rehu`` file to load, or to create if ``new``;
-            a ``.tc`` suffix loads through :func:`rehuco_core.load_tc` instead
-            ([[acquisition-tooling#tc-to-rehu]]), producing a locked, read-only document.
-        :param new: when true, skip loading and start an empty, already-dirty document bound to
-            ``path`` instead (:meth:`RehuDocumentModel.create_new`) -- used by :meth:`open_folder`
-            when the directory has no `info.rehu` yet; nothing is written to disk until the user saves.
-            Kept strictly distinct from the empty **locked** stub a failed load produces: a new document
-            is empty **and editable and dirty**, a document about to be written.
+            a ``.tc`` suffix loads locked and read-only ([[acquisition-tooling#tc-to-rehu]]).
+        :param new: start an empty, already-dirty document bound to ``path`` instead of reading it -- used
+            by :meth:`open_folder` when the directory has no `info.rehu` yet; nothing is written to disk
+            until the user saves. Kept strictly distinct from the empty **locked** stub a failed load
+            produces: a new document is empty **and editable and dirty**, a document about to be written.
         :param state: the document's own remembered layout, or ``None`` for the saved default -- see
             :meth:`open_document`.
-        :param lazy: when true (only :meth:`restore_session`), skip the read and build the dock around
-            a pending placeholder instead (:meth:`RehuDocumentModel.create_pending`) --
-            :meth:`__load_pending` reads the real file the first time this dock actually reaches the
-            screen (its ``visibilityChanged``), or is made current programmatically. Never honored for
-            ``new`` (there is nothing to defer reading) or a legacy ``.tc`` (:meth:`RehuDocument.reload`,
-            what the deferred read runs through, only ever re-reads a ``.rehu`` path as JSON).
-        :returns: the new dock (created for a successful load, a new document, a locked stub, or -- when
-            ``lazy`` -- an as-yet-unread placeholder, alike).
+        :param lazy: when true (only :meth:`restore_session`), ask for a pending placeholder instead of a
+            read -- :meth:`__load_pending` reads the real file the first time this dock actually reaches the
+            screen (its ``visibilityChanged``), or is made current programmatically. The registry decides
+            whether the model really is pending (:meth:`DocumentRegistry.acquire`).
+        :returns: the new dock (created for a successful load, a new document, a locked stub, or an
+            as-yet-unread placeholder, alike).
         """
-        lazy = lazy and not new and path.suffix.lower() != ".tc"
-        if new:
-            model = RehuDocumentModel.create_new(
-                path,
-                username=shared_identity_settings().current_username,
-                rename_coordinator=self.__rename_coordinator,
-            )
-        elif lazy:
-            model = RehuDocumentModel.create_pending(
-                path,
-                username=shared_identity_settings().current_username,
-                rename_coordinator=self.__rename_coordinator,
-            )
-        else:
-            model = RehuDocumentModel(self.__load_or_locked(path), rename_coordinator=self.__rename_coordinator)
-        # the model is created parentless and handed to the dock, which adopts it -- so the whole
-        # document is freed when the dock closes rather than leaking for the session (#148). The dock
-        # also owns its own title/identity upkeep; the area only wires the two seams that cross back to
-        # it: the field status-message relay and the close request.
+        # held through the registry, which owns the model and frees it at its last release (#375); the
+        # dock owns its own title/identity upkeep, and the area only wires the seams that cross back to
+        # it: the field status-message relay, the open requests, the path relay and the close request
+        model = self.__registry.acquire(path, new=new, lazy=lazy)
         dock = DocumentDock(
             self.__dock_manager, model, stylesheet_host=self.__stylesheet_host, task_queue=self.__task_queue
         )
@@ -524,13 +456,13 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         # and relay its Files sub-dock's open requests the same way, up to the window that owns what
         # "open" means (#266)
         dock.document_widget.record_activated.connect(self.open_requested)
+        dock.path_moved.connect(self.document_path_changed)
         dock.closeRequested.connect(self.__on_close_dock_widget_requested)
         self.__document_docks[dock] = dock.document_widget  # pylint: disable=unsupported-assignment-operation
-        self.__last_known_paths[dock] = path  # pylint: disable=unsupported-assignment-operation
-        model.path_changed.connect(  # type: ignore[attr-defined]
-            lambda new_path, dock=dock: self.__on_document_path_changed(dock, new_path)
-        )
-        if lazy:
+        self.__model_docks[model] = dock  # pylint: disable=unsupported-assignment-operation
+        # pending is the registry's call, not this request's: a lazy open of a model another holder
+        # already read is nothing to defer, and a .tc or a new document never defers at all
+        if model.pending:
             self.__pending_docks.add(dock)
             # the "first time this tab actually reaches the screen" trigger (#66): silent while the
             # window is still hidden (the whole restore), fired for each area's current tab when it
@@ -551,16 +483,18 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
 
         return dock
 
-    def __find_dock_by_path(self, path: Path) -> QtAds.CDockWidget | None:
-        """Return the dock whose document has ``path``, or ``None`` if no such dock is open.
+    def __find_dock(self, path: Path) -> QtAds.CDockWidget | None:
+        """Return the dock showing ``path``'s document, or ``None`` if this area shows none.
+
+        Asks the registry for the model held under ``path`` (keyed by the model's *current* path, so a
+        renamed document is found under its new name) and then for this area's dock over it -- a model
+        another holder alone holds has no dock here yet.
 
         :param path: absolute filesystem path to look for.
         :returns: the matching dock, if any.
         """
-        for dock, widget in self.__document_docks.items():
-            if widget.model.path == path:
-                return dock
-        return None
+        model = self.__registry.find(path)
+        return self.__model_docks.get(model) if model is not None else None
 
     def __settle_pending(self, dock: QtAds.CDockWidget) -> bool:
         """Retire ``dock``'s pending-load bookkeeping (#66): drop it from :attr:`__pending_docks` and
@@ -645,19 +579,21 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         self.__close_dock(dock)
 
     def __close_dock(self, dock: QtAds.CDockWidget) -> bool:
-        """Close ``dock``, prompting first if its document is dirty.
+        """Close ``dock``, prompting first if closing it would discard unsaved edits.
 
         The close-button handler's own guard -- a single document's dirty state decides whether to
-        prompt for it alone. :meth:`close_missing` reuses it (a ``MISSING`` document is locked and
-        so can never actually prompt); :meth:`close_all` does not, since it confirms every dirty
-        document at once through a single batch dialog instead (#96).
+        prompt for it alone, and only when this dock is its last holder: a dirty document another holder
+        still shows keeps its edits there, so this view closes without a question (#375).
+        :meth:`close_missing` reuses it (a ``MISSING`` document is locked and so can never actually
+        prompt); :meth:`close_all` does not, since it confirms every dirty document at once through a
+        single batch dialog instead (#96).
 
         :param dock: the dock to close.
-        :returns: ``True`` if the dock was actually closed (clean, or dirty and Save/Discard was
+        :returns: ``True`` if the dock was actually closed (clean, shared, or dirty and Save/Discard was
             chosen); ``False`` if a dirty prompt was cancelled, leaving the dock untouched.
         """
         widget = self.__document_docks[dock]
-        if widget.model.dirty and not self.__confirm_close(widget.model):
+        if self.__registry.release_discards_edits(widget.model) and not self.__confirm_close(widget.model):
             return False
 
         self.__remove_dock(dock)
@@ -685,25 +621,17 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         # not the manager's own removeDockWidget: a renamed document's dock is registered under the path it
         # was opened with, and would otherwise be left there, dangling once deleted (#364)
         remove_dock_widget(self.__dock_manager, dock)
-        # deleting the dock frees the whole document with it: the `DocumentDock` owns its model (parented
-        # to it) and widget, so their children -- the NameSuggestionModel, the field bindings' data --
-        # go too, ending the session-long per-document leak (#148). The model -> dock title connections
-        # are the dock's own bound methods, so Qt severs them here as well -- nothing to disconnect by hand.
+        # a model another holder keeps alive can still move before the deferred delete reclaims this dock,
+        # and a closed document is no longer this area's to report
+        if isinstance(dock, DocumentDock):
+            dock.path_moved.disconnect(self.document_path_changed)
+        # deleting the dock frees its widget and everything that widget hung on the model; the model -> dock
+        # title connections are the dock's own bound methods, so Qt severs them too. The model itself is the
+        # registry's: this release frees it when it was the last hold (#148, #375)
         dock.deleteLater()
-        self.__document_docks.pop(dock, None)
-        self.__last_known_paths.pop(dock, None)
-
-    def __on_document_path_changed(self, dock: QtAds.CDockWidget, new_path: Path | None) -> None:
-        """Relay ``dock``'s document moving to a new path as :attr:`document_path_changed`, with the
-        path it moved *from* alongside it (#295).
-
-        :param dock: the dock whose document's :attr:`~RehuDocumentModel.path` just changed.
-        :param new_path: the path it changed to.
-        """
-        old_path = self.__last_known_paths.get(dock)
-        if new_path is not None:
-            self.__last_known_paths[dock] = new_path  # pylint: disable=unsupported-assignment-operation
-        self.document_path_changed.emit(old_path, new_path)
+        model = self.__document_docks.pop(dock).model
+        self.__model_docks.pop(model, None)
+        self.__registry.release(model)
 
     def __confirm_close(self, model: RehuDocumentModel) -> bool:
         """Prompt Save/Discard/Cancel for a dirty ``model``, saving it if the answer is Save.

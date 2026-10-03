@@ -1,5 +1,5 @@
-"""One open document's dock: it owns its view-model and viewer/editor widget, and keeps its own tab
-title and persisted identity in step with the model ([[nodes#single-instance]])."""
+"""One open document's dock: it holds its view-model and owns its viewer/editor widget, and keeps its own
+tab title and persisted identity in step with the model ([[nodes#single-instance]])."""
 
 import logging
 from pathlib import Path
@@ -7,6 +7,7 @@ from typing import Final
 
 import PySide6QtAds as QtAds
 from borco_pyside.qtads import tab_label
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QWidget
 from rehuco_core import TaskQueue
 
@@ -30,14 +31,13 @@ icon either, since that single shared property also backs the tabs-menu entry, w
 
 
 class DocumentDock(QtAds.CDockWidget):  # pylint: disable=too-few-public-methods
-    """The dock for one open document -- it **owns** the document, not merely displays it.
+    """The dock for one open document: it **holds** the document's view-model and owns the widget over it.
 
-    Holds the :class:`RehuDocumentModel` and the :class:`DocumentWidget` built over it, and parents the
-    model to itself so the whole document (model, its `NameSuggestionModel`, the field bindings' data)
-    is freed when the dock closes rather than leaking for the session (#148). The area
-    (:class:`~rehuco_agent.documents.documents_dock.DocumentsDock`) creates the model -- it alone knows
-    load-vs-new and the identity to file per-user writes under -- and hands it here parentless; this dock
-    adopts it.
+    The :class:`RehuDocumentModel` belongs to the app's
+    :class:`~rehuco_agent.documents.document_registry.DocumentRegistry`, which may hand the same one to
+    other holders and frees it at the last release (#375); this dock only builds its
+    :class:`DocumentWidget` over it, and that widget -- with everything it hangs on the model -- dies with
+    the dock while the model may live on.
 
     Keeping the tab title and the persisted :meth:`objectName` in step with the model lives here too, as
     the dock's own concern: the connections are **bound methods of this dock**, so Qt severs them when the
@@ -45,13 +45,20 @@ class DocumentDock(QtAds.CDockWidget):  # pylint: disable=too-few-public-methods
     bookkeeping (the failure mode a lambda owned by the longer-lived area invited, #148).
 
     :param dock_manager: the area's dock manager this dock registers with.
-    :param model: the view-model to wrap; created parentless by the area and adopted here.
+    :param model: the view-model to show, held for this dock by the area.
     :param stylesheet_host: passed straight through to this document's :class:`DocumentWidget` -- the
         widget carrying the dock styling for the whole nest (see
         :class:`~rehuco_agent.documents.documents_dock.DocumentsDock`).
     :param task_queue: the app-wide queue this document's slow work goes on (#204), passed straight
         through; ``None`` builds a document that offers no such work at all.
     """
+
+    path_moved: Signal = Signal(object, object)
+    """Emitted ``(old_path, new_path)`` whenever this dock's document's :attr:`~RehuDocumentModel.path`
+    moves -- a :meth:`~RehuDocumentModel.convert` swapping a ``.tc`` for its ``.rehu``, or a completed rename
+    (#241). Tracked here because :attr:`~RehuDocumentModel.path_changed` carries only the *new* value, and
+    ``Open recents`` needs the old one too (#295). ``old_path`` is the path this dock was built with or last
+    reported, never ``None``: every document dock is built from a concrete path."""
 
     def __init__(
         self,
@@ -61,8 +68,8 @@ class DocumentDock(QtAds.CDockWidget):  # pylint: disable=too-few-public-methods
         task_queue: TaskQueue | None = None,
     ) -> None:
         super().__init__(dock_manager, "")
-        model.setParent(self)
         self.__model: Final = model
+        self.__last_path = model.path
         self.__widget: Final = DocumentWidget(model, self, stylesheet_host=stylesheet_host, task_queue=task_queue)
 
         self.setObjectName(self.__object_name(model.path))
@@ -84,6 +91,7 @@ class DocumentDock(QtAds.CDockWidget):  # pylint: disable=too-few-public-methods
         model.lock_reasons_changed.connect(self.__update_title)  # type: ignore[attr-defined]
         model.path_changed.connect(self.__resync_object_name)  # type: ignore[attr-defined]
         model.path_changed.connect(self.__update_title)  # type: ignore[attr-defined]
+        model.path_changed.connect(self.__report_path_moved)  # type: ignore[attr-defined]
         tab_label(self).doubleClicked.connect(self.__on_tab_label_double_clicked)
         self.__update_title()
 
@@ -125,6 +133,16 @@ class DocumentDock(QtAds.CDockWidget):  # pylint: disable=too-few-public-methods
         :param path: the document's new path.
         """
         self.setObjectName(self.__object_name(path))
+
+    def __report_path_moved(self, path: Path | None) -> None:
+        """Announce the document's move as :attr:`path_moved`, with the path it moved *from*.
+
+        :param path: the document's new path.
+        """
+        old_path = self.__last_path
+        if path is not None:
+            self.__last_path = path
+        self.path_moved.emit(old_path, path)
 
     @staticmethod
     def __object_name(path: Path | None) -> str:

@@ -2465,6 +2465,35 @@ def test_destroying_the_widget_severs_its_forms_field_connections(qtbot: QtBot) 
     assert model.original_duration == 120  # reached here without a RuntimeError from a destroyed widget
 
 
+def test_a_model_outliving_its_widget_reaches_nothing_the_widget_hung_on_it(
+    qtbot: QtBot, refimages_model: RehuDocumentModel
+) -> None:
+    """Everything a widget attaches to its model dies with the widget, so a model another holder still
+    shows (#375) moves, saves and is edited without reaching into a destroyed view.
+
+    A reference pack, because its Content Images dock is what a path change and a first save re-enumerate
+    -- the two connections a lambda once kept alive past the widget -- and the rename suggestions'
+    source-field subscriptions are the third.
+
+    **Test steps:**
+
+    * build a widget over a reference pack's model, then destroy the widget
+    * move the model, take it through a first save, edit a suggestion source field and switch its type
+    * verify none of it raised, and no rename-suggestion model was left hanging on the model
+    """
+    widget = DocumentWidget(refimages_model)
+    with wait_destroyed(qtbot, widget):
+        widget.deleteLater()
+
+    refimages_model.path = TARGET_PATH
+    refimages_model.saved_on_disk = False
+    refimages_model.saved_on_disk = True
+    refimages_model.title = "Renamed"
+    refimages_model.resource_type = "tutorial"
+
+    assert not refimages_model.findChildren(NameSuggestionModel)
+
+
 def test_field_signals_after_a_switch_do_not_fire_into_deleted_widgets(qtbot: QtBot) -> None:
     """A type switch rebuilds the form, deleting every field's old widgets; the model's field signals
     firing afterwards must not reach those deleted widgets ([[plugins#field-toolkit]], #114).
@@ -2507,14 +2536,14 @@ def test_repeated_type_switches_leave_exactly_one_live_suggestion_model(qtbot: Q
     so repeated type switches don't accumulate suggestion models whose notify subscriptions never
     disconnect (#149).
 
-    A leaked model stays parented to the (session-long) model and keeps its four source-field
-    subscriptions, so a single ``title`` edit would fan out to N+1 suggestion models after N switches.
-    The widget builds one and threads it through every rebuild instead.
+    A leaked model stays parented to the (long-lived) widget and keeps its source-field subscriptions,
+    so a single ``title`` edit would fan out to N+1 suggestion models after N switches. The widget
+    builds one and threads it through every rebuild instead.
 
     **Test steps:**
 
     * build a widget, then switch its type several times (forcing a rebuild each time)
-    * verify exactly one `NameSuggestionModel` is parented to the model
+    * verify exactly one `NameSuggestionModel` is parented to the widget
     * change a source field and verify the fan-out reaches exactly that one model, not one per rebuild
     """
     model = RehuDocumentModel(
@@ -2532,7 +2561,7 @@ def test_repeated_type_switches_leave_exactly_one_live_suggestion_model(qtbot: Q
         model.resource_type = resource_type
         qtbot.wait(1)  # let the old widgets (and any leaked suggestion model) actually be destroyed
 
-    suggestion_models = model.findChildren(NameSuggestionModel)
+    suggestion_models = widget.findChildren(NameSuggestionModel)
     assert len(suggestion_models) == 1
 
     fired: list[bool] = []
