@@ -23,8 +23,10 @@ from rehuco_core import (
     CatalogQuery,
     CatalogRecord,
     RecordKind,
+    RecordSignature,
     RehucoFile,
     RehucoRoot,
+    catalog_path_key,
     catalog_type_fields,
     rehudb_path,
 )
@@ -120,6 +122,11 @@ def two_roots() -> tuple[RehucoFile, RehucoRoot, RehucoRoot]:
 def record(path: str, **fields: Any) -> CatalogRecord:
     """A ``.rehu`` record at ``path`` with the given fields and a content hash."""
     return CatalogRecord(path, RecordKind.REHU, content_hash="0", **fields)
+
+
+def ids(cache: CatalogCache) -> dict[str, int]:
+    """Every row's id, by its root-relative path."""
+    return {row.record.path: row.resource_id for row in cache.rows()}
 
 
 # region Creating and versioning
@@ -378,6 +385,61 @@ def test_a_scan_leaves_the_other_roots_rows_alone(cache: CatalogCache) -> None:
     assert [(row.root_id, row.record.path) for row in cache.rows()] == [(second.root_id, "p/info.rehu")]
 
 
+def test_an_unchanged_record_keeps_its_row_as_it_was_read(cache: CatalogCache) -> None:
+    """An incremental scan's unchanged record is kept whole -- id, fields and read time -- while what it did not
+    find is swept; an unchanged path with no row (gone from the cache meanwhile) adds none."""
+    rehuco, first, _ = two_roots()
+    cache.reconcile_roots(rehuco.roots)
+    cache.apply_root_scan(first.root_id, [record("a/info.rehu", title="A"), record("b/info.rehu")], scanned_at=1.0)
+    before = ids(cache)
+
+    assert cache.apply_root_scan(first.root_id, [], unchanged=("a/info.rehu", "never/cached.rehu"), scanned_at=2.0)
+
+    (row,) = cache.rows()
+    assert (row.resource_id, row.record.title, row.scanned_at) == (before["a/info.rehu"], "A", 1.0)
+
+
+def test_an_unchanged_record_takes_its_new_spelling(cache: CatalogCache, mocker: MockerFixture) -> None:
+    """A case-only rename on a case-insensitive filesystem changes no stat signature, only how the path is spelled."""
+    mocker.patch("rehuco_core.rehudb.catalog_path_key", side_effect=str.casefold)
+    rehuco, first, _ = two_roots()
+    cache.reconcile_roots(rehuco.roots)
+    cache.apply_root_scan(first.root_id, [record("course/info.rehu")])
+    before = ids(cache)
+
+    cache.apply_root_scan(first.root_id, [], unchanged=("Course/info.rehu",))
+
+    assert ids(cache) == {"Course/info.rehu": before["course/info.rehu"]}
+
+
+def test_a_converted_record_takes_over_its_legacy_row(cache: CatalogCache) -> None:
+    """A ``.rehu`` arriving where a same-stem ``.tc`` had a row -- compared case-folded, in the same directory --
+    keeps that row's id; a ``.tc`` in a subdirectory, or of another stem, is a resource of its own.
+
+    **Test steps:**
+
+    * apply a scan holding ``course/Info.TC`` and three ``.tc`` rows it does not cover
+    * rescan with ``course/info.rehu`` in the first one's place
+    * verify the ``.rehu`` has the first ``.tc``'s id and the other three are untouched
+    """
+    rehuco, first, _ = two_roots()
+    cache.reconcile_roots(rehuco.roots)
+    names = ("course/Info.TC", "course/alpha.tc", "course/other.tc", "course/sub/info.tc")
+    legacy = [CatalogRecord(path, RecordKind.TC) for path in names]
+    cache.apply_root_scan(first.root_id, legacy)
+    before = ids(cache)
+
+    cache.apply_root_scan(first.root_id, [record("course/info.rehu"), *legacy[1:]])
+
+    assert ids(cache) == {
+        "course/info.rehu": before["course/Info.TC"],
+        "course/alpha.tc": before["course/alpha.tc"],
+        "course/other.tc": before["course/other.tc"],
+        "course/sub/info.tc": before["course/sub/info.tc"],
+    }
+    assert {row.record.path: row.record.kind for row in cache.rows()}["course/info.rehu"] is RecordKind.REHU
+
+
 def test_a_scan_of_a_root_removed_meanwhile_is_dropped(cache: CatalogCache) -> None:
     """Nothing to apply to, so nothing is applied."""
     assert not cache.apply_root_scan(uuid4(), [record("a/info.rehu")])
@@ -574,6 +636,189 @@ def test_a_version_2_cache_upgrades_keeping_its_rows_empty_and_stale(
     assert (row.record.title, row.record.type, row.record.size) == ("T", "tutorial", 7)
     assert all(getattr(row.record, name) in {None, ()} for name in TYPE_FIELD_COLUMNS)
     assert (row.record.mtime_ns, row.record.content_hash) == (0, "")
+
+
+# endregion
+
+# region Targeted updates
+
+TUTORIALS: Final = Path("D:/tutorials")
+""":func:`two_roots`'s first root's folder."""
+
+
+@fixture(name="filled")
+def fixture_filled(cache: CatalogCache) -> tuple[CatalogCache, RehucoRoot, RehucoRoot]:
+    """A cache whose two roots are reconciled and empty.
+
+    :param cache: the cache.
+    :returns: it, and the two roots.
+    """
+    rehuco, first, second = two_roots()
+    cache.reconcile_roots(rehuco.roots)
+    return cache, first, second
+
+
+def test_a_path_is_located_under_its_innermost_root(cache: CatalogCache) -> None:
+    """Component by component, so a sibling folder that merely starts alike is not inside; a root's own folder is
+    no record."""
+    rehuco, first, _ = two_roots()
+    row = rehuco.add_root(TUTORIALS / "blender")
+    inner = rehuco.roots[row]
+    cache.reconcile_roots(rehuco.roots)
+
+    located = cache.locate(TUTORIALS / "blender/donut/info.rehu")
+    outer = cache.locate(TUTORIALS / "zbrush/info.rehu")
+
+    assert located is not None and outer is not None
+    assert (located.root.root_id, located.relative) == (inner.root_id, "donut/info.rehu")
+    assert (outer.root.root_id, outer.relative) == (first.root_id, "zbrush/info.rehu")
+    assert cache.locate(Path("D:/tutorials2/info.rehu")) is None
+    assert cache.locate(TUTORIALS) is None
+
+
+def test_one_record_is_written_and_removed_on_its_own(filled: tuple[CatalogCache, RehucoRoot, RehucoRoot]) -> None:
+    """A save writes its row, a deletion drops it and the values only it named; neither touches another row."""
+    cache, first, _ = filled
+    cache.apply_root_scan(first.root_id, [record("kept.rehu")])
+
+    assert cache.upsert_record(first.root_id, record("new.rehu", title="New", authors=("Ann",)), scanned_at=5.0)
+    rows = {row.record.path: row for row in cache.rows()}
+    assert (rows["new.rehu"].record.title, rows["new.rehu"].scanned_at) == ("New", 5.0)
+
+    assert cache.remove(TUTORIALS / "new.rehu")
+    assert list(ids(cache)) == ["kept.rehu"]
+    assert not cache.rows(CatalogQuery(tokens=((CatalogField.AUTHORS, "Ann"),)))
+    assert not cache.remove(TUTORIALS / "new.rehu")
+    assert not cache.remove(Path("Z:/elsewhere/new.rehu"))
+
+
+def test_a_record_of_a_root_not_in_the_cache_is_not_written(cache: CatalogCache) -> None:
+    """Nothing to write it under."""
+    assert not cache.upsert_record(uuid4(), record("a.rehu"))
+    assert not cache.rows()
+
+
+def test_a_signature_is_what_its_row_was_read_at(filled: tuple[CatalogCache, RehucoRoot, RehucoRoot]) -> None:
+    """One row's, or every row's under a root, keyed as a scan looks them up."""
+    cache, first, second = filled
+    cache.apply_root_scan(first.root_id, [record("a.rehu", mtime_ns=7, size=3)])
+    cache.apply_root_scan(second.root_id, [record("p.rehu")])
+
+    expected = RecordSignature("a.rehu", 7, 3)
+    assert cache.signatures(first.root_id) == {catalog_path_key("a.rehu"): expected}
+    assert cache.signature(first.root_id, "a.rehu") == expected
+    assert cache.signature(first.root_id, "p.rehu") is None
+
+
+def test_a_signature_matches_only_a_readable_uncleared_row_of_the_same_time_and_size() -> None:
+    """An error row and a cleared one are always read again."""
+    assert RecordSignature("a", 7, 3).matches(7, 3)
+    assert not RecordSignature("a", 7, 3).matches(8, 3)
+    assert not RecordSignature("a", 7, 3).matches(7, 4)
+    assert not RecordSignature("a", 7, 3, "Not JSON").matches(7, 3)
+    assert not RecordSignature("a", 0, 3).matches(0, 3)
+
+
+def test_a_renamed_directory_rebases_every_record_beneath_it(
+    filled: tuple[CatalogCache, RehucoRoot, RehucoRoot],
+) -> None:
+    """A directory-scoped collection's rename moves its own record and every nested ``.rehu`` and ``.tc``, ids and
+    values kept, without reading one; a sibling whose name merely starts alike, and the other root, stay.
+
+    **Test steps:**
+
+    * fill ``series/`` with nested records, beside ``seriesX/``, and a row under the other root
+    * apply the one pair ``series`` -> ``saga``
+    * verify the rebased paths, the ids, the values, and the rows left alone
+    """
+    cache, first, second = filled
+    nested = [record("series/info.rehu", authors=("Ann",)), record("series/a/info.rehu")]
+    cache.apply_root_scan(
+        first.root_id, [*nested, CatalogRecord("series/b/Info.tc", RecordKind.TC), record("seriesX/info.rehu")]
+    )
+    cache.apply_root_scan(second.root_id, [record("series/info.rehu")])
+    before = {(row.root_id, row.record.path): row.resource_id for row in cache.rows()}
+
+    moved = cache.apply_relocation([(TUTORIALS / "series", TUTORIALS / "saga")])
+
+    assert moved == 3
+    rows = {(row.root_id, row.record.path): row for row in cache.rows()}
+    assert {(root_id, path): row.resource_id for (root_id, path), row in rows.items()} == {
+        (first.root_id, "saga/info.rehu"): before[(first.root_id, "series/info.rehu")],
+        (first.root_id, "saga/a/info.rehu"): before[(first.root_id, "series/a/info.rehu")],
+        (first.root_id, "saga/b/Info.tc"): before[(first.root_id, "series/b/Info.tc")],
+        (first.root_id, "seriesX/info.rehu"): before[(first.root_id, "seriesX/info.rehu")],
+        (second.root_id, "series/info.rehu"): before[(second.root_id, "series/info.rehu")],
+    }
+    assert rows[(first.root_id, "saga/info.rehu")].record.authors == ("Ann",)
+    assert cache.signature(first.root_id, "saga/a/info.rehu") is not None
+
+
+def test_a_file_scoped_rename_moves_only_its_own_record(filled: tuple[CatalogCache, RehucoRoot, RehucoRoot]) -> None:
+    """``foo.rehu``'s siblings and sidecars travel in the plan but have no rows; ``foobar.rehu`` is another
+    resource."""
+    cache, first, _ = filled
+    cache.apply_root_scan(first.root_id, [record("dir/foo.rehu"), record("dir/foobar.rehu")])
+    before = ids(cache)
+    plan = [
+        (TUTORIALS / f"dir/foo{tail}", TUTORIALS / f"dir/bar{tail}") for tail in (".rehu", ".zip", ".sfv", "00.jpg")
+    ]
+
+    assert cache.apply_relocation(plan) == 1
+    assert ids(cache) == {"dir/bar.rehu": before["dir/foo.rehu"], "dir/foobar.rehu": before["dir/foobar.rehu"]}
+
+
+def test_a_folder_rename_carries_its_file_scoped_record_and_that_records_rename_only_itself(
+    filled: tuple[CatalogCache, RehucoRoot, RehucoRoot],
+) -> None:
+    """A folder holding ``info.rehu`` and ``bar.rehu``: renaming the folder rebases both; renaming ``bar`` touches
+    only ``bar``'s row."""
+    cache, first, _ = filled
+    cache.apply_root_scan(first.root_id, [record("pack/info.rehu"), record("pack/bar.rehu")])
+    before = ids(cache)
+
+    assert cache.apply_relocation([(TUTORIALS / "pack", TUTORIALS / "kit")]) == 2
+    assert cache.apply_relocation([(TUTORIALS / "kit/bar.rehu", TUTORIALS / "kit/baz.rehu")]) == 1
+
+    assert ids(cache) == {"kit/info.rehu": before["pack/info.rehu"], "kit/baz.rehu": before["pack/bar.rehu"]}
+
+
+def test_a_case_only_rename_on_a_case_insensitive_filesystem_respells_in_place(
+    filled: tuple[CatalogCache, RehucoRoot, RehucoRoot], mocker: MockerFixture
+) -> None:
+    """Both ends share their keys, so the rows moving are not mistaken for stale ones already at the destination."""
+    mocker.patch("rehuco_core.rehudb.catalog_path_key", side_effect=str.casefold)
+    cache, first, _ = filled
+    cache.apply_root_scan(first.root_id, [record("course/info.rehu"), record("course/lesson.rehu")])
+    before = ids(cache)
+
+    assert cache.apply_relocation([(TUTORIALS / "course", TUTORIALS / "Course")]) == 2
+
+    assert ids(cache) == {
+        "Course/info.rehu": before["course/info.rehu"],
+        "Course/lesson.rehu": before["course/lesson.rehu"],
+    }
+
+
+def test_a_stale_row_at_the_destination_gives_way(filled: tuple[CatalogCache, RehucoRoot, RehucoRoot]) -> None:
+    """The rename found nothing there, so a row there is out of date."""
+    cache, first, _ = filled
+    cache.apply_root_scan(first.root_id, [record("old/info.rehu", title="Moved"), record("new/info.rehu")])
+    before = ids(cache)
+
+    cache.apply_relocation([(TUTORIALS / "old", TUTORIALS / "new")])
+
+    (row,) = cache.rows()
+    assert (row.record.path, row.resource_id, row.record.title) == ("new/info.rehu", before["old/info.rehu"], "Moved")
+
+
+def test_a_rename_of_the_root_itself_leaves_its_rows_alone(filled: tuple[CatalogCache, RehucoRoot, RehucoRoot]) -> None:
+    """Relative to the root, nothing moved; where the root now is, is the ``.rehuco``'s to say."""
+    cache, first, _ = filled
+    cache.apply_root_scan(first.root_id, [record("info.rehu")])
+
+    assert cache.apply_relocation([(TUTORIALS, Path("D:/tuts"))]) == 0
+    assert list(ids(cache)) == ["info.rehu"]
 
 
 # endregion

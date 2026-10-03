@@ -1,4 +1,4 @@
-"""Tests for a full scan of one ``.rehuco`` root (#372).
+"""Tests for a scan of one ``.rehuco`` root, full and incremental (#372, #373).
 
 The filesystem is declared, never touched: listings come from :class:`FakeScandir`, a record's stat and bytes
 from the same declaration, and its parse from the payload the test gave it.
@@ -11,18 +11,20 @@ from threading import Event
 from types import SimpleNamespace
 from typing import Any, Final
 
-from pytest import fixture
+from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from rehuco_core import (
     CURRENT_FORMAT_VERSION,
     CatalogCache,
     CatalogRootScan,
     RecordKind,
+    RecordSignature,
     RehucoFile,
     RehuDocument,
     RehuFormatError,
     RenameCoordinator,
     RootScanOutcome,
+    catalog_path_key,
 )
 from rehuco_core.rehu_parse_limits import MAX_FILE_BYTES
 
@@ -50,6 +52,7 @@ class FakeTree:  # pylint: disable=too-many-instance-attributes  # one knob per 
         self.listing: dict[Path, list[FakeDirEntry]] = {ROOT: []}
         self.payloads: dict[Path, dict[str, Any] | Exception] = {}
         self.sizes: dict[Path, int] = {}
+        self.mtimes: dict[Path, int] = {}
         self.unreadable: set[Path] = set()
         self.gone_at_end = False
         self.on_list: Callable[[Path], None] = lambda directory: None
@@ -84,7 +87,7 @@ class FakeTree:  # pylint: disable=too-many-instance-attributes  # one knob per 
     def __stat(self, path: Path, **_kwargs: object) -> SimpleNamespace:
         if path not in self.sizes:
             raise FileNotFoundError(path)
-        return SimpleNamespace(st_size=self.sizes[path], st_mtime_ns=1_000)
+        return SimpleNamespace(st_size=self.sizes[path], st_mtime_ns=self.mtimes.get(path, 1_000))
 
     def __read_bytes(self, path: Path) -> bytes:
         return str(path).encode()
@@ -112,8 +115,21 @@ def scan(**kwargs: Any) -> Any:
 
 
 def paths(result: Any) -> list[str]:
-    """The root-relative paths a scan found, in its order."""
+    """The root-relative paths a scan read, in its order."""
     return [record.path for record in result.records]
+
+
+def signatures_of(result: Any) -> dict[str, RecordSignature]:
+    """What the cache would hand the next scan after ``result`` was applied."""
+    return {
+        catalog_path_key(record.path): RecordSignature(record.path, record.mtime_ns, record.size, record.error)
+        for record in result.records
+    }
+
+
+def read_paths(tree: FakeTree) -> list[Path]:
+    """Every record whose bytes were read, in order."""
+    return [call.args[0] for call in tree.read_bytes.call_args_list]
 
 
 # region What a scan reads
@@ -331,6 +347,108 @@ def test_the_checkpoint_runs_for_every_directory_and_every_record(tree: FakeTree
 
 # endregion
 
+# region Incremental
+
+
+def test_a_rescan_reads_only_what_changed_or_is_new(tree: FakeTree) -> None:
+    """An unchanged record is a stat; one whose time or size moved is read again, as is one the cache never had;
+    one that vanished is in neither list, which is what lets the cache sweep it.
+
+    **Test steps:**
+
+    * scan four records, and keep their signatures
+    * touch one, resize another, delete the third, add a fifth
+    * rescan against the signatures; verify which were read and which were reported unchanged
+    """
+    for name in ("same.rehu", "touched.rehu", "resized.rehu", "gone.rehu"):
+        tree.file(name, payload("Old"))
+    known = signatures_of(scan())
+    tree.mtimes[ROOT / "touched.rehu"] = 2_000
+    tree.sizes[ROOT / "resized.rehu"] = 11
+    tree.payloads[ROOT / "touched.rehu"] = payload("Touched")
+    tree.listing[ROOT] = [entry for entry in tree.listing[ROOT] if entry.name != "gone.rehu"]
+    tree.file("new.rehu", payload("New"))
+    tree.read_bytes.reset_mock()
+
+    result = scan(known=known)
+
+    assert paths(result) == ["new.rehu", "resized.rehu", "touched.rehu"]
+    assert [record.title for record in result.records] == ["New", "Old", "Touched"]
+    assert result.unchanged == ("same.rehu",)
+    assert ROOT / "same.rehu" not in read_paths(tree)
+
+
+def test_a_row_that_could_not_be_read_or_was_cleared_is_read_again(tree: FakeTree) -> None:
+    """An error row is asked again in case it now reads; a signature a schema step cleared matches no file."""
+    tree.file("bad.rehu", payload("Fixed"))
+    tree.file("stale.rehu", payload("Stale"))
+    known = {
+        catalog_path_key("bad.rehu"): RecordSignature("bad.rehu", 1_000, 10, "Not JSON"),
+        catalog_path_key("stale.rehu"): RecordSignature("stale.rehu", 0, 10),
+    }
+
+    result = scan(known=known)
+
+    assert [record.title for record in result.records] == ["Fixed", "Stale"]
+    assert not result.unchanged
+
+
+def test_a_known_record_that_vanished_after_its_listing_keeps_a_row_with_the_reason(tree: FakeTree) -> None:
+    """A stat that fails is no match: the record goes to the reader, which names why."""
+    tree.file("gone.rehu")
+    known = signatures_of(scan())
+    del tree.sizes[ROOT / "gone.rehu"]
+
+    (record,) = scan(known=known).records
+
+    assert record.error is not None
+
+
+def test_progress_counts_every_record_whether_read_or_not(tree: FakeTree, mocker: MockerFixture) -> None:
+    """The count the job sets against the previous total includes the records skipped."""
+    tree.file("a.rehu")
+    tree.file("b.rehu")
+    known = signatures_of(scan())
+    tree.mtimes[ROOT / "b.rehu"] = 2_000
+    progress = mocker.Mock()
+
+    scan(known=known, progress=progress)
+
+    assert [call.args for call in progress.call_args_list] == [(1,), (2,)]
+
+
+# endregion
+
+# region Descent
+
+
+def test_records_nested_inside_a_tutorial_are_found_by_every_scan(tree: FakeTree) -> None:
+    """No type ends the descent (#373): a nested ``info.rehu`` and a file-scoped record deep inside a tutorial are
+    resources of their own, as the content walk treats them (#254), and a rescan still reaches them.
+
+    **Test steps:**
+
+    * declare a tutorial with a nested ``info.rehu`` and a deeper ``<stem>.rehu``
+    * scan; verify all three are read
+    * rescan against the first scan's rows; verify all three are found, unchanged
+    """
+    tree.directory("course")
+    tree.file("course/info.rehu", payload("Course", type="tutorial"))
+    tree.directory("course/foo")
+    tree.directory("course/foo/bar")
+    tree.file("course/foo/bar/info.rehu", payload("Nested"))
+    tree.file("course/foo/bonus.rehu", payload("Bonus"))
+
+    first = scan()
+    rescan = scan(known=signatures_of(first))
+
+    nested = ["course/info.rehu", "course/foo/bonus.rehu", "course/foo/bar/info.rehu"]
+    assert paths(first) == nested
+    assert rescan.unchanged == tuple(nested)
+
+
+# endregion
+
 # region Online and offline
 
 
@@ -377,11 +495,13 @@ def test_an_unreadable_branch_under_an_online_root_is_named_and_contributes_noth
 # region Renames
 
 
+@mark.parametrize("incremental", [False, True], ids=["full", "incremental"])
 def test_a_directory_scoped_rename_succeeds_while_the_scan_is_inside_that_directory(
-    tree: FakeTree, mocker: MockerFixture
+    tree: FakeTree, mocker: MockerFixture, incremental: bool
 ) -> None:
     """The scan is parked inside ``old/``'s listing when the rename arrives: the rename waits out that one
-    listing rather than the scan, and the record the scan then reads is found under its new name.
+    listing rather than the scan, and the record the scan then reads is found under its new name. A rescan that
+    knew it under the old one reads it again rather than reporting a row the rename has not reached unchanged.
 
     **Test steps:**
 
@@ -405,9 +525,10 @@ def test_a_directory_scoped_rename_succeeds_while_the_scan_is_inside_that_direct
 
     tree.on_list = park
     coordinator = RenameCoordinator()
+    known = {catalog_path_key("old/info.rehu"): RecordSignature("old/info.rehu", 1_000, 10)} if incremental else None
     results: list[Any] = []
 
-    with running(lambda: results.append(scan(coordinator=coordinator))):
+    with running(lambda: results.append(scan(coordinator=coordinator, known=known))):
         assert inside.wait(SETTLE)
         with running(lambda: coordinator.rename(ROOT / "old/info.rehu", "new")):
             assert wait_until(lambda: coordinator.yield_wanted)

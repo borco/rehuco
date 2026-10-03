@@ -699,18 +699,19 @@ Scanning is load-bearing ([[architecture-design#why-distributed]], [[mounts-and-
   version-compared, propagated — instead of waiting for a scan. "Just reopen the file" is thus enough to bring an
   out-of-band edit back into the swarm; the incremental scan remains the catch-all for files never touched again.
 
-**Type-directed descent (design note; replaces tc4's stop-at-first-sidecar).** Whether the scanner descends past a
-directory-scoped document is a property its **type declares** (in the plugin's non-GUI core layer,
-[[plugins#core-vs-plugin]]): a *tutorial* is a **scan boundary** — its nested folders are its own content
-([[data-model#resource-scoping]]) — while a *collection* is not, which is what lets a containment-shaped collection's
-`info.rehu` sit in the parent directory whose subdirectories are its members ([[plugins#grouping-entities]]).
-File-scoped documents never terminate descent — they describe named files, not the directory. Two caveats travel with
-the rule: a mis-typed boundary document hides its subtree (an optimization's failure mode — verify-on-access and
-explicit notifications still reach nested files, and the scanner may cheaply flag "boundary document with `.rehu`
-files beneath it", in the coexistence-warning spirit of [[data-model#resource-scoping]]); and tc4's two-phase
-collect-then-parse scan existed only to give its progress bar a denominator — with parse-on-find, progress is
-reported against the previous scan's totals (an estimate that is right when little changed, the common case under
-incremental scanning), and a first-ever scan shows a running count instead of a percentage.
+**The scan descends everywhere (#373; replaces tc4's stop-at-first-sidecar).** No record's type ends the walk. An
+earlier design note had a *tutorial* declare itself a **scan boundary**, so the scanner would skip its nested folders
+as its own content, while a *collection* would not. It was dropped before it shipped, because it contradicts the
+coverage rule ([[data-model#resource-scoping]], #254): a `foo/bar/info.rehu` or a `foo/<stem>.rehu` deep inside a
+tutorial is a resource of its own, which the tutorial's content walk already leaves out. Under a boundary, that resource
+would be in neither the catalog nor its tutorial, so a library's summed size would undercount. A save would also write
+its row through `upsert`, only for the next scan to sweep it away. The saving it bought, the listings of a tutorial's
+folders, is the one cost an incremental scan still pays. It does not justify a catalog that depends on how a record is
+typed. A containment-shaped collection's `info.rehu`, sitting in the parent directory of its members
+([[plugins#grouping-entities]]), needs nothing special for the same reason. tc4's two-phase collect-then-parse scan
+existed only to give its progress bar a denominator. With parse-on-find, progress is reported against the previous
+scan's totals (an estimate that is right when little changed, the common case under incremental scanning), and a
+first-ever scan shows a running count instead of a percentage.
 
 ## §4.8 Per-node local file trio
 
@@ -755,17 +756,27 @@ The cache is the stdlib `sqlite3` module in rehuco-core, Qt-free, one connection
 
 - **A `.tc` gets a row only where no `.rehu` covers it** ([[data-model#resource-scoping]]) — a `.rehu` of the same
   stem in the same directory, compared case-folded as the conversion plan compares it; a nested `info.tc` is a
-  resource of its own. Converting one replaces its row in place.
+  resource of its own. Converting one replaces its row in place: the `.rehu`'s first write takes over the `.tc`'s
+  row, id and all, whether a scan or an `upsert` makes it (#373).
 - **Where the file goes is the app's to say.** Core takes a local cache folder and names the file in it by the rehuco
   id; it reads no setting and knows no platform's cache location (#372).
 - **Roots are reconciled by id.** Opening a `.rehuco` brings `roots` in line with it: a relabeled, reordered or
   re-pointed root updates its row and keeps its resources, a new id gets an empty row, a missing id is deleted and
   its resources cascade away.
-- **A full scan replaces a root's rows; an offline root keeps them** ([[mounts-and-storage#offline-mounts]]). A root
+- **A scan replaces a root's rows; an offline root keeps them** ([[mounts-and-storage#offline-mounts]]). A root
   that does not list is recorded as unreachable and nothing under it changes. One that lists is wholly online: what
   the scan did not find is removed — including the contents of a branch that would not list, which the scan names.
   The root is probed again when the walk ends, and a scan whose root went away meanwhile is not applied. A record
   found again keeps its row id; one that could not be read keeps a row naming why.
+- **A scan is incremental** (#373). It is handed the root's rows, and a record whose stat signature still matches
+  its row is not opened: the row stays as it was, only its spelling following a case-only rename. A row that could not
+  be read, or whose signature a schema step cleared, is always read again. Progress counts against the previous
+  scan's row total; a first scan, with no rows, shows a running count. A full rescan is no separate mode — it is a
+  scan with nothing to compare against, which a discarded cache already is.
+- **Between scans, one record at a time** (#373). A save or a conversion re-reads its record into its row (`upsert`);
+  a deleted one loses its row (`remove`); opening, browsing to or serving one compares its row's signature with the
+  file and re-reads it on a mismatch (verify-on-access, [[data-model#scan-and-staleness]]). A record missing under an
+  online root is gone; under an offline one nothing changes.
 - **A type's columns are where the cache and its plugin meet** (#399). The cache says which type-specific fields
   it stores; the plugin declares which fields its type has; a type contributes the fields in both, and a scan fills
   only those — so a stray key in another type's block, or a type no plugin here claims, reads empty. Labels are the

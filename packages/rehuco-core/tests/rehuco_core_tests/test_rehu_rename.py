@@ -567,6 +567,28 @@ def test_relocate_answers_unchanged_after_a_rolled_back_rename(mocker: MockerFix
     assert renamer.relocate(FILE_PATH) == FILE_PATH
 
 
+def test_the_executed_plan_is_every_pair_that_ran(mocker: MockerFixture) -> None:
+    """What the catalog cache rebases by (#373): nothing before the rename, the renames in order after it."""
+    mock_rename = mock_environment(mocker, siblings=[FILE_PATH, *SCREENSHOTS])
+    renamer = RehuRenamer(FILE_PATH, NEW_NAME)
+    assert not renamer.executed
+
+    renamer.rename()
+
+    assert renamer.executed == tuple(renames(mock_rename))
+    assert len(renamer.executed) == 3
+
+
+def test_the_executed_plan_of_a_rolled_back_rename_is_empty(mocker: MockerFixture) -> None:
+    """Nothing moved in the end, so there is nothing to rebase."""
+    mock_environment(mocker, rename_side_effect=[None, OSError("boom"), None])
+    renamer = RehuRenamer(FILE_PATH, NEW_NAME)
+    with raises(OSError):
+        renamer.rename()
+
+    assert not renamer.executed
+
+
 # endregion
 
 

@@ -1,9 +1,14 @@
-"""A full scan of one ``.rehuco`` root: every record under it, read for the catalog cache
+"""A scan of one ``.rehuco`` root: every record under it, read for the catalog cache
 ([[data-model#scan-and-staleness]], [[data-model#cache-schema]], #372).
+
+**Incremental by default** (#373): given the root's cached rows, a record whose stat signature (modification
+time and size) still matches is not opened, and only what changed is read. Without them, which is a first scan,
+every record is. Either way the result is the root's whole content, so what was not found is swept.
 
 **Parse on find.** Each directory's records are read as soon as its listing closes, so progress is a running
 count rather than a percentage over a total nobody has yet -- a first scan cannot know one, and a walk that
-collected before it read would only exist to invent it.
+collected before it read would only exist to invent it. A later scan reports against the previous one's total
+instead (:class:`~rehuco_core.ScanCatalogRootJob`), an estimate that is right when little changed.
 
 **A root is wholly online or wholly offline** ([[mounts-and-storage#offline-mounts]], #245). One that does not
 list is *offline* and the scan says so without reading anything, so its cached rows survive rather than being
@@ -20,7 +25,7 @@ already read are tracked locations, so a folder renamed mid-scan lands in the re
 """
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from pathlib import Path
@@ -32,7 +37,7 @@ from .rehu_catalog import CatalogCheckpoint, CatalogScanner
 from .rehu_document import RehuDocument, author_name
 from .rehu_locks import coerced_str_list
 from .rehu_parse_limits import oversized_file_reason
-from .rehudb import CatalogRecord, RecordKind, catalog_type_fields
+from .rehudb import CatalogRecord, RecordKind, RecordSignature, catalog_path_key, catalog_type_fields
 from .rename_coordination import DEFAULT_RENAME_COORDINATOR, RenameCoordinator, ResourceLocation
 from .resource_scoping import is_legacy_record_name
 from .tc_document import load_tc
@@ -62,19 +67,22 @@ class RootScanResult:
 
     :param root: the root's folder, as it was at the end of the scan.
     :param outcome: how the scan ended.
-    :param records: every record found, paths relative to :attr:`root`; empty unless :attr:`outcome` is
+    :param records: every record read, paths relative to :attr:`root`; empty unless :attr:`outcome` is
         :attr:`RootScanOutcome.SCANNED`.
     :param unreadable_branches: directories under the root that would not list.
+    :param unchanged: the root-relative paths, as spelled now, of the records found unchanged and not read (#373);
+        empty, like :attr:`records`, unless the scan applies.
     """
 
     root: Path
     outcome: RootScanOutcome
     records: tuple[CatalogRecord, ...] = ()
     unreadable_branches: tuple[Path, ...] = ()
+    unchanged: tuple[str, ...] = ()
 
     @property
     def applicable(self) -> bool:
-        """Whether :attr:`records` is the root's whole content, fit to replace its rows."""
+        """Whether :attr:`records` and :attr:`unchanged` are the root's whole content, fit to replace its rows."""
         return self.outcome is RootScanOutcome.SCANNED
 
     @property
@@ -89,13 +97,23 @@ class RootScanResult:
 
 
 class CatalogRootScan:  # pylint: disable=too-few-public-methods
-    """Reads every record under one root ([[data-model#cache-schema]], #372).
+    """Reads every changed record under one root ([[data-model#cache-schema]], #372, #373).
+
+    **Incremental, given what the cache knows** ([[data-model#scan-and-staleness]]): a record whose stat
+    signature still matches its row is not opened at all -- it is reported unchanged, and its row stays as it is.
+    Without ``known`` every record is read, which is what a first scan is.
+
+    **It descends everywhere**, whatever a record's type ([[data-model#scan-and-staleness]], #373): a record nested
+    inside a tutorial is a resource of its own, as the content walk already treats it (#254), so a scan that stopped
+    at the tutorial would lose it from the catalog while the tutorial no longer counted it either.
 
     :param root: the root's folder.
     :param coordinator: the rename barrier every read goes through.
     :param checkpoint: called once per directory and once per record, so a cancel bites within one read;
         whatever it raises leaves the scan.
-    :param progress: called with the running count after each record.
+    :param progress: called with the running count after each record, read or not.
+    :param known: the root's cached rows (:meth:`~rehuco_core.CatalogCache.signatures`), or ``None`` to read every
+        record.
     """
 
     def __init__(
@@ -105,21 +123,23 @@ class CatalogRootScan:  # pylint: disable=too-few-public-methods
         coordinator: RenameCoordinator = DEFAULT_RENAME_COORDINATOR,
         checkpoint: CatalogCheckpoint | None = None,
         progress: ScanProgress | None = None,
+        known: Mapping[str, RecordSignature] | None = None,
     ) -> None:
         self.__coordinator: Final = coordinator
         self.__root: Final = coordinator.track(root)
         self.__checkpoint: Final = checkpoint
         self.__progress: Final = progress
+        self.__known: Final[Mapping[str, RecordSignature]] = known if known is not None else {}
 
     def scan(self) -> RootScanResult:
-        """Walk the root and read each record found.
+        """Walk the root and read each record found that changed.
 
         :returns: what was found, and how the scan ended.
         """
         scanner = CatalogScanner(
             self.__root.path, checkpoint=self.__checkpoint, coordinator=self.__coordinator, include_legacy=True
         )
-        found: list[tuple[ResourceLocation, CatalogRecord]] = []
+        found: list[tuple[ResourceLocation, CatalogRecord | None]] = []
         unreadable: list[Path] = []
         for listed, directory in enumerate(scanner.walk()):
             if not directory.listed:
@@ -133,7 +153,7 @@ class CatalogRootScan:  # pylint: disable=too-few-public-methods
                 if self.__checkpoint is not None:
                     self.__checkpoint()
                 with self.__coordinator.holding():
-                    record = self.__read(location.path)
+                    record = self.__visit(location.path)
                 found.append((location, record))
                 if self.__progress is not None:
                     self.__progress(len(found))
@@ -144,20 +164,46 @@ class CatalogRootScan:  # pylint: disable=too-few-public-methods
             if not root.is_dir():
                 LOG.warning("The root %s went away during its scan; the scan is discarded.", root)
                 return RootScanResult(root, RootScanOutcome.WENT_OFFLINE, unreadable_branches=tuple(unreadable))
-            records = tuple(self.__relative(root, location.path, record) for location, record in found)
-        return RootScanResult(root, RootScanOutcome.SCANNED, records, tuple(unreadable))
+            records = tuple(
+                replace(record, path=self.__relative(root, location.path))
+                for location, record in found
+                if record is not None
+            )
+            unchanged = tuple(self.__relative(root, location.path) for location, record in found if record is None)
+        return RootScanResult(root, RootScanOutcome.SCANNED, records, tuple(unreadable), unchanged)
+
+    def __visit(self, path: Path) -> CatalogRecord | None:
+        """Read one record, unless its row says it has not changed.
+
+        :param path: the record, as it is now; called under the hold, so it and the root agree.
+        :returns: what it holds, or ``None`` when it is unchanged.
+        """
+        known = self.__known.get(catalog_path_key(self.__relative(self.__root.path, path)))
+        if known is not None:
+            try:
+                stat = path.stat()
+            except OSError:
+                pass  # the read below stats it again, and records why it could not
+            else:
+                if known.matches(stat.st_mtime_ns, stat.st_size):
+                    return None
+        return CatalogRecordReader.read(path)
 
     @staticmethod
-    def __relative(root: Path, path: Path, record: CatalogRecord) -> CatalogRecord:
-        """``record`` with its path made root-relative, read from where its location is **now**."""
-        return replace(record, path=path.relative_to(root).as_posix())
+    def __relative(root: Path, path: Path) -> str:
+        """``path``, read from where its location is **now**, relative to the root."""
+        return path.relative_to(root).as_posix()
+
+
+class CatalogRecordReader:  # pylint: disable=too-few-public-methods
+    """Reads one record into what the cache stores of it -- for a scan, and for a targeted update (#373)."""
 
     @staticmethod
-    def __read(path: Path) -> CatalogRecord:
+    def read(path: Path) -> CatalogRecord:
         """Read one record: its stat signature, a hash of its bytes, the common core it holds and its type's own
         fields.
 
-        The path stored here is a placeholder, replaced by the root-relative one once the scan ends.
+        The path stored here is ``path`` itself; the caller makes it root-relative.
 
         :param path: the record, as it is now.
         :returns: what it holds, or a row naming why it could not be read.
@@ -190,9 +236,9 @@ class CatalogRootScan:  # pylint: disable=too-few-public-methods
             updated=document.updated,
             authors=tuple(name for name in (author_name(entry) for entry in document.authors) if name),
             tags=(*document.advertised_tags, *document.extra_tags),
-            publishers=CatalogRootScan.__publishers(document),
+            publishers=CatalogRecordReader.__publishers(document),
             content_hash=content_hash,
-            **CatalogRootScan.__type_fields(document),
+            **CatalogRecordReader.__type_fields(document),
         )
 
     @staticmethod

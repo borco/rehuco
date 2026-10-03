@@ -26,6 +26,15 @@ Changelogs are per package in this monorepo, matching the per-package release ta
   record that will not read keeps a row naming why. A root that does not list keeps its rows; a scan whose
   root went away before it finished is not applied. Each listing and each record read is held under the
   rename coordinator, so a rename waits for one read rather than the scan.
+- The root scan is incremental: given the root's cached rows (`CatalogCache.signatures`), it opens only the
+  records whose modification time or size changed, plus any row that could not be read before. Unchanged records
+  keep their rows, and what was not found is removed. The scan job reports progress against the previous scan's
+  row count. It still lists every folder, so a record nested inside a tutorial is found like any other.
+- Single-record cache updates between scans. `CatalogRecordUpdater.upsert` re-reads one record after a save or a
+  conversion, and a converted `.rehu` takes over its `.tc`'s row. `CatalogRecordUpdater.verify` re-reads a record
+  whose file no longer matches its row. `CatalogCache.remove` drops a deleted record's row. `CatalogCache.apply_relocation`
+  applies a rename's executed plan (`RehuRenamer.executed`) without reading anything: a renamed folder rebases every
+  row beneath it, a file-scoped rename only its own. A record missing under an offline root keeps its row.
 - `CatalogScanner.walk()` yields one listing at a time. Given a coordinator, it lists each directory under
   its hold and follows a folder renamed mid-walk. It can also collect uncovered `.tc` records.
 - The `.rehuco` file (`RehucoFile`): a rehuco id and an ordered list of folder roots, each with a stable id, a

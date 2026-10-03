@@ -135,10 +135,14 @@ class CatalogRootJob(TaskJobBase):  # pylint: disable=abstract-method  # a base;
 
 
 class ScanCatalogRootJob(CatalogRootJob):
-    """Scan one root in full and replace its rows with what was found (#372).
+    """Scan one root and replace its rows with what was found (#372).
+
+    **Incremental** (#373): only the records whose stat signature no longer matches their row are read, and
+    progress is reported against how many rows the root had -- a first scan, with none, shows a running count.
 
     **Safely interruptible**: nothing is written until the walk has finished, so a stop part-way leaves the
-    cache exactly as it was. It does not resume -- a paused scan starts its walk over.
+    cache exactly as it was. It does not resume -- a paused scan starts its walk over, which costs little now
+    that an unchanged record is a stat.
 
     A root that does not list, or goes away before the walk ends, keeps its rows; the job still finishes, since
     an offline root is a state to record, not a failure.
@@ -200,26 +204,30 @@ class ScanCatalogRootJob(CatalogRootJob):
         if root is None:
             raise ValueError("A catalog scan has no folder to work on.")
         root_id = self.required_root_id()
-        control.report(0)
-        result = CatalogRootScan(
-            root,
-            coordinator=self.__coordinator,
-            checkpoint=self.checkpoint,
-            progress=control.report,
-        ).scan()
         with self.cache() as cache:
+            known = cache.signatures(root_id)
+            total = len(known) or None
+            control.report(0, total)
+            result = CatalogRootScan(
+                root,
+                coordinator=self.__coordinator,
+                checkpoint=self.checkpoint,
+                progress=lambda done: control.report(done, None if total is None else max(total, done)),
+                known=known,
+            ).scan()
             if result.applicable:
-                cache.apply_root_scan(root_id, result.records)
+                cache.apply_root_scan(root_id, result.records, unchanged=result.unchanged)
             else:
                 cache.mark_root_unreachable(root_id)
         self.__result = result
         LOG.info(
-            "%s: %s, %d records (%d legacy, %d unreadable), %d branches unreadable.",
+            "%s: %s, %d records read (%d legacy, %d unreadable), %d unchanged, %d branches unreadable.",
             self.label,
             result.outcome,
             len(result.records),
             result.legacy_records,
             result.unreadable_records,
+            len(result.unchanged),
             len(result.unreadable_branches),
         )
 
