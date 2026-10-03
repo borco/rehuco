@@ -7,18 +7,21 @@ import sqlite3
 import threading
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Final, cast
+from typing import Final, cast
 
-import cbor2
-import humanize
 import PySide6QtAds as QtAds
 from borco_core.logging import LogScope
-from borco_pyside.qtads import QtAdsAutoHideButtonSuppressor, QtAdsFocusTracker, QtAdsTabContextActions
+from borco_pyside.qtads import (
+    QtAdsAutoHideButtonSuppressor,
+    QtAdsFocusTracker,
+    QtAdsTabContextActions,
+    remove_dock_widget,
+)
 from borco_pyside.theming import ActionIconThemeHandler
 from borco_pyside.widgets import MessageBanner, MessageBannerRow, MessageBannerSeverity, RowBandDelegate
-from PySide6.QtCore import QAbstractItemModel, QByteArray, QItemSelectionModel, QModelIndex, QObject, Qt, Signal
+from PySide6.QtCore import QByteArray, QItemSelectionModel, QObject, Qt, Signal
 from PySide6.QtGui import QAction
-from PySide6.QtWidgets import QFileDialog, QInputDialog, QMainWindow, QMessageBox, QStatusBar, QTableView, QWidget
+from PySide6.QtWidgets import QFileDialog, QInputDialog, QMainWindow, QMessageBox, QTableView, QWidget
 from rehuco_core import (
     DEFAULT_RENAME_COORDINATOR,
     FINISHED_JOB_STATES,
@@ -39,47 +42,40 @@ from rehuco_core import (
 from ..dock_maximize import attach_maximize_handler
 from ..glyphs import TAB_CLOSE_GLYPH
 from ..resource_events import ResourceEvents
+from ..settings.catalog_state_store import CatalogState, CatalogStateStore
 from ..settings.persistent_settings import cache_folder
-from .catalog_table_model import SIZE_ROLE, CatalogTableModel
-from .rehuco_browser_panel_ui import Ui_RehucoBrowserPanel
 from .rehuco_roots_model import RehucoRootsModel
 from .rehuco_roots_panel_ui import Ui_RehucoRootsPanel
+from .table_browser import TableBrowser
 
 LOG: Final = logging.getLogger(__name__)
 
 SCAN_ICON: Final = ":/icons/roots_scan.svg"
 ADD_ROOT_ICON: Final = ":/icons/roots_add.svg"
 REMOVE_ROOT_ICON: Final = ":/icons/roots_delete.svg"
+ROOTS_ICON: Final = ":/icons/file_browser_folder.svg"
+NEW_BROWSER_ICON: Final = ":/icons/browser_add.svg"
 RENAME_BROWSER_ICON: Final = ":/icons/browser_rename.svg"
+CLONE_BROWSER_ICON: Final = ":/icons/browser_clone.svg"
 
 ROOTS_DOCK_NAME: Final = "roots"
-BROWSER_DOCK_NAME: Final = "browser"
-"""Object names of this shell's two sub-docks -- the roots list and the resource table -- and the keys
-their layout is restored under."""
+"""Object name of the Roots sub-dock. A browser's is its id, so a saved layout finds each one."""
 
 ROOTS_DOCK_TITLE: Final = "Roots"
-BROWSER_DOCK_TITLE: Final = "Browser"
-
-STATE_VERSION_KEY: Final = "version"
-STATE_VERSION: Final = 1
-"""Schema version of :meth:`RehucoDock.save_state`'s blob. The nested layout is keyed by dock object name,
-so any change to the sub-dock set makes an older blob incompatible: QtAds's ``restoreState`` would accept it
-and silently hide the current docks. Bump this on any such change; :meth:`RehucoDock.restore_state` ignores
-a blob whose version differs, keeping the built default instead."""
-
-STATE_DOCK_MANAGER_KEY: Final = "dock_manager"
-STATE_CATALOG_HEADER_KEY: Final = "catalog_header"
-STATE_ROOTS_HEADER_KEY: Final = "roots_header"
-"""Where the two tables' header states -- column widths and order, and the browser's sort -- live in that blob.
-Read outside :data:`STATE_VERSION`'s guard on purpose, the way the Tasks dock reads its log filters: that version
-guards the sub-dock set, and a header's state is one table's own, which Qt validates itself."""
 
 
 # the public surface is the file operations plus read accessors for the views and actions, which the window
 # and the tests drive -- one cohesive widget, not a class waiting to be split
 class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,too-many-public-methods
-    """A nested dock shell over one open ``.rehuco``: its roots in one sub-dock, the resources its
-    ``.rehudb`` cache lists in another, and a toolbar to scan and to edit the roots.
+    """A nested dock shell over one open ``.rehuco``: its roots in one sub-dock, any number of **table
+    browsers** over the resources its ``.rehudb`` cache lists, and a toolbar to scan, to edit the roots and to
+    add and rename browsers.
+
+    **Browsers are the agent's, not the catalog's.** Each is a closable sub-dock named by a stable id, with a name,
+    a filter and a header state. They are remembered per catalog, with where every sub-dock sits, in a
+    :class:`~rehuco_agent.settings.catalog_state_store.CatalogStateStore` keyed by the rehuco id: read when a file
+    is opened and written when it is closed, replaced or the dock is detached. ``rehuco-core`` and the ``.rehuco``
+    know nothing of them. A catalog with none saved opens with one default browser.
 
     **The ``.rehuco`` is the source of truth for the roots, the cache for everything under them.** An
     open reconciles the cache's roots to the file's, so the two cannot disagree for longer than it takes to
@@ -101,6 +97,7 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         outermost ``CDockManager``.
     :param rename_coordinator: what a scan holds each directory and record read under, so it never blocks a
         rename ([[mounts-and-storage#out-of-band]]).
+    :param catalog_store: where each catalog's browsers and layout are remembered; the app's own by default.
     :param resource_events: the app's file announcements (#376), which keep the cache current between scans
         without reading anything a rename moved: a rename rebases the rows it moved
         (:meth:`~rehuco_core.CatalogCache.apply_relocation`), and a record the app wrote is read back into its
@@ -120,18 +117,20 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         queue_changed = Signal()
         """Carries nothing: the payload is whatever the queue says by the time the slot runs."""
 
-    def __init__(
+    def __init__(  # pylint: disable=too-many-arguments
         self,
         queue: TaskQueue,
         parent: QWidget | None = None,
         *,
         stylesheet_host: QWidget | None = None,
         rename_coordinator: RenameCoordinator = DEFAULT_RENAME_COORDINATOR,
+        catalog_store: CatalogStateStore | None = None,
         resource_events: ResourceEvents | None = None,
     ) -> None:
         super().__init__(parent)
         self.__queue: Final = queue
         self.__rename_coordinator: Final = rename_coordinator
+        self.__catalog_store: Final = catalog_store if catalog_store is not None else CatalogStateStore()
         self.__events: Final = resource_events
         self.__file: RehucoFile | None = None
         self.__cache: CatalogCache | None = None
@@ -147,7 +146,6 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         self.__marshaller.queue_changed.connect(self.__on_queue_changed, Qt.ConnectionType.QueuedConnection)
 
         self.__roots_model: Final = RehucoRootsModel(self)
-        self.__catalog_model: Final = CatalogTableModel(self)
 
         self.__roots_panel: Final = QWidget(self)
         self.__roots_ui: Final = Ui_RehucoRootsPanel()
@@ -158,21 +156,8 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         self.__banner: Final = MessageBanner(self.__roots_panel)
         self.__roots_ui.main_layout.insertWidget(0, self.__banner)
 
-        self.__browser_panel: Final = QWidget(self)
-        self.__browser_ui: Final = Ui_RehucoBrowserPanel()
-        self.__browser_ui.setupUi(self.__browser_panel)
-        catalog_view = self.__browser_ui.catalog_view
-        catalog_view.setModel(self.__catalog_model)
-        catalog_view.setItemDelegate(RowBandDelegate(catalog_view))
-        # unsorted until a header is clicked: the header's own default puts an arrow on the first column
-        # while the rows are still in the cache's order
-        catalog_view.horizontalHeader().setSortIndicator(-1, Qt.SortOrder.AscendingOrder)
-        # the count follows what the view shows, so it listens to the view's model: today the catalog's own,
-        # later a filter proxy over it (#396, #398)
-        shown = cast(QAbstractItemModel, catalog_view.model())
-        for signal in (shown.modelReset, shown.rowsInserted, shown.rowsRemoved):
-            signal.connect(self.__update_resource_count)
-        self.__update_resource_count()
+        self.__browsers: Final[dict[QtAds.CDockWidget, TableBrowser]] = {}
+        """Every browser's dock, in the order the browsers were added."""
 
         self.__dock_manager: Final = QtAds.CDockManager(self)
         self.__focus_tracker: Final = QtAdsFocusTracker(
@@ -181,10 +166,14 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         # pinning belongs to the window's own docks, and this shell's sub-docks live inside one of them
         QtAdsAutoHideButtonSuppressor(self.__dock_manager)
         self.__maximize_handler: Final = attach_maximize_handler(self.__dock_manager)
-        self.__add_sub_docks()
+        self.__tab_menus: Final = QtAdsTabContextActions(self.__dock_manager)
+        self.__roots_dock: Final = self.__add_roots_dock()
 
+        self.__new_browser_action: Final = QAction("New Table Browser", self)
+        self.__new_browser_action.setToolTip("Add a table browser over this catalog's resources.")
+        self.__rename_browser_action: Final = QAction("Rename Browser...", self)
+        self.__rename_browser_action.setToolTip("Rename the current browser.")
         self.__setup_toolbar()
-        self.__browser_ui.catalog_view.doubleClicked.connect(self.__on_row_activated)
         # selection_model() is None only before a model is set (setModel just did)
         self.__roots_selection: Final = cast(QItemSelectionModel, self.__roots_ui.roots_view.selectionModel())
         self.__roots_selection.selectionChanged.connect(self.__update_enablement)
@@ -306,17 +295,21 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         self.__release_session(keep_jobs=same_catalog)
         self.__file = file
         self.__cache = cache
+        self.__open_browsers(file)
         self.__refresh()
         self.__update_enablement()
         self.rehuco_path_changed.emit(file.path)
         return True
 
     def __release_session(self, *, keep_jobs: bool = False) -> None:
-        """Close the open cache and forget the open file.
+        """Remember the open catalog's browsers and layout, close its browsers and its cache, and forget the file.
 
         :param keep_jobs: whether to go on tracking the jobs this dock enqueued -- only right when the cache
             about to be shown is the one they write to.
         """
+        if self.__file is not None:
+            self.__remember_catalog(self.__file)
+        self.__close_browsers()
         if self.__cache is not None:
             self.__cache.close()
         self.__cache = None
@@ -327,7 +320,7 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
 
     # endregion
 
-    # region the views
+    # region the views and the browsers
 
     @property
     def roots_model(self) -> RehucoRootsModel:
@@ -335,24 +328,34 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         return self.__roots_model
 
     @property
-    def catalog_model(self) -> CatalogTableModel:
-        """The resource table's model."""
-        return self.__catalog_model
-
-    @property
     def roots_view(self) -> QTableView:
         """The roots list."""
         return self.__roots_ui.roots_view
 
     @property
-    def catalog_view(self) -> QTableView:
-        """The resource table."""
-        return self.__browser_ui.catalog_view
+    def roots_dock(self) -> QtAds.CDockWidget:
+        """The Roots sub-dock, closable and shown again by :attr:`roots_action`."""
+        return self.__roots_dock
 
     @property
-    def browser_status_bar(self) -> QStatusBar:
-        """The status bar under the resource table, which says how many resources the table shows."""
-        return self.__browser_ui.status_bar
+    def browsers(self) -> tuple[TableBrowser, ...]:
+        """Every browser, in the order they were added."""
+        return tuple(self.__browsers.values())
+
+    @property
+    def current_browser(self) -> TableBrowser | None:
+        """The browser whose sub-dock is the focus tracker's current one, or ``None`` while that is the Roots
+        list or nothing. The resource the current-resource sub-docks show is this browser's selection (#381)."""
+        current = self.__focus_tracker.current_dock
+        return None if current is None else self.__browsers.get(current)
+
+    def browser_dock(self, browser: TableBrowser) -> QtAds.CDockWidget:
+        """The sub-dock holding ``browser``.
+
+        :param browser: one of :attr:`browsers`.
+        :returns: its dock.
+        """
+        return next(dock for dock, held in self.__browsers.items() if held is browser)
 
     @property
     def scan_action(self) -> QAction:
@@ -370,17 +373,28 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         return self.__roots_ui.remove_root_action
 
     @property
+    def roots_action(self) -> QAction:
+        """Shows and hides the Roots sub-dock; checked while it is shown."""
+        return self.__roots_dock.toggleViewAction()
+
+    @property
+    def new_browser_action(self) -> QAction:
+        """Adds a table browser."""
+        return self.__new_browser_action
+
+    @property
     def rename_browser_action(self) -> QAction:
         """Renames the current browser."""
-        return self.__browser_ui.rename_browser_action
+        return self.__rename_browser_action
 
-    def ask_browser_name(self, current: str) -> str | None:
-        """Ask for a browser's new name; the one modal behind the rename, so a test replaces it per instance.
+    def ask_browser_name(self, current: str, title: str = "Rename Browser") -> str | None:
+        """Ask for a browser's name; the one modal behind a rename and a clone, so a test replaces it per instance.
 
         :param current: the name the box opens on.
+        :param title: the box's title.
         :returns: the typed name, or ``None`` if the box was cancelled.
         """
-        name, accepted = QInputDialog.getText(self, "Rename Browser", "Name:", text=current)
+        name, accepted = QInputDialog.getText(self, title, "Name:", text=current)
         return name if accepted else None
 
     def __refresh(self) -> None:
@@ -391,7 +405,6 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         """
         if self.__file is None or self.__cache is None:
             self.__roots_model.set_roots((), {})
-            self.__catalog_model.set_rows((), {})
             self.__banner.set_rows(())
             return
         roots = self.__file.roots
@@ -404,105 +417,261 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
             LOG.error("Could not read the cache of %s: %s", self.__file.path, error)
             return
         self.__roots_model.set_roots(roots, reachable)
-        self.__catalog_model.set_rows(rows, {root.root_id: root.path for root in roots})
+        root_paths = {root.root_id: root.path for root in roots}
+        for browser in self.__browsers.values():
+            browser.set_rows(rows, root_paths)
         lock_reason = self.__file.lock_reason
         self.__banner.set_rows(
             [] if lock_reason is None else [MessageBannerRow(MessageBannerSeverity.WARNING, lock_reason.message)]
         )
 
-    def __update_resource_count(self) -> None:
-        """Say in the browser's status bar how many rows the table's model holds now, and their sizes added up."""
-        model = self.__browser_ui.catalog_view.model()
-        count = model.rowCount()
-        if count == 0:
-            self.__browser_ui.status_bar.showMessage("No resources")
-            return
-        total = sum(model.index(row, 0).data(SIZE_ROLE) for row in range(count))
-        noun = "resource" if count == 1 else "resources"
-        self.__browser_ui.status_bar.showMessage(f"{count} {noun} / {humanize.naturalsize(total, gnu=True)}")
+    def __add_roots_dock(self) -> QtAds.CDockWidget:
+        """Place the Roots list on this shell's own manager, closable: hidden by its [x] and shown again by
+        :attr:`roots_action`, so closing it loses nothing.
 
-    def __add_sub_docks(self) -> None:
-        """Place the Browser in the centre and the Roots list to its left, on this shell's own manager."""
+        :returns: the Roots sub-dock.
+        """
         features = QtAds.CDockWidget.DockWidgetFeature
-        # neither is closable: closing the only things this dock exists to show would leave it empty with
-        # no control to bring them back
-        browser = QtAds.CDockWidget(self.__dock_manager, BROWSER_DOCK_TITLE)
-        browser.setObjectName(BROWSER_DOCK_NAME)
-        browser.setFeatures(features.DockWidgetFocusable | features.DockWidgetMovable)
-        browser.setWidget(self.__browser_panel)
-        self.__browser_dock = browser
-        # right-clicking the browser's tab also makes it current, so Rename reads enabled in the menu it opens
-        QtAdsTabContextActions(self.__dock_manager).add(
-            browser,
-            [self.__browser_ui.rename_browser_action],
-            lambda: self.__focus_tracker.set_current_dock(browser),
-        )
-        self.__dock_manager.addDockWidget(QtAds.CenterDockWidgetArea, browser)
-
         roots = QtAds.CDockWidget(self.__dock_manager, ROOTS_DOCK_TITLE)
         roots.setObjectName(ROOTS_DOCK_NAME)
-        roots.setFeatures(features.DockWidgetFocusable | features.DockWidgetMovable)
+        roots.setFeatures(features.DockWidgetClosable | features.DockWidgetFocusable | features.DockWidgetMovable)
         roots.setWidget(self.__roots_panel)
         self.__dock_manager.addDockWidget(QtAds.LeftDockWidgetArea, roots)
+        return roots
 
     def __setup_toolbar(self) -> None:
-        """Fill this shell's toolbar: Scan, then the two root edits, each with its themed icon."""
+        """Fill this shell's toolbar -- Scan, the two root edits, the Roots toggle, then New and Rename Browser --
+        each with its themed icon."""
         ui = self.__roots_ui
         toolbar = self.addToolBar("Root Catalog")
         toolbar.addAction(ui.scan_action)
         toolbar.addSeparator()
         toolbar.addActions([ui.add_root_action, ui.remove_root_action])
         toolbar.addSeparator()
-        toolbar.addAction(self.__browser_ui.rename_browser_action)
+        toolbar.addAction(self.roots_action)
+        toolbar.addSeparator()
+        toolbar.addActions([self.__new_browser_action, self.__rename_browser_action])
         for action, icon in (
             (ui.scan_action, SCAN_ICON),
             (ui.add_root_action, ADD_ROOT_ICON),
             (ui.remove_root_action, REMOVE_ROOT_ICON),
-            (self.__browser_ui.rename_browser_action, RENAME_BROWSER_ICON),
+            (self.roots_action, ROOTS_ICON),
+            (self.__new_browser_action, NEW_BROWSER_ICON),
+            (self.__rename_browser_action, RENAME_BROWSER_ICON),
         ):
             ActionIconThemeHandler(action, icon)
         ui.scan_action.triggered.connect(self.scan)
         ui.add_root_action.triggered.connect(self.__on_add_root)
         ui.remove_root_action.triggered.connect(self.__on_remove_root)
-        self.__browser_ui.rename_browser_action.triggered.connect(self.__on_rename_browser)
+        self.__new_browser_action.triggered.connect(self.__on_new_browser)
+        self.__rename_browser_action.triggered.connect(self.__on_rename_current_browser)
 
     def __update_enablement(self) -> None:
         """Enable Scan while a file is open, and the two root edits only while it can also be saved -- Remove
-        needing a selected root besides -- and Rename Browser only while a browser is the current sub-dock."""
+        needing a selected root besides. New Browser needs a catalog to hold it, and Rename Browser a browser to be
+        the current sub-dock, not the Roots one."""
         file = self.__file
         editable = file is not None and file.lock_reason is None
         has_root = self.__roots_model.root_at(self.__selected_row()) is not None
         self.__roots_ui.scan_action.setEnabled(file is not None)
         self.__roots_ui.add_root_action.setEnabled(editable)
         self.__roots_ui.remove_root_action.setEnabled(editable and has_root)
-        # a browser's own action: only while a browser is the current sub-dock, not the Roots one
-        self.__browser_ui.rename_browser_action.setEnabled(self.__focus_tracker.current_dock is self.__browser_dock)
+        self.__new_browser_action.setEnabled(file is not None)
+        self.__rename_browser_action.setEnabled(self.current_browser is not None)
 
     def __selected_row(self) -> int:
         """The selected root's row, or ``-1`` while none is selected."""
         rows = self.__roots_selection.selectedRows()
         return rows[0].row() if rows else -1
 
-    def __on_rename_browser(self) -> None:
-        """Rename the current browser: ask for a name and set the dock's ``windowTitle``, which is all a name
-        is. Never its ``objectName``: ``CDockManager`` keys its registry by the name a dock was added under,
-        and a changed one dangles (#364). An empty or unchanged name is a cancel. Kept for the session only,
-        until browsers are saved with the catalog (#396).
+    # endregion
+
+    # region the browsers
+
+    def __open_browsers(self, file: RehucoFile) -> None:
+        """Build ``file``'s browsers as the catalog remembered them -- one default one if it remembered none --
+        and put every sub-dock back where it sat.
+
+        Every browser exists *before* the layout is restored: QtAds restores by dock object name and creates none.
+
+        :param file: the catalog just opened.
         """
-        dock = self.__browser_dock
-        name = self.ask_browser_name(dock.windowTitle())
+        state = self.__catalog_store.load(file.rehuco_id)
+        for browser in [TableBrowser(saved) for saved in state.browsers] or [TableBrowser()]:
+            self.__add_browser(browser)
+        restored = bool(state.layout) and bool(self.__dock_manager.restoreState(QByteArray(state.layout)))
+        # a browser the layout does not know is left closed, or in an area the restore took out of the manager --
+        # shown there it would be invisible, and every browser added beside it too. It is placed again instead
+        for dock in [dock for dock in self.__browsers if not self.__is_placed(dock)]:
+            remove_dock_widget(self.__dock_manager, dock)
+            self.__place(dock)
+        if not restored:
+            self.__roots_dock.toggleView(True)
+        if state.roots_header:
+            self.__roots_ui.roots_view.horizontalHeader().restoreState(QByteArray(state.roots_header))
+
+    def __remember_catalog(self, file: RehucoFile) -> None:
+        """Write ``file``'s browsers, and where every sub-dock sits, to the catalog store.
+
+        :param file: the catalog being left.
+        """
+        with self.__maximize_handler.unmaximized():
+            layout = bytes(self.__dock_manager.saveState().data())
+        roots_header = bytes(self.__roots_ui.roots_view.horizontalHeader().saveState().data())
+        browsers = [browser.state() for browser in self.__browsers.values()]
+        self.__catalog_store.save(file.rehuco_id, CatalogState(browsers, layout, roots_header))
+
+    def __close_browsers(self) -> None:
+        """Remove every browser's sub-dock, leaving the Roots list alone on the manager."""
+        for dock in list(self.__browsers):
+            self.__remove_browser(dock)
+
+    def __add_browser(self, browser: TableBrowser, *, beside: QtAds.CDockWidget | None = None) -> QtAds.CDockWidget:
+        """Put ``browser`` in a closable sub-dock named by its id, with its own actions on the dock's title bar and
+        tab menu.
+
+        :param browser: the browser to show.
+        :param beside: the sub-dock whose tab strip to join; see :meth:`__place`.
+        :returns: its sub-dock.
+        """
+        features = QtAds.CDockWidget.DockWidgetFeature
+        dock = QtAds.CDockWidget(self.__dock_manager, browser.name)
+        dock.setObjectName(str(browser.browser_id))
+        # [x] deletes the browser, which is this shell's to do: QtAds would only hide it
+        dock.setFeatures(
+            features.CustomCloseHandling
+            | features.DockWidgetClosable
+            | features.DockWidgetFocusable
+            | features.DockWidgetMovable
+        )
+        dock.setWidget(browser)
+        dock.setTitleBarActions(self.__browser_actions(dock))
+        self.__place(dock, beside)
+        browser.row_activated.connect(self.open_requested)
+        dock.closeRequested.connect(lambda: self.__close_browser(dock))
+        self.__browsers[dock] = browser  # pylint: disable=unsupported-assignment-operation
+        return dock
+
+    def __place(self, dock: QtAds.CDockWidget, beside: QtAds.CDockWidget | None = None) -> None:
+        """Add a browser's sub-dock to the manager: into the tab strip of ``beside``, else of the first browser that
+        is on screen, else to the right of the Roots list; and give its tab its actions.
+
+        :param dock: the browser's sub-dock, not on the manager.
+        :param beside: the sub-dock whose tab strip to join.
+        """
+        anchor = (
+            beside
+            if beside is not None
+            else next((other for other in self.__browsers if self.__is_placed(other)), None)
+        )
+        area = None if anchor is None else anchor.dockAreaWidget()
+        if area is not None:
+            self.__dock_manager.addDockWidget(QtAds.CenterDockWidgetArea, dock, area)
+        else:
+            self.__dock_manager.addDockWidget(QtAds.RightDockWidgetArea, dock)
+        self.__tab_menus.add(dock, dock.titleBarActions(), lambda: self.__focus_tracker.set_current_dock(dock))
+
+    def __is_placed(self, dock: QtAds.CDockWidget) -> bool:
+        """Whether ``dock`` is open in an area the manager -- or a floating window of it -- shows.
+
+        :param dock: a browser's sub-dock.
+        :returns: ``False`` for a dock closed, or left in an area a layout restore took off the manager.
+        """
+        if dock.isClosed():
+            return False
+        return dock.isFloating() or dock.dockAreaWidget() in self.__dock_manager.openedDockAreas()
+
+    def __browser_actions(self, dock: QtAds.CDockWidget) -> list[QAction]:
+        """Rename and Clone for ``dock``'s browser, bound to that dock whichever one is current. Deleting is its [x].
+
+        :param dock: the browser's sub-dock.
+        :returns: the actions, in menu order.
+        """
+        rename = QAction("Rename...", dock)
+        rename.triggered.connect(lambda: self.__rename_browser(dock))
+        clone = QAction("Clone...", dock)
+        clone.triggered.connect(lambda: self.__clone_browser(dock))
+        for action, icon in ((rename, RENAME_BROWSER_ICON), (clone, CLONE_BROWSER_ICON)):
+            ActionIconThemeHandler(action, icon)
+        return [rename, clone]
+
+    def __remove_browser(self, dock: QtAds.CDockWidget) -> None:
+        """Take ``dock`` off the manager and delete it, with its browser.
+
+        :param dock: the browser's sub-dock.
+        """
+        self.__browsers.pop(dock, None)
+        remove_dock_widget(self.__dock_manager, dock)
+        dock.deleteLater()
+
+    def __on_new_browser(self) -> None:
+        """Add a default table browser and make it current."""
+        if self.__file is None:
+            return
+        browser = TableBrowser()
+        dock = self.__add_browser(browser)
+        self.__fill(browser)
+        self.__focus_tracker.set_current_dock(dock)
+
+    def __on_rename_current_browser(self) -> None:
+        """Rename the current browser, if one is."""
+        current = self.__focus_tracker.current_dock
+        if current in self.__browsers:
+            self.__rename_browser(cast(QtAds.CDockWidget, current))
+
+    def __rename_browser(self, dock: QtAds.CDockWidget) -> None:
+        """Ask for a new name for ``dock``'s browser and set it: on the dock's ``windowTitle`` and the browser.
+        Never the dock's ``objectName`` -- ``CDockManager`` keys its registry by the name a dock was added under,
+        and a changed one dangles (#364). An empty or unchanged name is a cancel.
+
+        :param dock: the browser's sub-dock.
+        """
+        browser = self.__browsers[dock]
+        name = self.ask_browser_name(browser.name)
         name = name.strip() if name is not None else ""
-        if name and name != dock.windowTitle():
+        if name and name != browser.name:
+            browser.name = name
             dock.setWindowTitle(name)
 
-    def __on_row_activated(self, index: QModelIndex) -> None:
-        """Ask for the double-clicked resource to be opened, by its absolute path.
+    def __clone_browser(self, dock: QtAds.CDockWidget) -> None:
+        """Ask for a name and add a copy of ``dock``'s browser -- the same filter and columns -- beside it.
 
-        :param index: the activated cell.
+        :param dock: the sub-dock of the browser to copy.
         """
-        path = self.__catalog_model.absolute_path(index.row())
-        if path is not None:
-            self.open_requested.emit(path)
+        source = self.__browsers[dock]
+        name = self.ask_browser_name(f"{source.name} copy", "Clone Browser")
+        name = name.strip() if name is not None else ""
+        if not name:
+            return
+        clone = TableBrowser(source.clone_state(name))
+        clone_dock = self.__add_browser(clone, beside=dock)
+        self.__fill(clone)
+        self.__focus_tracker.set_current_dock(clone_dock)
+
+    def __close_browser(self, dock: QtAds.CDockWidget) -> None:
+        """Delete ``dock``'s browser, as its [x] asks: a browser is only a view, so nothing is asked first.
+
+        :param dock: the browser's sub-dock.
+        """
+        if dock in self.__browsers:
+            self.__remove_browser(dock)
+            self.__update_enablement()
+
+    def __fill(self, browser: TableBrowser) -> None:
+        """Give a browser added after the rows were read the rows the others show.
+
+        :param browser: the new browser.
+        """
+        file, cache = self.__file, self.__cache
+        if file is None or cache is None:
+            return
+        try:
+            wanted = {root.root_id for root in file.roots}
+            rows = [row for row in cache.rows() if row.root_id in wanted]
+        except sqlite3.Error as error:
+            LOG.error("Could not read the cache of %s: %s", file.path, error)
+            return
+        browser.set_rows(rows, {root.root_id: root.path for root in file.roots})
 
     # endregion
 
@@ -728,67 +897,5 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
             LOG.error("Could not update the cache of %s: %s", self.rehuco_path, error)
         if changed:
             self.__refresh()
-
-    # endregion
-
-    # region layout
-
-    def save_state(self) -> bytes:
-        """Serialize this shell's nested dock layout and its two tables' header states.
-
-        :returns: cbor2-encoded state, suitable for :meth:`restore_state`.
-        """
-        with self.__maximize_handler.unmaximized():
-            dock_manager_state = bytes(self.__dock_manager.saveState().data())
-        return cbor2.dumps(
-            {
-                STATE_VERSION_KEY: STATE_VERSION,
-                STATE_DOCK_MANAGER_KEY: dock_manager_state,
-                STATE_CATALOG_HEADER_KEY: bytes(self.__browser_ui.catalog_view.horizontalHeader().saveState().data()),
-                STATE_ROOTS_HEADER_KEY: bytes(self.__roots_ui.roots_view.horizontalHeader().saveState().data()),
-            }
-        )
-
-    def restore_state(self, state: bytes) -> bool:
-        """Restore a layout previously captured by :meth:`save_state`.
-
-        The header states are restored first and whatever the version says: column widths, order and sort are one
-        table's own choices, and Qt itself refuses a header state that does not fit. The browser is then sorted as
-        its restored header says.
-
-        :param state: the cbor2-encoded state to restore.
-        :returns: ``True`` if the nested dock manager's state was restored; ``False`` if ``state`` was
-            empty, malformed, not in the expected shape, or of an incompatible :data:`STATE_VERSION` (in
-            which case the built default layout is kept).
-        """
-        try:
-            values: Any = cbor2.loads(state)
-        except cbor2.CBORDecodeError:
-            return False
-        if not isinstance(values, dict):
-            return False
-        self.__restore_headers(values)
-        if values.get(STATE_VERSION_KEY) != STATE_VERSION:
-            return False
-        dock_manager_state = values.get(STATE_DOCK_MANAGER_KEY, b"")
-        if not isinstance(dock_manager_state, bytes) or not dock_manager_state:
-            return False
-        return bool(self.__dock_manager.restoreState(QByteArray(dock_manager_state)))
-
-    def __restore_headers(self, values: dict[Any, Any]) -> None:
-        """Put back both tables' header states from a saved blob, each only when present and well-formed, then
-        sort the browser as its header now says.
-
-        :param values: the decoded blob.
-        """
-        for key, view in (
-            (STATE_CATALOG_HEADER_KEY, self.__browser_ui.catalog_view),
-            (STATE_ROOTS_HEADER_KEY, self.__roots_ui.roots_view),
-        ):
-            header_state = values.get(key)
-            if isinstance(header_state, bytes) and header_state:
-                view.horizontalHeader().restoreState(QByteArray(header_state))
-        header = self.__browser_ui.catalog_view.horizontalHeader()
-        self.__catalog_model.sort(header.sortIndicatorSection(), header.sortIndicatorOrder())
 
     # endregion

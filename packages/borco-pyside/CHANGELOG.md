@@ -11,6 +11,8 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ### Added
 
+- `QtAdsTabContextActions`, which puts a dock's own actions at the top of its tab's right-click menu, above QtAds'
+  *Detach* and *Close* and set apart by a separator, for the docks it is given and no others.
 - `RowBandDelegate`, which paints a selected row as one band with padded text instead of a box per cell.
   `ItemListEditor` installs it on its view.
 - `borco_pyside.shortcuts`: shortcuts as declared `Command`s with a scope and an optional focus group, a

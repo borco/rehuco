@@ -20,6 +20,11 @@ released becomes the body of the GitHub Release, so each entry is written to be 
   found into a `.rehudb` cache in the local cache folder, and a table lists what the cache holds. A rescan reads
   only the files that changed since the last one. Double-clicking
   a row opens that resource in Documents. A `.rehuco` written by a newer build opens read-only.
+- **Table browsers** in the Root Catalog panel: add as many as you like with **New Table Browser**, each with its
+  own name, columns and sort. **Rename** and **Clone** (the copy starts with the same columns) are on the browser's
+  title bar and its tab's right-click menu, and the toolbar renames the current one; the [x] deletes a browser. The Roots list can now be hidden with its [x] and shown with the toolbar's **Roots** toggle. Each
+  catalog remembers its browsers and where its sub-docks sit between runs, on this machine only. New icons for the
+  roots and browser actions.
 - A **Shortcuts** page in Settings: search every command by name, description or key, click a key and
   press its replacement (the numeric keypad and a lone Esc included), give a command several keys, and
   choose where its keys reach. Recording a key another command uses asks whether to reassign it. The table

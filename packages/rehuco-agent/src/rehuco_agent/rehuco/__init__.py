@@ -5,5 +5,6 @@
 from .catalog_table_model import CatalogTableModel
 from .rehuco_dock import RehucoDock
 from .rehuco_roots_model import RehucoRootsModel
+from .table_browser import TableBrowser
 
-__all__ = ["CatalogTableModel", "RehucoDock", "RehucoRootsModel"]
+__all__ = ["CatalogTableModel", "RehucoDock", "RehucoRootsModel", "TableBrowser"]

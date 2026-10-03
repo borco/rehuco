@@ -4,7 +4,7 @@ from collections.abc import Iterator
 from unittest.mock import MagicMock
 
 import PySide6QtAds as QtAds
-from borco_pyside.qtads import QtAdsTabContextActions
+from borco_pyside.qtads import QtAdsTabContextActions, remove_dock_widget
 from PySide6.QtCore import QPoint
 from PySide6.QtGui import QAction, QContextMenuEvent
 from PySide6.QtWidgets import QApplication, QMainWindow, QMenu, QWidget
@@ -123,3 +123,58 @@ def test_another_docks_tab_keeps_qtads_own_menu(manager: QtAds.CDockManager, hel
     event = QContextMenuEvent(QContextMenuEvent.Reason.Mouse, QPoint(5, 5), QPoint(5, 5))
 
     assert helper.eventFilter(other.tabWidget(), event) is False
+
+
+def test_a_removed_dock_is_forgotten(
+    manager: QtAds.CDockManager, helper: QtAdsTabContextActions, extended: QtAds.CDockWidget
+) -> None:
+    """Once its dock leaves the manager, the helper holds nothing for it and its tab is no longer filtered.
+
+    **Test steps:**
+
+    * remove the registered dock from the manager
+    * verify the helper no longer consumes a context-menu event sent to the tab it had
+    """
+    tab = extended.tabWidget()
+    remove_dock_widget(manager, extended)
+    extended.deleteLater()
+    event = QContextMenuEvent(QContextMenuEvent.Reason.Mouse, QPoint(5, 5), QPoint(5, 5))
+
+    assert helper.eventFilter(tab, event) is False
+
+
+def test_a_dock_that_was_never_added_leaves_the_helper_alone_when_removed(
+    manager: QtAds.CDockManager, helper: QtAdsTabContextActions, extended: QtAds.CDockWidget
+) -> None:
+    """Removing a dock the helper never held is not an error, and does not disturb the ones it holds.
+
+    **Test steps:**
+
+    * add and remove a dock that was never registered
+    * verify the registered dock's tab is still filtered
+    """
+    other = add_dock(manager, "other")
+    remove_dock_widget(manager, other)
+    other.deleteLater()
+    event = QContextMenuEvent(QContextMenuEvent.Reason.Mouse, QPoint(5, 5), QPoint(5, 5))
+
+    assert helper.eventFilter(extended.tabWidget(), event) is True
+
+
+def test_a_right_click_without_an_on_open_callback_shows_the_menu(
+    mocker: MockerFixture, manager: QtAds.CDockManager, action: QAction
+) -> None:
+    """``on_open`` is optional.
+
+    **Test steps:**
+
+    * add a dock with no callback, capture ``QMenu.popup`` and right-click its tab
+    * verify the menu was popped up
+    """
+    dock = add_dock(manager, "plain")
+    QtAdsTabContextActions(manager).add(dock, [action])
+    popup = mocker.patch.object(QMenu, "popup")
+
+    right_click(dock)
+
+    popup.assert_called_once()

@@ -19,9 +19,8 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any, Final
 from unittest.mock import MagicMock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
-import cbor2
 import PySide6QtAds as QtAds
 from borco_pyside.qtads import tab_close_button, tab_label, tab_maximize_button
 from borco_pyside.widgets import MessageBanner, RowBandDelegate
@@ -31,15 +30,9 @@ from PySide6.QtWidgets import QApplication, QMenu
 from pytest import LogCaptureFixture, fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.rehuco import RehucoDock
+from rehuco_agent.rehuco import RehucoDock, TableBrowser
 from rehuco_agent.rehuco.catalog_table_model import TITLE_COLUMN
-from rehuco_agent.rehuco.rehuco_dock import (
-    BROWSER_DOCK_NAME,
-    ROOTS_DOCK_NAME,
-    STATE_DOCK_MANAGER_KEY,
-    STATE_VERSION,
-    STATE_VERSION_KEY,
-)
+from rehuco_agent.rehuco.rehuco_dock import ROOTS_DOCK_NAME
 from rehuco_agent.resource_events import ResourceEvents
 from rehuco_core import (
     FINISHED_JOB_STATES,
@@ -53,6 +46,8 @@ from rehuco_core import (
     TaskJobBase,
     TaskQueue,
 )
+
+from rehuco_agent_tests.conftest import MemoryCatalogStateStore
 
 REHUCO_PATH: Final = Path("/fake/home.rehuco")
 OTHER_PATH: Final = Path("/fake/other.rehuco")
@@ -393,7 +388,7 @@ def test_closing_empties_the_dock(qtbot: QtBot, dock: RehucoDock, served: Any) -
     **Test steps:**
 
     * open a catalog and close it while waiting on the path signal
-    * verify the signal carried ``None``, nothing is open, both tables are empty and Scan is off
+    * verify the signal carried ``None``, nothing is open, the roots are empty, no browser is left and Scan is off
     """
     del served
     dock.open_rehuco(REHUCO_PATH)
@@ -404,7 +399,7 @@ def test_closing_empties_the_dock(qtbot: QtBot, dock: RehucoDock, served: Any) -
     assert closed.args == [None]
     assert dock.rehuco_path is None
     assert dock.roots_model.rowCount() == 0
-    assert dock.catalog_model.rowCount() == 0
+    assert not dock.browsers
     assert not dock.scan_action.isEnabled()
 
 
@@ -538,11 +533,11 @@ def test_the_table_is_read_once_when_the_last_scan_ends(
     """
     scan_finding(mocker, {TUTORIALS: (tutorial_record(),)})
     dock.open_rehuco(REHUCO_PATH)
-    set_rows = mocker.spy(dock.catalog_model, "set_rows")
+    set_rows = mocker.spy(TableBrowser, "set_rows")
 
     dock.scan_action.trigger()
 
-    qtbot.waitUntil(lambda: dock.catalog_model.rowCount() == 1, timeout=WAIT_TIMEOUT_MS)
+    qtbot.waitUntil(lambda: first_browser(dock).model.rowCount() == 1, timeout=WAIT_TIMEOUT_MS)
     wait_for_jobs(qtbot, queue)
     qtbot.wait(50)
     assert set_rows.call_count == 1
@@ -568,7 +563,7 @@ def test_reopening_the_open_catalog_keeps_its_running_scans_tracked(
     assert dock.open_rehuco(REHUCO_PATH)
     held.let_finish()
 
-    qtbot.waitUntil(lambda: dock.catalog_model.rowCount() == 1, timeout=WAIT_TIMEOUT_MS)
+    qtbot.waitUntil(lambda: first_browser(dock).model.rowCount() == 1, timeout=WAIT_TIMEOUT_MS)
     wait_for_jobs(qtbot, queue)
 
 
@@ -587,7 +582,7 @@ def test_opening_another_catalog_forgets_the_old_ones_scans(
     scan_finding(mocker, {TUTORIALS: (tutorial_record(),)})
     dock.open_rehuco(REHUCO_PATH)
     dock.scan_action.trigger()
-    set_rows = mocker.spy(dock.catalog_model, "set_rows")
+    set_rows = mocker.spy(TableBrowser, "set_rows")
     mocker.patch.object(Path, "read_text", return_value=json.dumps({**HOME, "id": str(uuid4())}))
     assert dock.open_rehuco(OTHER_PATH)
     assert set_rows.call_count == 1
@@ -597,7 +592,7 @@ def test_opening_another_catalog_forgets_the_old_ones_scans(
 
     qtbot.wait(50)
     assert set_rows.call_count == 1
-    assert dock.catalog_model.rowCount() == 0
+    assert first_browser(dock).model.rowCount() == 0
 
 
 def test_what_a_scan_finds_is_listed_once_it_ends(
@@ -613,13 +608,13 @@ def test_what_a_scan_finds_is_listed_once_it_ends(
     del served
     scan_finding(mocker, {TUTORIALS: (tutorial_record(),)})
     dock.open_rehuco(REHUCO_PATH)
-    assert dock.catalog_model.rowCount() == 0
+    assert first_browser(dock).model.rowCount() == 0
 
     dock.scan_action.trigger()
 
-    qtbot.waitUntil(lambda: dock.catalog_model.rowCount() == 1, timeout=WAIT_TIMEOUT_MS)
+    qtbot.waitUntil(lambda: first_browser(dock).model.rowCount() == 1, timeout=WAIT_TIMEOUT_MS)
     wait_for_jobs(qtbot, queue)
-    model = dock.catalog_model
+    model = first_browser(dock).model
     assert [model.index(0, column).data() for column in range(4)] == [
         "",
         "Python",
@@ -642,40 +637,18 @@ def test_a_double_click_opens_the_resource_by_its_absolute_path(
     scan_finding(mocker, {TUTORIALS: (tutorial_record(),)})
     dock.open_rehuco(REHUCO_PATH)
     dock.scan_action.trigger()
-    qtbot.waitUntil(lambda: dock.catalog_model.rowCount() == 1, timeout=WAIT_TIMEOUT_MS)
+    qtbot.waitUntil(lambda: first_browser(dock).model.rowCount() == 1, timeout=WAIT_TIMEOUT_MS)
     wait_for_jobs(qtbot, queue)
 
     with qtbot.waitSignal(dock.open_requested) as requested:
-        dock.catalog_view.doubleClicked.emit(dock.catalog_model.index(0, 0))
+        first_browser(dock).view.doubleClicked.emit(first_browser(dock).model.index(0, 0))
 
     assert requested.args == [TUTORIALS / "python/info.rehu"]
-
-
-def test_a_row_whose_root_is_gone_has_no_path(dock: RehucoDock) -> None:
-    """Nothing is opened for a double-click on a row the model no longer holds.
-
-    **Test steps:**
-
-    * ask the empty model for row 0's path
-    * verify there is none
-    """
-    assert dock.catalog_model.absolute_path(0) is None
 
 
 # endregion
 
 # region The browser's status bar
-
-
-def test_the_status_bar_says_no_resources_with_nothing_open(dock: RehucoDock) -> None:
-    """An empty table is said so, not left blank.
-
-    **Test steps:**
-
-    * read the browser's status bar with nothing open
-    * verify it reads ``No resources``
-    """
-    assert dock.browser_status_bar.currentMessage() == "No resources"
 
 
 @mark.usefixtures("served")
@@ -688,26 +661,22 @@ def test_the_status_bar_counts_the_rows_the_table_shows(
 
     * open a catalog and scan one 1.5 KiB record in; verify ``1 resource / 1.5K``
     * scan again, now finding a second 2 KiB record; verify ``2 resources / 3.5K``
-    * close the catalog; verify ``No resources``
     """
     scan_finding(mocker, {TUTORIALS: (tutorial_record(),)})
     dock.open_rehuco(REHUCO_PATH)
     dock.scan_action.trigger()
-    qtbot.waitUntil(lambda: dock.catalog_model.rowCount() == 1, timeout=WAIT_TIMEOUT_MS)
+    qtbot.waitUntil(lambda: first_browser(dock).model.rowCount() == 1, timeout=WAIT_TIMEOUT_MS)
     wait_for_jobs(qtbot, queue)
-    assert dock.browser_status_bar.currentMessage() == "1 resource / 1.5K"
+    assert first_browser(dock).status_bar.currentMessage() == "1 resource / 1.5K"
 
     second = CatalogRecord(
         "go/info.rehu", RecordKind.REHU, title="Go", type="tutorial", current_size=2048, content_hash="1"
     )
     scan_finding(mocker, {TUTORIALS: (tutorial_record(), second)})
     dock.scan_action.trigger()
-    qtbot.waitUntil(lambda: dock.catalog_model.rowCount() == 2, timeout=WAIT_TIMEOUT_MS)
+    qtbot.waitUntil(lambda: first_browser(dock).model.rowCount() == 2, timeout=WAIT_TIMEOUT_MS)
     wait_for_jobs(qtbot, queue)
-    assert dock.browser_status_bar.currentMessage() == "2 resources / 3.5K"
-
-    dock.close_rehuco()
-    assert dock.browser_status_bar.currentMessage() == "No resources"
+    assert first_browser(dock).status_bar.currentMessage() == "2 resources / 3.5K"
 
 
 # endregion
@@ -861,13 +830,13 @@ def test_a_removed_roots_rows_leave_the_table_at_once(
     scan_finding(mocker, {TUTORIALS: (tutorial_record(),)})
     dock.open_rehuco(REHUCO_PATH)
     dock.scan_action.trigger()
-    qtbot.waitUntil(lambda: dock.catalog_model.rowCount() == 1, timeout=WAIT_TIMEOUT_MS)
+    qtbot.waitUntil(lambda: first_browser(dock).model.rowCount() == 1, timeout=WAIT_TIMEOUT_MS)
     wait_for_jobs(qtbot, queue)
     dock.roots_view.selectRow(0)
 
     dock.remove_root_action.trigger()
 
-    assert dock.catalog_model.rowCount() == 0
+    assert first_browser(dock).model.rowCount() == 0
     wait_for_jobs(qtbot, queue)
 
 
@@ -919,6 +888,36 @@ def test_an_editable_file_shows_no_banner(dock: RehucoDock, served: Any) -> None
 # region Layout
 
 
+def first_browser(dock: RehucoDock) -> TableBrowser:
+    """The dock's first browser, taken through a local: ``pylint_qt`` reads ``dock.browsers[0]`` as a subscripted
+    signal.
+
+    :param dock: the Root Catalog dock, with a catalog open.
+    :returns: its first browser.
+    """
+    browsers = dock.browsers
+    return browsers[0]
+
+
+def sub_docks(dock: RehucoDock) -> dict[str, QtAds.CDockWidget]:
+    """Every sub-dock the shell holds, by object name: ``roots`` and each browser's id.
+
+    :param dock: the Root Catalog dock.
+    :returns: the sub-docks.
+    """
+    return {widget.objectName(): widget for widget in dock.findChildren(QtAds.CDockWidget)}
+
+
+def make_current(qtbot: QtBot, widget: QtAds.CDockWidget) -> None:
+    """Make ``widget`` the focus tracker's current sub-dock the way a user does, by clicking its tab title.
+
+    :param qtbot: the Qt test driver.
+    :param widget: the sub-dock to make current.
+    """
+    qtbot.mouseClick(tab_label(widget), Qt.MouseButton.LeftButton)
+
+
+@mark.usefixtures("served")
 def test_the_sub_dock_tabs_keep_their_buttons_small_before_the_dock_is_ever_shown(
     qtbot: QtBot, dock: RehucoDock
 ) -> None:
@@ -927,15 +926,13 @@ def test_the_sub_dock_tabs_keep_their_buttons_small_before_the_dock_is_ever_show
 
     **Test steps:**
 
-    * build the dock without showing it
-    * wait for both sub-docks' maximize buttons to appear
+    * open a catalog without showing the dock
+    * wait for the Roots and the browser sub-docks' maximize buttons to appear
     * verify neither they nor the close buttons are taller than a couple of text lines
     """
-    manager = dock.findChild(QtAds.CDockManager)
-    assert manager is not None
-    for name in (ROOTS_DOCK_NAME, BROWSER_DOCK_NAME):
-        sub_dock = manager.findDockWidget(name)
-        assert sub_dock is not None
+    dock.open_rehuco(REHUCO_PATH)
+    docks = sub_docks(dock)
+    for sub_dock in (docks[ROOTS_DOCK_NAME], dock.browser_dock(first_browser(dock))):
         qtbot.waitUntil(lambda sub_dock=sub_dock: tab_maximize_button(sub_dock) is not None, timeout=WAIT_TIMEOUT_MS)
         maximize = tab_maximize_button(sub_dock)
         close = tab_close_button(sub_dock)
@@ -947,113 +944,424 @@ def test_the_sub_dock_tabs_keep_their_buttons_small_before_the_dock_is_ever_show
         assert close.height() <= limit
 
 
+@mark.usefixtures("served")
 def test_both_tables_paint_rows_as_bands_with_no_grid(dock: RehucoDock) -> None:
     """The roots and the browser look like every other table in the app: one band per selected row, no grid.
 
     **Test steps:**
 
-    * read both views' delegate, grid and word wrap
+    * open a catalog and read both views' delegate, grid and word wrap
     * verify the row band delegate, no grid, no wrapping
     """
-    for view in (dock.roots_view, dock.catalog_view):
+    dock.open_rehuco(REHUCO_PATH)
+
+    for view in (dock.roots_view, first_browser(dock).view):
         assert isinstance(view.itemDelegate(), RowBandDelegate)
         assert not view.showGrid()
         assert not view.wordWrap()
 
 
-def test_the_browser_starts_unsorted_but_sortable(dock: RehucoDock) -> None:
+@mark.usefixtures("served")
+def test_a_browser_starts_unsorted_but_sortable(dock: RehucoDock) -> None:
     """No arrow on a column until one is clicked, because the rows start in the cache's order.
 
     **Test steps:**
 
-    * read the browser's sorting switch and sort indicator
+    * open a catalog and read the browser's sorting switch and sort indicator
     * verify sorting is on and no column is marked
     """
-    assert dock.catalog_view.isSortingEnabled()
-    assert dock.catalog_view.horizontalHeader().sortIndicatorSection() == -1
+    dock.open_rehuco(REHUCO_PATH)
+
+    assert first_browser(dock).view.isSortingEnabled()
+    assert first_browser(dock).view.horizontalHeader().sortIndicatorSection() == -1
 
 
-@mark.usefixtures("database")
-def test_column_widths_and_the_sort_survive_a_layout_round_trip(
-    mocker: MockerFixture, qtbot: QtBot, queue: TaskQueue
-) -> None:
-    """What a reader set on the tables comes back on the next start: widths, and the browser's sort.
+@mark.usefixtures("served")
+def test_column_widths_and_the_sort_survive_closing_and_reopening(dock: RehucoDock) -> None:
+    """What a reader set on the tables comes back the next time the catalog is opened: widths, and the browser's
+    sort.
 
     **Test steps:**
 
-    * widen a column on each table and sort the browser by title, descending, then save
-    * restore into a fresh dock
-    * verify both widths and the sort indicator, and that the model sorts as the header says
+    * widen a column on each table, sort the browser by title descending, then close the catalog
+    * open it again
+    * verify both widths and the sort indicator
     """
-    first = RehucoDock(queue)
-    qtbot.addWidget(first)
-    first.roots_view.horizontalHeader().resizeSection(0, 211)
-    first.catalog_view.horizontalHeader().resizeSection(0, 233)
-    first.catalog_view.sortByColumn(TITLE_COLUMN, Qt.SortOrder.DescendingOrder)
-    saved = first.save_state()
-    first.detach()
+    dock.open_rehuco(REHUCO_PATH)
+    dock.roots_view.horizontalHeader().resizeSection(0, 211)
+    first_browser(dock).view.horizontalHeader().resizeSection(0, 233)
+    first_browser(dock).view.sortByColumn(TITLE_COLUMN, Qt.SortOrder.DescendingOrder)
+    dock.close_rehuco()
 
-    second = RehucoDock(queue)
-    qtbot.addWidget(second)
-    sort = mocker.spy(second.catalog_model, "sort")
+    dock.open_rehuco(REHUCO_PATH)
 
-    assert second.restore_state(saved)
-
-    header = second.catalog_view.horizontalHeader()
-    assert second.roots_view.horizontalHeader().sectionSize(0) == 211
+    header = first_browser(dock).view.horizontalHeader()
+    assert dock.roots_view.horizontalHeader().sectionSize(0) == 211
     assert header.sectionSize(0) == 233
     assert (header.sortIndicatorSection(), header.sortIndicatorOrder()) == (TITLE_COLUMN, Qt.SortOrder.DescendingOrder)
-    sort.assert_called_with(TITLE_COLUMN, Qt.SortOrder.DescendingOrder)
-    second.detach()
 
 
-def test_the_layout_round_trips(dock: RehucoDock) -> None:
-    """What ``save_state`` writes, ``restore_state`` takes back.
-
-    **Test steps:**
-
-    * save the layout and restore it
-    * verify the restore succeeded
-    """
-    assert dock.restore_state(dock.save_state())
-
-
-def test_a_layout_of_another_version_is_ignored(dock: RehucoDock) -> None:
-    """The built default stays, since an old layout would hide the current sub-docks.
+@mark.usefixtures("served")
+def test_the_layout_comes_back_with_the_catalog(dock: RehucoDock) -> None:
+    """Where the sub-docks sit is remembered per catalog: a Roots list hidden by its [x] stays hidden.
 
     **Test steps:**
 
-    * save the layout and bump its version
-    * verify the restore refuses it
+    * open a catalog and hide the Roots list
+    * close the catalog and open it again
+    * verify the Roots list is still hidden and the browser still shown
     """
-    state = cbor2.loads(dock.save_state())
-    state[STATE_VERSION_KEY] = STATE_VERSION + 1
+    dock.open_rehuco(REHUCO_PATH)
+    dock.roots_dock.requestCloseDockWidget()
+    dock.close_rehuco()
 
-    assert not dock.restore_state(cbor2.dumps(state))
+    dock.open_rehuco(REHUCO_PATH)
+
+    assert dock.roots_dock.isClosed()
+    assert not dock.browser_dock(first_browser(dock)).isClosed()
 
 
-def test_a_layout_with_no_dock_state_is_ignored(dock: RehucoDock) -> None:
-    """A blob of the right version that holds nothing restores nothing.
+def test_a_catalog_with_no_remembered_layout_shows_the_roots_list(served: Any, dock: RehucoDock) -> None:
+    """A catalog never seen before opens with the Roots list shown, whatever the one before it did.
 
     **Test steps:**
 
-    * restore a current-version blob with empty dock state
-    * verify it is refused
+    * open a catalog, hide the Roots list and open another catalog
+    * verify the Roots list is shown again
     """
-    assert not dock.restore_state(cbor2.dumps({STATE_VERSION_KEY: STATE_VERSION, STATE_DOCK_MANAGER_KEY: b""}))
+    dock.open_rehuco(REHUCO_PATH)
+    dock.roots_dock.requestCloseDockWidget()
+    served["id"] = str(uuid4())
+
+    dock.open_rehuco(OTHER_PATH)
+
+    assert not dock.roots_dock.isClosed()
 
 
-def test_garbage_and_empty_layouts_are_ignored(dock: RehucoDock) -> None:
-    """Nothing a settings file holds can raise from here.
+# endregion
+
+# region Browsers (#396)
+
+
+def test_there_is_no_browser_until_a_catalog_is_open(dock: RehucoDock) -> None:
+    """Browsers belong to a catalog, so none exists -- and none can be added -- without one.
 
     **Test steps:**
 
-    * restore empty bytes, invalid CBOR and a CBOR list
-    * verify each is refused
+    * read the browsers and the New Browser action of a dock with nothing open
+    * verify there are none and the action is disabled
     """
-    assert not dock.restore_state(b"")
-    assert not dock.restore_state(b"\xff\xff")
-    assert not dock.restore_state(cbor2.dumps([1, 2]))
+    assert not dock.browsers
+    assert not dock.new_browser_action.isEnabled()
+
+
+@mark.usefixtures("served")
+def test_a_catalog_with_no_remembered_browsers_opens_one_default_browser(dock: RehucoDock) -> None:
+    """The first time a catalog is opened it shows one browser, named as a new one is.
+
+    **Test steps:**
+
+    * open a catalog the store knows nothing about
+    * verify one browser named "Browser", whose sub-dock is named by its id
+    """
+    dock.open_rehuco(REHUCO_PATH)
+
+    assert [browser.name for browser in dock.browsers] == ["Browser"]
+    assert str(first_browser(dock).browser_id) in sub_docks(dock)
+    assert dock.new_browser_action.isEnabled()
+
+
+@mark.usefixtures("served")
+def test_new_browser_adds_a_browser_with_the_rows_and_makes_it_current(dock: RehucoDock) -> None:
+    """A new browser is tabbed beside the first, shows the same rows and is the current one.
+
+    **Test steps:**
+
+    * open a catalog and trigger New Table Browser
+    * verify two browsers, the new one current, and both areas the same
+    """
+    dock.open_rehuco(REHUCO_PATH)
+
+    dock.new_browser_action.trigger()
+
+    first, second = dock.browsers
+    assert dock.current_browser is second
+    assert dock.browser_dock(second).dockAreaWidget() is dock.browser_dock(first).dockAreaWidget()
+    assert second.model.rowCount() == first.model.rowCount()
+
+
+@mark.usefixtures("served")
+def test_rename_browser_sets_only_the_window_title(mocker: MockerFixture, qtbot: QtBot, dock: RehucoDock) -> None:
+    """A real new name becomes the tab's title; the object name the registry keys on is never touched.
+
+    **Test steps:**
+
+    * open a catalog, make the browser current and answer the name box with a new name
+    * trigger Rename Browser
+    * verify the browser's and the dock's title, and that the dock's object name is still its id
+    """
+    dock.open_rehuco(REHUCO_PATH)
+    browser = first_browser(dock)
+    sub_dock = dock.browser_dock(browser)
+    ask = mocker.patch.object(dock, "ask_browser_name", return_value="  Renamed ")
+    make_current(qtbot, sub_dock)
+
+    dock.rename_browser_action.trigger()
+
+    ask.assert_called_once_with("Browser")
+    assert browser.name == "Renamed"
+    assert sub_dock.windowTitle() == "Renamed"
+    assert sub_dock.objectName() == str(browser.browser_id)
+
+
+@mark.parametrize("answer", [None, "   ", "Browser"])
+@mark.usefixtures("served")
+def test_a_cancelled_blank_or_unchanged_name_renames_nothing(
+    mocker: MockerFixture, qtbot: QtBot, dock: RehucoDock, answer: str | None
+) -> None:
+    """Only a real, different name is a rename.
+
+    **Test steps:**
+
+    * open a catalog and answer the name box with a cancel, blanks or the same name
+    * trigger Rename Browser
+    * verify the title is unchanged
+    """
+    dock.open_rehuco(REHUCO_PATH)
+    mocker.patch.object(dock, "ask_browser_name", return_value=answer)
+    make_current(qtbot, dock.browser_dock(first_browser(dock)))
+
+    dock.rename_browser_action.trigger()
+
+    assert first_browser(dock).name == "Browser"
+    assert dock.browser_dock(first_browser(dock)).windowTitle() == "Browser"
+
+
+@mark.usefixtures("served")
+def test_rename_browser_is_enabled_only_while_a_browser_is_current(qtbot: QtBot, dock: RehucoDock) -> None:
+    """The Roots sub-dock is not a browser: Rename follows which kind is current.
+
+    **Test steps:**
+
+    * open a catalog and make the Roots list current, then verify Rename is disabled
+    * make the browser current and verify it is enabled
+    """
+    dock.open_rehuco(REHUCO_PATH)
+
+    make_current(qtbot, sub_docks(dock)[ROOTS_DOCK_NAME])
+    assert not dock.rename_browser_action.isEnabled()
+
+    make_current(qtbot, dock.browser_dock(first_browser(dock)))
+    assert dock.rename_browser_action.isEnabled()
+
+
+@mark.usefixtures("served")
+def test_clone_copies_the_columns_under_a_new_id_and_name(mocker: MockerFixture, dock: RehucoDock) -> None:
+    """A clone starts with the source's header state, beside it, with a name asked for.
+
+    **Test steps:**
+
+    * open a catalog, widen a column and trigger the browser's Clone with a name answered
+    * verify the clone's name, column width and id, that the box was offered "<name> copy", and that it is current
+    """
+    dock.open_rehuco(REHUCO_PATH)
+    source = first_browser(dock)
+    source.view.horizontalHeader().resizeSection(0, 233)
+    ask = mocker.patch.object(dock, "ask_browser_name", return_value="Tutorials")
+
+    dock.browser_dock(source).titleBarActions()[1].trigger()
+
+    ask.assert_called_once_with("Browser copy", "Clone Browser")
+    _, clone = dock.browsers
+    assert clone.name == "Tutorials"
+    assert clone.view.horizontalHeader().sectionSize(0) == 233
+    assert clone.browser_id != source.browser_id
+    assert dock.current_browser is clone
+
+
+@mark.usefixtures("served")
+def test_a_cancelled_clone_adds_nothing(mocker: MockerFixture, dock: RehucoDock) -> None:
+    """Cancelling the name box makes no copy.
+
+    **Test steps:**
+
+    * open a catalog and trigger Clone with the box cancelled
+    * verify there is still one browser
+    """
+    dock.open_rehuco(REHUCO_PATH)
+    mocker.patch.object(dock, "ask_browser_name", return_value=None)
+
+    dock.browser_dock(first_browser(dock)).titleBarActions()[1].trigger()
+
+    assert len(dock.browsers) == 1
+
+
+@mark.usefixtures("served")
+def test_closing_a_browser_deletes_it_and_its_registry_entry(dock: RehucoDock) -> None:
+    """Its [x] deletes it without asking -- a browser is only a view -- and takes the dock off the manager *and*
+    out of its registry: no dangling name (#364).
+
+    **Test steps:**
+
+    * open a catalog, add a second browser, and request the first one's close
+    * verify the first is gone from the browsers and the manager's registry
+    """
+    dock.open_rehuco(REHUCO_PATH)
+    dock.new_browser_action.trigger()
+    first, second = dock.browsers
+    first_name = str(first.browser_id)
+    manager = dock.findChild(QtAds.CDockManager)
+    assert manager is not None
+
+    dock.browser_dock(first).closeRequested.emit()
+
+    assert dock.browsers == (second,)
+    assert first_name not in manager.dockWidgetsMap()
+
+
+@mark.usefixtures("served")
+def test_a_browsers_tab_menu_lists_its_actions_above_detach(mocker: MockerFixture, dock: RehucoDock) -> None:
+    """Right-clicking a browser's tab offers Rename and Clone, a separator, then QtAds' own entries -- and the Roots
+    tab keeps QtAds' menu.
+
+    **Test steps:**
+
+    * open a catalog and right-click the browser's tab, with the popup captured
+    * verify the two actions, a separator and Detach, in that order
+    * right-click the Roots tab and verify it is left to QtAds
+    """
+    dock.open_rehuco(REHUCO_PATH)
+    mocker.patch.object(QMenu, "popup")
+    event = QContextMenuEvent(QContextMenuEvent.Reason.Mouse, QPoint(5, 5), QPoint(5, 5))
+    sub_dock = dock.browser_dock(first_browser(dock))
+
+    QApplication.sendEvent(sub_dock.tabWidget(), event)
+
+    entries = sub_dock.tabWidget().findChildren(QMenu)[0].actions()
+    assert [entry.text() for entry in entries[:2]] == ["Rename...", "Clone..."]
+    assert entries[2].isSeparator()
+    assert entries[3].text() == "Detach"
+    assert not sub_docks(dock)[ROOTS_DOCK_NAME].tabWidget().findChildren(QMenu)
+    assert not sub_docks(dock)[ROOTS_DOCK_NAME].titleBarActions()
+
+
+@mark.usefixtures("served")
+def test_browsers_their_order_and_names_come_back_with_the_catalog(mocker: MockerFixture, dock: RehucoDock) -> None:
+    """What the catalog is closed with is what it opens with: the browsers, in order, with their names, ids and
+    columns.
+
+    **Test steps:**
+
+    * open a catalog, rename the first browser, widen its column and add a second
+    * close the catalog and open it again
+    * verify both browsers with the same ids, names and column width, in the same order
+    """
+    dock.open_rehuco(REHUCO_PATH)
+    first = first_browser(dock)
+    mocker.patch.object(dock, "ask_browser_name", return_value="Everything")
+    dock.browser_dock(first).titleBarActions()[0].trigger()
+    first.view.horizontalHeader().resizeSection(0, 233)
+    dock.new_browser_action.trigger()
+    ids = [browser.browser_id for browser in dock.browsers]
+
+    dock.close_rehuco()
+    assert not dock.browsers
+    dock.open_rehuco(REHUCO_PATH)
+
+    assert [browser.browser_id for browser in dock.browsers] == ids
+    assert [browser.name for browser in dock.browsers] == ["Everything", "Browser"]
+    assert first_browser(dock).view.horizontalHeader().sectionSize(0) == 233
+
+
+def test_two_catalogs_keep_their_own_browsers(mocker: MockerFixture, served: Any, dock: RehucoDock) -> None:
+    """Browsers are remembered by rehuco id, so another catalog neither shows nor disturbs them.
+
+    **Test steps:**
+
+    * open a catalog and rename its browser
+    * open a catalog with another id, and verify it has a default browser
+    * open the first again and verify its rename came back
+    """
+    dock.open_rehuco(REHUCO_PATH)
+    mocker.patch.object(dock, "ask_browser_name", return_value="Mine")
+    dock.browser_dock(first_browser(dock)).titleBarActions()[0].trigger()
+
+    served["id"] = str(uuid4())
+    dock.open_rehuco(OTHER_PATH)
+    assert [browser.name for browser in dock.browsers] == ["Browser"]
+
+    served["id"] = REHUCO_ID
+    dock.open_rehuco(REHUCO_PATH)
+    assert [browser.name for browser in dock.browsers] == ["Mine"]
+
+
+def test_a_read_only_catalogs_browsers_are_remembered_too(
+    served: Any, dock: RehucoDock, catalog_store: MemoryCatalogStateStore
+) -> None:
+    """Browsers are the agent's state, not the file's, so a catalog from a newer build keeps them like any other.
+
+    **Test steps:**
+
+    * open a catalog stamped by a newer build and add a browser
+    * close it
+    * verify the store holds both browsers
+    """
+    served["format_version"] = 999
+    dock.open_rehuco(REHUCO_PATH)
+    assert dock.new_browser_action.isEnabled()
+    dock.new_browser_action.trigger()
+
+    dock.close_rehuco()
+
+    states = catalog_store.states
+    assert len(states[UUID(REHUCO_ID)].browsers) == 2
+
+
+@mark.usefixtures("served")
+def test_a_layout_naming_a_browser_that_is_gone_restores_without_crashing(
+    dock: RehucoDock, catalog_store: MemoryCatalogStateStore
+) -> None:
+    """The layout was saved with two browsers; the store now lists one. Opening restores what it can and shows
+    every browser it builds.
+
+    **Test steps:**
+
+    * open a catalog with two browsers, close it, and drop the second from the store, keeping the layout
+    * open it again
+    * verify the one browser and the Roots list are shown
+    """
+    dock.open_rehuco(REHUCO_PATH)
+    dock.new_browser_action.trigger()
+    dock.close_rehuco()
+    states = catalog_store.states
+    states[UUID(REHUCO_ID)].browsers.pop()
+
+    dock.open_rehuco(REHUCO_PATH)
+
+    assert len(dock.browsers) == 1
+    assert not dock.browser_dock(first_browser(dock)).isClosed()
+    assert not dock.roots_dock.isClosed()
+
+
+@mark.usefixtures("served")
+def test_the_roots_toggle_and_the_roots_close_button_stay_in_step(dock: RehucoDock) -> None:
+    """Roots is closable: its [x] hides it, the toolbar's toggle shows it again, and the toggle's check follows.
+
+    **Test steps:**
+
+    * open a catalog and close the Roots sub-dock the way its [x] does
+    * verify the toggle is unchecked, then trigger it and verify the sub-dock is shown and the toggle checked
+    """
+    dock.open_rehuco(REHUCO_PATH)
+    assert dock.roots_action.isChecked()
+
+    dock.roots_dock.requestCloseDockWidget()
+    assert not dock.roots_action.isChecked()
+    assert dock.roots_dock.isClosed()
+
+    dock.roots_action.trigger()
+    assert not dock.roots_dock.isClosed()
+    assert dock.roots_action.isChecked()
 
 
 # endregion
@@ -1095,7 +1403,7 @@ def test_a_cache_that_cannot_be_read_keeps_what_is_shown(
     """
     dock.open_rehuco(REHUCO_PATH)
     mocker.patch.object(CatalogCache, "rows", side_effect=sqlite3.OperationalError("locked"))
-    set_rows = mocker.spy(dock.catalog_model, "set_rows")
+    set_rows = mocker.spy(TableBrowser, "set_rows")
     set_roots = mocker.spy(dock.roots_model, "set_roots")
     mocker.patch("rehuco_agent.rehuco.rehuco_dock.QFileDialog.getExistingDirectory", return_value="/fake/refs")
 
@@ -1107,16 +1415,18 @@ def test_a_cache_that_cannot_be_read_keeps_what_is_shown(
     set_roots.assert_not_called()
 
 
+@mark.usefixtures("served")
 def test_a_double_click_on_no_row_opens_nothing(qtbot: QtBot, dock: RehucoDock) -> None:
     """An invalid index -- a double-click on the empty area -- asks for nothing.
 
     **Test steps:**
 
-    * emit a double-click with an invalid index
+    * open a catalog and emit a double-click with an invalid index
     * verify no open was requested
     """
+    dock.open_rehuco(REHUCO_PATH)
     with qtbot.assertNotEmitted(dock.open_requested):
-        dock.catalog_view.doubleClicked.emit(QModelIndex())
+        first_browser(dock).view.doubleClicked.emit(QModelIndex())
 
 
 def test_the_root_edits_do_nothing_with_no_catalog_open(mocker: MockerFixture, dock: RehucoDock) -> None:
@@ -1136,6 +1446,70 @@ def test_the_root_edits_do_nothing_with_no_catalog_open(mocker: MockerFixture, d
 
     picker.assert_not_called()
     saves.assert_not_called()
+
+
+def test_the_browser_slots_do_nothing_with_nothing_to_act_on(
+    mocker: MockerFixture, qtbot: QtBot, dock: RehucoDock
+) -> None:
+    """The slots behind the disabled New and Rename actions refuse on their own too.
+
+    **Test steps:**
+
+    * call the new, rename, close and fill slots with no catalog open, and with the Roots list in place of a browser
+    * verify no browser appeared, the name box never opened, the unfilled browser has no rows and nothing raised
+    """
+    ask = mocker.patch.object(dock, "ask_browser_name")
+    stray = TableBrowser()
+    qtbot.addWidget(stray)
+
+    dock._RehucoDock__on_new_browser()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    dock._RehucoDock__on_rename_current_browser()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    dock._RehucoDock__close_browser(dock.roots_dock)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    dock._RehucoDock__fill(stray)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    assert not dock.browsers
+    ask.assert_not_called()
+    assert stray.model.rowCount() == 0
+
+
+@mark.usefixtures("served")
+def test_a_new_browser_whose_rows_cannot_be_read_is_still_added(
+    mocker: MockerFixture, dock: RehucoDock, caplog: LogCaptureFixture
+) -> None:
+    """A failed read is logged and the new browser starts empty -- the next scan rebuilds the cache.
+
+    **Test steps:**
+
+    * open a catalog, make ``rows`` raise and trigger New Table Browser
+    * verify an error was logged and the browser exists, with no rows
+    """
+    dock.open_rehuco(REHUCO_PATH)
+    mocker.patch.object(CatalogCache, "rows", side_effect=sqlite3.OperationalError("locked"))
+
+    with caplog.at_level(logging.ERROR):
+        dock.new_browser_action.trigger()
+
+    assert "Could not read the cache" in caplog.text
+    _, added = dock.browsers
+    assert added.model.rowCount() == 0
+
+
+@mark.parametrize(("accepted", "expected"), [(True, "Typed"), (False, None)])
+def test_ask_browser_name_returns_the_typed_name_or_none(
+    mocker: MockerFixture, dock: RehucoDock, accepted: bool, expected: str | None
+) -> None:
+    """The real name box yields its text when accepted and ``None`` when cancelled, opened on the offered name.
+
+    **Test steps:**
+
+    * patch ``QInputDialog.getText`` to accept, then to cancel
+    * verify the name or ``None``, and that the box was given the title and the current name
+    """
+    get_text = mocker.patch("rehuco_agent.rehuco.rehuco_dock.QInputDialog.getText", return_value=("Typed", accepted))
+
+    assert dock.ask_browser_name("Current", "Clone Browser") == expected
+    assert get_text.call_args.args[1] == "Clone Browser"
+    assert get_text.call_args.kwargs["text"] == "Current"
 
 
 @mark.usefixtures("served")
@@ -1216,7 +1590,7 @@ def test_a_tracked_job_cleared_from_the_queue_reads_the_table_again(
     dock.open_rehuco(REHUCO_PATH)
     dock.scan_action.trigger()
     serials = [status.serial for status in queue.jobs()[1:]]
-    set_rows = mocker.spy(dock.catalog_model, "set_rows")
+    set_rows = mocker.spy(TableBrowser, "set_rows")
 
     dock.jobs_reordered(serials)
     dock.queue_paused_changed(True)
@@ -1256,7 +1630,7 @@ def fixture_followed(
     scan_finding(mocker, {TUTORIALS: (tutorial_record(),)})
     dock.open_rehuco(REHUCO_PATH)
     dock.scan_action.trigger()
-    qtbot.waitUntil(lambda: dock.catalog_model.rowCount() == 1, timeout=WAIT_TIMEOUT_MS)
+    qtbot.waitUntil(lambda: first_browser(dock).model.rowCount() == 1, timeout=WAIT_TIMEOUT_MS)
     wait_for_jobs(qtbot, queue)
     yield dock, events
     dock.detach()
@@ -1264,7 +1638,7 @@ def fixture_followed(
 
 def shown_path(dock: RehucoDock) -> str:
     """The root-qualified path the one row shows."""
-    return dock.catalog_model.index(0, 3).data()
+    return first_browser(dock).model.index(0, 3).data()
 
 
 def test_a_rename_rebases_its_row_without_a_scan(followed: tuple[RehucoDock, ResourceEvents]) -> None:
@@ -1292,8 +1666,8 @@ def test_a_rename_elsewhere_reads_the_cache_not_again(
     * announce an unrelated rename and an empty one
     * verify the table was not read again
     """
-    dock, events = followed
-    set_rows = mocker.spy(dock.catalog_model, "set_rows")
+    _, events = followed
+    set_rows = mocker.spy(TableBrowser, "set_rows")
 
     events.announce_moved(Relocation(((Path("/fake/elsewhere/a"), Path("/fake/elsewhere/b")),)))
     events.announce_moved(Relocation())
@@ -1323,7 +1697,7 @@ def test_a_written_record_is_read_back_into_its_row(
 
     events.announce_changed((TUTORIALS / "python" / "info.rehu", TUTORIALS / "python" / "info00.jpg"))
 
-    assert dock.catalog_model.index(0, TITLE_COLUMN).data() == "Python 3"
+    assert first_browser(dock).model.index(0, TITLE_COLUMN).data() == "Python 3"
 
 
 def test_a_cache_failure_while_following_is_logged(
@@ -1353,7 +1727,7 @@ def test_with_nothing_open_an_announcement_is_nothing(qtbot: QtBot, queue: TaskQ
     **Test steps:**
 
     * announce a rename and a write to a dock with nothing open, then detach it
-    * verify nothing failed and the table stayed empty
+    * verify nothing failed and no browser appeared
     """
     del database
     events = ResourceEvents()
@@ -1365,142 +1739,61 @@ def test_with_nothing_open_an_announcement_is_nothing(qtbot: QtBot, queue: TaskQ
     dock.detach()
     events.announce_changed((TUTORIALS / "info.rehu",))
 
-    assert dock.catalog_model.rowCount() == 0
+    assert not dock.browsers
 
 
-# endregion
-
-
-# region Renaming the browser (#397)
-
-
-def browser_dock_widget(dock: RehucoDock) -> QtAds.CDockWidget:
-    """The Browser sub-dock, found by the object name it is registered under.
+def is_on_screen(dock: RehucoDock, browser: TableBrowser) -> bool:
+    """Whether ``browser``'s sub-dock is open in an area its manager shows.
 
     :param dock: the Root Catalog dock.
-    :returns: the sub-dock.
+    :param browser: one of its browsers.
+    :returns: whether a reader can see it.
     """
-    found = next(widget for widget in dock.findChildren(QtAds.CDockWidget) if widget.objectName() == BROWSER_DOCK_NAME)
-    return found
+    sub_dock = dock.browser_dock(browser)
+    manager = dock.findChild(QtAds.CDockManager)
+    assert manager is not None
+    return not sub_dock.isClosed() and sub_dock.dockAreaWidget() in manager.openedDockAreas()
 
 
-def make_current(qtbot: QtBot, widget: QtAds.CDockWidget) -> None:
-    """Make ``widget`` the focus tracker's current sub-dock the way a user does, by clicking its tab title.
-
-    :param qtbot: the Qt test driver.
-    :param widget: the sub-dock to make current.
-    """
-    qtbot.mouseClick(tab_label(widget), Qt.MouseButton.LeftButton)
-
-
-@mark.parametrize(
-    ("answer", "expected"),
-    [
-        ("Renamed", "Renamed"),
-        ("  Padded  ", "Padded"),
-        (None, "Browser"),
-        ("   ", "Browser"),
-        ("Browser", "Browser"),
-    ],
-)
-def test_rename_browser_sets_only_the_window_title(
-    mocker: MockerFixture, qtbot: QtBot, dock: RehucoDock, answer: str | None, expected: str
-) -> None:
-    """A real new name becomes the title; a cancel, a blank or an unchanged name changes nothing -- and the
-    object name the registry keys on is never touched.
+@mark.usefixtures("served")
+def test_after_every_browser_was_closed_a_reopen_and_new_browser_show_on_screen(dock: RehucoDock) -> None:
+    """A layout saved with no browser left must not swallow the browsers built after it: the restore used to leave
+    the default browser in an area off the manager, and every New Table Browser joined that invisible area.
 
     **Test steps:**
 
-    * make the browser current, answer the name box with each case and trigger Rename Browser
-    * verify the Browser sub-dock's window title, and that its object name is unchanged
+    * open a catalog, close its only browser, close the catalog and open it again
+    * verify the default browser is on screen
+    * trigger New Table Browser and verify both browsers are on screen
     """
-    mocker.patch.object(dock, "ask_browser_name", return_value=answer)
-    browser = browser_dock_widget(dock)
-    make_current(qtbot, browser)
+    dock.open_rehuco(REHUCO_PATH)
+    dock.browser_dock(first_browser(dock)).closeRequested.emit()
+    dock.close_rehuco()
 
-    dock.rename_browser_action.trigger()
+    dock.open_rehuco(REHUCO_PATH)
+    assert is_on_screen(dock, first_browser(dock))
 
-    assert browser.windowTitle() == expected
-    assert browser.objectName() == BROWSER_DOCK_NAME
+    dock.new_browser_action.trigger()
+    assert all(is_on_screen(dock, browser) for browser in dock.browsers)
 
 
-def test_rename_browser_opens_on_the_current_title(mocker: MockerFixture, qtbot: QtBot, dock: RehucoDock) -> None:
-    """The name box is offered the browser's current title.
+@mark.usefixtures("served")
+def test_new_browser_after_closing_every_browser_shows_on_screen(dock: RehucoDock) -> None:
+    """With no browser left, a new one is placed beside the Roots list.
 
     **Test steps:**
 
-    * make the browser current and trigger Rename Browser with the box cancelled
-    * verify it was asked with "Browser"
+    * open a catalog and close its only browser
+    * trigger New Table Browser
+    * verify one browser, on screen
     """
-    ask = mocker.patch.object(dock, "ask_browser_name", return_value=None)
-    make_current(qtbot, browser_dock_widget(dock))
+    dock.open_rehuco(REHUCO_PATH)
+    dock.browser_dock(first_browser(dock)).closeRequested.emit()
 
-    dock.rename_browser_action.trigger()
+    dock.new_browser_action.trigger()
 
-    ask.assert_called_once_with("Browser")
-
-
-def test_rename_browser_is_enabled_only_while_a_browser_is_current(qtbot: QtBot, dock: RehucoDock) -> None:
-    """The Roots sub-dock is not a browser: Rename follows which of the two is current.
-
-    **Test steps:**
-
-    * make the Roots list current and verify Rename is disabled
-    * make the browser current and verify it is enabled
-    * make the Roots list current again and verify it is disabled
-    """
-    docks = {widget.objectName(): widget for widget in dock.findChildren(QtAds.CDockWidget)}
-    make_current(qtbot, docks[ROOTS_DOCK_NAME])
-    assert not dock.rename_browser_action.isEnabled()
-
-    make_current(qtbot, docks[BROWSER_DOCK_NAME])
-    assert dock.rename_browser_action.isEnabled()
-
-    make_current(qtbot, docks[ROOTS_DOCK_NAME])
-    assert not dock.rename_browser_action.isEnabled()
-
-
-def test_ask_browser_name_returns_the_typed_name_or_none(mocker: MockerFixture, dock: RehucoDock) -> None:
-    """The real box yields its text when accepted and ``None`` when cancelled.
-
-    **Test steps:**
-
-    * patch ``QInputDialog.getText`` to accept, then to cancel
-    * verify the name, then ``None``
-    """
-    get_text = mocker.patch("rehuco_agent.rehuco.rehuco_dock.QInputDialog.getText")
-    get_text.return_value = ("Typed", True)
-    assert dock.ask_browser_name("Browser") == "Typed"
-
-    get_text.return_value = ("Typed", False)
-    assert dock.ask_browser_name("Browser") is None
-
-
-def test_the_browser_tab_menu_offers_rename_above_detach(mocker: MockerFixture, qtbot: QtBot, dock: RehucoDock) -> None:
-    """Right-clicking the browser's tab lists Rename Browser first, apart from QtAds' own entries, and makes it
-    current so the entry is enabled.
-
-    **Test steps:**
-
-    * make the Roots list current, so Rename Browser is disabled
-    * right-click the browser's tab title and build its menu through the helper's seam
-    * verify Rename Browser is first, followed by a separator and Detach, and now enabled
-    """
-    docks = {widget.objectName(): widget for widget in dock.findChildren(QtAds.CDockWidget)}
-    make_current(qtbot, docks[ROOTS_DOCK_NAME])
-    assert not dock.rename_browser_action.isEnabled()
-
-    mocker.patch.object(QMenu, "popup")
-    QApplication.sendEvent(
-        docks[BROWSER_DOCK_NAME].tabWidget(),
-        QContextMenuEvent(QContextMenuEvent.Reason.Mouse, QPoint(5, 5), QPoint(5, 5)),
-    )
-
-    entries = docks[BROWSER_DOCK_NAME].tabWidget().findChildren(QMenu)[0].actions()
-    assert entries[0] is dock.rename_browser_action
-    assert entries[1].isSeparator()
-    assert entries[2].text() == "Detach"
-    assert dock.rename_browser_action.isEnabled()
+    assert len(dock.browsers) == 1
+    assert is_on_screen(dock, first_browser(dock))
 
 
 # endregion

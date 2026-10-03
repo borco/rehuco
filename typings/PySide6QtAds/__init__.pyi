@@ -391,6 +391,13 @@ class CDockWidget(QWidget):
         """A checkable `QAction` that shows/hides this dock -- checking/unchecking it (e.g. from
         a toolbar button or menu item) is what fires `viewToggled`."""
 
+    def setTitleBarActions(self, actions: list[QAction]) -> None:
+        """The actions shown as buttons in the title bar of the area holding this dock, while it is the
+        area's current tab."""
+
+    def titleBarActions(self) -> list[QAction]:
+        """The actions set with `setTitleBarActions`."""
+
     def dockAreaWidget(self) -> CDockAreaWidget | None:
         """The tabbed area currently containing this dock, or `None` if it isn't placed in one
         (e.g. before it's been added to a manager)."""
@@ -613,6 +620,10 @@ class CDockManager(QWidget):
     dockWidgetAdded: Signal
     """Emitted with a dock widget just after it's been added to this manager (e.g. via
     `addDockWidget`), already placed into its `CDockAreaWidget`."""
+
+    dockWidgetAboutToBeRemoved: Signal
+    """Emitted with a dock widget just before it's removed from this manager via
+    `removeDockWidget`, while it still has its area and tab."""
 
     dockWidgetRemoved: Signal
     """Emitted with a dock widget just after it's been removed from this manager via

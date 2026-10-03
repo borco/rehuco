@@ -62,14 +62,6 @@
     </widget>
    </item>
   </layout>
-  <action name="rename_browser_action">
-   <property name="text">
-    <string>Rename Browser...</string>
-   </property>
-   <property name="toolTip">
-    <string>Rename the current browser.</string>
-   </property>
-  </action>
  </widget>
  <resources/>
  <connections/>

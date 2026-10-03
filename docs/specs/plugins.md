@@ -505,8 +505,9 @@ columns plus type-specific columns.
 The first browser is a top-level **Root Catalog** dock, first on the action bar and tabbed beside Documents, showing
 one opened `.rehuco` — a *root catalog* ([[data-model#local-file-trio]], #377). The word *collection* is not used for
 it: that is a resource type ([[plugins#grouping-entities]]). The dock works like the **Projects** of a code host: a
-toolbar over a nested dock manager whose sub-docks are one **Roots** dock and any number of **views**. Its toolbar has
-*Scan*, a *Roots* toggle that shows and hides the Roots sub-dock, and *New View*. Its nested dock manager holds three
+toolbar over a nested dock manager whose sub-docks are one **Roots** dock and any number of **browsers**. Its toolbar has
+*Scan*, the Roots edits, a *Roots* toggle that shows and hides the Roots sub-dock, *New Table Browser* and
+*Rename Browser*. Its nested dock manager holds three
 kinds of sub-dock:
 
 - **Roots** (#378) — a column view, hidden by its own [x] and shown again by the toolbar's toggle: the first column is the `.rehuco`'s roots by label
@@ -521,30 +522,36 @@ kinds of sub-dock:
   handle between listings and never uses `QFileSystemModel` — the files sub-dock's reasons, plus that browsing must
   never block a rename ([[mounts-and-storage#out-of-band]]). A node is root, folder, file, loading or unreachable, so
   an offline root is a state the model already has ([[mounts-and-storage#offline-mounts]]).
-- **Views** (#379) — each view is a Browser sub-dock: the generic resource browser above as a table over the cache
-  ([[data-model#cache-schema]]), every `.rehu` under the roots and every `.tc` no `.rehu` covers. A view has a name, a
-  filter and a set of visible columns, remembered with the catalog, and several views exist at once, each with its
-  own filter. Double-clicking a view's tab renames it in place; the view's toolbar clones it (asking for a name; the
-  clone starts with the same filter and columns) or deletes it, and its [x] deletes it too.
+- **Browsers** (#396, #379) — each browser is a closable sub-dock, and the first kind is the **table browser**: the generic
+  resource browser above as a table over the cache ([[data-model#cache-schema]]), every `.rehu` under the roots and
+  every `.tc` no `.rehu` covers. A browser has a name, a filter and a set of visible columns, and several browsers
+  exist at once, each with its own filter. The shell is written for more than one kind: the image browser (#403) is a
+  second. **Rename and Clone** are on the browser's title bar and its tab's context menu, above QtAds' own *Detach*;
+  the toolbar's *Rename Browser* acts on the current one. Clone asks for a name and starts with the same filter and
+  columns. The browser's [x] **deletes** it, without asking — a browser is only a view. **Browsers are the
+  agent's, not the catalog's**: each is remembered with where every sub-dock sits, per catalog on this machine, in a
+  file of its own named by the rehuco id (so a moved `.rehuco` keeps them) — never in the `.rehuco`, which
+  `rehuco-core` reads and which would carry view state to boxes that have no use for it. They are written when the
+  catalog is closed, replaced, or the app quits. A catalog with none remembered opens with one default table browser.
   - **Columns.** Every column the cache can show exists on every view, and a header context menu lists them all,
     checked where visible. Type-specific columns — a tutorial's durations and level, a reference pack's image
     counts — are the fields the cache stores that the type's plugin declares ([[data-model#cache-schema]], #399).
   - **The filter line** is GitHub-style: free text plus `field:"value"` tokens (`folder`, `authors`, `tags`,
     `publishers`, `type`). It filters the rows, and a column-selecting token chooses which columns show; an
     unknown field is reported, never silently dropped. A folder's context menu in Roots — *Show only rehu in this
-    folder* — sets `folder="<root label>/<relative path>"` on the current view, and click-to-filter links set the
-    same tokens on it ([[plugins#filter-urls]]). Roots and the views are otherwise independent.
-  - **New View** offers presets: *Default* (the common columns), *Tutorials* (the tutorial columns shown, the
+    folder* — sets `folder="<root label>/<relative path>"` on the current browser, and click-to-filter links set the
+    same tokens on it ([[plugins#filter-urls]]). Roots and the browsers are otherwise independent.
+  - **New Table Browser** offers presets: *Default* (the common columns), *Tutorials* (the tutorial columns shown, the
     others hidden) and *Reference images* (likewise). A preset only picks the starting columns and filter; the view
     is then an ordinary one.
-- **The current resource's sub-docks** (#381) — exactly one selected row in the focused view makes that resource
+- **The current resource's sub-docks** (#381) — exactly one selected row in the focused browser makes that resource
   *current*, and the document sub-docks ([[plugins#dock-shell]]) show it, with its document toolbar beside the Root
   Catalog toolbar; none or
   several selected leaves them empty. The view-model is the one any Documents dock of the same file holds
   ([[plugins#view-model]]), so the two stay in step unsaved. **Moving off a resource with unsaved edits opens it in
   Documents** (or focuses it there) carrying those edits, then shows the new current resource.
 
-Every view here updates in place when the app moves or changes files — rows and nodes are renamed, moved, inserted
+Every browser here updates in place when the app moves or changes files — rows and nodes are renamed, moved, inserted
 or removed, never reset — by the in-process announcements of [[mounts-and-storage#out-of-band]].
 
 ### §13.5.2 Click-to-filter URL convention
@@ -574,7 +581,7 @@ filter://publishers?name=Example%20Publisher
   handler dispatches on scheme — `filter://` internally, validated `http(s)` to the system browser — so a `filter://`
   link can never leak to the OS, and no other scheme is ever followed.
 - **A link is a filter-line token.** Dispatching `filter://authors?name=Foo%20Bar` sets `authors="Foo Bar"` on the
-  the current view's filter line in the Root Catalog dock ([[plugins#rehuco-dock]]) — one filter grammar, reached by
+  the current browser's filter line in the Root Catalog dock ([[plugins#rehuco-dock]]) — one filter grammar, reached by
   typing or by clicking.
 
 ## §13.6 Tutorial plugin
