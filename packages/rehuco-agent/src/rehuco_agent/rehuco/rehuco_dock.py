@@ -23,9 +23,11 @@ from rehuco_core import (
     DEFAULT_RENAME_COORDINATOR,
     FINISHED_JOB_STATES,
     CatalogCache,
+    CatalogRecordUpdater,
     JobStatus,
     RehucoFile,
     RehucoFileError,
+    Relocation,
     RemoveCatalogRootJob,
     RenameCoordinator,
     ScanCatalogRootJob,
@@ -36,6 +38,7 @@ from rehuco_core import (
 
 from ..dock_maximize import attach_maximize_handler
 from ..glyphs import TAB_CLOSE_GLYPH
+from ..resource_events import ResourceEvents
 from ..settings.persistent_settings import cache_folder
 from .catalog_table_model import SIZE_ROLE, CatalogTableModel
 from .rehuco_browser_panel_ui import Ui_RehucoBrowserPanel
@@ -97,6 +100,10 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         outermost ``CDockManager``.
     :param rename_coordinator: what a scan holds each directory and record read under, so it never blocks a
         rename ([[mounts-and-storage#out-of-band]]).
+    :param resource_events: the app's file announcements (#376), which keep the cache current between scans
+        without reading anything a rename moved: a rename rebases the rows it moved
+        (:meth:`~rehuco_core.CatalogCache.apply_relocation`), and a record the app wrote is read back into its
+        row (:class:`~rehuco_core.CatalogRecordUpdater`). ``None`` leaves the cache to the scans alone.
     """
 
     open_requested: Signal = Signal(object)
@@ -119,10 +126,12 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         *,
         stylesheet_host: QWidget | None = None,
         rename_coordinator: RenameCoordinator = DEFAULT_RENAME_COORDINATOR,
+        resource_events: ResourceEvents | None = None,
     ) -> None:
         super().__init__(parent)
         self.__queue: Final = queue
         self.__rename_coordinator: Final = rename_coordinator
+        self.__events: Final = resource_events
         self.__file: RehucoFile | None = None
         self.__cache: CatalogCache | None = None
         self.__load_error = ""
@@ -180,6 +189,9 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         self.__roots_model.modelReset.connect(self.__update_enablement)
         self.__update_enablement()
         queue.add_listener(self)
+        if resource_events is not None:
+            resource_events.moved.connect(self.__on_moved)
+            resource_events.changed.connect(self.__on_files_changed)
 
     # region the open file
 
@@ -238,9 +250,12 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         self.rehuco_path_changed.emit(None)
 
     def detach(self) -> None:
-        """Stop listening to the queue and close the cache, before the window goes
+        """Stop listening to the queue and the file announcements, and close the cache, before the window goes
         ([[appendices.task-queue#teardown]])."""
         self.__queue.remove_listener(self)
+        if self.__events is not None:
+            self.__events.moved.disconnect(self.__on_moved)
+            self.__events.changed.disconnect(self.__on_files_changed)
         self.__release_session()
 
     def __fail(self, message: str) -> bool:
@@ -627,6 +642,50 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         del paused
 
     # endregion
+
+    # endregion
+
+    # region the app's own file changes
+
+    def __on_moved(self, relocation: Relocation) -> None:
+        """Rebase the rows a rename moved, reading nothing, and show them (#376).
+
+        A scan still running under a renamed folder already reads on under the new name (its tracked
+        locations were rewritten by the coordinator), so its rows land under the paths this rebased the old
+        ones to.
+
+        :param relocation: the rename's executed plan.
+        """
+        cache = self.__cache
+        if cache is None or not relocation.pairs:
+            return
+        try:
+            moved = cache.apply_relocation(relocation.pairs)
+        except sqlite3.Error as error:
+            LOG.error("Could not follow a rename in the cache of %s: %s", self.rehuco_path, error)
+            return
+        if moved:
+            self.__refresh()
+
+    def __on_files_changed(self, paths: tuple[Path, ...]) -> None:
+        """Read each record the app wrote back into its row, and show what changed (#376).
+
+        A path that is not a record, or not under a root, is passed over by the updater itself.
+
+        :param paths: the files written or replaced.
+        """
+        cache = self.__cache
+        if cache is None:
+            return
+        updater = CatalogRecordUpdater(cache, coordinator=self.__rename_coordinator)
+        changed = False
+        try:
+            for path in paths:
+                changed = updater.upsert(path) or changed
+        except (OSError, sqlite3.Error) as error:
+            LOG.error("Could not update the cache of %s: %s", self.rehuco_path, error)
+        if changed:
+            self.__refresh()
 
     # endregion
 

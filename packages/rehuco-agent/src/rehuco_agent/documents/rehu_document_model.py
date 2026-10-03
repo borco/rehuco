@@ -25,6 +25,7 @@ from rehuco_core import (
     Deleter,
     LockReason,
     RehuDocument,
+    Relocation,
     RenameCoordinator,
     convert_tc,
     is_directory_scoped,
@@ -198,6 +199,17 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     :attr:`unknown_fields_changed` (a single fallback field dropped) because that stays within a
     composition the reactive rows can show/hide, whereas this adds, removes, and re-wires whole rows --
     so ``DocumentWidget`` rebuilds its dock contents on it. Plain seeding does not raise it."""
+
+    files_changed = Signal(object)
+    """Fires with a tuple of the :class:`~pathlib.Path` objects of files this document wrote or replaced --
+    its record on every :meth:`save`, the new ``.rehu`` and the ``.tc`` it replaced on a :meth:`convert`, and
+    whatever a collaborator announces through :meth:`announce_files_changed`. The per-document half of the
+    app's file announcements: whoever holds the model relays it app-wide
+    (:class:`~rehuco_agent.resource_events.ResourceEvents`, #376)."""
+
+    folder_changed = Signal(object)
+    """Fires with the :class:`~pathlib.Path` of a folder whose listing this document's work changed, through
+    :meth:`announce_folder_changed` -- relayed the same way as :attr:`files_changed`."""
 
     path = SimpleProperty[Path | None](None)
     """The document's current file path, mirroring :attr:`document`'s own path -- reassigned whenever
@@ -619,6 +631,8 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             self.__document.save()
             LOG.info("Saved %s", self.path)
         self.dirty = False
+        if self.path is not None:
+            self.files_changed.emit((self.path,))
         # the file now exists on disk, so there is finally something to revert to: mark saved_on_disk so
         # DocumentWidget re-enables Revert (#147). Set once and never unset -- a later out-of-band
         # deletion still leaves this a document that *was* saved, whose revert is the fix-retry loop.
@@ -778,8 +792,9 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             raise ValueError("only a legacy .tc-backed document can be converted")
         if self.path is None:
             raise ValueError("no path to convert -- document was not loaded from a file")
-        with LogScope.open(self.path):
-            LOG.info("Converting %s, %s", self.path, "keeping backups" if keep_backups else "discarding originals")
+        legacy_path = self.path
+        with LogScope.open(legacy_path):
+            LOG.info("Converting %s, %s", legacy_path, "keeping backups" if keep_backups else "discarding originals")
             self.__document = convert_tc(
                 self.path,
                 keep_backups=keep_backups,
@@ -799,6 +814,45 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.reloaded.emit()
         self.__recompute_upgradable()
         self.__log_document_state()
+        # the new record first: the catalog reads it into the `.tc`'s row before finding the `.tc` gone
+        self.files_changed.emit(tuple(path for path in (self.__document.path, legacy_path) if path is not None))
+
+    def announce_files_changed(self, paths: Sequence[Path]) -> None:
+        """Say that this document's work wrote or replaced ``paths`` -- for a collaborator that writes files on
+        its behalf, such as a checksum run (:attr:`files_changed`).
+
+        :param paths: the files' absolute paths.
+        """
+        self.files_changed.emit(tuple(paths))
+
+    def announce_folder_changed(self, directory: Path) -> None:
+        """Say that this document's work changed ``directory``'s listing -- for a collaborator that renames,
+        deletes or writes files there, such as the screenshot organizer (:attr:`folder_changed`).
+
+        :param directory: the folder's absolute path.
+        """
+        self.folder_changed.emit(directory)
+
+    def relocate(self, relocation: Relocation) -> bool:
+        """Follow a rename that moved this document's record ([[mounts-and-storage#out-of-band]], #376).
+
+        The holder's half of a rename announced app-wide: whoever holds this model hands it every rename's
+        executed plan, and the model adopts the path the plan gives its record -- a record nested in a renamed
+        collection folder, or one whose own sibling set was renamed. Adopting is :meth:`rename_location`'s own
+        (:meth:`__adopt_path`), and as there it is not an edit: unsaved edits stay unsaved, now bound to the new
+        location.
+
+        **Idempotent**, which is what lets the renaming document hear its own rename: the announcement reaches
+        it before :meth:`rename_location` has adopted the result, and whichever comes second finds the path
+        already there and does nothing.
+
+        :param relocation: the rename's executed plan.
+        :returns: whether this document's path changed.
+        """
+        path = self.path
+        if path is None:
+            return False
+        return self.__adopt_path(relocation.relocate(path))
 
     def bind[T](self, field: Field[T], name: str | None = None) -> FieldBinding[T]:
         """Resolve one of a field's names into its current binding on this model
@@ -1176,15 +1230,9 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         ([[data-model#resource-scoping]], [[data-model#write-integrity]]) -- belongs to
         :func:`~rehuco_core.rename_rehu_resource`, and standing the readers aside first belongs to
         :class:`~rehuco_core.RenameCoordinator` (#241), so all that is left here is *adopting* what it
-        returns: the document is re-pointed at its new location (:meth:`~RehuDocument.rebind_path`),
-        :attr:`path` and :attr:`location` reseed from it, and a fresh screenshot scanner is installed.
-        :attr:`current_name` and :attr:`label` derive from :attr:`path`, so they follow on their own, as
-        does the dock identity `DocumentsDock` resyncs off ``path_changed``.
-
-        The scanner is **replaced** rather than left alone even though it reads the model's live path
-        and so would already resolve the moved screenshots: replacing it is what emits
-        ``image_scanner_changed``, which is the only thing telling the image strip and the Markdown
-        viewer that the names they are holding are stale.
+        returns (:meth:`__adopt_path`). :attr:`current_name` and :attr:`label` derive from :attr:`path`,
+        so they follow on their own, as does the dock identity `DocumentsDock` resyncs off
+        ``path_changed``.
 
         Nothing here writes back to the document's payload, so a rename is not an edit: the model ends
         as clean as :meth:`rename_location`'s pre-move save left it.
@@ -1214,11 +1262,30 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
                 f'Could not rename "{current_name}" to "{new_name}": {self.__failure_reason(error)}'
                 + (f" {holders}" if holders else "")
             )
+        # already adopted when the coordinator's announcement reached this model through its holder (#376)
+        self.__adopt_path(new_path)
+        LOG.info("Renamed %r to %r", current_name, new_name)
+        return True
+
+    def __adopt_path(self, new_path: Path) -> bool:
+        """Re-point this document at ``new_path`` after a rename moved its record, once.
+
+        The document is re-pointed (:meth:`~RehuDocument.rebind_path`), :attr:`path` and :attr:`location`
+        follow, and a fresh screenshot scanner is installed -- replaced rather than left alone, because
+        replacing it is what emits ``image_scanner_changed``, the only thing telling the image strip and the
+        Markdown viewer that the names they hold are stale. A path already adopted is left alone, so a rename
+        heard twice -- from :meth:`rename_location` and from the app-wide announcement -- moves the document
+        and fires each signal exactly once.
+
+        :param new_path: where the record is now.
+        :returns: whether anything changed.
+        """
+        if new_path == self.path:
+            return False
         self.__document.rebind_path(new_path)
         self.path = new_path
         self.location = new_path.as_posix()
         self.image_scanner = self.__make_image_scanner()
-        LOG.info("Renamed %r to %r", current_name, new_name)
         return True
 
     def __renamed(self, path: Path, new_name: str) -> Path:

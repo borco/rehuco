@@ -56,6 +56,9 @@ Changelogs are per package in this monorepo, matching the per-package release ta
   next verify adopts them as unexpected.
 - Converting a `.tc` measures `current_size` after renaming its screenshots, so the size never counts the
   images the conversion itself claims.
+- A rename's executed plan is a `Relocation`, available as `RehuRenamer.relocation`. Its `relocate(path)` gives a
+  path's new location, and `touches(folder)` says whether a folder's listing changed. `RenameCoordinator` passes it
+  to every rename listener, which used to be called with no arguments.
 
 ### Removed
 

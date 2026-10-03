@@ -10,6 +10,11 @@ the kinds arrive from the test rather than from the rules, which is the point: w
 *mapping* from a kind to a row, where whether a given file has that kind is core's own subject.
 """
 
+# the read, the checksum states, the in-place table and its order are one surface; one cohesive module reads
+# better than an arbitrary split, so the module-length cap is lifted here, as it is for
+# test_rehu_document_model.py
+# pylint: disable=too-many-lines
+
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import Event
@@ -20,6 +25,7 @@ from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, Qt
 from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
+from pytestqt.wait_signal import SignalBlocker
 from rehuco_agent.documents.files_rows import (
     CHECKSUM_COLUMN,
     KIND_COLUMN,
@@ -36,7 +42,15 @@ from rehuco_agent.documents.files_rows import (
     FilesTableModel,
     ModelIndex,
 )
-from rehuco_core import ChecksumRecordError, DirectoryClassifier, DirectoryEntry, DirectoryListing, FileKind, FileType
+from rehuco_core import (
+    ChecksumRecordError,
+    DirectoryClassifier,
+    DirectoryEntry,
+    DirectoryListing,
+    FileKind,
+    FileType,
+    Relocation,
+)
 
 DIRECTORY: Final = Path("/fake/library/sculpting")
 INFO_PATH: Final = DIRECTORY / "info.rehu"
@@ -632,6 +646,138 @@ def test_the_listings_own_metadata_reaches_the_row(mocker: MockerFixture) -> Non
     assert found["notes.pdf"].modified == MTIME
     assert found["sub"].size is None
     assert found["sub"].file_type is FileType.DIRECTORY
+
+
+# endregion
+
+
+# region Applying a read in place
+
+
+def file_row(name: str, size: int = 1, directory: Path = DIRECTORY) -> FileRow:
+    """A plain content row.
+
+    :param name: the file's name.
+    :param size: its size, which a test changes to make a row differ.
+    :param directory: the folder it is in.
+    :returns: the row.
+    """
+    return FileRow(name, directory / name, FileKind.CONTENT, FileType.VIDEO, size=size)
+
+
+@fixture(name="held")
+def fixture_held() -> FilesTableModel:
+    """A model already showing three rows.
+
+    :returns: the model.
+    """
+    model = FilesTableModel()
+    model.set_rows((file_row("a.mp4"), file_row("b.mp4"), file_row("c.mp4")))
+    return model
+
+
+def shown(model: FilesTableModel) -> list[FileRow]:
+    """Every row the model holds, in its own order.
+
+    :param model: the model.
+    :returns: the rows.
+    """
+    return [model.index(row, NAME_COLUMN).data(FilesTableModel.ROW_ROLE) for row in range(model.rowCount())]
+
+
+def arguments(blocker: SignalBlocker) -> list[Any]:
+    """What a caught signal carried.
+
+    :param blocker: the wait that caught it.
+    :returns: its arguments.
+    """
+    assert blocker.args is not None
+    return blocker.args
+
+
+def test_a_read_is_applied_without_a_reset(qtbot: QtBot, held: FilesTableModel) -> None:
+    """A gone row is removed, a new one inserted and a changed one redrawn, and the model is never reset (#376).
+
+    **Test steps:**
+
+    * apply a read in which one row is gone, one is new and one changed size
+    * verify the rows, the one removal, the one insertion, and no reset
+    """
+    with (
+        qtbot.assertNotEmitted(held.modelReset),
+        qtbot.waitSignal(held.rowsRemoved) as removed,
+        qtbot.waitSignal(held.rowsInserted) as inserted,
+        qtbot.waitSignal(held.dataChanged) as changed,
+    ):
+        held.set_rows((file_row("a.mp4"), file_row("c.mp4", size=2), file_row("d.mp4")))
+
+    assert shown(held) == [file_row("a.mp4"), file_row("c.mp4", size=2), file_row("d.mp4")]
+    assert arguments(removed)[1:] == [1, 1]
+    assert arguments(inserted)[1:] == [2, 2]
+    assert arguments(changed)[0].row() == 1
+
+
+def test_an_identical_read_changes_nothing(qtbot: QtBot, held: FilesTableModel) -> None:
+    """Reading a folder that did not change emits nothing at all.
+
+    **Test steps:**
+
+    * apply the same rows again
+    * verify no structural or data signal fired
+    """
+    with (
+        qtbot.assertNotEmitted(held.rowsRemoved),
+        qtbot.assertNotEmitted(held.rowsInserted),
+        qtbot.assertNotEmitted(held.dataChanged),
+    ):
+        held.set_rows((file_row("a.mp4"), file_row("b.mp4"), file_row("c.mp4")))
+
+
+def test_a_run_of_gone_rows_is_removed_at_once(qtbot: QtBot, held: FilesTableModel) -> None:
+    """Adjacent gone rows go in one removal, so a view redraws once per run rather than per row.
+
+    **Test steps:**
+
+    * apply a read keeping only the first row
+    * verify one removal spanning the other two
+    """
+    with qtbot.waitSignal(held.rowsRemoved) as removed:
+        held.set_rows((file_row("a.mp4"),))
+
+    assert arguments(removed)[1:] == [1, 2]
+    assert shown(held) == [file_row("a.mp4")]
+
+
+def test_a_relocation_renames_the_rows_it_moved(qtbot: QtBot, held: FilesTableModel) -> None:
+    """A rename's rows keep their places and take their new names, the ``..`` row keeping its own (#376).
+
+    **Test steps:**
+
+    * hold a ``..`` row and a renamed sibling, and relocate
+    * verify the sibling's path and name moved, the parent row's path moved and its name did not
+    """
+    parent = FileRow(PARENT_ROW_NAME, DIRECTORY, FileKind.DIRECTORY, FileType.DIRECTORY)
+    held.set_rows((parent, file_row("a.mp4", directory=DIRECTORY / "sub")))
+    renamed = DIRECTORY.with_name("renamed")
+
+    with qtbot.assertNotEmitted(held.rowsRemoved), qtbot.assertNotEmitted(held.rowsInserted):
+        held.relocate(Relocation(((DIRECTORY, renamed),)))
+
+    rows = shown(held)
+    assert (rows[0].name, rows[0].path) == (PARENT_ROW_NAME, renamed)
+    assert (rows[1].name, rows[1].path) == ("a.mp4", renamed / "sub" / "a.mp4")
+
+
+def test_a_relocation_moving_nothing_here_redraws_nothing(qtbot: QtBot, held: FilesTableModel) -> None:
+    """A rename elsewhere leaves every row as it was.
+
+    **Test steps:**
+
+    * relocate through an unrelated rename
+    * verify no row was redrawn
+    """
+    with qtbot.assertNotEmitted(held.dataChanged):
+        held.relocate(Relocation(((Path("/fake/other"), Path("/fake/else")),)))
 
 
 # endregion

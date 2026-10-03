@@ -16,7 +16,7 @@ from typing import Any, Final
 
 from pytest import fixture, raises
 from pytest_mock import MockerFixture
-from rehuco_core import RenameCoordinator, RenameYieldTimeout, ResourceLocation
+from rehuco_core import Relocation, RenameCoordinator, RenameYieldTimeout, ResourceLocation
 
 from rehuco_core_tests.concurrency import BRIEF, SETTLE, running, wait_until
 
@@ -391,23 +391,44 @@ def test_locations_are_rewritten_before_readers_are_let_back_in(
 
 
 # region announcing
-def test_a_listener_is_told_once_a_rename_lands(coordinator: RenameCoordinator, filesystem: Any) -> None:
-    """The one event, carrying nothing: whoever cares re-reads what they hold.
+def test_a_listener_is_told_what_each_rename_moved(coordinator: RenameCoordinator, filesystem: Any) -> None:
+    """The one event, carrying the executed plan: whoever cares applies it to what they hold (#376).
 
     **Test steps:**
 
     * attach two listeners and rename twice
-    * check each was called once per rename
+    * check each was called once per rename, in order, with that rename's relocation
     """
     del filesystem
-    calls: list[str] = []
-    coordinator.add_rename_listener(lambda: calls.append("first"))
-    coordinator.add_rename_listener(lambda: calls.append("second"))
+    calls: list[tuple[str, Relocation]] = []
+    coordinator.add_rename_listener(lambda relocation: calls.append(("first", relocation)))
+    coordinator.add_rename_listener(lambda relocation: calls.append(("second", relocation)))
 
     coordinator.rename(INFO_PATH, "one")
     coordinator.rename(DIRECTORY / "one" / "info.rehu", "two")
 
-    assert calls == ["first", "second", "first", "second"]
+    once = Relocation(((FOLDER, DIRECTORY / "one"),))
+    twice = Relocation(((DIRECTORY / "one", DIRECTORY / "two"),))
+    assert calls == [("first", once), ("second", once), ("first", twice), ("second", twice)]
+
+
+def test_a_rename_to_its_own_name_announces_an_empty_relocation(
+    coordinator: RenameCoordinator, filesystem: Any
+) -> None:
+    """Nothing moved, and the listener is told exactly that.
+
+    **Test steps:**
+
+    * rename to the folder's own name
+    * check the listener got a relocation with no pairs
+    """
+    del filesystem
+    calls: list[Relocation] = []
+    coordinator.add_rename_listener(calls.append)
+
+    coordinator.rename(INFO_PATH, FOLDER.name)
+
+    assert calls == [Relocation()]
 
 
 def test_a_listener_is_not_told_about_a_rename_that_failed(
@@ -421,8 +442,8 @@ def test_a_listener_is_not_told_about_a_rename_that_failed(
     * check it was never called
     """
     mocker.patch.object(Path, "is_file", autospec=True, return_value=False)
-    calls: list[None] = []
-    coordinator.add_rename_listener(lambda: calls.append(None))
+    calls: list[Relocation] = []
+    coordinator.add_rename_listener(calls.append)
 
     with raises(FileNotFoundError):
         coordinator.rename(INFO_PATH, NEW_NAME)
@@ -440,16 +461,16 @@ def test_a_failing_listener_is_logged_and_the_rest_still_run(coordinator: Rename
     * rename, and check it returned normally and the second listener ran
     """
     del filesystem
-    calls: list[None] = []
+    calls: list[Relocation] = []
 
-    def raising() -> None:
+    def raising(_relocation: Relocation) -> None:
         raise RuntimeError("boom")
 
     coordinator.add_rename_listener(raising)
-    coordinator.add_rename_listener(lambda: calls.append(None))
+    coordinator.add_rename_listener(calls.append)
 
     assert coordinator.rename(INFO_PATH, NEW_NAME) == RENAMED / "info.rehu"
-    assert calls == [None]
+    assert calls == [Relocation(((FOLDER, RENAMED),))]
 
 
 # endregion

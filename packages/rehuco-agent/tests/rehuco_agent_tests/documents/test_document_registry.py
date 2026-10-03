@@ -2,6 +2,8 @@
 
 import json
 import logging
+from collections.abc import Generator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Final
 
@@ -11,6 +13,9 @@ from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.document_registry import DocumentRegistry
 from rehuco_agent.documents.document_widget import DocumentWidget
+from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
+from rehuco_agent.resource_events import ResourceEvents
+from rehuco_core import Relocation, RenameCoordinator
 
 from rehuco_agent_tests.qt_waits import wait_destroyed
 
@@ -310,3 +315,171 @@ def test_releasing_a_model_nobody_holds_raises(mocker: MockerFixture, qtbot: QtB
 
     with raises(KeyError):
         registry.release(model)
+
+
+# region Following the app's own renames and writes (#376)
+
+LIBRARY: Final = Path.cwd() / "fake" / "library"
+
+
+def test_a_member_follows_its_collection_folders_rename(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A directory-scoped collection renamed while a member nested in it is open: the member's record moves
+    with the folder, and the registry finds it under its new path.
+
+    **Test steps:**
+
+    * hold a member's ``info.rehu`` nested under a collection folder
+    * announce the collection folder's rename
+    * verify the member's path moved and it is found under the new one only
+    """
+    del qtbot
+    load_document(mocker)
+    registry = DocumentRegistry()
+    member = LIBRARY / "series" / "part1" / "info.rehu"
+    model = registry.acquire(member)
+
+    registry.resource_events.announce_moved(Relocation(((LIBRARY / "series", LIBRARY / "saga"),)))
+
+    moved = LIBRARY / "saga" / "part1" / "info.rehu"
+    assert model.path == moved
+    assert registry.find(moved) is model
+    assert registry.find(member) is None
+
+
+def test_a_file_scoped_record_follows_its_own_rename(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """``foo.rehu`` renamed with its sibling set: the open record is re-pointed at ``bar.rehu``.
+
+    **Test steps:**
+
+    * hold ``foo.rehu`` and announce the rename of its set
+    * verify it is now ``bar.rehu``
+    """
+    del qtbot
+    load_document(mocker)
+    registry = DocumentRegistry()
+    model = registry.acquire(LIBRARY / "foo.rehu")
+
+    registry.resource_events.announce_moved(
+        Relocation(
+            (
+                (LIBRARY / "foo.rehu", LIBRARY / "bar.rehu"),
+                (LIBRARY / "foo.zip", LIBRARY / "bar.zip"),
+                (LIBRARY / "foo.checksum", LIBRARY / "bar.checksum"),
+                (LIBRARY / "foo00.jpg", LIBRARY / "bar00.jpg"),
+            )
+        )
+    )
+
+    assert model.path == LIBRARY / "bar.rehu"
+    assert registry.find(LIBRARY / "bar.rehu") is model
+
+
+def test_a_folder_rename_carries_its_file_scoped_record_and_a_sibling_rename_does_not_touch_the_folders(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """A folder holding ``info.rehu`` and a file-scoped ``bar.rehu``: renaming the folder moves both open
+    records; renaming ``bar`` afterwards moves only ``bar``.
+
+    **Test steps:**
+
+    * hold the folder's ``info.rehu`` and its ``bar.rehu``
+    * announce the folder's rename, and verify both moved
+    * announce ``bar``'s rename within the renamed folder, and verify ``info.rehu`` stayed
+    """
+    del qtbot
+    load_document(mocker)
+    registry = DocumentRegistry()
+    info = registry.acquire(LIBRARY / "pack" / "info.rehu")
+    standalone = registry.acquire(LIBRARY / "pack" / "bar.rehu")
+    kit = LIBRARY / "kit"
+
+    registry.resource_events.announce_moved(Relocation(((LIBRARY / "pack", kit),)))
+
+    assert info.path == kit / "info.rehu"
+    assert standalone.path == kit / "bar.rehu"
+
+    with stays_put(info):
+        registry.resource_events.announce_moved(Relocation(((kit / "bar.rehu", kit / "baz.rehu"),)))
+
+    assert standalone.path == kit / "baz.rehu"
+    assert info.path == kit / "info.rehu"
+
+
+@contextmanager
+def stays_put(model: RehuDocumentModel) -> Generator[None]:
+    """Fail if ``model``'s path changes inside the block.
+
+    :param model: the model that must stay put.
+    :yields: nothing; the block runs the announcement.
+    """
+    moves: list[object] = []
+    model.path_changed.connect(moves.append)  # type: ignore[attr-defined]
+    try:
+        yield
+    finally:
+        model.path_changed.disconnect(moves.append)  # type: ignore[attr-defined]
+    assert not moves
+
+
+def test_a_held_models_writes_are_announced_until_its_last_release(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """What a held model says it wrote reaches the app-wide events; a released one is no longer relayed.
+
+    **Test steps:**
+
+    * hold a model and have it announce a write and a folder change
+    * verify both were announced app-wide
+    * release it, and verify a later announcement is not relayed
+    """
+    load_document(mocker)
+    events = ResourceEvents()
+    registry = DocumentRegistry(resource_events=events)
+    model = registry.acquire(FAKE_PATH)
+
+    with qtbot.waitSignal(events.changed) as changed:
+        model.announce_files_changed((FAKE_PATH,))
+    with qtbot.waitSignal(events.folder_changed) as folder:
+        model.announce_folder_changed(FAKE_PATH.parent)
+
+    assert changed.args == [(FAKE_PATH,)]
+    assert folder.args == [FAKE_PATH.parent]
+
+    registry.release(model)
+    with qtbot.assertNotEmitted(events.changed):
+        model.announce_files_changed((FAKE_PATH,))
+
+
+def test_the_renaming_document_adopts_its_rename_exactly_once(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The coordinator's announcement reaches the renaming model through the registry before the rename call
+    returns to it; between the two it moves, and each signal fires, exactly once.
+
+    **Test steps:**
+
+    * hold a model in a registry whose events hear a coordinator, with the rename on disk mocked
+    * rename it from its location editor
+    * verify ``path_changed`` and ``image_scanner_changed`` fired once each, and the registry re-keyed it
+    """
+    del qtbot
+    load_document(mocker)
+    renamed = FAKE_PATH.parent.with_name("modelling") / "info.rehu"
+    renamer = mocker.patch("rehuco_core.rename_coordination.RehuRenamer", autospec=True).return_value
+    renamer.rename.return_value = renamed
+    renamer.relocation = Relocation(((FAKE_PATH.parent, renamed.parent),))
+    mocker.patch.object(RenameCoordinator, "_RenameCoordinator__step_out_of")
+    coordinator = RenameCoordinator()
+    events = ResourceEvents()
+    coordinator.add_rename_listener(events.announce_moved)
+    registry = DocumentRegistry(rename_coordinator=coordinator, resource_events=events)
+    model = registry.acquire(FAKE_PATH)
+    paths: list[object] = []
+    scanners: list[object] = []
+    model.path_changed.connect(paths.append)  # type: ignore[attr-defined]
+    model.image_scanner_changed.connect(scanners.append)  # type: ignore[attr-defined]
+
+    assert model.rename_location("modelling")
+
+    assert paths == [renamed]
+    assert len(scanners) == 1
+    assert registry.find(renamed) is model
+
+
+# endregion

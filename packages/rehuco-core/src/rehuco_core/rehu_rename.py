@@ -29,6 +29,7 @@ from typing import Final
 
 from .checksum_trust import DEFAULT_CHECKSUM_TRUST, ChecksumTrust
 from .constants import REHU_SUFFIX
+from .relocation import Relocation
 from .resource_scoping import is_directory_scoped
 
 TRANSIENT_LOCK_ERRORS: Final = frozenset({5, 32})
@@ -111,7 +112,7 @@ class RehuRenamer:
         self.__path: Final = path
         self.__new_name: Final = new_name
         self.__trust: Final = trust
-        self.__executed: list[tuple[Path, Path]] = []
+        self.__relocation = Relocation()
         """The plan :meth:`rename` actually carried out, and what :meth:`relocate` answers from. Empty
         until a rename succeeds -- including after one that was rolled back, so a failure leaves every
         path where a caller last saw it rather than pointing at destinations that no longer hold
@@ -154,7 +155,17 @@ class RehuRenamer:
 
         :returns: the executed plan.
         """
-        return tuple(self.__executed)
+        return self.__relocation.pairs
+
+    @property
+    def relocation(self) -> Relocation:
+        """The executed plan as a :class:`~rehuco_core.Relocation`, for a holder elsewhere to apply to everything
+        it holds -- what :class:`~rehuco_core.RenameCoordinator` announces once a rename lands (#376). Empty
+        exactly when :attr:`executed` is.
+
+        :returns: the executed plan.
+        """
+        return self.__relocation
 
     def relocate(self, candidate: Path) -> Path:
         """Where ``candidate`` ended up once this rename ran, or ``candidate`` itself if it did not move
@@ -166,15 +177,9 @@ class RehuRenamer:
         executed* rather than from a second traversal that could disagree with it: the same one list of
         pairs :meth:`__execute` renamed, read back the other way.
 
-        Both scopes ([[data-model#resource-scoping]]) are one rule -- **a path at or beneath a renamed
-        source lands at the same offset beneath its destination**. For a file-scoped resource every
-        source is a file, so nothing is ever beneath one and the rule degenerates to exact matching
-        against its sibling set; for a directory-scoped one the single source is the directory, so the
-        whole subtree rebases without any of it ever being enumerated. Comparison folds case exactly
-        where the filesystem does, through :func:`os.path.normcase` -- the same rule
-        :meth:`__check_no_collisions` uses to decide whether two paths name the same file -- and the
-        tail is taken from ``candidate``'s **own** parts, so a differently-cased ancestor relocates
-        without rewriting how the rest of the name is spelled.
+        Both scopes ([[data-model#resource-scoping]]) are one rule, :meth:`Relocation.relocate`'s -- **a
+        path at or beneath a renamed source lands at the same offset beneath its destination** -- with
+        case folded by the same :func:`os.path.normcase` rule :meth:`__check_no_collisions` uses.
 
         Answers about **this instance's** rename and no other: before :meth:`rename` has run, after one
         that was a no-op, and after one that failed and was rolled back, every path comes back
@@ -188,14 +193,7 @@ class RehuRenamer:
         :returns: the path ``candidate`` now has, or ``candidate`` unchanged when this rename did not
             move it.
         """
-        candidate_parts = self.__normalized_path_parts(candidate)
-        for source, destination in self.__executed:
-            source_parts = self.__normalized_path_parts(source)
-            if candidate_parts == source_parts:
-                return destination
-            if candidate_parts[: len(source_parts)] == source_parts:
-                return destination.joinpath(*candidate.parts[len(source_parts) :])
-        return candidate
+        return self.__relocation.relocate(candidate)
 
     def conflict(self) -> Path | None:
         """Whatever already occupies this rename's own destination, or ``None`` when it is free.
@@ -428,23 +426,6 @@ class RehuRenamer:
             if destination.exists():
                 raise FileExistsError(f'"{destination.name}" already exists.')
 
-    @staticmethod
-    def __normalized_path_parts(path: Path) -> tuple[str, ...]:
-        """``path`` split into components, each normalized the way this filesystem normalizes a name.
-
-        :func:`os.path.normcase` does the normalizing -- folding case on Windows and rewriting
-        separators there, identity on POSIX -- so two paths that name the same thing come out equal and
-        two that do not, do not.
-
-        Split into components rather than left as one normalized string so that a prefix test cannot
-        mistake a *sibling whose name merely starts alike* for something inside a directory --
-        ``/lib/folder2`` starts with ``/lib/folder`` as text and is not beneath it as a path.
-
-        :param path: the path to normalize.
-        :returns: its normalized components.
-        """
-        return tuple(os.path.normcase(part) for part in path.parts)
-
     def __execute(self, plan: Sequence[tuple[Path, Path]]) -> None:
         """Perform every planned rename, undoing the completed ones if any of them fails.
 
@@ -465,7 +446,7 @@ class RehuRenamer:
         except OSError as error:
             self.__roll_back(completed, error)
             raise
-        self.__executed = completed
+        self.__relocation = Relocation(tuple(completed))
 
     @staticmethod
     def __rename_step(current: Path, wanted: Path) -> None:

@@ -169,7 +169,7 @@ def test_a_real_rename_lands_mid_hash_and_the_job_survives_it(tmp_path: Path) ->
     record, content = make_resource(tmp_path, "old_folder")
     coordinator = RenameCoordinator()
     queue = TaskQueue()
-    coordinator.add_rename_listener(queue.resync_sources)  # exactly MainWindow's wiring
+    coordinator.add_rename_listener(lambda _relocation: queue.resync_sources())  # what MainWindow's events end in
     job = HashingJob(coordinator, record, content)
     try:
         serial = queue.enqueue(job)
@@ -211,7 +211,7 @@ def test_three_real_renames_during_one_hash_still_yield_the_right_digest(tmp_pat
     record, content = make_resource(tmp_path, "old_folder")
     coordinator = RenameCoordinator()
     queue = TaskQueue()
-    coordinator.add_rename_listener(queue.resync_sources)
+    coordinator.add_rename_listener(lambda _relocation: queue.resync_sources())
     job = HashingJob(coordinator, record, content)
     try:
         queue.enqueue(job)
@@ -275,7 +275,7 @@ def test_a_rename_started_mid_park_waits_for_the_standing_aside(tmp_path: Path) 
     record, content = make_resource(tmp_path, "old_folder")
     coordinator = RenameCoordinator()
     queue = TaskQueue()
-    coordinator.add_rename_listener(queue.resync_sources)
+    coordinator.add_rename_listener(lambda _relocation: queue.resync_sources())
     job = HashingJob(coordinator, record, content)
     landed = Event()
     try:

@@ -29,7 +29,8 @@ do are each routed out of here rather than done here:
 Anything else is handed to the system's default handler, which is the only sensible thing to do with a
 video or a PDF and the one route that does not involve this app pretending to open it.
 
-**It refreshes when shown, and on demand -- never in between.** The dock starts hidden, and a listing is
+**It refreshes when shown, on demand, and when the app itself changes the files it shows -- never in
+between.** The dock starts hidden, and a listing is
 a filesystem round trip on a share ([[packaging-deployment#ts230-as-nas]]), so a document that is open
 but whose folder nobody is looking at costs nothing. Deliberately **not** a ``QFileSystemModel``: that
 model installs a watcher which holds handles open on Windows, and a held handle is exactly what makes a
@@ -45,9 +46,10 @@ from borco_pyside.theming import ActionIconThemeHandler
 from PySide6.QtCore import QModelIndex, QPersistentModelIndex, Qt, QUrl, Signal
 from PySide6.QtGui import QAction, QDesktopServices, QShowEvent
 from PySide6.QtWidgets import QHeaderView, QToolBar, QToolButton, QWidget
-from rehuco_core import IMAGE_EXTENSIONS, FileKind
+from rehuco_core import IMAGE_EXTENSIONS, FileKind, Relocation
 
 from ..commands import REFRESH_FILES, shared_command_registry
+from ..resource_events import ResourceEvents
 from ..settings.checksum_settings import shared_checksum_settings
 from ..settings.excluded_files_settings import shared_excluded_files_settings
 from .files_row_delegate import CHECKSUM_COLUMN_WIDTH, FilesRowDelegate
@@ -113,15 +115,24 @@ class FilesView(QWidget):
     owns the answer -- the document (a verify, a lightbox) or the window (opening another resource).
     Nothing here writes, deletes or renames anything.
 
-    **Refreshed at four seams**: being shown, ``F5``, the refresh button, and the two things that change
-    what it is a view *of* -- this document's path moving (a convert, a completed rename) and one of its
-    checksum runs finishing, which is the only way the checksum column can change without the folder
-    changing. Not on a timer and not on a watcher, for the reasons the module docstring gives.
+    **Refreshed at four seams**: being shown, ``F5``, the refresh button, and whatever the app itself does
+    to the files beneath this resource's folder ([[mounts-and-storage#out-of-band]], #376) -- a rename, a
+    save, a conversion, a screenshot moved or deleted, a checksum run finishing. Each read is applied in
+    place (:class:`~rehuco_agent.documents.files_rows.FilesTableModel`), so a refresh keeps the reader's
+    selection and scroll position. Not on a timer and not on a watcher, for the reasons the module docstring
+    gives.
+
+    **The browsed folder follows a move.** A rename that moves this resource's folder, or a convert or rename
+    that re-points its record, keeps the reader where they were relative to the resource's folder rather than
+    sending them back to its top.
 
     :param model: the document whose folder this shows.
     :param parent: optional Qt parent.
     :param verify: what the checksum record's row calls -- this document's *Verify All*, or ``None``
         where the document has no queue to put a run on, which also greys that row's activation.
+    :param resource_events: the app's file announcements to follow; ``None`` follows only this document's own
+        (:attr:`~RehuDocumentModel.files_changed`, :attr:`~RehuDocumentModel.folder_changed`), which a document
+        held by the registry announces through these events anyway.
     """
 
     record_activated: Signal = Signal(object)
@@ -140,15 +151,25 @@ class FilesView(QWidget):
     curation ignored."""
 
     def __init__(
-        self, model: RehuDocumentModel, parent: QWidget | None = None, verify: Callable[[], None] | None = None
+        self,
+        model: RehuDocumentModel,
+        parent: QWidget | None = None,
+        verify: Callable[[], None] | None = None,
+        resource_events: ResourceEvents | None = None,
     ) -> None:
         super().__init__(parent)
         self.__model: Final = model
         self.__verify: Final = verify
+        self.__events: Final = resource_events
         self.__stale = True
         self.__directory: Path | None = None
-        """The folder currently browsed, or ``None`` before the first read has been set up -- reset to
-        the root whenever the document's path moves."""
+        """The folder currently browsed, or ``None`` for a document with no folder yet."""
+        self.__root: Path | None = None
+        """The resource's own folder as last seen -- what the browsed folder's offset is kept against when the
+        document's path moves."""
+        self.__shown: Path | None = None
+        """The folder the table last drew, so a read of a different one -- navigation -- starts at the top while
+        a read of the same one keeps the reader's place."""
 
         self.__ui: Final = Ui_FilesView()
         self.__ui.setupUi(self)
@@ -173,7 +194,25 @@ class FilesView(QWidget):
         self.__setup_toolbar()
         self.__ui.file_view.doubleClicked.connect(self.__on_double_clicked)
         model.path_changed.connect(self.__on_path_changed)  # type: ignore[attr-defined]
+        if resource_events is not None:
+            resource_events.moved.connect(self.__on_moved)
+            resource_events.changed.connect(self.__on_files_changed)
+            resource_events.folder_changed.connect(self.__on_folder_changed)
+        else:
+            model.files_changed.connect(self.__on_files_changed)
+            model.folder_changed.connect(self.__on_folder_changed)
         self.__reset_to_root()
+
+    def detach(self) -> None:
+        """Stop following the app's file announcements, before this view is destroyed.
+
+        The events outlive every document, and a connection to a bound method can outlive the widget it
+        reads (#387), so the owner disconnects explicitly rather than trusting the destruction to.
+        """
+        if self.__events is not None:
+            self.__events.moved.disconnect(self.__on_moved)
+            self.__events.changed.disconnect(self.__on_files_changed)
+            self.__events.folder_changed.disconnect(self.__on_folder_changed)
 
     # region Reading
 
@@ -193,6 +232,7 @@ class FilesView(QWidget):
         path = self.__model.path
         directory = self.__directory
         if path is None or directory is None:
+            self.__shown = None
             self.__rows.set_rows(())
             self.__ui.path_label.setText("")
             self.__ui.summary_label.setText(NO_PATH_SUMMARY)
@@ -221,7 +261,12 @@ class FilesView(QWidget):
         :param rows: what the read established.
         """
         self.__directory = rows.directory
+        navigated = rows.directory != self.__shown
+        self.__shown = rows.directory
         self.__rows.set_rows(rows.rows)
+        if navigated:
+            self.__ui.file_view.clearSelection()
+            self.__ui.file_view.scrollToTop()
         self.__ui.path_label.setText(self.__relative_label(rows.directory))
         self.__ui.summary_label.setText(FilesView.__summary(rows))
 
@@ -296,6 +341,7 @@ class FilesView(QWidget):
         """
         path = self.__model.path
         self.__directory = directory
+        self.__root = None if path is None else path.parent
         self.__set_navigable(path is not None and directory is not None and directory != path.parent)
         self.__ui.reveal_action.setEnabled(directory is not None)
         self.refresh()
@@ -303,9 +349,9 @@ class FilesView(QWidget):
     def __reset_to_root(self, *_args: object) -> None:
         """Point the browser back at the resource's own folder.
 
-        Three callers, one act. It is what the first read starts from; where a path change lands, since a
-        rename or a convert moves the folder this is a view *of* and a subdirectory of the old one is not
-        somewhere to stay; and what the Home action does.
+        Three callers, one act. It is what the first read starts from; where a path change lands when the
+        browsed folder has no place under the new one (:meth:`__on_path_changed`); and what the Home action
+        does.
 
         :param _args: whatever the triggering signal carried -- ``triggered``'s ``checked`` flag;
             unused, the folder being re-derived from the model either way.
@@ -313,13 +359,93 @@ class FilesView(QWidget):
         path = self.__model.path
         self.__go_to(None if path is None else path.parent)
 
-    def __on_path_changed(self, _path: Path | None) -> None:
+    def __on_path_changed(self, path: Path | None) -> None:
         """Re-scope to the new folder when the document's path moves (#52's landmine, for a folder).
 
-        :param _path: the model's new path; unused -- :meth:`__reset_to_root` re-reads it, and the
-            folder is its parent either way.
+        The browsed folder keeps its offset beneath the resource's folder -- the rename rule
+        (:class:`~rehuco_core.Relocation`) applied to the one folder this view is scoped by -- so a rename of
+        a directory-scoped resource, which may reach here before :meth:`__on_moved` does, leaves the reader
+        in the same subfolder under the new name, and a convert, which keeps the folder, leaves them where
+        they were. A document with no path, or a browsed folder outside the old one, goes back to the top.
+
+        :param path: the model's new path.
         """
-        self.__reset_to_root()
+        root = self.__root
+        directory = self.__directory
+        if path is None or root is None or directory is None or not FilesView.__is_beneath(directory, root):
+            self.__reset_to_root()
+            return
+        moved = Relocation(((root, path.parent),))
+        self.__shown = FilesView.__relocated(moved, self.__shown)
+        self.__go_to(moved.relocate(directory))
+
+    def __on_moved(self, relocation: Relocation) -> None:
+        """Follow a rename the app made: rename the rows it moved and the folder browsed, then read again.
+
+        Only a rename touching this resource's folder is anything to this view; one elsewhere in the
+        catalog is not read for. The rows are renamed before the read goes out so the read lands on rows
+        already under their new paths, and the reader's selection with them.
+
+        :param relocation: the rename's executed plan.
+        """
+        root = self.__root
+        if root is None or not relocation.touches(root):
+            return
+        self.__rows.relocate(relocation)
+        self.__directory = FilesView.__relocated(relocation, self.__directory)
+        self.__shown = FilesView.__relocated(relocation, self.__shown)
+        self.__root = relocation.relocate(root)
+        self.refresh()
+
+    @staticmethod
+    def __relocated(relocation: Relocation, path: Path | None) -> Path | None:
+        """Where ``path`` is after ``relocation``, or ``None`` for no folder at all.
+
+        :param relocation: the rename's executed plan.
+        :param path: a folder this view keeps, if it keeps one yet.
+        :returns: the folder's new path.
+        """
+        return None if path is None else relocation.relocate(path)
+
+    def __on_files_changed(self, paths: tuple[Path, ...]) -> None:
+        """Read again when the app wrote a file beneath this resource's folder.
+
+        :param paths: the files written or replaced.
+        """
+        if any(self.__beneath_root(path) for path in paths):
+            self.refresh()
+
+    def __on_folder_changed(self, directory: Path) -> None:
+        """Read again when the app changed a folder's listing beneath this resource's folder.
+
+        :param directory: the folder whose listing changed.
+        """
+        if self.__beneath_root(directory):
+            self.refresh()
+
+    def __beneath_root(self, path: Path) -> bool:
+        """Whether ``path`` is this resource's folder or anywhere under it.
+
+        The whole folder rather than only the browsed one: the checksum column of a subfolder is read from
+        the record at the top, so a change there is a change to what every level shows.
+
+        :param path: the announced path.
+        :returns: whether a listing of this resource could show it, or show it differently.
+        """
+        root = self.__root
+        return root is not None and FilesView.__is_beneath(path, root)
+
+    @staticmethod
+    def __is_beneath(path: Path, folder: Path) -> bool:
+        """Whether ``path`` is ``folder`` or anywhere under it, case folded where the filesystem folds it --
+        the comparison a rename's own relocation makes.
+
+        :param path: the path in question.
+        :param folder: the folder.
+        :returns: whether ``path`` is at or beneath ``folder``.
+        """
+        folder_parts = Relocation.path_parts(folder)
+        return Relocation.path_parts(path)[: len(folder_parts)] == folder_parts
 
     def __on_double_clicked(self, index: QModelIndex | QPersistentModelIndex) -> None:
         """Act on the row the reader double-clicked, by what it is.

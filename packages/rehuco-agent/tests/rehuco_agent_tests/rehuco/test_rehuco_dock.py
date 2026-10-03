@@ -38,12 +38,14 @@ from rehuco_agent.rehuco.rehuco_dock import (
     STATE_VERSION,
     STATE_VERSION_KEY,
 )
+from rehuco_agent.resource_events import ResourceEvents
 from rehuco_core import (
     FINISHED_JOB_STATES,
     CatalogCache,
     CatalogRecord,
     JobControl,
     RecordKind,
+    Relocation,
     RootScanOutcome,
     RootScanResult,
     TaskJobBase,
@@ -1224,6 +1226,144 @@ def test_a_tracked_job_cleared_from_the_queue_reads_the_table_again(
         queue.remove(serial)
     qtbot.waitUntil(lambda: set_rows.call_count == 1, timeout=WAIT_TIMEOUT_MS)
     held.let_finish()
+
+
+# endregion
+
+
+# region Following the app's own file changes (#376)
+
+
+@fixture(name="followed")
+def fixture_followed(
+    qtbot: QtBot, mocker: MockerFixture, queue: TaskQueue, database: MemoryDatabase, served: Any
+) -> Generator[tuple[RehucoDock, ResourceEvents]]:
+    """A dock following the app's file announcements, its catalog open and one tutorial scanned in.
+
+    :param qtbot: pytest-qt fixture.
+    :param mocker: pytest-mock fixture.
+    :param queue: the queue its scan runs on.
+    :param database: the cache's database.
+    :param served: the served ``.rehuco``.
+    :yields: the dock and the events it follows.
+    """
+    del database, served
+    events = ResourceEvents()
+    dock = RehucoDock(queue, resource_events=events)
+    qtbot.addWidget(dock)
+    scan_finding(mocker, {TUTORIALS: (tutorial_record(),)})
+    dock.open_rehuco(REHUCO_PATH)
+    dock.scan_action.trigger()
+    qtbot.waitUntil(lambda: dock.catalog_model.rowCount() == 1, timeout=WAIT_TIMEOUT_MS)
+    wait_for_jobs(qtbot, queue)
+    yield dock, events
+    dock.detach()
+
+
+def shown_path(dock: RehucoDock) -> str:
+    """The root-qualified path the one row shows."""
+    return dock.catalog_model.index(0, 3).data()
+
+
+def test_a_rename_rebases_its_row_without_a_scan(followed: tuple[RehucoDock, ResourceEvents]) -> None:
+    """A renamed folder's record keeps its row, under the new path, with nothing read.
+
+    **Test steps:**
+
+    * announce the rename of the scanned tutorial's folder
+    * verify the row now shows the new path
+    """
+    dock, events = followed
+
+    events.announce_moved(Relocation(((TUTORIALS / "python", TUTORIALS / "py"),)))
+
+    assert shown_path(dock) == "tutorials/py/info.rehu"
+
+
+def test_a_rename_elsewhere_reads_the_cache_not_again(
+    mocker: MockerFixture, followed: tuple[RehucoDock, ResourceEvents]
+) -> None:
+    """A rename that moved no row leaves the table alone, and an empty one is not even looked at.
+
+    **Test steps:**
+
+    * announce an unrelated rename and an empty one
+    * verify the table was not read again
+    """
+    dock, events = followed
+    set_rows = mocker.spy(dock.catalog_model, "set_rows")
+
+    events.announce_moved(Relocation(((Path("/fake/elsewhere/a"), Path("/fake/elsewhere/b")),)))
+    events.announce_moved(Relocation())
+
+    assert set_rows.call_count == 0
+
+
+def test_a_written_record_is_read_back_into_its_row(
+    mocker: MockerFixture, followed: tuple[RehucoDock, ResourceEvents]
+) -> None:
+    """A save is reflected in the table at once, the record read back through the updater; a file that is not a
+    record is passed over.
+
+    **Test steps:**
+
+    * make the record read as retitled, and announce it and a screenshot as written
+    * verify the row shows the new title
+    """
+    dock, events = followed
+    mocker.patch.object(Path, "is_file", autospec=True, return_value=True)
+    mocker.patch(
+        "rehuco_core.rehudb_updates.CatalogRecordReader.read",
+        return_value=CatalogRecord(
+            "python/info.rehu", RecordKind.REHU, title="Python 3", type="tutorial", current_size=1536, content_hash="1"
+        ),
+    )
+
+    events.announce_changed((TUTORIALS / "python" / "info.rehu", TUTORIALS / "python" / "info00.jpg"))
+
+    assert dock.catalog_model.index(0, TITLE_COLUMN).data() == "Python 3"
+
+
+def test_a_cache_failure_while_following_is_logged(
+    mocker: MockerFixture, followed: tuple[RehucoDock, ResourceEvents], caplog: LogCaptureFixture
+) -> None:
+    """The cache is disposable and the next scan rebuilds it, so a failure to follow is a log line.
+
+    **Test steps:**
+
+    * make the cache refuse a relocation and an upsert, and announce both
+    * verify each was logged as an error
+    """
+    _dock, events = followed
+    mocker.patch.object(CatalogCache, "apply_relocation", side_effect=sqlite3.OperationalError("locked"))
+    mocker.patch.object(CatalogCache, "locate", side_effect=sqlite3.OperationalError("locked"))
+    caplog.set_level(logging.ERROR, logger="rehuco_agent.rehuco.rehuco_dock")
+
+    events.announce_moved(Relocation(((TUTORIALS / "python", TUTORIALS / "py"),)))
+    events.announce_changed((TUTORIALS / "python" / "info.rehu",))
+
+    assert caplog.text.count("locked") == 2
+
+
+def test_with_nothing_open_an_announcement_is_nothing(qtbot: QtBot, queue: TaskQueue, database: MemoryDatabase) -> None:
+    """A dock with no catalog open has no cache to follow anything into.
+
+    **Test steps:**
+
+    * announce a rename and a write to a dock with nothing open, then detach it
+    * verify nothing failed and the table stayed empty
+    """
+    del database
+    events = ResourceEvents()
+    dock = RehucoDock(queue, resource_events=events)
+    qtbot.addWidget(dock)
+
+    events.announce_moved(Relocation(((TUTORIALS, PACKS),)))
+    events.announce_changed((TUTORIALS / "info.rehu",))
+    dock.detach()
+    events.announce_changed((TUTORIALS / "info.rehu",))
+
+    assert dock.catalog_model.rowCount() == 0
 
 
 # endregion

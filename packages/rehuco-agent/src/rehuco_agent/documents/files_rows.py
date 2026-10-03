@@ -24,7 +24,7 @@ one ``scandir`` and one small JSON read, neither of which is slow and either of 
 share timeout when the mount is away.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
@@ -51,6 +51,7 @@ from rehuco_core import (
     DirectoryEntry,
     FileKind,
     FileType,
+    Relocation,
     checksum_record_path,
     is_checksum_fresh,
     load_checksum_record,
@@ -624,9 +625,12 @@ class FilesRowsLoader(QObject):
 class FilesTableModel(QAbstractTableModel):
     """The rows, as a table (#266).
 
-    A plain snapshot holder, like :class:`~rehuco_agent.documents.checksum_rows.ChecksumTableModel`: it
-    is handed a :class:`FilesRows` and shows it, and every refresh is a whole new read. A folder changes
-    under the app from outside it, so there is nothing here a diff could be trusted against.
+    **Updated in place, never reset** ([[mounts-and-storage#out-of-band]], #376). Every refresh is a whole new
+    read -- a folder changes under the app from outside it, so nothing here is trusted to be current -- but
+    the read is *applied* as a diff keyed by each row's path: rows gone are removed, rows new are inserted,
+    rows changed are redrawn, and a reader's selection and scroll position survive it. A rename the app made
+    is applied before the read lands (:meth:`relocate`), renaming the rows it moved, so the read that follows
+    finds them already under their new keys rather than removing and re-inserting them.
 
     **A disabled row is disabled in :meth:`flags`**, not merely drawn pale: that is one answer rather
     than a paint rule plus a guard in every activation path, and it is what makes a double-click on
@@ -644,16 +648,78 @@ class FilesTableModel(QAbstractTableModel):
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
-        self.__rows: tuple[FileRow, ...] = ()
+        self.__rows: Final[list[FileRow]] = []
 
     def set_rows(self, rows: tuple[FileRow, ...]) -> None:
-        """Replace everything shown.
+        """Show ``rows``, changing only what differs from what is shown.
+
+        The row order here is the read's, which nothing draws: :class:`FilesSortProxy` decides the order on
+        screen, so a new row is simply appended and the proxy puts it where it belongs.
 
         :param rows: the rows to show.
         """
-        self.beginResetModel()
-        self.__rows = rows
-        self.endResetModel()
+        fresh = {row.path: row for row in rows}
+        self.__remove_missing(fresh)
+        self.__update_changed(fresh)
+        held = {row.path for row in self.__rows}
+        added = [row for row in rows if row.path not in held]
+        if added:
+            start = len(self.__rows)
+            self.beginInsertRows(QModelIndex(), start, start + len(added) - 1)
+            self.__rows.extend(added)
+            self.endInsertRows()
+
+    def relocate(self, relocation: Relocation) -> None:
+        """Rename in place every row a rename moved, keeping each one's identity -- its selection with it.
+
+        :param relocation: the rename's executed plan.
+        """
+        for position, row in enumerate(self.__rows):
+            moved = relocation.relocate(row.path)
+            if moved == row.path:
+                continue
+            name = row.name if row.is_parent else moved.name
+            self.__replace(position, replace(row, path=moved, name=name))
+
+    def __remove_missing(self, fresh: dict[Path, FileRow]) -> None:
+        """Remove the rows ``fresh`` no longer has, one contiguous run at a time, from the end backwards so
+        the positions still to visit stay put.
+
+        :param fresh: the new rows by path.
+        """
+        # a local, not the attribute: pylint_qt reads a subscripted attribute in a Qt module as a signal
+        rows: list[FileRow] = self.__rows
+        index = len(rows) - 1
+        while index >= 0:
+            if rows[index].path in fresh:
+                index -= 1
+                continue
+            end = index
+            while index >= 0 and rows[index].path not in fresh:
+                index -= 1
+            self.beginRemoveRows(QModelIndex(), index + 1, end)
+            del rows[index + 1 : end + 1]
+            self.endRemoveRows()
+
+    def __update_changed(self, fresh: dict[Path, FileRow]) -> None:
+        """Redraw each held row whose fresh read differs -- a size, a time, a checksum verdict.
+
+        :param fresh: the new rows by path; every held row is in it, the missing ones being gone already.
+        """
+        for position, row in enumerate(self.__rows):
+            fresh_row = fresh[row.path]
+            if fresh_row != row:
+                self.__replace(position, fresh_row)
+
+    def __replace(self, position: int, row: FileRow) -> None:
+        """Put ``row`` at ``position`` and redraw that whole row.
+
+        :param position: the row's position here.
+        :param row: what it shows now.
+        """
+        rows: list[FileRow] = self.__rows  # a local, for the reason `__remove_missing` gives
+        rows[position] = row
+        self.dataChanged.emit(self.index(position, 0), self.index(position, COLUMN_COUNT - 1))
 
     @override
     def rowCount(self, parent: ModelIndex = QModelIndex()) -> int:

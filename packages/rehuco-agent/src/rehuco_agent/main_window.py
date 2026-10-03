@@ -38,6 +38,7 @@ from rehuco_core import (
     FINISHED_JOB_STATES,
     REHUCO_SUFFIX,
     JobState,
+    Relocation,
     SweepChecksumsJob,
     TaskQueue,
     is_directory_scoped,
@@ -77,6 +78,7 @@ from .glyphs import TAB_CLOSE_GLYPH
 from .main_window_ui import Ui_MainWindow
 from .recycle_bin_deleter import configured_deleter
 from .rehuco import RehucoDock
+from .resource_events import ResourceEvents
 from .settings.checksum_settings import shared_checksum_settings
 from .settings.checksum_trust_store import checksum_trust_path
 from .settings.document_session_settings import DocumentSessionSettings
@@ -317,17 +319,22 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
         # the app's one rename coordinator: every document renames through it and every job that reads
         # files tracks its locations in it, so a rename asks the running work to stand aside for one
-        # chunk instead of waiting for it to finish (#241). Its notification drives the queue's own
-        # re-read, which is how a moved job's row stops naming a folder that no longer exists.
+        # chunk instead of waiting for it to finish (#241). Its notification is announced app-wide (#376):
+        # every view of the moved files follows it in place, and the queue re-reads its jobs' sources, which
+        # is how a moved job's row stops naming a folder that no longer exists.
         # The process-wide one rather than this window's own (#204): a job the registry rebuilt from
         # the saved queue has no window to be handed anything, and a job reading through a coordinator
         # nobody renames through would hold a directory open against the rename it must stand aside for.
         self.__rename_coordinator: Final = DEFAULT_RENAME_COORDINATOR
-        self.__rename_coordinator.add_rename_listener(self.__task_queue.resync_sources)
+        self.__resource_events: Final = ResourceEvents(self)
+        self.__resource_events.moved.connect(self.__on_resources_moved)
+        self.__rename_coordinator.add_rename_listener(self.__resource_events.announce_moved)
 
         # one view-model per open document whoever shows it (#375): every holder acquires through this,
         # so a resource open in two places is one model, edited live in both
-        self.__document_registry: Final = DocumentRegistry(self, rename_coordinator=self.__rename_coordinator)
+        self.__document_registry: Final = DocumentRegistry(
+            self, rename_coordinator=self.__rename_coordinator, resource_events=self.__resource_events
+        )
         self.__documents_dock: Final = DocumentsDock(
             self,
             stylesheet_host=self.__dock_manager,
@@ -346,6 +353,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             self,
             stylesheet_host=self.__dock_manager,
             rename_coordinator=self.__rename_coordinator,
+            resource_events=self.__resource_events,
         )
         # a resource double-clicked in the Root Catalog browser opens through the ordinary route (#377)
         self.__rehuco_dock.open_requested.connect(self.open_path)
@@ -1438,7 +1446,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """
         # the coordinator is process-wide and outlives this window (#204), so its listener has to be
         # taken back rather than left pointing at a queue that is about to be shut down
-        self.__rename_coordinator.remove_rename_listener(self.__task_queue.resync_sources)
+        self.__rename_coordinator.remove_rename_listener(self.__resource_events.announce_moved)
         self.__task_queue.pause()
         if not self.__task_queue.wait_until_idle():
             LOG.warning("The task queue did not settle before quitting; the unfinished job may be lost.")
@@ -1713,6 +1721,14 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """
         if isinstance(path, Path):
             self.open_path(path)
+
+    def __on_resources_moved(self, _relocation: Relocation) -> None:
+        """Have the task queue re-read its jobs' sources once a rename lands (#241) -- every job's own tracked
+        locations were already rewritten by the coordinator, so a source is all that can still be stale.
+
+        :param _relocation: the rename's executed plan; unused -- the queue re-reads every job's source.
+        """
+        self.__task_queue.resync_sources()
 
     def __on_document_path_changed(self, old_path: Path | None, new_path: Path | None) -> None:
         """Re-read the window title when the moved document is the focused one (#356), and keep

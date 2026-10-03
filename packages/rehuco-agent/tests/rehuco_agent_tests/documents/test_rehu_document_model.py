@@ -37,6 +37,7 @@ from rehuco_core import (
     LearningPathEntry,
     LockReasonKind,
     RehuDocument,
+    Relocation,
     RenameCoordinator,
     RenameYieldTimeout,
     current_block_version,
@@ -2547,6 +2548,114 @@ def test_saving_marks_saved_on_disk(mocker: MockerFixture) -> None:
     model.save()
 
     assert model.saved_on_disk is True
+
+
+def test_a_save_announces_the_record_it_wrote(mocker: MockerFixture) -> None:
+    """Every save says what it wrote, so every listing of the folder and the catalog follow it (#376) -- the
+    first save of a new document included.
+
+    **Test steps:**
+
+    * build a not-yet-saved model, patching the document's atomic save, and save it
+    * verify ``files_changed`` carried the record's path
+    """
+    path = Path("/fake/sculpting/info.rehu")
+    model = RehuDocumentModel.create_new(path)
+    mocker.patch.object(model.document, "save")
+    written: list[object] = []
+    model.files_changed.connect(written.append)
+
+    model.save()
+
+    assert written == [(path,)]
+
+
+def test_a_convert_announces_the_new_record_and_the_tc_it_replaced(mocker: MockerFixture) -> None:
+    """A conversion writes a ``.rehu`` and retires the ``.tc``: the new record first, so the catalog reads it
+    into the ``.tc``'s row before finding the ``.tc`` gone (#376).
+
+    **Test steps:**
+
+    * convert a legacy model with ``convert_tc`` mocked
+    * verify ``files_changed`` carried the ``.rehu`` then the ``.tc``
+    """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("/fake/info.tc"), legacy_tc=True))
+    mocker.patch(
+        "rehuco_agent.documents.rehu_document_model.convert_tc",
+        return_value=RehuDocument({"type": "Tutorial"}, Path("/fake/info.rehu")),
+    )
+    written: list[object] = []
+    model.files_changed.connect(written.append)
+
+    model.convert(keep_backups=True)
+
+    assert written == [(Path("/fake/info.rehu"), Path("/fake/info.tc"))]
+
+
+def test_a_relocation_moving_the_record_re_points_the_document_once() -> None:
+    """A rename that moved this record is adopted, unsaved edits and all, and hearing it twice moves nothing
+    more (#376).
+
+    **Test steps:**
+
+    * edit a model, then relocate it by a rename of its folder, twice
+    * verify the path, location and document moved once, the second call reported no change, and the edit
+      is still unsaved
+    """
+    path = Path("/fake/sculpting/info.rehu")
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, path))
+    model.title = "Edited"
+    renamed = path.parent.with_name("modelling")
+    relocation = Relocation(((path.parent, renamed),))
+    paths: list[object] = []
+    model.path_changed.connect(paths.append)  # type: ignore[attr-defined]
+
+    assert model.relocate(relocation) is True
+    assert model.relocate(relocation) is False
+
+    assert paths == [renamed / "info.rehu"]
+    assert model.location == (renamed / "info.rehu").as_posix()
+    assert model.document.path == renamed / "info.rehu"
+    assert model.dirty
+    assert model.title == "Edited"
+
+
+def test_a_relocation_elsewhere_leaves_the_document_alone(model: RehuDocumentModel) -> None:
+    """A rename that did not move this record is nothing to it, and a document with no path has nothing to
+    move.
+
+    **Test steps:**
+
+    * relocate a located document by an unrelated rename, and the path-less fixture by any rename
+    * verify neither moved
+    """
+    path = Path("/fake/sculpting/info.rehu")
+    located = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, path))
+
+    assert located.relocate(Relocation(((Path("/fake/other"), Path("/fake/else")),))) is False
+    assert located.path == path
+    assert model.relocate(Relocation(((Path("/fake"), Path("/else")),))) is False
+
+
+@mark.parametrize("announce", ["files", "folder"])
+def test_a_collaborators_write_is_announced_through_the_model(model: RehuDocumentModel, announce: str) -> None:
+    """The organizer and the checksum actions say what they wrote through the document that holds them.
+
+    **Test steps:**
+
+    * announce a write, or a folder change
+    * verify the matching signal carried it
+    """
+    heard: list[object] = []
+    model.files_changed.connect(heard.append)
+    model.folder_changed.connect(heard.append)
+
+    if announce == "files":
+        model.announce_files_changed([Path("/fake/info.checksum")])
+    else:
+        model.announce_folder_changed(Path("/fake"))
+
+    assert heard == [(Path("/fake/info.checksum"),) if announce == "files" else Path("/fake")]
 
 
 def test_create_new_files_per_user_state_under_the_given_username() -> None:
