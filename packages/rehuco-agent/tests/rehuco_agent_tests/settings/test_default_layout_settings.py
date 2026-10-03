@@ -12,9 +12,11 @@ from pytest import fixture
 from pytest_mock import MockerFixture
 from rehuco_agent.settings import default_layout_settings
 from rehuco_agent.settings.default_layout_settings import (
+    GROUP,
     UNTYPED_GROUP,
     DefaultLayoutSettings,
     shared_default_layout_settings,
+    shared_default_layout_settings_in,
 )
 
 # region fixtures
@@ -81,9 +83,9 @@ def settings() -> FakeSettings:
 def clear_shared_instance_cache() -> Iterator[None]:
     """Clear the ``lru_cache``-backed singleton before and after every test (see
     ``test_markdown_rendering_settings.py`` for the full rationale)."""
-    shared_default_layout_settings.cache_clear()
+    shared_default_layout_settings_in.cache_clear()
     yield
-    shared_default_layout_settings.cache_clear()
+    shared_default_layout_settings_in.cache_clear()
 
 
 # endregion
@@ -229,6 +231,57 @@ def test_the_shared_instance_is_the_same_object_every_time(mocker: MockerFixture
     mocker.patch.object(default_layout_settings, "persistent_settings", return_value=stored)
 
     assert shared_default_layout_settings() is shared_default_layout_settings()
+
+
+def test_a_group_of_its_own_round_trips_beside_the_documents_group(settings: FakeSettings) -> None:
+    """A settings object with a group of its own stores, loads and prunes only under that group, and
+    leaves the Documents dock's defaults alone (#380).
+
+    **Test steps:**
+
+    * save a Documents settings object and one under another group, each holding a tutorial's state
+    * verify each landed under its own group
+    * load a fresh one of the other group and verify it read only its own state
+    * pop its tutorial, save, and verify the Documents group's state is still stored
+    """
+    DefaultLayoutSettings(states={"tutorial": b"documents blob"}).save(settings)  # pyright: ignore[reportArgumentType]
+    own = DefaultLayoutSettings(group="rehuco_layout", states={"tutorial": b"own blob"})
+    own.save(settings)  # pyright: ignore[reportArgumentType]
+
+    assert settings.keys() == ["default_layout/tutorial/state", "rehuco_layout/tutorial/state"]
+
+    loaded = DefaultLayoutSettings(group="rehuco_layout")
+    loaded.load(settings)  # pyright: ignore[reportArgumentType]
+    assert loaded.states == {"tutorial": b"own blob"}
+
+    loaded.states.pop("tutorial")
+    loaded.save(settings)  # pyright: ignore[reportArgumentType]
+
+    assert settings.keys() == ["default_layout/tutorial/state"]
+
+
+def test_each_group_has_its_own_shared_instance(mocker: MockerFixture) -> None:
+    """The Documents dock's shared instance is the one its group names, and another group's is a
+    different object, loaded from its own group (#380).
+
+    **Test steps:**
+
+    * mock persistent storage holding a state under another group
+    * verify the Documents instance is the one kept for its group
+    * verify the other group's instance is a different object holding only its own state
+    """
+    stored = FakeSettings()
+    own_saved = DefaultLayoutSettings(group="rehuco_layout", states={"tutorial": b"own blob"})
+    own_saved.save(stored)  # pyright: ignore[reportArgumentType]
+    mocker.patch.object(default_layout_settings, "persistent_settings", return_value=stored)
+
+    documents = shared_default_layout_settings()
+    own = shared_default_layout_settings_in("rehuco_layout")
+
+    assert documents is shared_default_layout_settings_in(GROUP)
+    assert own is not documents
+    assert own.states == {"tutorial": b"own blob"}
+    assert not documents.states
 
 
 # endregion

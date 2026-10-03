@@ -29,7 +29,7 @@ from rehuco_agent import main_rc  # noqa: F401  # pylint: disable=unused-import 
 from rehuco_agent.app_logging import shared_log_bridge
 from rehuco_agent.commands import shared_command_registry
 from rehuco_agent.dialogs import conversion_backups_dialog
-from rehuco_agent.documents import document_widget
+from rehuco_agent.documents import document_sub_docks
 from rehuco_agent.fields.widgets.markdown_view import render_markdown
 from rehuco_agent.run_log import shared_run_log
 from rehuco_agent.scraping.registry import shared_scraper_registry
@@ -56,7 +56,7 @@ from rehuco_agent.settings import (
     web_search_settings,
 )
 from rehuco_agent.settings.checksum_settings import shared_checksum_settings
-from rehuco_agent.settings.default_layout_settings import shared_default_layout_settings
+from rehuco_agent.settings.default_layout_settings import shared_default_layout_settings_in
 from rehuco_agent.settings.deletion_settings import shared_deletion_settings
 from rehuco_agent.settings.description_editor_settings import shared_description_editor_settings
 from rehuco_agent.settings.excluded_files_settings import shared_excluded_files_settings
@@ -594,15 +594,15 @@ def isolate_shared_default_layout_settings(mocker: MockerFixture) -> Iterator[No
     document would pin an instance loaded from the developer's real on-disk settings for the rest of
     the session -- and could overwrite the layout they actually saved as their default.
     """
-    shared_default_layout_settings.cache_clear()
+    shared_default_layout_settings_in.cache_clear()
     fake = FakeSettings()
     mocker.patch.object(default_layout_settings, "persistent_settings", return_value=fake)
     # the widget's own import site too, same as the tray fixture below: the Save/Reset actions call
-    # ``settings.save(persistent_settings())`` through document_widget's import, so an unpatched one
+    # ``settings.save(persistent_settings())`` through document_sub_docks' import, so an unpatched one
     # would write the developer's real settings file from any test that triggers either action
-    mocker.patch.object(document_widget, "persistent_settings", return_value=fake)
+    mocker.patch.object(document_sub_docks, "persistent_settings", return_value=fake)
     yield
-    shared_default_layout_settings.cache_clear()
+    shared_default_layout_settings_in.cache_clear()
 
 
 @fixture(autouse=True)

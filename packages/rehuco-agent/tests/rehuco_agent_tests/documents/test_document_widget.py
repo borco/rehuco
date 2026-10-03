@@ -63,7 +63,7 @@ from rehuco_agent.documents.document_fields import (
     VIEWER_DESCRIPTION_TAB,
     VIEWER_MAIN_TAB,
 )
-from rehuco_agent.documents.document_widget import (
+from rehuco_agent.documents.document_sub_docks import (
     APPLY_DEFAULT_LAYOUT_TOOLTIP,
     CHECKSUM_DOCK_MIN_HEIGHT,
     CHECKSUM_ICON_RESOURCE,
@@ -85,10 +85,11 @@ from rehuco_agent.documents.document_widget import (
     STATE_VERSION,
     STATE_VERSION_KEY,
     STATE_WIDGET_STATE_KEY,
-    DocumentWidget,
+    DocumentSubDocks,
     type_dock_names,
     viewer_mode_for,
 )
+from rehuco_agent.documents.document_widget import DocumentWidget
 from rehuco_agent.documents.files_view import FilesView
 from rehuco_agent.documents.name_suggestion_model import NameSuggestionModel
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
@@ -142,7 +143,7 @@ TC_PATH: Final = Path("/fake/info.tc")
 TARGET_PATH: Final = Path("/fake/info.rehu")
 SCREENSHOTS: Final = [Path("/fake/info00.jpg"), Path("/fake/info01.jpg"), Path("/fake/info02.jpg")]
 
-CONFIRM_DELETE: Final = "rehuco_agent.documents.document_widget.confirm_delete"
+CONFIRM_DELETE: Final = "rehuco_agent.documents.document_sub_docks.confirm_delete"
 """The up-front permanent-delete gate, where the widget looks it up (#313); ``test_delete_confirmation.py``
 is its subject, and a test here reads what Discard Originals asked for."""
 
@@ -264,8 +265,8 @@ def field_surfaces(widget: DocumentWidget) -> list[QWidget]:
     :returns: each viewer and editor dock's content widget, viewers first.
     """
     docks = {
-        **widget._DocumentWidget__viewer_docks,  # type: ignore[attr-defined]  # pylint: disable=protected-access
-        **widget._DocumentWidget__editor_docks,  # type: ignore[attr-defined]  # pylint: disable=protected-access
+        **widget.sub_docks._DocumentSubDocks__viewer_docks,  # type: ignore[attr-defined]  # pylint: disable=protected-access
+        **widget.sub_docks._DocumentSubDocks__editor_docks,  # type: ignore[attr-defined]  # pylint: disable=protected-access
     }
     return [dock.widget() for dock in docks.values()]
 
@@ -658,7 +659,7 @@ def open_curating(selector: ImageSelector, widget: DocumentWidget, row: int) -> 
     :returns: the viewer.
     """
     selector.viewer_requested.emit(row)
-    viewer = widget._DocumentWidget__image_viewer  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    viewer = widget.sub_docks._DocumentSubDocks__image_viewer  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert isinstance(viewer, CuratingImageLightbox)
     return viewer
 
@@ -798,7 +799,7 @@ def test_a_curating_viewer_ignores_a_later_curated_set_change(widget: DocumentWi
     selector = curating_editor(widget, mocker, folder)
     viewer = open_curating(selector, widget, 0)
 
-    widget._DocumentWidget__on_curated_images_changed(SCREENSHOTS)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    widget.sub_docks._DocumentSubDocks__on_curated_images_changed(SCREENSHOTS)  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     assert viewer_names(viewer) == ["info00.jpg", "info01.jpg"]
 
@@ -1186,8 +1187,8 @@ def test_normal_document_shows_save_revert_and_hides_convert_actions(widget: Doc
     """
     assert widget.save_action.isVisible() is True
     assert widget.revert_action.isVisible() is True
-    keep_backups = widget._DocumentWidget__convert_keep_backups_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
-    discard = widget._DocumentWidget__convert_discard_originals_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    keep_backups = widget.sub_docks._DocumentSubDocks__convert_keep_backups_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    discard = widget.sub_docks._DocumentSubDocks__convert_discard_originals_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert keep_backups.isVisible() is False
     assert discard.isVisible() is False
 
@@ -1204,8 +1205,8 @@ def test_legacy_document_hides_save_revert_and_shows_convert_actions(legacy_widg
     """
     assert legacy_widget.save_action.isVisible() is False
     assert legacy_widget.revert_action.isVisible() is False
-    keep_backups = legacy_widget._DocumentWidget__convert_keep_backups_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
-    discard = legacy_widget._DocumentWidget__convert_discard_originals_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    keep_backups = legacy_widget.sub_docks._DocumentSubDocks__convert_keep_backups_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    discard = legacy_widget.sub_docks._DocumentSubDocks__convert_discard_originals_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert keep_backups.isVisible() is True
     assert discard.isVisible() is True
 
@@ -1225,7 +1226,7 @@ def test_convert_action_with_no_existing_target_calls_model_convert(
       `~rehuco_agent.asking_deleter.AskingDeleter` (#301)
     """
     convert = mocker.patch.object(legacy_model, "convert")
-    keep_backups = legacy_widget._DocumentWidget__convert_keep_backups_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    keep_backups = legacy_widget.sub_docks._DocumentSubDocks__convert_keep_backups_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     keep_backups.trigger()
 
@@ -1251,7 +1252,7 @@ def test_convert_action_prompts_before_overwriting_and_cancels_on_no(
     mocker.patch.object(Path, "exists", autospec=True, side_effect=lambda self: self == TARGET_PATH)
     mocker.patch.object(QMessageBox, "warning", return_value=QMessageBox.StandardButton.No)
     convert = mocker.patch.object(legacy_model, "convert")
-    discard = legacy_widget._DocumentWidget__convert_discard_originals_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    discard = legacy_widget.sub_docks._DocumentSubDocks__convert_discard_originals_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     discard.trigger()
 
@@ -1272,7 +1273,7 @@ def test_convert_action_prompts_before_overwriting_and_proceeds_on_yes(
     mocker.patch.object(Path, "exists", autospec=True, side_effect=lambda self: self == TARGET_PATH)
     mocker.patch.object(QMessageBox, "warning", return_value=QMessageBox.StandardButton.Yes)
     convert = mocker.patch.object(legacy_model, "convert")
-    discard = legacy_widget._DocumentWidget__convert_discard_originals_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    discard = legacy_widget.sub_docks._DocumentSubDocks__convert_discard_originals_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     discard.trigger()
 
@@ -1299,7 +1300,7 @@ def test_a_permanent_discard_originals_asks_first_and_cancels_on_no(
     shared_deletion_settings().use_recycle_bin = False
     confirm = mocker.patch(CONFIRM_DELETE, return_value=False)
     convert = mocker.patch.object(legacy_model, "convert")
-    discard = legacy_widget._DocumentWidget__convert_discard_originals_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    discard = legacy_widget.sub_docks._DocumentSubDocks__convert_discard_originals_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     discard.trigger()
 
@@ -1327,7 +1328,7 @@ def test_a_permanent_discard_originals_proceeds_on_yes_without_asking_again(
     shared_deletion_settings().use_recycle_bin = False
     confirm = mocker.patch(CONFIRM_DELETE, return_value=True)
     convert = mocker.patch.object(legacy_model, "convert")
-    discard = legacy_widget._DocumentWidget__convert_discard_originals_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    discard = legacy_widget.sub_docks._DocumentSubDocks__convert_discard_originals_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     discard.trigger()
 
@@ -1352,7 +1353,7 @@ def test_clear_backups_without_asking_skips_the_discard_originals_question(
     shared_deletion_settings().clear_backups_without_asking = True
     shown = mocker.patch.object(QMessageBox, "exec")
     convert = mocker.patch.object(legacy_model, "convert")
-    discard = legacy_widget._DocumentWidget__convert_discard_originals_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    discard = legacy_widget.sub_docks._DocumentSubDocks__convert_discard_originals_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     discard.trigger()
 
@@ -1374,7 +1375,7 @@ def test_a_bin_bound_discard_originals_asks_nothing(
     """
     shown = mocker.patch.object(QMessageBox, "exec")
     convert = mocker.patch.object(legacy_model, "convert")
-    discard = legacy_widget._DocumentWidget__convert_discard_originals_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    discard = legacy_widget.sub_docks._DocumentSubDocks__convert_discard_originals_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     discard.trigger()
 
@@ -1396,7 +1397,7 @@ def test_convert_action_shows_a_critical_dialog_on_failure(
     """
     mocker.patch.object(legacy_model, "convert", side_effect=OSError("disk full"))
     critical = mocker.patch.object(QMessageBox, "critical")
-    keep_backups = legacy_widget._DocumentWidget__convert_keep_backups_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    keep_backups = legacy_widget.sub_docks._DocumentSubDocks__convert_keep_backups_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     keep_backups.trigger()
 
@@ -1418,7 +1419,7 @@ def test_successful_convert_flips_the_toolbar_back_to_save_revert(
     """
     converted = RehuDocument({"type": "Tutorial", "sources": [{"title": "Foo", "primary": True}]}, TARGET_PATH)
     mocker.patch("rehuco_agent.documents.rehu_document_model.convert_tc", return_value=converted)
-    keep_backups = legacy_widget._DocumentWidget__convert_keep_backups_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    keep_backups = legacy_widget.sub_docks._DocumentSubDocks__convert_keep_backups_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     keep_backups.trigger()
 
@@ -1426,7 +1427,7 @@ def test_successful_convert_flips_the_toolbar_back_to_save_revert(
     assert legacy_widget.save_action.isVisible() is True
     assert legacy_widget.revert_action.isVisible() is True
     assert keep_backups.isVisible() is False
-    discard = legacy_widget._DocumentWidget__convert_discard_originals_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    discard = legacy_widget.sub_docks._DocumentSubDocks__convert_discard_originals_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert discard.isVisible() is False
 
 
@@ -1474,7 +1475,7 @@ def test_adding_docks_from_an_empty_grid_map_builds_nothing(widget: DocumentWidg
     * invoke the dock builder with an empty grid map
     * verify it returns an empty mapping (the ``setAsCurrentTab`` step is skipped)
     """
-    docks = widget._DocumentWidget__add_docks({}, "viewer", QtAds.LeftDockWidgetArea)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    docks = widget.sub_docks._DocumentSubDocks__add_docks({}, "viewer", QtAds.LeftDockWidgetArea)  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     assert docks == {}
 
@@ -1497,7 +1498,7 @@ def test_closing_a_dock_stashes_its_splitter_sizes(widget: DocumentWidget) -> No
     widget.toggle_action(EDITOR_MAIN_TAB).trigger()
     widget.toggle_action(EDITOR_MAIN_TAB).trigger()
 
-    stashed = widget._DocumentWidget__stashed_sizes  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    stashed = widget.sub_docks._DocumentSubDocks__stashed_sizes  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     assert "editor:Main Editor" in stashed
 
 
@@ -1517,7 +1518,7 @@ def test_reopening_a_toggled_dock_restores_its_splitter_sizes(widget: DocumentWi
     widget.toggle_action(EDITOR_MAIN_TAB).trigger()
 
     assert widget.toggle_action(EDITOR_MAIN_TAB).isChecked() is True
-    stashed = widget._DocumentWidget__stashed_sizes  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    stashed = widget.sub_docks._DocumentSubDocks__stashed_sizes  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     assert "editor:Main Editor" in stashed
 
 
@@ -1537,9 +1538,9 @@ def test_stash_size_is_a_noop_for_a_dock_with_no_area(mocker: MockerFixture, wid
     fake_dock.dockAreaWidget.return_value = None
     fake_dock.objectName.return_value = "orphaned"
 
-    widget._DocumentWidget__stash_size(fake_dock)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    widget.sub_docks._DocumentSubDocks__stash_size(fake_dock)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
-    stashed = widget._DocumentWidget__stashed_sizes  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    stashed = widget.sub_docks._DocumentSubDocks__stashed_sizes  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     assert "orphaned" not in stashed
 
 
@@ -1552,7 +1553,7 @@ def test_restore_size_is_a_noop_for_a_dock_with_no_area(mocker: MockerFixture, w
       no area
     * verify ``setSplitterSizes`` was never called
     """
-    stashed = widget._DocumentWidget__stashed_sizes  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    stashed = widget.sub_docks._DocumentSubDocks__stashed_sizes  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     stashed["orphaned"] = [100, 200]
     fake_dock = mocker.MagicMock()
     fake_dock.dockAreaWidget.return_value = None
@@ -1560,7 +1561,7 @@ def test_restore_size_is_a_noop_for_a_dock_with_no_area(mocker: MockerFixture, w
     dock_manager = widget._DocumentWidget__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     set_sizes = mocker.patch.object(dock_manager, "setSplitterSizes")
 
-    widget._DocumentWidget__restore_size(fake_dock)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    widget.sub_docks._DocumentSubDocks__restore_size(fake_dock)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
     set_sizes.assert_not_called()
 
@@ -1581,7 +1582,7 @@ def test_save_state_round_trips_through_restore_state(widget: DocumentWidget) ->
     state = widget.save_state()
 
     assert widget.restore_state(state) is True
-    stashed = widget._DocumentWidget__stashed_sizes  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    stashed = widget.sub_docks._DocumentSubDocks__stashed_sizes  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     assert "editor:Main Editor" in stashed
 
 
@@ -1696,7 +1697,7 @@ def test_restore_state_tolerates_a_payload_without_stashed_sizes(widget: Documen
     del payload["stashed_sizes"]
 
     assert widget.restore_state(cbor2.dumps(payload)) is True
-    stashed = widget._DocumentWidget__stashed_sizes  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    stashed = widget.sub_docks._DocumentSubDocks__stashed_sizes  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     assert not stashed
 
 
@@ -1710,7 +1711,7 @@ def save_preview_dock(widget: DocumentWidget) -> QtAds.CDockWidget:
     :param widget: the document widget to inspect.
     :returns: the Save Preview `CDockWidget`.
     """
-    return widget._DocumentWidget__save_preview_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    return widget.sub_docks._DocumentSubDocks__save_preview_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
 
 def on_disk_dock(widget: DocumentWidget) -> QtAds.CDockWidget:
@@ -1719,7 +1720,7 @@ def on_disk_dock(widget: DocumentWidget) -> QtAds.CDockWidget:
     :param widget: the document widget to inspect.
     :returns: the On Disk `CDockWidget`.
     """
-    return widget._DocumentWidget__on_disk_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    return widget.sub_docks._DocumentSubDocks__on_disk_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
 
 def test_the_viewer_is_two_docks_split_across_the_two_areas(widget: DocumentWidget) -> None:
@@ -1735,8 +1736,8 @@ def test_the_viewer_is_two_docks_split_across_the_two_areas(widget: DocumentWidg
     * verify the viewer docks are exactly the two new tabs, under their ``viewer:`` object names
     * verify Main View shares the main editor's area and Description View does not
     """
-    docks = widget._DocumentWidget__viewer_docks  # type: ignore[attr-defined]  # pylint: disable=protected-access
-    editors = widget._DocumentWidget__editor_docks  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    docks = widget.sub_docks._DocumentSubDocks__viewer_docks  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    editors = widget.sub_docks._DocumentSubDocks__editor_docks  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     assert list(docks) == [VIEWER_MAIN_TAB, VIEWER_DESCRIPTION_TAB]
     assert docks[VIEWER_MAIN_TAB].objectName() == "viewer:Main View"
@@ -1755,8 +1756,8 @@ def test_a_document_opens_as_a_reader_with_every_editor_hidden(widget: DocumentW
     * build a widget over the sample model
     * verify both viewer toggles report checked and every editor toggle reports unchecked
     """
-    viewers = widget._DocumentWidget__viewer_docks  # type: ignore[attr-defined]  # pylint: disable=protected-access
-    editors = widget._DocumentWidget__editor_docks  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    viewers = widget.sub_docks._DocumentSubDocks__viewer_docks  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    editors = widget.sub_docks._DocumentSubDocks__editor_docks  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     assert all(dock.toggleViewAction().isChecked() for dock in viewers.values())
     assert not any(dock.toggleViewAction().isChecked() for dock in editors.values())
@@ -1769,8 +1770,8 @@ def open_field_tabs(widget: DocumentWidget) -> list[FieldsTab]:
     :returns: the tabs whose toggle reports checked.
     """
     docks = {
-        **widget._DocumentWidget__viewer_docks,  # type: ignore[attr-defined]  # pylint: disable=protected-access
-        **widget._DocumentWidget__editor_docks,  # type: ignore[attr-defined]  # pylint: disable=protected-access
+        **widget.sub_docks._DocumentSubDocks__viewer_docks,  # type: ignore[attr-defined]  # pylint: disable=protected-access
+        **widget.sub_docks._DocumentSubDocks__editor_docks,  # type: ignore[attr-defined]  # pylint: disable=protected-access
     }
     return [tab for tab, dock in docks.items() if dock.toggleViewAction().isChecked()]
 
@@ -1785,7 +1786,7 @@ def test_a_type_less_document_opens_on_the_main_editor_alone(new_widget: Documen
     * verify the Main Editor is the only open viewer or editor, and it is its area's current tab
     * verify the inspection docks stay hidden and Main View can still be toggled back on
     """
-    main_editor = new_widget._DocumentWidget__editor_docks[EDITOR_MAIN_TAB]  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    main_editor = new_widget.sub_docks._DocumentSubDocks__editor_docks[EDITOR_MAIN_TAB]  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     assert open_field_tabs(new_widget) == [EDITOR_MAIN_TAB]
     assert main_editor.isCurrentTab()  # pylint: disable=no-member
@@ -1805,7 +1806,7 @@ def test_the_images_editor_dock_has_a_minimum_height_a_splitter_drag_cant_cross(
     * verify the Images tab's own minimum size hint reports the configured floor
     * verify a sibling tab (Main Editor) keeps no floor of its own
     """
-    editors = widget._DocumentWidget__editor_docks  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    editors = widget.sub_docks._DocumentSubDocks__editor_docks  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     assert editors[EDITOR_IMAGES_TAB].minimumSizeHint().height() == IMAGES_DOCK_MIN_HEIGHT
     assert editors[EDITOR_MAIN_TAB].minimumSizeHint().height() != IMAGES_DOCK_MIN_HEIGHT
@@ -1869,7 +1870,7 @@ def test_building_the_inspection_docks_leaves_the_main_viewer_current(widget: Do
     * build a widget over the sample model (every inspection dock added, then hidden)
     * verify both viewer docks are the current tab in their own areas, not an inspection dock
     """
-    docks = widget._DocumentWidget__viewer_docks  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    docks = widget.sub_docks._DocumentSubDocks__viewer_docks  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert docks[VIEWER_DESCRIPTION_TAB].isCurrentTab() is True
     assert docks[VIEWER_MAIN_TAB].isCurrentTab() is True
 
@@ -1911,7 +1912,7 @@ def test_inspection_docks_open_their_own_area_when_there_are_no_viewer_docks(
     widget = DocumentWidget(model)
     qtbot.addWidget(widget)
 
-    assert widget._DocumentWidget__viewer_docks == {}  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert widget.sub_docks._DocumentSubDocks__viewer_docks == {}  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert save_preview_dock(widget).toggleViewAction().isChecked() is False
     assert on_disk_dock(widget).toggleViewAction().isChecked() is False
 
@@ -2065,7 +2066,7 @@ def test_a_successful_convert_clears_the_banner(
     """
     converted = RehuDocument({"type": "Tutorial", "sources": [{"title": "Foo", "primary": True}]}, TARGET_PATH)
     mocker.patch("rehuco_agent.documents.rehu_document_model.convert_tc", return_value=converted)
-    keep_backups = legacy_widget._DocumentWidget__convert_keep_backups_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    keep_backups = legacy_widget.sub_docks._DocumentSubDocks__convert_keep_backups_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     keep_backups.trigger()
 
@@ -2644,7 +2645,7 @@ def test_switching_type_keeps_the_images_editor_docks_minimum_height(
     """
     model.resource_type = "reference_images"
 
-    editors = widget._DocumentWidget__editor_docks  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    editors = widget.sub_docks._DocumentSubDocks__editor_docks  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert editors[EDITOR_IMAGES_TAB].minimumSizeHint().height() == IMAGES_DOCK_MIN_HEIGHT
 
 
@@ -2723,16 +2724,16 @@ def test_switching_type_refocuses_the_rebuilt_main_editor_when_it_had_focus(
     """
     widget = DocumentWidget(block_model)
     qtbot.addWidget(widget)
-    outgoing_main_editor = widget._DocumentWidget__editor_docks[EDITOR_MAIN_TAB].widget()  # type: ignore[attr-defined]  # pylint: disable=protected-access,no-member
+    outgoing_main_editor = widget.sub_docks._DocumentSubDocks__editor_docks[EDITOR_MAIN_TAB].widget()  # type: ignore[attr-defined]  # pylint: disable=protected-access,no-member
     mocker.patch(
-        "rehuco_agent.documents.document_widget.QApplication.focusWidget",
+        "rehuco_agent.documents.document_sub_docks.QApplication.focusWidget",
         return_value=outgoing_main_editor.findChildren(QWidget)[0],
     )
-    focus_first_child = mocker.patch.object(widget, "_DocumentWidget__focus_first_child")
+    focus_first_child = mocker.patch.object(widget.sub_docks, "_DocumentSubDocks__focus_first_child")
 
     block_model.resource_type = "reference_images"
 
-    rebuilt_main_editor = widget._DocumentWidget__editor_docks[EDITOR_MAIN_TAB].widget()  # type: ignore[attr-defined]  # pylint: disable=protected-access,no-member
+    rebuilt_main_editor = widget.sub_docks._DocumentSubDocks__editor_docks[EDITOR_MAIN_TAB].widget()  # type: ignore[attr-defined]  # pylint: disable=protected-access,no-member
     focus_first_child.assert_called_once_with(rebuilt_main_editor)
 
 
@@ -2750,8 +2751,8 @@ def test_switching_type_leaves_focus_alone_when_it_was_elsewhere(
     """
     widget = DocumentWidget(block_model)
     qtbot.addWidget(widget)
-    mocker.patch("rehuco_agent.documents.document_widget.QApplication.focusWidget", return_value=None)
-    focus_first_child = mocker.patch.object(widget, "_DocumentWidget__focus_first_child")
+    mocker.patch("rehuco_agent.documents.document_sub_docks.QApplication.focusWidget", return_value=None)
+    focus_first_child = mocker.patch.object(widget.sub_docks, "_DocumentSubDocks__focus_first_child")
 
     block_model.resource_type = "reference_images"
 
@@ -2779,7 +2780,7 @@ def test_focus_first_child_skips_unfocusable_widgets_for_the_first_focusable_one
     first_focus = mocker.patch.object(first, "setFocus")
     second_focus = mocker.patch.object(second, "setFocus")
 
-    DocumentWidget._DocumentWidget__focus_first_child(container)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    DocumentSubDocks._DocumentSubDocks__focus_first_child(container)  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     first_focus.assert_called_once_with(Qt.FocusReason.OtherFocusReason)
     label_focus.assert_not_called()
@@ -2800,7 +2801,7 @@ def test_focus_first_child_does_nothing_without_a_focusable_widget(qtbot: QtBot,
     label = QLabel("Type", container)
     label_focus = mocker.patch.object(label, "setFocus")
 
-    DocumentWidget._DocumentWidget__focus_first_child(container)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    DocumentSubDocks._DocumentSubDocks__focus_first_child(container)  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     label_focus.assert_not_called()
 
@@ -2844,7 +2845,7 @@ def test_switching_type_tolerates_a_stateful_widget_that_disappears_across_the_s
     qtbot.addWidget(widget)
     location_editor(widget).expanded = True
 
-    real_stateful_widgets = widget._DocumentWidget__stateful_widgets  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    real_stateful_widgets = widget.sub_docks._DocumentSubDocks__stateful_widgets  # type: ignore[attr-defined]  # pylint: disable=protected-access
     ghost = mocker.Mock(spec=StatefulWidget)
     ghost.save_state.return_value = b"ghost"
     calls: Final = []
@@ -2854,7 +2855,7 @@ def test_switching_type_tolerates_a_stateful_widget_that_disappears_across_the_s
         calls.append(None)
         return {**widgets, "ghost": ghost} if len(calls) == 1 else widgets
 
-    mocker.patch.object(widget, "_DocumentWidget__stateful_widgets", side_effect=fake_stateful_widgets)
+    mocker.patch.object(widget.sub_docks, "_DocumentSubDocks__stateful_widgets", side_effect=fake_stateful_widgets)
 
     block_model.resource_type = "reference_images"  # no KeyError despite "ghost" missing from the rebuilt grid
 
@@ -3531,7 +3532,7 @@ def log_dock(widget: DocumentWidget) -> QtAds.CDockWidget:
     :param widget: the document widget to inspect.
     :returns: the log `CDockWidget`.
     """
-    return widget._DocumentWidget__log_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    return widget.sub_docks._DocumentSubDocks__log_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
 
 def log_messages(widget: DocumentWidget) -> list[str]:
@@ -3665,7 +3666,7 @@ def test_adding_the_log_dock_leaves_the_main_viewer_current(widget: DocumentWidg
 
     * verify the first viewer dock is the current tab
     """
-    viewer_docks = widget._DocumentWidget__viewer_docks  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    viewer_docks = widget.sub_docks._DocumentSubDocks__viewer_docks  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert next(iter(viewer_docks.values())).isCurrentTab()
 
 
@@ -4039,7 +4040,7 @@ def test_a_layout_from_another_dock_set_restores_and_reattaches_what_it_never_na
     content_images.toggleView(True)
     qtbot.wait(1)
     assert not content_images.isFloating()
-    description = refimages_widget._DocumentWidget__viewer_docks[VIEWER_DESCRIPTION_TAB]  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    description = refimages_widget.sub_docks._DocumentSubDocks__viewer_docks[VIEWER_DESCRIPTION_TAB]  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert content_images.dockAreaWidget() is description.dockAreaWidget()  # pylint: disable=no-member
 
 
@@ -4129,7 +4130,7 @@ def test_the_checksum_dock_toggle_carries_its_own_icon(qtbot: QtBot, model: Rehu
     widget = DocumentWidget(model, task_queue=queue)
     qtbot.addWidget(widget)
     try:
-        dock = widget._DocumentWidget__checksum_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+        dock = widget.sub_docks._DocumentSubDocks__checksum_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
         assert dock is not None
         icon = dock.toggleViewAction().icon()
         assert icon.cacheKey() == themed_svg_icon(CHECKSUM_ICON_RESOURCE).cacheKey()
@@ -4151,7 +4152,7 @@ def test_the_checksum_dock_hosts_its_view_directly_not_in_a_scroll_area(qtbot: Q
     widget = DocumentWidget(model, task_queue=queue)
     qtbot.addWidget(widget)
     try:
-        dock = widget._DocumentWidget__checksum_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+        dock = widget.sub_docks._DocumentSubDocks__checksum_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
         assert dock is not None
         assert dock.widget().parentWidget() is dock
     finally:
@@ -4173,7 +4174,7 @@ def test_the_checksum_dock_has_a_minimum_height_a_splitter_drag_cant_cross(
     widget = DocumentWidget(model, task_queue=queue)
     qtbot.addWidget(widget)
     try:
-        dock = widget._DocumentWidget__checksum_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+        dock = widget.sub_docks._DocumentSubDocks__checksum_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
         assert dock is not None
         assert dock.minimumSizeHint().height() == CHECKSUM_DOCK_MIN_HEIGHT
     finally:
@@ -4196,7 +4197,7 @@ def test_apply_default_layout_action_is_on_the_toolbar_with_its_icon_and_tooltip
     * verify the apply action is on its toolbar, themed from ``document_default_layout.svg``, and
       carries the expected tooltip
     """
-    action = widget._DocumentWidget__apply_default_layout_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    action = widget.sub_docks._DocumentSubDocks__apply_default_layout_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
     toolbar = widget.findChildren(QToolBar)[0]
     assert action in toolbar.actions()
     assert action.toolTip() == APPLY_DEFAULT_LAYOUT_TOOLTIP
@@ -4217,7 +4218,7 @@ def test_apply_default_layout_action_closes_the_toolbar_behind_the_dock_toggles(
     * verify the apply action is last, and the item before it is a ``ToolBarStretch``
     * verify the run between the separator and the stretch is dock toggles -- checkable, nothing else
     """
-    action = widget._DocumentWidget__apply_default_layout_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    action = widget.sub_docks._DocumentSubDocks__apply_default_layout_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
     toolbar = widget.findChildren(QToolBar)[0]
     actions = toolbar.actions()
     assert actions[-1] is action
@@ -4295,7 +4296,7 @@ def test_apply_default_layout_action_carries_the_save_and_reset_entries_as_its_m
     * build a plain widget
     * verify the apply action's menu holds exactly Save then Reset, by their labels
     """
-    action = widget._DocumentWidget__apply_default_layout_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    action = widget.sub_docks._DocumentSubDocks__apply_default_layout_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
     menu = cast(QMenu, action.menu())
     assert [entry.text() for entry in menu.actions()] == [
         SAVE_DEFAULT_LAYOUT_LABEL.format(type="Tutorial"),
@@ -4314,7 +4315,7 @@ def test_the_save_and_reset_entries_follow_the_type(
     * switch the tutorial to a reference pack; verify both entries now name Reference Images
     * verify a brand-new, type-less document's entries name "(no type)" and are enabled
     """
-    menu = cast(QMenu, widget._DocumentWidget__apply_default_layout_action.menu())  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    menu = cast(QMenu, widget.sub_docks._DocumentSubDocks__apply_default_layout_action.menu())  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     model.resource_type = "reference_images"
 
@@ -4322,7 +4323,7 @@ def test_the_save_and_reset_entries_follow_the_type(
         SAVE_DEFAULT_LAYOUT_LABEL.format(type="Reference Images"),
         RESET_DEFAULT_LAYOUT_LABEL.format(type="Reference Images"),
     ]
-    new_menu = cast(QMenu, new_widget._DocumentWidget__apply_default_layout_action.menu())  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    new_menu = cast(QMenu, new_widget.sub_docks._DocumentSubDocks__apply_default_layout_action.menu())  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert [entry.text() for entry in new_menu.actions()] == [
         SAVE_DEFAULT_LAYOUT_LABEL.format(type=NO_TYPE_LABEL),
         RESET_DEFAULT_LAYOUT_LABEL.format(type=NO_TYPE_LABEL),
@@ -4343,7 +4344,7 @@ def test_save_current_layout_as_default_writes_the_current_layout(widget: Docume
     """
     on_disk_dock(widget).toggleView(True)
 
-    widget._DocumentWidget__save_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    widget.sub_docks._DocumentSubDocks__save_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     assert shared_default_layout_settings().states == {TUTORIAL_PLUGIN.key: widget.save_layout_state()}
 
@@ -4358,7 +4359,7 @@ def test_the_saved_default_is_layout_only(widget: DocumentWidget) -> None:
     * trigger Save
     * verify the stored blob carries neither the widget-state nor the image-strip entry
     """
-    widget._DocumentWidget__save_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    widget.sub_docks._DocumentSubDocks__save_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     payload = cbor2.loads(shared_default_layout_settings().state_for(TUTORIAL_PLUGIN.key))
     assert STATE_WIDGET_STATE_KEY not in payload
@@ -4379,7 +4380,7 @@ def test_reset_default_layout_clears_only_its_types_default(widget: DocumentWidg
     settings.states[TUTORIAL_PLUGIN.key] = widget.save_layout_state()  # pylint: disable=unsupported-assignment-operation
     settings.states[REFERENCE_IMAGES_PLUGIN.key] = b"pack blob"  # pylint: disable=unsupported-assignment-operation
 
-    widget._DocumentWidget__reset_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    widget.sub_docks._DocumentSubDocks__reset_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     assert settings.states == {REFERENCE_IMAGES_PLUGIN.key: b"pack blob"}
 
@@ -4397,7 +4398,7 @@ def test_apply_default_layout_restores_the_saved_default(widget: DocumentWidget)
     shared_default_layout_settings().states[TUTORIAL_PLUGIN.key] = widget.save_layout_state()  # pylint: disable=unsupported-assignment-operation
     on_disk_dock(widget).toggleView(False)
 
-    widget._DocumentWidget__apply_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    widget.sub_docks._DocumentSubDocks__apply_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     assert on_disk_dock(widget).toggleViewAction().isChecked() is True
 
@@ -4415,11 +4416,11 @@ def test_apply_default_layout_never_reads_another_types_default(
     * verify the tutorial's On Disk is hidden again -- as-built, not the pack's default
     """
     on_disk_dock(refimages_widget).toggleView(True)
-    refimages_widget._DocumentWidget__save_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    refimages_widget.sub_docks._DocumentSubDocks__save_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert set(shared_default_layout_settings().states) == {REFERENCE_IMAGES_PLUGIN.key}
     on_disk_dock(widget).toggleView(True)
 
-    widget._DocumentWidget__apply_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    widget.sub_docks._DocumentSubDocks__apply_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     assert on_disk_dock(widget).toggleViewAction().isChecked() is False
 
@@ -4439,7 +4440,7 @@ def test_apply_default_layout_falls_back_to_the_as_built_layout_when_none_is_sav
     on_disk_dock(widget).toggleView(True)
     assert not shared_default_layout_settings().states
 
-    widget._DocumentWidget__apply_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    widget.sub_docks._DocumentSubDocks__apply_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     assert on_disk_dock(widget).toggleViewAction().isChecked() is False
 
@@ -4462,7 +4463,7 @@ def test_apply_default_layout_falls_back_when_the_saved_default_is_stale(widget:
     shared_default_layout_settings().states[TUTORIAL_PLUGIN.key] = cbor2.dumps(payload)  # pylint: disable=unsupported-assignment-operation
     on_disk_dock(widget).toggleView(True)
 
-    widget._DocumentWidget__apply_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    widget.sub_docks._DocumentSubDocks__apply_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     assert on_disk_dock(widget).toggleViewAction().isChecked() is False
 
@@ -4479,15 +4480,15 @@ def test_the_type_less_default_is_saved_reset_and_applied_like_any_types(new_wid
     * trigger Reset, then Apply; verify no default is held and the Main Editor is alone again
     """
     new_widget.toggle_action(VIEWER_MAIN_TAB).trigger()
-    new_widget._DocumentWidget__save_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    new_widget.sub_docks._DocumentSubDocks__save_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert shared_default_layout_settings().states == {"": new_widget.save_layout_state()}
 
     new_widget.toggle_action(VIEWER_MAIN_TAB).trigger()
-    new_widget._DocumentWidget__apply_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    new_widget.sub_docks._DocumentSubDocks__apply_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert open_field_tabs(new_widget) == [VIEWER_MAIN_TAB, EDITOR_MAIN_TAB]
 
-    new_widget._DocumentWidget__reset_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
-    new_widget._DocumentWidget__apply_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    new_widget.sub_docks._DocumentSubDocks__reset_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    new_widget.sub_docks._DocumentSubDocks__apply_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     assert not shared_default_layout_settings().states
     assert open_field_tabs(new_widget) == [EDITOR_MAIN_TAB]
@@ -4505,7 +4506,7 @@ def test_a_saved_type_less_default_is_what_the_next_new_document_opens_with(
     * verify its On Disk is open
     """
     on_disk_dock(new_widget).toggleView(True)
-    new_widget._DocumentWidget__save_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    new_widget.sub_docks._DocumentSubDocks__save_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     second = DocumentWidget(RehuDocumentModel.create_new(TARGET_PATH))
     qtbot.addWidget(second)
@@ -4632,7 +4633,7 @@ def test_converting_in_place_hands_the_images_dock_back(mocker: MockerFixture, q
     mocker.patch("rehuco_agent.documents.rehu_document_model.convert_tc", return_value=converted)
     mocker.patch("rehuco_agent.documents.rehu_document_model.scan_rehu_screenshot_files", return_value=SCREENSHOTS)
     mocker.patch("rehuco_agent.documents.rehu_document_model.scan_unconverted_screenshots", return_value=[])
-    keep_backups = widget._DocumentWidget__convert_keep_backups_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    keep_backups = widget.sub_docks._DocumentSubDocks__convert_keep_backups_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     keep_backups.trigger()
 
@@ -4713,7 +4714,7 @@ def test_converting_in_place_removes_the_after_conversion_column(mocker: MockerF
     assert after_conversion_column(selector)[0]
     converted = RehuDocument({"type": "Tutorial", "sources": [{"title": "Foo", "primary": True}]}, TARGET_PATH)
     mocker.patch("rehuco_agent.documents.rehu_document_model.convert_tc", return_value=converted)
-    keep_backups = widget._DocumentWidget__convert_keep_backups_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    keep_backups = widget.sub_docks._DocumentSubDocks__convert_keep_backups_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     keep_backups.trigger()
 
@@ -4743,7 +4744,7 @@ def files_dock(widget: DocumentWidget) -> QtAds.CDockWidget:
     :param widget: the document widget to inspect.
     :returns: the Files `CDockWidget`.
     """
-    return widget._DocumentWidget__files_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    return widget.sub_docks._DocumentSubDocks__files_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
 
 def test_the_files_dock_exists_and_starts_hidden(widget: DocumentWidget) -> None:
@@ -4843,7 +4844,7 @@ def test_an_image_activated_in_the_browser_opens_against_the_folder(widget: Docu
 
     view.images_activated.emit(folder, folder[0])
 
-    viewer = widget._DocumentWidget__image_viewer  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    viewer = widget.sub_docks._DocumentSubDocks__image_viewer  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert viewer is not None
     assert type(viewer) is ImageLightbox  # pylint: disable=unidiomatic-typecheck  # read-only, #370
     assert lightbox_paths(viewer) == folder
@@ -4864,7 +4865,7 @@ def test_an_activation_carrying_anything_else_opens_no_viewer(widget: DocumentWi
 
     view.images_activated.emit(None, None)
 
-    assert widget._DocumentWidget__image_viewer is None  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert widget.sub_docks._DocumentSubDocks__image_viewer is None  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
 
 def test_a_curation_edit_does_not_re_point_a_folder_viewer(widget: DocumentWidget) -> None:
@@ -4885,16 +4886,16 @@ def test_a_curation_edit_does_not_re_point_a_folder_viewer(widget: DocumentWidge
     curated = [Path("/fake/library/sculpting/info00.jpg")]
 
     view.images_activated.emit(folder, folder[0])
-    widget._DocumentWidget__on_curated_images_changed(curated)  # type: ignore[attr-defined]  # pylint: disable=protected-access
-    viewer = widget._DocumentWidget__image_viewer  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    widget.sub_docks._DocumentSubDocks__on_curated_images_changed(curated)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    viewer = widget.sub_docks._DocumentSubDocks__image_viewer  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert viewer is not None
     assert type(viewer) is ImageLightbox  # pylint: disable=unidiomatic-typecheck  # read-only, #370
     assert lightbox_paths(viewer) == folder
 
     viewer.close()
-    widget._DocumentWidget__on_image_activated(curated[0])  # type: ignore[attr-defined]  # pylint: disable=protected-access
-    widget._DocumentWidget__on_curated_images_changed(folder)  # type: ignore[attr-defined]  # pylint: disable=protected-access
-    strip_viewer = widget._DocumentWidget__image_viewer  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    widget.sub_docks._DocumentSubDocks__on_image_activated(curated[0])  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    widget.sub_docks._DocumentSubDocks__on_curated_images_changed(folder)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    strip_viewer = widget.sub_docks._DocumentSubDocks__image_viewer  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert strip_viewer is not None
     assert lightbox_paths(strip_viewer) == folder
 
@@ -4911,7 +4912,7 @@ def content_images_dock(widget: DocumentWidget) -> QtAds.CDockWidget:
     :param widget: the document widget to inspect.
     :returns: the Content Images `CDockWidget`.
     """
-    dock = widget._DocumentWidget__content_images_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    dock = widget.sub_docks._DocumentSubDocks__content_images_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert dock is not None
     return dock
 
@@ -4997,8 +4998,8 @@ def test_the_content_images_dock_is_a_reference_packs_alone(
     qtbot.addWidget(collection)
     assert content_images_dock(refimages_widget).objectName() == CONTENT_IMAGES_DOCK_NAME
     for other in (widget, collection):
-        assert other._DocumentWidget__content_images_dock is None  # type: ignore[attr-defined]  # pylint: disable=protected-access
-        assert other._DocumentWidget__content_images_view is None  # type: ignore[attr-defined]  # pylint: disable=protected-access
+        assert other.sub_docks._DocumentSubDocks__content_images_dock is None  # type: ignore[attr-defined]  # pylint: disable=protected-access
+        assert other.sub_docks._DocumentSubDocks__content_images_view is None  # type: ignore[attr-defined]  # pylint: disable=protected-access
         assert CONTENT_IMAGES_DOCK_NAME not in other._DocumentWidget__dock_manager.dockWidgetsMap()  # type: ignore[attr-defined]  # pylint: disable=protected-access
         titles = [action.text() for action in other.findChildren(QToolBar)[0].actions()]
         assert CONTENT_IMAGES_DOCK_TITLE not in titles
@@ -5014,7 +5015,7 @@ def test_a_document_with_no_content_images_dock_ignores_its_signals(widget: Docu
     * on a tutorial, report a content-image activation and change the clamp and banner settings
     * verify no viewer opened and nothing raised
     """
-    widget._DocumentWidget__on_content_image_activated(0)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    widget.sub_docks._DocumentSubDocks__on_content_image_activated(0)  # type: ignore[attr-defined]  # pylint: disable=protected-access
     settings = shared_image_viewer_settings()
     settings.content_rows_min_height = 90
     settings.content_banners = False
@@ -5045,7 +5046,7 @@ def test_a_type_switch_swaps_the_types_own_docks_and_applies_no_layout(
     docks_before = sorted(widget._DocumentWidget__dock_manager.dockWidgetsMap())  # type: ignore[attr-defined]  # pylint: disable=protected-access
     toolbar = widget.findChildren(QToolBar)[0]
     toggles_before = [action.text() for action in toolbar.actions()]
-    stretch = widget._DocumentWidget__toolbar_stretch_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    stretch = widget.sub_docks._DocumentSubDocks__toolbar_stretch_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     model.resource_type = "reference_images"
 
@@ -5058,7 +5059,7 @@ def test_a_type_switch_swaps_the_types_own_docks_and_applies_no_layout(
 
     model.resource_type = "tutorial"
 
-    assert widget._DocumentWidget__content_images_dock is None  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert widget.sub_docks._DocumentSubDocks__content_images_dock is None  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert CONTENT_IMAGES_DOCK_NAME not in widget._DocumentWidget__dock_manager.dockWidgetsMap()  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert toggle not in toolbar.actions()
     assert [action.text() for action in toolbar.actions()] == toggles_before
@@ -5082,8 +5083,8 @@ def test_a_resource_type_change_on_a_still_pending_placeholder_builds_no_type_do
 
     pending.resource_type = "reference_images"
 
-    assert widget._DocumentWidget__content_images_dock is None  # type: ignore[attr-defined]  # pylint: disable=protected-access
-    assert widget._DocumentWidget__awaiting_type is True  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert widget.sub_docks._DocumentSubDocks__content_images_dock is None  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert widget.sub_docks._DocumentSubDocks__awaiting_type is True  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
 
 def test_remove_type_docks_ignores_a_name_that_was_never_built(refimages_widget: DocumentWidget) -> None:
@@ -5099,9 +5100,9 @@ def test_remove_type_docks_ignores_a_name_that_was_never_built(refimages_widget:
     """
     real_dock = content_images_dock(refimages_widget)
 
-    refimages_widget._DocumentWidget__remove_type_docks(frozenset({"never_built"}))  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    refimages_widget.sub_docks._DocumentSubDocks__remove_type_docks(frozenset({"never_built"}))  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
-    assert refimages_widget._DocumentWidget__content_images_dock is real_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert refimages_widget.sub_docks._DocumentSubDocks__content_images_dock is real_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
 
 def test_remove_type_docks_only_runs_the_content_images_cleanup_for_its_own_name(
@@ -5120,15 +5121,15 @@ def test_remove_type_docks_only_runs_the_content_images_cleanup_for_its_own_name
     * verify neither name is tracked afterward and nothing raised
     """
     dock = content_images_dock(refimages_widget)
-    refimages_widget._DocumentWidget__type_docks["unrelated_dock"] = dock  # type: ignore[attr-defined]  # pylint: disable=protected-access,unsupported-assignment-operation
-    refimages_widget._DocumentWidget__content_images_model = None  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    refimages_widget.sub_docks._DocumentSubDocks__type_docks["unrelated_dock"] = dock  # type: ignore[attr-defined]  # pylint: disable=protected-access,unsupported-assignment-operation
+    refimages_widget.sub_docks._DocumentSubDocks__content_images_model = None  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
-    refimages_widget._DocumentWidget__remove_type_docks(  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    refimages_widget.sub_docks._DocumentSubDocks__remove_type_docks(  # type: ignore[attr-defined]  # pylint: disable=protected-access
         frozenset({"unrelated_dock", CONTENT_IMAGES_DOCK_NAME})
     )
 
-    assert "unrelated_dock" not in refimages_widget._DocumentWidget__type_docks  # type: ignore[attr-defined]  # pylint: disable=protected-access
-    assert CONTENT_IMAGES_DOCK_NAME not in refimages_widget._DocumentWidget__type_docks  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert "unrelated_dock" not in refimages_widget.sub_docks._DocumentSubDocks__type_docks  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert CONTENT_IMAGES_DOCK_NAME not in refimages_widget.sub_docks._DocumentSubDocks__type_docks  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
 
 def test_a_type_switch_closes_the_outgoing_types_open_dock(
@@ -5156,9 +5157,9 @@ def test_a_type_switch_closes_the_outgoing_types_open_dock(
 
     refimages_model.resource_type = "tutorial"
 
-    assert refimages_widget._DocumentWidget__content_images_dock is None  # type: ignore[attr-defined]  # pylint: disable=protected-access
-    assert refimages_widget._DocumentWidget__content_images_view is None  # type: ignore[attr-defined]  # pylint: disable=protected-access
-    assert refimages_widget._DocumentWidget__content_images_model is None  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert refimages_widget.sub_docks._DocumentSubDocks__content_images_dock is None  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert refimages_widget.sub_docks._DocumentSubDocks__content_images_view is None  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert refimages_widget.sub_docks._DocumentSubDocks__content_images_model is None  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert CONTENT_IMAGES_DOCK_NAME not in refimages_widget._DocumentWidget__dock_manager.dockWidgetsMap()  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert toggle not in toolbar.actions()
     refimages_model.path = Path("/fake/elsewhere/info.rehu")
@@ -5179,12 +5180,12 @@ def test_apply_default_layout_on_a_switched_document_applies_the_new_types_defau
     """
     on_disk_dock(refimages_widget).toggleView(True)
     content_images_dock(refimages_widget).toggleView(True)
-    refimages_widget._DocumentWidget__save_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    refimages_widget.sub_docks._DocumentSubDocks__save_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
     model.resource_type = "reference_images"
     assert on_disk_dock(widget).toggleViewAction().isChecked() is False
     assert content_images_dock(widget).toggleViewAction().isChecked() is False
 
-    widget._DocumentWidget__apply_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    widget.sub_docks._DocumentSubDocks__apply_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     assert on_disk_dock(widget).toggleViewAction().isChecked() is True
     assert content_images_dock(widget).toggleViewAction().isChecked() is True
@@ -5205,7 +5206,7 @@ def test_leaving_the_empty_type_applies_the_new_types_default(
     """
     on_disk_dock(refimages_widget).toggleView(True)
     content_images_dock(refimages_widget).toggleView(True)
-    refimages_widget._DocumentWidget__save_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    refimages_widget.sub_docks._DocumentSubDocks__save_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     new_model.resource_type = "reference_images"
 
@@ -5300,7 +5301,7 @@ def test_a_pending_documents_stored_layout_lands_on_the_docks_its_first_read_bui
     widget = DocumentWidget(pending)
     qtbot.addWidget(widget)
     widget.adopt_layout(stored)
-    assert widget._DocumentWidget__content_images_dock is None  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert widget.sub_docks._DocumentSubDocks__content_images_dock is None  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     pending.load_pending()
 
@@ -5354,7 +5355,7 @@ def test_showing_the_dock_enumerates_the_resources_archives(
     found = [ContentImageEntry(Path("/fake/refimages/pack.zip"), "a.jpg", 0, 0)]
     enumeration = mocker.patch.object(content_images_model, "enumerate_content_images", return_value=found)
     assert not enumeration.called
-    content_model = refimages_widget._DocumentWidget__content_images_model  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    content_model = refimages_widget.sub_docks._DocumentSubDocks__content_images_model  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     with qtbot.waitSignal(content_model.modelReset, timeout=WAIT_TIMEOUT_MS):
         content_images_dock(refimages_widget).toggleView(True)
@@ -5381,7 +5382,7 @@ def test_a_path_change_releases_the_archive_handles_even_with_the_dock_closed(
     * verify the handles were released and nothing was enumerated
     """
     enumeration = mocker.patch.object(content_images_model, "enumerate_content_images", return_value=[])
-    content_model = refimages_widget._DocumentWidget__content_images_model  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    content_model = refimages_widget.sub_docks._DocumentSubDocks__content_images_model  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert content_images_dock(refimages_widget).isClosed()
     released = mocker.spy(content_model.archive_cache, "release_handles")
 
@@ -5404,7 +5405,7 @@ def test_hiding_the_content_images_dock_closes_its_idle_archives(
     * verify the idle handles were closed once
     """
     mocker.patch.object(content_images_model, "enumerate_content_images", return_value=[])
-    content_model = refimages_widget._DocumentWidget__content_images_model  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    content_model = refimages_widget.sub_docks._DocumentSubDocks__content_images_model  # type: ignore[attr-defined]  # pylint: disable=protected-access
     content_images_dock(refimages_widget).toggleView(True)
     closed = mocker.spy(content_model.archive_cache, "close_idle_handles")
 
@@ -5459,7 +5460,7 @@ def test_refresh_is_always_enabled_and_picks_up_a_zip_packed_outside_the_app(
 
     found = [ContentImageEntry(Path("/fake/refimages/pack.zip"), "a.jpg", 0, 0)]
     enumeration.return_value = found
-    content_model = refimages_widget._DocumentWidget__content_images_model  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    content_model = refimages_widget.sub_docks._DocumentSubDocks__content_images_model  # type: ignore[attr-defined]  # pylint: disable=protected-access
     with qtbot.waitSignal(content_model.modelReset, timeout=WAIT_TIMEOUT_MS):
         panel.refresh_action.trigger()
 
@@ -5522,7 +5523,7 @@ def test_a_content_image_activated_in_the_dock_opens_the_lightbox_over_the_pack(
       alone
     """
     entries = [ContentImageEntry(Path("/fake/refimages/pack.zip"), f"{index}.png", 0, 0) for index in range(2)]
-    content_model = refimages_widget._DocumentWidget__content_images_model  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    content_model = refimages_widget.sub_docks._DocumentSubDocks__content_images_model  # type: ignore[attr-defined]  # pylint: disable=protected-access
     content_model.set_entries(entries, Path("/fake/refimages"))
     mocker.patch.object(ArchiveImageSource, "load", side_effect=lambda *_: QImage(20, 10, QImage.Format.Format_RGB32))
 
@@ -5534,7 +5535,7 @@ def test_a_content_image_activated_in_the_dock_opens_the_lightbox_over_the_pack(
     assert lightbox.current_index == 1
     assert len(lightbox.source) == 2
     assert lightbox.current_key == entries[1].key
-    refimages_widget._DocumentWidget__on_curated_images_changed(SCREENSHOTS)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    refimages_widget.sub_docks._DocumentSubDocks__on_curated_images_changed(SCREENSHOTS)  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert len(lightbox.source) == 2
 
 
@@ -5552,7 +5553,7 @@ def test_closing_a_content_viewer_selects_the_image_it_was_on_when_asked(
     * turn it on, open a viewer, re-enumerate the dock underneath it, close; verify no selection
     """
     entries = [ContentImageEntry(Path("/fake/refimages/pack.zip"), f"{index}.png", 0, 0) for index in range(3)]
-    content_model = refimages_widget._DocumentWidget__content_images_model  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    content_model = refimages_widget.sub_docks._DocumentSubDocks__content_images_model  # type: ignore[attr-defined]  # pylint: disable=protected-access
     content_model.set_entries(entries, Path("/fake/refimages"))
     mocker.patch.object(ArchiveImageSource, "load", side_effect=lambda *_: QImage(20, 10, QImage.Format.Format_RGB32))
     grid = content_images_view(refimages_widget)
@@ -5596,7 +5597,7 @@ def test_content_images_never_reach_the_screenshot_strip(
     * give the dock's refimages_model an entry and hide an image by name in the refimages_model
     * verify the strip lists no archive member and the dock's source is unchanged
     """
-    content_model = refimages_widget._DocumentWidget__content_images_model  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    content_model = refimages_widget.sub_docks._DocumentSubDocks__content_images_model  # type: ignore[attr-defined]  # pylint: disable=protected-access
     content_model.set_entries([ContentImageEntry(Path("/fake/refimages/pack.zip"), "a.png", 0, 0)], Path("/fake"))
     strip = refimages_widget.findChild(ImageStrip)
     assert isinstance(strip, ImageStrip)
@@ -5957,7 +5958,7 @@ def _drop_event(data: QMimeData) -> QDropEvent:
 
 def _main_editor_dock(widget: DocumentWidget) -> QtAds.CDockWidget:
     """The widget's Main Editor dock -- what `UrlDropFilter` is installed on."""
-    return widget._DocumentWidget__editor_docks[EDITOR_MAIN_TAB]  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    return widget.sub_docks._DocumentSubDocks__editor_docks[EDITOR_MAIN_TAB]  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
 
 def _url_mime_data(url: str = "https://www.artstation.com/artwork/example") -> QMimeData:
@@ -6005,7 +6006,7 @@ def test_a_url_drop_on_the_main_editor_is_accepted_and_submitted(
     * drag a `text/uri-list` URL onto the dock and drop it, through Qt's own dispatch
     * verify both the enter and the drop were accepted, and `submit` got the parsed drop
     """
-    scrapes = saved_widget._DocumentWidget__scrapes  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    scrapes = saved_widget.sub_docks._DocumentSubDocks__scrapes  # type: ignore[attr-defined]  # pylint: disable=protected-access
     submit = mocker.patch.object(scrapes, "submit")
     data = _url_mime_data()
 
@@ -6018,7 +6019,7 @@ def test_plain_text_that_is_not_a_url_is_refused(
     saved_widget: DocumentWidget, qtbot: QtBot, mocker: MockerFixture
 ) -> None:
     """Ordinary text dropped on the Main Editor dock is refused at the enter, never submitted (#272)."""
-    scrapes = saved_widget._DocumentWidget__scrapes  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    scrapes = saved_widget.sub_docks._DocumentSubDocks__scrapes  # type: ignore[attr-defined]  # pylint: disable=protected-access
     submit = mocker.patch.object(scrapes, "submit")
     data = QMimeData()
     data.setText("just some words")
@@ -6032,7 +6033,7 @@ def test_a_locked_documents_main_editor_refuses_a_url_drop(
     legacy_widget: DocumentWidget, qtbot: QtBot, mocker: MockerFixture
 ) -> None:
     """A URL dropped on a locked document's Main Editor is refused at the enter, never queued (#272)."""
-    scrapes = legacy_widget._DocumentWidget__scrapes  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    scrapes = legacy_widget.sub_docks._DocumentSubDocks__scrapes  # type: ignore[attr-defined]  # pylint: disable=protected-access
     submit = mocker.patch.object(scrapes, "submit")
     data = _url_mime_data()
 
@@ -6055,7 +6056,7 @@ def test_a_url_drop_survives_a_type_switch(block_model: RehuDocumentModel, qtbot
     widget = DocumentWidget(block_model)
     qtbot.addWidget(widget)
     block_model.resource_type = "reference_images"
-    scrapes = widget._DocumentWidget__scrapes  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    scrapes = widget.sub_docks._DocumentSubDocks__scrapes  # type: ignore[attr-defined]  # pylint: disable=protected-access
     submit = mocker.patch.object(scrapes, "submit")
     data = _url_mime_data()
 
@@ -6072,7 +6073,7 @@ def test_a_scrape_notice_lands_in_the_inline_strip(saved_widget: DocumentWidget,
     * fake a busy notice on the widget's `ScrapeActions` and fire ``changed``
     * verify the banner shows that row
     """
-    scrapes = saved_widget._DocumentWidget__scrapes  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    scrapes = saved_widget.sub_docks._DocumentSubDocks__scrapes  # type: ignore[attr-defined]  # pylint: disable=protected-access
     rows = [MessageBannerRow(MessageBannerSeverity.INFO, "Scraping example.com…")]
     mocker.patch.object(type(scrapes), "notice", new_callable=mocker.PropertyMock, return_value=rows)
 
@@ -6088,7 +6089,7 @@ def test_a_scrape_notice_lands_in_the_inline_strip(saved_widget: DocumentWidget,
 # region image drop on the Images sub-dock (#73)
 def images_dock(widget: DocumentWidget) -> QtAds.CDockWidget:
     """The widget's Images sub-dock -- what `ImageDropFilter` is installed on."""
-    return widget._DocumentWidget__editor_docks[EDITOR_IMAGES_TAB]  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    return widget.sub_docks._DocumentSubDocks__editor_docks[EDITOR_IMAGES_TAB]  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
 
 def drag_onto_images_dock(widget: DocumentWidget, qtbot: QtBot, data: QMimeData) -> tuple[bool, bool]:
@@ -6143,7 +6144,7 @@ def test_a_local_file_drop_on_the_images_dock_acquires_it(
     saved_widget: DocumentWidget, qtbot: QtBot, mocker: MockerFixture
 ) -> None:
     """A single ``file:`` URL with a recognized image extension is acquired straight from disk (#73)."""
-    image_downloads = saved_widget._DocumentWidget__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    image_downloads = saved_widget.sub_docks._DocumentSubDocks__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
     acquire_local = mocker.patch.object(image_downloads, "acquire_local")
     data = local_file_mime_data(Path("/fake/dropped.jpg"))
 
@@ -6157,7 +6158,7 @@ def test_multiple_local_files_in_one_drop_acquires_each(
 ) -> None:
     """A multi-file drop acquires every recognized file, not only the first -- all of them in one call,
     so they are one batch (#73)."""
-    image_downloads = saved_widget._DocumentWidget__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    image_downloads = saved_widget.sub_docks._DocumentSubDocks__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
     acquire_local = mocker.patch.object(image_downloads, "acquire_local")
     data = local_file_mime_data(Path("/fake/one.jpg"), Path("/fake/two.png"))
 
@@ -6171,7 +6172,7 @@ def test_a_local_file_with_an_unrecognized_extension_is_skipped(
 ) -> None:
     """A local file with no recognized image extension is left out; the recognized one beside it in
     the same drop still gets acquired (#73)."""
-    image_downloads = saved_widget._DocumentWidget__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    image_downloads = saved_widget.sub_docks._DocumentSubDocks__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
     acquire_local = mocker.patch.object(image_downloads, "acquire_local")
     data = local_file_mime_data(Path("/fake/notes.txt"), Path("/fake/dropped.jpg"))
 
@@ -6184,7 +6185,7 @@ def test_an_image_data_drop_on_the_images_dock_acquires_it(
     saved_widget: DocumentWidget, qtbot: QtBot, mocker: MockerFixture
 ) -> None:
     """A drop carrying its own ``image/*`` payload is acquired from those bytes (#73)."""
-    image_downloads = saved_widget._DocumentWidget__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    image_downloads = saved_widget.sub_docks._DocumentSubDocks__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
     acquire_local = mocker.patch.object(image_downloads, "acquire_local")
     data = image_bytes_mime_data("image/png")
 
@@ -6199,7 +6200,7 @@ def test_a_mixed_url_and_local_file_drop_acquires_only_the_local_file(
     saved_widget: DocumentWidget, qtbot: QtBot, mocker: MockerFixture
 ) -> None:
     """A drop carrying both a non-local URL and a local file only acquires the local one (#73)."""
-    image_downloads = saved_widget._DocumentWidget__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    image_downloads = saved_widget.sub_docks._DocumentSubDocks__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
     acquire_local = mocker.patch.object(image_downloads, "acquire_local")
     data = QMimeData()
     data.setUrls([QUrl("https://example.com/photo.jpg"), QUrl.fromLocalFile("/fake/dropped.jpg")])
@@ -6214,7 +6215,7 @@ def test_an_image_url_drop_with_no_taint_hint_at_all_is_submitted_with_no_referr
 ) -> None:
     """A drop carrying no renderer-taint hint whatsoever (every Firefox drop) submits with no referrer
     (#73, [[acquisition-tooling#drop-source-url]])."""
-    image_downloads = saved_widget._DocumentWidget__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    image_downloads = saved_widget.sub_docks._DocumentSubDocks__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
     submit = mocker.patch.object(image_downloads, "submit")
     data = _url_mime_data("https://example.com/photo.jpg")
 
@@ -6228,7 +6229,7 @@ def test_an_image_url_drop_is_submitted_with_the_renderer_taint_origin(
 ) -> None:
     """An image-suffixed URL is submitted for download, with Chromium's renderer-taint hint as the
     ``Referer`` (#73, [[acquisition-tooling#drop-source-url]])."""
-    image_downloads = saved_widget._DocumentWidget__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    image_downloads = saved_widget.sub_docks._DocumentSubDocks__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
     submit = mocker.patch.object(image_downloads, "submit")
     data = taint_mime_data("https://example.com/photo.jpg", "https://example.com")
 
@@ -6241,7 +6242,7 @@ def test_a_non_http_taint_is_ignored_as_a_referrer(
     saved_widget: DocumentWidget, qtbot: QtBot, mocker: MockerFixture
 ) -> None:
     """A taint hint that does not decode to an ``http(s)`` origin is dropped, not passed on (#73)."""
-    image_downloads = saved_widget._DocumentWidget__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    image_downloads = saved_widget.sub_docks._DocumentSubDocks__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
     submit = mocker.patch.object(image_downloads, "submit")
     data = _url_mime_data("https://example.com/photo.jpg")
     data.setData(RENDERER_TAINT_FORMAT, QByteArray(b"not-a-url"))
@@ -6255,7 +6256,7 @@ def test_a_page_url_drop_is_submitted_as_a_page(
     saved_widget: DocumentWidget, qtbot: QtBot, mocker: MockerFixture
 ) -> None:
     """A URL with no recognized image suffix is scraped as a page, not downloaded as an image (#73)."""
-    image_downloads = saved_widget._DocumentWidget__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    image_downloads = saved_widget.sub_docks._DocumentSubDocks__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
     submit_page = mocker.patch.object(image_downloads, "submit_page")
     data = _url_mime_data("https://www.artstation.com/artwork/example")
 
@@ -6268,7 +6269,7 @@ def test_a_locked_documents_images_dock_refuses_a_drop(
     legacy_widget: DocumentWidget, qtbot: QtBot, mocker: MockerFixture
 ) -> None:
     """A locked document's Images dock refuses a drop at the enter, nothing acquired (#73)."""
-    image_downloads = legacy_widget._DocumentWidget__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    image_downloads = legacy_widget.sub_docks._DocumentSubDocks__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
     acquire_local = mocker.patch.object(image_downloads, "acquire_local")
     data = local_file_mime_data(Path("/fake/dropped.jpg"))
 
@@ -6281,7 +6282,7 @@ def test_a_path_less_documents_images_dock_refuses_a_drop(
     widget: DocumentWidget, qtbot: QtBot, mocker: MockerFixture
 ) -> None:
     """A document with no path yet refuses a drop at the enter -- there is nowhere to write it (#73)."""
-    image_downloads = widget._DocumentWidget__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    image_downloads = widget.sub_docks._DocumentSubDocks__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
     acquire_local = mocker.patch.object(image_downloads, "acquire_local")
     data = local_file_mime_data(Path("/fake/dropped.jpg"))
 
@@ -6308,7 +6309,7 @@ def test_an_image_download_notice_lands_in_the_inline_strip(
     * fake a busy notice on the widget's `ImageDownloads` and fire ``changed``
     * verify the banner shows that row
     """
-    image_downloads = saved_widget._DocumentWidget__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    image_downloads = saved_widget.sub_docks._DocumentSubDocks__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
     rows = [MessageBannerRow(MessageBannerSeverity.INFO, "Downloading an image…")]
     mocker.patch.object(type(image_downloads), "notice", new_callable=mocker.PropertyMock, return_value=rows)
 
@@ -6333,7 +6334,7 @@ def test_a_selection_drop_on_the_images_dock_is_scraped_as_a_page(
     * drop a selection: an image-suffixed URL plus the selected markup around it
     * verify it went to `submit_page` with its fragment, and nothing was downloaded as an image
     """
-    image_downloads = saved_widget._DocumentWidget__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    image_downloads = saved_widget.sub_docks._DocumentSubDocks__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
     submit = mocker.patch.object(image_downloads, "submit")
     submit_page = mocker.patch.object(image_downloads, "submit_page")
     data = _url_mime_data("https://example.com/photo.jpg")
@@ -6466,8 +6467,8 @@ def test_an_acquired_image_refreshes_the_conversion_backup_actions(
 ) -> None:
     """`ImageDownloads.acquired` refreshes `.ConversionBackupActions`, since an acquisition writing
     into an occupied slot can leave a new backup behind that no other seam re-reads for (#73)."""
-    image_downloads = saved_widget._DocumentWidget__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
-    conversion_backups = saved_widget._DocumentWidget__conversion_backups  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    image_downloads = saved_widget.sub_docks._DocumentSubDocks__image_downloads  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    conversion_backups = saved_widget.sub_docks._DocumentSubDocks__conversion_backups  # type: ignore[attr-defined]  # pylint: disable=protected-access
     refresh = mocker.patch.object(conversion_backups, "refresh")
 
     image_downloads.acquired.emit()

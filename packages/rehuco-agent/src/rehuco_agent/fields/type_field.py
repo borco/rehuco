@@ -18,7 +18,7 @@ accidental *un*-set."""
 def type_label(key: str) -> str:
     """Readable label for a type key: the empty type's placeholder, else the key title-cased.
 
-    Shared between this field's own editor radio group and `DocumentWidget`'s toolbar type badge (#309), which
+    Shared between this field's own editor radio group and `DocumentSubDocks`' toolbar type badge (#309), which
     labels the same keys from outside this class.
 
     :param key: the type key (a block key spelling, or ``""`` for no type).
@@ -31,7 +31,7 @@ class TypeField(Field[str]):
     """The special ``type`` field ([[plugins#plugin-blocks]], #83): the key of the one **active**
     plugin block, edited as a radio group (#310) -- there are few types, and the choice decides which
     plugin block is active, worth seeing in full rather than open-scan-pick. Editor-only -- the colored
-    viewer badge this field used to show is now `DocumentWidget`'s own toolbar concern (#309), driven
+    viewer badge this field used to show is now `DocumentSubDocks`' own toolbar concern (#309), driven
     straight off the model rather than a field binding a form rebuild would destroy.
 
     Carried from TutCatalog5's ``info_type`` prior art: it is the field the user **selects the current

@@ -2,7 +2,7 @@
 (#62, #320)."""
 
 from dataclasses import dataclass, field
-from functools import lru_cache
+from functools import cache
 from typing import Final, cast
 
 from PySide6.QtCore import QByteArray, QSettings
@@ -30,10 +30,15 @@ class DefaultLayoutSettings:
     is built, or when the toolbar's "Apply default layout" action is triggered.
     """
 
+    group: str = GROUP
+    """The settings group the blobs sit under (#380): :data:`GROUP` for the Documents dock's defaults, and
+    another for a host keeping a set of its own (the Root Catalog dock, #381) -- so neither one's saved
+    default ever lands on the other's documents."""
+
     states: dict[str, bytes] = field(default_factory=dict)
-    """A :meth:`~rehuco_agent.documents.document_widget.DocumentWidget.save_layout_state` blob per
+    """A :meth:`~rehuco_agent.documents.document_sub_docks.DocumentSubDocks.save_layout_state` blob per
     resource type, keyed by the type's main key
-    (:attr:`~rehuco_agent.documents.document_widget.DocumentWidget.layout_type`). A type with no entry
+    (:attr:`~rehuco_agent.documents.document_sub_docks.DocumentSubDocks.layout_type`). A type with no entry
     has no default: no inheritance across types, so a tutorial layout never lands on a reference pack
     (#320). A type-less document keys by ``""``, stored under :data:`UNTYPED_GROUP` (#354)."""
 
@@ -50,7 +55,7 @@ class DefaultLayoutSettings:
 
         :param settings: the ``QSettings`` to read from.
         """
-        settings.beginGroup(GROUP)
+        settings.beginGroup(self.group)
         self.states.clear()
         for group in settings.childGroups():
             settings.beginGroup(group)
@@ -67,7 +72,7 @@ class DefaultLayoutSettings:
 
         :param settings: the ``QSettings`` to write to.
         """
-        settings.beginGroup(GROUP)
+        settings.beginGroup(self.group)
         settings.remove(STATE_KEY)
         groups = {layout_type or UNTYPED_GROUP: state for layout_type, state in self.states.items()}
         for stale in settings.childGroups():
@@ -80,16 +85,28 @@ class DefaultLayoutSettings:
         settings.endGroup()
 
 
-@lru_cache(maxsize=1)
-def shared_default_layout_settings() -> DefaultLayoutSettings:
-    """The single, process-wide `DefaultLayoutSettings` instance, loaded from persistent storage on
+@cache
+def shared_default_layout_settings_in(group: str) -> DefaultLayoutSettings:
+    """The single, process-wide `DefaultLayoutSettings` instance of ``group``, loaded from persistent
+    storage on
     first call -- the same shape, and for the same reason, as
     :func:`~rehuco_agent.settings.checksum_settings.shared_checksum_settings`: every open
-    `~rehuco_agent.documents.document_widget.DocumentWidget`'s "Save current layout as default"
-    writes onto this one instance, and every newly opened document reads it back from the same place.
+    `~rehuco_agent.documents.document_sub_docks.DocumentSubDocks`' "Save current layout as default"
+    in that group writes onto this one instance, and every newly opened document reads it back from the
+    same place. One instance per group (#380), so ``cache_clear`` resets them all.
+
+    :param group: the settings group (:attr:`DefaultLayoutSettings.group`).
+    :returns: the shared instance.
+    """
+    settings = DefaultLayoutSettings(group=group)
+    settings.load(persistent_settings())
+    return settings
+
+
+def shared_default_layout_settings() -> DefaultLayoutSettings:
+    """The Documents dock's own shared `DefaultLayoutSettings`, under :data:`GROUP` -- the instance
+    :func:`shared_default_layout_settings_in` keeps for it, not a second one.
 
     :returns: the shared instance.
     """
-    settings = DefaultLayoutSettings()
-    settings.load(persistent_settings())
-    return settings
+    return shared_default_layout_settings_in(GROUP)

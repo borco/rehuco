@@ -2180,13 +2180,13 @@ def test_a_freshly_opened_document_adopts_the_saved_default_layout(mocker: Mocke
     qtbot.addWidget(dock)
 
     first = dock.open_document(FAKE_PATH)
-    first_on_disk = first._DocumentWidget__on_disk_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    first_on_disk = first.sub_docks._DocumentSubDocks__on_disk_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
     first_on_disk.toggleView(True)
     shared_default_layout_settings().states[TUTORIAL_PLUGIN.key] = first.save_layout_state()  # pylint: disable=unsupported-assignment-operation
 
     second = dock.open_document(OTHER_PATH)
 
-    second_on_disk = second._DocumentWidget__on_disk_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    second_on_disk = second.sub_docks._DocumentSubDocks__on_disk_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert second_on_disk.toggleViewAction().isChecked() is True
 
 
@@ -2207,13 +2207,13 @@ def test_a_session_restored_layout_wins_over_the_saved_default(mocker: MockerFix
 
     first = dock.open_document(FAKE_PATH)
     own_state = first.save_state()
-    first_on_disk = first._DocumentWidget__on_disk_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    first_on_disk = first.sub_docks._DocumentSubDocks__on_disk_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
     first_on_disk.toggleView(True)
     shared_default_layout_settings().states[TUTORIAL_PLUGIN.key] = first.save_layout_state()  # pylint: disable=unsupported-assignment-operation
 
     second = dock.open_document(OTHER_PATH, state=own_state)
 
-    second_on_disk = second._DocumentWidget__on_disk_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    second_on_disk = second.sub_docks._DocumentSubDocks__on_disk_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert second_on_disk.toggleViewAction().isChecked() is False
 
 
@@ -2232,13 +2232,13 @@ def test_an_unusable_session_layout_falls_through_to_the_saved_default(mocker: M
     qtbot.addWidget(dock)
 
     first = dock.open_document(FAKE_PATH)
-    first_on_disk = first._DocumentWidget__on_disk_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    first_on_disk = first.sub_docks._DocumentSubDocks__on_disk_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
     first_on_disk.toggleView(True)
     shared_default_layout_settings().states[TUTORIAL_PLUGIN.key] = first.save_layout_state()  # pylint: disable=unsupported-assignment-operation
 
     second = dock.open_document(OTHER_PATH, state=b"not a layout blob")
 
-    second_on_disk = second._DocumentWidget__on_disk_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    second_on_disk = second.sub_docks._DocumentSubDocks__on_disk_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert second_on_disk.toggleViewAction().isChecked() is True
 
 
@@ -2259,7 +2259,7 @@ def test_a_freshly_opened_document_keeps_its_own_layout_with_no_saved_default(
 
     widget = dock.open_document(FAKE_PATH)
 
-    on_disk = widget._DocumentWidget__on_disk_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    on_disk = widget.sub_docks._DocumentSubDocks__on_disk_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert on_disk.toggleViewAction().isChecked() is False
 
 
@@ -2285,7 +2285,7 @@ def test_a_lazily_restored_reference_pack_gets_its_own_layout_once_it_loads(
     qtbot.addWidget(dock)
     first = dock.open_document(FAKE_PATH)
     shared_default_layout_settings().states[REFERENCE_IMAGES_PLUGIN.key] = first.save_layout_state()  # pylint: disable=unsupported-assignment-operation
-    content_images = first._DocumentWidget__content_images_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    content_images = first.sub_docks._DocumentSubDocks__content_images_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert content_images is not None
     content_images.toggleView(True)
     own_state = first.save_state()
@@ -2296,12 +2296,12 @@ def test_a_lazily_restored_reference_pack_gets_its_own_layout_once_it_loads(
     dock.restore_session(session)
     restored = dock.open_document_widgets()[0]
     assert restored.model.pending is True
-    assert restored._DocumentWidget__content_images_dock is None  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert restored.sub_docks._DocumentSubDocks__content_images_dock is None  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     dock.show()
     qtbot.waitUntil(lambda: not restored.model.pending, timeout=int(TIMEOUT * 1000))
 
-    content_images = restored._DocumentWidget__content_images_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    content_images = restored.sub_docks._DocumentSubDocks__content_images_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert content_images is not None
     assert content_images.toggleViewAction().isChecked() is True
 

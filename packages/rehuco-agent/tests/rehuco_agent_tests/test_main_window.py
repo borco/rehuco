@@ -36,7 +36,7 @@ from pytestqt.qtbot import QtBot
 from rehuco_agent import main_window
 from rehuco_agent.app_logging import shared_log_bridge
 from rehuco_agent.commands import QUIT, SAVE_DOCUMENT, shared_command_registry
-from rehuco_agent.documents.document_widget import LOG_DOCK_MIN_HEIGHT
+from rehuco_agent.documents.document_sub_docks import LOG_DOCK_MIN_HEIGHT
 from rehuco_agent.glyphs import TAB_CLOSE_GLYPH
 from rehuco_agent.main_window import (
     DOCK_PIN_SIDES_GROUP,

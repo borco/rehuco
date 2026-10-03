@@ -24,7 +24,7 @@ class PathField(Field[str]):
     """The special ``path`` field ([[plugins#field-toolkit]], [[field-schema#field-mapping]]): a
     file's location, common to every ``.rehu`` and unlike the record fields in that its editor is
     driven by *other* fields' values (rename suggestions built from title/publisher/etc). It is
-    therefore constructed directly by its owner (`DocumentWidget`) with model-aware callbacks, not
+    therefore constructed directly by its owner (`DocumentSubDocks`) with model-aware callbacks, not
     resolved generically through the field list.
 
     **Viewer** -- plain text followed by an ``(open)`` link that reveals the folder; the text is the value

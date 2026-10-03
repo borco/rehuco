@@ -13,7 +13,7 @@ from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.commands import REFRESH_FILES, SAVE_DOCUMENT, shared_command_registry
-from rehuco_agent.documents import document_widget
+from rehuco_agent.documents import document_sub_docks
 from rehuco_agent.documents.document_command_router import DocumentCommandRouter
 from rehuco_agent.documents.document_widget import DocumentWidget
 from rehuco_agent.documents.documents_dock import DocumentsDock
@@ -70,7 +70,7 @@ def saved(mocker: MockerFixture) -> MagicMock:
     :param mocker: pytest-mock fixture.
     :returns: the stand-in, called ``(widget, model)``.
     """
-    return mocker.patch.object(document_widget, "save_or_prompt_retry")
+    return mocker.patch.object(document_sub_docks, "save_or_prompt_retry")
 
 
 def route_app_wide(command_id: str) -> None:
@@ -111,7 +111,7 @@ def files_dock_of(document: DocumentWidget) -> QtAds.CDockWidget:
     :param document: the open document.
     :returns: its Files dock.
     """
-    return document._DocumentWidget__files_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    return document.sub_docks._DocumentSubDocks__files_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
 
 def shown_files_view_of(document: DocumentWidget) -> FilesView:

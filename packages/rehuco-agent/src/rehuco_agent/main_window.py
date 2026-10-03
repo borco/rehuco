@@ -68,7 +68,8 @@ from .dock_maximize import attach_maximize_handler
 from .documents.confirm_and_save_dirty import confirm_and_save_dirty
 from .documents.document_command_router import DocumentCommandRouter
 from .documents.document_registry import DocumentRegistry
-from .documents.document_widget import LOG_DOCK_MIN_HEIGHT, DocumentWidget
+from .documents.document_sub_docks import LOG_DOCK_MIN_HEIGHT
+from .documents.document_widget import DocumentWidget
 from .documents.documents_dock import DocumentsDock
 from .documents.rehu_document_menu_entry import RehuDocumentMenuEntry
 from .documents.rehu_document_model import path_label

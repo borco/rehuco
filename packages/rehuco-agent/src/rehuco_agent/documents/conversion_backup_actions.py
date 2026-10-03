@@ -11,7 +11,7 @@ through; one resource has no such problem, and putting an instantaneous edit beh
 would be worse than doing it.
 
 **The banner says, the toolbar does.** The document's inline strip stays message-only, the rule
-`~rehuco_agent.documents.document_widget.DocumentWidget` already states -- every kind's remedy is
+`~rehuco_agent.documents.document_sub_docks.DocumentSubDocks` already states -- every kind's remedy is
 already on screen -- so what this class contributes to the strip is one sentence and what it contributes
 to the toolbar is the one action that sentence is about.
 """
@@ -46,7 +46,7 @@ DISCARD_ICON_RESOURCE: Final = ":/icons/backup_delete.svg"
 
 Set with a plain ``QIcon`` rather than through
 :class:`~borco_pyside.theming.ActionIconThemeHandler`, the same way
-:data:`~rehuco_agent.documents.document_widget.CONVERT_DISCARD_ICON_RESOURCE` is: it carries its own red,
+:data:`~rehuco_agent.documents.document_sub_docks.CONVERT_DISCARD_ICON_RESOURCE` is: it carries its own red,
 which is the point of it, and the handler exists for the icons drawn *without* a color so a theme can give
 them one."""
 

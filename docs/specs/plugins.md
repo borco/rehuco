@@ -140,7 +140,7 @@ that show and edit it:
   protocol rather than by field type: `StatusReporter` (the `authors` viewer's hovered-link URL) and
   `ImageActivator` (the `images` strip reporting a clicked screenshot). This is the toolkit's standing rule —
   **a field decides *that* something happened, never *what* the app does about it**: it does not reach for a status
-  bar, a window, or a settings value it doesn't own. The owner (`DocumentWidget`) collects such fields on every form
+  bar, a window, or a settings value it doesn't own. The owner (`DocumentSubDocks`) collects such fields on every form
   it builds, rebuilds included, and acts.
 
 The toolkit lives in the **agent** (`packages/rehuco-agent/…/fields/`); `rehuco-core` stays non-GUI.

@@ -780,7 +780,7 @@ back puts an empty box on screen (measured), so the restore skips any area whose
 `openDockWidgetsCount()` is zero. A layout restore rebuilds every area from scratch: the handler forgets
 its bookkeeping on `stateRestored`, while the tabs — and the buttons on them — survive, the same objects
 reparented ([[appendices.qt-ads#restore-current-split]]); a refused blob touches nothing, so a standing
-maximize correctly survives one. One consumer still needs its own call: `DocumentWidget.__on_view_toggled`
+maximize correctly survives one. One consumer still needs its own call: `DocumentSubDocks.__on_view_toggled`
 is connected as each dock is built, before the handler could be, so it calls `restore()` itself ahead of
 its size stash rather than trusting slot order.
 

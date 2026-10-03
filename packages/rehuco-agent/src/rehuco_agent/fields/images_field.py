@@ -1,7 +1,7 @@
 """The special `images` field: a lightbox thumbnail strip viewer and a curation editor ([[plugins#field-toolkit]], #27).
 
 Like the ``path`` field, this one is **model-aware** -- its widgets need the resource's screenshot
-siblings on disk, which the toolkit's value binding cannot supply -- so its owner (`DocumentWidget`)
+siblings on disk, which the toolkit's value binding cannot supply -- so its owner (`DocumentSubDocks`)
 constructs it directly with an ``image_scanner`` rather than resolving it generically through the
 field list. Its bound value is the list of *hidden* screenshot filenames ([[data-model#image-meanings]]).
 Pure wiring only: `ImageStrip`/`ImageSelector` each hold their own `image_scanner` and know how to
