@@ -100,6 +100,20 @@ V1_STATEMENTS: Final = (
 )
 """Version 1's schema, statement by statement -- frozen here rather than built from the live column names."""
 
+V2_JOIN_TABLES: Final = ("resource_authors", "resource_tags", "resource_publishers")
+"""The join tables version 2 gives a spelling of their own -- frozen, like :data:`V1_STATEMENTS`."""
+
+V3_COLUMNS: Final = (
+    ("advertised_duration", "INTEGER"),
+    ("original_duration", "INTEGER"),
+    ("current_duration", "INTEGER"),
+    ("level", "TEXT"),
+    ("advertised_count", "TEXT"),
+    ("current_count", "INTEGER"),
+)
+"""The type-specific columns version 3 adds to ``resources``, with their SQL types -- frozen, like
+:data:`V1_STATEMENTS`."""
+
 
 def create_schema_v1(connection: sqlite3.Connection) -> None:
     """0 -> 1: the first schema -- roots, the resources under them, and the three value tables with their joins.
@@ -108,10 +122,6 @@ def create_schema_v1(connection: sqlite3.Connection) -> None:
     """
     for statement in V1_STATEMENTS:
         connection.execute(statement)
-
-
-V2_JOIN_TABLES: Final = ("resource_authors", "resource_tags", "resource_publishers")
-"""The join tables version 2 gives a spelling of their own -- frozen, like :data:`V1_STATEMENTS`."""
 
 
 def add_join_spellings_v2(connection: sqlite3.Connection) -> None:
@@ -129,7 +139,26 @@ def add_join_spellings_v2(connection: sqlite3.Connection) -> None:
         connection.execute(f"ALTER TABLE {table} ADD COLUMN name TEXT")  # nosec B608  # frozen literal names
 
 
-CHAIN: Final[SchemaChain] = ((1, create_schema_v1), (2, add_join_spellings_v2))
+def add_type_fields_v3(connection: sqlite3.Connection) -> None:
+    """2 -> 3: the type-specific fields a browser shows as columns -- a tutorial's durations and level, a reference
+    pack's image counts (#399).
+
+    Typed columns rather than one generic value column, so a duration or a count sorts and compares as a number;
+    ``advertised_count`` is text because the claim it holds may be open-ended (``500+``), and ``level`` a JSON
+    array because the field is multi-choice.
+
+    A row written before this step keeps its place but has no values for them, and nothing on disk says it is
+    stale: so its stat signature is cleared too, which no real file matches, and the next scan of any kind reads
+    the record again rather than trusting the row as current.
+
+    :param connection: the cache, inside the transaction the caller opened.
+    """
+    for column, sql_type in V3_COLUMNS:
+        connection.execute(f"ALTER TABLE resources ADD COLUMN {column} {sql_type}")  # nosec B608  # frozen literals
+    connection.execute("UPDATE resources SET mtime_ns = 0, content_hash = ''")
+
+
+CHAIN: Final[SchemaChain] = ((1, create_schema_v1), (2, add_join_spellings_v2), (3, add_type_fields_v3))
 """This target's ordered ``(target, step)`` chain."""
 
 CURRENT_VERSION: Final = chain_head(CHAIN, BASE_VERSION)

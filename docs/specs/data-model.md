@@ -750,7 +750,7 @@ The cache is the stdlib `sqlite3` module in rehuco-core, Qt-free, one connection
 | Table | Holds |
 | --- | --- |
 | `roots` | One row per root of the `.rehuco`, keyed by the root's stable id: its label, path, position and removable flag; whether the last scan could list it, and when its rows were last replaced |
-| `resources` | One row per record found under a root — FK to its root with `ON DELETE CASCADE`; the root-relative path, both as spelled and **normalized** (`os.path.normcase`) for matching; kind `rehu` or `tc`; UUID; type; the common core fields a browser shows; the record's stat signature and a content hash at last read ([[data-model#scan-and-staleness]]); why it could not be read, if it could not; when it was scanned |
+| `resources` | One row per record found under a root — FK to its root with `ON DELETE CASCADE`; the root-relative path, both as spelled and **normalized** (`os.path.normcase`) for matching; kind `rehu` or `tc`; UUID; type; the common core fields a browser shows; the type-specific fields, one typed column each (schema v3, #399): a tutorial's three durations in seconds and its levels (a JSON array), a reference pack's claimed count (text, so `500+` survives) and measured count; the record's stat signature and a content hash at last read ([[data-model#scan-and-staleness]]); why it could not be read, if it could not; when it was scanned |
 | `authors`, `tags`, `publishers` | Values plus their join tables to `resources`, so a filter on any of them is an indexed lookup. A value is one row per name, matched case-insensitively; the join row keeps the name **as its resource spells it**, which is what a browser shows, so a file that fixes a name's case shows the fix after its next scan (schema v2, #377) |
 
 - **A `.tc` gets a row only where no `.rehu` covers it** ([[data-model#resource-scoping]]) — a `.rehu` of the same
@@ -766,11 +766,17 @@ The cache is the stdlib `sqlite3` module in rehuco-core, Qt-free, one connection
   the scan did not find is removed — including the contents of a branch that would not list, which the scan names.
   The root is probed again when the walk ends, and a scan whose root went away meanwhile is not applied. A record
   found again keeps its row id; one that could not be read keeps a row naming why.
+- **A type's columns are where the cache and its plugin meet** (#399). The cache says which type-specific fields
+  it stores; the plugin declares which fields its type has; a type contributes the fields in both, and a scan fills
+  only those — so a stray key in another type's block, or a type no plugin here claims, reads empty. Labels are the
+  agent's, as every field's are.
 - **Versioned, and upgraded forward only.** `PRAGMA user_version` holds the schema version, and upgrades are a
   migration chain of `(version, upgrade)` steps whose head *is* the current version — the shape of the `.rehu`
   chains ([[data-model#schema-version]]). Each step runs in one transaction; a step may simply be *drop and
   rebuild*, which a disposable cache can always afford. There is no downgrade: a cache **newer** than the build is
-  never written, but discarded and rebuilt from the `.rehu` files, the reason logged.
+  never written, but discarded and rebuilt from the `.rehu` files, the reason logged. A step that adds columns
+  keeps the rows but clears their stat signature, so they show the new columns empty rather than wrong and the
+  next scan of any kind reads them again (v3).
 - **Created with `PRAGMA auto_vacuum = INCREMENTAL`** (it must precede the first table), so removing a root —
   whose resources cascade away — returns its space with a cheap `PRAGMA incremental_vacuum` rather than a full
   `VACUUM` rewrite.

@@ -14,7 +14,9 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 - The `.rehudb` catalog cache (`CatalogCache`): a SQLite file per `.rehuco`, named by its rehuco id inside a
   cache folder the caller names. It holds the roots, keyed by their ids, and one row per record found under
   them: the common core a browser shows, the authors, tags and publishers, and the record's size,
-  modification time and content hash. The schema is versioned through `PRAGMA user_version` and upgraded
+  modification time and content hash. It also holds the type-specific fields: a tutorial's three durations and
+  its levels, and a reference pack's claimed and measured image counts. `catalog_type_fields` names the ones a
+  type contributes, and a scan fills only those. The schema is versioned through `PRAGMA user_version` and upgraded
   forward only. A cache newer than the build, or a file that is not a database, is discarded and rebuilt.
   Reconciling against a `.rehuco` keeps a relabeled or re-pointed root's rows. Removing a root deletes its
   rows and frees their space. Rows can be read whole or narrowed by free text and `folder`, `authors`,

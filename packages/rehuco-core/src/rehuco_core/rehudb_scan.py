@@ -24,14 +24,15 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from pathlib import Path
-from typing import Final
+from typing import Any, Final
 
 import xxhash
 
 from .rehu_catalog import CatalogCheckpoint, CatalogScanner
 from .rehu_document import RehuDocument, author_name
+from .rehu_locks import coerced_str_list
 from .rehu_parse_limits import oversized_file_reason
-from .rehudb import CatalogRecord, RecordKind
+from .rehudb import CatalogRecord, RecordKind, catalog_type_fields
 from .rename_coordination import DEFAULT_RENAME_COORDINATOR, RenameCoordinator, ResourceLocation
 from .resource_scoping import is_legacy_record_name
 from .tc_document import load_tc
@@ -153,7 +154,8 @@ class CatalogRootScan:  # pylint: disable=too-few-public-methods
 
     @staticmethod
     def __read(path: Path) -> CatalogRecord:
-        """Read one record: its stat signature, a hash of its bytes, and the common core it holds.
+        """Read one record: its stat signature, a hash of its bytes, the common core it holds and its type's own
+        fields.
 
         The path stored here is a placeholder, replaced by the root-relative one once the scan ends.
 
@@ -190,7 +192,23 @@ class CatalogRootScan:  # pylint: disable=too-few-public-methods
             tags=(*document.advertised_tags, *document.extra_tags),
             publishers=CatalogRootScan.__publishers(document),
             content_hash=content_hash,
+            **CatalogRootScan.__type_fields(document),
         )
+
+    @staticmethod
+    def __type_fields(document: RehuDocument) -> dict[str, Any]:
+        """The type-specific fields the cache stores (:data:`~rehuco_core.rehudb.TYPE_FIELD_COLUMNS`) that the
+        record's type declares -- so a stray key in another type's block, or a type no plugin here claims, stays
+        empty rather than showing in a column that is not its type's."""
+        values = {
+            "advertised_duration": document.advertised_duration,
+            "original_duration": document.original_duration,
+            "current_duration": document.current_duration,
+            "level": tuple(coerced_str_list(document.active_field("level"))),
+            "advertised_count": document.advertised_count,
+            "current_count": document.current_count,
+        }
+        return {name: values[name] for name in catalog_type_fields(document.type, document.plugins)}
 
     @staticmethod
     def __publishers(document: RehuDocument) -> tuple[str, ...]:

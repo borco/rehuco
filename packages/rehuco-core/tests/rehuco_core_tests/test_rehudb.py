@@ -15,7 +15,9 @@ from uuid import uuid4
 from pytest import LogCaptureFixture, fixture, raises
 from pytest_mock import MockerFixture
 from rehuco_core import (
+    BUILTIN_PLUGINS,
     REHUDB_SUFFIX,
+    TYPE_FIELD_COLUMNS,
     CatalogCache,
     CatalogField,
     CatalogQuery,
@@ -23,6 +25,7 @@ from rehuco_core import (
     RecordKind,
     RehucoFile,
     RehucoRoot,
+    catalog_type_fields,
     rehudb_path,
 )
 from rehuco_core.migrations.rehudb import CHAIN, CURRENT_VERSION
@@ -399,6 +402,12 @@ def test_every_field_of_a_record_round_trips(cache: CatalogCache) -> None:
         authors=("Zed", "Ann"),
         tags=("b", "a"),
         publishers=("P", "Q"),
+        advertised_duration=3600,
+        original_duration=3500,
+        current_duration=1200,
+        level=("intermediate", "beginner"),
+        advertised_count="500+",
+        current_count=480,
         mtime_ns=42,
         size=7,
         content_hash="abc",
@@ -410,6 +419,25 @@ def test_every_field_of_a_record_round_trips(cache: CatalogCache) -> None:
     (row,) = cache.rows()
     assert row.record == written
     assert (row.root_id, row.root_label, row.scanned_at) == (first.root_id, "tutorials", 5.0)
+
+
+def test_a_record_without_type_fields_reads_them_empty(cache: CatalogCache, database: MemoryDatabase) -> None:
+    """A record whose type has none of the type-specific fields stores nothing for them, ``level`` included.
+
+    **Test steps:**
+
+    * scan a record carrying no type-specific field
+    * verify its ``level`` column holds ``NULL``, not an empty array, and the row reads every field empty
+    """
+    rehuco, first, _ = two_roots()
+    cache.reconcile_roots(rehuco.roots)
+
+    cache.apply_root_scan(first.root_id, [record("a/info.rehu", type="collection")])
+
+    assert database.scalar("SELECT level FROM resources") is None
+    (row,) = cache.rows()
+    assert row.record == record("a/info.rehu", type="collection")
+    assert all(getattr(row.record, name) in {None, ()} for name in TYPE_FIELD_COLUMNS)
 
 
 def test_a_rescan_shows_a_value_whose_case_changed(cache: CatalogCache) -> None:
@@ -513,6 +541,41 @@ def test_a_version_1_cache_upgrades_and_keeps_its_rows(
         assert [row.record.authors for row in upgraded.rows()] == [("Ann",)]
 
 
+def test_a_version_2_cache_upgrades_keeping_its_rows_empty_and_stale(
+    memory: Callable[[], MemoryDatabase], mocker: MockerFixture
+) -> None:
+    """The version-3 step adds the type-specific columns: a row from before it keeps its place, shows them empty
+    rather than wrong, and carries no signature a real file could match, so the next scan reads it again (#399).
+
+    **Test steps:**
+
+    * build a version-2 cache holding one scanned tutorial
+    * reopen it with the full chain
+    * verify the stamp is current, the row is still there with its title, its type fields are empty, and its
+      stat signature and content hash are cleared
+    """
+    database = memory()
+    mocker.patch("rehuco_core.rehudb.sqlite3.connect", side_effect=database.connect)
+    mocker.patch.object(Path, "mkdir", autospec=True)
+    rehuco, first, _ = two_roots()
+    with CatalogCache.open(CACHE_PATH, chain=CHAIN[:2]) as old:
+        old.reconcile_roots(rehuco.roots)
+        database.keeper.execute(
+            "INSERT INTO resources (root_id, path, path_key, kind, type, title, mtime_ns, size, content_hash, "
+            "scanned_at) VALUES (?, 'a/info.rehu', 'a/info.rehu', 'rehu', 'tutorial', 'T', 42, 7, 'abc', 0)",
+            (str(first.root_id),),
+        )
+
+    with CatalogCache.open(CACHE_PATH) as upgraded:
+        assert upgraded.schema_version == CURRENT_VERSION
+        rows = upgraded.rows()
+    assert len(rows) == 1
+    row = rows[0]
+    assert (row.record.title, row.record.type, row.record.size) == ("T", "tutorial", 7)
+    assert all(getattr(row.record, name) in {None, ()} for name in TYPE_FIELD_COLUMNS)
+    assert (row.record.mtime_ns, row.record.content_hash) == (0, "")
+
+
 # endregion
 
 # region Querying
@@ -595,6 +658,33 @@ def test_a_matching_row_still_carries_all_its_values(library: CatalogCache) -> N
     (row,) = library.rows(CatalogQuery(tokens=((CatalogField.TAGS, "rig"),)))
 
     assert row.record.tags == ("3d", "rig")
+
+
+# endregion
+
+# region A type's columns
+
+
+def test_a_type_contributes_the_stored_fields_its_plugin_declares() -> None:
+    """A tutorial contributes its durations and level, a reference pack -- by any of its spellings -- its image
+    counts, in the cache's order (#399)."""
+    assert catalog_type_fields("tutorial") == ("advertised_duration", "original_duration", "current_duration", "level")
+    assert catalog_type_fields("ReferenceImages") == ("advertised_count", "current_count")
+
+
+def test_a_type_declaring_none_of_them_contributes_nothing() -> None:
+    """A Collection declares no field of its own, a type no plugin claims declares nothing, and a record with no
+    type has none."""
+    assert not catalog_type_fields("collection")
+    assert not catalog_type_fields("daz3d")
+    assert not catalog_type_fields("")
+
+
+def test_every_stored_type_field_is_some_plugins() -> None:
+    """No type-specific column is one no built-in type would ever fill."""
+    declared = {name for plugin in BUILTIN_PLUGINS for name in plugin.field_names}
+
+    assert set(TYPE_FIELD_COLUMNS) <= declared
 
 
 # endregion

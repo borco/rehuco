@@ -190,6 +190,7 @@ from .rehu_screenshot_ordering import (
 from .rehu_screenshots import scan_rehu_screenshot_files
 from .rehuco_file import RehucoFile, RehucoFileError, RehucoRoot
 from .rehudb import (
+    TYPE_FIELD_COLUMNS,
     CatalogCache,
     CatalogField,
     CatalogQuery,
@@ -197,6 +198,7 @@ from .rehudb import (
     CatalogRoot,
     CatalogRow,
     RecordKind,
+    catalog_type_fields,
     rehudb_path,
 )
 from .rehudb_jobs import (
@@ -482,6 +484,7 @@ __all__ = [
     "TRUST_NOT_TRACKED",
     "TUTORIAL_FIELD_NAMES",
     "TUTORIAL_PLUGIN",
+    "TYPE_FIELD_COLUMNS",
     "TaskJob",
     "TaskJobBase",
     "TaskJobRegistry",
@@ -507,6 +510,7 @@ __all__ = [
     "author_name",
     "authors_comma_editable",
     "backup_path",
+    "catalog_type_fields",
     "checksum_entry_name",
     "checksum_record_path",
     "checksum_report_summary",

@@ -25,6 +25,7 @@ Every value a query matches against is a parameter; the SQL around it is assembl
 fragments below, never from text a reader typed.
 """
 
+import json
 import logging
 import os
 import sqlite3
@@ -41,6 +42,7 @@ from uuid import UUID
 from .constants import REHUDB_SUFFIX
 from .migrations.rehudb import BASE_VERSION, CHAIN, SchemaChain
 from .migrations.runner import chain_head
+from .plugins import DEFAULT_PLUGIN_REGISTRY, PluginRegistry
 from .rehuco_file import RehucoRoot
 
 LOG: Final = logging.getLogger(__name__)
@@ -75,7 +77,8 @@ class CatalogField(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class CatalogRecord:  # pylint: disable=too-many-instance-attributes
-    """What a scan read from one record: the common core a browser shows, and how to tell it changed.
+    """What a scan read from one record: the common core a browser shows, its type's own fields, and how to tell
+    it changed.
 
     :param path: root-relative, ``/``-separated, as spelled on disk.
     :param kind: the record's format.
@@ -90,6 +93,13 @@ class CatalogRecord:  # pylint: disable=too-many-instance-attributes
     :param authors: author names, in order.
     :param tags: advertised then extra tags, in order.
     :param publishers: every source's publisher, primary first.
+    :param advertised_duration: the claimed running time in seconds, or ``None``; type-specific, like the five below
+        -- filled only where the record's type declares the field (:func:`catalog_type_fields`).
+    :param original_duration: the complete download's measured running time in seconds, or ``None``.
+    :param current_duration: the running time still on disk in seconds, or ``None``.
+    :param level: the chosen levels, in order.
+    :param advertised_count: the pack's own claim of how many images it holds, as text (``500+``), or ``None``.
+    :param current_count: the measured content-image count, or ``None``.
     :param mtime_ns: the record file's modification time ([[data-model#scan-and-staleness]]).
     :param size: the record file's size in bytes.
     :param content_hash: the record file's bytes, hashed at this read.
@@ -110,6 +120,12 @@ class CatalogRecord:  # pylint: disable=too-many-instance-attributes
     authors: tuple[str, ...] = ()
     tags: tuple[str, ...] = ()
     publishers: tuple[str, ...] = ()
+    advertised_duration: int | None = None
+    original_duration: int | None = None
+    current_duration: int | None = None
+    level: tuple[str, ...] = ()
+    advertised_count: str | None = None
+    current_count: int | None = None
     mtime_ns: int = 0
     size: int = 0
     content_hash: str = ""
@@ -192,6 +208,17 @@ TOKEN_CLAUSES: Final = {
 }
 """The clause each token field adds, each with exactly one parameter."""
 
+TYPE_FIELD_COLUMNS: Final = (
+    "advertised_duration",
+    "original_duration",
+    "current_duration",
+    "level",
+    "advertised_count",
+    "current_count",
+)
+"""The type-specific fields the cache stores, one column each (schema v3, #399): a tutorial's durations and level,
+a reference pack's image counts. A scan fills one only where the record's type declares it."""
+
 RESOURCE_COLUMNS: Final = (
     "path",
     "kind",
@@ -203,12 +230,29 @@ RESOURCE_COLUMNS: Final = (
     "released",
     "current_size",
     "updated",
+    *TYPE_FIELD_COLUMNS,
     "mtime_ns",
     "size",
     "content_hash",
     "error",
 )
-"""The ``resources`` columns a :class:`CatalogRecord` fills -- each one of its fields, under the same name."""
+"""The ``resources`` columns a :class:`CatalogRecord` fills -- each one of its fields, under the same name, and
+stored as it is but for ``level``, which a column holds as a JSON array (:meth:`CatalogCache.rows`)."""
+
+
+def catalog_type_fields(type_name: str, plugins: PluginRegistry = DEFAULT_PLUGIN_REGISTRY) -> tuple[str, ...]:
+    """The type-specific columns a resource type contributes to a browser: those of :data:`TYPE_FIELD_COLUMNS`
+    its plugin declares (:meth:`~rehuco_core.PluginRegistry.field_names`), in the cache's order.
+
+    The cache says which fields it stores and the plugin which fields its type has; a column belongs to a type
+    where the two meet. Their labels are the agent's to say, as every field's are.
+
+    :param type_name: a type's main key or alias, as spelled on disk.
+    :param plugins: the plugins installed here.
+    :returns: the column names; ``()`` for a type that declares none, or whose plugin is not installed.
+    """
+    declared = plugins.field_names(type_name)
+    return tuple(column for column in TYPE_FIELD_COLUMNS if column in declared)
 
 
 def rehudb_path(cache_dir: Path, rehuco_id: UUID) -> Path:
@@ -425,6 +469,7 @@ class CatalogCache:
         for resource_id, root_id, root_label, scanned_at, *fields in cursor:
             columns_read = dict(zip(RESOURCE_COLUMNS, fields, strict=True))
             columns_read["kind"] = RecordKind(columns_read["kind"])
+            columns_read["level"] = self.__level_read(columns_read["level"])
             record = CatalogRecord(
                 **columns_read,
                 authors=values["authors"].get(resource_id, ()),
@@ -518,7 +563,7 @@ class CatalogCache:
         """
         names = ", ".join(RESOURCE_COLUMNS)
         updates = ", ".join(f"{column} = excluded.{column}" for column in RESOURCE_COLUMNS)
-        fields = tuple(getattr(record, column) for column in RESOURCE_COLUMNS)
+        fields = tuple(CatalogCache.__stored(record, column) for column in RESOURCE_COLUMNS)
         (resource_id,) = connection.execute(
             f"INSERT INTO resources (root_id, path_key, scanned_at, {names}) "  # nosec B608  # fixed names
             f"VALUES (?, ?, ?, {', '.join('?' * len(RESOURCE_COLUMNS))}) "
@@ -528,6 +573,20 @@ class CatalogCache:
         for (table, join), names_of in zip(JOINS, (record.authors, record.tags, record.publishers), strict=True):
             CatalogCache.__write_values(connection, table, join, resource_id, names_of)
         return resource_id
+
+    @staticmethod
+    def __stored(record: CatalogRecord, column: str) -> object:
+        """What one of a record's columns holds: its field as it is, but ``level`` as a JSON array, or ``NULL``
+        when it names none -- the inverse of :meth:`__level_read`."""
+        value = getattr(record, column)
+        if column != "level":
+            return value
+        return json.dumps(list(value)) if value else None
+
+    @staticmethod
+    def __level_read(stored: str | None) -> tuple[str, ...]:
+        """The levels a ``level`` column holds, in order -- the inverse of :meth:`__stored`."""
+        return tuple(json.loads(stored)) if stored else ()
 
     @staticmethod
     def __write_values(

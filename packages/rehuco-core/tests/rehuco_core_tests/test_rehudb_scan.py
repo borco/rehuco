@@ -4,6 +4,7 @@ The filesystem is declared, never touched: listings come from :class:`FakeScandi
 from the same declaration, and its parse from the payload the test gave it.
 """
 
+import sqlite3
 from collections.abc import Callable
 from pathlib import Path
 from threading import Event
@@ -14,8 +15,10 @@ from pytest import fixture
 from pytest_mock import MockerFixture
 from rehuco_core import (
     CURRENT_FORMAT_VERSION,
+    CatalogCache,
     CatalogRootScan,
     RecordKind,
+    RehucoFile,
     RehuDocument,
     RehuFormatError,
     RenameCoordinator,
@@ -27,6 +30,9 @@ from rehuco_core_tests.concurrency import SETTLE, running, wait_until
 from rehuco_core_tests.fake_directories import FakeDirEntry, FakeScandir
 
 ROOT: Final = Path("/fake/library")
+
+real_connect: Final = sqlite3.connect
+"""The real :func:`sqlite3.connect`, bound before a test patches the module the cache shares with this one."""
 
 
 def payload(title: str = "", **core: Any) -> dict[str, Any]:
@@ -165,6 +171,87 @@ def test_every_sources_publisher_is_kept_the_primarys_first(tree: FakeTree) -> N
 
     assert record.publisher == "First"
     assert record.publishers == ("First", "Second")
+
+
+def test_a_tutorial_is_read_with_its_durations_and_level(tree: FakeTree) -> None:
+    """A tutorial's own fields reach its record; a reference pack's do not (#399)."""
+    content = payload("Donut", type="tutorial")
+    content["tutorial"] = {
+        "advertised_duration": 3600,
+        "original_duration": 3500,
+        "current_duration": 1200,
+        "level": ["intermediate", 7, "beginner"],
+    }
+    tree.file("info.rehu", content)
+
+    (record,) = scan().records
+
+    assert (record.advertised_duration, record.original_duration, record.current_duration) == (3600, 3500, 1200)
+    assert record.level == ("intermediate", "beginner")
+    assert (record.advertised_count, record.current_count) == (None, None)
+
+
+def test_a_reference_pack_is_read_with_its_image_counts(tree: FakeTree) -> None:
+    """A reference pack's claimed count stays the text it is; its measured count is a number (#399)."""
+    content = payload("Faces", type="ReferenceImages")
+    content["reference_images"] = {"advertised_count": "500+", "current_count": 480}
+    tree.file("info.rehu", content)
+
+    (record,) = scan().records
+
+    assert (record.advertised_count, record.current_count) == ("500+", 480)
+    assert (record.advertised_duration, record.level) == (None, ())
+
+
+def test_a_field_its_type_does_not_declare_is_left_empty(tree: FakeTree) -> None:
+    """A stray count in a tutorial's block, or a block under a type with no fields of its own, shows in no column.
+
+    **Test steps:**
+
+    * declare a tutorial whose block also carries ``current_count``, and a collection whose block carries a duration
+    * verify the tutorial's count and the collection's duration are both empty
+    """
+    tutorial = payload("Donut", type="tutorial")
+    tutorial["tutorial"] = {"current_count": 3, "current_duration": 60}
+    collection = payload("Series", type="collection")
+    collection["collection"] = {"current_duration": 60}
+    tree.file("a.rehu", tutorial)
+    tree.file("b.rehu", collection)
+
+    first, second = scan().records
+
+    assert (first.current_duration, first.current_count) == (60, None)
+    assert second.current_duration is None
+
+
+def test_scanned_type_fields_round_trip_through_the_cache(tree: FakeTree, mocker: MockerFixture) -> None:
+    """What a scan read of a tutorial and a reference pack is what the cache reads back (#399).
+
+    **Test steps:**
+
+    * scan a tutorial with its durations and levels and a reference pack with its counts
+    * apply the scan to a fresh in-memory cache and read its rows
+    * verify each row's record equals the scanned one
+    """
+    mocker.patch("rehuco_core.rehudb.sqlite3.connect", side_effect=lambda *_a, **_k: real_connect(":memory:"))
+    mocker.patch.object(Path, "mkdir", autospec=True)
+    tutorial = payload("Donut", type="tutorial")
+    tutorial["tutorial"] = {"advertised_duration": 3600, "current_duration": 1200, "level": ["any"]}
+    pack = payload("Faces", type="reference_images")
+    pack["reference_images"] = {"advertised_count": "500+", "current_count": 480}
+    tree.file("a.rehu", tutorial)
+    tree.file("b.rehu", pack)
+    rehuco = RehucoFile.new()
+    rehuco.add_root(ROOT)
+    result = scan()
+
+    with CatalogCache.open(Path("/fake/cache/x.rehudb")) as cache:
+        cache.reconcile_roots(rehuco.roots)
+        assert cache.apply_root_scan(rehuco.roots[0].root_id, result.records)
+        rows = cache.rows()
+
+    assert [row.record for row in rows] == list(result.records)
+    assert (rows[0].record.level, rows[1].record.advertised_count) == (("any",), "500+")
 
 
 def test_a_legacy_record_is_read_only_where_no_rehu_covers_it(tree: FakeTree) -> None:
