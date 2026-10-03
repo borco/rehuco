@@ -136,7 +136,7 @@ def add_join_spellings_v2(connection: sqlite3.Connection) -> None:
     :param connection: the cache, inside the transaction the caller opened.
     """
     for table in V2_JOIN_TABLES:
-        connection.execute(f"ALTER TABLE {table} ADD COLUMN name TEXT")  # nosec B608  # frozen literal names
+        connection.execute(f"ALTER TABLE {table} ADD COLUMN name TEXT")
 
 
 def add_type_fields_v3(connection: sqlite3.Connection) -> None:
@@ -154,7 +154,7 @@ def add_type_fields_v3(connection: sqlite3.Connection) -> None:
     :param connection: the cache, inside the transaction the caller opened.
     """
     for column, sql_type in V3_COLUMNS:
-        connection.execute(f"ALTER TABLE resources ADD COLUMN {column} {sql_type}")  # nosec B608  # frozen literals
+        connection.execute(f"ALTER TABLE resources ADD COLUMN {column} {sql_type}")
     connection.execute("UPDATE resources SET mtime_ns = 0, content_hash = ''")
 
 
