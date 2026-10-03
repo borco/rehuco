@@ -6,7 +6,13 @@ from uuid import UUID, uuid4
 
 from PySide6.QtCore import QModelIndex, QPersistentModelIndex, Qt
 from pytest import fixture
-from rehuco_agent.rehuco.catalog_table_model import AUTHORS_COLUMN, PATH_ROLE, TITLE_COLUMN, CatalogTableModel
+from rehuco_agent.rehuco.catalog_table_model import (
+    AUTHORS_COLUMN,
+    PATH_ROLE,
+    SIZE_ROLE,
+    TITLE_COLUMN,
+    CatalogTableModel,
+)
 from rehuco_core import CatalogRecord, CatalogRow, RecordKind
 
 ROOT_ID: Final = uuid4()
@@ -103,6 +109,26 @@ def test_a_row_answers_its_absolute_path(model: CatalogTableModel) -> None:
     """
     assert model.index(0, 0).data(PATH_ROLE) == ROOT / "python/info.rehu"
     assert model.absolute_path(0) == ROOT / "python/info.rehu"
+
+
+def test_a_row_answers_its_current_size_or_zero() -> None:
+    """The size role is the record's ``current_size``; a record stating none counts as nothing.
+
+    **Test steps:**
+
+    * set one record with a size and one without
+    * verify the size role answers the size, then ``0``
+    """
+    model = CatalogTableModel()
+    model.set_rows(
+        [
+            row(CatalogRecord("a/info.rehu", RecordKind.REHU, current_size=4096)),
+            row(CatalogRecord("b/info.tc", RecordKind.TC)),
+        ],
+        {ROOT_ID: ROOT},
+    )
+
+    assert [model.index(r, 0).data(SIZE_ROLE) for r in range(2)] == [4096, 0]
 
 
 def test_a_row_whose_root_is_unknown_has_no_path() -> None:

@@ -20,6 +20,10 @@ AUTHORS_SEPARATOR: Final = ", "
 PATH_ROLE: Final = Qt.ItemDataRole.UserRole
 """The role answering a row's absolute path -- what a double-click opens."""
 
+SIZE_ROLE: Final = Qt.ItemDataRole.UserRole + 1
+"""The role answering a row's ``current_size`` in bytes -- ``0`` for a record that states none (a legacy ``.tc``
+included) -- so a status bar can total what a view shows through any proxy over this model."""
+
 
 class CatalogTableModel(QAbstractTableModel):
     """A read-only table over :class:`~rehuco_core.CatalogRow` entries.
@@ -144,6 +148,8 @@ class CatalogTableModel(QAbstractTableModel):
         entry = self.__rows[index.row()]
         if role == PATH_ROLE:
             return self.absolute_path(index.row())
+        if role == SIZE_ROLE:
+            return entry.record.current_size or 0
         if role == Qt.ItemDataRole.ToolTipRole and entry.record.error:
             return entry.record.error
         if role != Qt.ItemDataRole.DisplayRole or not 0 <= index.column() < len(COLUMN_TITLES):

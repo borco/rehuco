@@ -218,7 +218,9 @@ def scan_finding(mocker: MockerFixture, records: dict[Path, tuple[CatalogRecord,
 
 def tutorial_record() -> CatalogRecord:
     """A readable ``.rehu`` record, as a scan of the tutorials root finds it."""
-    return CatalogRecord("python/info.rehu", RecordKind.REHU, title="Python", type="tutorial", content_hash="0")
+    return CatalogRecord(
+        "python/info.rehu", RecordKind.REHU, title="Python", type="tutorial", current_size=1536, content_hash="0"
+    )
 
 
 def wait_for_jobs(qtbot: QtBot, queue: TaskQueue) -> None:
@@ -654,6 +656,54 @@ def test_a_row_whose_root_is_gone_has_no_path(dock: RehucoDock) -> None:
     * verify there is none
     """
     assert dock.catalog_model.absolute_path(0) is None
+
+
+# endregion
+
+# region The browser's status bar
+
+
+def test_the_status_bar_says_no_resources_with_nothing_open(dock: RehucoDock) -> None:
+    """An empty table is said so, not left blank.
+
+    **Test steps:**
+
+    * read the browser's status bar with nothing open
+    * verify it reads ``No resources``
+    """
+    assert dock.browser_status_bar.currentMessage() == "No resources"
+
+
+@mark.usefixtures("served")
+def test_the_status_bar_counts_the_rows_the_table_shows(
+    mocker: MockerFixture, qtbot: QtBot, dock: RehucoDock, queue: TaskQueue
+) -> None:
+    """The count follows the rows a scan lands and the rows a close clears, with the singular spelled right.
+
+    **Test steps:**
+
+    * open a catalog and scan one 1.5 KiB record in; verify ``1 resource / 1.5K``
+    * scan again, now finding a second 2 KiB record; verify ``2 resources / 3.5K``
+    * close the catalog; verify ``No resources``
+    """
+    scan_finding(mocker, {TUTORIALS: (tutorial_record(),)})
+    dock.open_rehuco(REHUCO_PATH)
+    dock.scan_action.trigger()
+    qtbot.waitUntil(lambda: dock.catalog_model.rowCount() == 1, timeout=WAIT_TIMEOUT_MS)
+    wait_for_jobs(qtbot, queue)
+    assert dock.browser_status_bar.currentMessage() == "1 resource / 1.5K"
+
+    second = CatalogRecord(
+        "go/info.rehu", RecordKind.REHU, title="Go", type="tutorial", current_size=2048, content_hash="1"
+    )
+    scan_finding(mocker, {TUTORIALS: (tutorial_record(), second)})
+    dock.scan_action.trigger()
+    qtbot.waitUntil(lambda: dock.catalog_model.rowCount() == 2, timeout=WAIT_TIMEOUT_MS)
+    wait_for_jobs(qtbot, queue)
+    assert dock.browser_status_bar.currentMessage() == "2 resources / 3.5K"
+
+    dock.close_rehuco()
+    assert dock.browser_status_bar.currentMessage() == "No resources"
 
 
 # endregion
