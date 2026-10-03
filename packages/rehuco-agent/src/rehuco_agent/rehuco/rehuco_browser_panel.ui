@@ -54,6 +54,13 @@
      </attribute>
     </widget>
    </item>
+   <item>
+    <widget class="QStatusBar" name="status_bar">
+     <property name="sizeGripEnabled">
+      <bool>false</bool>
+     </property>
+    </widget>
+   </item>
   </layout>
  </widget>
  <resources/>

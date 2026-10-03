@@ -10,14 +10,15 @@ from pathlib import Path
 from typing import Any, Final, cast
 
 import cbor2
+import humanize
 import PySide6QtAds as QtAds
 from borco_core.logging import LogScope
 from borco_pyside.qtads import QtAdsAutoHideButtonSuppressor, QtAdsFocusTracker
 from borco_pyside.theming import ActionIconThemeHandler
 from borco_pyside.widgets import MessageBanner, MessageBannerRow, MessageBannerSeverity, RowBandDelegate
-from PySide6.QtCore import QByteArray, QItemSelectionModel, QModelIndex, QObject, Qt, Signal
+from PySide6.QtCore import QAbstractItemModel, QByteArray, QItemSelectionModel, QModelIndex, QObject, Qt, Signal
 from PySide6.QtGui import QAction
-from PySide6.QtWidgets import QFileDialog, QMainWindow, QMessageBox, QTableView, QWidget
+from PySide6.QtWidgets import QFileDialog, QMainWindow, QMessageBox, QStatusBar, QTableView, QWidget
 from rehuco_core import (
     DEFAULT_RENAME_COORDINATOR,
     FINISHED_JOB_STATES,
@@ -36,7 +37,7 @@ from rehuco_core import (
 from ..dock_maximize import attach_maximize_handler
 from ..glyphs import TAB_CLOSE_GLYPH
 from ..settings.persistent_settings import cache_folder
-from .catalog_table_model import CatalogTableModel
+from .catalog_table_model import SIZE_ROLE, CatalogTableModel
 from .rehuco_browser_panel_ui import Ui_RehucoBrowserPanel
 from .rehuco_roots_model import RehucoRootsModel
 from .rehuco_roots_panel_ui import Ui_RehucoRootsPanel
@@ -156,6 +157,12 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         # unsorted until a header is clicked: the header's own default puts an arrow on the first column
         # while the rows are still in the cache's order
         catalog_view.horizontalHeader().setSortIndicator(-1, Qt.SortOrder.AscendingOrder)
+        # the count follows what the view shows, so it listens to the view's model: today the catalog's own,
+        # later a filter proxy over it (#396, #398)
+        shown = cast(QAbstractItemModel, catalog_view.model())
+        for signal in (shown.modelReset, shown.rowsInserted, shown.rowsRemoved):
+            signal.connect(self.__update_resource_count)
+        self.__update_resource_count()
 
         self.__dock_manager: Final = QtAds.CDockManager(self)
         # nothing holds onto the tracker: it parents itself to the manager it tracks
@@ -325,6 +332,11 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         return self.__browser_ui.catalog_view
 
     @property
+    def browser_status_bar(self) -> QStatusBar:
+        """The status bar under the resource table, which says how many resources the table shows."""
+        return self.__browser_ui.status_bar
+
+    @property
     def scan_action(self) -> QAction:
         """Scans every root into the cache, on the queue."""
         return self.__roots_ui.scan_action
@@ -365,6 +377,17 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         self.__banner.set_rows(
             [] if lock_reason is None else [MessageBannerRow(MessageBannerSeverity.WARNING, lock_reason.message)]
         )
+
+    def __update_resource_count(self) -> None:
+        """Say in the browser's status bar how many rows the table's model holds now, and their sizes added up."""
+        model = self.__browser_ui.catalog_view.model()
+        count = model.rowCount()
+        if count == 0:
+            self.__browser_ui.status_bar.showMessage("No resources")
+            return
+        total = sum(model.index(row, 0).data(SIZE_ROLE) for row in range(count))
+        noun = "resource" if count == 1 else "resources"
+        self.__browser_ui.status_bar.showMessage(f"{count} {noun} / {humanize.naturalsize(total, gnu=True)}")
 
     def __add_sub_docks(self) -> None:
         """Place the Browser in the centre and the Roots list to its left, on this shell's own manager."""
