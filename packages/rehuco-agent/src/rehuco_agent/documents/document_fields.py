@@ -295,7 +295,8 @@ def build_document_form(
         the form (a type switch/revert, `DocumentWidget`) owns **one** and passes it to every build, so
         it is reused rather than a fresh one leaking per rebuild (#149). Required, not optional-with-a-
         default: minting one here would put that ownership back inside a per-build call, the exact seam
-        #149 closed. The owner parents it to ``model`` so it is freed with the whole document (#148).
+        #149 closed. The owner parents it to itself, so it is freed with that view rather than piling up
+        on a model other views still hold (#375).
     :param image_organizer: what the images strip's editor writes screenshot reorders/removals through
         -- the caller's own instance (`DocumentWidget`), shared with its `.image_downloads.ImageDownloads`
         rather than a second, redundant one minted here (#73): both are stateless, but one instance keeps

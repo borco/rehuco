@@ -66,6 +66,7 @@ from .dialogs.import_legacy_catalog_wizard import ImportLegacyCatalogWizard
 from .dock_maximize import attach_maximize_handler
 from .documents.confirm_and_save_dirty import confirm_and_save_dirty
 from .documents.document_command_router import DocumentCommandRouter
+from .documents.document_registry import DocumentRegistry
 from .documents.document_widget import LOG_DOCK_MIN_HEIGHT, DocumentWidget
 from .documents.documents_dock import DocumentsDock
 from .documents.rehu_document_menu_entry import RehuDocumentMenuEntry
@@ -324,10 +325,13 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__rename_coordinator: Final = DEFAULT_RENAME_COORDINATOR
         self.__rename_coordinator.add_rename_listener(self.__task_queue.resync_sources)
 
+        # one view-model per open document whoever shows it (#375): every holder acquires through this,
+        # so a resource open in two places is one model, edited live in both
+        self.__document_registry: Final = DocumentRegistry(self, rename_coordinator=self.__rename_coordinator)
         self.__documents_dock: Final = DocumentsDock(
             self,
             stylesheet_host=self.__dock_manager,
-            rename_coordinator=self.__rename_coordinator,
+            registry=self.__document_registry,
             task_queue=self.__task_queue,
         )
         self.__documents_dock.document_focus_changed.connect(self.__on_document_focus_changed)

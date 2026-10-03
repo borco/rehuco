@@ -27,8 +27,9 @@ from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.app_logging import shared_log_bridge
-from rehuco_agent.documents import documents_dock
+from rehuco_agent.documents import document_registry
 from rehuco_agent.documents.document_dock import DIRTY_DOCK_MARKER, LOCKED_DOCK_MARKER
+from rehuco_agent.documents.document_registry import DocumentRegistry
 from rehuco_agent.documents.documents_dock import DocumentsDock
 from rehuco_agent.settings.default_layout_settings import shared_default_layout_settings
 from rehuco_agent.settings.document_session_settings import DocumentSessionSettings
@@ -470,10 +471,10 @@ def test_closing_a_dock_stops_it_listening_to_the_task_queue(mocker: MockerFixtu
 def test_closing_a_dock_destroys_its_model(mocker: MockerFixture, qtbot: QtBot) -> None:
     """Closing a document destroys its view-model, ending the session-long per-document leak (#148).
 
-    The model is parented to the long-lived dock area, not to its (closing) `DocumentWidget`, so
-    without the explicit ``deleteLater`` it would survive every close for the whole session, dragging
-    its data and `NameSuggestionModel` children along. The dock stays alive throughout this test, so
-    the model's ``destroyed`` firing is proof the close itself freed it.
+    The model is parented to the long-lived registry, not to its (closing) `DocumentWidget`, so
+    without the last release's ``deleteLater`` it would survive every close for the whole session
+    (#375). The area stays alive throughout this test, so the model's ``destroyed`` firing is proof the
+    close itself freed it.
 
     **Test steps:**
 
@@ -521,6 +522,104 @@ def test_a_signal_on_a_closed_documents_model_does_not_touch_the_area(mocker: Mo
     model.dirty_changed.emit(True)  # type: ignore[attr-defined]
 
     assert not dock._DocumentsDock__document_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_opening_a_path_another_holder_holds_shows_its_model(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A document already held elsewhere opens over that same model, and closing the dock leaves it to
+    the other holder (#375).
+
+    **Test steps:**
+
+    * hold the fake path through the registry first, then open it in the dock
+    * verify the dock shows the held model
+    * close the dock, and verify the model is still held under its path
+    """
+    load_document(mocker)
+    registry = DocumentRegistry()
+    held = registry.acquire(FAKE_PATH)
+    dock = DocumentsDock(registry=registry)
+    qtbot.addWidget(dock)
+
+    widget = dock.open_document(FAKE_PATH)
+
+    assert widget.model is held
+
+    dock_for(dock, widget).requestCloseDockWidget()
+
+    assert registry.find(FAKE_PATH) is held
+
+
+def test_closing_a_dirty_document_another_holder_shows_does_not_prompt(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Closing one view of a dirty document loses nothing while another holder still shows it, so it asks
+    nothing (#375).
+
+    **Test steps:**
+
+    * open the fake path, take a second hold on its model through the registry, and dirty it
+    * close the dock
+    * verify no prompt was shown, the dock is gone, and the dirty model is still held
+    """
+    load_document(mocker)
+    registry = DocumentRegistry()
+    dock = DocumentsDock(registry=registry)
+    qtbot.addWidget(dock)
+    widget = dock.open_document(FAKE_PATH)
+    model = registry.acquire(FAKE_PATH)
+    model.dirty = True
+    warning = mocker.patch.object(QMessageBox, "warning")
+
+    dock_for(dock, widget).requestCloseDockWidget()
+
+    warning.assert_not_called()
+    assert not dock.open_document_widgets()
+    assert registry.find(FAKE_PATH) is model
+    assert model.dirty
+
+
+def test_close_all_leaves_a_shared_dirty_document_out_of_the_batch_dialog(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """``close_all`` confirms only the dirty documents it would be the last to let go of (#375).
+
+    **Test steps:**
+
+    * open the fake path, take a second hold on its model through the registry, and dirty it
+    * call ``close_all``
+    * verify the batch dialog was never built and every dock is gone
+    """
+    load_document(mocker)
+    registry = DocumentRegistry()
+    dock = DocumentsDock(registry=registry)
+    qtbot.addWidget(dock)
+    dock.open_document(FAKE_PATH)
+    registry.acquire(FAKE_PATH).dirty = True
+    dialog_class = mocker.patch(UNSAVED_CHANGES_DIALOG)
+
+    dock.close_all()
+
+    dialog_class.assert_not_called()
+    assert not dock.open_document_widgets()
+
+
+def test_a_closed_document_still_held_elsewhere_reports_no_more_moves(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Once its dock is closed, a model another holder keeps moving is no longer this area's to report.
+
+    **Test steps:**
+
+    * open the fake path, take a second hold on its model, and close the dock
+    * move the model, spying on ``document_path_changed``
+    * verify nothing was reported
+    """
+    load_document(mocker)
+    registry = DocumentRegistry()
+    dock = DocumentsDock(registry=registry)
+    qtbot.addWidget(dock)
+    widget = dock.open_document(FAKE_PATH)
+    model = registry.acquire(FAKE_PATH)
+    dock_for(dock, widget).requestCloseDockWidget()
+    spy = QSignalSpy(dock.document_path_changed)
+
+    model.path = OTHER_PATH
+
+    assert spy.count() == 0
 
 
 def test_closing_a_dirty_dock_prompts_and_discards_on_discard(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -906,12 +1005,13 @@ def test_open_document_tracks_a_dock_with_no_area(mocker: MockerFixture, qtbot: 
     """Opening a path whose dock currently has no containing area still tracks it as current, just
     without indexing into that (nonexistent) area.
 
-    Registers a stand-in dock directly in the private map, since a real dock added via the normal
-    flow always has an area -- this null case can't be reached through the public API alone.
+    Registers a stand-in dock directly in the private maps (and has the registry report its model as the
+    one held for the path), since a real dock added via the normal flow always has an area -- this null
+    case can't be reached through the public API alone.
 
     **Test steps:**
 
-    * register a stand-in dock (reporting no area) for a path, directly in the private map
+    * register a stand-in dock (reporting no area) for a path, directly in the private maps
     * open that same path
     * verify the stand-in's widget was returned and it's tracked as the focused document
     """
@@ -924,6 +1024,10 @@ def test_open_document_tracks_a_dock_with_no_area(mocker: MockerFixture, qtbot: 
     fake_widget.model.path = FAKE_PATH
     docks = dock._DocumentsDock__document_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     docks[fake_cdock] = fake_widget
+    model_docks = dock._DocumentsDock__model_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    model_docks[fake_widget.model] = fake_cdock
+    registry = dock._DocumentsDock__registry  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    mocker.patch.object(registry, "find", return_value=fake_widget.model)
 
     result = dock.open_document(FAKE_PATH)
 
@@ -1741,7 +1845,7 @@ def configure_identity(mocker: MockerFixture, *, current: str = "admin", unknown
     :param unknown: the unknown username ``shared_identity_settings()`` should report.
     """
     mocker.patch.object(
-        documents_dock,
+        document_registry,
         "shared_identity_settings",
         return_value=IdentitySettings(current_username=current, unknown_username=unknown),
     )
@@ -1889,7 +1993,7 @@ def read_sink(qtbot: QtBot) -> Iterator[RecordingSink]:
     """
     del qtbot  # only needed so a QApplication and an event loop exist
     bridge = shared_log_bridge()
-    logger = logging.getLogger(documents_dock.__name__)
+    logger = logging.getLogger(document_registry.__name__)
     previous_propagate = logger.propagate
     previous_level = logger.level
     # DEBUG explicitly: this logger's own level is NOTSET, so the effective floor would otherwise be the
@@ -2006,11 +2110,12 @@ def test_an_opened_document_renames_through_the_docks_coordinator(mocker: Mocker
     """Every document this dock opens renames through the **app's** coordinator, not one of its own.
 
     A job and a document holding different coordinators would each coordinate with nobody, so what
-    matters is that the one handed in is the one that arrives.
+    matters is that the one handed in -- to the registry the dock opens through (#375) -- is the one that
+    arrives.
 
     **Test steps:**
 
-    * build a dock over a coordinator whose rename is mocked, and open a document
+    * build a dock over a registry with a coordinator whose rename is mocked, and open a document
     * rename from the model
     * verify that coordinator was the one asked
     """
@@ -2018,7 +2123,7 @@ def test_an_opened_document_renames_through_the_docks_coordinator(mocker: Mocker
     coordinator = RenameCoordinator()
     renamed = FAKE_PATH.parent.with_name("new_name") / "info.rehu"
     through = mocker.patch.object(coordinator, "rename", return_value=renamed)
-    dock = DocumentsDock(rename_coordinator=coordinator)
+    dock = DocumentsDock(registry=DocumentRegistry(rename_coordinator=coordinator))
     qtbot.addWidget(dock)
 
     widget = dock.open_document(FAKE_PATH)
@@ -2035,7 +2140,8 @@ def test_a_new_document_renames_through_the_docks_coordinator(mocker: MockerFixt
 
     **Test steps:**
 
-    * build a dock over a coordinator and start a new document in a folder with no `info.rehu`
+    * build a dock over a registry with a coordinator and start a new document in a folder with no
+      `info.rehu`
     * save it, then rename
     * verify the dock's coordinator was asked
     """
@@ -2043,7 +2149,7 @@ def test_a_new_document_renames_through_the_docks_coordinator(mocker: MockerFixt
     coordinator = RenameCoordinator()
     renamed = FAKE_PATH.parent.with_name("new_name") / "info.rehu"
     through = mocker.patch.object(coordinator, "rename", return_value=renamed)
-    dock = DocumentsDock(rename_coordinator=coordinator)
+    dock = DocumentsDock(registry=DocumentRegistry(rename_coordinator=coordinator))
     qtbot.addWidget(dock)
 
     widget = dock.open_folder(FAKE_PATH.parent)

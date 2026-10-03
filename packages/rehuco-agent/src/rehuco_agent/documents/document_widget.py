@@ -534,10 +534,11 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         self.__restoring_layout = False
 
         # the rename-suggestion compute model is built once and reused across every form rebuild, not
-        # rebuilt with the form: its four notify-signal subscriptions on the model are permanent, so a
-        # fresh one per type switch/revert would leak a set that never disconnects (#149). Parented to
-        # model, so it is freed with the whole document when the dock closes (#148).
-        self.__name_suggestions: Final = NameSuggestionModel(model, parent=model)
+        # rebuilt with the form: its notify-signal subscriptions on the model last its whole life, so a
+        # fresh one per type switch/revert would leak a set that never disconnects (#149). Parented to this
+        # widget, not the model: the model may outlive this view (#375), and one left on it per view would
+        # pile up there for as long as any holder kept it.
+        self.__name_suggestions: Final = NameSuggestionModel(model, parent=self)
         # the whole field composition (location + images + record fields + unknown fallbacks) is
         # authored in document_fields; this widget only hosts the resulting docks. The form is retained
         # (not discarded after building) so its fields outlive the widgets they built -- a field's
@@ -661,16 +662,9 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         self.__awaiting_type = model.pending
         self.__type_docks: dict[str, QtAds.CDockWidget] = self.__add_type_docks(type_dock_names(self.layout_type))
         # the archives are found relative to the path, so a path change re-enumerates them; connected
-        # once here rather than by the dock that needs it, which a type change removes and rebuilds
-        model.path_changed.connect(lambda _path: self.__on_content_images_path_changed())  # type: ignore[attr-defined]
-        # a brand-new resource's first save (#359): the path was already set by create_new, so
-        # path_changed never fires, and a reader who packed zips outside the app while the document sat
-        # unsaved would otherwise see them only after closing and reopening the dock. Guarded on the
-        # transition to True -- the only one that ever fires in practice -- so nothing re-enumerates on
-        # the way back to not-yet-saved
-        model.saved_on_disk_changed.connect(  # type: ignore[attr-defined]
-            lambda saved: self.__refresh_content_images() if saved else None
-        )
+        # once here rather than by the dock that needs it, which a type change removes and rebuilds. A bound
+        # method, not a lambda: Qt severs it when this widget dies, and the model may live on (#375)
+        model.path_changed.connect(self.__on_content_images_path_changed)  # type: ignore[attr-defined]
 
         # unlike the checksum pair, these need no queue: both operations are a handful of renames over
         # one directory, run inline the way `RehuDocumentModel.convert` -- their exact mirror -- is
@@ -1087,9 +1081,16 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         that first save); a loaded document starts :attr:`~RehuDocumentModel.saved_on_disk` and so
         Revert-enabled.
 
+        The same first save re-enumerates the Content Images (#359): the path was already set by
+        ``create_new``, so ``path_changed`` never fires, and a reader who packed zips outside the app while
+        the document sat unsaved would otherwise see them only after closing and reopening the dock.
+        Guarded on the transition to ``True``, so nothing re-enumerates on the way back to not-yet-saved.
+
         :param saved_on_disk: the model's new saved-on-disk state.
         """
         self.__revert_action.setEnabled(saved_on_disk)
+        if saved_on_disk:
+            self.__refresh_content_images()
 
     def __on_lock_reasons_changed(self) -> None:
         """Disable/re-enable the editor docks and rebuild the inline notice strip as the model's lock
