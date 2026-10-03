@@ -2,7 +2,7 @@
 
 import logging
 from pathlib import Path
-from typing import Final
+from typing import Final, cast
 
 from borco_core.logging import LogScope
 from PySide6.QtCore import QObject
@@ -131,9 +131,8 @@ class DocumentRegistry(QObject):
 
         :param path: the model's new path.
         """
-        model = self.sender()
-        if not isinstance(model, RehuDocumentModel) or model not in self.__holders:
-            return
+        # only a held model is connected here: acquire connects it and the last release disconnects it
+        model = cast(RehuDocumentModel, self.sender())
         self.__unmap(model, self.__paths[model])
         self.__paths[model] = path  # pylint: disable=unsupported-assignment-operation
         if path is None:

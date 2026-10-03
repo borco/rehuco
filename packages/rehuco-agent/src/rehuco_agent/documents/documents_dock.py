@@ -97,7 +97,7 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         self.__task_queue: Final = task_queue
         self.__dock_manager: Final = QtAds.CDockManager(self)
         self.__document_docks: Final[dict[QtAds.CDockWidget, DocumentWidget]] = {}
-        self.__model_docks: Final[dict[RehuDocumentModel, QtAds.CDockWidget]] = {}
+        self.__model_docks: Final[dict[RehuDocumentModel, DocumentDock]] = {}
         """The dock showing each held model -- what turns the registry's answer to "is this path open"
         into the dock to focus. Seeded in :meth:`__make_new_dock`, dropped in :meth:`__remove_dock`."""
         self.__pending_docks: Final[set[QtAds.CDockWidget]] = set()
@@ -621,16 +621,14 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         # not the manager's own removeDockWidget: a renamed document's dock is registered under the path it
         # was opened with, and would otherwise be left there, dangling once deleted (#364)
         remove_dock_widget(self.__dock_manager, dock)
+        model = self.__document_docks.pop(dock).model
         # a model another holder keeps alive can still move before the deferred delete reclaims this dock,
         # and a closed document is no longer this area's to report
-        if isinstance(dock, DocumentDock):
-            dock.path_moved.disconnect(self.document_path_changed)
+        self.__model_docks.pop(model).path_moved.disconnect(self.document_path_changed)
         # deleting the dock frees its widget and everything that widget hung on the model; the model -> dock
         # title connections are the dock's own bound methods, so Qt severs them too. The model itself is the
         # registry's: this release frees it when it was the last hold (#148, #375)
         dock.deleteLater()
-        model = self.__document_docks.pop(dock).model
-        self.__model_docks.pop(model, None)
         self.__registry.release(model)
 
     def __confirm_close(self, model: RehuDocumentModel) -> bool:

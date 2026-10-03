@@ -241,6 +241,25 @@ def test_a_lazy_acquisition_is_an_unread_placeholder(mocker: MockerFixture, qtbo
     assert model.title == "Foo"
 
 
+def test_a_second_lazy_acquisition_leaves_the_placeholder_unread(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A lazy holder joining another's placeholder defers too -- only a real acquisition reads it (#66).
+
+    **Test steps:**
+
+    * acquire the fake path lazily, twice
+    * verify both holds share the one model, still pending, with the file never read
+    """
+    del qtbot
+    read_text = mocker.patch.object(Path, "read_text", return_value=json.dumps(TUTORIAL))
+    registry = DocumentRegistry()
+
+    model = registry.acquire(FAKE_PATH, lazy=True)
+
+    assert registry.acquire(FAKE_PATH, lazy=True) is model
+    assert model.pending
+    read_text.assert_not_called()
+
+
 def test_a_lazy_acquisition_of_a_tc_or_a_new_document_is_not_deferred(mocker: MockerFixture, qtbot: QtBot) -> None:
     """Neither a ``.tc`` (whose deferred read would go through a ``.rehu``-only reload) nor a new document
     (with nothing to read) is ever a placeholder.
