@@ -4711,8 +4711,8 @@ def test_the_task_queue_docks_visibility_survives_a_restart(mocker: MockerFixtur
 
 
 def test_a_rename_makes_the_queue_re_read_its_job_sources(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """The window wires the coordinator's notification to the queue's re-read, so a job's row follows
-    the resource it was working on (#241).
+    """The window wires the coordinator's notification, through its app-wide announcements (#376), to the
+    queue's re-read, so a job's row follows the resource it was working on (#241).
 
     The two halves are built and tested apart -- core never learns what a coordinator is -- so this is
     the one place the connection between them is a fact rather than an intention.
@@ -4741,6 +4741,26 @@ def test_a_rename_makes_the_queue_re_read_its_job_sources(mocker: MockerFixture,
     coordinator.rename(Path("C:/tutorials/old_folder/info.rehu"), "new_name")
 
     assert resync.call_count == 1
+
+
+def test_a_closed_window_hears_no_more_renames(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The coordinator is process-wide and outlives the window, so closing takes its listener back (#376).
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``, close it, then rename through its coordinator with the renamer mocked
+    * verify nothing was announced
+    """
+    renamer = mocker.patch("rehuco_core.rename_coordination.RehuRenamer")
+    renamer.return_value.rename.return_value = Path("C:/tutorials/new_name/info.rehu")
+    window = MainWindow()
+    qtbot.addWidget(window)
+    coordinator = window._MainWindow__rename_coordinator  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    events = window._MainWindow__resource_events  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    window.close()
+
+    with qtbot.assertNotEmitted(events.moved):
+        coordinator.rename(Path("C:/tutorials/old_folder/info.rehu"), "new_name")
 
 
 def test_registers_the_tasks_page(qtbot: QtBot) -> None:

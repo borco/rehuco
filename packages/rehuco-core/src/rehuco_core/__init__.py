@@ -213,6 +213,7 @@ from .rehudb_jobs import (
 )
 from .rehudb_scan import CatalogRecordReader, CatalogRootScan, RootScanOutcome, RootScanResult, ScanProgress
 from .rehudb_updates import CatalogRecordUpdater
+from .relocation import Relocation
 from .rename_coordination import (
     DEFAULT_RENAME_COORDINATOR,
     DEFAULT_RENAME_YIELD_TIMEOUT,
@@ -467,6 +468,7 @@ __all__ = [
     "RehucoFile",
     "RehucoFileError",
     "RehucoRoot",
+    "Relocation",
     "RenameCoordinator",
     "RenameYieldTimeout",
     "RemoveCatalogRootJob",

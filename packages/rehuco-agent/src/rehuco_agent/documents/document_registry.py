@@ -6,8 +6,9 @@ from typing import Final, cast
 
 from borco_core.logging import LogScope
 from PySide6.QtCore import QObject
-from rehuco_core import RehuDocument, RehuFormatError, RenameCoordinator, load_tc
+from rehuco_core import RehuDocument, RehuFormatError, Relocation, RenameCoordinator, load_tc
 
+from ..resource_events import ResourceEvents
 from ..settings.identity_settings import shared_identity_settings
 from .rehu_document_model import RehuDocumentModel
 
@@ -27,21 +28,42 @@ class DocumentRegistry(QObject):
     Keys follow the model: a :meth:`~RehuDocumentModel.convert` or a completed rename moves the model's
     entry to its new path, so a later :meth:`find` of the new path reaches the same model.
 
+    **Every held model hears every rename** ([[mounts-and-storage#out-of-band]], #376): each announced
+    relocation is handed to every model (:meth:`~RehuDocumentModel.relocate`), so a record nested under a
+    renamed collection folder, or a file-scoped record inside a renamed folder, follows the rename it did not
+    ask for. In the other direction, what a held model says it wrote (:attr:`~RehuDocumentModel.files_changed`,
+    :attr:`~RehuDocumentModel.folder_changed`) is announced app-wide through the same events.
+
     :param parent: optional Qt parent.
     :param rename_coordinator: handed to every model this registry builds, so a rename from the location
         editor stands the running jobs aside instead of being refused while they finish (#241) -- the
         app's one coordinator, see ``DocumentsDock``.
+    :param resource_events: the app's file announcements; ``None`` builds a private one, for a registry with
+        no window around it.
     """
 
-    def __init__(self, parent: QObject | None = None, rename_coordinator: RenameCoordinator | None = None) -> None:
+    def __init__(
+        self,
+        parent: QObject | None = None,
+        rename_coordinator: RenameCoordinator | None = None,
+        resource_events: ResourceEvents | None = None,
+    ) -> None:
         super().__init__(parent)
         self.__rename_coordinator: Final = rename_coordinator
+        self.__events: Final = resource_events if resource_events is not None else ResourceEvents(self)
+        self.__events.moved.connect(self.__on_moved)
         self.__models: Final[dict[Path, RehuDocumentModel]] = {}
         self.__holders: Final[dict[RehuDocumentModel, int]] = {}
         self.__paths: Final[dict[RehuDocumentModel, Path | None]] = {}
         """Each held model's key as last recorded -- kept because
         :attr:`~RehuDocumentModel.path_changed` carries only the *new* path, and rekeying needs the old
         one to drop."""
+
+    @property
+    def resource_events(self) -> ResourceEvents:
+        """The file announcements this registry relocates its models from and relays their writes to -- what
+        every view of an acquired model listens to as well."""
+        return self.__events
 
     def find(self, path: Path) -> RehuDocumentModel | None:
         """The model held for ``path``, or ``None`` when nobody holds one.
@@ -93,6 +115,8 @@ class DocumentRegistry(QObject):
         self.__holders[model] = 1  # pylint: disable=unsupported-assignment-operation
         self.__paths[model] = path  # pylint: disable=unsupported-assignment-operation
         model.path_changed.connect(self.__on_path_changed)  # type: ignore[attr-defined]
+        model.files_changed.connect(self.__events.announce_changed)
+        model.folder_changed.connect(self.__events.announce_folder_changed)
         return model
 
     def release(self, model: RehuDocumentModel) -> None:
@@ -111,6 +135,8 @@ class DocumentRegistry(QObject):
         del self.__holders[model]  # pylint: disable=unsupported-delete-operation
         self.__unmap(model, self.__paths.pop(model))
         model.path_changed.disconnect(self.__on_path_changed)  # type: ignore[attr-defined]
+        model.files_changed.disconnect(self.__events.announce_changed)
+        model.folder_changed.disconnect(self.__events.announce_folder_changed)
         model.deleteLater()
 
     def release_discards_edits(self, model: RehuDocumentModel) -> bool:
@@ -142,6 +168,15 @@ class DocumentRegistry(QObject):
             LOG.warning("%s is already open as another document; not tracking a second one under it", path)
             return
         self.__models[path] = model  # pylint: disable=unsupported-assignment-operation
+
+    def __on_moved(self, relocation: Relocation) -> None:
+        """Hand a landed rename to every held model; each adopts its own new path, if the rename moved it, and
+        re-keys here through :meth:`__on_path_changed`.
+
+        :param relocation: the rename's executed plan.
+        """
+        for model in list(self.__holders):
+            model.relocate(relocation)
 
     def __unmap(self, model: RehuDocumentModel, path: Path | None) -> None:
         """Drop ``path``'s key when it maps to ``model`` (and not to another model holding it).

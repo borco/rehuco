@@ -1,7 +1,9 @@
 """Tests for RehuDocumentImageOrganizer: where a resource's screenshot renames are aimed (#72, #291)."""
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Final
+from unittest.mock import MagicMock
 
 import pytest
 from pytest import fixture
@@ -305,3 +307,98 @@ def test_a_document_with_no_path_yet_refuses_to_acquire(mocker: MockerFixture) -
         organizer.acquire(b"bytes", ".jpg")
 
     save_screenshot.assert_not_called()
+
+
+# region announcing what it wrote (#376)
+
+OPERATIONS: Final[dict[str, Callable[[RehuDocumentImageOrganizer], object]]] = {
+    "reorder": lambda organizer: organizer.reorder(PATHS),
+    "convert": lambda organizer: organizer.convert(DIRECTORY / "cover.jpg"),
+    "acquire": lambda organizer: organizer.acquire(b"bytes", ".jpg"),
+    "remove": lambda organizer: organizer.remove(PATHS[0], PATHS[1:], deleter=DEFAULT_DELETER),
+}
+"""Each write the organizer makes."""
+
+CORE: Final = {
+    "reorder": "renumber_screenshots",
+    "convert": "convert_screenshot",
+    "acquire": "save_screenshot",
+    "remove": "renumber_screenshots",
+}
+"""The core function each write ends in."""
+
+
+@fixture(name="core")
+def fixture_core(mocker: MockerFixture) -> dict[str, MagicMock]:
+    """Every core write the organizer reaches, patched.
+
+    :param mocker: pytest-mock fixture.
+    :returns: the patches by function name.
+    """
+    module = "rehuco_agent.documents.rehu_document_image_organizer"
+    return {
+        name: mocker.patch(f"{module}.{name}", return_value=DIRECTORY / "info02.jpg")
+        for name in ("renumber_screenshots", "convert_screenshot", "save_screenshot", "delete_screenshot")
+    }
+
+
+@pytest.mark.parametrize("operation", OPERATIONS)
+def test_every_write_announces_the_folder(core: dict[str, MagicMock], operation: str) -> None:
+    """Every listing of the folder follows a rearrangement, through the document (#376).
+
+    **Test steps:**
+
+    * run the operation on a located document
+    * verify the document announced its folder once
+    """
+    del core
+    model = model_at(DIRECTORY / "info.rehu")
+    heard: list[object] = []
+    model.folder_changed.connect(heard.append)
+
+    OPERATIONS[operation](RehuDocumentImageOrganizer(model))
+
+    assert heard == [DIRECTORY]
+
+
+@pytest.mark.parametrize("operation", OPERATIONS)
+def test_a_failed_write_still_announces_the_folder(core: dict[str, MagicMock], operation: str) -> None:
+    """A renumbering stopped part-way may already have moved files, so a failure is announced too.
+
+    **Test steps:**
+
+    * make the operation's core write fail, and run it
+    * verify it raised and the folder was still announced
+    """
+    core[CORE[operation]].side_effect = OSError("boom")
+    model = model_at(DIRECTORY / "info.rehu")
+    heard: list[object] = []
+    model.folder_changed.connect(heard.append)
+
+    with pytest.raises(OSError, match="boom"):
+        OPERATIONS[operation](RehuDocumentImageOrganizer(model))
+
+    assert heard == [DIRECTORY]
+
+
+@pytest.mark.parametrize("operation", OPERATIONS)
+def test_a_refused_write_announces_nothing(core: dict[str, MagicMock], operation: str) -> None:
+    """A refusal touched nothing, so there is nothing to announce.
+
+    **Test steps:**
+
+    * run the operation on a legacy ``.tc`` document
+    * verify it was refused and nothing was announced
+    """
+    del core
+    model = model_at(DIRECTORY / "info.tc", legacy_tc=True)
+    heard: list[object] = []
+    model.folder_changed.connect(heard.append)
+
+    with pytest.raises(PermissionError):
+        OPERATIONS[operation](RehuDocumentImageOrganizer(model))
+
+    assert not heard
+
+
+# endregion

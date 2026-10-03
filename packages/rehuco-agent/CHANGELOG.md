@@ -46,6 +46,11 @@ released becomes the body of the GitHub Release, so each entry is written to be 
   lists it as such, and checksums, size on disk and duration include it. Beside the `.rehu` it is still
   offered for conversion in the Images panel. The screenshot name patterns setting no longer affects
   checksums or measurements. The next verify of an existing `.checksum` adopts such files as unexpected.
+- What the app does to files shows at once in every place that shows them, without a rescan. When a resource is
+  renamed, an open document stored inside it is re-pointed too: a member of a renamed collection folder, or a
+  `.rehu` in a renamed folder. The Root Catalog table follows renames, saves and conversions. The Files panel
+  follows renames, saves, conversions, screenshot reorders, deletions and drops, and finished checksum runs. It
+  keeps the selection and scroll position, and stays in the same subfolder after a rename or a conversion.
 
 ## [0.2.0] - 2026-09-27
 

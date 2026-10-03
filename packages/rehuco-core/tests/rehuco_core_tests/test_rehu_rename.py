@@ -7,7 +7,14 @@ from typing import Any, Final
 
 from pytest import mark, param, raises
 from pytest_mock import MockerFixture
-from rehuco_core import ChecksumTrust, PartialRenameError, RehuRenamer, rehu_rename_conflict, rename_rehu_resource
+from rehuco_core import (
+    ChecksumTrust,
+    PartialRenameError,
+    RehuRenamer,
+    Relocation,
+    rehu_rename_conflict,
+    rename_rehu_resource,
+)
 from rehuco_core.rehu_rename import RETRY_DELAYS
 
 DIRECTORY: Final = Path("/fake/library")
@@ -577,6 +584,7 @@ def test_the_executed_plan_is_every_pair_that_ran(mocker: MockerFixture) -> None
 
     assert renamer.executed == tuple(renames(mock_rename))
     assert len(renamer.executed) == 3
+    assert renamer.relocation == Relocation(renamer.executed)
 
 
 def test_the_executed_plan_of_a_rolled_back_rename_is_empty(mocker: MockerFixture) -> None:

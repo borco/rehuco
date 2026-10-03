@@ -525,6 +525,27 @@ def test_a_clean_verify_says_so(
     assert queue.jobs()[0].state is JobState.DONE
 
 
+def test_a_finished_run_announces_the_record_through_the_document(
+    qtbot: QtBot, mocker: MockerFixture, actions: ChecksumActions, model: RehuDocumentModel
+) -> None:
+    """A run's end is when every listing of the folder learns its checksum column moved (#376).
+
+    **Test steps:**
+
+    * run a verify to its end
+    * check the document announced the checksum record as written
+    """
+    mocker.patch(
+        "rehuco_core.checksum_jobs.verify_checksums",
+        return_value=ChecksumReport(statuses={VIDEO: "matched"}),
+    )
+
+    with qtbot.waitSignal(model.files_changed, timeout=TIMEOUT) as written:
+        actions.verify_action.trigger()
+
+    assert written.args == [(RECORD_PATH,)]
+
+
 def test_a_verify_with_mismatches_surfaces_them(qtbot: QtBot, mocker: MockerFixture, actions: ChecksumActions) -> None:
     """A mismatch is a finding about the files, not an error -- so it reads as one, and is not clean.
 
@@ -917,25 +938,29 @@ def test_generate_is_offered_only_while_there_is_no_record(
 
 
 def test_forgetting_entries_says_the_record_changed(
-    qtbot: QtBot, actions: ChecksumActions, mocker: MockerFixture
+    qtbot: QtBot, actions: ChecksumActions, model: RehuDocumentModel, mocker: MockerFixture
 ) -> None:
-    """A forget writes the record without producing a finding, so the view needs its own signal (#244).
+    """A forget writes the record without producing a finding, so the view needs its own signal (#244), and
+    the write is announced through the document for every listing of the folder (#376).
 
     **Test steps:**
 
     * forget one entry
-    * check core was asked and the record-changed signal fired
+    * check core was asked, the record-changed signal fired, and the record was announced as written
     """
     del qtbot
     forget = mocker.patch("rehuco_agent.documents.checksum_actions.forget_checksums", return_value=(VIDEO,))
     fired: list[int] = []
     actions.record_changed.connect(lambda: fired.append(1))
+    written: list[object] = []
+    model.files_changed.connect(written.append)
 
     dropped = actions.forget([VIDEO])
 
     forget.assert_called_once_with(INFO_PATH, only=[VIDEO])
     assert dropped == (VIDEO,)
     assert fired == [1]
+    assert written == [(RECORD_PATH,)]
 
 
 def test_forgetting_nothing_touches_neither_the_record_nor_the_view(

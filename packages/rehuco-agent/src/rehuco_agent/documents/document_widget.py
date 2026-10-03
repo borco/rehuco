@@ -42,6 +42,7 @@ from ..fields.widgets import (
 )
 from ..glyphs import TAB_CLOSE_GLYPH
 from ..recycle_bin_deleter import configured_deleter
+from ..resource_events import ResourceEvents
 from ..scraping.image_pipeline import MIME_EXTENSIONS, ImageBytes
 from ..scraping.url_drop import UrlDrop
 from ..settings.default_layout_settings import shared_default_layout_settings
@@ -431,6 +432,9 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         redundant copy of QtAds' ~10 KB default sheet per open document, re-evaluated on every tab
         switch ([[appendices.qt-ads#per-manager-stylesheet]], #234, and see
         :class:`~borco_pyside.qtads.QtAdsFocusTracker`).
+    :param task_queue: the app-wide queue this document's slow work goes on; ``None`` offers no such work.
+    :param resource_events: the app's file announcements (#376), which the Files sub-dock follows; ``None``
+        leaves it following only this document's own.
     """
 
     status_message: Signal = Signal(str)
@@ -457,9 +461,11 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         parent: QWidget | None = None,
         stylesheet_host: QWidget | None = None,
         task_queue: TaskQueue | None = None,
+        resource_events: ResourceEvents | None = None,
     ) -> None:
         super().__init__(parent)
         self.__model: Final = model
+        self.__resource_events: Final = resource_events
 
         self.__image_viewer: ImageLightbox | None = None
         """This document's maximized image viewer while one is open (#160), so becoming the current
@@ -882,6 +888,9 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             self.__checksums.detach()
         self.__scrapes.detach()
         self.__image_downloads.detach()
+        files_view = self.__files_dock.widget()
+        if isinstance(files_view, FilesView):  # pragma: no branch -- the Files dock always holds one
+            files_view.detach()
 
     def toggle_action(self, tab: FieldsTab) -> QAction:
         """The visibility-toggle action for ``tab``'s dock -- whichever viewer or editor tab it is.
@@ -2097,9 +2106,9 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         another resource's record on up through :attr:`record_activated` -- because the browser knows
         what a file *is* and none of what to do about it.
 
-        Refreshed when a checksum run of this document's finishes, the seam ``ChecksumView`` already
-        listens on: the browser's checksum column is a view of that record, and a verify launched from
-        the browser itself has to become visible in it when it lands.
+        It follows the app's file announcements (#376) -- a checksum run of this document's finishing among
+        them, which the checksum actions announce through the model -- so a verify launched from the
+        browser itself becomes visible in it when it lands.
 
         :param model: the view-model whose folder the browser shows.
         :param checksums: this document's checksum actions, whose *Verify All* the record's row calls,
@@ -2109,11 +2118,14 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         # the *action*'s trigger rather than the method behind it: a disabled QAction triggers nothing,
         # so the row honours exactly the enablement the toolbar's Verify does instead of enqueuing a run
         # the toolbar would have refused
-        view = FilesView(model, self, verify=None if checksums is None else checksums.verify_action.trigger)
+        view = FilesView(
+            model,
+            self,
+            verify=None if checksums is None else checksums.verify_action.trigger,
+            resource_events=self.__resource_events,
+        )
         view.record_activated.connect(self.record_activated)
         view.images_activated.connect(self.__on_folder_images_activated)
-        if checksums is not None:
-            checksums.record_changed.connect(view.refresh)
         return self.__add_hidden_inspection_dock(
             FILES_DOCK_NAME,
             FILES_DOCK_TITLE,

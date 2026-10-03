@@ -448,7 +448,11 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         # it: the field status-message relay, the open requests, the path relay and the close request
         model = self.__registry.acquire(path, new=new, lazy=lazy)
         dock = DocumentDock(
-            self.__dock_manager, model, stylesheet_host=self.__stylesheet_host, task_queue=self.__task_queue
+            self.__dock_manager,
+            model,
+            stylesheet_host=self.__stylesheet_host,
+            task_queue=self.__task_queue,
+            resource_events=self.__registry.resource_events,
         )
         # relay this document's field status messages (the authors viewer's hovered-link URL) up to
         # MainWindow, which routes them to the real status bar (the genuine top-level window)

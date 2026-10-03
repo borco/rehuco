@@ -372,10 +372,11 @@ mismatch would assert a check that never happened, and drawing it as missing wou
 a neighbour's entry. **The mapping from an entry to a glyph is one function** the checksum dock (#244) reads too, so a
 file's verdict looks the same in both. One `.checksum` read per refresh, whatever the folder holds.
 
-It **refreshes when shown and on demand** — `F5` and a refresh button, each refreshing only this sub-dock — plus at the
-two seams that change what it is a view *of*: the document's path moving (a convert, a completed rename) and one of its
-own checksum runs finishing, which is the only way the column can change without the folder changing. Never in
-between. Deliberately **not `QFileSystemModel`**: that model installs a file-system watcher that holds handles open on
+It **refreshes when shown and on demand** — `F5` and a refresh button, each refreshing only this sub-dock — plus
+whenever the app itself changes something beneath the resource's folder: a rename, a save, a conversion, a screenshot
+moved or deleted, a checksum run finishing ([[mounts-and-storage#out-of-band]]). Never in between. Each read is
+applied **in place**, so a selection and the scroll position survive it, and a rename or convert keeps the reader in
+the same subfolder rather than sending them back to the top. Deliberately **not `QFileSystemModel`**: that model installs a file-system watcher that holds handles open on
 Windows, and a held handle is exactly what makes a rename or a delete of the resource's own files fail — the app would
 be locking what it is about to move. The same reasoning already keeps a watcher out of the node
 ([[mounts-and-storage#out-of-band]]). A plain listing costs one `scandir` per refresh and holds nothing between them,

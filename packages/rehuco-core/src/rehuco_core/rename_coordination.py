@@ -45,6 +45,7 @@ from typing import Final
 from weakref import ReferenceType, ref
 
 from .rehu_rename import RehuRenamer
+from .relocation import Relocation
 from .resource_scoping import is_directory_scoped
 from .storage_traits import readers_must_yield_for_directory_rename
 
@@ -147,7 +148,7 @@ class RenameCoordinator:
         self.__yield_wanted = False
         self.__holders = 0
         self.__locations: list[ReferenceType[ResourceLocation]] = []
-        self.__listeners: list[Callable[[], None]] = []
+        self.__listeners: list[Callable[[Relocation], None]] = []
         self.__yield_listeners: list[Callable[[], None]] = []
 
     def track(self, path: Path) -> ResourceLocation:
@@ -166,22 +167,23 @@ class RenameCoordinator:
             self.__locations.append(ref(location))
         return location
 
-    def add_rename_listener(self, listener: Callable[[], None]) -> None:
-        """Be told, after the fact, that a rename moved something.
+    def add_rename_listener(self, listener: Callable[[Relocation], None]) -> None:
+        """Be told, after the fact, what a rename moved.
 
         A plain callable rather than a
-        :class:`~rehuco_core.tasks.TaskQueueListener`-style protocol, because there is one event and it
-        carries nothing: whoever cares re-reads what they hold. It is how the task queue learns to
-        re-read its jobs' ``source`` without core growing a dependency in either direction -- the app
-        wires the two together.
+        :class:`~rehuco_core.tasks.TaskQueueListener`-style protocol, because there is one event and one
+        payload: the rename's **executed plan** (:attr:`~rehuco_core.RehuRenamer.relocation`), which each
+        listener applies to whatever it holds ([[mounts-and-storage#out-of-band]], #376). It is how the app
+        learns what moved without core growing a dependency on it -- the app wires the two together.
 
-        :param listener: called with no arguments once a rename has landed and every tracked location
-            has been rewritten. Called on whichever thread asked for the rename, with no lock held.
+        :param listener: called with the rename's relocation once it has landed and every tracked location
+            has been rewritten -- an empty one for a rename to the name the resource already had. Called on
+            whichever thread asked for the rename, with no lock held.
         """
         with self.__condition:
             self.__listeners.append(listener)
 
-    def remove_rename_listener(self, listener: Callable[[], None]) -> None:
+    def remove_rename_listener(self, listener: Callable[[Relocation], None]) -> None:
         """Stop being told, for a listener that is going away.
 
         The counterpart :meth:`add_rename_listener` needs once a coordinator outlives its listeners --
@@ -298,7 +300,7 @@ class RenameCoordinator:
                 self.__relocate_tracked(renamer)
             finally:
                 self.__release_readers()
-        self.__announce()
+        self.__announce(renamer.relocation)
         return renamed
 
     @staticmethod
@@ -385,8 +387,8 @@ class RenameCoordinator:
                 location.moved_to(renamer.relocate(location.path))
             self.__locations = alive
 
-    def __announce(self) -> None:
-        """Tell every listener that a rename landed.
+    def __announce(self, relocation: Relocation) -> None:
+        """Tell every listener that a rename landed, and what it moved.
 
         Called with no lock held and after the flag is down, so a listener is free to do real work --
         re-read a queue, redraw a row -- without holding a rename open behind it.
@@ -394,10 +396,16 @@ class RenameCoordinator:
         **A listener's exception is logged, never propagated**, the same contract
         :class:`~rehuco_core.TaskQueue` gives its own: the rename has already happened, and raising out
         of the notification would tell the caller an operation failed that in fact succeeded.
+
+        :param relocation: the rename's executed plan.
         """
         with self.__condition:
             listeners = tuple(self.__listeners)
-        self.__call(listeners, "A rename listener failed; detach it or fix it -- it was skipped.")
+        for listener in listeners:
+            try:
+                listener(relocation)
+            except Exception:  # pylint: disable=broad-exception-caught
+                LOG.exception("A rename listener failed; detach it or fix it -- it was skipped.")
 
     @staticmethod
     def __call(listeners: tuple[Callable[[], None], ...], failure: str) -> None:

@@ -7,18 +7,25 @@ stated. What each file *is* comes from the real classifier over a mocked listing
 kind is `test_rehu_file_kinds`' subject, and the rows themselves are `test_files_rows`'.
 """
 
+# when it reads, what it shows, where it goes, what a double-click does and what it follows are one browser;
+# one cohesive module reads better than an arbitrary split, so the module-length cap is lifted here, as it is
+# for test_rehu_document_model.py
+# pylint: disable=too-many-lines
+
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Final
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QTableView
-from pytest import fixture
+from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.files_rows import NAME_COLUMN, PARENT_ROW_NAME, FileRow, FilesTableModel
 from rehuco_agent.documents.files_view import LOADING_SUMMARY, NO_PATH_SUMMARY, UNREACHABLE_SUMMARY, FilesView
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
+from rehuco_agent.resource_events import ResourceEvents
 from rehuco_core import (
     ChecksumRecordError,
     DirectoryClassifier,
@@ -27,6 +34,7 @@ from rehuco_core import (
     FileKind,
     FileType,
     RehuDocument,
+    Relocation,
 )
 
 DIRECTORY: Final = Path("/fake/library/sculpting")
@@ -661,15 +669,17 @@ def test_the_up_action_is_the_parent_rows_act_on_a_button(qtbot: QtBot, view: Fi
     assert view.directory == DIRECTORY
 
 
-def test_the_document_moving_re_scopes_the_browser(qtbot: QtBot, view: FilesView, model: RehuDocumentModel) -> None:
-    """A rename or a convert moves the folder this is a view *of* (#52's landmine, for a folder), so a
-    subfolder of the old one is not somewhere to stay.
+def test_the_document_moving_keeps_the_browsed_subfolder(
+    qtbot: QtBot, view: FilesView, model: RehuDocumentModel
+) -> None:
+    """A rename moves the folder this is a view *of* (#52's landmine, for a folder); the reader stays in the
+    same subfolder under its new name (#376).
 
     **Test steps:**
 
     * walk into the subfolder
     * move the document's path
-    * verify the browser is back at the new resource's own folder
+    * verify the browser shows the subfolder under the new resource's folder, Home still offered
     """
     view.activate(row_of(view, "sub"))
     settle(qtbot, view)
@@ -678,7 +688,27 @@ def test_the_document_moving_re_scopes_the_browser(qtbot: QtBot, view: FilesView
     model.path = moved
     settle(qtbot, view)
 
-    assert view.directory == moved.parent
+    assert view.directory == moved.parent / "sub"
+    assert view.home_action.isEnabled()
+
+
+def test_the_document_losing_its_path_goes_back_to_nowhere(
+    qtbot: QtBot, view: FilesView, model: RehuDocumentModel
+) -> None:
+    """A document with no path has no folder to stay in.
+
+    **Test steps:**
+
+    * walk into the subfolder, then clear the document's path
+    * verify nothing is browsed
+    """
+    view.activate(row_of(view, "sub"))
+    settle(qtbot, view)
+
+    model.path = None
+
+    assert view.directory is None
+    assert view.summary == NO_PATH_SUMMARY
 
 
 # endregion
@@ -811,6 +841,379 @@ def test_the_row_behind_every_index_is_reachable(view: FilesView) -> None:
 
     assert isinstance(row, FileRow)
     assert row.path == DIRECTORY / "lesson01.mp4"
+
+
+# endregion
+
+
+# region Following the app's own file changes
+
+
+@fixture(name="events")
+def fixture_events() -> ResourceEvents:
+    """The app's file announcements, for a browser that follows them.
+
+    :returns: the events.
+    """
+    return ResourceEvents()
+
+
+@fixture(name="followed")
+def fixture_followed(qtbot: QtBot, model: RehuDocumentModel, events: ResourceEvents) -> FilesView:
+    """A shown browser following ``events``, its first read landed.
+
+    :param qtbot: pytest-qt fixture.
+    :param model: the document.
+    :param events: the announcements it follows.
+    :returns: the view.
+    """
+    view = FilesView(model, resource_events=events)
+    qtbot.addWidget(view)
+    view.show()
+    settle(qtbot, view)
+    return view
+
+
+def table_of(view: FilesView) -> QTableView:
+    """The table the browser draws its rows in.
+
+    :param view: the browser.
+    :returns: its table.
+    """
+    table = view.findChild(QTableView)
+    assert table is not None
+    return table
+
+
+def rows_model(view: FilesView) -> FilesTableModel:
+    """The model behind the browser's sorting proxy.
+
+    :param view: the browser.
+    :returns: its rows model.
+    """
+    source = view.proxy.sourceModel()
+    assert isinstance(source, FilesTableModel)
+    return source
+
+
+def select(view: FilesView, name: str) -> None:
+    """Select the row drawn under ``name``, as a click would.
+
+    :param view: the browser.
+    :param name: the row's name.
+    """
+    table_of(view).selectRow(row_of(view, name))
+
+
+def selected(view: FilesView) -> list[str]:
+    """The names of the selected rows.
+
+    :param view: the browser.
+    :returns: the names.
+    """
+    selection = table_of(view).selectionModel()
+    assert selection is not None
+    return [index.data() for index in selection.selectedRows(NAME_COLUMN)]
+
+
+def test_a_refresh_keeps_the_selection_and_never_resets(qtbot: QtBot, view: FilesView) -> None:
+    """A read is applied in place, so the reader's place survives it (#376).
+
+    **Test steps:**
+
+    * select a row and refresh
+    * verify the model was never reset and the row is still selected
+    """
+    select(view, "lesson01.mp4")
+
+    with qtbot.assertNotEmitted(rows_model(view).modelReset):
+        view.refresh()
+        settle(qtbot, view)
+
+    assert selected(view) == ["lesson01.mp4"]
+
+
+def test_a_refresh_keeps_the_scroll_position(qtbot: QtBot, view: FilesView, listing: Any) -> None:
+    """A long folder scrolled half-way stays there when it is read again.
+
+    **Test steps:**
+
+    * list a hundred files in a short browser, scroll down and refresh
+    * verify the scroll position did not move
+    """
+    many = tuple(DirectoryEntry(f"clip{number:03}.mp4", FileKind.CONTENT, FileType.VIDEO) for number in range(100))
+    listing.side_effect = lambda _self, directory: DirectoryListing(directory, entries=many)
+    view.resize(400, 200)
+    view.refresh()
+    settle(qtbot, view)
+    scroll_bar = table_of(view).verticalScrollBar()
+    scroll_bar.setValue(scroll_bar.maximum() // 2)
+    position = scroll_bar.value()
+
+    view.refresh()
+    settle(qtbot, view)
+
+    assert position > 0
+    assert scroll_bar.value() == position
+
+
+def test_walking_into_a_folder_starts_at_its_top(qtbot: QtBot, view: FilesView) -> None:
+    """Navigation is not a refresh: a different folder starts unselected.
+
+    **Test steps:**
+
+    * select a row, then walk into the subfolder
+    * verify nothing is selected
+    """
+    select(view, "lesson01.mp4")
+
+    view.activate(row_of(view, "sub"))
+    settle(qtbot, view)
+
+    assert not selected(view)
+
+
+def test_a_rename_of_the_folder_renames_the_rows_in_place(
+    qtbot: QtBot, followed: FilesView, model: RehuDocumentModel, events: ResourceEvents, listing: Any
+) -> None:
+    """A directory-scoped rename keeps the reader in the same subfolder, on the same selected row, with no row
+    removed or inserted -- whichever of the path change and the announcement arrives first (#376).
+
+    **Test steps:**
+
+    * walk into the subfolder and select its file
+    * rename the folder: the registry re-points the model, then the rename is announced
+    * verify the subfolder under its new name is browsed, the row renamed and still selected
+    """
+    renamed = Path("/fake/library/renamed")
+    back = Relocation(((renamed, DIRECTORY),))
+    listing.side_effect = lambda _self, directory: DirectoryListing(
+        directory, entries=TREE.get(back.relocate(directory), ())
+    )
+    followed.activate(row_of(followed, "sub"))
+    settle(qtbot, followed)
+    select(followed, "deeper.mp4")
+    table = rows_model(followed)
+
+    with (
+        qtbot.assertNotEmitted(table.modelReset),
+        qtbot.assertNotEmitted(table.rowsRemoved),
+        qtbot.assertNotEmitted(table.rowsInserted),
+    ):
+        model.path = renamed / "info.rehu"
+        events.announce_moved(Relocation(((DIRECTORY, renamed),)))
+        settle(qtbot, followed)
+
+    assert followed.directory == renamed / "sub"
+    assert selected(followed) == ["deeper.mp4"]
+    row = followed.proxy.index(row_of(followed, "deeper.mp4"), NAME_COLUMN).data(FilesTableModel.ROW_ROLE)
+    assert row.path == renamed / "sub" / "deeper.mp4"
+
+
+def test_a_member_of_a_renamed_collection_keeps_its_rows_too(
+    qtbot: QtBot, events: ResourceEvents, listing: Any
+) -> None:
+    """A resource nested under a renamed collection folder is re-pointed by the registry before the browser hears
+    the rename, so it asks from a folder *beneath* the destination -- and must still rename its rows in place.
+
+    **Test steps:**
+
+    * browse a member nested under a collection folder, and select a row
+    * re-point the model as the registry would, then announce the collection folder's rename
+    * verify the rows carry the new paths, none was removed or inserted, and the selection survived
+    """
+    collection, renamed = Path("/fake/library/series"), Path("/fake/library/saga")
+    member_entries = (DirectoryEntry("lesson01.mp4", FileKind.CONTENT, FileType.VIDEO),)
+    listing.side_effect = lambda _self, directory: DirectoryListing(directory, entries=member_entries)
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, collection / "part1" / "info.rehu"))
+    view = FilesView(model, resource_events=events)
+    qtbot.addWidget(view)
+    view.show()
+    settle(qtbot, view)
+    select(view, "lesson01.mp4")
+    table = rows_model(view)
+
+    with qtbot.assertNotEmitted(table.rowsRemoved), qtbot.assertNotEmitted(table.rowsInserted):
+        model.path = renamed / "part1" / "info.rehu"
+        events.announce_moved(Relocation(((collection, renamed),)))
+        settle(qtbot, view)
+
+    assert view.directory == renamed / "part1"
+    assert selected(view) == ["lesson01.mp4"]
+    row = view.proxy.index(row_of(view, "lesson01.mp4"), NAME_COLUMN).data(FilesTableModel.ROW_ROLE)
+    assert row.path == renamed / "part1" / "lesson01.mp4"
+
+
+def test_a_convert_keeps_the_browsed_folder(qtbot: QtBot, listing: Any) -> None:
+    """A ``.tc`` becoming a ``.rehu`` changes the record's name, not its folder: the reader stays put.
+
+    **Test steps:**
+
+    * browse into a subfolder of a legacy document's folder, then re-point its path at the ``.rehu``
+    * verify the same subfolder is still browsed
+    """
+    del listing
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, DIRECTORY / "info.tc", legacy_tc=True))
+    view = FilesView(model)
+    qtbot.addWidget(view)
+    view.show()
+    settle(qtbot, view)
+    view.activate(row_of(view, "sub"))
+    settle(qtbot, view)
+
+    model.path = INFO_PATH
+    settle(qtbot, view)
+
+    assert view.directory == SUB
+
+
+def test_a_file_scoped_rename_renames_its_sibling_rows_in_place(
+    qtbot: QtBot, events: ResourceEvents, listing: Any
+) -> None:
+    """``foo.rehu`` renamed to ``bar.rehu`` carries ``foo.*``, its screenshots and its ``.checksum`` with it;
+    their rows are renamed, not replaced, and a neighbour's row is left alone (#376).
+
+    **Test steps:**
+
+    * browse a folder holding a file-scoped ``foo`` set and a neighbour, and select a screenshot
+    * re-point the model and announce the sibling set's rename
+    * verify the rows carry the new names, none was removed or inserted, and the selection followed
+    """
+    tails = (".rehu", ".zip", "00.jpg", ".checksum")
+    stem = ["foo"]
+
+    def classify(_self: DirectoryClassifier, directory: Path) -> DirectoryListing:
+        entries = [DirectoryEntry(f"{stem[0]}{tail}", FileKind.CONTENT, FileType.GENERIC) for tail in tails]
+        entries.append(DirectoryEntry("other.zip", FileKind.CONTENT, FileType.GENERIC))
+        return DirectoryListing(directory, entries=tuple(entries))
+
+    listing.side_effect = classify
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, DIRECTORY / "foo.rehu"))
+    view = FilesView(model, resource_events=events)
+    qtbot.addWidget(view)
+    view.show()
+    settle(qtbot, view)
+    select(view, "foo00.jpg")
+    table = rows_model(view)
+    relocation = Relocation(tuple((DIRECTORY / f"foo{tail}", DIRECTORY / f"bar{tail}") for tail in tails))
+
+    with qtbot.assertNotEmitted(table.rowsRemoved), qtbot.assertNotEmitted(table.rowsInserted):
+        stem[0] = "bar"
+        model.path = DIRECTORY / "bar.rehu"
+        events.announce_moved(relocation)
+        settle(qtbot, view)
+
+    assert sorted(drawn(view)) == ["bar.checksum", "bar.rehu", "bar.zip", "bar00.jpg", "other.zip"]
+    assert selected(view) == ["bar00.jpg"]
+
+
+def test_a_rename_elsewhere_reads_nothing(
+    qtbot: QtBot, followed: FilesView, events: ResourceEvents, listing: Any
+) -> None:
+    """A rename in another part of the catalog is nothing to this folder.
+
+    **Test steps:**
+
+    * announce a rename of an unrelated folder
+    * verify no listing ran
+    """
+    del followed
+    events.announce_moved(Relocation(((Path("/fake/other/a"), Path("/fake/other/b")),)))
+    qtbot.wait(10)
+
+    assert listing.call_count == 1
+
+
+@mark.parametrize(
+    "case",
+    [
+        (lambda events: events.announce_changed((INFO_PATH,)), 2),
+        (lambda events: events.announce_changed((SUB / "deeper.mp4",)), 2),
+        (lambda events: events.announce_changed((Path("/fake/library/other/info.rehu"),)), 1),
+        (lambda events: events.announce_folder_changed(DIRECTORY), 2),
+        (lambda events: events.announce_folder_changed(Path("/fake/library")), 1),
+    ],
+)
+def test_a_change_beneath_the_resources_folder_reads_it_again(
+    qtbot: QtBot,
+    followed: FilesView,
+    events: ResourceEvents,
+    listing: Any,
+    case: tuple[Callable[[ResourceEvents], None], int],
+) -> None:
+    """A save, a screenshot rearranged, a checksum run finishing -- anything at or beneath the resource's own
+    folder is read; anything outside it is not (#376).
+
+    **Test steps:**
+
+    * announce a change
+    * verify whether a second listing ran
+    """
+    announce, reads = case
+    announce(events)
+    settle(qtbot, followed)
+    qtbot.wait(10)
+
+    assert listing.call_count == reads
+
+
+def test_a_change_while_hidden_only_marks_the_folder_stale(
+    qtbot: QtBot, model: RehuDocumentModel, events: ResourceEvents, listing: Any
+) -> None:
+    """A hidden browser reads nothing for an announcement either, and catches up when shown.
+
+    **Test steps:**
+
+    * announce a change to a hidden browser's folder, and verify nothing was listed
+    * show it, and verify one listing ran
+    """
+    view = FilesView(model, resource_events=events)
+    qtbot.addWidget(view)
+
+    events.announce_folder_changed(DIRECTORY)
+
+    assert listing.call_count == 0
+
+    view.show()
+    settle(qtbot, view)
+
+    assert listing.call_count == 1
+
+
+def test_without_events_the_documents_own_announcements_are_followed(
+    qtbot: QtBot, view: FilesView, model: RehuDocumentModel, listing: Any
+) -> None:
+    """A browser outside the app's registry still follows what its own document says it wrote.
+
+    **Test steps:**
+
+    * announce a folder change through the model and a save's write
+    * verify each read the folder again
+    """
+    model.announce_folder_changed(DIRECTORY)
+    settle(qtbot, view)
+    model.announce_files_changed((INFO_PATH,))
+    settle(qtbot, view)
+
+    assert listing.call_count == 3
+
+
+def test_a_detached_browser_follows_nothing(
+    qtbot: QtBot, followed: FilesView, events: ResourceEvents, listing: Any
+) -> None:
+    """Detached on its document's close, the browser stops hearing the app-wide announcements.
+
+    **Test steps:**
+
+    * detach the browser and announce a change to its folder
+    * verify nothing was listed
+    """
+    followed.detach()
+
+    events.announce_folder_changed(DIRECTORY)
+    qtbot.wait(10)
+
+    assert listing.call_count == 1
 
 
 # endregion
