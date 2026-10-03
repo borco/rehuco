@@ -88,7 +88,7 @@ class MainWindowSettings:
     followed, and what is searched for.
 
     Kept outside :data:`OUTER_DOCKS_STATE_VERSION`'s guard on purpose, the same way
-    ``DocumentWidget``'s image-strip key is: that version guards the *dock set*, while this is one
+    ``DocumentSubDocks``' image-strip key is: that version guards the *dock set*, while this is one
     widget's filters, read key by key and defaulting individually
     (:meth:`~borco_pyside.logging.LogWidget.restore_state`). A blob written before a filter existed is
     still a perfectly good answer about the others."""

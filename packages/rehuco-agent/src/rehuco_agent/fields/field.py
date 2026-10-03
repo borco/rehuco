@@ -184,7 +184,7 @@ class StatusReporter(Protocol):  # pylint: disable=too-few-public-methods
     ``authors`` viewer announcing a hovered link's URL (:class:`~rehuco_agent.fields.authors_field.AuthorsField`).
 
     The field emits ``status_message`` and its **owner routes it** to the real status bar; a toolkit
-    field never reaches for app chrome it does not own. The owner (`DocumentWidget`) collects the fields
+    field never reaches for app chrome it does not own. The owner (`DocumentSubDocks`) collects the fields
     satisfying this protocol -- by protocol, not by field type -- and bubbles their messages up to the
     genuine top-level window's status bar (:meth:`FieldsForm.connect_status_messages`).
     """
@@ -199,7 +199,7 @@ class ImageActivator(Protocol):  # pylint: disable=too-few-public-methods
     ([[plugins#field-toolkit]]) -- e.g. the ``images`` strip, whose thumbnails open maximized (#160).
 
     The same owner-routes-it shape as `StatusReporter`, for the same reason: a toolkit field decides
-    *that* an image was picked, never *what* opens for it. The owner (`DocumentWidget`) collects the
+    *that* an image was picked, never *what* opens for it. The owner (`DocumentSubDocks`) collects the
     fields satisfying this protocol -- by protocol, not by field type -- and builds whichever surface
     the user's settings ask for (:meth:`FieldsForm.connect_image_activations`).
     """
@@ -220,7 +220,7 @@ class ImageCurator(Protocol):  # pylint: disable=too-few-public-methods
     field's screenshots editor, opened on a double-click.
 
     `ImageActivator`'s shape once more, for the editor rather than the strip: the field reports the ask
-    and the owner (`DocumentWidget`) builds the viewer, since only it knows the document the viewer
+    and the owner (`DocumentSubDocks`) builds the viewer, since only it knows the document the viewer
     covers and the surface the user's settings name. Both signals carry the editor itself, which is
     what the owner builds the viewer's rows from and routes the viewer's requests back to
     (:meth:`FieldsForm.connect_image_curations`).
@@ -246,7 +246,7 @@ class LockAware(Protocol):  # pylint: disable=too-few-public-methods
     buttons). Disabling the surface wholesale costs a legacy ``.tc`` the very thing its conversion is
     about to act on, so a field that says which half is which is offered this contract instead.
 
-    The owner (`DocumentWidget`) hands the lock to every field satisfying it and leaves *their* tabs
+    The owner (`DocumentSubDocks`) hands the lock to every field satisfying it and leaves *their* tabs
     enabled -- a tab is left enabled only when every field on it is lock-aware, so a surface shared
     with an ordinary editor still locks whole.
     """
@@ -408,7 +408,7 @@ class Field[T]:
         leave it firing into the dead widget on the next emit. Rather than tie each connection to a widget
         `destroyed` signal (fragile: PySide does not keep the lambda's captured field alive, so the field
         can be collected before that fires), the field just records the connection and the **owner clears
-        it deterministically** -- :class:`~rehuco_agent.documents.document_widget.DocumentWidget` calls
+        it deterministically** -- :class:`~rehuco_agent.documents.document_sub_docks.DocumentSubDocks` calls
         :meth:`clear_external` on every field before a rebuild and on destruction, while the fields are
         still alive.
 

@@ -198,7 +198,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     at once, so revert rebuilds unconditionally rather than deciding which moved). Distinct from
     :attr:`unknown_fields_changed` (a single fallback field dropped) because that stays within a
     composition the reactive rows can show/hide, whereas this adds, removes, and re-wires whole rows --
-    so ``DocumentWidget`` rebuilds its dock contents on it. Plain seeding does not raise it."""
+    so ``DocumentSubDocks`` rebuilds its dock contents on it. Plain seeding does not raise it."""
 
     files_changed = Signal(object)
     """Fires with a tuple of the :class:`~pathlib.Path` objects of files this document wrote or replaced --
@@ -377,7 +377,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     to revert to. ``True`` for a **loaded** document (it stands for a file on disk -- even one that later
     goes missing out-of-band, whose revert is the fix-retry loop, [[data-model#write-integrity]]);
     ``False`` for a brand-new document (:meth:`create_new`) bound to a path that does not exist on disk
-    yet. ``DocumentWidget`` keeps its Revert action **disabled** while this is ``False`` (#147): reverting
+    yet. ``DocumentSubDocks`` keeps its Revert action **disabled** while this is ``False`` (#147): reverting
     a not-yet-written path would re-read a file that isn't there, replacing the editable in-memory
     document with an empty **locked** ``MISSING`` stub and silently discarding the edits. Set ``True``
     only forward, by the first :meth:`save`; a revert never touches it, since a not-yet-saved document
@@ -390,7 +390,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     ([[acquisition-tooling#tc-to-rehu]]), an owned field present-but-uncoercible, or a file that could not
     be read at all -- so the viewer can explain the lock and act per kind (#94). Recomputed at
     construction and on every :meth:`revert`/:meth:`convert` (never by an edit -- there is no setter path
-    back to a locked state). ``DocumentWidget`` disables its editor docks while this is non-empty; the
+    back to a locked state). ``DocumentSubDocks`` disables its editor docks while this is non-empty; the
     inline notice (#94) and `DocumentsDock`'s tab marker bind to `lock_reasons_changed`."""
 
     upgradable = SimpleProperty(False)
@@ -403,7 +403,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     same seams as :attr:`lock_reasons` -- construction, :meth:`revert`, :meth:`convert` -- plus
     :meth:`save` (since saving is what clears it), and live off `dirty_changed`/`lock_reasons_changed`
     so an in-place edit or a newly-appearing lock hides the offer immediately rather than leaving it
-    stale until the next explicit seam. `DocumentWidget`'s upgrade toolbar button and inline notice
+    stale until the next explicit seam. `DocumentSubDocks`' upgrade toolbar button and inline notice
     banner row both key off this flag directly, the same shape every other lock reason already uses
     (a toolbar remedy, plus a message-only banner row explaining it)."""
 
@@ -634,7 +634,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         if self.path is not None:
             self.files_changed.emit((self.path,))
         # the file now exists on disk, so there is finally something to revert to: mark saved_on_disk so
-        # DocumentWidget re-enables Revert (#147). Set once and never unset -- a later out-of-band
+        # DocumentSubDocks re-enables Revert (#147). Set once and never unset -- a later out-of-band
         # deletion still leaves this a document that *was* saved, whose revert is the fix-retry loop.
         self.saved_on_disk = True
         # explicit, not left to the dirty_changed connection alone: a clean-but-upgradable document
@@ -1114,7 +1114,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     def __log_document_state(self) -> None:
         """Write a record for everything the inline notice banner would show about this document (#200).
 
-        **Banner parity.** ``DocumentWidget.__banner_rows`` builds its rows from exactly three sources:
+        **Banner parity.** ``DocumentSubDocks.__banner_rows`` builds its rows from exactly three sources:
         :attr:`lock_reasons`, :attr:`upgradable`, and :attr:`rename_error`. The first two are written
         here, in the same words the banner uses, so a reader who dismissed a banner -- or never had one
         on screen, because the dock was closed -- can still find out why a document is locked. The third

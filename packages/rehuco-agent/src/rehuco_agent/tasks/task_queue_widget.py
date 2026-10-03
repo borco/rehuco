@@ -174,7 +174,7 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
         self.__log_scope: JobScope | None = None
         """The job whose log this shell's surface is currently attached under, or ``None`` while no row
         is selected. Held rather than re-read off the selection, because a change has to detach the sink
-        from the scope it was attached with, not the new one (the same reason ``DocumentWidget`` holds
+        from the scope it was attached with, not the new one (the same reason ``DocumentSubDocks`` holds
         its own)."""
 
         self.__log_widget: Final = build_log_widget(limit=shared_logs_settings().effective_resource_limit)

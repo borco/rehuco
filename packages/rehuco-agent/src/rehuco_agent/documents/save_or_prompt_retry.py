@@ -19,7 +19,7 @@ def save_or_prompt_retry(parent: QWidget, model: RehuDocumentModel) -> bool:
     traceback. This is the one seam every save call site funnels through -- the Save and Upgrade actions,
     Save All, the per-tab and batch close guards, and the whole-app close -- so how a failed save is
     surfaced (and the choice to abort whatever the save was gating) lives in exactly one place, the same
-    way :meth:`~rehuco_agent.documents.document_widget.DocumentWidget.__on_convert_triggered` already
+    way :meth:`~rehuco_agent.documents.document_sub_docks.DocumentSubDocks.__on_convert_triggered` already
     guards the convert actions.
 
     Only ``OSError`` is caught: a save-blocking lock raises ``ValueError`` from

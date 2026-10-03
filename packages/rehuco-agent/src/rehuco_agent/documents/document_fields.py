@@ -282,7 +282,7 @@ def build_document_form(
     measure callback the same way), then one generic `UnknownField` fallback per
     unrecognized key in the active block, and finally one per **inactive block**
     ([[plugins#fallback-editor]], #28, #80). All of it is driven from ``model`` alone, so
-    `DocumentWidget` only hosts the resulting docks.
+    `DocumentSubDocks` only hosts the resulting docks.
 
     The leading fields and ``description`` are **not** filtered by type: they are common core
     ([[field-schema#resource-types]]) except ``location``, which is a location control rather than a
@@ -292,13 +292,13 @@ def build_document_form(
     :param name_suggestions: the rename-suggestion `NameSuggestionModel` the ``location`` field pulls
         candidate names from -- the caller's, not built here. It carries permanent notify-signal
         subscriptions on ``model``, so it must outlive individual form builds: a caller that rebuilds
-        the form (a type switch/revert, `DocumentWidget`) owns **one** and passes it to every build, so
+        the form (a type switch/revert, `DocumentSubDocks`) owns **one** and passes it to every build, so
         it is reused rather than a fresh one leaking per rebuild (#149). Required, not optional-with-a-
         default: minting one here would put that ownership back inside a per-build call, the exact seam
         #149 closed. The owner parents it to itself, so it is freed with that view rather than piling up
         on a model other views still hold (#375).
     :param image_organizer: what the images strip's editor writes screenshot reorders/removals through
-        -- the caller's own instance (`DocumentWidget`), shared with its `.image_downloads.ImageDownloads`
+        -- the caller's own instance (`DocumentSubDocks`), shared with its `.image_downloads.ImageDownloads`
         rather than a second, redundant one minted here (#73): both are stateless, but one instance keeps
         the two writers of the same directory in one place.
     :param registry: the field registry to resolve the record types with; a default one when omitted.

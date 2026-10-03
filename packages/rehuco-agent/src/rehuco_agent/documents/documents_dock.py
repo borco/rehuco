@@ -527,7 +527,7 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         already exactly "re-read this document's path and reseed every field from what comes back" --
         the same seam an already-open document's Revert action and a hand-fixed locked stub's retry
         both use to pick up a file's real content. It also fires
-        :attr:`~RehuDocumentModel.active_block_changed` unconditionally, so ``DocumentWidget`` rebuilds
+        :attr:`~RehuDocumentModel.active_block_changed` unconditionally, so ``DocumentSubDocks`` rebuilds
         its whole form for the real type in place of the placeholder's typeless one. Settled first,
         so nothing re-triggered by the load's own signal storm can re-enter it.
 

@@ -31,7 +31,7 @@ class FieldsForm:
     """Builds a viewer or editor form from an ordered list of fields ([[plugins#field-toolkit]]).
 
     Fields are **grouped by their `FieldsTab`**: each factory returns one 3-column `QGridLayout`
-    widget per tab (``{tab: grid}``), which the owner (`DocumentWidget`) hosts as one dock per tab.
+    widget per tab (``{tab: grid}``), which the owner (`DocumentSubDocks`) hosts as one dock per tab.
     Rows are laid out **label** | **misc** | **content** -- a field can place an extra control (the
     ``path`` field's expand toggle, the ``misc`` slot of its
     :class:`~rehuco_agent.fields.field.FieldEditorWidgets`) in the middle column. The label and misc
@@ -60,7 +60,7 @@ class FieldsForm:
     def clear_external(self) -> None:
         """Disconnect every field's long-lived-signal connections (:meth:`Field.clear_external`).
 
-        The owner (`DocumentWidget`) calls this before rebuilding the form and when the hosting widget is
+        The owner (`DocumentSubDocks`) calls this before rebuilding the form and when it is torn down or
         destroyed, so each field's ``binding.changed`` (and settings) connections are severed while the
         fields are still alive -- the deterministic teardown the lambda connections need
         ([[plugins#field-toolkit]]).
@@ -73,7 +73,7 @@ class FieldsForm:
 
         A field that reports transient status-bar text (`StatusReporter` -- e.g. the ``authors`` viewer's
         hovered-link URL) emits it as a signal rather than reaching for the status bar itself; the owner
-        (`DocumentWidget`) passes its own re-emitting signal here, and each such field is wired to it. The
+        (`DocumentSubDocks`) passes its own re-emitting signal here, and each such field is wired to it. The
         owner calls this once per form it builds -- on construction and on every rebuild -- so a rebuilt
         form's fresh fields report through the same ``sink``; the outgoing form's fields drop the
         connection when they are collected (Qt severs a connection whose `QObject` sender dies), so no

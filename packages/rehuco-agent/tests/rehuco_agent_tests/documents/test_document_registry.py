@@ -94,14 +94,14 @@ def test_an_edit_through_one_holders_view_shows_in_the_others(mocker: MockerFixt
     qtbot.addWidget(first)
     second = DocumentWidget(registry.acquire(FAKE_PATH))
     qtbot.addWidget(second)
-    editors = first._DocumentWidget__editor_docks  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    editors = first.sub_docks._DocumentSubDocks__editor_docks  # type: ignore[attr-defined]  # pylint: disable=protected-access
     title_edit = next(
         edit for dock in editors.values() for edit in dock.widget().findChildren(QLineEdit) if edit.text() == "Foo"
     )
 
     title_edit.setText("Renamed")
 
-    viewers = second._DocumentWidget__viewer_docks  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    viewers = second.sub_docks._DocumentSubDocks__viewer_docks  # type: ignore[attr-defined]  # pylint: disable=protected-access
     viewer_texts = {label.text() for dock in viewers.values() for label in dock.widget().findChildren(QLabel)}
     assert "Renamed" in viewer_texts
     assert second.model.dirty
