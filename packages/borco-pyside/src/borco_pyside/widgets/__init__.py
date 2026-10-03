@@ -18,6 +18,7 @@ from .content_sized_table_view import ContentSizedTableView
 from .dynamic_properties_helpers import toggle_dynamic_property
 from .elided_label import ElidedLabel
 from .flow_layout import FlowLayout
+from .header_sections_menu import HeaderSectionsMenu
 from .horizontal_line import HorizontalLine
 from .item_action_button_column import ItemEditActionsColumn, ItemOrderingActionsColumn
 from .item_actions import (
@@ -74,6 +75,7 @@ __all__ = [
     "EditItemAction",
     "ElidedLabel",
     "FlowLayout",
+    "HeaderSectionsMenu",
     "HorizontalLine",
     "InsertItemAction",
     "ItemEditActionsColumn",
