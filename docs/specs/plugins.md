@@ -811,8 +811,8 @@ its browser/editor contributed by its plugin ([[plugins#browsers]]). All three a
   non-existence beats privacy by access rule — decided finally when the plugin is built. v1 (single-user, no
   entities) is unaffected either way.
 - **Placement and discovery.** The directory tree is *never* the source of membership — a containment-shaped
-  collection's `info.rehu` sitting in its members' parent directory is only that entity's natural home (and depends on
-  the collection type being a scan non-boundary, [[data-model#scan-and-staleness]]). Every other grouping entity lives
+  collection's `info.rehu` sitting in its members' parent directory is only that entity's natural home (the scan
+  descends past every record, whatever its type, [[data-model#scan-and-staleness]]). Every other grouping entity lives
   in the **configured creation directory** declared in `.rehuco` ([[mounts-and-storage#rehuco-scope]]). *Discovery* of
   existing entity documents needs no declared locations at all — it is type-based: the scanner finds them wherever
   they sit in any scanned root, so a swarm arriving with its own authors is just documents in its roots.

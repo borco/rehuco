@@ -18,8 +18,12 @@ connection, because the cascade a root removal relies on is otherwise silently i
 **Roots are keyed by their** ``.rehuco`` **id** (:attr:`~rehuco_core.RehucoRoot.root_id`), never by path:
 relabelling, reordering or re-pointing a root updates its row in place (:meth:`CatalogCache.reconcile_roots`)
 and keeps its resources. A **root is wholly online or wholly offline** ([[mounts-and-storage#offline-mounts]]):
-one that would not list keeps its rows as they were (:meth:`CatalogCache.mark_root_unreachable`), while a full
-scan of one that did replaces them (:meth:`CatalogCache.apply_root_scan`) -- a record no longer there is gone.
+one that would not list keeps its rows as they were (:meth:`CatalogCache.mark_root_unreachable`), while a scan of
+one that did replaces them (:meth:`CatalogCache.apply_root_scan`) -- a record no longer there is gone.
+
+**Between scans, one record at a time** (#373): a record re-read after a save is written alone
+(:meth:`CatalogCache.upsert_record`), a deleted one removed (:meth:`CatalogCache.remove`), and a rename applied
+from its executed plan without reading anything (:meth:`CatalogCache.apply_relocation`).
 
 Every value a query matches against is a parameter; the SQL around it is assembled only from the fixed
 fragments below, never from text a reader typed.
@@ -133,6 +137,35 @@ class CatalogRecord:  # pylint: disable=too-many-instance-attributes
 
 
 @dataclass(frozen=True, slots=True)
+class RecordSignature:
+    """What an incremental scan needs of a cached row to decide whether to read its record again
+    ([[data-model#scan-and-staleness]], #373).
+
+    :param path: root-relative, as last spelled.
+    :param mtime_ns: the record file's modification time at last read; ``0`` once a schema step cleared it.
+    :param size: the record file's size at last read.
+    :param error: why it could not be read last time, or ``None``.
+    """
+
+    path: str
+    mtime_ns: int
+    size: int
+    error: str | None = None
+
+    def matches(self, mtime_ns: int, size: int) -> bool:
+        """Whether the file as it is now still is what this row was read from.
+
+        Never for a row that could not be read, which is asked again in case it now can be, nor for one whose
+        signature a schema step cleared (``0``), which is the marker that its columns are stale.
+
+        :param mtime_ns: the file's modification time now.
+        :param size: the file's size now.
+        :returns: whether the row can be trusted without a read.
+        """
+        return self.error is None and self.mtime_ns != 0 and (self.mtime_ns, self.size) == (mtime_ns, size)
+
+
+@dataclass(frozen=True, slots=True)
 class CatalogRoot:
     """One root's row: what the ``.rehuco`` says about it, and what the last scan found.
 
@@ -152,6 +185,18 @@ class CatalogRoot:
     removable: bool
     reachable: bool | None
     scanned_at: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogLocation:
+    """Where a path sits in the cache: the root it is under and its root-relative spelling.
+
+    :param root: the root -- the innermost one, where roots nest.
+    :param relative: the path relative to it, ``/``-separated, spelled as the path spells it.
+    """
+
+    root: CatalogRoot
+    relative: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -239,6 +284,15 @@ RESOURCE_COLUMNS: Final = (
 """The ``resources`` columns a :class:`CatalogRecord` fills -- each one of its fields, under the same name, and
 stored as it is but for ``level``, which a column holds as a JSON array (:meth:`CatalogCache.rows`)."""
 
+KEY_RANGE_END: Final = "\U0010ffff"
+"""Appended to a key prefix to bound the range of keys that start with it: the highest code point, whose UTF-8
+sorts after every other character's, so ``prefix <= key < prefix + KEY_RANGE_END`` is an indexed prefix match --
+where ``LIKE`` would need its wildcards escaped and ``substr`` would read every row of the root."""
+
+SUBTREE_CLAUSE: Final = "(path_key = ? OR (path_key >= ? AND path_key < ?))"
+"""A path and everything beneath it, by key -- three parameters: the path's own key, then the bounds of the keys
+under its ``/``-terminated prefix."""
+
 
 def catalog_type_fields(type_name: str, plugins: PluginRegistry = DEFAULT_PLUGIN_REGISTRY) -> tuple[str, ...]:
     """The type-specific columns a resource type contributes to a browser: those of :data:`TYPE_FIELD_COLUMNS`
@@ -253,6 +307,16 @@ def catalog_type_fields(type_name: str, plugins: PluginRegistry = DEFAULT_PLUGIN
     """
     declared = plugins.field_names(type_name)
     return tuple(column for column in TYPE_FIELD_COLUMNS if column in declared)
+
+
+def catalog_path_key(path: str) -> str:
+    """The normalized spelling a root-relative path is matched by (``path_key``, [[data-model#cache-schema]]):
+    case folded and separators unified exactly where this filesystem does, through :func:`os.path.normcase`.
+
+    :param path: root-relative, ``/``-separated.
+    :returns: its key.
+    """
+    return os.path.normcase(path)
 
 
 def rehudb_path(cache_dir: Path, rehuco_id: UUID) -> Path:
@@ -422,15 +486,23 @@ class CatalogCache:
     # region Resources
 
     def apply_root_scan(
-        self, root_id: UUID, records: Sequence[CatalogRecord], *, scanned_at: float | None = None
+        self,
+        root_id: UUID,
+        records: Sequence[CatalogRecord],
+        *,
+        unchanged: Sequence[str] = (),
+        scanned_at: float | None = None,
     ) -> bool:
-        """Replace a root's resources with what a full scan of it found, in one transaction.
+        """Replace a root's resources with what a scan of it found, in one transaction -- mark and sweep.
 
         A record found again keeps its row id, so a view holding it keeps its place; a record not found is
         removed -- the root listed, so its absence is real.
 
         :param root_id: the root scanned.
-        :param records: everything the scan found under it.
+        :param records: every record the scan read.
+        :param unchanged: the root-relative paths, as spelled now, of the records an incremental scan found
+            unchanged and did not read (#373): each keeps its row as it is -- its ``scanned_at`` included, which says
+            when it was last *read* -- but for its spelling, which follows a case-only rename.
         :param scanned_at: when the scan ran; now, when omitted.
         :returns: whether it was applied -- ``False`` when the root was removed while the scan ran, which
             leaves nothing to apply to.
@@ -442,6 +514,13 @@ class CatalogCache:
                 LOG.info("The root %s was removed while it was scanned; the scan is dropped.", root_id)
                 return False
             kept = {self.__upsert(connection, key, record, stamp) for record in records}
+            for path in unchanged:
+                row = connection.execute(
+                    "UPDATE resources SET path = ? WHERE root_id = ? AND path_key = ? RETURNING id",
+                    (path, key, catalog_path_key(path)),
+                ).fetchone()
+                if row is not None:
+                    kept.add(row[0])
             existing = {
                 resource_id
                 for (resource_id,) in connection.execute("SELECT id FROM resources WHERE root_id = ?", (key,))
@@ -450,6 +529,120 @@ class CatalogCache:
             connection.execute("UPDATE roots SET reachable = 1, scanned_at = ? WHERE id = ?", (stamp, key))
             self.__prune_values(connection)
         return True
+
+    def signatures(self, root_id: UUID) -> dict[str, RecordSignature]:
+        """Every row under a root, as much of it as an incremental scan compares against (#373).
+
+        :param root_id: the root.
+        :returns: the signatures, keyed by path key (:func:`catalog_path_key`); as many as the last scan found,
+            which is the total the next one reports progress against.
+        """
+        cursor = self.__connection.execute(
+            "SELECT path_key, path, mtime_ns, size, error FROM resources WHERE root_id = ?", (str(root_id),)
+        )
+        return {key: RecordSignature(*fields) for key, *fields in cursor}
+
+    def signature(self, root_id: UUID, relative: str) -> RecordSignature | None:
+        """One row's signature, for verify-on-access ([[data-model#scan-and-staleness]]).
+
+        :param root_id: the root.
+        :param relative: the record's root-relative path.
+        :returns: the signature, or ``None`` when no row holds that path.
+        """
+        row = self.__connection.execute(
+            "SELECT path, mtime_ns, size, error FROM resources WHERE root_id = ? AND path_key = ?",
+            (str(root_id), catalog_path_key(relative)),
+        ).fetchone()
+        return RecordSignature(*row) if row is not None else None
+
+    def locate(self, path: Path) -> CatalogLocation | None:
+        """Which root ``path`` is under, and where beneath it.
+
+        Compared component by component, each one normalized as the filesystem would
+        (:func:`os.path.normcase`), so a root ``D:/lib`` holds ``d:/LIB/x.rehu`` on Windows and never
+        ``D:/lib2/x.rehu`` anywhere. Where roots nest, the innermost one answers.
+
+        :param path: an absolute path.
+        :returns: the location, its relative part spelled as ``path`` spells it; ``None`` outside every root, and
+            for a root's own folder, which is no record.
+        """
+        parts = self.__normalized_parts(path)
+        holding = (
+            root
+            for root in self.roots()
+            if len(parts) > len(root.path.parts) and parts[: len(root.path.parts)] == self.__normalized_parts(root.path)
+        )
+        best = max(holding, key=lambda root: len(root.path.parts), default=None)
+        if best is None:
+            return None
+        return CatalogLocation(best, "/".join(path.parts[len(best.path.parts) :]))
+
+    def upsert_record(self, root_id: UUID, record: CatalogRecord, *, scanned_at: float | None = None) -> bool:
+        """Write one record read outside a scan -- after a save or a conversion (#373).
+
+        A ``.rehu`` written where a same-stem ``.tc`` had a row takes that row over, keeping its id: converting a
+        record replaces its row in place ([[data-model#cache-schema]]).
+
+        :param root_id: the root it is under.
+        :param record: what it holds, its path root-relative.
+        :param scanned_at: when it was read; now, when omitted.
+        :returns: whether it was written -- ``False`` when the root is not in the cache.
+        """
+        stamp = time.time() if scanned_at is None else scanned_at
+        key = str(root_id)
+        with self.__transaction() as connection:
+            if connection.execute("SELECT 1 FROM roots WHERE id = ?", (key,)).fetchone() is None:
+                return False
+            self.__upsert(connection, key, record, stamp)
+            self.__prune_values(connection)
+        return True
+
+    def remove(self, path: Path) -> bool:
+        """Delete the row of a record that is gone (#373).
+
+        :param path: the record's absolute path.
+        :returns: whether a row was deleted.
+        """
+        location = self.locate(path)
+        if location is None:
+            return False
+        with self.__transaction() as connection:
+            removed = connection.execute(
+                "DELETE FROM resources WHERE root_id = ? AND path_key = ?",
+                (str(location.root.root_id), catalog_path_key(location.relative)),
+            ).rowcount
+            if removed:
+                self.__prune_values(connection)
+        return bool(removed)
+
+    def apply_relocation(self, pairs: Sequence[tuple[Path, Path]]) -> int:
+        """Apply a rename that ran, without reading a record (#373).
+
+        ``pairs`` is the rename's executed plan (:attr:`~rehuco_core.RehuRenamer.executed`), and the one rule
+        applied is the renamer's own (:meth:`~rehuco_core.RehuRenamer.relocate`): **a path at or beneath a renamed
+        source lands at the same offset beneath its destination**. A directory-scoped rename's one pair is the
+        directory, so every record beneath it is rebased; a file-scoped one's pairs are files, so only its own
+        record's row matches and its siblings, which have no rows, change nothing. Each row keeps its own spelling
+        of the part that did not move.
+
+        A row already at a destination is stale -- the rename found nothing there -- and is dropped first. A
+        source at or above a root's own folder moves the root rather than anything in it: its rows' relative
+        paths stay right, and where the root now is is the ``.rehuco``'s to say.
+
+        :param pairs: ``(source, destination)`` absolute paths, as the rename ran them.
+        :returns: how many rows were rebased.
+        """
+        roots = self.roots()
+        moved = 0
+        with self.__transaction() as connection:
+            for source, destination in pairs:
+                for root in roots:
+                    relative = self.__relative_pair(root, source, destination)
+                    if relative is not None:
+                        moved += self.__rebase(connection, str(root.root_id), *relative)
+            if moved:
+                self.__prune_values(connection)
+        return moved
 
     def rows(self, query: CatalogQuery | None = None) -> list[CatalogRow]:
         """The resources matching ``query``, in root order and then by path.
@@ -564,15 +757,110 @@ class CatalogCache:
         names = ", ".join(RESOURCE_COLUMNS)
         updates = ", ".join(f"{column} = excluded.{column}" for column in RESOURCE_COLUMNS)
         fields = tuple(CatalogCache.__stored(record, column) for column in RESOURCE_COLUMNS)
+        key = catalog_path_key(record.path)
+        CatalogCache.__adopt_legacy_row(connection, root_id, record, key)
         (resource_id,) = connection.execute(
             f"INSERT INTO resources (root_id, path_key, scanned_at, {names}) "  # nosec B608  # fixed names
             f"VALUES (?, ?, ?, {', '.join('?' * len(RESOURCE_COLUMNS))}) "
             f"ON CONFLICT (root_id, path_key) DO UPDATE SET scanned_at = excluded.scanned_at, {updates} RETURNING id",
-            (root_id, os.path.normcase(record.path), stamp, *fields),
+            (root_id, key, stamp, *fields),
         ).fetchone()
         for (table, join), names_of in zip(JOINS, (record.authors, record.tags, record.publishers), strict=True):
             CatalogCache.__write_values(connection, table, join, resource_id, names_of)
         return resource_id
+
+    @staticmethod
+    def __adopt_legacy_row(connection: sqlite3.Connection, root_id: str, record: CatalogRecord, key: str) -> None:
+        """Re-key the row of the ``.tc`` a new ``.rehu`` record converts, so the write that follows lands on it.
+
+        Only for a ``.rehu`` with no row of its own yet, and only a ``.tc`` the scanner would count as covered by
+        it: same directory, stem equal case-folded ([[data-model#cache-schema]]). Coverage stops at the directory,
+        so a ``.tc`` deeper down is found by the range but never taken.
+
+        :param connection: the cache, inside a write transaction.
+        :param root_id: the root.
+        :param record: the record about to be written.
+        :param key: its path key.
+        """
+        if record.kind is not RecordKind.REHU:
+            return
+        if connection.execute("SELECT 1 FROM resources WHERE root_id = ? AND path_key = ?", (root_id, key)).fetchone():
+            return
+        parent, _, name = record.path.rpartition("/")
+        prefix = catalog_path_key(f"{parent}/") if parent else ""
+        stem = os.path.splitext(name)[0].casefold()
+        candidates = connection.execute(
+            "SELECT id, path FROM resources WHERE root_id = ? AND kind = ? AND path_key >= ? AND path_key < ?",
+            (root_id, RecordKind.TC.value, prefix, prefix + KEY_RANGE_END),
+        )
+        for resource_id, path in candidates.fetchall():
+            row_parent, _, row_name = path.rpartition("/")
+            if catalog_path_key(row_parent) == catalog_path_key(parent) and (
+                os.path.splitext(row_name)[0].casefold() == stem
+            ):
+                connection.execute(
+                    "UPDATE resources SET path = ?, path_key = ? WHERE id = ?", (record.path, key, resource_id)
+                )
+                return
+
+    @staticmethod
+    def __normalized_parts(path: Path) -> tuple[str, ...]:
+        """``path``'s components, each normalized as this filesystem normalizes a name -- so a prefix test cannot
+        mistake ``lib2`` for something inside ``lib``."""
+        return tuple(os.path.normcase(part) for part in path.parts)
+
+    @staticmethod
+    def __relative_pair(root: CatalogRoot, source: Path, destination: Path) -> tuple[str, str] | None:
+        """One renamed pair, made relative to ``root`` -- or ``None`` when the rename did not move anything inside
+        it.
+
+        :returns: the source's and the destination's root-relative paths, each spelled as the pair spells it.
+        """
+        root_parts = CatalogCache.__normalized_parts(root.path)
+        source_parts = CatalogCache.__normalized_parts(source)
+        depth = len(root_parts)
+        if source_parts[:depth] != root_parts or len(source_parts) == depth:
+            if root_parts[: len(source_parts)] == source_parts:
+                LOG.info("A rename moved the root %s itself; its rows are kept as they are.", root.path)
+            return None
+        # a rename's pairs stay inside one directory, so a source beneath the root has its destination there too
+        return "/".join(source.parts[depth:]), "/".join(destination.parts[depth:])
+
+    @staticmethod
+    def __subtree_keys(path: str) -> tuple[str, str, str]:
+        """The three parameters :data:`SUBTREE_CLAUSE` takes for ``path``: its own key and the range of the keys
+        beneath it."""
+        prefix = catalog_path_key(f"{path}/")
+        return catalog_path_key(path), prefix, prefix + KEY_RANGE_END
+
+    @staticmethod
+    def __rebase(connection: sqlite3.Connection, root_id: str, source: str, destination: str) -> int:
+        """Rewrite every row at or beneath ``source`` to the same offset beneath ``destination``.
+
+        :param connection: the cache, inside a write transaction.
+        :param root_id: the root.
+        :param source: root-relative, as the rename spelled it.
+        :param destination: root-relative, as the rename spelled it.
+        :returns: how many rows moved.
+        """
+        subtree = f"SELECT id, path FROM resources WHERE root_id = ? AND {SUBTREE_CLAUSE}"  # nosec B608  # fixed
+        moving = connection.execute(subtree, (root_id, *CatalogCache.__subtree_keys(source))).fetchall()
+        if not moving:
+            return 0
+        moving_ids = {resource_id for resource_id, _ in moving}
+        # a case-only rename on a case-insensitive filesystem has the same keys at both ends: those rows are moving
+        stale = connection.execute(subtree, (root_id, *CatalogCache.__subtree_keys(destination))).fetchall()
+        connection.executemany(
+            "DELETE FROM resources WHERE id = ?", [(gone,) for gone, _ in stale if gone not in moving_ids]
+        )
+        depth = len(source.split("/"))
+        for resource_id, path in moving:
+            rebased = "/".join((destination, *path.split("/")[depth:]))
+            connection.execute(
+                "UPDATE resources SET path = ?, path_key = ? WHERE id = ?",
+                (rebased, catalog_path_key(rebased), resource_id),
+            )
+        return len(moving)
 
     @staticmethod
     def __stored(record: CatalogRecord, column: str) -> object:

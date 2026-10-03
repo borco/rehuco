@@ -81,19 +81,46 @@ def scan_job() -> ScanCatalogRootJob:
 
 
 def test_a_scan_applies_what_it_found(mocker: MockerFixture, cache: MagicMock) -> None:
-    """A root that listed has its rows replaced, and the progress is a running count."""
+    """A root that listed has its rows replaced -- the records read and the ones found unchanged -- and with no rows
+    to go by, the progress is a running count."""
+    cache.signatures.return_value = {}
     records = (CatalogRecord("info.rehu", RecordKind.REHU),)
-    result = RootScanResult(ROOT, RootScanOutcome.SCANNED, records)
-    scan_returning(mocker, result)
+    result = RootScanResult(ROOT, RootScanOutcome.SCANNED, records, unchanged=("same.rehu",))
+    scan_class = scan_returning(mocker, result)
     control = FakeControl()
     job = scan_job()
 
     job.run(control)
 
-    cache.apply_root_scan.assert_called_once_with(ROOT_ID, records)
+    cache.apply_root_scan.assert_called_once_with(ROOT_ID, records, unchanged=("same.rehu",))
     cache.mark_root_unreachable.assert_not_called()
     assert control.reports == [(0, None), (1, None)]
     assert job.result is result
+    assert scan_class.call_args.kwargs["known"] == {}
+
+
+def test_a_rescan_compares_against_the_cached_rows_and_reports_against_their_count(
+    mocker: MockerFixture, cache: MagicMock
+) -> None:
+    """The root's rows are what the scan skips by, and how many there were is the total -- raised, not exceeded,
+    when more turn up."""
+    known = {"a.rehu": mocker.sentinel.a, "b.rehu": mocker.sentinel.b}
+    cache.signatures.return_value = known
+    scan_class = mocker.patch("rehuco_core.rehudb_jobs.CatalogRootScan")
+
+    def scanning() -> RootScanResult:
+        for done in (1, 2, 3):
+            scan_class.call_args.kwargs["progress"](done)
+        return RootScanResult(ROOT, RootScanOutcome.SCANNED)
+
+    scan_class.return_value.scan.side_effect = scanning
+    control = FakeControl()
+
+    scan_job().run(control)
+
+    cache.signatures.assert_called_once_with(ROOT_ID)
+    assert scan_class.call_args.kwargs["known"] is known
+    assert control.reports == [(0, 2), (1, 2), (2, 2), (3, 3)]
 
 
 @mark.parametrize("outcome", [RootScanOutcome.OFFLINE, RootScanOutcome.WENT_OFFLINE])

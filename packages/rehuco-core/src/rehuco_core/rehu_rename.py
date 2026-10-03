@@ -143,6 +143,19 @@ class RehuRenamer:
         self.__trust.moved(self.__path, renamed)
         return renamed
 
+    @property
+    def executed(self) -> tuple[tuple[Path, Path], ...]:
+        """The ``(source, destination)`` pairs this rename carried out, in the order they ran.
+
+        What :meth:`relocate` answers from, handed over whole for a reader that applies the same rule somewhere
+        else -- the catalog cache rebasing its rows without re-reading them
+        (:meth:`~rehuco_core.CatalogCache.apply_relocation`, #373). Empty whenever :meth:`relocate` would move
+        nothing: before :meth:`rename`, after a no-op, and after a failure.
+
+        :returns: the executed plan.
+        """
+        return tuple(self.__executed)
+
     def relocate(self, candidate: Path) -> Path:
         """Where ``candidate`` ended up once this rename ran, or ``candidate`` itself if it did not move
         (#241).

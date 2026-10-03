@@ -193,11 +193,14 @@ from .rehudb import (
     TYPE_FIELD_COLUMNS,
     CatalogCache,
     CatalogField,
+    CatalogLocation,
     CatalogQuery,
     CatalogRecord,
     CatalogRoot,
     CatalogRow,
     RecordKind,
+    RecordSignature,
+    catalog_path_key,
     catalog_type_fields,
     rehudb_path,
 )
@@ -208,7 +211,8 @@ from .rehudb_jobs import (
     RemoveCatalogRootJob,
     ScanCatalogRootJob,
 )
-from .rehudb_scan import CatalogRootScan, RootScanOutcome, RootScanResult, ScanProgress
+from .rehudb_scan import CatalogRecordReader, CatalogRootScan, RootScanOutcome, RootScanResult, ScanProgress
+from .rehudb_updates import CatalogRecordUpdater
 from .rename_coordination import (
     DEFAULT_RENAME_COORDINATOR,
     DEFAULT_RENAME_YIELD_TIMEOUT,
@@ -347,8 +351,11 @@ __all__ = [
     "CatalogDirectory",
     "CatalogEnumeration",
     "CatalogField",
+    "CatalogLocation",
     "CatalogQuery",
     "CatalogRecord",
+    "CatalogRecordReader",
+    "CatalogRecordUpdater",
     "CatalogRoot",
     "CatalogRootJob",
     "CatalogRootScan",
@@ -453,6 +460,7 @@ __all__ = [
     "RESOURCE_FIELD_NAMES",
     "RESTORED_UNFINISHED_STATES",
     "RecordKind",
+    "RecordSignature",
     "RehuDocument",
     "RehuFormatError",
     "RehuRenamer",
@@ -510,6 +518,7 @@ __all__ = [
     "author_name",
     "authors_comma_editable",
     "backup_path",
+    "catalog_path_key",
     "catalog_type_fields",
     "checksum_entry_name",
     "checksum_record_path",
