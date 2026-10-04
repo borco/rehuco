@@ -63,9 +63,11 @@
   the three actions in an actual menu is the caller's job. `ThemeManager` and `ThemeMenu` are
   independent of one another — each usable on its own — but both read/write the same `ThemeModel`,
   so picking a mode in either one shows up in the other.
-- **`LineEditClearActionFilter`** (`borco_pyside.widgets`) — an app-wide consumer: installs a themed,
-  glyph-rendered clear action on every `QLineEdit`, including ones this app never constructs
-  directly ([[plugins#field-toolkit]]'s field toolkit line edits, and any `.ui`-file-generated one).
+- **`LineEditClearActionFilter`** (`borco_pyside.widgets`) — app-wide: adds a clear action to every `QLineEdit`,
+  including ones this app never constructs directly ([[plugins#field-toolkit]]'s field toolkit line edits, and any
+  `.ui`-file-generated one). Its icon is the style's own clear-button icon, so it looks like Qt's clear button and
+  themes with the style (#406); it is not that button, which stays hidden after a signal-blocked `setText`. A line
+  edit that turns Qt's button on is skipped. `DurationEdit`'s value-resetting clear action draws the same icon.
 
 ## 1. Phosphor's "Duotone" weight cannot be used as a font
 

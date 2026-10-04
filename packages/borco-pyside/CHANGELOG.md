@@ -37,6 +37,9 @@ Changelogs are per package in this monorepo, matching the per-package release ta
   while every editable cell is, so a row can be filled in any order. Cancelling the first editor, and any
   close on a one-column list, still abandon it at once. An edit to another row while a blank insert waits
   is now reported.
+- `LineEditClearActionFilter` draws its clear action with the style's own clear-button icon instead of a glyph,
+  and leaves alone a line edit that turned Qt's clear button on; it takes only an optional parent, the glyph, font
+  family and colour role arguments gone.
 
 ## [0.2.0] - 2026-09-27
 

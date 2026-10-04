@@ -44,6 +44,8 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 ### Changed
 
+- Every text box's clear button is the style's plain × instead of the backspace glyph, and a duration's looks
+  the same. The Shortcuts page's search box no longer shows two.
 - Every keyboard shortcut is now read from the settings file's `shortcuts` group, falling back to its
   default, so a changed key reaches every open window and document. The defaults are unchanged.
 - The Save and Refresh buttons' tooltips name their keys.
