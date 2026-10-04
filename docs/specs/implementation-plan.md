@@ -152,51 +152,49 @@ through to view or edit any resource.
   columns (#399); the New Table Browser presets (#400).
 - public docs once it runs (#382).
 
-## Tutorials — direction revised
+## Release 0.4.0 — watching, remote roots and borrowing (filed, not started)
 
-The original design here was a single node serving thin browser clients on the LAN (the
-**agent-as-node-client** refactor, [[nodes#two-roles]]) — no swarm, no pairing, no auth-propagation. That
-is superseded for now: an **in-app player comes first** instead, and is already filed and in progress
-(#315–#319 — watch progress, the in-app player dock, video settings, external VLC). No node exists yet, and
-none is scheduled ahead of that in-app work.
+Starts once Release 0.3.0 ships. Filed as #409–#452 plus #315–#319, milestone *Release 0.4.0*; the order lives in the
+work queue, the shape here.
 
-The node/web approach below is unfiled and further out — kept here only as an outline, once a node exists:
+**Goal:** watch a tutorial from the agent or from a tablet's browser with progress following between them; browse,
+view, play and edit roots that only another node can reach as if they were local; borrow a resource onto a node and
+return it; browse a switched-off NAS or drive from what was cached.
 
-**Goal:** from a tablet (thin browser client), browse the tutorials a node serves and watch one, with
-progress recorded. Single node, on the LAN — no swarm, no pairing, no multi-node sync, no
-auth-propagation ([[multiplicity#single-node-base]]). Cache ownership moves from the agent (Cache DB above)
-to the node here.
+**The rule that keeps this from becoming a series of refactors:** new logic lands in rehuco-core, Qt-free, taking
+paths, settings and the username as parameters; the agent and the node are thin hosts over it
+([[nodes#two-roles]]). Every root a node owns — on this machine too — goes through that node, its one writer;
+a root no node owns, the agent reaches directly, with its own `.rehudb`. The earlier blanket **agent-as-node-client
+refactor is dropped**: what is built keeps working on roots no node owns, and node-owned roots come through the
+access seam.
 
-Tracer bullet: a single headless node serves an HTTP page listing one configured tutorial → tap it → the
-browser plays the video → progress is recorded server-side and survives a reload.
+**Tracks, in order:**
 
-Then thicken: the **agent-as-node-client refactor**, moving catalog reads through the node
-([[nodes#two-roles]]; `rehuco-node` gets its first real code here); the Cache DB table view mirrored for
-the browser ([[plugins#browsers]]); sequential web playback with progress/duration tracking, notes and
-bookmarks; frequent-enough progress writes for a reload to stay current
-([[mounts-and-storage#node-handoff]]); an optional login gate for the web UI if the tablet should require
-one ([[discovery-trust-access#user-auth]]).
+1. **Foundation** — the spec (#409); Qt-free app folders (#412); the resource access seam's keys and change feed
+   (#413), the agent re-keyed onto them (#414) with a guard against new direct file I/O (#415); records through the
+   seam with read-merge-write saves and a version check (#416), on top of watch progress in core (#410); the Root
+   Catalog through the seam (#417). [[nodes#access-seam]].
+2. **Node tracer** — the FastAPI skeleton with a contract suite run against the local and the remote implementation
+   (#420), browsing another node's catalog (#421), authentication (#422); the FastAPI/HTMX/Pico spike first (#418).
+   Early on purpose: it tests the keys and the wire format while few groups depend on them.
+3. **View and play** — the remaining read groups through the seam (#423–#425), viewing a remote resource (#431),
+   media streaming (#433), and watching in the agent (#315–#318 over #410/#411).
+4. **Edit and web** — editing through the owning node (#432), the iPad playback spike (#419), the web list and watch
+   pages (#440, #441), progress following the watch node (#442), the agent-hosted node (#437).
+5. **Complete the seam** — jobs, measuring, mutations, screenshot writes and local-only capabilities (#426–#430); the
+   change journal (#434), remote jobs (#435), remote mutations (#436), remote configuration (#438), node bring-up and
+   pairing (#439); external VLC (#319).
+6. **Borrowing** — verified copies and moves between nodes (#443) on #339's verified copy, two-party sync (#444),
+   borrowing (#445), Available offline and Return (#446), the Borrowed browser (#447); scheduled archival (#448) stays
+   deferred. The borrow target is the **watch node** ([[borrowing#agent-ui]]), a laptop being one more node.
+7. **Root caching** — the per-root flag (#449), the retention store (#450), background probing (#451), offline roots
+   through the seam (#452). [[mounts-and-storage#durable-retention]].
 
-**Exit criteria:** open the web UI on a tablet over the LAN, see the tutorials a node serves, watch one, and
-have progress remembered across sessions and devices.
+**Exit criteria:** watch 10 minutes in the agent, 15 on the tablet, and resume in the agent at 25; open, play and edit
+a resource on a disk only mini2 can reach; borrow a tutorial onto mini2, watch it with the PC off, and return it with
+its progress reconciled.
 
-## Borrowing — not started
-
-**Goal:** before leaving, borrow a tutorial onto a laptop; watch it offline (the laptop runs its own node);
-sync progress/notes back on return. A **two-party** sync (home node ↔ laptop), simpler than general swarm
-sync, and depends on Tutorials' node existing first.
-
-Tracer bullet: mark a tutorial "borrow" → its files + `.rehu` copy onto the laptop, borrow recorded in the
-user meta block ([[borrowing#recording-borrows]]) → the laptop's node serves it offline → on return,
-progress/notes reconcile back.
-
-Then thicken: a minimal instance registry tracking where a UUID's copies live and their roles
-([[instances-and-dedup#instance-registry]]); the version-vector + activity-log reconcile machinery
-([[sync#overview]]), scoped to two parties; a return/reconcile UI handling the borrow-vs-changed case if it
-arises ([[borrowing#borrow-vs-delete]]); scheduled archival on return, full or selective
-([[borrowing#scheduled-archival]]).
-
-**Exit criteria:** borrow → go offline → watch and take notes → return → changes reconciled.
+**Gates before node/web code:** the FastAPI/HTMX/Pico spike (#418) and the iPad playback spike (#419).
 
 ## Reference images — richness not started
 
@@ -223,15 +221,16 @@ identification and practice mode are deliberately last.
   [[appendices.briefcase-packaging#status]]): Briefcase-built installers with declarative file
   association/icon/AUMID. MSIX packaging and self-update against a public release oracle still wait on
   code-signing/notarization ([[packaging-deployment#app-identity]]/[[packaging-deployment#auto-update]]).
-- **Swarm** (full multi-node: discovery, pairing, registry, safe-move —
-  [[discovery-trust-access]], [[mounts-and-storage#fingerprint-map]]–[[mounts-and-storage#safe-move-rename]])
-  and **Daz3D library migration** are their own further-out efforts, out of scope for everything above.
+- **The rest of the swarm** — discovery, the propagated registry and its resync, fingerprint mapping, benchmarking
+  ([[discovery-trust-access]], [[mounts-and-storage#fingerprint-map]]–[[mounts-and-storage#node-benchmark]]) — beyond
+  what Release 0.4.0 takes (pairing, user auth, moves between nodes), and **Daz3D library migration**, are their own
+  further-out efforts.
 
 ## Sequencing gates still open
 
-- **Before Tutorials' web/node work:** a short FastAPI/HTMX/Pico **spike**, since it's a new stack — answer
+- **Before Tutorials' web/node work (#418):** a short FastAPI/HTMX/Pico **spike**, since it's a new stack — answer
   "can the follow-mode page be built the way it's needed", keep the lesson, discard the toy.
-- **Before promising "the browser plays the video" to a tablet:** an iPad-playback **spike** over a
+- **Before promising "the browser plays the video" to a tablet (#419):** an iPad-playback **spike** over a
   representative sample of the real catalog — container/codec coverage (Safari plays H.264/HEVC in MP4/MOV;
   MKV, common in these catalogs, does not play natively), the self-signed-HTTPS trust story
   ([[appendices.open-questions#still-open]]), and HTTP Range seeking. The outcome decides whether Tutorials'

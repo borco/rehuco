@@ -38,3 +38,49 @@ is a first-class supported mode, not a degraded form of multi-node:
 - **Create-swarm and single-node-forever are the same path.** "Single-node forever" is just "created a swarm and never
   invited anyone." Multi-node is the *elaboration*; the base case is one fully-functional node that serves,
   authenticates, and enforces access entirely on its own.
+
+## §8.2 Node instances on one machine, and one owner per root
+
+[[[multiplicity#instances]]]
+
+- [#409: docs: access seam, owning-node rule, views, node hosting and instances](https://github.com/borco/rehuco/issues/409)
+
+**An instance is a named folder.** Each node process on a machine is an *instance*, with a folder
+`nodes/<name>/` under the app's data folder ([[packaging-deployment#app-folders]]) holding:
+
+- a small **node config file** — its swarm, its port and listen address, and which `.rehuco` it serves; the
+  `.rehuco` stays the list of roots, so roots are declared in one place;
+- its **own data** — identity certificate ([[discovery-trust-access#node-identity-pairing]]), `.rehusw`, `.rehudb`,
+  retention store, task queue, change journal.
+
+It starts as `rehuco-node serve --instance <name>`: a systemd template unit (`rehuco-node@<name>`) on Linux; on Windows
+a log-on task per instance (no admin rights, and tied to that user's app folder) or a service. The node an agent hosts
+([[nodes#two-roles]]) is one instance like any other. **Different users are not a reason for an instance** — users and
+access rules are per swarm ([[discovery-trust-access#access-control]]); separate instances are for separate swarms, or
+the independent-restart and storage-reliability reasons of the overview.
+
+**Every root folder has exactly one owner** — one node instance (and so one swarm), or, for a root no node serves, the
+agent that lists it. Two owners would be two writers ([[data-model#write-integrity]]), so it is refused rather than
+handled:
+
+- **The claim lives in the folder.** Adding a root writes a claim beside the fingerprint
+  ([[mounts-and-storage#fingerprint-map]]) naming the owner: node, swarm, or agent. Adding a folder someone else
+  already claims is refused, naming the owner — the choices are to reach it through that owner, or an explicit,
+  admin-only **transfer** that releases the first claim.
+- **Roots don't overlap.** A root inside another owner's root, or containing one, is refused, so no file has two
+  owners.
+- **Outside its owner's swarm, a file is read-only.** An agent opening a `.rehu` under a root claimed by a swarm it is
+  not working in opens it read-only and names the owner — it can tell from the claim, so it does not write.
+- **One check for processes and machines.** A share mounted by several machines shows every one of them the same
+  claim, so the rule that keeps two instances on one box apart also keeps two boxes from both owning a share — the
+  double-primary detection of [[mounts-and-storage#folder-add]].
+- **Read-only media** (a CD/DVD, a read-only share) can't hold a claim file; the claim goes into a list kept on the
+  machine instead, which protects within that machine — enough, since nothing writes to such media.
+
+**An agent works in one swarm at a time** (its single-instance socket is already scoped per swarm,
+[[nodes#single-instance]]). Its catalog is what its open `.rehuco` lists — local folders, and references to roots (or
+folders under them) that nodes of that swarm serve ([[mounts-and-storage#rehuco-scope]]). A local folder some node of
+the swarm owns is reached through that node; any other, directly. Where those nodes run makes no difference: a
+resource is addressed by node, root and relative path ([[nodes#access-seam]]), with no host in it, so two instances
+on the agent's own machine are reached exactly as two nodes on two boxes are. An instance on the same machine that
+belongs to another swarm stays out of view until the agent switches swarm.

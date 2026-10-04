@@ -82,14 +82,16 @@ complexity lives.
 
 [[[architecture-design#components]]]
 
-**Core principle — the agent (desktop GUI) is a node client for swarm operations; "admin" is a logged-in user's
-privilege, not a separate app ([[nodes#two-roles]]).** The desktop GUI talks to a node rather than touching the catalog
-filesystem itself, removing "local path vs. remote node" special-casing. The bare single-file viewer is the one
-exception — it opens a local `.rehu` off disk with no node and no login ([[nodes#local-vs-swarm]]).
+**Core principle — the agent and the node are thin hosts over rehuco-core; "admin" is a logged-in user's privilege,
+not a separate app ([[nodes#two-roles]]).** A root a node owns — on this machine or another — is reached through that
+node, which stays its one writer; a root no node owns, the agent reaches directly. Both go through one
+operation-level access seam
+([[nodes#access-seam]]) that keeps "local path vs. remote node" in one place rather than in every caller. The bare
+single-file viewer needs no node and no login ([[nodes#local-vs-swarm]]).
 
 | Component | Role |
 | --- | --- |
-| **Agent** (PySide6 desktop GUI) | Tray icon, viewer/editor, catalog/admin UI. A node client ([[nodes#two-roles]]). Exposes admin functions only when an admin *user* is logged in ([[discovery-trust-access#user-auth]]) — there is no separate "admin build". Runs only on machines with a display. |
+| **Agent** (PySide6 desktop GUI) | Tray icon, viewer/editor, catalog/admin UI. Local-first; a client of the nodes whose roots it can't reach itself, and optionally the host of this machine's node ([[nodes#two-roles]]). Exposes admin functions only when an admin *user* is logged in ([[discovery-trust-access#user-auth]]) — there is no separate "admin build". Runs only on machines with a display. |
 | **Local viewer/editor** (part of the agent) | Views/edits a single `.rehu` file. Registered as the default `.rehu` handler in File Explorer (double-click opens it, [[nodes#single-instance]]). Works in local-file mode with no node/login ([[nodes#local-vs-swarm]]). Behavior is supplied by the resource's **plugin** ([[plugins#overview]]). |
 | **Node** | Headless service: watches folder roots, serves `.rehu` data over REST, participates in the swarm, runs jobs. Runs on every machine including headless ones (QNAP). No GUI. Multiple per machine (different config/data dirs, ports). Per root, **primary/local** (owns files, authoritative writer) or **remote/mounted** (serves a mount it doesn't own) — chosen at folder-add ([[mounts-and-storage#folder-add]]). Independent lifecycle from the agent ([[nodes#two-roles]]). |
 | **Task queue / dock** | Visible, app-wide queue of slow operations (checksum, sync, scans, copies, node-notify, benchmarking, safe moves). Pause/resume/cancel/reorder. Multi-selecting serializes work rather than running it all at once. All background swarm chatter lives here, surfaced as status not a blocking gate ([[nodes#readiness-per-op]]). The engine and the decisions behind it are [[appendices.task-queue]]. |

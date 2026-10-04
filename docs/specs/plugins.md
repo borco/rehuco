@@ -811,7 +811,7 @@ its browser/editor contributed by its plugin ([[plugins#browsers]]). All three a
   record timestamps. Nothing materializes as a side effect of browsing.
 - **The entity document is the source of truth — but never retroactively.** When a genuine entity exists, its item
   list decides membership. A membership change is **one logical operation writing both documents** (the child's entry
-  and the entity's list — the agent is a node client, each document keeps its single writer), never two independent
+  and the entity's list — each document keeps its single writer, [[data-model#write-integrity]]), never two independent
   field edits. A child-side entry the entity doesn't carry is pruned **only when the entity is known newer** (a
   version comparison, [[sync#overview]] — never blind precedence), the prune is a **logged event**, and a genuinely
   concurrent child-add vs. entity-edit is *surfaced*, not auto-lost — the same asymmetric-stakes rule as

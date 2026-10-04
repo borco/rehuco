@@ -74,6 +74,15 @@ the cache keys its rows on, so relabeling, reordering or re-pointing it orphans 
 off by default and changeable at any time, marking a folder that lives on whatever removable device — a CD, a USB
 stick or drive — is mounted there.
 
+**A root is a local folder or a reference into a node** (#409). An entry either names a folder on this machine, or
+points at a root another node serves — or at a folder under one — by node, root and relative path
+([[nodes#access-seam]]). So a `.rehuco` the agent opens is a **view**: one can show everything the swarm exposes, another
+only `mini2 / Tutorials / Blender`, and views own nothing, so any number of them may point into the same root. There is
+no swarm mode to switch: out of a swarm, node references have no node to resolve and show as unavailable — kept, not
+removed — while local folders work as always. Who reaches a local folder follows the owner rule: through the node in
+the agent's swarm that owns it, otherwise directly ([[multiplicity#instances]]). A node serves a `.rehuco` too — its
+instance config names it — and every root in it is a local folder that node owns.
+
 **Do not put swarm-identical data in `.rehuco`.** Users, hashes, and access rules are swarm-wide and must be identical
 on every node; they belong with the propagated swarm registry ([[discovery-trust-access#user-auth]],
 [[discovery-trust-access#access-control]]), *not* in this per-machine file. The dividing line: `.rehuco` holds what is
@@ -343,3 +352,19 @@ The system chooses *how* to perform a move/rename rather than assuming:
   by the node local to the target FS) → delete the source **only if verification passes**. The source retains its
   instance-registry entry ([[instances-and-dedup#instance-registry]]) until target verification succeeds, so an
   interrupted move is always recoverable and never loses data.
+
+**One verified copy, three uses** (#339, #409). The checksum-gated sequence is built as a reusable **verified copy** —
+the source verified against its checksum record, the bytes copied, the copy verified on the target — and the moves
+and borrows are made from it:
+
+| Operation | Built as |
+| --- | --- |
+| Move to another filesystem | verified copy, then delete the source only if the target verified (#339) |
+| Borrow onto a node | verified copy, no delete; the copy becomes a borrowed instance ([[borrowing#another-instance-role]]) |
+| Move to a root on **another node** | verified copy between nodes, then delete the source only if the target verified |
+
+**Between nodes**, the source verifies on the node that owns it, the bytes go node to node (never through the agent),
+and the copy verifies on the target node; both nodes' instance-registry entries stay until that verification passes,
+so an interrupted transfer is recoverable from either side. A different node is always the copy path — a rename
+cannot cross machines. The job records each end as a root and a root-relative path ([[nodes#access-seam]]), never an
+absolute path, so it survives restarts and runs on the nodes that own the files.

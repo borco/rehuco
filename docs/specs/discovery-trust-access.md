@@ -185,7 +185,8 @@ to propagate grants. Concrete consequence: because grants propagate like members
 catches up on reconnect — so access is consistent regardless of which node a user logs into.
 
 **Enforcement is server-side, at the serving node — never client-side.** Because the web client is a dumb browser
-([[borrowing#vacation-topology]]) and the Qt app is just a node client ([[nodes#two-roles]]), the only trustworthy
+([[borrowing#vacation-topology]]) and the Qt app reaches another node's resources only through it
+([[nodes#two-roles]]), the only trustworthy
 filter is the node answering the request: it knows who the user is (authenticated session,
 [[discovery-trust-access#user-auth]]), holds the propagated access rules, and **filters the catalog before sending
 anything back**. The user never receives a full list with disallowed items merely hidden in the UI — the node simply
@@ -247,3 +248,35 @@ and defending against a member who kept a copy is an explicit non-goal. **Partia
 [[discovery-trust-access#serve-after-resync]]:** revocation *does* take effect the instant that laptop rejoins the swarm
 (its `.rehusw` resync pulls the updated rules and it enforces from then on) — the hole is specifically a copy that
 *never reconnects*; any node that ever comes back online closes its own hole on next sync.
+
+## §6.12 Remote administration and the agent-hosted node
+
+[[[discovery-trust-access#remote-admin]]]
+
+- [#409: docs: access seam, owning-node rule, views, node hosting and instances](https://github.com/borco/rehuco/issues/409)
+
+Bringing up a node on a new box should take an admin almost nothing — install it, run it, approve it — and once paired
+it is configured from any agent an admin is logged into ([[discovery-trust-access#admin-portability]]). A node can
+also be hosted by an agent ([[nodes#two-roles]]), so it listens on a laptop wherever the laptop goes. Both widen what
+the network can reach, so the rules below come with them:
+
+- **Two kinds of route, one API.** Node↔node and agent↔node routes require mutual TLS pinned to device IDs
+  ([[discovery-trust-access#node-identity-pairing]]) **and** a user session token; the web UI's routes require a login.
+  The separation is the trust model, not a second protocol ([[nodes#overview]]).
+- **The web UI needs a login whenever another machine can reach it.** A node with no login configured listens on
+  loopback only — the default for a hosted node on a fresh install, so turning the setting on never exposes anything by
+  surprise. The first time a node listens beyond loopback, the OS firewall asks, as it should.
+- **Settings are swarm-managed or machine-local, and the node enforces which.** Swarm-managed: roots and their labels,
+  the watch node, root caching, plugin choices — editable by an admin from any agent. Machine-local: **anything that
+  names a program or a script to run** (the ffprobe path, the VLC path, scraper scripts) and folder locations —
+  editable only on that machine. Otherwise remote configuration would be remote code execution on every node.
+- **An optional allowed-root-folders limit**, machine-local. Adding a root makes everything the node can read under it
+  browsable and servable; at household scale the admin is trusted, and the limit is for a box whose owner wants a cap
+  anyway.
+- **Pairing is never automatic.** A fresh node waits for an admin to compare its device ID
+  ([[discovery-trust-access#node-identity-pairing]]); "little to deploy" never means "first to claim it wins", which a
+  rogue device on the LAN could win.
+- **Remote file operations wait for revocable admins.** An admin account that can rename and delete on every node is
+  the swarm's largest blast radius. Deletions already go to the Recycle Bin and the activity log records who did what,
+  but [[discovery-trust-access#admin-portability]]'s open question — can an admin identity be revoked? — is settled
+  before remote mutations ship (#436).
