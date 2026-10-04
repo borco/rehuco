@@ -20,7 +20,9 @@ Changelogs are per package in this monorepo, matching the per-package release ta
   forward only. A cache newer than the build, or a file that is not a database, is discarded and rebuilt.
   Reconciling against a `.rehuco` keeps a relabeled or re-pointed root's rows. Removing a root deletes its
   rows and frees their space. Rows can be read whole or narrowed by free text and `folder`, `authors`,
-  `tags`, `publishers` and `type` tokens.
+  `tags`, `publishers` and `type` tokens, each token driven from an index rather than a scan: a value token
+  through the value's name index, a `folder` token through the root label (ASCII case ignored) and a `path_key`
+  range beneath it, folded as the filesystem folds paths.
 - A full scan of one root (`CatalogRootScan`, queued as `ScanCatalogRootJob`), and root removal as
   `RemoveCatalogRootJob`. The scan reads every `.rehu`, and every `.tc` no same-stem `.rehu` sits beside. A
   record that will not read keeps a row naming why. A root that does not list keeps its rows; a scan whose

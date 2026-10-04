@@ -1,12 +1,13 @@
 """The bare resource table over the cache: one row per record, four columns (#377)."""
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Final, override
 from uuid import UUID
 
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, QPersistentModelIndex, Qt
-from rehuco_core import CatalogRow
+from rehuco_core import CatalogRow, RecordKind, catalog_type_fields
 
 AUTHORS_COLUMN: Final = 0
 TITLE_COLUMN: Final = 1
@@ -22,9 +23,30 @@ AUTHORS_SEPARATOR: Final = ", "
 PATH_ROLE: Final = Qt.ItemDataRole.UserRole
 """The role answering a row's absolute path -- what a double-click opens."""
 
-SIZE_ROLE: Final = Qt.ItemDataRole.UserRole + 1
-"""The role answering a row's ``current_size`` in bytes -- ``0`` for a record that states none (a legacy ``.tc``
-included) -- so a status bar can total what a view shows through any proxy over this model."""
+
+@dataclass(frozen=True, slots=True)
+class CatalogTotals:
+    """What the rows a model holds add up to (#454). ``None`` is not ``0``: ``0`` is a measurement (an empty pack), and
+    ``None`` is a record stating none, so a total says how many rows it left out.
+
+    :param count: the rows.
+    :param legacy: how many of them are legacy ``.tc`` files. Their sizes and image counts are old claims -- often a
+        literal ``0`` -- so the totals below leave them out and the status line names them instead.
+    :param size: the sum of every ``.rehu`` row's ``current_size`` that is not ``None``, in bytes.
+    :param unmeasured_size: the ``.rehu`` rows with no ``current_size``.
+    :param images: the sum of every ``.rehu`` row's ``current_count`` that is not ``None``.
+    :param unmeasured_images: the ``.rehu`` rows of a type that declares ``current_count`` and state none.
+    :param has_images: whether any ``.rehu`` row has a ``current_count`` or is of a type that declares one -- whether
+        an image total means anything for these rows.
+    """
+
+    count: int = 0
+    legacy: int = 0
+    size: int = 0
+    unmeasured_size: int = 0
+    images: int = 0
+    unmeasured_images: int = 0
+    has_images: bool = False
 
 
 class CatalogTableModel(QAbstractTableModel):
@@ -49,8 +71,14 @@ class CatalogTableModel(QAbstractTableModel):
         """The rows in the cache's own order -- what an unsorted view shows."""
         self.__rows: list[CatalogRow] = []
         self.__root_paths: dict[UUID, Path] = {}
+        self.__totals = CatalogTotals()
         self.__sort_column = -1
         self.__sort_order = Qt.SortOrder.AscendingOrder
+
+    @property
+    def totals(self) -> CatalogTotals:
+        """What the rows add up to, kept by the model so a status line reads it without calling :meth:`data`."""
+        return self.__totals
 
     def set_rows(self, rows: Sequence[CatalogRow], root_paths: Mapping[UUID, Path]) -> None:
         """Replace every row, in the sort the view last asked for.
@@ -62,8 +90,35 @@ class CatalogTableModel(QAbstractTableModel):
         self.beginResetModel()
         self.__source = list(rows)
         self.__root_paths = dict(root_paths)
+        self.__totals = self.__totalled(self.__source)
         self.__rows = self.__sorted()
         self.endResetModel()
+
+    @staticmethod
+    def __totalled(rows: Sequence[CatalogRow]) -> CatalogTotals:
+        """Add up ``rows`` in one pass; ``None`` is never read as ``0``."""
+        declares_count: dict[str, bool] = {}
+        size = unmeasured_size = images = unmeasured_images = legacy = 0
+        has_images = False
+        for entry in rows:
+            record = entry.record
+            if record.kind is RecordKind.TC:
+                legacy += 1
+                continue
+            if record.current_size is None:
+                unmeasured_size += 1
+            else:
+                size += record.current_size
+            declared = declares_count.get(record.type)
+            if declared is None:
+                declared = declares_count[record.type] = "current_count" in catalog_type_fields(record.type)
+            if record.current_count is not None:
+                images += record.current_count
+                has_images = True
+            elif declared:
+                unmeasured_images += 1
+            has_images = has_images or declared
+        return CatalogTotals(len(rows), legacy, size, unmeasured_size, images, unmeasured_images, has_images)
 
     @override
     def sort(self, column: int, order: Qt.SortOrder = Qt.SortOrder.AscendingOrder) -> None:
@@ -150,8 +205,6 @@ class CatalogTableModel(QAbstractTableModel):
         entry = self.__rows[index.row()]
         if role == PATH_ROLE:
             return self.absolute_path(index.row())
-        if role == SIZE_ROLE:
-            return entry.record.current_size or 0
         if role == Qt.ItemDataRole.ToolTipRole and entry.record.error:
             return entry.record.error
         if role != Qt.ItemDataRole.DisplayRole or not 0 <= index.column() < len(COLUMN_TITLES):

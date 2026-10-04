@@ -9,9 +9,9 @@ from pytest import fixture
 from rehuco_agent.rehuco.catalog_table_model import (
     AUTHORS_COLUMN,
     PATH_ROLE,
-    SIZE_ROLE,
     TITLE_COLUMN,
     CatalogTableModel,
+    CatalogTotals,
 )
 from rehuco_core import CatalogRecord, CatalogRow, RecordKind
 
@@ -111,24 +111,59 @@ def test_a_row_answers_its_absolute_path(model: CatalogTableModel) -> None:
     assert model.absolute_path(0) == ROOT / "python/info.rehu"
 
 
-def test_a_row_answers_its_current_size_or_zero() -> None:
-    """The size role is the record's ``current_size``; a record stating none counts as nothing.
+def test_the_totals_tell_none_from_zero_and_count_legacy_tc_apart() -> None:
+    """A measured ``0`` adds to a total, a record stating none is unmeasured, and a legacy ``.tc`` -- whose ``0`` is an
+    old claim -- is counted on its own and left out of both totals.
 
     **Test steps:**
 
-    * set one record with a size and one without
-    * verify the size role answers the size, then ``0``
+    * set a sized record, a record of ``0`` bytes, a measured pack, an empty pack, an unmeasured pack and two ``.tc``
+      files, one claiming ``0`` and one a size
+    * verify the count, the legacy count, the sum of the sizes with the rows missing one, and the images with the packs
+      missing a count
     """
+    pack = "reference_images"
     model = CatalogTableModel()
     model.set_rows(
         [
-            row(CatalogRecord("a/info.rehu", RecordKind.REHU, current_size=4096)),
-            row(CatalogRecord("b/info.tc", RecordKind.TC)),
+            row(CatalogRecord("a/info.rehu", RecordKind.REHU, type="tutorial", current_size=4096)),
+            row(CatalogRecord("b/info.rehu", RecordKind.REHU, type="tutorial", current_size=0)),
+            row(CatalogRecord("c/info.tc", RecordKind.TC, type=pack, current_size=0)),
+            row(CatalogRecord("g/info.tc", RecordKind.TC, type=pack, current_size=999)),
+            row(CatalogRecord("d.rehu", RecordKind.REHU, type=pack, current_size=100, current_count=7)),
+            row(CatalogRecord("e.rehu", RecordKind.REHU, type=pack, current_size=0, current_count=0)),
+            row(CatalogRecord("f.rehu", RecordKind.REHU, type=pack)),
         ],
         {ROOT_ID: ROOT},
     )
 
-    assert [model.index(r, 0).data(SIZE_ROLE) for r in range(2)] == [4096, 0]
+    assert model.totals == CatalogTotals(
+        count=7, legacy=2, size=4196, unmeasured_size=1, images=7, unmeasured_images=1, has_images=True
+    )
+
+
+def test_a_table_with_no_reference_image_rows_has_no_image_total() -> None:
+    """Rows of a type that declares no image count are not "unmeasured" images, and with only empty packs the total
+    still means something.
+
+    **Test steps:**
+
+    * set a tutorial and a legacy ``.tc`` of a pack type, and read the totals
+    * set only an empty pack, and read them again
+    * verify no image total, then ``0`` images with nothing missing
+    """
+    model = CatalogTableModel()
+    model.set_rows(
+        [
+            row(CatalogRecord("a/info.rehu", RecordKind.REHU, type="tutorial")),
+            row(CatalogRecord("b/info.tc", RecordKind.TC, type="reference_images")),
+        ],
+        {ROOT_ID: ROOT},
+    )
+    assert (model.totals.has_images, model.totals.unmeasured_images) == (False, 0)
+
+    model.set_rows([row(CatalogRecord("e.rehu", RecordKind.REHU, type="reference_images", current_count=0))], {})
+    assert (model.totals.has_images, model.totals.images, model.totals.unmeasured_images) == (True, 0, 0)
 
 
 def test_a_row_whose_root_is_unknown_has_no_path() -> None:
