@@ -485,6 +485,11 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
     bubbles up through it -- ``DocumentWidget`` -> ``DocumentsDock`` -> ``MainWindow`` -- to the genuine
     top-level window instead."""
 
+    filter_requested: Signal = Signal(str)
+    """Re-emits a field's clicked ``filter://`` link (an ``authors`` viewer's name, a `FilterRequester`) up the same
+    ``DocumentWidget`` -> ``DocumentsDock`` -> ``MainWindow`` hop :attr:`status_message` makes, to the window that
+    hands it to the Root Catalog ([[plugins#filter-urls]])."""
+
     record_activated: Signal = Signal(object)
     """Relays another resource's record, double-clicked in this document's Files sub-dock (#266), up to
     the window that knows how to open one.
@@ -589,6 +594,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         # StatusReporter) emits it rather than reaching for the status bar itself; collect those and
         # bubble them up through status_message, which the host relays on to MainWindow's real bar.
         self.__form.connect_status_messages(self.status_message)
+        self.__form.connect_filter_requests(self.filter_requested)
         # a clicked screenshot opens maximized here, not in the field that reported it: only this layer
         # knows the document the viewer belongs to, and it is the one that reads the user's surface
         # preference (#160)
@@ -1298,6 +1304,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         # re-route the rebuilt form's fresh fields' status messages; the outgoing form's fields drop
         # their connection as they are collected (Qt severs a dead QObject sender's connections).
         self.__form.connect_status_messages(self.status_message)
+        self.__form.connect_filter_requests(self.filter_requested)
         self.__form.connect_image_activations(self.__on_image_activated, self.__on_curated_images_changed)
         self.__form.connect_image_curations(self.__on_curation_viewer_requested, self.__on_curation_rows_changed)
         editor_min_heights = {EDITOR_IMAGES_TAB: IMAGES_DOCK_MIN_HEIGHT}

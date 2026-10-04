@@ -1,6 +1,6 @@
 """A context menu on a `QHeaderView` that shows and hides its sections, with a header state to persist."""
 
-from PySide6.QtCore import QAbstractItemModel, QByteArray, QObject, QPoint, Qt
+from PySide6.QtCore import QAbstractItemModel, QByteArray, QObject, QPoint, Qt, Signal
 from PySide6.QtWidgets import QHeaderView, QMenu
 
 
@@ -18,8 +18,15 @@ class HeaderSectionsMenu(QObject):
     and cannot disagree with it -- after a restore, after the model's column count changed, or after
     anything else hid a section.
 
+    :attr:`sections_visibility_changed` says when the menu or a restore changed which sections show, so a consumer
+    mirroring that choice elsewhere -- a filter line's column token -- can follow it. A section hidden by anyone
+    else calling the header directly is not reported: the header itself has no signal for it.
+
     :param header: the header to attach to; this object is parented to it and lives as long as it does.
     """
+
+    sections_visibility_changed: Signal = Signal()
+    """Emitted once the menu or :meth:`restore_state` has shown or hidden a section."""
 
     def __init__(self, header: QHeaderView) -> None:
         super().__init__(header)
@@ -72,6 +79,7 @@ class HeaderSectionsMenu(QObject):
         model = self.__header.model()
         if model is None:
             return False
+        hidden = self.__hidden_sections()
         snapshot = self.__header.saveState()
         restored = self.__header.restoreState(QByteArray(state))
         if restored and self.__header.count() != self.__section_count(model):
@@ -80,8 +88,10 @@ class HeaderSectionsMenu(QObject):
         if not restored or self.__visible_count() == 0:
             for section in range(self.__header.count()):
                 self.__header.setSectionHidden(section, False)
-            return False
-        return True
+            restored = False
+        if self.__hidden_sections() != hidden:
+            self.sections_visibility_changed.emit()
+        return restored
 
     def __section_count(self, model: QAbstractItemModel) -> int:
         """How many sections the model has for this header's orientation.
@@ -100,6 +110,13 @@ class HeaderSectionsMenu(QObject):
         """
         return self.__header.count() - self.__header.hiddenSectionCount()
 
+    def __hidden_sections(self) -> frozenset[int]:
+        """Which sections are hidden.
+
+        :returns: their logical indexes.
+        """
+        return frozenset(section for section in range(self.__header.count()) if self.__header.isSectionHidden(section))
+
     def __set_shown(self, section: int, shown: bool) -> None:
         """Show or hide one section, refusing to hide the last one shown.
 
@@ -108,7 +125,10 @@ class HeaderSectionsMenu(QObject):
         """
         if not shown and self.__visible_count() <= 1 and not self.__header.isSectionHidden(section):
             return
+        if self.__header.isSectionHidden(section) != shown:
+            return
         self.__header.setSectionHidden(section, not shown)
+        self.sections_visibility_changed.emit()
 
     def __on_context_menu_requested(self, position: QPoint) -> None:
         """Open the menu where the header was right-clicked.

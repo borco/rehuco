@@ -221,7 +221,7 @@ class CatalogRow:
 class CatalogQuery:
     """Which rows to read: free text over title and path, and field tokens, all of which must match.
 
-    The structure a filter line parses into (#379); parsing ``field="value"`` is the line's business, so
+    The structure a filter line parses into (#398); parsing ``field:"value"`` is the line's business, so
     this takes the tokens already split.
 
     :param text: matched case-insensitively anywhere in a title or a root-relative path; empty matches all.

@@ -10,6 +10,10 @@ from borco_pyside.theming import Glyph
 CALENDAR_ACTION_GLYPH: Final = Glyph("\ue108", "Phosphor-Bold")
 """`DateField`'s popup-calendar trailing action icon."""
 
+FILTER_PROBLEM_GLYPH: Final = Glyph("\ue4e0", "Phosphor-Bold")
+"""A table browser's filter line, while part of it could not be applied (`TableBrowser`, #398): Phosphor's
+``warning``, its tooltip saying what."""
+
 POSITIVE_RATING_GLYPH: Final = Glyph("\ue46a", "Phosphor-Fill")
 """Positive-rating stars -- see :data:`NEGATIVE_RATING_GLYPH`."""
 

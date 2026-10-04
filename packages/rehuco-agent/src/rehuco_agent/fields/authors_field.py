@@ -10,8 +10,9 @@ from typing import Final, override
 from PySide6.QtCore import QEvent, QObject, QSignalBlocker, Qt, QUrl, Signal
 from PySide6.QtGui import QCursor, QDesktopServices, QPalette
 from PySide6.QtWidgets import QApplication, QLabel, QToolTip
-from rehuco_core import AuthorEntry, author_name
+from rehuco_core import AuthorEntry, CatalogField, author_name
 
+from ..filter_urls import FILTER_SCHEME, filter_url
 from .author_url import HTTP_SCHEMES, is_http_author_url
 from .field import Field, FieldBinding, FieldEditorWidgets, FieldViewerWidgets
 from .text_list_string import TextListString
@@ -19,12 +20,6 @@ from .widgets import AuthorsEditor, ExpandToggleButton
 from .widgets.authors_editor import SIMPLE_UNAVAILABLE_TOOLTIP
 
 LOG: Final = logging.getLogger(__name__)
-
-FILTER_SCHEME: Final = "filter"
-"""The click-to-filter internal scheme ([[plugins#filter-urls]]) -- a logged no-op here until a
-browser exists to filter against; no author-name anchor emits it yet, but the
-dispatch handler already recognizes it so it is never mistaken for an external link and sent to
-:class:`~PySide6.QtGui.QDesktopServices`."""
 
 MODE_TOOLTIP: Final = "Edit the authors as rows, with a link for each."
 """What the row's misc-column toggle offers, while both modes are on offer."""
@@ -45,10 +40,11 @@ class AuthorsField(Field[Sequence[AuthorEntry]], QObject):
     unavailable -- the mode on screen is then not the user's to choose, and a control that silently
     does nothing is worse than one that says why.
 
-    The viewer's link never auto-follows (``setOpenExternalLinks(False)``): one
-    :meth:`__on_link_activated` handler dispatches on the href's scheme instead, so a future
-    ``filter://`` anchor (:data:`FILTER_SCHEME`) can never reach
-    :class:`~PySide6.QtGui.QDesktopServices` by accident, and no other scheme is ever followed.
+    Each name is a click-to-filter link ([[plugins#filter-urls]]): clicking it emits :attr:`filter_requested`, and
+    the window sets ``authors:"<name>"`` on the Root Catalog's current browser. The viewer's links never auto-follow
+    (``setOpenExternalLinks(False)``): one :meth:`__on_link_activated` handler dispatches on the href's scheme
+    instead, so a ``filter://`` link can never reach :class:`~PySide6.QtGui.QDesktopServices`, and no scheme but it
+    and http(s) is ever followed.
     """
 
     TYPE = "authors"
@@ -84,6 +80,10 @@ class AuthorsField(Field[Sequence[AuthorEntry]], QObject):
     trap it sidesteps -- now lives at the genuine top-level owner
     (:class:`~rehuco_agent.main_window.MainWindow`), which is the one wired to a real status bar."""
 
+    filter_requested: Signal = Signal(str)
+    """Fires with a clicked name's ``filter://`` link, for the **owner to route** to the Root Catalog -- the
+    `FilterRequester` contract ([[plugins#filter-urls]])."""
+
     @override
     def make_viewer(self, binding: FieldBinding[Sequence[AuthorEntry]]) -> FieldViewerWidgets:
         label = self.Label(lambda: self.__to_html(binding.value))
@@ -116,9 +116,9 @@ class AuthorsField(Field[Sequence[AuthorEntry]], QObject):
     # region viewer
 
     def __to_html(self, entries: Sequence[AuthorEntry]) -> str:
-        """Render ``entries`` as the viewer's rich text: each name escaped, with a trailing ``(url)``
-        anchor for a strict http/https URL -- anything else (no URL, a non-http(s) scheme, a malformed
-        value) renders as if the entry carried no URL at all ([[data-model#write-integrity]]).
+        """Render ``entries`` as the viewer's rich text: each name an escaped click-to-filter link, with a
+        trailing ``(url)`` anchor for a strict http/https URL -- anything else (no URL, a non-http(s) scheme, a
+        malformed value) renders as if the entry carried no URL at all ([[data-model#write-integrity]]).
 
         The anchor's color is read from the live palette's own `QPalette.ColorRole.Link`, not left to
         Qt's rich-text engine's hardcoded default -- illegible against a dark theme otherwise, the same
@@ -130,7 +130,9 @@ class AuthorsField(Field[Sequence[AuthorEntry]], QObject):
         link_color = QApplication.palette().color(QPalette.ColorRole.Link).name()
         parts = []
         for entry in entries:
-            name_html = html.escape(author_name(entry))
+            name = author_name(entry)
+            filter_href = html.escape(filter_url(CatalogField.AUTHORS, name))
+            name_html = f'<a href="{filter_href}" style="color:{link_color};">{html.escape(name)}</a>'
             url = entry.get("url") if isinstance(entry, dict) else None
             if isinstance(url, str) and is_http_author_url(url):
                 href = html.escape(url)
@@ -140,14 +142,15 @@ class AuthorsField(Field[Sequence[AuthorEntry]], QObject):
         return TextListString.join(parts)
 
     def __on_link_activated(self, href: str) -> None:
-        """Dispatch a clicked viewer link by its scheme -- the shared shape ``tags``/``publishers``
-        will reuse once they linkify too ([[plugins#filter-urls]]).
+        """Dispatch a clicked viewer link by its scheme: a ``filter://`` one up to the owner, an http(s) one to the
+        system browser -- the shared shape ``tags``/``publishers`` will reuse once they linkify too
+        ([[plugins#filter-urls]]).
 
         :param href: the clicked anchor's href.
         """
         scheme = QUrl(href).scheme().lower()
         if scheme == FILTER_SCHEME:
-            LOG.info("click-to-filter link is not wired yet: %s", href)
+            self.filter_requested.emit(href)
         elif scheme in HTTP_SCHEMES:
             QDesktopServices.openUrl(QUrl(href))
         else:

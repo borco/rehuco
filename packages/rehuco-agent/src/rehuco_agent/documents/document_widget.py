@@ -54,6 +54,10 @@ class DocumentWidget(QMainWindow):
     would lazily create a stray bar that swallows the message); it bubbles up to ``DocumentsDock`` and on
     to the genuine top-level window instead."""
 
+    filter_requested: Signal = Signal(str)
+    """Re-emits a field's clicked ``filter://`` link (a `FilterRequester`) on up to ``DocumentsDock``, the hop
+    :attr:`status_message` makes ([[plugins#filter-urls]])."""
+
     record_activated: Signal = Signal(object)
     """Relays another resource's record, double-clicked in this document's Files sub-dock (#266), up to
     the window that knows how to open one.
@@ -107,6 +111,7 @@ class DocumentWidget(QMainWindow):
             parent=self,
         )
         self.__sub_docks.status_message.connect(self.status_message)
+        self.__sub_docks.filter_requested.connect(self.filter_requested)
         self.__sub_docks.record_activated.connect(self.record_activated)
         self.addToolBar(self.__sub_docks.toolbar)
 

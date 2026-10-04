@@ -13,6 +13,8 @@ TITLE_COLUMN: Final = 1
 TYPE_COLUMN: Final = 2
 PATH_COLUMN: Final = 3
 COLUMN_TITLES: Final = ("Authors", "Title", "Type", "Path")
+COLUMN_IDS: Final = tuple(title.lower() for title in COLUMN_TITLES)
+"""What the filter line's ``columns:`` token calls each column (#398), in column order."""
 
 AUTHORS_SEPARATOR: Final = ", "
 """Joins a record's authors into one cell, in the order the record lists them."""
