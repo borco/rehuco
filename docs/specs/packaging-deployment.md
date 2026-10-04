@@ -587,3 +587,40 @@ consumer can reach `design/icons/`, and copy only where it cannot**:
 - **The `.ico` is derived from the PNG master**, never from the SVG.
 - **Masters stay out of `src/` and `docs_dir`**, so neither the wheel nor the built site bundles
   the editable `.afdesign`.
+
+## §16.11 App folders
+
+[[[packaging-deployment#app-folders]]]
+
+- [#405: docs: spec root caching, borrowing UI, and per-file watch progress](https://github.com/borco/rehuco/issues/405)
+
+**The agent and the node share their files, per machine and OS user**, under the organization folder every borco app
+uses. What they keep: both apps' settings side by side (`rehuco-agent.ini`, and the node's own settings file), their
+caches (`.rehudb`, [[data-model#local-file-trio]]), and their durable local state — the retention store
+([[mounts-and-storage#durable-retention]]), the saved task queue, the scraper browser's persona, crash dumps. Where it
+goes follows each platform's own convention:
+
+| Platform | Settings | Durable state | Caches |
+| --- | --- | --- | --- |
+| Windows | `%LOCALAPPDATA%\borco\rehuco` | same folder | same folder |
+| macOS | `~/Library/Application Support/borco/rehuco` | same folder | same folder |
+| Linux | `$XDG_CONFIG_HOME/borco/rehuco` (`~/.config`) | `$XDG_DATA_HOME/borco/rehuco` (`~/.local/share`) | `$XDG_CACHE_HOME/borco/rehuco` (`~/.cache`) |
+
+- **One folder on Windows and macOS.** Neither platform separates settings from data by convention as Linux does, so
+  everything sits in one place there — one answer to "where are rehuco's files".
+- **Local, not roaming, on Windows.** The Roaming profile is meant for small settings that follow a user between
+  machines; this folder holds gigabytes of retained screenshots and caches that describe *this* machine's roots, so it
+  belongs in Local. One place was preferred over splitting settings (Roaming) from data (Local).
+- **Linux follows XDG**, as its users and tools expect: settings under the config directory, durable state under the
+  data directory, and disposable caches under the cache directory, which backup tools and cleaners know to skip. The
+  `XDG_*` variables are honored when set; the paths in parentheses are their defaults.
+- **Not everything in it is disposable.** Caches can be deleted and rebuilt; the retention store of a removable root,
+  per-user state not yet synced, and `.rehusw` ([[data-model#local-file-trio]]) cannot. Deleting the folder wholesale
+  loses them.
+- **Borrowed copies never go here** ([[borrowing#agent-ui]]): one borrow can be many gigabytes, so each node's borrow
+  folder is the user's choice.
+- **One folder assumes the agent and node run as the same OS user** — the launch-on-login case of
+  [[nodes#two-roles]]. A node installed as a system service runs under its own account, and so has its own folder.
+- **The move from today's location is manual.** The agent's files currently sit in a `borco/rehuco-agent` folder
+  beside its `.ini` (#361) — Roaming on Windows, `~/.config` on Linux. They are moved once, by hand — or deleted and
+  let the app recreate them — and no migration code is written for it.
