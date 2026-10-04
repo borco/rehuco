@@ -31,8 +31,9 @@ Flagging gaps so they're a deliberate choice rather than an oversight.
 - **Node identity scheme** — replaced the pairing-secret design with Syncthing-style cert-hash device IDs
   ([[discovery-trust-access#node-identity-pairing]]), where identity *is* the key and the introducer model
   ([[discovery-trust-access#membership-model]]) matches the existing hub-and-spoke choice.
-- **App/filesystem coupling** — resolved by making the Qt app always a node client ([[nodes#two-roles]]), removing the
-  local-vs-remote dual code path.
+- **App/filesystem coupling** — first resolved by making the Qt app always a node client; revised by #409: every
+  root a node owns goes through that node (on this machine too), a root no node owns is reached directly, and local
+  versus remote lives in one access seam instead of every caller ([[nodes#two-roles]], [[nodes#access-seam]]).
 - **Cross-node storage topology** — was reactive per-resource UUID matching only; now also proactive via fingerprint
   self-mapping ([[mounts-and-storage#fingerprint-map]]), which additionally guards the single-primary rule
   ([[mounts-and-storage#folder-add]]).
@@ -63,8 +64,9 @@ Flagging gaps so they're a deliberate choice rather than an oversight.
   its own registry authority, serves immediately without waiting for peers; create-swarm and single-node-forever are the
   same path.
 - **Node vs. agent split** — resolved ([[nodes#two-roles]]): node = headless service (runs everywhere incl. QNAP); agent
-  = desktop GUI (tray + viewer/editor + catalog), a node client, GUI machines only. Independent lifecycles; quitting the
-  agent leaves the node serving. "Admin" is a logged-in user's privilege, not a separate build.
+  = desktop GUI (tray + viewer/editor + catalog), through the owning node for node-owned roots, GUI machines only.
+  A service node outlives the agent; a
+  node the agent hosts (a setting, #409) stops with it. "Admin" is a logged-in user's privilege, not a separate build.
 - **App readiness / responsiveness** — resolved ([[nodes#readiness-per-op]]): per-operation readiness, not one global
   gate; local-file and cached operations never block on swarm sync; all swarm chatter is async background (task queue)
   surfaced as status.

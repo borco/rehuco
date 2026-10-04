@@ -824,14 +824,20 @@ single file received from someone; note that local-file mode [[nodes#local-vs-sw
   directory, fsync, then atomically rename over the original (POSIX same-FS rename; Windows `ReplaceFile`/`MoveFileEx`).
   A reader never sees a half-written file, and a crash mid-write leaves either the complete old file or the complete new
   file — never a torn one. This prevents *torn* files.
-- **Managed files: the owning node is the sole writer — whenever a route to it exists.** An edit to a managed `.rehu`
-  that can reach the owning node — from the agent (a node client, [[nodes#two-roles]]), from sync reconciliation, or
-  from the node itself — goes *through that node*, which serializes all writes to the file. (Consequently the
-  [[mounts-and-storage#out-of-band]] "agent edits through a mount, then notifies the node to re-read" path is **retired
-  as the normal editing flow** — the agent asks the node to make the change rather than writing the file the node also
-  writes.) When no route exists (local-file mode with no session or no reachable node, [[nodes#local-vs-swarm]]), the
-  agent may still write the file directly: that is a tolerated **out-of-band change**, detected and reintegrated via
-  [[mounts-and-storage#out-of-band]] (notification, verify-on-access, or scan) rather than prevented. Atomic writes
+- **Managed files: the owning node is the sole writer.** Every operation on a root a node owns — from an agent on any
+  machine, **including that node's own machine** and an agent that hosts the node itself, from sync reconciliation, or
+  from another node — goes *through that node*, which serializes all writes to the file ([[nodes#access-seam]],
+  #409). The agent writes directly only where no node in its current swarm owns the root, or the file is unmanaged
+  (below). (Consequently the [[mounts-and-storage#out-of-band]] "agent edits through a mount, then notifies the node
+  to re-read" path is **retired as the normal editing flow** — the agent asks the node to make the change rather than
+  writing the file the node also writes.) **When the owning node is not running** — stopped, crashed, still starting —
+  the agent does **not** fall back to writing the file: an edit is refused with the reason ("the node for this root
+  isn't running"), and a node the agent hosts can be restarted from there. Two writers never touch a managed file by
+  the app's own hand. An agent outside the owner's swarm opens the file read-only — the root's claim names its owner
+  ([[multiplicity#instances]]). What remains out-of-band is what happens outside the app — a text editor, a file
+  manager, another tool ([[nodes#local-vs-swarm]]) — detected and
+  reintegrated via [[mounts-and-storage#out-of-band]] (notification, verify-on-access, or scan) rather than
+  prevented. Atomic writes
   bound the residual race to lose-one-never-corrupt, and reintegration is ordered by the **version vector**
   ([[sync#overview]]), not a scalar counter: if the file's embedded vector still matches the node's last-read state, the
   out-of-band edit is a clean fast-forward (the node integrates it and bumps its own component); if the node advanced

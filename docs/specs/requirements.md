@@ -33,8 +33,9 @@ Consolidated list of requirements established across discussion, checked against
 - Seamless node handoff during active playback ([[mounts-and-storage#node-handoff]]).
 - Web UI usable from an iPad as a thin client served by a node — a household always-on box at home, or the laptop's node
   while away ([[borrowing#vacation-topology]]).
-- The Qt app connects to any node on the LAN and always operates as a node client, even on the same machine; editing a
-  node's `.rehuco` browses that node's files ([[nodes#two-roles]]).
+- The Qt app reaches every root a node owns through that node — on this machine too — and a root no node owns
+  directly, browsing, viewing, playing and editing them alike ([[nodes#access-seam]]); it can host this machine's
+  node while it runs; editing a node's `.rehuco` browses that node's files ([[nodes#two-roles]]).
 - Tolerating offline mounts without blocking — a node keeps serving when a mounted source box (e.g. the TS-230) is
   powered off ([[mounts-and-storage#offline-mounts]]).
 - Self-mapping of shared storage across nodes via fingerprint files, including detection of double-primary
