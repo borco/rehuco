@@ -7,9 +7,6 @@ from typing import Final
 
 from borco_pyside.theming import Glyph
 
-CLEAR_ACTION_GLYPH: Final = Glyph("\ue0ae", "Phosphor-Bold")
-"""`QLineEdit` clear action's icon ([[plugins#field-toolkit]], ``app.py``)."""
-
 CALENDAR_ACTION_GLYPH: Final = Glyph("\ue108", "Phosphor-Bold")
 """`DateField`'s popup-calendar trailing action icon."""
 
