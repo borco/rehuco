@@ -44,6 +44,7 @@ from rehuco_agent.main_window import (
     DOCUMENTS_DOCK_OBJECT_NAME,
     LOG_DOCK_OBJECT_NAME,
     LOG_DOCK_TITLE,
+    NO_CATALOG_TO_FILTER_MESSAGE,
     REHUCO_DOCK_OBJECT_NAME,
     SETTINGS_DIALOG_OBJECT_NAME,
     TASK_QUEUE_DOCK_OBJECT_NAME,
@@ -287,6 +288,39 @@ def test_a_documents_dock_status_message_shows_on_the_status_bar(qtbot: QtBot) -
 
     documents_dock.status_message.emit("")
     assert window.statusBar().currentMessage() == ""
+
+
+def test_a_documents_dock_filter_link_reaches_the_root_catalog_and_brings_it_forward(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """A clicked ``filter://`` link relayed up by ``DocumentsDock`` is handed to the Root Catalog, which is brought
+    forward when it took the filter; with no catalog to take it, the status bar says so ([[plugins#filter-urls]]).
+
+    **Test steps:**
+
+    * construct a real ``MainWindow`` with the Root Catalog's ``apply_filter_url`` standing in, taking the filter
+    * emit the documents dock's ``filter_requested``
+    * verify the link reached the catalog and its dock was brought forward
+    * make the catalog refuse it and emit again
+    * verify the status bar says there is no catalog to filter
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    documents_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    rehuco_dock = window._MainWindow__rehuco_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    apply = mocker.patch.object(rehuco_dock, "apply_filter_url", return_value=True)
+    reveal = mocker.patch.object(window, "_MainWindow__reveal_rehuco_dock")
+
+    documents_dock.filter_requested.emit("filter://authors?name=Alice")
+
+    apply.assert_called_once_with("filter://authors?name=Alice")
+    reveal.assert_called_once()
+
+    apply.return_value = False
+    documents_dock.filter_requested.emit("filter://authors?name=Alice")
+
+    assert window.statusBar().currentMessage() == NO_CATALOG_TO_FILTER_MESSAGE
+    reveal.assert_called_once()
 
 
 def test_settings_dock_toggle_action_is_added_to_the_action_bar(qtbot: QtBot) -> None:

@@ -395,6 +395,28 @@ def test_status_message_relays_from_a_document_widget(mocker: MockerFixture, qtb
     assert relayed == ["https://example.com/alice"]
 
 
+def test_a_filter_link_relays_from_a_document_widget(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A document's clicked ``filter://`` link is relayed up for ``MainWindow`` to hand to the Root Catalog, the
+    hop ``status_message`` makes ([[plugins#filter-urls]]).
+
+    **Test steps:**
+
+    * open a document and connect a spy to the dock's ``filter_requested``
+    * emit the widget's own ``filter_requested``
+    * verify the dock relayed it on
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.open_document(FAKE_PATH)
+
+    relayed: list[str] = []
+    dock.filter_requested.connect(relayed.append)
+    widget.filter_requested.emit("filter://authors?name=Alice")
+
+    assert relayed == ["filter://authors?name=Alice"]
+
+
 def test_an_open_request_relays_from_a_document_widget(mocker: MockerFixture, qtbot: QtBot) -> None:
     """Another resource double-clicked in a document's Files sub-dock is relayed up rather than opened
     here (#266), even though :meth:`open_document` is right there: opening is more than making a dock,

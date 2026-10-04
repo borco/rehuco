@@ -199,6 +199,81 @@ def test_the_last_visible_section_cannot_be_hidden(setup: Setup) -> None:
     assert not setup.header.isSectionHidden(0)
 
 
+def test_toggling_an_action_announces_the_change_of_visibility(setup: Setup, qtbot: QtBot) -> None:
+    """Each section the menu hides or shows is announced, so a consumer mirroring the choice can follow it.
+
+    **Test steps:**
+
+    * uncheck the first action, then check it again
+    * verify each announced the change
+    """
+    menu = setup.menu.build_menu()
+
+    with qtbot.waitSignal(setup.menu.sections_visibility_changed):
+        menu.actions()[0].setChecked(False)
+    with qtbot.waitSignal(setup.menu.sections_visibility_changed):
+        menu.actions()[0].setChecked(True)
+
+
+def test_a_refused_hide_of_the_last_section_announces_nothing(setup: Setup, qtbot: QtBot) -> None:
+    """Nothing changed, so nothing is said.
+
+    **Test steps:**
+
+    * hide all but the first section, then uncheck its action anyway
+    * verify no change was announced
+    """
+    setup.header.setSectionHidden(1, True)
+    setup.header.setSectionHidden(2, True)
+    menu = setup.menu.build_menu()
+
+    with qtbot.assertNotEmitted(setup.menu.sections_visibility_changed):
+        menu.actions()[0].setChecked(False)
+
+
+def test_an_action_for_a_section_already_so_announces_nothing(setup: Setup, qtbot: QtBot) -> None:
+    """A menu built before something else hid a section changes nothing by unchecking it again, and says nothing.
+
+    **Test steps:**
+
+    * build the menu, then hide the first section on the header directly
+    * uncheck the first action, still checked from when the menu was built
+    * verify the section stays hidden and no change was announced
+    """
+    menu = setup.menu.build_menu()
+    setup.header.setSectionHidden(0, True)
+
+    with qtbot.assertNotEmitted(setup.menu.sections_visibility_changed):
+        menu.actions()[0].setChecked(False)
+
+    assert setup.header.isSectionHidden(0)
+
+
+def test_a_restore_announces_a_change_of_visibility_and_only_a_change(setup: Setup, qtbot: QtBot) -> None:
+    """A restore that hides or shows a section is announced like a toggle, including the show-all fallback; one
+    that leaves every section as it was is not.
+
+    **Test steps:**
+
+    * save a state with a section hidden, show it again, and restore that state
+    * verify the change was announced
+    * restore the same state again
+    * verify nothing was announced
+    * restore bytes the header refuses
+    * verify the fallback showing every section was announced
+    """
+    setup.header.setSectionHidden(1, True)
+    state = setup.menu.save_state()
+    setup.header.setSectionHidden(1, False)
+
+    with qtbot.waitSignal(setup.menu.sections_visibility_changed):
+        setup.menu.restore_state(state)
+    with qtbot.assertNotEmitted(setup.menu.sections_visibility_changed):
+        setup.menu.restore_state(state)
+    with qtbot.waitSignal(setup.menu.sections_visibility_changed):
+        setup.menu.restore_state(b"not a header state")
+
+
 def test_restoring_a_saved_state_brings_back_visibility_order_and_checkmarks(setup: Setup) -> None:
     """A state saved from one header restores onto another, and the next menu reads the restored header.
 

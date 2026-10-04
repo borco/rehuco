@@ -22,6 +22,7 @@ from rehuco_agent.fields.field import (
     FieldEditorWidgets,
     FieldsTab,
     FieldViewerWidgets,
+    FilterRequester,
     ImageActivator,
     LockAware,
     StatusReporter,
@@ -737,6 +738,38 @@ def test_connect_status_messages_routes_reporting_fields_to_the_sink(qtbot: QtBo
     assert relayed == ["https://example.com/alice"]
     assert isinstance(authors, StatusReporter)
     assert not isinstance(plain, StatusReporter)
+
+
+def test_connect_filter_requests_routes_link_offering_fields_to_the_sink(
+    qtbot: QtBot, model: RehuDocumentModel
+) -> None:
+    """``connect_filter_requests`` wires each ``FilterRequester`` field's clicked ``filter://`` link into the
+    owner's sink and leaves plain fields untouched ([[plugins#filter-urls]]).
+
+    **Test steps:**
+
+    * build a form of a plain field and an ``authors`` field (a ``FilterRequester``)
+    * connect the form to a sink signal recording everything it relays
+    * click a name's link in the ``authors`` viewer
+    * verify the link reached the sink, and that only the ``authors`` field is a ``FilterRequester``
+    """
+    plain = TextField("title")
+    authors = AuthorsField("authors")
+    form = FieldsForm([plain, authors])
+    model.authors = ["Alice"]
+    viewer = authors.make_viewer(model.bind(authors)).viewer
+    assert isinstance(viewer, QLabel)
+    qtbot.addWidget(viewer)
+    sink = StatusSink()
+    relayed: list[str] = []
+    sink.message.connect(relayed.append)
+
+    form.connect_filter_requests(sink.message)
+    viewer.linkActivated.emit("filter://authors?name=Alice")
+
+    assert relayed == ["filter://authors?name=Alice"]
+    assert isinstance(authors, FilterRequester)
+    assert not isinstance(plain, FilterRequester)
 
 
 def empty_scanner(mocker: MockerFixture) -> object:

@@ -1,4 +1,5 @@
-"""Tests for the table browser: a catalog's rows as a table, with a status line and a state worth remembering (#396)."""
+"""Tests for the table browser: a catalog's rows as a table under a filter line, with a status line and a state worth
+remembering (#396, #398)."""
 
 from collections.abc import Iterator
 from pathlib import Path
@@ -8,9 +9,10 @@ from PySide6.QtCore import QModelIndex, Qt
 from pytest import fixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.rehuco import TableBrowser
-from rehuco_agent.rehuco.catalog_table_model import TITLE_COLUMN
+from rehuco_agent.rehuco.catalog_table_model import COLUMN_IDS, TITLE_COLUMN
+from rehuco_agent.rehuco.table_browser import FILTER_HELP, FILTER_SETTLE_MS
 from rehuco_agent.settings.catalog_state_store import TABLE_BROWSER_KIND, BrowserState
-from rehuco_core import CatalogRecord, CatalogRow, RecordKind
+from rehuco_core import CatalogField, CatalogQuery, CatalogRecord, CatalogRow, RecordKind
 
 ROOT_ID = uuid4()
 ROOT_PATH = Path("/fake/root")
@@ -184,3 +186,216 @@ def test_renaming_a_browser_shows_in_its_state(browser: TableBrowser) -> None:
     browser.name = "Everything"
 
     assert browser.state().name == "Everything"
+
+
+# region the filter line
+
+
+def hidden_columns(browser: TableBrowser) -> list[str]:
+    """Which columns the browser's header hides.
+
+    :param browser: the browser.
+    :returns: their ids, in column order.
+    """
+    header = browser.view.horizontalHeader()
+    return [column for section, column in enumerate(COLUMN_IDS) if header.isSectionHidden(section)]
+
+
+def set_column_shown(browser: TableBrowser, column: str, shown: bool) -> None:
+    """Check or uncheck one column in the header's own menu, as a reader would.
+
+    :param browser: the browser.
+    :param column: the column's id.
+    :param shown: whether to show it.
+    """
+    menu = browser.sections_menu.build_menu()
+    action = next(action for action in menu.actions() if action.text().lower() == column)
+    action.setChecked(shown)
+    menu.deleteLater()
+
+
+def test_typing_applies_the_filter_once_the_text_settles(qtbot: QtBot, browser: TableBrowser) -> None:
+    """The rows are asked for once per pause in typing, not once per keystroke.
+
+    **Test steps:**
+
+    * type a token into the line
+    * verify the query is unchanged right after, then changes once, carrying the token
+    """
+    with qtbot.waitSignal(browser.query_changed, timeout=FILTER_SETTLE_MS * 10) as changed:
+        qtbot.keyClicks(browser.filter_edit, "type:tutorial")
+        assert browser.query == CatalogQuery()
+    assert changed.args == [CatalogQuery("", ((CatalogField.TYPE, "tutorial"),))]
+    assert browser.filter_text == "type:tutorial"
+
+
+def test_enter_applies_the_filter_without_waiting(qtbot: QtBot, browser: TableBrowser) -> None:
+    """Enter is the reader saying they are done typing.
+
+    **Test steps:**
+
+    * type a word and press Enter
+    * verify the query carries it at once
+    """
+    qtbot.keyClicks(browser.filter_edit, "blender")
+    qtbot.keyClick(browser.filter_edit, Qt.Key.Key_Return)
+
+    assert browser.query == CatalogQuery("blender")
+
+
+def test_a_change_of_columns_alone_asks_for_no_rows(qtbot: QtBot, browser: TableBrowser) -> None:
+    """Showing other columns reads nothing again.
+
+    **Test steps:**
+
+    * set a line that only names columns
+    * verify no query change was announced
+    """
+    with qtbot.assertNotEmitted(browser.query_changed):
+        browser.set_filter_text("columns:title")
+
+
+def test_the_columns_token_shows_the_columns_it_names_and_hides_the_rest(browser: TableBrowser) -> None:
+    """One string says which columns show.
+
+    **Test steps:**
+
+    * name two columns on the line
+    * verify the other two are hidden
+    * take the token away by naming all four
+    * verify none is hidden
+    """
+    browser.set_filter_text("columns:authors,title")
+    assert hidden_columns(browser) == ["type", "path"]
+
+    browser.set_filter_text("columns:authors,title,type,path")
+    assert not hidden_columns(browser)
+
+
+def test_hiding_a_column_from_the_header_menu_writes_the_columns_token(browser: TableBrowser) -> None:
+    """The header menu and the token stay in step: the line always says which columns show.
+
+    **Test steps:**
+
+    * type some free text, then uncheck Path in the header menu
+    * verify the line keeps the text and gains a token naming the three shown columns
+    * check Path again
+    * verify the token is gone, every column showing
+    """
+    browser.set_filter_text("intro")
+
+    set_column_shown(browser, "path", False)
+    assert browser.filter_text == "intro columns:authors,title,type"
+    assert hidden_columns(browser) == ["path"]
+
+    set_column_shown(browser, "path", True)
+    assert browser.filter_text == "intro"
+    assert not hidden_columns(browser)
+
+
+def test_every_column_shown_again_with_no_columns_token_leaves_the_line_alone(browser: TableBrowser) -> None:
+    """With nothing on the line to take back, showing every column writes nothing.
+
+    **Test steps:**
+
+    * type some free text and hide a column on the header directly, so no token says so
+    * restore a header state showing every column through the header's menu
+    * verify the line is unchanged and every column shows
+    """
+    browser.set_filter_text("intro")
+    every_column = browser.sections_menu.save_state()
+    browser.view.horizontalHeader().setSectionHidden(0, True)
+
+    browser.sections_menu.restore_state(every_column)
+
+    assert browser.filter_edit.text() == "intro"
+    assert not hidden_columns(browser)
+
+
+def test_an_unknown_field_is_reported_on_the_line(browser: TableBrowser) -> None:
+    """What the line cannot apply is shown on it, and nothing once it can apply it all.
+
+    **Test steps:**
+
+    * set a line with an unknown field
+    * verify the problem is reported, by a visible warning action and the line's tooltip
+    * set a line it can apply
+    * verify the warning is gone and the tooltip is the grammar alone
+    """
+    browser.set_filter_text("colour:red")
+
+    assert browser.filter_problems == ('Unknown field "colour"',)
+    warning = next(action for action in browser.filter_edit.actions() if action.toolTip() == 'Unknown field "colour"')
+    assert warning.isVisible()
+    assert browser.filter_edit.toolTip().startswith('Unknown field "colour"\n\n')
+
+    browser.set_filter_text("type:tutorial")
+
+    assert not warning.isVisible()
+    assert browser.filter_edit.toolTip() == FILTER_HELP
+
+
+def test_a_browser_built_from_a_state_applies_its_filter_and_columns(qtbot: QtBot) -> None:
+    """A remembered filter is applied, not only shown.
+
+    **Test steps:**
+
+    * build a browser from a state whose filter names a type and two columns
+    * verify the line, the query and the hidden columns
+    """
+    state = BrowserState(uuid4(), TABLE_BROWSER_KIND, "Tutorials", "type:tutorial columns:title,path")
+    browser = TableBrowser(state)
+    qtbot.addWidget(browser)
+
+    assert browser.filter_edit.text() == state.filter
+    assert browser.query == CatalogQuery("", ((CatalogField.TYPE, "tutorial"),))
+    assert hidden_columns(browser) == ["authors", "type"]
+
+
+def test_the_state_and_a_clone_carry_the_line_as_typed(qtbot: QtBot, browser: TableBrowser) -> None:
+    """What is on the line when the catalog is left is what comes back, settled or not.
+
+    **Test steps:**
+
+    * type a token without waiting for it to settle
+    * verify the state and a clone state both carry it
+    """
+    qtbot.keyClicks(browser.filter_edit, "tags:python")
+
+    assert browser.state().filter == "tags:python"
+    assert browser.clone_state("Copy").filter == "tags:python"
+
+
+def test_setting_a_token_replaces_its_field_on_the_line_and_applies_it(browser: TableBrowser) -> None:
+    """What a click-to-filter link does to a browser.
+
+    **Test steps:**
+
+    * set a line with free text and an authors token
+    * set another author
+    * verify the line and the query carry the new author only, the text kept
+    """
+    browser.set_filter_text("intro authors:Old")
+
+    browser.set_token("authors", "Foo Bar")
+
+    assert browser.filter_text == 'intro authors:"Foo Bar"'
+    assert browser.query == CatalogQuery("intro", ((CatalogField.AUTHORS, "Foo Bar"),))
+
+
+# endregion
+
+
+def test_clearing_the_line_applies_once_it_settles(qtbot: QtBot, browser: TableBrowser) -> None:
+    """A clear button empties the line without a keystroke, and the rows still follow.
+
+    **Test steps:**
+
+    * apply a token, then clear the line the way a clear button does
+    * verify the query goes back to matching everything once the text settles
+    """
+    browser.set_filter_text("type:tutorial")
+
+    with qtbot.waitSignal(browser.query_changed, timeout=FILTER_SETTLE_MS * 10) as changed:
+        browser.filter_edit.clear()
+    assert changed.args == [CatalogQuery()]
