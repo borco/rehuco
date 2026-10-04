@@ -6,7 +6,7 @@ from typing import NamedTuple
 from borco_pyside.widgets.line_edit_clear_action import LineEditClearActionFilter
 from PySide6.QtCore import QEvent, QObject, QSignalBlocker
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QApplication, QComboBox, QLineEdit, QSpinBox, QWidget
+from PySide6.QtWidgets import QApplication, QComboBox, QLineEdit, QSpinBox, QStyle, QWidget
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -27,21 +27,22 @@ def installed_filter(qtbot: QtBot) -> Iterator[LineEditClearActionFilter]:
     del qtbot
     app = QApplication.instance()
     assert isinstance(app, QApplication)
-    line_edit_filter = LineEditClearActionFilter("x", "Arial")
+    line_edit_filter = LineEditClearActionFilter()
     app.installEventFilter(line_edit_filter)
     yield line_edit_filter
     app.removeEventFilter(line_edit_filter)
 
 
-def test_showing_a_line_edit_adds_a_hidden_trailing_action(
+def test_showing_a_line_edit_adds_a_hidden_trailing_action_drawn_as_qts_clear_button(
     installed_filter: LineEditClearActionFilter, qtbot: QtBot
 ) -> None:
-    """Showing a QLineEdit gets it a trailing action, invisible while it holds no text.
+    """Showing a QLineEdit gets it a trailing action, invisible while it holds no text, drawn with the
+    style's own clear icon (#406).
 
     **Test steps:**
 
     * show a fresh, empty QLineEdit
-    * verify it now has exactly one trailing action, and it's hidden
+    * verify it now has exactly one trailing action, hidden, whose icon is the style's clear icon
     """
     del installed_filter
     line_edit = QLineEdit()
@@ -52,6 +53,28 @@ def test_showing_a_line_edit_adds_a_hidden_trailing_action(
     actions = line_edit.actions()
     assert len(actions) == 1
     assert actions[0].isVisible() is False
+    expected = line_edit.style().standardIcon(QStyle.StandardPixmap.SP_LineEditClearButton, None, line_edit)
+    assert actions[0].icon().pixmap(16).toImage() == expected.pixmap(16).toImage()
+
+
+def test_a_line_edit_showing_qts_own_clear_button_gets_no_second_one(
+    installed_filter: LineEditClearActionFilter, qtbot: QtBot
+) -> None:
+    """A line edit that turned Qt's clear button on itself keeps that one alone (#406).
+
+    **Test steps:**
+
+    * turn on Qt's clear button on a fresh line edit, then show it
+    * verify the filter added no action of its own
+    """
+    del installed_filter
+    line_edit = QLineEdit()
+    line_edit.setClearButtonEnabled(True)
+    qtbot.addWidget(line_edit)
+
+    line_edit.show()
+
+    assert line_edit.actions() == []
 
 
 def test_the_action_becomes_visible_once_the_line_edit_holds_text(
@@ -377,3 +400,25 @@ def test_a_show_after_the_action_dies_re_equips_a_working_one(
     assert isValid(actions[0])
     line_edit.setText("hello")
     assert actions[0].isVisible() is True
+
+
+def test_a_removed_filter_equips_nothing_more(qtbot: QtBot) -> None:
+    """Once the filter is taken off the app, a line edit shown after it gets no clear action.
+
+    **Test steps:**
+
+    * install the filter on the app and remove it again
+    * show a fresh line edit
+    * verify it carries no action
+    """
+    app = QApplication.instance()
+    assert isinstance(app, QApplication)
+    line_edit_filter = LineEditClearActionFilter()
+    app.installEventFilter(line_edit_filter)
+    app.removeEventFilter(line_edit_filter)
+    line_edit = QLineEdit()
+    qtbot.addWidget(line_edit)
+
+    line_edit.show()
+
+    assert line_edit.actions() == []

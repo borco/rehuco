@@ -37,6 +37,7 @@ from rehuco_agent.resource_events import ResourceEvents
 from rehuco_core import (
     FINISHED_JOB_STATES,
     CatalogCache,
+    CatalogField,
     CatalogRecord,
     JobControl,
     RecordKind,
@@ -1853,6 +1854,159 @@ def test_new_browser_after_closing_every_browser_shows_on_screen(dock: RehucoDoc
 
     assert len(dock.browsers) == 1
     assert is_on_screen(dock, first_browser(dock))
+
+
+# endregion
+
+# region The filter line
+
+
+def authored_record(path: str, author: str) -> CatalogRecord:
+    """A readable ``.rehu`` record by one author, as a scan of the tutorials root finds it.
+
+    :param path: its path under the root.
+    :param author: its author.
+    :returns: the record.
+    """
+    return CatalogRecord(
+        path, RecordKind.REHU, title=path, type="tutorial", authors=(author,), current_size=1, content_hash=path
+    )
+
+
+@mark.usefixtures("served")
+def test_each_browser_shows_the_rows_its_own_filter_matches(
+    mocker: MockerFixture, qtbot: QtBot, dock: RehucoDock, queue: TaskQueue
+) -> None:
+    """A filter narrows its own browser only, at once, and is kept when the rows are read again (#398).
+
+    **Test steps:**
+
+    * open a catalog with a second browser and scan in two records by different authors
+    * filter the first browser on one author
+    * verify it shows one row while the second still shows both
+    * scan again, now finding a third record by the filtered author
+    * verify the first shows its two rows and the second all three
+    """
+    scan_finding(
+        mocker, {TUTORIALS: (authored_record("a/info.rehu", "Foo Bar"), authored_record("b/info.rehu", "Baz"))}
+    )
+    dock.open_rehuco(REHUCO_PATH)
+    dock.new_browser_action.trigger()
+    first, second = dock.browsers
+    dock.scan_action.trigger()
+    qtbot.waitUntil(lambda: second.model.rowCount() == 2, timeout=WAIT_TIMEOUT_MS)
+    wait_for_jobs(qtbot, queue)
+
+    first.set_filter_text('authors:"Foo Bar"')
+
+    assert (first.model.rowCount(), second.model.rowCount()) == (1, 2)
+
+    scan_finding(
+        mocker,
+        {
+            TUTORIALS: (
+                authored_record("a/info.rehu", "Foo Bar"),
+                authored_record("b/info.rehu", "Baz"),
+                authored_record("c/info.rehu", "Foo Bar"),
+            )
+        },
+    )
+    dock.scan_action.trigger()
+    qtbot.waitUntil(lambda: second.model.rowCount() == 3, timeout=WAIT_TIMEOUT_MS)
+    wait_for_jobs(qtbot, queue)
+
+    assert first.model.rowCount() == 2
+
+
+@mark.usefixtures("served")
+def test_a_filter_link_lands_on_the_current_browser_or_the_last_one_while_roots_is_current(
+    qtbot: QtBot, dock: RehucoDock
+) -> None:
+    """``filter://authors?name=Foo%20Bar`` sets ``authors:"Foo Bar"`` on the current browser; with the Roots list
+    current, on the browser that was current before it, which is brought forward ([[plugins#filter-urls]]).
+
+    **Test steps:**
+
+    * open a catalog and add a second browser, which is then current
+    * apply an authors link; verify the second browser's line carries it and the first's does not
+    * make the Roots list current and apply a tags link
+    * verify the second browser carries both tokens and is current again
+    """
+    dock.open_rehuco(REHUCO_PATH)
+    dock.new_browser_action.trigger()
+    first, second = dock.browsers
+
+    assert dock.apply_filter_url("filter://authors?name=Foo%20Bar")
+    assert (first.filter_text, second.filter_text) == ("", 'authors:"Foo Bar"')
+
+    make_current(qtbot, dock.roots_dock)
+    assert dock.apply_filter_url("filter://tags?name=python")
+
+    assert second.filter_text == 'authors:"Foo Bar" tags:python'
+    assert dock.current_browser is second
+
+
+@mark.usefixtures("served")
+def test_a_filter_link_with_every_browser_closed_opens_a_default_browser_carrying_it(dock: RehucoDock) -> None:
+    """With nothing to filter, a link opens a browser to filter instead of doing nothing.
+
+    **Test steps:**
+
+    * open a catalog and close its only browser
+    * apply an authors link
+    * verify one new default browser, current and on screen, carrying the token
+    """
+    dock.open_rehuco(REHUCO_PATH)
+    dock.browser_dock(first_browser(dock)).closeRequested.emit()
+
+    assert dock.apply_filter_url("filter://authors?name=Foo%20Bar")
+
+    browser = first_browser(dock)
+    assert len(dock.browsers) == 1
+    assert (browser.name, browser.filter_text) == (TableBrowser.DEFAULT_NAME, 'authors:"Foo Bar"')
+    assert dock.current_browser is browser
+    assert is_on_screen(dock, browser)
+
+
+def test_a_filter_link_with_no_catalog_open_or_naming_no_filter_sets_nothing(
+    served: Any, dock: RehucoDock, caplog: LogCaptureFixture
+) -> None:
+    """Nothing is set with no catalog to filter, nor for a link that is not a filter, which is logged.
+
+    **Test steps:**
+
+    * apply an authors link with nothing open; verify it was not set
+    * open a catalog and apply a link naming a field no link filters on
+    * verify it was not set, its browser's line is empty, and the link was logged
+    """
+    del served
+    assert not dock.apply_filter_url("filter://authors?name=Foo")
+
+    dock.open_rehuco(REHUCO_PATH)
+    with caplog.at_level(logging.WARNING, logger="rehuco_agent.rehuco.rehuco_dock"):
+        assert not dock.apply_filter_url("filter://colour?name=red")
+
+    assert first_browser(dock).filter_text == ""
+    assert "filter://colour?name=red" in caplog.text
+
+
+@mark.usefixtures("served")
+def test_a_filter_set_from_the_dock_replaces_that_fields_token(dock: RehucoDock) -> None:
+    """The Roots list's folder filter, through the same seam: one folder at a time, the rest of the line kept.
+
+    **Test steps:**
+
+    * open a catalog and type free text and a folder on its browser
+    * set another folder from the dock
+    * verify the line keeps the text and carries only the new folder
+    """
+    dock.open_rehuco(REHUCO_PATH)
+    browser = first_browser(dock)
+    browser.set_filter_text("intro folder:packs")
+
+    assert dock.set_filter_token(CatalogField.FOLDER, "tutorials/python")
+
+    assert browser.filter_text == "intro folder:tutorials/python"
 
 
 # endregion

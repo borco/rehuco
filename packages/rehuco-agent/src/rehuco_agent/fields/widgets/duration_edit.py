@@ -4,13 +4,10 @@ import re
 from typing import Final, cast
 
 from borco_pyside.core import SimpleProperty
-from borco_pyside.theming import GlyphActionIconThemeHandler
 from borco_pyside.widgets import equal_width_row, resync_line_edit, write_through_or_none
 from PySide6.QtCore import QSignalBlocker
-from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QLineEdit, QSpinBox, QWidget
+from PySide6.QtWidgets import QLineEdit, QSpinBox, QStyle, QWidget
 
-from ...glyphs import CLEAR_ACTION_GLYPH
 from ..colors import WARNING_COLOR
 
 
@@ -88,10 +85,11 @@ class DurationEdit(QWidget):
         # QSpinBox always has an internal line edit once constructed; cast rather than a runtime
         # None-check that could never actually be exercised (an untestable, permanently-dead branch).
         spin_box_line_edit = cast(QLineEdit, self.__spin_box.lineEdit())
-        clear_action = spin_box_line_edit.addAction(QIcon(), QLineEdit.ActionPosition.TrailingPosition)
-        GlyphActionIconThemeHandler(
-            clear_action, CLEAR_ACTION_GLYPH.codepoint, CLEAR_ACTION_GLYPH.family, parent=clear_action
+        # Qt's own clear icon, so this value reset looks like every line edit's clear button (#406)
+        clear_icon = spin_box_line_edit.style().standardIcon(
+            QStyle.StandardPixmap.SP_LineEditClearButton, None, spin_box_line_edit
         )
+        clear_action = spin_box_line_edit.addAction(clear_icon, QLineEdit.ActionPosition.TrailingPosition)
         clear_action.setToolTip("Clear")
         clear_action.setVisible(False)
         clear_action.triggered.connect(self.__clear_spin_box)

@@ -2,12 +2,18 @@
 (#377, [[plugins#rehuco-dock]], [[data-model#cache-schema]]).
 """
 
+# one cohesive module: the shell's file, its roots, its browsers and the reads that fill them all turn on the same
+# open catalog and cache, and a scoped disable reads better than an arbitrary split (same precedent as
+# document_sub_docks.py, [[appendices.code-conventions]])
+# pylint: disable=too-many-lines
+
 import logging
 import sqlite3
 import threading
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Final, cast
+from uuid import UUID
 
 import PySide6QtAds as QtAds
 from borco_core.logging import LogScope
@@ -26,7 +32,10 @@ from rehuco_core import (
     DEFAULT_RENAME_COORDINATOR,
     FINISHED_JOB_STATES,
     CatalogCache,
+    CatalogField,
+    CatalogQuery,
     CatalogRecordUpdater,
+    CatalogRow,
     JobStatus,
     RehucoFile,
     RehucoFileError,
@@ -40,6 +49,7 @@ from rehuco_core import (
 )
 
 from ..dock_maximize import attach_maximize_handler
+from ..filter_urls import filter_url_token
 from ..glyphs import TAB_CLOSE_GLYPH
 from ..resource_events import ResourceEvents
 from ..settings.catalog_state_store import CatalogState, CatalogStateStore
@@ -158,6 +168,9 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
 
         self.__browsers: Final[dict[QtAds.CDockWidget, TableBrowser]] = {}
         """Every browser's dock, in the order the browsers were added."""
+        self.__last_browser: TableBrowser | None = None
+        """The browser that was current last, which a filter set from outside lands on while the Roots list is
+        the current sub-dock."""
 
         self.__dock_manager: Final = QtAds.CDockManager(self)
         self.__focus_tracker: Final = QtAdsFocusTracker(
@@ -179,6 +192,7 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         self.__roots_selection.selectionChanged.connect(self.__update_enablement)
         self.__roots_model.modelReset.connect(self.__update_enablement)
         self.__focus_tracker.current_dock_changed.connect(self.__update_enablement)
+        self.__focus_tracker.current_dock_changed.connect(self.__remember_current_browser)
         self.__update_enablement()
         queue.add_listener(self)
         if resource_events is not None:
@@ -375,6 +389,56 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         """
         return next(dock for dock, held in self.__browsers.items() if held is browser)
 
+    def set_filter_token(self, field: CatalogField, value: str) -> bool:
+        """Filter the current browser on ``value`` in ``field``, replacing any filter on that field it had
+        ([[plugins#rehuco-dock]]): what a click-to-filter link and the Roots list's folder filter do.
+
+        The current browser is the focused one, else the one last focused -- the Roots list may be current -- else
+        the first one open. With none open, a default browser is opened to carry the filter.
+
+        :param field: the field to filter on.
+        :param value: the value, as its resource spells it.
+        :returns: whether it was set; never while no catalog is open.
+        """
+        if self.__file is None:
+            return False
+        browser = self.__filter_target()
+        if browser is None:
+            browser = self.__new_browser()
+        else:
+            self.focus_browser(browser)
+        browser.set_token(field.value, value)
+        return True
+
+    def apply_filter_url(self, url: str) -> bool:
+        """Set the filter a click-to-filter link stands for on the current browser (:meth:`set_filter_token`).
+
+        :param url: a ``filter://`` link ([[plugins#filter-urls]]).
+        :returns: whether a filter was set; not for a link that names none, nor while no catalog is open.
+        """
+        token = filter_url_token(url)
+        if token is None:
+            LOG.warning("Not a filter link: %s", url)
+            return False
+        return self.set_filter_token(*token)
+
+    def __filter_target(self) -> TableBrowser | None:
+        """The browser a filter set from outside lands on; see :meth:`set_filter_token`.
+
+        :returns: the browser, or ``None`` while none is open.
+        """
+        if self.current_browser is not None:
+            return self.current_browser
+        opened = self.open_browsers()
+        if self.__last_browser in opened:
+            return self.__last_browser
+        return opened[0] if opened else None
+
+    def __remember_current_browser(self) -> None:
+        """Keep the browser that is current now as the last one, whenever one is."""
+        if self.current_browser is not None:
+            self.__last_browser = self.current_browser
+
     @property
     def scan_action(self) -> QAction:
         """Scans every root into the cache, on the queue."""
@@ -426,22 +490,38 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
             self.__banner.set_rows(())
             return
         roots = self.__file.roots
+        matching: dict[CatalogQuery, list[CatalogRow]] = {}
         try:
             reachable = {root.root_id: root.reachable for root in self.__cache.roots()}
             wanted = {root.root_id for root in roots}
-            # a root removed from the file keeps its rows until its removal job has run; they are not shown
-            rows = [row for row in self.__cache.rows() if row.root_id in wanted]
+            # browsers filtering alike share one read
+            for browser in self.__browsers.values():
+                if browser.query not in matching:
+                    matching[browser.query] = self.__matching_rows(self.__cache, browser.query, wanted)
         except sqlite3.Error as error:
             LOG.error("Could not read the cache of %s: %s", self.__file.path, error)
             return
         self.__roots_model.set_roots(roots, reachable)
         root_paths = {root.root_id: root.path for root in roots}
         for browser in self.__browsers.values():
-            browser.set_rows(rows, root_paths)
+            browser.set_rows(matching[browser.query], root_paths)
         lock_reason = self.__file.lock_reason
         self.__banner.set_rows(
             [] if lock_reason is None else [MessageBannerRow(MessageBannerSeverity.WARNING, lock_reason.message)]
         )
+
+    @staticmethod
+    def __matching_rows(cache: CatalogCache, query: CatalogQuery, wanted: set[UUID]) -> list[CatalogRow]:
+        """The rows ``query`` matches under the roots the file lists.
+
+        :param cache: the open cache.
+        :param query: a browser's query.
+        :param wanted: the file's root ids -- a root removed from it keeps its rows until its removal job has run, and
+            they are not shown.
+        :returns: the rows, in the cache's order.
+        :raises sqlite3.Error: when the cache cannot be read.
+        """
+        return [row for row in cache.rows(query) if row.root_id in wanted]
 
     def __add_roots_dock(self) -> QtAds.CDockWidget:
         """Place the Roots list on this shell's own manager, closable: hidden by its [x] and shown again by
@@ -571,10 +651,13 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         )
         dock.setWidget(browser)
         dock.setTitleBarActions(self.__browser_actions(dock))
+        # registered before it is placed: placing it can make it the current sub-dock, and whoever hears that asks
+        # which browser it is
+        self.__browsers[dock] = browser  # pylint: disable=unsupported-assignment-operation
         self.__place(dock, beside)
         browser.row_activated.connect(self.open_requested)
+        browser.query_changed.connect(lambda: self.__fill(browser))
         dock.closeRequested.connect(lambda: self.__close_browser(dock))
-        self.__browsers[dock] = browser  # pylint: disable=unsupported-assignment-operation
         return dock
 
     def __place(self, dock: QtAds.CDockWidget, beside: QtAds.CDockWidget | None = None) -> None:
@@ -625,18 +708,26 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
 
         :param dock: the browser's sub-dock.
         """
-        self.__browsers.pop(dock, None)
+        if self.__browsers.pop(dock, None) is self.__last_browser:
+            self.__last_browser = None
         remove_dock_widget(self.__dock_manager, dock)
         dock.deleteLater()
 
     def __on_new_browser(self) -> None:
         """Add a default table browser and make it current."""
-        if self.__file is None:
-            return
+        if self.__file is not None:
+            self.__new_browser()
+
+    def __new_browser(self) -> TableBrowser:
+        """Add a default table browser, filled, and make it current.
+
+        :returns: the new browser.
+        """
         browser = TableBrowser()
         dock = self.__add_browser(browser)
         self.__fill(browser)
         self.__focus_tracker.set_current_dock(dock)
+        return browser
 
     def __on_rename_current_browser(self) -> None:
         """Rename the current browser, if one is."""
@@ -683,16 +774,15 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
             self.__update_enablement()
 
     def __fill(self, browser: TableBrowser) -> None:
-        """Give a browser added after the rows were read the rows the others show.
+        """Read one browser's rows again: a browser added after the others were read, or one whose filter changed.
 
-        :param browser: the new browser.
+        :param browser: the browser.
         """
         file, cache = self.__file, self.__cache
         if file is None or cache is None:
             return
         try:
-            wanted = {root.root_id for root in file.roots}
-            rows = [row for row in cache.rows() if row.root_id in wanted]
+            rows = self.__matching_rows(cache, browser.query, {root.root_id for root in file.roots})
         except sqlite3.Error as error:
             LOG.error("Could not read the cache of %s: %s", file.path, error)
             return

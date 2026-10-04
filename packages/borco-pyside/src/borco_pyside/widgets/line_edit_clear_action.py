@@ -3,11 +3,9 @@
 from typing import Final, override
 
 from PySide6.QtCore import QEvent, QObject
-from PySide6.QtGui import QAction, QIcon, QPalette
-from PySide6.QtWidgets import QAbstractSpinBox, QComboBox, QLineEdit
+from PySide6.QtGui import QAction
+from PySide6.QtWidgets import QAbstractSpinBox, QComboBox, QLineEdit, QStyle
 from shiboken6 import isValid
-
-from ..theming import GlyphActionIconThemeHandler
 
 ACTION_PROPERTY: Final = "_borco_clear_action"
 """The dynamic property a line edit's clear action is stashed under, read back by
@@ -28,9 +26,15 @@ moment it notices its action died, so it is never read back stale. ``setProperty
 
 
 class LineEditClearActionFilter(QObject):
-    """Adds a themed "clear text" trailing action to every plain ``QLineEdit`` app-wide, the moment
-    it is first shown -- installed once (``app.installEventFilter(...)``) so every line edit gets
-    one, including ``.ui``-file-generated line edits this app never constructs directly.
+    """Adds a "clear text" trailing action to every plain ``QLineEdit`` app-wide, the moment it is
+    first shown -- installed once (``app.installEventFilter(...)``) so every line edit gets one,
+    including ``.ui``-file-generated line edits this app never constructs directly.
+
+    **It looks like Qt's own clear button** (#406): its icon is the style's
+    ``SP_LineEditClearButton``, the one ``QLineEdit.setClearButtonEnabled`` draws, so it themes with
+    the style. It is not that button, because Qt's stays hidden after a ``setText`` made under a
+    ``QSignalBlocker`` (confirmed empirically) -- the field toolkit's echo guard -- which the resync
+    below handles. A line edit that turned Qt's button on itself is skipped, so none shows two.
 
     Skips a ``QLineEdit`` owned by a ``QAbstractSpinBox`` or an editable ``QComboBox`` (its internal
     display line edit, ``spin_box.lineEdit()`` / ``combo_box.lineEdit()``): "clear the text" and
@@ -58,23 +62,8 @@ class LineEditClearActionFilter(QObject):
     wanting its own trailing action *outside* this one (e.g. a calendar popup) must add its action
     first, at construction, before the line edit is ever shown.
 
-    :param glyph: the glyph character drawn as the action's icon.
-    :param family: the font family ``glyph`` resolves in; must already be loaded application-wide.
-    :param color_role: the palette role the glyph is colored with.
     :param parent: optional ``QObject`` parent.
     """
-
-    def __init__(
-        self,
-        glyph: str,
-        family: str,
-        color_role: QPalette.ColorRole = QPalette.ColorRole.Text,
-        parent: QObject | None = None,
-    ) -> None:
-        super().__init__(parent)
-        self.__glyph: Final = glyph
-        self.__family: Final = family
-        self.__color_role: Final = color_role
 
     @override
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
@@ -84,6 +73,7 @@ class LineEditClearActionFilter(QObject):
         if (
             event.type() == QEvent.Type.Show
             and isinstance(watched, QLineEdit)
+            and not watched.isClearButtonEnabled()
             and not self.__is_owned_display_edit(watched)
         ):
             self.__ensure_clear_action(watched)
@@ -113,8 +103,8 @@ class LineEditClearActionFilter(QObject):
         """
         if line_edit.property(ACTION_PROPERTY) is not None:
             return
-        action = line_edit.addAction(QIcon(), QLineEdit.ActionPosition.TrailingPosition)
-        GlyphActionIconThemeHandler(action, self.__glyph, self.__family, self.__color_role, parent=action)
+        icon = line_edit.style().standardIcon(QStyle.StandardPixmap.SP_LineEditClearButton, None, line_edit)
+        action = line_edit.addAction(icon, QLineEdit.ActionPosition.TrailingPosition)
         action.setToolTip("Clear")
         action.setVisible(bool(line_edit.text()))
         # as exposed to a dead action as the paint-resync filter is (#365), and guarded the same way

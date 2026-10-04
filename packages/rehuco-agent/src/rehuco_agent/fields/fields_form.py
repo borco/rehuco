@@ -14,6 +14,7 @@ from .field import (
     FieldModel,
     FieldsTab,
     FieldViewerWidgets,
+    FilterRequester,
     HeaderPinned,
     ImageActivator,
     ImageCurator,
@@ -84,6 +85,18 @@ class FieldsForm:
         for field in self.__fields:
             if isinstance(field, StatusReporter):
                 field.status_message.connect(sink)
+
+    def connect_filter_requests(self, sink: SignalInstance) -> None:
+        """Route every link-offering field's ``filter_requested`` into ``sink`` ([[plugins#filter-urls]]).
+
+        The `FilterRequester` counterpart of :meth:`connect_status_messages`, and wired the same way: once per form
+        built, the outgoing form's fields dropping the connection when they are collected.
+
+        :param sink: the owner's signal to forward each clicked ``filter://`` link into.
+        """
+        for field in self.__fields:
+            if isinstance(field, FilterRequester):
+                field.filter_requested.connect(sink)
 
     def connect_image_activations(
         self, activated: Callable[[Path], None], curated_changed: Callable[[list[Path]], None]

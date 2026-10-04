@@ -141,7 +141,10 @@ task queue. Each job walks its root and records every `.rehu` it finds, and ever
 covers, in a **`.rehudb`** cache. The cache sits in the machine's local cache folder and is named by the
 `.rehuco`'s own id, so moving the `.rehuco` keeps its cache; it is only ever a copy, rebuilt by scanning again.
 A table lists what the cache holds — authors, title, type and path — and double-clicking a row opens that resource in
-Documents. The panel also lists the roots, which can be added and removed there.
+Documents. Each table has a **filter line**: free text and `field:value` tokens (`folder`, `authors`, `tags`,
+`publishers`, `type`) narrow the rows, read from the cache again as the text settles, and a `columns:` token picks
+the columns shown. Clicking an author's name in a document sets that author on it. The panel also lists the roots,
+which can be added and removed there.
 
 The biggest user is **checksums**. Beside each resource sits a `.checksum` record of *when each of its
 files was last checked and what the answer was* — not a manifest for an external tool, which is what lets
@@ -184,9 +187,9 @@ whole folder tree at once, and `Tools` > `Conversion Backups…` discards the ba
 Everything above is implemented. None of the following is, and the design documents discuss all of it at
 length, which is exactly why this section is here:
 
-**A bare browser, and no search.** The Root Catalog panel lists what a scan found and nothing more: no filter,
-no search, no choice of columns, and no update between scans — a change made outside the app shows only after
-the next scan. The other recursive walks — the checksum sweep and the legacy import, over a folder you hand them — act
+**A plain browser.** The Root Catalog panel lists what a scan found, filtered by its line, over four columns: a
+tutorial's durations and a pack's image counts are not shown yet, and a change made outside the app shows only
+after the next scan. The other recursive walks — the checksum sweep and the legacy import, over a folder you hand them — act
 as they go and remember nothing about what they found.
 
 **No network beyond fetching a page you drop.** No node, no REST API, no discovery, no sync between
@@ -195,8 +198,8 @@ holding its name.
 
 **No playback and no progress tracking.** rehuco describes a tutorial; it does not play one.
 
-The next thing worth building is a fuller **browser** — a column view of the roots, filtering and search over the
-table, the open resource's panels beside it, and a cache that follows files as they move, so a catalog can be looked through
+The next thing worth building is a fuller **browser** — a column view of the roots, every column the cache stores,
+the open resource's panels beside it, and a cache that follows files as they move, so a catalog can be looked through
 instead of opened one file at a time. Past that, the design reaches toward machines sharing a catalog;
 whether that is worth building is a question the editor and the browser have to answer first.
 

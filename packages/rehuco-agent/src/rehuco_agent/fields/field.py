@@ -194,6 +194,20 @@ class StatusReporter(Protocol):  # pylint: disable=too-few-public-methods
 
 
 @runtime_checkable
+class FilterRequester(Protocol):  # pylint: disable=too-few-public-methods
+    """A field whose viewer offers click-to-filter links ([[plugins#filter-urls]]) -- e.g. the ``authors`` viewer's
+    names (:class:`~rehuco_agent.fields.authors_field.AuthorsField`).
+
+    The same owner-routes-it shape as `StatusReporter`: the field says *that* a value was clicked, and the owner
+    (`DocumentSubDocks`) bubbles the link up to the window, which hands it to the Root Catalog's current browser
+    (:meth:`FieldsForm.connect_filter_requests`).
+    """
+
+    filter_requested: SignalInstance
+    """Fires with the clicked ``filter://`` link."""
+
+
+@runtime_checkable
 class ImageActivator(Protocol):  # pylint: disable=too-few-public-methods
     """A field whose viewer reports that the user activated one of its images
     ([[plugins#field-toolkit]]) -- e.g. the ``images`` strip, whose thumbnails open maximized (#160).

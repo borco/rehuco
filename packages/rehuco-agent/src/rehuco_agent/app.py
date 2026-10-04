@@ -26,7 +26,6 @@ from borco_pyside.widgets import (
 from . import main_rc  # noqa: F401  # pylint: disable=unused-import  # registers :/icons/... resources
 from .app_logging import shared_log_bridge
 from .fields.colors import ERROR_COLOR, INFO_COLOR, WARNING_COLOR
-from .glyphs import CLEAR_ACTION_GLYPH
 from .linux_registration import DESKTOP_FILE_NAME
 from .main_window import MainWindow
 from .run_log import shared_run_log
@@ -86,9 +85,7 @@ class Application(QApplication):
         self.setWindowIcon(QIcon(ICON_RESOURCE))
         for font_resource in ICON_FONT_RESOURCES:
             QFontDatabase.addApplicationFont(font_resource)
-        clear_action_filter = LineEditClearActionFilter(
-            CLEAR_ACTION_GLYPH.codepoint, CLEAR_ACTION_GLYPH.family, parent=self
-        )
+        clear_action_filter = LineEditClearActionFilter(self)
         self.installEventFilter(clear_action_filter)
         # give the inline notice banner (#94) this app's own icons/brand colors for every severity it
         # uses, rather than borco-pyside's generic fallback (MessageBanner.SEVERITY_STYLES's own

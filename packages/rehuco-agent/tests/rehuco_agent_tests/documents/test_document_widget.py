@@ -897,6 +897,29 @@ def test_a_field_status_message_bubbles_up_through_the_widget(qtbot: QtBot, mode
     assert messages == ["https://example.com/alice"]
 
 
+def test_a_fields_filter_link_bubbles_up_through_the_widget(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """A clicked author name's ``filter://`` link is re-emitted by the widget for the window to hand to the Root
+    Catalog ([[plugins#filter-urls]]).
+
+    **Test steps:**
+
+    * seed one author and build the widget, then locate the label linking the name
+    * record the widget's ``filter_requested`` emissions and click the link
+    * verify the link surfaced on the widget's own signal
+    """
+    model.authors = ["Alice"]
+    widget = DocumentWidget(model)
+    qtbot.addWidget(widget)
+
+    label = next(child for child in widget.findChildren(QLabel) if 'href="filter://authors?name=Alice"' in child.text())
+    requested: list[str] = []
+    widget.filter_requested.connect(requested.append)
+
+    label.linkActivated.emit("filter://authors?name=Alice")
+
+    assert requested == ["filter://authors?name=Alice"]
+
+
 def test_save_action_triggers_the_models_save(
     mocker: MockerFixture, widget: DocumentWidget, model: RehuDocumentModel
 ) -> None:

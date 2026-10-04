@@ -1,11 +1,8 @@
 """Tests for AuthorsField: the rich-text link viewer, the two-mode editor and its misc-column toggle
 (#95, #97), and the scheme-dispatching link handlers."""
 
-import logging
-
-import pytest
 from PySide6.QtCore import QEvent
-from PySide6.QtGui import QColor, QPalette
+from PySide6.QtGui import QColor, QPalette, QTextDocumentFragment
 from PySide6.QtWidgets import QApplication, QLabel
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -33,18 +30,28 @@ def build_editor(qtbot: QtBot, model: RehuDocumentModel) -> tuple[AuthorsEditor,
     return editor, toggle
 
 
+def shown_text(viewer: QLabel) -> str:
+    """What the viewer reads as, its markup dropped.
+
+    :param viewer: the viewer label.
+    :returns: its rich text as plain text.
+    """
+    return QTextDocumentFragment.fromHtml(viewer.text()).toPlainText()
+
+
 # endregion
 
 
 # region viewer
-def test_authors_field_viewer_renders_plain_names_with_no_anchors(qtbot: QtBot, model: RehuDocumentModel) -> None:
-    """A plain-string-only list renders as comma-joined, escaped names -- no ``(url)`` anchor.
+def test_authors_field_viewer_renders_each_name_as_a_filter_link(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """A plain-string-only list renders as comma-joined names, each a click-to-filter link and none with a
+    ``(url)`` anchor ([[plugins#filter-urls]]).
 
     **Test steps:**
 
     * seed ``model.authors`` with two plain names
     * build the viewer
-    * verify the label joins them with no anchor markup
+    * verify it reads as the joined names, each linking to its ``filter://`` URL
     """
     model.authors = ["Alice", "Bob"]
     field = AuthorsField("authors")
@@ -52,8 +59,28 @@ def test_authors_field_viewer_renders_plain_names_with_no_anchors(qtbot: QtBot, 
     assert isinstance(viewer, QLabel)
     qtbot.addWidget(viewer)
 
-    assert viewer.text() == "Alice, Bob"
-    assert "<a" not in viewer.text()
+    assert shown_text(viewer) == "Alice, Bob"
+    assert 'href="filter://authors?name=Alice"' in viewer.text()
+    assert 'href="filter://authors?name=Bob"' in viewer.text()
+
+
+def test_authors_field_viewer_percent_encodes_a_name_in_its_filter_link(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """A name's filter link carries it percent-encoded whole, so a space, an ampersand or a slash survives the
+    trip ([[plugins#filter-urls]]).
+
+    **Test steps:**
+
+    * seed a name with a space, an ampersand and a slash
+    * build the viewer
+    * verify its link's ``name`` is the percent-encoded name
+    """
+    model.authors = ["Foo Bar & Co/Ltd"]
+    field = AuthorsField("authors")
+    viewer = field.make_viewer(model.bind(field)).viewer
+    assert isinstance(viewer, QLabel)
+    qtbot.addWidget(viewer)
+
+    assert 'href="filter://authors?name=Foo%20Bar%20%26%20Co%2FLtd"' in viewer.text()
 
 
 def test_authors_field_viewer_renders_an_anchor_for_a_valid_http_url(qtbot: QtBot, model: RehuDocumentModel) -> None:
@@ -71,7 +98,8 @@ def test_authors_field_viewer_renders_an_anchor_for_a_valid_http_url(qtbot: QtBo
     assert isinstance(viewer, QLabel)
     qtbot.addWidget(viewer)
 
-    assert viewer.text().startswith('Alice (<a href="https://example.com/alice" style="color:')
+    assert shown_text(viewer) == "Alice (url)"
+    assert ' (<a href="https://example.com/alice" style="color:' in viewer.text()
     assert viewer.text().endswith(">url</a>)")
 
 
@@ -94,7 +122,7 @@ def test_authors_field_viewer_renders_no_anchor_for_a_non_http_url(qtbot: QtBot,
     assert isinstance(viewer, QLabel)
     qtbot.addWidget(viewer)
 
-    assert viewer.text() == "Alice, Bob, Carol"
+    assert shown_text(viewer) == "Alice, Bob, Carol"
 
 
 def test_authors_field_viewer_escapes_html_in_a_name(qtbot: QtBot, model: RehuDocumentModel) -> None:
@@ -134,7 +162,7 @@ def test_authors_field_viewer_tracks_model_changes(qtbot: QtBot, model: RehuDocu
     qtbot.addWidget(viewer)
 
     model.authors = ["Bob", {"name": "Carol", "url": "https://example.com"}]
-    assert viewer.text().startswith('Bob, Carol (<a href="https://example.com" style="color:')
+    assert shown_text(viewer) == "Bob, Carol (url)"
     assert viewer.text().endswith(">url</a>)")
 
 
@@ -321,7 +349,7 @@ def test_authors_field_editor_and_viewer_echo_without_a_feedback_loop(qtbot: QtB
     editor.value_changed.emit(["Alice", "Bob"])
 
     assert model.authors == ["Alice", "Bob"]
-    assert viewer.text() == "Alice, Bob"
+    assert shown_text(viewer) == "Alice, Bob"
     assert editor.value == ["Alice", "Bob"]
 
 
@@ -368,29 +396,30 @@ def test_authors_field_link_activated_opens_an_http_url(
     assert open_url.call_args[0][0].toString() == "https://example.com/alice"  # pylint: disable=no-member
 
 
-def test_authors_field_link_activated_logs_a_no_op_for_a_filter_link(
-    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
+def test_authors_field_link_activated_requests_a_filter_for_a_filter_link(
+    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
 ) -> None:
-    """A ``filter://`` href is a logged no-op, never opened -- the dispatch seam for the future catalog browser
-    ([[plugins#filter-urls]]).
+    """A ``filter://`` href is handed up as :attr:`filter_requested` for the owner to route to the Root Catalog,
+    and never opened ([[plugins#filter-urls]]).
 
     **Test steps:**
 
-    * build the viewer
+    * build the viewer and record every ``filter_requested`` it emits
     * emit ``linkActivated`` with a ``filter://`` href
-    * verify ``QDesktopServices.openUrl`` was never called and the href was logged
+    * verify it was requested once and ``QDesktopServices.openUrl`` never called
     """
     open_url = mocker.patch("rehuco_agent.fields.authors_field.QDesktopServices.openUrl")
     field = AuthorsField("authors")
     viewer = field.make_viewer(model.bind(field)).viewer
     assert isinstance(viewer, QLabel)
     qtbot.addWidget(viewer)
+    requested: list[str] = []
+    field.filter_requested.connect(requested.append)
 
-    with caplog.at_level(logging.INFO, logger="rehuco_agent.fields.authors_field"):
-        viewer.linkActivated.emit("filter://authors?name=Alice")
+    viewer.linkActivated.emit("filter://authors?name=Alice")
 
+    assert requested == ["filter://authors?name=Alice"]
     open_url.assert_not_called()
-    assert "filter://authors?name=Alice" in caplog.text
 
 
 def test_authors_field_link_activated_ignores_an_unsupported_scheme(

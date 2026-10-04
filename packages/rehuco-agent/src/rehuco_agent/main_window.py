@@ -183,6 +183,12 @@ REHUCO_VIEW_ICON_RESOURCE: Final = ":/icons/rehuco_view.svg"
 
 REHUCO_FILE_FILTER: Final = "Root Catalog Files (*.rehuco);;All Files (*)"
 
+NO_CATALOG_TO_FILTER_MESSAGE: Final = "Open a Root Catalog to filter by this value."
+"""What the status bar says when a click-to-filter link has no catalog to filter ([[plugins#filter-urls]])."""
+
+STATUS_MESSAGE_TIMEOUT_MS: Final = 5000
+"""How long a one-off status message stays up."""
+
 IMAGE_PREVIEWS_ICON_RESOURCE: Final = ":/icons/image_previews.svg"
 
 FILE_MENU_MOVES_TO_APP_MENU: Final = sys.platform == "darwin"
@@ -353,6 +359,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         )
         self.__documents_dock.document_focus_changed.connect(self.__on_document_focus_changed)
         self.__documents_dock.status_message.connect(self.__on_status_message)
+        self.__documents_dock.filter_requested.connect(self.__on_filter_requested)
         self.__documents_dock.document_path_changed.connect(self.__on_document_path_changed)
         self.__documents_dock.open_requested.connect(self.__on_open_requested)
         # a document command set app-wide fires on the focused document from anywhere (#345); nothing
@@ -466,6 +473,18 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         :param text: the message to show; an empty string clears it.
         """
         self.statusBar().showMessage(text)
+
+    def __on_filter_requested(self, url: str) -> None:
+        """Set the filter a clicked ``filter://`` link stands for on the Root Catalog's current browser and bring
+        the catalog forward ([[plugins#filter-urls]]); with no catalog open there is nothing to filter, and the
+        status bar says so.
+
+        :param url: the clicked link, bubbled up from a document's field (`FilterRequester`).
+        """
+        if self.__rehuco_dock.apply_filter_url(url):
+            self.__reveal_rehuco_dock()
+        else:
+            self.statusBar().showMessage(NO_CATALOG_TO_FILTER_MESSAGE, STATUS_MESSAGE_TIMEOUT_MS)
 
     def __add_open_documents(self, menu: QMenu) -> None:
         """Rebuild ``menu`` with every currently open document, alphabetically by title (#61).
