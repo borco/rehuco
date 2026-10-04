@@ -1770,7 +1770,9 @@ def test_recents_menu_lists_remembered_paths_newest_first(qtbot: QtBot) -> None:
     window = MainWindow()
     qtbot.addWidget(window)
     recent_files = window._MainWindow__recent_files  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    older, newer = Path("older.rehu").resolve(), Path("newer.rehu").resolve()
+    # short paths under the filesystem root, not the cwd: the menu elides a path that does not fit, so one built from a
+    # long checkout path would never read back whole
+    older, newer = Path(Path.cwd().anchor, "older.rehu"), Path(Path.cwd().anchor, "newer.rehu")
     recent_files.record(older)
     recent_files.record(newer)
 
@@ -1869,7 +1871,7 @@ def test_recents_menu_repopulates_on_every_show(qtbot: QtBot) -> None:
     assert len(menu.actions()) == 1
     assert not menu.actions()[0].isEnabled()
 
-    path = Path("fresh.rehu").resolve()
+    path = Path(Path.cwd().anchor, "fresh.rehu")
     window._MainWindow__recent_files.record(path)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     menu.aboutToShow.emit()
 
