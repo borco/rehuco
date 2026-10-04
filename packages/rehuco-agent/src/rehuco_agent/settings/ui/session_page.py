@@ -1,4 +1,4 @@
-"""Session settings page: whether a restart restores the previous session's documents (#65)."""
+"""Session settings page: whether a restart restores the previous session's documents and root catalog (#65, #408)."""
 
 from typing import Final
 
@@ -10,9 +10,9 @@ from .session_page_ui import Ui_SessionPage
 
 
 class SessionPage(QWidget):
-    """Configure whether the previous session's open documents come back on the next start.
+    """Configure whether the previous session's open documents and root catalog come back on the next start.
 
-    One checkbox, staged in the widget until :meth:`save_changes` writes it -- the same shape as
+    Two checkboxes, staged in the widget until :meth:`save_changes` writes them -- the same shape as
     every other settings page here.
 
     :param parent: optional Qt parent.
@@ -25,22 +25,33 @@ class SessionPage(QWidget):
         self.drop_changes()
 
     def is_dirty(self) -> bool:
-        """Whether the staged checkbox differs from what's saved."""
+        """Whether a staged checkbox differs from what's saved."""
         saved = SessionRestoreSettings()
         saved.load(persistent_settings())
-        return self.__ui.restore_on_startup_check_box.isChecked() != saved.restore_on_startup
+        return (
+            self.__ui.restore_documents_check_box.isChecked() != saved.restore_documents
+            or self.__ui.restore_root_catalog_check_box.isChecked() != saved.restore_root_catalog
+        )
 
     def save_changes(self) -> None:
-        """Persist the staged choice."""
-        settings = SessionRestoreSettings(restore_on_startup=self.__ui.restore_on_startup_check_box.isChecked())
+        """Persist the staged choices."""
+        settings = SessionRestoreSettings(
+            restore_documents=self.__ui.restore_documents_check_box.isChecked(),
+            restore_root_catalog=self.__ui.restore_root_catalog_check_box.isChecked(),
+        )
         settings.save(persistent_settings())
 
     def drop_changes(self) -> None:
-        """Discard the staged edit, re-seeding the checkbox from persistent storage."""
+        """Discard the staged edit, re-seeding the checkboxes from persistent storage."""
         saved = SessionRestoreSettings()
         saved.load(persistent_settings())
-        self.__ui.restore_on_startup_check_box.setChecked(saved.restore_on_startup)
+        self.__stage(saved)
 
     def seed_defaults(self) -> None:
-        """Stage the factory value: what an unloaded `SessionRestoreSettings` holds (#342)."""
-        self.__ui.restore_on_startup_check_box.setChecked(SessionRestoreSettings().restore_on_startup)
+        """Stage the factory values: what an unloaded `SessionRestoreSettings` holds (#342)."""
+        self.__stage(SessionRestoreSettings())
+
+    def __stage(self, settings: SessionRestoreSettings) -> None:
+        """Show ``settings`` in the checkboxes."""
+        self.__ui.restore_documents_check_box.setChecked(settings.restore_documents)
+        self.__ui.restore_root_catalog_check_box.setChecked(settings.restore_root_catalog)

@@ -90,9 +90,10 @@ def test_checkbox_starts_checked(page: SessionPage) -> None:
 
     **Test steps:**
 
-    * Assert the checkbox is checked.
+    * Assert both checkboxes are checked.
     """
-    assert ui(page).restore_on_startup_check_box.isChecked()
+    assert ui(page).restore_documents_check_box.isChecked()
+    assert ui(page).restore_root_catalog_check_box.isChecked()
 
 
 def test_is_clean_until_something_is_toggled(page: SessionPage) -> None:
@@ -113,7 +114,7 @@ def test_toggling_the_checkbox_is_reported_as_dirty(page: SessionPage) -> None:
     * Uncheck the checkbox.
     * Assert the page is dirty.
     """
-    ui(page).restore_on_startup_check_box.setChecked(False)
+    ui(page).restore_documents_check_box.setChecked(False)
     assert page.is_dirty()
 
 
@@ -125,13 +126,13 @@ def test_saving_persists_the_choice(page: SessionPage, fake_persistent_settings:
     * Uncheck the box and save.
     * Assert a freshly loaded `SessionRestoreSettings` reads it back off.
     """
-    ui(page).restore_on_startup_check_box.setChecked(False)
+    ui(page).restore_documents_check_box.setChecked(False)
 
     page.save_changes()
 
     loaded = SessionRestoreSettings()
     loaded.load(fake_persistent_settings)  # type: ignore[arg-type]
-    assert loaded.restore_on_startup is False
+    assert loaded.restore_documents is False
     assert not page.is_dirty()
 
 
@@ -143,11 +144,11 @@ def test_dropping_changes_re_seeds_from_storage(page: SessionPage) -> None:
     * Uncheck the box, then drop the changes.
     * Assert it came back checked and the page is clean.
     """
-    ui(page).restore_on_startup_check_box.setChecked(False)
+    ui(page).restore_documents_check_box.setChecked(False)
 
     page.drop_changes()
 
-    assert ui(page).restore_on_startup_check_box.isChecked()
+    assert ui(page).restore_documents_check_box.isChecked()
     assert not page.is_dirty()
 
 
@@ -163,13 +164,36 @@ def test_seed_defaults_stages_the_factory_value_over_a_saved_one(
     * call ``seed_defaults``
     * verify the box is checked and the page is dirty
     """
-    SessionRestoreSettings(restore_on_startup=False).save(
+    SessionRestoreSettings(restore_documents=False).save(
         fake_persistent_settings  # pyright: ignore[reportArgumentType]
     )
     page.drop_changes()
-    assert not ui(page).restore_on_startup_check_box.isChecked()
+    assert not ui(page).restore_documents_check_box.isChecked()
 
     page.seed_defaults()
 
-    assert ui(page).restore_on_startup_check_box.isChecked()
+    assert ui(page).restore_documents_check_box.isChecked()
     assert page.is_dirty()
+
+
+def test_root_catalog_checkbox_is_staged_and_saved_independently(
+    page: SessionPage, fake_persistent_settings: FakeSettings
+) -> None:
+    """The root catalog box is its own choice (#408).
+
+    **Test steps:**
+
+    * uncheck only the root catalog box
+    * verify the page is dirty, then save
+    * verify only ``restore_root_catalog`` was persisted off
+    """
+    ui(page).restore_root_catalog_check_box.setChecked(False)
+    assert page.is_dirty()
+
+    page.save_changes()
+
+    loaded = SessionRestoreSettings()
+    loaded.load(fake_persistent_settings)  # type: ignore[arg-type]
+    assert loaded.restore_documents is True
+    assert loaded.restore_root_catalog is False
+    assert not page.is_dirty()
