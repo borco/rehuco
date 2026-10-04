@@ -420,6 +420,10 @@ to the same-named bool); `favorite`, absent from tc4, defaults to `false`.
 - **Which types.** `complete`, `online`, `keep` and `favorite` are on Tutorial and ReferenceImages;
   `viewed` and `todo` are Tutorial-only. `complete` reads as *has all its parts* — every video, or every
   image — so it is not a progress flag despite sitting near two.
+- **`viewed` means fully watched, at two scales.** On a video file it is recorded as the file plays
+  ([[field-schema#watch-progress]]); on the tutorial it is the user's own call — a tutorial can be `viewed` with some
+  files never opened, because the ones that mattered were. One word, one meaning; a setting checks the tutorial's flag
+  when its last file becomes viewed, but nothing else ever computes it from its files'.
 - **Deferred: a `default_tags` toggle set.** Folding the fixed-vocabulary bools
   (`complete`/`online`/`viewed`/`todo`/`keep`) into one list rendered as UI toggles, with a
   vocabulary from `.rehuco` or defaults, was considered and **deferred** ([[field-schema#deferred-items]]): its payoff
@@ -553,6 +557,88 @@ render " ".join(parts)
 
 Size renders base-1000 (macOS-Finder style) with two decimals, e.g. `1.50 GB`; `None`
 (unmeasured/absent) renders empty, a genuine `0` renders honestly (#101).
+
+### §17.3.3 Per-user watch progress
+
+[[[field-schema#watch-progress]]]
+
+- [#316: feat: per-user watch progress — block data, immediate non-dirtying writes, per-file durations from the Measure, file and folder % in the Files sub-dock](https://github.com/borco/rehuco/issues/316)
+- [#405: docs: spec root caching, borrowing UI, and per-file watch progress](https://github.com/borco/rehuco/issues/405)
+
+The per-user `progress` [[field-schema#duration-size]] keeps room for, made concrete. Progress is **per video file**,
+stored in the tutorial block's `users` map ([[field-schema#per-user-shared]]) beside the measured, shared lengths it is
+read against:
+
+```json
+"tutorial": {
+  "videos": { "01 Basics/03 Brushes.mp4": { "duration": 640.0, "width": 1920, "height": 1080 } },
+  "users": { "admin": { "viewed": false, "progress": {
+    "01 Basics/03 Brushes.mp4": { "position": 512.3, "duration": 640.0, "viewed": true }
+  } } }
+}
+```
+
+- **Two independent facts per file.** `position` is where playback last stopped — the resume point, and nothing more.
+  `viewed` means *watched to the end at least once* — the same word, and the same meaning, as the tutorial's own
+  `viewed`. Neither drives the other: a rewatch moves `position` and leaves `viewed` alone, so reviewing a finished
+  video still resumes where the review stopped. Reaching the end — scrubbed there or not — sets `viewed` **when a
+  setting says so** (on by default); `viewed` is also a checkbox, so the user can set or clear it by hand. The common
+  path needs no hands; the setting and the checkbox are the flexibility.
+- **The tutorial's `viewed` is the user's verdict** ([[field-schema#boolean-flags]]) that the tutorial is fully
+  watched, which can be true with some files never opened, because the ones that mattered were. Setting it changes
+  none of the files' flags. A **second setting** (on by default) checks it automatically **at the moment its last
+  file becomes `viewed`** — every file on disk, and every missing file with an entry. It acts on that change only,
+  never as a standing rule: a tutorial unchecked by hand while all its files are viewed stays unchecked, and
+  unchecking a file never unchecks the tutorial.
+- **Keys are paths relative to the record**, posix separators, so moving a resource as a whole keeps every key. For a
+  directory-scoped `info.rehu` the key is the path under its directory. For a **standalone `<stem>.rehu`** the key is
+  the file name **with the stem removed** — `foo.rehu` describing `foo.mp4` and `foo-part2.mp4` keys them as
+  `.mp4` and `-part2.mp4` — so renaming the stem ([[plugins#tutorial-plugin]]'s path row) keeps them too. The same
+  rule keys `videos`.
+- **A file that is gone keeps its entry.** An entry whose file is not on disk is shown as *missing* — derived when
+  listing, never stored — and still counts in every total below. Archival removes videos on purpose
+  ([[borrowing#scheduled-archival]]), and the legacy habit was to delete videos as they were watched
+  ([[field-schema#duration-size]]); erasing their progress would erase exactly the history worth keeping. The agent
+  lists missing entries and offers to **forget** one by hand; nothing forgets one automatically.
+- **A renamed file takes its entry with it.** When a keyed file is missing and an unkeyed one has appeared beside it,
+  the strongest evidence available decides:
+  1. The missing file has a hash recorded in its `.checksum` ([[data-model#checksums]]) — the candidate is hashed,
+     and only an equal hash moves the entry. No setting is involved, and equal sizes are told apart here.
+  2. No usable hash — the record is absent, broken, or never covered that file — and **exactly one** candidate has the
+     same size (and the same duration, when both are known): the entry moves. This rung sits behind a setting, *match
+     renamed files by size when no checksum is recorded*, on by default, for a reader who will not trust size alone.
+  3. Anything else — two candidates, no candidate, the setting off — moves nothing; the entry stays missing for the
+     user to reattach or forget.
+- **Totals are duration-weighted and derived, never stored.** A file counts its full duration once `viewed`, and its
+  `position` otherwise; a folder and the resource sum their files recursively. Watching 90 of a folder's 100 minutes
+  reads *90 min / 90% watched / 10 min left*. A `viewed` file counts its full length even while a rewatch has its
+  `position` at 20%. Lengths come from `videos`; a played file's own entry supplies its length when `videos` lacks it.
+- **Why a progress entry repeats the length `videos` already holds.** A video's length is the same for every user, so
+  `videos` is its home and **wins whenever both exist**; the entry's `duration` is the length the player saw, kept as
+  a fallback for the cases where `videos` cannot answer:
+  - **The file was never measured.** `videos` is filled by the duration Measure, an explicit action, so most tutorials
+    start without it. The player learns the length the moment it opens the file; without its own copy, a video just
+    watched in an unmeasured tutorial could show no percentage until someone measured it.
+  - **`videos` cannot be written where progress is.** A progress write touches `users.<me>.progress` only — per-user
+    state, which [[sync#overview]] lets any node write: on a borrowed copy, while the source is offline, on the retained
+    copy of a source that can never be written. `videos` is shared resource metadata, written by its owning node and
+    only while the resource is online. Recording the length into `videos` from the player would fail in exactly the
+    places watching happens away from the source.
+  - **A missing file's length outlives the file.** A Measure that rebuilds `videos` from disk drops a deleted video;
+    its progress entry still carries the length, so the folder totals above keep counting it.
+
+  Dropping the copy was considered: it would need the Measure to keep entries for vanished files, and would leave
+  played videos blank until measured. A few bytes per played file was judged cheaper than either.
+- **Recorded by rehuco's own players only** — the agent (an external VLC it launches and tracks counts as the agent,
+  #319) and the web UI ([[plugins#tutorial-plugin]]). A file opened in another player is not tracked; the agent edits
+  progress by hand for that case.
+- **Writes never bump `updated`** ([[field-schema#record-timestamps]]): that stamp describes the resource, not one
+  person's viewing.
+- **A source that can never be written** — a CD/DVD, a read-only share — records progress on its retained copy
+  ([[mounts-and-storage#durable-retention]]), which is writable for per-user data only.
+- **Sync.** Every connected node holding the resource — the owner and each borrower — gets a change immediately; a
+  node that was off pushes its own changes and pulls what it missed when it comes back. Its changes are delayed, not
+  lost, while it is off. The merge rules are [[sync#overview]]'s.
 
 ## §17.4 Field types
 

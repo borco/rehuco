@@ -742,6 +742,13 @@ that is already a resource type ([[plugins#grouping-entities]]).
 **rehuco id** rather than by the `.rehuco`'s path — so moving or renaming a `.rehuco` keeps its cache, and the cache
 is never on a network share, where SQLite's locking is unsafe (#372). `.rehusw` keeps its own durable home.
 
+**Retention has a store of its own, beside `.rehudb` and never inside it** (#405). The retained metadata of a cached
+root ([[mounts-and-storage#durable-retention]]) is the only copy there is while a removable medium is absent, so it
+cannot share a file that a rebuild deletes. Its container and layout are left to its first implementation; what is
+fixed is that it is durable, lives in the app's own folder ([[packaging-deployment#app-folders]]), and holds per
+resource the raw `.rehu`, the screenshots as they are, and the file structure (relative paths, sizes, each video's
+duration and resolution).
+
 ### §4.8.1 The `.rehudb` cache schema
 
 [[[data-model#cache-schema]]]

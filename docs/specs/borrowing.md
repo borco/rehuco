@@ -148,3 +148,36 @@ The difference between the two cases:
 **B's deletion reason is always preserved and surfaced to A** (carried in the activity log), so A sees *why* B removed
 it before deciding — and may come around to agreeing with B later. This is the same "never silently lose a human's
 reasoning" principle as the deletion-with-memory feature ([[instances-and-dedup#duplicate-review]]).
+
+## §11.7 Borrowing from the agent: Available offline, Return, and the Borrowed browser
+
+[[[borrowing#agent-ui]]]
+
+- [#405: docs: spec root caching, borrowing UI, and per-file watch progress](https://github.com/borco/rehuco/issues/405)
+
+**Borrow is per resource, retention is per root.** Retention ([[mounts-and-storage#durable-retention]]) keeps a whole
+root *browsable* while its source is off — metadata, screenshots and file structure, never content. A borrow copies
+**all** of one resource's files, and is the only way to *watch* a resource whose source is offline. The two never
+stand in for each other.
+
+- **The control is an *Available offline* checkbox** on a resource — the OneDrive vocabulary §11.4 already maps
+  onto ([[borrowing#recording-borrows]]). Checking it borrows; unchecking it **returns**.
+- **The target is a node, the watch node by default.** The **watch node** is a user setting: the node the web UI is
+  watched through ([[borrowing#vacation-topology]]) — the always-on box at home, typically. It is also where a borrow
+  goes unless the user picks another node when borrowing; one setting, not two concepts. This machine is a valid
+  target only when it runs its own node ([[nodes#two-roles]]): the copy is served, synced and returned by a node, and
+  the agent alone is none.
+- **A borrowed copy lives where its node's user said.** Each node has a borrow folder, chosen by the user — never the
+  app's own folder ([[packaging-deployment#app-folders]]), since one borrow can be many gigabytes.
+- **Return is always explicit, and always says what it deletes.** Unchecking asks for confirmation naming the node and
+  the copy that will be removed, and reconciles progress and notes back first ([[sync#overview]]). Nothing removes a
+  borrowed copy on its own: away from home, a vanished borrow cannot be restored until the source is reachable
+  again, so it must never go missing without notice. Scheduled archival ([[borrowing#scheduled-archival]]) acts on
+  the original, not on the copy.
+- **A *Borrowed* browser lists every borrow** in a tree — by the node holding it, then by where it came from — with
+  Return one click away, and the overdue and stranded entries of §11.4 visible there
+  ([[borrowing#recording-borrows]]).
+- **Watching in the agent reads the content where it is stored** — the source while it is reachable, a borrowed copy
+  otherwise. Progress recorded there reaches every connected node holding the resource immediately
+  ([[field-schema#watch-progress]]), which is what lets a viewer stop in the agent, carry on in the web UI on the
+  watch node's copy, and come back to the agent where the web UI stopped.

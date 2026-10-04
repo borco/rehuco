@@ -51,6 +51,14 @@ serving the swarm, the tablet, and other nodes even when the desktop GUI is dism
 window while background sync continues). Stopping the node is a separate, more deliberate action (it takes that
 machine's content offline to the swarm). The node runs as a service/daemon or launch-on-login, independent of the tray.
 
+**The node is never embedded in the agent** (#405). An agent that hosted a node in its tray process would take that
+node down on quit, which is exactly what the lifecycle above forbids. So anything that needs a node *on this
+machine* — borrowing onto it ([[borrowing#agent-ui]]), serving the web UI from it — needs this machine's own node
+installed and running, and the agent alone never substitutes for one. The agent **manages** nodes instead: the local
+one, and the swarm's for an admin user — add, remove, start, stop, and their configuration — from a settings page,
+a dock or a dialog, as a node client like everything else here. Which of the three surfaces is a UI decision for when
+it is built.
+
 **The agent is a node client for swarm operations** (catalog, per-user state, sync, anything access-controlled): it
 never reads/writes the catalog filesystem directly, so there is no "local path vs. remote node" dual code path — it
 always asks a node, which optimizes how to satisfy the request (own disk, mount, or delegating). The mount-vs-node

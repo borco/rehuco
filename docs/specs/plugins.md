@@ -726,8 +726,8 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
   as an inline banner row on the document, not a modal: the resource is untouched and the candidate list that produced
   the name is still on screen.
 - **Follow** (a distinct mode from viewer/editor): sequential playback of the tutorial's files, recording watch progress
-  and duration; note-taking (create/view/edit); bookmarking. Progress sync follows
-  [[sync#overview]]/[[mounts-and-storage#node-handoff]].
+  and duration; note-taking (create/view/edit); bookmarking. Progress — per file, a resume position and a *viewed*
+  flag — is [[field-schema#watch-progress]]; its sync follows [[sync#overview]]/[[mounts-and-storage#node-handoff]].
 - **Web**: search/browse tutorials the user has access to; follow a tutorial from the browser, with the same
   progress/notes/bookmarks behavior as the desktop "follow" mode.
 

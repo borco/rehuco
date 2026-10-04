@@ -14,7 +14,9 @@ Consolidated list of requirements established across discussion, checked against
   ([[instances-and-dedup#instance-registry]]).
 - Duplicate detection across the catalog, with a review UI for ambiguous cases ([[instances-and-dedup#deduplication]],
   [[instances-and-dedup#duplicate-review]]).
-- Per-resource notes, view/watch progress, and bookmarking; ability to delete local viewed files on request.
+- Per-resource notes, view/watch progress, and bookmarking; ability to delete local viewed files on request. Progress
+  is per video file — a resume position and a *viewed* flag, totalled per folder — recorded by the agent and the web
+  UI and carried between them ([[field-schema#watch-progress]]).
 - Track *why* something was deleted/skipped (via tags/notes), to avoid re-buying or re-downloading it later.
 - Admin-managed users and access control: full access, per-resource grants, or dynamic tag-based grants —
   swarm-propagated, enforced server-side at the serving node ([[discovery-trust-access#user-auth]],
@@ -26,7 +28,8 @@ Consolidated list of requirements established across discussion, checked against
   offline editing
   covers per-user state only; resource metadata is online-only-editable ([[sync#overview]]).
 - Borrows recorded in the user's meta block, supporting multiple simultaneous devices and an explicit return step
-  ([[borrowing#recording-borrows]]).
+  ([[borrowing#recording-borrows]]); borrowed from the agent with an *Available offline* checkbox onto the watch node
+  by default, and listed in a Borrowed browser ([[borrowing#agent-ui]]).
 - Seamless node handoff during active playback ([[mounts-and-storage#node-handoff]]).
 - Web UI usable from an iPad as a thin client served by a node — a household always-on box at home, or the laptop's node
   while away ([[borrowing#vacation-topology]]).
@@ -44,4 +47,5 @@ Consolidated list of requirements established across discussion, checked against
 - Scheduled archival of a borrowed resource's video files on return (fully or selectively, keeping chosen files),
   preserving metadata/images/extras and tagged as archived ([[borrowing#scheduled-archival]]).
 - Durable, configurable local retention of offline-media and remote-node metadata for offline browsing and rebuild
-  survival ([[mounts-and-storage#durable-retention]]).
+  survival — per root, forced for removable roots and on by default for network ones
+  ([[mounts-and-storage#durable-retention]]).

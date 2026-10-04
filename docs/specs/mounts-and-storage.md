@@ -183,17 +183,44 @@ be standing, it is that node's coordinator that stands its own readers aside, an
 
 [[[mounts-and-storage#durable-retention]]]
 
-`.rehuco` can opt in, per source, to keeping a **durable local copy of that source's `.rehu` metadata and screenshots**
-— for usually-offline media (external drives, USB sticks, CD/DVD) and optionally for other nodes. Rationale and rules:
+- [#405: docs: spec root caching, borrowing UI, and per-file watch progress](https://github.com/borco/rehuco/issues/405)
+
+`.rehuco` can opt in, per root, to keeping a **durable local copy of that root's metadata** — so a root whose medium
+sits in a drawer, or whose node or share is switched off (the library shelf, [[borrowing#library-shelf]]), stays
+browsable. The UI calls this **caching a root**; the spec keeps *retention*, because everywhere else here a cache is
+disposable and this copy is not (below). Rationale and rules:
 
 - **Why**: offline media are painful to rescan one-by-one, and a powered-off node's content would otherwise drop out of
   the catalog. Retaining their metadata locally keeps them browsable while disconnected, and — because the retained
   copies are ordinary local files — keeps them present across a full cache rebuild
-  ([[architecture-design#why-distributed]]). Extending the same option to other nodes' metadata is for
-  completeness/flexibility, not necessity.
-- **It's opt-in and configurable** because every retained copy is, by definition, a cache that can go stale relative to
-  its true owner. The cost of the convenience is more staleness surfaces; the mitigation is cheap version-marker
-  staleness detection ([[data-model#scan-and-staleness]]), not frequent rebuilds.
+  ([[architecture-design#why-distributed]]).
+- **Chosen per root, when the root is added to the `.rehuco`**, with a default by kind — nothing else needs configuring
+  to browse an offline root later:
+
+  | Root | Retention |
+  | --- | --- |
+  | Removable (USB stick, external drive, CD/DVD) | **Forced on** — removable by definition, so it must stay browsable without its medium |
+  | Network (a share, another node's content) | **On by default**; the user may turn it off for a source known to stay online, where retaining only buys speed |
+  | Local disk | Off — the disk is always there to read |
+
+  It is per root, not per resource: keeping one resource *whole* on this machine is a borrow
+  ([[borrowing#another-instance-role]]), not retention.
+- **What is retained is enough to browse, never to watch.** Per resource: the `.rehu` itself (the raw document, not
+  only the fields the browser shows), its screenshots copied as they are (no re-encoding — they are small JPEGs at
+  this scale), and its **file structure**: every file's relative path and size, plus each video's duration and
+  resolution. That is what lets the browser, the Description View and the Files dock show an offline resource,
+  read-only. No content file is copied; watching a resource whose source is offline needs a borrow.
+- **Durable, not disposable.** A removable root cannot be rescanned while its medium is absent, so its retained copy
+  is the only one there is. The store therefore sits beside `.rehudb` ([[data-model#local-file-trio]]), never inside
+  it: a cache rebuild must not wipe it. The scan writes both — durations and file structure for *every* root into
+  `.rehudb`, which the browser's folder totals need ([[field-schema#watch-progress]]), and the same data for a retained
+  root into the store as well.
+- **Per-user state for a source that can never be written** — a CD/DVD, a read-only share — is tracked on the
+  retained copy, which stays writable for per-user data only ([[field-schema#watch-progress]]). The resource metadata in
+  it is still a read-only stand-in (below).
+- **It's configurable** because every retained copy is, by definition, a copy that can go stale relative to its true
+  owner. The cost of the convenience is more staleness surfaces; the mitigation is cheap version-marker staleness
+  detection ([[data-model#scan-and-staleness]]), not frequent rebuilds.
 - **Retained copies are read-only stand-ins.** They reflect the v1 rule ([[sync#overview]]): you can browse them offline
   and attach your own per-user notes, but you cannot edit the *resource metadata* of a retained copy until its real
   owner is reachable. (For genuinely write-once sources like sealed CD/DVD, the metadata is never editable on the source

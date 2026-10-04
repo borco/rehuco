@@ -81,7 +81,11 @@ Reconciliation rules over this model:
   you edited a note on the laptop, nothing changed at home). If neither dominates (true concurrency), fall to
   field-level merge below.
 - **Field-level merge for concurrent edits** (no user prompt needed): watched segments (union), bookmarks (union by
-  position), viewed flags (logical OR). Free-text notes (and edited screenshots, if offline metadata editing is ever
+  position), `viewed` flags, a file's and the tutorial's (logical OR — *watched to the end at least once*
+  is a fact that only becomes true), a file's resume `position` (the later action wins)
+  ([[field-schema#watch-progress]]). The one exception to the OR is **a `viewed` the user cleared by hand**: that is a
+  deliberate, logged action with its own vector position, so it dominates an older `true` instead of being resurrected
+  by it. Free-text notes (and edited screenshots, if offline metadata editing is ever
   enabled, [[sync#overview]] future hook) are the fields that can genuinely collide; worst case, keep both and surface
   for the user. Data is never silently lost.
 - **Deletion, archival, and resurrection are ordinary logged actions in this same model** — not a separate mechanism. A
