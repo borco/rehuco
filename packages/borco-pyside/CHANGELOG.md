@@ -23,7 +23,8 @@ Changelogs are per package in this monorepo, matching the per-package release ta
   carry none, so one key is never on two actions; `bound_actions` filters by role.
 - `HeaderSectionsMenu`, a context menu on a `QHeaderView` with one checkable action per section to show or
   hide it (the last visible one stays), sections made movable, and `save_state()` / `restore_state()` over
-  the header's own state; a state that fails to restore leaves every section shown.
+  the header's own state; a state that fails to restore leaves every section shown. Its
+  `sections_visibility_changed` signal says when the menu or a restore showed or hid a section.
 - `LIST_EDITOR_COMMANDS`, `CARD_LIST_COMMANDS` and `LOG_COMMANDS`, the commands behind the list editor's,
   the card list's and the log view's keys, for a host to register.
 

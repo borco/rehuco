@@ -466,8 +466,8 @@ author-page URL is a `{ "name": …, "url": … }` record instead. Decided with
   shows as a tooltip and a status-bar message on hover, and opens in the external browser on click.
 - **No aliases in documents.** An alias set is catalog-level identity, deferred to a future metadata-only
   **author record** type on the Collection precedent ([[field-schema#resource-types]],
-  [[daz3d-personal-database#authors-urls]]); per-document URLs fold into it then. Author names additionally render as
-  `filter://` links once browsers exist ([[plugins#filter-urls]]).
+  [[daz3d-personal-database#authors-urls]]); per-document URLs fold into it then. Each author name is itself a
+  `filter://` link that filters the Root Catalog's current browser on it ([[plugins#filter-urls]], #398).
 
 ## §17.3 Duration and size model
 

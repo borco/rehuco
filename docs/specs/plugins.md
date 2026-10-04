@@ -536,11 +536,19 @@ Its nested dock manager holds three kinds of sub-dock:
   - **Columns.** Every column the cache can show exists on every view, and a header context menu lists them all,
     checked where visible. Type-specific columns — a tutorial's durations and level, a reference pack's image
     counts — are the fields the cache stores that the type's plugin declares ([[data-model#cache-schema]], #399).
-  - **The filter line** is GitHub-style: free text plus `field:"value"` tokens (`folder`, `authors`, `tags`,
-    `publishers`, `type`). It filters the rows, and a column-selecting token chooses which columns show; an
-    unknown field is reported, never silently dropped. A folder's context menu in Roots — *Show only rehu in this
-    folder* — sets `folder="<root label>/<relative path>"` on the current browser, and click-to-filter links set the
-    same tokens on it ([[plugins#filter-urls]]). Roots and the browsers are otherwise independent.
+  - **The filter line** (#398) is GitHub-style: free text plus `field:value` or `field:"quoted value"` tokens
+    (`folder`, `authors`, `tags`, `publishers`, `type`), all ANDed; the free text is one phrase matched in a title or
+    path, and a repeated field must match both values. It picks the rows **by query, not by proxy**: as the text
+    settles (or on Enter) it is compiled to the cache's query and the browser's rows are read again, so the table and
+    its status line only ever hold what matches. A **`columns:` token** — `columns:authors,title` — chooses which
+    columns show, and a change from the header menu is written back into it, so one string says both what rows and
+    what fields; it is dropped once every column shows. An unknown field or column is reported on the line, never
+    silently dropped, and the rest of the line still applies. The text is the browser's remembered filter. A
+    folder's context menu in Roots — *Show only rehu in this folder* — sets `folder:"<root label>/<relative path>"`
+    on the current browser, and click-to-filter links set the same tokens on it ([[plugins#filter-urls]]); either
+    **replaces** that field's token and keeps the rest of the line. The current browser is the focused one, else the
+    one focused last, and a link with no browser open opens a default one to carry it. Roots and the browsers are
+    otherwise independent.
   - **New Table Browser** offers presets: *Default* (the common columns), *Tutorials* (the tutorial columns shown, the
     others hidden) and *Reference images* (likewise). A preset only picks the starting columns and filter; the view
     is then an ordinary one.
@@ -584,13 +592,14 @@ filter://publishers?name=Example%20Publisher
 - **Initial field set:** `authors`, `tags`, `publishers` — the three values [[plugins#browsers]] linkifies.
   `advertised_tags` and `extra_tags` share the single `tags` domain: clicking a tag filters on the tag regardless of
   which list it came from; the two-list split is an editing-side concept, not a filtering one.
-- **Dormant until CacheDB.** The viewer renders external `http(s)` links from day one (an author entry's URL,
-  [[field-schema#authors]]) but adds `filter://` anchors only once a browser exists to filter; until then the internal
-  dispatch branch is a logged no-op seam. Link handling never enables the label's own external-link opening: one
-  handler dispatches on scheme — `filter://` internally, validated `http(s)` to the system browser — so a `filter://`
-  link can never leak to the OS, and no other scheme is ever followed.
-- **A link is a filter-line token.** Dispatching `filter://authors?name=Foo%20Bar` sets `authors="Foo Bar"` on the
-  the current browser's filter line in the Root Catalog dock ([[plugins#rehuco-dock]]) — one filter grammar, reached by
+- **Authors first** (#398). Each author name in the viewer is a `filter://` anchor, beside the external `http(s)` link
+  an author entry's URL adds ([[field-schema#authors]]); tags and publishers linkify later. Link handling never
+  enables the label's own external-link opening: one handler dispatches on scheme — `filter://` internally,
+  validated `http(s)` to the system browser — so a `filter://` link can never leak to the OS, and no other scheme is
+  ever followed. A clicked link travels up to the window like a field's status message, and the window brings the
+  Root Catalog forward; with no catalog open, its status bar says so.
+- **A link is a filter-line token.** Dispatching `filter://authors?name=Foo%20Bar` sets `authors:"Foo Bar"` on the
+  current browser's filter line in the Root Catalog dock ([[plugins#rehuco-dock]]) — one filter grammar, reached by
   typing or by clicking.
 
 ## §13.6 Tutorial plugin
