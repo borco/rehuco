@@ -19,7 +19,7 @@ from borco_pyside.shortcuts import BindingRole
 from borco_pyside.theming import ActionIconThemeHandler, ThemeManager, ThemeMenu, ThemeModel
 from borco_pyside.widgets import ToolBarStretch
 from PySide6.QtCore import QByteArray
-from PySide6.QtGui import QAction, QCloseEvent, QIcon, QShowEvent
+from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QIcon, QShowEvent
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -79,6 +79,7 @@ from .glyphs import TAB_CLOSE_GLYPH
 from .main_window_ui import Ui_MainWindow
 from .recycle_bin_deleter import configured_deleter
 from .rehuco import RehucoDock
+from .rehuco.table_browser import TableBrowser
 from .resource_events import ResourceEvents
 from .settings.checksum_settings import shared_checksum_settings
 from .settings.checksum_trust_store import checksum_trust_path
@@ -184,6 +185,10 @@ REHUCO_FILE_FILTER: Final = "Root Catalog Files (*.rehuco);;All Files (*)"
 
 IMAGE_PREVIEWS_ICON_RESOURCE: Final = ":/icons/image_previews.svg"
 
+FILE_MENU_MOVES_TO_APP_MENU: Final = sys.platform == "darwin"
+"""Whether the OS takes ``File``'s only two entries away (#402): Qt moves the ``Settings`` and ``Quit`` actions into
+macOS's application menu, which leaves ``File`` with nothing in it, and an empty menu is hidden rather than shown."""
+
 TRAY_ICON_RESOURCE: Final = ":/icons/rehuco-agent.svg"
 """qrc path to the tray icon (#205) -- the app's own icon, the same one `Application.__init__` sets
 as the window icon; a tray icon distinguishing itself from every other running app is `QSystemTrayIcon`'s
@@ -254,8 +259,12 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__base_window_title: Final = self.windowTitle()
         # every action __add_open_documents itself added on the last rebuild -- removed and
         # rebuilt from scratch each time, so the rebuild never has to know or guess what's
-        # "static" above it (the theme entries, their separator, or anything added there later)
-        self.__dynamic_view_menu_actions: Final[list[QAction]] = []
+        # "static" above it (the open and close verbs, their separators, or anything added there later)
+        self.__dynamic_documents_menu_actions: Final[list[QAction]] = []
+        # the same, for the Browsers menu's open list; its entries are exclusive, and the group is this one for
+        # the window's life -- a deleted action leaves it on its own, so a rebuild needs no second group
+        self.__dynamic_browsers_menu_actions: Final[list[QAction]] = []
+        self.__browsers_menu_group: Final = QActionGroup(self.__ui.browsers_menu)
 
         # not Final: request_quit sets this before close(), and closeEvent clears it right back --
         # the one thing that overrides tray mode's close-to-tray routing (#205)
@@ -359,8 +368,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # a resource double-clicked in the Root Catalog browser opens through the ordinary route (#377)
         self.__rehuco_dock.open_requested.connect(self.open_path)
         self.__setup_docking_system()
-        self.__ui.view_menu.aboutToShow.connect(lambda: self.__add_open_documents(self.__ui.view_menu))
+        self.__ui.documents_menu.aboutToShow.connect(lambda: self.__add_open_documents(self.__ui.documents_menu))
+        self.__ui.browsers_menu.aboutToShow.connect(lambda: self.__add_open_browsers(self.__ui.browsers_menu))
         self.__setup_file_menu()
+        self.__setup_root_catalog_menu()
 
         self.__window_settings: Final = MainWindowSettings()
         self.__window_settings.load(persistent_settings())
@@ -418,7 +429,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
     def __on_document_focus_changed(self, widget: DocumentWidget | None) -> None:
         """Reflect the newly-focused document's label in the window title, or the base title if none,
-        and enable ``File`` > ``Close`` (``Ctrl+W``, #247) only while a document is actually focused --
+        and enable ``Documents`` > ``Close`` (``Ctrl+W``, #247) only while a document is actually focused --
         the same condition, read off the same signal, so the two never disagree about whether one is.
 
         :param widget: the newly-focused document's widget, or ``None`` when no document is focused.
@@ -459,14 +470,14 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
     def __add_open_documents(self, menu: QMenu) -> None:
         """Rebuild ``menu`` with every currently open document, alphabetically by title (#61).
 
-        Listed directly under ``View``, below the three static theme entries and their trailing
-        separator (#57) -- not mixed into them. ``Close All``/``Close Missing Files`` used to lead
-        this same tail (#96); they moved to ``File``, grouped below ``Close`` (#247), once both
-        needed a keyboard shortcut and a menu rebuilt from scratch on every show is not where a
-        shortcut-bearing action wants to live. Rebuilt fresh on every ``aboutToShow`` rather than
+        Listed at the foot of ``Documents``, below the open and close verbs and their trailing separator
+        (#402) -- not mixed into them. It lived under ``View`` until then (#57), and ``Close All``/
+        ``Close Missing Files`` used to lead it (#96): they are static entries, grouped below ``Close``
+        (#247), because a menu rebuilt from scratch on every show is not where a shortcut-bearing action
+        wants to live. Rebuilt fresh on every ``aboutToShow`` rather than
         kept in sync incrementally -- the open set, titles, paths, and lock reasons all change
         independently (open/close/rename/save-as/revert), and a menu only actually needs to be
-        correct while it's showing. Only :attr:`__dynamic_view_menu_actions` -- this method's own
+        correct while it's showing. Only :attr:`__dynamic_documents_menu_actions` -- this method's own
         additions from the last rebuild -- is removed first, unlike a plain ``menu.clear()``, which
         would wipe whatever's above them too.
 
@@ -476,21 +487,21 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         :class:`RehuDocumentMenuEntry`); focus and dirtiness are read fresh at build time here, the
         same as everything else this rebuild reads.
 
-        :param menu: the menu to (re)populate (``View``).
+        :param menu: the menu to (re)populate (``Documents``).
         """
-        for action in self.__dynamic_view_menu_actions:
+        for action in self.__dynamic_documents_menu_actions:
             menu.removeAction(action)
             action.deleteLater()
-        self.__dynamic_view_menu_actions.clear()
+        self.__dynamic_documents_menu_actions.clear()
 
         widgets = sorted(
             self.__documents_dock.open_document_widgets(), key=lambda widget: widget.model.label.casefold()
         )
 
         if not widgets:
-            placeholder = menu.addAction("No Open Docks")
+            placeholder = menu.addAction("No Open Documents")
             placeholder.setEnabled(False)
-            self.__dynamic_view_menu_actions.append(placeholder)
+            self.__dynamic_documents_menu_actions.append(placeholder)
             return
         focused_widget = self.__documents_dock.focused_document_widget()
         for widget in widgets:
@@ -506,10 +517,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             )
             action.triggered.connect(lambda _checked=False, widget=widget: self.__focus_document(widget))
             menu.addAction(action)
-            self.__dynamic_view_menu_actions.append(action)
+            self.__dynamic_documents_menu_actions.append(action)
 
     def __focus_document(self, widget: DocumentWidget) -> None:
-        """Jump to an already-open document from the ``View`` menu (#61), revealing the Documents dock
+        """Jump to an already-open document from the ``Documents`` menu (#61), revealing the Documents dock
         first (#268).
 
         Not an open funnel, but the same failure without the reveal: a document picked from the menu
@@ -521,9 +532,50 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__reveal_documents_dock()
         self.__documents_dock.focus_document(widget)
 
+    def __add_open_browsers(self, menu: QMenu) -> None:
+        """Rebuild ``menu`` with every open table browser, alphabetically by name, the focused one checked (#402).
+
+        The twin of :meth:`__add_open_documents`, and rebuilt the same way -- fresh on every ``aboutToShow``,
+        removing only :attr:`__dynamic_browsers_menu_actions` -- because the open set, the names and the focus
+        all change independently. The entries form one exclusive group, so the style draws a radio mark: a
+        browser is *the one in front*, not one of several that are on. There is no kind icon yet, the table
+        browser being the only kind.
+
+        :param menu: the menu to (re)populate (``Browsers``).
+        """
+        for action in self.__dynamic_browsers_menu_actions:
+            menu.removeAction(action)
+            action.deleteLater()
+        self.__dynamic_browsers_menu_actions.clear()
+
+        browsers = sorted(self.__rehuco_dock.open_browsers(), key=lambda browser: browser.name.casefold())
+        if not browsers:
+            placeholder = menu.addAction("No Open Browsers")
+            placeholder.setEnabled(False)
+            self.__dynamic_browsers_menu_actions.append(placeholder)
+            return
+        focused = self.__rehuco_dock.focused_browser()
+        for browser in browsers:
+            action = menu.addAction(browser.name)
+            action.setCheckable(True)
+            action.setChecked(browser is focused)
+            self.__browsers_menu_group.addAction(action)
+            action.triggered.connect(lambda _checked=False, browser=browser: self.__focus_browser(browser))
+            self.__dynamic_browsers_menu_actions.append(action)
+
+    def __focus_browser(self, browser: TableBrowser) -> None:
+        """Jump to an open browser from the ``Browsers`` menu: the Root Catalog dock first, as
+        :meth:`__focus_document` does for the Documents one, then the browser's own sub-dock.
+
+        :param browser: the picked browser.
+        """
+        self.__reveal_rehuco_dock()
+        self.__rehuco_dock.focus_browser(browser)
+
     def __setup_view_menu(self) -> None:
-        """Build the theme controls and fill ``View``'s static section -- the theme entries, then the
-        app-wide docks (#57, #200, #202, #268).
+        """Build the theme controls and fill ``View`` -- the theme entries, then the app-wide docks (#57, #200,
+        #202, #268). It lists what is *visible* and no longer the open documents, which moved to ``Documents``
+        (#402).
 
         The toolbar's 3-state cycling action and the menu's three explicit entries are two views of the
         one :class:`~borco_pyside.theming.ThemeModel` built in ``__init__``; neither reads
@@ -533,10 +585,8 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         ``documents_action``/``log_action``/``tasks_action`` stand in for those docks' own
         ``toggleViewAction()``s here (see
         :meth:`__setup_docking_system`'s companion-wiring comment) -- a plain menu row, unlike the
-        toolbar buttons those were built for. They sit between the theme entries and the open-resource
-        list because all three are views of the *app* rather than of a resource, and
-        :meth:`__add_open_documents` only ever appends, so this static order survives however often the
-        dynamic tail is rebuilt.
+        toolbar buttons those were built for. They follow the theme entries because all three are views of
+        the *app* rather than of a resource.
 
         ``image_previews_action`` (``Ctrl+Shift+``, grave accent, #71) joins them for the same reason:
         it too is a view of the app rather than of one resource. It is the *companion* to the toolbar's
@@ -565,7 +615,6 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__ui.view_menu.addAction(self.__ui.log_action)
         self.__ui.view_menu.addAction(self.__ui.tasks_action)
         self.__ui.view_menu.addAction(self.__ui.image_previews_action)
-        self.__ui.view_menu.addSeparator()  # between the app docks above and the dynamic docks list below
 
     def __bind_ui_actions(self) -> None:
         """Bind the `.ui`'s actions to their commands (#343): the catalog, not the `.ui`, holds their keys.
@@ -593,16 +642,15 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__command_registry.bind(ui.image_previews_toggle_action, IMAGE_PREVIEWS.id, role=BindingRole.LABEL)
 
     def __setup_file_menu(self) -> None:
-        """Wire ``File``'s static actions -- open dialogs, close, save all, quit -- and the ``Open
-        recents`` submenu's on-demand population (#64). ``Settings`` and the trailing ``Quit``
-        separator are appended later, in :meth:`__setup_docking_system`, once the settings dock exists
-        for ``settings_action``'s icon handler to mirror.
+        """Wire the menus' static actions -- the open dialogs, close, save all, the maintenance tools, quit -- and
+        the ``Open recents`` submenu's on-demand population (#64). ``Settings`` and the trailing ``Quit`` are
+        appended later, in :meth:`__setup_docking_system`, once the settings dock exists for ``settings_action``'s
+        icon handler to mirror.
 
-        ``Sweep checksums...`` (#242) lives here rather than in a menu of its own: ``File`` is where
-        every *point at something on disk and act on it* entry already is, and a sweep is a folder
-        chooser plus an enqueue. A ``Tools`` menu becomes worth having when the second catalog-wide
-        operation lands -- the cache scan the same walk was built for ([[data-model#scan-and-staleness]])
-        -- and both should move there together rather than one arriving alone.
+        ``File`` holds the application and nothing else (#402): the verbs that open and close documents are in
+        ``Documents``, the ``.rehuco`` ones in ``Root Catalog``, and the three maintenance operations --
+        ``Sweep checksums...`` (#242) and ``Import Legacy Catalog...`` (#192) joined by the cache scan as the
+        second catalog-wide walk ([[data-model#scan-and-staleness]]) -- in ``Tools``.
         """
         self.__ui.open_rehu_action.triggered.connect(self.__on_open_rehu)
         self.__ui.open_folder_action.triggered.connect(self.__on_open_folder)
@@ -624,11 +672,29 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # it's seen, same as __populate_docks_menu/__populate_recents_menu rebuild fresh on every
         # aboutToShow (#64)
         self.__ui.file_menu.aboutToShow.connect(self.__settings_action_icon_handler.resync_companion_checked_state)
-        # close_missing_action/close_all_action moved here from the View menu's own dynamic rebuild
-        # (#96, #247) -- resynced the same lazy way that rebuild always read them: fresh right before
-        # the menu holding them shows, since the open set and which of it is missing both change
-        # independently of any signal narrower than that
-        self.__ui.file_menu.aboutToShow.connect(self.__resync_close_actions_enabled)
+        # close_missing_action/close_all_action are resynced the same lazy way the open list below them is:
+        # fresh right before the menu holding them shows, since the open set and which of it is missing both
+        # change independently of any signal narrower than that
+        self.__ui.documents_menu.aboutToShow.connect(self.__resync_close_actions_enabled)
+        if FILE_MENU_MOVES_TO_APP_MENU:
+            self.__ui.file_menu.menuAction().setVisible(False)
+
+    def __setup_root_catalog_menu(self) -> None:
+        """Append the Root Catalog dock's own actions to ``Root Catalog`` and ``Browsers`` (#402).
+
+        The dock's ``QAction`` objects themselves, not copies, so an entry's enabled state is the dock's: nothing
+        is enabled with no catalog open, the root edits are off on a read-only file and ``Remove Root`` needs a
+        selected root. Added in code, after the ``.ui``'s own ``New``/``Open``/``Open Recent``, because the actions
+        belong to a widget built at run time.
+        """
+        dock = self.__rehuco_dock
+        menu = self.__ui.rehuco_menu
+        menu.addAction(dock.scan_action)
+        menu.addAction(dock.add_root_action)
+        menu.addAction(dock.remove_root_action)
+        browsers_menu = self.__ui.browsers_menu
+        browsers_menu.addAction(dock.new_browser_action)
+        browsers_menu.addSeparator()
 
     def __resync_close_actions_enabled(self) -> None:
         """Recompute ``Close Missing Files``/``Close All``'s enabled state (#96, #247).
@@ -656,20 +722,20 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         settings.save(persistent_settings())
 
     def __on_open_rehu(self) -> None:
-        """Prompt for a ``.rehu`` file and open it (``File`` > ``Open rehu...``, #64)."""
+        """Prompt for a ``.rehu`` file and open it (``Documents`` > ``Open rehu...``, #64)."""
         path, _ = QFileDialog.getOpenFileName(self, "Open rehu", "", "Rehu Files (*.rehu);;All Files (*)")
         if path:
             self.open_file(path)
 
     def __on_open_folder(self) -> None:
-        """Prompt for a directory-scoped resource's folder and open it (``File`` > ``Open folder...``,
+        """Prompt for a directory-scoped resource's folder and open it (``Documents`` > ``Open folder...``,
         [[data-model#resource-scoping]], #64)."""
         path = QFileDialog.getExistingDirectory(self, "Open Folder")
         if path:
             self.open_folder(path)
 
     def __on_open_companion(self) -> None:
-        """Prompt for an archive file and open its ``.rehu`` companion (``File`` > ``Open companion...``,
+        """Prompt for an archive file and open its ``.rehu`` companion (``Documents`` > ``Open companion...``,
         [[data-model#resource-scoping]], #64)."""
         filters = " ".join(f"*{extension}" for extension in ARCHIVE_EXTENSIONS)
         path, _ = QFileDialog.getOpenFileName(self, "Open Companion", "", f"Archives ({filters});;All Files (*)")
@@ -677,7 +743,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             self.open_archive(path)
 
     def __on_new_rehuco(self) -> None:
-        """Prompt for where to create a ``.rehuco`` and open it (``File`` > ``New Root Catalog...``, #377)."""
+        """Prompt for where to create a ``.rehuco`` and open it (``Root Catalog`` > ``New...``, #377)."""
         chosen, _ = QFileDialog.getSaveFileName(self, "New Root Catalog", "", REHUCO_FILE_FILTER)
         if not chosen:
             return
@@ -712,7 +778,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         return answer == QMessageBox.StandardButton.Yes
 
     def __on_open_rehuco(self) -> None:
-        """Prompt for a ``.rehuco`` and open it (``File`` > ``Open Root Catalog...``, #377)."""
+        """Prompt for a ``.rehuco`` and open it (``Root Catalog`` > ``Open...``, #377)."""
         chosen, _ = QFileDialog.getOpenFileName(self, "Open Root Catalog", "", REHUCO_FILE_FILTER)
         if chosen:
             self.__open_rehuco_or_report(chosen)
@@ -729,7 +795,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
     def open_rehuco_path(self, path: Path | str) -> bool:
         """Open the ``.rehuco`` at ``path`` in the Root Catalog dock, replacing the one open (#377).
 
-        Recorded into ``Open recent rehuco`` once opened -- and only then: a file that would not open is
+        Recorded into ``Root Catalog`` > ``Open Recent`` once opened -- and only then: a file that would not open is
         not one that was opened. Says nothing about a failure itself, since a caller knows whether a person
         is there to be told; the reason is the dock's :attr:`~rehuco_agent.rehuco.RehucoDock.load_error`.
 
@@ -758,7 +824,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             container.activateWindow()
 
     def __populate_recent_rehucos_menu(self) -> None:
-        """Rebuild ``Open recent rehuco`` with the most recently opened files, newest first (#377)."""
+        """Rebuild ``Root Catalog`` > ``Open Recent`` with the most recently opened files, newest first (#377)."""
         menu = self.__ui.open_recent_rehucos_menu
         menu.clear()
         paths = self.__rehuco_settings.newest_first()
@@ -770,7 +836,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             action.triggered.connect(lambda _checked=False, path=path: self.__open_rehuco_or_report(path))
 
     def __on_save_all(self) -> None:
-        """Save every currently dirty open document (``File`` > ``Save all``, reusing #41's
+        """Save every currently dirty open document (``Documents`` > ``Save all``, reusing #41's
         per-document ``RehuDocumentModel.save``, #64).
 
         Each save is guarded (:func:`~rehuco_agent.documents.save_or_prompt_retry.save_or_prompt_retry`,
@@ -783,7 +849,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
                 return
 
     def __on_sweep_checksums(self) -> None:
-        """Prompt for a folder and queue a sweep over it (``File`` > ``Sweep checksums...``, #242).
+        """Prompt for a folder and queue a sweep over it (``Tools`` > ``Sweep checksums...``, #242).
 
         **A folder per run, not a configured library.** Where a machine's folder roots live is
         [[mounts-and-storage#rehuco-scope]]'s `.rehuco` question and nothing writes one yet, so a sweep
@@ -820,7 +886,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             self.__task_queue.enqueue(job)
 
     def __on_import_legacy_catalog(self) -> None:
-        """Open the bulk `.tc` import wizard (``File`` > ``Import Legacy Catalog...``, #192).
+        """Open the bulk `.tc` import wizard (``Tools`` > ``Import Legacy Catalog...``, #192).
 
         Filed under the **unknown** identity, the same rule an in-app `.tc` open already follows
         (``DocumentsDock``): the per-user flags a legacy file carries were not set by this install's
@@ -832,7 +898,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         wizard.exec()
 
     def __on_conversion_backups(self) -> None:
-        """Open the conversion-backups manager (``File`` > ``Conversion Backups...``, #193).
+        """Open the conversion-backups manager (``Tools`` > ``Conversion Backups...``, #193).
 
         Takes no identity, unlike :meth:`__on_import_legacy_catalog`: discarding deletes files, and files
         them under nobody -- there are no per-user flags being read or written here for an identity to
@@ -1190,11 +1256,11 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """Show the Documents dock if it is hidden, and bring its tab to the front (#268).
 
         Every open funnel runs this first -- :meth:`open_file`, :meth:`open_folder`,
-        :meth:`open_archive` (so the ``File`` dialogs, ``Open recents``, argv, the shell verbs and the
+        :meth:`open_archive` (so the ``Documents`` dialogs, ``Open recents``, argv, the shell verbs and the
         single-instance forward are all covered, since each reaches the documents area through one of
         the three) and :meth:`__restore_session`. A file opened into a dock the user has closed, or that
         sits behind the Log dock's tab, would otherwise be added, made current and focused somewhere
-        invisible: the window would look exactly as it did before, and ``File`` > ``Close`` would
+        invisible: the window would look exactly as it did before, and ``Documents`` > ``Close`` would
         suddenly be enabled for a document nobody can see.
 
         ``toggleView(True)`` on an already-open dock is a no-op, and so is ``setAsCurrentTab()`` on one

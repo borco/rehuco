@@ -134,8 +134,8 @@ showing its progress and its own log, pausable, cancellable, reorderable, and wr
 quitting. Checksums, `.tc` imports, scrapes and image downloads all run on it; an app-wide **Tasks** panel
 shows the queue, beside an app-wide **Log**.
 
-A **root catalog** is a `.rehuco` file naming the folders to catalog — its **roots**, each with a label. `File` >
-`New Root Catalog…` or `Open Root Catalog…` opens one in the app-wide **Root Catalog** panel, one at a time, and it is
+A **root catalog** is a `.rehuco` file naming the folders to catalog — its **roots**, each with a label. `Root Catalog` >
+`New…` or `Open…` opens one in the app-wide **Root Catalog** panel, one at a time, and it is
 reopened on start with the documents, under the same Session setting; a file written by a newer build opens read-only. The panel's **Scan** puts one job per root on the
 task queue. Each job walks its root and records every `.rehu` it finds, and every legacy `.tc` that no `.rehu`
 covers, in a **`.rehudb`** cache. The cache sits in the machine's local cache folder and is named by the
@@ -146,7 +146,7 @@ Documents. The panel also lists the roots, which can be added and removed there.
 The biggest user is **checksums**. Beside each resource sits a `.checksum` record of *when each of its
 files was last checked and what the answer was* — not a manifest for an external tool, which is what lets
 a run skip a file checked recently instead of re-hashing a terabyte to learn nothing. A document's toolbar
-generates and verifies its own resource; `File` > `Sweep checksums…` points a run at a folder, finds every
+generates and verifies its own resource; `Tools` > `Sweep checksums…` points a run at a folder, finds every
 resource under it, and checks only what has gone stale. Because each record is written as its resource
 finishes, a sweep interrupted halfway carries on from where it was the next time it runs, with nothing
 kept in memory to lose. How long a check stays good for, and which hash is used, are settings.
@@ -176,8 +176,8 @@ concern, and keeping it that way is what would let something without a screen re
 The predecessors used a YAML sidecar, `info.tc`. rehuco reads that format and converts it: JSON parses
 far faster at the sizes involved, which was the reason for changing. Conversion writes the `.rehu`,
 renames screenshots to the current convention, and keeps backups it can roll back if any step fails. It
-never writes `.tc` — the older format is read-only here. `File` > `Import Legacy Catalog…` converts a
-whole folder tree at once, and `File` > `Conversion Backups…` discards the backups once you're satisfied.
+never writes `.tc` — the older format is read-only here. `Tools` > `Import Legacy Catalog…` converts a
+whole folder tree at once, and `Tools` > `Conversion Backups…` discards the backups once you're satisfied.
 
 ## What does not exist yet
 

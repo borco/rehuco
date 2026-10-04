@@ -1,4 +1,4 @@
-"""`File ▸ Import Legacy Catalog…`: the one-time bulk `.tc` → `.rehu` migration wizard (#192).
+"""`Tools ▸ Import Legacy Catalog…`: the one-time bulk `.tc` → `.rehu` migration wizard (#192).
 
 Five steps, and **no per-item review gate** -- the design decision #192 encodes. The conversion offers
 no choices: every screenshot keeps the number it already carries, and one whose slot is taken keeps its
@@ -152,7 +152,7 @@ class _ScanWorker(QObject):
 class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-attributes
     """The five-step bulk `.tc` import wizard (#192): root, dry-run scan, plan, import, result.
 
-    Shown with :meth:`~PySide6.QtWidgets.QDialog.exec` from `File ▸ Import Legacy Catalog…`, a task run
+    Shown with :meth:`~PySide6.QtWidgets.QDialog.exec` from `Tools ▸ Import Legacy Catalog…`, a task run
     over a tree rather than a view kept open -- so it is a dialog, not a dock. Geometry is persisted the
     same way `~rehuco_agent.dialogs.unsaved_changes_dialog.UnsavedChangesDialog`'s is: restored in
     :meth:`__init__`, captured in :meth:`done`, the one hook every exit path funnels through.

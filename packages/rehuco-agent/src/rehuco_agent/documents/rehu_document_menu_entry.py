@@ -47,8 +47,8 @@ enough that a probe glyph lands clear of any check column, short enough to be fr
 
 class RehuDocumentMenuEntry(QWidget):
     """A menu entry for a `.rehu` document: its title in normal text, its full path beneath it in
-    smaller, dimmed text -- both right-elided to fit :data:`MAX_WIDTH`. Shared by the `View` menu's
-    open-documents list (#61) and the `File` menu's `Open recents` list (#64).
+    smaller, dimmed text -- both right-elided to fit :data:`MAX_WIDTH`. Shared by the `Documents` menu's
+    open list (#61) and its `Open recents` list (#64).
 
     **Aligned and highlighted by the style, not by hand** (#79). A `QWidgetAction`'s custom default
     widget is painted by *us*, not by the `QMenu` around it, so anything invented here becomes a
@@ -58,8 +58,8 @@ class RehuDocumentMenuEntry(QWidget):
     checkmark are drawn by ``QStyle.CE_MenuItem`` from a real :class:`QStyleOptionMenuItem`, seeded
     from the owning menu through ``QMenu.initStyleOption``: the highlight, the checkmark and the check
     column's width then come from the same style code every native row uses. Seeding from the menu is
-    also what carries ``maxIconWidth`` across -- the `View` menu's own ``Log``/``Tasks``/``Image
-    Previews`` rows have icons, which widens the check column for *every* row, so an entry reserving
+    also what carries ``maxIconWidth`` across -- a row of the same menu with an icon
+    in it which widens the check column for *every* row, so an entry reserving
     only its own check width would sit left of everything above it.
 
     The two text lines are then drawn directly, at an x **measured from the style** rather than
@@ -74,8 +74,8 @@ class RehuDocumentMenuEntry(QWidget):
         `info.rehu`-aware derivation for a not-currently-open path).
     :param path: the document's full path, or ``None`` for a not-yet-saved document.
     :param parent: optional Qt parent.
-    :param checked: draw the style's own checkmark -- the `View` menu's open-documents list (#79)
-        sets this for the currently focused document. The `File` menu's `Open recents` list has no
+    :param checked: draw the style's own checkmark -- the `Documents` menu's open list (#79)
+        sets this for the currently focused document. Its `Open recents` list has no
         notion of "current" and leaves it ``False``.
     :param dirty: draw :data:`~rehuco_agent.documents.document_dock.DIRTY_DOCK_MARKER` -- the same
         marker the document's own tab title carries -- in the menu's icon column (#79, see

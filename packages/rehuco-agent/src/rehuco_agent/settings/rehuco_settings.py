@@ -21,7 +21,7 @@ class RehucoSettings:
 
     One file is open at a time, so ``current_path`` is a single path rather than a set -- the thing reopened on
     start. The recents are a :class:`RecentFilesSettings` under this section's group: the same most-recent-last
-    list, cap and storage the ``File`` menu's recents use, kept in one place.
+    list, cap and storage the ``Documents`` menu's recents use, kept in one place.
     """
 
     current_path: Path | None = None

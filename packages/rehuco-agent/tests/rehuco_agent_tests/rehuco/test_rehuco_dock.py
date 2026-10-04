@@ -1091,6 +1091,64 @@ def test_new_browser_adds_a_browser_with_the_rows_and_makes_it_current(dock: Reh
 
 
 @mark.usefixtures("served")
+def test_open_browsers_and_the_focused_one_follow_the_sub_docks(qtbot: QtBot, dock: RehucoDock) -> None:
+    """The Browsers menu's two reads: every browser with an open sub-dock, and the current one (#402).
+
+    **Test steps:**
+
+    * open a catalog, add a second browser, and verify both are open with the new one focused
+    * verify none is focused while the Roots sub-dock is current
+    """
+    dock.open_rehuco(REHUCO_PATH)
+    dock.new_browser_action.trigger()
+    first, second = dock.browsers
+
+    assert dock.open_browsers() == (first, second)
+    assert dock.focused_browser() is second
+
+    make_current(qtbot, dock.roots_dock)
+
+    assert dock.focused_browser() is None
+
+
+@mark.usefixtures("served")
+def test_focus_browser_brings_a_background_tab_to_the_front_and_makes_it_current(dock: RehucoDock) -> None:
+    """Focusing a browser fronts its tab and makes it the current sub-dock (#402).
+
+    **Test steps:**
+
+    * open a catalog, add a second browser and verify the first tab is behind it
+    * focus the first browser
+    * verify its tab is current in its area and the dock reports it focused
+    """
+    dock.open_rehuco(REHUCO_PATH)
+    dock.new_browser_action.trigger()
+    first, second = dock.browsers
+    area = dock.browser_dock(first).dockAreaWidget()
+    assert area is not None
+    assert area.dockWidget(area.currentIndex()) is dock.browser_dock(second)
+
+    dock.focus_browser(first)
+
+    assert area.dockWidget(area.currentIndex()) is dock.browser_dock(first)
+    assert dock.focused_browser() is first
+
+
+@mark.usefixtures("served")
+def test_remove_root_is_on_a_roots_context_menu(dock: RehucoDock) -> None:
+    """A root's right-click menu offers Remove Root, the same action the title bar and the Root Catalog menu hold
+    (#402).
+
+    **Test steps:**
+
+    * read the roots view's actions and its context menu policy
+    * verify the policy offers them and Remove Root is among them
+    """
+    assert dock.roots_view.contextMenuPolicy() == Qt.ContextMenuPolicy.ActionsContextMenu
+    assert dock.roots_view.actions() == [dock.remove_root_action]
+
+
+@mark.usefixtures("served")
 def test_rename_browser_sets_only_the_window_title(mocker: MockerFixture, qtbot: QtBot, dock: RehucoDock) -> None:
     """A real new name becomes the tab's title; the object name the registry keys on is never touched.
 
@@ -1242,7 +1300,8 @@ def test_a_browsers_tab_menu_lists_its_actions_above_detach(mocker: MockerFixtur
     assert entries[2].isSeparator()
     assert entries[3].text() == "Detach"
     assert not sub_docks(dock)[ROOTS_DOCK_NAME].tabWidget().findChildren(QMenu)
-    assert not sub_docks(dock)[ROOTS_DOCK_NAME].titleBarActions()
+    # the Roots tab carries the root edits (#402), not Rename and Clone
+    assert sub_docks(dock)[ROOTS_DOCK_NAME].titleBarActions() == [dock.add_root_action, dock.remove_root_action]
 
 
 @mark.usefixtures("served")

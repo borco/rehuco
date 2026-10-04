@@ -71,6 +71,23 @@ itself is written.
   real single word (`centralwidget`, `statusbar`, `menubar`) becomes `central_widget`,
   `status_bar`, `menu_bar`.
 
+### Command surfaces
+
+[[[appendices.code-conventions#command-surfaces]]]
+
+A command can be reached from several places; each has one job.
+
+- **The menu bar is the complete index.** Every command is in a menu, whatever else shows it, so a command is
+  findable without knowing which widget owns it.
+- **A button goes at the narrowest widget containing everything it affects.** *Scan* affects every browser of a
+  catalog, so it is on the catalog shell's toolbar; *Add Root* and *Remove Root* affect only the roots list, so
+  they are on its sub-dock's title bar (`CDockWidget.setTitleBarActions`). A command on one item — a root, a row —
+  goes on that item's context menu.
+- **A sub-dock earns a toolbar only past about three frequent actions.** Up to that, its title-bar actions are
+  enough.
+- **One `QAction` serves every surface**, so enabled state, text and shortcut are decided once, by the widget
+  that owns it.
+
 ## 3. Markdown
 
 [[[appendices.code-conventions#markdown]]]

@@ -342,6 +342,24 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         """Every browser, in the order they were added."""
         return tuple(self.__browsers.values())
 
+    def open_browsers(self) -> tuple[TableBrowser, ...]:
+        """Every browser whose sub-dock is open, in the order they were added -- the set the Browsers menu lists."""
+        return tuple(browser for dock, browser in self.__browsers.items() if not dock.isClosed())
+
+    def focused_browser(self) -> TableBrowser | None:
+        """The browser the Browsers menu checks: :attr:`current_browser`, under the name its menu reads it by."""
+        return self.current_browser
+
+    def focus_browser(self, browser: TableBrowser) -> None:
+        """Show ``browser``'s sub-dock, bring its tab to the front and make it the current one.
+
+        :param browser: one of :attr:`browsers`.
+        """
+        dock = self.browser_dock(browser)
+        dock.toggleView(True)
+        dock.setAsCurrentTab()
+        self.__focus_tracker.set_current_dock(dock)
+
     @property
     def current_browser(self) -> TableBrowser | None:
         """The browser whose sub-dock is the focus tracker's current one, or ``None`` while that is the Roots
@@ -436,17 +454,24 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         roots.setObjectName(ROOTS_DOCK_NAME)
         roots.setFeatures(features.DockWidgetClosable | features.DockWidgetFocusable | features.DockWidgetMovable)
         roots.setWidget(self.__roots_panel)
+        # the two root edits affect this list and nothing else, so they sit on its own title bar and its context
+        # menu rather than on the shell's toolbar ([[appendices.code-conventions#command-surfaces]])
+        ui = self.__roots_ui
+        roots.setTitleBarActions([ui.add_root_action, ui.remove_root_action])
+        ui.roots_view.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
+        ui.roots_view.addAction(ui.remove_root_action)
         self.__dock_manager.addDockWidget(QtAds.LeftDockWidgetArea, roots)
         return roots
 
     def __setup_toolbar(self) -> None:
-        """Fill this shell's toolbar -- Scan, the two root edits, the Roots toggle, then New and Rename Browser --
-        each with its themed icon."""
+        """Fill this shell's toolbar -- Scan, the Roots toggle, then New and Rename Browser -- each with its themed
+        icon, and give the two root edits theirs, which they show on the Roots sub-dock's title bar instead.
+
+        Scan stays here because it affects every browser; New Table Browser because it creates one in this shell
+        ([[appendices.code-conventions#command-surfaces]])."""
         ui = self.__roots_ui
         toolbar = self.addToolBar("Root Catalog")
         toolbar.addAction(ui.scan_action)
-        toolbar.addSeparator()
-        toolbar.addActions([ui.add_root_action, ui.remove_root_action])
         toolbar.addSeparator()
         toolbar.addAction(self.roots_action)
         toolbar.addSeparator()

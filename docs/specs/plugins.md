@@ -506,9 +506,9 @@ The first browser is a top-level **Root Catalog** dock, first on the action bar 
 one opened `.rehuco` — a *root catalog* ([[data-model#local-file-trio]], #377). The word *collection* is not used for
 it: that is a resource type ([[plugins#grouping-entities]]). The dock works like the **Projects** of a code host: a
 toolbar over a nested dock manager whose sub-docks are one **Roots** dock and any number of **browsers**. Its toolbar has
-*Scan*, the Roots edits, a *Roots* toggle that shows and hides the Roots sub-dock, *New Table Browser* and
-*Rename Browser*. Its nested dock manager holds three
-kinds of sub-dock:
+*Scan*, a *Roots* toggle that shows and hides the Roots sub-dock, *New Table Browser* and *Rename Browser*;
+the Roots edits are on the Roots sub-dock's own title bar ([[appendices.code-conventions#command-surfaces]]).
+Its nested dock manager holds three kinds of sub-dock:
 
 - **Roots** (#378) — a column view, hidden by its own [x] and shown again by the toolbar's toggle: the first column is the `.rehuco`'s roots by label
   ([[mounts-and-storage#rehuco-scope]]), each further column one folder's listing, drawn like the files sub-dock
@@ -550,6 +550,15 @@ kinds of sub-dock:
   several selected leaves them empty. The view-model is the one any Documents dock of the same file holds
   ([[plugins#view-model]]), so the two stay in step unsaved. **Moving off a resource with unsaved edits opens it in
   Documents** (or focuses it there) carrying those edits, then shows the new current resource.
+
+**The menu bar is the complete index** (#402): `File` (Settings, Quit), `Root Catalog`, `Documents`, `Browsers`,
+`View` and `Tools`. `Documents` and `Browsers` are twins — the verbs that open or create, the verbs on the open
+set, then the open list, A–Z, with the focused one checked. `Root Catalog` is the same shape without a list,
+there being one catalog: New, Open, Open Recent, then Scan, Add Root and Remove Root, which are the dock's own
+actions and so are enabled as the dock enables them. `Browsers` leads with *New Table Browser*; the image
+browser (#403) adds its own entry and kind icon when it lands. `View` is what is visible — themes and the dock
+toggles — and `Tools` holds the catalog-wide maintenance operations. Where the OS moves `File`'s two entries
+into an application menu, `File` is not shown empty.
 
 Every browser here updates in place when the app moves or changes files — rows and nodes are renamed, moved, inserted
 or removed, never reset — by the in-process announcements of [[mounts-and-storage#out-of-band]].
