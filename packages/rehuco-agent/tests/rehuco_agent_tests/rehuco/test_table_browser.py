@@ -106,6 +106,42 @@ def test_the_status_line_counts_the_rows_and_adds_up_their_sizes(browser: TableB
     assert browser.status_bar.currentMessage() == "2 resources / 3.5K"
 
 
+def test_the_status_line_says_when_a_total_is_partial(browser: TableBrowser) -> None:
+    """A total never silently understates: it names the rows it left out, and says nothing when none is missing.
+
+    **Test steps:**
+
+    * show a sized tutorial, a legacy ``.tc``, a measured pack and an unmeasured one
+    * verify the legacy count and the image total's ``unmeasured`` parenthesis
+    * show only measured rows, and verify the parentheses are gone
+    * show only an empty pack, and verify ``0 images`` is still said
+    """
+    sized = row("a/info.rehu", 1536)
+    unsized = CatalogRow(1, ROOT_ID, "root", CatalogRecord("b/info.tc", RecordKind.TC, type="tutorial"), 0.0)
+    pack = CatalogRecord("c.rehu", RecordKind.REHU, type="reference_images", current_size=512, current_count=1)
+    unmeasured = CatalogRecord("d.rehu", RecordKind.REHU, type="reference_images", current_size=512)
+    packs = [CatalogRow(1, ROOT_ID, "root", entry, 0.0) for entry in (pack, unmeasured)]
+
+    browser.set_rows([sized, unsized, *packs], {ROOT_ID: ROOT_PATH})
+    assert browser.status_bar.currentMessage() == "4 resources / 1 legacy .tc / 2.5K / 1 image (1 unmeasured)"
+
+    browser.set_rows([sized, packs[0]], {ROOT_ID: ROOT_PATH})
+    assert browser.status_bar.currentMessage() == "2 resources / 2.0K / 1 image"
+
+    empty = CatalogRecord("e.rehu", RecordKind.REHU, type="reference_images", current_size=0, current_count=0)
+    browser.set_rows([CatalogRow(1, ROOT_ID, "root", empty, 0.0)], {ROOT_ID: ROOT_PATH})
+    assert browser.status_bar.currentMessage() == "1 resource / 0B / 0 images"
+
+    many = CatalogRecord("f.rehu", RecordKind.REHU, type="reference_images", current_size=0, current_count=18400)
+    browser.set_rows([CatalogRow(1, ROOT_ID, "root", many, 0.0)], {ROOT_ID: ROOT_PATH})
+    assert browser.status_bar.currentMessage() == "1 resource / 0B / 18,400 images"
+
+    legacy = CatalogRecord("g.tc", RecordKind.TC, type="reference_images")
+    rows = [CatalogRow(1, ROOT_ID, "root", legacy, 0.0)] * 1188 + [row("h/info.rehu", 0)] * 52
+    browser.set_rows(rows, {ROOT_ID: ROOT_PATH})
+    assert browser.status_bar.currentMessage() == "1,240 resources / 1,188 legacy .tc / 0B"
+
+
 def test_a_browser_starts_unsorted(browser: TableBrowser) -> None:
     """No arrow on a column until one is clicked, because the rows start in the cache's order.
 

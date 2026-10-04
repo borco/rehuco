@@ -543,7 +543,15 @@ Its nested dock manager holds three kinds of sub-dock:
     its status line only ever hold what matches. A read costs about 21 µs per row it returns (#407): the cache's own
     token clauses must be index-driven rather than correlated per row, and what a refresh does with the rows — a status
     total, a sort — must not call back into Qt once per row. Past roughly 30k resources a read belongs on a worker
-    thread, with filtering over the rows already loaded, behind the same `CatalogQuery`. A **`columns:` token** —
+    thread, with filtering over the rows already loaded, behind the same `CatalogQuery`. **Case:** `authors`, `tags`,
+    `publishers`, `type` and a `folder`'s root label fold ASCII only (SQLite's `NOCASE`); the path beneath the root
+    folds as the filesystem does (`os.path.normcase`), the rule Roots navigates by — so `folder:lib/FÖLDER` finds
+    `Földer` on Windows and not on Linux, where `folder:lib/G03` does not find `g03`. The **status line** totals what
+    the model holds, never what a row's `None` hides: the size and the image count each say how many rows they leave
+    out, and cover the `.rehu` rows only: a legacy `.tc`'s size and image count are old claims, often a literal `0`,
+    so those rows are counted apart (`1,240 resources / 188 legacy .tc / 1.2T (37 unmeasured) / 18,400 images (3
+    unmeasured)`). The image total is shown only where a `.rehu` row has a count or is of a type that declares one.
+    A **`columns:` token** —
     `columns:authors,title` — chooses which columns show, and a change from the header menu is written back into it,
     so one string says both what rows and what fields; it is dropped once every column shows. An unknown field or column is reported on the line, never
     silently dropped, and the rest of the line still applies. The text is the browser's remembered filter. A

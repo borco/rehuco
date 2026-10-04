@@ -3,20 +3,20 @@ catalog (#396, #398)."""
 
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Final, cast
+from typing import Final
 from uuid import UUID, uuid4
 
 import humanize
 from borco_pyside.theming import GlyphActionIconThemeHandler
 from borco_pyside.widgets import HeaderSectionsMenu, RowBandDelegate
-from PySide6.QtCore import QAbstractItemModel, QModelIndex, Qt, QTimer, Signal
+from PySide6.QtCore import QModelIndex, Qt, QTimer, Signal
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QLineEdit, QStatusBar, QTableView, QWidget
 from rehuco_core import CatalogField, CatalogQuery, CatalogRow
 
 from ..glyphs import FILTER_PROBLEM_GLYPH
 from ..settings.catalog_state_store import TABLE_BROWSER_KIND, BrowserState
-from .catalog_table_model import COLUMN_IDS, SIZE_ROLE, CatalogTableModel
+from .catalog_table_model import COLUMN_IDS, CatalogTableModel
 from .filter_line import COLUMN_SEPARATOR, COLUMNS_TOKEN, parse_filter, with_token
 from .rehuco_browser_panel_ui import Ui_RehucoBrowserPanel
 
@@ -81,8 +81,7 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
         view.horizontalHeader().setSortIndicator(-1, Qt.SortOrder.AscendingOrder)
         self.__sections_menu: Final = HeaderSectionsMenu(view.horizontalHeader())
         view.doubleClicked.connect(self.__on_double_clicked)
-        shown = cast(QAbstractItemModel, view.model())
-        for signal in (shown.modelReset, shown.rowsInserted, shown.rowsRemoved):
+        for signal in (self.__model.modelReset, self.__model.rowsInserted, self.__model.rowsRemoved):
             signal.connect(self.__update_status)
         self.__update_status()
 
@@ -277,12 +276,24 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
             self.row_activated.emit(path)
 
     def __update_status(self) -> None:
-        """Say how many rows the table shows now, and their sizes added up."""
-        model = self.__ui.catalog_view.model()
-        count = model.rowCount()
-        if count == 0:
+        """Say how many rows the table shows now, their sizes and, where it means anything, their image counts added
+        up over the ``.rehu`` rows, the legacy ``.tc`` ones counted apart -- each total saying how many rows it left
+        out, never silently understating."""
+        totals = self.__model.totals
+        if totals.count == 0:
             self.__ui.status_bar.showMessage("No resources")
             return
-        total = sum(model.index(row, 0).data(SIZE_ROLE) for row in range(count))
-        noun = "resource" if count == 1 else "resources"
-        self.__ui.status_bar.showMessage(f"{count} {noun} / {humanize.naturalsize(total, gnu=True)}")
+        noun = "resource" if totals.count == 1 else "resources"
+        parts = [f"{totals.count:,} {noun}"]
+        if totals.legacy:
+            parts.append(f"{totals.legacy:,} legacy .tc")
+        parts.append(humanize.naturalsize(totals.size, gnu=True) + self.__unmeasured(totals.unmeasured_size))
+        if totals.has_images:
+            noun = "image" if totals.images == 1 else "images"
+            parts.append(f"{totals.images:,} {noun}{self.__unmeasured(totals.unmeasured_images)}")
+        self.__ui.status_bar.showMessage(" / ".join(parts))
+
+    @staticmethod
+    def __unmeasured(missing: int) -> str:
+        """The parenthesis after a partial total; nothing when no row is missing."""
+        return f" ({missing} unmeasured)" if missing else ""

@@ -32,7 +32,10 @@ released becomes the body of the GitHub Release, so each entry is written to be 
   roots and browser actions.
 - A **filter line** over each table browser: free text plus `field:value` or `field:"quoted value"` tokens for
   `folder`, `authors`, `tags`, `publishers` and `type`, all of which must match. The rows narrow as you pause
-  typing, or at once on Enter, and the status line counts what is shown. `columns:authors,title` picks the columns
+  typing, or at once on Enter. The status line under the table counts what is shown and adds up its sizes and, for
+  reference packs, its image counts, saying how many rows each total leaves out as unmeasured and how many are
+  legacy `.tc` files; a `folder` token matches the root label ignoring ASCII case and the path beneath it as the
+  filesystem does. `columns:authors,title` picks the columns
   shown; showing or hiding one from the header's right-click menu rewrites the token. An unknown field or column is
   flagged with a warning icon on the line, and the rest of the line still applies. Each browser remembers its line.
 - Author names in a document's viewer are links: clicking one brings the Root Catalog forward with

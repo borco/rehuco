@@ -241,17 +241,28 @@ JOINS: Final = (
 """Each value table and its join table -- the only names ever formatted into a statement."""
 
 TOKEN_CLAUSES: Final = {
-    CatalogField.FOLDER: "(roots.label || '/' || r.path) LIKE ? ESCAPE '\\'",
     CatalogField.TYPE: "r.type = ? COLLATE NOCASE",
     **{
+        # driven from the value's unique name index and the join's value index, not probed once per resource (#454)
         CatalogField(table): (
-            f"EXISTS (SELECT 1 FROM {join} j JOIN {table} v ON v.id = j.value_id "  # nosec B608  # fixed names
-            "WHERE j.resource_id = r.id AND v.name = ?)"
+            f"r.id IN (SELECT j.resource_id FROM {join} j JOIN {table} v ON v.id = j.value_id "  # nosec B608  # fixed
+            "WHERE v.name = ?)"
         )
         for table, join in JOINS
     },
 }
-"""The clause each token field adds, each with exactly one parameter."""
+"""The clause each token field adds but ``folder``, each with exactly one parameter."""
+
+FOLDER_ROOT_CLAUSE: Final = "r.root_id IN (SELECT id FROM roots WHERE label = ? COLLATE NOCASE)"
+"""A root by its label, folded as ASCII only, as the label's uniqueness is.
+
+Phrased on ``r.root_id`` rather than ``roots.label`` on purpose: a ``folder`` token ORs one of these per way of
+splitting its value, and SQLite drives an OR through the ``(root_id, path_key)`` index only when every term is a
+condition on ``r``'s own indexed columns -- a term on the joined ``roots`` row makes the whole query a scan."""
+
+FOLDER_SUBTREE_CLAUSE: Final = f"({FOLDER_ROOT_CLAUSE} AND r.path_key >= ? AND r.path_key < ?)"
+"""A folder beneath a root, by key range -- three parameters: the root's label, then the bounds of the keys under the
+folder's ``/``-terminated prefix. The path part folds as the filesystem does (:func:`catalog_path_key`)."""
 
 TYPE_FIELD_COLUMNS: Final = (
     "advertised_duration",
@@ -920,12 +931,38 @@ class CatalogCache:
             pattern = f"%{CatalogCache.__escaped(query.text)}%"
             parameters += [pattern, pattern]
         for field, value in query.tokens:
-            clauses.append(TOKEN_CLAUSES[field])
             if field is CatalogField.FOLDER:
-                parameters.append(f"{CatalogCache.__escaped(value.strip('/'))}/%")
+                clause, folder_parameters = CatalogCache.__folder_clause(value)
+                clauses.append(clause)
+                parameters += folder_parameters
             else:
+                clauses.append(TOKEN_CLAUSES[field])
                 parameters.append(value)
         return " AND ".join(clauses), tuple(parameters)
+
+    @staticmethod
+    def __folder_clause(value: str) -> tuple[str, tuple[str, ...]]:
+        """The condition a ``folder`` token reads as: every row beneath ``<root label>/<relative path>``.
+
+        A label may hold a ``/``, so every split of ``value`` into a label and a path is tried, each an indexed range.
+        The label matches as ASCII folds it; the path as the filesystem does, the way Roots navigates by it.
+
+        :param value: the token's value, ``/``-separated.
+        :returns: the condition and its parameters.
+        """
+        parts = value.strip("/").split("/")
+        alternatives: list[str] = []
+        parameters: list[str] = []
+        for split in range(1, len(parts) + 1):
+            label, relative = "/".join(parts[:split]), "/".join(parts[split:])
+            if not relative:
+                alternatives.append(FOLDER_ROOT_CLAUSE)
+                parameters.append(label)
+                continue
+            prefix = catalog_path_key(f"{relative}/")
+            alternatives.append(FOLDER_SUBTREE_CLAUSE)
+            parameters += [label, prefix, prefix + KEY_RANGE_END]
+        return f"({' OR '.join(alternatives)})", tuple(parameters)
 
     @staticmethod
     def __escaped(text: str) -> str:

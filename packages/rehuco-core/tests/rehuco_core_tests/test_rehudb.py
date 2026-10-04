@@ -5,14 +5,17 @@ per name, and a second *keeper* connection to the same name is what a test inspe
 including after the cache under test has closed its own.
 """
 
+# pylint: disable=too-many-lines  # one cohesive module per subject, see [[appendices.code-conventions]]
+
 import logging
+import re
 import sqlite3
 from collections.abc import Callable, Generator
 from pathlib import Path
 from typing import Any, Final
 from uuid import uuid4
 
-from pytest import LogCaptureFixture, fixture, raises
+from pytest import LogCaptureFixture, fixture, mark, raises
 from pytest_mock import MockerFixture
 from rehuco_core import (
     BUILTIN_PLUGINS,
@@ -889,6 +892,82 @@ def test_a_folder_token_is_a_label_and_path_prefix(library: CatalogCache) -> Non
     assert titles(library, blender) == ["Donut 100%", "Rigging"]
     assert titles(library, CatalogQuery(tokens=((CatalogField.FOLDER, "packs"),))) == ["Faces"]
     assert not titles(library, CatalogQuery(tokens=((CatalogField.FOLDER, "tutorials/blend"),)))
+
+
+def test_a_folder_token_folds_the_label_as_ascii_and_the_path_as_the_filesystem_does(library: CatalogCache) -> None:
+    """The root's label is matched ignoring ASCII case; the path beneath it by its key (#454), which folds as this
+    filesystem does -- so ``BLENDER`` finds ``blender`` where ``normcase`` says they are one folder, and only there."""
+    assert titles(library, CatalogQuery(tokens=((CatalogField.FOLDER, "TUTORIALS"),))) == [
+        "Donut 100%",
+        "Rigging",
+        "Sculpt_1",
+    ]
+    shouted = CatalogQuery(tokens=((CatalogField.FOLDER, "Tutorials/BLENDER"),))
+
+    assert bool(titles(library, shouted)) == (catalog_path_key("BLENDER") == catalog_path_key("blender"))
+
+
+def test_a_folder_token_takes_like_wildcards_literally(library: CatalogCache) -> None:
+    """``%`` and ``_`` in a folder are characters, not patterns."""
+    assert not titles(library, CatalogQuery(tokens=((CatalogField.FOLDER, "tutorials/_lender"),)))
+    assert not titles(library, CatalogQuery(tokens=((CatalogField.FOLDER, "tutorials/%"),)))
+
+
+def test_two_resources_sharing_a_value_under_different_spellings_each_keep_their_own(cache: CatalogCache) -> None:
+    """The value row keeps the first spelling ever written; each resource's join keeps what its record said, and a
+    token finds both whatever its case."""
+    rehuco, first, _ = two_roots()
+    cache.reconcile_roots(rehuco.roots)
+    cache.apply_root_scan(
+        first.root_id,
+        [record("a/info.rehu", title="A", authors=("Ann",)), record("b/info.rehu", title="B", authors=("ann",))],
+    )
+
+    rows = cache.rows(CatalogQuery(tokens=((CatalogField.AUTHORS, "ANN"),)))
+
+    assert [(row.record.title, row.record.authors) for row in rows] == [("A", ("Ann",)), ("B", ("ann",))]
+
+
+def test_a_repeated_value_field_must_match_both_values(library: CatalogCache) -> None:
+    """Two tokens of one field narrow, each an independent clause."""
+    both = CatalogQuery(tokens=((CatalogField.TAGS, "3d"), (CatalogField.TAGS, "rig")))
+
+    assert titles(library, both) == ["Rigging"]
+
+
+@mark.parametrize(
+    "token",
+    [
+        (CatalogField.FOLDER, "tutorials/blender"),
+        (CatalogField.AUTHORS, "ann"),
+        (CatalogField.TAGS, "rig"),
+        (CatalogField.PUBLISHERS, "pub"),
+    ],
+    ids=lambda token: token[0].value,
+)
+def test_a_token_on_its_own_reads_resources_through_an_index_never_a_scan(
+    library: CatalogCache, token: tuple[CatalogField, str]
+) -> None:
+    """Every statement one token runs reaches ``resources`` through an index (#454): a plan that scans the table and
+    probes a join once per row is what made ``authors:`` cost 758 ms at 100k resources, and a folder token ORed over
+    its label splits scans unless every term is on the table's own indexed columns. The planner's choice here does not
+    depend on the row count, so the small library is enough -- but each token is asked alone, since beside another
+    it may ride that one's index as a mere filter."""
+    statements: list[str] = []
+    connection = library.connection
+    connection.set_trace_callback(statements.append)
+    try:
+        library.rows(CatalogQuery(tokens=(token,)))
+    finally:
+        connection.set_trace_callback(None)
+    plans = {
+        statement: [step for (*_, step) in connection.execute(f"EXPLAIN QUERY PLAN {statement}")]
+        for statement in statements
+        if "FROM resources r" in statement
+    }
+
+    assert len(plans) == 4  # the rows and the three value tables
+    assert not [step for steps in plans.values() for step in steps if re.fullmatch(r"SCAN r( .*)?", step)]
 
 
 def test_tokens_and_text_must_all_match(library: CatalogCache) -> None:
