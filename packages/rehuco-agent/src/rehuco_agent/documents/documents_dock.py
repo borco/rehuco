@@ -106,7 +106,7 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         cover every way there: the dock's own ``visibilityChanged`` -- which stays silent while the
         window is still hidden, fires once per area's current tab when it first shows, and again on
         every later tab reveal (see the curated stub's entry) -- and, for the programmatic focus routes
-        that bypass real visibility (a re-open by path, the ``View`` menu, the session's remembered
+        that bypass real visibility (a re-open by path, the ``Documents`` menu, the session's remembered
         focus), :meth:`__activate` and :meth:`__on_current_dock_changed`. Entries are settled
         (:meth:`__settle_pending`) by whichever fires first, or by the dock closing unviewed
         (:meth:`__remove_dock`)."""
@@ -262,7 +262,7 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
     def focused_document_widget(self) -> DocumentWidget | None:
         """The widget of the currently focused document, or ``None`` if none is focused.
 
-        Used by the ``View`` menu's open-documents list (#79) to mark the focused entry with a
+        Used by the ``Documents`` menu's open list (#79) to mark the focused entry with a
         checkmark -- compared by widget identity rather than path, the same reason
         :meth:`focus_document` takes a widget rather than a path: a not-yet-saved document has none
         (yet) to compare by.
@@ -339,7 +339,7 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
     def has_missing_documents(self) -> bool:
         """Whether any open document is locked with the ``MISSING`` reason (#93).
 
-        Drives the ``View`` menu's "Close Missing Files" enabled state (#96) -- shares the same
+        Drives the ``Documents`` menu's "Close Missing Files" enabled state (#96) -- shares the same
         predicate :meth:`close_missing` itself filters by, so "what counts as missing" lives in
         one place.
         """
@@ -353,7 +353,7 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
     def focus_document(self, widget: DocumentWidget) -> None:
         """Make ``widget``'s dock the current one, raising/focusing it.
 
-        Used by the ``View`` menu's open-documents list (#61) to jump to an already-open document
+        Used by the ``Documents`` menu's open list (#61) to jump to an already-open document
         by widget identity rather than path, since a not-yet-saved document has no path (yet) for
         :meth:`open_document` to look up.
 

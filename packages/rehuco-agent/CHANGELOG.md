@@ -13,13 +13,18 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 ### Added
 
 - A **Root Catalog** panel beside Documents, first on the action bar and closed until a `.rehuco` is opened.
-  `File` > `New Root Catalog…`, `Open Root Catalog…` and `Open recent root catalog` open one file at a time, as
+  `Root Catalog` > `New…`, `Open…` and `Open Recent` open one file at a time, as
   does double-clicking a `.rehuco` in a file manager, and the one left open is reopened on start under the Session
   page's restore toggle, like the documents. Its roots can be
   added and removed, **Scan** puts one task-queue job per root that records the `.rehu` and uncovered `.tc` files
   found into a `.rehudb` cache in the local cache folder, and a table lists what the cache holds. A rescan reads
   only the files that changed since the last one. Double-clicking
   a row opens that resource in Documents. A `.rehuco` written by a newer build opens read-only.
+- The menu bar is six short menus, each about one thing: `File` (Settings, Quit), `Root Catalog`, `Documents`,
+  `Browsers`, `View` and `Tools`. `Documents` and `Browsers` each list what is open, A–Z, with the focused one
+  checked, and picking an entry brings it to the front; `View` no longer lists documents. `Sweep checksums…`,
+  `Import Legacy Catalog…` and `Conversion Backups…` moved to `Tools`. Add Root and Remove Root moved from the
+  Root Catalog toolbar to the Roots list's title bar, and Remove Root is also on a root's right-click menu.
 - **Table browsers** in the Root Catalog panel: add as many as you like with **New Table Browser**, each with its
   own name, columns and sort. **Rename** and **Clone** (the copy starts with the same columns) are on the browser's
   title bar and its tab's right-click menu, and the toolbar renames the current one; the [x] deletes a browser. The Roots list can now be hidden with its [x] and shown with the toolbar's **Roots** toggle. Each

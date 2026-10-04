@@ -495,7 +495,7 @@ same one-resource-one-directory assumption the backup above is built on. A direc
 `.tc` that will not read or parse costs its own entry and is named, never the whole plan — the walk says what
 it could not see, the discipline the checksum sweep already follows ([[mounts-and-storage#offline-mounts]]).
 
-`File ▸ Import Legacy Catalog…` is the wizard that runs the plan and then acts on it, over as many
+`Tools ▸ Import Legacy Catalog…` is the wizard that runs the plan and then acts on it, over as many
 resources as the folder holds — thousands, for a real catalog. Five steps: choose a root (remembering
 recent ones); run the scan on a worker thread, cancellable; show the plan as a checkbox table, one row per
 resource, sortable and filterable by flag, with a header summary (*"9,847 clean · 153 flagged · 12
@@ -546,7 +546,7 @@ A completed conversion keeps exactly one retained pair to act on afterwards — 
 `info.sfv.orig` — and the only remedy over them is **Discard**, permanent by design: nothing about the conversion
 itself can be undone, because nothing about it was destructive in the first place. A wrong image rename is corrected
 in the images dock ([[plugins#tutorial-plugin]]), by hand, one file at a time — not by reverting the whole resource
-back to a `.tc`. `File ▸ Conversion Backups…` is the catalog-wide manager over these retained pairs, **one row per
+back to a `.tc`. `Tools ▸ Conversion Backups…` is the catalog-wide manager over these retained pairs, **one row per
 resource**: the date its conversion minted, the reclaimable size, and Discard, confirmed and irreversible, run as a
 task-queue job whatever the selection size. There is nothing here to filter by outcome quality, since a conversion
 has none to report — the only question a row answers is *keep this small backup, or reclaim its bytes*.

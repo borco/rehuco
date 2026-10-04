@@ -1,4 +1,4 @@
-"""`File ▸ Conversion Backups…`: discard the `.orig` backups a bulk import left behind (#193).
+"""`Tools ▸ Conversion Backups…`: discard the `.orig` backups a bulk import left behind (#193).
 
 **This is where the review pass lives.** #192 deliberately drops the per-item confirmation, because the
 conversion offers no choices worth confirming thousands of times; safety is that nothing was deleted.
@@ -171,7 +171,7 @@ class ScanWorker(QObject):
 class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-attributes
     """The backups manager: scan a folder, review what still has backups, and discard them (#193).
 
-    Shown with :meth:`~PySide6.QtWidgets.QDialog.exec` from `File ▸ Conversion Backups…`, a task run over
+    Shown with :meth:`~PySide6.QtWidgets.QDialog.exec` from `Tools ▸ Conversion Backups…`, a task run over
     a tree rather than a view kept open -- so it is a dialog, not a dock, the same call
     `~rehuco_agent.dialogs.import_legacy_catalog_wizard.ImportLegacyCatalogWizard` makes. Geometry is
     persisted in :meth:`done`, the one hook every exit path funnels through.

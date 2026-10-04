@@ -27,14 +27,14 @@
     <property name="title">
      <string>&amp;File</string>
     </property>
+   </widget>
+   <widget class="QMenu" name="documents_menu">
+    <property name="title">
+     <string>&amp;Documents</string>
+    </property>
     <widget class="QMenu" name="open_recents_menu">
      <property name="title">
       <string>Open recen&amp;ts</string>
-     </property>
-    </widget>
-    <widget class="QMenu" name="open_recent_rehucos_menu">
-     <property name="title">
-      <string>Open recent root cata&amp;log</string>
      </property>
     </widget>
     <addaction name="open_rehu_action"/>
@@ -42,27 +42,50 @@
     <addaction name="open_companion_action"/>
     <addaction name="open_recents_menu"/>
     <addaction name="separator"/>
-    <addaction name="new_rehuco_action"/>
-    <addaction name="open_rehuco_action"/>
-    <addaction name="open_recent_rehucos_menu"/>
-    <addaction name="separator"/>
     <addaction name="close_action"/>
     <addaction name="close_missing_action"/>
     <addaction name="close_all_action"/>
     <addaction name="save_all_action"/>
     <addaction name="separator"/>
-    <addaction name="sweep_checksums_action"/>
-    <addaction name="import_legacy_catalog_action"/>
-    <addaction name="conversion_backups_action"/>
+   </widget>
+   <widget class="QMenu" name="rehuco_menu">
+    <property name="title">
+     <string>&amp;Root Catalog</string>
+    </property>
+    <widget class="QMenu" name="open_recent_rehucos_menu">
+     <property name="title">
+      <string>Open &amp;Recent</string>
+     </property>
+    </widget>
+    <addaction name="new_rehuco_action"/>
+    <addaction name="open_rehuco_action"/>
+    <addaction name="open_recent_rehucos_menu"/>
     <addaction name="separator"/>
+   </widget>
+   <widget class="QMenu" name="browsers_menu">
+    <property name="title">
+     <string>&amp;Browsers</string>
+    </property>
    </widget>
    <widget class="QMenu" name="view_menu">
     <property name="title">
      <string>&amp;View</string>
     </property>
    </widget>
+   <widget class="QMenu" name="tools_menu">
+    <property name="title">
+     <string>&amp;Tools</string>
+    </property>
+    <addaction name="sweep_checksums_action"/>
+    <addaction name="import_legacy_catalog_action"/>
+    <addaction name="conversion_backups_action"/>
+   </widget>
    <addaction name="file_menu"/>
+   <addaction name="rehuco_menu"/>
+   <addaction name="documents_menu"/>
+   <addaction name="browsers_menu"/>
    <addaction name="view_menu"/>
+   <addaction name="tools_menu"/>
   </widget>
   <widget class="QStatusBar" name="status_bar"/>
   <widget class="QToolBar" name="action_bar">
@@ -198,12 +221,12 @@
   </action>
   <action name="new_rehuco_action">
    <property name="text">
-    <string>&amp;New Root Catalog...</string>
+    <string>&amp;New...</string>
    </property>
   </action>
   <action name="open_rehuco_action">
    <property name="text">
-    <string>Open Root C&amp;atalog...</string>
+    <string>&amp;Open...</string>
    </property>
   </action>
   <action name="image_previews_action">

@@ -1,4 +1,4 @@
-"""Most-recently-opened paths for the ``File > Open recents`` menu, newest last (#64)."""
+"""Most-recently-opened paths for the ``Documents > Open recents`` menu, newest last (#64)."""
 
 from collections import OrderedDict
 from dataclasses import dataclass, field
@@ -27,7 +27,7 @@ class RecentFilesSettings:
     """Every remembered path, oldest first."""
 
     group: str = GROUP
-    """The settings group the list lives under -- the ``File`` menu's recents by default; another list of
+    """The settings group the list lives under -- the ``Documents`` menu's recents by default; another list of
     the same shape, such as the root catalogs', names its own (#377)."""
 
     def record(self, path: Path) -> None:
