@@ -2523,17 +2523,18 @@ def test_restore_session_on_startup_delegates_to_the_documents_dock(mocker: Mock
     restore_session.assert_called_once_with(session)
 
 
-def test_restore_on_startup_off_skips_reopening_the_saved_session(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """Turning off the Session page's toggle (#65) starts with no documents open, even though the
-    previous session still has an open item saved underneath.
+def test_restore_documents_off_skips_reopening_the_saved_session(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Turning off the Session page's documents toggle (#65, #408) starts with no documents open, even
+    though the previous session still has an open item saved underneath -- while the open ``.rehuco``
+    still comes back, since that is the other toggle's business.
 
     **Test steps:**
 
-    * seed ``DocumentSessionSettings.load`` to report one open item
-    * seed ``SessionRestoreSettings.load`` to report the toggle off
-    * mock ``DocumentsDock.restore_session``
+    * seed ``DocumentSessionSettings.load`` to report one open item, and ``RehucoSettings.load`` one open file
+    * seed ``SessionRestoreSettings.load`` to report only the documents toggle off
+    * mock ``DocumentsDock.restore_session`` and ``RehucoDock.open_rehuco``
     * construct ``MainWindow``
-    * verify ``restore_session`` was never called
+    * verify ``restore_session`` was never called, and ``open_rehuco`` was
     """
     open_path = Path("open.rehu").resolve()
 
@@ -2541,18 +2542,26 @@ def test_restore_on_startup_off_skips_reopening_the_saved_session(mocker: Mocker
         del settings
         self.items[open_path] = DocumentSessionSettings.Item(open=True, state=b"state-bytes")  # pylint: disable=unsupported-assignment-operation
 
+    def fake_rehuco_load(self: RehucoSettings, settings: object) -> None:
+        del settings
+        self.current_path = REHUCO_FILE
+
     def fake_restore_settings_load(self: SessionRestoreSettings, settings: object) -> None:
         del settings
-        self.restore_on_startup = False
+        self.restore_documents = False
+        self.restore_root_catalog = True
 
     mocker.patch.object(DocumentSessionSettings, "load", fake_session_load)
+    mocker.patch.object(RehucoSettings, "load", fake_rehuco_load)
     mocker.patch.object(SessionRestoreSettings, "load", fake_restore_settings_load)
     restore_session = mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_session")
+    open_rehuco = mocker.patch("rehuco_agent.main_window.RehucoDock.open_rehuco", return_value=True)
 
     window = MainWindow()
     qtbot.addWidget(window)
 
     restore_session.assert_not_called()
+    open_rehuco.assert_called_once_with(REHUCO_FILE)
 
 
 def test_close_event_snapshots_open_documents_into_the_session(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -6301,32 +6310,43 @@ def test_a_rehuco_that_will_not_reopen_is_forgotten_quietly(mocker: MockerFixtur
     assert window._MainWindow__rehuco_settings.current_path is None  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
 
-def test_restore_on_startup_off_skips_reopening_the_rehuco(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """The Session page's toggle governs the open ``.rehuco`` too (#377).
+def test_restore_root_catalog_off_skips_reopening_the_rehuco(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The Session page's root catalog toggle governs the open ``.rehuco`` (#377, #408) -- and only
+    that: the documents still come back under their own toggle.
 
     **Test steps:**
 
-    * seed one open file and the toggle off
+    * seed one open file and one open document, with only the root catalog toggle off
+    * mock ``RehucoDock.open_rehuco`` and ``DocumentsDock.restore_session``
     * construct ``MainWindow``
-    * verify the dock was never asked to open anything
+    * verify the dock was never asked to open anything, and the documents were restored
     """
+    open_path = Path("open.rehu").resolve()
 
     def fake_load(self: RehucoSettings, settings: object) -> None:
         del settings
         self.current_path = REHUCO_FILE
 
+    def fake_session_load(self: DocumentSessionSettings, settings: object) -> None:
+        del settings
+        self.items[open_path] = DocumentSessionSettings.Item(open=True, state=b"state-bytes")  # pylint: disable=unsupported-assignment-operation
+
     def fake_restore_settings_load(self: SessionRestoreSettings, settings: object) -> None:
         del settings
-        self.restore_on_startup = False
+        self.restore_documents = True
+        self.restore_root_catalog = False
 
     mocker.patch.object(RehucoSettings, "load", fake_load)
+    mocker.patch.object(DocumentSessionSettings, "load", fake_session_load)
     mocker.patch.object(SessionRestoreSettings, "load", fake_restore_settings_load)
     open_rehuco = mocker.patch("rehuco_agent.main_window.RehucoDock.open_rehuco", return_value=True)
+    restore_session = mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_session")
 
     window = MainWindow()
     qtbot.addWidget(window)
 
     open_rehuco.assert_not_called()
+    restore_session.assert_called_once()
 
 
 def test_closing_remembers_the_open_rehuco(mocker: MockerFixture, qtbot: QtBot) -> None:

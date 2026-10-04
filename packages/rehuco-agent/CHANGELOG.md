@@ -14,8 +14,8 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 - A **Root Catalog** panel beside Documents, first on the action bar and closed until a `.rehuco` is opened.
   `Root Catalog` > `New…`, `Open…` and `Open Recent` open one file at a time, as
-  does double-clicking a `.rehuco` in a file manager, and the one left open is reopened on start under the Session
-  page's restore toggle, like the documents. Its roots can be
+  does double-clicking a `.rehuco` in a file manager, and the one left open is reopened on start under its own Session
+  page toggle, beside the documents'. Its roots can be
   added and removed, **Scan** puts one task-queue job per root that records the `.rehu` and uncovered `.tc` files
   found into a `.rehudb` cache in the local cache folder, and a table lists what the cache holds. A rescan reads
   only the files that changed since the last one. Double-clicking
@@ -51,6 +51,9 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 ### Changed
 
+- The Session page's one restore check is two: **Opened root catalog** and **Opened documents**, under *Restore
+  on restart*. Each decides only its own half of what comes back on start; a setting saved with the old single
+  check carries over to both.
 - Every text box's clear button is the style's plain × instead of the backspace glyph, and a duration's looks
   the same. The Shortcuts page's search box no longer shows two.
 - Every keyboard shortcut is now read from the settings file's `shortcuts` group, falling back to its

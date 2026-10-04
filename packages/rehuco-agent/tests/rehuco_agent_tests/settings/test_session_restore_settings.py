@@ -6,7 +6,7 @@ Uses the same hand-rolled in-memory ``QSettings`` stand-in as ``test_tasks_setti
 from typing import Any
 
 from pytest import fixture
-from rehuco_agent.settings.session_restore_settings import SessionRestoreSettings
+from rehuco_agent.settings.session_restore_settings import GROUP, LEGACY_RESTORE_ON_STARTUP_KEY, SessionRestoreSettings
 
 
 # region fixtures
@@ -49,12 +49,13 @@ def test_defaults_to_restoring(settings: FakeSettings) -> None:
     **Test steps:**
 
     * load a fresh `SessionRestoreSettings` from an empty store
-    * verify ``restore_on_startup`` is ``True``
+    * verify both choices are ``True``
     """
     loaded = SessionRestoreSettings()
     loaded.load(settings)  # type: ignore[arg-type]
 
-    assert loaded.restore_on_startup is True
+    assert loaded.restore_documents is True
+    assert loaded.restore_root_catalog is True
 
 
 def test_save_then_load_round_trips_the_choice(settings: FakeSettings) -> None:
@@ -62,14 +63,53 @@ def test_save_then_load_round_trips_the_choice(settings: FakeSettings) -> None:
 
     **Test steps:**
 
-    * save a `SessionRestoreSettings` with ``restore_on_startup`` off
+    * save a `SessionRestoreSettings` with ``restore_documents`` off
     * load into a fresh instance from the same store
     * verify it came back off
     """
-    saved = SessionRestoreSettings(restore_on_startup=False)
+    saved = SessionRestoreSettings(restore_documents=False, restore_root_catalog=True)
     saved.save(settings)  # type: ignore[arg-type]
 
     loaded = SessionRestoreSettings()
     loaded.load(settings)  # type: ignore[arg-type]
 
-    assert loaded.restore_on_startup is False
+    assert loaded.restore_documents is False
+    assert loaded.restore_root_catalog is True
+
+
+def test_the_two_choices_are_independent(settings: FakeSettings) -> None:
+    """Root catalog off with documents on survives a round trip (#408).
+
+    **Test steps:**
+
+    * save ``restore_root_catalog`` off, ``restore_documents`` on
+    * load into a fresh instance
+    * verify each came back as saved
+    """
+    SessionRestoreSettings(restore_documents=True, restore_root_catalog=False).save(settings)  # type: ignore[arg-type]
+
+    loaded = SessionRestoreSettings()
+    loaded.load(settings)  # type: ignore[arg-type]
+
+    assert loaded.restore_documents is True
+    assert loaded.restore_root_catalog is False
+
+
+def test_the_legacy_single_toggle_seeds_both_choices(settings: FakeSettings) -> None:
+    """A user who had the old single toggle off keeps both halves off until they choose (#408).
+
+    **Test steps:**
+
+    * write only the legacy ``restore_on_startup`` key, off
+    * load a fresh instance
+    * verify both choices are off
+    """
+    settings.beginGroup(GROUP)
+    settings.setValue(LEGACY_RESTORE_ON_STARTUP_KEY, False)
+    settings.endGroup()
+
+    loaded = SessionRestoreSettings()
+    loaded.load(settings)  # type: ignore[arg-type]
+
+    assert loaded.restore_documents is False
+    assert loaded.restore_root_catalog is False

@@ -1635,7 +1635,8 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         super().closeEvent(event)
 
     def __restore_session_if_enabled(self) -> None:
-        """Apply the loaded session (#65) unless the Session page's toggle has turned that off.
+        """Apply the loaded session (#65) and reopen the ``.rehuco`` (#377), each unless its own toggle on
+        the Session page has turned that off (#408).
 
         Only the *apply* step is gated: the session is still loaded, and ``__save_session`` still
         runs on every close, so a run with the toggle off ends by recording its own open set -- the
@@ -1644,8 +1645,9 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """
         session_restore_settings = SessionRestoreSettings()
         session_restore_settings.load(persistent_settings())
-        if session_restore_settings.restore_on_startup:
+        if session_restore_settings.restore_documents:
             self.__restore_session()
+        if session_restore_settings.restore_root_catalog:
             self.__restore_rehuco()
 
     def __restore_rehuco(self) -> None:

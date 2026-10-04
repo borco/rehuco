@@ -46,17 +46,27 @@
          </font>
         </property>
         <property name="text">
-         <string>On restart</string>
+         <string>Restore on restart</string>
         </property>
        </widget>
       </item>
       <item>
-       <widget class="QCheckBox" name="restore_on_startup_check_box">
+       <widget class="QCheckBox" name="restore_root_catalog_check_box">
         <property name="text">
-         <string>Restore previously opened documents and root catalog</string>
+         <string>Opened root catalog</string>
         </property>
         <property name="toolTip">
-         <string>When off, the app starts with no documents and no root catalog open. Sessions keep being recorded on close either way.</string>
+         <string>When off, the app starts with no root catalog open.</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QCheckBox" name="restore_documents_check_box">
+        <property name="text">
+         <string>Opened documents</string>
+        </property>
+        <property name="toolTip">
+         <string>When off, the app starts with no documents open. Sessions keep being recorded on close either way.</string>
         </property>
        </widget>
       </item>
