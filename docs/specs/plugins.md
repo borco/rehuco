@@ -540,9 +540,12 @@ Its nested dock manager holds three kinds of sub-dock:
     (`folder`, `authors`, `tags`, `publishers`, `type`), all ANDed; the free text is one phrase matched in a title or
     path, and a repeated field must match both values. It picks the rows **by query, not by proxy**: as the text
     settles (or on Enter) it is compiled to the cache's query and the browser's rows are read again, so the table and
-    its status line only ever hold what matches. A **`columns:` token** — `columns:authors,title` — chooses which
-    columns show, and a change from the header menu is written back into it, so one string says both what rows and
-    what fields; it is dropped once every column shows. An unknown field or column is reported on the line, never
+    its status line only ever hold what matches. A read costs about 21 µs per row it returns (#407): the cache's own
+    token clauses must be index-driven rather than correlated per row, and what a refresh does with the rows — a status
+    total, a sort — must not call back into Qt once per row. Past roughly 30k resources a read belongs on a worker
+    thread, with filtering over the rows already loaded, behind the same `CatalogQuery`. A **`columns:` token** —
+    `columns:authors,title` — chooses which columns show, and a change from the header menu is written back into it,
+    so one string says both what rows and what fields; it is dropped once every column shows. An unknown field or column is reported on the line, never
     silently dropped, and the rest of the line still applies. The text is the browser's remembered filter. A
     folder's context menu in Roots — *Show only rehu in this folder* — sets `folder:"<root label>/<relative path>"`
     on the current browser, and click-to-filter links set the same tokens on it ([[plugins#filter-urls]]); either
