@@ -61,6 +61,9 @@ select = ["E", "F", "I", "UP"]
 # substrings, not paths: bandit tests each with `x in path`, so a written-out path would only match
 # on the OS whose separator it used. Nothing tracked under packages/ or tools/ contains either word.
 exclude_dirs = ["tests", "build", "dist"]
+# The SQL f-strings in rehuco_core/rehudb.py carry a bare `# nosec  # B608: ...`, not `# nosec B608`. B608 reports
+# an f-string once, on its first literal piece, so with a test id named every later piece -- and every other string
+# in the same statement -- logs "nosec encountered (B608), but no failed test". Only a bare nosec stays quiet.
 
 [tool.pylint.main]
 jobs = 0

@@ -49,7 +49,8 @@ class RootsItemDelegate(RowBandDelegate):
             color = self.paint_band(painter, opt, index)
             selected = QStyle.StateFlag.State_Selected in opt.state
             if index.data(RootsFolderModel.GREYED_ROLE) and not selected:
-                color = opt.palette.color(  # pylint: disable=no-member
+                # pylint infers QStyleOptionViewItem.palette on some runs and not others
+                color = opt.palette.color(  # pylint: disable=no-member,useless-suppression
                     QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text
                 )
                 painter.setPen(color)

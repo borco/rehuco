@@ -224,6 +224,26 @@ def test_damaged_bytes_read_as_empty(mocker: MockerFixture, written: MagicMock) 
     assert state.browsers == [BrowserState(FIRST.browser_id, FIRST.kind, FIRST.name, FIRST.filter)]
 
 
+def test_missing_or_non_text_bytes_read_as_empty(mocker: MockerFixture, written: MagicMock) -> None:
+    """A blob that is absent or not a string is an empty blob, not an error.
+
+    **Test steps:**
+
+    * serve a file with no layout and a browser whose columns are ``null``
+    * verify each reads as empty bytes and the browser is kept
+    """
+    CatalogStateStore().save(REHUCO_ID, CatalogState([FIRST]))
+    values = json.loads(saved_text(written))
+    del values["layout"]
+    values["browsers"][0]["columns"] = None
+    serve(mocker, json.dumps(values))
+
+    state = CatalogStateStore().load(REHUCO_ID)
+
+    assert state.layout == b""
+    assert state.browsers == [BrowserState(FIRST.browser_id, FIRST.kind, FIRST.name, FIRST.filter)]
+
+
 def test_a_failed_write_is_logged_not_raised(mocker: MockerFixture, caplog: LogCaptureFixture) -> None:
     """Losing the layout must not block closing.
 

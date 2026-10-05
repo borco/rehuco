@@ -253,7 +253,7 @@ TOKEN_CLAUSES: Final = {
     **{
         # driven from the value's unique name index and the join's value index, not probed once per resource (#454)
         CatalogField(table): (
-            f"r.id IN (SELECT j.resource_id FROM {join} j JOIN {table} v ON v.id = j.value_id "  # nosec B608  # fixed
+            f"r.id IN (SELECT j.resource_id FROM {join} j JOIN {table} v ON v.id = j.value_id "  # nosec  # B608: fixed
             "WHERE v.name = ?)"
         )
         for table, join in JOINS
@@ -693,7 +693,7 @@ class CatalogCache:
                     continue
                 relative = "/".join(path.parts[depth:])
                 cursor = self.__connection.execute(
-                    f"SELECT id FROM resources WHERE root_id = ? AND {SUBTREE_CLAUSE}",  # nosec B608  # fixed
+                    f"SELECT id FROM resources WHERE root_id = ? AND {SUBTREE_CLAUSE}",  # nosec  # B608: fixed
                     (str(root.root_id), *self.__subtree_keys(relative)),
                 )
                 ids.update(resource_id for (resource_id,) in cursor)
@@ -710,7 +710,7 @@ class CatalogCache:
         where, parameters = self.__where(query if query is not None else CatalogQuery(), ids)
         values = {table: self.__values(table, join, where, parameters) for table, join in JOINS}
         cursor = self.__connection.execute(
-            f"SELECT r.id, r.root_id, roots.label, r.scanned_at, {SELECTED_COLUMNS} "  # nosec B608  # fixed names
+            f"SELECT r.id, r.root_id, roots.label, r.scanned_at, {SELECTED_COLUMNS} "  # nosec  # B608: fixed names
             f"FROM resources r JOIN roots ON roots.id = r.root_id WHERE {where} ORDER BY roots.position, r.path_key",
             parameters,
         )
@@ -816,7 +816,7 @@ class CatalogCache:
         key = catalog_path_key(record.path)
         CatalogCache.__adopt_legacy_row(connection, root_id, record, key)
         (resource_id,) = connection.execute(
-            f"INSERT INTO resources (root_id, path_key, scanned_at, {names}) "  # nosec B608  # fixed names
+            f"INSERT INTO resources (root_id, path_key, scanned_at, {names}) "  # nosec  # B608: fixed names
             f"VALUES (?, ?, ?, {', '.join('?' * len(RESOURCE_COLUMNS))}) "
             f"ON CONFLICT (root_id, path_key) DO UPDATE SET scanned_at = excluded.scanned_at, {updates} RETURNING id",
             (root_id, key, stamp, *fields),
@@ -899,7 +899,7 @@ class CatalogCache:
         :param destination: root-relative, as the rename spelled it.
         :returns: how many rows moved.
         """
-        subtree = f"SELECT id, path FROM resources WHERE root_id = ? AND {SUBTREE_CLAUSE}"  # nosec B608  # fixed
+        subtree = f"SELECT id, path FROM resources WHERE root_id = ? AND {SUBTREE_CLAUSE}"  # nosec  # B608: fixed
         moving = connection.execute(subtree, (root_id, *CatalogCache.__subtree_keys(source))).fetchall()
         if not moving:
             return 0
@@ -945,9 +945,9 @@ class CatalogCache:
             stored on the join exactly as spelled, since the value row it shares with other resources keeps only the
             first spelling ever written.
         """
-        insert_value = f"INSERT INTO {table} (name) VALUES (?) ON CONFLICT DO NOTHING"  # nosec B608  # fixed names
-        select_value = f"SELECT id FROM {table} WHERE name = ?"  # nosec B608  # fixed names
-        connection.execute(f"DELETE FROM {join} WHERE resource_id = ?", (resource_id,))  # nosec B608  # fixed names
+        insert_value = f"INSERT INTO {table} (name) VALUES (?) ON CONFLICT DO NOTHING"  # nosec  # B608: fixed names
+        select_value = f"SELECT id FROM {table} WHERE name = ?"  # nosec  # B608: fixed names
+        connection.execute(f"DELETE FROM {join} WHERE resource_id = ?", (resource_id,))  # nosec  # B608: fixed names
         for position, name in enumerate(name for name in names if name):
             connection.execute(insert_value, (name,))
             (value_id,) = connection.execute(select_value, (name,)).fetchone()
@@ -960,7 +960,7 @@ class CatalogCache:
     def __prune_values(connection: sqlite3.Connection) -> None:
         """Drop every author, tag and publisher no resource names any more."""
         for table, join in JOINS:
-            orphans = f"DELETE FROM {table} WHERE id NOT IN (SELECT value_id FROM {join})"  # nosec B608  # fixed names
+            orphans = f"DELETE FROM {table} WHERE id NOT IN (SELECT value_id FROM {join})"  # nosec  # B608: fixed names
             connection.execute(orphans)
 
     @staticmethod
@@ -1027,7 +1027,7 @@ class CatalogCache:
         """
         cursor = self.__connection.execute(
             "SELECT j.resource_id, COALESCE(j.name, v.name) "
-            f"FROM {join} j JOIN {table} v ON v.id = j.value_id "  # nosec B608  # fixed names
+            f"FROM {join} j JOIN {table} v ON v.id = j.value_id "  # nosec  # B608: fixed names
             f"WHERE j.resource_id IN (SELECT r.id FROM resources r JOIN roots ON roots.id = r.root_id WHERE {where}) "
             "ORDER BY j.resource_id, j.position",
             parameters,

@@ -41,8 +41,9 @@ def paint_grip(painter: QPainter, band: QRect, color: QColor) -> None:
     painter.restore()
 
 
-# an event filter is one method; there is nothing else for it to be
-# pylint: disable-next=too-few-public-methods
+# an event filter is one method; whether pylint counts QObject's inherited ones depends on its inference, which
+# varies between runs, so the pragma must be quiet both when it is needed and when it is not
+# pylint: disable-next=too-few-public-methods,useless-suppression
 class RootsGripFilter(QObject):
     """Lets only the grip of a root row start a drag, by arming the column's drag on a press that lands on one and
     disarming it on any other, and shows the hand cursor over a grip.
