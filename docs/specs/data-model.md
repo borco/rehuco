@@ -758,7 +758,7 @@ The cache is the stdlib `sqlite3` module in rehuco-core, Qt-free, one connection
 | Table | Holds |
 | --- | --- |
 | `roots` | One row per root of the `.rehuco`, keyed by the root's stable id: its label, path, position and whether its storage is removable (a removable drive or a CD or DVD); whether the last scan could list it, and when its rows were last replaced |
-| `resources` | One row per record found under a root — FK to its root with `ON DELETE CASCADE`; the root-relative path, both as spelled and **normalized** (`os.path.normcase`) for matching; kind `rehu` or `tc`; UUID; type; the common core fields a browser shows; the type-specific fields, one typed column each (schema v3, #399): a tutorial's three durations in seconds and its levels (a JSON array), a reference pack's claimed count (text, so `500+` survives) and measured count; the record's stat signature and a content hash at last read ([[data-model#scan-and-staleness]]); why it could not be read, if it could not; when it was scanned |
+| `resources` | One row per record found under a root — FK to its root with `ON DELETE CASCADE`; the root-relative path, both as spelled and **normalized** (`os.path.normcase`) for matching; kind `rehu` or `tc`; UUID; type; the common core fields a browser shows; the type-specific fields, one typed column each (schema v3, #399): a tutorial's three durations in seconds and its levels (a JSON array), a reference pack's claimed count (text, so `500+` survives) and measured count; the record's **format version** (schema v4, #379): a `.rehu`'s own `format_version` as on disk, `0` for an unstamped one, `NULL` for a legacy `.tc`, which has none — and for a `.rehu` that could not be read, so `kind` and the version are read together, never `NULL` alone; the record's stat signature and a content hash at last read ([[data-model#scan-and-staleness]]); why it could not be read, if it could not; when it was scanned |
 | `authors`, `tags`, `publishers` | Values plus their join tables to `resources`, so a filter on any of them is an indexed lookup. A value is one row per name, matched case-insensitively; the join row keeps the name **as its resource spells it**, which is what a browser shows, so a file that fixes a name's case shows the fix after its next scan (schema v2, #377) |
 
 - **A `.tc` gets a row only where no `.rehu` covers it** ([[data-model#resource-scoping]]) — a `.rehu` of the same
@@ -794,7 +794,7 @@ The cache is the stdlib `sqlite3` module in rehuco-core, Qt-free, one connection
   rebuild*, which a disposable cache can always afford. There is no downgrade: a cache **newer** than the build is
   never written, but discarded and rebuilt from the `.rehu` files, the reason logged. A step that adds columns
   keeps the rows but clears their stat signature, so they show the new columns empty rather than wrong and the
-  next scan of any kind reads them again (v3).
+  next scan of any kind reads them again (v3, v4).
 - **Created with `PRAGMA auto_vacuum = INCREMENTAL`** (it must precede the first table), so removing a root —
   whose resources cascade away — returns its space with a cheap `PRAGMA incremental_vacuum` rather than a full
   `VACUUM` rewrite.
@@ -803,6 +803,10 @@ The cache is the stdlib `sqlite3` module in rehuco-core, Qt-free, one connection
   same offset beneath its destination*. Exact and prefix matches on the normalized path are rewritten in one
   transaction, and no moved record is re-read; a directory-scoped rename rebases every nested record, a file-scoped
   one only its own.
+- **A browser follows a change by id, not by re-reading** (#379). Before and after a rename or a write, the agent asks
+  which rows are at or beneath the paths it touched (`resource_ids`), then reads just those through each browser's
+  query (`rows(query, ids=...)`) — a row that no longer matches, or is gone, is one the read leaves out — and the
+  browser changes, moves, inserts or removes each in place.
 - **Scanning never blocks a rename.** Each directory read, and each record read, is one chunk under the rename
   coordinator's hold, closed before the next ([[mounts-and-storage#out-of-band]]). The directories still to visit
   and the records already read are tracked locations, so a folder renamed mid-scan is scanned under its new name.

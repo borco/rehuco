@@ -140,10 +140,12 @@ reopened on start with the documents, under the same Session setting; a file wri
 task queue. Each job walks its root and records every `.rehu` it finds, and every legacy `.tc` that no `.rehu`
 covers, in a **`.rehudb`** cache. The cache sits in the machine's local cache folder and is named by the
 `.rehuco`'s own id, so moving the `.rehuco` keeps its cache; it is only ever a copy, rebuilt by scanning again.
-A table lists what the cache holds — authors, title, type and path — and double-clicking a row opens that resource in
-Documents. Each table has a **filter line**: free text and `field:value` tokens (`folder`, `authors`, `tags`,
-`publishers`, `type`) narrow the rows, read from the cache again as the text settles, and a `columns:` token picks
-the columns shown. Clicking an author's name in a document sets that author on it. The panel also lists the roots,
+A table lists what the cache holds — authors, title, type, path, publisher, tags, release date, size, last update
+and the file's format version, with the URL and a tutorial's or a reference pack's own fields a right-click on the
+header away — and double-clicking a row opens that resource in Documents. A rename, save or deletion made in the app
+changes just its row, in place. Each table has a **filter line**: free text and `field:value` tokens (`folder`,
+`authors`, `tags`, `publishers`, `type`) narrow the rows, read from the cache again as the text settles. Clicking an
+author's name in a document sets that author on it. The panel also lists the roots,
 which can be added and removed there.
 
 The biggest user is **checksums**. Beside each resource sits a `.checksum` record of *when each of its
@@ -187,9 +189,8 @@ whole folder tree at once, and `Tools` > `Conversion Backups…` discards the ba
 Everything above is implemented. None of the following is, and the design documents discuss all of it at
 length, which is exactly why this section is here:
 
-**A plain browser.** The Root Catalog panel lists what a scan found, filtered by its line, over four columns: a
-tutorial's durations and a pack's image counts are not shown yet, and a change made outside the app shows only
-after the next scan. The other recursive walks — the checksum sweep and the legacy import, over a folder you hand them — act
+**A plain browser.** The Root Catalog panel lists what a scan found, filtered by its line; a change made outside
+the app shows only after the next scan, and selecting a row does not yet show that resource beside the table. The other recursive walks — the checksum sweep and the legacy import, over a folder you hand them — act
 as they go and remember nothing about what they found.
 
 **No network beyond fetching a page you drop.** No node, no REST API, no discovery, no sync between

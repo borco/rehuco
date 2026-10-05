@@ -158,7 +158,26 @@ def add_type_fields_v3(connection: sqlite3.Connection) -> None:
     connection.execute("UPDATE resources SET mtime_ns = 0, content_hash = ''")
 
 
-CHAIN: Final[SchemaChain] = ((1, create_schema_v1), (2, add_join_spellings_v2), (3, add_type_fields_v3))
+def add_format_version_v4(connection: sqlite3.Connection) -> None:
+    """3 -> 4: which file format each record is in -- a ``.rehu``'s own ``format_version``, ``NULL`` for a legacy
+    ``.tc``, which has none of its own (#379).
+
+    ``NULL`` is also what a ``.rehu`` row reads until its record is read again, and what an unreadable one keeps: a
+    browser tells the three apart by ``kind`` and ``error``, never by ``NULL`` alone. As in version 3, nothing on disk
+    says a row written before this step is stale, so its stat signature is cleared and the next scan reads it again.
+
+    :param connection: the cache, inside the transaction the caller opened.
+    """
+    connection.execute("ALTER TABLE resources ADD COLUMN format_version INTEGER")
+    connection.execute("UPDATE resources SET mtime_ns = 0, content_hash = ''")
+
+
+CHAIN: Final[SchemaChain] = (
+    (1, create_schema_v1),
+    (2, add_join_spellings_v2),
+    (3, add_type_fields_v3),
+    (4, add_format_version_v4),
+)
 """This target's ordered ``(target, step)`` chain."""
 
 CURRENT_VERSION: Final = chain_head(CHAIN, BASE_VERSION)

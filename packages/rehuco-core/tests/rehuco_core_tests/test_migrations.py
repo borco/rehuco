@@ -1125,7 +1125,7 @@ def test_the_cache_schema_chain_is_validated_and_its_head_derived() -> None:
     validate_chain(rehudb.CHAIN, rehudb.BASE_VERSION)
 
     assert rehudb.BASE_VERSION == 0
-    assert rehudb.CURRENT_VERSION == chain_head(rehudb.CHAIN, rehudb.BASE_VERSION) == 3
+    assert rehudb.CURRENT_VERSION == chain_head(rehudb.CHAIN, rehudb.BASE_VERSION) == 4
 
 
 def test_every_block_migration_target_names_a_real_plugin() -> None:

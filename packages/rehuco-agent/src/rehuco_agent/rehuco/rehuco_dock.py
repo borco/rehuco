@@ -133,7 +133,9 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
     :param resource_events: the app's file announcements (#376), which keep the cache current between scans
         without reading anything a rename moved: a rename rebases the rows it moved
         (:meth:`~rehuco_core.CatalogCache.apply_relocation`), and a record the app wrote is read back into its
-        row (:class:`~rehuco_core.CatalogRecordUpdater`). ``None`` leaves the cache to the scans alone.
+        row (:class:`~rehuco_core.CatalogRecordUpdater`). Either way only the rows it touched are read again, and
+        every browser changes, moves, inserts or removes them in place (#379). ``None`` leaves the cache to the scans
+        alone.
     """
 
     open_requested: Signal = Signal(object)
@@ -1562,7 +1564,7 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
     # region the app's own file changes
 
     def __on_moved(self, relocation: Relocation) -> None:
-        """Rebase the rows a rename moved, reading nothing, and show them (#376).
+        """Rebase the rows a rename moved, reading no record, and show them in place (#376, #379).
 
         A scan still running under a renamed folder already reads on under the new name (its tracked
         locations were rewritten by the coordinator), so its rows land under the paths this rebased the old
@@ -1575,15 +1577,17 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
             return
         self.__roots_model.relocate(relocation)
         try:
+            # the rows moving, and any stale one at a destination the rebase drops; they keep their ids
+            affected = cache.resource_ids([path for pair in relocation.pairs for path in pair])
             moved = cache.apply_relocation(relocation.pairs)
         except sqlite3.Error as error:
             LOG.error("Could not follow a rename in the cache of %s: %s", self.rehuco_path, error)
             return
         if moved:
-            self.__refresh()
+            self.__update_in_place(affected)
 
     def __on_files_changed(self, paths: tuple[Path, ...]) -> None:
-        """Read each record the app wrote back into its row, and show what changed (#376).
+        """Read each record the app wrote back into its row, and show what changed in place (#376, #379).
 
         A path that is not a record, or not under a root, is passed over by the updater itself.
 
@@ -1594,12 +1598,39 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
             return
         updater = CatalogRecordUpdater(cache, coordinator=self.__rename_coordinator)
         changed = False
+        affected: set[int] = set()
         try:
+            # asked before, for a row the write removes; and after, for a row it adds or a converted .tc's it took over
+            affected = cache.resource_ids(paths)
             for path in paths:
                 changed = updater.upsert(path) or changed
+            affected |= cache.resource_ids(paths)
         except (OSError, sqlite3.Error) as error:
             LOG.error("Could not update the cache of %s: %s", self.rehuco_path, error)
         if changed:
-            self.__refresh()
+            self.__update_in_place(affected)
+
+    def __update_in_place(self, affected: set[int]) -> None:
+        """Show what a change did to ``affected`` rows in every browser, each row changed, moved, inserted or removed
+        where it stands -- one read of just those rows per distinct query, never a reset (#379).
+
+        :param affected: the ids of every row the change may have touched.
+        """
+        file, cache = self.__file, self.__cache
+        if file is None or cache is None:  # pragma: no cover  (only called with a file open)
+            return
+        wanted = {root.root_id for root in file.roots}
+        fresh: dict[CatalogQuery, list[CatalogRow]] = {}
+        try:
+            for browser in self.__browsers.values():
+                if browser.query not in fresh:
+                    fresh[browser.query] = [
+                        row for row in cache.rows(browser.query, ids=affected) if row.root_id in wanted
+                    ]
+        except sqlite3.Error as error:
+            LOG.error("Could not read the cache of %s: %s", file.path, error)
+            return
+        for browser in self.__browsers.values():
+            browser.update_rows(affected, fresh[browser.query])
 
     # endregion

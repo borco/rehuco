@@ -1,9 +1,8 @@
-"""Tests for the filter line's grammar: free text and ``field:"value"`` tokens, read into a query and the columns
-shown (#398)."""
+"""Tests for the filter line's grammar: free text and ``field:"value"`` tokens, read into a query (#398); the
+``columns:`` token it once had is retired (#379)."""
 
 import pytest
-from rehuco_agent.rehuco.catalog_table_model import COLUMN_IDS
-from rehuco_agent.rehuco.filter_line import COLUMNS_TOKEN, format_token, parse_filter, with_token
+from rehuco_agent.rehuco.filter_line import format_token, parse_filter, with_token, without_retired_tokens
 from rehuco_core import CatalogField, CatalogQuery
 
 
@@ -13,12 +12,12 @@ def test_free_text_only_is_the_query_text_with_its_words_joined_by_one_space() -
     **Test steps:**
 
     * parse two words with extra whitespace around and between them
-    * verify the query's text joins them with one space, with no tokens, columns or problems
+    * verify the query's text joins them with one space, with no tokens or problems
     """
-    parsed = parse_filter("  blender    intro ", COLUMN_IDS)
+    parsed = parse_filter("  blender    intro ")
 
     assert parsed.query == CatalogQuery("blender intro")
-    assert (parsed.columns, parsed.problems, parsed.tokens) == (None, (), ())
+    assert (parsed.problems, parsed.tokens) == ((), ())
 
 
 @pytest.mark.parametrize("field", list(CatalogField))
@@ -30,7 +29,7 @@ def test_each_field_token_compiles_to_its_catalog_field(field: CatalogField) -> 
     * parse ``<field>:value`` for each field
     * verify the query carries that field and value, and no free text
     """
-    assert parse_filter(f"{field.value}:value", COLUMN_IDS).query == CatalogQuery("", ((field, "value"),))
+    assert parse_filter(f"{field.value}:value").query == CatalogQuery("", ((field, "value"),))
 
 
 def test_tokens_only_leave_no_free_text() -> None:
@@ -41,7 +40,7 @@ def test_tokens_only_leave_no_free_text() -> None:
     * parse two tokens
     * verify both are in the query, in order, and the text is empty
     """
-    parsed = parse_filter("type:tutorial tags:python", COLUMN_IDS)
+    parsed = parse_filter("type:tutorial tags:python")
 
     assert parsed.query == CatalogQuery("", ((CatalogField.TYPE, "tutorial"), (CatalogField.TAGS, "python")))
 
@@ -54,7 +53,7 @@ def test_free_text_and_tokens_mix_in_any_order() -> None:
     * parse a word, a token, another word
     * verify the text joins both words and the token is kept
     """
-    parsed = parse_filter("intro authors:Foo course", COLUMN_IDS)
+    parsed = parse_filter("intro authors:Foo course")
 
     assert parsed.query == CatalogQuery("intro course", ((CatalogField.AUTHORS, "Foo"),))
 
@@ -67,7 +66,7 @@ def test_a_quoted_value_keeps_its_spaces_and_unescapes_quotes_and_backslashes() 
     * parse a quoted authors value with a space, an escaped quote and an escaped backslash
     * verify the value as the cache is given it
     """
-    parsed = parse_filter(r'authors:"Foo \"Bar\" \\ Co"', COLUMN_IDS)
+    parsed = parse_filter(r'authors:"Foo \"Bar\" \\ Co"')
 
     assert parsed.query.tokens == ((CatalogField.AUTHORS, 'Foo "Bar" \\ Co'),)
 
@@ -80,8 +79,8 @@ def test_quoted_free_text_is_one_phrase() -> None:
     * parse a quoted phrase, then an empty quoted run beside a word
     * verify the phrase is the query's text, and the empty run adds nothing
     """
-    assert parse_filter('"blender  intro"', COLUMN_IDS).query == CatalogQuery("blender  intro")
-    assert parse_filter('"" intro', COLUMN_IDS).query == CatalogQuery("intro")
+    assert parse_filter('"blender  intro"').query == CatalogQuery("blender  intro")
+    assert parse_filter('"" intro').query == CatalogQuery("intro")
 
 
 def test_an_unclosed_quote_runs_to_the_end_of_the_line() -> None:
@@ -92,9 +91,7 @@ def test_an_unclosed_quote_runs_to_the_end_of_the_line() -> None:
     * parse a token whose quote is never closed
     * verify its value is everything after the quote
     """
-    assert parse_filter('folder:"Tutorials/Blender ba', COLUMN_IDS).query.tokens == (
-        (CatalogField.FOLDER, "Tutorials/Blender ba"),
-    )
+    assert parse_filter('folder:"Tutorials/Blender ba').query.tokens == ((CatalogField.FOLDER, "Tutorials/Blender ba"),)
 
 
 def test_a_repeated_field_is_kept_twice() -> None:
@@ -105,7 +102,7 @@ def test_a_repeated_field_is_kept_twice() -> None:
     * parse the tags field twice
     * verify both tokens are in the query
     """
-    assert parse_filter("tags:a tags:b", COLUMN_IDS).query.tokens == (
+    assert parse_filter("tags:a tags:b").query.tokens == (
         (CatalogField.TAGS, "a"),
         (CatalogField.TAGS, "b"),
     )
@@ -119,7 +116,7 @@ def test_a_field_name_is_matched_whatever_its_case() -> None:
     * parse a token whose name is capitalized
     * verify it compiles to the authors field and the token is recorded lowercased
     """
-    parsed = parse_filter("Authors:Foo", COLUMN_IDS)
+    parsed = parse_filter("Authors:Foo")
 
     assert parsed.query.tokens == ((CatalogField.AUTHORS, "Foo"),)
     assert parsed.tokens[0].name == "authors"
@@ -133,7 +130,7 @@ def test_an_unknown_field_is_reported_and_the_rest_still_applies() -> None:
     * parse free text, an unknown field and a known one
     * verify the problem names the field, and the text and the known token still apply
     """
-    parsed = parse_filter("intro colour:red type:tutorial", COLUMN_IDS)
+    parsed = parse_filter("intro colour:red type:tutorial")
 
     assert parsed.problems == ('Unknown field "colour"',)
     assert parsed.query == CatalogQuery("intro", ((CatalogField.TYPE, "tutorial"),))
@@ -147,39 +144,39 @@ def test_a_token_with_no_value_yet_is_ignored_without_a_word() -> None:
     * parse a known and an unknown name, each with nothing after its colon
     * verify no field token and no problem
     """
-    parsed = parse_filter('authors: colour:""', COLUMN_IDS)
+    parsed = parse_filter('authors: colour:""')
 
     assert (parsed.query, parsed.problems) == (CatalogQuery(), ())
     assert [token.name for token in parsed.tokens] == ["authors", "colour"]
 
 
-def test_the_columns_token_names_the_columns_in_its_order() -> None:
-    """``columns:`` picks columns by id, whatever their case and spacing, without becoming a field.
+def test_a_columns_word_typed_now_is_an_unknown_field() -> None:
+    """Columns are the header menu's alone: a ``columns:`` word is a field there is not, reported like any other.
 
     **Test steps:**
 
-    * parse a columns token naming two columns
-    * verify the columns, in the token's order, and an empty query
+    * parse a line holding a columns word and a type token
+    * verify the type applies and the columns word is reported
     """
-    parsed = parse_filter('columns:"Title, authors"', COLUMN_IDS)
+    parsed = parse_filter("columns:title type:tutorial")
 
-    assert parsed.columns == ("title", "authors")
-    assert parsed.query == CatalogQuery()
+    assert parsed.query == CatalogQuery("", ((CatalogField.TYPE, "tutorial"),))
+    assert parsed.problems == ('Unknown field "columns"',)
 
 
-def test_an_unknown_column_is_reported_and_the_known_ones_still_apply() -> None:
-    """A column name with no column behind it is reported, not dropped in silence.
+def test_a_remembered_columns_word_is_dropped_without_a_word() -> None:
+    """A line an older build saved loses its ``columns:`` word as it is loaded; the rest is kept as written.
 
     **Test steps:**
 
-    * parse a columns token naming one real and one made-up column
-    * then one naming only a made-up one
-    * verify the first keeps the real column with a problem, the second names no columns
+    * strip a saved line holding a columns word between other words, and one holding none
+    * verify the first loses only that word and parses without a problem, and the second is unchanged
     """
-    parsed = parse_filter("columns:title,colour", COLUMN_IDS)
-    assert (parsed.columns, parsed.problems) == (("title",), ('Unknown column "colour"',))
+    stripped = without_retired_tokens('intro columns:"title, authors" type:tutorial')
 
-    assert parse_filter("columns:colour", COLUMN_IDS).columns is None
+    assert stripped == "intro type:tutorial"
+    assert not parse_filter(stripped).problems
+    assert without_retired_tokens('intro  "a  phrase"') == 'intro  "a  phrase"'
 
 
 @pytest.mark.parametrize(
@@ -201,7 +198,7 @@ def test_a_token_is_written_bare_when_it_can_be_and_quoted_when_it_must(value: s
     * verify the text, and that parsing it gives the value back
     """
     assert format_token("type", value) == written
-    parsed = parse_filter(written, COLUMN_IDS)
+    parsed = parse_filter(written)
     assert parsed.tokens[0].value == value
 
 
@@ -215,7 +212,7 @@ def test_setting_a_token_replaces_every_word_of_its_field_and_keeps_the_rest() -
     """
     line = 'intro authors:Old  "a  phrase" authors:"Older One" type:tutorial'
 
-    assert with_token(line, COLUMN_IDS, "authors", "Foo Bar") == ('intro "a  phrase" type:tutorial authors:"Foo Bar"')
+    assert with_token(line, "authors", "Foo Bar") == ('intro "a  phrase" type:tutorial authors:"Foo Bar"')
 
 
 def test_setting_a_token_on_an_empty_line_is_the_token_alone() -> None:
@@ -226,7 +223,7 @@ def test_setting_a_token_on_an_empty_line_is_the_token_alone() -> None:
     * set a token on an empty line
     * verify the line is that token
     """
-    assert with_token("", COLUMN_IDS, "folder", "Tutorials/Blender") == "folder:Tutorials/Blender"
+    assert with_token("", "folder", "Tutorials/Blender") == "folder:Tutorials/Blender"
 
 
 def test_a_token_set_to_none_is_removed() -> None:
@@ -234,7 +231,7 @@ def test_a_token_set_to_none_is_removed() -> None:
 
     **Test steps:**
 
-    * remove the columns token from a line that has one
+    * remove the authors token from a line that has one
     * verify the rest of the line is left
     """
-    assert with_token("intro columns:title type:x", COLUMN_IDS, COLUMNS_TOKEN, None) == "intro type:x"
+    assert with_token("intro authors:Ann type:x", "authors", None) == "intro type:x"

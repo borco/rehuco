@@ -1,15 +1,19 @@
 """Tests for the table browser: a catalog's rows as a table under a filter line, with a status line and a state worth
-remembering (#396, #398)."""
+remembering (#396, #398, #379)."""
 
 from collections.abc import Iterator
+from itertools import count
 from pathlib import Path
 from uuid import uuid4
 
-from PySide6.QtCore import QModelIndex, Qt
+from PySide6.QtCore import QItemSelectionModel, QModelIndex, Qt
+from PySide6.QtGui import QStandardItemModel
+from PySide6.QtWidgets import QTableView
 from pytest import fixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.rehuco import TableBrowser
-from rehuco_agent.rehuco.catalog_table_model import COLUMN_IDS, TITLE_COLUMN
+from rehuco_agent.rehuco.catalog_delegates import DurationDelegate, SizeDelegate
+from rehuco_agent.rehuco.catalog_table_model import DEFAULT_HIDDEN, CatalogColumn
 from rehuco_agent.rehuco.table_browser import FILTER_HELP, FILTER_SETTLE_MS
 from rehuco_agent.settings.catalog_state_store import TABLE_BROWSER_KIND, BrowserState
 from rehuco_core import CatalogField, CatalogQuery, CatalogRecord, CatalogRow, RecordKind
@@ -17,17 +21,27 @@ from rehuco_core import CatalogField, CatalogQuery, CatalogRecord, CatalogRow, R
 ROOT_ID = uuid4()
 ROOT_PATH = Path("/fake/root")
 
+ids: Iterator[int] = count(10_000)
+"""Every row :func:`row` builds has an id of its own, as the cache's rows do -- far above any a test gives."""
 
-def row(path: str, size: int, title: str = "") -> CatalogRow:
+
+def row(path: str, size: int, title: str = "", resource_id: int | None = None) -> CatalogRow:
     """A cache row for one ``.rehu`` of ``size`` bytes under the test root.
 
     :param path: the record's path under the root.
     :param size: its size.
     :param title: its title.
+    :param resource_id: its id; a fresh one when omitted.
     :returns: the row.
     """
     record = CatalogRecord(path, RecordKind.REHU, title=title or path, type="tutorial", current_size=size)
-    return CatalogRow(resource_id=1, root_id=ROOT_ID, root_label="root", record=record, scanned_at=0.0)
+    return CatalogRow(
+        resource_id=next(ids) if resource_id is None else resource_id,
+        root_id=ROOT_ID,
+        root_label="root",
+        record=record,
+        scanned_at=0.0,
+    )
 
 
 @fixture(name="browser")
@@ -183,16 +197,19 @@ def test_the_state_carries_the_header_and_restores_it_with_its_sort(qtbot: QtBot
     * verify its column width, sort indicator and that its model sorts the same way
     """
     browser.view.horizontalHeader().resizeSection(0, 233)
-    browser.view.sortByColumn(TITLE_COLUMN, Qt.SortOrder.DescendingOrder)
+    browser.view.sortByColumn(CatalogColumn.TITLE, Qt.SortOrder.DescendingOrder)
 
     restored = TableBrowser(browser.state())
     qtbot.addWidget(restored)
 
     header = restored.view.horizontalHeader()
     assert header.sectionSize(0) == 233
-    assert (header.sortIndicatorSection(), header.sortIndicatorOrder()) == (TITLE_COLUMN, Qt.SortOrder.DescendingOrder)
+    assert (header.sortIndicatorSection(), header.sortIndicatorOrder()) == (
+        CatalogColumn.TITLE,
+        Qt.SortOrder.DescendingOrder,
+    )
     restored.set_rows([row("a", 1, "Alpha"), row("b", 1, "Beta")], {ROOT_ID: ROOT_PATH})
-    assert restored.model.index(0, TITLE_COLUMN).data() == "Beta"
+    assert restored.model.index(0, CatalogColumn.TITLE).data() == "Beta"
 
 
 def test_a_clone_state_keeps_the_filter_and_columns_under_a_new_id_and_name(browser: TableBrowser) -> None:
@@ -211,6 +228,30 @@ def test_a_clone_state_keeps_the_filter_and_columns_under_a_new_id_and_name(brow
     assert (clone.name, clone.filter, clone.columns) == ("Copy", browser.filter_text, browser.state().columns)
 
 
+def test_a_size_reads_short_while_the_cell_keeps_its_bytes(browser: TableBrowser) -> None:
+    """The model holds the bytes; the column's delegate says them in short form, and a duration as a field would.
+
+    **Test steps:**
+
+    * show a row of 1,024 bytes
+    * verify the cell holds the number and the size and duration columns' delegates word it
+    """
+    browser.set_rows([row("a/info.rehu", 1024)], {ROOT_ID: ROOT_PATH})
+    index = browser.model.index(0, CatalogColumn.SIZE)
+    view = browser.view
+    locale = view.locale()
+
+    sizes = view.itemDelegateForColumn(CatalogColumn.SIZE)
+    durations = view.itemDelegateForColumn(CatalogColumn.CURRENT_DURATION)
+    assert isinstance(sizes, SizeDelegate) and isinstance(durations, DurationDelegate)
+
+    assert index.data() == 1024
+    assert sizes.displayText(index.data(), locale) == "1.0K"
+    assert durations.displayText(8100, locale) == "2h 15m"
+    assert sizes.displayText("text", locale) == "text"
+    assert durations.displayText(None, locale) == ""
+
+
 def test_renaming_a_browser_shows_in_its_state(browser: TableBrowser) -> None:
     """The name a browser is remembered by is the one it was last given.
 
@@ -224,30 +265,214 @@ def test_renaming_a_browser_shows_in_its_state(browser: TableBrowser) -> None:
     assert browser.state().name == "Everything"
 
 
-# region the filter line
+# region the columns
 
 
-def hidden_columns(browser: TableBrowser) -> list[str]:
+def hidden_columns(browser: TableBrowser) -> set[CatalogColumn]:
     """Which columns the browser's header hides.
 
     :param browser: the browser.
-    :returns: their ids, in column order.
+    :returns: the hidden columns.
     """
     header = browser.view.horizontalHeader()
-    return [column for section, column in enumerate(COLUMN_IDS) if header.isSectionHidden(section)]
+    return {column for column in CatalogColumn if header.isSectionHidden(column)}
 
 
-def set_column_shown(browser: TableBrowser, column: str, shown: bool) -> None:
+def set_column_shown(browser: TableBrowser, title: str, shown: bool) -> None:
     """Check or uncheck one column in the header's own menu, as a reader would.
 
     :param browser: the browser.
-    :param column: the column's id.
+    :param title: the column's header.
     :param shown: whether to show it.
     """
     menu = browser.sections_menu.build_menu()
-    action = next(action for action in menu.actions() if action.text().lower() == column)
+    action = next(action for action in menu.actions() if action.text() == title)
     action.setChecked(shown)
     menu.deleteLater()
+
+
+def test_a_plain_browser_starts_with_the_common_columns(browser: TableBrowser) -> None:
+    """The URL and the type-specific columns start hidden; a preset shows those (#400).
+
+    **Test steps:**
+
+    * read which columns a new browser hides
+    * verify exactly the default hidden ones
+    """
+    assert hidden_columns(browser) == DEFAULT_HIDDEN
+
+
+def test_the_header_menu_alone_chooses_the_columns_and_the_state_keeps_them(
+    qtbot: QtBot, browser: TableBrowser
+) -> None:
+    """Toggling a column never touches the filter line; the header state round-trips the choice, and a clone copies it.
+
+    **Test steps:**
+
+    * type some free text, hide Path and show URL from the header menu
+    * verify the line is unchanged and no rows were asked for
+    * build a browser from the state and another from a clone state
+    * verify both hide the same columns
+    """
+    browser.set_filter_text("intro")
+
+    with qtbot.assertNotEmitted(browser.query_changed):
+        set_column_shown(browser, "Path", False)
+        set_column_shown(browser, "URL", True)
+
+    assert browser.filter_text == browser.filter_edit.text() == "intro"
+    expected = (DEFAULT_HIDDEN - {CatalogColumn.URL}) | {CatalogColumn.PATH}
+    assert hidden_columns(browser) == expected
+    for state in (browser.state(), browser.clone_state("Copy")):
+        copy = TableBrowser(state)
+        qtbot.addWidget(copy)
+        assert hidden_columns(copy) == expected
+
+
+def test_a_remembered_columns_word_is_dropped_on_load_without_a_problem(qtbot: QtBot) -> None:
+    """A line an older build saved with a ``columns:`` word loses it, and the header state alone says what shows.
+
+    **Test steps:**
+
+    * build a browser from a state whose filter names a type and two columns
+    * verify the line and the query keep the type only, no problem is reported, and the columns are the defaults
+    """
+    state = BrowserState(uuid4(), TABLE_BROWSER_KIND, "Tutorials", "type:tutorial columns:title,path")
+    browser = TableBrowser(state)
+    qtbot.addWidget(browser)
+
+    assert browser.filter_edit.text() == browser.filter_text == "type:tutorial"
+    assert browser.query == CatalogQuery("", ((CatalogField.TYPE, "tutorial"),))
+    assert not browser.filter_problems
+    assert hidden_columns(browser) == DEFAULT_HIDDEN
+    assert browser.state().filter == "type:tutorial"
+
+
+def test_a_header_saved_before_the_later_columns_existed_keeps_them_at_their_defaults(qtbot: QtBot) -> None:
+    """A state covering only #377's four columns applies to those four; Qt would show the rest, so the ones a plain
+    browser hides are hidden again.
+
+    **Test steps:**
+
+    * save a four-column header with Type hidden and Title widened
+    * build a browser from it
+    * verify Type and the default hidden columns are hidden, and the width came back
+    """
+    old = QTableView()
+    qtbot.addWidget(old)
+    old.setModel(QStandardItemModel(0, 4, old))
+    old.horizontalHeader().setSectionHidden(CatalogColumn.TYPE, True)
+    old.horizontalHeader().resizeSection(CatalogColumn.TITLE, 321)
+    saved = bytes(old.horizontalHeader().saveState().data())
+
+    browser = TableBrowser(BrowserState(uuid4(), TABLE_BROWSER_KIND, "Old", "", saved))
+    qtbot.addWidget(browser)
+
+    assert TableBrowser.saved_column_count(saved) == 4
+    assert hidden_columns(browser) == DEFAULT_HIDDEN | {CatalogColumn.TYPE}
+    assert browser.view.horizontalHeader().sectionSize(CatalogColumn.TITLE) == 321
+
+
+def test_a_header_state_the_header_refuses_leaves_the_defaults(qtbot: QtBot) -> None:
+    """Bytes that are no header state cost the reader their layout, never the defaults.
+
+    **Test steps:**
+
+    * build a browser from a state holding junk header bytes
+    * verify the default columns are hidden
+    """
+    browser = TableBrowser(BrowserState(uuid4(), TABLE_BROWSER_KIND, "Junk", "", b"junk"))
+    qtbot.addWidget(browser)
+
+    assert TableBrowser.saved_column_count(b"junk") == 0
+    assert hidden_columns(browser) == DEFAULT_HIDDEN
+
+
+# endregion
+
+# region the current resource
+
+
+def select(browser: TableBrowser, *rows: int) -> None:
+    """Select ``rows`` as a reader would, replacing the selection.
+
+    :param browser: the browser.
+    :param rows: the rows to select; none clears it.
+    """
+    selection = browser.view.selectionModel()
+    selection.clearSelection()
+    flags = QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows
+    for row_ in rows:
+        selection.select(browser.model.index(row_, 0), flags)
+
+
+def test_exactly_one_selected_row_is_the_current_resource(qtbot: QtBot, browser: TableBrowser) -> None:
+    """One row names its resource by root id and relative path; none or several name none.
+
+    **Test steps:**
+
+    * show two rows, then select one, both, and none
+    * verify the resource announced each time, and the property agreeing
+    """
+    browser.set_rows([row("a/info.rehu", 1), row("b/info.rehu", 1)], {ROOT_ID: ROOT_PATH})
+
+    with qtbot.waitSignal(browser.current_changed) as changed:
+        select(browser, 0)
+    assert changed.args == [(ROOT_ID, "a/info.rehu")]
+    assert browser.current_resource == (ROOT_ID, "a/info.rehu")
+
+    with qtbot.waitSignal(browser.current_changed) as changed:
+        select(browser, 0, 1)
+    assert changed.args == [None]
+
+    select(browser, 1)
+    with qtbot.waitSignal(browser.current_changed) as changed:
+        select(browser)
+    assert changed.args == [None]
+    assert browser.current_resource is None
+
+
+def test_the_current_resource_follows_its_row_renamed_and_removed_in_place(qtbot: QtBot, browser: TableBrowser) -> None:
+    """The selection survives a rename, which changes what the current resource is called; a removal ends it.
+
+    **Test steps:**
+
+    * select a row, then update it in place under a new path
+    * verify the row is still selected and the new key announced, with no reset
+    * remove it in place
+    * verify no resource is current
+    """
+    browser.set_rows([row("a/info.rehu", 1, resource_id=7), row("b/info.rehu", 1, resource_id=8)], {ROOT_ID: ROOT_PATH})
+    select(browser, 0)
+
+    with qtbot.assertNotEmitted(browser.model.modelReset), qtbot.waitSignal(browser.current_changed) as changed:
+        browser.update_rows({7}, [row("c/info.rehu", 1, resource_id=7)])
+    assert changed.args == [(ROOT_ID, "c/info.rehu")]
+    assert browser.view.selectionModel().isRowSelected(browser.model.rowCount() - 1, QModelIndex())
+
+    with qtbot.waitSignal(browser.current_changed) as changed:
+        browser.update_rows({7}, [])
+    assert changed.args == [None]
+
+
+def test_an_update_in_place_keeps_the_status_line_current(browser: TableBrowser) -> None:
+    """The totals follow an update in place as they follow a reset.
+
+    **Test steps:**
+
+    * show one row, then update it with a new size and insert another
+    * verify the status line counts both and adds the new sizes
+    """
+    browser.set_rows([row("a/info.rehu", 1024, resource_id=1)], {ROOT_ID: ROOT_PATH})
+
+    browser.update_rows({1, 2}, [row("a/info.rehu", 2048, resource_id=1), row("b/info.rehu", 1024, resource_id=2)])
+
+    assert browser.status_bar.currentMessage() == "2 resources / 3.0K"
+
+
+# endregion
+
+# region the filter line
 
 
 def test_typing_applies_the_filter_once_the_text_settles(qtbot: QtBot, browser: TableBrowser) -> None:
@@ -279,75 +504,6 @@ def test_enter_applies_the_filter_without_waiting(qtbot: QtBot, browser: TableBr
     assert browser.query == CatalogQuery("blender")
 
 
-def test_a_change_of_columns_alone_asks_for_no_rows(qtbot: QtBot, browser: TableBrowser) -> None:
-    """Showing other columns reads nothing again.
-
-    **Test steps:**
-
-    * set a line that only names columns
-    * verify no query change was announced
-    """
-    with qtbot.assertNotEmitted(browser.query_changed):
-        browser.set_filter_text("columns:title")
-
-
-def test_the_columns_token_shows_the_columns_it_names_and_hides_the_rest(browser: TableBrowser) -> None:
-    """One string says which columns show.
-
-    **Test steps:**
-
-    * name two columns on the line
-    * verify the other two are hidden
-    * take the token away by naming all four
-    * verify none is hidden
-    """
-    browser.set_filter_text("columns:authors,title")
-    assert hidden_columns(browser) == ["type", "path"]
-
-    browser.set_filter_text("columns:authors,title,type,path")
-    assert not hidden_columns(browser)
-
-
-def test_hiding_a_column_from_the_header_menu_writes_the_columns_token(browser: TableBrowser) -> None:
-    """The header menu and the token stay in step: the line always says which columns show.
-
-    **Test steps:**
-
-    * type some free text, then uncheck Path in the header menu
-    * verify the line keeps the text and gains a token naming the three shown columns
-    * check Path again
-    * verify the token is gone, every column showing
-    """
-    browser.set_filter_text("intro")
-
-    set_column_shown(browser, "path", False)
-    assert browser.filter_text == "intro columns:authors,title,type"
-    assert hidden_columns(browser) == ["path"]
-
-    set_column_shown(browser, "path", True)
-    assert browser.filter_text == "intro"
-    assert not hidden_columns(browser)
-
-
-def test_every_column_shown_again_with_no_columns_token_leaves_the_line_alone(browser: TableBrowser) -> None:
-    """With nothing on the line to take back, showing every column writes nothing.
-
-    **Test steps:**
-
-    * type some free text and hide a column on the header directly, so no token says so
-    * restore a header state showing every column through the header's menu
-    * verify the line is unchanged and every column shows
-    """
-    browser.set_filter_text("intro")
-    every_column = browser.sections_menu.save_state()
-    browser.view.horizontalHeader().setSectionHidden(0, True)
-
-    browser.sections_menu.restore_state(every_column)
-
-    assert browser.filter_edit.text() == "intro"
-    assert not hidden_columns(browser)
-
-
 def test_an_unknown_field_is_reported_on_the_line(browser: TableBrowser) -> None:
     """What the line cannot apply is shown on it, and nothing once it can apply it all.
 
@@ -371,21 +527,20 @@ def test_an_unknown_field_is_reported_on_the_line(browser: TableBrowser) -> None
     assert browser.filter_edit.toolTip() == FILTER_HELP
 
 
-def test_a_browser_built_from_a_state_applies_its_filter_and_columns(qtbot: QtBot) -> None:
+def test_a_browser_built_from_a_state_applies_its_filter(qtbot: QtBot) -> None:
     """A remembered filter is applied, not only shown.
 
     **Test steps:**
 
-    * build a browser from a state whose filter names a type and two columns
-    * verify the line, the query and the hidden columns
+    * build a browser from a state whose filter names a type
+    * verify the line and the query
     """
-    state = BrowserState(uuid4(), TABLE_BROWSER_KIND, "Tutorials", "type:tutorial columns:title,path")
+    state = BrowserState(uuid4(), TABLE_BROWSER_KIND, "Tutorials", "type:tutorial")
     browser = TableBrowser(state)
     qtbot.addWidget(browser)
 
     assert browser.filter_edit.text() == state.filter
     assert browser.query == CatalogQuery("", ((CatalogField.TYPE, "tutorial"),))
-    assert hidden_columns(browser) == ["authors", "type"]
 
 
 def test_the_state_and_a_clone_carry_the_line_as_typed(qtbot: QtBot, browser: TableBrowser) -> None:

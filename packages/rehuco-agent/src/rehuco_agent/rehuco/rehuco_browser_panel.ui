@@ -29,7 +29,7 @@
    <item>
     <widget class="QLineEdit" name="filter_edit">
      <property name="placeholderText">
-      <string>Filter: text, folder:, authors:, tags:, publishers:, type:, columns:</string>
+      <string>Filter: text, folder:, authors:, tags:, publishers:, type:</string>
      </property>
     </widget>
    </item>
@@ -39,7 +39,7 @@
       <set>QAbstractItemView::EditTrigger::NoEditTriggers</set>
      </property>
      <property name="selectionMode">
-      <enum>QAbstractItemView::SelectionMode::SingleSelection</enum>
+      <enum>QAbstractItemView::SelectionMode::ExtendedSelection</enum>
      </property>
      <property name="selectionBehavior">
       <enum>QAbstractItemView::SelectionBehavior::SelectRows</enum>
