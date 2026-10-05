@@ -96,7 +96,9 @@ class FakeTree:  # pylint: disable=too-many-instance-attributes  # one knob per 
         content = self.payloads[Path(path)]
         if isinstance(content, Exception):
             raise content
-        return RehuDocument(content, Path(path))
+        stamp = content.get("format_version", 0)
+        # what a real load reads off the file: an unstamped one is version 0
+        return RehuDocument(content, Path(path), on_disk_format_version=stamp if isinstance(stamp, int) else 0)
 
 
 @fixture(name="tree")
@@ -284,6 +286,25 @@ def test_a_legacy_record_is_read_only_where_no_rehu_covers_it(tree: FakeTree) ->
     assert paths(result) == ["Foo.TC", "info.rehu", "sub/info.tc"]
     assert [record.kind for record in result.records] == [RecordKind.TC, RecordKind.REHU, RecordKind.TC]
     assert result.legacy_records == 2
+
+
+def test_a_record_carries_the_format_version_of_its_file(tree: FakeTree) -> None:
+    """A ``.rehu``'s own stamp, ``0`` for an unstamped one; a legacy ``.tc`` and an unreadable ``.rehu`` have none
+    (#379)."""
+    tree.file("current.rehu")
+    tree.file("unstamped.rehu", {"core": {"sources": [{"title": "Old"}]}})
+    tree.file("legacy.tc", {"core": {}})
+    tree.file("broken.rehu", RehuFormatError("Not JSON"))
+
+    result = scan()
+
+    versions = {record.path: record.format_version for record in result.records}
+    assert versions == {
+        "broken.rehu": None,
+        "current.rehu": CURRENT_FORMAT_VERSION,
+        "legacy.tc": None,
+        "unstamped.rehu": 0,
+    }
 
 
 def test_an_unparsable_record_keeps_a_row_with_the_reason(tree: FakeTree) -> None:

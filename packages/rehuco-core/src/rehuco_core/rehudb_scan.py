@@ -238,6 +238,8 @@ class CatalogRecordReader:  # pylint: disable=too-few-public-methods
             tags=(*document.advertised_tags, *document.extra_tags),
             publishers=CatalogRecordReader.__publishers(document),
             content_hash=content_hash,
+            # a .tc has no version of its own: its document says only what it was upgraded to in memory
+            format_version=None if kind is RecordKind.TC else document.on_disk_format_version,
             **CatalogRecordReader.__type_fields(document),
         )
 

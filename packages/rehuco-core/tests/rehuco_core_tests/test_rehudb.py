@@ -475,6 +475,7 @@ def test_every_field_of_a_record_round_trips(cache: CatalogCache) -> None:
         level=("intermediate", "beginner"),
         advertised_count="500+",
         current_count=480,
+        format_version=1,
         mtime_ns=42,
         size=7,
         content_hash="abc",
@@ -643,6 +644,39 @@ def test_a_version_2_cache_upgrades_keeping_its_rows_empty_and_stale(
     assert (row.record.mtime_ns, row.record.content_hash) == (0, "")
 
 
+def test_a_version_3_cache_upgrades_with_no_format_version_and_stale(
+    memory: Callable[[], MemoryDatabase], mocker: MockerFixture
+) -> None:
+    """The version-4 step adds the format version: a row from before it keeps its place, reads no version until it
+    is read again, and carries no signature a real file could match (#379).
+
+    **Test steps:**
+
+    * build a version-3 cache holding one scanned ``.rehu``
+    * reopen it with the full chain
+    * verify the stamp is current, the row is still there with no format version, and its signature is cleared
+    """
+    database = memory()
+    mocker.patch("rehuco_core.rehudb.sqlite3.connect", side_effect=database.connect)
+    mocker.patch.object(Path, "mkdir", autospec=True)
+    rehuco, first, _ = two_roots()
+    with CatalogCache.open(CACHE_PATH, chain=CHAIN[:3]) as old:
+        old.reconcile_roots(rehuco.roots)
+        database.keeper.execute(
+            "INSERT INTO resources (root_id, path, path_key, kind, title, mtime_ns, size, content_hash, scanned_at) "
+            "VALUES (?, 'a/info.rehu', 'a/info.rehu', 'rehu', 'T', 42, 7, 'abc', 0)",
+            (str(first.root_id),),
+        )
+
+    with CatalogCache.open(CACHE_PATH) as upgraded:
+        assert upgraded.schema_version == CURRENT_VERSION
+        rows = upgraded.rows()
+    assert len(rows) == 1
+    row = rows[0]
+    assert (row.record.title, row.record.format_version) == ("T", None)
+    assert (row.record.mtime_ns, row.record.content_hash) == (0, "")
+
+
 # endregion
 
 # region Targeted updates
@@ -695,6 +729,49 @@ def test_one_record_is_written_and_removed_on_its_own(filled: tuple[CatalogCache
     assert not cache.rows(CatalogQuery(tokens=((CatalogField.AUTHORS, "Ann"),)))
     assert not cache.remove(TUTORIALS / "new.rehu")
     assert not cache.remove(Path("Z:/elsewhere/new.rehu"))
+
+
+def test_the_rows_at_or_beneath_a_path_are_found_by_id(filled: tuple[CatalogCache, RehucoRoot, RehucoRoot]) -> None:
+    """A record, a folder's subtree, and nothing for a path under no root or a sibling that merely starts alike
+    (#379).
+
+    **Test steps:**
+
+    * scan three records under the first root
+    * verify a record, a folder and an outside path each name the rows they hold
+    """
+    cache, first, _ = filled
+    cache.apply_root_scan(first.root_id, [record("a/info.rehu"), record("a/b/info.rehu"), record("ab/info.rehu")])
+    by_path = ids(cache)
+
+    assert cache.resource_ids([TUTORIALS / "a" / "info.rehu"]) == {by_path["a/info.rehu"]}
+    assert cache.resource_ids([TUTORIALS / "a", Path("Z:/elsewhere/a")]) == {
+        by_path["a/info.rehu"],
+        by_path["a/b/info.rehu"],
+    }
+    assert not cache.resource_ids([TUTORIALS, Path("Z:/elsewhere")])
+
+
+def test_rows_read_by_id_are_only_those_that_also_match(filled: tuple[CatalogCache, RehucoRoot, RehucoRoot]) -> None:
+    """The few rows a change touched, still narrowed by the query, with their values (#379).
+
+    **Test steps:**
+
+    * scan three records, two of them by one author
+    * verify reading two ids returns those two, and with an author token only the one that matches
+    """
+    cache, first, _ = filled
+    cache.apply_root_scan(
+        first.root_id,
+        [record("a.rehu", authors=("Ann",)), record("b.rehu", authors=("Bob",)), record("c.rehu", authors=("Ann",))],
+    )
+    by_path = ids(cache)
+    wanted = {by_path["a.rehu"], by_path["b.rehu"]}
+
+    assert [row.record.path for row in cache.rows(ids=wanted)] == ["a.rehu", "b.rehu"]
+    (row,) = cache.rows(CatalogQuery(tokens=((CatalogField.AUTHORS, "Ann"),)), ids=wanted)
+    assert (row.record.path, row.record.authors) == ("a.rehu", ("Ann",))
+    assert not cache.rows(ids=())
 
 
 def test_a_record_of_a_root_not_in_the_cache_is_not_written(cache: CatalogCache) -> None:

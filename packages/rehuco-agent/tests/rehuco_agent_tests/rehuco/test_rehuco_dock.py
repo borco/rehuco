@@ -42,7 +42,7 @@ from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.rehuco import RehucoDock, TableBrowser
 from rehuco_agent.rehuco.add_root_dialog import AddRootDialog
-from rehuco_agent.rehuco.catalog_table_model import TITLE_COLUMN
+from rehuco_agent.rehuco.catalog_table_model import CatalogColumn
 from rehuco_agent.rehuco.rehuco_dock import ROOTS_DOCK_NAME
 from rehuco_agent.rehuco.root_storage import ROOT_STORAGE_ICONS
 from rehuco_agent.rehuco.roots_folder_model import NodeListing, RootsNodeKind
@@ -665,7 +665,7 @@ def test_what_a_scan_finds_is_listed_once_it_ends(
     wait_for_jobs(qtbot, queue)
     model = first_browser(dock).model
     assert [model.index(0, column).data() for column in range(4)] == [
-        "",
+        None,
         "Python",
         "tutorial",
         "tutorials/python/info.rehu",
@@ -1044,14 +1044,17 @@ def test_column_widths_and_the_sort_survive_closing_and_reopening(dock: RehucoDo
     """
     dock.open_rehuco(REHUCO_PATH)
     first_browser(dock).view.horizontalHeader().resizeSection(0, 233)
-    first_browser(dock).view.sortByColumn(TITLE_COLUMN, Qt.SortOrder.DescendingOrder)
+    first_browser(dock).view.sortByColumn(CatalogColumn.TITLE, Qt.SortOrder.DescendingOrder)
     dock.close_rehuco()
 
     dock.open_rehuco(REHUCO_PATH)
 
     header = first_browser(dock).view.horizontalHeader()
     assert header.sectionSize(0) == 233
-    assert (header.sortIndicatorSection(), header.sortIndicatorOrder()) == (TITLE_COLUMN, Qt.SortOrder.DescendingOrder)
+    assert (header.sortIndicatorSection(), header.sortIndicatorOrder()) == (
+        CatalogColumn.TITLE,
+        Qt.SortOrder.DescendingOrder,
+    )
 
 
 @mark.usefixtures("served")
@@ -1764,7 +1767,7 @@ def fixture_followed(
 
 def shown_path(dock: RehucoDock) -> str:
     """The root-qualified path the one row shows."""
-    return first_browser(dock).model.index(0, 3).data()
+    return first_browser(dock).model.index(0, CatalogColumn.PATH).data()
 
 
 def test_a_rename_rebases_its_row_without_a_scan(followed: tuple[RehucoDock, ResourceEvents]) -> None:
@@ -1823,7 +1826,141 @@ def test_a_written_record_is_read_back_into_its_row(
 
     events.announce_changed((TUTORIALS / "python" / "info.rehu", TUTORIALS / "python" / "info00.jpg"))
 
-    assert first_browser(dock).model.index(0, TITLE_COLUMN).data() == "Python 3"
+    assert first_browser(dock).model.index(0, CatalogColumn.TITLE).data() == "Python 3"
+
+
+def test_a_rename_moves_the_row_in_place_and_keeps_it_selected(
+    qtbot: QtBot, followed: tuple[RehucoDock, ResourceEvents]
+) -> None:
+    """A rename changes the row where it stands: no reset, the selection kept, the current resource renamed (#379).
+
+    **Test steps:**
+
+    * select the one row, then announce its folder renamed
+    * verify no reset, the row still selected, and the new key announced as current
+    """
+    dock, events = followed
+    browser = first_browser(dock)
+    browser.view.selectRow(0)
+
+    with qtbot.assertNotEmitted(browser.model.modelReset), qtbot.waitSignal(browser.current_changed) as changed:
+        events.announce_moved(Relocation(((TUTORIALS / "python", TUTORIALS / "py"),)))
+
+    assert changed.args is not None
+    (current,) = changed.args
+    assert current is not None
+    root_id, relative = current
+    assert relative == "py/info.rehu"
+    assert browser.current_resource == (root_id, "py/info.rehu")
+    assert browser.view.selectionModel().isRowSelected(0, QModelIndex())
+
+
+def test_a_written_record_changes_its_row_without_a_reset(
+    qtbot: QtBot, mocker: MockerFixture, followed: tuple[RehucoDock, ResourceEvents]
+) -> None:
+    """A save reads back just its own row, and the table changes it in place (#379).
+
+    **Test steps:**
+
+    * make the record read as retitled, and announce it written
+    * verify no reset and the new title
+    """
+    dock, events = followed
+    model = first_browser(dock).model
+    mocker.patch.object(Path, "is_file", autospec=True, return_value=True)
+    mocker.patch(
+        "rehuco_core.rehudb_updates.CatalogRecordReader.read",
+        return_value=CatalogRecord("python/info.rehu", RecordKind.REHU, title="Python 3", type="tutorial"),
+    )
+
+    with qtbot.assertNotEmitted(model.modelReset):
+        events.announce_changed((TUTORIALS / "python" / "info.rehu",))
+
+    assert model.index(0, CatalogColumn.TITLE).data() == "Python 3"
+
+
+def test_a_deleted_record_leaves_the_table_in_place(
+    qtbot: QtBot, mocker: MockerFixture, followed: tuple[RehucoDock, ResourceEvents]
+) -> None:
+    """A record gone from a root that is there loses its row, and only that row goes (#379).
+
+    **Test steps:**
+
+    * make the record missing under an online root, and announce it changed
+    * verify the row was removed without a reset
+    """
+    dock, events = followed
+    model = first_browser(dock).model
+    mocker.patch.object(Path, "is_file", autospec=True, return_value=False)
+    mocker.patch.object(Path, "is_dir", autospec=True, return_value=True)
+
+    with qtbot.assertNotEmitted(model.modelReset), qtbot.waitSignal(model.rowsRemoved):
+        events.announce_changed((TUTORIALS / "python" / "info.rehu",))
+
+    assert model.rowCount() == 0
+
+
+def test_a_rename_out_of_a_folder_filter_removes_the_row(
+    qtbot: QtBot, followed: tuple[RehucoDock, ResourceEvents]
+) -> None:
+    """Each browser reads the touched rows with its own query, so a row renamed out of what it filters leaves it.
+
+    **Test steps:**
+
+    * filter the browser to the tutorial's folder, then rename that folder
+    * verify the row was removed without a reset
+    """
+    dock, events = followed
+    browser = first_browser(dock)
+    browser.set_filter_text('folder:"tutorials/python"')
+    qtbot.waitUntil(lambda: browser.model.rowCount() == 1, timeout=WAIT_TIMEOUT_MS)
+
+    with qtbot.assertNotEmitted(browser.model.modelReset):
+        events.announce_moved(Relocation(((TUTORIALS / "python", TUTORIALS / "py"),)))
+
+    assert browser.model.rowCount() == 0
+
+
+def test_browsers_filtering_alike_share_one_read_of_the_touched_rows(
+    mocker: MockerFixture, followed: tuple[RehucoDock, ResourceEvents]
+) -> None:
+    """Two browsers with one query are updated from one read of the rows a rename touched.
+
+    **Test steps:**
+
+    * add a second browser, then announce the tutorial's folder renamed
+    * verify both show the new path, read once
+    """
+    dock, events = followed
+    dock.new_browser_action.trigger()
+    rows = mocker.spy(CatalogCache, "rows")
+
+    events.announce_moved(Relocation(((TUTORIALS / "python", TUTORIALS / "py"),)))
+
+    assert {browser.model.index(0, CatalogColumn.PATH).data() for browser in dock.browsers} == {
+        "tutorials/py/info.rehu"
+    }
+    assert rows.call_count == 1
+
+
+def test_a_failed_read_of_the_touched_rows_is_logged_and_the_table_kept(
+    mocker: MockerFixture, followed: tuple[RehucoDock, ResourceEvents], caplog: LogCaptureFixture
+) -> None:
+    """The rename is in the cache; a failure to read its rows back leaves the table as it was, logged.
+
+    **Test steps:**
+
+    * make the cache refuse to read rows, and announce a rename
+    * verify the error was logged and the row still shows its old path
+    """
+    dock, events = followed
+    mocker.patch.object(CatalogCache, "rows", side_effect=sqlite3.OperationalError("locked"))
+    caplog.set_level(logging.ERROR, logger="rehuco_agent.rehuco.rehuco_dock")
+
+    events.announce_moved(Relocation(((TUTORIALS / "python", TUTORIALS / "py"),)))
+
+    assert "locked" in caplog.text
+    assert shown_path(dock) == "tutorials/python/info.rehu"
 
 
 def test_a_cache_failure_while_following_is_logged(

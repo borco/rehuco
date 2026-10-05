@@ -44,7 +44,15 @@ released becomes the body of the GitHub Release, so each entry is written to be 
   Root Catalog toolbar to the Roots view's title bar, and Remove Root is also on a root's right-click menu.
 - **Table browsers** in the Root Catalog panel: add as many as you like with **New Table Browser**, each with its
   own name, columns and sort. **Rename** and **Clone** (the copy starts with the same columns) are on the browser's
-  title bar and its tab's right-click menu, and the toolbar renames the current one; the [x] deletes a browser. The Roots view can now be hidden with its [x] and shown with the toolbar's **Roots** toggle. Each
+  title bar and its tab's right-click menu, and the toolbar renames the current one; the [x] deletes a browser.
+  A table browser has a column for every field the cache holds: authors, title, type, path, publisher, URL, tags,
+  release date, size, last update, a tutorial's three durations and its level, a reference pack's claimed and
+  measured image counts, and **Format**: the file's format version, `tc` for a legacy `.tc`, and `?` for a `.rehu`
+  not read since this version (a scan fills it in). The URL and the tutorial and reference-pack columns start
+  hidden; the header's right-click menu shows and hides any column, and each browser remembers its choice. Sizes,
+  durations and counts sort as numbers, and a cell with nothing in it sorts last either way round; hovering a size
+  shows its exact bytes. Rows can be multi-selected. A rename, save or deletion made in the app changes just the
+  rows it touched, keeping the selection and the sort, instead of reloading the table. The Roots view can now be hidden with its [x] and shown with the toolbar's **Roots** toggle. Each
   catalog remembers its browsers and where its sub-docks sit between runs, on this machine only. New icons for the
   roots and browser actions.
 - A **filter line** over each table browser: free text plus `field:value` or `field:"quoted value"` tokens for
@@ -52,9 +60,8 @@ released becomes the body of the GitHub Release, so each entry is written to be 
   typing, or at once on Enter. The status line under the table counts what is shown and adds up its sizes and, for
   reference packs, its image counts, saying how many rows each total leaves out as unmeasured and how many are
   legacy `.tc` files; a `folder` token matches the root label ignoring ASCII case and the path beneath it as the
-  filesystem does. `columns:authors,title` picks the columns
-  shown; showing or hiding one from the header's right-click menu rewrites the token. An unknown field or column is
-  flagged with a warning icon on the line, and the rest of the line still applies. Each browser remembers its line.
+  filesystem does. An unknown field is flagged with a warning icon on the line, and the rest of the line still
+  applies. Each browser remembers its line.
 - Author names in a document's viewer are links: clicking one brings the Root Catalog forward with
   `authors:"<name>"` set on its current browser, opening a browser if none is open.
 - A **Shortcuts** page in Settings: search every command by name, description or key, click a key and

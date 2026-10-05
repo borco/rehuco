@@ -1,7 +1,7 @@
 """A table browser: the Root Catalog's rows as a table under a filter line and over a status line, one of several per
 catalog (#396, #398)."""
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Final
 from uuid import UUID, uuid4
@@ -9,24 +9,23 @@ from uuid import UUID, uuid4
 import humanize
 from borco_pyside.theming import GlyphActionIconThemeHandler
 from borco_pyside.widgets import HeaderSectionsMenu, RowBandDelegate
-from PySide6.QtCore import QModelIndex, Qt, QTimer, Signal
-from PySide6.QtGui import QIcon
+from PySide6.QtCore import QByteArray, QModelIndex, Qt, QTimer, Signal
+from PySide6.QtGui import QIcon, QStandardItemModel
 from PySide6.QtWidgets import QLineEdit, QStatusBar, QTableView, QWidget
 from rehuco_core import CatalogField, CatalogQuery, CatalogRow
 
 from ..glyphs import FILTER_PROBLEM_GLYPH
 from ..settings.catalog_state_store import TABLE_BROWSER_KIND, BrowserState
-from .catalog_table_model import COLUMN_IDS, CatalogTableModel
-from .filter_line import COLUMN_SEPARATOR, COLUMNS_TOKEN, parse_filter, with_token
+from .catalog_delegates import COLUMN_DELEGATES
+from .catalog_table_model import DEFAULT_HIDDEN, CatalogTableModel, RowKey
+from .filter_line import parse_filter, with_token, without_retired_tokens
 from .rehuco_browser_panel_ui import Ui_RehucoBrowserPanel
 
 FILTER_SETTLE_MS: Final = 250
 """How long the filter line waits after the last keystroke before its rows are read again; Enter does not wait."""
 
 FILTER_HELP: Final = (
-    'Free text, and field:value or field:"quoted value" tokens: '
-    f"{', '.join(field.value for field in CatalogField)}.\n"
-    f"{COLUMNS_TOKEN}:{COLUMN_SEPARATOR.join(COLUMN_IDS)} picks the columns shown."
+    f'Free text, and field:value or field:"quoted value" tokens: {", ".join(field.value for field in CatalogField)}.'
 )
 """The filter line's tooltip: its grammar, under whatever it could not apply."""
 
@@ -40,9 +39,14 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
     **The filter line picks the rows by query, not by proxy** ([[plugins#rehuco-dock]]): as its text settles it is
     read into a :class:`~rehuco_core.CatalogQuery` and :attr:`query_changed` asks the shell for the rows that match,
     so the model only ever holds what the table shows -- and the status line, which follows the view's model,
-    counts exactly that. A ``columns:`` token sets which columns show; a change from the header's own menu is
-    written back into the text, so one string always says both. What the line could not apply is reported on it,
-    never dropped.
+    counts exactly that. What the line could not apply is reported on it, never dropped.
+
+    **Which columns show is the header's alone** (#379): its context menu toggles them, and the header state keeps the
+    choice with the widths, order and sort; the filter line never names a column. A plain browser starts with
+    every column shown but :data:`~.catalog_table_model.DEFAULT_HIDDEN`.
+
+    **The rows change in place** when the app renames, writes or deletes a record (:meth:`update_rows`), so a
+    selection survives; exactly one selected row is the browser's **current resource** (:attr:`current_changed`).
 
     A browser carries the state a catalog remembers about it -- its id, name, filter text and header state -- but
     not its dock: what a name *looks like* on a tab is the shell's.
@@ -57,7 +61,11 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
 
     query_changed: Signal = Signal(object)
     """Emitted with the new :class:`~rehuco_core.CatalogQuery` once the filter line's text has settled on one that
-    picks other rows; a change of columns alone is not one."""
+    picks other rows."""
+
+    current_changed: Signal = Signal(object)
+    """Emitted with the new :attr:`current_resource` -- a ``(root_id, relative)`` pair, or ``None`` -- whenever it
+    changes: by a selection, or by the selected row itself being renamed or removed."""
 
     DEFAULT_NAME: Final = "Browser"
     """What a browser made without a name is called."""
@@ -66,23 +74,32 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
         super().__init__(parent)
         self.__browser_id: Final = state.browser_id if state is not None else uuid4()
         self.__name = state.name if state is not None else self.DEFAULT_NAME
-        self.__filter_text = state.filter if state is not None else ""
-        self.__parsed = parse_filter(self.__filter_text, COLUMN_IDS)
-        self.__writing_columns = False
-        """Set while the header's columns are being written into the text, so they are not applied back."""
+        # a word an older build wrote and this one no longer reads is not this reader's mistake to be told about
+        self.__filter_text = without_retired_tokens(state.filter) if state is not None else ""
+        self.__parsed = parse_filter(self.__filter_text)
+        self.__current: RowKey | None = None
         self.__model: Final = CatalogTableModel(self)
         self.__ui: Final = Ui_RehucoBrowserPanel()
         self.__ui.setupUi(self)
         view = self.__ui.catalog_view
         view.setModel(self.__model)
         view.setItemDelegate(RowBandDelegate(view))
+        for column, delegate in COLUMN_DELEGATES.items():
+            view.setItemDelegateForColumn(column, delegate(view))
         # unsorted until a header is clicked: the header's own default puts an arrow on the first column while
         # the rows are still in the cache's order
         view.horizontalHeader().setSortIndicator(-1, Qt.SortOrder.AscendingOrder)
         self.__sections_menu: Final = HeaderSectionsMenu(view.horizontalHeader())
+        for column in DEFAULT_HIDDEN:
+            view.horizontalHeader().setSectionHidden(column, True)
         view.doubleClicked.connect(self.__on_double_clicked)
-        for signal in (self.__model.modelReset, self.__model.rowsInserted, self.__model.rowsRemoved):
+        model = self.__model
+        for signal in (model.modelReset, model.rowsInserted, model.rowsRemoved, model.dataChanged):
             signal.connect(self.__update_status)
+        # connected after setModel, so the selection model has followed a removed or moved row before this asks it
+        view.selectionModel().selectionChanged.connect(self.__update_current)
+        for signal in (model.modelReset, model.rowsRemoved, model.rowsMoved, model.dataChanged, model.layoutChanged):
+            signal.connect(self.__update_current)
         self.__update_status()
 
         line = self.__ui.filter_edit
@@ -100,10 +117,7 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
 
         if state is not None:
             self.restore_columns(state.columns)
-        # the header state keeps the widths and the order; a columns token in the saved text has the last word on
-        # which show, so the two agree from the start
-        self.__show_parsed()
-        self.__sections_menu.sections_visibility_changed.connect(self.__on_sections_toggled)
+        self.__show_problems()
 
     @property
     def browser_id(self) -> UUID:
@@ -140,6 +154,11 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
         return self.__parsed.problems
 
     @property
+    def current_resource(self) -> RowKey | None:
+        """The resource of the one selected row, as ``(root_id, relative)``; ``None`` while none or several are."""
+        return self.__current
+
+    @property
     def filter_edit(self) -> QLineEdit:
         """The filter line."""
         return self.__ui.filter_edit
@@ -172,6 +191,14 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
         """
         self.__model.set_rows(rows, root_paths)
 
+    def update_rows(self, affected: Iterable[int], fresh: Sequence[CatalogRow]) -> None:
+        """Bring the rows a rename, a write or a deletion touched up to date, in place.
+
+        :param affected: the ids of every row the change may have touched.
+        :param fresh: those of them that exist and match :attr:`query` now.
+        """
+        self.__model.update_rows(affected, fresh)
+
     def set_filter_text(self, text: str) -> None:
         """Put ``text`` on the filter line and apply it now, without waiting for it to settle.
 
@@ -183,10 +210,10 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
     def set_token(self, name: str, value: str | None) -> None:
         """Set one token on the filter line and apply it now: any word naming ``name`` is replaced, the rest kept.
 
-        :param name: the token's name -- a field's spelling, or ``columns``.
+        :param name: the token's name -- a field's spelling.
         :param value: its value; ``None`` only removes it.
         """
-        self.set_filter_text(with_token(self.__ui.filter_edit.text(), COLUMN_IDS, name, value))
+        self.set_filter_text(with_token(self.__ui.filter_edit.text(), name, value))
 
     def state(self) -> BrowserState:
         """This browser as a catalog remembers it: the filter line as it reads now, and the header state."""
@@ -199,7 +226,8 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
         )
 
     def clone_state(self, name: str) -> BrowserState:
-        """What a copy of this browser starts as: the same filter and columns under a new id and ``name``.
+        """What a copy of this browser starts as: the same filter and header -- columns, widths, order and sort --
+        under a new id and ``name``.
 
         :param name: the copy's name.
         :returns: the state to build the copy from.
@@ -210,14 +238,35 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
     def restore_columns(self, header_state: bytes) -> None:
         """Put back the header state a browser was saved with, then sort as the header now says.
 
-        A header state that does not fit the model leaves every column shown (:meth:`HeaderSectionsMenu.restore_state`).
+        A state saved before the later columns existed covers only the first ones: Qt shows every column past it, so
+        those past it are put back to the defaults -- as is every column, for a state the header refuses.
 
         :param header_state: bytes from :meth:`state`; empty leaves the defaults.
         """
         header = self.__ui.catalog_view.horizontalHeader()
         if header_state:
-            self.__sections_menu.restore_state(header_state)
+            covered = self.saved_column_count(header_state) if self.__sections_menu.restore_state(header_state) else 0
+            for column in DEFAULT_HIDDEN:
+                if column >= covered:
+                    header.setSectionHidden(column, True)
         self.__model.sort(header.sortIndicatorSection(), header.sortIndicatorOrder())
+
+    @staticmethod
+    def saved_column_count(header_state: bytes) -> int:
+        """How many columns a saved header state describes.
+
+        Read by restoring it onto a scratch one-column table, whose header grows to the state's count -- Qt keeps no
+        other public account of it, and parsing its bytes would tie this to its private format.
+
+        :param header_state: bytes from :meth:`state`.
+        :returns: the count; ``0`` for bytes the header refuses.
+        """
+        scratch = QTableView()
+        scratch.setModel(QStandardItemModel(0, 1, scratch))
+        header = scratch.horizontalHeader()
+        count = header.count() if header.restoreState(QByteArray(header_state)) else 0
+        scratch.deleteLater()
+        return count
 
     def __apply_typed(self) -> None:
         """Apply what has been typed, now."""
@@ -231,40 +280,26 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__settle_timer.stop()
         previous = self.__parsed.query
         self.__filter_text = text
-        self.__parsed = parse_filter(text, COLUMN_IDS)
-        self.__show_parsed()
+        self.__parsed = parse_filter(text)
+        self.__show_problems()
         if self.__parsed.query != previous:
             self.query_changed.emit(self.__parsed.query)
 
-    def __show_parsed(self) -> None:
-        """Show the columns the line names, and on the line what it could not apply."""
-        columns = self.__parsed.columns
-        if columns is not None and not self.__writing_columns:
-            header = self.__ui.catalog_view.horizontalHeader()
-            for section, column in enumerate(COLUMN_IDS):
-                header.setSectionHidden(section, column not in columns)
+    def __show_problems(self) -> None:
+        """Show on the line what it could not apply."""
         problems = self.__parsed.problems
         self.__problems_action.setVisible(bool(problems))
         tooltip = "\n".join(problems)
         self.__problems_action.setToolTip(tooltip)
         self.__ui.filter_edit.setToolTip(f"{tooltip}\n\n{FILTER_HELP}" if problems else FILTER_HELP)
 
-    def __on_sections_toggled(self) -> None:
-        """Write the columns the header now shows into the line: a ``columns:`` token naming them, in the order they
-        show, or no token once every column shows again."""
-        header = self.__ui.catalog_view.horizontalHeader()
-        logical = [header.logicalIndex(visual) for visual in range(header.count())]
-        visible = [COLUMN_IDS[section] for section in logical if not header.isSectionHidden(section)]
-        text = self.__ui.filter_edit.text()
-        named = any(token.name == COLUMNS_TOKEN for token in parse_filter(text, COLUMN_IDS).tokens)
-        value = None if len(visible) == len(COLUMN_IDS) else COLUMN_SEPARATOR.join(visible)
-        if value is None and not named:
-            return
-        self.__writing_columns = True
-        try:
-            self.set_token(COLUMNS_TOKEN, value)
-        finally:
-            self.__writing_columns = False
+    def __update_current(self) -> None:
+        """Say which resource is current now, if that changed: the one selected row's, else none."""
+        rows = self.__ui.catalog_view.selectionModel().selectedRows()
+        current = self.__model.row_key(rows[0].row()) if len(rows) == 1 else None
+        if current != self.__current:
+            self.__current = current
+            self.current_changed.emit(current)
 
     def __on_double_clicked(self, index: QModelIndex) -> None:
         """Ask for the double-clicked resource to be opened, by its absolute path.

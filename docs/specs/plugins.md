@@ -558,9 +558,20 @@ Its nested dock manager holds three kinds of sub-dock:
   file of its own named by the rehuco id (so a moved `.rehuco` keeps them) — never in the `.rehuco`, which
   `rehuco-core` reads and which would carry view state to boxes that have no use for it. They are written when the
   catalog is closed, replaced, or the app quits. A catalog with none remembered opens with one default table browser.
-  - **Columns.** Every column the cache can show exists on every view, and a header context menu lists them all,
-    checked where visible. Type-specific columns — a tutorial's durations and level, a reference pack's image
-    counts — are the fields the cache stores that the type's plugin declares ([[data-model#cache-schema]], #399).
+  - **Columns** (#379). Every column the cache can show exists on every view, and the header's context menu lists
+    them all, checked where visible — **the only control over columns**: the filter line never names one. The choice
+    is kept in the browser's header state with the widths, order and sort, and a clone copies it. A plain browser
+    shows authors, title, type, path, publisher, tags, released, size, updated and **format**; the URL and the
+    type-specific columns — a tutorial's durations and level, a reference pack's image counts, the fields the cache
+    stores that the type's plugin declares ([[data-model#cache-schema]], #399) — start hidden, for a preset to show.
+    A header state saved before a column existed shows that column at its default. **A cell holds its value** (a size
+    in bytes, a duration in seconds) and a delegate says how it reads, so two sizes that read alike still sort apart;
+    the exact size is the cell's tooltip. A missing value sorts after every value, in either order. **Format** says
+    which file format a resource is in: the `.rehu`'s own version as a number (`0` for an unstamped one), `tc` for a
+    legacy `.tc` — a format of its own, not version 0 — and `?` for a `.rehu` whose version the cache does not know
+    (unreadable, or not read since the cache began storing it). It sorts by number, then `tc`, then `?`.
+  - **The current resource** (#379) is the one selected row's, named by its root's id and root-relative path;
+    none or several selected name none. Every browser is multi-select.
   - **The filter line** (#398) is GitHub-style: free text plus `field:value` or `field:"quoted value"` tokens
     (`folder`, `authors`, `tags`, `publishers`, `type`), all ANDed; the free text is one phrase matched in a title or
     path, and a repeated field must match both values. It picks the rows **by query, not by proxy**: as the text
@@ -576,10 +587,8 @@ Its nested dock manager holds three kinds of sub-dock:
     out, and cover the `.rehu` rows only: a legacy `.tc`'s size and image count are old claims, often a literal `0`,
     so those rows are counted apart (`1,240 resources / 188 legacy .tc / 1.2T (37 unmeasured) / 18,400 images (3
     unmeasured)`). The image total is shown only where a `.rehu` row has a count or is of a type that declares one.
-    A **`columns:` token** —
-    `columns:authors,title` — chooses which columns show, and a change from the header menu is written back into it,
-    so one string says both what rows and what fields; it is dropped once every column shows. An unknown field or column is reported on the line, never
-    silently dropped, and the rest of the line still applies. The text is the browser's remembered filter. A
+    An unknown field is reported on the line, never silently dropped, and the rest of the line still applies. The
+    text is the browser's remembered filter; a `columns:` word an earlier build saved in it is dropped as it loads. A
     folder's context menu in Roots — *Show only rehu in this folder* — sets `folder:"<root label>/<relative path>"`
     on the current browser, and click-to-filter links set the same tokens on it ([[plugins#filter-urls]]); either
     **replaces** that field's token and keeps the rest of the line. The current browser is the focused one, else the

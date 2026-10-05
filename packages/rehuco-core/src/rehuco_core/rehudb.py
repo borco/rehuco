@@ -29,12 +29,16 @@ Every value a query matches against is a parameter; the SQL around it is assembl
 fragments below, never from text a reader typed.
 """
 
+# one class over one file: every read and write here keeps the same invariants -- roots by id, a row per record, the
+# value tables pruned -- and splitting it would separate rules that only make sense read against each other
+# pylint: disable=too-many-lines
+
 import json
 import logging
 import os
 import sqlite3
 import time
-from collections.abc import Generator, Sequence
+from collections.abc import Collection, Generator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import StrEnum
@@ -104,6 +108,9 @@ class CatalogRecord:  # pylint: disable=too-many-instance-attributes
     :param level: the chosen levels, in order.
     :param advertised_count: the pack's own claim of how many images it holds, as text (``500+``), or ``None``.
     :param current_count: the measured content-image count, or ``None``.
+    :param format_version: the file's own ``format_version`` as it is on disk (``0`` for an unstamped ``.rehu``), or
+        ``None``: always for a legacy ``.tc``, which has no version of its own, and for a ``.rehu`` that could not be
+        read (#379).
     :param mtime_ns: the record file's modification time ([[data-model#scan-and-staleness]]).
     :param size: the record file's size in bytes.
     :param content_hash: the record file's bytes, hashed at this read.
@@ -130,6 +137,7 @@ class CatalogRecord:  # pylint: disable=too-many-instance-attributes
     level: tuple[str, ...] = ()
     advertised_count: str | None = None
     current_count: int | None = None
+    format_version: int | None = None
     mtime_ns: int = 0
     size: int = 0
     content_hash: str = ""
@@ -287,6 +295,7 @@ RESOURCE_COLUMNS: Final = (
     "current_size",
     "updated",
     *TYPE_FIELD_COLUMNS,
+    "format_version",
     "mtime_ns",
     "size",
     "content_hash",
@@ -294,6 +303,9 @@ RESOURCE_COLUMNS: Final = (
 )
 """The ``resources`` columns a :class:`CatalogRecord` fills -- each one of its fields, under the same name, and
 stored as it is but for ``level``, which a column holds as a JSON array (:meth:`CatalogCache.rows`)."""
+
+SELECTED_COLUMNS: Final = ", ".join(f"r.{column}" for column in RESOURCE_COLUMNS)
+"""The ``resources r`` columns a row is read with, in :data:`RESOURCE_COLUMNS` order."""
 
 KEY_RANGE_END: Final = "\U0010ffff"
 """Appended to a key prefix to bound the range of keys that start with it: the highest code point, whose UTF-8
@@ -664,17 +676,41 @@ class CatalogCache:
                 self.__prune_values(connection)
         return moved
 
-    def rows(self, query: CatalogQuery | None = None) -> list[CatalogRow]:
+    def resource_ids(self, paths: Sequence[Path]) -> set[int]:
+        """The rows at or beneath each of ``paths`` -- what a rename or a write may have changed, asked before and
+        after it so a browser can update just those rows in place (#379).
+
+        :param paths: absolute paths, of records or of folders; one under no root adds nothing.
+        :returns: the rows' ids.
+        """
+        roots = self.roots()
+        ids: set[int] = set()
+        for path in paths:
+            parts = self.__normalized_parts(path)
+            for root in roots:
+                depth = len(root.path.parts)
+                if len(parts) <= depth or parts[:depth] != self.__normalized_parts(root.path):
+                    continue
+                relative = "/".join(path.parts[depth:])
+                cursor = self.__connection.execute(
+                    f"SELECT id FROM resources WHERE root_id = ? AND {SUBTREE_CLAUSE}",  # nosec B608  # fixed
+                    (str(root.root_id), *self.__subtree_keys(relative)),
+                )
+                ids.update(resource_id for (resource_id,) in cursor)
+        return ids
+
+    def rows(self, query: CatalogQuery | None = None, *, ids: Collection[int] | None = None) -> list[CatalogRow]:
         """The resources matching ``query``, in root order and then by path.
 
         :param query: what to match; ``None`` reads every row.
+        :param ids: when given, only these rows are read -- the few a rename or a write touched (#379); each is one
+            parameter, so the set is meant to be small.
         :returns: the rows.
         """
-        where, parameters = self.__where(query if query is not None else CatalogQuery())
+        where, parameters = self.__where(query if query is not None else CatalogQuery(), ids)
         values = {table: self.__values(table, join, where, parameters) for table, join in JOINS}
-        columns = ", ".join(f"r.{column}" for column in RESOURCE_COLUMNS)
         cursor = self.__connection.execute(
-            f"SELECT r.id, r.root_id, roots.label, r.scanned_at, {columns} "  # nosec B608  # fixed names
+            f"SELECT r.id, r.root_id, roots.label, r.scanned_at, {SELECTED_COLUMNS} "  # nosec B608  # fixed names
             f"FROM resources r JOIN roots ON roots.id = r.root_id WHERE {where} ORDER BY roots.position, r.path_key",
             parameters,
         )
@@ -928,13 +964,18 @@ class CatalogCache:
             connection.execute(orphans)
 
     @staticmethod
-    def __where(query: CatalogQuery) -> tuple[str, tuple[str, ...]]:
+    def __where(query: CatalogQuery, ids: Collection[int] | None = None) -> tuple[str, tuple[object, ...]]:
         """The ``WHERE`` condition a query reads as, over ``resources r`` joined to ``roots``.
 
+        :param query: what to match.
+        :param ids: the only rows to read, when given.
         :returns: the condition and its parameters, one per placeholder.
         """
         clauses = ["1"]
-        parameters: list[str] = []
+        parameters: list[object] = []
+        if ids is not None:
+            clauses.append(f"r.id IN ({', '.join('?' * len(ids))})")
+            parameters += ids
         if query.text:
             clauses.append("(r.title LIKE ? ESCAPE '\\' OR r.path LIKE ? ESCAPE '\\')")
             pattern = f"%{CatalogCache.__escaped(query.text)}%"
@@ -978,7 +1019,7 @@ class CatalogCache:
         """``text`` with ``LIKE``'s wildcards and its escape character taken literally."""
         return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
-    def __values(self, table: str, join: str, where: str, parameters: tuple[str, ...]) -> dict[int, tuple[str, ...]]:
+    def __values(self, table: str, join: str, where: str, parameters: Sequence[object]) -> dict[int, tuple[str, ...]]:
         """One value table's names for every matching resource, in each resource's own order and spelling -- the
         join's own, falling back to the shared one for a row written before the join kept a spelling.
 

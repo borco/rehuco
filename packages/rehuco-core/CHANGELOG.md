@@ -23,7 +23,8 @@ Changelogs are per package in this monorepo, matching the per-package release ta
   them: the common core a browser shows, the authors, tags and publishers, and the record's size,
   modification time and content hash. It also holds the type-specific fields: a tutorial's three durations and
   its levels, and a reference pack's claimed and measured image counts. `catalog_type_fields` names the ones a
-  type contributes, and a scan fills only those. The schema is versioned through `PRAGMA user_version` and upgraded
+  type contributes, and a scan fills only those. Each row also records its file's format version: a `.rehu`'s
+  own `format_version` (`0` when unstamped), none for a legacy `.tc` or a record that could not be read. The schema is versioned through `PRAGMA user_version` and upgraded
   forward only. A cache newer than the build, or a file that is not a database, is discarded and rebuilt.
   Reconciling against a `.rehuco` keeps a relabeled or re-pointed root's rows. Removing a root deletes its
   rows and frees their space. Rows can be read whole or narrowed by free text and `folder`, `authors`,
@@ -44,6 +45,8 @@ Changelogs are per package in this monorepo, matching the per-package release ta
   whose file no longer matches its row. `CatalogCache.remove` drops a deleted record's row. `CatalogCache.apply_relocation`
   applies a rename's executed plan (`RehuRenamer.executed`) without reading anything: a renamed folder rebases every
   row beneath it, a file-scoped rename only its own. A record missing under an offline root keeps its row.
+  `CatalogCache.resource_ids` names the rows at or beneath some paths, and `CatalogCache.rows(query, ids=...)`
+  reads just those rows through a query, so a view can follow a change without reading everything again.
 - `CatalogScanner.walk()` yields one listing at a time. Given a coordinator, it lists each directory under
   its hold and follows a folder renamed mid-walk. It can also collect uncovered `.tc` records.
 - The `.rehuco` file (`RehucoFile`): a rehuco id and an ordered list of folder roots, each with a stable id, a

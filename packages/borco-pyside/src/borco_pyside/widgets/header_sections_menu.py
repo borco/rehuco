@@ -19,8 +19,8 @@ class HeaderSectionsMenu(QObject):
     anything else hid a section.
 
     :attr:`sections_visibility_changed` says when the menu or a restore changed which sections show, so a consumer
-    mirroring that choice elsewhere -- a filter line's column token -- can follow it. A section hidden by anyone
-    else calling the header directly is not reported: the header itself has no signal for it.
+    that mirrors or persists that choice can follow it. A section hidden by anyone else calling the header directly
+    is not reported: the header itself has no signal for it.
 
     :param header: the header to attach to; this object is parented to it and lives as long as it does.
     """
@@ -70,8 +70,9 @@ class HeaderSectionsMenu(QObject):
         reader their layout and never a column. Qt refuses corrupt bytes itself; a state saved from a
         header with *more* sections than the model has it accepts, by growing the header past the model
         (confirmed on 6.x) -- that one is refused here and the header put back as it was. A state saved
-        from fewer sections than the model has applies to the sections it knows and leaves the rest
-        alone, which is what a table that gained a column wants.
+        from fewer sections than the model has applies to the sections it knows and **shows** the rest,
+        whatever they were before (confirmed on 6.x): a consumer whose newer sections start hidden hides
+        them again.
 
         :param state: the bytes to apply.
         :returns: whether the header accepted them; never while it has no model to lay out.

@@ -1,5 +1,5 @@
 """The filter line's grammar (#398, [[plugins#rehuco-dock]]): free text and ``field:"value"`` tokens, read into the
-:class:`~rehuco_core.CatalogQuery` a browser's rows come from and the columns it shows.
+:class:`~rehuco_core.CatalogQuery` a browser's rows come from. Which columns show is the header's alone (#379).
 
 Words are separated by whitespace; a ``"..."`` run is one value, with ``\\"`` and ``\\\\`` its only escapes, and an
 unclosed quote runs to the end of the line. A word that starts with a name and a colon is a token -- ``name:value``
@@ -7,16 +7,15 @@ or ``name:"quoted value"`` -- and every other word is free text. Tokens and the 
 """
 
 import re
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Final
 
 from rehuco_core import CatalogField, CatalogQuery
 
-COLUMNS_TOKEN: Final = "columns"
-"""The token naming the columns a browser shows, comma-separated: ``columns:authors,title``."""
-
-COLUMN_SEPARATOR: Final = ","
+RETIRED_TOKENS: Final = ("columns",)
+"""Tokens an older build wrote into a browser's remembered line and this one no longer reads: ``columns:`` named the
+columns shown until #379 left that to the header menu. Dropped from a line on load, without a word."""
 
 NAME_PATTERN: Final = re.compile(r"([A-Za-z_]+):")
 """A token's name and its colon, at the start of a word; matched case-insensitively against the known names."""
@@ -43,32 +42,27 @@ class ParsedFilter:
     """What a filter line says.
 
     :param query: the free text and every field token, in the line's order.
-    :param columns: the column ids a ``columns:`` token names, the known ones only, in its order; ``None`` while
-        the line has no such token, or names no column there is.
-    :param problems: one sentence per word that was not applied -- an unknown field or column. The rest of the
-        line still applies.
+    :param problems: one sentence per word that was not applied -- an unknown field. The rest of the line still
+        applies.
     :param tokens: every ``name:value`` word, applied or not, so the line can be rewritten around them.
     """
 
     query: CatalogQuery
-    columns: tuple[str, ...] | None
     problems: tuple[str, ...]
     tokens: tuple[FilterToken, ...]
 
 
-def parse_filter(text: str, column_ids: Sequence[str]) -> ParsedFilter:
+def parse_filter(text: str) -> ParsedFilter:
     """Read a filter line.
 
     A token with an empty value is ignored without a word: it is what a token looks like while it is typed.
 
     :param text: the line.
-    :param column_ids: the ids a ``columns:`` token may name.
-    :returns: the query, the columns and what could not be applied.
+    :returns: the query and what could not be applied.
     """
     free: list[str] = []
     tokens: list[FilterToken] = []
     fields: list[tuple[CatalogField, str]] = []
-    columns: tuple[str, ...] | None = None
     problems: list[str] = []
     for name, value, start, end in split_words(text):
         if name is None:
@@ -78,17 +72,11 @@ def parse_filter(text: str, column_ids: Sequence[str]) -> ParsedFilter:
         tokens.append(FilterToken(name, value, start, end))
         if not value:
             continue
-        if name == COLUMNS_TOKEN:
-            named = dict.fromkeys(part.strip().lower() for part in value.split(COLUMN_SEPARATOR) if part.strip())
-            problems.extend(f'Unknown column "{column}"' for column in named if column not in column_ids)
-            known = tuple(column for column in named if column in column_ids)
-            columns = known or None
-            continue
         try:
             fields.append((CatalogField(name), value))
         except ValueError:
             problems.append(f'Unknown field "{name}"')
-    return ParsedFilter(CatalogQuery(" ".join(free), tuple(fields)), columns, tuple(problems), tuple(tokens))
+    return ParsedFilter(CatalogQuery(" ".join(free), tuple(fields)), tuple(problems), tuple(tokens))
 
 
 def format_token(name: str, value: str) -> str:
@@ -105,21 +93,20 @@ def format_token(name: str, value: str) -> str:
     return f'{name}:"{escaped}"'
 
 
-def with_token(text: str, column_ids: Sequence[str], name: str, value: str | None) -> str:
+def with_token(text: str, name: str, value: str | None) -> str:
     """Set one token on a line: every word naming ``name`` goes, and the new one is appended.
 
     A click sets a field rather than adding to it -- one link, one filter -- and the rest of the line is kept as it
     was written.
 
     :param text: the line.
-    :param column_ids: the ids a ``columns:`` token may name, as :func:`parse_filter` takes them.
     :param name: the token's name.
     :param value: its new value; ``None`` only removes the old ones.
     :returns: the rewritten line.
     """
     pieces: list[str] = []
     position = 0
-    for token in parse_filter(text, column_ids).tokens:
+    for token in parse_filter(text).tokens:
         if token.name == name:
             pieces.append(text[position : token.start])
             position = token.end
@@ -128,6 +115,20 @@ def with_token(text: str, column_ids: Sequence[str], name: str, value: str | Non
     if value is not None:
         kept.append(format_token(name, value))
     return " ".join(kept)
+
+
+def without_retired_tokens(text: str) -> str:
+    """A remembered line with every :data:`RETIRED_TOKENS` word taken out -- for a line saved by an older build, as it
+    is loaded; one typed now that names one is an unknown field like any other.
+
+    :param text: the line as it was saved.
+    :returns: the line without them; ``text`` itself when it held none.
+    """
+    names = {token.name for token in parse_filter(text).tokens}
+    for name in RETIRED_TOKENS:
+        if name in names:
+            text = with_token(text, name, None)
+    return text
 
 
 def split_words(text: str) -> Iterator[tuple[str | None, str, int, int]]:
