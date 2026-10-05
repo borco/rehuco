@@ -71,9 +71,6 @@ class CatalogState:
     layout: bytes = b""
     """The nested dock manager's saved layout."""
 
-    roots_header: bytes = b""
-    """The Roots table's header state."""
-
 
 class CatalogStateStore:
     """Reads and writes :class:`CatalogState` files, one per catalog.
@@ -108,7 +105,6 @@ class CatalogStateStore:
         return CatalogState(
             browsers=self.__read_browsers(values.get("browsers"), path),
             layout=self.__read_bytes(values.get("layout")),
-            roots_header=self.__read_bytes(values.get("roots_header")),
         )
 
     def save(self, rehuco_id: UUID, state: CatalogState) -> None:
@@ -131,7 +127,6 @@ class CatalogStateStore:
                 for browser in state.browsers
             ],
             "layout": base64.b64encode(state.layout).decode("ascii"),
-            "roots_header": base64.b64encode(state.roots_header).decode("ascii"),
         }
         try:
             # the folder does not exist until something is first written to it

@@ -4,24 +4,25 @@ The target for the machine-local roots file ``rehuco_core.rehuco_file`` reads an
 other target -- a ``BASE_VERSION``, a ``CHAIN``, a head derived from it -- stamped under the file's
 ``format_version``, the spelling a ``.rehu`` uses.
 
-The chain is empty today: version 1 is the first shape the file ever had. The hook exists so the day the shape
-changes, the step goes here and every ``.rehuco`` already on disk comes up on read, the way a ``.rehu`` does.
+Version 1 was the first shape the file ever had; version 2 (#378) replaced a root's ``removable`` flag with a
+``storage``. Every ``.rehuco`` already on disk comes up on read, the way a ``.rehu`` does.
 """
 
 from typing import Final
 
 from ..runner import Chain, chain_head, run
+from . import v2_root_storage
 
 BASE_VERSION: Final = 1
 """What an unstamped file resolves to -- there has only ever been a v1, so a file whose stamp is missing or
 malformed is read as one rather than refused."""
 
-CHAIN: Final[Chain] = ()
-"""This target's ordered ``(target, step)`` chain -- empty, because v1 is the first shape."""
+CHAIN: Final[Chain] = ((v2_root_storage.VERSION, v2_root_storage.upgrade),)
+"""This target's ordered ``(target, step)`` chain."""
 
 CURRENT_VERSION: Final = chain_head(CHAIN, BASE_VERSION)
-"""The newest ``.rehuco`` version this build understands -- the chain's head, or the base while the chain is
-empty. Derived, never declared separately, so it cannot drift from the steps that actually exist."""
+"""The newest ``.rehuco`` version this build understands -- the chain's head. Derived, never declared separately,
+so it cannot drift from the steps that actually exist."""
 
 
 def migrate_rehuco_data(data: dict) -> None:

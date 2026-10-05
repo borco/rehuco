@@ -514,14 +514,39 @@ Its nested dock manager holds three kinds of sub-dock:
   ([[mounts-and-storage#rehuco-scope]]), each further column one folder's listing, drawn like the files sub-dock
   ([[plugins#files-subdock]]) but with no `..` row, which a column view has no use for. It is **navigation, not
   membership**: what the catalog holds is still decided by records, never by the tree ([[plugins#grouping-entities]]).
-  A vertical toolbar on its left adds a root (a folder picker), removes one (after a confirmation), and moves the
-  current root to the top, up, down or bottom — the ordering actions and icons the settings lists use, but not their
-  list editor, whose inline insert, rename, duplicate and reset have no meaning for a root. The toolbar acts only
-  while the root column is current. `F5` re-lists the visible columns: a folder deleted outside the app disappears,
-  and the selection falls back to its nearest surviving ancestor. The model lists off the GUI thread, holds no
-  handle between listings and never uses `QFileSystemModel` — the files sub-dock's reasons, plus that browsing must
-  never block a rename ([[mounts-and-storage#out-of-band]]). A node is root, folder, file, loading or unreachable, so
-  an offline root is a state the model already has ([[mounts-and-storage#offline-mounts]]).
+  Its title bar holds **Add Root**, **Remove Root** and **Refresh**; a root's context menu holds, in three
+  groups, the folder filter and Open in file explorer; the four moves — top, up, down, bottom, with the ordering
+  icons the settings lists use but not their list editor, whose inline insert, rename, duplicate and reset have no
+  meaning for a root; and, last and apart, Remove Root. A root row is two lines, its name and under it its folder,
+  smaller and fainter and elided to fit. Its details pane has no move buttons, the grip being the way to move one.
+  A folder's menu holds the folder filter and the folder's rehu: **Open associated rehu** when its `info.rehu` (or `info.tc`) is there, **Create rehu**
+  — a new unsaved record, opened in Documents — when it is not ([[data-model#resource-scoping]]). A checksum file's menu
+  also offers **Verify checksums**, which queues a verify of the `.rehu` that shares its name — the same job the
+  Checksums dock queues — and is off while there is no such `.rehu`. A file's menu
+  offers **Open in external app** and the same pair for the `.rehu` that shares its name, and a `.rehu` or `.tc`
+  file's offers **Open**. The first entry of a menu is the row's **default action**, drawn bold: what a double-click
+  runs. A rehu is never created by a double-click, so a folder with none has no default. A **details pane** beside
+  the columns shows the current row, whatever it is: name, type, size, when it changed, how much a folder holds and
+  where it is (elided to fit), from what the listing already read, and a thumbnail for an image read off the GUI
+  thread. **Below the details is a button for every entry of the row's context menu**, in its order, the default in
+  bold; a folder's menu and buttons also hold **Open in file explorer**, and its create entry is named for what it
+  would start, `Create info.rehu`. `QColumnView`'s own preview column is collapsed. A root can also be
+  **dragged to another place** by the grip band of dots at the left of its row — the same handle a card list has — and
+  only by it, so a click anywhere else on the row just selects; the drop is saved at once, like a move. The root
+  edits act only while a root row is current, and **Remove Root asks first**, saying the files stay
+  on disk and how many cached entries go. **Add Root** asks for what the folder lives on — its *storage* — ahead of
+  the folder, because a root served by another node will want a different picker below it
+  ([[nodes#access-seam]]). When a **root** is current the details pane shows its editors in place of a type line: its **Name** (the
+  label, which nothing on disk follows) and its **Storage**: a local folder, a network share, a removable drive or a
+  CD or DVD, each with its own glyph. `F5` re-lists the visible columns: a
+  folder deleted outside the app disappears, and the selection falls back to its nearest surviving ancestor. A root
+  that cannot be listed says so by what it lives on: a **local** folder that is gone is struck through, a share, a
+  drive or a disc that is merely away keeps its glyph greyed out, and either way its column holds one row saying
+  what is wrong. The model lists off the GUI thread, holds no handle between listings and never uses
+  `QFileSystemModel` — the files sub-dock's reasons, plus that browsing must never block a rename
+  ([[mounts-and-storage#out-of-band]]). A node is root, folder, file, loading or unreachable, so an offline root is
+  a state the model already has ([[mounts-and-storage#offline-mounts]]). Every folder is read through one function
+  keyed by root id and relative path, which is what Release 0.4.0 swaps for another node's listing.
 - **Browsers** (#396, #379) — each browser is a closable sub-dock, and the first kind is the **table browser**: the generic
   resource browser above as a table over the cache ([[data-model#cache-schema]]), every `.rehu` under the roots and
   every `.tc` no `.rehu` covers. A browser has a name, a filter and a set of visible columns, and several browsers

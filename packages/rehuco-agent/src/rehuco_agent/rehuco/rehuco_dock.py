@@ -8,9 +8,10 @@
 # pylint: disable=too-many-lines
 
 import logging
+import os
 import sqlite3
 import threading
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Final, cast
 from uuid import UUID
@@ -24,27 +25,33 @@ from borco_pyside.qtads import (
     remove_dock_widget,
 )
 from borco_pyside.theming import ActionIconThemeHandler
-from borco_pyside.widgets import MessageBanner, MessageBannerRow, MessageBannerSeverity, RowBandDelegate
-from PySide6.QtCore import QByteArray, QItemSelectionModel, QObject, Qt, Signal
-from PySide6.QtGui import QAction
-from PySide6.QtWidgets import QFileDialog, QInputDialog, QMainWindow, QMessageBox, QTableView, QWidget
+from borco_pyside.widgets import MessageBanner, MessageBannerRow, MessageBannerSeverity
+from PySide6.QtCore import QByteArray, QItemSelectionModel, QModelIndex, QObject, QPoint, Qt, QUrl, Signal
+from PySide6.QtGui import QAction, QDesktopServices, QFont
+from PySide6.QtWidgets import QComboBox, QDialog, QInputDialog, QLineEdit, QMainWindow, QMenu, QMessageBox, QWidget
 from rehuco_core import (
     DEFAULT_RENAME_COORDINATOR,
     FINISHED_JOB_STATES,
+    INFO_REHU_FILENAME,
     CatalogCache,
     CatalogField,
     CatalogQuery,
     CatalogRecordUpdater,
     CatalogRow,
+    FileType,
     JobStatus,
     RehucoFile,
     RehucoFileError,
+    RehucoRoot,
     Relocation,
     RemoveCatalogRootJob,
     RenameCoordinator,
+    RootFolderLister,
+    RootStorage,
     ScanCatalogRootJob,
     TaskJob,
     TaskQueue,
+    VerifyChecksumsJob,
     rehudb_path,
 )
 
@@ -53,9 +60,16 @@ from ..filter_urls import filter_url_token
 from ..glyphs import TAB_CLOSE_GLYPH
 from ..resource_events import ResourceEvents
 from ..settings.catalog_state_store import CatalogState, CatalogStateStore
+from ..settings.checksum_settings import shared_checksum_settings
+from ..settings.excluded_files_settings import shared_excluded_files_settings
 from ..settings.persistent_settings import cache_folder
-from .rehuco_roots_model import RehucoRootsModel
+from ..tasks.already_queued import job_already_queued
+from .add_root_dialog import AddRootDialog
 from .rehuco_roots_panel_ui import Ui_RehucoRootsPanel
+from .root_storage import selected_root_storage
+from .roots_column_view import RootsColumnView
+from .roots_folder_model import RootsFolderModel, RootsNodeKind
+from .roots_preview import RootsPreview
 from .table_browser import TableBrowser
 
 LOG: Final = logging.getLogger(__name__)
@@ -63,7 +77,15 @@ LOG: Final = logging.getLogger(__name__)
 SCAN_ICON: Final = ":/icons/roots_scan.svg"
 ADD_ROOT_ICON: Final = ":/icons/roots_add.svg"
 REMOVE_ROOT_ICON: Final = ":/icons/roots_delete.svg"
-ROOTS_ICON: Final = ":/icons/file_browser_folder.svg"
+REFRESH_ROOTS_ICON: Final = ":/icons/refresh.svg"
+MOVE_TO_TOP_ICON: Final = ":/icons/items_top.svg"
+MOVE_UP_ICON: Final = ":/icons/items_up.svg"
+MOVE_DOWN_ICON: Final = ":/icons/items_down.svg"
+MOVE_TO_BOTTOM_ICON: Final = ":/icons/items_bottom.svg"
+ROOTS_ICON: Final = ":/icons/roots_view.svg"
+
+DETAILS_PANE_WIDTH: Final = 320
+"""How wide the details pane beside the Roots view's columns starts, in pixels."""
 NEW_BROWSER_ICON: Final = ":/icons/browser_add.svg"
 RENAME_BROWSER_ICON: Final = ":/icons/browser_rename.svg"
 CLONE_BROWSER_ICON: Final = ":/icons/browser_clone.svg"
@@ -118,6 +140,14 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
     """Emitted with a resource's absolute :class:`~pathlib.Path` when its row is double-clicked. Typed as
     plain ``object`` for the reason ``DocumentsDock.open_requested`` is."""
 
+    open_folder_requested: Signal = Signal(object)
+    """Emitted with a folder's :class:`~pathlib.Path` when its associated rehu is asked for: the ``info.rehu`` in it,
+    or a new one if there is none yet ([[data-model#resource-scoping]]). Typed as plain ``object``, as above."""
+
+    open_companion_requested: Signal = Signal(object)
+    """Emitted with a file's :class:`~pathlib.Path` when its associated rehu is asked for: the one that shares its
+    name, or a new one if there is none yet."""
+
     rehuco_path_changed: Signal = Signal(object)
     """Emitted with the open ``.rehuco``'s :class:`~pathlib.Path`, or ``None`` once none is open."""
 
@@ -127,7 +157,7 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         queue_changed = Signal()
         """Carries nothing: the payload is whatever the queue says by the time the slot runs."""
 
-    def __init__(  # pylint: disable=too-many-arguments
+    def __init__(  # pylint: disable=too-many-arguments,too-many-statements
         self,
         queue: TaskQueue,
         parent: QWidget | None = None,
@@ -155,21 +185,37 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         self.__marshaller: Final = RehucoDock.Marshaller(self)
         self.__marshaller.queue_changed.connect(self.__on_queue_changed, Qt.ConnectionType.QueuedConnection)
 
-        self.__roots_model: Final = RehucoRootsModel(self)
+        self.__roots_model: Final = RootsFolderModel(self)
+        self.__fallback: tuple[UUID, tuple[str, ...]] | None = None
+        """Where the Roots selection goes once the rows it was in are removed: the folder they were in."""
+        # connected before the view's selection model exists, so it runs before that model moves the current row to a
+        # neighbour of the removed one -- which is the one thing this has to see unmoved
+        self.__roots_model.rowsAboutToBeRemoved.connect(self.__on_roots_rows_about_to_be_removed)
+        self.__roots_model.rowsRemoved.connect(self.__on_roots_rows_removed)
+        # queued: a drop is handled inside the view's own event, and the move changes the rows it is dropping on
+        self.__roots_model.root_move_requested.connect(self.__on_root_dropped, Qt.ConnectionType.QueuedConnection)
 
         self.__roots_panel: Final = QWidget(self)
         self.__roots_ui: Final = Ui_RehucoRootsPanel()
         self.__roots_ui.setupUi(self.__roots_panel)
+        # the details of the current row, whatever it is, sit beside the columns
+        self.__preview: Final = RootsPreview(self.__roots_model, rename_coordinator, self.__actions_for_row)
+        splitter = self.__roots_ui.roots_splitter
+        splitter.addWidget(self.__preview)
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 0)
+        splitter.setSizes([DETAILS_PANE_WIDTH * 2, DETAILS_PANE_WIDTH])
+        self.__roots_model.dataChanged.connect(self.__preview.follow)
+        self.__roots_model.rowsRemoved.connect(self.__preview.forget_if_gone)
         self.__roots_ui.roots_view.setModel(self.__roots_model)
-        # the row band every other table here paints, so a selected row reads as one band, not boxed cells
-        self.__roots_ui.roots_view.setItemDelegate(RowBandDelegate(self.__roots_ui.roots_view))
+        self.__roots_ui.roots_view.doubleClicked.connect(self.__on_roots_double_clicked)
         self.__banner: Final = MessageBanner(self.__roots_panel)
         self.__roots_ui.main_layout.insertWidget(0, self.__banner)
 
         self.__browsers: Final[dict[QtAds.CDockWidget, TableBrowser]] = {}
         """Every browser's dock, in the order the browsers were added."""
         self.__last_browser: TableBrowser | None = None
-        """The browser that was current last, which a filter set from outside lands on while the Roots list is
+        """The browser that was current last, which a filter set from outside lands on while the Roots view is
         the current sub-dock."""
 
         self.__dock_manager: Final = QtAds.CDockManager(self)
@@ -182,6 +228,11 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         self.__tab_menus: Final = QtAdsTabContextActions(self.__dock_manager)
         self.__roots_dock: Final = self.__add_roots_dock()
 
+        # a root's menu has two groups to divide, and one action cannot sit twice in a menu, so two separators, made
+        # once: the menu and the details pane ask for a row's actions on every selection
+        self.__separators: Final = (QAction(self), QAction(self))
+        for separator in self.__separators:
+            separator.setSeparator(True)
         self.__new_browser_action: Final = QAction("New Table Browser", self)
         self.__new_browser_action.setToolTip("Add a table browser over this catalog's resources.")
         self.__rename_browser_action: Final = QAction("Rename Browser...", self)
@@ -189,8 +240,16 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         self.__setup_toolbar()
         # selection_model() is None only before a model is set (setModel just did)
         self.__roots_selection: Final = cast(QItemSelectionModel, self.__roots_ui.roots_view.selectionModel())
-        self.__roots_selection.selectionChanged.connect(self.__update_enablement)
-        self.__roots_model.modelReset.connect(self.__update_enablement)
+        self.__roots_selection.currentChanged.connect(self.__on_roots_current_row_changed)
+        for signal in (
+            self.__roots_model.rowsInserted,
+            self.__roots_model.rowsRemoved,
+            self.__roots_model.rowsMoved,
+            self.__roots_model.dataChanged,
+        ):
+            signal.connect(self.__on_roots_current_changed)
+        self.__preview.root_name_edit.editingFinished.connect(self.__on_root_name_edited)
+        self.__preview.root_storage_combo.activated.connect(self.__on_root_storage_chosen)
         self.__focus_tracker.current_dock_changed.connect(self.__update_enablement)
         self.__focus_tracker.current_dock_changed.connect(self.__remember_current_browser)
         self.__update_enablement()
@@ -198,6 +257,7 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         if resource_events is not None:
             resource_events.moved.connect(self.__on_moved)
             resource_events.changed.connect(self.__on_files_changed)
+            resource_events.folder_changed.connect(self.__on_folder_changed)
 
     # region the open file
 
@@ -262,6 +322,7 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         if self.__events is not None:
             self.__events.moved.disconnect(self.__on_moved)
             self.__events.changed.disconnect(self.__on_files_changed)
+            self.__events.folder_changed.disconnect(self.__on_folder_changed)
         self.__release_session()
 
     def __fail(self, message: str) -> bool:
@@ -337,14 +398,24 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
     # region the views and the browsers
 
     @property
-    def roots_model(self) -> RehucoRootsModel:
-        """The roots list's model."""
+    def roots_model(self) -> RootsFolderModel:
+        """The Roots view's model: the roots, and the folders and files under them."""
         return self.__roots_model
 
     @property
-    def roots_view(self) -> QTableView:
-        """The roots list."""
+    def roots_view(self) -> RootsColumnView:
+        """The Roots view: one column per open level, the roots in the first."""
         return self.__roots_ui.roots_view
+
+    @property
+    def root_name_edit(self) -> QLineEdit:
+        """The name field the details pane shows for a root."""
+        return self.__preview.root_name_edit
+
+    @property
+    def root_storage_combo(self) -> QComboBox:
+        """The storage combo the details pane shows for a root."""
+        return self.__preview.root_storage_combo
 
     @property
     def roots_dock(self) -> QtAds.CDockWidget:
@@ -391,9 +462,9 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
 
     def set_filter_token(self, field: CatalogField, value: str) -> bool:
         """Filter the current browser on ``value`` in ``field``, replacing any filter on that field it had
-        ([[plugins#rehuco-dock]]): what a click-to-filter link and the Roots list's folder filter do.
+        ([[plugins#rehuco-dock]]): what a click-to-filter link and the Roots view's folder filter do.
 
-        The current browser is the focused one, else the one last focused -- the Roots list may be current -- else
+        The current browser is the focused one, else the one last focused -- the Roots view may be current -- else
         the first one open. With none open, a default browser is opened to carry the filter.
 
         :param field: the field to filter on.
@@ -451,8 +522,54 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
 
     @property
     def remove_root_action(self) -> QAction:
-        """Removes the selected root."""
+        """Removes the selected root, after asking."""
         return self.__roots_ui.remove_root_action
+
+    @property
+    def refresh_roots_action(self) -> QAction:
+        """Lists the open columns of the Roots view again (F5)."""
+        return self.__roots_ui.refresh_roots_action
+
+    @property
+    def move_root_actions(self) -> tuple[QAction, QAction, QAction, QAction]:
+        """Move the selected root to the top, up, down and to the bottom, in that order."""
+        ui = self.__roots_ui
+        return ui.move_to_top_action, ui.move_up_action, ui.move_down_action, ui.move_to_bottom_action
+
+    @property
+    def verify_checksums_action(self) -> QAction:
+        """Verifies the resource of the selected checksum file, on the task queue."""
+        return self.__roots_ui.verify_checksums_action
+
+    @property
+    def open_explorer_action(self) -> QAction:
+        """Shows the selected root or folder in the system's file manager."""
+        return self.__roots_ui.open_explorer_action
+
+    @property
+    def open_record_action(self) -> QAction:
+        """Opens the selected ``.rehu`` or ``.tc`` file in Documents."""
+        return self.__roots_ui.open_record_action
+
+    @property
+    def open_file_action(self) -> QAction:
+        """Opens the selected file with the application the system associates with it."""
+        return self.__roots_ui.open_file_action
+
+    @property
+    def open_companion_action(self) -> QAction:
+        """Opens the rehu that describes the selected folder or file, which is there."""
+        return self.__roots_ui.open_companion_action
+
+    @property
+    def create_companion_action(self) -> QAction:
+        """Starts a new rehu for the selected folder or file, which has none; nothing is written until it is saved."""
+        return self.__roots_ui.create_companion_action
+
+    @property
+    def filter_folder_action(self) -> QAction:
+        """Filters the current browser to the resources under the selected root or folder."""
+        return self.__roots_ui.filter_folder_action
 
     @property
     def roots_action(self) -> QAction:
@@ -486,13 +603,12 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         a log line is the proportionate answer.
         """
         if self.__file is None or self.__cache is None:
-            self.__roots_model.set_roots((), {})
+            self.__roots_model.set_roots((), None)
             self.__banner.set_rows(())
             return
         roots = self.__file.roots
         matching: dict[CatalogQuery, list[CatalogRow]] = {}
         try:
-            reachable = {root.root_id: root.reachable for root in self.__cache.roots()}
             wanted = {root.root_id for root in roots}
             # browsers filtering alike share one read
             for browser in self.__browsers.values():
@@ -501,7 +617,7 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         except sqlite3.Error as error:
             LOG.error("Could not read the cache of %s: %s", self.__file.path, error)
             return
-        self.__roots_model.set_roots(roots, reachable)
+        self.__roots_model.set_roots(roots, RootFolderLister(roots, coordinator=self.__rename_coordinator))
         root_paths = {root.root_id: root.path for root in roots}
         for browser in self.__browsers.values():
             browser.set_rows(matching[browser.query], root_paths)
@@ -524,7 +640,7 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         return [row for row in cache.rows(query) if row.root_id in wanted]
 
     def __add_roots_dock(self) -> QtAds.CDockWidget:
-        """Place the Roots list on this shell's own manager, closable: hidden by its [x] and shown again by
+        """Place the Roots view on this shell's own manager, closable: hidden by its [x] and shown again by
         :attr:`roots_action`, so closing it loses nothing.
 
         :returns: the Roots sub-dock.
@@ -534,12 +650,14 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         roots.setObjectName(ROOTS_DOCK_NAME)
         roots.setFeatures(features.DockWidgetClosable | features.DockWidgetFocusable | features.DockWidgetMovable)
         roots.setWidget(self.__roots_panel)
-        # the two root edits affect this list and nothing else, so they sit on its own title bar and its context
-        # menu rather than on the shell's toolbar ([[appendices.code-conventions#command-surfaces]])
+        # the root edits affect this view and nothing else, so they sit on its own title bar and its context menu
+        # rather than on the shell's toolbar ([[appendices.code-conventions#command-surfaces]])
         ui = self.__roots_ui
-        roots.setTitleBarActions([ui.add_root_action, ui.remove_root_action])
-        ui.roots_view.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
-        ui.roots_view.addAction(ui.remove_root_action)
+        roots.setTitleBarActions([ui.add_root_action, ui.remove_root_action, ui.refresh_roots_action])
+        # F5 works from any column, since they are all this panel's children
+        self.__roots_panel.addAction(ui.refresh_roots_action)
+        ui.roots_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        ui.roots_view.customContextMenuRequested.connect(self.__on_roots_context_menu)
         self.__dock_manager.addDockWidget(QtAds.LeftDockWidgetArea, roots)
         return roots
 
@@ -560,6 +678,11 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
             (ui.scan_action, SCAN_ICON),
             (ui.add_root_action, ADD_ROOT_ICON),
             (ui.remove_root_action, REMOVE_ROOT_ICON),
+            (ui.refresh_roots_action, REFRESH_ROOTS_ICON),
+            (ui.move_to_top_action, MOVE_TO_TOP_ICON),
+            (ui.move_up_action, MOVE_UP_ICON),
+            (ui.move_down_action, MOVE_DOWN_ICON),
+            (ui.move_to_bottom_action, MOVE_TO_BOTTOM_ICON),
             (self.roots_action, ROOTS_ICON),
             (self.__new_browser_action, NEW_BROWSER_ICON),
             (self.__rename_browser_action, RENAME_BROWSER_ICON),
@@ -568,26 +691,452 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         ui.scan_action.triggered.connect(self.scan)
         ui.add_root_action.triggered.connect(self.__on_add_root)
         ui.remove_root_action.triggered.connect(self.__on_remove_root)
+        ui.refresh_roots_action.triggered.connect(self.__on_refresh_roots)
+        ui.filter_folder_action.triggered.connect(self.__on_filter_folder)
+        ui.open_record_action.triggered.connect(self.__on_open_record)
+        ui.open_explorer_action.triggered.connect(self.__on_open_explorer)
+        ui.verify_checksums_action.triggered.connect(self.__on_verify_checksums)
+        ui.open_file_action.triggered.connect(self.__on_open_file)
+        ui.open_companion_action.triggered.connect(self.__on_companion)
+        ui.create_companion_action.triggered.connect(self.__on_companion)
+        for action, move in (
+            (ui.move_to_top_action, RehucoFile.move_to_top),
+            (ui.move_up_action, RehucoFile.move_up),
+            (ui.move_down_action, RehucoFile.move_down),
+            (ui.move_to_bottom_action, RehucoFile.move_to_bottom),
+        ):
+            action.triggered.connect(lambda _checked=False, move=move: self.__move_root(move))
         self.__new_browser_action.triggered.connect(self.__on_new_browser)
         self.__rename_browser_action.triggered.connect(self.__on_rename_current_browser)
 
     def __update_enablement(self) -> None:
-        """Enable Scan while a file is open, and the two root edits only while it can also be saved -- Remove
-        needing a selected root besides. New Browser needs a catalog to hold it, and Rename Browser a browser to be
-        the current sub-dock, not the Roots one."""
+        """Enable Scan while a file is open, and the root edits only while it can also be saved -- Remove and the moves
+        needing a selected **root row** besides, the moves not at the end they move towards. Refresh and the folder
+        filter need a catalog, the filter a root or folder to name. New Browser needs a catalog to hold it, and
+        Rename Browser a browser to be the current sub-dock, not the Roots one."""
         file = self.__file
         editable = file is not None and file.lock_reason is None
-        has_root = self.__roots_model.root_at(self.__selected_row()) is not None
-        self.__roots_ui.scan_action.setEnabled(file is not None)
-        self.__roots_ui.add_root_action.setEnabled(editable)
-        self.__roots_ui.remove_root_action.setEnabled(editable and has_root)
+        ui = self.__roots_ui
+        current = ui.roots_view.currentIndex()
+        row = current.row() if self.__roots_model.root_at(current) is not None else -1
+        last = self.__roots_model.rowCount() - 1
+        self.__preview.set_editable(editable)
+        self.__roots_model.set_reorderable(editable)
+        ui.scan_action.setEnabled(file is not None)
+        ui.add_root_action.setEnabled(editable)
+        ui.remove_root_action.setEnabled(editable and row >= 0)
+        ui.refresh_roots_action.setEnabled(file is not None)
+        ui.move_to_top_action.setEnabled(editable and row > 0)
+        ui.move_up_action.setEnabled(editable and row > 0)
+        ui.move_down_action.setEnabled(editable and 0 <= row < last)
+        ui.move_to_bottom_action.setEnabled(editable and 0 <= row < last)
+        ui.filter_folder_action.setEnabled(
+            file is not None and self.__roots_model.node_kind(current) in (RootsNodeKind.ROOT, RootsNodeKind.FOLDER)
+        )
         self.__new_browser_action.setEnabled(file is not None)
         self.__rename_browser_action.setEnabled(self.current_browser is not None)
 
-    def __selected_row(self) -> int:
-        """The selected root's row, or ``-1`` while none is selected."""
-        rows = self.__roots_selection.selectedRows()
-        return rows[0].row() if rows else -1
+    # endregion
+
+    # region the Roots view
+
+    def __on_roots_current_row_changed(self, current: QModelIndex, _previous: QModelIndex) -> None:
+        """List the folder that became current if nobody has yet, whether or not the view is on screen to ask, and
+        bring the actions and the card in line.
+
+        :param current: the new current row.
+        :param _previous: the row that was current.
+        """
+        self.__roots_model.fetchMore(current)
+        self.__preview.show_index(current)
+        self.__on_roots_current_changed()
+
+    def __on_roots_current_changed(self, *_args: object) -> None:
+        """Bring the actions in line with the current row, whatever changed it."""
+        self.__update_enablement()
+
+    def __current_root_row(self) -> int:
+        """The current row of the Roots view if it is a root row.
+
+        :returns: its row, which is also its place in the file; ``-1`` for a folder, a file, or none.
+        """
+        current = self.__roots_ui.roots_view.currentIndex()
+        return current.row() if self.__roots_model.root_at(current) is not None else -1
+
+    def __on_root_name_edited(self) -> None:
+        """Rename the current root to what was typed in the details pane, as its label; nothing on disk changes.
+
+        An empty name, or one another root already has, is refused with a warning and the field goes back to the
+        label the root has.
+        """
+        file, row = self.__file, self.__current_root_row()
+        if file is None or file.lock_reason is not None or row < 0:
+            return
+        root = file.roots[row]
+        edit = self.__preview.root_name_edit
+        name = edit.text().strip()
+        if name == root.label:
+            edit.setText(root.label)
+            return
+        try:
+            file.relabel_root(row, name)
+        except ValueError as error:
+            QMessageBox.warning(self, "Rename Root", str(error))
+            edit.setText(root.label)
+            return
+        self.__commit_root_edit()
+
+    def __on_root_storage_chosen(self) -> None:
+        """Set the current root to the storage chosen in the details pane; nothing on disk changes."""
+        file, row = self.__file, self.__current_root_row()
+        if file is None or file.lock_reason is not None or row < 0:
+            return
+        storage = selected_root_storage(self.__preview.root_storage_combo)
+        if file.roots[row].storage is storage:
+            return
+        file.set_storage(row, storage)
+        self.__commit_root_edit()
+
+    def __commit_root_edit(self) -> None:
+        """Save an edit of a root, bring the cache's copy of it in line, and show it."""
+        if self.__save_file():
+            self.__reconcile_cache()
+        self.__refresh()
+        self.__preview.refresh()
+
+    def __move_root(self, move: Callable[[RehucoFile, int], int]) -> None:
+        """Move the current root with one of the file's ordering operations, and keep it current.
+
+        :param move: the :class:`~rehuco_core.RehucoFile` operation; takes the row and returns where it ended up.
+        """
+        file, row = self.__file, self.__current_root_row()
+        if file is None or file.lock_reason is not None or row < 0:
+            return
+        root_id = file.roots[row].root_id
+        if move(file, row) == row:
+            return
+        if self.__save_file():
+            self.__reconcile_cache()
+        self.__refresh()
+        self.__roots_ui.roots_view.setCurrentIndex(self.__roots_model.index_for(root_id, ()))
+
+    def __on_root_dropped(self, root_id: UUID, to: int) -> None:
+        """Move a root that was dragged to its new place: the file is reordered, saved and shown, as the move buttons
+        do, and the root stays current.
+
+        :param root_id: the root dropped.
+        :param to: the row it should end up at.
+        """
+        file = self.__file
+        row = None if file is None else next((i for i, r in enumerate(file.roots) if r.root_id == root_id), None)
+        if file is None or file.lock_reason is not None or row is None:
+            return
+        self.__roots_ui.roots_view.setCurrentIndex(self.__roots_model.index(row, 0))
+        self.__move_root(lambda moved, at: moved.move(at, to))
+
+    def __on_refresh_roots(self) -> None:
+        """List the columns on screen again (F5): the current row's chain, or every root while none is current."""
+        model = self.__roots_model
+        current = self.__roots_ui.roots_view.currentIndex()
+        if current.isValid():
+            model.relist_chain(current)
+            return
+        for row in range(model.rowCount()):
+            model.relist(model.index(row, 0))
+
+    def __on_roots_double_clicked(self, index: QModelIndex) -> None:
+        """Run a row's default action (:meth:`__default_action`); a root has none, and only navigates.
+
+        :param index: the row.
+        """
+        self.__run(self.__default_action(index), index)
+
+    def __on_open_record(self) -> None:
+        """Open the current row's record in Documents."""
+        self.__run(self.__roots_ui.open_record_action, self.__roots_ui.roots_view.currentIndex())
+
+    def __on_open_file(self) -> None:
+        """Open the current row's file with the application the system associates with it."""
+        self.__run(self.__roots_ui.open_file_action, self.__roots_ui.roots_view.currentIndex())
+
+    def __on_open_explorer(self) -> None:
+        """Show the current root or folder in the system's file manager."""
+        self.__run(self.__roots_ui.open_explorer_action, self.__roots_ui.roots_view.currentIndex())
+
+    def __on_verify_checksums(self) -> None:
+        """Queue a verification of the resource the current checksum file belongs to.
+
+        The Checksums dock's plain *Verify* -- every file checked, with the same settings -- not its *Verify Old*,
+        which skips what was checked recently; the two derive the same label, so a verify already waiting for this
+        resource, asked from either place, is not asked again.
+        """
+        resource = self.__verify_resource(self.__roots_ui.roots_view.currentIndex())
+        if resource is None:
+            return
+        checksums = shared_checksum_settings()
+        job = VerifyChecksumsJob(
+            resource,
+            coordinator=self.__rename_coordinator,
+            algorithm=checksums.algorithm,
+            excluded_patterns=shared_excluded_files_settings().excluded_file_patterns,
+            create_if_missing=True if checksums.create_missing_on_verify else None,
+            migrate_to=checksums.migrate_target,
+        )
+        if job_already_queued(self.__queue, label=job.label, source=job.source):
+            LOG.info("%s is already in the task queue; it was not queued again.", job.label)
+            return
+        with LogScope.open(resource):
+            self.__queue.enqueue(job)
+
+    def __on_companion(self) -> None:
+        """Ask for the rehu that describes the current folder or file: a folder's ``info.rehu``, a file's same-name
+        ``.rehu``. The main window opens the one there is or starts a new, unsaved one, which is why opening and
+        creating ask the same question; which of them the menu offered is only a matter of what is on disk."""
+        index = self.__roots_ui.roots_view.currentIndex()
+        self.__run(self.__companion_action(index), index)
+
+    def __run(self, action: QAction | None, index: QModelIndex) -> None:
+        """Do what one of the row actions stands for, to a row.
+
+        :param action: the action, or ``None`` for a row with nothing to do.
+        :param index: the row.
+        """
+        path = self.__roots_model.path_of(index)
+        if action is None or path is None:
+            return
+        ui = self.__roots_ui
+        if action is ui.open_record_action:
+            if self.__roots_model.file_type_of(index) is FileType.RECORD:
+                self.open_requested.emit(path)
+        elif action in (ui.open_file_action, ui.open_explorer_action):
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+        elif self.__roots_model.node_kind(index) is RootsNodeKind.FOLDER:
+            self.open_folder_requested.emit(path)
+        else:
+            self.open_companion_requested.emit(path)
+
+    def __on_folder_changed(self, directory: Path) -> None:
+        """List a folder again that the app changed the contents of, if the Roots view has it loaded.
+
+        :param directory: the folder.
+        """
+        self.__roots_model.relist_folder(directory)
+
+    def __on_filter_folder(self) -> None:
+        """Filter the current browser to the resources under the current root or folder (#398)."""
+        model = self.__roots_model
+        current = self.__roots_ui.roots_view.currentIndex()
+        root, key = model.root_of(current), model.key(current)
+        if root is None or key is None or model.node_kind(current) not in (RootsNodeKind.ROOT, RootsNodeKind.FOLDER):
+            return
+        self.set_filter_token(CatalogField.FOLDER, "/".join((root.label, *key[1])))
+
+    def roots_context_actions(self, index: QModelIndex) -> list[QAction]:
+        """What the Roots view's context menu holds for a row.
+
+        A root: the folder filter and Open in file explorer, then the four moves, then Remove. A folder: **Open
+        associated rehu** if it has one, **Create info.rehu** if not, then the folder filter and Open in file explorer.
+        A rehu record: Open. A checksum file: Open with its application, Verify checksums, then the associated rehu.
+        Any other file: Open with its application, then Open associated rehu or Create <name>.rehu likewise. A
+        placeholder: nothing. The row's default action, which a double-click runs, is drawn bold: Open, in every case
+        but a folder with no rehu, whose double-click does nothing -- **a rehu is only ever created from this menu**.
+
+        :param index: the row the menu is for.
+        :returns: the actions in menu order, a separator among them where the groups change.
+        """
+        ui = self.__roots_ui
+        match self.__roots_model.node_kind(index):
+            case RootsNodeKind.ROOT:
+                actions = [
+                    ui.filter_folder_action,
+                    ui.open_explorer_action,
+                    self.__separators[0],
+                    *self.move_root_actions,
+                    self.__separators[1],
+                    ui.remove_root_action,
+                ]
+            case RootsNodeKind.FOLDER:
+                actions = [self.__companion_action(index), ui.filter_folder_action, ui.open_explorer_action]
+            case RootsNodeKind.FILE:
+                file_type = self.__roots_model.file_type_of(index)
+                if file_type is FileType.RECORD:
+                    actions = [ui.open_record_action]
+                elif file_type is FileType.MANIFEST:
+                    actions = [ui.open_file_action, self.__verify_action(index), self.__companion_action(index)]
+                else:
+                    actions = [ui.open_file_action, self.__companion_action(index)]
+            case _:
+                return []
+        default = self.__default_action(index)
+        bold = QFont()
+        bold.setBold(True)
+        # the actions are shared by every row's menu, so which one is bold is decided each time it is asked for
+        for action in (
+            ui.open_record_action,
+            ui.open_file_action,
+            ui.open_companion_action,
+            ui.create_companion_action,
+            ui.filter_folder_action,
+            ui.open_explorer_action,
+            ui.verify_checksums_action,
+        ):
+            action.setFont(bold if action is default else QFont())
+        return actions
+
+    def __actions_for_row(self, index: QModelIndex) -> tuple[list[QAction], QAction | None]:
+        """What the details pane makes buttons of for a row: its context menu, and its default.
+
+        :param index: the row.
+        :returns: the actions in menu order, and the default one. A root has no move buttons: its grip moves it, and
+            the moves stay in its menu.
+        """
+        if self.__roots_model.node_kind(index) is RootsNodeKind.ROOT:
+            ui = self.__roots_ui
+            first_separator = self.__separators[0]
+            return [ui.filter_folder_action, ui.open_explorer_action, first_separator, ui.remove_root_action], None
+        return self.roots_context_actions(index), self.__default_action(index)
+
+    def __default_action(self, index: QModelIndex) -> QAction | None:
+        """What a double-click on a row does, and what the details pane's Open button runs.
+
+        :param index: the row.
+        :returns: a folder's associated rehu if it has one, a record's Open, any other file's Open with its
+            application; ``None`` for a root and a placeholder, which only navigate, and for a folder with no rehu --
+            a double-click never creates one.
+        """
+        ui = self.__roots_ui
+        match self.__roots_model.node_kind(index):
+            case RootsNodeKind.FOLDER:
+                return ui.open_companion_action if self.__companion_exists(index) else None
+            case RootsNodeKind.FILE:
+                if self.__roots_model.file_type_of(index) is FileType.RECORD:
+                    return ui.open_record_action
+                return ui.open_file_action
+        return None
+
+    def __companion_action(self, index: QModelIndex) -> QAction:
+        """What the associated rehu of a folder or file is asked for as: opening it if it is there, creating it if not.
+        The create action names the record it would start -- ``info.rehu``, or the file's own name with ``.rehu``.
+
+        :param index: the folder or file.
+        :returns: the open action or the create action.
+        """
+        ui = self.__roots_ui
+        if self.__companion_exists(index):
+            return ui.open_companion_action
+        record = self.__companion_record(index)
+        if record is not None:
+            ui.create_companion_action.setText(f"Create {record.name}")
+        return ui.create_companion_action
+
+    def __companion_record(self, index: QModelIndex) -> Path | None:
+        """Where the ``.rehu`` of a folder or file is, or would be.
+
+        :param index: the folder or file.
+        :returns: its ``info.rehu`` for a folder, its same-name ``.rehu`` for a file; ``None`` for any other row.
+        """
+        path = self.__roots_model.path_of(index)
+        if path is None:
+            return None
+        if self.__roots_model.node_kind(index) is RootsNodeKind.FOLDER:
+            return path / INFO_REHU_FILENAME
+        return path.with_suffix(".rehu")
+
+    def __companion_exists(self, index: QModelIndex) -> bool:
+        """Whether a folder or file already has its rehu: the folder's ``info.rehu`` or ``info.tc``, the file's
+        same-name ``.rehu`` or ``.tc``.
+
+        Answered from the listing when it has one -- a file's neighbours are always listed, a folder's only once it
+        has been opened -- and from the disk otherwise.
+
+        :param index: the folder or file.
+        :returns: whether there is one to open.
+        """
+        record = self.__companion_record(index)
+        if record is None:
+            return False
+        holder = index if self.__roots_model.node_kind(index) is RootsNodeKind.FOLDER else index.parent()
+        candidates = (record, record.with_suffix(".tc"))
+        names = self.__roots_model.child_names(holder)
+        if names is None:
+            return any(candidate.exists() for candidate in candidates)
+        wanted = {os.path.normcase(candidate.name) for candidate in candidates}
+        return bool(wanted & {os.path.normcase(name) for name in names})
+
+    def __verify_action(self, index: QModelIndex) -> QAction:
+        """The Verify action for a checksum file, on only while the resource it belongs to is there to be checked.
+
+        :param index: the checksum file.
+        :returns: the action, enabled or not, with a tooltip saying which.
+        """
+        ui = self.__roots_ui
+        resource = self.__verify_resource(index)
+        ui.verify_checksums_action.setEnabled(resource is not None)
+        ui.verify_checksums_action.setToolTip(
+            "Check the files of the resource this checksum record belongs to against it, on the task queue."
+            if resource is not None
+            else "There is no .rehu with this name beside it to check the files of."
+        )
+        return ui.verify_checksums_action
+
+    def __verify_resource(self, index: QModelIndex) -> Path | None:
+        """The resource a checksum file records: the ``.rehu`` that shares its name.
+
+        :param index: the checksum file.
+        :returns: the ``.rehu``'s path when it is there, else ``None``. Answered from the listing, which a file's
+            neighbours always have.
+        """
+        path = self.__roots_model.path_of(index)
+        names = self.__roots_model.child_names(index.parent())
+        if path is None or names is None:
+            return None
+        resource = path.with_suffix(".rehu")
+        return resource if os.path.normcase(resource.name) in {os.path.normcase(name) for name in names} else None
+
+    def __on_roots_context_menu(self, position: QPoint) -> None:
+        """Open the Roots view's context menu on the row under the pointer, making it the current row first so the
+        actions act on it.
+
+        :param position: where it was asked for, in the view's coordinates.
+        """
+        view = self.__roots_ui.roots_view
+        global_position = view.mapToGlobal(position)
+        index = view.index_at_global(global_position)
+        actions = self.roots_context_actions(index)
+        if not actions:
+            return
+        view.setCurrentIndex(index)
+        menu = QMenu(self)
+        menu.addActions(actions)
+        menu.exec(global_position)
+        menu.deleteLater()
+
+    def __on_roots_rows_about_to_be_removed(self, parent: QModelIndex, first: int, last: int) -> None:
+        """Remember where the selection falls back to if the rows about to go hold it: the folder they are in.
+
+        Qt would move it to a neighbour of the removed row, which is a different folder from the one the reader was
+        in; the nearest surviving ancestor is the better answer (a folder deleted outside the app, then F5).
+
+        :param parent: the row the removed rows are under.
+        :param first: the first removed row.
+        :param last: the last removed row.
+        """
+        self.__fallback = None
+        if not parent.isValid():
+            return
+        index = self.__roots_ui.roots_view.currentIndex()
+        while index.isValid():
+            if index.parent() == parent and first <= index.row() <= last:
+                key = self.__roots_model.key(parent)
+                self.__fallback = key
+                return
+            index = index.parent()
+
+    def __on_roots_rows_removed(self) -> None:
+        """Select the folder remembered by :meth:`__on_roots_rows_about_to_be_removed`, if there is one."""
+        fallback, self.__fallback = self.__fallback, None
+        if fallback is not None:
+            self.__roots_ui.roots_view.setCurrentIndex(self.__roots_model.index_for(*fallback))
 
     # endregion
 
@@ -612,8 +1161,6 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
             self.__place(dock)
         if not restored:
             self.__roots_dock.toggleView(True)
-        if state.roots_header:
-            self.__roots_ui.roots_view.horizontalHeader().restoreState(QByteArray(state.roots_header))
 
     def __remember_catalog(self, file: RehucoFile) -> None:
         """Write ``file``'s browsers, and where every sub-dock sits, to the catalog store.
@@ -622,12 +1169,11 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         """
         with self.__maximize_handler.unmaximized():
             layout = bytes(self.__dock_manager.saveState().data())
-        roots_header = bytes(self.__roots_ui.roots_view.horizontalHeader().saveState().data())
         browsers = [browser.state() for browser in self.__browsers.values()]
-        self.__catalog_store.save(file.rehuco_id, CatalogState(browsers, layout, roots_header))
+        self.__catalog_store.save(file.rehuco_id, CatalogState(browsers, layout))
 
     def __close_browsers(self) -> None:
-        """Remove every browser's sub-dock, leaving the Roots list alone on the manager."""
+        """Remove every browser's sub-dock, leaving the Roots view alone on the manager."""
         for dock in list(self.__browsers):
             self.__remove_browser(dock)
 
@@ -662,7 +1208,7 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
 
     def __place(self, dock: QtAds.CDockWidget, beside: QtAds.CDockWidget | None = None) -> None:
         """Add a browser's sub-dock to the manager: into the tab strip of ``beside``, else of the first browser that
-        is on screen, else to the right of the Roots list; and give its tab its actions.
+        is on screen, else to the right of the Roots view; and give its tab its actions.
 
         :param dock: the browser's sub-dock, not on the manager.
         :param beside: the sub-dock whose tab strip to join.
@@ -792,32 +1338,74 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
 
     # region editing the roots
 
+    def ask_root_to_add(self) -> tuple[str, RootStorage] | None:
+        """Ask for a root to add: its storage, then its folder. The one modal behind Add Root, so a test replaces it
+        per instance.
+
+        :returns: the folder and what it lives on, or ``None`` if the dialog was cancelled.
+        """
+        dialog = AddRootDialog(self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return None
+        return dialog.folder, dialog.storage
+
+    def confirm_remove_root(self, root: RehucoRoot, cached: int) -> bool:
+        """Ask whether to remove a root, saying what goes and what stays. The one modal behind Remove Root, so a test
+        replaces it per instance.
+
+        :param root: the root to remove.
+        :param cached: how many cached resources go with it.
+        :returns: whether to go ahead.
+        """
+        entries = "1 cached entry is" if cached == 1 else f"{cached} cached entries are"
+        answer = QMessageBox.question(
+            self,
+            "Remove Root",
+            f'Remove the root "{root.label}" from this catalog?\n\n'
+            f"Its files stay where they are, in {root.path}. {entries} removed from the cache; a scan would bring "
+            "them back if the folder were added again.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return answer == QMessageBox.StandardButton.Yes
+
     def __on_add_root(self) -> None:
-        """Prompt for a folder and add it as a root, saving the file at once."""
+        """Ask for a folder and what it lives on and add it as a root, saving the file at once, and make it current."""
         file = self.__file
         if file is None or file.lock_reason is not None:
             return
-        chosen = QFileDialog.getExistingDirectory(self, "Add Root")
-        if not chosen:
+        chosen = self.ask_root_to_add()
+        if chosen is None:
             return
+        folder, storage = chosen
         try:
-            file.add_root(chosen)
+            row = file.add_root(folder, storage=storage)
         except ValueError as error:
             QMessageBox.warning(self, "Add Root", str(error))
             return
+        root_id = file.roots[row].root_id
         if self.__save_file():
             self.__reconcile_cache()
         self.__refresh()
+        self.__roots_ui.roots_view.setCurrentIndex(self.__roots_model.index_for(root_id, ()))
 
     def __on_remove_root(self) -> None:
-        """Remove the selected root from the file, saving it at once, and its rows from the cache on the
-        queue."""
+        """Remove the current root from the file, once confirmed, saving it at once, and its rows from the cache on
+        the queue."""
         file = self.__file
         cache = self.__cache
         if file is None or cache is None or file.lock_reason is not None:
             return
-        row = self.__selected_row()
-        if self.__roots_model.root_at(row) is None:
+        row = self.__current_root_row()
+        if row < 0:
+            return
+        root = file.roots[row]
+        try:
+            cached = cache.resource_count(root.root_id)
+        except sqlite3.Error as error:
+            LOG.error("Could not count the cached entries of %s: %s", root.label, error)
+            cached = 0
+        if not self.confirm_remove_root(root, cached):
             return
         removed = file.remove_root(row)
         if self.__save_file():
@@ -985,6 +1573,7 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         cache = self.__cache
         if cache is None or not relocation.pairs:
             return
+        self.__roots_model.relocate(relocation)
         try:
             moved = cache.apply_relocation(relocation.pairs)
         except sqlite3.Error as error:

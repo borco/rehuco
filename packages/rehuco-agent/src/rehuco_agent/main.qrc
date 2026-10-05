@@ -78,8 +78,12 @@
         <file alias="icons/rehuco_view.svg">../../../../design/icons/rehuco_view.svg</file>
         <file alias="icons/rehu_upgrade.svg">../../../../design/icons/rehu_upgrade.svg</file>
         <file alias="icons/rehuco-agent.svg">../../../../design/icons/rehuco-agent.svg</file>
+        <file alias="icons/compact_disk.svg">../../../../design/icons/compact_disk.svg</file>
+        <file alias="icons/network.svg">../../../../design/icons/network.svg</file>
+        <file alias="icons/removable.svg">../../../../design/icons/removable.svg</file>
         <file alias="icons/roots_add.svg">../../../../design/icons/roots_add.svg</file>
         <file alias="icons/roots_delete.svg">../../../../design/icons/roots_delete.svg</file>
+        <file alias="icons/roots_view.svg">../../../../design/icons/roots_view.svg</file>
         <file alias="icons/roots_scan.svg">../../../../design/icons/roots_scan.svg</file>
         <file alias="icons/screenshot_convert.svg">../../../../design/icons/screenshot_convert.svg</file>
         <file alias="icons/settings_apply.svg">../../../../design/icons/settings_apply.svg</file>

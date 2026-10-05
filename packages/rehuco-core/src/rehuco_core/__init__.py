@@ -188,7 +188,7 @@ from .rehu_screenshot_ordering import (
     renumber_screenshots,
 )
 from .rehu_screenshots import scan_rehu_screenshot_files
-from .rehuco_file import RehucoFile, RehucoFileError, RehucoRoot
+from .rehuco_file import RehucoFile, RehucoFileError, RehucoRoot, RootStorage
 from .rehudb import (
     TYPE_FIELD_COLUMNS,
     CatalogCache,
@@ -231,6 +231,7 @@ from .resource_scoping import (
     other_record_stems,
     resource_name,
 )
+from .root_folders import RootFolderLister
 from .storage_traits import readers_must_yield_for_directory_rename
 from .tasks import (
     DEFAULT_SHUTDOWN_TIMEOUT,
@@ -468,6 +469,8 @@ __all__ = [
     "RehucoFile",
     "RehucoFileError",
     "RehucoRoot",
+    "RootFolderLister",
+    "RootStorage",
     "Relocation",
     "RenameCoordinator",
     "RenameYieldTimeout",
