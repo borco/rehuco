@@ -1,7 +1,12 @@
 """A context menu on a `QHeaderView` that shows and hides its sections, with a header state to persist."""
 
+import logging
+from typing import cast
+
 from PySide6.QtCore import QAbstractItemModel, QByteArray, QObject, QPoint, Qt, Signal
 from PySide6.QtWidgets import QHeaderView, QMenu
+
+LOG = logging.getLogger(__name__)
 
 
 class HeaderSectionsMenu(QObject):
@@ -22,7 +27,9 @@ class HeaderSectionsMenu(QObject):
     that mirrors or persists that choice can follow it. A section hidden by anyone else calling the header directly
     is not reported: the header itself has no signal for it.
 
-    :param header: the header to attach to; this object is parented to it and lives as long as it does.
+    :param header: the header to attach to; this object is parented to it and lives as long as it does. It is read
+        back from that parent on every use and its Python wrapper never kept: a wrapper of a Qt-owned header can be
+        invalidated while the header lives (#459), and a kept one then raises "already deleted" from the menu.
     """
 
     sections_visibility_changed: Signal = Signal()
@@ -30,10 +37,15 @@ class HeaderSectionsMenu(QObject):
 
     def __init__(self, header: QHeaderView) -> None:
         super().__init__(header)
-        self.__header = header
+        self.__reported = False
         header.setSectionsMovable(True)
         header.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         header.customContextMenuRequested.connect(self.__on_context_menu_requested)
+
+    @property
+    def __header(self) -> QHeaderView:
+        """The header this is attached to: its Qt parent, fetched anew so the wrapper is always a live one."""
+        return cast(QHeaderView, self.parent())
 
     def build_menu(self) -> QMenu:
         """Build the menu for the header's present state.
@@ -136,8 +148,18 @@ class HeaderSectionsMenu(QObject):
 
         :param position: the click's position in the header's coordinates.
         """
-        # the menu is parented to the header so a theme or palette change reaches it, which means
-        # nothing else lets go of it: delete it once it is dismissed, or every right-click leaks one
-        menu = self.build_menu()
-        menu.exec(self.__header.mapToGlobal(position))
-        menu.deleteLater()
+        try:
+            header = self.__header
+            # the menu is parented to the header so a theme or palette change reaches it, which means
+            # nothing else lets go of it: delete it once it is dismissed -- or failed to open -- or every
+            # right-click leaks one
+            menu = self.build_menu()
+            try:
+                menu.exec(header.mapToGlobal(position))
+            finally:
+                menu.deleteLater()
+        except RuntimeError:
+            # a slot must not raise into Qt's event loop: say so once, with what it was about, and stay quiet after
+            if not self.__reported:
+                self.__reported = True
+                LOG.exception("The sections menu of header %r could not open", self.parent())
