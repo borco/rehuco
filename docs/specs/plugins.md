@@ -590,7 +590,9 @@ Its nested dock manager holds three kinds of sub-dock:
     An unknown field is reported on the line, never silently dropped, and the rest of the line still applies. The
     text is the browser's remembered filter; a `columns:` word an earlier build saved in it is dropped as it loads. A
     folder's context menu in Roots — *Show only rehu in this folder* — sets `folder:"<root label>/<relative path>"`
-    on the current browser, and click-to-filter links set the same tokens on it ([[plugins#filter-urls]]); either
+    on the current browser, click-to-filter links set the same tokens on it ([[plugins#filter-urls]]), and an
+    **Authors** cell's context menu (#460) offers *Filter by <author>* for each author of its row, read from the
+    record rather than split from the cell, or *Clear the filter by <author>* for one the line already names; each
     **replaces** that field's token and keeps the rest of the line. The current browser is the focused one, else the
     one focused last, and a link with no browser open opens a default one to carry it. Roots and the browsers are
     otherwise independent.

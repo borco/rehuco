@@ -9,16 +9,16 @@ from uuid import UUID, uuid4
 import humanize
 from borco_pyside.theming import GlyphActionIconThemeHandler
 from borco_pyside.widgets import HeaderSectionsMenu, RowBandDelegate
-from PySide6.QtCore import QByteArray, QModelIndex, Qt, QTimer, Signal
+from PySide6.QtCore import QByteArray, QModelIndex, QPoint, Qt, QTimer, Signal
 from PySide6.QtGui import QIcon, QStandardItemModel
-from PySide6.QtWidgets import QLineEdit, QStatusBar, QTableView, QWidget
+from PySide6.QtWidgets import QLineEdit, QMenu, QStatusBar, QTableView, QWidget
 from rehuco_core import CatalogField, CatalogQuery, CatalogRow
 
 from ..glyphs import FILTER_PROBLEM_GLYPH
 from ..settings.catalog_state_store import TABLE_BROWSER_KIND, BrowserState
 from .browser_presets import DEFAULT_BROWSER_NAME, DEFAULT_PRESET, BrowserPreset
 from .catalog_delegates import COLUMN_DELEGATES
-from .catalog_table_model import DEFAULT_HIDDEN, CatalogTableModel, RowKey
+from .catalog_table_model import DEFAULT_HIDDEN, CatalogColumn, CatalogTableModel, RowKey
 from .filter_line import parse_filter, with_token, without_retired_tokens
 from .rehuco_browser_panel_ui import Ui_RehucoBrowserPanel
 
@@ -106,6 +106,8 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
         for column in DEFAULT_HIDDEN if state is not None else preset.hidden:
             view.horizontalHeader().setSectionHidden(column, True)
         view.doubleClicked.connect(self.__on_double_clicked)
+        view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        view.customContextMenuRequested.connect(self.__on_context_menu)
         model = self.__model
         for signal in (model.modelReset, model.rowsInserted, model.rowsRemoved, model.dataChanged):
             signal.connect(self.__update_status)
@@ -319,6 +321,46 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
         if current != self.__current:
             self.__current = current
             self.current_changed.emit(current)
+
+    def __on_context_menu(self, position: QPoint) -> None:
+        """Open the menu of the cell under the pointer, if it has one: an Authors cell offers to filter by each of its
+        authors (#460). Any other cell, and a row with no authors, opens nothing.
+
+        :param position: where it was asked for, in the table's viewport coordinates.
+        """
+        view = self.__ui.catalog_view
+        index = view.indexAt(position)
+        if not index.isValid() or index.column() != CatalogColumn.AUTHORS:
+            return
+        authors = self.__model.authors_of(index.row())
+        if not authors:
+            return
+        applied = {
+            token.value.casefold()
+            for token in parse_filter(self.__ui.filter_edit.text()).tokens
+            if token.name == "authors"
+        }
+        # a child of this widget, so a failed ``exec`` must not leave it behind for the browser's life (#459)
+        menu = QMenu(self)
+        try:
+            for author in authors:
+                clearing = author.casefold() in applied
+                text = f"Clear the filter by {author}" if clearing else f"Filter by {author}"
+                action = menu.addAction(text)
+                action.triggered.connect(
+                    lambda _checked=False, name=author, clear=clearing: self.__toggle_author(name, clear)
+                )
+            menu.exec(view.viewport().mapToGlobal(position))
+        finally:
+            menu.deleteLater()
+
+    def __toggle_author(self, name: str, clear: bool) -> None:
+        """Filter by ``name`` alone, or drop the authors filter it already is.
+
+        :param name: an author of the clicked row.
+        :param clear: whether the line already filters by ``name``.
+        """
+        self.set_token("authors", None if clear else name)
 
     def __on_double_clicked(self, index: QModelIndex) -> None:
         """Ask for the double-clicked resource to be opened, by its absolute path.

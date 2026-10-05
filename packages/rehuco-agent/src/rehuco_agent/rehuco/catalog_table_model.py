@@ -297,6 +297,16 @@ class CatalogTableModel(QAbstractTableModel):  # pylint: disable=too-many-instan
         entry = self.__rows[row]
         return entry.root_id, entry.record.path
 
+    def authors_of(self, row: int) -> tuple[str, ...]:
+        """The individual authors of a row's record, in the record's order.
+
+        :param row: the row.
+        :returns: their names; empty out of range or for a record with none.
+        """
+        if not 0 <= row < len(self.__rows):
+            return ()
+        return tuple(self.__rows[row].record.authors)
+
     def absolute_path(self, row: int) -> Path | None:
         """Where a row's record lives on disk.
 
