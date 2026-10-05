@@ -65,7 +65,9 @@ released becomes the body of the GitHub Release, so each entry is written to be 
   filesystem does. An unknown field is flagged with a warning icon on the line, and the rest of the line still
   applies. Each browser remembers its line.
 - Author names in a document's viewer are links: clicking one brings the Root Catalog forward with
-  `authors:"<name>"` set on its current browser, opening a browser if none is open.
+  `authors:"<name>"` set on its current browser, opening a browser if none is open. Right-clicking an **Authors**
+  cell in a table browser offers the same for each of the row's authors, and offers to clear the filter by one the
+  line already holds; the rest of the line is kept.
 - A **Shortcuts** page in Settings: search every command by name, description or key, click a key and
   press its replacement (the numeric keypad and a lone Esc included), give a command several keys, and
   choose where its keys reach. Recording a key another command uses asks whether to reassign it. The table

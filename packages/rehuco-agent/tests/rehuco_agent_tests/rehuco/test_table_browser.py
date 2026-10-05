@@ -2,16 +2,17 @@
 remembering (#396, #398, #379)."""
 
 from collections.abc import Iterator
+from dataclasses import replace
 from itertools import count
 from pathlib import Path
 from uuid import uuid4
 
-from PySide6.QtCore import QItemSelectionModel, QModelIndex, Qt
-from PySide6.QtGui import QStandardItemModel
-from PySide6.QtWidgets import QTableView
-from pytest import fixture
+from PySide6.QtCore import QCoreApplication, QEvent, QItemSelectionModel, QModelIndex, QPoint, Qt
+from PySide6.QtGui import QAction, QStandardItemModel
+from PySide6.QtWidgets import QMenu, QTableView
+from pytest import MonkeyPatch, fixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.rehuco import TableBrowser
+from rehuco_agent.rehuco import TableBrowser, table_browser
 from rehuco_agent.rehuco.browser_presets import BrowserPreset, browser_presets
 from rehuco_agent.rehuco.catalog_delegates import DurationDelegate, SizeDelegate
 from rehuco_agent.rehuco.catalog_table_model import DEFAULT_HIDDEN, CatalogColumn
@@ -612,6 +613,178 @@ def test_setting_a_token_replaces_its_field_on_the_line_and_applies_it(browser: 
 
     assert browser.filter_text == 'intro authors:"Foo Bar"'
     assert browser.query == CatalogQuery("intro", ((CatalogField.AUTHORS, "Foo Bar"),))
+
+
+# endregion
+
+
+# region Author menu
+
+
+def authored_row(path: str, *authors: str) -> CatalogRow:
+    """A cache row whose record lists ``authors``.
+
+    :param path: the record's path under the root.
+    :param authors: its authors, in order.
+    :returns: the row.
+    """
+    plain = row(path, 1)
+    return CatalogRow(plain.resource_id, plain.root_id, plain.root_label, replace(plain.record, authors=authors), 0.0)
+
+
+def right_click(
+    browser: TableBrowser, column: CatalogColumn, monkeypatch: MonkeyPatch, row_number: int = 0
+) -> list[QAction]:
+    """Right-click a cell and return the actions of the menu it opened, empty if none opened.
+
+    :param browser: the browser, already holding rows.
+    :param column: the clicked column.
+    :param monkeypatch: swaps the browser's menu for one that runs no modal loop.
+    :param row_number: the clicked row.
+    :returns: the menu's actions as they stood when it would have shown.
+    """
+    opened: list[list[QAction]] = []
+
+    class RecordingMenu(QMenu):
+        """Reports its actions instead of running a modal loop, which a patched ``QMenu.exec`` would not prevent."""
+
+        def exec(self, *_args: object) -> None:  # type: ignore[override]
+            """Record what would have been shown."""
+            opened.append(self.actions())
+
+    monkeypatch.setattr(table_browser, "QMenu", RecordingMenu)
+    view = browser.view
+    index = browser.model.index(row_number, column)
+    view.customContextMenuRequested.emit(view.visualRect(index).center())
+    return opened[0] if opened else []
+
+
+def test_a_row_out_of_range_has_no_authors(browser: TableBrowser) -> None:
+    """The model answers for a row it lacks with nothing, as its other per-row reads do.
+
+    **Test steps:**
+
+    * ask an empty model, and a model of one row, for authors out of range
+    * verify none, and the row's own authors in range
+    """
+    assert browser.model.authors_of(0) == ()
+    browser.set_rows([authored_row("a.rehu", "Ann")], {ROOT_ID: ROOT_PATH})
+
+    assert browser.model.authors_of(1) == ()
+    assert browser.model.authors_of(0) == ("Ann",)
+
+
+def test_an_authors_cell_offers_one_entry_per_author_in_the_records_order(
+    browser: TableBrowser, monkeypatch: MonkeyPatch
+) -> None:
+    """The names come from the record, not from splitting the cell's text.
+
+    **Test steps:**
+
+    * show a row whose author names contain a comma and spaces
+    * right-click its Authors cell
+    * verify one entry per author, in order
+    """
+    browser.set_rows([authored_row("a.rehu", "Doe, Jane", "Bob")], {ROOT_ID: ROOT_PATH})
+
+    actions = right_click(browser, CatalogColumn.AUTHORS, monkeypatch)
+
+    assert [action.text() for action in actions] == ["Filter by Doe, Jane", "Filter by Bob"]
+
+
+def test_choosing_an_author_sets_that_field_only_and_keeps_the_rest_of_the_line(
+    browser: TableBrowser, monkeypatch: MonkeyPatch
+) -> None:
+    """An existing authors word is replaced, the free text and other tokens stay, and a name with spaces or quotes
+    is quoted so it reads back whole.
+
+    **Test steps:**
+
+    * set a line with free text, a tags token and another author
+    * choose an author whose name holds spaces and a quote
+    * verify the line and the query
+    """
+    name = 'Jane "J" Doe'
+    browser.set_rows([authored_row("a.rehu", name)], {ROOT_ID: ROOT_PATH})
+    browser.set_filter_text("intro tags:python authors:Old")
+
+    actions = right_click(browser, CatalogColumn.AUTHORS, monkeypatch)
+
+    actions[0].trigger()
+    assert browser.filter_text == 'intro tags:python authors:"Jane \\"J\\" Doe"'
+    assert browser.query == CatalogQuery("intro", ((CatalogField.TAGS, "python"), (CatalogField.AUTHORS, name)))
+
+
+def test_an_author_already_on_the_line_is_offered_to_be_cleared(
+    browser: TableBrowser, monkeypatch: MonkeyPatch
+) -> None:
+    """The menu also undoes: choosing the applied author drops its word and nothing else.
+
+    **Test steps:**
+
+    * filter by one of a row's two authors, with free text
+    * right-click the Authors cell
+    * verify that author reads as a clear and the other as a filter, then trigger the clear
+    * verify the line keeps only the free text
+    """
+    browser.set_rows([authored_row("a.rehu", "Ann", "Bob")], {ROOT_ID: ROOT_PATH})
+    browser.set_filter_text("intro authors:ann")
+
+    actions = right_click(browser, CatalogColumn.AUTHORS, monkeypatch)
+
+    assert [action.text() for action in actions] == ["Clear the filter by Ann", "Filter by Bob"]
+    actions[0].trigger()
+    assert browser.filter_text == "intro"
+
+
+def test_no_menu_opens_on_a_row_without_authors_or_on_another_column(
+    browser: TableBrowser, monkeypatch: MonkeyPatch
+) -> None:
+    """Only an Authors cell with something to offer has a menu.
+
+    **Test steps:**
+
+    * show one row with authors and one without
+    * right-click the authorless Authors cell, the authored row's Title cell and empty space
+    * verify no menu opened, and the line stays empty
+    """
+    browser.set_rows([authored_row("a.rehu", "Ann"), row("b.rehu", 1)], {ROOT_ID: ROOT_PATH})
+    # the second row sorts as the cache gave it, so it is the authorless one
+
+    assert not right_click(browser, CatalogColumn.AUTHORS, monkeypatch, 1)
+    assert not right_click(browser, CatalogColumn.TITLE, monkeypatch, 0)
+    browser.view.customContextMenuRequested.emit(QPoint(-5, -5))
+    assert browser.filter_text == ""
+
+
+def test_a_menu_whose_exec_fails_is_not_left_behind(
+    qtbot: QtBot, browser: TableBrowser, monkeypatch: MonkeyPatch
+) -> None:
+    """The menu is the browser's child, so a failed ``exec`` must still delete it (#459).
+
+    **Test steps:**
+
+    * make the menu's ``exec`` raise, and right-click an Authors cell
+    * flush deferred deletes
+    * verify the failure surfaced and no menu is left under the browser
+    """
+    browser.set_rows([authored_row("a.rehu", "Ann")], {ROOT_ID: ROOT_PATH})
+
+    class FailingMenu(QMenu):
+        """A real menu whose ``exec`` raises."""
+
+        def exec(self, *_args: object) -> None:  # type: ignore[override]
+            """Fail as a broken popup would."""
+            raise RuntimeError("boom")
+
+    monkeypatch.setattr(table_browser, "QMenu", FailingMenu)
+    index = browser.model.index(0, CatalogColumn.AUTHORS)
+    with qtbot.capture_exceptions() as raised:
+        browser.view.customContextMenuRequested.emit(browser.view.visualRect(index).center())
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+    assert [type(error) for _, error, _ in raised] == [RuntimeError]
+    assert browser.findChildren(QMenu) == []
 
 
 # endregion
