@@ -65,6 +65,7 @@ from ..settings.excluded_files_settings import shared_excluded_files_settings
 from ..settings.persistent_settings import cache_folder
 from ..tasks.already_queued import job_already_queued
 from .add_root_dialog import AddRootDialog
+from .browser_presets import DEFAULT_PRESET, BrowserPreset, browser_presets
 from .rehuco_roots_panel_ui import Ui_RehucoRootsPanel
 from .root_storage import selected_root_storage
 from .roots_column_view import RootsColumnView
@@ -236,7 +237,10 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         for separator in self.__separators:
             separator.setSeparator(True)
         self.__new_browser_action: Final = QAction("New Table Browser", self)
-        self.__new_browser_action.setToolTip("Add a table browser over this catalog's resources.")
+        self.__new_browser_action.setToolTip(
+            "Add a table browser over this catalog's resources; its menu starts one from a preset."
+        )
+        self.__presets_menu: Final = self.__make_presets_menu()
         self.__rename_browser_action: Final = QAction("Rename Browser...", self)
         self.__rename_browser_action.setToolTip("Rename the current browser.")
         self.__setup_toolbar()
@@ -584,6 +588,11 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         return self.__new_browser_action
 
     @property
+    def presets_menu(self) -> QMenu:
+        """New Table Browser's menu: one entry per :func:`~.browser_presets.browser_presets`."""
+        return self.__presets_menu
+
+    @property
     def rename_browser_action(self) -> QAction:
         """Renames the current browser."""
         return self.__rename_browser_action
@@ -708,7 +717,7 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
             (ui.move_to_bottom_action, RehucoFile.move_to_bottom),
         ):
             action.triggered.connect(lambda _checked=False, move=move: self.__move_root(move))
-        self.__new_browser_action.triggered.connect(self.__on_new_browser)
+        self.__new_browser_action.triggered.connect(lambda _checked=False: self.__on_new_browser())
         self.__rename_browser_action.triggered.connect(self.__on_rename_current_browser)
 
     def __update_enablement(self) -> None:
@@ -1261,17 +1270,34 @@ class RehucoDock(QMainWindow):  # pylint: disable=too-many-instance-attributes,t
         remove_dock_widget(self.__dock_manager, dock)
         dock.deleteLater()
 
-    def __on_new_browser(self) -> None:
-        """Add a default table browser and make it current."""
+    def __make_presets_menu(self) -> QMenu:
+        """Give New Table Browser its menu of presets (#400): a click on the action is still a default browser, and
+        the action carries the menu wherever it sits -- a toolbar's drop-down, a submenu of ``Browsers``.
+
+        :returns: the menu.
+        """
+        menu = QMenu(self)
+        for preset in browser_presets():
+            action = menu.addAction(preset.label)
+            action.triggered.connect(lambda _checked=False, preset=preset: self.__on_new_browser(preset))
+        self.__new_browser_action.setMenu(menu)
+        return menu
+
+    def __on_new_browser(self, preset: BrowserPreset = DEFAULT_PRESET) -> None:
+        """Add a table browser as ``preset`` starts one and make it current.
+
+        :param preset: what it starts as.
+        """
         if self.__file is not None:
-            self.__new_browser()
+            self.__new_browser(preset)
 
-    def __new_browser(self) -> TableBrowser:
-        """Add a default table browser, filled, and make it current.
+    def __new_browser(self, preset: BrowserPreset = DEFAULT_PRESET) -> TableBrowser:
+        """Add a table browser as ``preset`` starts one, filled, and make it current.
 
+        :param preset: what it starts as.
         :returns: the new browser.
         """
-        browser = TableBrowser()
+        browser = TableBrowser(preset=preset)
         dock = self.__add_browser(browser)
         self.__fill(browser)
         self.__focus_tracker.set_current_dock(dock)

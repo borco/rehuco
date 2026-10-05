@@ -594,9 +594,11 @@ Its nested dock manager holds three kinds of sub-dock:
     **replaces** that field's token and keeps the rest of the line. The current browser is the focused one, else the
     one focused last, and a link with no browser open opens a default one to carry it. Roots and the browsers are
     otherwise independent.
-  - **New Table Browser** offers presets: *Default* (the common columns), *Tutorials* (the tutorial columns shown, the
-    others hidden) and *Reference images* (likewise). A preset only picks the starting columns and filter; the view
-    is then an ordinary one.
+  - **New Table Browser** offers presets on its menu (#400) — a click on it is *Default* (the common columns); then
+    one *<Type> Columns* entry per type that contributes columns (`catalog_type_fields`), today *Tutorial Columns* and
+    *Reference Images Columns*: that type's columns shown, every other type's hidden, a `type:` token on the line, and
+    the browser named after the type. A type with no column of its own is not offered. A preset only picks the
+    starting header state, filter and name; the browser is then an ordinary one and remembers no preset.
 - **The current resource's sub-docks** (#381) — exactly one selected row in the focused browser makes that resource
   *current*, and the document sub-docks ([[plugins#dock-shell]]) show it, with its document toolbar beside the Root
   Catalog toolbar; none or

@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QTableView
 from pytest import fixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.rehuco import TableBrowser
+from rehuco_agent.rehuco.browser_presets import BrowserPreset, browser_presets
 from rehuco_agent.rehuco.catalog_delegates import DurationDelegate, SizeDelegate
 from rehuco_agent.rehuco.catalog_table_model import DEFAULT_HIDDEN, CatalogColumn
 from rehuco_agent.rehuco.table_browser import FILTER_HELP, FILTER_SETTLE_MS
@@ -327,6 +328,44 @@ def test_the_header_menu_alone_chooses_the_columns_and_the_state_keeps_them(
         copy = TableBrowser(state)
         qtbot.addWidget(copy)
         assert hidden_columns(copy) == expected
+
+
+def test_a_browser_from_a_preset_takes_its_name_columns_and_filter(qtbot: QtBot) -> None:
+    """A preset sets the name, the header's hidden columns and the line -- and the query read from it (#400).
+
+    **Test steps:**
+
+    * build a browser from a preset hiding Title and filtering by type
+    * verify its name, hidden columns, line and query
+    """
+    preset = BrowserPreset("Tutorial Columns", "Tutorial", frozenset({CatalogColumn.TITLE}), "type:tutorial")
+
+    browser = TableBrowser(preset=preset)
+    qtbot.addWidget(browser)
+
+    assert browser.name == "Tutorial"
+    assert hidden_columns(browser) == {CatalogColumn.TITLE}
+    assert browser.filter_edit.text() == browser.filter_text == "type:tutorial"
+    assert browser.query == CatalogQuery("", ((CatalogField.TYPE, "tutorial"),))
+
+
+def test_a_browser_from_a_preset_is_remembered_and_cloned_like_any_other(qtbot: QtBot) -> None:
+    """Its state and a clone's carry the preset's columns and line; nothing of the preset itself is kept (#400).
+
+    **Test steps:**
+
+    * build a browser from each built-in preset
+    * rebuild one browser from its state and another from a clone state
+    * verify both hide the preset's columns and read the preset's line
+    """
+    for preset in browser_presets():
+        browser = TableBrowser(preset=preset)
+        qtbot.addWidget(browser)
+        for state in (browser.state(), browser.clone_state("Copy")):
+            copy = TableBrowser(state)
+            qtbot.addWidget(copy)
+            assert hidden_columns(copy) == preset.hidden
+            assert copy.filter_text == preset.filter
 
 
 def test_a_remembered_columns_word_is_dropped_on_load_without_a_problem(qtbot: QtBot) -> None:

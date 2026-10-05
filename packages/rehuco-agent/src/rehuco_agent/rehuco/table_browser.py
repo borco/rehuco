@@ -16,6 +16,7 @@ from rehuco_core import CatalogField, CatalogQuery, CatalogRow
 
 from ..glyphs import FILTER_PROBLEM_GLYPH
 from ..settings.catalog_state_store import TABLE_BROWSER_KIND, BrowserState
+from .browser_presets import DEFAULT_BROWSER_NAME, DEFAULT_PRESET, BrowserPreset
 from .catalog_delegates import COLUMN_DELEGATES
 from .catalog_table_model import DEFAULT_HIDDEN, CatalogTableModel, RowKey
 from .filter_line import parse_filter, with_token, without_retired_tokens
@@ -43,7 +44,7 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
 
     **Which columns show is the header's alone** (#379): its context menu toggles them, and the header state keeps the
     choice with the widths, order and sort; the filter line never names a column. A plain browser starts with
-    every column shown but :data:`~.catalog_table_model.DEFAULT_HIDDEN`.
+    every column shown but :data:`~.catalog_table_model.DEFAULT_HIDDEN`, one made from a preset with the preset's.
 
     **The rows change in place** when the app renames, writes or deletes a record (:meth:`update_rows`), so a
     selection survives; exactly one selected row is the browser's **current resource** (:attr:`current_changed`).
@@ -51,8 +52,10 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
     A browser carries the state a catalog remembers about it -- its id, name, filter text and header state -- but
     not its dock: what a name *looks like* on a tab is the shell's.
 
-    :param state: the browser as remembered, or ``None`` for a new one: a fresh id and the name ``"Browser"``.
+    :param state: the browser as remembered, or ``None`` for a new one: a fresh id, and the rest from ``preset``.
     :param parent: optional Qt parent.
+    :param preset: what a new browser starts as (#400) -- its name, hidden columns and filter line; a plain browser
+        unless given. Unused with a ``state``.
     """
 
     row_activated: Signal = Signal(object)
@@ -67,15 +70,21 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
     """Emitted with the new :attr:`current_resource` -- a ``(root_id, relative)`` pair, or ``None`` -- whenever it
     changes: by a selection, or by the selected row itself being renamed or removed."""
 
-    DEFAULT_NAME: Final = "Browser"
+    DEFAULT_NAME: Final = DEFAULT_BROWSER_NAME
     """What a browser made without a name is called."""
 
-    def __init__(self, state: BrowserState | None = None, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        state: BrowserState | None = None,
+        parent: QWidget | None = None,
+        *,
+        preset: BrowserPreset = DEFAULT_PRESET,
+    ) -> None:
         super().__init__(parent)
         self.__browser_id: Final = state.browser_id if state is not None else uuid4()
-        self.__name = state.name if state is not None else self.DEFAULT_NAME
+        self.__name = state.name if state is not None else preset.name
         # a word an older build wrote and this one no longer reads is not this reader's mistake to be told about
-        self.__filter_text = without_retired_tokens(state.filter) if state is not None else ""
+        self.__filter_text = without_retired_tokens(state.filter) if state is not None else preset.filter
         self.__parsed = parse_filter(self.__filter_text)
         self.__current: RowKey | None = None
         self.__model: Final = CatalogTableModel(self)
@@ -90,7 +99,7 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
         # the rows are still in the cache's order
         view.horizontalHeader().setSortIndicator(-1, Qt.SortOrder.AscendingOrder)
         self.__sections_menu: Final = HeaderSectionsMenu(view.horizontalHeader())
-        for column in DEFAULT_HIDDEN:
+        for column in DEFAULT_HIDDEN if state is not None else preset.hidden:
             view.horizontalHeader().setSectionHidden(column, True)
         view.doubleClicked.connect(self.__on_double_clicked)
         model = self.__model
