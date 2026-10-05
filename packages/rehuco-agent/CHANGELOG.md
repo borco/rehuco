@@ -110,6 +110,10 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 - Right-clicking a table browser's header could stop showing the column menu until the app was restarted. The menu
   no longer holds on to the header it was built for, and a menu that cannot open is logged once instead of raised.
+- Clearing a table browser's filter line, with its clear button or otherwise, could leave the filtered rows on screen:
+  an error showing the line's problem marker stopped the rows from being read again. The rows are read first now, and
+  the marker is found again each time instead of being held on to. A line edit sometimes showing two clear buttons
+  (the filter line and the Location fields among them) is fixed too.
 
 ## [0.2.0] - 2026-09-27
 

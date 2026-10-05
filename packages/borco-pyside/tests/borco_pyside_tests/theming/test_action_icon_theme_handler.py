@@ -9,8 +9,10 @@ from borco_pyside.theming.checked_chrome import CheckedToolButtonChrome
 from borco_pyside.theming.contrast import perceived_brightness
 from PySide6.QtCore import QObject, QSize
 from PySide6.QtGui import QAction, QColor, QIcon, QPalette
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QMenu
 from pytest_mock import MockerFixture
+from pytestqt.qtbot import QtBot
+from shiboken6 import invalidate
 
 SVG: bytes = (
     b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">'
@@ -411,6 +413,43 @@ def test_two_actions_from_one_source_share_a_single_icon(
     ActionIconThemeHandler(make_companion_action, "icon.svg")
 
     assert make_action.icon().cacheKey() == make_companion_action.icon().cacheKey()
+
+
+def test_the_handler_works_on_after_the_actions_wrapper_it_was_given_is_invalidated(
+    qtbot: QtBot, make_companion_action: QAction, mock_qfile: Callable[..., Any]
+) -> None:
+    """#459: the wrapper of a Qt-owned action (a dock's ``toggleViewAction()``) can be invalidated while the
+    action lives on. A handler parented to its action reads the action back from that parent, so a resync and
+    a new icon still reach it.
+
+    The action is one Qt made (``QMenu.addAction``), as the real victims are: a wrapper Python made stays in
+    shiboken's map through ``invalidate`` and comes back revalidated, which would prove nothing.
+
+    **Test steps:**
+
+    * construct a handler with a companion and no explicit parent over a Qt-made action, then invalidate the
+      wrapper it was given and take a fresh one through the handler's parent
+    * check the action through the fresh wrapper and resync the companion
+    * verify the companion followed, and ``set_icon`` still gives the action an icon
+    """
+    mock_qfile(SVG)
+    menu = QMenu()
+    qtbot.addWidget(menu)
+    given = menu.addAction("Toggle")
+    given.setCheckable(True)
+    make_companion_action.setCheckable(True)
+    handler = ActionIconThemeHandler(given, "icon.svg", companion=make_companion_action)
+    invalidate(given)
+    action = handler.parent()
+    assert isinstance(action, QAction)
+    action.setIcon(QIcon())
+
+    action.setChecked(True)
+    handler.resync_companion_checked_state()
+    handler.set_icon("icon.svg")
+
+    assert make_companion_action.isChecked() is True
+    assert not action.icon().isNull()
 
 
 def test_defaults_to_being_parented_to_the_action(make_action: QAction, mock_qfile: Callable[..., Any]) -> None:

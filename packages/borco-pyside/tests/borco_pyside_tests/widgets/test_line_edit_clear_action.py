@@ -1,16 +1,15 @@
 """Tests for LineEditClearActionFilter: the app-wide QLineEdit clear action."""
 
 from collections.abc import Iterator
-from typing import NamedTuple
 
 from borco_pyside.widgets.line_edit_clear_action import LineEditClearActionFilter
-from PySide6.QtCore import QEvent, QObject, QSignalBlocker
+from PySide6.QtCore import QEvent, QSignalBlocker
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QComboBox, QLineEdit, QSpinBox, QStyle, QWidget
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from shiboken6 import isValid
+from shiboken6 import invalidate, isValid
 
 WAIT = 10_000
 """How long a ``waitUntil`` here is given -- generous for the reason the QtAds tests give: the first
@@ -320,77 +319,32 @@ def test_a_field_specific_trailing_action_coexists_untouched(
     assert field_action.isVisible() is True
 
 
-class OrphanedLineEdit(NamedTuple):
-    """A shown, equipped line edit whose clear action has since been deleted out from under it."""
+def test_a_show_after_the_action_is_deleted_equips_a_working_one(
+    installed_filter: LineEditClearActionFilter, qtbot: QtBot
+) -> None:
+    """#365: the clear action can be deleted while its line edit lives on; the next ``Show`` equips a fresh
+    one, with no repaint raising in between.
 
-    line_edit: QLineEdit
-    resync_filter: QObject
+    The action is detached before it is deleted, as a real deleter would: deleting it while attached leaves the
+    line edit's *own* internal trailing-icon widget holding a dangling pointer, a native crash of its own
+    (confirmed on a stock ``QLineEdit`` with no filter of this module's involved).
 
+    **Test steps:**
 
-@fixture
-def orphaned_line_edit(installed_filter: LineEditClearActionFilter, qtbot: QtBot) -> OrphanedLineEdit:
-    """Equip a line edit, then delete its clear action the way #365's still-unidentified deleter must:
-    detached from the line edit first, as a real deleter would, not while it is still one of the line
-    edit's own trailing actions -- deleting it while attached leaves the line edit's *own* internal
-    trailing-icon widget holding the dangling pointer too, a native crash of its own (confirmed on a
-    stock ``QLineEdit`` with no filter of this module's involved) and not what the filter can guard
-    against; only the *external* dangling reference the paint-resync filter closes over is this fix's
-    concern.
-
-    :param installed_filter: the app-wide filter, so showing the line edit equips it.
-    :param qtbot: pytest-qt bot, to gate on the deferred delete landing.
-    :returns: the line edit and the resync filter that was installed for it.
+    * show a line edit, then remove and delete its clear action
+    * hide and show it again
+    * verify it carries exactly one live action, and it still tracks the text
     """
     del installed_filter
     line_edit = QLineEdit()
     qtbot.addWidget(line_edit)
     line_edit.show()
     action = line_edit.actions()[0]
-    resync_filter = next(child for child in line_edit.children() if type(child).__name__ == "__PaintResyncFilter")
-
     line_edit.removeAction(action)
     action.deleteLater()
     qtbot.waitUntil(lambda: not isValid(action), timeout=WAIT)
-    return OrphanedLineEdit(line_edit, resync_filter)
-
-
-def test_a_repaint_after_the_action_dies_drops_the_resync_filter(
-    orphaned_line_edit: OrphanedLineEdit, qtbot: QtBot
-) -> None:
-    """#365: something can delete the clear action while its line edit lives on (seen from a QtAds
-    auto-hide pin/unpin round trip). The per-widget paint-resync filter used to hold the dead action
-    and raise on every repaint from then on; it must instead drop out quietly, once.
-
-    A real, still-shown line edit keeps receiving genuine repaints on its own, so this forges none --
-    it gates on the filter having taken itself out, which only a delivered repaint can cause.
-
-    **Test steps:**
-
-    * take a shown line edit whose clear action has been deleted out from under it
-    * wait for the resync filter to be gone
-    * verify nothing raised on the way
-    """
-    qtbot.waitUntil(lambda: not isValid(orphaned_line_edit.resync_filter), timeout=WAIT)
-
-
-def test_a_show_after_the_action_dies_re_equips_a_working_one(
-    orphaned_line_edit: OrphanedLineEdit, qtbot: QtBot
-) -> None:
-    """#365: once the dead action is cleaned up, the line edit shouldn't be left without a working
-    clear button for the rest of the run -- its next ``Show`` re-equips a fresh one.
-
-    Gates on the resync filter's cleanup first: that is what clears the stored-action property, and
-    reading that property back before it is cleared is the crash the module docstring describes.
-
-    **Test steps:**
-
-    * take a shown line edit whose clear action has been deleted out from under it, and let the
-      resync filter clean up
-    * hide and show it again
-    * verify it now carries exactly one live action, and it still tracks the text
-    """
-    line_edit = orphaned_line_edit.line_edit
-    qtbot.waitUntil(lambda: not isValid(orphaned_line_edit.resync_filter), timeout=WAIT)
+    line_edit.update()
+    QApplication.processEvents()
 
     line_edit.hide()
     line_edit.show()
@@ -400,6 +354,57 @@ def test_a_show_after_the_action_dies_re_equips_a_working_one(
     assert isValid(actions[0])
     line_edit.setText("hello")
     assert actions[0].isVisible() is True
+
+
+def test_an_invalidated_action_wrapper_is_not_equipped_twice(
+    installed_filter: LineEditClearActionFilter, qtbot: QtBot
+) -> None:
+    """#459: a wrapper of the clear action can be invalidated while the C++ action lives on. The line edit must
+    keep that one action -- not equip a second beside it, two clear buttons -- and it must keep tracking the
+    text.
+
+    **Test steps:**
+
+    * show a line edit and invalidate the wrapper of its clear action
+    * hide and show it again, and set some text
+    * verify it still carries exactly one clear action, visible, and clearing it empties the line edit
+    """
+    del installed_filter
+    line_edit = QLineEdit()
+    qtbot.addWidget(line_edit)
+    line_edit.show()
+    invalidate(line_edit.actions()[0])
+
+    line_edit.hide()
+    line_edit.show()
+    line_edit.setText("hello")
+
+    actions = line_edit.actions()
+    assert len(actions) == 1
+    assert actions[0].isVisible() is True
+    actions[0].trigger()
+    assert line_edit.text() == ""
+
+
+def test_text_changes_are_followed_once_however_often_the_line_edit_is_equipped(
+    installed_filter: LineEditClearActionFilter, qtbot: QtBot, mocker: MockerFixture
+) -> None:
+    """Showing an equipped line edit again must not stack another ``textChanged`` listener.
+
+    **Test steps:**
+
+    * show, hide and show a line edit three times
+    * count the resync helpers on it
+    * verify there is one
+    """
+    del installed_filter, mocker
+    line_edit = QLineEdit()
+    qtbot.addWidget(line_edit)
+    for _ in range(3):
+        line_edit.show()
+        line_edit.hide()
+
+    assert [type(child).__name__ for child in line_edit.children()].count("__Resync") == 1
 
 
 def test_a_removed_filter_equips_nothing_more(qtbot: QtBot) -> None:

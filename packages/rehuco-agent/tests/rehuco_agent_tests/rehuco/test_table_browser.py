@@ -15,9 +15,10 @@ from rehuco_agent.rehuco import TableBrowser
 from rehuco_agent.rehuco.browser_presets import BrowserPreset, browser_presets
 from rehuco_agent.rehuco.catalog_delegates import DurationDelegate, SizeDelegate
 from rehuco_agent.rehuco.catalog_table_model import DEFAULT_HIDDEN, CatalogColumn
-from rehuco_agent.rehuco.table_browser import FILTER_HELP, FILTER_SETTLE_MS
+from rehuco_agent.rehuco.table_browser import FILTER_HELP, FILTER_SETTLE_MS, PROBLEMS_ACTION_NAME
 from rehuco_agent.settings.catalog_state_store import TABLE_BROWSER_KIND, BrowserState
 from rehuco_core import CatalogField, CatalogQuery, CatalogRecord, CatalogRow, RecordKind
+from shiboken6 import invalidate
 
 ROOT_ID = uuid4()
 ROOT_PATH = Path("/fake/root")
@@ -629,3 +630,29 @@ def test_clearing_the_line_applies_once_it_settles(qtbot: QtBot, browser: TableB
     with qtbot.waitSignal(browser.query_changed, timeout=FILTER_SETTLE_MS * 10) as changed:
         browser.filter_edit.clear()
     assert changed.args == [CatalogQuery()]
+
+
+def test_clearing_the_line_asks_for_all_rows_though_the_problem_markers_wrapper_died(
+    qtbot: QtBot, browser: TableBrowser
+) -> None:
+    """The wrapper of the line's problem marker can be invalidated while the marker lives (#459); applying the text
+    used to raise there, before the rows were asked for, so a cleared line kept the filtered rows on screen. The rows
+    are asked for first, and the marker is found again on the line.
+
+    **Test steps:**
+
+    * apply a token, then invalidate the wrapper of every action on the line
+    * clear the line
+    * verify the query goes back to matching everything, and a problem is still marked on the marker
+    """
+    browser.set_filter_text("type:tutorial")
+    for action in browser.filter_edit.actions():
+        invalidate(action)
+
+    with qtbot.waitSignal(browser.query_changed, timeout=FILTER_SETTLE_MS * 10) as changed:
+        browser.filter_edit.clear()
+    assert changed.args == [CatalogQuery()]
+
+    browser.set_filter_text("nonsense:value")
+    marker = next(action for action in browser.filter_edit.actions() if action.objectName() == PROBLEMS_ACTION_NAME)
+    assert marker.toolTip() == "\n".join(browser.filter_problems) != ""

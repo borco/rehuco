@@ -10,6 +10,9 @@ from PySide6.QtWidgets import QLineEdit, QSpinBox, QStyle, QWidget
 
 from ..colors import WARNING_COLOR
 
+CLEAR_ACTION_NAME: Final = "duration_clear_action"
+"""The object name of the spin box's clear action, which is how it is found again (#459)."""
+
 
 class DurationEdit(QWidget):
     """A duration editor: human text kept in sync with a raw-seconds ``QSpinBox``, exposing only
@@ -92,6 +95,7 @@ class DurationEdit(QWidget):
         clear_action = spin_box_line_edit.addAction(clear_icon, QLineEdit.ActionPosition.TrailingPosition)
         clear_action.setToolTip("Clear")
         clear_action.setVisible(False)
+        clear_action.setObjectName(CLEAR_ACTION_NAME)
         clear_action.triggered.connect(self.__clear_spin_box)
 
         equal_width_row(self, self.__line_edit, self.__spin_box)
@@ -99,9 +103,22 @@ class DurationEdit(QWidget):
         self.__line_edit.textChanged.connect(self.__on_text_changed)
         self.__spin_box.valueChanged.connect(self.set_value)  # type: ignore[attr-defined]
         self.value_changed.connect(self.__render)  # type: ignore[attr-defined]
+        # the spin box's line edit and the action are found again each time, never kept: the wrapper of a C++-owned
+        # object has been seen invalidated while the object lived on (#459)
         self.value_changed.connect(  # type: ignore[attr-defined]
-            lambda value: clear_action.setVisible(value is not None)
+            lambda value: self.__show_clear_action(cast(QLineEdit, self.__spin_box.lineEdit()), value is not None)
         )
+
+    @staticmethod
+    def __show_clear_action(line_edit: QLineEdit, shown: bool) -> None:
+        """Show or hide the spin box's clear action.
+
+        :param line_edit: the spin box's line edit, which carries the action.
+        :param shown: whether it is to be shown.
+        """
+        action = next((action for action in line_edit.actions() if action.objectName() == CLEAR_ACTION_NAME), None)
+        if action is not None:
+            action.setVisible(shown)
 
     @classmethod
     def parse(cls, text: str) -> int | None:

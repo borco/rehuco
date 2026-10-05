@@ -42,6 +42,15 @@ Changelogs are per package in this monorepo, matching the per-package release ta
   and leaves alone a line edit that turned Qt's clear button on; it takes only an optional parent, the glyph, font
   family and colour role arguments gone.
 
+### Fixed
+
+- `LineEditClearActionFilter` could equip a line edit with a second clear button when the Python wrapper of the first
+  was invalidated while the action itself lived on. It now keeps no reference to its action and finds it on the line
+  edit by object name, so there is only ever one; `LineEditClearActionFilter.action_of(line_edit)` is how.
+- `ActionIconThemeHandler` raised "already deleted" from `resync_companion_checked_state` once the wrapper of the
+  action it was given was invalidated while the action lived on. Parented to the action (the default), it now reads
+  the action back from its parent each time.
+
 ## [0.2.0] - 2026-09-27
 
 ### Added

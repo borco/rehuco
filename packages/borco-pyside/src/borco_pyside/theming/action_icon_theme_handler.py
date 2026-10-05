@@ -1,5 +1,7 @@
 """Give an action a themed icon, and keep an optional menu companion mirroring it."""
 
+from typing import cast
+
 from PySide6.QtCore import QObject
 from PySide6.QtGui import QAction
 
@@ -26,6 +28,14 @@ class ActionIconThemeHandler(QObject):
     A ``QObject``, parented to ``action`` by default -- ``ActionIconThemeHandler(action, icon)`` alone
     is enough, with nothing to hold onto. It is needed at all only for ``companion``; an action with no
     companion can equally well be given :func:`~borco_pyside.theming.themed_svg_icon` directly.
+
+    **The default parenting is also how ``action`` is reached again** (#459): a Qt-owned action's Python
+    wrapper -- a dock's ``toggleViewAction()``, say -- can be invalidated while the action itself lives on,
+    and a handler holding that wrapper then raised "already deleted" from every later
+    :meth:`resync_companion_checked_state`. So while this handler is the action's child, the action is read
+    from ``parent()`` each time, a live wrapper. With an explicit ``parent`` the given wrapper is all there is
+    to hold, which is fine for an action Python made (a ``.ui``'s or a ``QAction(...)`` of its own) and the
+    reason a Qt-made one should get the default. ``companion`` is held as given, for the same reason.
 
     :param action: the action to give a themed icon.
     :param icon: path (Qt resource or filesystem) to the source SVG. Must be genuinely monochrome, in
@@ -66,7 +76,7 @@ class ActionIconThemeHandler(QObject):
         flat: bool = False,
     ) -> None:
         super().__init__(parent if parent is not None else action)
-        self.__action = action
+        self.__given_action = action
         self.__companion_action = companion
         self.__flat = flat
 
@@ -76,6 +86,13 @@ class ActionIconThemeHandler(QObject):
         self.resync_companion_checked_state()
 
         self.__assign_icon(icon)
+
+    @property
+    def __action(self) -> QAction:
+        """The action this handler themes: its Qt parent while it is the default one (a live wrapper every
+        time), else the action it was given."""
+        parent = self.parent()
+        return cast(QAction, parent) if isinstance(parent, QAction) else self.__given_action
 
     def resync_companion_checked_state(self) -> None:
         """Force ``companion``'s checked state to match ``action``'s right now.

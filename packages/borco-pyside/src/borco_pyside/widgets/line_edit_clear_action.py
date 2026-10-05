@@ -1,27 +1,19 @@
 """App-wide `QLineEdit` clear action, added to every line edit as it becomes visible."""
 
-from typing import Final, override
+from typing import Final, cast, override
 
 from PySide6.QtCore import QEvent, QObject
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QAbstractSpinBox, QComboBox, QLineEdit, QStyle
-from shiboken6 import isValid
 
-ACTION_PROPERTY: Final = "_borco_clear_action"
-"""The dynamic property a line edit's clear action is stashed under, read back by
-:meth:`LineEditClearActionFilter.__ensure_clear_action` to skip an already-equipped line edit.
+ACTION_NAME: Final = "_borco_clear_action"
+"""The object name a line edit's clear action carries, which is how it is found again.
 
-Module-level rather than a ``__``-private attribute of the filter class: it is also read from
-``__PaintResyncFilter``, a *nested* class, whose body mangles a ``__name`` against its own name and so
-cannot reach a name-mangled attribute of its lexically enclosing class.
-
-**Reading it back after its action has died crashes** -- an access violation, not a catchable
-exception (#365; confirmed on a stock ``QLineEdit`` with the stored ``QAction`` deleted, no filter of
-this module's involved). Qt keeps the ``QVariant`` over the now-dangling ``QObject*`` and
-``QObject.property()`` hands it to shiboken to re-wrap; the exact step that faults is not pinned down,
-and does not need to be: the resync filter below clears this property back to ``None`` itself the
-moment it notices its action died, so it is never read back stale. ``setProperty`` only stores a new
-``QVariant`` and never dereferences the old one, so the overwrite is safe where the read is not.
+**No Python reference to the action is kept, because one cannot be trusted** (#365, #459): the action is
+C++-owned by its line edit, and its wrapper has been seen invalidated while the C++ action lived on. Whoever
+held that wrapper found it "already deleted" and, in the first version of this module, equipped a *second*
+action beside the live first -- two clear buttons. The line edit's own ``actions()`` hands back a live wrapper
+every time, so the action is looked up there by this name (:meth:`LineEditClearActionFilter.action_of`).
 """
 
 
@@ -90,72 +82,78 @@ class LineEditClearActionFilter(QObject):
         """
         return isinstance(line_edit.parentWidget(), (QAbstractSpinBox, QComboBox))
 
-    def __ensure_clear_action(self, line_edit: QLineEdit) -> None:
-        """Install ``line_edit``'s clear action once; a no-op on a later ``Show`` of the same widget.
+    @staticmethod
+    def action_of(line_edit: QLineEdit) -> QAction | None:
+        """Find ``line_edit``'s clear action, if it has one.
 
-        Also the recovery path for #365 (something deleting the clear action out from under a
-        still-live line edit, e.g. from a QtAds auto-hide pin/unpin round trip; the deleter itself is
-        still unidentified): this re-equips a fresh action whenever the stored property reads back
-        ``None``, which is exactly what the resync filter below leaves behind once it notices the
-        action it was tracking has died.
+        :param line_edit: the line edit to look in.
+        :returns: the action, as a live wrapper, else ``None``.
+        """
+        return next((action for action in line_edit.actions() if action.objectName() == ACTION_NAME), None)
+
+    def __ensure_clear_action(self, line_edit: QLineEdit) -> None:
+        """Equip ``line_edit`` with its clear action once; a no-op on a later ``Show`` of an equipped one.
+
+        An action deleted out from under a live line edit (#365) is simply missing here and is made again; one
+        whose wrapper alone died (#459) is found by name and left be, so there is never a second one.
 
         :param line_edit: the line edit to equip.
         """
-        if line_edit.property(ACTION_PROPERTY) is not None:
-            return
-        icon = line_edit.style().standardIcon(QStyle.StandardPixmap.SP_LineEditClearButton, None, line_edit)
-        action = line_edit.addAction(icon, QLineEdit.ActionPosition.TrailingPosition)
-        action.setToolTip("Clear")
-        action.setVisible(bool(line_edit.text()))
-        # as exposed to a dead action as the paint-resync filter is (#365), and guarded the same way
-        line_edit.textChanged.connect(lambda text: action.setVisible(bool(text)) if isValid(action) else None)
-        action.triggered.connect(lambda: self.__clear(line_edit))
-        line_edit.setProperty(ACTION_PROPERTY, action)
-        line_edit.installEventFilter(self.__PaintResyncFilter(action, parent=line_edit))
+        resync = line_edit.findChild(self.__Resync)
+        if resync is None:
+            # once per line edit, for its whole life: connected here and never again, so a re-equipped action
+            # does not stack a second listener
+            resync = self.__Resync(line_edit)
+            line_edit.installEventFilter(resync)
+            line_edit.textChanged.connect(resync.sync)
+        if self.action_of(line_edit) is None:
+            icon = line_edit.style().standardIcon(QStyle.StandardPixmap.SP_LineEditClearButton, None, line_edit)
+            action = line_edit.addAction(icon, QLineEdit.ActionPosition.TrailingPosition)
+            action.setObjectName(ACTION_NAME)
+            action.setToolTip("Clear")
+            action.triggered.connect(resync.clear)
+        resync.sync()
 
-    @staticmethod
-    def __clear(line_edit: QLineEdit) -> None:
-        """Clear ``line_edit``'s text and restore keyboard focus to it.
+    class __Resync(QObject):  # pylint: disable=invalid-name
+        """Per-line-edit helper that keeps the clear action's visibility matched to the line edit's text: on
+        ``textChanged``, and on every repaint as the fallback for a signal-blocked ``setText`` that emits no
+        ``textChanged`` (see :class:`LineEditClearActionFilter`'s docstring).
 
-        :param line_edit: the line edit to clear.
-        """
-        line_edit.clear()
-        line_edit.setFocus()
+        Installed on a single equipped line edit only (never app-wide) and parented to it, so it dies with it.
+        It holds no wrapper at all -- not the action's, looked up on the line edit by :data:`ACTION_NAME` each
+        time, and not the line edit's, read from its own Qt parent each time (#459: a kept wrapper of a Qt-owned
+        object can be invalidated while the object lives) -- so nothing dead is ever read back. With no action
+        there is nothing to sync, and the line edit's next ``Show`` equips one.
 
-    class __PaintResyncFilter(QObject):  # pylint: disable=invalid-name
-        """Per-line-edit event filter that re-matches one clear ``action``'s visibility to the line
-        edit's current text on every repaint -- the fallback path for a signal-blocked ``setText``
-        that emits no ``textChanged`` (see :class:`LineEditClearActionFilter`'s docstring).
-
-        Installed on a single equipped line edit only (never app-wide) and closing over that line
-        edit's own ``action``, so the resync touches just the equipped line edits and needs no
-        property lookup to find the action. Parented to the line edit, so it dies with it.
-
-        Something can delete ``action`` while the line edit it belongs to lives on (#365: seen from a
-        QtAds auto-hide pin/unpin round trip; the deleter itself is still unidentified). Every repaint
-        after that used to raise, forever, since ``action`` is a dead C++ object this filter still
-        holds -- so a repaint first checks it is still alive and, if not, drops itself out, once. It
-        also clears the line edit's stored-action property back to ``None`` right then, rather than
-        leaving it holding a ``QVariant`` over a now-dangling pointer: reading that back is what
-        crashes (see :data:`ACTION_PROPERTY`), not merely stale, so clearing it here is what lets
-        :meth:`~LineEditClearActionFilter.__ensure_clear_action` re-equip a fresh one on the line
-        edit's next ``Show`` without ever reading the dead one back.
-
-        :param action: the clear action whose visibility to keep in sync.
-        :param parent: the line edit this filter is installed on and parented to.
+        :param line_edit: the line edit this is installed on and parented to.
         """
 
-        def __init__(self, action: QAction, parent: QLineEdit) -> None:
-            super().__init__(parent)
-            self.__action: Final = action
+        def __init__(self, line_edit: QLineEdit) -> None:
+            super().__init__(line_edit)
+
+        @property
+        def __line_edit(self) -> QLineEdit:
+            """The line edit this is installed on: its Qt parent, fetched anew so the wrapper is a live one."""
+            return cast(QLineEdit, self.parent())
+
+        def sync(self, *_args: object) -> None:
+            """Show the clear action while the line edit holds text.
+
+            :param _args: ``textChanged``'s text, unused: the line edit is asked.
+            """
+            line_edit = self.__line_edit
+            action = LineEditClearActionFilter.action_of(line_edit)
+            if action is not None:
+                action.setVisible(bool(line_edit.text()))
+
+        def clear(self) -> None:
+            """Clear the line edit's text and restore keyboard focus to it -- what the clear action does."""
+            line_edit = self.__line_edit
+            line_edit.clear()
+            line_edit.setFocus()
 
         @override
         def eventFilter(self, watched: QObject, event: QEvent) -> bool:
             if event.type() == QEvent.Type.Paint and isinstance(watched, QLineEdit):
-                if isValid(self.__action):
-                    self.__action.setVisible(bool(watched.text()))
-                else:
-                    watched.setProperty(ACTION_PROPERTY, None)
-                    watched.removeEventFilter(self)
-                    self.deleteLater()
+                self.sync()
             return super().eventFilter(watched, event)

@@ -25,6 +25,10 @@ from .rehuco_browser_panel_ui import Ui_RehucoBrowserPanel
 FILTER_SETTLE_MS: Final = 250
 """How long the filter line waits after the last keystroke before its rows are read again; Enter does not wait."""
 
+PROBLEMS_ACTION_NAME: Final = "filter_problems_action"
+"""The object name of the filter line's problem marker, which is how it is found again: no Python reference to it is
+kept, because the wrapper of a C++-owned action has been seen invalidated while the action lived on (#459)."""
+
 FILTER_HELP: Final = (
     f'Free text, and field:value or field:"quoted value" tokens: {", ".join(field.value for field in CatalogField)}.'
 )
@@ -112,8 +116,9 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__update_status()
 
         line = self.__ui.filter_edit
-        self.__problems_action: Final = line.addAction(QIcon(), QLineEdit.ActionPosition.TrailingPosition)
-        GlyphActionIconThemeHandler(self.__problems_action, FILTER_PROBLEM_GLYPH.codepoint, FILTER_PROBLEM_GLYPH.family)
+        problems_action = line.addAction(QIcon(), QLineEdit.ActionPosition.TrailingPosition)
+        problems_action.setObjectName(PROBLEMS_ACTION_NAME)
+        GlyphActionIconThemeHandler(problems_action, FILTER_PROBLEM_GLYPH.codepoint, FILTER_PROBLEM_GLYPH.family)
         self.__settle_timer: Final = QTimer(self)
         self.__settle_timer.setSingleShot(True)
         self.__settle_timer.setInterval(FILTER_SETTLE_MS)
@@ -290,16 +295,21 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
         previous = self.__parsed.query
         self.__filter_text = text
         self.__parsed = parse_filter(text)
-        self.__show_problems()
+        # the rows come first: the marker is only decoration, and a failure showing it must not leave the old rows
+        # on screen under a cleared line (#459)
         if self.__parsed.query != previous:
             self.query_changed.emit(self.__parsed.query)
+        self.__show_problems()
 
     def __show_problems(self) -> None:
         """Show on the line what it could not apply."""
         problems = self.__parsed.problems
-        self.__problems_action.setVisible(bool(problems))
         tooltip = "\n".join(problems)
-        self.__problems_action.setToolTip(tooltip)
+        edit = self.__ui.filter_edit
+        marker = next((action for action in edit.actions() if action.objectName() == PROBLEMS_ACTION_NAME), None)
+        if marker is not None:
+            marker.setVisible(bool(problems))
+            marker.setToolTip(tooltip)
         self.__ui.filter_edit.setToolTip(f"{tooltip}\n\n{FILTER_HELP}" if problems else FILTER_HELP)
 
     def __update_current(self) -> None:
