@@ -106,6 +106,11 @@ released becomes the body of the GitHub Release, so each entry is written to be 
   follows renames, saves, conversions, screenshot reorders, deletions and drops, and finished checksum runs. It
   keeps the selection and scroll position, and stays in the same subfolder after a rename or a conversion.
 
+### Fixed
+
+- Right-clicking a table browser's header could stop showing the column menu until the app was restarted. The menu
+  no longer holds on to the header it was built for, and a menu that cannot open is logged once instead of raised.
+
 ## [0.2.0] - 2026-09-27
 
 ### Added

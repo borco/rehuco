@@ -1,9 +1,12 @@
 """Tests for HeaderSectionsMenu: a header's context menu of section visibility, and its saved state."""
 
+import logging
+
+import shiboken6
 from borco_pyside.widgets import HeaderSectionsMenu
-from PySide6.QtCore import QAbstractTableModel, QModelIndex, QPersistentModelIndex, QPoint, Qt
+from PySide6.QtCore import QAbstractTableModel, QCoreApplication, QEvent, QModelIndex, QPersistentModelIndex, QPoint, Qt
 from PySide6.QtWidgets import QMenu, QTableView
-from pytest import fixture
+from pytest import LogCaptureFixture, fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 
@@ -401,6 +404,74 @@ def test_a_context_menu_request_opens_the_menu_at_the_click(setup: Setup, mocker
 
     menu.exec.assert_called_once_with(setup.header.mapToGlobal(position))
     menu.deleteLater.assert_called_once_with()
+
+
+def test_the_menu_works_after_the_wrapper_it_was_given_is_invalidated(setup: Setup) -> None:
+    """A header whose Python wrapper was invalidated while its C++ object lives (#459) still gets a working menu,
+    for the menu reads the header from its Qt parent instead of keeping the wrapper.
+
+    **Test steps:**
+
+    * invalidate the wrapper the menu was attached with
+    * verify the menu builds, toggles a section and saves and restores the header's state
+    """
+    wrapper = setup.header
+    shiboken6.invalidate(wrapper)
+    assert not shiboken6.isValid(wrapper)
+
+    menu = setup.menu.build_menu()
+    menu.actions()[1].setChecked(False)
+
+    assert setup.labels(menu) == HEADERS
+    assert setup.view.horizontalHeader().isSectionHidden(1)
+    assert setup.menu.restore_state(setup.menu.save_state())
+
+
+def test_a_failing_context_menu_request_is_logged_once_and_never_raised(
+    setup: Setup, mocker: MockerFixture, caplog: LogCaptureFixture
+) -> None:
+    """A slot that raises into Qt's event loop is an unhandled exception; here it is one log record, however often.
+
+    **Test steps:**
+
+    * make the menu builder raise ``RuntimeError``
+    * request the context menu twice
+    * verify nothing was raised and one error was logged
+    """
+    mocker.patch.object(setup.menu, "build_menu", side_effect=RuntimeError("already deleted"))
+
+    with caplog.at_level(logging.ERROR):
+        setup.header.customContextMenuRequested.emit(QPoint(1, 2))
+        setup.header.customContextMenuRequested.emit(QPoint(1, 2))
+
+    assert len([record for record in caplog.records if record.levelno == logging.ERROR]) == 1
+
+
+def test_a_menu_that_failed_to_open_is_deleted_like_one_dismissed(setup: Setup, mocker: MockerFixture) -> None:
+    """A built menu is the header's child, so one left behind by a failed ``exec`` would live as long as the header:
+    it is deleted whichever way the request ends.
+
+    **Test steps:**
+
+    * build real menus whose ``exec`` raises, request the context menu twice, flush deferred deletes
+    * verify the header has no menu left under it
+    """
+    header = setup.view.horizontalHeader()
+
+    class FailingMenu(QMenu):
+        """A menu whose opening fails, as the header's child like the real one."""
+
+        def exec(self, *_args: object) -> None:  # type: ignore[override]
+            """Fail to open, as a menu over a dead header does."""
+            raise RuntimeError("already deleted")
+
+    mocker.patch.object(setup.menu, "build_menu", side_effect=lambda: FailingMenu(header))
+
+    setup.header.customContextMenuRequested.emit(QPoint(1, 2))
+    setup.header.customContextMenuRequested.emit(QPoint(1, 2))
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+    assert header.findChildren(QMenu) == []
 
 
 # endregion
