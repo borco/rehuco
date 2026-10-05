@@ -374,6 +374,9 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         )
         # a resource double-clicked in the Root Catalog browser opens through the ordinary route (#377)
         self.__rehuco_dock.open_requested.connect(self.open_path)
+        self.__rehuco_dock.open_folder_requested.connect(self.open_folder)
+        # open_archive derives the companion from any file's name, an archive's or not
+        self.__rehuco_dock.open_companion_requested.connect(self.open_archive)
         self.__setup_docking_system()
         self.__ui.documents_menu.aboutToShow.connect(lambda: self.__add_open_documents(self.__ui.documents_menu))
         self.__ui.browsers_menu.aboutToShow.connect(lambda: self.__add_open_browsers(self.__ui.browsers_menu))

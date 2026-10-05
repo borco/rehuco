@@ -11,6 +11,13 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ### Added
 
+- `RootFolderLister` lists one folder of one `.rehuco` root, asked by root id and path under the root, never by an
+  absolute path: a read is one `scandir` under the rename coordinator's hold, and a folder that is gone or an unknown
+  root comes back not reachable rather than raising. `CatalogCache.resource_count` says how many rows a root holds.
+- `RehucoFile.move` puts a root at any row, which a drag and drop of one asks for.
+- `RootStorage` — what a root's folder lives on: `local`, `network`, `removable` or `compact_disk`. A `.rehuco` stores
+  it per root as `storage`, read as `local` when absent, and `RehucoRoot.removable` is true for the last two.
+  `RehucoFile.add_root` takes a `storage`, and `set_storage` replaces `set_removable`.
 - The `.rehudb` catalog cache (`CatalogCache`): a SQLite file per `.rehuco`, named by its rehuco id inside a
   cache folder the caller names. It holds the roots, keyed by their ids, and one row per record found under
   them: the common core a browser shows, the authors, tags and publishers, and the record's size,
@@ -52,6 +59,9 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ### Changed
 
+- A `.rehuco` is version 2: a root's `removable` flag became a `storage` (`removable` for a flagged root, otherwise
+  `local`), migrated when a file is read and written back on its next save. A build that predates this opens the
+  file read-only.
 - An image named by a legacy screenshot pattern (`01.jpg`, `cover.jpg`, `sample-01.jpg`, ...) is content
   in every folder: enumerated, checksummed and measured like any other file. Only a `<record>NN` image
   beside its record is a screenshot sidecar. A `.checksum` written before this lacks such files, and the

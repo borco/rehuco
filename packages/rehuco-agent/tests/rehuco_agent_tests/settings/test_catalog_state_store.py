@@ -23,7 +23,7 @@ from rehuco_agent.settings.catalog_state_store import (
 REHUCO_ID = uuid4()
 FIRST = BrowserState(uuid4(), TABLE_BROWSER_KIND, "Everything", 'type:"tutorial"', b"\x00\x01header")
 SECOND = BrowserState(uuid4(), TABLE_BROWSER_KIND, "Tutorials")
-STATE = CatalogState([FIRST, SECOND], layout=b"layout\xff", roots_header=b"roots")
+STATE = CatalogState([FIRST, SECOND], layout=b"layout\xff")
 
 
 @fixture(autouse=True)
@@ -180,15 +180,28 @@ def test_a_browsers_value_that_is_not_a_list_is_no_browsers(mocker: MockerFixtur
 
     **Test steps:**
 
-    * serve a file whose ``browsers`` is a string but whose roots header is intact
-    * verify no browsers and the roots header read
+    * serve a file whose ``browsers`` is a string but whose layout is intact
+    * verify no browsers and the layout read
     """
-    serve(mocker, json.dumps({"version": 1, "browsers": "nope", "roots_header": "cm9vdHM="}))
+    serve(mocker, json.dumps({"version": 1, "browsers": "nope", "layout": "bGF5b3V0"}))
 
     state = CatalogStateStore().load(REHUCO_ID)
 
     assert not state.browsers
-    assert state.roots_header == b"roots"
+    assert state.layout == b"layout"
+
+
+def test_a_file_that_still_carries_a_roots_header_loads(mocker: MockerFixture) -> None:
+    """The Roots table's header state a build before the column view wrote is ignored, not an error (#378).
+
+    **Test steps:**
+
+    * serve a file with a layout and a ``roots_header``
+    * verify the layout is read and nothing else is lost
+    """
+    serve(mocker, json.dumps({"version": 1, "browsers": [], "layout": "bGF5b3V0", "roots_header": "cm9vdHM="}))
+
+    assert CatalogStateStore().load(REHUCO_ID) == CatalogState(layout=b"layout")
 
 
 def test_damaged_bytes_read_as_empty(mocker: MockerFixture, written: MagicMock) -> None:
@@ -196,19 +209,18 @@ def test_damaged_bytes_read_as_empty(mocker: MockerFixture, written: MagicMock) 
 
     **Test steps:**
 
-    * serve a file whose layout, roots header and a browser's columns are not valid base64
+    * serve a file whose layout and a browser's columns are not valid base64
     * verify each reads as empty bytes
     """
     CatalogStateStore().save(REHUCO_ID, CatalogState([FIRST]))
     values = json.loads(saved_text(written))
     values["layout"] = "!!!"
-    values["roots_header"] = 5
     values["browsers"][0]["columns"] = "é"
     serve(mocker, json.dumps(values))
 
     state = CatalogStateStore().load(REHUCO_ID)
 
-    assert state.layout == b"" and state.roots_header == b""
+    assert state.layout == b""
     assert state.browsers == [BrowserState(FIRST.browser_id, FIRST.kind, FIRST.name, FIRST.filter)]
 
 

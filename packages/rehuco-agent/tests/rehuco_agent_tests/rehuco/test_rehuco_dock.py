@@ -13,7 +13,9 @@ and every scan job's, on the worker thread, reach the same one.
 
 import json
 import logging
+import os
 import sqlite3
+import tempfile
 import threading
 from collections.abc import Generator
 from pathlib import Path
@@ -24,15 +26,28 @@ from uuid import UUID, uuid4
 import PySide6QtAds as QtAds
 from borco_pyside.qtads import tab_close_button, tab_label, tab_maximize_button
 from borco_pyside.widgets import MessageBanner, RowBandDelegate
-from PySide6.QtCore import QModelIndex, QPoint, Qt
-from PySide6.QtGui import QContextMenuEvent
-from PySide6.QtWidgets import QApplication, QMenu
-from pytest import LogCaptureFixture, fixture, mark
+from PySide6.QtCore import QModelIndex, QPoint, Qt, QUrl
+from PySide6.QtGui import QAction, QContextMenuEvent
+from PySide6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QLabel,
+    QListView,
+    QMenu,
+    QMessageBox,
+    QSplitter,
+)
+from pytest import LogCaptureFixture, fixture, mark, param
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.rehuco import RehucoDock, TableBrowser
+from rehuco_agent.rehuco.add_root_dialog import AddRootDialog
 from rehuco_agent.rehuco.catalog_table_model import TITLE_COLUMN
 from rehuco_agent.rehuco.rehuco_dock import ROOTS_DOCK_NAME
+from rehuco_agent.rehuco.root_storage import ROOT_STORAGE_ICONS
+from rehuco_agent.rehuco.roots_folder_model import NodeListing, RootsNodeKind
+from rehuco_agent.rehuco.roots_item_delegate import RootsItemDelegate
+from rehuco_agent.rehuco.roots_preview import RootsPreview
 from rehuco_agent.resource_events import ResourceEvents
 from rehuco_core import (
     FINISHED_JOB_STATES,
@@ -41,11 +56,14 @@ from rehuco_core import (
     CatalogRecord,
     JobControl,
     RecordKind,
+    RehucoRoot,
     Relocation,
     RootScanOutcome,
     RootScanResult,
+    RootStorage,
     TaskJobBase,
     TaskQueue,
+    VerifyChecksumsJob,
 )
 
 from rehuco_agent_tests.conftest import MemoryCatalogStateStore
@@ -183,16 +201,23 @@ def fixture_held(queue: TaskQueue) -> Generator[GateJob]:
 
 
 @fixture(name="dock")
-def fixture_dock(qtbot: QtBot, queue: TaskQueue, database: MemoryDatabase) -> Generator[RehucoDock]:
+def fixture_dock(
+    qtbot: QtBot, queue: TaskQueue, database: MemoryDatabase, mocker: MockerFixture
+) -> Generator[RehucoDock]:
     """A dock over the real queue and the in-memory database, detached when the test ends.
+
+    Removing a root asks first, and that question is replaced per instance with a yes -- a test of the question
+    itself replaces it again.
 
     :param qtbot: pytest-qt fixture.
     :param queue: the queue its jobs run on.
     :param database: the cache's database.
+    :param mocker: pytest-mock fixture.
     :yields: the dock, with nothing open.
     """
     del database
     dock = RehucoDock(queue)
+    mocker.patch.object(dock, "confirm_remove_root", return_value=True)
     qtbot.addWidget(dock)
     yield dock
     dock.detach()
@@ -228,6 +253,29 @@ def wait_for_jobs(qtbot: QtBot, queue: TaskQueue) -> None:
     qtbot.waitUntil(
         lambda: all(status.state in FINISHED_JOB_STATES for status in queue.jobs()), timeout=WAIT_TIMEOUT_MS
     )
+
+
+def select_root(dock: RehucoDock, row: int) -> None:
+    """Make a root row the Roots view's current one.
+
+    :param dock: the Root Catalog dock.
+    :param row: the root's row.
+    """
+    dock.roots_view.setCurrentIndex(dock.roots_model.index(row, 0))
+
+
+def answer_add_root(
+    mocker: MockerFixture, dock: RehucoDock, folder: str | None, storage: RootStorage = RootStorage.LOCAL
+) -> MagicMock:
+    """Make the Add Root question answer, instead of opening its dialog.
+
+    :param mocker: pytest-mock fixture.
+    :param dock: the Root Catalog dock.
+    :param folder: the folder to answer with; ``None`` cancels.
+    :param storage: what the answered folder lives on.
+    :returns: the mock standing in for the question.
+    """
+    return mocker.patch.object(dock, "ask_root_to_add", return_value=None if folder is None else (folder, storage))
 
 
 def shown_labels(dock: RehucoDock) -> list[str]:
@@ -506,12 +554,12 @@ def test_removing_a_re_added_root_is_queued_again(
     * hold the queue; remove a root, add the same folder back, remove it again
     * verify two removal jobs wait
     """
-    mocker.patch("rehuco_agent.rehuco.rehuco_dock.QFileDialog.getExistingDirectory", return_value=str(TUTORIALS))
+    answer_add_root(mocker, dock, str(TUTORIALS))
     dock.open_rehuco(REHUCO_PATH)
-    dock.roots_view.selectRow(0)
+    select_root(dock, 0)
     dock.remove_root_action.trigger()
     dock.add_root_action.trigger()
-    dock.roots_view.selectRow(1)
+    select_root(dock, 1)
 
     dock.remove_root_action.trigger()
 
@@ -696,7 +744,7 @@ def test_adding_a_root_saves_the_file_and_the_cache_follows(
     * verify the file was written with three roots, the list shows three, and the cache holds three
     """
     del served
-    mocker.patch("rehuco_agent.rehuco.rehuco_dock.QFileDialog.getExistingDirectory", return_value="/fake/refs")
+    answer_add_root(mocker, dock, "/fake/refs")
     dock.open_rehuco(REHUCO_PATH)
 
     dock.add_root_action.trigger()
@@ -717,7 +765,7 @@ def test_cancelling_the_folder_picker_adds_nothing(
     * verify nothing was written and the list is unchanged
     """
     del served
-    mocker.patch("rehuco_agent.rehuco.rehuco_dock.QFileDialog.getExistingDirectory", return_value="")
+    answer_add_root(mocker, dock, None)
     dock.open_rehuco(REHUCO_PATH)
 
     dock.add_root_action.trigger()
@@ -737,7 +785,7 @@ def test_adding_a_folder_that_is_already_a_root_warns_and_changes_nothing(
     * verify a warning was shown, nothing was written and the list is unchanged
     """
     del served
-    mocker.patch("rehuco_agent.rehuco.rehuco_dock.QFileDialog.getExistingDirectory", return_value=str(PACKS))
+    answer_add_root(mocker, dock, str(PACKS))
     warning = mocker.patch("rehuco_agent.rehuco.rehuco_dock.QMessageBox.warning")
     dock.open_rehuco(REHUCO_PATH)
 
@@ -759,7 +807,7 @@ def test_a_failed_save_drops_the_edit_from_the_screen_too(
     * verify a warning was shown and the list is back to two roots
     """
     del served
-    mocker.patch("rehuco_agent.rehuco.rehuco_dock.QFileDialog.getExistingDirectory", return_value="/fake/refs")
+    answer_add_root(mocker, dock, "/fake/refs")
     warning = mocker.patch("rehuco_agent.rehuco.rehuco_dock.QMessageBox.warning")
     saves.side_effect = PermissionError("read-only folder")
     dock.open_rehuco(REHUCO_PATH)
@@ -781,7 +829,7 @@ def test_a_failed_save_that_cannot_be_read_back_closes_the_file(
     * verify nothing is open
     """
     del served
-    mocker.patch("rehuco_agent.rehuco.rehuco_dock.QFileDialog.getExistingDirectory", return_value="/fake/refs")
+    answer_add_root(mocker, dock, "/fake/refs")
     mocker.patch("rehuco_agent.rehuco.rehuco_dock.QMessageBox.warning")
     saves.side_effect = PermissionError("read-only folder")
     dock.open_rehuco(REHUCO_PATH)
@@ -805,7 +853,7 @@ def test_removing_a_root_saves_the_file_and_queues_the_removal(
     """
     dock.open_rehuco(REHUCO_PATH)
     assert not dock.remove_root_action.isEnabled()
-    dock.roots_view.selectRow(0)
+    select_root(dock, 0)
     assert dock.remove_root_action.isEnabled()
 
     dock.remove_root_action.trigger()
@@ -833,7 +881,7 @@ def test_a_removed_roots_rows_leave_the_table_at_once(
     dock.scan_action.trigger()
     qtbot.waitUntil(lambda: first_browser(dock).model.rowCount() == 1, timeout=WAIT_TIMEOUT_MS)
     wait_for_jobs(qtbot, queue)
-    dock.roots_view.selectRow(0)
+    select_root(dock, 0)
 
     dock.remove_root_action.trigger()
 
@@ -862,7 +910,7 @@ def test_a_newer_file_opens_read_only_with_a_banner(dock: RehucoDock, served: An
     assert banner is not None
     assert not banner.isHidden()
     assert not dock.add_root_action.isEnabled()
-    dock.roots_view.selectRow(0)
+    select_root(dock, 0)
     assert not dock.remove_root_action.isEnabled()
     assert dock.scan_action.isEnabled()
 
@@ -946,20 +994,26 @@ def test_the_sub_dock_tabs_keep_their_buttons_small_before_the_dock_is_ever_show
 
 
 @mark.usefixtures("served")
-def test_both_tables_paint_rows_as_bands_with_no_grid(dock: RehucoDock) -> None:
-    """The roots and the browser look like every other table in the app: one band per selected row, no grid.
+def test_the_browser_paints_bands_and_the_roots_columns_their_own_rows(dock: RehucoDock) -> None:
+    """The browser looks like every other table in the app: one band per selected row, no grid. Each Roots column is
+    drawn by the delegate that adds the glyph and the arrow -- the column view's own delegate would draw neither
+    the glyph nor a greyed row.
 
     **Test steps:**
 
-    * open a catalog and read both views' delegate, grid and word wrap
+    * open a catalog and read the browser's delegate, grid and word wrap
     * verify the row band delegate, no grid, no wrapping
+    * verify every column the Roots view made uses the roots delegate
     """
     dock.open_rehuco(REHUCO_PATH)
 
-    for view in (dock.roots_view, first_browser(dock).view):
-        assert isinstance(view.itemDelegate(), RowBandDelegate)
-        assert not view.showGrid()
-        assert not view.wordWrap()
+    view = first_browser(dock).view
+    assert isinstance(view.itemDelegate(), RowBandDelegate)
+    assert not view.showGrid()
+    assert not view.wordWrap()
+    columns = dock.roots_view.findChildren(QListView)
+    assert columns
+    assert all(isinstance(column.itemDelegate(), RootsItemDelegate) for column in columns)
 
 
 @mark.usefixtures("served")
@@ -979,17 +1033,16 @@ def test_a_browser_starts_unsorted_but_sortable(dock: RehucoDock) -> None:
 
 @mark.usefixtures("served")
 def test_column_widths_and_the_sort_survive_closing_and_reopening(dock: RehucoDock) -> None:
-    """What a reader set on the tables comes back the next time the catalog is opened: widths, and the browser's
+    """What a reader set on the browser comes back the next time the catalog is opened: its column width and
     sort.
 
     **Test steps:**
 
-    * widen a column on each table, sort the browser by title descending, then close the catalog
+    * widen a column of the browser, sort it by title descending, then close the catalog
     * open it again
-    * verify both widths and the sort indicator
+    * verify the width and the sort indicator
     """
     dock.open_rehuco(REHUCO_PATH)
-    dock.roots_view.horizontalHeader().resizeSection(0, 211)
     first_browser(dock).view.horizontalHeader().resizeSection(0, 233)
     first_browser(dock).view.sortByColumn(TITLE_COLUMN, Qt.SortOrder.DescendingOrder)
     dock.close_rehuco()
@@ -997,20 +1050,19 @@ def test_column_widths_and_the_sort_survive_closing_and_reopening(dock: RehucoDo
     dock.open_rehuco(REHUCO_PATH)
 
     header = first_browser(dock).view.horizontalHeader()
-    assert dock.roots_view.horizontalHeader().sectionSize(0) == 211
     assert header.sectionSize(0) == 233
     assert (header.sortIndicatorSection(), header.sortIndicatorOrder()) == (TITLE_COLUMN, Qt.SortOrder.DescendingOrder)
 
 
 @mark.usefixtures("served")
 def test_the_layout_comes_back_with_the_catalog(dock: RehucoDock) -> None:
-    """Where the sub-docks sit is remembered per catalog: a Roots list hidden by its [x] stays hidden.
+    """Where the sub-docks sit is remembered per catalog: a Roots view hidden by its [x] stays hidden.
 
     **Test steps:**
 
-    * open a catalog and hide the Roots list
+    * open a catalog and hide the Roots view
     * close the catalog and open it again
-    * verify the Roots list is still hidden and the browser still shown
+    * verify the Roots view is still hidden and the browser still shown
     """
     dock.open_rehuco(REHUCO_PATH)
     dock.roots_dock.requestCloseDockWidget()
@@ -1023,12 +1075,12 @@ def test_the_layout_comes_back_with_the_catalog(dock: RehucoDock) -> None:
 
 
 def test_a_catalog_with_no_remembered_layout_shows_the_roots_list(served: Any, dock: RehucoDock) -> None:
-    """A catalog never seen before opens with the Roots list shown, whatever the one before it did.
+    """A catalog never seen before opens with the Roots view shown, whatever the one before it did.
 
     **Test steps:**
 
-    * open a catalog, hide the Roots list and open another catalog
-    * verify the Roots list is shown again
+    * open a catalog, hide the Roots view and open another catalog
+    * verify the Roots view is shown again
     """
     dock.open_rehuco(REHUCO_PATH)
     dock.roots_dock.requestCloseDockWidget()
@@ -1136,17 +1188,27 @@ def test_focus_browser_brings_a_background_tab_to_the_front_and_makes_it_current
 
 
 @mark.usefixtures("served")
-def test_remove_root_is_on_a_roots_context_menu(dock: RehucoDock) -> None:
-    """A root's right-click menu offers Remove Root, the same action the title bar and the Root Catalog menu hold
-    (#402).
+def test_a_root_row_menu_leads_with_the_folder_actions_then_the_moves_then_remove(dock: RehucoDock) -> None:
+    """A root's right-click menu offers the folder filter and Open in file explorer, then the four moves, then Remove
+    Root -- the action the title bar and the Root Catalog menu hold (#402) -- last and apart, since it is the one that
+    cannot be undone; the view asks for it itself.
 
     **Test steps:**
 
-    * read the roots view's actions and its context menu policy
-    * verify the policy offers them and Remove Root is among them
+    * open a catalog and read the view's context menu policy
+    * ask for the actions of the first root's row
+    * verify the policy is custom, and the actions are in that order, in three groups
     """
-    assert dock.roots_view.contextMenuPolicy() == Qt.ContextMenuPolicy.ActionsContextMenu
-    assert dock.roots_view.actions() == [dock.remove_root_action]
+    dock.open_rehuco(REHUCO_PATH)
+
+    actions = dock.roots_context_actions(dock.roots_model.index(0, 0))
+
+    assert dock.roots_view.contextMenuPolicy() == Qt.ContextMenuPolicy.CustomContextMenu
+    assert [action.isSeparator() for action in actions] == [False, False, True, False, False, False, False, True, False]
+    assert actions[0] is dock.filter_folder_action
+    assert actions[1] is dock.open_explorer_action
+    assert actions[3:7] == list(dock.move_root_actions)
+    assert actions[8] is dock.remove_root_action
 
 
 @mark.usefixtures("served")
@@ -1202,7 +1264,7 @@ def test_rename_browser_is_enabled_only_while_a_browser_is_current(qtbot: QtBot,
 
     **Test steps:**
 
-    * open a catalog and make the Roots list current, then verify Rename is disabled
+    * open a catalog and make the Roots view current, then verify Rename is disabled
     * make the browser current and verify it is enabled
     """
     dock.open_rehuco(REHUCO_PATH)
@@ -1302,7 +1364,11 @@ def test_a_browsers_tab_menu_lists_its_actions_above_detach(mocker: MockerFixtur
     assert entries[3].text() == "Detach"
     assert not sub_docks(dock)[ROOTS_DOCK_NAME].tabWidget().findChildren(QMenu)
     # the Roots tab carries the root edits (#402), not Rename and Clone
-    assert sub_docks(dock)[ROOTS_DOCK_NAME].titleBarActions() == [dock.add_root_action, dock.remove_root_action]
+    assert sub_docks(dock)[ROOTS_DOCK_NAME].titleBarActions() == [
+        dock.add_root_action,
+        dock.remove_root_action,
+        dock.refresh_roots_action,
+    ]
 
 
 @mark.usefixtures("served")
@@ -1388,7 +1454,7 @@ def test_a_layout_naming_a_browser_that_is_gone_restores_without_crashing(
 
     * open a catalog with two browsers, close it, and drop the second from the store, keeping the layout
     * open it again
-    * verify the one browser and the Roots list are shown
+    * verify the one browser and the Roots view are shown
     """
     dock.open_rehuco(REHUCO_PATH)
     dock.new_browser_action.trigger()
@@ -1465,7 +1531,7 @@ def test_a_cache_that_cannot_be_read_keeps_what_is_shown(
     mocker.patch.object(CatalogCache, "rows", side_effect=sqlite3.OperationalError("locked"))
     set_rows = mocker.spy(TableBrowser, "set_rows")
     set_roots = mocker.spy(dock.roots_model, "set_roots")
-    mocker.patch("rehuco_agent.rehuco.rehuco_dock.QFileDialog.getExistingDirectory", return_value="/fake/refs")
+    answer_add_root(mocker, dock, "/fake/refs")
 
     with caplog.at_level(logging.ERROR):
         dock.add_root_action.trigger()
@@ -1494,10 +1560,10 @@ def test_the_root_edits_do_nothing_with_no_catalog_open(mocker: MockerFixture, d
 
     **Test steps:**
 
-    * spy on the folder picker, then call the add and remove slots with nothing open
-    * verify the picker never opened and nothing was written
+    * spy on the Add Root question, then call the add and remove slots with nothing open
+    * verify the question never opened and nothing was written
     """
-    picker = mocker.patch("rehuco_agent.rehuco.rehuco_dock.QFileDialog.getExistingDirectory")
+    picker = answer_add_root(mocker, dock, "/fake/refs")
     saves = mocker.patch("rehuco_core.rehuco_file.atomic_write_text")
 
     dock._RehucoDock__on_add_root()  # type: ignore[attr-defined]  # pylint: disable=protected-access
@@ -1515,7 +1581,7 @@ def test_the_browser_slots_do_nothing_with_nothing_to_act_on(
 
     **Test steps:**
 
-    * call the new, rename, close and fill slots with no catalog open, and with the Roots list in place of a browser
+    * call the new, rename, close and fill slots with no catalog open, and with the Roots view in place of a browser
     * verify no browser appeared, the name box never opened, the unfilled browser has no rows and nothing raised
     """
     ask = mocker.patch.object(dock, "ask_browser_name")
@@ -1603,7 +1669,7 @@ def test_a_removal_whose_save_fails_queues_no_job(
     mocker.patch("rehuco_agent.rehuco.rehuco_dock.QMessageBox.warning")
     saves.side_effect = PermissionError("read-only folder")
     dock.open_rehuco(REHUCO_PATH)
-    dock.roots_view.selectRow(0)
+    select_root(dock, 0)
 
     dock.remove_root_action.trigger()
 
@@ -1624,7 +1690,7 @@ def test_a_cache_that_cannot_take_a_new_root_is_logged(
     """
     dock.open_rehuco(REHUCO_PATH)
     mocker.patch.object(CatalogCache, "reconcile_roots", side_effect=sqlite3.OperationalError("locked"))
-    mocker.patch("rehuco_agent.rehuco.rehuco_dock.QFileDialog.getExistingDirectory", return_value="/fake/refs")
+    answer_add_root(mocker, dock, "/fake/refs")
 
     with caplog.at_level(logging.ERROR):
         dock.add_root_action.trigger()
@@ -1839,7 +1905,7 @@ def test_after_every_browser_was_closed_a_reopen_and_new_browser_show_on_screen(
 
 @mark.usefixtures("served")
 def test_new_browser_after_closing_every_browser_shows_on_screen(dock: RehucoDock) -> None:
-    """With no browser left, a new one is placed beside the Roots list.
+    """With no browser left, a new one is placed beside the Roots view.
 
     **Test steps:**
 
@@ -1922,14 +1988,14 @@ def test_each_browser_shows_the_rows_its_own_filter_matches(
 def test_a_filter_link_lands_on_the_current_browser_or_the_last_one_while_roots_is_current(
     qtbot: QtBot, dock: RehucoDock
 ) -> None:
-    """``filter://authors?name=Foo%20Bar`` sets ``authors:"Foo Bar"`` on the current browser; with the Roots list
+    """``filter://authors?name=Foo%20Bar`` sets ``authors:"Foo Bar"`` on the current browser; with the Roots view
     current, on the browser that was current before it, which is brought forward ([[plugins#filter-urls]]).
 
     **Test steps:**
 
     * open a catalog and add a second browser, which is then current
     * apply an authors link; verify the second browser's line carries it and the first's does not
-    * make the Roots list current and apply a tags link
+    * make the Roots view current and apply a tags link
     * verify the second browser carries both tokens and is current again
     """
     dock.open_rehuco(REHUCO_PATH)
@@ -1992,7 +2058,7 @@ def test_a_filter_link_with_no_catalog_open_or_naming_no_filter_sets_nothing(
 
 @mark.usefixtures("served")
 def test_a_filter_set_from_the_dock_replaces_that_fields_token(dock: RehucoDock) -> None:
-    """The Roots list's folder filter, through the same seam: one folder at a time, the rest of the line kept.
+    """The Roots view's folder filter, through the same seam: one folder at a time, the rest of the line kept.
 
     **Test steps:**
 
@@ -2007,6 +2073,1200 @@ def test_a_filter_set_from_the_dock_replaces_that_fields_token(dock: RehucoDock)
     assert dock.set_filter_token(CatalogField.FOLDER, "tutorials/python")
 
     assert browser.filter_text == "intro folder:tutorials/python"
+
+
+# endregion
+
+
+# region The Roots view
+
+
+@fixture(name="folders")
+def fixture_folders(served: dict[str, Any]) -> Generator[Path]:
+    """Point both served roots at real folders: ``tutorials`` holds ``alpha`` (with ``sub`` and a note) and a folder
+    with a space in its name; ``packs`` is empty.
+
+    Not under ``tmp_path``: the ``database`` fixture replaces ``Path.mkdir``, which is what pytest makes that folder
+    with, so the folders are made with :func:`os.makedirs` in a directory of their own.
+
+    :param served: the served ``.rehuco``.
+    :yields: the ``tutorials`` folder, with everything removed when the test ends.
+    """
+    with tempfile.TemporaryDirectory() as base:
+        tutorials, packs = Path(base) / "tutorials", Path(base) / "packs"
+        os.makedirs(tutorials / "alpha" / "sub")
+        os.makedirs(tutorials / "my folder")
+        os.makedirs(packs)
+        (tutorials / "alpha" / "note.txt").write_text("n", encoding="utf-8")
+        served["roots"][0]["path"] = str(tutorials)
+        served["roots"][1]["path"] = str(packs)
+        yield tutorials
+
+
+def child_names(dock: RehucoDock, parent: QModelIndex) -> list[str]:
+    """The names of the rows under a row of the Roots view.
+
+    :param dock: the Root Catalog dock.
+    :param parent: the row.
+    :returns: the names, in order.
+    """
+    model = dock.roots_model
+    return [model.index(row, 0, parent).data() for row in range(model.rowCount(parent))]
+
+
+def wait_for_root_listing(qtbot: QtBot, dock: RehucoDock, index: QModelIndex) -> None:
+    """Wait until a root or folder of the Roots view has been listed.
+
+    :param qtbot: pytest-qt fixture.
+    :param dock: the Root Catalog dock.
+    :param index: the root or folder.
+    """
+    qtbot.waitUntil(
+        lambda: dock.roots_model.listing_state(index) in (NodeListing.LISTED, NodeListing.UNREACHABLE),
+        timeout=WAIT_TIMEOUT_MS,
+    )
+
+
+def open_root_folder(qtbot: QtBot, dock: RehucoDock, *names: str) -> QModelIndex:
+    """Make a folder of the first root the Roots view's current row, listing each folder on the way as a column does.
+
+    :param qtbot: pytest-qt fixture.
+    :param dock: the Root Catalog dock, with a catalog open.
+    :param names: the folder names down from the first root.
+    :returns: the folder's index.
+    """
+    model = dock.roots_model
+    index = model.index(0, 0)
+    for name in names:
+        wait_for_root_listing(qtbot, dock, index)
+        rows = [model.index(row, 0, index) for row in range(model.rowCount(index))]
+        index = next(row for row in rows if row.data() == name)
+        dock.roots_view.setCurrentIndex(index)
+    if dock.roots_model.node_kind(index) in (RootsNodeKind.ROOT, RootsNodeKind.FOLDER):
+        wait_for_root_listing(qtbot, dock, index)
+    return index
+
+
+@mark.usefixtures("served")
+def test_the_roots_view_lists_folders_when_a_column_opens(qtbot: QtBot, dock: RehucoDock, folders: Path) -> None:
+    """Selecting a root opens its folders, and a folder opens its own: the view fetches them itself.
+
+    **Test steps:**
+
+    * open a catalog over real folders and select the first root
+    * verify its folders are listed, then select ``alpha`` and verify its subfolder and note
+    """
+    del folders
+    dock.open_rehuco(REHUCO_PATH)
+
+    select_root(dock, 0)
+    root = dock.roots_model.index(0, 0)
+    wait_for_root_listing(qtbot, dock, root)
+    alpha = open_root_folder(qtbot, dock, "alpha")
+
+    assert [dock.roots_model.index(row, 0, root).data() for row in range(2)] == ["alpha", "my folder"]
+    assert [dock.roots_model.index(row, 0, alpha).data() for row in range(2)] == ["sub", "note.txt"]
+
+
+@mark.usefixtures("served")
+def test_an_unreachable_root_is_a_state_the_view_shows_unclicked(qtbot: QtBot, dock: RehucoDock) -> None:
+    """The served roots point at folders that do not exist: both list as away at once, without being selected.
+
+    **Test steps:**
+
+    * open the catalog whose roots' folders are missing
+    * verify both roots become unreachable
+    """
+    dock.open_rehuco(REHUCO_PATH)
+
+    for row in range(2):
+        index = dock.roots_model.index(row, 0)
+        qtbot.waitUntil(
+            lambda index=index: dock.roots_model.listing_state(index) is NodeListing.UNREACHABLE,
+            timeout=WAIT_TIMEOUT_MS,
+        )
+
+
+@mark.usefixtures("served")
+def test_the_root_actions_follow_the_current_row(qtbot: QtBot, dock: RehucoDock, folders: Path) -> None:
+    """Remove and the moves act on a **root row** only, the moves not at the end they move towards; the folder filter
+    takes a root or a folder; nothing is enabled with no current row.
+
+    **Test steps:**
+
+    * open a catalog and read the actions with no current row
+    * select the first root, the second, then a folder, reading them each time
+    * verify each state
+    """
+    del folders
+    to_top, up, down, to_bottom = dock.move_root_actions
+    dock.open_rehuco(REHUCO_PATH)
+    assert not any(
+        a.isEnabled() for a in (dock.remove_root_action, to_top, up, down, to_bottom, dock.filter_folder_action)
+    )
+    assert dock.refresh_roots_action.isEnabled()
+
+    select_root(dock, 0)
+    assert [a.isEnabled() for a in (dock.remove_root_action, to_top, up, down, to_bottom)] == [
+        True,
+        False,
+        False,
+        True,
+        True,
+    ]
+    assert dock.filter_folder_action.isEnabled()
+
+    select_root(dock, 1)
+    assert [a.isEnabled() for a in (to_top, up, down, to_bottom)] == [True, True, False, False]
+
+    open_root_folder(qtbot, dock, "alpha")
+    assert not any(a.isEnabled() for a in (dock.remove_root_action, to_top, up, down, to_bottom))
+    assert dock.filter_folder_action.isEnabled()
+
+
+def test_a_read_only_file_turns_the_root_edits_off_but_not_refresh_or_the_filter(
+    dock: RehucoDock, served: Any, folders: Path
+) -> None:
+    """Nothing that would write the file is on for a newer one; browsing and filtering still are.
+
+    **Test steps:**
+
+    * open a newer file and select the first root
+    * verify the edits, the moves and the card are off, and Refresh and the folder filter are on
+    """
+    del folders
+    served["format_version"] = 99
+    dock.open_rehuco(REHUCO_PATH)
+
+    select_root(dock, 0)
+
+    assert not any(a.isEnabled() for a in (dock.add_root_action, dock.remove_root_action, *dock.move_root_actions))
+    assert dock.refresh_roots_action.isEnabled()
+    assert dock.filter_folder_action.isEnabled()
+    assert not dock.root_name_edit.isEnabled()
+    assert not dock.root_storage_combo.isEnabled()
+
+
+def written_storages(saves: MagicMock) -> list[str]:
+    """The root storages of the last ``.rehuco`` written.
+
+    :param saves: the mock standing in for ``atomic_write_text``.
+    :returns: each root's storage, in file order.
+    """
+    return [root["storage"] for root in json.loads(saves.call_args[0][1])["roots"]]
+
+
+@mark.usefixtures("served")
+def test_a_move_is_saved_and_the_moved_root_stays_current(dock: RehucoDock, saves: MagicMock) -> None:
+    """The file is reordered at once and the root the reader moved is still the one selected.
+
+    **Test steps:**
+
+    * select the second root and move it to the top, then down, then to the bottom, then up
+    * verify the saved order after each, and that the same root is current throughout
+    """
+    to_top, up, down, to_bottom = dock.move_root_actions
+    dock.open_rehuco(REHUCO_PATH)
+    select_root(dock, 1)
+
+    for action, expected in ((to_top, ["packs", "tutorials"]), (down, ["tutorials", "packs"])):
+        action.trigger()
+        assert written_roots(saves) == expected
+        assert shown_labels(dock) == expected
+        assert getattr(dock.roots_model.root_at(dock.roots_view.currentIndex()), "label", "") == "packs"
+    to_top.trigger()
+    to_bottom.trigger()
+    up.trigger()
+    assert written_roots(saves) == ["packs", "tutorials"]
+    assert getattr(dock.roots_model.root_at(dock.roots_view.currentIndex()), "label", "") == "packs"
+
+
+@mark.usefixtures("served")
+def test_a_move_whose_save_fails_is_undone_on_screen(mocker: MockerFixture, dock: RehucoDock, saves: MagicMock) -> None:
+    """The file is read back, so what is shown is what is on disk.
+
+    **Test steps:**
+
+    * select the second root and move it up while the write fails
+    * verify a warning and the roots back in their saved order
+    """
+    warning = mocker.patch("rehuco_agent.rehuco.rehuco_dock.QMessageBox.warning")
+    saves.side_effect = PermissionError("read-only folder")
+    dock.open_rehuco(REHUCO_PATH)
+    select_root(dock, 1)
+
+    _to_top, up, _down, _to_bottom = dock.move_root_actions
+    up.trigger()
+
+    warning.assert_called_once()
+    assert shown_labels(dock) == ["tutorials", "packs"]
+
+
+def test_a_move_with_no_root_selected_does_nothing(dock: RehucoDock, served: Any, saves: MagicMock) -> None:
+    """The slot behind a disabled move refuses on its own too.
+
+    **Test steps:**
+
+    * open a catalog selecting nothing, and trigger the moves anyway
+    * verify nothing was written
+    """
+    del served
+    dock.open_rehuco(REHUCO_PATH)
+
+    for action in dock.move_root_actions:
+        action.trigger()
+
+    saves.assert_not_called()
+
+
+@mark.usefixtures("served")
+def test_the_root_editors_show_for_a_root_row_only(qtbot: QtBot, dock: RehucoDock, folders: Path) -> None:
+    """The details pane edits a root when the root itself is current: the name and storage show with its values, and
+    are hidden for a folder, a file and no row.
+
+    **Test steps:**
+
+    * open a catalog and read the editors with no row current
+    * select the second root, then a folder of the first
+    * verify the editors are hidden, shown with the root's label and storage, and hidden again
+    """
+    del folders
+    dock.open_rehuco(REHUCO_PATH)
+    dock.show()
+    assert dock.root_name_edit.isHidden()
+    assert dock.root_storage_combo.isHidden()
+
+    select_root(dock, 1)
+    assert not dock.root_name_edit.isHidden()
+    assert dock.root_name_edit.text() == "packs"
+    assert dock.root_name_edit.isEnabled()
+    assert dock.root_storage_combo.currentData() == RootStorage.LOCAL
+
+    open_root_folder(qtbot, dock, "alpha", "sub")
+    assert dock.root_name_edit.isHidden()
+    assert dock.root_storage_combo.isHidden()
+
+
+@mark.usefixtures("served")
+def test_filling_the_card_never_saves(dock: RehucoDock, saves: MagicMock) -> None:
+    """Moving about the view only shows roots on the card; an edit is what saves.
+
+    **Test steps:**
+
+    * open a catalog and select each root in turn
+    * verify nothing was written
+    """
+    dock.open_rehuco(REHUCO_PATH)
+
+    select_root(dock, 0)
+    select_root(dock, 1)
+
+    saves.assert_not_called()
+
+
+@mark.usefixtures("served")
+def test_renaming_on_the_card_saves_the_label_and_updates_the_row(
+    dock: RehucoDock, saves: MagicMock, database: MemoryDatabase
+) -> None:
+    """A new name is the root's label in the file, the cache and the view; the folder is untouched and the row stays
+    current.
+
+    **Test steps:**
+
+    * select the second root, type a name into the card and finish editing
+    * verify the saved labels, the shown labels, the cache's label and the current row
+    """
+    dock.open_rehuco(REHUCO_PATH)
+    select_root(dock, 1)
+
+    dock.root_name_edit.setText("  Packs & Co  ")
+    dock.root_name_edit.editingFinished.emit()
+
+    assert written_roots(saves) == ["tutorials", "Packs & Co"]
+    assert shown_labels(dock) == ["tutorials", "Packs & Co"]
+    assert database.scalar("SELECT label FROM roots WHERE position = 1") == "Packs & Co"
+    assert dock.roots_view.currentIndex().row() == 1
+    assert dock.root_name_edit.text() == "Packs & Co"
+
+
+@mark.usefixtures("served")
+@mark.parametrize("typed", ["tutorials", "TUTORIALS", ""])
+def test_a_name_another_root_has_or_none_is_refused_and_reverted(
+    mocker: MockerFixture, dock: RehucoDock, saves: MagicMock, typed: str
+) -> None:
+    """The file's own refusal reaches the person, nothing is written, and the field goes back to the label.
+
+    **Test steps:**
+
+    * select the second root and type another root's label, in another case, and nothing
+    * verify a warning, no write, the old label shown in the field and in the view
+    """
+    warning = mocker.patch("rehuco_agent.rehuco.rehuco_dock.QMessageBox.warning")
+    dock.open_rehuco(REHUCO_PATH)
+    select_root(dock, 1)
+
+    dock.root_name_edit.setText(typed)
+    dock.root_name_edit.editingFinished.emit()
+
+    warning.assert_called_once()
+    saves.assert_not_called()
+    assert dock.root_name_edit.text() == "packs"
+    assert shown_labels(dock) == ["tutorials", "packs"]
+
+
+@mark.usefixtures("served")
+def test_leaving_the_name_as_it_was_writes_nothing(mocker: MockerFixture, dock: RehucoDock, saves: MagicMock) -> None:
+    """Finishing an edit that changed nothing is not an edit.
+
+    **Test steps:**
+
+    * select a root and finish editing its name untouched
+    * verify nothing was written and no warning shown
+    """
+    warning = mocker.patch("rehuco_agent.rehuco.rehuco_dock.QMessageBox.warning")
+    dock.open_rehuco(REHUCO_PATH)
+    select_root(dock, 0)
+
+    dock.root_name_edit.editingFinished.emit()
+
+    saves.assert_not_called()
+    warning.assert_not_called()
+
+
+@mark.usefixtures("served")
+def test_choosing_a_storage_on_the_card_saves_it_and_restyles_the_row_without_a_reset(
+    dock: RehucoDock, saves: MagicMock, database: MemoryDatabase
+) -> None:
+    """The root's storage is saved at once, the row's glyph changes in place, and the cache's removable flag follows.
+
+    **Test steps:**
+
+    * select the first root and choose Removable drive, then CD or DVD, then Network share
+    * verify the saved storage each time, the row's glyph, the cache's flag, and that the model was not reset
+    """
+    resets: list[int] = []
+    dock.roots_model.modelReset.connect(lambda: resets.append(1))
+    dock.open_rehuco(REHUCO_PATH)
+    select_root(dock, 0)
+    combo = dock.root_storage_combo
+
+    for storage, flag in (
+        (RootStorage.REMOVABLE, 1),
+        (RootStorage.COMPACT_DISK, 1),
+        (RootStorage.NETWORK, 0),
+    ):
+        combo.setCurrentIndex(combo.findData(storage))
+        combo.activated.emit(combo.currentIndex())
+        assert written_storages(saves)[0] == storage.value
+        assert dock.roots_model.index(0, 0).data(dock.roots_model.ICON_PATH_ROLE) == ROOT_STORAGE_ICONS[storage]
+        assert database.scalar("SELECT removable FROM roots WHERE position = 0") == flag
+
+    assert not resets
+    assert dock.roots_view.currentIndex().row() == 0
+
+
+@mark.usefixtures("served")
+def test_choosing_the_storage_it_already_has_writes_nothing(dock: RehucoDock, saves: MagicMock) -> None:
+    """Re-choosing the current storage is not an edit.
+
+    **Test steps:**
+
+    * select a local root and choose Local folder
+    * verify nothing was written
+    """
+    dock.open_rehuco(REHUCO_PATH)
+    select_root(dock, 0)
+
+    dock.root_storage_combo.activated.emit(dock.root_storage_combo.currentIndex())
+
+    saves.assert_not_called()
+
+
+@mark.usefixtures("served")
+def test_a_card_edit_whose_save_fails_is_undone_on_screen(
+    mocker: MockerFixture, dock: RehucoDock, saves: MagicMock
+) -> None:
+    """The file is read back, so the card and the view show what is on disk.
+
+    **Test steps:**
+
+    * select a root and rename it while the write fails
+    * verify a warning, and the old label in the view and on the card
+    """
+    mocker.patch("rehuco_agent.rehuco.rehuco_dock.QMessageBox.warning")
+    saves.side_effect = PermissionError("read-only folder")
+    dock.open_rehuco(REHUCO_PATH)
+    select_root(dock, 0)
+
+    dock.root_name_edit.setText("renamed")
+    dock.root_name_edit.editingFinished.emit()
+
+    assert shown_labels(dock) == ["tutorials", "packs"]
+    assert dock.root_name_edit.text() == "tutorials"
+
+
+@mark.usefixtures("served")
+@mark.parametrize("storage", [RootStorage.LOCAL, RootStorage.REMOVABLE, RootStorage.NETWORK, RootStorage.COMPACT_DISK])
+def test_adding_a_root_saves_its_storage_and_makes_it_current(
+    mocker: MockerFixture, dock: RehucoDock, saves: MagicMock, storage: RootStorage
+) -> None:
+    """What the dialog answers is what is saved, and the new root is the one selected.
+
+    **Test steps:**
+
+    * answer the Add Root question with a folder and each storage
+    * verify the saved storage, the third row, and that it is current and on the card
+    """
+    answer_add_root(mocker, dock, "/fake/refs", storage)
+    dock.open_rehuco(REHUCO_PATH)
+
+    dock.add_root_action.trigger()
+
+    assert written_storages(saves)[2] == storage.value
+    assert dock.roots_view.currentIndex().row() == 2
+    assert dock.root_name_edit.text() == "refs"
+    assert dock.root_storage_combo.currentData() == storage
+
+
+@mark.usefixtures("served", "saves")
+def test_declining_the_removal_keeps_the_root(mocker: MockerFixture, dock: RehucoDock, queue: TaskQueue) -> None:
+    """Remove asks first, and a no leaves the file, the view and the queue alone.
+
+    **Test steps:**
+
+    * select a root and remove it, answering no
+    * verify the question named the root, nothing was written or queued, and both roots remain
+    """
+    confirm = mocker.patch.object(dock, "confirm_remove_root", return_value=False)
+    saved = mocker.patch("rehuco_core.rehuco_file.atomic_write_text")
+    dock.open_rehuco(REHUCO_PATH)
+    select_root(dock, 0)
+
+    dock.remove_root_action.trigger()
+
+    confirm.assert_called_once()
+    asked = confirm.call_args.args
+    assert asked[0].label == "tutorials"
+    saved.assert_not_called()
+    assert not queue.jobs()
+    assert shown_labels(dock) == ["tutorials", "packs"]
+
+
+@mark.usefixtures("served", "saves")
+def test_the_removal_question_is_told_how_many_cached_entries_go(
+    mocker: MockerFixture, qtbot: QtBot, dock: RehucoDock, queue: TaskQueue
+) -> None:
+    """The count the confirmation states is the root's rows in the cache.
+
+    **Test steps:**
+
+    * scan a record into the first root, select it and remove it
+    * verify the question was asked with the root and a count of one
+    """
+    scan_finding(mocker, {TUTORIALS: (tutorial_record(),)})
+    dock.open_rehuco(REHUCO_PATH)
+    dock.scan_action.trigger()
+    qtbot.waitUntil(lambda: first_browser(dock).model.rowCount() == 1, timeout=WAIT_TIMEOUT_MS)
+    wait_for_jobs(qtbot, queue)
+    select_root(dock, 0)
+
+    dock.remove_root_action.trigger()
+
+    confirm: Any = dock.confirm_remove_root
+    assert confirm.call_args.args[1] == 1
+    wait_for_jobs(qtbot, queue)
+
+
+@mark.parametrize(
+    ("cached", "stated"),
+    [param(0, "0 cached entries are"), param(1, "1 cached entry is"), param(12, "12 cached entries are")],
+)
+def test_the_removal_question_says_what_goes_and_what_stays(
+    mocker: MockerFixture, dock: RehucoDock, cached: int, stated: str
+) -> None:
+    """The wording: the files stay on disk, where; the cached entries go, how many; and the answer is Yes only for Yes.
+
+    **Test steps:**
+
+    * ask the real question with the box patched to answer Yes, then No
+    * verify the text names the root and its folder and counts the entries, and the answers map to booleans
+    """
+    root = RehucoRoot(UUID(ROOT_IDS[0]), TUTORIALS, "tutorials", RootStorage.LOCAL)
+    box = mocker.patch(
+        "rehuco_agent.rehuco.rehuco_dock.QMessageBox.question", return_value=QMessageBox.StandardButton.Yes
+    )
+
+    assert RehucoDock.confirm_remove_root(dock, root, cached) is True
+
+    text = box.call_args.args[2]
+    assert "tutorials" in text
+    assert str(TUTORIALS) in text
+    assert "stay where they are" in text
+    assert stated in text
+    box.return_value = QMessageBox.StandardButton.No
+    assert RehucoDock.confirm_remove_root(dock, root, cached) is False
+
+
+def test_the_real_add_root_question_returns_what_the_dialog_holds(mocker: MockerFixture, dock: RehucoDock) -> None:
+    """The dock opens its dialog and answers its folder and storage; a cancelled dialog answers nothing.
+
+    **Test steps:**
+
+    * run the question with the dialog's ``exec`` patched to fill in a folder and a storage, then to cancel
+    * verify the answer and the cancel
+    """
+
+    def accept(self: AddRootDialog) -> QDialog.DialogCode:
+        self.folder = "/fake/refs"
+        self.storage_combo.setCurrentIndex(self.storage_combo.findData(RootStorage.NETWORK))
+        return QDialog.DialogCode.Accepted
+
+    mocker.patch.object(AddRootDialog, "exec", new=accept)
+    assert dock.ask_root_to_add() == ("/fake/refs", RootStorage.NETWORK)
+
+    mocker.patch.object(AddRootDialog, "exec", return_value=QDialog.DialogCode.Rejected)
+    assert dock.ask_root_to_add() is None
+
+
+@mark.usefixtures("served")
+def test_the_folder_filter_sets_the_current_browsers_folder_token(
+    qtbot: QtBot, dock: RehucoDock, folders: Path
+) -> None:
+    """*Show only rehu in this folder* filters the current browser on ``folder:<label>/<relative path>`` -- a root
+    by its label, a nested folder with its path, and a name with a space quoted -- keeping the rest of the line.
+
+    **Test steps:**
+
+    * type free text on the browser, then trigger the filter on the first root, on ``alpha/sub`` and on ``my folder``
+    * verify the line each time
+    """
+    del folders
+    dock.open_rehuco(REHUCO_PATH)
+    browser = first_browser(dock)
+    browser.set_filter_text("intro")
+
+    select_root(dock, 0)
+    dock.filter_folder_action.trigger()
+    assert browser.filter_text == "intro folder:tutorials"
+
+    open_root_folder(qtbot, dock, "alpha", "sub")
+    dock.filter_folder_action.trigger()
+    assert browser.filter_text == "intro folder:tutorials/alpha/sub"
+
+    open_root_folder(qtbot, dock, "my folder")
+    dock.filter_folder_action.trigger()
+    assert browser.filter_text == 'intro folder:"tutorials/my folder"'
+
+
+@mark.usefixtures("served")
+def test_the_folder_filter_does_nothing_on_a_file_or_with_no_row(qtbot: QtBot, dock: RehucoDock, folders: Path) -> None:
+    """Only a root or a folder names a folder.
+
+    **Test steps:**
+
+    * trigger the filter with no current row, then with a file current
+    * verify the browser's filter is untouched
+    """
+    del folders
+    dock.open_rehuco(REHUCO_PATH)
+    browser = first_browser(dock)
+
+    dock.filter_folder_action.trigger()
+    open_root_folder(qtbot, dock, "alpha", "note.txt")
+    dock.filter_folder_action.trigger()
+
+    assert browser.filter_text == ""
+
+
+def add_files_to_a_folder(folders: Path) -> None:
+    """Give two folders what the Open and Create tests need, before any of them is opened.
+
+    ``my folder`` holds a rehu record, a video with no rehu of its own (``y.mp4``) and one with (``w.mp4``,
+    ``w.rehu``); ``alpha`` gets an ``info.rehu``, so it has an associated rehu and ``my folder`` has none.
+
+    :param folders: the first root's folder.
+    """
+    inside = folders / "my folder"
+    (inside / "x.rehu").write_text("{}", encoding="utf-8")
+    (inside / "y.mp4").write_bytes(b"y")
+    (inside / "w.mp4").write_bytes(b"w")
+    (inside / "w.rehu").write_text("{}", encoding="utf-8")
+    (folders / "alpha" / "info.rehu").write_text("{}", encoding="utf-8")
+
+
+@mark.usefixtures("served")
+def test_the_context_menu_of_each_kind_of_row(qtbot: QtBot, dock: RehucoDock, folders: Path) -> None:
+    """A root offers Remove, the moves, the filter and the file manager. A folder offers **Open associated rehu** if
+    it has one and **Create info.rehu** if not, then the filter and the file manager; a rehu record Open; any other
+    file Open and then Open associated rehu or Create <name>.rehu likewise. The default -- bold, what a double-click
+    runs -- is Open in every case, and a folder with no rehu has none.
+
+    **Test steps:**
+
+    * ask for the actions of a root row, a folder with and one without a rehu, a record, a video with and one
+      without a rehu, and no row
+    * verify each list, which action is bold after each, and what Create is called
+    """
+    add_files_to_a_folder(folders)
+    dock.open_rehuco(REHUCO_PATH)
+    alpha = open_root_folder(qtbot, dock, "alpha")
+    no_rehu = open_root_folder(qtbot, dock, "my folder")
+    record = open_root_folder(qtbot, dock, "my folder", "x.rehu")
+    bare = open_root_folder(qtbot, dock, "my folder", "y.mp4")
+    paired = open_root_folder(qtbot, dock, "my folder", "w.mp4")
+    row_actions = (
+        dock.open_record_action,
+        dock.open_file_action,
+        dock.open_companion_action,
+        dock.create_companion_action,
+        dock.filter_folder_action,
+        dock.open_explorer_action,
+    )
+
+    def bold() -> list[bool]:
+        return [action.font().bold() for action in row_actions]
+
+    assert dock.roots_context_actions(dock.roots_model.index(0, 0))[0] is dock.filter_folder_action
+    assert not any(bold())
+    assert dock.roots_context_actions(alpha) == [
+        dock.open_companion_action,
+        dock.filter_folder_action,
+        dock.open_explorer_action,
+    ]
+    assert bold() == [False, False, True, False, False, False]
+    assert dock.roots_context_actions(no_rehu) == [
+        dock.create_companion_action,
+        dock.filter_folder_action,
+        dock.open_explorer_action,
+    ]
+    assert dock.create_companion_action.text() == "Create info.rehu"
+    assert not any(bold())
+    assert dock.roots_context_actions(record) == [dock.open_record_action]
+    assert bold() == [True, False, False, False, False, False]
+    assert dock.roots_context_actions(bare) == [dock.open_file_action, dock.create_companion_action]
+    assert dock.create_companion_action.text() == "Create y.rehu"
+    assert bold() == [False, True, False, False, False, False]
+    assert dock.roots_context_actions(paired) == [dock.open_file_action, dock.open_companion_action]
+    assert bold() == [False, True, False, False, False, False]
+    assert not dock.roots_context_actions(QModelIndex())
+
+
+@mark.usefixtures("served")
+def test_double_clicking_runs_the_rows_default_action_and_never_creates(
+    mocker: MockerFixture, qtbot: QtBot, dock: RehucoDock, folders: Path
+) -> None:
+    """A record opens in Documents, a folder opens its rehu there when it has one, any other file opens with the
+    application the system associates with it; a root, and a folder with no rehu, only navigate -- a rehu is never
+    created by a double-click.
+
+    **Test steps:**
+
+    * double-click a root, a folder with no rehu, a record, a folder with one and a video in turn, watching the
+      requests
+    * verify each asked for what it should, and the folder with no rehu and the root for nothing
+    """
+    add_files_to_a_folder(folders)
+    dock.open_rehuco(REHUCO_PATH)
+    opener = mocker.patch("rehuco_agent.rehuco.rehuco_dock.QDesktopServices.openUrl")
+    alpha = open_root_folder(qtbot, dock, "alpha")
+    no_rehu = open_root_folder(qtbot, dock, "my folder")
+    record = open_root_folder(qtbot, dock, "my folder", "x.rehu")
+    video = open_root_folder(qtbot, dock, "my folder", "y.mp4")
+    records: list[object] = []
+    folders_asked: list[object] = []
+    files_asked: list[object] = []
+    dock.open_requested.connect(records.append)
+    dock.open_folder_requested.connect(folders_asked.append)
+    dock.open_companion_requested.connect(files_asked.append)
+
+    for ignored in (dock.roots_model.index(0, 0), no_rehu):
+        dock.roots_view.doubleClicked.emit(ignored)
+    assert not records and not folders_asked and not files_asked
+    opener.assert_not_called()
+
+    dock.roots_view.doubleClicked.emit(record)
+    assert records == [folders / "my folder" / "x.rehu"]
+    dock.roots_view.doubleClicked.emit(alpha)
+    assert folders_asked == [folders / "alpha"]
+    dock.roots_view.doubleClicked.emit(video)
+    opener.assert_called_once_with(QUrl.fromLocalFile(str(folders / "my folder" / "y.mp4")))
+    assert len(records) == 1 and not files_asked
+
+
+@mark.usefixtures("served")
+def test_open_acts_on_the_current_row_by_what_it_is(
+    mocker: MockerFixture, qtbot: QtBot, dock: RehucoDock, folders: Path
+) -> None:
+    """Open on a record opens it in Documents and does nothing for a file that is not one; Open on a file runs the
+    system's application.
+
+    **Test steps:**
+
+    * trigger Open (record) with a record current, then with a video current, then Open (file) with the video current
+    * verify one Documents request, for the record, and one system open, for the video
+    """
+    add_files_to_a_folder(folders)
+    dock.open_rehuco(REHUCO_PATH)
+    opener = mocker.patch("rehuco_agent.rehuco.rehuco_dock.QDesktopServices.openUrl")
+    open_root_folder(qtbot, dock, "my folder", "x.rehu")
+    asked: list[object] = []
+    dock.open_requested.connect(asked.append)
+
+    dock.open_record_action.trigger()
+    open_root_folder(qtbot, dock, "my folder", "y.mp4")
+    dock.open_record_action.trigger()
+    opener.assert_not_called()
+    dock.open_file_action.trigger()
+
+    assert asked == [folders / "my folder" / "x.rehu"]
+    opener.assert_called_once_with(QUrl.fromLocalFile(str(folders / "my folder" / "y.mp4")))
+
+
+@mark.usefixtures("served")
+def test_opening_and_creating_an_associated_rehu_ask_by_what_the_row_is(
+    qtbot: QtBot, dock: RehucoDock, folders: Path
+) -> None:
+    """A folder's is its ``info.rehu``, a file's the one named like it; the window opens or starts either, so Open
+    and Create send the same request and differ only in which the menu offers.
+
+    **Test steps:**
+
+    * trigger Open and Create with no row, with folders and with files current
+    * verify nothing for no row, and the folder request and the file request otherwise
+    """
+    add_files_to_a_folder(folders)
+    dock.open_rehuco(REHUCO_PATH)
+    for_folders: list[object] = []
+    for_files: list[object] = []
+    dock.open_folder_requested.connect(for_folders.append)
+    dock.open_companion_requested.connect(for_files.append)
+    dock.create_companion_action.trigger()
+    dock.open_companion_action.trigger()
+    assert not for_folders and not for_files
+
+    open_root_folder(qtbot, dock, "my folder")
+    dock.create_companion_action.trigger()
+    open_root_folder(qtbot, dock, "alpha")
+    dock.open_companion_action.trigger()
+    open_root_folder(qtbot, dock, "my folder", "y.mp4")
+    dock.create_companion_action.trigger()
+    open_root_folder(qtbot, dock, "my folder", "w.mp4")
+    dock.open_companion_action.trigger()
+
+    assert for_folders == [folders / "my folder", folders / "alpha"]
+    assert for_files == [folders / "my folder" / "y.mp4", folders / "my folder" / "w.mp4"]
+
+
+@mark.usefixtures("served")
+# one walk over every kind of row, each step reading what the last one left, is the test
+# pylint: disable-next=too-many-locals
+def test_the_details_pane_follows_the_current_row_and_has_a_button_for_each_menu_entry(
+    mocker: MockerFixture, qtbot: QtBot, dock: RehucoDock, folders: Path
+) -> None:
+    """The pane beside the columns names the current row and offers a button for every entry of its context menu,
+    in order, the default in bold; clicking one does what the entry does.
+
+    **Test steps:**
+
+    * select a root, a folder with no rehu, a folder with one, a record and a video in turn
+    * verify the buttons' actions, which one is bold, and what clicking the default asks for
+    """
+    add_files_to_a_folder(folders)
+    dock.open_rehuco(REHUCO_PATH)
+    dock.show()
+    opener = mocker.patch("rehuco_agent.rehuco.rehuco_dock.QDesktopServices.openUrl")
+    preview = dock.findChild(RootsPreview)
+    assert preview is not None
+    name = preview.findChild(QLabel, "name_label")
+    assert name is not None
+    folder_requests: list[object] = []
+    record_requests: list[object] = []
+    dock.open_folder_requested.connect(folder_requests.append)
+    dock.open_requested.connect(record_requests.append)
+
+    def shown() -> list[tuple[QAction | None, bool]]:
+        return [(button.defaultAction(), button.font().bold()) for button in preview.buttons]
+
+    select_root(dock, 0)
+    assert [action for action, _bold in shown() if action is not None and not action.isSeparator()] == [
+        dock.filter_folder_action,
+        dock.open_explorer_action,
+        dock.remove_root_action,
+    ]
+    assert not any(bold for _action, bold in shown())
+
+    open_root_folder(qtbot, dock, "my folder")
+    assert name.text() == "my folder"
+    assert shown() == [
+        (dock.create_companion_action, False),
+        (dock.filter_folder_action, False),
+        (dock.open_explorer_action, False),
+    ]
+
+    open_root_folder(qtbot, dock, "alpha")
+    assert shown()[0] == (dock.open_companion_action, True)
+    open_rehu, _filter, explorer = preview.buttons
+    open_rehu.click()
+    assert folder_requests == [folders / "alpha"]
+    explorer.click()
+    opener.assert_called_once_with(QUrl.fromLocalFile(str(folders / "alpha")))
+
+    open_root_folder(qtbot, dock, "my folder", "x.rehu")
+    assert shown() == [(dock.open_record_action, True)]
+    (open_record,) = preview.buttons
+    open_record.click()
+    assert record_requests == [folders / "my folder" / "x.rehu"]
+
+    open_root_folder(qtbot, dock, "my folder", "y.mp4")
+    assert shown() == [(dock.open_file_action, True), (dock.create_companion_action, False)]
+    open_external, create = preview.buttons
+    assert create.text() == "Create y.rehu"
+    opener.reset_mock()
+    open_external.click()
+    opener.assert_called_once_with(QUrl.fromLocalFile(str(folders / "my folder" / "y.mp4")))
+
+
+@mark.usefixtures("served")
+def test_the_details_pane_sits_beside_the_columns_in_a_splitter(dock: RehucoDock) -> None:
+    """The view and the pane share a splitter, the columns first.
+
+    **Test steps:**
+
+    * open a catalog and find the panel's splitter
+    * verify it holds the view and then the pane, and that neither can be collapsed away
+    """
+    dock.open_rehuco(REHUCO_PATH)
+
+    splitter = dock.findChild(QSplitter, "roots_splitter")
+    assert splitter is not None
+    assert splitter.widget(0) is dock.roots_view
+    assert isinstance(splitter.widget(1), RootsPreview)
+    assert not splitter.childrenCollapsible()
+
+
+@mark.usefixtures("served")
+def test_refresh_lists_a_deleted_folder_away_and_falls_back_to_its_parent(
+    qtbot: QtBot, dock: RehucoDock, folders: Path
+) -> None:
+    """F5 re-lists the open columns: a folder deleted outside the app disappears in place, and the selection falls
+    back to the nearest folder that survives -- not to a neighbour of the one that went.
+
+    **Test steps:**
+
+    * select ``alpha/sub``, delete it on disk and trigger Refresh
+    * verify it left ``alpha``, ``alpha`` is current rather than the note beside it, and nothing was reset
+    """
+    dock.open_rehuco(REHUCO_PATH)
+    open_root_folder(qtbot, dock, "alpha", "sub")
+    resets: list[int] = []
+    dock.roots_model.modelReset.connect(lambda: resets.append(1))
+    os.rmdir(folders / "alpha" / "sub")
+
+    dock.refresh_roots_action.trigger()
+
+    qtbot.waitUntil(
+        lambda: dock.roots_model.key(dock.roots_view.currentIndex()) == (UUID(ROOT_IDS[0]), ("alpha",)),
+        timeout=WAIT_TIMEOUT_MS,
+    )
+    alpha = dock.roots_model.index_for(UUID(ROOT_IDS[0]), ("alpha",))
+    assert [dock.roots_model.index(row, 0, alpha).data() for row in range(dock.roots_model.rowCount(alpha))] == [
+        "note.txt"
+    ]
+    assert not resets
+
+
+@mark.usefixtures("served")
+def test_refresh_with_no_current_row_lists_every_root_again(qtbot: QtBot, dock: RehucoDock, folders: Path) -> None:
+    """With nothing selected the open column is the roots, so each is listed again.
+
+    **Test steps:**
+
+    * add a folder on disk under the first root and trigger Refresh with no current row
+    * verify the root lists it
+    """
+    dock.open_rehuco(REHUCO_PATH)
+    root = dock.roots_model.index(0, 0)
+    wait_for_root_listing(qtbot, dock, root)
+    os.makedirs(folders / "added")
+
+    dock.refresh_roots_action.trigger()
+
+    qtbot.waitUntil(
+        lambda: (
+            "added" in [dock.roots_model.index(row, 0, root).data() for row in range(dock.roots_model.rowCount(root))]
+        ),
+        timeout=WAIT_TIMEOUT_MS,
+    )
+
+
+def test_refresh_is_on_the_roots_title_bar_and_bound_to_f5(dock: RehucoDock, served: Any) -> None:
+    """The refresh action carries F5 and works from any column of the view, and it sits on the title bar.
+
+    **Test steps:**
+
+    * read the refresh action's shortcut, its context, the Roots sub-dock's title bar actions and its panel's actions
+    * verify F5, children of the panel, its place after Add and Remove, and that the panel carries it
+    """
+    del served
+
+    assert dock.refresh_roots_action.shortcut().toString() == "F5"
+    assert dock.refresh_roots_action.shortcutContext() == Qt.ShortcutContext.WidgetWithChildrenShortcut
+    assert sub_docks(dock)[ROOTS_DOCK_NAME].titleBarActions()[2] is dock.refresh_roots_action
+    assert dock.refresh_roots_action in sub_docks(dock)[ROOTS_DOCK_NAME].widget().actions()
+
+
+@fixture(name="listening")
+def fixture_listening(
+    qtbot: QtBot, queue: TaskQueue, database: MemoryDatabase, served: dict[str, Any], folders: Path
+) -> Generator[tuple[RehucoDock, ResourceEvents, Path]]:
+    """A dock over real folders that follows an announcer, with the catalog open.
+
+    :param qtbot: pytest-qt fixture.
+    :param queue: the queue its jobs run on.
+    :param database: the cache's database.
+    :param served: the served ``.rehuco``.
+    :param folders: the first root's folder.
+    :yields: the dock, its events and the first root's folder.
+    """
+    del database, served
+    events = ResourceEvents()
+    dock = RehucoDock(queue, resource_events=events)
+    qtbot.addWidget(dock)
+    dock.open_rehuco(REHUCO_PATH)
+    yield dock, events, folders
+    if dock.rehuco_path is not None:  # a test may have detached it already, which cannot be done twice
+        dock.detach()
+
+
+def test_an_announced_rename_renames_the_row_in_place(
+    qtbot: QtBot, listening: tuple[RehucoDock, ResourceEvents, Path]
+) -> None:
+    """A rename the app carries out changes the row of a loaded folder without a reset, and its subtree follows.
+
+    **Test steps:**
+
+    * load ``alpha`` and its ``sub``, rename ``alpha`` on disk and announce the rename
+    * verify the row has the new name, ``sub`` is still loaded under it, and the model was not reset
+    """
+    dock, events, folder = listening
+    open_root_folder(qtbot, dock, "alpha", "sub")
+    resets: list[int] = []
+    dock.roots_model.modelReset.connect(lambda: resets.append(1))
+    os.rename(folder / "alpha", folder / "omega")
+
+    events.announce_moved(Relocation(((folder / "alpha", folder / "omega"),)))
+
+    root_id = UUID(ROOT_IDS[0])
+    assert dock.roots_model.path_of(dock.roots_model.index_for(root_id, ("omega", "sub"))) == folder / "omega" / "sub"
+    assert not resets
+
+
+def test_an_announced_folder_change_lists_a_loaded_folder_again(
+    qtbot: QtBot, listening: tuple[RehucoDock, ResourceEvents, Path]
+) -> None:
+    """A folder whose listing the app changed is read again if the view has it loaded.
+
+    **Test steps:**
+
+    * load ``alpha``, add a file to it on disk and announce the folder changed
+    * verify the file appears
+    """
+    dock, events, folder = listening
+    alpha = open_root_folder(qtbot, dock, "alpha")
+    (folder / "alpha" / "added.txt").write_text("a", encoding="utf-8")
+
+    events.announce_folder_changed(folder / "alpha")
+
+    qtbot.waitUntil(
+        lambda: (
+            "added.txt"
+            in [dock.roots_model.index(row, 0, alpha).data() for row in range(dock.roots_model.rowCount(alpha))]
+        ),
+        timeout=WAIT_TIMEOUT_MS,
+    )
+
+
+def test_a_detached_dock_stops_following_folder_changes(
+    qtbot: QtBot, listening: tuple[RehucoDock, ResourceEvents, Path]
+) -> None:
+    """After detach nothing is connected to the announcer any more, so a late announcement is harmless.
+
+    **Test steps:**
+
+    * detach the dock and announce a folder change
+    * verify nothing failed
+    """
+    dock, events, folder = listening
+    dock.detach()
+
+    events.announce_folder_changed(folder / "alpha")
+    qtbot.wait(20)
+
+    assert dock.rehuco_path is None
+
+
+# endregion
+
+
+# region Dragging roots
+
+
+@mark.usefixtures("served")
+def test_dropping_a_root_reorders_the_file_saves_it_and_keeps_it_current(
+    qtbot: QtBot, dock: RehucoDock, saves: MagicMock
+) -> None:
+    """A root dragged by its grip to another place is moved in the file at once, as the move buttons do, and stays the
+    one selected.
+
+    **Test steps:**
+
+    * open a catalog and drop the second root before the first
+    * verify the saved order, the shown order and that the dropped root is current
+    """
+    dock.open_rehuco(REHUCO_PATH)
+    model = dock.roots_model
+    assert model.flags(model.index(1, 0)) & Qt.ItemFlag.ItemIsDragEnabled
+
+    model.dropMimeData(model.mimeData([model.index(1, 0)]), Qt.DropAction.MoveAction, 0, 0, QModelIndex())
+
+    qtbot.waitUntil(lambda: saves.call_count == 1, timeout=WAIT_TIMEOUT_MS)
+    assert written_roots(saves) == ["packs", "tutorials"]
+    assert shown_labels(dock) == ["packs", "tutorials"]
+    assert getattr(dock.roots_model.root_at(dock.roots_view.currentIndex()), "label", "") == "packs"
+
+
+@mark.usefixtures("served")
+def test_a_read_only_file_takes_no_drag_and_no_drop(dock: RehucoDock, served: Any, saves: MagicMock) -> None:
+    """The grip is for a catalog that can be saved: a newer file shows none, and a drop is refused.
+
+    **Test steps:**
+
+    * open a newer file and read the drag flag of a root
+    * try to drop a root
+    * verify no drag flag, a refused drop and nothing written
+    """
+    served["format_version"] = 99
+    dock.open_rehuco(REHUCO_PATH)
+    model = dock.roots_model
+
+    assert not model.flags(model.index(1, 0)) & Qt.ItemFlag.ItemIsDragEnabled
+    taken = model.dropMimeData(model.mimeData([model.index(1, 0)]), Qt.DropAction.MoveAction, 0, 0, QModelIndex())
+
+    assert not taken
+    saves.assert_not_called()
+
+
+@mark.usefixtures("served")
+def test_a_drop_for_a_root_that_is_not_in_the_file_changes_nothing(dock: RehucoDock, saves: MagicMock) -> None:
+    """The slot behind the drop refuses a root it cannot find, and a catalog it cannot write.
+
+    **Test steps:**
+
+    * call the slot with a root id the file does not have
+    * verify nothing was written
+    """
+    dock.open_rehuco(REHUCO_PATH)
+
+    dock._RehucoDock__on_root_dropped(uuid4(), 0)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    saves.assert_not_called()
+    assert shown_labels(dock) == ["tutorials", "packs"]
+
+
+# endregion
+
+
+# region Verifying a checksum file
+
+
+def add_checksum_files(folders: Path) -> None:
+    """Put a checksum record beside a rehu record in ``alpha``, and a lone one in ``my folder``.
+
+    :param folders: the first root's folder.
+    """
+    (folders / "alpha" / "info.rehu").write_text("{}", encoding="utf-8")
+    (folders / "alpha" / "info.checksum").write_text("{}", encoding="utf-8")
+    (folders / "my folder" / "lonely.checksum").write_text("{}", encoding="utf-8")
+
+
+@mark.usefixtures("served")
+def test_a_checksum_file_offers_verify_and_it_needs_its_rehu(qtbot: QtBot, dock: RehucoDock, folders: Path) -> None:
+    """The menu of a checksum file leads with Open in external app, then Verify checksums, then its associated rehu;
+    Verify is on only when the ``.rehu`` it records is beside it.
+
+    **Test steps:**
+
+    * ask for the actions of a checksum file with its rehu beside it, and of one without
+    * verify the order, and that Verify is enabled for the first and disabled, with its own tooltip, for the second
+    """
+    add_checksum_files(folders)
+    dock.open_rehuco(REHUCO_PATH)
+    paired = open_root_folder(qtbot, dock, "alpha", "info.checksum")
+    lonely = open_root_folder(qtbot, dock, "my folder", "lonely.checksum")
+
+    with_rehu = dock.roots_context_actions(paired)
+    assert with_rehu == [dock.open_file_action, dock.verify_checksums_action, dock.open_companion_action]
+    assert dock.verify_checksums_action.isEnabled()
+    enabled_tip = dock.verify_checksums_action.toolTip()
+
+    without = dock.roots_context_actions(lonely)
+    assert without == [dock.open_file_action, dock.verify_checksums_action, dock.create_companion_action]
+    assert not dock.verify_checksums_action.isEnabled()
+    assert dock.verify_checksums_action.toolTip() != enabled_tip
+
+
+@mark.usefixtures("served")
+def test_verifying_a_checksum_file_queues_a_verify_of_its_resource(
+    mocker: MockerFixture, qtbot: QtBot, dock: RehucoDock, queue: TaskQueue, folders: Path
+) -> None:
+    """Verify queues the job the Checksums dock queues, for the ``.rehu`` that shares the file's name, and does nothing
+    for a checksum file with no rehu beside it.
+
+    **Test steps:**
+
+    * trigger Verify on a lone checksum file, then on one with its rehu
+    * verify nothing queued, then one verify job whose resource is that rehu
+    """
+    add_checksum_files(folders)
+    dock.open_rehuco(REHUCO_PATH)
+    enqueue = mocker.patch.object(queue, "enqueue")
+    open_root_folder(qtbot, dock, "my folder", "lonely.checksum")
+    dock.roots_context_actions(dock.roots_model.index_for(UUID(ROOT_IDS[0]), ("my folder", "lonely.checksum")))
+
+    dock.verify_checksums_action.trigger()
+    enqueue.assert_not_called()
+
+    paired = open_root_folder(qtbot, dock, "alpha", "info.checksum")
+    dock.roots_context_actions(paired)
+    dock.verify_checksums_action.trigger()
+
+    enqueue.assert_called_once()
+    (job,) = enqueue.call_args.args
+    assert isinstance(job, VerifyChecksumsJob)
+    assert job.source == folders / "alpha" / "info.rehu"
+
+
+@mark.usefixtures("served")
+def test_verifying_twice_is_not_asking_twice(
+    mocker: MockerFixture, qtbot: QtBot, dock: RehucoDock, queue: TaskQueue, folders: Path
+) -> None:
+    """A verify already waiting for the same resource is not queued again.
+
+    **Test steps:**
+
+    * say the queue already holds the job, and trigger Verify
+    * verify nothing was queued
+    """
+    add_checksum_files(folders)
+    dock.open_rehuco(REHUCO_PATH)
+    enqueue = mocker.patch.object(queue, "enqueue")
+    mocker.patch("rehuco_agent.rehuco.rehuco_dock.job_already_queued", return_value=True)
+    paired = open_root_folder(qtbot, dock, "alpha", "info.checksum")
+    dock.roots_context_actions(paired)
+
+    dock.verify_checksums_action.trigger()
+
+    enqueue.assert_not_called()
 
 
 # endregion

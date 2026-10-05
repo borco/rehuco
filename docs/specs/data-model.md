@@ -757,7 +757,7 @@ The cache is the stdlib `sqlite3` module in rehuco-core, Qt-free, one connection
 
 | Table | Holds |
 | --- | --- |
-| `roots` | One row per root of the `.rehuco`, keyed by the root's stable id: its label, path, position and removable flag; whether the last scan could list it, and when its rows were last replaced |
+| `roots` | One row per root of the `.rehuco`, keyed by the root's stable id: its label, path, position and whether its storage is removable (a removable drive or a CD or DVD); whether the last scan could list it, and when its rows were last replaced |
 | `resources` | One row per record found under a root — FK to its root with `ON DELETE CASCADE`; the root-relative path, both as spelled and **normalized** (`os.path.normcase`) for matching; kind `rehu` or `tc`; UUID; type; the common core fields a browser shows; the type-specific fields, one typed column each (schema v3, #399): a tutorial's three durations in seconds and its levels (a JSON array), a reference pack's claimed count (text, so `500+` survives) and measured count; the record's stat signature and a content hash at last read ([[data-model#scan-and-staleness]]); why it could not be read, if it could not; when it was scanned |
 | `authors`, `tags`, `publishers` | Values plus their join tables to `resources`, so a filter on any of them is an indexed lookup. A value is one row per name, matched case-insensitively; the join row keeps the name **as its resource spells it**, which is what a browser shows, so a file that fixes a name's case shows the fix after its next scan (schema v2, #377) |
 

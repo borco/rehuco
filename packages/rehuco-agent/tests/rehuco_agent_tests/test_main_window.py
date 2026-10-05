@@ -6412,6 +6412,32 @@ def test_a_resource_double_clicked_in_the_rehuco_dock_opens_through_open_path(
     open_path.assert_called_once_with(path)
 
 
+def test_the_rehuco_docks_associated_rehu_requests_open_or_start_the_resource(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """A folder's request opens its directory-scoped resource and a file's the one named like it, both through the
+    window's own routes (#378).
+
+    **Test steps:**
+
+    * spy on ``open_folder`` and ``open_archive``
+    * emit the dock's folder request and its file request
+    * verify each reached its own route with its path
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    open_folder = mocker.patch.object(MainWindow, "open_folder")
+    open_archive = mocker.patch.object(MainWindow, "open_archive")
+    folder, video = Path("/fake/tutorials/python"), Path("/fake/tutorials/clip.mp4")
+    dock = window._MainWindow__rehuco_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    dock.open_folder_requested.emit(folder)
+    dock.open_companion_requested.emit(video)
+
+    open_folder.assert_called_once_with(folder)
+    open_archive.assert_called_once_with(video)
+
+
 def test_the_rehuco_dock_survives_an_outer_layout_round_trip_open(qtbot: QtBot, mocker: MockerFixture) -> None:
     """A Root Catalog dock left open is open again after a restart (#377).
 
@@ -6881,7 +6907,7 @@ def test_scan_and_new_table_browser_stay_on_the_shell_toolbar_while_the_root_edi
 
     * construct a real ``MainWindow`` and read the Root Catalog shell's toolbar
     * verify Scan and New Table Browser are on it and the two root edits are not
-    * verify the Roots sub-dock's title-bar actions are exactly those two
+    * verify the Roots sub-dock's title-bar actions are those two, then Refresh (#378)
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -6894,7 +6920,7 @@ def test_scan_and_new_table_browser_stay_on_the_shell_toolbar_while_the_root_edi
     assert dock.new_browser_action in toolbar_actions
     assert dock.add_root_action not in toolbar_actions
     assert dock.remove_root_action not in toolbar_actions
-    assert roots_dock.titleBarActions() == [dock.add_root_action, dock.remove_root_action]
+    assert roots_dock.titleBarActions() == [dock.add_root_action, dock.remove_root_action, dock.refresh_roots_action]
 
 
 # endregion

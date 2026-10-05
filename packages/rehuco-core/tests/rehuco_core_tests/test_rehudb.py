@@ -29,6 +29,7 @@ from rehuco_core import (
     RecordSignature,
     RehucoFile,
     RehucoRoot,
+    RootStorage,
     catalog_path_key,
     catalog_type_fields,
     rehudb_path,
@@ -305,7 +306,8 @@ def test_a_relabeled_repointed_and_reordered_root_keeps_its_rows(cache: CatalogC
     rehuco.relabel_root(0, "courses")
     rehuco.move_to_bottom(0)
     other, relabeled = rehuco.roots
-    cache.reconcile_roots([other, RehucoRoot(relabeled.root_id, Path("F:/elsewhere"), relabeled.label, True)])
+    moved = RehucoRoot(relabeled.root_id, Path("F:/elsewhere"), relabeled.label, RootStorage.REMOVABLE)
+    cache.reconcile_roots([other, moved])
 
     rows = cache.rows()
     assert [row.root_label for row in rows] == ["courses"]
@@ -699,6 +701,18 @@ def test_a_record_of_a_root_not_in_the_cache_is_not_written(cache: CatalogCache)
     """Nothing to write it under."""
     assert not cache.upsert_record(uuid4(), record("a.rehu"))
     assert not cache.rows()
+
+
+def test_a_roots_resources_are_counted(filled: tuple[CatalogCache, RehucoRoot, RehucoRoot]) -> None:
+    """The count is what a root's removal would drop, and no other root's."""
+    cache, first, second = filled
+    assert cache.resource_count(first.root_id) == 0
+    cache.apply_root_scan(first.root_id, [record("a.rehu"), record("b.rehu")])
+    cache.apply_root_scan(second.root_id, [record("p.rehu")])
+
+    assert cache.resource_count(first.root_id) == 2
+    assert cache.resource_count(second.root_id) == 1
+    assert cache.resource_count(uuid4()) == 0
 
 
 def test_a_signature_is_what_its_row_was_read_at(filled: tuple[CatalogCache, RehucoRoot, RehucoRoot]) -> None:

@@ -70,9 +70,11 @@ browsed together — and the agent opens one at a time ([[data-model#local-file-
 shows and what a folder filter addresses (`folder="<label>/<relative path>"`, [[plugins#browsers]]), and changing it
 touches nothing on disk. Removing a root from a `.rehuco` asks first, states that its files stay where they are, and
 drops only the root's cached entries ([[data-model#cache-schema]]). A root also carries a stable **id**, which
-the cache keys its rows on, so relabeling, reordering or re-pointing it orphans nothing; and a **Removable** flag,
-off by default and changeable at any time, marking a folder that lives on whatever removable device — a CD, a USB
-stick or drive — is mounted there.
+the cache keys its rows on, so relabeling, reordering or re-pointing it orphans nothing; and a **storage**, which
+the user chooses and can change at any time — a local folder, a network share, a removable drive (a USB stick or
+disk) or a CD or DVD. Nothing detects it: it says what the folder lives on, so the Roots view can tell a share that
+is away from a folder that is gone, and a removable drive or a disc counts as removable for the cache
+([[mounts-and-storage#durable-retention]]).
 
 **A root is a local folder or a reference into a node** (#409). An entry either names a folder on this machine, or
 points at a root another node serves — or at a folder under one — by node, root and relative path

@@ -16,6 +16,7 @@ from rehuco_core import (
     RehucoFile,
     RehucoFileError,
     RehucoRoot,
+    RootStorage,
 )
 
 FAKE_PATH: Final = Path("/fake/home.rehuco")
@@ -29,6 +30,17 @@ ROOT_IDS: Final = (
 )
 
 HOME: Final = {
+    "format_version": 2,
+    "id": REHUCO_ID,
+    "some_future_key": {"nested": [1, 2, 3]},
+    "roots": [
+        {"id": ROOT_IDS[0], "path": "D:/tutorials", "label": "tutorials", "storage": "local"},
+        {"id": ROOT_IDS[1], "path": "E:/discs", "label": "discs", "storage": "removable", "some_future_root_key": 7},
+        {"id": ROOT_IDS[2], "path": "F:/refs", "label": "refs"},
+    ],
+}
+
+V1_HOME: Final = {
     "format_version": 1,
     "id": REHUCO_ID,
     "some_future_key": {"nested": [1, 2, 3]},
@@ -101,7 +113,7 @@ def test_load_reads_the_rehuco_id_and_roots(home: RehucoFile) -> None:
     **Test steps:**
 
     * load ``HOME``
-    * verify the id, path, version, count and every root's parsed view, ``removable`` defaulting to false
+    * verify the id, path, version, count and every root's parsed view, ``storage`` defaulting to local
     """
     assert home.rehuco_id == UUID(REHUCO_ID)
     assert home.path == FAKE_PATH
@@ -109,9 +121,9 @@ def test_load_reads_the_rehuco_id_and_roots(home: RehucoFile) -> None:
     assert home.lock_reason is None
     assert home.count == 3
     assert home.roots == (
-        RehucoRoot(UUID(ROOT_IDS[0]), Path("D:/tutorials"), "tutorials", False),
-        RehucoRoot(UUID(ROOT_IDS[1]), Path("E:/discs"), "discs", True),
-        RehucoRoot(UUID(ROOT_IDS[2]), Path("F:/refs"), "refs", False),
+        RehucoRoot(UUID(ROOT_IDS[0]), Path("D:/tutorials"), "tutorials", RootStorage.LOCAL),
+        RehucoRoot(UUID(ROOT_IDS[1]), Path("E:/discs"), "discs", RootStorage.REMOVABLE),
+        RehucoRoot(UUID(ROOT_IDS[2]), Path("F:/refs"), "refs", RootStorage.LOCAL),
     )
 
 
@@ -122,7 +134,7 @@ def test_round_trip_is_lossless_and_canonical(mocker: MockerFixture, home: Rehuc
 
     * load ``HOME`` and save it through a mocked ``atomic_write_text``
     * verify the payload equals ``HOME``: the unknown top-level key, the unknown root key and the absent
-      ``removable`` all carried as found
+      ``storage`` all carried as found
     * verify the key order: ``format_version``, ``id``, the unknown key, ``roots`` last
     """
     payload = saved_payload(mocker, home)
@@ -181,16 +193,17 @@ def test_save_without_a_path_is_refused(mocker: MockerFixture) -> None:
 
 
 def test_unstamped_file_reads_as_version_one(mocker: MockerFixture) -> None:
-    """A file with no ``format_version`` is read as v1 and saved stamped.
+    """A file with no ``format_version`` is read as v1, migrated and saved stamped.
 
     **Test steps:**
 
-    * load ``HOME`` without its stamp
-    * verify the version and the saved stamp
+    * load ``V1_HOME`` without its stamp
+    * verify it was migrated -- the removable root reads as removable -- and the saved stamp is the current one
     """
-    data = {key: value for key, value in HOME.items() if key != "format_version"}
+    data = {key: value for key, value in V1_HOME.items() if key != "format_version"}
     rehuco = load_rehuco(mocker, data)
-    assert rehuco.format_version == 1
+    assert rehuco.format_version == CURRENT_REHUCO_VERSION
+    assert rehuco.roots[1].storage is RootStorage.REMOVABLE
     assert saved_payload(mocker, rehuco)["format_version"] == CURRENT_REHUCO_VERSION
 
 
@@ -313,12 +326,21 @@ def test_missing_file_propagates(mocker: MockerFixture) -> None:
         ),
         param(
             {
-                "format_version": 1,
+                "format_version": 2,
                 "id": REHUCO_ID,
-                "roots": [{"id": ROOT_IDS[0], "path": "D:/x", "label": "x", "removable": "yes"}],
+                "roots": [{"id": ROOT_IDS[0], "path": "D:/x", "label": "x", "storage": "floppy"}],
             },
-            "non-boolean 'removable'",
-            id="removable-not-a-bool",
+            "unknown 'storage': 'floppy'",
+            id="storage-not-a-known-one",
+        ),
+        param(
+            {
+                "format_version": 2,
+                "id": REHUCO_ID,
+                "roots": [{"id": ROOT_IDS[0], "path": "D:/x", "label": "x", "storage": []}],
+            },
+            "unknown 'storage': \\[\\]",
+            id="storage-not-a-string",
         ),
         param(
             {
@@ -367,27 +389,27 @@ def test_shape_error_without_a_path_names_no_path() -> None:
 
 
 def test_add_root_appends_under_a_fresh_id(mocker: MockerFixture) -> None:
-    """``add_root`` appends a root with a fresh uuid4 id, the folder's name as label, and the removable flag.
+    """``add_root`` appends a root with a fresh uuid4 id, the folder's name as label, and the storage.
 
     **Test steps:**
 
-    * add two roots to a new file, the second removable
-    * verify the returned rows, distinct uuid4 ids, labels and flags
+    * add two roots to a new file, the second on a removable drive
+    * verify the returned rows, distinct uuid4 ids, labels and storages, and the derived ``removable``
     * verify the saved root objects spell every key
     """
     rehuco = RehucoFile.new()
     assert rehuco.add_root(Path("D:/tutorials")) == 0
-    assert rehuco.add_root("E:/discs", removable=True) == 1
+    assert rehuco.add_root("E:/discs", storage=RootStorage.REMOVABLE) == 1
     first, second = rehuco.roots
     assert first.root_id.version == 4
     assert first.root_id != second.root_id
-    assert (first.label, first.removable) == ("tutorials", False)
-    assert (second.label, second.removable) == ("discs", True)
+    assert (first.label, first.storage, first.removable) == ("tutorials", RootStorage.LOCAL, False)
+    assert (second.label, second.storage, second.removable) == ("discs", RootStorage.REMOVABLE, True)
     assert saved_payload(mocker, rehuco)["roots"][1] == {
         "id": str(second.root_id),
         "path": "E:/discs",
         "label": "discs",
-        "removable": True,
+        "storage": "removable",
     }
 
 
@@ -553,20 +575,82 @@ def test_relabel_root_refuses_an_empty_or_clashing_label(home: RehucoFile, label
     assert labels(home)[0] == "tutorials"
 
 
-def test_set_removable_round_trips(mocker: MockerFixture, home: RehucoFile) -> None:
-    """``set_removable`` flips the flag, and the saved file carries it.
+def test_move_puts_a_root_at_any_row(mocker: MockerFixture, home: RehucoFile) -> None:
+    """``move`` takes a root to the row it should end up at, whichever way, and the saved file keeps the order.
 
     **Test steps:**
 
-    * mark the third root removable and the second not
-    * verify the parsed flags and the saved root objects
+    * move the first root to the last row, then the last to the middle, then one where it already is
+    * verify the returned rows, the order after each, and the saved order
     """
-    home.set_removable(2, True)
-    home.set_removable(1, False)
+    assert home.move(0, 2) == 2
+    assert [root.label for root in home.roots] == ["discs", "refs", "tutorials"]
+    assert home.move(2, 1) == 1
+    assert [root.label for root in home.roots] == ["discs", "tutorials", "refs"]
+    assert home.move(1, 1) == 1
+    assert [root["label"] for root in saved_payload(mocker, home)["roots"]] == ["discs", "tutorials", "refs"]
+
+
+@mark.parametrize("at, to", [param(3, 0, id="no-source"), param(0, 3, id="no-target"), param(-1, 0, id="negative")])
+def test_move_refuses_a_row_outside_the_file(home: RehucoFile, at: int, to: int) -> None:
+    """Both rows must exist, and nothing changes when one does not.
+
+    **Test steps:**
+
+    * move with a source or a target outside the file
+    * verify an index error and the order unchanged
+    """
+    with pytest.raises(IndexError):
+        home.move(at, to)
+    assert [root.label for root in home.roots] == ["tutorials", "discs", "refs"]
+
+
+def test_set_storage_round_trips(mocker: MockerFixture, home: RehucoFile) -> None:
+    """``set_storage`` changes what a root lives on, and the saved file carries it.
+
+    **Test steps:**
+
+    * put the third root on a compact disk and the second on a network share
+    * verify the parsed storages, the derived ``removable`` and the saved root objects
+    """
+    home.set_storage(2, RootStorage.COMPACT_DISK)
+    home.set_storage(1, RootStorage.NETWORK)
+    assert [root.storage for root in home.roots] == [RootStorage.LOCAL, RootStorage.NETWORK, RootStorage.COMPACT_DISK]
     assert [root.removable for root in home.roots] == [False, False, True]
     roots = saved_payload(mocker, home)["roots"]
-    assert [root["removable"] for root in roots] == [False, False, True]
+    assert [root["storage"] for root in roots] == ["local", "network", "compact_disk"]
     assert roots[1]["some_future_root_key"] == 7
+
+
+def test_a_v1_file_comes_up_with_a_storage_per_root(mocker: MockerFixture) -> None:
+    """A v1 ``.rehuco`` loads as v2: ``removable`` becomes a storage, and everything else is carried.
+
+    **Test steps:**
+
+    * load ``V1_HOME``, whose roots are not removable, removable and unmarked
+    * verify the storages are local, removable and local
+    * verify the saved payload keeps the unknown keys and leaves no ``removable`` behind
+    """
+    rehuco = load_rehuco(mocker, V1_HOME)
+    assert rehuco.format_version == CURRENT_REHUCO_VERSION == 2
+    assert [root.storage for root in rehuco.roots] == [RootStorage.LOCAL, RootStorage.REMOVABLE, RootStorage.LOCAL]
+    payload = saved_payload(mocker, rehuco)
+    assert payload["roots"][:2] == HOME["roots"][:2]
+    assert "removable" not in payload["roots"][2]
+    assert payload["some_future_key"] == HOME["some_future_key"]
+
+
+def test_a_newer_than_v2_file_is_read_only_and_keeps_its_storage(mocker: MockerFixture) -> None:
+    """A file stamped past v2 loads, read-only, with the storage it names.
+
+    **Test steps:**
+
+    * load ``HOME`` stamped 3
+    * verify it is locked and the second root's storage is read as stored
+    """
+    rehuco = load_rehuco(mocker, {**HOME, "format_version": 3})
+    assert rehuco.lock_reason is not None
+    assert rehuco.roots[1].storage is RootStorage.REMOVABLE
 
 
 @mark.parametrize(
@@ -574,7 +658,7 @@ def test_set_removable_round_trips(mocker: MockerFixture, home: RehucoFile) -> N
     [
         param(lambda rehuco: rehuco.remove_root(3), id="remove"),
         param(lambda rehuco: rehuco.relabel_root(-1, "x"), id="relabel"),
-        param(lambda rehuco: rehuco.set_removable(3, True), id="set-removable"),
+        param(lambda rehuco: rehuco.set_storage(3, RootStorage.NETWORK), id="set-storage"),
         param(lambda rehuco: rehuco.move_to_top(3), id="move-to-top"),
         param(lambda rehuco: rehuco.move_up(-1), id="move-up"),
         param(lambda rehuco: rehuco.move_down(3), id="move-down"),

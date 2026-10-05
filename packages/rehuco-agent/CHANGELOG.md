@@ -12,6 +12,23 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 ### Added
 
+- The Root Catalog's **Roots view** is a column view: the first column lists the `.rehuco`'s roots and each further
+  one a folder's contents, listed when you open it and never while it would block a rename. **Add Root** asks what
+  the folder lives on before the folder. The selected root's **name** and **storage** are edited in the pane beside the columns
+  — a local folder, a network share, a removable drive or a CD or DVD, each with its own icon. A root that cannot be
+  listed says so: a deleted local folder is struck through, and a share, drive or disc that is away keeps its icon
+  greyed out. Remove Root asks first and says how many cached entries go. A root's right-click menu has the folder filter and Open in file
+  explorer, then the moves, then Remove Root, and a root's row shows its folder under its name. A checksum file's menu
+  has **Verify checksums**. A folder's has **Show only rehu in this folder**, which filters the current browser.
+  `F5` lists the open columns again, a folder deleted outside the app disappears, and the selection falls back to
+  the nearest folder that is left. Roots are reordered by dragging the grip at the left of a root's row, as well as from its menu; the grip
+  only shows while the catalog can be saved. A rename the app makes shows in the columns without a reload. A pane beside
+  the columns shows the details of the selected row -- a root, a folder or a file, with a thumbnail for an image --
+  and a button for every entry of the row's right-click menu, which now also has **Open in file explorer** on a
+  root or folder. Double-clicking runs a row's default action, the bold first entry of its right-click menu:
+  a `.rehu` or `.tc` file or a folder with a rehu opens in Documents, any other file opens in its own application. A
+  folder's or file's menu says **Open associated rehu** or **Create info.rehu** (or **Create <name>.rehu**) by
+  whether it has one, and a double-click never creates.
 - A **Root Catalog** panel beside Documents, first on the action bar and closed until a `.rehuco` is opened.
   `Root Catalog` > `New…`, `Open…` and `Open Recent` open one file at a time, as
   does double-clicking a `.rehuco` in a file manager, and the one left open is reopened on start under its own Session
@@ -24,10 +41,10 @@ released becomes the body of the GitHub Release, so each entry is written to be 
   `Browsers`, `View` and `Tools`. `Documents` and `Browsers` each list what is open, A–Z, with the focused one
   checked, and picking an entry brings it to the front; `View` no longer lists documents. `Sweep checksums…`,
   `Import Legacy Catalog…` and `Conversion Backups…` moved to `Tools`. Add Root and Remove Root moved from the
-  Root Catalog toolbar to the Roots list's title bar, and Remove Root is also on a root's right-click menu.
+  Root Catalog toolbar to the Roots view's title bar, and Remove Root is also on a root's right-click menu.
 - **Table browsers** in the Root Catalog panel: add as many as you like with **New Table Browser**, each with its
   own name, columns and sort. **Rename** and **Clone** (the copy starts with the same columns) are on the browser's
-  title bar and its tab's right-click menu, and the toolbar renames the current one; the [x] deletes a browser. The Roots list can now be hidden with its [x] and shown with the toolbar's **Roots** toggle. Each
+  title bar and its tab's right-click menu, and the toolbar renames the current one; the [x] deletes a browser. The Roots view can now be hidden with its [x] and shown with the toolbar's **Roots** toggle. Each
   catalog remembers its browsers and where its sub-docks sit between runs, on this machine only. New icons for the
   roots and browser actions.
 - A **filter line** over each table browser: free text plus `field:value` or `field:"quoted value"` tokens for
@@ -54,6 +71,9 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 ### Changed
 
+- A root's **Removable** checkbox is gone: what a root lives on is its **storage**, chosen when it is added and
+  changed on the card under the Roots view. A `.rehuco` saved by this build is read-only in an earlier one, and a
+  catalog no longer remembers the Roots table's column widths.
 - The Session page's one restore check is two: **Opened root catalog** and **Opened documents**, under *Restore
   on restart*. Each decides only its own half of what comes back on start; a setting saved with the old single
   check carries over to both.

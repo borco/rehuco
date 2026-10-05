@@ -7,7 +7,7 @@ A ``.rehuco`` is machine-local and opened as a file; a machine may keep several.
       "format_version": 1,
       "id": "6f1c5e0a-...",
       "roots": [
-        { "id": "a41b9c3d-...", "path": "D:/tutorials", "label": "tutorials", "removable": false }
+        { "id": "a41b9c3d-...", "path": "D:/tutorials", "label": "tutorials", "storage": "local" }
       ]
     }
 
@@ -15,8 +15,10 @@ A ``.rehuco`` is machine-local and opened as a file; a machine may keep several.
 moving or renaming a ``.rehuco`` keeps its cache. **Each root's ``id``** is what the cache keys the root's rows
 on, so relabelling it, reordering it or re-pointing its path never orphans them. A root's **label** defaults to
 its folder's name, made unique with a suffix on a clash; it is what the browser shows and what a folder filter
-addresses (``folder="<label>/<relative path>"``), and changing it touches nothing on disk. **``removable``**
-marks a root whose folder lives on whatever removable device is mounted there (a CD, a USB stick or drive).
+addresses (``folder="<label>/<relative path>"``), and changing it touches nothing on disk. **``storage``**
+says what the folder lives on -- a local folder, a network share, a removable drive (a USB stick or disk) or a
+compact disk -- as the user chose it; nothing here detects it, and changing it touches nothing on disk. Version 1
+carried a ``removable`` flag instead, which the migration turns into ``"removable"`` or ``"local"``.
 
 What this build does not understand is carried: an unknown top-level key, and an unknown key on a root, come
 back out of a save unchanged (invariant 1 of ``how-it-works.md``). A file stamped newer than this build loads,
@@ -25,6 +27,7 @@ but read-only, with the reason stated (invariant 2).
 
 import json
 from dataclasses import dataclass
+from enum import StrEnum
 from os import path as os_path
 from pathlib import Path
 from typing import Any, Final
@@ -51,8 +54,27 @@ ROOT_PATH_KEY: Final = "path"
 ROOT_LABEL_KEY: Final = "label"
 """A root's key holding the name the browser shows and a folder filter addresses."""
 
-ROOT_REMOVABLE_KEY: Final = "removable"
-"""A root's key saying its folder lives on a removable device; absent reads as ``false``."""
+ROOT_STORAGE_KEY: Final = "storage"
+"""A root's key saying what its folder lives on, a :class:`RootStorage` value; absent reads as ``local``."""
+
+
+class RootStorage(StrEnum):
+    """What a root's folder lives on, as the user said -- never detected.
+
+    The member values are what the file stores.
+    """
+
+    LOCAL = "local"
+    """A folder on one of this machine's own disks."""
+
+    NETWORK = "network"
+    """A folder on a share another computer serves."""
+
+    REMOVABLE = "removable"
+    """A folder on a removable drive: a USB stick or an external disk."""
+
+    COMPACT_DISK = "compact_disk"
+    """A folder on a CD or DVD."""
 
 
 class RehucoFileError(ValueError):
@@ -72,13 +94,19 @@ class RehucoRoot:
     :param root_id: the root's stable id.
     :param path: the root's folder.
     :param label: the name the browser shows and a folder filter addresses; unique within the file.
-    :param removable: whether the folder lives on a removable device.
+    :param storage: what the folder lives on.
     """
 
     root_id: UUID
     path: Path
     label: str
-    removable: bool
+    storage: RootStorage = RootStorage.LOCAL
+
+    @property
+    def removable(self) -> bool:
+        """Whether the folder lives on a medium that can be taken away -- a removable drive or a compact disk. What
+        the cache's ``removable`` column and the retention rules read."""
+        return self.storage in (RootStorage.REMOVABLE, RootStorage.COMPACT_DISK)
 
 
 class RehucoFile:
@@ -205,13 +233,13 @@ class RehucoFile:
         atomic_write_text(target, json.dumps(payload, indent=2, ensure_ascii=False) + "\n")
         self.__path = target
 
-    def add_root(self, path: Path | str, label: str | None = None, *, removable: bool = False) -> int:
+    def add_root(self, path: Path | str, label: str | None = None, *, storage: RootStorage = RootStorage.LOCAL) -> int:
         """Append a root, under a fresh id.
 
         :param path: the root's folder.
         :param label: the name to show; ``None`` takes the folder's name. Either way a label already in use
             (case-insensitively) gets a suffix: ``foo``, ``foo (2)``, ``foo (3)``.
-        :param removable: whether the folder lives on a removable device.
+        :param storage: what the folder lives on.
         :returns: the new root's row.
         :raises ValueError: the folder is already a root -- compared normalized, and case-folded where the
             platform's paths are.
@@ -225,7 +253,7 @@ class RehucoFile:
                 ROOT_ID_KEY: str(uuid4()),
                 ROOT_PATH_KEY: str(path),
                 ROOT_LABEL_KEY: self.__unique_label(base),
-                ROOT_REMOVABLE_KEY: removable,
+                ROOT_STORAGE_KEY: RootStorage(storage).value,
             }
         )
         return len(self.__roots) - 1
@@ -256,15 +284,27 @@ class RehucoFile:
             raise ValueError(f"Another root is already labeled {label!r}")
         self.__roots[at][ROOT_LABEL_KEY] = label
 
-    def set_removable(self, at: int, removable: bool) -> None:
-        """Mark a root as living on a removable device, or not; nothing on disk changes.
+    def set_storage(self, at: int, storage: RootStorage) -> None:
+        """Say what a root's folder lives on; nothing on disk changes.
 
         :param at: the root's row.
-        :param removable: the new flag.
+        :param storage: the new storage.
         :raises IndexError: no such row.
         """
         self.__check_row(at)
-        self.__roots[at][ROOT_REMOVABLE_KEY] = removable
+        self.__roots[at][ROOT_STORAGE_KEY] = RootStorage(storage).value
+
+    def move(self, at: int, to: int) -> int:
+        """Move a root to any row -- what a drag and drop of one asks for.
+
+        :param at: the root's row.
+        :param to: the row it should end up at, in the list as it will be: ``0`` puts it first and ``count - 1`` last.
+        :returns: the row it ends up at.
+        :raises IndexError: no such row, for either.
+        """
+        self.__check_row(at)
+        self.__check_row(to)
+        return self.__move(at, to)
 
     def move_to_top(self, at: int) -> int:
         """Move a root to the first row.
@@ -316,15 +356,15 @@ class RehucoFile:
             raise self.__error("A root is not an object")
         path = raw.get(ROOT_PATH_KEY)
         label = raw.get(ROOT_LABEL_KEY)
-        removable = raw.get(ROOT_REMOVABLE_KEY, False)
+        storage = raw.get(ROOT_STORAGE_KEY, RootStorage.LOCAL.value)
         if not isinstance(path, str) or not path:
             raise self.__error(f"A root has no '{ROOT_PATH_KEY}'")
         if not isinstance(label, str) or not label:
             raise self.__error(f"The root {path!r} has no '{ROOT_LABEL_KEY}'")
-        if not isinstance(removable, bool):
-            raise self.__error(f"The root {path!r} has a non-boolean '{ROOT_REMOVABLE_KEY}'")
+        if not isinstance(storage, str) or storage not in {member.value for member in RootStorage}:
+            raise self.__error(f"The root {path!r} has an unknown '{ROOT_STORAGE_KEY}': {storage!r}")
         root_id = self.__read_uuid(raw.get(ROOT_ID_KEY), f"the root {path!r}'s id")
-        return RehucoRoot(root_id=root_id, path=Path(path), label=label, removable=removable)
+        return RehucoRoot(root_id=root_id, path=Path(path), label=label, storage=RootStorage(storage))
 
     def __read_uuid(self, value: Any, what: str) -> UUID:
         if not isinstance(value, str):

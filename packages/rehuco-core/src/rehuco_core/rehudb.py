@@ -553,6 +553,15 @@ class CatalogCache:
         )
         return {key: RecordSignature(*fields) for key, *fields in cursor}
 
+    def resource_count(self, root_id: UUID) -> int:
+        """How many rows a root holds -- what removing it would drop (#378).
+
+        :param root_id: the root.
+        :returns: its cached resources, ``.rehu`` and legacy ``.tc`` alike.
+        """
+        sql = "SELECT COUNT(*) FROM resources WHERE root_id = ?"
+        return self.__connection.execute(sql, (str(root_id),)).fetchone()[0]
+
     def signature(self, root_id: UUID, relative: str) -> RecordSignature | None:
         """One row's signature, for verify-on-access ([[data-model#scan-and-staleness]]).
 
