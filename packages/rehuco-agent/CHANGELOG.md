@@ -49,7 +49,9 @@ released becomes the body of the GitHub Release, so each entry is written to be 
   release date, size, last update, a tutorial's three durations and its level, a reference pack's claimed and
   measured image counts, and **Format**: the file's format version, `tc` for a legacy `.tc`, and `?` for a `.rehu`
   not read since this version (a scan fills it in). The URL and the tutorial and reference-pack columns start
-  hidden; the header's right-click menu shows and hides any column, and each browser remembers its choice. Sizes,
+  hidden; the header's right-click menu shows and hides any column, and each browser remembers its choice.
+  New Table Browser's menu also starts a browser from a preset: **Tutorial Columns** or **Reference Images Columns**
+  shows that type's columns and lists only resources of that type. Sizes,
   durations and counts sort as numbers, and a cell with nothing in it sorts last either way round; hovering a size
   shows its exact bytes. Rows can be multi-selected. A rename, save or deletion made in the app changes just the
   rows it touched, keeping the selection and the sort, instead of reloading the table. The Roots view can now be hidden with its [x] and shown with the toolbar's **Roots** toggle. Each

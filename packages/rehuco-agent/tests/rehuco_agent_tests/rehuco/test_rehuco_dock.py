@@ -42,6 +42,7 @@ from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.rehuco import RehucoDock, TableBrowser
 from rehuco_agent.rehuco.add_root_dialog import AddRootDialog
+from rehuco_agent.rehuco.browser_presets import browser_presets
 from rehuco_agent.rehuco.catalog_table_model import CatalogColumn
 from rehuco_agent.rehuco.rehuco_dock import ROOTS_DOCK_NAME
 from rehuco_agent.rehuco.root_storage import ROOT_STORAGE_ICONS
@@ -1144,6 +1145,34 @@ def test_new_browser_adds_a_browser_with_the_rows_and_makes_it_current(dock: Reh
     assert dock.current_browser is second
     assert dock.browser_dock(second).dockAreaWidget() is dock.browser_dock(first).dockAreaWidget()
     assert second.model.rowCount() == first.model.rowCount()
+
+
+@mark.usefixtures("served")
+def test_new_table_browser_offers_the_presets_and_one_starts_a_browser_as_it_says(dock: RehucoDock) -> None:
+    """New Table Browser carries a menu of the presets; an entry adds a browser named, filtered and with the columns
+    the preset gives, and makes it current (#400).
+
+    **Test steps:**
+
+    * verify the action's menu lists the presets
+    * open a catalog and trigger Reference Images Columns
+    * verify the new browser is current, with the preset's name, line and hidden columns
+    """
+    menu = dock.presets_menu
+    assert dock.new_browser_action.menu() is menu
+    assert [action.text() for action in menu.actions()] == [preset.label for preset in browser_presets()]
+    dock.open_rehuco(REHUCO_PATH)
+
+    entry = next(action for action in menu.actions() if action.text() == "Reference Images Columns")
+    entry.trigger()
+
+    _, added = dock.browsers
+    header = added.view.horizontalHeader()
+    preset = browser_presets()[-1]
+    assert dock.current_browser is added
+    assert added.name == "Reference Images"
+    assert added.filter_text == "type:reference_images"
+    assert {column for column in CatalogColumn if header.isSectionHidden(column)} == preset.hidden
 
 
 @mark.usefixtures("served")

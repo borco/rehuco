@@ -154,6 +154,17 @@ COLUMNS: Final[Mapping[CatalogColumn, ColumnSpec]] = {
 DEFAULT_HIDDEN: Final = frozenset(column for column, spec in COLUMNS.items() if not spec.default_visible)
 """The columns a plain browser starts with hidden: the URL, and the type-specific ones a preset shows (#400)."""
 
+TYPE_COLUMNS: Final[Mapping[str, CatalogColumn]] = {
+    "advertised_duration": CatalogColumn.ADVERTISED_DURATION,
+    "original_duration": CatalogColumn.ORIGINAL_DURATION,
+    "current_duration": CatalogColumn.CURRENT_DURATION,
+    "level": CatalogColumn.LEVEL,
+    "advertised_count": CatalogColumn.ADVERTISED_COUNT,
+    "current_count": CatalogColumn.CURRENT_COUNT,
+}
+"""The column each of the cache's type-specific fields (:data:`~rehuco_core.TYPE_FIELD_COLUMNS`) shows in, by the
+field's name -- what turns a type's :func:`~rehuco_core.catalog_type_fields` into columns (#400)."""
+
 
 @dataclass(frozen=True, slots=True)
 class Descending:
