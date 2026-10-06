@@ -519,7 +519,7 @@ and its cache** — the catalog — and both docks read it and hear from it when
   groups, the folder filter and Open in file explorer; the four moves — top, up, down, bottom, with the ordering
   icons the settings lists use but not their list editor, whose inline insert, rename, duplicate and reset have no
   meaning for a root; and, last and apart, Remove Root. A root row is two lines, its name and under it its folder,
-  smaller and fainter and elided to fit. Its details pane has no move buttons, the grip being the way to move one.
+  smaller and fainter and elided to fit, with its storage glyph centred beside both. Its details pane has no move buttons, the grip being the way to move one.
   A folder's menu holds the folder filter and the folder's rehu: **Open associated rehu** when its `info.rehu` (or `info.tc`) is there, **Create rehu**
   — a new unsaved record, opened in Documents — when it is not ([[data-model#resource-scoping]]). A checksum file's menu
   also offers **Verify checksums**, which queues a verify of the `.rehu` that shares its name — the same job the

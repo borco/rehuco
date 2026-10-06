@@ -5,7 +5,7 @@ from typing import Final, override
 from borco_pyside.widgets import RowBandDelegate
 from borco_pyside.widgets.row_band_delegate import TEXT_PADDING, ModelIndex
 from PySide6.QtCore import QRect, QSize, Qt
-from PySide6.QtGui import QColor, QFontMetricsF, QPainter, QPalette
+from PySide6.QtGui import QColor, QFontMetricsF, QImage, QPainter, QPalette
 from PySide6.QtWidgets import QAbstractItemView, QApplication, QStyle, QStyleOptionViewItem
 
 from ..svg_icon_cache import SvgIconCache
@@ -19,6 +19,36 @@ ICON_TEXT_GAP: Final = 6
 
 ARROW_WIDTH: Final = 12
 """Room kept at a row's right edge for the arrow of one that opens another column."""
+
+__arrow_heights: Final[dict[tuple[str, int], int]] = {}
+"""What :func:`arrow_height` measured, by style and row height."""
+
+
+def arrow_height(style: QStyle, row_height: int) -> int:
+    """How tall the style draws the column view's arrow in a row ``row_height`` tall.
+
+    Measured by drawing it, once per style and height: how the arrow grows with the row is the style's own business
+    (Windows 11 keeps a floor on short rows and grows it with tall ones), and the root's glyph has to grow as it does.
+
+    :param style: the style the arrow is drawn in.
+    :param row_height: the row's height.
+    :returns: the height of what it draws, in pixels; ``0`` for a style that draws nothing there.
+    """
+    key = (style.name(), row_height)
+    if key not in __arrow_heights:
+        # drawn into a strip three arrows wide, since a style may draw past the width it is given
+        image = QImage(3 * ARROW_WIDTH, row_height, QImage.Format.Format_ARGB32_Premultiplied)
+        image.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(image)
+        try:
+            option = QStyleOptionViewItem()
+            option.rect = QRect(ARROW_WIDTH, 0, ARROW_WIDTH, row_height)
+            style.drawPrimitive(QStyle.PrimitiveElement.PE_IndicatorColumnViewArrow, option, painter)
+        finally:
+            painter.end()
+        inked = [y for y in range(row_height) if any(image.pixelColor(x, y).alpha() for x in range(image.width()))]
+        __arrow_heights[key] = inked[-1] - inked[0] + 1 if inked else 0
+    return __arrow_heights[key]
 
 
 class RootsItemDelegate(RowBandDelegate):

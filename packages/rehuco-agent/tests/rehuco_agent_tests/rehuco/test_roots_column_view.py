@@ -6,15 +6,23 @@ from typing import Final
 from uuid import uuid4
 
 from borco_pyside.widgets import RowBandDelegate
-from PySide6.QtCore import QPoint
-from PySide6.QtGui import QColor, QImage
-from PySide6.QtWidgets import QAbstractItemView, QListView, QStyleOptionViewItem
+from borco_pyside.widgets.row_band_delegate import TEXT_PADDING
+from PySide6.QtCore import QPoint, QRect
+from PySide6.QtGui import QColor, QImage, QPainter
+from PySide6.QtWidgets import QAbstractItemView, QApplication, QListView, QStyleOptionViewItem
 from pytest import fixture
+from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.rehuco.root_row_delegate import RootRowDelegate
+from rehuco_agent.rehuco.root_row_delegate import ROW_PADDING, RootRowDelegate
 from rehuco_agent.rehuco.roots_column_view import RootsColumnView
 from rehuco_agent.rehuco.roots_folder_model import NodeListing, RootsFolderModel
-from rehuco_agent.rehuco.roots_item_delegate import ARROW_WIDTH, ICON_SIZE, ICON_TEXT_GAP, RootsItemDelegate
+from rehuco_agent.rehuco.roots_item_delegate import (
+    ARROW_WIDTH,
+    ICON_SIZE,
+    ICON_TEXT_GAP,
+    RootsItemDelegate,
+    arrow_height,
+)
 from rehuco_core import RehucoRoot, RootFolderLister, RootStorage
 
 WAIT_TIMEOUT_MS: Final = 10_000
@@ -227,7 +235,8 @@ def test_painting_a_root_row_shows_its_folder_line(
     **Test steps:**
 
     * grab the column of roots
-    * verify the first row's lower half holds some ink, and its darkest pixel is lighter than the name's
+    * verify the first row's lower half holds some ink, and its darkest pixel is lighter than the name's -- read right
+      of the glyph, which spans both lines
     """
     view, _model = shown
     qtbot.wait(50)
@@ -236,13 +245,16 @@ def test_painting_a_root_row_shows_its_folder_line(
         for column in view.findChildren(QAbstractItemView)
         if column.model() is not None and not column.rootIndex().isValid()
     )
-    height = RootRowDelegate(view).sizeHint(QStyleOptionViewItem(), first.model().index(0, 0)).height()
+    root = first.model().index(0, 0)
+    delegate = RootRowDelegate(view)
+    height = delegate.sizeHint(QStyleOptionViewItem(), root).height()
+    text_left = TEXT_PADDING + delegate.glyph_size(QStyleOptionViewItem(), root, height) + ICON_TEXT_GAP
     image = first.viewport().grab().toImage()
 
     def darkest(top: int, bottom: int) -> int:
         return min(
             QColor(image.pixel(x, y)).lightness()
-            for x in range(20, min(200, image.width()))
+            for x in range(text_left, min(200, image.width()))
             for y in range(top, min(bottom, image.height()))
         )
 
@@ -250,3 +262,123 @@ def test_painting_a_root_row_shows_its_folder_line(
     folder_ink = darkest(height // 2, height)
     assert folder_ink < 255
     assert folder_ink > name_ink
+
+
+def test_a_root_rows_glyph_is_centred_on_the_whole_row(
+    mocker: MockerFixture, shown: tuple[RootsColumnView, RootsFolderModel]
+) -> None:
+    """The storage glyph sits halfway down the two-line row, beside both the name and the folder, not level with the
+    name alone.
+
+    **Test steps:**
+
+    * paint a root row's content into a rect taller than its two lines, with the glyph drawing captured
+    * verify the glyph's vertical centre is the rect's
+    """
+    view, model = shown
+    delegate = RootRowDelegate(view)
+    draw = mocker.patch.object(delegate, "draw_icon")
+    root = model.index(0, 0)
+    option = QStyleOptionViewItem()
+    delegate.initStyleOption(option, root)
+    row = QRect(0, 10, 300, 60)
+    image = QImage(320, 80, QImage.Format.Format_ARGB32)
+    painter = QPainter(image)
+    try:
+        delegate.paint_content(painter, option, root, row, QColor("black"))
+    finally:
+        painter.end()
+
+    _painter, _path, _color, glyph = draw.call_args.args
+    assert glyph.width() == glyph.height() == delegate.glyph_size(option, root, row.height())
+    assert abs(glyph.center().y() - row.center().y()) <= 1
+
+
+def test_a_root_rows_glyph_grows_as_its_arrow_does(shown: tuple[RootsColumnView, RootsFolderModel]) -> None:
+    """The style draws the column view's arrow bigger in a taller row, so the two-line root row's arrow is bigger than a
+    folder's; the root's glyph is the folders' scaled by the ratio of the two arrows, and the row is wider by what that
+    adds.
+
+    **Test steps:**
+
+    * measure a root row with the root row delegate and with the one-line one, and the arrow each gets
+    * verify the glyph is the folders' size scaled by the ratio of the two arrows, capped at the two lines' height
+    * verify the root row's width hint grew by exactly the glyph's growth
+    * verify it never shrinks below a folder's in a short row
+    """
+    view, model = shown
+    root = model.index(0, 0)
+    option = QStyleOptionViewItem()
+    delegate = RootRowDelegate(view)
+    two_lines = delegate.sizeHint(option, root)
+    one_line = RootsItemDelegate(view).sizeHint(option, root)
+    ratio = arrow_height(QApplication.style(), two_lines.height()) / arrow_height(
+        QApplication.style(), one_line.height()
+    )
+
+    side = delegate.glyph_size(option, root, two_lines.height())
+
+    assert side == max(ICON_SIZE, min(round(ICON_SIZE * ratio), two_lines.height() - 2 * ROW_PADDING))
+    assert two_lines.width() == one_line.width() + side - ICON_SIZE
+    assert delegate.glyph_size(option, root, 4) == ICON_SIZE
+
+
+def test_the_arrow_is_measured_as_the_style_draws_it_and_grows_with_the_row(qtbot: QtBot) -> None:
+    """The arrow's height is read off what the style draws -- something, and more of it in a taller row -- and asking
+    twice gives the same answer.
+
+    **Test steps:**
+
+    * measure the arrow of a one-line row and of a row three times as tall
+    * verify both drew something, the taller one more, and a second ask agrees
+    """
+    del qtbot
+    style = QApplication.style()
+
+    short, tall = arrow_height(style, 20), arrow_height(style, 60)
+
+    assert 0 < short <= tall
+    assert arrow_height(style, 20) == short
+
+
+def test_a_style_that_draws_no_arrow_leaves_the_root_glyph_at_the_folders_size(
+    mocker: MockerFixture, shown: tuple[RootsColumnView, RootsFolderModel]
+) -> None:
+    """With nothing drawn to measure, there is no ratio to scale by: the arrow measures nothing, and the root's glyph
+    stays the size a folder's is.
+
+    **Test steps:**
+
+    * measure the arrow of a style that draws nothing
+    * make every arrow measure nothing and ask for a root's glyph
+    * verify zero, then the folders' size
+    """
+    view, model = shown
+    blank = mocker.MagicMock()
+    blank.name.return_value = "blank"
+
+    assert arrow_height(blank, 30) == 0
+
+    mocker.patch("rehuco_agent.rehuco.root_row_delegate.arrow_height", return_value=0)
+    assert RootRowDelegate(view).glyph_size(QStyleOptionViewItem(), model.index(0, 0), 38) == ICON_SIZE
+
+
+def test_a_row_with_no_glyph_is_no_wider_than_its_one_line_hint(
+    shown: tuple[RootsColumnView, RootsFolderModel],
+) -> None:
+    """A row with no glyph -- a placeholder -- has none to grow, so its two-line hint is exactly as wide as its one-line
+    one.
+
+    **Test steps:**
+
+    * take the placeholder row of the unreachable root, which has no glyph
+    * verify the root row delegate's width hint is the one-line delegate's
+    """
+    view, model = shown
+    placeholder = model.index(0, 0, model.index(1, 0))
+    assert placeholder.isValid()
+    assert placeholder.data(RootsFolderModel.ICON_PATH_ROLE) is None
+
+    width = RootRowDelegate(view).sizeHint(QStyleOptionViewItem(), placeholder).width()
+
+    assert width == RootsItemDelegate(view).sizeHint(QStyleOptionViewItem(), placeholder).width()
