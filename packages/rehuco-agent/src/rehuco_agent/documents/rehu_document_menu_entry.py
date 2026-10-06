@@ -45,6 +45,11 @@ ICON_COLUMN_PAD: Final = 4
 (``QMenuPrivate::updateActionRects``, ``icone + 4``) -- reserved by the entry too (#465), so its text starts
 where it would in a menu that has such a row."""
 
+ICON_COLUMN_CLEARANCE: Final = 2
+"""Two more pixels on top of :data:`ICON_COLUMN_PAD`, because the frame `Fusion` draws round a checked row's icon is
+26 px wide from x=4 on a two-line row and ends on the very column the text's first glyph starts at, so a checked and
+unsaved entry touched its title. Two, since Fusion moves its text one pixel for every two the column grows."""
+
 PROBE_SIZE: Final = QSize(200, 26)
 """Scratch size for the one-off render :meth:`RehuDocumentMenuEntry.row_style` measures from. Wide
 enough that a probe glyph lands clear of any check column, short enough to be free."""
@@ -185,7 +190,9 @@ class RehuDocumentMenuEntry(QWidget):
         # (``updateActionRects``: the small icon size plus ICON_COLUMN_PAD), not the bare icon size.
         option.maxIconWidth = max(
             option.maxIconWidth,
-            self.style().pixelMetric(QStyle.PixelMetric.PM_SmallIconSize, None, self) + ICON_COLUMN_PAD,
+            self.style().pixelMetric(QStyle.PixelMetric.PM_SmallIconSize, None, self)
+            + ICON_COLUMN_PAD
+            + ICON_COLUMN_CLEARANCE,
         )
         option.menuItemType = QStyleOptionMenuItem.MenuItemType.Normal
         option.text = ""
