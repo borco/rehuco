@@ -452,6 +452,8 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         """True only while :meth:`__seed_from_document` is applying field values pulled from the
         document -- guards every write-through handler below so a seed is never mistaken for a user
         edit."""
+        self.__loading = False
+        """See :attr:`loading`."""
 
         self.__seed_from_document()
         self.lock_reasons = list(self.__document.lock_reasons)
@@ -596,6 +598,15 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     def document(self) -> RehuDocument:
         """The wrapped document."""
         return self.__document
+
+    @property
+    def loading(self) -> bool:
+        """Whether :meth:`load` (or a revert) is mid-way through moving every field to a newly read file (#381).
+
+        Its path, dirty flag and lock reasons each announce their own change on the way, and :attr:`reloaded`
+        follows once it is all done: a consumer that re-reads the disk on any of them waits for that one.
+        """
+        return self.__loading
 
     @property
     def locked(self) -> bool:
@@ -780,12 +791,19 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         # cleared before anything is emitted: the refresh handlers this raises (reloaded,
         # active_block_changed) are the very consumers whose I/O the pending flag was holding back (#66)
         self.__pending = False
-        self.__document = document
-        self.__seed_from_document()
-        self.dirty = False
-        self.rename_error = ""
-        self.lock_reasons = list(self.__document.lock_reasons)
+        self.__loading = True
+        try:
+            self.__document = document
+            self.__seed_from_document(description=False)
+            self.dirty = False
+            self.rename_error = ""
+            self.lock_reasons = list(self.__document.lock_reasons)
+        finally:
+            self.__loading = False
         self.image_scanner = self.__make_image_scanner()
+        # after the scanner: a description renders its embedded images against the new folder, once (#381)
+        with self.__seeding_guard():
+            self.description = self.__document.description
         self.unknown_fields_changed.emit()
         if rebuild or self.__form_shape() != shape:
             self.active_block_changed.emit()
@@ -879,6 +897,9 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
         :param directory: the folder's absolute path.
         """
+        # what the scanner last read of the folder is out of date now -- before anyone is told to read it again.
+        # Installed at construction and only ever replaced, never cleared
+        cast(RehuDocumentImageScanner, self.image_scanner).forget()
         self.folder_changed.emit(directory)
 
     def relocate(self, relocation: Relocation) -> bool:
@@ -1194,9 +1215,13 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         finally:
             self.__seeding = False
 
-    def __seed_from_document(self) -> None:
+    def __seed_from_document(self, *, description: bool = True) -> None:
         """Set every field from :attr:`document`'s current in-memory state (construction,
-        :meth:`revert`, :meth:`convert`), guarded so it is never itself mistaken for a user edit."""
+        :meth:`revert`, :meth:`convert`), guarded so it is never itself mistaken for a user edit.
+
+        :param description: seed the description too; :meth:`__load` seeds it on its own, once the new image
+            scanner is installed, so it is rendered once and against the right folder (#381).
+        """
         with self.__seeding_guard():
             self.path = self.__document.path
             self.location = self.__document.path.as_posix() if self.__document.path is not None else ""
@@ -1207,7 +1232,8 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             self.publisher = self.__document.publisher
             self.url = self.__document.url
             self.released = self.__document.released
-            self.description = self.__document.description
+            if description:
+                self.description = self.__document.description
             self.hidden_images = self.__document.hidden_images
             self.original_size = self.__document.original_size
             self.current_size = self.__document.current_size

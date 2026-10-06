@@ -523,8 +523,11 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
         A :attr:`~RehuDocumentModel.pending` session-restore placeholder is treated like a document
         with no path: even the record's single ``stat`` can block on an offline mount (#66,
         [[mounts-and-storage#offline-mounts]]), and the deferred load's ``reloaded`` -- wired in
-        ``__init__`` -- re-runs this once the document is real.
+        ``__init__`` -- re-runs this once the document is real. A load in progress waits for its own ``reloaded``
+        too, rather than taking the ``stat`` once per field it moves (#381).
         """
+        if self.__model.loading:
+            return
         path = self.__model.path if not self.__model.pending and self.__model.saved_on_disk else None
         checksums = shared_checksum_settings()
         has_record = path is not None and self.__has_something_to_verify(path)

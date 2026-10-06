@@ -152,6 +152,10 @@ class ConversionBackupActions(QObject):
         read the deferral exists to avoid. The deferred load emits ``reloaded``, which is already wired
         here, so the inventory catches up the moment the document is real.
         """
+        # a load moves the path, the dirty flag and the lock one after another, and ends on `reloaded`: one
+        # listing then, not one per step (#381)
+        if self.__model.loading:
+            return
         path = self.__model.path if not self.__model.pending else None
         self.__backups = conversion_backups(path) if path is not None else None
         self.__discard_action.setVisible(self.retained)

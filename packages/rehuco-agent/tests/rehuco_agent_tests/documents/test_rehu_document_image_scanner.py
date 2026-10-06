@@ -11,6 +11,7 @@ from unittest.mock import Mock
 
 from PySide6.QtCore import QSize
 from pytest_mock import MockerFixture
+from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_image_scanner import RehuDocumentImageScanner
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields.image_scanner import AfterConversion
@@ -136,7 +137,7 @@ def test_screenshots_reports_a_shared_directory(mocker: MockerFixture) -> None:
     **Test steps:**
 
     * mock ``other_record_stems`` to report a sibling, then to report none
-    * read ``screenshots()`` each time
+    * read ``screenshots()`` each time, the scanner told in between that the folder changed
     * verify ``shared_directory`` follows it
     """
     stems = mocker.patch("rehuco_agent.documents.rehu_document_image_scanner.other_record_stems", return_value=("foo",))
@@ -146,8 +147,35 @@ def test_screenshots_reports_a_shared_directory(mocker: MockerFixture) -> None:
     assert scanner.screenshots().shared_directory
 
     stems.return_value = ()
+    scanner.forget()
 
     assert not scanner.screenshots().shared_directory
+
+
+def test_screenshots_reads_the_folder_once_a_turn(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The strip and the curation list each ask as a record is shown: one reading of the folder answers both, until
+    the event loop runs again or the scanner is told the folder changed (#381).
+
+    **Test steps:**
+
+    * ask twice in one turn, then once after the event loop ran, then once after ``forget``
+    * verify the folder was read once, then again each time
+    """
+    lister = mocker.Mock(return_value=[])
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE_PATH))
+    scanner = RehuDocumentImageScanner(model, lister, no_screenshots)
+
+    scanner.screenshots()
+    scanner.screenshots()
+    assert lister.call_count == 1
+
+    qtbot.wait(1)
+    scanner.screenshots()
+    assert lister.call_count == 2
+
+    scanner.forget()
+    scanner.screenshots()
+    assert lister.call_count == 3
 
 
 def test_screenshots_is_empty_without_a_path(mocker: MockerFixture) -> None:

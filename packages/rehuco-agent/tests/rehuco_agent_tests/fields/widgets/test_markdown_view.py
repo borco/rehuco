@@ -229,13 +229,13 @@ def test_load_resource_ignores_the_scanner_for_a_non_image_resource(qtbot: QtBot
 def test_assigning_a_new_image_scanner_re_renders_the_current_text(qtbot: QtBot, mocker: MockerFixture) -> None:
     """Assigning a new ``image_scanner`` re-renders the currently-set text, so already-shown images
     are re-resolved through the new scanner (e.g. a `.tc` -> `.rehu` conversion,
-    [[acquisition-tooling#tc-to-rehu]]).
+    [[acquisition-tooling#tc-to-rehu]]) -- at the end of the turn, so text set in the same turn renders once (#381).
 
     **Test steps:**
 
     * set some Markdown that embeds an image
     * assign a new scanner
-    * verify the new scanner's ``get_markdown_viewer_image`` is consulted on the next render
+    * verify the new scanner's ``get_markdown_viewer_image`` is consulted once the event loop runs
     """
     view = MarkdownView()
     qtbot.addWidget(view)
@@ -244,6 +244,29 @@ def test_assigning_a_new_image_scanner_re_renders_the_current_text(qtbot: QtBot,
     new_scanner = mocker.Mock(get_markdown_viewer_image=mocker.Mock(return_value=None))
     view.image_scanner = new_scanner
 
+    qtbot.waitUntil(lambda: new_scanner.get_markdown_viewer_image.called)
+
+
+def test_text_set_after_a_new_scanner_renders_once(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """A document loading another record installs a new scanner and sets the new text in one turn: the text renders
+    once, through the new scanner, and the re-render the scanner asked for is dropped (#381).
+
+    **Test steps:**
+
+    * assign a new scanner, then at once set Markdown that embeds an image
+    * let the event loop run
+    * verify the view rendered once, resolving the image through the new scanner
+    """
+    view = MarkdownView()
+    qtbot.addWidget(view)
+    new_scanner = mocker.Mock(get_markdown_viewer_image=mocker.Mock(return_value=None))
+    rendered = mocker.spy(view, "setHtml")
+
+    view.image_scanner = new_scanner
+    view.set_markdown("![](cover.jpg)")
+    qtbot.wait(10)
+
+    assert rendered.call_count == 1
     assert new_scanner.get_markdown_viewer_image.called
 
 

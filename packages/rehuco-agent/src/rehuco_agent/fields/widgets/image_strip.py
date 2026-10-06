@@ -7,6 +7,7 @@ thumbnail's height is the user's own choice ("Viewers > Images"), and so is whic
 document's strip uses.
 """
 
+from collections.abc import Hashable
 from pathlib import Path
 from typing import Final, override
 
@@ -193,6 +194,9 @@ class ImageStrip(QScrollArea):  # pylint: disable=too-many-instance-attributes
         self.__thumbnails: dict[Path, ThumbnailLabel] = {}
         self.__waiting: dict[str, Path] = {}
         """The thumbnails still holding their place, by the cache key their picture will land under (#381)."""
+        self.__shown: tuple[tuple[Hashable, ...], int, float] | None = None
+        """The files the row was last built for, by identity, with the height and pixel ratio -- what a rebuild
+        compares against to skip one that would change nothing (#381); ``None`` before the first."""
         self.__current: Path | None = None
         self.__requested_visible = True
         self.__row: QLayout
@@ -290,8 +294,10 @@ class ImageStrip(QScrollArea):  # pylint: disable=too-many-instance-attributes
             return
         self.__wrap = wrap
         paths = list(self.__thumbnails)
-        # the labels themselves are about to be destroyed with the content widget holding them
+        # the labels themselves are about to be destroyed with the content widget holding them, so the same files
+        # are a rebuild this time
         self.__thumbnails.clear()
+        self.__shown = None
         self.__build_content()
         self.__apply_height()
         self.set_images(paths)
@@ -434,15 +440,13 @@ class ImageStrip(QScrollArea):  # pylint: disable=too-many-instance-attributes
         place until the loader lands it, or takes it back out if it cannot be decoded -- reporting the set
         again then -- and one already known not to decode is left out from the start.
 
+        The very files the row already shows, at the size it shows them, are nothing to do (#381): showing a record
+        refreshes the strip both for its new scanner and for the curation list's rebuild, and a rebuild of the
+        same row twice is a second round of widgets for nothing. Compared by file, not name, so a rearrangement
+        that swapped two files' names is still rebuilt.
+
         :param paths: the curated (visible) screenshot paths to show; an empty list clears the strip.
         """
-        while (item := self.__row.takeAt(0)) is not None:
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
-        self.__thumbnails.clear()
-        self.__waiting.clear()
-
         # the whole strip height: the current-item frame is painted over the screenshot rather
         # than around it, so it costs the thumbnail nothing
         thumbnail_height = self.__height
@@ -450,6 +454,18 @@ class ImageStrip(QScrollArea):  # pylint: disable=too-many-instance-attributes
         # keyed by the file, not its name: a screenshot's name is its place in the set, so a curation edit
         # renames the files and a name key would paint a neighbour's cached picture
         source = ScreenshotRowsImageSource([(path, ImageVisibility.VISIBLE) for path in paths])
+        shown = (tuple(source.key(index) for index in range(len(source))), thumbnail_height, ratio)
+        if shown == self.__shown:
+            return
+        self.__shown = shown
+
+        while (item := self.__row.takeAt(0)) is not None:
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        self.__thumbnails.clear()
+        self.__waiting.clear()
+
         for index, path in enumerate(paths):
             key = source.key(index)
             if self.__loader.failed(key, thumbnail_height, ratio):
