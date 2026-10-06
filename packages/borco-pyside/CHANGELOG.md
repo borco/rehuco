@@ -44,6 +44,10 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ### Fixed
 
+- Pinning a dock that has a `QtAdsPinSideHandler` no longer invalidates the Python wrappers of objects Qt made
+  inside that dock while the objects still exist, which made them raise "already deleted" on next use. The
+  handler now asks the dock for its slide-out container rather than asking the container for its dock: that
+  call registered the dock under a wrapper that was discarded as the pin finished.
 - `LineEditClearActionFilter` could equip a line edit with a second clear button when the Python wrapper of the first
   was invalidated while the action itself lived on. It now keeps no reference to its action and finds it on the line
   edit by object name, so there is only ever one; `LineEditClearActionFilter.action_of(line_edit)` is how.

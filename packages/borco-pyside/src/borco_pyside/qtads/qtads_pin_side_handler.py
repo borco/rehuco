@@ -139,8 +139,14 @@ class QtAdsPinSideHandler(QObject):
         Every handler on the same manager sees every pin, so the dock check is what makes one handler
         per dock work off one shared signal.
 
+        **Asked of the dock, never of the container.** ``container.dockWidget()`` registers the dock as a
+        child of ``container``'s wrapper -- a slot argument, collected the moment this returns -- and
+        shiboken then invalidates every Qt-made wrapper anyone fetched beneath that dock (a column of a
+        ``QColumnView``, a view's header, a line edit's own actions) while the objects themselves live on
+        and later raise "already deleted". ``dock.autoHideDockContainer()`` registers nothing (#461).
+
         :param container: the slide-out container QtAds has just built for some pinned dock.
         """
-        if container.dockWidget() is self.__dock:
+        if self.__dock.autoHideDockContainer() is container:
             self.__pinned = True
             self.__dock.setPreferredAutoHideSideBarLocation(container.sideBarLocation())
