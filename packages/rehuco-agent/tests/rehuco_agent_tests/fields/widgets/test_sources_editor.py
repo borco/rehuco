@@ -339,14 +339,16 @@ def test_the_cards_actions_wear_the_apps_icons(qtbot: QtBot, two_sources: RehuDo
             assert button.width() == button.height()
 
 
-def test_the_glyphs_read_on_the_selected_fill(qtbot: QtBot, two_sources: RehuDocumentModel) -> None:
-    """A current card's buttons wear the highlighted-text glyphs, and the plain ones again when it is not.
+def test_the_glyphs_are_the_same_whether_or_not_the_card_is_current(
+    qtbot: QtBot, two_sources: RehuDocumentModel
+) -> None:
+    """A current card is not filled, so its buttons keep the ordinary glyphs.
 
     **Test steps:**
 
     * note the delete icon of a card that is not current
-    * make it current and verify the icon changed
-    * make it not current and verify the original icon is back
+    * make it current and verify the icon is unchanged
+    * make it not current and verify the icon is unchanged again
     """
     editor = make_editor(qtbot, two_sources)
     cards = editor.cards
@@ -354,7 +356,7 @@ def test_the_glyphs_read_on_the_selected_fill(qtbot: QtBot, two_sources: RehuDoc
     plain = card.delete_action.icon().cacheKey()
 
     card.set_current(True)
-    assert card.delete_action.icon().cacheKey() != plain
+    assert card.delete_action.icon().cacheKey() == plain
 
     card.set_current(False)
     assert card.delete_action.icon().cacheKey() == plain

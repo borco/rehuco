@@ -33,6 +33,10 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ### Changed
 
+- The current card of a card list is no longer filled and outlined in the selection colour: it is painted like any
+  other card, and its add and delete buttons, shown for as long as it is current, are its only mark. `CardStyle`
+  ships no `CURRENT` state and `CardStyle.style_for` takes the card's states alone; a flagged card shows its state's
+  fill and border whether or not it is current.
 - The list-editor, card and log-view actions take their keys from the installed `CommandRegistry` when
   there is one; with none installed they keep their keys as before. `set_tooltip_and_shortcut` and
   `ActionButtonColumn.add_action` take an optional `command_id`.

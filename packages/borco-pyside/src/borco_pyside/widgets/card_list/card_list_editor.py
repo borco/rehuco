@@ -38,7 +38,8 @@ class CardListEditor(QWidget):
     Ctrl+Up/Down/Home/End move it -- claimed ahead of the edit widget's own use of those keys. Del alone is
     left to the edit widget: it never deletes a card.
 
-    **Current card.** The card holding focus is current: painted in the selection colour, its buttons shown.
+    **Current card.** The card holding focus is current: its buttons are shown, however the pointer
+    moves, and that is its only mark -- it is painted like any other card.
     It stops being current when focus leaves the editor, but not when the window merely loses activation.
 
     **Drag.** A card's grip drags it. The card leaves the list for the length of the drag and a ghost, as tall as

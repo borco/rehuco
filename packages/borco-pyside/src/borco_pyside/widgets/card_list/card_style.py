@@ -2,7 +2,7 @@
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import ClassVar, Final
+from typing import ClassVar
 
 from PySide6.QtGui import QColor, QPalette
 
@@ -40,20 +40,14 @@ class CardStateStyle:
 class CardStyle:
     """Maps a card state's name to its :class:`CardStateStyle` ([[plugins#field-toolkit]]).
 
-    Ships only :attr:`CURRENT`, the card holding focus, in the palette's selection colour. Every other state
-    -- a ``flagged`` card, say -- is the app's to :meth:`register`, since this package carries no app
-    colours. A card that is both current and in a registered state keeps the current fill and takes the
-    state's border, so the flag stays visible on the card being edited.
+    Ships no state: the card holding focus is marked by its buttons alone, not by a fill or an outline, and
+    every other state -- a ``flagged`` card, say -- is the app's to :meth:`register`, since this package
+    carries no app colours.
 
     :param states: per-instance styles, taking precedence over the class-wide :attr:`STATES`.
     """
 
-    CURRENT: Final = "current"
-    """The state of the card holding focus."""
-
-    STATES: ClassVar[dict[str, CardStateStyle]] = {
-        CURRENT: CardStateStyle(fill=QPalette.ColorRole.Highlight, border=QPalette.ColorRole.Highlight),
-    }
+    STATES: ClassVar[dict[str, CardStateStyle]] = {}
     """Class-wide styles, shared by every card list that names no style of its own for a state."""
 
     def __init__(self, states: Mapping[str, CardStateStyle] | None = None) -> None:
@@ -75,25 +69,14 @@ class CardStyle:
         """
         return self.__states.get(state, self.STATES.get(state))
 
-    def style_for(self, current: bool, states: Mapping[str, str]) -> CardStateStyle:
-        """The look of a card that is ``current`` or not, and in ``states``.
+    def style_for(self, states: Mapping[str, str]) -> CardStateStyle:
+        """The look of a card in ``states``.
 
-        :param current: whether the card holds focus.
         :param states: the card's states (name to reason); only styled ones count, the first one styled
             in registration order winning.
         :returns: the style to paint; an empty one for a plain card.
         """
-        flagged = next(
-            (
-                style
-                for name in (*self.__states, *self.STATES)
-                if name != self.CURRENT and name in states and (style := self.style(name))
-            ),
-            None,
+        return next(
+            (style for name in (*self.__states, *self.STATES) if name in states and (style := self.style(name))),
+            CardStateStyle(),
         )
-        current_style = self.style(self.CURRENT) if current else None
-        if current_style is None:
-            return flagged or CardStateStyle()
-        if flagged is None:
-            return current_style
-        return CardStateStyle(fill=current_style.fill, border=flagged.border or current_style.border)

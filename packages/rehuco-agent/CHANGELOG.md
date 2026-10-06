@@ -91,6 +91,8 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 ### Changed
 
+- The current card of a document's **Locations** field is no longer filled in the selection blue: its add and delete
+  buttons, shown for as long as it is current, mark it.
 - A root's **Removable** checkbox is gone: what a root lives on is its **storage**, chosen when it is added and
   changed on the card under the Roots view. A `.rehuco` saved by this build is read-only in an earlier one, and a
   catalog no longer remembers the Roots table's column widths.
