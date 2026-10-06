@@ -6030,6 +6030,8 @@ def test_the_roots_views_folder_filter_reaches_the_browsers_and_reveals_their_do
 
     * stand a catalog in, close the Browsers dock and emit the panel's ``filter_requested``
     * verify the token reached the browsers and the dock is open
+    * close the dock, make the browsers refuse the token and emit again
+    * verify the dock stays closed
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -6041,6 +6043,13 @@ def test_the_roots_views_folder_filter_reaches_the_browsers_and_reveals_their_do
 
     set_token.assert_called_once_with(CatalogField.FOLDER, "tutorials/python")
     assert not browsers_dock_widget(window).isClosed()
+
+    browsers_dock_widget(window).toggleView(False)
+    set_token.return_value = False
+
+    roots_panel(window).filter_requested.emit(CatalogField.FOLDER, "tutorials/python")
+
+    assert browsers_dock_widget(window).isClosed()
 
 
 def test_the_root_catalog_toggle_leads_the_action_bar(qtbot: QtBot) -> None:

@@ -38,7 +38,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QSplitter,
 )
-from pytest import LogCaptureFixture, fixture, mark, param
+from pytest import LogCaptureFixture, MonkeyPatch, fixture, mark, param
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.rehuco import BrowsersDock, RootCatalog, RootsPanel, TableBrowser
@@ -3502,6 +3502,132 @@ def test_verifying_twice_is_not_asking_twice(
     dock.roots.verify_checksums_action.trigger()
 
     enqueue.assert_not_called()
+
+
+# endregion
+
+
+# region Guards the actions never reach, because a disabled action does not fire (#461)
+
+
+@mark.usefixtures("served")
+def test_the_root_slots_refuse_without_a_current_root_and_a_move_that_goes_nowhere_writes_nothing(
+    qtbot: QtBot, dock: CatalogDocks, queue: TaskQueue, saves: MagicMock
+) -> None:
+    """Called directly, the slots behind the root editors, the moves, Verify and the folder filter each refuse on
+    their own, since a disabled action never reaches them.
+
+    **Test steps:**
+
+    * open a catalog with no row current and call the name, storage, move, verify and folder-filter slots
+    * select the first root and call the move slot with a move that leaves it where it is
+    * verify nothing was written or queued, no filter was asked for, and the file is as it was
+    """
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    panel = dock.roots
+
+    with qtbot.assertNotEmitted(panel.filter_requested):
+        panel._RootsPanel__on_root_name_edited()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+        panel._RootsPanel__on_root_storage_chosen()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+        panel._RootsPanel__move_root(lambda _file, row: row)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+        panel._RootsPanel__on_verify_checksums()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+        panel._RootsPanel__on_filter_folder()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+        select_root(dock, 0)
+        panel._RootsPanel__move_root(lambda _file, row: row)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    saves.assert_not_called()
+    assert not queue.jobs()
+    assert shown_labels(dock) == ["tutorials", "packs"]
+
+
+class RecordingMenu(QMenu):
+    """A menu that records what it was asked to show instead of running a modal loop."""
+
+    shown: list[list[QAction]] = []
+
+    def exec(self, *_args: object) -> None:  # type: ignore[override]
+        """Record the menu's actions."""
+        RecordingMenu.shown.append(self.actions())
+
+
+@mark.usefixtures("served")
+def test_the_roots_context_menu_shows_the_rows_actions_and_makes_it_current(
+    mocker: MockerFixture, monkeypatch: MonkeyPatch, dock: CatalogDocks
+) -> None:
+    """Right-clicking a row opens a menu of that row's actions and makes the row current first; right-clicking
+    nothing opens none.
+
+    **Test steps:**
+
+    * open a catalog and ask for the menu where the pointer is over the second root
+    * verify the menu held that root's actions and the root became current
+    * ask for it where there is no row and verify no menu was shown
+    """
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    monkeypatch.setattr("rehuco_agent.rehuco.roots_panel.QMenu", RecordingMenu)
+    RecordingMenu.shown = []
+    view = dock.roots.roots_view
+    second = dock.roots.roots_model.index(1, 0)
+    answers = mocker.patch.object(view, "index_at_global", return_value=second)
+
+    dock.roots._RootsPanel__on_roots_context_menu(QPoint(1, 1))  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    assert RecordingMenu.shown == [dock.roots.roots_context_actions(second)]
+    assert view.currentIndex() == second
+
+    answers.return_value = QModelIndex()
+    dock.roots._RootsPanel__on_roots_context_menu(QPoint(1, 1))  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    assert len(RecordingMenu.shown) == 1
+
+
+def test_a_catalog_counts_nothing_with_no_cache_and_logs_a_cache_it_cannot_read(
+    mocker: MockerFixture, dock: CatalogDocks, served: Any, caplog: LogCaptureFixture
+) -> None:
+    """The entries a removal would drop are zero with nothing open and when the cache cannot be read.
+
+    **Test steps:**
+
+    * count a root's entries with no catalog open
+    * open one, make the count raise, and count again
+    * verify zero both times and an error naming the root
+    """
+    del served
+    root = RehucoRoot(UUID(ROOT_IDS[0]), TUTORIALS, "tutorials")
+    assert dock.catalog.resource_count(root) == 0
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    mocker.patch.object(CatalogCache, "resource_count", side_effect=sqlite3.OperationalError("locked"))
+
+    with caplog.at_level(logging.ERROR):
+        assert dock.catalog.resource_count(root) == 0
+
+    assert "Could not count the cached entries of tutorials" in caplog.text
+
+
+def test_removing_a_root_with_no_catalog_open_does_nothing_and_a_save_that_closes_the_file_is_not_announced(
+    mocker: MockerFixture, dock: CatalogDocks, served: Any, saves: MagicMock
+) -> None:
+    """The catalog refuses a removal it has no file for, and says nothing more when a failed save left it closed.
+
+    **Test steps:**
+
+    * remove a root with nothing open
+    * open a catalog, make the save fail and the file unreadable, and remove the first root
+    * verify both removals report failure, the second closed the file, and no refresh was announced after it
+    """
+    del served
+    assert not dock.catalog.remove_root(0)
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    saves.side_effect = PermissionError("read-only folder")
+    mocker.patch.object(Path, "read_text", side_effect=FileNotFoundError("gone"))
+    refreshed = mocker.MagicMock()
+    dock.catalog.refreshed.connect(refreshed)
+
+    assert not dock.catalog.remove_root(0)
+
+    assert dock.catalog.rehuco_path is None
+    refreshed.assert_called_once_with()
+    assert dock.catalog.save_error.startswith("Could not save")
 
 
 # endregion
