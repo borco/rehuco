@@ -249,15 +249,17 @@ def test_painting_a_root_row_shows_its_folder_line(
     delegate = RootRowDelegate(view)
     height = delegate.sizeHint(QStyleOptionViewItem(), root).height()
     text_left = TEXT_PADDING + delegate.glyph_size(QStyleOptionViewItem(), root, height) + ICON_TEXT_GAP
-    image = first.viewport().grab().toImage()
 
     def darkest(top: int, bottom: int) -> int:
+        image = first.viewport().grab().toImage()
         return min(
             QColor(image.pixel(x, y)).lightness()
             for x in range(text_left, min(200, image.width()))
             for y in range(top, min(bottom, image.height()))
         )
 
+    # the first paint can come after the fixed wait above under load (a parallel run): wait for the ink itself
+    qtbot.waitUntil(lambda: darkest(height // 2, height) < 255)
     name_ink = darkest(0, height // 2)
     folder_ink = darkest(height // 2, height)
     assert folder_ink < 255
