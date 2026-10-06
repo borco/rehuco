@@ -459,14 +459,21 @@ def test_a_persistent_index_follows_its_row_through_a_sort() -> None:
     assert held.data() == "gamma"
 
 
-@mark.parametrize("order", [Qt.SortOrder.AscendingOrder, Qt.SortOrder.DescendingOrder])
-def test_a_missing_value_sorts_after_every_value_either_way_round(order: Qt.SortOrder) -> None:
-    """A record with no authors is not "less" than one with: it comes last in both orders.
+@mark.parametrize(
+    ("order", "expected"),
+    [
+        (Qt.SortOrder.AscendingOrder, ["Without", "Ann", "Bob"]),
+        (Qt.SortOrder.DescendingOrder, ["Bob", "Ann", "Without"]),
+    ],
+)
+def test_a_missing_value_sorts_as_the_smallest(order: Qt.SortOrder, expected: list[str]) -> None:
+    """A record with no authors is the smallest value: first ascending, last descending, so a click on the header
+    brings the rows lacking a value to either end.
 
     **Test steps:**
 
     * sort a record without authors and two with by the authors column, each way round
-    * verify the one without is last
+    * verify the one without is first ascending and last descending
     """
     model = model_of(
         row(rehu("a/info.rehu", title="Without")),
@@ -476,7 +483,7 @@ def test_a_missing_value_sorts_after_every_value_either_way_round(order: Qt.Sort
 
     model.sort(CatalogColumn.AUTHORS, order)
 
-    assert shown_titles(model)[-1] == "Without"
+    assert shown_titles(model) == expected
 
 
 def test_a_size_sorts_by_its_bytes_not_its_text() -> None:
@@ -485,7 +492,7 @@ def test_a_size_sorts_by_its_bytes_not_its_text() -> None:
     **Test steps:**
 
     * sort 1,024 B, 1,000 B, 9 B and an unmeasured record by size
-    * verify the order is by bytes, the unmeasured one last
+    * verify the order is by bytes, the unmeasured one first
     """
     model = model_of(
         row(rehu("a.rehu", title="1024", current_size=1024)),
@@ -496,7 +503,7 @@ def test_a_size_sorts_by_its_bytes_not_its_text() -> None:
 
     model.sort(CatalogColumn.SIZE)
 
-    assert shown_titles(model) == ["9", "1000", "1024", "none"]
+    assert shown_titles(model) == ["none", "9", "1000", "1024"]
 
 
 def test_a_duration_and_a_claimed_count_sort_as_numbers() -> None:
@@ -523,17 +530,19 @@ def test_a_duration_and_a_claimed_count_sort_as_numbers() -> None:
 @mark.parametrize(
     ("order", "expected"),
     [
-        (Qt.SortOrder.AscendingOrder, ["v0", "v1", "v2", "tc", "unknown"]),
+        (Qt.SortOrder.AscendingOrder, ["unknown", "tc", "v0", "v1", "v2"]),
         (Qt.SortOrder.DescendingOrder, ["v2", "v1", "v0", "tc", "unknown"]),
     ],
 )
-def test_the_format_column_sorts_by_version_then_tc_then_unknown(order: Qt.SortOrder, expected: list[str]) -> None:
-    """Versions compare as numbers; every ``.tc``, then every unknown version, follows them in either order.
+def test_the_format_column_sorts_a_tc_below_the_versions_and_an_unknown_one_as_missing(
+    order: Qt.SortOrder, expected: list[str]
+) -> None:
+    """Versions compare as numbers, a ``.tc`` is the oldest format, and an unknown version is a missing value.
 
     **Test steps:**
 
-    * sort an unknown, a ``.tc`` and three versions by format
-    * verify the versions in the order asked, then ``tc``, then ``?``
+    * sort an unknown, a ``.tc`` and three versions by format, each way round
+    * verify the order is ``?``, ``tc``, 0, 1, 2 ascending and exactly the reverse descending
     """
     model = model_of(
         row(CatalogRecord("unknown.rehu", RecordKind.REHU, title="unknown")),

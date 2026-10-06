@@ -5,7 +5,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import IntEnum
 from pathlib import Path
-from typing import Any, Final, override
+from typing import Any, Final, cast, override
 from uuid import UUID
 
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, QPersistentModelIndex, Qt
@@ -69,8 +69,9 @@ class ColumnSpec:
     :param default_visible: whether a plain browser starts with it shown.
     :param numeric: whether it is a number, aligned right.
     :param sort_key: what a present value sorts by; the value itself unless given.
-    :param missing_rank: where a value sorts that is not one: ``0`` for a value, and ascending after every value, in
-        either order, for each kind of missing one.
+    :param is_missing: whether a cell's value is no value -- the record states none. A missing one sorts as the
+        smallest value: first ascending, last descending, so one click on a header brings the rows lacking it to the
+        top and the other to the bottom.
     """
 
     title: str
@@ -78,7 +79,7 @@ class ColumnSpec:
     default_visible: bool = True
     numeric: bool = False
     sort_key: Callable[[Any], Any] | None = None
-    missing_rank: Callable[[object], int] = lambda value: 1 if value is None or value == "" else 0
+    is_missing: Callable[[object], bool] = lambda value: value is None or value == ""
 
 
 def title_of(entry: CatalogRow) -> str:
@@ -96,9 +97,9 @@ def format_of(entry: CatalogRow) -> int | str:
     return UNKNOWN_FORMAT if record.format_version is None else record.format_version
 
 
-def format_rank(value: object) -> int:
-    """A version sorts first, then every ``.tc``, then every version not known."""
-    return {LEGACY_FORMAT: 1, UNKNOWN_FORMAT: 2}.get(value, 0) if isinstance(value, str) else 0
+def format_sort_key(value: int | str) -> int:
+    """What a known format sorts by: its version, a legacy ``.tc`` below them all as the oldest format."""
+    return -1 if value == LEGACY_FORMAT else cast(int, value)
 
 
 def joined(values: Iterable[str]) -> str:
@@ -124,7 +125,13 @@ COLUMNS: Final[Mapping[CatalogColumn, ColumnSpec]] = {
     CatalogColumn.RELEASED: ColumnSpec("Released", lambda entry: entry.record.released),
     CatalogColumn.SIZE: ColumnSpec("Size", lambda entry: entry.record.current_size, numeric=True),
     CatalogColumn.UPDATED: ColumnSpec("Updated", lambda entry: entry.record.updated),
-    CatalogColumn.FORMAT: ColumnSpec("Format", format_of, numeric=True, missing_rank=format_rank),
+    CatalogColumn.FORMAT: ColumnSpec(
+        "Format",
+        format_of,
+        numeric=True,
+        sort_key=format_sort_key,
+        is_missing=lambda value: value == UNKNOWN_FORMAT,
+    ),
     CatalogColumn.ADVERTISED_DURATION: ColumnSpec(
         "Advertised duration", lambda entry: entry.record.advertised_duration, default_visible=False, numeric=True
     ),
@@ -380,8 +387,8 @@ class CatalogTableModel(QAbstractTableModel):  # pylint: disable=too-many-instan
         return 0 <= self.__sort_column < len(COLUMNS)
 
     def __sort_key(self, entry: CatalogRow) -> tuple[Any, ...]:
-        """Where ``entry`` sorts in the current order: its column's value, missing ones after every value either way
-        round, then the cache's order between equals.
+        """Where ``entry`` sorts in the current order: its column's value, a missing one as the smallest, then the
+        cache's order between equals -- which stays ascending whichever way the column runs.
 
         :param entry: the row.
         :returns: its key.
@@ -390,13 +397,13 @@ class CatalogTableModel(QAbstractTableModel):  # pylint: disable=too-many-instan
             return self.__cache_key(entry)
         spec = COLUMNS[CatalogColumn(self.__sort_column)]
         value = spec.value(entry)
-        rank = spec.missing_rank(value)
-        if rank:
-            return rank, 0, self.__cache_key(entry)
-        key = spec.sort_key(value) if spec.sort_key is not None else value
+        if spec.is_missing(value):
+            key: tuple[int, Any] = (0, 0)
+        else:
+            key = (1, spec.sort_key(value) if spec.sort_key is not None else value)
         if self.__sort_order == Qt.SortOrder.DescendingOrder:
-            key = Descending(key)
-        return 0, key, self.__cache_key(entry)
+            return Descending(key), self.__cache_key(entry)
+        return key, self.__cache_key(entry)
 
     def __cache_key(self, entry: CatalogRow) -> tuple[int, str]:
         """Where the cache would put ``entry``: by its root's position, then by its path's key."""
