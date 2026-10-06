@@ -121,6 +121,8 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 ### Fixed
 
+- A checked, unsaved document in the `File` menu no longer touches its title in the Fusion style: the entry reserves
+  two more pixels beside its marks.
 - Right-clicking a table browser's header could stop showing the column menu until the app was restarted. The menu
   no longer holds on to the header it was built for, and a menu that cannot open is logged once instead of raised.
 - Clearing a table browser's filter line, with its clear button or otherwise, could leave the filtered rows on screen:

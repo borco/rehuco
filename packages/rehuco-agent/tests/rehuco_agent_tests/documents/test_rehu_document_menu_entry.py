@@ -21,13 +21,19 @@ from PySide6.QtWidgets import (
     QStyle,
     QStyleFactory,
     QStyleOption,
+    QStyleOptionMenuItem,
     QWidget,
     QWidgetAction,
 )
 from pytest import mark, skip
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.document_dock import DIRTY_DOCK_MARKER
-from rehuco_agent.documents.rehu_document_menu_entry import MAX_WIDTH, RehuDocumentMenuEntry
+from rehuco_agent.documents.rehu_document_menu_entry import (
+    ICON_COLUMN_CLEARANCE,
+    ICON_COLUMN_PAD,
+    MAX_WIDTH,
+    RehuDocumentMenuEntry,
+)
 
 ELLIPSIS = "\N{HORIZONTAL ELLIPSIS}"
 """The character `QFontMetrics.elidedText` appends when it trims text to fit."""
@@ -412,6 +418,29 @@ def pixels_differing_from(image: QImage, reference: QImage, *, from_x: int) -> l
     ]
 
 
+def marks_reaching_the_text(entries: list[RehuDocumentMenuEntry], text_left: int) -> list[tuple[int, int]]:
+    """What the marked entries (all but the last, plain one) paint at or right of ``text_left`` beyond the plain one."""
+    reference = entries[-1].grab().toImage()
+    return [
+        pixel
+        for entry in entries[:-1]
+        for pixel in pixels_differing_from(entry.grab().toImage(), reference, from_x=text_left)
+    ]
+
+
+def native_column(menu: QMenu) -> int:
+    """The icon column the menu reserves for its first (native) row."""
+    option = QStyleOptionMenuItem()
+    menu.initStyleOption(option, menu.actions()[0])
+    return option.maxIconWidth
+
+
+def entry_column(style: QStyle, entry: RehuDocumentMenuEntry) -> int:
+    """The icon column an entry reserves for itself, whatever its menu holds."""
+    small = style.pixelMetric(QStyle.PixelMetric.PM_SmallIconSize, None, entry)
+    return small + ICON_COLUMN_PAD + ICON_COLUMN_CLEARANCE
+
+
 @mark.parametrize("native_icon", [False, True])
 @mark.parametrize("style_name", ["windows11", "Windows", "Fusion"])  # windowsvista draws no check offscreen: no theme
 def test_an_entrys_marks_never_overlap_its_text_whatever_the_menus_other_rows_hold(
@@ -426,13 +455,14 @@ def test_an_entrys_marks_never_overlap_its_text_whatever_the_menus_other_rows_ho
       without an icon on a native row; skip where plain text draws no ink in this worker, since where
       the text sits is then unobservable (:func:`is_renderable`)
     * verify the four entries start their text at the same x
-    * verify that x is the same whether or not a native row has an icon
+    * verify that x is the same whether or not a native row has an icon, unless that icon makes the menu reserve
+      a wider column than the entry does (macOS: a 25 px column) -- then the entries follow the native rows
     * verify everything the marks add to the painting lies left of that x
     """
     style = QStyleFactory.create(style_name)
     if style is None:  # a style Qt did not build on this platform
         skip(f"{style_name} unavailable")
-    _menu, entries = make_menu(qtbot, style, native_icon=native_icon)
+    menu, entries = make_menu(qtbot, style, native_icon=native_icon)
     plain = entries[-1]
     if not is_renderable(plain, "Hg"):
         skip("plain text draws no ink in this worker (an icon font is the only family)")
@@ -440,11 +470,15 @@ def test_an_entrys_marks_never_overlap_its_text_whatever_the_menus_other_rows_ho
     text_left = plain.row_style()[0]
     assert {entry.row_style()[0] for entry in entries} == {text_left}
 
-    reference = plain.grab().toImage()
-    for entry in entries[:-1]:  # the marked ones
-        reaching = pixels_differing_from(entry.grab().toImage(), reference, from_x=text_left)
-        assert not reaching, f"{style_name}: marks reach into the text at {reaching[:3]}"
-    assert entries[0].grab().toImage() != reference  # the checked one differs left of the text
+    reaching = marks_reaching_the_text(entries, text_left)
+    assert not reaching, f"{style_name}: marks reach into the text at {reaching[:3]}"
+    assert entries[0].grab().toImage() != plain.grab().toImage()  # the checked one differs left of the text
 
-    _other_menu, other = make_menu(qtbot, style, native_icon=not native_icon)
-    assert {entry.row_style()[0] for entry in other} == {text_left}
+    other_menu, other = make_menu(qtbot, style, native_icon=not native_icon)
+    other_lefts = {entry.row_style()[0] for entry in other}
+    assert len(other_lefts) == 1
+    # an icon can only widen the column, and does not unless the menu reserves more than the entry does
+    icon_left, plain_left = (text_left, other_lefts.pop()) if native_icon else (other_lefts.pop(), text_left)
+    assert icon_left >= plain_left
+    if native_column(menu if native_icon else other_menu) <= entry_column(style, plain):
+        assert icon_left == plain_left
