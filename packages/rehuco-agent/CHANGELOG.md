@@ -69,7 +69,8 @@ released becomes the body of the GitHub Release, so each entry is written to be 
   `folder`, `authors`, `tags`, `publishers` and `type`, all of which must match. The rows narrow as you pause
   typing, or at once on Enter. The status line under the table counts what is shown and adds up its sizes and, for
   reference packs, its image counts, saying how many rows each total leaves out as unmeasured and how many are
-  legacy `.tc` files; a `folder` token matches the root label ignoring ASCII case and the path beneath it as the
+  legacy `.tc` files, and after them, for the rows selected, how many there are and their sums by the same rule; the
+  line shortens the selection first and holds the whole text as its tooltip; a `folder` token matches the root label ignoring ASCII case and the path beneath it as the
   filesystem does. An unknown field is flagged with a warning icon on the line, and the rest of the line still
   applies. Each browser remembers its line.
 - Author names in a document's viewer are links: clicking one brings the Root Catalog forward with

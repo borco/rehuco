@@ -11,16 +11,17 @@ from borco_pyside.theming import GlyphActionIconThemeHandler
 from borco_pyside.widgets import HeaderSectionsMenu, RowBandDelegate
 from PySide6.QtCore import QByteArray, QModelIndex, QPoint, Qt, QTimer, Signal
 from PySide6.QtGui import QIcon, QStandardItemModel
-from PySide6.QtWidgets import QLineEdit, QMenu, QStatusBar, QTableView, QWidget
+from PySide6.QtWidgets import QLineEdit, QMenu, QTableView, QWidget
 from rehuco_core import CatalogField, CatalogQuery, CatalogRow
 
 from ..glyphs import FILTER_PROBLEM_GLYPH
 from ..settings.catalog_state_store import TABLE_BROWSER_KIND, BrowserState
 from .browser_presets import DEFAULT_BROWSER_NAME, DEFAULT_PRESET, BrowserPreset
 from .catalog_delegates import COLUMN_DELEGATES
-from .catalog_table_model import DEFAULT_HIDDEN, CatalogColumn, CatalogTableModel, RowKey
+from .catalog_table_model import DEFAULT_HIDDEN, CatalogColumn, CatalogTableModel, CatalogTotals, RowKey
 from .filter_line import parse_filter, with_token, without_retired_tokens
 from .rehuco_browser_panel_ui import Ui_RehucoBrowserPanel
+from .status_line_label import StatusLineLabel
 
 FILTER_SETTLE_MS: Final = 250
 """How long the filter line waits after the last keystroke before its rows are read again; Enter does not wait."""
@@ -96,6 +97,8 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__ui.setupUi(self)
         view = self.__ui.catalog_view
         view.setModel(self.__model)
+        self.__status_line: Final = StatusLineLabel()
+        self.__ui.status_bar.addWidget(self.__status_line, 1)
         view.setItemDelegate(RowBandDelegate(view))
         for column, delegate in COLUMN_DELEGATES.items():
             view.setItemDelegateForColumn(column, delegate(view))
@@ -111,6 +114,7 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
         model = self.__model
         for signal in (model.modelReset, model.rowsInserted, model.rowsRemoved, model.dataChanged):
             signal.connect(self.__update_status)
+        view.selectionModel().selectionChanged.connect(self.__update_status)
         # connected after setModel, so the selection model has followed a removed or moved row before this asks it
         view.selectionModel().selectionChanged.connect(self.__update_current)
         for signal in (model.modelReset, model.rowsRemoved, model.rowsMoved, model.dataChanged, model.layoutChanged):
@@ -195,9 +199,9 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
         return self.__ui.catalog_view
 
     @property
-    def status_bar(self) -> QStatusBar:
-        """The status line under the table: how many resources it shows."""
-        return self.__ui.status_bar
+    def status_line(self) -> StatusLineLabel:
+        """The status line under the table: what it shows and, after that, what is selected."""
+        return self.__status_line
 
     def set_rows(self, rows: Sequence[CatalogRow], root_paths: Mapping[UUID, Path]) -> None:
         """Show ``rows``, in the sort this browser last asked for.
@@ -372,22 +376,44 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
             self.row_activated.emit(path)
 
     def __update_status(self) -> None:
-        """Say how many rows the table shows now, their sizes and, where it means anything, their image counts added
-        up over the ``.rehu`` rows, the legacy ``.tc`` ones counted apart -- each total saying how many rows it left
-        out, never silently understating."""
+        """Say what the table shows now, and after it what is selected (#462): the rows, their sizes and, where it
+        means anything, their image counts added up over the ``.rehu`` rows, the legacy ``.tc`` ones counted apart --
+        each total saying how many rows it left out, never silently understating."""
         totals = self.__model.totals
         if totals.count == 0:
-            self.__ui.status_bar.showMessage("No resources")
+            self.__status_line.set_parts("No resources")
             return
-        noun = "resource" if totals.count == 1 else "resources"
-        parts = [f"{totals.count:,} {noun}"]
+        selected = set[int]()
+        selection = self.view.selectionModel().selection()
+        for position in range(selection.count()):
+            chosen_range = selection.at(position)
+            selected.update(range(chosen_range.top(), chosen_range.bottom() + 1))
+        secondary = ""
+        if selected:
+            chosen = self.__model.totals_of(selected)
+            secondary = self.__describe(chosen, f"{chosen.count:,} selected")
+        self.__status_line.set_parts(self.__describe(totals, self.__resources(totals)), secondary)
+
+    @staticmethod
+    def __resources(totals: CatalogTotals) -> str:
+        """How many resources, the singular spelled right."""
+        return f"{totals.count:,} {'resource' if totals.count == 1 else 'resources'}"
+
+    def __describe(self, totals: CatalogTotals, lead: str) -> str:
+        """One part of the status line.
+
+        :param totals: what it adds up.
+        :param lead: how it starts: the count of rows it speaks of.
+        :returns: the part.
+        """
+        parts = [lead]
         if totals.legacy:
             parts.append(f"{totals.legacy:,} legacy .tc")
         parts.append(humanize.naturalsize(totals.size, gnu=True) + self.__unmeasured(totals.unmeasured_size))
         if totals.has_images:
             noun = "image" if totals.images == 1 else "images"
             parts.append(f"{totals.images:,} {noun}{self.__unmeasured(totals.unmeasured_images)}")
-        self.__ui.status_bar.showMessage(" / ".join(parts))
+        return " / ".join(parts)
 
     @staticmethod
     def __unmeasured(missing: int) -> str:

@@ -354,6 +354,29 @@ def test_a_table_with_no_reference_image_rows_has_no_image_total() -> None:
     assert (model.totals.has_images, model.totals.images, model.totals.unmeasured_images) == (True, 0, 0)
 
 
+def test_some_rows_add_up_by_the_rule_the_totals_do() -> None:
+    """A selection's totals are the totals of those rows alone, ``.tc`` and unmeasured rows included.
+
+    **Test steps:**
+
+    * set a sized record, a legacy ``.tc``, a measured pack and an unmeasured one
+    * verify the totals of no row, of one, of two with the ``.tc`` and of every row (a repeated and an out-of-range
+      number ignored)
+    """
+    pack = "reference_images"
+    model = model_of(
+        row(rehu("a/info.rehu", type="tutorial", current_size=4096)),
+        row(CatalogRecord("c/info.tc", RecordKind.TC, type=pack, current_size=0)),
+        row(rehu("d.rehu", type=pack, current_size=100, current_count=7)),
+        row(rehu("f.rehu", type=pack)),
+    )
+
+    assert model.totals_of([]) == CatalogTotals()
+    assert model.totals_of([0]) == CatalogTotals(count=1, size=4096)
+    assert model.totals_of([1, 2]) == CatalogTotals(count=2, legacy=1, size=100, images=7, has_images=True)
+    assert model.totals_of([0, 1, 2, 3, 3, 9, -1]) == model.totals
+
+
 # endregion
 
 # region Sorting

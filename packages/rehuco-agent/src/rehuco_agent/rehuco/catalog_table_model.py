@@ -205,6 +205,31 @@ class CatalogTotals:
     has_images: bool = False
 
 
+@dataclass(slots=True)
+class _Tally:
+    """A running :class:`CatalogTotals`: rows added to it and taken out of it, one at a time."""
+
+    count: int = 0
+    legacy: int = 0
+    size: int = 0
+    unmeasured_size: int = 0
+    images: int = 0
+    unmeasured_images: int = 0
+    image_rows: int = 0
+
+    def totals(self) -> CatalogTotals:
+        """What it holds now."""
+        return CatalogTotals(
+            self.count,
+            self.legacy,
+            self.size,
+            self.unmeasured_size,
+            self.images,
+            self.unmeasured_images,
+            self.image_rows > 0,
+        )
+
+
 class CatalogTableModel(QAbstractTableModel):  # pylint: disable=too-many-instance-attributes
     """A read-only table over :class:`~rehuco_core.CatalogRow` entries.
 
@@ -235,21 +260,25 @@ class CatalogTableModel(QAbstractTableModel):  # pylint: disable=too-many-instan
         self.__sort_column = -1
         self.__sort_order = Qt.SortOrder.AscendingOrder
         self.__declares_count: dict[str, bool] = {}
-        self.__count = self.__legacy = self.__size = self.__unmeasured_size = 0
-        self.__images = self.__unmeasured_images = self.__image_rows = 0
+        self.__tally = _Tally()
 
     @property
     def totals(self) -> CatalogTotals:
         """What the rows add up to, kept by the model so a status line reads it without calling :meth:`data`."""
-        return CatalogTotals(
-            self.__count,
-            self.__legacy,
-            self.__size,
-            self.__unmeasured_size,
-            self.__images,
-            self.__unmeasured_images,
-            self.__image_rows > 0,
-        )
+        return self.__tally.totals()
+
+    def totals_of(self, rows: Iterable[int]) -> CatalogTotals:
+        """What some of the rows add up to, by the same rule as :attr:`totals` (#462) -- one pass over those rows, so
+        a selection of every row costs no Qt call per cell.
+
+        :param rows: the row numbers; any out of range are ignored, and a repeated one is counted once.
+        :returns: their totals.
+        """
+        tally, held = _Tally(), self.__rows
+        for row in set(rows):
+            if 0 <= row < len(held):
+                self.__account(held[row], 1, tally)
+        return tally.totals()
 
     def set_rows(self, rows: Sequence[CatalogRow], root_paths: Mapping[UUID, Path]) -> None:
         """Replace every row, in the sort the view last asked for.
@@ -263,10 +292,9 @@ class CatalogTableModel(QAbstractTableModel):  # pylint: disable=too-many-instan
         self.__by_id = {entry.resource_id: entry for entry in self.__source}
         self.__root_paths = dict(root_paths)
         self.__root_positions = {root_id: position for position, root_id in enumerate(root_paths)}
-        self.__count = self.__legacy = self.__size = self.__unmeasured_size = 0
-        self.__images = self.__unmeasured_images = self.__image_rows = 0
+        self.__tally = _Tally()
         for entry in self.__source:
-            self.__account(entry, 1)
+            self.__account(entry, 1, self.__tally)
         self.__rows = self.__sorted()
         self.endResetModel()
 
@@ -383,8 +411,8 @@ class CatalogTableModel(QAbstractTableModel):  # pylint: disable=too-many-instan
         """Show ``new`` in ``old``'s row, moving it where the sort now puts it."""
         # the containers through locals: pylint_qt reads a subscript on a QObject's attribute as a signal's
         rows, source, by_id = self.__rows, self.__source, self.__by_id
-        self.__account(old, -1)
-        self.__account(new, 1)
+        self.__account(old, -1, self.__tally)
+        self.__account(new, 1, self.__tally)
         by_id[new.resource_id] = new
         # a rename changes where the cache would put it, too
         source.remove(old)
@@ -407,7 +435,7 @@ class CatalogTableModel(QAbstractTableModel):  # pylint: disable=too-many-instan
     def __insert(self, new: CatalogRow) -> None:
         """Show a row this model did not have, where the sort puts it."""
         rows, source, by_id = self.__rows, self.__source, self.__by_id
-        self.__account(new, 1)
+        self.__account(new, 1, self.__tally)
         by_id[new.resource_id] = new
         source.insert(bisect_right(source, self.__cache_key(new), key=self.__cache_key), new)
         target = bisect_right(rows, self.__sort_key(new), key=self.__sort_key)
@@ -423,31 +451,31 @@ class CatalogTableModel(QAbstractTableModel):  # pylint: disable=too-many-instan
         rows.pop(row)
         self.__source.remove(old)
         by_id.pop(old.resource_id)
-        self.__account(old, -1)
+        self.__account(old, -1, self.__tally)
         self.endRemoveRows()
 
-    def __account(self, entry: CatalogRow, sign: int) -> None:
-        """Add one row to the totals, or with ``sign`` ``-1`` take it out -- the one rule both a reset and an update in
-        place keep them by; ``None`` is never read as ``0``."""
+    def __account(self, entry: CatalogRow, sign: int, tally: _Tally) -> None:
+        """Add one row to ``tally``, or with ``sign`` ``-1`` take it out -- the one rule the totals of a reset, of an
+        update in place and of a selection all keep them by; ``None`` is never read as ``0``."""
         record = entry.record
-        self.__count += sign
+        tally.count += sign
         if record.kind is RecordKind.TC:
-            self.__legacy += sign
+            tally.legacy += sign
             return
         if record.current_size is None:
-            self.__unmeasured_size += sign
+            tally.unmeasured_size += sign
         else:
-            self.__size += sign * record.current_size
+            tally.size += sign * record.current_size
         declares = self.__declares_count
         declared = declares.get(record.type)
         if declared is None:
             declared = declares[record.type] = "current_count" in catalog_type_fields(record.type)
         if record.current_count is not None:
-            self.__images += sign * record.current_count
+            tally.images += sign * record.current_count
         elif declared:
-            self.__unmeasured_images += sign
+            tally.unmeasured_images += sign
         if record.current_count is not None or declared:
-            self.__image_rows += sign
+            tally.image_rows += sign
 
     # endregion
 

@@ -753,7 +753,7 @@ def test_the_status_bar_counts_the_rows_the_table_shows(
     dock.roots.scan_action.trigger()
     qtbot.waitUntil(lambda: first_browser(dock).model.rowCount() == 1, timeout=WAIT_TIMEOUT_MS)
     wait_for_jobs(qtbot, queue)
-    assert first_browser(dock).status_bar.currentMessage() == "1 resource / 1.5K"
+    assert first_browser(dock).status_line.full_text == "1 resource / 1.5K"
 
     second = CatalogRecord(
         "go/info.rehu", RecordKind.REHU, title="Go", type="tutorial", current_size=2048, content_hash="1"
@@ -762,7 +762,7 @@ def test_the_status_bar_counts_the_rows_the_table_shows(
     dock.roots.scan_action.trigger()
     qtbot.waitUntil(lambda: first_browser(dock).model.rowCount() == 2, timeout=WAIT_TIMEOUT_MS)
     wait_for_jobs(qtbot, queue)
-    assert first_browser(dock).status_bar.currentMessage() == "2 resources / 3.5K"
+    assert first_browser(dock).status_line.full_text == "2 resources / 3.5K"
 
 
 # endregion
