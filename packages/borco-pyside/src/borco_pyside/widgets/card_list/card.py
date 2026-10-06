@@ -76,9 +76,9 @@ and rebinding one kind of list must not rebind the other."""
 class Card(QWidget):  # pylint: disable=too-many-instance-attributes
     """``grip | frame | buttons``: the frame wraps only the app's content, and the buttons sit outside it.
 
-    The whole card -- grip, frame and buttons -- is painted in its :class:`CardStyle` look: the current
-    card's selection colour, a state the app registered (``flagged``, say), or nothing. The delete and insert
-    buttons show while the pointer is over the card or the card is current.
+    The whole card -- grip, frame and buttons -- is painted in its :class:`CardStyle` look: a state the app
+    registered (``flagged``, say), or nothing. The current card is painted like any other: the delete and insert
+    buttons, shown while the pointer is over the card **or** the card is current, are its only mark.
 
     The card's actions carry the keys a card list reacts to -- Ctrl+Del, Ctrl+Ins, Ctrl+Up/Down/Home/End --
     so their tooltips name them; the keys themselves are routed by the
@@ -93,7 +93,7 @@ class Card(QWidget):  # pylint: disable=too-many-instance-attributes
     """Fires when the grip is dragged."""
 
     current_changed = Signal(bool)
-    """Fires with the new :attr:`current` -- for an app that dresses the buttons differently on the selected fill."""
+    """Fires with the new :attr:`current`."""
 
     RADIUS: Final = 4
     """The corner radius of the card's fill and outline."""
@@ -228,9 +228,9 @@ class Card(QWidget):  # pylint: disable=too-many-instance-attributes
     def painted_style(self) -> CardStateStyle:
         """The look this card paints with now.
 
-        :returns: the style for its current and state flags.
+        :returns: the style for its states; being current changes nothing about it.
         """
-        return self.__style.style_for(self.__current, self.__states)
+        return self.__style.style_for(self.__states)
 
     @staticmethod
     def __keyed(action: QAction, command: Command) -> QAction:

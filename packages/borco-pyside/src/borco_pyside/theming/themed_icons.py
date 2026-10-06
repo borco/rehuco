@@ -42,7 +42,7 @@ class PaletteSvgIconEngine(QIconEngine):
         paints no filled chrome behind the glyph at all, e.g. a menu row, where its own native
         checkmark communicates checked-ness instead.
     :param role: the palette role the unchecked glyph is drawn in -- ``ButtonText`` by default; another
-        for a glyph that sits on a fill of its own, e.g. ``HighlightedText`` on a selected card.
+        for a glyph that sits on a fill of its own, e.g. ``HighlightedText`` on a selected row.
     """
 
     def __init__(

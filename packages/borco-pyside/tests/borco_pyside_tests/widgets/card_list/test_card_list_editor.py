@@ -740,14 +740,13 @@ def test_states_reach_the_cards_and_their_content(page: Page) -> None:
     assert page.card(0).states == {}
 
 
-def test_a_current_flagged_card_keeps_the_flag_as_its_border(page: Page, qtbot: QtBot) -> None:
-    """Current wins the fill; a registered state keeps its border.
+def test_a_current_flagged_card_shows_its_states_border_and_fill(page: Page, qtbot: QtBot) -> None:
+    """Current changes nothing about how a registered state paints.
 
     **Test steps:**
 
     * register a pink ``flagged`` state, flag the last card and focus it
-    * verify the unfocused flagged card paints pink over pink
-    * focus it and verify it paints the palette's selection colour, still bordered pink
+    * verify the card paints pink over pink, before and after it is current
     """
     pink = QColor("pink")
     page.editor.style_map.register("flagged", CardStateStyle(fill=pink, border=pink))
@@ -763,8 +762,47 @@ def test_a_current_flagged_card_keeps_the_flag_as_its_border(page: Page, qtbot: 
     qtbot.waitUntil(lambda: page.editor.current_index == 2)
 
     style = card.painted_style()
-    assert CardStateStyle.resolve(style.fill, palette) == palette.color(QPalette.ColorRole.Highlight)
+    assert CardStateStyle.resolve(style.fill, palette) == pink
     assert CardStateStyle.resolve(style.border, palette) == pink
+
+
+def test_the_current_card_paints_like_any_other(page: Page, qtbot: QtBot) -> None:
+    """No fill, no outline: the buttons are the only mark of the current card.
+
+    **Test steps:**
+
+    * focus the second card and verify it is current
+    * verify its painted style is the empty one, as the other cards' is
+    """
+    page.content(1).url.setFocus()
+    qtbot.waitUntil(lambda: page.editor.current_index == 1)
+
+    assert page.card(1).current
+    assert page.card(1).painted_style() == CardStateStyle()
+    assert page.card(1).painted_style() == page.card(0).painted_style()
+
+
+def test_the_current_cards_buttons_show_without_the_pointer(page: Page, qtbot: QtBot) -> None:
+    """Only the current card shows its buttons while the pointer is elsewhere; moving current moves them.
+
+    **Test steps:**
+
+    * send every card a leave event, focus the first card and verify only its buttons show
+    * focus the second card and verify the first one's buttons hide and the second's show
+    """
+    for index in range(3):
+        QApplication.sendEvent(page.card(index), QEvent(QEvent.Type.Leave))
+
+    def shown(index: int) -> bool:
+        return not any(button.isHidden() for button in page.card(index).strip.buttons)
+
+    page.content(0).url.setFocus()
+    qtbot.waitUntil(lambda: page.editor.current_index == 0)
+    assert [shown(0), shown(1), shown(2)] == [True, False, False]
+
+    page.content(1).url.setFocus()
+    qtbot.waitUntil(lambda: page.editor.current_index == 1)
+    assert [shown(0), shown(1), shown(2)] == [False, True, False]
 
 
 def test_an_edit_the_content_adds_later_is_wired_like_the_others(page: Page, qtbot: QtBot) -> None:

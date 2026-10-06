@@ -31,7 +31,6 @@ from borco_pyside.widgets import (
     MoveUpItemAction,
     ResetItemAction,
 )
-from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import QToolButton
 
 ICONS_BY_ACTION_TYPE: Final = {
@@ -82,10 +81,8 @@ def apply_card_icons(card: Card) -> None:
     to it; its four move actions have no button but are dressed all the same, for whatever a host shows
     them in.
 
-    A **current** card is filled in the selection colour, on which the usual button colour would not read:
-    while it is current every glyph is drawn in the palette's ``HighlightedText`` instead, and back again
-    when it is not. Both icons are the shared themed ones, which read the palette as they paint, so a theme
-    switch needs nothing from here.
+    The icons are the shared themed ones, which read the palette as they paint, so a theme switch needs
+    nothing from here; a current card is painted like any other, so they never change with it.
 
     :param card: the card to dress.
     """
@@ -97,15 +94,5 @@ def apply_card_icons(card: Card) -> None:
         card.move_down_action,
         card.move_to_bottom_action,
     )
-
-    def dress(current: bool) -> None:
-        """Set every action's icon for a card that is, or is not, current.
-
-        :param current: whether the card is the current one.
-        """
-        role = QPalette.ColorRole.HighlightedText if current else QPalette.ColorRole.ButtonText
-        for action in actions:
-            action.setIcon(themed_svg_icon(ICONS_BY_ACTION_TYPE[type(action)], role=role))
-
-    dress(card.current)
-    card.current_changed.connect(dress)
+    for action in actions:
+        action.setIcon(themed_svg_icon(ICONS_BY_ACTION_TYPE[type(action)]))
