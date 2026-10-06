@@ -64,7 +64,7 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
 
     row_activated: Signal = Signal(object)
     """Emitted with a resource's absolute :class:`~pathlib.Path` when its row is double-clicked. Typed as plain
-    ``object`` for the reason ``RehucoDock.open_requested`` is."""
+    ``object`` for the reason ``BrowsersDock.open_requested`` is."""
 
     query_changed: Signal = Signal(object)
     """Emitted with the new :class:`~rehuco_core.CatalogQuery` once the filter line's text has settled on one that

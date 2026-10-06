@@ -22,29 +22,37 @@ released becomes the body of the GitHub Release, so each entry is written to be 
   has **Verify checksums**. A folder's has **Show only rehu in this folder**, which filters the current browser.
   `F5` lists the open columns again, a folder deleted outside the app disappears, and the selection falls back to
   the nearest folder that is left. Roots are reordered by dragging the grip at the left of a root's row, as well as from its menu; the grip
-  only shows while the catalog can be saved. A rename the app makes shows in the columns without a reload. A pane beside
+  only shows while the catalog can be saved and says *Drag to reorder* when hovered. A dragged root behaves as a
+  dragged location does: it leaves its place, and one shadow shows where it will land, the other roots closing up
+  around it. A rename the app makes shows in the columns without a reload. A pane beside
   the columns shows the details of the selected row -- a root, a folder or a file, with a thumbnail for an image --
   and a button for every entry of the row's right-click menu, which now also has **Open in file explorer** on a
   root or folder. Double-clicking runs a row's default action, the bold first entry of its right-click menu:
   a `.rehu` or `.tc` file or a folder with a rehu opens in Documents, any other file opens in its own application. A
   folder's or file's menu says **Open associated rehu** or **Create info.rehu** (or **Create <name>.rehu**) by
   whether it has one, and a double-click never creates.
-- A **Root Catalog** panel beside Documents, first on the action bar and closed until a `.rehuco` is opened.
+- A **Root Catalog** panel beside Documents, first on the action bar and closed until a `.rehuco` is opened, when
+  it and the Browsers panel both show. Each has its own entry in `View`, and closing one leaves the other.
   `Root Catalog` > `New…`, `Open…` and `Open Recent` open one file at a time, as
   does double-clicking a `.rehuco` in a file manager, and the one left open is reopened on start under its own Session
   page toggle, beside the documents'. Its roots can be
-  added and removed, **Scan** puts one task-queue job per root that records the `.rehu` and uncovered `.tc` files
+  added and removed from the `Root Catalog` menu, whose **Scan** puts one task-queue job per root that records the
+  `.rehu` and uncovered `.tc` files
   found into a `.rehudb` cache in the local cache folder, and a table lists what the cache holds. A rescan reads
   only the files that changed since the last one. Double-clicking
-  a row opens that resource in Documents. A `.rehuco` written by a newer build opens read-only.
+  a row opens that resource in Documents. A `.rehuco` written by a newer build opens read-only. Neither panel has a
+  toolbar: the Root Catalog's title bar holds Refresh and the Browsers' New Table Browser, and the rest is in the
+  menus.
 - The menu bar is six short menus, each about one thing: `File` (Settings, Quit), `Root Catalog`, `Documents`,
   `Browsers`, `View` and `Tools`. `Documents` and `Browsers` each list what is open, A–Z, with the focused one
   checked, and picking an entry brings it to the front; `View` no longer lists documents. `Sweep checksums…`,
-  `Import Legacy Catalog…` and `Conversion Backups…` moved to `Tools`. Add Root and Remove Root moved from the
-  Root Catalog toolbar to the Roots view's title bar, and Remove Root is also on a root's right-click menu.
-- **Table browsers** in the Root Catalog panel: add as many as you like with **New Table Browser**, each with its
+  `Import Legacy Catalog…` and `Conversion Backups…` moved to `Tools`. Remove Root is also on a root's right-click
+  menu.
+- **Table browsers** in a **Browsers** panel of their own, beside the Root Catalog one and named like its menu:
+  add as many as you like with **New Table Browser**, on the panel's title bar and in `Browsers`, each with its
   own name, columns and sort. **Rename** and **Clone** (the copy starts with the same columns) are on the browser's
-  title bar and its tab's right-click menu, and the toolbar renames the current one; the [x] deletes a browser.
+  title bar and its tab's right-click menu, and `Browsers` > `Rename Browser…` renames the current one; the [x]
+  deletes a browser.
   A table browser has a column for every field the cache holds: authors, title, type, path, publisher, URL, tags,
   release date, size, last update, a tutorial's three durations and its level, a reference pack's claimed and
   measured image counts, and **Format**: the file's format version, `tc` for a legacy `.tc`, and `?` for a `.rehu`
@@ -54,8 +62,8 @@ released becomes the body of the GitHub Release, so each entry is written to be 
   shows that type's columns and lists only resources of that type. Sizes,
   durations and counts sort as numbers, and a cell with nothing in it sorts last either way round; hovering a size
   shows its exact bytes. Rows can be multi-selected. A rename, save or deletion made in the app changes just the
-  rows it touched, keeping the selection and the sort, instead of reloading the table. The Roots view can now be hidden with its [x] and shown with the toolbar's **Roots** toggle. Each
-  catalog remembers its browsers and where its sub-docks sit between runs, on this machine only. New icons for the
+  rows it touched, keeping the selection and the sort, instead of reloading the table. Each
+  catalog remembers its browsers and where they sit between runs, on this machine only. New icons for the
   roots and browser actions.
 - A **filter line** over each table browser: free text plus `field:value` or `field:"quoted value"` tokens for
   `folder`, `authors`, `tags`, `publishers` and `type`, all of which must match. The rows narrow as you pause

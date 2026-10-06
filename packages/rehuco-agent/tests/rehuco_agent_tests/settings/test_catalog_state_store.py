@@ -1,4 +1,4 @@
-"""Tests for the per-catalog state file: the Root Catalog dock's browsers and layout (#396).
+"""Tests for the per-catalog state file: the Browsers dock's browsers and layout (#396, #461).
 
 No file is ever created: ``Path.read_text`` serves the file and ``atomic_write_text`` is captured.
 """
@@ -157,6 +157,25 @@ def test_another_version_is_an_empty_state(mocker: MockerFixture) -> None:
     assert CatalogStateStore().load(REHUCO_ID) == CatalogState()
 
 
+def test_a_file_from_before_the_split_keeps_its_browsers_and_drops_its_layout(
+    mocker: MockerFixture, written: MagicMock
+) -> None:
+    """A version 1 file's layout nests the Roots view among the browsers, which no longer share a shell with it:
+    its browsers are read whole, its layout not at all (#461).
+
+    **Test steps:**
+
+    * save the state, then serve what was written stamped as version 1
+    * verify the browsers -- names, filters, columns -- come back and the layout is empty
+    """
+    CatalogStateStore().save(REHUCO_ID, STATE)
+    values = json.loads(saved_text(written))
+    values["version"] = 1
+    serve(mocker, json.dumps(values))
+
+    assert CatalogStateStore().load(REHUCO_ID) == CatalogState([FIRST, SECOND])
+
+
 def test_malformed_and_repeated_browsers_are_skipped(mocker: MockerFixture, written: MagicMock) -> None:
     """A bad entry costs only itself.
 
@@ -183,7 +202,7 @@ def test_a_browsers_value_that_is_not_a_list_is_no_browsers(mocker: MockerFixtur
     * serve a file whose ``browsers`` is a string but whose layout is intact
     * verify no browsers and the layout read
     """
-    serve(mocker, json.dumps({"version": 1, "browsers": "nope", "layout": "bGF5b3V0"}))
+    serve(mocker, json.dumps({"version": 2, "browsers": "nope", "layout": "bGF5b3V0"}))
 
     state = CatalogStateStore().load(REHUCO_ID)
 
@@ -199,7 +218,7 @@ def test_a_file_that_still_carries_a_roots_header_loads(mocker: MockerFixture) -
     * serve a file with a layout and a ``roots_header``
     * verify the layout is read and nothing else is lost
     """
-    serve(mocker, json.dumps({"version": 1, "browsers": [], "layout": "bGF5b3V0", "roots_header": "cm9vdHM="}))
+    serve(mocker, json.dumps({"version": 2, "browsers": [], "layout": "bGF5b3V0", "roots_header": "cm9vdHM="}))
 
     assert CatalogStateStore().load(REHUCO_ID) == CatalogState(layout=b"layout")
 

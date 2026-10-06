@@ -135,18 +135,19 @@ quitting. Checksums, `.tc` imports, scrapes and image downloads all run on it; a
 shows the queue, beside an app-wide **Log**.
 
 A **root catalog** is a `.rehuco` file naming the folders to catalog — its **roots**, each with a label. `Root Catalog` >
-`New…` or `Open…` opens one in the app-wide **Root Catalog** panel, one at a time, and it is
-reopened on start with the documents, under the same Session setting; a file written by a newer build opens read-only. The panel's **Scan** puts one job per root on the
+`New…` or `Open…` opens one, one at a time, in two app-wide panels — **Root Catalog**, which lists its roots, and
+**Browsers**, which lists what its cache holds — and it is
+reopened on start with the documents, under the same Session setting; a file written by a newer build opens read-only. `Root Catalog` > **Scan** puts one job per root on the
 task queue. Each job walks its root and records every `.rehu` it finds, and every legacy `.tc` that no `.rehu`
 covers, in a **`.rehudb`** cache. The cache sits in the machine's local cache folder and is named by the
 `.rehuco`'s own id, so moving the `.rehuco` keeps its cache; it is only ever a copy, rebuilt by scanning again.
-A table lists what the cache holds — authors, title, type, path, publisher, tags, release date, size, last update
+A table in the Browsers panel lists what the cache holds — authors, title, type, path, publisher, tags, release date, size, last update
 and the file's format version, with the URL and a tutorial's or a reference pack's own fields a right-click on the
 header away — and double-clicking a row opens that resource in Documents. A rename, save or deletion made in the app
 changes just its row, in place. Each table has a **filter line**: free text and `field:value` tokens (`folder`,
 `authors`, `tags`, `publishers`, `type`) narrow the rows, read from the cache again as the text settles. Clicking an
-author's name in a document sets that author on it. The panel also lists the roots,
-which can be added and removed there.
+author's name in a document sets that author on it. The Root Catalog panel lists the roots, which the `Root Catalog`
+menu adds and removes, as a column view: one column per open folder, with the details of the current row beside them.
 
 The biggest user is **checksums**. Beside each resource sits a `.checksum` record of *when each of its
 files was last checked and what the answer was* — not a manifest for an external tool, which is what lets
@@ -189,7 +190,7 @@ whole folder tree at once, and `Tools` > `Conversion Backups…` discards the ba
 Everything above is implemented. None of the following is, and the design documents discuss all of it at
 length, which is exactly why this section is here:
 
-**A plain browser.** The Root Catalog panel lists what a scan found, filtered by its line; a change made outside
+**A plain browser.** The Browsers panel lists what a scan found, filtered by its line; a change made outside
 the app shows only after the next scan, and selecting a row does not yet show that resource beside the table. The other recursive walks — the checksum sweep and the legacy import, over a folder you hand them — act
 as they go and remember nothing about what they found.
 

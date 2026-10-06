@@ -723,9 +723,21 @@ class RootsFolderModel(QAbstractItemModel):
         if current is None:
             return False
         before = len(top.children) if row < 0 else row
-        final = before - 1 if before > current else before
-        if final != current:
-            self.root_move_requested.emit(root_id, final)
+        self.request_root_move(current, before - 1 if before > current else before)
+        return True
+
+    def request_root_move(self, row: int, to: int) -> bool:
+        """Ask for the root at ``row`` to end up at ``to`` -- a dragged root dropped, or a drop on the view -- by
+        :attr:`root_move_requested`; asked for nothing while roots cannot be reordered or when it is already there.
+
+        :param row: the root's row.
+        :param to: the row it should end up at, in the list as it will be.
+        :returns: whether a move was asked for.
+        """
+        top = self.__top
+        if not self.__reorderable or not 0 <= row < len(top.children) or to == row:
+            return False
+        self.root_move_requested.emit(self.__own_root(top.children[row]).root_id, to)
         return True
 
     @override

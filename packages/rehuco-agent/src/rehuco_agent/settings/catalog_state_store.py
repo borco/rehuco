@@ -1,6 +1,6 @@
-"""What the agent remembers about one ``.rehuco`` between runs: its browsers and where its sub-docks sit (#396).
+"""What the agent remembers about one ``.rehuco`` between runs: its browsers and where their sub-docks sit (#396).
 
-``rehuco-core`` knows nothing of browsers -- they are the Root Catalog dock's own state, kept here under the
+``rehuco-core`` knows nothing of browsers -- they are the Browsers dock's own state (#461), kept here under the
 catalog's rehuco id so that moving or renaming the ``.rehuco`` keeps them, as it keeps the ``.rehudb``
 ([[data-model#local-file-trio]]). It is a file of its own, not the ``.ini``: a nested dock layout is a binary blob
 that grows with use, and an ``.ini`` already holds too many of those (#404).
@@ -24,9 +24,17 @@ LOG: Final = logging.getLogger(__name__)
 CATALOG_STATE_FOLDER: Final = "catalogs"
 """The folder of the per-catalog files, in the app's own config folder."""
 
-CATALOG_STATE_VERSION: Final = 1
+CATALOG_STATE_VERSION: Final = 2
 """Schema version of the file. A file of another version is read as empty -- it is view state, and the next close
-writes a fresh one."""
+writes a fresh one -- except :data:`ROOTS_IN_LAYOUT_VERSION`'s.
+
+Bumped to 2 when the Roots view left the browsers' shell for a dock of its own (#461): the browsers are written
+the same way, and only the layout means something else."""
+
+ROOTS_IN_LAYOUT_VERSION: Final = 1
+"""The version whose layout nests the Roots view among the browsers. Its browsers -- names, filters, columns -- are
+read as they are; its layout is dropped, so the browsers open in the default arrangement rather than placed around
+a Roots sub-dock that is no longer there (#461)."""
 
 TABLE_BROWSER_KIND: Final = "table"
 """The kind of a browser showing the cache's rows as a table; the image browser (#403) will be the second."""
@@ -69,7 +77,7 @@ class CatalogState:
     """The browsers, in the order they were open."""
 
     layout: bytes = b""
-    """The nested dock manager's saved layout."""
+    """The Browsers dock's nested dock manager's saved layout; empty to place every browser by default."""
 
 
 class CatalogStateStore:
@@ -99,12 +107,13 @@ class CatalogStateStore:
         except ValueError:
             LOG.error("The saved state %s is not readable JSON; it is ignored.", path)
             return CatalogState()
-        if not isinstance(values, dict) or values.get("version") != CATALOG_STATE_VERSION:
+        version = values.get("version") if isinstance(values, dict) else None
+        if version not in (CATALOG_STATE_VERSION, ROOTS_IN_LAYOUT_VERSION):
             LOG.warning("The saved state %s is not in a shape this build reads; it is ignored.", path)
             return CatalogState()
         return CatalogState(
             browsers=self.__read_browsers(values.get("browsers"), path),
-            layout=self.__read_bytes(values.get("layout")),
+            layout=self.__read_bytes(values.get("layout")) if version == CATALOG_STATE_VERSION else b"",
         )
 
     def save(self, rehuco_id: UUID, state: CatalogState) -> None:

@@ -40,6 +40,7 @@ from rehuco_agent.commands import QUIT, SAVE_DOCUMENT, shared_command_registry
 from rehuco_agent.documents.document_sub_docks import LOG_DOCK_MIN_HEIGHT
 from rehuco_agent.glyphs import TAB_CLOSE_GLYPH
 from rehuco_agent.main_window import (
+    BROWSERS_DOCK_OBJECT_NAME,
     DOCK_PIN_SIDES_GROUP,
     DOCUMENTS_DOCK_OBJECT_NAME,
     LOG_DOCK_OBJECT_NAME,
@@ -51,7 +52,7 @@ from rehuco_agent.main_window import (
     MainWindow,
 )
 from rehuco_agent.recycle_bin_deleter import RecycleBinDeleter
-from rehuco_agent.rehuco import RehucoDock
+from rehuco_agent.rehuco import BrowsersDock, RootCatalog, RootsPanel
 from rehuco_agent.settings.checksum_settings import shared_checksum_settings
 from rehuco_agent.settings.document_session_settings import DocumentSessionSettings
 from rehuco_agent.settings.identity_settings import shared_identity_settings
@@ -81,6 +82,7 @@ from rehuco_core import (
     DEFAULT_DELETER_PROVIDER,
     DEFAULT_PLUGIN_REGISTRY,
     INFO_REHU_FILENAME,
+    CatalogField,
     JobControl,
     JobState,
     JobStatus,
@@ -307,9 +309,9 @@ def test_a_documents_dock_filter_link_reaches_the_root_catalog_and_brings_it_for
     window = MainWindow()
     qtbot.addWidget(window)
     documents_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    rehuco_dock = window._MainWindow__rehuco_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    apply = mocker.patch.object(rehuco_dock, "apply_filter_url", return_value=True)
-    reveal = mocker.patch.object(window, "_MainWindow__reveal_rehuco_dock")
+    browsers_dock = window._MainWindow__browsers_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    apply = mocker.patch.object(browsers_dock, "apply_filter_url", return_value=True)
+    reveal = mocker.patch.object(window, "_MainWindow__reveal_browsers_dock")
 
     documents_dock.filter_requested.emit("filter://authors?name=Alice")
 
@@ -2532,7 +2534,7 @@ def test_restore_documents_off_skips_reopening_the_saved_session(mocker: MockerF
 
     * seed ``DocumentSessionSettings.load`` to report one open item, and ``RehucoSettings.load`` one open file
     * seed ``SessionRestoreSettings.load`` to report only the documents toggle off
-    * mock ``DocumentsDock.restore_session`` and ``RehucoDock.open_rehuco``
+    * mock ``DocumentsDock.restore_session`` and ``RootCatalog.open_rehuco``
     * construct ``MainWindow``
     * verify ``restore_session`` was never called, and ``open_rehuco`` was
     """
@@ -2555,7 +2557,7 @@ def test_restore_documents_off_skips_reopening_the_saved_session(mocker: MockerF
     mocker.patch.object(RehucoSettings, "load", fake_rehuco_load)
     mocker.patch.object(SessionRestoreSettings, "load", fake_restore_settings_load)
     restore_session = mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_session")
-    open_rehuco = mocker.patch("rehuco_agent.main_window.RehucoDock.open_rehuco", return_value=True)
+    open_rehuco = mocker.patch("rehuco_agent.main_window.RootCatalog.open_rehuco", return_value=True)
 
     window = MainWindow()
     qtbot.addWidget(window)
@@ -3383,6 +3385,7 @@ def test_installs_a_documents_dock_and_no_central_widget(qtbot: QtBot) -> None:
     assert set(dock_manager.dockWidgetsMap()) == {
         DOCUMENTS_DOCK_OBJECT_NAME,
         REHUCO_DOCK_OBJECT_NAME,
+        BROWSERS_DOCK_OBJECT_NAME,
         LOG_DOCK_OBJECT_NAME,
         TASK_QUEUE_DOCK_OBJECT_NAME,
         SETTINGS_DIALOG_OBJECT_NAME,
@@ -5172,11 +5175,12 @@ def test_the_tasks_dock_s_nested_layout_is_restored_on_start(mocker: MockerFixtu
 MAIN_DOCK_NAMES: Final = (
     DOCUMENTS_DOCK_OBJECT_NAME,
     REHUCO_DOCK_OBJECT_NAME,
+    BROWSERS_DOCK_OBJECT_NAME,
     LOG_DOCK_OBJECT_NAME,
     TASK_QUEUE_DOCK_OBJECT_NAME,
     SETTINGS_DIALOG_OBJECT_NAME,
 )
-"""The window's five own docks -- the set pinning is an affordance of."""
+"""The window's six own docks -- the set pinning is an affordance of."""
 
 PIN_BUTTON_WAIT: Final = 10_000
 """How long a wait for the pin-button suppressor is given. Generous on purpose: the suppressor's hide
@@ -5213,7 +5217,7 @@ def main_dock(window: MainWindow, name: str) -> Any:
 
 
 def test_every_main_dock_is_pinnable(qtbot: QtBot) -> None:
-    """All five of the window's own docks can be collapsed into a sidebar (#279).
+    """All six of the window's own docks can be collapsed into a sidebar (#279).
 
     One flag, set the same way in all four builders since #307 made the Settings dock a plain
     ``CDockWidget`` like its three siblings -- it used to be the exception, turning pinning on by hand
@@ -5229,7 +5233,7 @@ def test_every_main_dock_is_pinnable(qtbot: QtBot) -> None:
 
     pinnable = QtAds.CDockWidget.DockWidgetFeature.DockWidgetPinnable
 
-    assert [bool(main_dock(window, name).features() & pinnable) for name in MAIN_DOCK_NAMES] == [True] * 5
+    assert [bool(main_dock(window, name).features() & pinnable) for name in MAIN_DOCK_NAMES] == [True] * 6
 
 
 def dict_backed_settings(settings: Any) -> dict[str, Any]:
@@ -5269,7 +5273,7 @@ def test_every_main_dock_starts_on_the_default_sidebar(qtbot: QtBot) -> None:
 
     sides = [main_dock(window, name).preferredAutoHideSideBarLocation() for name in MAIN_DOCK_NAMES]
 
-    assert sides == [DEFAULT_PIN_SIDE] * 5
+    assert sides == [DEFAULT_PIN_SIDE] * 6
 
 
 def test_a_dock_dropped_on_a_sidebar_pins_back_there(qtbot: QtBot) -> None:
@@ -5936,63 +5940,157 @@ def rehuco_dock_widget(window: MainWindow) -> Any:
     """The window's Root Catalog dock, found on the outer manager by object name.
 
     :param window: the window to read.
-    :returns: the ``CDockWidget`` hosting the Root Catalog dock.
+    :returns: the ``CDockWidget`` hosting the Roots view.
     """
     return main_dock(window, REHUCO_DOCK_OBJECT_NAME)
 
 
-def test_the_rehuco_dock_is_tabbed_with_documents_and_closed(qtbot: QtBot) -> None:
-    """Nothing is open on a fresh install, so the dock starts closed, in the Documents area (#377).
+def browsers_dock_widget(window: MainWindow) -> Any:
+    """The window's Browsers dock, found on the outer manager by object name (#461).
+
+    :param window: the window to read.
+    :returns: the ``CDockWidget`` hosting the browsers' shell.
+    """
+    return main_dock(window, BROWSERS_DOCK_OBJECT_NAME)
+
+
+def test_the_two_catalog_docks_are_tabbed_with_documents_and_closed(qtbot: QtBot) -> None:
+    """Nothing is open on a fresh install, so both docks start closed, in the Documents area, the Root Catalog one
+    holding the Roots view and the Browsers one the browsers' shell (#377, #461).
 
     **Test steps:**
 
     * construct a real ``MainWindow`` with nothing persisted
-    * verify the Root Catalog dock is closed and shares the Documents dock's area
+    * verify each dock is closed, shares the Documents dock's area, is titled as its menu is and holds its content
     """
     window = MainWindow()
     qtbot.addWidget(window)
 
-    dock = rehuco_dock_widget(window)
+    rehuco, browsers = rehuco_dock_widget(window), browsers_dock_widget(window)
 
-    assert dock.isClosed()
-    assert dock.dockAreaWidget() is documents_dock_widget(window).dockAreaWidget()
+    for dock in (rehuco, browsers):
+        assert dock.isClosed()
+        assert dock.dockAreaWidget() is documents_dock_widget(window).dockAreaWidget()
+    assert (rehuco.windowTitle(), browsers.windowTitle()) == ("Root Catalog", "Browsers")
+    assert rehuco.widget() is roots_panel(window)
+    assert browsers.widget() is window._MainWindow__browsers_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_the_two_catalog_docks_toggle_independently_from_view(qtbot: QtBot) -> None:
+    """Each dock has its own ``View`` entry; closing one leaves the other as it was (#461).
+
+    **Test steps:**
+
+    * construct a real ``MainWindow`` and open both docks through their toggles
+    * close the Root Catalog dock and verify Browsers is still open; reopen it and close Browsers, verify the reverse
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    rehuco, browsers = rehuco_dock_widget(window), browsers_dock_widget(window)
+    rehuco.toggleViewAction().trigger()
+    browsers.toggleViewAction().trigger()
+    assert not rehuco.isClosed() and not browsers.isClosed()
+
+    rehuco.toggleViewAction().trigger()
+    assert rehuco.isClosed()
+    assert not browsers.isClosed()
+
+    rehuco.toggleViewAction().trigger()
+    browsers.toggleViewAction().trigger()
+    assert browsers.isClosed()
+    assert not rehuco.isClosed()
+
+
+def test_opening_a_catalog_reveals_both_docks_with_root_catalog_in_front(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """An opened ``.rehuco`` shows its roots and its browsers, the roots in front where the two share a tab strip
+    (#461).
+
+    **Test steps:**
+
+    * make the catalog's open succeed and open a path
+    * verify both docks are open and the Root Catalog one is its area's current tab
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    mocker.patch.object(window._MainWindow__root_catalog, "open_rehuco", return_value=True)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    assert window.open_rehuco_path(REHUCO_FILE)
+
+    rehuco, browsers = rehuco_dock_widget(window), browsers_dock_widget(window)
+    assert not rehuco.isClosed() and not browsers.isClosed()
+    assert rehuco.isCurrentTab()
+
+
+def test_the_roots_views_folder_filter_reaches_the_browsers_and_reveals_their_dock(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """The folder filter the Roots view asks for lands on the Browsers dock, which is brought forward (#398, #461).
+
+    **Test steps:**
+
+    * stand a catalog in, close the Browsers dock and emit the panel's ``filter_requested``
+    * verify the token reached the browsers and the dock is open
+    * close the dock, make the browsers refuse the token and emit again
+    * verify the dock stays closed
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    browsers = open_catalog_stand_in(window)
+    set_token = mocker.patch.object(browsers, "set_filter_token", return_value=True)
+    browsers_dock_widget(window).toggleView(False)
+
+    roots_panel(window).filter_requested.emit(CatalogField.FOLDER, "tutorials/python")
+
+    set_token.assert_called_once_with(CatalogField.FOLDER, "tutorials/python")
+    assert not browsers_dock_widget(window).isClosed()
+
+    browsers_dock_widget(window).toggleView(False)
+    set_token.return_value = False
+
+    roots_panel(window).filter_requested.emit(CatalogField.FOLDER, "tutorials/python")
+
+    assert browsers_dock_widget(window).isClosed()
 
 
 def test_the_root_catalog_toggle_leads_the_action_bar(qtbot: QtBot) -> None:
-    """The Root Catalog toggle is the first action on the bar, right above Documents (#377).
+    """The Root Catalog toggle is the first action on the bar, Browsers next, then Documents (#377, #461).
 
     **Test steps:**
 
     * construct a real ``MainWindow`` and read the action bar's actions
-    * verify the Root Catalog toggle is first, immediately followed by Documents then Log, and that it carries a
-      themed icon
+    * verify the Root Catalog toggle is first, then Browsers, then Documents then Log, and that the two carry
+      themed icons
     """
     window = MainWindow()
     qtbot.addWidget(window)
     actions = window._MainWindow__ui.action_bar.actions()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     rehuco_toggle = rehuco_dock_widget(window).toggleViewAction()
+    browsers_toggle = browsers_dock_widget(window).toggleViewAction()
     documents_toggle = documents_dock_widget(window).toggleViewAction()
 
     assert actions.index(rehuco_toggle) == 0
-    assert actions.index(documents_toggle) == 1
+    assert actions.index(browsers_toggle) == 1
+    assert actions.index(documents_toggle) == 2
     assert actions.index(documents_toggle) < actions.index(log_dock(window).toggleViewAction())
     assert not rehuco_toggle.icon().isNull()
+    assert not browsers_toggle.icon().isNull()
 
 
 def test_the_root_catalog_companion_leads_the_dock_entries_in_the_view_menu(qtbot: QtBot) -> None:
-    """``View`` lists ``rehuco_action`` right before ``documents_action`` (#377).
+    """``View`` lists ``rehuco_action``, then ``browsers_action``, right before ``documents_action`` (#377, #461).
 
     **Test steps:**
 
     * construct a real ``MainWindow`` and read the View menu's actions
-    * verify the Root Catalog companion immediately precedes the Documents one
+    * verify the Root Catalog companion, then the Browsers one, immediately precede the Documents one
     """
     window = MainWindow()
     qtbot.addWidget(window)
     ui = window._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     actions = ui.view_menu.actions()
 
-    assert actions.index(ui.rehuco_action) + 1 == actions.index(ui.documents_action)
+    assert actions.index(ui.rehuco_action) + 1 == actions.index(ui.browsers_action)
+    assert actions.index(ui.browsers_action) + 1 == actions.index(ui.documents_action)
 
 
 def test_new_rehuco_creates_the_chosen_file_and_reveals_the_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -6008,8 +6106,8 @@ def test_new_rehuco_creates_the_chosen_file_and_reveals_the_dock(mocker: MockerF
     mocker.patch("rehuco_agent.main_window.QFileDialog.getSaveFileName", return_value=(str(REHUCO_FILE), ""))
     window = MainWindow()
     qtbot.addWidget(window)
-    dock = window._MainWindow__rehuco_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    new_rehuco = mocker.patch.object(dock, "new_rehuco", return_value=True)
+    catalog = window._MainWindow__root_catalog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    new_rehuco = mocker.patch.object(catalog, "new_rehuco", return_value=True)
 
     window._MainWindow__ui.new_rehuco_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
@@ -6030,7 +6128,7 @@ def test_new_rehuco_adds_the_suffix_the_user_left_off(mocker: MockerFixture, qtb
     mocker.patch("rehuco_agent.main_window.QFileDialog.getSaveFileName", return_value=("/fake/home", ""))
     window = MainWindow()
     qtbot.addWidget(window)
-    new_rehuco = mocker.patch.object(window._MainWindow__rehuco_dock, "new_rehuco", return_value=True)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    new_rehuco = mocker.patch.object(window._MainWindow__root_catalog, "new_rehuco", return_value=True)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
     window._MainWindow__ui.new_rehuco_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
@@ -6049,7 +6147,7 @@ def test_new_rehuco_does_nothing_when_the_dialog_is_cancelled(mocker: MockerFixt
     mocker.patch("rehuco_agent.main_window.QFileDialog.getSaveFileName", return_value=("", ""))
     window = MainWindow()
     qtbot.addWidget(window)
-    new_rehuco = mocker.patch.object(window._MainWindow__rehuco_dock, "new_rehuco")  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    new_rehuco = mocker.patch.object(window._MainWindow__root_catalog, "new_rehuco")  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
     window._MainWindow__ui.new_rehuco_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
@@ -6070,9 +6168,9 @@ def test_new_rehuco_that_fails_tells_the_user_and_remembers_nothing(mocker: Mock
     critical = mocker.patch.object(QMessageBox, "critical")
     window = MainWindow()
     qtbot.addWidget(window)
-    dock = window._MainWindow__rehuco_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    mocker.patch.object(dock, "new_rehuco", return_value=False)
-    mocker.patch.object(RehucoDock, "load_error", new_callable=mocker.PropertyMock, return_value="disk full")
+    catalog = window._MainWindow__root_catalog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    mocker.patch.object(catalog, "new_rehuco", return_value=False)
+    mocker.patch.object(RootCatalog, "load_error", new_callable=mocker.PropertyMock, return_value="disk full")
 
     window._MainWindow__ui.new_rehuco_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
@@ -6131,7 +6229,7 @@ def test_open_rehuco_action_reports_a_file_that_would_not_open(mocker: MockerFix
     critical = mocker.patch.object(QMessageBox, "critical")
     window = MainWindow()
     qtbot.addWidget(window)
-    mocker.patch.object(window._MainWindow__rehuco_dock, "open_rehuco", return_value=False)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    mocker.patch.object(window._MainWindow__root_catalog, "open_rehuco", return_value=False)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
     window._MainWindow__ui.open_rehuco_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
@@ -6149,7 +6247,7 @@ def test_open_rehuco_path_opens_reveals_and_remembers(mocker: MockerFixture, qtb
     """
     window = MainWindow()
     qtbot.addWidget(window)
-    open_rehuco = mocker.patch.object(window._MainWindow__rehuco_dock, "open_rehuco", return_value=True)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    open_rehuco = mocker.patch.object(window._MainWindow__root_catalog, "open_rehuco", return_value=True)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
     assert window.open_rehuco_path("home.rehuco")
 
@@ -6170,7 +6268,7 @@ def test_open_rehuco_path_that_fails_remembers_nothing(mocker: MockerFixture, qt
     """
     window = MainWindow()
     qtbot.addWidget(window)
-    mocker.patch.object(window._MainWindow__rehuco_dock, "open_rehuco", return_value=False)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    mocker.patch.object(window._MainWindow__root_catalog, "open_rehuco", return_value=False)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
     assert not window.open_rehuco_path("home.rehuco")
 
@@ -6275,7 +6373,7 @@ def test_the_rehuco_open_at_the_last_close_is_reopened_on_start(mocker: MockerFi
         self.current_path = REHUCO_FILE
 
     mocker.patch.object(RehucoSettings, "load", fake_load)
-    open_rehuco = mocker.patch("rehuco_agent.main_window.RehucoDock.open_rehuco", return_value=True)
+    open_rehuco = mocker.patch("rehuco_agent.main_window.RootCatalog.open_rehuco", return_value=True)
 
     window = MainWindow()
     qtbot.addWidget(window)
@@ -6299,7 +6397,7 @@ def test_a_rehuco_that_will_not_reopen_is_forgotten_quietly(mocker: MockerFixtur
         self.current_path = REHUCO_FILE
 
     mocker.patch.object(RehucoSettings, "load", fake_load)
-    mocker.patch("rehuco_agent.main_window.RehucoDock.open_rehuco", return_value=False)
+    mocker.patch("rehuco_agent.main_window.RootCatalog.open_rehuco", return_value=False)
     critical = mocker.patch.object(QMessageBox, "critical")
 
     window = MainWindow()
@@ -6317,7 +6415,7 @@ def test_restore_root_catalog_off_skips_reopening_the_rehuco(mocker: MockerFixtu
     **Test steps:**
 
     * seed one open file and one open document, with only the root catalog toggle off
-    * mock ``RehucoDock.open_rehuco`` and ``DocumentsDock.restore_session``
+    * mock ``RootCatalog.open_rehuco`` and ``DocumentsDock.restore_session``
     * construct ``MainWindow``
     * verify the dock was never asked to open anything, and the documents were restored
     """
@@ -6339,7 +6437,7 @@ def test_restore_root_catalog_off_skips_reopening_the_rehuco(mocker: MockerFixtu
     mocker.patch.object(RehucoSettings, "load", fake_load)
     mocker.patch.object(DocumentSessionSettings, "load", fake_session_load)
     mocker.patch.object(SessionRestoreSettings, "load", fake_restore_settings_load)
-    open_rehuco = mocker.patch("rehuco_agent.main_window.RehucoDock.open_rehuco", return_value=True)
+    open_rehuco = mocker.patch("rehuco_agent.main_window.RootCatalog.open_rehuco", return_value=True)
     restore_session = mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_session")
 
     window = MainWindow()
@@ -6360,7 +6458,7 @@ def test_closing_remembers_the_open_rehuco(mocker: MockerFixture, qtbot: QtBot) 
     """
     window = MainWindow()
     qtbot.addWidget(window)
-    mocker.patch.object(RehucoDock, "rehuco_path", new_callable=mocker.PropertyMock, return_value=REHUCO_FILE)
+    mocker.patch.object(RootCatalog, "rehuco_path", new_callable=mocker.PropertyMock, return_value=REHUCO_FILE)
     saved: list[Path | None] = []
     mocker.patch.object(
         RehucoSettings,
@@ -6384,7 +6482,7 @@ def test_closing_detaches_the_rehuco_dock_from_the_queue(mocker: MockerFixture, 
     """
     window = MainWindow()
     qtbot.addWidget(window)
-    detach = mocker.patch.object(window._MainWindow__rehuco_dock, "detach")  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    detach = mocker.patch.object(window._MainWindow__root_catalog, "detach")  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
     window.closeEvent(QCloseEvent())
 
@@ -6407,7 +6505,7 @@ def test_a_resource_double_clicked_in_the_rehuco_dock_opens_through_open_path(
     open_path = mocker.patch.object(MainWindow, "open_path")
     path = Path("/fake/tutorials/info.rehu")
 
-    window._MainWindow__rehuco_dock.open_requested.emit(path)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    window._MainWindow__browsers_dock.open_requested.emit(path)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
     open_path.assert_called_once_with(path)
 
@@ -6429,27 +6527,30 @@ def test_the_rehuco_docks_associated_rehu_requests_open_or_start_the_resource(
     open_folder = mocker.patch.object(MainWindow, "open_folder")
     open_archive = mocker.patch.object(MainWindow, "open_archive")
     folder, video = Path("/fake/tutorials/python"), Path("/fake/tutorials/clip.mp4")
-    dock = window._MainWindow__rehuco_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    roots = window._MainWindow__roots_panel  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
-    dock.open_folder_requested.emit(folder)
-    dock.open_companion_requested.emit(video)
+    roots.open_folder_requested.emit(folder)
+    roots.open_companion_requested.emit(video)
 
     open_folder.assert_called_once_with(folder)
     open_archive.assert_called_once_with(video)
 
 
-def test_the_rehuco_dock_survives_an_outer_layout_round_trip_open(qtbot: QtBot, mocker: MockerFixture) -> None:
-    """A Root Catalog dock left open is open again after a restart (#377).
+@mark.parametrize("dock_name", [REHUCO_DOCK_OBJECT_NAME, BROWSERS_DOCK_OBJECT_NAME])
+def test_a_catalog_dock_survives_an_outer_layout_round_trip_open(
+    qtbot: QtBot, mocker: MockerFixture, dock_name: str
+) -> None:
+    """A Root Catalog or Browsers dock left open is open again after a restart (#377, #461).
 
     **Test steps:**
 
-    * open the Root Catalog dock and save the outer layout
+    * open the dock and save the outer layout
     * build a second window from what the first saved
     * verify the dock is open there
     """
     first = MainWindow()
     qtbot.addWidget(first)
-    rehuco_dock_widget(first).toggleView(True)
+    main_dock(first, dock_name).toggleView(True)
     first._MainWindow__save_window_state()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     saved = first._MainWindow__window_settings  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
@@ -6461,7 +6562,7 @@ def test_the_rehuco_dock_survives_an_outer_layout_round_trip_open(qtbot: QtBot, 
     second = MainWindow()
     qtbot.addWidget(second)
 
-    assert not rehuco_dock_widget(second).isClosed()
+    assert not main_dock(second, dock_name).isClosed()
 
 
 def test_open_path_routes_a_rehuco_to_the_root_catalog_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -6516,7 +6617,7 @@ def test_the_root_catalog_dock_is_detached_before_the_queue_shuts_down(mocker: M
     window = MainWindow()
     qtbot.addWidget(window)
     order: list[str] = []
-    mocker.patch.object(window._MainWindow__rehuco_dock, "detach", side_effect=lambda: order.append("detach"))  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    mocker.patch.object(window._MainWindow__root_catalog, "detach", side_effect=lambda: order.append("detach"))  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     queue = window._MainWindow__task_queue  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     real_shutdown = queue.shutdown
     mocker.patch.object(queue, "shutdown", side_effect=lambda: (order.append("shutdown"), real_shutdown()))
@@ -6537,7 +6638,7 @@ def test_revealing_a_floating_root_catalog_dock_raises_its_window(mocker: Mocker
     """
     window = MainWindow()
     qtbot.addWidget(window)
-    mocker.patch.object(window._MainWindow__rehuco_dock, "open_rehuco", return_value=True)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    mocker.patch.object(window._MainWindow__root_catalog, "open_rehuco", return_value=True)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     dock = rehuco_dock_widget(window)
     dock.toggleView(True)
     dock.setFloating()
@@ -6564,7 +6665,7 @@ def test_new_rehuco_records_the_resolved_path(mocker: MockerFixture, qtbot: QtBo
     mocker.patch("rehuco_agent.main_window.QFileDialog.getSaveFileName", return_value=("home.rehuco", ""))
     window = MainWindow()
     qtbot.addWidget(window)
-    new_rehuco = mocker.patch.object(window._MainWindow__rehuco_dock, "new_rehuco", return_value=True)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    new_rehuco = mocker.patch.object(window._MainWindow__root_catalog, "new_rehuco", return_value=True)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
     window._MainWindow__ui.new_rehuco_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
@@ -6586,7 +6687,7 @@ def test_new_rehuco_asks_before_replacing_a_file_the_suffix_lands_on(mocker: Moc
     mocker.patch.object(Path, "exists", autospec=True, side_effect=lambda self: self.name == "home.rehuco")
     window = MainWindow()
     qtbot.addWidget(window)
-    new_rehuco = mocker.patch.object(window._MainWindow__rehuco_dock, "new_rehuco", return_value=True)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    new_rehuco = mocker.patch.object(window._MainWindow__root_catalog, "new_rehuco", return_value=True)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     confirm = mocker.patch.object(window, "confirm_overwrite", return_value=False)
 
     window._MainWindow__ui.new_rehuco_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
@@ -6611,7 +6712,7 @@ def test_new_rehuco_does_not_ask_when_the_suffixed_file_is_new(mocker: MockerFix
     mocker.patch.object(Path, "exists", autospec=True, return_value=False)
     window = MainWindow()
     qtbot.addWidget(window)
-    new_rehuco = mocker.patch.object(window._MainWindow__rehuco_dock, "new_rehuco", return_value=True)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    new_rehuco = mocker.patch.object(window._MainWindow__root_catalog, "new_rehuco", return_value=True)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     confirm = mocker.patch.object(window, "confirm_overwrite")
 
     window._MainWindow__ui.new_rehuco_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
@@ -6644,19 +6745,29 @@ def test_confirm_overwrite_is_the_question_boxs_answer(
     assert question.call_args.args[-1] == QMessageBox.StandardButton.No
 
 
-def open_catalog_stand_in(window: MainWindow) -> RehucoDock:
-    """Make the window's Root Catalog dock think a catalog is open, without reading or writing any file.
+def open_catalog_stand_in(window: MainWindow) -> BrowsersDock:
+    """Make the window's catalog think a file is open, without reading or writing any one, and tell both docks.
 
     :param window: the window to read.
-    :returns: the dock.
+    :returns: the Browsers dock's content, which most callers go on to fill.
     """
-    dock = window._MainWindow__rehuco_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    dock._RehucoDock__file = RehucoFile.new()  # pylint: disable=protected-access
-    dock._RehucoDock__update_enablement()  # pylint: disable=protected-access
-    return dock
+    catalog = window._MainWindow__root_catalog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    catalog._RootCatalog__file = RehucoFile.new()  # pylint: disable=protected-access
+    catalog.refreshed.emit()
+    catalog.rehuco_path_changed.emit(None)
+    return window._MainWindow__browsers_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
 
-def add_named_browsers(dock: RehucoDock, *names: str) -> None:
+def roots_panel(window: MainWindow) -> RootsPanel:
+    """The window's Root Catalog dock's content.
+
+    :param window: the window to read.
+    :returns: the panel.
+    """
+    return window._MainWindow__roots_panel  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def add_named_browsers(dock: BrowsersDock, *names: str) -> None:
     """Add one table browser per name, each focused as it is added.
 
     :param dock: a dock with a catalog open.
@@ -6772,13 +6883,13 @@ def test_root_catalog_holds_the_catalog_files_then_the_docks_own_actions(qtbot: 
     window = MainWindow()
     qtbot.addWidget(window)
     ui = window._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    dock = window._MainWindow__rehuco_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    roots = roots_panel(window)
 
     actions = ui.rehuco_menu.actions()
 
     assert actions[:3] == [ui.new_rehuco_action, ui.open_rehuco_action, ui.open_recent_rehucos_menu.menuAction()]
     assert actions[3].isSeparator()
-    assert actions[4:] == [dock.scan_action, dock.add_root_action, dock.remove_root_action]
+    assert actions[4:] == [roots.scan_action, roots.add_root_action, roots.remove_root_action]
 
 
 def test_root_catalog_entries_follow_the_dock_and_scan_wakes_once_a_catalog_is_open(qtbot: QtBot) -> None:
@@ -6793,18 +6904,21 @@ def test_root_catalog_entries_follow_the_dock_and_scan_wakes_once_a_catalog_is_o
     """
     window = MainWindow()
     qtbot.addWidget(window)
-    dock = window._MainWindow__rehuco_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    assert not any(action.isEnabled() for action in (dock.scan_action, dock.add_root_action, dock.remove_root_action))
+    roots = roots_panel(window)
+    assert not any(
+        action.isEnabled() for action in (roots.scan_action, roots.add_root_action, roots.remove_root_action)
+    )
 
     open_catalog_stand_in(window)
 
-    assert dock.scan_action.isEnabled()
-    assert dock.add_root_action.isEnabled()
-    assert not dock.remove_root_action.isEnabled()
+    assert roots.scan_action.isEnabled()
+    assert roots.add_root_action.isEnabled()
+    assert not roots.remove_root_action.isEnabled()
 
 
 def test_browsers_leads_with_new_table_browser_and_lists_a_placeholder_when_none_is_open(qtbot: QtBot) -> None:
-    """``Browsers`` is the dock's New Table Browser, a separator, then ``No Open Browsers`` -- disabled (#402).
+    """``Browsers`` is the dock's New Table Browser and Rename Browser, a separator, then ``No Open Browsers`` --
+    disabled (#402, #461).
 
     **Test steps:**
 
@@ -6814,15 +6928,16 @@ def test_browsers_leads_with_new_table_browser_and_lists_a_placeholder_when_none
     window = MainWindow()
     qtbot.addWidget(window)
     ui = window._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    dock = window._MainWindow__rehuco_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    dock = window._MainWindow__browsers_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     ui.browsers_menu.aboutToShow.emit()
 
     actions = ui.browsers_menu.actions()
 
     assert actions[0] is dock.new_browser_action
-    assert actions[1].isSeparator()
-    assert [action.text() for action in actions[2:]] == ["No Open Browsers"]
-    assert not actions[2].isEnabled()
+    assert actions[1] is dock.rename_browser_action
+    assert actions[2].isSeparator()
+    assert [action.text() for action in actions[3:]] == ["No Open Browsers"]
+    assert not actions[3].isEnabled()
 
 
 def test_the_browsers_tail_lists_the_open_browsers_a_to_z_and_checks_the_focused_one(
@@ -6848,17 +6963,17 @@ def test_the_browsers_tail_lists_the_open_browsers_a_to_z_and_checks_the_focused
 
     entries = window._MainWindow__dynamic_browsers_menu_actions  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     assert [(entry.text(), entry.isChecked()) for entry in entries] == [("Blender", True), ("Faces", False)]
-    assert len(ui.browsers_menu.actions()) == 2 + 2
+    assert len(ui.browsers_menu.actions()) == 3 + 2
 
 
-def test_triggering_a_browsers_entry_focuses_it_and_shows_the_root_catalog(qtbot: QtBot) -> None:
-    """Picking a browser from the menu raises the Root Catalog dock and makes that browser the focused one (#402).
+def test_triggering_a_browsers_entry_focuses_it_and_shows_the_browsers_dock(qtbot: QtBot) -> None:
+    """Picking a browser from the menu raises the Browsers dock and makes that browser the focused one (#402, #461).
 
     **Test steps:**
 
-    * construct a real ``MainWindow``, stand a catalog in, add two browsers and close the Root Catalog dock
+    * construct a real ``MainWindow``, stand a catalog in, add two browsers and close the Browsers dock
     * rebuild the tail and trigger the entry of the browser that is not focused
-    * verify the Root Catalog dock is open again and that browser is now the dock's focused one
+    * verify the Browsers dock is open again and that browser is now the dock's focused one
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -6866,12 +6981,12 @@ def test_triggering_a_browsers_entry_focuses_it_and_shows_the_root_catalog(qtbot
     dock = open_catalog_stand_in(window)
     add_named_browsers(dock, "Faces", "Blender")
     faces = next(browser for browser in dock.browsers if browser.name == "Faces")
-    rehuco_dock_widget(window).toggleView(False)
+    browsers_dock_widget(window).toggleView(False)
     ui.browsers_menu.aboutToShow.emit()
 
     next(entry for entry in window._MainWindow__dynamic_browsers_menu_actions if entry.text() == "Faces").trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
-    assert not rehuco_dock_widget(window).isClosed()
+    assert not browsers_dock_widget(window).isClosed()
     assert dock.focused_browser() is faces
 
 
@@ -6899,28 +7014,29 @@ def test_view_no_longer_lists_documents_and_tools_holds_the_three_maintenance_op
     ]
 
 
-def test_scan_and_new_table_browser_stay_on_the_shell_toolbar_while_the_root_edits_leave_it(qtbot: QtBot) -> None:
-    """The shell's toolbar keeps Scan and New Table Browser; Add Root and Remove Root are on the Roots sub-dock's
-    title bar instead (#402).
+def test_neither_catalog_dock_has_a_toolbar_and_each_title_bar_carries_its_own_actions(qtbot: QtBot) -> None:
+    """No toolbar is left in either dock (#461): the Root Catalog dock's title bar shows Refresh, the Browsers
+    dock's New Table Browser, and every action the old toolbar had is reachable from a menu.
 
     **Test steps:**
 
-    * construct a real ``MainWindow`` and read the Root Catalog shell's toolbar
-    * verify Scan and New Table Browser are on it and the two root edits are not
-    * verify the Roots sub-dock's title-bar actions are those two, then Refresh (#378)
+    * construct a real ``MainWindow`` and read both docks' contents for toolbars and both docks' title-bar actions
+    * verify no toolbar, the two title bars, and that Scan, Add Root, Remove Root, New Table Browser and Rename
+      Browser each sit in a menu and the Root Catalog toggle in ``View``
     """
     window = MainWindow()
     qtbot.addWidget(window)
-    dock = window._MainWindow__rehuco_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    ui = window._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    roots = roots_panel(window)
+    browsers = window._MainWindow__browsers_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
-    toolbar_actions = dock.findChild(QToolBar).actions()
-    roots_dock = dock.roots_dock
-
-    assert dock.scan_action in toolbar_actions
-    assert dock.new_browser_action in toolbar_actions
-    assert dock.add_root_action not in toolbar_actions
-    assert dock.remove_root_action not in toolbar_actions
-    assert roots_dock.titleBarActions() == [dock.add_root_action, dock.remove_root_action, dock.refresh_roots_action]
+    assert not roots.findChildren(QToolBar)
+    assert not browsers.findChildren(QToolBar)
+    assert rehuco_dock_widget(window).titleBarActions() == [roots.refresh_roots_action]
+    assert browsers_dock_widget(window).titleBarActions() == [browsers.new_browser_action]
+    assert {roots.scan_action, roots.add_root_action, roots.remove_root_action} <= set(ui.rehuco_menu.actions())
+    assert {browsers.new_browser_action, browsers.rename_browser_action} <= set(ui.browsers_menu.actions())
+    assert ui.rehuco_action in ui.view_menu.actions()
 
 
 # endregion

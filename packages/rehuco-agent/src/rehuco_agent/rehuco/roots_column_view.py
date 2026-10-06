@@ -2,6 +2,7 @@
 
 from typing import override
 
+from borco_pyside.widgets import ReorderDrag
 from PySide6.QtCore import QModelIndex, QPersistentModelIndex, QPoint, Qt
 from PySide6.QtWidgets import QAbstractItemView, QColumnView, QWidget
 
@@ -32,29 +33,40 @@ class RootsColumnView(QColumnView):
     @override
     def createColumn(self, index: QModelIndex | QPersistentModelIndex) -> QAbstractItemView:  # noqa: N802
         column = super().createColumn(index)
-        # the first column lists the roots, which have a folder to show under their names
-        column.setItemDelegate(RootRowDelegate(column) if not index.isValid() else RootsItemDelegate(column))
-        if not index.isValid():
-            RootsColumnView.__make_reorderable(column)
+        if index.isValid():
+            column.setItemDelegate(RootsItemDelegate(column))
+        else:
+            # the first column lists the roots, which have a folder to show under their names, and are reordered by
+            # a drag whose shadow the delegate paints and the grip filter moves
+            drag = ReorderDrag()
+            column.setItemDelegate(RootRowDelegate(column, drag))
+            RootsColumnView.__make_reorderable(column, drag)
         self.__collapse_preview_column()
         return column
 
     @staticmethod
-    def __make_reorderable(column: QAbstractItemView) -> None:
+    def __make_reorderable(column: QAbstractItemView, drag: ReorderDrag) -> None:
         """Let the column that lists the roots take a root dragged by its grip to another place.
 
-        The model decides which rows may be dragged and what a drop asks for; the column only has to allow both, with
-        dragging off until a press lands on a grip (:class:`~rehuco_agent.rehuco.roots_grip.RootsGripFilter`).
+        The drag is :class:`~rehuco_agent.rehuco.roots_grip.RootsGripFilter`'s, the card list's behaviour: the view's
+        own drag and its drop line stay off, and the column only takes drops, every one of which the filter answers.
 
         :param column: the first column.
+        :param drag: the drag's bookkeeping, shared with the column's delegate.
         """
-        column.setDragDropMode(QAbstractItemView.DragDropMode.DragDrop)
+        column.setDragDropMode(QAbstractItemView.DragDropMode.DropOnly)
         column.setDefaultDropAction(Qt.DropAction.MoveAction)
-        column.setDropIndicatorShown(True)
+        column.setDropIndicatorShown(False)
         column.setDragEnabled(False)
         column.setMouseTracking(True)
         column.viewport().setMouseTracking(True)
-        column.viewport().installEventFilter(RootsGripFilter(column))
+        grip_filter = RootsGripFilter(column, drag)
+        column.viewport().installEventFilter(grip_filter)
+        # the roots changing under a drag -- a scan's end, a relist -- abandons it, as a card list's rows do
+        model = column.model()
+        for signal in (model.rowsInserted, model.rowsRemoved, model.rowsMoved):
+            signal.connect(grip_filter.abandon)
+        model.modelReset.connect(lambda: grip_filter.abandon(None))
 
     def __collapse_preview_column(self, *_args: object) -> None:
         """Give the preview column no width. The view only ever moves it, so a maximum would not shrink it.

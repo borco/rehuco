@@ -1,16 +1,18 @@
 """Tests for QtAdsPinSideHandler: remembering which sidebar a dock was last pinned to."""
 
+import gc
 from collections.abc import Iterator
 from typing import Any
 
 import PySide6QtAds as QtAds
+import shiboken6
 from borco_pyside.qtads.qtads_pin_side_handler import (
     DEFAULT_PIN_SIDE,
     PIN_SIDE_KEY,
     PIN_SIDE_NAMES,
     QtAdsPinSideHandler,
 )
-from PySide6.QtWidgets import QMainWindow, QWidget
+from PySide6.QtWidgets import QListView, QMainWindow, QWidget
 from pytest import fixture
 from pytestqt.qtbot import QtBot
 
@@ -198,6 +200,34 @@ def test_another_docks_pin_is_ignored(manager: QtAds.CDockManager) -> None:
 
     assert handler.side == DEFAULT_PIN_SIDE
     assert handler.pinned is False
+
+
+def test_pinning_leaves_the_wrappers_of_qt_made_objects_inside_the_dock_alive(manager: QtAds.CDockManager) -> None:
+    """Pinning a handled dock must not invalidate the Python wrapper of an object Qt made inside it (#461).
+
+    Asking the slide-out container for its dock registered the dock as a child of the container's
+    wrapper, a slot argument collected as the slot returned; shiboken then invalidated every Qt-made
+    wrapper fetched beneath the dock while the objects lived -- the Roots view's column, and its grip's
+    "already deleted" on every hover.
+
+    **Test steps:**
+
+    * put a list view in a handled dock and fetch its viewport, an object Qt made
+    * pin the dock, then collect garbage
+    * assert the viewport's wrapper is still valid and usable
+    """
+    dock = add_dock(manager, "holder")
+    view = QListView()
+    dock.setWidget(view)
+    viewport = view.viewport()
+    handler = QtAdsPinSideHandler(dock, GROUP)
+
+    dock.setAutoHide(True)
+    gc.collect()
+
+    assert handler.pinned is True
+    assert shiboken6.isValid(viewport)
+    assert viewport.rect() is not None
 
 
 # endregion

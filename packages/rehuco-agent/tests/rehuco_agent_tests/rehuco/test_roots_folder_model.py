@@ -814,3 +814,26 @@ def test_a_drop_the_model_cannot_take_is_refused(qtbot: QtBot, tmp_path: Path) -
 
 
 # endregion
+
+
+def test_a_move_is_asked_for_only_when_a_movable_root_would_move(qtbot: QtBot, tmp_path: Path) -> None:
+    """The dragged root's drop asks the file for a move through the model -- and only for one that moves a root while
+    roots can be reordered.
+
+    **Test steps:**
+
+    * ask to move the first root to the last row, a root to its own row, a row that is not there, and the first root
+      again with reordering off
+    * verify only the first was asked for
+    """
+    model, roots = three_roots(qtbot, tmp_path)
+    asked: list[tuple[Any, int]] = []
+    model.root_move_requested.connect(lambda root_id, to: asked.append((root_id, to)))
+
+    assert model.request_root_move(0, 2)
+    assert not model.request_root_move(1, 1)
+    assert not model.request_root_move(5, 0)
+    model.set_reorderable(False)
+    assert not model.request_root_move(0, 2)
+
+    assert asked == [(roots[0].root_id, 2)]
