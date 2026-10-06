@@ -2,13 +2,12 @@
 
 from collections.abc import Generator
 from pathlib import Path
-from typing import Final
+from typing import Any, Final, NamedTuple
 from uuid import uuid4
 
 from borco_pyside.widgets import RowBandDelegate
-from borco_pyside.widgets.row_band_delegate import TEXT_PADDING
 from PySide6.QtCore import QPoint, QRect
-from PySide6.QtGui import QColor, QImage, QPainter
+from PySide6.QtGui import QColor, QFont, QImage, QPainter
 from PySide6.QtWidgets import QAbstractItemView, QApplication, QListView, QStyleOptionViewItem
 from pytest import fixture
 from pytest_mock import MockerFixture
@@ -226,44 +225,61 @@ def test_a_root_row_is_taller_than_a_folder_row_and_its_folder_is_in_the_model(
     assert clip.data(RootsFolderModel.PATH_ROLE) is None
 
 
-def test_painting_a_root_row_shows_its_folder_line(
-    qtbot: QtBot, shown: tuple[RootsColumnView, RootsFolderModel]
-) -> None:
-    """The folder line is drawn, fainter than the name: the row has ink in its lower half, and less strongly than in its
-    upper half.
+class DrawnLine(NamedTuple):
+    """One line of text a painter was asked to draw: where, what, in which font and in which colour."""
+
+    rect: QRect
+    text: str
+    font: QFont
+    ink: QColor
+
+
+class RecordingPainter(QPainter):
+    """A painter that notes each line of text it is asked to draw."""
+
+    def __init__(self, device: QImage) -> None:
+        super().__init__(device)
+        self.lines: list[DrawnLine] = []
+
+    def drawText(self, *args: Any) -> None:  # noqa: N802  # pyright: ignore[reportIncompatibleMethodOverride]
+        """Note a ``(rect, flags, text)`` draw, then draw it."""
+        rect, _flags, text = args
+        self.lines.append(DrawnLine(rect, text, self.font(), self.pen().color()))
+        super().drawText(*args)
+
+
+def test_painting_a_root_row_shows_its_folder_line(shown: tuple[RootsColumnView, RootsFolderModel]) -> None:
+    """The folder line is drawn under the name, in a smaller font and fainter ink.
+
+    Read off the draw calls, not the pixels: the offscreen platform has no system fonts, and once any test has loaded
+    an icon font plain text draws nothing at all, so a grab of the row holds no ink to measure.
 
     **Test steps:**
 
-    * grab the column of roots
-    * verify the first row's lower half holds some ink, and its darkest pixel is lighter than the name's -- read right
-      of the glyph, which spans both lines
+    * paint a root row's content with a painter that records each line of text
+    * verify two lines: the name, then the folder -- below it, smaller, and drawn with a lower alpha
     """
-    view, _model = shown
-    qtbot.wait(50)
-    first = next(
-        column
-        for column in view.findChildren(QAbstractItemView)
-        if column.model() is not None and not column.rootIndex().isValid()
-    )
-    root = first.model().index(0, 0)
+    view, model = shown
+    root = model.index(0, 0)
     delegate = RootRowDelegate(view)
-    height = delegate.sizeHint(QStyleOptionViewItem(), root).height()
-    text_left = TEXT_PADDING + delegate.glyph_size(QStyleOptionViewItem(), root, height) + ICON_TEXT_GAP
+    option = QStyleOptionViewItem()
+    delegate.initStyleOption(option, root)
+    image = QImage(320, 80, QImage.Format.Format_ARGB32)  # kept: a painter does not own its device
+    painter = RecordingPainter(image)
+    try:
+        painter.setPen(QColor("black"))
+        delegate.paint_content(painter, option, root, QRect(0, 0, 300, 60), QColor("black"))
+    finally:
+        painter.end()
 
-    def darkest(top: int, bottom: int) -> int:
-        image = first.viewport().grab().toImage()
-        return min(
-            QColor(image.pixel(x, y)).lightness()
-            for x in range(text_left, min(200, image.width()))
-            for y in range(top, min(bottom, image.height()))
-        )
-
-    # the first paint can come after the fixed wait above under load (a parallel run): wait for the ink itself
-    qtbot.waitUntil(lambda: darkest(height // 2, height) < 255)
-    name_ink = darkest(0, height // 2)
-    folder_ink = darkest(height // 2, height)
-    assert folder_ink < 255
-    assert folder_ink > name_ink
+    lines = painter.lines
+    name, folder = lines[0], lines[1]
+    assert len(lines) == 2
+    assert name.text == "lib"
+    assert folder.text  # elided to fit, so not compared with the whole path
+    assert folder.rect.top() >= name.rect.bottom()
+    assert folder.font.pointSizeF() < name.font.pointSizeF()
+    assert (name.ink.alpha(), folder.ink.alpha() < 255) == (255, True)
 
 
 def test_a_root_rows_glyph_is_centred_on_the_whole_row(
@@ -384,3 +400,45 @@ def test_a_row_with_no_glyph_is_no_wider_than_its_one_line_hint(
     width = RootRowDelegate(view).sizeHint(QStyleOptionViewItem(), placeholder).width()
 
     assert width == RootsItemDelegate(view).sizeHint(QStyleOptionViewItem(), placeholder).width()
+
+
+def test_a_row_with_no_glyph_paints_its_name_alone(
+    mocker: MockerFixture, shown: tuple[RootsColumnView, RootsFolderModel]
+) -> None:
+    """Neither delegate draws a glyph, or leaves room for one, in a row that has none.
+
+    **Test steps:**
+
+    * paint the placeholder row of the unreachable root with each delegate, the glyph drawing captured
+    * verify no glyph was drawn
+    """
+    view, model = shown
+    placeholder = model.index(0, 0, model.index(1, 0))
+    for delegate in (RootRowDelegate(view), RootsItemDelegate(view)):
+        draw = mocker.patch.object(delegate, "draw_icon")
+        option = QStyleOptionViewItem()
+        delegate.initStyleOption(option, placeholder)
+        image = QImage(320, 80, QImage.Format.Format_ARGB32)
+        painter = QPainter(image)
+        try:
+            delegate.paint_content(painter, option, placeholder, QRect(0, 0, 300, 60), QColor("black"))
+        finally:
+            painter.end()
+        draw.assert_not_called()
+
+
+def test_the_folder_line_scales_a_font_sized_in_pixels(qtbot: QtBot) -> None:
+    """A font with no point size -- one set in pixels -- gets a folder line smaller by the same scale.
+
+    **Test steps:**
+
+    * build a font of 20 pixels and ask for the folder line's font
+    * verify it is smaller and still in pixels
+    """
+    del qtbot
+    font = QFont()
+    font.setPixelSize(20)
+
+    folder_font = RootRowDelegate._RootRowDelegate__folder_font(font)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    assert 0 < folder_font.pixelSize() < 20

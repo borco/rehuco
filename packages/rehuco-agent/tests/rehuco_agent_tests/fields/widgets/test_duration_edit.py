@@ -451,3 +451,22 @@ def test_duration_edit_spin_box_clear_action_hides_again_after_clearing(qtbot: Q
 
 
 # endregion
+
+
+def test_duration_edit_without_a_clear_action_still_takes_a_value(qtbot: QtBot) -> None:
+    """A spin box whose clear action was taken away is left as it is when the value changes.
+
+    **Test steps:**
+
+    * remove the spin box's clear action and set a value
+    * verify the value is held
+    """
+    edit = DurationEdit()
+    qtbot.addWidget(edit)
+    line_edit = internal_spin_box(edit).lineEdit()
+    assert line_edit is not None
+    line_edit.removeAction(line_edit.actions()[0])
+
+    edit.value = 60
+
+    assert edit.value == 60

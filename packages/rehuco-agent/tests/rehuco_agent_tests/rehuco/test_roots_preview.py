@@ -6,8 +6,9 @@ from uuid import uuid4
 
 from PySide6.QtCore import QModelIndex
 from PySide6.QtGui import QAction, QImage
-from PySide6.QtWidgets import QFrame, QLabel
+from PySide6.QtWidgets import QFrame, QLabel, QLineEdit, QVBoxLayout
 from pytest import fixture
+from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.rehuco.roots_folder_model import NodeListing, RootsFolderModel
 from rehuco_agent.rehuco.roots_preview import (
@@ -444,3 +445,62 @@ def test_a_size_is_given_in_words_and_in_exact_bytes() -> None:
     assert format_size(2048) == "2.0 kB (2,048 B)"
     assert format_size(999) == "999 B"
     assert format_size(0) == "0 B"
+
+
+def test_a_name_being_typed_is_left_alone_while_the_same_root_stays_shown(mocker: MockerFixture, shown: Shown) -> None:
+    """A listing that lands while the root's name has focus does not eat what was typed.
+
+    **Test steps:**
+
+    * show the root and type into its name, the field holding focus
+    * show the same root again
+    * verify the typed text is still there
+    """
+    shown.preview.show_index(shown.root)
+    shown.preview.root_name_edit.setText("typing")
+    mocker.patch.object(QLineEdit, "hasFocus", return_value=True)
+
+    shown.preview.show_index(shown.root)
+
+    assert shown.preview.root_name_edit.text() == "typing"
+
+
+def test_a_layout_item_that_is_not_a_widget_is_skipped_when_the_buttons_are_made_again(
+    qtbot: QtBot, tmp_path: Path
+) -> None:
+    """Making the buttons again clears what is in their layout, a stretch included.
+
+    **Test steps:**
+
+    * add a stretch to the buttons' layout and show a row
+    * verify the row's one button is all that is left
+    """
+    library = tmp_path / "lib"
+    library.mkdir()
+    (library / "a.txt").write_text("a", encoding="utf-8")
+    shown = Shown(qtbot, library, lambda _index: ([QAction("Only")], None))
+    layout = shown.preview.findChild(QVBoxLayout, "buttons_layout")
+    assert layout is not None
+    layout.addStretch()
+
+    shown.preview.show_index(shown.row("a.txt"))
+
+    assert len(shown.preview.buttons) == 1
+
+
+def test_a_thumbnail_read_that_ends_after_the_preview_was_deleted_is_dropped(
+    mocker: MockerFixture, shown: Shown
+) -> None:
+    """The worker's last step, telling the preview, does not raise once the preview is gone.
+
+    **Test steps:**
+
+    * make telling the preview raise, as a deleted C++ object does, and run the read of a picture
+    * verify nothing is raised
+    """
+    path = shown.model.path_of(shown.row("small.png"))
+    assert path is not None
+    mocker.patch.object(shown.preview, "image_ready").emit.side_effect = RuntimeError
+    read_image = shown.preview._RootsPreview__read_image  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    read_image(1, path)

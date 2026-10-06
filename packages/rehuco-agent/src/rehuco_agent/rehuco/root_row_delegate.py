@@ -125,6 +125,6 @@ class RootRowDelegate(RootsItemDelegate):
         font.setStrikeOut(False)
         if font.pointSizeF() > 0:
             font.setPointSizeF(font.pointSizeF() * PATH_FONT_SCALE)
-        elif font.pixelSize() > 0:
+        else:  # a font is sized in points or in pixels, and ``pixelSize()`` is ``-1`` for one in points
             font.setPixelSize(max(1, round(font.pixelSize() * PATH_FONT_SCALE)))
         return font

@@ -908,3 +908,22 @@ def test_clearing_the_line_asks_for_all_rows_though_the_problem_markers_wrapper_
     browser.set_filter_text("nonsense:value")
     marker = next(action for action in browser.filter_edit.actions() if action.objectName() == PROBLEMS_ACTION_NAME)
     assert marker.toolTip() == "\n".join(browser.filter_problems) != ""
+
+
+def test_a_problem_is_still_reported_in_the_tooltip_when_the_marker_is_gone(browser: TableBrowser) -> None:
+    """The filter line's own tooltip says what could not be applied, with or without its marker.
+
+    **Test steps:**
+
+    * remove the problem marker from the line and apply a token it cannot
+    * verify the line's tooltip names the problem
+    """
+    for action in browser.filter_edit.actions():
+        if action.objectName() == PROBLEMS_ACTION_NAME:
+            browser.filter_edit.removeAction(action)
+
+    browser.set_filter_text("nonsense:value")
+
+    problems = "\n".join(browser.filter_problems)
+    assert problems
+    assert problems in browser.filter_edit.toolTip()

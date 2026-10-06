@@ -846,9 +846,8 @@ class RootsFolderModel(QAbstractItemModel):
 
         :param node: the row.
         """
-        if node is not self.__top:
-            index = self.__index_for(node)
-            self.dataChanged.emit(index, index)
+        index = self.__index_for(node)
+        self.dataChanged.emit(index, index)
 
     @staticmethod
     def __renumber(parent: RootsFolderModel.Node, start: int) -> None:

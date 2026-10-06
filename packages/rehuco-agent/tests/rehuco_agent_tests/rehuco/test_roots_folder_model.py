@@ -837,3 +837,63 @@ def test_a_move_is_asked_for_only_when_a_movable_root_would_move(qtbot: QtBot, t
     assert not model.request_root_move(0, 2)
 
     assert asked == [(roots[0].root_id, 2)]
+
+
+def test_a_listing_that_fails_with_an_os_error_shows_the_root_as_unreachable(
+    qtbot: QtBot, mocker: MockerFixture, library: Path
+) -> None:
+    """A read that raises, as a share dropping mid-read does, answers as an unreachable folder.
+
+    **Test steps:**
+
+    * show a root whose lister raises ``OSError``
+    * verify the root is unreachable
+    """
+    root = make_root(library)
+    lister = RootFolderLister([root])
+    mocker.patch.object(lister, "list", side_effect=OSError)
+    model = RootsFolderModel()
+    model.set_roots([root], lister)
+    top = model.index(0, 0)
+
+    wait_listed(qtbot, model, top)
+
+    assert model.listing_state(top) is NodeListing.UNREACHABLE
+
+
+def test_a_model_with_no_lister_lists_nothing(library: Path) -> None:
+    """Roots shown with nothing to list them stay unlisted, and ask for nothing.
+
+    **Test steps:**
+
+    * show a root with no lister
+    * verify the root has no rows and is unlisted
+    """
+    model = RootsFolderModel()
+    model.set_roots([make_root(library)], None)
+    top = model.index(0, 0)
+
+    assert model.listing_state(top) is NodeListing.UNLISTED
+    assert model.rowCount(top) == 0
+
+
+def test_the_questions_asked_about_no_row_or_a_placeholder_are_answered_with_nothing(
+    qtbot: QtBot, tmp_path: Path, library: Path
+) -> None:
+    """The invalid index and a placeholder row have no key, no parent and no data, and a folder has no tooltip.
+
+    **Test steps:**
+
+    * show a reachable root and an unreachable one
+    * verify the invalid index has no key, parent or data, the placeholder under the unreachable root has no key, and
+      a folder has no tooltip
+    """
+    model = make_model(qtbot, [make_root(library), make_root(tmp_path / "gone", "gone")])
+    alpha = child(model, model.index(0, 0), "alpha")
+    placeholder = model.index(0, 0, model.index(1, 0))
+
+    assert model.key(QModelIndex()) is None
+    assert not model.parent(QModelIndex()).isValid()
+    assert model.data(QModelIndex()) is None
+    assert model.key(placeholder) is None
+    assert alpha.data(Qt.ItemDataRole.ToolTipRole) is None
