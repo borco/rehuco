@@ -404,7 +404,12 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__selection_preview: Final = SelectionPreview(self.__root_catalog, self.__show_selection_in_preview, self)
         self.__browsers_dock.resource_selected.connect(self.__on_browser_selection)
         self.__roots_panel.record_selected.connect(self.__on_roots_selection)
+        self.__selecting_dock: QtAds.CDockWidget | None = None
+        """Which of the Browsers and the Root Catalog docks the reader was last in -- the one whose selection the
+        preview follows (#381). Any other dock becoming current leaves it as it is: a Documents dock the preview
+        itself opened, or the Log, would otherwise take the arrow keys' selection away from the table they move."""
         self.__setup_docking_system()
+        self.__focus_tracker.current_dock_changed.connect(self.__on_current_dock_changed)
         self.__ui.file_menu.aboutToShow.connect(lambda: self.__add_open_documents(self.__ui.file_menu))
         self.__ui.browsers_menu.aboutToShow.connect(lambda: self.__add_open_browsers(self.__ui.browsers_menu))
         self.__setup_file_menu()
@@ -1916,13 +1921,21 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__reveal_documents_dock()
         self.__documents_dock.show_in_preview(Path(path).resolve())
 
+    def __on_current_dock_changed(self, dock: object) -> None:
+        """Remember the Browsers or the Root Catalog dock as the one the preview follows, once the reader is in it.
+
+        :param dock: the outer dock now current, or ``None``.
+        """
+        if dock is self.__browsers_dock_widget or dock is self.__rehuco_dock_widget:
+            self.__selecting_dock = cast(QtAds.CDockWidget, dock)
+
     def __on_browser_selection(self, key: object) -> None:
-        """Hand the Browsers dock's selection to the preview -- only while that dock is the one the reader is in (#381):
-        a selection that moved on its own (a rename, a rescan) while they work elsewhere is not a request.
+        """Hand the Browsers dock's selection to the preview -- only while it is the catalog view the reader was last
+        in (#381): the other view's selection moving meanwhile is not a request.
 
         :param key: the one selected row's ``(root_id, relative)``, or ``None``.
         """
-        if self.__focus_tracker.current_dock is self.__browsers_dock_widget:
+        if self.__selecting_dock is self.__browsers_dock_widget:
             self.__selection_preview.select(cast(RowKey | None, key))
 
     def __on_roots_selection(self, key: object) -> None:
@@ -1930,7 +1943,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
         :param key: the selected row's record as ``(root_id, relative)``, or ``None``.
         """
-        if self.__focus_tracker.current_dock is self.__rehuco_dock_widget:
+        if self.__selecting_dock is self.__rehuco_dock_widget:
             self.__selection_preview.select(cast(RowKey | None, key))
 
     def __show_selection_in_preview(self, path: Path) -> None:

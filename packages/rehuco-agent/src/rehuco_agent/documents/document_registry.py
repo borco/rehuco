@@ -220,8 +220,9 @@ def load_or_locked(path: Path) -> RehuDocument:
     a locked, never-savable stub instead of an exception ([[data-model#write-integrity]]). Each branch
     is handed the identity that matches its provenance
     (:func:`~rehuco_agent.settings.identity_settings.shared_identity_settings`, #109), read here at
-    open time -- the document keeps it for its whole life, so a later identity-setting change
-    affects only documents opened afterwards. A ``.tc`` import files its per-user state under the
+    each read -- the document keeps it until it is read again, so a later identity-setting change
+    reaches a document opened afterwards, or one reverted or loaded in place afterwards, which reads its
+    file through here like any open (#381). A ``.tc`` import files its per-user state under the
     **unknown** user, since a flag carried in from the file was not set by this install's identity; a
     ``.rehu`` (whose per-user writes this UI makes) is opened under the **current** user. A locked stub
     adopts whichever name its branch would have used, so a hand-fix-and-revert retries under the same

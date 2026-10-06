@@ -176,6 +176,36 @@ def test_a_teardown_closes_an_open_image_viewer(host: BareHost, model: RehuDocum
     assert viewer.isHidden()
 
 
+def test_another_record_loaded_in_place_lets_go_of_what_the_last_one_showed(
+    mocker: MockerFixture, host: BareHost, model: RehuDocumentModel
+) -> None:
+    """A record loaded into the model in place of another (a preview moving on, #381) is not a rename: the log's rows
+    and an open image viewer were the last record's, and go. A rename keeps the log's rows.
+
+    **Test steps:**
+
+    * build sub-docks, spy on the log surface's clear, and rename the resource: verify nothing was cleared
+    * open a screenshot maximized, then load another record into the model
+    * verify the log surface was cleared once and the viewer is hidden
+    """
+    sub_docks = DocumentSubDocks(model, host.lent)
+    clear = mocker.spy(sub_docks.log_widget, "clear")
+    model.path = Path("/fake/renamed/info.rehu")
+    clear.assert_not_called()
+    sub_docks._DocumentSubDocks__on_image_activated(SCREENSHOT)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    viewer = sub_docks._DocumentSubDocks__image_viewer  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert viewer is not None
+
+    other = RehuDocument(
+        {"type": "Tutorial", "sources": [{"title": "Bar", "primary": True}]}, Path("/fake/b/info.rehu")
+    )
+    mocker.patch("rehuco_agent.documents.rehu_document_model.load_or_locked", return_value=other)
+    model.load(Path("/fake/b/info.rehu"))
+
+    clear.assert_called_once()
+    assert viewer.isHidden()
+
+
 def test_a_model_change_after_teardown_reaches_nothing_torn_down(host: BareHost, model: RehuDocumentModel) -> None:
     """A teardown severs the model at once, not when the deferred deletes run: an edit made in between
     reaches nothing of the torn-down sub-docks.

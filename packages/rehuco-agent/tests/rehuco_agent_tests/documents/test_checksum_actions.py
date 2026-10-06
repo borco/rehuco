@@ -617,6 +617,79 @@ def test_a_second_run_replaces_the_first_s_finding(
     assert actions.finding_clean
 
 
+OTHER_INFO_PATH: Final = Path("/fake/library/modelling/info.rehu")
+
+
+def load_another_record(mocker: MockerFixture, model: RehuDocumentModel) -> None:
+    """Load another record into ``model`` in place, as a preview moving on does (#381).
+
+    :param mocker: pytest-mock fixture.
+    :param model: the model.
+    """
+    other = RehuDocument({"type": "Tutorial", "sources": [{"title": "Modelling", "primary": True}]}, OTHER_INFO_PATH)
+    mocker.patch("rehuco_agent.documents.rehu_document_model.load_or_locked", return_value=other)
+    model.load(OTHER_INFO_PATH)
+
+
+def test_a_finding_stays_through_a_rename_and_goes_with_another_record(
+    qtbot: QtBot, mocker: MockerFixture, actions: ChecksumActions, model: RehuDocumentModel
+) -> None:
+    """A rename is the same resource, so what its last run found still holds; another record loaded in its place is
+    not, and the finding goes (#381).
+
+    **Test steps:**
+
+    * run a verify to its finding, then rename the resource: check the finding stays
+    * load another record into the model: check the finding is gone
+    """
+    mocker.patch(
+        "rehuco_core.checksum_jobs.verify_checksums",
+        return_value=ChecksumReport(statuses={VIDEO: "matched"}),
+    )
+    with qtbot.waitSignal(actions.finding_changed, timeout=TIMEOUT):
+        actions.verify_action.trigger()
+
+    model.path = DIRECTORY.with_name("sculpting-renamed") / "info.rehu"
+    assert actions.finding == "Checksums verified: 1 matched."
+
+    with qtbot.waitSignal(actions.finding_changed, timeout=TIMEOUT):
+        load_another_record(mocker, model)
+    assert actions.finding == ""
+
+
+def test_a_run_finishing_after_another_record_was_loaded_reports_nothing_on_it(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+    qtbot: QtBot,
+    mocker: MockerFixture,
+    actions: ChecksumActions,
+    model: RehuDocumentModel,
+    queue: TaskQueue,
+    held: GateJob,
+) -> None:
+    """A run asked for one record finishes in the Tasks dock, but says nothing over the record loaded after it (#381).
+
+    **Test steps:**
+
+    * queue a verify behind the held worker, then load another record into the model
+    * let the run finish
+    * check there is no finding and nothing was announced as written
+    """
+    mocker.patch(
+        "rehuco_core.checksum_jobs.verify_checksums",
+        return_value=ChecksumReport(statuses={VIDEO: "mismatched"}),
+    )
+    actions.verify_action.trigger()
+    load_another_record(mocker, model)
+    written: list[object] = []
+    model.files_changed.connect(written.append)
+
+    held.let_finish()
+    qtbot.waitUntil(lambda: queued_rows(queue)[0].state is JobState.DONE, timeout=TIMEOUT)
+    qtbot.wait(50)
+
+    assert actions.finding == ""
+    assert not written
+
+
 def test_a_run_that_was_stopped_part_way_says_nothing(
     qtbot: QtBot, mocker: MockerFixture, actions: ChecksumActions, queue: TaskQueue
 ) -> None:

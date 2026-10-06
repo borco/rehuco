@@ -3157,15 +3157,15 @@ def test_a_selection_in_the_roots_view_shows_in_the_preview(
 def test_only_the_view_the_reader_is_in_drives_the_preview(
     mocker: MockerFixture, monkeypatch: MonkeyPatch, qtbot: QtBot
 ) -> None:
-    """A selection that moved in a dock the reader is not in -- a rename, a rescan -- is not a request, and neither
-    is one from the other catalog view.
+    """Of the two catalog views, only the one the reader was last in drives the preview: a selection moving in the
+    other is not a request. Any other dock becoming current -- the Documents dock, the Log -- changes nothing.
 
     **Test steps:**
 
     * with the Root Catalog dock current, announce a selection from the Browsers dock
     * with the Browsers dock current, announce one from the Roots view
-    * with the Documents dock current, announce one from each
     * wait out the settle and verify nothing was previewed
+    * make the Documents dock current and announce one from the Browsers dock: verify it is previewed
     """
     window = selecting_window(mocker, monkeypatch, qtbot)
     browsers = open_catalog_stand_in(window)
@@ -3175,12 +3175,12 @@ def test_only_the_view_the_reader_is_in_drives_the_preview(
     browsers.resource_selected.emit(SELECTED_KEY)
     drive_from(window, browsers_dock_widget(window))
     roots_panel(window).record_selected.emit(SELECTED_KEY)
+    qtbot.wait(SETTLE_MS * 6)
+    assert previewed_path(window) is None
+
     drive_from(window, docs_dock_widget)
     browsers.resource_selected.emit(SELECTED_KEY)
-    roots_panel(window).record_selected.emit(SELECTED_KEY)
-    qtbot.wait(SETTLE_MS * 6)
-
-    assert previewed_path(window) is None
+    qtbot.waitUntil(lambda: previewed_path(window) == SELECTED_ROOT / "a/info.rehu")
 
 
 def test_selecting_nothing_leaves_the_preview_as_it_is(
@@ -3262,13 +3262,14 @@ def test_a_selection_does_not_bring_the_documents_dock_forward(
     mocker: MockerFixture, monkeypatch: MonkeyPatch, qtbot: QtBot
 ) -> None:
     """The Documents dock can be a tab behind the dock being selected in, and fronting it would take that away: only a
-    Documents dock the reader has closed is opened.
+    Documents dock the reader has closed is opened -- and opening it leaves the selection with the view it came from.
 
     **Test steps:**
 
     * spy on the window's reveal of the Documents dock, and preview a resource with the dock open
     * close the dock and preview another
     * verify the dock was left alone the first time and revealed the second
+    * select the first again: verify the preview follows it
     """
     window = selecting_window(mocker, monkeypatch, qtbot)
     browsers = open_catalog_stand_in(window)
@@ -3284,6 +3285,8 @@ def test_a_selection_does_not_bring_the_documents_dock_forward(
     qtbot.waitUntil(lambda: previewed_path(window) == SELECTED_ROOT / "b/info.rehu")
 
     reveal.assert_called_once()
+    browsers.resource_selected.emit(SELECTED_KEY)
+    qtbot.waitUntil(lambda: previewed_path(window) == SELECTED_ROOT / "a/info.rehu")
 
 
 # endregion

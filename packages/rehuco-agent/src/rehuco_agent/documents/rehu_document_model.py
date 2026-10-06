@@ -740,7 +740,8 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     def revert(self) -> None:
         """Discard in-memory edits and load the document's file again, exactly as :meth:`load` loads any other
         (#381) -- so an out-of-band edit ([[data-model#write-integrity]]) is picked up too, and a revert is fast
-        whenever the file's structure is what the form already shows.
+        whenever the file's structure is what the form already shows. Like any open, it reads under the identity
+        set now, which an identity-setting change made since the document was opened has moved.
 
         :raises ValueError: if the document has no path (was never loaded from or saved to a file).
         """

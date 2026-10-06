@@ -196,6 +196,31 @@ def test_a_rearrangement_never_paints_a_neighbours_cached_picture(qtbot: QtBot, 
     qtbot.waitUntil(lambda: [colour_of(label) for label in thumbnails(strip)] == [BLUE, RED])
 
 
+def test_a_renamed_screenshot_is_shown_under_its_new_name(qtbot: QtBot, folder: Path) -> None:
+    """A rename keeps the file, so the row is rebuilt for its name, not its picture: each thumbnail is its path, and a
+    row naming files that are gone would open nothing.
+
+    **Test steps:**
+
+    * set a screenshot on a strip and wait for it to land
+    * rename the file on disk, and set it again under its new name
+    * verify the strip was rebuilt, reporting the new name
+    """
+    old = write_picture(folder / "cover.png", RED)
+    strip = ImageStrip(height=STRIP_HEIGHT)
+    qtbot.addWidget(strip)
+    strip.set_images([old])
+    qtbot.waitUntil(lambda: colour_of(thumbnails(strip)[0]) == RED)
+    reported: list[list[Path]] = []
+    strip.images_changed.connect(reported.append)
+
+    new = folder / "info00.png"
+    os.replace(old, new)
+    strip.set_images([new])
+
+    assert reported == [list((new,))]
+
+
 def test_a_picture_landing_after_a_rebuild_paints_nothing_it_no_longer_holds(qtbot: QtBot, folder: Path) -> None:
     """A rebuild withdraws what the row no longer holds; a picture another strip asked for lands without
     touching this one.

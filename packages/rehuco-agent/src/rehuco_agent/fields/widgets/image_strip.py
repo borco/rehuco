@@ -194,9 +194,9 @@ class ImageStrip(QScrollArea):  # pylint: disable=too-many-instance-attributes
         self.__thumbnails: dict[Path, ThumbnailLabel] = {}
         self.__waiting: dict[str, Path] = {}
         """The thumbnails still holding their place, by the cache key their picture will land under (#381)."""
-        self.__shown: tuple[tuple[Hashable, ...], int, float] | None = None
-        """The files the row was last built for, by identity, with the height and pixel ratio -- what a rebuild
-        compares against to skip one that would change nothing (#381); ``None`` before the first."""
+        self.__shown: tuple[tuple[Hashable, ...], tuple[Path, ...], int, float] | None = None
+        """The files the row was last built for, by identity and by name, with the height and pixel ratio -- what a
+        rebuild compares against to skip one that would change nothing (#381); ``None`` before the first."""
         self.__current: Path | None = None
         self.__requested_visible = True
         self.__row: QLayout
@@ -442,8 +442,8 @@ class ImageStrip(QScrollArea):  # pylint: disable=too-many-instance-attributes
 
         The very files the row already shows, at the size it shows them, are nothing to do (#381): showing a record
         refreshes the strip both for its new scanner and for the curation list's rebuild, and a rebuild of the
-        same row twice is a second round of widgets for nothing. Compared by file, not name, so a rearrangement
-        that swapped two files' names is still rebuilt.
+        same row twice is a second round of widgets for nothing. Compared by file and by name: a rearrangement
+        that swapped two files' names keeps the names, and a rename keeps the files, and either is still rebuilt.
 
         :param paths: the curated (visible) screenshot paths to show; an empty list clears the strip.
         """
@@ -454,7 +454,9 @@ class ImageStrip(QScrollArea):  # pylint: disable=too-many-instance-attributes
         # keyed by the file, not its name: a screenshot's name is its place in the set, so a curation edit
         # renames the files and a name key would paint a neighbour's cached picture
         source = ScreenshotRowsImageSource([(path, ImageVisibility.VISIBLE) for path in paths])
-        shown = (tuple(source.key(index) for index in range(len(source))), thumbnail_height, ratio)
+        # the paths too: a rename keeps the file, and each label is its path -- a skipped rebuild would leave the
+        # row naming files that are no longer there
+        shown = (tuple(source.key(index) for index in range(len(source))), tuple(paths), thumbnail_height, ratio)
         if shown == self.__shown:
             return
         self.__shown = shown
