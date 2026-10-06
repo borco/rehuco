@@ -733,7 +733,7 @@ regenerated. Because it carries the user list with salted password hashes ([[dis
 creates it owner-readable only (0600-equivalent).
 
 **A `.rehuco` is a file the agent opens, and a machine may keep several** — one per set of roots a user wants to
-browse together — with **one open at a time** in the agent's Root Catalog dock ([[plugins#browsers]]) (#371). Its
+browse together — with **one open at a time** in the agent's Browsers dock ([[plugins#browsers]]) (#371). Its
 contents stay machine-local for the reasons in [[mounts-and-storage#rehuco-scope]]; what changes is only that the
 declaration is a document rather than a single fixed file. The word *collection* is deliberately not used for it:
 that is already a resource type ([[plugins#grouping-entities]]).

@@ -1,4 +1,4 @@
-"""Click-to-filter links: the one wire format a linkified value and the Root Catalog dock share
+"""Click-to-filter links: the one wire format a linkified value and the Browsers dock share
 ([[plugins#filter-urls]], #398).
 
 ``filter://<field>?name=<percent-encoded value>`` -- the field is the host, the value always rides the ``name``

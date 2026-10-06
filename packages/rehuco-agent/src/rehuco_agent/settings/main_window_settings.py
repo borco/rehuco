@@ -14,9 +14,9 @@ TOOLBARS_STATE_KEY: Final = "toolbars_state"
 LOG_WIDGET_STATE_KEY: Final = "log_widget_state"
 TASK_QUEUE_STATE_KEY: Final = "task_queue_state"
 
-OUTER_DOCKS_STATE_VERSION: Final = 7
+OUTER_DOCKS_STATE_VERSION: Final = 8
 """Schema version of :attr:`MainWindowSettings.outer_docks_state`. The outer dock set (the Documents
-dock and its four sibling docks -- Log, Tasks, Settings and Root Catalog) is keyed by dock object
+dock and its five sibling docks -- Log, Tasks, Settings, Root Catalog and Browsers) is keyed by dock object
 name, so any change to that set makes an older blob incompatible: ``CDockManager.restoreState``
 would accept it and silently hide docks not present in the saved layout. Bump this whenever the
 outer dock set changes; :meth:`MainWindowSettings.load` discards a blob whose version differs,
@@ -51,7 +51,11 @@ that describes the wrong layout; this one describes the previous build's default
 
 Bumped to 7 when the Root Catalog dock joined the outer set, tabbed beside Documents (#377). A v6 blob knows
 nothing of it, so restoring one would leave that dock in whatever state QtAds invents for a dock the layout
-never mentions, rather than the closed one the window builds."""
+never mentions, rather than the closed one the window builds.
+
+Bumped to 8 when the Root Catalog dock split in two (#461): the Roots view became the Root Catalog dock's whole
+content and the browsers moved to a new Browsers dock. A v7 blob knows nothing of the Browsers dock, and its Root
+Catalog dock is the old shell, sized and placed for browsers; both start from the window's default instead."""
 
 TOOLBARS_STATE_VERSION: Final = 2
 """Version passed to Qt's own ``QMainWindow.saveState``/``restoreState`` (the toolbar-area/floating

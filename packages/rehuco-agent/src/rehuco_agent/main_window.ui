@@ -219,6 +219,14 @@
     <string>&amp;Root Catalog</string>
    </property>
   </action>
+  <action name="browsers_action">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>&amp;Browsers</string>
+   </property>
+  </action>
   <action name="new_rehuco_action">
    <property name="text">
     <string>&amp;New...</string>

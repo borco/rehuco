@@ -32,7 +32,7 @@ from rehuco_agent.commands import shared_command_registry
 from rehuco_agent.dialogs import conversion_backups_dialog
 from rehuco_agent.documents import document_sub_docks
 from rehuco_agent.fields.widgets.markdown_view import render_markdown
-from rehuco_agent.rehuco import rehuco_dock
+from rehuco_agent.rehuco import browsers_dock
 from rehuco_agent.run_log import shared_run_log
 from rehuco_agent.scraping.registry import shared_scraper_registry
 from rehuco_agent.scraping.scraper_executor import shared_scraper_executor
@@ -253,14 +253,14 @@ class MemoryCatalogStateStore(CatalogStateStore):
 
 @fixture(name="catalog_store", autouse=True)
 def isolate_catalog_state_store(mocker: MockerFixture) -> MemoryCatalogStateStore:
-    """Give every Root Catalog dock built without a store of its own one in-memory store, shared by the docks of a
+    """Give every Browsers dock built without a store of its own one in-memory store, shared by the docks of a
     test -- so a catalog closed in one and reopened in another finds its browsers, and nothing touches disk.
 
     :param mocker: pytest-mock fixture.
     :returns: the store, for a test that wants to look inside.
     """
     store = MemoryCatalogStateStore()
-    mocker.patch.object(rehuco_dock, "CatalogStateStore", return_value=store)
+    mocker.patch.object(browsers_dock, "CatalogStateStore", return_value=store)
     return store
 
 

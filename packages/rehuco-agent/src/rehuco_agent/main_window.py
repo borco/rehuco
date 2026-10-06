@@ -37,6 +37,7 @@ from rehuco_core import (
     DEFAULT_RENAME_COORDINATOR,
     FINISHED_JOB_STATES,
     REHUCO_SUFFIX,
+    CatalogField,
     JobState,
     Relocation,
     SweepChecksumsJob,
@@ -78,7 +79,7 @@ from .fields.type_field import type_label
 from .glyphs import TAB_CLOSE_GLYPH
 from .main_window_ui import Ui_MainWindow
 from .recycle_bin_deleter import configured_deleter
-from .rehuco import RehucoDock
+from .rehuco import BrowsersDock, RootCatalog, RootsPanel
 from .rehuco.table_browser import TableBrowser
 from .resource_events import ResourceEvents
 from .settings.checksum_settings import shared_checksum_settings
@@ -175,11 +176,20 @@ TASK_VIEW_ICON_RESOURCE: Final = ":/icons/task_view.svg"
 REHUCO_DOCK_OBJECT_NAME: Final = "rehuco_dock"
 """The Root Catalog dock's ``objectName`` -- its identity in the outer `CDockManager`'s saved layout and the key
 its remembered pin side is stored under (#377). A fixed literal, like the other docks': it is not a
-document, so nothing here derives from a path."""
+document, so nothing here derives from a path. Kept from when the dock was the browsers' shell too (#461): a
+remembered pin side still finds it."""
 
 REHUCO_DOCK_TITLE: Final = "Root Catalog"
 
-REHUCO_VIEW_ICON_RESOURCE: Final = ":/icons/rehuco_view.svg"
+REHUCO_VIEW_ICON_RESOURCE: Final = ":/icons/roots_view.svg"
+"""The Root Catalog dock's toggle: the Roots view's own icon from when it was a sub-dock (#461)."""
+
+BROWSERS_DOCK_OBJECT_NAME: Final = "browsers_dock"
+"""The Browsers dock's ``objectName`` (#461), a fixed literal for the reason :data:`REHUCO_DOCK_OBJECT_NAME` is."""
+
+BROWSERS_DOCK_TITLE: Final = "Browsers"
+
+BROWSERS_VIEW_ICON_RESOURCE: Final = ":/icons/rehuco_view.svg"
 
 REHUCO_FILE_FILTER: Final = "Root Catalog Files (*.rehuco);;All Files (*)"
 
@@ -242,9 +252,10 @@ def location_group_title(main_key: str) -> str:
 class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
     """The single top-level window: a `CDockManager` holding a **Documents** dock around
     :class:`DocumentsDock`, with a **Settings** dock (#47) registered on the same outer manager -- not
-    merged into `DocumentsDock`'s own nested one. Five peer docks in all, each placed once and each
+    merged into `DocumentsDock`'s own nested one. Six peer docks in all, each placed once and each
     leaving its own visibility to the manager's ``saveState()``, the Settings one included since #307
-    (see :meth:`__add_settings_dock`). The **Root Catalog** dock (#377) is tabbed beside Documents the same way.
+    (see :meth:`__add_settings_dock`). The **Root Catalog** dock (#377) and the **Browsers** dock (#461) are tabbed
+    beside Documents the same way.
 
     Dock-in-dock (a `CDockManager` inside the Documents dock's `DocumentsDock`, itself inside this
     window's own `CDockManager`) leaves room for a future resource browser to dock alongside the
@@ -365,18 +376,29 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # a document command set app-wide fires on the focused document from anywhere (#345); nothing
         # holds onto the router -- it parents itself to this window, which its actions are added to
         DocumentCommandRouter(self.__documents_dock, self.__command_registry, self)
-        self.__rehuco_dock: Final = RehucoDock(
+        # the open .rehuco and its cache, which the Root Catalog dock's roots and the Browsers dock's browsers both
+        # read (#461)
+        self.__root_catalog: Final = RootCatalog(
             self.__task_queue,
             self,
-            stylesheet_host=self.__dock_manager,
             rename_coordinator=self.__rename_coordinator,
             resource_events=self.__resource_events,
         )
-        # a resource double-clicked in the Root Catalog browser opens through the ordinary route (#377)
-        self.__rehuco_dock.open_requested.connect(self.open_path)
-        self.__rehuco_dock.open_folder_requested.connect(self.open_folder)
+        self.__roots_panel: Final = RootsPanel(
+            self.__root_catalog,
+            self.__task_queue,
+            self,
+            rename_coordinator=self.__rename_coordinator,
+            resource_events=self.__resource_events,
+        )
+        self.__browsers_dock: Final = BrowsersDock(self.__root_catalog, self, stylesheet_host=self.__dock_manager)
+        # a resource double-clicked in a browser or opened from the Roots view opens through the ordinary route (#377)
+        self.__browsers_dock.open_requested.connect(self.open_path)
+        self.__roots_panel.open_requested.connect(self.open_path)
+        self.__roots_panel.open_folder_requested.connect(self.open_folder)
         # open_archive derives the companion from any file's name, an archive's or not
-        self.__rehuco_dock.open_companion_requested.connect(self.open_archive)
+        self.__roots_panel.open_companion_requested.connect(self.open_archive)
+        self.__roots_panel.filter_requested.connect(self.__on_folder_filter_requested)
         self.__setup_docking_system()
         self.__ui.documents_menu.aboutToShow.connect(lambda: self.__add_open_documents(self.__ui.documents_menu))
         self.__ui.browsers_menu.aboutToShow.connect(lambda: self.__add_open_browsers(self.__ui.browsers_menu))
@@ -478,16 +500,26 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.statusBar().showMessage(text)
 
     def __on_filter_requested(self, url: str) -> None:
-        """Set the filter a clicked ``filter://`` link stands for on the Root Catalog's current browser and bring
-        the catalog forward ([[plugins#filter-urls]]); with no catalog open there is nothing to filter, and the
-        status bar says so.
+        """Set the filter a clicked ``filter://`` link stands for on the current browser and bring the Browsers dock
+        forward ([[plugins#filter-urls]]); with no catalog open there is nothing to filter, and the status bar says
+        so.
 
         :param url: the clicked link, bubbled up from a document's field (`FilterRequester`).
         """
-        if self.__rehuco_dock.apply_filter_url(url):
-            self.__reveal_rehuco_dock()
+        if self.__browsers_dock.apply_filter_url(url):
+            self.__reveal_browsers_dock()
         else:
             self.statusBar().showMessage(NO_CATALOG_TO_FILTER_MESSAGE, STATUS_MESSAGE_TIMEOUT_MS)
+
+    def __on_folder_filter_requested(self, field: CatalogField, value: str) -> None:
+        """Filter the current browser to what the Roots view's folder filter names, and bring the Browsers dock
+        forward (#398, #461).
+
+        :param field: the field to filter on.
+        :param value: the value.
+        """
+        if self.__browsers_dock.set_filter_token(field, value):
+            self.__reveal_browsers_dock()
 
     def __add_open_documents(self, menu: QMenu) -> None:
         """Rebuild ``menu`` with every currently open document, alphabetically by title (#61).
@@ -570,13 +602,13 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             action.deleteLater()
         self.__dynamic_browsers_menu_actions.clear()
 
-        browsers = sorted(self.__rehuco_dock.open_browsers(), key=lambda browser: browser.name.casefold())
+        browsers = sorted(self.__browsers_dock.open_browsers(), key=lambda browser: browser.name.casefold())
         if not browsers:
             placeholder = menu.addAction("No Open Browsers")
             placeholder.setEnabled(False)
             self.__dynamic_browsers_menu_actions.append(placeholder)
             return
-        focused = self.__rehuco_dock.focused_browser()
+        focused = self.__browsers_dock.focused_browser()
         for browser in browsers:
             action = menu.addAction(browser.name)
             action.setCheckable(True)
@@ -586,13 +618,13 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             self.__dynamic_browsers_menu_actions.append(action)
 
     def __focus_browser(self, browser: TableBrowser) -> None:
-        """Jump to an open browser from the ``Browsers`` menu: the Root Catalog dock first, as
+        """Jump to an open browser from the ``Browsers`` menu: the Browsers dock first, as
         :meth:`__focus_document` does for the Documents one, then the browser's own sub-dock.
 
         :param browser: the picked browser.
         """
-        self.__reveal_rehuco_dock()
-        self.__rehuco_dock.focus_browser(browser)
+        self.__reveal_browsers_dock()
+        self.__browsers_dock.focus_browser(browser)
 
     def __setup_view_menu(self) -> None:
         """Build the theme controls and fill ``View`` -- the theme entries, then the app-wide docks (#57, #200,
@@ -633,6 +665,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__ui.view_menu.addAction(theme_menu.dark_action)
         self.__ui.view_menu.addSeparator()  # between the static theme entries above and the app docks below
         self.__ui.view_menu.addAction(self.__ui.rehuco_action)
+        self.__ui.view_menu.addAction(self.__ui.browsers_action)
         self.__ui.view_menu.addAction(self.__ui.documents_action)
         self.__ui.view_menu.addAction(self.__ui.log_action)
         self.__ui.view_menu.addAction(self.__ui.tasks_action)
@@ -702,20 +735,24 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             self.__ui.file_menu.menuAction().setVisible(False)
 
     def __setup_root_catalog_menu(self) -> None:
-        """Append the Root Catalog dock's own actions to ``Root Catalog`` and ``Browsers`` (#402).
+        """Append the Root Catalog dock's actions to ``Root Catalog``, and the Browsers dock's to ``Browsers`` (#402,
+        #461).
 
-        The dock's ``QAction`` objects themselves, not copies, so an entry's enabled state is the dock's: nothing
-        is enabled with no catalog open, the root edits are off on a read-only file and ``Remove Root`` needs a
-        selected root. Added in code, after the ``.ui``'s own ``New``/``Open``/``Open Recent``, because the actions
-        belong to a widget built at run time.
+        The docks' ``QAction`` objects themselves, not copies, so an entry's enabled state is the dock's: nothing
+        is enabled with no catalog open, the root edits are off on a read-only file, ``Remove Root`` needs a
+        selected root and ``Rename Browser`` a current browser. Added in code, after the ``.ui``'s own
+        ``New``/``Open``/``Open Recent``, because the actions belong to widgets built at run time. Neither dock has
+        a toolbar (#461): these menus are the home of the catalog-wide actions, and each dock's title bar carries
+        only what is used often (:meth:`__add_rehuco_dock`, :meth:`__add_browsers_dock`).
         """
-        dock = self.__rehuco_dock
+        roots = self.__roots_panel
         menu = self.__ui.rehuco_menu
-        menu.addAction(dock.scan_action)
-        menu.addAction(dock.add_root_action)
-        menu.addAction(dock.remove_root_action)
+        menu.addAction(roots.scan_action)
+        menu.addAction(roots.add_root_action)
+        menu.addAction(roots.remove_root_action)
         browsers_menu = self.__ui.browsers_menu
-        browsers_menu.addAction(dock.new_browser_action)
+        browsers_menu.addAction(self.__browsers_dock.new_browser_action)
+        browsers_menu.addAction(self.__browsers_dock.rename_browser_action)
         browsers_menu.addSeparator()
 
     def __resync_close_actions_enabled(self) -> None:
@@ -776,10 +813,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             path = path.with_name(path.name + REHUCO_SUFFIX)
             if path.exists() and not self.confirm_overwrite(path):
                 return
-        if self.__rehuco_dock.new_rehuco(path):
+        if self.__root_catalog.new_rehuco(path):
             self.__rehuco_opened(path)
         else:
-            QMessageBox.critical(self, "New Root Catalog", self.__rehuco_dock.load_error)
+            QMessageBox.critical(self, "New Root Catalog", self.__root_catalog.load_error)
 
     def confirm_overwrite(self, path: Path) -> bool:
         """Ask whether an existing root catalog may be replaced by an empty one.
@@ -812,35 +849,53 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         :param path: the ``.rehuco`` file.
         """
         if not self.open_rehuco_path(path):
-            QMessageBox.critical(self, "Open Root Catalog", self.__rehuco_dock.load_error)
+            QMessageBox.critical(self, "Open Root Catalog", self.__root_catalog.load_error)
 
     def open_rehuco_path(self, path: Path | str) -> bool:
-        """Open the ``.rehuco`` at ``path`` in the Root Catalog dock, replacing the one open (#377).
+        """Open the ``.rehuco`` at ``path`` in the catalog, replacing the one open (#377).
 
         Recorded into ``Root Catalog`` > ``Open Recent`` once opened -- and only then: a file that would not open is
         not one that was opened. Says nothing about a failure itself, since a caller knows whether a person
-        is there to be told; the reason is the dock's :attr:`~rehuco_agent.rehuco.RehucoDock.load_error`.
+        is there to be told; the reason is the catalog's :attr:`~rehuco_agent.rehuco.RootCatalog.load_error`.
 
         :param path: the ``.rehuco`` file.
         :returns: whether it was opened.
         """
         resolved = Path(path).resolve()
-        if not self.__rehuco_dock.open_rehuco(resolved):
+        if not self.__root_catalog.open_rehuco(resolved):
             return False
         self.__rehuco_opened(resolved)
         return True
 
     def __rehuco_opened(self, path: Path) -> None:
-        """What an open ``.rehuco`` leaves behind: the dock shown, the file remembered."""
-        self.__reveal_rehuco_dock()
+        """What an open ``.rehuco`` leaves behind: both its docks shown, the file remembered."""
+        self.__reveal_catalog_docks()
         self.__rehuco_settings.record(path)
+
+    def __reveal_catalog_docks(self) -> None:
+        """Show both docks of a catalog just opened (#461): the Browsers dock, then the Root Catalog dock, which
+        ends up in front where the two share a tab strip -- the roots are what an opened catalog is about."""
+        self.__reveal_browsers_dock()
+        self.__reveal_rehuco_dock()
 
     def __reveal_rehuco_dock(self) -> None:
         """Show the Root Catalog dock if it is hidden, bring its tab to the front and, when it floats, its window
         too -- the same reasons, and the same calls, as :meth:`__reveal_documents_dock`."""
-        self.__rehuco_dock_widget.toggleView(True)
-        self.__rehuco_dock_widget.setAsCurrentTab()
-        container = self.__rehuco_dock_widget.floatingDockContainer()
+        self.__reveal_dock(self.__rehuco_dock_widget)
+
+    def __reveal_browsers_dock(self) -> None:
+        """Show the Browsers dock as :meth:`__reveal_rehuco_dock` shows the Root Catalog one (#461)."""
+        self.__reveal_dock(self.__browsers_dock_widget)
+
+    @staticmethod
+    def __reveal_dock(dock: QtAds.CDockWidget) -> None:
+        """Show ``dock`` if it is hidden, bring its tab to the front and, when it floats, its window too.
+
+        :param dock: one of the outer docks.
+        """
+        dock.toggleView(True)
+        dock.setAsCurrentTab()
+        container = dock.floatingDockContainer()
         if container is not None:
             container.raise_()
             container.activateWindow()
@@ -1076,6 +1131,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__log_dock = self.__add_log_dock()
         self.__task_queue_dock = self.__add_task_queue_dock()
         self.__rehuco_dock_widget = self.__add_rehuco_dock()
+        self.__browsers_dock_widget = self.__add_browsers_dock()
         # a local rather than an attribute, unlike the three above: nothing outside this method needs
         # the dock itself, and __main_docks below is what carries it for the rest of the window's life
         settings_dock = self.__add_settings_dock()
@@ -1103,7 +1159,13 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__rehuco_view_icon_handler = ActionIconThemeHandler(
             self.__rehuco_dock_widget.toggleViewAction(), REHUCO_VIEW_ICON_RESOURCE, companion=self.__ui.rehuco_action
         )
+        self.__browsers_view_icon_handler = ActionIconThemeHandler(
+            self.__browsers_dock_widget.toggleViewAction(),
+            BROWSERS_VIEW_ICON_RESOURCE,
+            companion=self.__ui.browsers_action,
+        )
         self.__ui.view_menu.aboutToShow.connect(self.__rehuco_view_icon_handler.resync_companion_checked_state)
+        self.__ui.view_menu.aboutToShow.connect(self.__browsers_view_icon_handler.resync_companion_checked_state)
         self.__ui.view_menu.aboutToShow.connect(self.__documents_view_icon_handler.resync_companion_checked_state)
         self.__ui.view_menu.aboutToShow.connect(self.__log_view_icon_handler.resync_companion_checked_state)
         self.__ui.view_menu.aboutToShow.connect(self.__task_view_icon_handler.resync_companion_checked_state)
@@ -1137,6 +1199,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__main_docks = (
             self.__documents_dock_widget,
             self.__rehuco_dock_widget,
+            self.__browsers_dock_widget,
             self.__log_dock,
             self.__task_queue_dock,
             settings_dock,
@@ -1167,9 +1230,11 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
         # the dock toggles lead the vertical action_bar, so the surfaces of the current work are the
         # first thing on it (#311). Settings is a dock too (#307) but reads as the app's preferences
-        # rather than a surface of the current work, so it stays with the bottom group. The Root Catalog leads
-        # the group: it is where a resource is found, ahead of Documents, where it is then worked on (#377).
+        # rather than a surface of the current work, so it stays with the bottom group. The Root Catalog and the
+        # Browsers lead the group: they are where a resource is found, ahead of Documents, where it is then worked on
+        # (#377, #461).
         self.__ui.action_bar.addAction(self.__rehuco_dock_widget.toggleViewAction())
+        self.__ui.action_bar.addAction(self.__browsers_dock_widget.toggleViewAction())
         self.__ui.action_bar.addAction(self.__documents_dock_widget.toggleViewAction())
         self.__ui.action_bar.addAction(self.__log_dock.toggleViewAction())
         self.__ui.action_bar.addAction(self.__task_queue_dock.toggleViewAction())
@@ -1399,7 +1464,8 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         return dock
 
     def __add_rehuco_dock(self) -> QtAds.CDockWidget:
-        """Build the Root Catalog dock on the outer manager, closed by default (#377).
+        """Build the Root Catalog dock on the outer manager, closed by default (#377): the open ``.rehuco``'s roots,
+        with Refresh on its title bar (#461).
 
         **Tabbed into the Documents area**, exactly as the Settings dock is
         (:meth:`__add_settings_dock`) and for the same reason: a third named dock in the bottom area would
@@ -1423,7 +1489,36 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             | features.DockWidgetFocusable
             | features.DockWidgetPinnable
         )
-        dock.setWidget(self.__rehuco_dock)
+        dock.setWidget(self.__roots_panel)
+        dock.setTitleBarActions(self.__roots_panel.title_bar_actions)
+        self.__dock_manager.addDockWidget(
+            QtAds.CenterDockWidgetArea, dock, self.__documents_dock_widget.dockAreaWidget()
+        )
+        dock.toggleView(False)
+        return dock
+
+    def __add_browsers_dock(self) -> QtAds.CDockWidget:
+        """Build the Browsers dock on the outer manager, closed by default (#461): every browser over the open
+        catalog's cache, with New Table Browser on its title bar.
+
+        Tabbed into the Documents area and closed, for the reasons the Root Catalog dock is
+        (:meth:`__add_rehuco_dock`); an open catalog reveals both (:meth:`__reveal_catalog_docks`), and either can
+        be dragged beside the other from there.
+
+        :returns: the dock, closed.
+        """
+        dock = QtAds.CDockWidget(self.__dock_manager, BROWSERS_DOCK_TITLE)
+        dock.setObjectName(BROWSERS_DOCK_OBJECT_NAME)
+        features = QtAds.CDockWidget.DockWidgetFeature
+        dock.setFeatures(
+            features.DockWidgetClosable
+            | features.DockWidgetMovable
+            | features.DockWidgetFloatable
+            | features.DockWidgetFocusable
+            | features.DockWidgetPinnable
+        )
+        dock.setWidget(self.__browsers_dock)
+        dock.setTitleBarActions(self.__browsers_dock.title_bar_actions)
         self.__dock_manager.addDockWidget(
             QtAds.CenterDockWidgetArea, dock, self.__documents_dock_widget.dockAreaWidget()
         )
@@ -1603,12 +1698,14 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             event.ignore()
             return
 
-        # the open catalog is remembered and its dock detached before the queue is shut down, for the
-        # reason the Tasks widget is detached first (__shutdown_task_queue): shutdown calls every listener
-        # still attached, and a listener whose cache is closing has nothing left to say (#377)
-        self.__rehuco_settings.current_path = self.__rehuco_dock.rehuco_path
+        # the open catalog is remembered and detached before the queue is shut down, for the reason the Tasks
+        # widget is detached first (__shutdown_task_queue): shutdown calls every listener still attached, and a
+        # listener whose cache is closing has nothing left to say (#377). Detaching it lets the file go, which is
+        # when the Browsers dock remembers its browsers
+        self.__rehuco_settings.current_path = self.__root_catalog.rehuco_path
         self.__rehuco_settings.save(persistent_settings())
-        self.__rehuco_dock.detach()
+        self.__roots_panel.detach()
+        self.__root_catalog.detach()
         # pause, wait, save, shut down (#202, [[appendices.task-queue#teardown]]) -- before the outer
         # dock layout is captured below
         self.__shutdown_task_queue()
@@ -1663,8 +1760,8 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         path = self.__rehuco_settings.current_path
         if path is None:
             return
-        if self.__rehuco_dock.open_rehuco(path):
-            self.__reveal_rehuco_dock()
+        if self.__root_catalog.open_rehuco(path):
+            self.__reveal_catalog_docks()
         else:
             self.__rehuco_settings.current_path = None
 

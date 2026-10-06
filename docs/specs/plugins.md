@@ -219,7 +219,7 @@ viewer surface is bound to, so the viewer re-renders without the two surfaces kn
 other. Keeping the reactive layer in the agent preserves the core's non-GUI purity ([[plugins#core-vs-plugin]]).
 
 **One view-model per open resource, app-wide** (#375). The same bindings that keep two surfaces of one document in
-step keep *two hosts* in step: a resource shown both as a Documents dock and as the Root Catalog dock's current resource
+step keep *two hosts* in step: a resource shown both as a Documents dock and as the Browsers dock's current resource
 ([[plugins#browsers]]) is **one** view-model held by both, so an edit in either shows in the other before anything is
 saved. A registry keyed by path owns the view-models and hands the same one to every holder; a view-model lives until
 its last holder lets go, and the unsaved-changes prompt belongs to that last release, not to closing one of several
@@ -304,7 +304,7 @@ workaround
 whose own nested manager hosts the sub-docks of the *current* resource next to the browsing views. So the sub-docks,
 the document toolbar and the layout button are one reusable piece that any dock manager can host and rebuild for
 another resource (#380), not something only a Documents dock owns. Each host keeps **its own per-type default
-layouts**: a layout saved in the Root Catalog dock never changes how Documents opens that type, and the other way round.
+layouts**: a layout saved beside the Browsers dock never changes how Documents opens that type, and the other way round.
 
 ### §13.2.5 The files sub-dock
 
@@ -502,19 +502,20 @@ columns plus type-specific columns.
 
 [[[plugins#rehuco-dock]]]
 
-The first browser is a top-level **Root Catalog** dock, first on the action bar and tabbed beside Documents, showing
-one opened `.rehuco` — a *root catalog* ([[data-model#local-file-trio]], #377). The word *collection* is not used for
-it: that is a resource type ([[plugins#grouping-entities]]). The dock works like the **Projects** of a code host: a
-toolbar over a nested dock manager whose sub-docks are one **Roots** dock and any number of **browsers**. Its toolbar has
-*Scan*, a *Roots* toggle that shows and hides the Roots sub-dock, *New Table Browser* and *Rename Browser*;
-the Roots edits are on the Roots sub-dock's own title bar ([[appendices.code-conventions#command-surfaces]]).
-Its nested dock manager holds three kinds of sub-dock:
+Two top-level docks, first on the action bar and tabbed beside Documents, show one opened `.rehuco` — a *root
+catalog* ([[data-model#local-file-trio]], #377, #461): the **Root Catalog** dock holds its roots and the
+**Browsers** dock its browsers, each named as its menu is, each with its own `View` toggle, and both revealed when a
+catalog is opened. The word *collection* is not used for it: that is a resource type ([[plugins#grouping-entities]]).
+**Neither dock has a toolbar.** The Root Catalog dock's title bar holds *Refresh* and the Browsers dock's *New Table
+Browser*; *Scan*, *Add Root* and *Remove Root* are entries of `Root Catalog` and *Rename Browser* of `Browsers`, the
+rare actions being the menu's ([[appendices.code-conventions#command-surfaces]]). **One object owns the open file
+and its cache** — the catalog — and both docks read it and hear from it when it changed; neither holds the file.
 
-- **Roots** (#378) — a column view, hidden by its own [x] and shown again by the toolbar's toggle: the first column is the `.rehuco`'s roots by label
+- **The Root Catalog dock** (#378) — a column view: the first column is the `.rehuco`'s roots by label
   ([[mounts-and-storage#rehuco-scope]]), each further column one folder's listing, drawn like the files sub-dock
   ([[plugins#files-subdock]]) but with no `..` row, which a column view has no use for. It is **navigation, not
   membership**: what the catalog holds is still decided by records, never by the tree ([[plugins#grouping-entities]]).
-  Its title bar holds **Add Root**, **Remove Root** and **Refresh**; a root's context menu holds, in three
+  The `Root Catalog` menu holds **Scan**, **Add Root** and **Remove Root**; a root's context menu holds, in three
   groups, the folder filter and Open in file explorer; the four moves — top, up, down, bottom, with the ordering
   icons the settings lists use but not their list editor, whose inline insert, rename, duplicate and reset have no
   meaning for a root; and, last and apart, Remove Root. A root row is two lines, its name and under it its folder,
@@ -547,14 +548,15 @@ Its nested dock manager holds three kinds of sub-dock:
   ([[mounts-and-storage#out-of-band]]). A node is root, folder, file, loading or unreachable, so an offline root is
   a state the model already has ([[mounts-and-storage#offline-mounts]]). Every folder is read through one function
   keyed by root id and relative path, which is what Release 0.4.0 swaps for another node's listing.
-- **Browsers** (#396, #379) — each browser is a closable sub-dock, and the first kind is the **table browser**: the generic
+- **The Browsers dock** (#396, #379) — a nested dock manager whose every sub-dock is a browser, closable, and the
+  first kind is the **table browser**: the generic
   resource browser above as a table over the cache ([[data-model#cache-schema]]), every `.rehu` under the roots and
   every `.tc` no `.rehu` covers. A browser has a name, a filter and a set of visible columns, and several browsers
   exist at once, each with its own filter. The shell is written for more than one kind: the image browser (#403) is a
   second. **Rename and Clone** are on the browser's title bar and its tab's context menu, above QtAds' own *Detach*;
-  the toolbar's *Rename Browser* acts on the current one. Clone asks for a name and starts with the same filter and
+  the `Browsers` menu's *Rename Browser* acts on the current one. Clone asks for a name and starts with the same filter and
   columns. The browser's [x] **deletes** it, without asking — a browser is only a view. **Browsers are the
-  agent's, not the catalog's**: each is remembered with where every sub-dock sits, per catalog on this machine, in a
+  agent's, not the catalog's**: each is remembered with where the browsers' sub-docks sit, per catalog on this machine, in a
   file of its own named by the rehuco id (so a moved `.rehuco` keeps them) — never in the `.rehuco`, which
   `rehuco-core` reads and which would carry view state to boxes that have no use for it. They are written when the
   catalog is closed, replaced, or the app quits. A catalog with none remembered opens with one default table browser.
@@ -648,7 +650,7 @@ filter://publishers?name=Example%20Publisher
   ever followed. A clicked link travels up to the window like a field's status message, and the window brings the
   Root Catalog forward; with no catalog open, its status bar says so.
 - **A link is a filter-line token.** Dispatching `filter://authors?name=Foo%20Bar` sets `authors:"Foo Bar"` on the
-  current browser's filter line in the Root Catalog dock ([[plugins#rehuco-dock]]) — one filter grammar, reached by
+  current browser's filter line in the Browsers dock ([[plugins#rehuco-dock]]) — one filter grammar, reached by
   typing or by clicking.
 
 ## §13.6 Tutorial plugin
