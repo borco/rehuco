@@ -617,14 +617,13 @@ and its cache** — the catalog — and both docks read it and hear from it when
   ([[plugins#view-model]]), so the two stay in step unsaved. **Moving off a resource with unsaved edits opens it in
   Documents** (or focuses it there) carrying those edits, then shows the new current resource.
 
-**The menu bar is the complete index** (#402): `File` (Settings, Quit), `Root Catalog`, `Documents`, `Browsers`,
-`View` and `Tools`. `Documents` and `Browsers` are twins — the verbs that open or create, the verbs on the open
-set, then the open list, A–Z, with the focused one checked. `Root Catalog` is the same shape without a list,
+**The menu bar is the complete index** (#402, #465): `File`, `Root Catalog`, `Browsers`, `View` and `Tools`.
+`File` and `Browsers` are twins — the verbs that open or create, the verbs on the open set, then the open list,
+A–Z, with the focused one checked; `File` ends with Settings and Quit. `Root Catalog` is the same shape without a list,
 there being one catalog: New, Open, Open Recent, then Scan, Add Root and Remove Root, which are the dock's own
 actions and so are enabled as the dock enables them. `Browsers` leads with *New Table Browser*; the image
 browser (#403) adds its own entry and kind icon when it lands. `View` is what is visible — themes and the dock
-toggles — and `Tools` holds the catalog-wide maintenance operations. Where the OS moves `File`'s two entries
-into an application menu, `File` is not shown empty.
+toggles — and `Tools` holds the catalog-wide maintenance operations.
 
 Every browser here updates in place when the app moves or changes files — rows and nodes are renamed, moved, inserted
 or removed, never reset — by the in-process announcements of [[mounts-and-storage#out-of-band]].

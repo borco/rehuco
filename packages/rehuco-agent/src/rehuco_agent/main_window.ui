@@ -27,11 +27,6 @@
     <property name="title">
      <string>&amp;File</string>
     </property>
-   </widget>
-   <widget class="QMenu" name="documents_menu">
-    <property name="title">
-     <string>&amp;Documents</string>
-    </property>
     <widget class="QMenu" name="open_recents_menu">
      <property name="title">
       <string>Open recen&amp;ts</string>
@@ -82,7 +77,6 @@
    </widget>
    <addaction name="file_menu"/>
    <addaction name="rehuco_menu"/>
-   <addaction name="documents_menu"/>
    <addaction name="browsers_menu"/>
    <addaction name="view_menu"/>
    <addaction name="tools_menu"/>
