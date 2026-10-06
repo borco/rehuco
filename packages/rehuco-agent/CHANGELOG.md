@@ -60,7 +60,8 @@ released becomes the body of the GitHub Release, so each entry is written to be 
   hidden; the header's right-click menu shows and hides any column, and each browser remembers its choice.
   New Table Browser's menu also starts a browser from a preset: **Tutorial Columns** or **Reference Images Columns**
   shows that type's columns and lists only resources of that type. Sizes,
-  durations and counts sort as numbers, and a cell with nothing in it sorts last either way round; hovering a size
+  durations and counts sort as numbers, and a cell with nothing in it sorts as the smallest value -- first ascending,
+  last descending -- so one click on a header brings the rows lacking a value to the top (#466); hovering a size
   shows its exact bytes. Rows can be multi-selected. A rename, save or deletion made in the app changes just the
   rows it touched, keeping the selection and the sort, instead of reloading the table. Each
   catalog remembers its browsers and where they sit between runs, on this machine only. New icons for the

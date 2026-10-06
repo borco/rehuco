@@ -586,10 +586,12 @@ and its cache** — the catalog — and both docks read it and hear from it when
     stores that the type's plugin declares ([[data-model#cache-schema]], #399) — start hidden, for a preset to show.
     A header state saved before a column existed shows that column at its default. **A cell holds its value** (a size
     in bytes, a duration in seconds) and a delegate says how it reads, so two sizes that read alike still sort apart;
-    the exact size is the cell's tooltip. A missing value sorts after every value, in either order. **Format** says
-    which file format a resource is in: the `.rehu`'s own version as a number (`0` for an unstamped one), `tc` for a
-    legacy `.tc` — a format of its own, not version 0 — and `?` for a `.rehu` whose version the cache does not know
-    (unreadable, or not read since the cache began storing it). It sorts by number, then `tc`, then `?`.
+    the exact size is the cell's tooltip. A missing value sorts as the smallest — first ascending, last descending
+    (#466) — so one click on a header brings the rows lacking it to the top. **Format** says which file format a
+    resource is in: the `.rehu`'s own version as a number (`0` for an unstamped one), `tc` for a legacy `.tc` — a
+    format of its own, not version 0 — and `?` for a `.rehu` whose version the cache does not know (unreadable, or not
+    read since the cache began storing it). It sorts by number, with `tc` below them as the oldest format and `?` as
+    the missing value.
   - **The current resource** (#379) is the one selected row's, named by its root's id and root-relative path;
     none or several selected name none. Every browser is multi-select.
   - **The filter line** (#398) is GitHub-style: free text plus `field:value` or `field:"quoted value"` tokens
