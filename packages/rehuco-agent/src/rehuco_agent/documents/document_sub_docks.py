@@ -606,8 +606,9 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         # self.__form, so it is still alive to be cleared). Rebuilds clear the outgoing form themselves
         # (__rebuild_field_docks), and so does teardown. A lambda, not a bound method: Qt drops a connection
         # whose *receiver* is the object being destroyed, so a slot on self would never fire on its own
-        # destruction -- and it must re-read self.__form, which a rebuild may have replaced.
-        self.destroyed.connect(lambda: self.__form.clear_external())  # pylint: disable=unnecessary-lambda
+        # destruction -- and it must re-read self.__form, which a rebuild may have replaced. Recorded, so a
+        # teardown -- which clears the form itself -- leaves nothing behind on this object either (#39).
+        self.__connect(self.destroyed, lambda: self.__form.clear_external())  # pylint: disable=unnecessary-lambda
         # one dock per FieldsTab, in two areas: Main View leads the left one with the editor tabs behind
         # it, Description View holds the right one where the single Viewer dock sat before the split
         # (#299). The editors are built first so the left area exists for Main View to stack into, and
@@ -640,7 +641,9 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
 
         self.__revert_action: Final = QAction("&Revert", host.widget)
         ActionIconThemeHandler(self.__revert_action, REVERT_ICON_RESOURCE)
-        self.__revert_action.triggered.connect(model.revert)
+        # recorded: the action outlives a teardown until its deferred delete, and must not revert the model
+        # it was built for in that gap -- a preview dock has moved on to another document by then (#39)
+        self.__connect(self.__revert_action.triggered, model.revert)
         # disabled until the document has been saved to disk: there is nothing on disk to revert to, and
         # reverting a not-yet-written path would replace the editable document with a locked MISSING stub,
         # silently discarding the edits (#147). The first save sets saved_on_disk and re-enables it.

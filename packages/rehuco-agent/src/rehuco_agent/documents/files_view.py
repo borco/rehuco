@@ -204,15 +204,21 @@ class FilesView(QWidget):
         self.__reset_to_root()
 
     def detach(self) -> None:
-        """Stop following the app's file announcements, before this view is destroyed.
+        """Stop following the app's file announcements and the document's own, before this view is destroyed.
 
         The events outlive every document, and a connection to a bound method can outlive the widget it
-        reads (#387), so the owner disconnects explicitly rather than trusting the destruction to.
+        reads (#387), so the owner disconnects explicitly rather than trusting the destruction to. The model may
+        outlive this view too -- held elsewhere, or by a preview dock that has moved on to another document (#39) --
+        so its connections go here as well.
         """
+        self.__model.path_changed.disconnect(self.__on_path_changed)  # type: ignore[attr-defined]
         if self.__events is not None:
             self.__events.moved.disconnect(self.__on_moved)
             self.__events.changed.disconnect(self.__on_files_changed)
             self.__events.folder_changed.disconnect(self.__on_folder_changed)
+        else:
+            self.__model.files_changed.disconnect(self.__on_files_changed)
+            self.__model.folder_changed.disconnect(self.__on_folder_changed)
 
     # region Reading
 

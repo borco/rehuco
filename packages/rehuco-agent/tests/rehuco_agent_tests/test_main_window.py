@@ -16,7 +16,7 @@ from typing import Any, Final
 import PySide6QtAds as QtAds
 from borco_pyside.logging import LogWidget
 from borco_pyside.logging.log_model import MESSAGE_COLUMN
-from borco_pyside.qtads import tab_close_button
+from borco_pyside.qtads import tab_close_button, tab_label
 from borco_pyside.qtads.qtads_pin_side_handler import DEFAULT_PIN_SIDE, PIN_SIDE_KEY
 from borco_pyside.shortcuts import BindingRole
 from PySide6.QtCore import QByteArray, QEvent, QModelIndex, QObject, Qt
@@ -2931,6 +2931,138 @@ def test_close_event_records_the_focused_document(mocker: MockerFixture, qtbot: 
 
     session = window._MainWindow__session  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     assert session.focused_path == path
+
+
+# region the preview dock (#39)
+
+
+def serve_tutorials(mocker: MockerFixture) -> None:
+    """Have every ``.rehu`` read as the same tutorial.
+
+    :param mocker: pytest-mock fixture.
+    """
+    mocker.patch.object(
+        Path, "read_text", return_value='{"format_version": 1, "type": "Tutorial", "sources": [{"title": "Foo"}]}'
+    )
+
+
+def preview_dock_of(window: MainWindow) -> QtAds.CDockWidget:
+    """The Documents dock's preview dock, reached through its private map by design.
+
+    :param window: the main window.
+    :returns: the preview's dock.
+    """
+    docs_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    preview = docs_dock.preview_document_widget()
+    docks = docs_dock._DocumentsDock__document_docks  # pylint: disable=protected-access
+    return next(dock for dock, widget in docks.items() if widget is preview)
+
+
+def test_a_preview_joins_recents_only_once_promoted(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A document shown in the preview is not a file the reader opened, until they keep it.
+
+    **Test steps:**
+
+    * show a document in the preview: verify ``Open recents`` is empty
+    * double-click the preview's title: verify the document is now the newest recent entry
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    serve_tutorials(mocker)
+    path = Path("a", "info.rehu").resolve()
+    recent_files = window._MainWindow__recent_files  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    window.show_in_preview(path)
+    assert recent_files.newest_first() == []
+
+    tab_label(preview_dock_of(window)).doubleClicked.emit()
+    assert recent_files.newest_first() == [path]
+
+
+def test_a_promoted_preview_that_failed_to_load_stays_out_of_recents(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A promoted preview whose file could not be read is no more a file opened than any other failed open.
+
+    **Test steps:**
+
+    * show a missing document in the preview and double-click its title
+    * verify ``Open recents`` stays empty
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    mocker.patch.object(Path, "read_text", side_effect=FileNotFoundError)
+
+    window.show_in_preview(Path("missing", "info.rehu").resolve())
+    tab_label(preview_dock_of(window)).doubleClicked.emit()
+
+    recent_files = window._MainWindow__recent_files  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert recent_files.newest_first() == []
+
+
+def test_a_promotion_carrying_anything_else_records_nothing(qtbot: QtBot) -> None:
+    """The promotion relay is object-typed; anything but a path is ignored, which no in-tree emitter sends.
+
+    **Test steps:**
+
+    * emit ``preview_promoted`` with a string
+    * verify ``Open recents`` stays empty
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    docs_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    docs_dock.preview_promoted.emit("a.rehu")
+
+    recent_files = window._MainWindow__recent_files  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert recent_files.newest_first() == []
+
+
+def test_the_session_leaves_the_preview_out(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The preview is transient: the session keeps the documents open in ordinary docks, not the preview, and
+    does not remember the preview as the focused one.
+
+    **Test steps:**
+
+    * open one document, then show another in the preview (now the focused one)
+    * dispatch a close event
+    * verify the session holds only the opened document, and no focused path
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    serve_tutorials(mocker)
+    mocker.patch.object(DocumentSessionSettings, "save")
+    opened = Path("a", "info.rehu").resolve()
+    previewed = Path("b", "info.rehu").resolve()
+    window.open_file(opened)
+    window.show_in_preview(previewed)
+
+    window.closeEvent(QCloseEvent())
+
+    session = window._MainWindow__session  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert list(session.items) == [opened]
+    assert session.focused_path is None
+
+
+def test_close_event_writes_the_preview_layouts(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Closing the app writes each type's preview layout (#39).
+
+    **Test steps:**
+
+    * spy on the Documents dock's ``save_preview_layouts``
+    * dispatch a close event
+    * verify it was called once
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    docs_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    save_preview_layouts = mocker.patch.object(docs_dock, "save_preview_layouts")
+    mocker.patch.object(DocumentSessionSettings, "save")
+
+    window.closeEvent(QCloseEvent())
+
+    save_preview_layouts.assert_called_once()
+
+
+# endregion
 
 
 def test_raise_and_activate_shows_a_normal_window(mocker: MockerFixture, qtbot: QtBot) -> None:

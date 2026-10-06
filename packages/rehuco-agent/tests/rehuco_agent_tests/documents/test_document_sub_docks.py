@@ -13,7 +13,6 @@ from typing import Final
 import PySide6QtAds as QtAds
 from borco_pyside.qtads import QtAdsFocusTracker
 from borco_pyside.widgets import MessageBanner
-from PySide6.QtCore import QCoreApplication, QEvent, QMetaMethod
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 from pytest import fixture
 from pytest_mock import MockerFixture
@@ -28,6 +27,8 @@ from rehuco_agent.settings.default_layout_settings import (
     shared_default_layout_settings_in,
 )
 from rehuco_core import TUTORIAL_PLUGIN, RehuDocument
+
+from rehuco_agent_tests.qt_connections import flush_deferred_deletes, receivers
 
 DOCUMENT_PATH: Final = Path("/fake/info.rehu")
 SCREENSHOT: Final = Path("/fake/info00.jpg")
@@ -81,27 +82,6 @@ def model() -> RehuDocumentModel:
 def other_model() -> RehuDocumentModel:
     """A reference pack's view-model -- a type whose dock set differs from a tutorial's (#320)."""
     return RehuDocumentModel(RehuDocument({"type": "ReferenceImages", "sources": [{"title": "Pack", "primary": True}]}))
-
-
-def receivers(model: RehuDocumentModel) -> dict[str, int]:
-    """How many connections each of the model's signals has, ``QObject``'s own included.
-
-    :param model: the model to count on.
-    :returns: the receiver count per signal signature.
-    """
-    meta = model.metaObject()
-    counts: dict[str, int] = {}
-    for index in range(meta.methodCount()):
-        method = meta.method(index)
-        if method.methodType() == QMetaMethod.MethodType.Signal:
-            signature = bytes(method.methodSignature().data()).decode()
-            counts[signature] = model.receivers(f"2{signature}")
-    return counts
-
-
-def flush_deferred_deletes() -> None:
-    """Run every pending ``deleteLater``, so what a teardown scheduled is really gone."""
-    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
 
 
 # endregion
@@ -213,6 +193,29 @@ def test_a_model_change_after_teardown_reaches_nothing_torn_down(host: BareHost,
     model.title = "Edited"
 
     assert save_action.isEnabled() is False
+
+
+def test_a_kept_revert_action_reverts_nothing_after_teardown(
+    mocker: MockerFixture, host: BareHost, model: RehuDocumentModel
+) -> None:
+    """The Revert action outlives a teardown until its deferred delete, and must not reach the model in that
+    gap -- a preview dock has moved on to another document by then (#39).
+
+    **Test steps:**
+
+    * stand in for the model's revert, build sub-docks over it and keep their Revert action, enabled
+    * tear down, then trigger the kept action before the deferred deletes run
+    * verify the model was not reverted
+    """
+    revert = mocker.patch.object(model, "revert")
+    sub_docks = DocumentSubDocks(model, host.lent)
+    revert_action = sub_docks.revert_action
+    revert_action.setEnabled(True)
+
+    sub_docks.teardown()
+    revert_action.trigger()
+
+    revert.assert_not_called()
 
 
 def test_a_rebuild_in_the_same_manager_binds_only_the_new_document(

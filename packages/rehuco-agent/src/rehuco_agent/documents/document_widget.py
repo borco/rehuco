@@ -22,7 +22,7 @@ from .document_sub_docks import DocumentSubDocks, SubDockHost
 from .rehu_document_model import RehuDocumentModel
 
 
-class DocumentWidget(QMainWindow):
+class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attributes
     """One open document's window in the Documents dock: an inline notice strip over a nested dock
     manager holding the document's `DocumentSubDocks`, whose toolbar it carries (#380).
 
@@ -31,7 +31,8 @@ class DocumentWidget(QMainWindow):
     :attr:`sub_docks`'; this widget is the host they are built into, and owns only what belongs to its
     manager rather than to a document: the manager, its focus tracker and maximize toggle, and the
     banner's place above it. Its members other than those delegate to :attr:`sub_docks`, so a holder --
-    `DocumentsDock`, `MainWindow` -- addresses the document through this widget unchanged.
+    `DocumentsDock`, `MainWindow` -- addresses the document through this widget unchanged, even after a
+    preview dock has handed it another document (:meth:`show_model`, #39).
 
     :param model: the reactive view-model this document's docks bind to.
     :param parent: optional Qt parent.
@@ -103,23 +104,52 @@ class DocumentWidget(QMainWindow):
         # sub-docks so every layout capture reads them un-maximized, and so a dock toggle exits it first
         self.__maximize_handler: Final = attach_maximize_handler(self.__dock_manager)
 
-        self.__sub_docks: Final = DocumentSubDocks(
-            model,
-            SubDockHost(self, self.__dock_manager, self.__tracker, self.__maximize_handler, self.__banner),
-            task_queue=task_queue,
-            resource_events=resource_events,
-            parent=self,
+        self.__host: Final = SubDockHost(
+            self, self.__dock_manager, self.__tracker, self.__maximize_handler, self.__banner
         )
-        self.__sub_docks.status_message.connect(self.status_message)
-        self.__sub_docks.filter_requested.connect(self.filter_requested)
-        self.__sub_docks.record_activated.connect(self.record_activated)
-        self.addToolBar(self.__sub_docks.toolbar)
+        self.__task_queue: Final = task_queue
+        self.__resource_events: Final = resource_events
+        self.__sub_docks = self.__build_sub_docks(model)
 
         # keyboard reach for the tab button's maximize (#341), on whichever dock is current
         self.__maximize_action: Final = QAction("Maximize Current Dock", self)
         shared_command_registry().bind(self.__maximize_action, MAXIMIZE_DOCK.id)
         self.__maximize_action.triggered.connect(self.toggle_maximized_dock)
         self.addAction(self.__maximize_action)
+
+    def show_model(self, model: RehuDocumentModel) -> None:
+        """Show another document in this same window (#39): the current document's sub-docks are torn down
+        (:meth:`DocumentSubDocks.teardown`) and the new one's are built into the same manager, banner and
+        toolbar area. Everything that belongs to the manager -- the manager itself, its focus tracker,
+        maximize toggle and banner -- stays.
+
+        Lays nothing out: the caller adopts a layout next, as it does after building a widget.
+
+        :param model: the document to show; the caller holds it, and lets go of the old one itself.
+        """
+        old = self.__sub_docks
+        old.status_message.disconnect(self.status_message)
+        old.filter_requested.disconnect(self.filter_requested)
+        old.record_activated.disconnect(self.record_activated)
+        self.removeToolBar(old.toolbar)
+        old.teardown()
+        self.__sub_docks = self.__build_sub_docks(model)
+
+    def __build_sub_docks(self, model: RehuDocumentModel) -> DocumentSubDocks:
+        """Build ``model``'s sub-docks into this widget's host, relaying their signals and carrying their
+        toolbar.
+
+        :param model: the document to build them over.
+        :returns: the new sub-docks.
+        """
+        sub_docks = DocumentSubDocks(
+            model, self.__host, task_queue=self.__task_queue, resource_events=self.__resource_events, parent=self
+        )
+        sub_docks.status_message.connect(self.status_message)
+        sub_docks.filter_requested.connect(self.filter_requested)
+        sub_docks.record_activated.connect(self.record_activated)
+        self.addToolBar(sub_docks.toolbar)
+        return sub_docks
 
     @property
     def sub_docks(self) -> DocumentSubDocks:

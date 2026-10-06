@@ -3,7 +3,7 @@
 
 import logging
 from pathlib import Path
-from typing import Final
+from typing import Final, cast
 
 import PySide6QtAds as QtAds
 from borco_pyside.qtads import QtAdsAutoHideButtonSuppressor, QtAdsFocusTracker, remove_dock_widget
@@ -13,7 +13,13 @@ from rehuco_core import INFO_REHU_FILENAME, LockReasonKind, TaskQueue
 
 from ..dock_maximize import attach_maximize_handler
 from ..glyphs import TAB_CLOSE_GLYPH
+from ..settings.default_layout_settings import (
+    PREVIEW_LAYOUT_GROUP,
+    DefaultLayoutSettings,
+    shared_default_layout_settings_in,
+)
 from ..settings.document_session_settings import DocumentSessionSettings
+from ..settings.persistent_settings import persistent_settings
 from .confirm_and_save_dirty import confirm_and_save_dirty
 from .document_dock import DocumentDock
 from .document_registry import DocumentRegistry
@@ -35,6 +41,12 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
     (tab-bar, tabs-menu, tab-label click, real keyboard focus into a split area) -- is delegated to a
     :class:`~borco_pyside.qtads.QtAdsFocusTracker`, the same tracker each nested
     :class:`DocumentWidget` uses for its own viewer/editor surfaces.
+
+    At most one dock is the **preview** (#39, :meth:`show_in_preview`): it shows whichever document it is
+    handed next, in place, until a double-click on its title -- or being asked for another document while it
+    has unsaved changes -- promotes it to an ordinary dock. It is transient: the session leaves it out and
+    ``Open recents`` hears of it only at its promotion. Each type's last preview arrangement is remembered
+    apart from the type's default layout (:data:`~rehuco_agent.settings.default_layout_settings.PREVIEW_LAYOUT_GROUP`).
 
     :param parent: optional Qt parent.
     :param stylesheet_host: the widget carrying the dock styling for this whole nest -- normally the
@@ -88,6 +100,11 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
     actually exists instead of the one that was opened (#295). ``old_path`` is the path this dock was
     built with or last reported here, never ``None`` -- relayed from :attr:`DocumentDock.path_moved`."""
 
+    preview_promoted: Signal = Signal(object)
+    """Emitted with the :class:`~pathlib.Path` of the preview just promoted to an ordinary dock (#39) -- by a
+    double-click on its title, or by being asked to show another document while it had unsaved changes. A
+    preview is transient, so the file joins ``Open recents`` only now; ``MainWindow`` records it."""
+
     def __init__(
         self,
         parent: QWidget | None = None,
@@ -103,7 +120,8 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         self.__document_docks: Final[dict[QtAds.CDockWidget, DocumentWidget]] = {}
         self.__model_docks: Final[dict[RehuDocumentModel, DocumentDock]] = {}
         """The dock showing each held model -- what turns the registry's answer to "is this path open"
-        into the dock to focus. Seeded in :meth:`__make_new_dock`, dropped in :meth:`__remove_dock`."""
+        into the dock to focus. Seeded in :meth:`__make_new_dock`, re-keyed by a preview's switch
+        (:meth:`__switch_preview`), dropped in :meth:`__remove_dock`."""
         self.__pending_docks: Final[set[QtAds.CDockWidget]] = set()
         """Docks made by :meth:`restore_session` whose document has not been read yet (#66) -- each is
         loaded (:meth:`__load_pending`) the first time it actually reaches the screen. Two triggers
@@ -121,6 +139,11 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         deferral this all exists for (#66). The ``visibilityChanged`` trigger needs no such guard: the
         window is still hidden for the whole of the restore, and a hidden window's tab churn emits
         nothing."""
+        self.__preview: DocumentDock | None = None
+        """The one preview dock (#39), or ``None`` -- set by :meth:`show_in_preview` building one, cleared by
+        its promotion or its close."""
+        self.__preview_count = 0
+        """Previews made so far, numbering each one's object name apart from every earlier one's."""
         self.__tracker: Final = QtAdsFocusTracker(
             self.__dock_manager, close_glyph=TAB_CLOSE_GLYPH, stylesheet_host=stylesheet_host
         )
@@ -198,6 +221,47 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         if tc_path.exists():
             return self.open_document(tc_path)
         return self.__activate(self.__find_dock(info_path) or self.__make_new_dock(info_path, new=True))
+
+    def show_in_preview(self, path: Path) -> DocumentWidget:
+        """Show ``path`` in the preview dock (#39), the way an editor's file explorer opens a file in a preview
+        tab.
+
+        - A document already shown here -- in an ordinary dock, or by the preview itself -- is focused, and the
+          preview is left as it is.
+        - Otherwise the preview shows it **in place**: the same dock, the old document's sub-docks torn down
+          and the new one's built, the old model released (:meth:`DocumentDock.show_model`). The preview's
+          layout for the type it leaves is remembered first, and the new document opens with its own type's.
+        - A preview with unsaved changes is not replaced: it is promoted, keeping them without a question,
+          and ``path`` goes to a new preview. A preview whose edits were saved is replaced like any other.
+        - With no preview yet, one is made, tabbed where an ordinary open would be.
+
+        :param path: absolute filesystem path to a ``.rehu`` file (or a legacy ``.tc``), as for
+            :meth:`open_document`.
+        :returns: the document's widget.
+        """
+        dock = self.__find_dock(path)
+        if dock is not None:
+            return self.__activate(dock)
+        preview = self.__preview
+        if preview is not None and preview.document_widget.model.dirty:
+            self.__promote(preview)
+            preview = None
+        if preview is None:
+            return self.__activate(self.__make_new_dock(path, preview=True))
+        return self.__switch_preview(preview, path)
+
+    def preview_document_widget(self) -> DocumentWidget | None:
+        """The preview's widget (#39), or ``None`` while there is no preview.
+
+        Read by the session save (``MainWindow``), which leaves the preview out: it is transient.
+        """
+        return self.__preview.document_widget if self.__preview is not None else None
+
+    def save_preview_layouts(self) -> None:
+        """Remember the preview's current layout for its type, and write every type's preview layout to the
+        settings (#39) -- at app exit, the last moment the preview stops showing its layout."""
+        self.__capture_preview_layout()
+        self.__preview_layouts().save(persistent_settings())
 
     def restore_session(self, session: DocumentSessionSettings) -> None:
         """Recreate every document the last session left open (#21), restoring its dock layout and
@@ -422,7 +486,7 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         return self.__document_docks[dock]
 
     def __make_new_dock(
-        self, path: Path, *, new: bool = False, state: bytes | None = None, lazy: bool = False
+        self, path: Path, *, new: bool = False, state: bytes | None = None, lazy: bool = False, preview: bool = False
     ) -> QtAds.CDockWidget:
         """Hold ``path``'s document and build its dock -- **always** a dock, never an error dialog.
 
@@ -444,6 +508,8 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
             read -- :meth:`__load_pending` reads the real file the first time this dock actually reaches the
             screen (its ``visibilityChanged``), or is made current programmatically. The registry decides
             whether the model really is pending (:meth:`DocumentRegistry.acquire`).
+        :param preview: make it the area's preview (#39), named ``Preview-<n>`` and laid out with its type's
+            preview layout rather than ``state``.
         :returns: the new dock (created for a successful load, a new document, a locked stub, or an
             as-yet-unread placeholder, alike).
         """
@@ -451,13 +517,22 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         # dock owns its own title/identity upkeep, and the area only wires the seams that cross back to
         # it: the field status-message relay, the open requests, the path relay and the close request
         model = self.__registry.acquire(path, new=new, lazy=lazy)
+        preview_name = None
+        if preview:
+            self.__preview_count += 1
+            preview_name = f"Preview-{self.__preview_count}"
         dock = DocumentDock(
             self.__dock_manager,
             model,
             stylesheet_host=self.__stylesheet_host,
             task_queue=self.__task_queue,
             resource_events=self.__registry.resource_events,
+            preview_name=preview_name,
         )
+        if preview:
+            self.__preview = dock
+            state = self.__preview_layout_for(dock.document_widget)
+        dock.promotion_requested.connect(self.__on_promotion_requested)
         # relay this document's field status messages (the authors viewer's hovered-link URL) up to
         # MainWindow, which routes them to the real status bar (the genuine top-level window)
         dock.document_widget.status_message.connect(self.status_message)
@@ -492,6 +567,73 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         dock.document_widget.adopt_layout(state)
 
         return dock
+
+    def __switch_preview(self, preview: DocumentDock, path: Path) -> DocumentWidget:
+        """Show ``path`` in ``preview`` in place (#39): remember the layout it leaves, hold the new document
+        before letting go of the old one, rebind the dock, and lay it out with the new type's preview layout.
+
+        :param preview: the clean preview dock.
+        :param path: the document to show, shown nowhere in this area yet.
+        :returns: the preview's widget.
+        """
+        self.__capture_preview_layout()
+        widget = preview.document_widget
+        old = widget.model
+        model = self.__registry.acquire(path)
+        preview.show_model(model)
+        del self.__model_docks[old]  # pylint: disable=unsupported-delete-operation
+        self.__model_docks[model] = preview  # pylint: disable=unsupported-assignment-operation
+        self.__registry.release(old)
+        widget.adopt_layout(self.__preview_layout_for(widget))
+        # a preview already current stays so, and the tracker says nothing -- the window still has to hear
+        # that its focused document is another one now
+        was_current = self.__tracker.current_dock is preview
+        self.__activate(preview)
+        if was_current:
+            self.document_focus_changed.emit(widget)
+        return widget
+
+    def __promote(self, preview: DocumentDock) -> None:
+        """Make ``preview`` an ordinary document dock (#39), remembering the layout it leaves first.
+
+        :param preview: the area's preview dock.
+        """
+        self.__capture_preview_layout()
+        preview.promote()
+        self.__preview = None
+        self.preview_promoted.emit(preview.document_widget.model.path)
+
+    def __on_promotion_requested(self) -> None:
+        """Promote the preview whose title was double-clicked (#39), resolved via ``sender()`` the way
+        :meth:`__on_close_dock_widget_requested` resolves its dock. Only a dock that is still a preview asks
+        (:attr:`DocumentDock.promotion_requested`), and the area has one at a time, so the sender is it."""
+        self.__promote(cast(DocumentDock, self.sender()))
+
+    @staticmethod
+    def __preview_layouts() -> DefaultLayoutSettings:
+        """Each type's preview layout (#39), kept in memory and written at exit (:meth:`save_preview_layouts`).
+
+        :returns: the shared settings of :data:`PREVIEW_LAYOUT_GROUP`.
+        """
+        return shared_default_layout_settings_in(PREVIEW_LAYOUT_GROUP)
+
+    def __preview_layout_for(self, widget: DocumentWidget) -> bytes | None:
+        """The layout the preview last left ``widget``'s type in (#39), or ``None`` when it has none yet --
+        which :meth:`DocumentWidget.adopt_layout` answers with the type's default layout, else as built.
+
+        :param widget: the preview's widget, showing the document about to be laid out.
+        :returns: the stored layout, or ``None``.
+        """
+        return self.__preview_layouts().state_for(widget.sub_docks.layout_type) or None
+
+    def __capture_preview_layout(self) -> None:
+        """Remember the preview's current arrangement as its type's preview layout (#39) -- whenever the
+        preview stops showing it: before a switch, a promotion or its close, and at exit. In memory only."""
+        if self.__preview is None:
+            return
+        widget = self.__preview.document_widget
+        layouts = self.__preview_layouts()
+        layouts.states[widget.sub_docks.layout_type] = widget.save_layout_state()  # pylint: disable=unsupported-assignment-operation
 
     def __find_dock(self, path: Path) -> QtAds.CDockWidget | None:
         """Return the dock showing ``path``'s document, or ``None`` if this area shows none.
@@ -623,6 +765,10 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         # a dock closed before its tab was ever viewed leaves the pending state here instead of
         # lingering as a stale entry for the session (#66)
         self.__settle_pending(dock)
+        # a closing preview stops showing its type's layout too (#39), and the next show makes a new one
+        if dock is self.__preview:
+            self.__capture_preview_layout()
+            self.__preview = None
         # let go of everything app-wide this document is attached to before it is destroyed: the task
         # queue calls its listeners on the worker thread, so one arriving after the C++ objects have
         # gone would reach a deleted QObject (#204). The work itself is untouched -- closing a document

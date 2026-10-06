@@ -306,6 +306,20 @@ the document toolbar and the layout button are one reusable piece that any dock 
 another resource (#380), not something only a Documents dock owns. Each host keeps **its own per-type default
 layouts**: a layout saved beside the Browsers dock never changes how Documents opens that type, and the other way round.
 
+**The preview dock.** Documents holds at most one **preview** dock (#39), the way an editor's file explorer opens a
+file in a preview tab; the browsers and the Roots view drive it (#381). Showing a `.rehu` open in an ordinary dock
+focuses that dock; showing any other puts it in the preview, made if there is none. The preview **switches in place**:
+the same dock, the old document's sub-docks torn down and the next one's built into the same manager, the old model
+released — the second-host rebuild above, inside a document dock. It is **promoted** to an ordinary dock, in place, by
+a double-click on its title, or by being asked for another `.rehu` while it has unsaved changes — nothing is lost or
+asked, and the other `.rehu` goes to a new preview. An edit alone does not promote, nor a saved one. Its title is the
+document's label in italic; its object name is `Preview-<n>`, numbered per preview because a promoted dock keeps the
+manager registry entry it was added under ([[appendices.qt-ads#dock-registry-keys]]). It is **transient**: never in the
+session, and in `Open recents` only once promoted. Each type's preview remembers **its own layout** under
+`preview_layout/<type>`, captured whenever the preview stops showing that type (a switch, a promotion, its close, app
+exit) and written at exit; a type with none opens with its default layout. That layout is implicit: the Layout button
+in a preview acts on the type's default layout, as in any document dock.
+
 ### §13.2.5 The files sub-dock
 
 [[[plugins#files-subdock]]]

@@ -18,6 +18,10 @@ UNTYPED_GROUP: Final = "_untyped"
 """The group the empty type's blob sits under (#354): ``default_layout//state`` is malformed, and the
 pre-#320 ``default_layout/state`` is the blob :meth:`DefaultLayoutSettings.save` drops. Translated at
 this storage boundary only -- in :attr:`DefaultLayoutSettings.states` the empty type keys by ``""``."""
+PREVIEW_LAYOUT_GROUP: Final = "preview_layout"
+"""The group the Documents dock's preview keeps each type's last arrangement under (#39), beside :data:`GROUP`.
+Implicit: captured whenever the preview stops showing a type's layout, never read or written from the UI -- the
+Layout button in the preview acts on :data:`GROUP`, as in any document dock."""
 
 
 @dataclass

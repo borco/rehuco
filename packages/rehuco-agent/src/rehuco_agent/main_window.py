@@ -369,6 +369,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__documents_dock.filter_requested.connect(self.__on_filter_requested)
         self.__documents_dock.document_path_changed.connect(self.__on_document_path_changed)
         self.__documents_dock.open_requested.connect(self.__on_open_requested)
+        self.__documents_dock.preview_promoted.connect(self.__on_preview_promoted)
         # a document command set app-wide fires on the focused document from anywhere (#345); nothing
         # holds onto the router -- it parents itself to this window, which its actions are added to
         DocumentCommandRouter(self.__documents_dock, self.__command_registry, self)
@@ -1713,6 +1714,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         for handler in self.__pin_side_handlers:
             handler.save(persistent_settings())
         self.__save_session()
+        self.__documents_dock.save_preview_layouts()
         self.__settings_dialog.save_filter_state()
         self.__recent_files.save(persistent_settings())
         self.__theme_settings.mode = self.__theme_model.mode
@@ -1791,12 +1793,14 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         the LRU order); everything else keeps its prior state but is marked closed. A brand-new
         document not yet written to its path (``saved_on_disk`` false) is skipped -- there is nothing
         on disk to restore, and reopening it via the load path would materialize a locked ``MISSING``
-        stub for a file that never existed, resurrecting edits the user discarded (#175, #147).
+        stub for a file that never existed, resurrecting edits the user discarded (#175, #147). Neither is the
+        preview (#39): it is transient, so the next run starts without one.
         """
+        preview = self.__documents_dock.preview_document_widget()
         open_widgets = {
             widget.model.path: widget
             for widget in self.__documents_dock.open_document_widgets()
-            if widget.model.path is not None and widget.model.saved_on_disk
+            if widget is not preview and widget.model.path is not None and widget.model.saved_on_disk
         }
 
         for path in open_widgets:
@@ -1807,7 +1811,8 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             self.__session.items[path] = DocumentSessionSettings.Item(  # pylint: disable=unsupported-assignment-operation
                 open=True, state=widget.save_state()
             )
-        self.__session.focused_path = self.__documents_dock.focused_document_path()
+        preview_focused = preview is not None and self.__documents_dock.focused_document_widget() is preview
+        self.__session.focused_path = None if preview_focused else self.__documents_dock.focused_document_path()
         self.__session.docks_state = self.__documents_dock.save_state()
 
         self.__session.save(persistent_settings())
@@ -1889,6 +1894,31 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         widget = self.__documents_dock.open_archive(resolved)
         if not widget.model.document.load_failed:
             self.__recent_files.record(resolved)
+
+    def show_in_preview(self, path: Path | str) -> None:
+        """Show the ``.rehu`` at ``path`` in the Documents dock's preview (#39), focusing it instead if it is
+        already open.
+
+        Unlike :meth:`open_file`, nothing joins ``Open recents``: a preview is transient, and is recorded only
+        once promoted (:meth:`__on_preview_promoted`). The Documents dock is shown and raised first, as for
+        every open (#268).
+
+        :param path: filesystem path to a ``.rehu`` file.
+        """
+        self.__reveal_documents_dock()
+        self.__documents_dock.show_in_preview(Path(path).resolve())
+
+    def __on_preview_promoted(self, path: object) -> None:
+        """Record a promoted preview in ``Open recents`` (#39) -- it is a file the reader opened now -- unless
+        it could not be read, as :meth:`open_file` decides.
+
+        :param path: the promoted document's path, as the object-typed relay carried it.
+        """
+        if not isinstance(path, Path):
+            return
+        model = self.__document_registry.find(path)
+        if model is not None and not model.document.load_failed:
+            self.__recent_files.record(path)
 
     def __on_open_requested(self, path: object) -> None:
         """Open a record an already-open document asked for -- another resource double-clicked in its
