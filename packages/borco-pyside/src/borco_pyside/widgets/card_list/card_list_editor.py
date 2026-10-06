@@ -18,6 +18,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QAbstractButton, QApplication, QPushButton, QVBoxLayout, QWidget
 
+from ..reorder_drag import drop_slot
 from .card import Card
 from .card_ghost import CardGhost
 from .card_list_model import CardListModel
@@ -539,7 +540,7 @@ class CardListEditor(QWidget):
         :param y: the pointer's height, in this editor's coordinates.
         :returns: the row, from ``0`` (above every other card) to the number of other cards.
         """
-        return sum(1 for card in self.__cards if card is not self.__dragged and card.geometry().center().y() < y)
+        return drop_slot(y, (card.geometry().center().y() for card in self.__cards if card is not self.__dragged))
 
     def __show_ghost_at(self, slot: int) -> None:
         """Put the ghost where the dragged card would end up at row ``slot``, closing any gap it left.

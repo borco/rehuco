@@ -3,12 +3,15 @@
 from typing import override
 
 from PySide6.QtCore import QRectF, Qt
-from PySide6.QtGui import QColor, QPainter, QPaintEvent, QPalette, QPen
+from PySide6.QtGui import QPainter, QPaintEvent
 from PySide6.QtWidgets import QWidget
+
+from ..reorder_drag import paint_drag_ghost
 
 
 class CardGhost(QWidget):
-    """A quiet gap as tall as the dragged card: a faint fill and a thin solid outline.
+    """A quiet gap as tall as the dragged card: a faint fill and a thin solid outline, drawn as every reorderable list
+    draws its shadow (:func:`~borco_pyside.widgets.reorder_drag.paint_drag_ghost`).
 
     :param parent: optional Qt parent.
     """
@@ -21,11 +24,5 @@ class CardGhost(QWidget):
     @override
     def paintEvent(self, event: QPaintEvent) -> None:  # noqa: N802  (Qt override)
         super().paintEvent(event)
-        color = self.palette().color(QPalette.ColorRole.Highlight)
-        fill = QColor(color)
-        fill.setAlpha(40)
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setPen(QPen(color, 1))
-        painter.setBrush(fill)
-        painter.drawRoundedRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5), 4, 4)
+        paint_drag_ghost(painter, QRectF(self.rect()), self.palette())

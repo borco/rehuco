@@ -46,6 +46,7 @@ from .message_banner import (
     MessageBannerSeverityStyle,
 )
 from .rating import Rating
+from .reorder_drag import ReorderDrag, drop_slot, paint_drag_ghost
 from .rich_text_view import RichTextView
 from .row_band_delegate import RowBandDelegate
 from .string_item_list_model import StringItemListModel
@@ -95,6 +96,7 @@ __all__ = [
     "MoveToTopItemAction",
     "MoveUpItemAction",
     "Rating",
+    "ReorderDrag",
     "ResetItemAction",
     "RichTextView",
     "RowBandDelegate",
@@ -104,8 +106,10 @@ __all__ = [
     "UnboundedSpinBox",
     "WrappingCheckBox",
     "WrappingLabel",
+    "drop_slot",
     "equal_width_row",
     "equal_height_column",
+    "paint_drag_ghost",
     "resync_line_edit",
     "toggle_dynamic_property",
     "write_through_or_none",
