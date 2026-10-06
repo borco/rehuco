@@ -105,7 +105,7 @@ def test_the_status_line_says_no_resources_when_the_table_is_empty(browser: Tabl
     * read the status line of a browser with no rows
     * verify it reads ``No resources``
     """
-    assert browser.status_bar.currentMessage() == "No resources"
+    assert browser.status_line.full_text == "No resources"
 
 
 def test_the_status_line_counts_the_rows_and_adds_up_their_sizes(browser: TableBrowser) -> None:
@@ -117,10 +117,10 @@ def test_the_status_line_counts_the_rows_and_adds_up_their_sizes(browser: TableB
     * verify ``1 resource / 1.5K`` and then ``2 resources / 3.5K``
     """
     browser.set_rows([row("a/info.rehu", 1536)], {ROOT_ID: ROOT_PATH})
-    assert browser.status_bar.currentMessage() == "1 resource / 1.5K"
+    assert browser.status_line.full_text == "1 resource / 1.5K"
 
     browser.set_rows([row("a/info.rehu", 1536), row("b/info.rehu", 2048)], {ROOT_ID: ROOT_PATH})
-    assert browser.status_bar.currentMessage() == "2 resources / 3.5K"
+    assert browser.status_line.full_text == "2 resources / 3.5K"
 
 
 def test_the_status_line_says_when_a_total_is_partial(browser: TableBrowser) -> None:
@@ -140,23 +140,23 @@ def test_the_status_line_says_when_a_total_is_partial(browser: TableBrowser) -> 
     packs = [CatalogRow(1, ROOT_ID, "root", entry, 0.0) for entry in (pack, unmeasured)]
 
     browser.set_rows([sized, unsized, *packs], {ROOT_ID: ROOT_PATH})
-    assert browser.status_bar.currentMessage() == "4 resources / 1 legacy .tc / 2.5K / 1 image (1 unmeasured)"
+    assert browser.status_line.full_text == "4 resources / 1 legacy .tc / 2.5K / 1 image (1 unmeasured)"
 
     browser.set_rows([sized, packs[0]], {ROOT_ID: ROOT_PATH})
-    assert browser.status_bar.currentMessage() == "2 resources / 2.0K / 1 image"
+    assert browser.status_line.full_text == "2 resources / 2.0K / 1 image"
 
     empty = CatalogRecord("e.rehu", RecordKind.REHU, type="reference_images", current_size=0, current_count=0)
     browser.set_rows([CatalogRow(1, ROOT_ID, "root", empty, 0.0)], {ROOT_ID: ROOT_PATH})
-    assert browser.status_bar.currentMessage() == "1 resource / 0B / 0 images"
+    assert browser.status_line.full_text == "1 resource / 0B / 0 images"
 
     many = CatalogRecord("f.rehu", RecordKind.REHU, type="reference_images", current_size=0, current_count=18400)
     browser.set_rows([CatalogRow(1, ROOT_ID, "root", many, 0.0)], {ROOT_ID: ROOT_PATH})
-    assert browser.status_bar.currentMessage() == "1 resource / 0B / 18,400 images"
+    assert browser.status_line.full_text == "1 resource / 0B / 18,400 images"
 
     legacy = CatalogRecord("g.tc", RecordKind.TC, type="reference_images")
     rows = [CatalogRow(1, ROOT_ID, "root", legacy, 0.0)] * 1188 + [row("h/info.rehu", 0)] * 52
     browser.set_rows(rows, {ROOT_ID: ROOT_PATH})
-    assert browser.status_bar.currentMessage() == "1,240 resources / 1,188 legacy .tc / 0B"
+    assert browser.status_line.full_text == "1,240 resources / 1,188 legacy .tc / 0B"
 
 
 def test_a_browser_starts_unsorted(browser: TableBrowser) -> None:
@@ -431,6 +431,85 @@ def test_a_header_state_the_header_refuses_leaves_the_defaults(qtbot: QtBot) -> 
 
 # endregion
 
+# region the selection's stats
+
+
+def test_the_status_line_adds_the_selection_after_the_totals(browser: TableBrowser) -> None:
+    """Nothing selected says nothing; a selection adds up as the totals would over those rows alone.
+
+    **Test steps:**
+
+    * show a sized row, a legacy ``.tc`` and a pack of images
+    * verify no selection part, then one row, then the ``.tc`` with the pack, then every row
+    """
+    legacy = CatalogRecord("b/info.tc", RecordKind.TC, type="reference_images")
+    pack = CatalogRecord("c.rehu", RecordKind.REHU, type="reference_images", current_size=1024, current_count=120)
+    rows = [
+        row("a/info.rehu", 2048),
+        CatalogRow(1, ROOT_ID, "root", legacy, 0.0),
+        CatalogRow(2, ROOT_ID, "root", pack, 0.0),
+    ]
+    browser.set_rows(rows, {ROOT_ID: ROOT_PATH})
+    totals = "3 resources / 1 legacy .tc / 3.0K / 120 images"
+    assert browser.status_line.full_text == totals
+
+    select(browser, 0)
+    assert browser.status_line.full_text == f"{totals} — 1 selected / 2.0K"
+
+    select(browser, 1, 2)
+    assert browser.status_line.full_text == f"{totals} — 2 selected / 1 legacy .tc / 1.0K / 120 images"
+
+    browser.view.selectAll()
+    assert browser.status_line.full_text == f"{totals} — 3 selected / 1 legacy .tc / 3.0K / 120 images"
+
+    select(browser)
+    assert browser.status_line.full_text == totals
+
+
+def test_the_selection_part_names_the_rows_it_leaves_out(browser: TableBrowser) -> None:
+    """A selected unmeasured row is counted in the selection's parenthesis, as in the totals'.
+
+    **Test steps:**
+
+    * show a measured pack and an unmeasured one, and select the second
+    * verify its part says ``(1 unmeasured)`` twice
+    """
+    measured = CatalogRecord("a.rehu", RecordKind.REHU, type="reference_images", current_size=1024, current_count=1)
+    unmeasured = CatalogRecord("b.rehu", RecordKind.REHU, type="reference_images")
+    browser.set_rows(
+        [CatalogRow(1, ROOT_ID, "root", entry, 0.0) for entry in (measured, unmeasured)], {ROOT_ID: ROOT_PATH}
+    )
+
+    select(browser, 1)
+    assert browser.status_line.full_text.endswith("— 1 selected / 0B (1 unmeasured) / 0 images (1 unmeasured)")
+
+
+def test_a_selected_row_changed_in_place_updates_the_line_without_a_reset(browser: TableBrowser) -> None:
+    """A resize, a rename and a removal reach the selection part, and the selection stays.
+
+    **Test steps:**
+
+    * show two rows with both selected, then resize one in place
+    * verify the selection's size, rename it (it moves) and verify it is still counted, then remove the other and
+      verify its count
+    """
+    browser.set_rows(
+        [row("a/info.rehu", 1024, resource_id=1), row("b/info.rehu", 1024, resource_id=2)], {ROOT_ID: ROOT_PATH}
+    )
+    select(browser, 0, 1)
+
+    browser.update_rows({1}, [row("a/info.rehu", 3072, resource_id=1)])
+    assert browser.status_line.full_text == "2 resources / 4.0K — 2 selected / 4.0K"
+
+    browser.update_rows({1}, [row("z/info.rehu", 3072, resource_id=1)])
+    assert browser.status_line.full_text == "2 resources / 4.0K — 2 selected / 4.0K"
+
+    browser.update_rows({2}, [])
+    assert browser.status_line.full_text == "1 resource / 3.0K — 1 selected / 3.0K"
+
+
+# endregion
+
 # region the current resource
 
 
@@ -508,7 +587,7 @@ def test_an_update_in_place_keeps_the_status_line_current(browser: TableBrowser)
 
     browser.update_rows({1, 2}, [row("a/info.rehu", 2048, resource_id=1), row("b/info.rehu", 1024, resource_id=2)])
 
-    assert browser.status_bar.currentMessage() == "2 resources / 3.0K"
+    assert browser.status_line.full_text == "2 resources / 3.0K"
 
 
 # endregion

@@ -592,6 +592,10 @@ and its cache** — the catalog — and both docks read it and hear from it when
     out, and cover the `.rehu` rows only: a legacy `.tc`'s size and image count are old claims, often a literal `0`,
     so those rows are counted apart (`1,240 resources / 188 legacy .tc / 1.2T (37 unmeasured) / 18,400 images (3
     unmeasured)`). The image total is shown only where a `.rehu` row has a count or is of a type that declares one.
+    **The selection** follows it after ` — `: how many rows are selected and their sums by the same rule
+    (`CatalogTableModel.totals_of`, one pass over the selected rows, so Ctrl+A costs no call per cell), e.g. `— 3 selected /
+    4.1G / 120 images`; nothing selected shows nothing. The line is an elided label: the selection part shortens first,
+    then the totals, and the whole line is its tooltip (#462).
     An unknown field is reported on the line, never silently dropped, and the rest of the line still applies. The
     text is the browser's remembered filter; a `columns:` word an earlier build saved in it is dropped as it loads. A
     folder's context menu in Roots — *Show only rehu in this folder* — sets `folder:"<root label>/<relative path>"`
