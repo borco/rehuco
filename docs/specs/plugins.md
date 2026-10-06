@@ -532,8 +532,11 @@ and its cache** — the catalog — and both docks read it and hear from it when
   thread. **Below the details is a button for every entry of the row's context menu**, in its order, the default in
   bold; a folder's menu and buttons also hold **Open in file explorer**, and its create entry is named for what it
   would start, `Create info.rehu`. `QColumnView`'s own preview column is collapsed. A root can also be
-  **dragged to another place** by the grip band of dots at the left of its row — the same handle a card list has — and
-  only by it, so a click anywhere else on the row just selects; the drop is saved at once, like a move. The root
+  **dragged to another place** by the grip band of dots at the left of its row — the same handle a card list has, with
+  its open-hand cursor and its *Drag to reorder* tooltip — and only by it, so a click anywhere else on the row just
+  selects. It is dragged as a card of a card list is, by the same shared code: the root leaves its place, which
+  becomes a shadow; the one shadow follows the pointer to where the root would land, the other roots closing up around
+  it; leaving the list puts it back at the root's place. The drop is saved at once, like a move. The root
   edits act only while a root row is current, and **Remove Root asks first**, saying the files stay
   on disk and how many cached entries go. **Add Root** asks for what the folder lives on — its *storage* — ahead of
   the folder, because a root served by another node will want a different picker below it

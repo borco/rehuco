@@ -22,7 +22,9 @@ released becomes the body of the GitHub Release, so each entry is written to be 
   has **Verify checksums**. A folder's has **Show only rehu in this folder**, which filters the current browser.
   `F5` lists the open columns again, a folder deleted outside the app disappears, and the selection falls back to
   the nearest folder that is left. Roots are reordered by dragging the grip at the left of a root's row, as well as from its menu; the grip
-  only shows while the catalog can be saved. A rename the app makes shows in the columns without a reload. A pane beside
+  only shows while the catalog can be saved and says *Drag to reorder* when hovered. A dragged root behaves as a
+  dragged location does: it leaves its place, and one shadow shows where it will land, the other roots closing up
+  around it. A rename the app makes shows in the columns without a reload. A pane beside
   the columns shows the details of the selected row -- a root, a folder or a file, with a thumbnail for an image --
   and a button for every entry of the row's right-click menu, which now also has **Open in file explorer** on a
   root or folder. Double-clicking runs a row's default action, the bold first entry of its right-click menu:

@@ -99,7 +99,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
     """Emitted with a :class:`~rehuco_core.CatalogField` and a value when the current browser is to be filtered on
     them -- the folder filter (#398); the window hands it to the Browsers dock."""
 
-    def __init__(  # pylint: disable=too-many-arguments
+    def __init__(  # pylint: disable=too-many-arguments,useless-suppression
         self,
         catalog: RootCatalog,
         queue: TaskQueue,
@@ -151,8 +151,9 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
             separator.setSeparator(True)
         self.__setup_actions()
         # selection_model() is None only before a model is set (setModel just did)
-        self.__roots_selection: Final = cast(QItemSelectionModel, self.__roots_ui.roots_view.selectionModel())
-        self.__roots_selection.currentChanged.connect(self.__on_roots_current_row_changed)
+        # a local, not a kept wrapper: the selection model is an object Qt made (#459)
+        selection = cast(QItemSelectionModel, self.__roots_ui.roots_view.selectionModel())
+        selection.currentChanged.connect(self.__on_roots_current_row_changed)
         for signal in (
             self.__roots_model.rowsInserted,
             self.__roots_model.rowsRemoved,

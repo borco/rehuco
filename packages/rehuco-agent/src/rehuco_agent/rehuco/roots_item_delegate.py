@@ -2,9 +2,9 @@
 
 from typing import Final, override
 
-from borco_pyside.widgets import RowBandDelegate
+from borco_pyside.widgets import ReorderDrag, RowBandDelegate, paint_drag_ghost
 from borco_pyside.widgets.row_band_delegate import TEXT_PADDING, ModelIndex
-from PySide6.QtCore import QRect, QSize, Qt
+from PySide6.QtCore import QRect, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QFontMetricsF, QImage, QPainter, QPalette
 from PySide6.QtWidgets import QAbstractItemView, QApplication, QStyle, QStyleOptionViewItem
 
@@ -63,15 +63,35 @@ class RootsItemDelegate(RowBandDelegate):
     A ``QColumnView`` gives its columns a delegate of its own, which draws that arrow and nothing else this view
     needs, so :class:`~rehuco_agent.rehuco.roots_column_view.RootsColumnView` puts this one on each column.
 
+    **While a root is dragged** (``drag``), the column shows what a card list shows: the root has left its place, the
+    other roots close up around one shadow where it would land. A list view cannot open a gap, but root rows are all
+    as tall as each other, so each row paints the root :meth:`~borco_pyside.widgets.ReorderDrag.source_at` says is
+    shown there -- selected if that root is -- and the shadow's row paints the card list's shadow.
+
     :param parent: optional Qt parent.
+    :param drag: the drag that reorders this column's rows, for the column that lists the roots; ``None`` for another.
     """
 
-    def __init__(self, parent: QAbstractItemView | None = None) -> None:
+    def __init__(self, parent: QAbstractItemView | None = None, drag: ReorderDrag | None = None) -> None:
         super().__init__(parent)
         self.__icons: Final = SvgIconCache()
+        self.__drag: Final = drag
 
     @override
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: ModelIndex) -> None:
+        drag = self.__drag
+        if drag is not None and drag.active and not index.parent().isValid():
+            shown = drag.source_at(index.row())
+            if shown is None:
+                # pylint infers QStyleOptionViewItem.rect and .palette on some runs and not others
+                paint_drag_ghost(
+                    painter,
+                    QRectF(option.rect),  # pylint: disable=no-member,useless-suppression
+                    option.palette,  # pylint: disable=no-member,useless-suppression
+                )
+                return
+            index = index.model().index(shown, 0)
+            option = RootsItemDelegate.__as_shown(option, index)
         opt = QStyleOptionViewItem(option)
         self.initStyleOption(opt, index)
         painter.save()
@@ -94,6 +114,23 @@ class RootsItemDelegate(RowBandDelegate):
             self.paint_content(painter, opt, index, rect, color)
         finally:
             painter.restore()
+
+    @staticmethod
+    def __as_shown(option: QStyleOptionViewItem, index: ModelIndex) -> QStyleOptionViewItem:
+        """The option a row is painted with when it shows another root than its own: selected if that root is, and not
+        hovered, since the pointer is dragging.
+
+        :param option: the row's own option.
+        :param index: the root it shows.
+        :returns: the option to paint it with.
+        """
+        shown = QStyleOptionViewItem(option)
+        view = option.widget  # pylint: disable=no-member,useless-suppression
+        selection = view.selectionModel() if isinstance(view, QAbstractItemView) else None
+        shown.state &= ~(QStyle.StateFlag.State_Selected | QStyle.StateFlag.State_MouseOver)
+        if selection is not None and selection.isSelected(index):
+            shown.state |= QStyle.StateFlag.State_Selected
+        return shown
 
     def paint_content(
         self, painter: QPainter, opt: QStyleOptionViewItem, index: ModelIndex, rect: QRect, color: QColor
