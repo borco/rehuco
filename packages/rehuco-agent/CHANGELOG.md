@@ -43,9 +43,9 @@ released becomes the body of the GitHub Release, so each entry is written to be 
   a row opens that resource in Documents. A `.rehuco` written by a newer build opens read-only. Neither panel has a
   toolbar: the Root Catalog's title bar holds Refresh and the Browsers' New Table Browser, and the rest is in the
   menus.
-- The menu bar is six short menus, each about one thing: `File` (Settings, Quit), `Root Catalog`, `Documents`,
-  `Browsers`, `View` and `Tools`. `Documents` and `Browsers` each list what is open, A–Z, with the focused one
-  checked, and picking an entry brings it to the front; `View` no longer lists documents. `Sweep checksums…`,
+- The menu bar is five short menus, each about one thing: `File` (open and close documents, the open list,
+  Settings, Quit), `Root Catalog`, `Browsers`, `View` and `Tools`. `File` and `Browsers` each list what is open, A–Z,
+  with the focused one checked, and picking an entry brings it to the front; `View` no longer lists documents. `Sweep checksums…`,
   `Import Legacy Catalog…` and `Conversion Backups…` moved to `Tools`. Remove Root is also on a root's right-click
   menu.
 - **Table browsers** in a **Browsers** panel of their own, beside the Root Catalog one and named like its menu:

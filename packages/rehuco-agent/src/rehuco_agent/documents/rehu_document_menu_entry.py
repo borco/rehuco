@@ -40,6 +40,11 @@ DIMMED_ALPHA: Final = 0.7
 ``PlaceholderText`` role carries at rest, expressed against whatever color the style highlights text
 in (that role is defined against the *menu's* background, not against a highlight)."""
 
+ICON_COLUMN_PAD: Final = 4
+"""What `QMenu` adds to the small icon size when a row with an icon sets the menu's icon column
+(``QMenuPrivate::updateActionRects``, ``icone + 4``) -- reserved by the entry too (#465), so its text starts
+where it would in a menu that has such a row."""
+
 PROBE_SIZE: Final = QSize(200, 26)
 """Scratch size for the one-off render :meth:`RehuDocumentMenuEntry.row_style` measures from. Wide
 enough that a probe glyph lands clear of any check column, short enough to be free."""
@@ -47,7 +52,7 @@ enough that a probe glyph lands clear of any check column, short enough to be fr
 
 class RehuDocumentMenuEntry(QWidget):
     """A menu entry for a `.rehu` document: its title in normal text, its full path beneath it in
-    smaller, dimmed text -- both right-elided to fit :data:`MAX_WIDTH`. Shared by the `Documents` menu's
+    smaller, dimmed text -- both right-elided to fit :data:`MAX_WIDTH`. Shared by the `File` menu's
     open list (#61) and its `Open recents` list (#64).
 
     **Aligned and highlighted by the style, not by hand** (#79). A `QWidgetAction`'s custom default
@@ -59,8 +64,9 @@ class RehuDocumentMenuEntry(QWidget):
     from the owning menu through ``QMenu.initStyleOption``: the highlight, the checkmark and the check
     column's width then come from the same style code every native row uses. Seeding from the menu is
     also what carries ``maxIconWidth`` across -- a row of the same menu with an icon
-    in it which widens the check column for *every* row, so an entry reserving
-    only its own check width would sit left of everything above it.
+    in it widens the icon column for *every* row. The entry also reserves that column itself (#465): a
+    menu none of whose native rows has an icon reserves none, which drew the check and the unsaved marker
+    over the title, so ``maxIconWidth`` is raised to the style's small-icon width whatever the menu holds.
 
     The two text lines are then drawn directly, at an x **measured from the style** rather than
     assumed (:meth:`row_style`). Letting ``CE_MenuItem`` draw them too would be neater but is not
@@ -74,7 +80,7 @@ class RehuDocumentMenuEntry(QWidget):
         `info.rehu`-aware derivation for a not-currently-open path).
     :param path: the document's full path, or ``None`` for a not-yet-saved document.
     :param parent: optional Qt parent.
-    :param checked: draw the style's own checkmark -- the `Documents` menu's open list (#79)
+    :param checked: draw the style's own checkmark -- the `File` menu's open list (#79)
         sets this for the currently focused document. Its `Open recents` list has no
         notion of "current" and leaves it ``False``.
     :param dirty: draw :data:`~rehuco_agent.documents.document_dock.DIRTY_DOCK_MARKER` -- the same
@@ -172,6 +178,15 @@ class RehuDocumentMenuEntry(QWidget):
         else:
             option.initFrom(self)
         option.rect = rect
+        # the entry's own icon column (#465): the unsaved marker lives in it, and a menu none of whose native rows
+        # has an icon reserves none, which drew the check and the marker over the title. Reserved here, whatever
+        # the menu holds, so every entry (and `Open recents`' unmarked ones) starts its text at the same x --
+        # and at the x a menu with an icon on a native row gives it, which is why the width is QMenu's own
+        # (``updateActionRects``: the small icon size plus ICON_COLUMN_PAD), not the bare icon size.
+        option.maxIconWidth = max(
+            option.maxIconWidth,
+            self.style().pixelMetric(QStyle.PixelMetric.PM_SmallIconSize, None, self) + ICON_COLUMN_PAD,
+        )
         option.menuItemType = QStyleOptionMenuItem.MenuItemType.Normal
         option.text = ""
         option.icon = QIcon()

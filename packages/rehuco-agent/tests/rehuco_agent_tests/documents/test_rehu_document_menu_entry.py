@@ -1,8 +1,8 @@
 """Tests for RehuDocumentMenuEntry: title-over-dimmed-path layout, right-elision, and width cap.
 
-The entry backs the `View` menu's open-documents list (#61) and the `File` menu's `Open recents`
-list (#64); those menus are exercised through `MainWindow` in ``test_main_window.py``. These tests
-cover the widget itself in isolation (the audit's zero-gap goal, #153).
+The entry backs the `File` menu's open-documents list (#61) and its `Open recents` list (#64); those
+menus are exercised through `MainWindow` in ``test_main_window.py``. These tests cover the widget itself
+in isolation (the audit's zero-gap goal, #153).
 
 The entry is drawn by the style rather than built from child widgets (#79), so the assertions here
 read the text it actually draws (:meth:`RehuDocumentMenuEntry.displayed_title` /
@@ -188,7 +188,7 @@ class IconRecordingStyle(QProxyStyle):
     Wraps the default application style (the no-argument `QProxyStyle`, which borrows it rather than
     taking ownership) so what it records is the real style's own behavior. Lets a test assert that the
     entry *hands the marker to the style* without depending on whether the process can actually render
-    the marker's glyph -- see :func:`marker_is_renderable`.
+    the marker's glyph -- see :func:`is_renderable`.
     """
 
     def __init__(self) -> None:
@@ -209,8 +209,8 @@ class IconRecordingStyle(QProxyStyle):
         super().drawControl(element, option, painter, widget)
 
 
-def marker_is_renderable(entry: RehuDocumentMenuEntry) -> bool:
-    """Whether this process can actually draw :data:`DIRTY_DOCK_MARKER` in ``entry``'s font.
+def is_renderable(entry: RehuDocumentMenuEntry, text: str) -> bool:
+    """Whether this process can actually draw ``text`` in ``entry``'s font.
 
     The suite runs on the **offscreen** platform, whose font database starts empty (root
     ``conftest.py``), so the marker normally reaches the pixels only as a tofu box. Once a test has
@@ -225,14 +225,16 @@ def marker_is_renderable(entry: RehuDocumentMenuEntry) -> bool:
     is why this is a test-environment artifact rather than a defect in what the app draws.
 
     :param entry: the entry whose font to probe.
-    :returns: whether drawing the marker leaves any non-transparent pixel.
+    :param text: what to draw -- :data:`DIRTY_DOCK_MARKER`, or plain text for the tests that measure
+        where text sits (#465), which the same loaded icon font leaves without a glyph.
+    :returns: whether drawing ``text`` leaves any non-transparent pixel.
     """
     probe = QImage(32, 32, QImage.Format.Format_ARGB32)
     probe.fill(Qt.GlobalColor.transparent)
     painter = QPainter(probe)
     painter.setFont(entry.font())
     painter.setPen(QColor("black"))
-    painter.drawText(probe.rect(), Qt.AlignmentFlag.AlignCenter, DIRTY_DOCK_MARKER.strip())
+    painter.drawText(probe.rect(), Qt.AlignmentFlag.AlignCenter, text)
     painter.end()
     return any(probe.pixelColor(x, y).alpha() > 0 for x in range(probe.width()) for y in range(probe.height()))
 
@@ -244,7 +246,7 @@ def test_the_dirty_marker_is_actually_drawn(qtbot: QtBot) -> None:
     **hands the marker to the style** holds whatever the process's fonts are, so it is checked always,
     through a recording style rather than by reaching into the widget. That the marker then **changes
     the pixels** depends on the font database actually having a glyph for it, which an earlier test in
-    the same process may have taken away (:func:`marker_is_renderable`) -- so that half runs only where
+    the same process may have taken away (:func:`is_renderable`) -- so that half runs only where
     it can mean anything, instead of failing on whichever worker xdist handed the icon-font tests to.
 
     **Test steps:**
@@ -264,7 +266,7 @@ def test_the_dirty_marker_is_actually_drawn(qtbot: QtBot) -> None:
 
     assert any(dirty_style.menu_row_icons)
     assert not any(clean_style.menu_row_icons)
-    if marker_is_renderable(dirty):
+    if is_renderable(dirty, DIRTY_DOCK_MARKER.strip()):
         assert dirty_painting != clean_painting
 
 
@@ -366,3 +368,83 @@ def test_the_highlighted_row_keeps_its_text_legible_under_every_style(style_name
 
     darker, lighter = sorted((brightness(text), brightness(fill)))
     assert (lighter + 0.05) / (darker + 0.05) > 2.0, f"{style_name}: {text.name()} on {fill.name()}"
+
+
+def make_menu(qtbot: QtBot, style: QStyle, *, native_icon: bool) -> tuple[QMenu, list[RehuDocumentMenuEntry]]:
+    """A menu with one native row and four entries -- checked, unsaved, both and neither -- each in a
+    `QWidgetAction`, as the `File` menu's open list builds them (#465).
+
+    :param qtbot: registers the menu for teardown.
+    :param style: the style the menu and every entry use -- set on each, since a widget's style does
+        not reach its children the way the application's does.
+    :param native_icon: whether the native row carries an icon, which is what widens the icon column
+        for every row of the menu.
+    :returns: the shown menu -- the caller holds it, or Python collects it and the entries with it -- and the
+        entries in the order above.
+    """
+    menu = QMenu()
+    qtbot.addWidget(menu)
+    menu.setStyle(style)
+    native = menu.addAction("Settings")
+    if native_icon:
+        native.setIcon(menu.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon))
+    entries = [
+        RehuDocumentMenuEntry("My Tutorial", Path("/home/ada/my.rehu"), menu, checked=checked, dirty=dirty)
+        for checked, dirty in ((True, False), (False, True), (True, True), (False, False))
+    ]
+    for entry in entries:
+        entry.setStyle(style)
+        action = QWidgetAction(menu)
+        action.setDefaultWidget(entry)
+        menu.addAction(action)
+    menu.show()
+    qtbot.waitExposed(menu)
+    return menu, entries
+
+
+def pixels_differing_from(image: QImage, reference: QImage, *, from_x: int) -> list[tuple[int, int]]:
+    """The pixels of ``image`` right of ``from_x`` that differ from ``reference``."""
+    return [
+        (x, y)
+        for x in range(from_x, image.width())
+        for y in range(image.height())
+        if image.pixel(x, y) != reference.pixel(x, y)
+    ]
+
+
+@mark.parametrize("native_icon", [False, True])
+@mark.parametrize("style_name", ["windows11", "Windows", "Fusion"])  # windowsvista draws no check offscreen: no theme
+def test_an_entrys_marks_never_overlap_its_text_whatever_the_menus_other_rows_hold(
+    style_name: str, native_icon: bool, qtbot: QtBot
+) -> None:
+    """An entry reserves its own check and icon columns (#465): with no icon on any native row the style
+    reserves no icon column, and the check and the unsaved bullet used to be drawn over the title.
+
+    **Test steps:**
+
+    * for each style, build a menu with entries that are checked, unsaved, both and neither, with and
+      without an icon on a native row; skip where plain text draws no ink in this worker, since where
+      the text sits is then unobservable (:func:`is_renderable`)
+    * verify the four entries start their text at the same x
+    * verify that x is the same whether or not a native row has an icon
+    * verify everything the marks add to the painting lies left of that x
+    """
+    style = QStyleFactory.create(style_name)
+    if style is None:  # a style Qt did not build on this platform
+        skip(f"{style_name} unavailable")
+    _menu, entries = make_menu(qtbot, style, native_icon=native_icon)
+    plain = entries[-1]
+    if not is_renderable(plain, "Hg"):
+        skip("plain text draws no ink in this worker (an icon font is the only family)")
+
+    text_left = plain.row_style()[0]
+    assert {entry.row_style()[0] for entry in entries} == {text_left}
+
+    reference = plain.grab().toImage()
+    for entry in entries[:-1]:  # the marked ones
+        reaching = pixels_differing_from(entry.grab().toImage(), reference, from_x=text_left)
+        assert not reaching, f"{style_name}: marks reach into the text at {reaching[:3]}"
+    assert entries[0].grab().toImage() != reference  # the checked one differs left of the text
+
+    _other_menu, other = make_menu(qtbot, style, native_icon=not native_icon)
+    assert {entry.row_style()[0] for entry in other} == {text_left}
