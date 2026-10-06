@@ -36,10 +36,21 @@ from PySide6.QtCore import (
     QModelIndex,
     QObject,
     QPersistentModelIndex,
+    QRunnable,
     Qt,
+    QThreadPool,
     Signal,
 )
-from PySide6.QtGui import QAction, QKeyEvent, QKeySequence, QMouseEvent, QPixmap, QResizeEvent, QShowEvent
+from PySide6.QtGui import (
+    QAction,
+    QImage,
+    QKeyEvent,
+    QKeySequence,
+    QMouseEvent,
+    QPixmap,
+    QResizeEvent,
+    QShowEvent,
+)
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QGridLayout,
@@ -212,8 +223,8 @@ class PreviewLabel(QLabel):
 class ScreenshotRow:
     """One screenshot as the curation list holds it (#72).
 
-    The metrics are read once, when the row is built, rather than on every repaint: they come off
-    disk, and a view asks for a cell's data far more often than a file changes size.
+    The metrics are read once, in the background as the rows are built (#381), rather than on every
+    repaint: they come off disk, and a view asks for a cell's data far more often than a file changes size.
 
     :ivar path: the screenshot itself; its filename is what the name column shows.
     :ivar hidden: whether it is curated out of the lightbox ([[data-model#image-meanings]]) -- the
@@ -230,6 +241,79 @@ class ScreenshotRow:
     dimensions: str
     size: str
     numbered: bool = True
+
+
+class SelectorJobSignals(QObject):
+    """The sender one of the curation editor's background reads emits through -- never the editor or its
+    model, which the next document shown may already have destroyed (#381, the #221 shape).
+
+    Parented to the pool, whose destructor waits for its runnables, and ``deleteLater``-ed by the job when
+    it is done, so it is only ever deleted on the GUI thread; the receiver's own destruction severs the
+    queued connection, and a late answer reaches nobody.
+
+    :param pool: the pool the job runs on, which owns the sender.
+    """
+
+    measured = Signal(int, list)
+    """A :class:`MetricsJob`'s generation and each row's ``(dimensions, size)``, in row order."""
+
+    read = Signal(int, QImage)
+    """A :class:`PreviewJob`'s serial and the decoded picture, null when it would not decode."""
+
+    def __init__(self, pool: QThreadPool) -> None:
+        super().__init__(pool)
+
+
+def read_preview(path: Path) -> QImage:
+    """Decode one screenshot for the editor's preview pane, at its own size -- off the GUI thread (#381).
+
+    :param path: the screenshot.
+    :returns: the picture, null when it cannot be read or decoded.
+    """
+    return QImage(str(path))
+
+
+class MetricsJob(QRunnable):
+    """Reads every row's dimensions and size off the GUI thread (#381): a header read and a ``stat`` per
+    screenshot, which on a share is a round trip each.
+
+    :param signals: the sender to report through, already wired; released when the job is done.
+    :param generation: which set of rows this answers; a stale answer is dropped.
+    :param paths: the rows' files, in row order.
+    """
+
+    def __init__(self, signals: SelectorJobSignals, generation: int, paths: list[Path]) -> None:
+        super().__init__()
+        self.__signals: Final = signals
+        self.__generation: Final = generation
+        self.__paths: Final = paths
+
+    def run(self) -> None:
+        try:
+            self.__signals.measured.emit(self.__generation, [ScreenshotListModel.metrics(p) for p in self.__paths])
+        finally:
+            self.__signals.deleteLater()
+
+
+class PreviewJob(QRunnable):
+    """Decodes the current row's picture for the preview pane off the GUI thread (#381).
+
+    :param signals: the sender to report through, already wired; released when the job is done.
+    :param serial: which selection this answers; a stale answer is dropped.
+    :param path: the screenshot.
+    """
+
+    def __init__(self, signals: SelectorJobSignals, serial: int, path: Path) -> None:
+        super().__init__()
+        self.__signals: Final = signals
+        self.__serial: Final = serial
+        self.__path: Final = path
+
+    def run(self) -> None:
+        try:
+            self.__signals.read.emit(self.__serial, read_preview(self.__path))
+        finally:
+            self.__signals.deleteLater()
 
 
 class ScreenshotListModel(QAbstractTableModel):
@@ -266,6 +350,10 @@ class ScreenshotListModel(QAbstractTableModel):
         self.__organizer: ImageOrganizer | None = None
         self.__read_only = False
         self.__after_conversion: dict[str, AfterConversion] | None = None
+        self.__generation = 0
+        """Which read of the rows' metrics is the current one (#381); an older one's answer is dropped."""
+        self.__measuring = False
+        """Whether that read is still out -- and so would answer for rows a move has since reordered."""
 
     def set_read_only(self, read_only: bool) -> None:
         """Refuse every edit these rows can make, while still describing the files (#292).
@@ -493,10 +581,12 @@ class ScreenshotListModel(QAbstractTableModel):
         hidden: list[str],
         after_conversion: dict[str, AfterConversion] | None = None,
     ) -> None:
-        """Replace every row, reading each screenshot's metrics off disk.
+        """Replace every row; each screenshot's metrics are read off disk in the background (#381).
 
         A reset, because it genuinely is one: a different set of screenshots, not a rearrangement of
-        this one. Every other edit here reports itself more precisely.
+        this one. Every other edit here reports itself more precisely. The dimensions and size cells start
+        blank and fill in once the read lands -- a header read and a ``stat`` per screenshot, a round trip
+        each on a share, which as the rows were built held a document's whole open up.
 
         The un-converted rows follow the numbered ones and are checked unless ``hidden`` names them
         (#270) -- the same rule the numbered set follows, which is what makes "checked by default"
@@ -513,7 +603,7 @@ class ScreenshotListModel(QAbstractTableModel):
         hidden_names = set(hidden)
 
         def row(path: Path, is_numbered: bool) -> ScreenshotRow:
-            return ScreenshotRow(path, path.name in hidden_names, *self.metrics(path), numbered=is_numbered)
+            return ScreenshotRow(path, path.name in hidden_names, "", "", numbered=is_numbered)
 
         self.beginResetModel()
         try:
@@ -521,6 +611,40 @@ class ScreenshotListModel(QAbstractTableModel):
             self.__rows = [row(path, True) for path in numbered] + [row(path, False) for path in unconverted]
         finally:
             self.endResetModel()
+        self.__measure()
+
+    def __measure(self) -> None:
+        """Read every row's metrics on a pool thread, answering for the rows as they stand now."""
+        self.__generation += 1
+        self.__measuring = True
+        pool = QThreadPool.globalInstance()
+        signals = SelectorJobSignals(pool)
+        signals.measured.connect(self.__on_measured)
+        pool.start(MetricsJob(signals, self.__generation, [row.path for row in self.__rows]))
+
+    def __remeasure_if_measuring(self) -> None:
+        """Ask again after a move or a delete while a read is still out: it answers row by row, in an order
+        the rows no longer have, for files a rename may have swapped."""
+        if self.__measuring:
+            self.__measure()
+
+    def __on_measured(self, generation: int, metrics: list[tuple[str, str]]) -> None:
+        """Fill the dimensions and size cells from a read that is still the current one.
+
+        :param generation: which read this answers.
+        :param metrics: each row's ``(dimensions, size)``, in the order the rows had when it started.
+        """
+        if generation != self.__generation:
+            return
+        self.__measuring = False
+        for row, (dimensions, size) in zip(self.__rows, metrics, strict=True):
+            row.dimensions, row.size = dimensions, size
+        if self.__rows:
+            self.dataChanged.emit(
+                self.index(0, DIMENSIONS_COLUMN),
+                self.index(len(self.__rows) - 1, SIZE_COLUMN),
+                [Qt.ItemDataRole.DisplayRole],
+            )
 
     def move_row(self, source: int, target: int) -> bool:
         """Move one screenshot to ``target``, renaming the files inside the same transaction.
@@ -564,6 +688,7 @@ class ScreenshotListModel(QAbstractTableModel):
         finally:
             self.endMoveRows()
         self.__report(renamed)
+        self.__remeasure_if_measuring()
         return True
 
     def remove_row(self, row: int, deleter: Deleter | None = None) -> bool:
@@ -597,6 +722,7 @@ class ScreenshotListModel(QAbstractTableModel):
         finally:
             self.endRemoveRows()
         self.__report(renamed)
+        self.__remeasure_if_measuring()
         return True
 
     @staticmethod
@@ -839,6 +965,8 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes,
         self.__shared_directory = False
         # the split as it stood when the preview was toggled away, held until it comes back (#71)
         self.__stashed_state: bytes | None = None
+        # which selection the preview's decode answers (#381): the latest wins, an earlier one is dropped
+        self.__preview_serial = 0
 
         self.__preview_pane: Final = QWidget()
         overlay = QGridLayout(self.__preview_pane)
@@ -1508,6 +1636,8 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes,
         if self.__list_model.rowCount():
             self.__list.setCurrentIndex(self.__list_model.index(0, NAME_COLUMN))
         else:
+            # a decode still out for a row that is gone must not paint over the empty pane when it lands
+            self.__preview_serial += 1
             self.__show_preview(QPixmap())
         # every rebuild, not only the ones this editor caused: the owner cannot tell a rearrangement
         # from a scanner swap, and both mean a viewer over the same directory is now showing stale
@@ -1565,8 +1695,26 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes,
         :param _previous: the previously-selected index (unused).
         """
         path = self.__list_model.index(current.row(), NAME_COLUMN).data(PATH_ROLE) if current.isValid() else None
-        self.__show_preview(QPixmap(str(path)) if isinstance(path, Path) else QPixmap())
+        # decoded on a pool thread (#381): a full-size screenshot read off a share held the whole document's
+        # open up. The previous picture stays until this one lands, and a selection moved on meanwhile drops it
+        self.__preview_serial += 1
+        if isinstance(path, Path):
+            pool = QThreadPool.globalInstance()
+            signals = SelectorJobSignals(pool)
+            signals.read.connect(self.__on_preview_read)
+            pool.start(PreviewJob(signals, self.__preview_serial, path))
+        else:
+            self.__show_preview(QPixmap())
         self.current_index_changed.emit()
+
+    def __on_preview_read(self, serial: int, image: QImage) -> None:
+        """Show a decoded preview, if it still answers the current row.
+
+        :param serial: which selection it answers.
+        :param image: the picture, null when it would not decode.
+        """
+        if serial == self.__preview_serial:
+            self.__show_preview(QPixmap.fromImage(image))
 
     def __show_preview(self, pixmap: QPixmap) -> None:
         """Adopt ``pixmap`` as the preview and refresh the size overlay.

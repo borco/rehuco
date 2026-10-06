@@ -84,6 +84,8 @@ class DocumentDock(QtAds.CDockWidget):
         self.__model = model
         self.__last_path = model.path
         self.__preview_name = preview_name
+        self.__switching = False
+        """True only while :meth:`load` moves the model to another record -- a path change that is no move."""
         self.__widget: Final = DocumentWidget(
             model, self, stylesheet_host=stylesheet_host, task_queue=task_queue, resource_events=resource_events
         )
@@ -128,6 +130,22 @@ class DocumentDock(QtAds.CDockWidget):
         self.__last_path = model.path
         self.__follow(model)
         self.__update_title()
+
+    def load(self, path: Path) -> None:
+        """Show the record at ``path`` in this dock's own model (#381) -- a preview moving on to the next
+        resource without building anything: :meth:`RehuDocumentModel.load` reseeds the widgets already here.
+
+        Not a move: the model's path changes, but nothing was renamed, so :attr:`path_moved` -- which keeps
+        ``Open recents`` pointed at a renamed file -- stays quiet, and the next move is reported from here.
+
+        :param path: the record to show.
+        """
+        self.__switching = True
+        try:
+            self.__model.load(path)
+        finally:
+            self.__switching = False
+        self.__last_path = self.__model.path
 
     def promote(self) -> None:
         """Make this preview an ordinary document dock, in place (#39): its object name becomes its path,
@@ -221,6 +239,8 @@ class DocumentDock(QtAds.CDockWidget):
 
         :param path: the document's new path.
         """
+        if self.__switching:
+            return
         old_path = self.__last_path
         if path is not None:
             self.__last_path = path

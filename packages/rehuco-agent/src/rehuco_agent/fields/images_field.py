@@ -12,7 +12,7 @@ from functools import partial
 from pathlib import Path
 from typing import Final, override
 
-from PySide6.QtCore import QObject, Signal, SignalInstance
+from PySide6.QtCore import QObject, QSignalBlocker, Signal, SignalInstance
 
 from .field import Field, FieldBinding, FieldEditorWidgets, FieldsTab, FieldViewerWidgets
 from .image_organizer import ImageOrganizer
@@ -182,11 +182,13 @@ class ImagesField(Field[list[str]], QObject):  # pylint: disable=too-many-instan
         # first curated set as much as any later one -- it is what a thumbnail click opens against (#161)
         strip.image_activated.connect(self.image_activated)
         strip.images_changed.connect(self.curated_images_changed)
+        # the hidden list before the scanner: each rebuilds the strip, and only the scanner's reads the folder
+        # -- the other way round read it twice, and the first pass painted every screenshot, hidden ones too
+        strip.set_hidden(binding.value)
         strip.image_scanner = self.__image_scanner
         # bind_external, not a raw connect: this field outlives any one strip, so a form rebuild has
         # to be able to sever it -- the same reason the settings-driven bindings below use it
         self.bind_external(self.screenshots_changed, strip.refresh)  # type: ignore[arg-type]
-        strip.set_hidden(binding.value)
         binding.changed.connect(strip.set_hidden)
         if self.__image_scanner_changed is not None:
             # through bind_external, not a raw connect: the model outlives this strip. Measured live
@@ -217,7 +219,10 @@ class ImagesField(Field[list[str]], QObject):  # pylint: disable=too-many-instan
         selector.read_only = self.__locked
         self.locked_changed.connect(selector.set_read_only)  # type: ignore[attr-defined]
         selector.setObjectName(self.name)
-        selector.image_scanner = self.__image_scanner
+        # quietly: taking a scanner rebuilds the rows from it, and the seed below is that rebuild with the
+        # document's own hidden list -- announced, it was a second read of the folder for nothing (#381)
+        with QSignalBlocker(selector):
+            selector.image_scanner = self.__image_scanner
         # the initial seed always builds, unlike set_hidden -- its echo-guard would otherwise skip
         # populating a brand-new, empty selector whenever the initial hidden list happens to be empty too
         selector.set_screenshots(

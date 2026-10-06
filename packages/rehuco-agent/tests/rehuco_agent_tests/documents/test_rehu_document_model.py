@@ -17,6 +17,7 @@ from collections.abc import Callable, Hashable, Iterator, Sequence
 from functools import partial
 from pathlib import Path
 from typing import Final
+from unittest.mock import MagicMock
 
 import pytest
 import shiboken6
@@ -25,6 +26,7 @@ from pytest import fixture, mark, param, raises
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.app_logging import shared_log_bridge
+from rehuco_agent.documents import document_registry
 from rehuco_agent.documents.rehu_document_image_scanner import RehuDocumentImageScanner
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel, path_label
 from rehuco_agent.fields import FieldsTab, UnknownField
@@ -95,6 +97,42 @@ def model(document: RehuDocument) -> RehuDocumentModel:
 
 
 # endregion
+
+
+ON_DISK_PATH: Final = Path("/fake/info.rehu")
+"""Where the documents a revert reads back live; nothing is ever read from it."""
+
+
+def reloads_as(mocker: MockerFixture, document: RehuDocument, change: Callable[[], None] | None = None) -> MagicMock:
+    """Have the next read of a file hand back ``document``, after ``change`` -- an edit made to the file out of
+    band. A revert loads its file the way any open does (#381), so this is where a test stands in for the disk.
+
+    :param mocker: pytest-mock fixture.
+    :param document: what the read returns.
+    :param change: the out-of-band edit, applied to ``document`` as it is read.
+    :returns: the stand-in reader, to assert on what was read.
+    """
+
+    def read(_path: Path) -> RehuDocument:
+        if change is not None:
+            change()
+        return document
+
+    return mocker.patch("rehuco_agent.documents.rehu_document_model.load_or_locked", side_effect=read)
+
+
+@fixture(name="on_disk")
+def fixture_on_disk() -> RehuDocument:
+    """The sample document, as one loaded from a file -- what a revert needs, since it reads its file again."""
+    return RehuDocument(
+        {
+            "type": "Tutorial",
+            "sources": [
+                {"title": "Foo", "publisher": "Bar", "url": "https://example.com", "primary": True},
+            ],
+        },
+        ON_DISK_PATH,
+    )
 
 
 # region RehuDocumentModel tests
@@ -1281,9 +1319,7 @@ def test_save_writes_document_and_clears_dirty(
     assert model.dirty is False
 
 
-def test_revert_reseeds_from_a_reloaded_document_and_clears_dirty(
-    mocker: MockerFixture, model: RehuDocumentModel, document: RehuDocument
-) -> None:
+def test_revert_reseeds_from_a_reloaded_document_and_clears_dirty(mocker: MockerFixture, on_disk: RehuDocument) -> None:
     """revert() re-reads the document and reseeds every common-core field from it, then clears dirty.
 
     Picks up values the model never held before (neither the original seed nor the unsaved edit),
@@ -1294,10 +1330,13 @@ def test_revert_reseeds_from_a_reloaded_document_and_clears_dirty(
     **Test steps:**
 
     * make an unsaved edit, dirtying the model
-    * mock ``document.reload`` to simulate an out-of-band on-disk change touching every field
+    * have the file read back with an out-of-band change touching every field
     * call ``model.revert()``
-    * verify every field reflects the *reloaded* value (not the edit, not the original) and dirty clears
+    * verify the file was read again, every field reflects the *reloaded* value (not the edit, not the
+      original) and dirty clears
     """
+    document = on_disk
+    model = RehuDocumentModel(document)
     model.title = "Unsaved Edit"
     assert model.dirty is True
 
@@ -1320,11 +1359,11 @@ def test_revert_reseeds_from_a_reloaded_document_and_clears_dirty(
         core["description"] = "# Reloaded\n\nprose"
         core["hidden_images"] = ["reloaded.jpg"]
 
-    reload = mocker.patch.object(document, "reload", side_effect=fake_reload)
+    read = reloads_as(mocker, document, fake_reload)
 
     model.revert()
 
-    reload.assert_called_once_with()
+    read.assert_called_once_with(ON_DISK_PATH)
     assert model.title == "Reloaded Title"
     assert model.publisher == "Reloaded Publisher"
     assert model.url == "https://reloaded.example"
@@ -1340,7 +1379,7 @@ def test_revert_reseeds_from_a_reloaded_document_and_clears_dirty(
 
 
 def test_revert_recomputes_locked_from_the_reloaded_format_version(
-    mocker: MockerFixture, model: RehuDocumentModel, document: RehuDocument
+    mocker: MockerFixture, on_disk: RehuDocument
 ) -> None:
     """revert() recomputes :attr:`~RehuDocumentModel.locked` from the reloaded document's
     ``format_version``, picking up an out-of-band change to it just like any other field.
@@ -1348,17 +1387,18 @@ def test_revert_recomputes_locked_from_the_reloaded_format_version(
     **Test steps:**
 
     * start with a clean, unlocked model
-    * mock ``document.reload`` to simulate the on-disk file now carrying a newer ``format_version``
+    * have the file read back now carrying a newer ``format_version``
     * call ``model.revert()``
     * verify the model is now locked
     """
+    model = RehuDocumentModel(on_disk)
     assert model.locked is False
     newer_version = CURRENT_FORMAT_VERSION + 1
 
     def fake_reload() -> None:
-        document.data["format_version"] = newer_version
+        on_disk.data["format_version"] = newer_version
 
-    mocker.patch.object(document, "reload", side_effect=fake_reload)
+    reloads_as(mocker, on_disk, fake_reload)
 
     model.revert()
 
@@ -1398,9 +1438,7 @@ def test_revert_is_the_fix_retry_loop_over_a_load_failure(mocker: MockerFixture)
     assert model.title == "Fixed"
 
 
-def test_revert_reseeds_type_fields_too(
-    mocker: MockerFixture, model: RehuDocumentModel, document: RehuDocument
-) -> None:
+def test_revert_reseeds_type_fields_too(mocker: MockerFixture, on_disk: RehuDocument) -> None:
     """revert() also reseeds the type-field-backed scalars (bool/int) from the reloaded document.
 
     ``rating`` is per-user (#99), so the simulated on-disk state carries it where a real reload's
@@ -1409,15 +1447,16 @@ def test_revert_reseeds_type_fields_too(
 
     **Test steps:**
 
-    * mock ``document.reload`` to simulate an on-disk rating change
+    * have the file read back with a rating change
     * call ``model.revert()``
     * verify ``model.rating`` reflects the reloaded value
     """
+    model = RehuDocumentModel(on_disk)
 
     def fake_reload() -> None:
-        document.data["tutorial"] = {"users": {"admin": {"rating": -3}}}
+        on_disk.data["tutorial"] = {"users": {"admin": {"rating": -3}}}
 
-    mocker.patch.object(document, "reload", side_effect=fake_reload)
+    reloads_as(mocker, on_disk, fake_reload)
 
     model.revert()
 
@@ -1430,13 +1469,13 @@ def test_revert_reseeds_location_from_the_document_path(mocker: MockerFixture) -
     **Test steps:**
 
     * build a model over a document with a path, then change ``location`` in memory to something else
-    * mock ``reload`` as a no-op (the path stays)
+    * have the file read back unchanged (the path stays)
     * call ``model.revert()`` and verify ``location`` snaps back to the document's path
     """
     document = RehuDocument({"type": "Tutorial"}, Path("C:/tutorials/foo/info.rehu"))
     model = RehuDocumentModel(document)
     model.location = "C:/edited/elsewhere"
-    mocker.patch.object(document, "reload")
+    reloads_as(mocker, document)
 
     model.revert()
 
@@ -1452,13 +1491,13 @@ def test_revert_does_not_write_back_to_a_sourceless_document(mocker: MockerFixtu
 
     **Test steps:**
 
-    * build a model over a document with no ``sources``, and mock ``reload`` as a no-op
+    * build a model over a document with no ``sources``, and have the file read back unchanged
     * call ``model.revert()``
     * verify no primary source was synthesized
     """
-    document = RehuDocument({"type": "Tutorial"})
+    document = RehuDocument({"type": "Tutorial"}, ON_DISK_PATH)
     model = RehuDocumentModel(document)
-    mocker.patch.object(document, "reload")
+    reloads_as(mocker, document)
 
     model.revert()
 
@@ -1475,13 +1514,13 @@ def test_revert_emits_reloaded_even_when_nothing_changed(mocker: MockerFixture) 
 
     **Test steps:**
 
-    * build a clean, unlocked model over a document with a path, and mock ``reload`` as a no-op
+    * build a clean, unlocked model over a document with a path, and have the file read back unchanged
     * record ``reloaded`` emissions, then revert
     * verify it fired once and the model stayed clean and unlocked
     """
-    document = RehuDocument({"type": "Tutorial"}, Path("/fake/info.rehu"))
+    document = RehuDocument({"type": "Tutorial"}, ON_DISK_PATH)
     model = RehuDocumentModel(document)
-    mocker.patch.object(document, "reload")
+    reloads_as(mocker, document)
     fired: list[None] = []
     model.reloaded.connect(lambda: fired.append(None))
 
@@ -1493,15 +1532,15 @@ def test_revert_emits_reloaded_even_when_nothing_changed(mocker: MockerFixture) 
 
 
 def test_revert_without_a_path_propagates(model: RehuDocumentModel, document: RehuDocument) -> None:
-    """revert() propagates the document's error when it has never been loaded from a file.
+    """revert() refuses a document that was never loaded from or saved to a file: there is nothing to read.
 
     **Test steps:**
 
     * call ``model.revert()`` on a document with no path
-    * verify ``ValueError`` propagates
+    * verify ``ValueError`` is raised
     """
     assert document.path is None
-    with raises(ValueError, match="no path to reload from"):
+    with raises(ValueError, match="no path to revert from"):
         model.revert()
 
 
@@ -1862,24 +1901,28 @@ def test_convert_reassigns_a_fresh_rehu_scanner(mocker: MockerFixture) -> None:
     assert model.image_scanner is not original_scanner
 
 
-def test_revert_leaves_the_image_scanner_untouched(mocker: MockerFixture) -> None:
-    """``revert()`` never changes ``legacy_tc``-ness, so it leaves ``image_scanner`` untouched.
+def test_a_revert_installs_a_fresh_image_scanner(mocker: MockerFixture) -> None:
+    """A revert loads the file as any open does (#381) and installs the image scanner afresh: that is what has
+    the strip, the curation list and the description's embedded images read the folder again, now that the form
+    is no longer rebuilt to do it.
 
     **Test steps:**
 
-    * build a model over a normal document and record its scanner
-    * mock ``document.reload`` as a no-op
-    * call ``model.revert()``
-    * verify ``image_scanner`` is the exact same instance
+    * build a model over a normal document, record its scanner and listen for a new one
+    * have the file read back unchanged, and revert
+    * verify a new scanner was installed and announced
     """
-    document = RehuDocument({"type": "Tutorial"}, Path("/fake/info.rehu"))
+    document = RehuDocument({"type": "Tutorial"}, ON_DISK_PATH)
     model = RehuDocumentModel(document)
     original_scanner = model.image_scanner
-    mocker.patch.object(document, "reload")
+    announced: list[object] = []
+    model.image_scanner_changed.connect(announced.append)  # type: ignore[attr-defined]
+    reloads_as(mocker, document)
 
     model.revert()
 
-    assert model.image_scanner is original_scanner
+    assert model.image_scanner is not original_scanner
+    assert announced == [model.image_scanner]
 
 
 def test_document_exposes_the_wrapped_document(model: RehuDocumentModel, document: RehuDocument) -> None:
@@ -2870,22 +2913,22 @@ def test_model_learning_paths_carry_every_identitys_records(document: RehuDocume
     assert visible_learning_paths(model.learning_paths, username="admin") == [LearningPathEntry(3, "Shared")]
 
 
-def test_model_reseeds_the_record_lists_on_revert(mocker: MockerFixture, document: RehuDocument) -> None:
+def test_model_reseeds_the_record_lists_on_revert(mocker: MockerFixture, on_disk: RehuDocument) -> None:
     """A revert re-reads both record lists from disk, like every other seeded field.
 
     **Test steps:**
 
     * construct a model over a document with no record lists
-    * mock ``document.reload`` to bring in a collection membership, and revert
+    * have the file read back with a collection membership, and revert
     * verify the list follows
     """
-    model = RehuDocumentModel(document)
+    model = RehuDocumentModel(on_disk)
     assert model.collections == []
 
     def fake_reload() -> None:
-        document.set_active_field("collections", [{"title": "Series", "index": 2}])
+        on_disk.set_active_field("collections", [{"title": "Series", "index": 2}])
 
-    mocker.patch.object(document, "reload", side_effect=fake_reload)
+    reloads_as(mocker, on_disk, fake_reload)
 
     model.revert()
 
@@ -3728,8 +3771,9 @@ class RecordingSink:
 def scoped_sink(qtbot: QtBot) -> Iterator[Callable[[Hashable | None], RecordingSink]]:
     """Provide a way to record what the shared bridge routes to one scope.
 
-    The model's own logger is attached to the bridge with propagation off, so these records reach the
-    bridge under test and neither the console nor a handler another test left behind.
+    The model's own logger, and the shared loader's a model reads a file through (#381), are attached to the
+    bridge with propagation off, so these records reach the bridge under test and neither the console nor a
+    handler another test left behind.
 
     :param qtbot: pytest-qt bot, whose event loop the bridge's queued dispatch needs.
     :returns: a callable taking a scope -- or ``None`` for a sink that sees everything, which is what a
@@ -3737,14 +3781,14 @@ def scoped_sink(qtbot: QtBot) -> Iterator[Callable[[Hashable | None], RecordingS
     """
     del qtbot  # only needed so a QApplication and an event loop exist
     bridge = shared_log_bridge()
-    logger = logging.getLogger(RehuDocumentModel.__module__)
-    previous_propagate = logger.propagate
-    previous_level = logger.level
-    # DEBUG explicitly: this logger's own level is NOTSET, so without it the effective floor is the root
-    # logger's -- which under pytest is WARNING, and would silently drop every info these tests assert on
-    logger.setLevel(logging.DEBUG)
-    logger.propagate = False
-    logger.addHandler(bridge)
+    loggers = [logging.getLogger(RehuDocumentModel.__module__), logging.getLogger(document_registry.__name__)]
+    previous = [(logger.propagate, logger.level) for logger in loggers]
+    for logger in loggers:
+        # DEBUG explicitly: this logger's own level is NOTSET, so without it the effective floor is the root
+        # logger's -- which under pytest is WARNING, and would silently drop every info these tests assert on
+        logger.setLevel(logging.DEBUG)
+        logger.propagate = False
+        logger.addHandler(bridge)
     sinks: list[RecordingSink] = []
 
     def attach(scope: Hashable | None = None) -> RecordingSink:
@@ -3759,9 +3803,10 @@ def scoped_sink(qtbot: QtBot) -> Iterator[Callable[[Hashable | None], RecordingS
     yield attach
     for sink in sinks:
         bridge.remove_sink(sink)
-    logger.removeHandler(bridge)
-    logger.propagate = previous_propagate
-    logger.setLevel(previous_level)
+    for logger, (propagate, level) in zip(loggers, previous, strict=True):
+        logger.removeHandler(bridge)
+        logger.propagate = propagate
+        logger.setLevel(level)
 
 
 @fixture
@@ -3801,11 +3846,11 @@ def test_reverting_logs_under_this_documents_own_scope(
 
     **Test steps:**
 
-    * patch the document's own reload, and attach a sink for its path
+    * have the file read back unchanged, and attach a sink for its path
     * revert through the model
     * verify the revert was recorded under that scope
     """
-    mocker.patch.object(saved_document, "reload")
+    reloads_as(mocker, saved_document)
     model = RehuDocumentModel(saved_document)
     sink = scoped_sink(LOGGED_PATH)
 

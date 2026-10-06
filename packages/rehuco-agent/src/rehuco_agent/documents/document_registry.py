@@ -207,42 +207,43 @@ class DocumentRegistry(QObject):
                 username=shared_identity_settings().current_username,
                 rename_coordinator=self.__rename_coordinator,
             )
-        return RehuDocumentModel(self.__load_or_locked(path), rename_coordinator=self.__rename_coordinator)
+        return RehuDocumentModel(load_or_locked(path), rename_coordinator=self.__rename_coordinator)
 
-    @staticmethod
-    def __load_or_locked(path: Path) -> RehuDocument:
-        """Load ``path``, or an empty locked stub bound to it when the file cannot be read.
 
-        Routes a ``.tc`` through :func:`rehuco_core.load_tc` and everything else through
-        :meth:`RehuDocument.load`, but funnels *both* loaders' failures through the one seam that draws
-        the missing-vs-unparseable line (:meth:`RehuDocument.locked_stub_for_error`) -- so the holder gets
-        a locked, never-savable stub instead of an exception ([[data-model#write-integrity]]). Each branch
-        is handed the identity that matches its provenance
-        (:func:`~rehuco_agent.settings.identity_settings.shared_identity_settings`, #109), read here at
-        open time -- the document keeps it for its whole life, so a later identity-setting change
-        affects only documents opened afterwards. A ``.tc`` import files its per-user state under the
-        **unknown** user, since a flag carried in from the file was not set by this install's identity; a
-        ``.rehu`` (whose per-user writes this UI makes) is opened under the **current** user. A locked stub
-        adopts whichever name its branch would have used, so a hand-fix-and-revert retries under the same
-        identity the open was asked for.
+def load_or_locked(path: Path) -> RehuDocument:
+    """Load ``path``, or an empty locked stub bound to it when the file cannot be read -- the one way a
+    document is read from a file, whether a holder is opening it or a model is loading it again (#381).
 
-        **The read is logged, under this resource's own scope** (#200): this is the one funnel both
-        loaders and both failure kinds pass through, so it is the one place that can say *"this file was
-        read"* or *"this file could not be"* once rather than per branch. The failure is an **error**, not
-        a warning: it is not the shape of the document that is in question, it is that there is no
-        document -- the stub stands in for one.
+    Routes a ``.tc`` through :func:`rehuco_core.load_tc` and everything else through
+    :meth:`RehuDocument.load`, but funnels *both* loaders' failures through the one seam that draws
+    the missing-vs-unparseable line (:meth:`RehuDocument.locked_stub_for_error`) -- so the holder gets
+    a locked, never-savable stub instead of an exception ([[data-model#write-integrity]]). Each branch
+    is handed the identity that matches its provenance
+    (:func:`~rehuco_agent.settings.identity_settings.shared_identity_settings`, #109), read here at
+    open time -- the document keeps it for its whole life, so a later identity-setting change
+    affects only documents opened afterwards. A ``.tc`` import files its per-user state under the
+    **unknown** user, since a flag carried in from the file was not set by this install's identity; a
+    ``.rehu`` (whose per-user writes this UI makes) is opened under the **current** user. A locked stub
+    adopts whichever name its branch would have used, so a hand-fix-and-revert retries under the same
+    identity the open was asked for.
 
-        :param path: the file to load (a ``.rehu``, or a legacy ``.tc``).
-        :returns: the loaded document, or a locked stub bound to ``path``.
-        """
-        settings = shared_identity_settings()
-        is_tc = path.suffix.lower() == ".tc"
-        username = settings.unknown_username if is_tc else settings.current_username
-        with LogScope.open(path):
-            try:
-                document = load_tc(path, username=username) if is_tc else RehuDocument.load(path, username=username)
-            except (OSError, RehuFormatError) as error:
-                LOG.error("Could not read %s: %s", path, error)
-                return RehuDocument.locked_stub_for_error(path, error, username=username)
-            LOG.info("Read %s as %s", path, document.type or "an untyped resource")
-            return document
+    **The read is logged, under this resource's own scope** (#200): this is the one funnel both
+    loaders and both failure kinds pass through, so it is the one place that can say *"this file was
+    read"* or *"this file could not be"* once rather than per branch. The failure is an **error**, not
+    a warning: it is not the shape of the document that is in question, it is that there is no
+    document -- the stub stands in for one.
+
+    :param path: the file to load (a ``.rehu``, or a legacy ``.tc``).
+    :returns: the loaded document, or a locked stub bound to ``path``.
+    """
+    settings = shared_identity_settings()
+    is_tc = path.suffix.lower() == ".tc"
+    username = settings.unknown_username if is_tc else settings.current_username
+    with LogScope.open(path):
+        try:
+            document = load_tc(path, username=username) if is_tc else RehuDocument.load(path, username=username)
+        except (OSError, RehuFormatError) as error:
+            LOG.error("Could not read %s: %s", path, error)
+            return RehuDocument.locked_stub_for_error(path, error, username=username)
+        LOG.info("Read %s as %s", path, document.type or "an untyped resource")
+        return document

@@ -1,5 +1,5 @@
-"""What a selected resource becomes in the Documents preview: one key, resolved in one place, shown once the
-selection has settled (#381)."""
+"""What a selected resource becomes in the Documents preview: one key, resolved in one place, shown at once
+(#381)."""
 
 from collections.abc import Callable
 from pathlib import Path
@@ -10,13 +10,16 @@ from PySide6.QtCore import QObject, QTimer
 from .catalog_table_model import RowKey
 from .root_catalog import RootCatalog
 
-SELECTION_SETTLE_MS: Final = 250
-"""How long a selection stands before it is shown, like the filter line's wait: moving through a table with the
-arrow keys shows the row it comes to rest on, not every row it passed."""
+SELECTION_SETTLE_MS: Final = 0
+"""How long a selection stands before it is shown: no time at all. A preview switch reloads the widgets already
+built, in milliseconds, so there is nothing to wait out. It still runs as a zero-length timer rather than inside
+the selection's own handler: that turns the event loop once first, so the key presses an auto-repeating arrow
+key has queued move the cursor through every row, and only the row it lands on is loaded."""
 
 
 class SelectionPreview(QObject):
-    """Turns a view's selection into one call to show a document in the preview, once the selection settles.
+    """Turns a view's selection into one call to show a document in the preview, as soon as the input queued
+    behind it has been handled.
 
     A selection is a ``(root_id, relative)`` key -- what a browser row and the Roots view both name a resource by --
     and :meth:`RootCatalog.resource_path` is the one place it becomes a path, read when the selection **settles**

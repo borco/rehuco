@@ -16,8 +16,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
-from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QImage
+from PySide6.QtCore import QSize, QUrl
+from PySide6.QtGui import QImage, QImageReader
 from rehuco_core import IMAGE_EXTENSIONS, other_record_stems
 
 from ..fields.image_scanner import AfterConversion, ScreenshotSet
@@ -152,12 +152,16 @@ class RehuDocumentImageScanner:
         path = self.__resolved(name)
         if path is None:
             return None
-        image = QImage(str(path))
+        # decoded straight at the width it is shown at, off a header read, rather than in full and then
+        # scaled: a screenshot embedded in a description is several megapixels the view never draws (#381)
+        reader = QImageReader(str(path))
+        max_width = round(shared_markdown_rendering_settings().max_image_width * device_pixel_ratio)
+        size = reader.size()
+        if size.width() > max_width:
+            reader.setScaledSize(QSize(max_width, max(1, round(size.height() * max_width / size.width()))))
+        image = reader.read()
         if image.isNull():
             return None
-        max_width = round(shared_markdown_rendering_settings().max_image_width * device_pixel_ratio)
-        if image.width() > max_width:
-            image = image.scaledToWidth(max_width, Qt.TransformationMode.SmoothTransformation)
         image.setDevicePixelRatio(device_pixel_ratio)
         return image
 

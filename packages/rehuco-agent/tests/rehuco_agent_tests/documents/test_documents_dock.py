@@ -12,10 +12,8 @@
 # here rather than fragmenting it.
 # pylint: disable=too-many-lines
 
-import gc
 import json
 import logging
-import weakref
 from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
 from typing import Any, Final
@@ -26,7 +24,7 @@ from borco_pyside.qtads import tab_label
 from PySide6.QtCore import QObject
 from PySide6.QtTest import QSignalSpy
 from PySide6.QtWidgets import QDialog, QMessageBox, QWidget
-from pytest import fixture
+from pytest import LogCaptureFixture, fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.app_logging import shared_log_bridge
@@ -2824,15 +2822,16 @@ def show_on_disk(widget: DocumentWidget) -> None:
     widget.sub_docks._DocumentSubDocks__on_disk_dock.toggleView(True)  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
 
-def test_showing_documents_in_turn_keeps_one_dock_and_lets_go_of_each(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """The preview switches in place: one dock throughout, each document's sub-docks in it, and every
-    document it moved on from released and freed.
+def test_showing_documents_in_turn_loads_each_into_the_same_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The preview switches in place (#381): one dock, one widget and one model throughout, the model loading each
+    document in turn into the widgets already built -- and held under the path it shows now, so the documents it
+    moved on from are held by nothing.
 
     **Test steps:**
 
     * show three documents in turn in the preview
-    * verify one dock and one widget throughout, showing the last document, named ``Preview-1``
-    * verify the first two are no longer held, and their models are gone once the deferred deletes run
+    * verify one dock, widget and model throughout, showing the last document, named ``Preview-1``
+    * verify the registry holds that model under the last path alone
     """
     load_document(mocker)
     registry = DocumentRegistry()
@@ -2840,21 +2839,40 @@ def test_showing_documents_in_turn_keeps_one_dock_and_lets_go_of_each(mocker: Mo
     qtbot.addWidget(dock)
 
     first = dock.show_in_preview(FAKE_PATH)
-    first_model = weakref.ref(first.model)
+    model = first.model
     second = dock.show_in_preview(OTHER_PATH)
-    second_model = weakref.ref(second.model)
     third = dock.show_in_preview(THIRD_PATH)
 
     assert first is second is third
+    assert third.model is model
     assert dock.open_document_widgets() == [third]
-    assert third.model.path == THIRD_PATH
+    assert model.path == THIRD_PATH
     assert preview_of(dock).objectName() == "Preview-1"
+    assert registry.find(THIRD_PATH) is model
     assert registry.find(FAKE_PATH) is None
     assert registry.find(OTHER_PATH) is None
-    flush_deferred_deletes()
-    gc.collect()
-    assert first_model() is None
-    assert second_model() is None
+    assert registry.models() == [model]
+
+
+def test_a_switch_is_not_reported_as_a_move(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The preview's model takes another path as it loads the next record, but nothing was renamed: no move is
+    reported, so ``Open recents`` is left alone (#381).
+
+    **Test steps:**
+
+    * show a document in the preview, spying on ``document_path_changed``
+    * show another
+    * verify nothing was reported
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    dock.show_in_preview(FAKE_PATH)
+    spy = QSignalSpy(dock.document_path_changed)
+
+    dock.show_in_preview(OTHER_PATH)
+
+    assert spy.count() == 0
 
 
 def test_switching_documents_accumulates_nothing(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -3221,6 +3239,31 @@ def test_an_applied_default_becomes_the_preview_layout(mocker: MockerFixture, qt
     dock.show_in_preview(OTHER_PATH)
     dock.show_in_preview(THIRD_PATH)
     assert on_disk_shown(widget)
+
+
+def test_a_preview_logs_how_long_it_held_the_window(
+    mocker: MockerFixture, qtbot: QtBot, caplog: LogCaptureFixture
+) -> None:
+    """Each preview logs, at debug level, how long the GUI thread was held -- per phase for a switch in place, so
+    a slow one says where its time went (#381).
+
+    **Test steps:**
+
+    * show one document in the preview, then another
+    * verify a line for the new preview, then one naming the load, layout and total of the switch
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    caplog.set_level(logging.DEBUG, logger="rehuco_agent.documents.documents_dock")
+
+    dock.show_in_preview(FAKE_PATH)
+    dock.show_in_preview(OTHER_PATH)
+
+    lines = [record.getMessage() for record in caplog.records if "review of" in record.getMessage()]
+    assert lines[0].startswith(f"New preview of {FAKE_PATH}: total ")
+    assert lines[1].startswith(f"Preview of {OTHER_PATH}: load ")
+    assert all(phase in lines[1] for phase in ("layout ", "total "))
 
 
 def test_showing_what_the_preview_shows_does_not_take_the_focus(mocker: MockerFixture, qtbot: QtBot) -> None:

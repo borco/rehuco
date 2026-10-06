@@ -2,6 +2,7 @@
 ([[nodes#single-instance]])."""
 
 import logging
+import time
 from pathlib import Path
 from typing import Final, cast
 
@@ -249,7 +250,10 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
             self.__promote(preview)
             preview = None
         if preview is None:
-            return self.__activate(self.__make_new_dock(path, preview=True))
+            started = time.perf_counter()
+            widget = self.__activate(self.__make_new_dock(path, preview=True))
+            LOG.debug("New preview of %s: total %.0f ms", path, (time.perf_counter() - started) * 1000)
+            return widget
         return self.__switch_preview(preview, path)
 
     def preview_document_widget(self) -> DocumentWidget | None:
@@ -578,21 +582,50 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         :param path: the document to show, shown nowhere in this area yet.
         :returns: the preview's widget.
         """
+        started = time.perf_counter()
         self.__capture_preview_layout()
         widget = preview.document_widget
-        old = widget.model
-        model = self.__registry.acquire(path)
-        preview.show_model(model)
-        del self.__model_docks[old]  # pylint: disable=unsupported-delete-operation
-        self.__model_docks[model] = preview  # pylint: disable=unsupported-assignment-operation
-        self.__registry.release(old)
-        widget.adopt_layout(self.__preview_layout_for(widget))
+        layout_type: str | None = widget.sub_docks.layout_type
+        if self.__registry.find(path) is None:
+            # the preview's own model loads the next record into the widgets already built (#381): nothing is
+            # torn down, and the form is rebuilt only for a record of another structure. The registry follows
+            # the model's path as it follows a rename
+            preview.load(path)
+        else:
+            # held by another holder already, so shown through that holder's model -- one model per file
+            old = widget.model
+            model = self.__registry.acquire(path)
+            preview.show_model(model)
+            del self.__model_docks[old]  # pylint: disable=unsupported-delete-operation
+            self.__model_docks[model] = preview  # pylint: disable=unsupported-assignment-operation
+            self.__registry.release(old)
+            layout_type = None
+        loaded = time.perf_counter()
+        if layout_type is None:
+            # built afresh: laid out the way any new preview is
+            widget.adopt_layout(self.__preview_layout_for(widget))
+        elif widget.sub_docks.layout_type != layout_type:
+            # the same docks, now another type's: they take that type's preview layout -- else its default, else
+            # as built -- rather than keeping the arrangement the last type was left in
+            state = self.__preview_layout_for(widget)
+            if state is None or not widget.restore_state(state):
+                widget.sub_docks.apply_default_layout()
+        # a record of the type already shown keeps the arrangement the reader has in front of them
+        laid_out = time.perf_counter()
         # a preview already current stays so, and the tracker says nothing -- the window still has to hear
         # that its focused document is another one now
         was_current = self.__tracker.current_dock is preview
         self.__activate(preview)
         if was_current:
             self.document_focus_changed.emit(widget)
+        # what the GUI thread was held for, phase by phase: the number a slow preview is judged by
+        LOG.debug(
+            "Preview of %s: load %.0f ms, layout %.0f ms, total %.0f ms",
+            path,
+            (loaded - started) * 1000,
+            (laid_out - loaded) * 1000,
+            (time.perf_counter() - started) * 1000,
+        )
         return widget
 
     def __promote(self, preview: DocumentDock, *, announce: bool = True) -> None:

@@ -13,10 +13,22 @@ from typing import Final, override
 from borco_pyside.core import SimpleProperty
 from borco_pyside.widgets import FlowLayout
 from PySide6.QtCore import QEvent, QRectF, Qt, Signal
-from PySide6.QtGui import QMouseEvent, QPainter, QPainterPath, QPaintEvent, QPalette, QPixmap, QResizeEvent, QWheelEvent
+from PySide6.QtGui import (
+    QMouseEvent,
+    QPainter,
+    QPainterPath,
+    QPaintEvent,
+    QPalette,
+    QPixmap,
+    QPixmapCache,
+    QResizeEvent,
+    QWheelEvent,
+)
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLayout, QScrollArea, QWidget
 
 from ..image_scanner import ImageScanner
+from .image_source import ImageVisibility, ScreenshotRowsImageSource
+from .thumbnail_loader import ThumbnailLoader, thumbnail_cache_key
 
 THUMBNAIL_BORDER: Final = 3
 """Width, in pixels, of the frame marking the current thumbnail (#161). Painted **over** the
@@ -27,6 +39,10 @@ leave each image short of the height it was given."""
 THUMBNAIL_SPACING: Final = 0
 """Gap, in pixels, between thumbnails, in either layout. Set explicitly because a layout's default
 spacing comes from the style and is several pixels, which reads as stray padding in a row this dense."""
+
+PLACEHOLDER_ASPECT: Final = 16 / 9
+"""The width-to-height ratio a thumbnail holds its place at until its picture is decoded (#381): a
+screenshot's own shape, as near as one guess gets, so the row moves as little as it can when it lands."""
 
 
 class ThumbnailLabel(QLabel):
@@ -129,7 +145,7 @@ class ThumbnailLabel(QLabel):
             self.clicked.emit(self.__path)
 
 
-class ImageStrip(QScrollArea):
+class ImageStrip(QScrollArea):  # pylint: disable=too-many-instance-attributes
     """A row -- or, wrapped, a block -- of screenshot thumbnails ([[plugins#field-toolkit]], #27, #70).
 
     Every image is scaled to ``height`` (preserving aspect ratio) and laid out left-to-right. The two
@@ -175,9 +191,16 @@ class ImageStrip(QScrollArea):
         self.__wrap = wrap
         self.__hidden: list[str] = []
         self.__thumbnails: dict[Path, ThumbnailLabel] = {}
+        self.__waiting: dict[str, Path] = {}
+        """The thumbnails still holding their place, by the cache key their picture will land under (#381)."""
         self.__current: Path | None = None
         self.__requested_visible = True
         self.__row: QLayout
+        # the pictures are decoded off the GUI thread into the app's one pixmap cache (#381): a strip decoding
+        # every screenshot at full size as it was built held a document's whole open up on the disk -- seconds
+        # on a share -- and coming back to a resource now paints from the cache at once
+        self.__loader: Final = ThumbnailLoader(self)
+        self.__loader.ready.connect(self.__on_thumbnail_ready)
         self.setWidgetResizable(True)
         # nothing but the thumbnails: a scroll area's default sunken panel would draw a border around
         # the row and inset it by the frame width, which reads as stray padding around the images on
@@ -200,8 +223,13 @@ class ImageStrip(QScrollArea):
     def set_hidden(self, hidden: list[str]) -> None:
         """Update which screenshots are curated out of the lightbox, and rebuild the strip.
 
+        The list the strip already has is nothing to do: the echo of a binding that already holds it would
+        otherwise read the folder again (#381).
+
         :param hidden: filenames to leave out; every other current-scanner screenshot is shown.
         """
+        if hidden == self.__hidden:
+            return
         self.__hidden = hidden
         self.__refresh()
 
@@ -400,9 +428,11 @@ class ImageStrip(QScrollArea):
     def set_images(self, paths: list[Path]) -> None:
         """Replace the strip's thumbnails with the given screenshot paths, in order.
 
-        Reports the result through :attr:`images_changed` -- the paths that actually painted, not the
-        ones asked for -- so a maximized viewer following this strip navigates exactly the set the
-        user can see and click (#161).
+        Reports the result through :attr:`images_changed` -- the paths a user can see and click, so a
+        maximized viewer following this strip navigates exactly that set (#161). Nothing is decoded here
+        (#381): a picture already in the pixmap cache is painted at once, and every other one holds its
+        place until the loader lands it, or takes it back out if it cannot be decoded -- reporting the set
+        again then -- and one already known not to decode is left out from the start.
 
         :param paths: the curated (visible) screenshot paths to show; an empty list clears the strip.
         """
@@ -411,17 +441,26 @@ class ImageStrip(QScrollArea):
             if widget is not None:
                 widget.deleteLater()
         self.__thumbnails.clear()
+        self.__waiting.clear()
 
         # the whole strip height: the current-item frame is painted over the screenshot rather
         # than around it, so it costs the thumbnail nothing
         thumbnail_height = self.__height
-        for path in paths:
-            pixmap = QPixmap(str(path))
-            if pixmap.isNull():
+        ratio = self.devicePixelRatioF()
+        # keyed by the file, not its name: a screenshot's name is its place in the set, so a curation edit
+        # renames the files and a name key would paint a neighbour's cached picture
+        source = ScreenshotRowsImageSource([(path, ImageVisibility.VISIBLE) for path in paths])
+        for index, path in enumerate(paths):
+            key = source.key(index)
+            if self.__loader.failed(key, thumbnail_height, ratio):
                 continue
             label = ThumbnailLabel(path)
             label.clicked.connect(self.image_activated)
-            label.setPixmap(pixmap.scaledToHeight(thumbnail_height, Qt.TransformationMode.SmoothTransformation))
+            pixmap = self.__loader.request(self, source, index, thumbnail_height, ratio)
+            if pixmap is None:
+                self.__waiting[thumbnail_cache_key(key, thumbnail_height, ratio)] = path  # pylint: disable=unsupported-assignment-operation
+                pixmap = self.__placeholder(thumbnail_height, ratio)
+            label.setPixmap(pixmap)
             self.__row.addWidget(label)
             # shown here rather than left to the layout to show along with the row: a child that has
             # never been shown counts as an *empty* layout item, whose size hint is nothing at all --
@@ -435,6 +474,43 @@ class ImageStrip(QScrollArea):
         # doesn't silently lose the mark on a screenshot that survived it
         self.set_current(self.__current)
         # a wrapped strip's height is its block's, so a rebuild is exactly when it can change (#70)
+        self.__apply_height()
+        self.__apply_visibility()
+        # what is no longer on the row is no longer worth decoding
+        self.__loader.retain(self, self.__waiting)
+        self.images_changed.emit(list(self.__thumbnails))
+
+    def __placeholder(self, height: int, ratio: float) -> QPixmap:
+        """What a thumbnail shows until its picture lands: an empty frame of a screenshot's usual shape.
+
+        :param height: the thumbnail height, in logical pixels.
+        :param ratio: the device pixel ratio it is drawn at.
+        :returns: the placeholder, filled with the palette's mid tone.
+        """
+        pixmap = QPixmap(round(height * PLACEHOLDER_ASPECT * ratio), round(height * ratio))
+        pixmap.setDevicePixelRatio(ratio)
+        pixmap.fill(self.palette().color(QPalette.ColorRole.Mid))
+        return pixmap
+
+    def __on_thumbnail_ready(self, cache_key: str) -> None:
+        """Paint a thumbnail whose picture just landed, or take it back off the row if it would not decode.
+
+        :param cache_key: the cache key the loader announced -- one of this strip's, or one of a strip
+            sharing the cache that this one is not waiting for.
+        """
+        path = self.__waiting.pop(cache_key, None)
+        if path is None:
+            return
+        label = self.__thumbnails[path]
+        pixmap = QPixmap()
+        if QPixmapCache.find(cache_key, pixmap) and not pixmap.isNull():
+            label.setPixmap(pixmap)
+            # a picture of another shape than the placeholder's changes what a wrapped block folds into
+            self.__apply_height()
+            return
+        self.__row.removeWidget(label)
+        label.deleteLater()
+        del self.__thumbnails[path]  # pylint: disable=unsupported-delete-operation
         self.__apply_height()
         self.__apply_visibility()
         self.images_changed.emit(list(self.__thumbnails))

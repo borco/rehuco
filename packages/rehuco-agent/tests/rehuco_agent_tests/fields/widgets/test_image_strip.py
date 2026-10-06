@@ -5,11 +5,12 @@
 # module reads better than an arbitrary split, so the module-length cap is lifted here.
 # pylint: disable=too-many-lines
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterable, Iterator
+from dataclasses import dataclass
 from pathlib import Path
 
 from borco_pyside.widgets import FlowLayout
-from PySide6.QtCore import QMargins, QPoint, QPointF, Qt
+from PySide6.QtCore import QMargins, QObject, QPoint, QPointF, Qt, Signal
 from PySide6.QtGui import QColor, QPalette, QPixmap, QWheelEvent
 from PySide6.QtWidgets import QApplication, QFrame, QHBoxLayout, QVBoxLayout, QWidget
 from pytest import fixture
@@ -44,6 +45,62 @@ def flat_pixmap() -> QPixmap:
     pixmap = QPixmap(WIDE_PIXMAP, WIDE_PIXMAP)
     pixmap.fill(QColor(FLAT_COLOUR))
     return pixmap
+
+
+@dataclass
+class Pictures:
+    """What the stand-in loader hands back: a picture per request, or a null one for a file that will not
+    decode. One per module (:data:`PICTURES`), replaced per test by :func:`serve_pictures`."""
+
+    make: Callable[[], QPixmap] = lambda: QPixmap(10, 10)
+
+
+PICTURES = Pictures()
+
+
+class SyncLoader(QObject):
+    """Stands in for the strip's `ThumbnailLoader`, answering every request at once -- the way the real one
+    answers a picture already in the cache -- so these tests read the strip's row as it stands right after a
+    rebuild. The background half is what ``test_image_strip_loading.py`` tests, against the real loader.
+
+    :param parent: the strip, as the real loader's parent is.
+    """
+
+    ready = Signal(str)
+
+    def __init__(self, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+
+    @staticmethod
+    def failed(_key: object, _height: int, _ratio: float = 1.0) -> bool:
+        """Whether the picture is one that will not decode."""
+        return PICTURES.make().isNull()
+
+    @staticmethod
+    def request(_requester: object, _source: object, _index: int, height: int, _ratio: float = 1.0) -> QPixmap:
+        """The picture, at the thumbnail height -- what the loader decodes it to."""
+        return PICTURES.make().scaledToHeight(height, Qt.TransformationMode.SmoothTransformation)
+
+    def retain(self, requester: object, cache_keys: Iterable[str]) -> None:
+        """Nothing is ever pending here."""
+
+
+@fixture(autouse=True)
+def synchronous_loader(mocker: MockerFixture) -> None:
+    """Give every strip in these tests the stand-in loader (:class:`SyncLoader`).
+
+    :param mocker: pytest-mock fixture.
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_strip.ThumbnailLoader", SyncLoader)
+
+
+def serve_pictures(mocker: MockerFixture, make: Callable[[], QPixmap]) -> None:
+    """Have the stand-in loader hand back what ``make`` builds, for the rest of the test.
+
+    :param mocker: pytest-mock fixture, which puts the default back afterwards.
+    :param make: builds one request's picture; a null one stands for a file that will not decode.
+    """
+    mocker.patch.object(PICTURES, "make", make)
 
 
 WHEEL_STEP = 120
@@ -184,7 +241,7 @@ def test_set_images_adds_one_thumbnail_per_loadable_image(mocker: MockerFixture,
     * set two images
     * verify two thumbnails are laid out
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    serve_pictures(mocker, lambda: QPixmap(10, 10))
     strip = ImageStrip()
     qtbot.addWidget(strip)
 
@@ -202,7 +259,7 @@ def test_set_images_skips_unloadable_images(mocker: MockerFixture, qtbot: QtBot)
     * set two images
     * verify no thumbnails are laid out
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap())
+    serve_pictures(mocker, QPixmap)
     strip = ImageStrip()
     qtbot.addWidget(strip)
 
@@ -219,7 +276,7 @@ def test_set_images_replaces_the_previous_thumbnails(mocker: MockerFixture, qtbo
     * seed two images, then re-seed with one
     * verify only the latest thumbnail remains
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    serve_pictures(mocker, lambda: QPixmap(10, 10))
     strip = ImageStrip()
     qtbot.addWidget(strip)
 
@@ -238,7 +295,7 @@ def test_set_hidden_filters_and_paints_the_visible_files(mocker: MockerFixture, 
     * set one of them hidden
     * verify only the other one is painted
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    serve_pictures(mocker, lambda: QPixmap(10, 10))
     strip = ImageStrip()
     qtbot.addWidget(strip)
     strip.image_scanner = fake_scanner(mocker, PATHS)  # type: ignore[assignment]
@@ -257,7 +314,7 @@ def test_assigning_a_new_scanner_rebuilds_keeping_the_hidden_list(mocker: Mocker
     * assign a new scanner reporting a different, smaller file set that doesn't include that filename
     * verify the rebuild shows every one of the new scanner's files (the hidden filename no longer applies)
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    serve_pictures(mocker, lambda: QPixmap(10, 10))
     strip = ImageStrip()
     qtbot.addWidget(strip)
     strip.image_scanner = fake_scanner(mocker, PATHS)  # type: ignore[assignment]
@@ -294,7 +351,7 @@ def test_double_clicking_a_thumbnail_reports_its_screenshot(mocker: MockerFixtur
     * paint two thumbnails, single-click the second and verify nothing was reported
     * double-click it and verify the strip reported the second path, not the first
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    serve_pictures(mocker, lambda: QPixmap(10, 10))
     strip = ImageStrip()
     qtbot.addWidget(strip)
     strip.set_images(PATHS)
@@ -320,7 +377,7 @@ def test_a_rebuilt_thumbnail_still_reports_its_screenshot(mocker: MockerFixture,
     * paint two thumbnails, then re-paint with only the second
     * double-click the surviving thumbnail and verify it still reports its path
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    serve_pictures(mocker, lambda: QPixmap(10, 10))
     strip = ImageStrip()
     qtbot.addWidget(strip)
     strip.set_images(PATHS)
@@ -342,7 +399,7 @@ def test_a_right_click_activates_nothing(mocker: MockerFixture, qtbot: QtBot) ->
     * paint one thumbnail and right-double-click it
     * verify nothing was reported
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    serve_pictures(mocker, lambda: QPixmap(10, 10))
     strip = ImageStrip()
     qtbot.addWidget(strip)
     strip.set_images(PATHS[:1])
@@ -381,7 +438,7 @@ def test_set_images_reports_what_it_painted(mocker: MockerFixture, qtbot: QtBot)
     * connect to ``images_changed`` and set two images
     * verify the reported set is exactly those two
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    serve_pictures(mocker, lambda: QPixmap(10, 10))
     strip = ImageStrip()
     qtbot.addWidget(strip)
     reported: list[list[Path]] = []
@@ -400,7 +457,7 @@ def test_the_reported_set_leaves_out_what_would_not_load(mocker: MockerFixture, 
     * make ``QPixmap`` construction yield a null pixmap and set two images
     * verify the reported set is empty
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap())
+    serve_pictures(mocker, QPixmap)
     strip = ImageStrip()
     qtbot.addWidget(strip)
     reported: list[list[Path]] = []
@@ -419,7 +476,7 @@ def test_set_current_frames_only_that_thumbnail(mocker: MockerFixture, qtbot: Qt
     * paint two thumbnails and mark the second as current
     * verify only it carries the current frame
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    serve_pictures(mocker, lambda: QPixmap(10, 10))
     strip = ImageStrip()
     qtbot.addWidget(strip)
     strip.set_images(PATHS)
@@ -441,7 +498,7 @@ def test_set_current_survives_a_rebuild(mocker: MockerFixture, qtbot: QtBot) -> 
     * mark the second of two screenshots as current, then re-paint the same set
     * verify the freshly-built thumbnail for it is the framed one
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    serve_pictures(mocker, lambda: QPixmap(10, 10))
     strip = ImageStrip()
     qtbot.addWidget(strip)
     strip.set_images(PATHS)
@@ -462,7 +519,7 @@ def test_set_current_leaves_the_row_unmarked_for_a_screenshot_it_does_not_show(
     * paint one thumbnail and mark a different screenshot as current
     * verify the painted thumbnail is left plain
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    serve_pictures(mocker, lambda: QPixmap(10, 10))
     strip = ImageStrip()
     qtbot.addWidget(strip)
     strip.set_images(PATHS[:1])
@@ -482,7 +539,7 @@ def test_a_thumbnail_starts_unframed(mocker: MockerFixture, qtbot: QtBot) -> Non
     * paint one thumbnail without marking anything current
     * verify it is a `ThumbnailLabel` carrying the plain style
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    serve_pictures(mocker, lambda: QPixmap(10, 10))
     strip = ImageStrip()
     qtbot.addWidget(strip)
 
@@ -501,7 +558,7 @@ def test_a_strip_with_nothing_to_show_hides_itself(mocker: MockerFixture, hosted
     * paint a thumbnail, then re-paint with nothing
     * verify the strip showed itself and then hid itself
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    serve_pictures(mocker, lambda: QPixmap(10, 10))
     strip = hosted_strip
 
     strip.set_images(PATHS[:1])
@@ -521,7 +578,7 @@ def test_curating_every_screenshot_away_hides_the_strip(mocker: MockerFixture, h
     * hide both through ``set_hidden``
     * verify the strip is hidden
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    serve_pictures(mocker, lambda: QPixmap(10, 10))
     strip = hosted_strip
     strip.image_scanner = fake_scanner(mocker, PATHS)  # type: ignore[assignment]
     assert not strip.isHidden()
@@ -539,7 +596,7 @@ def test_an_owner_can_hide_a_populated_strip(mocker: MockerFixture, hosted_strip
     * paint two thumbnails, then have the owner ask for the strip hidden and shown again
     * verify the strip followed each time
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    serve_pictures(mocker, lambda: QPixmap(10, 10))
     strip = hosted_strip
     strip.set_images(PATHS)
 
@@ -562,7 +619,7 @@ def test_an_owner_asking_for_a_strip_cannot_show_an_empty_one(mocker: MockerFixt
     * paint one, then take it away again
     * verify it is only ever on screen while it has something on it
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    serve_pictures(mocker, lambda: QPixmap(10, 10))
     strip = hosted_strip
 
     strip.set_requested_visible(True)
@@ -603,9 +660,7 @@ def test_a_thumbnail_fills_the_strip_height_less_its_frame(mocker: MockerFixture
     * paint one thumbnail in a strip of a known height
     * verify its pixmap is that height less the frame on both sides
     """
-    mocker.patch(
-        "rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(WIDE_PIXMAP, WIDE_PIXMAP)
-    )
+    serve_pictures(mocker, lambda: QPixmap(WIDE_PIXMAP, WIDE_PIXMAP))
     strip = ImageStrip(height=100)
     qtbot.addWidget(strip)
 
@@ -628,7 +683,7 @@ def test_a_parentless_strip_never_shows_itself(mocker: MockerFixture, qtbot: QtB
     * seed a strip that has not been given a parent yet
     * verify it never showed itself, and is still a window rather than a child
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    serve_pictures(mocker, lambda: QPixmap(10, 10))
     strip = ImageStrip()
     qtbot.addWidget(strip)
 
@@ -650,7 +705,7 @@ def test_a_strip_applies_the_rule_once_it_is_given_a_parent(mocker: MockerFixtur
     * seed a parentless strip with images, then add it to a shown host's layout
     * verify it comes up with its new parent
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    serve_pictures(mocker, lambda: QPixmap(10, 10))
     strip = ImageStrip()
     strip.set_images(PATHS)
     host = QWidget()
@@ -671,7 +726,7 @@ def test_an_empty_strip_added_to_a_layout_stays_hidden(mocker: MockerFixture, qt
     * seed a parentless strip with nothing, then add it to a shown host's layout
     * verify it is hidden
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    serve_pictures(mocker, lambda: QPixmap(10, 10))
     strip = ImageStrip()
     strip.set_images([])
     host = QWidget()
@@ -692,9 +747,7 @@ def test_set_height_rescales_the_thumbnails(mocker: MockerFixture, hosted_strip:
     * paint a thumbnail, then set a new strip height
     * verify the strip and its thumbnail both took the new size
     """
-    mocker.patch(
-        "rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(WIDE_PIXMAP, WIDE_PIXMAP)
-    )
+    serve_pictures(mocker, lambda: QPixmap(WIDE_PIXMAP, WIDE_PIXMAP))
     hosted_strip.set_images(PATHS[:1])
 
     hosted_strip.set_height(80)
@@ -713,7 +766,7 @@ def test_set_height_to_the_current_height_rebuilds_nothing(mocker: MockerFixture
     * paint a thumbnail, then set the height it already has
     * verify the very same thumbnail widget is still in the row
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    serve_pictures(mocker, lambda: QPixmap(10, 10))
     hosted_strip.set_images(PATHS[:1])
     before = thumbnail_at(hosted_strip, 0)
 
@@ -749,7 +802,7 @@ def test_a_thumbnail_click_is_not_passed_on_to_whatever_is_behind(
     * paint a thumbnail and double-click it
     * verify it reported its own screenshot and no release reached the host behind it
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    serve_pictures(mocker, lambda: QPixmap(10, 10))
     hosted_strip.set_images(PATHS[:1])
     activated: list[Path] = []
     hosted_strip.image_activated.connect(activated.append)
@@ -778,7 +831,7 @@ def test_a_plain_wheel_is_left_to_whatever_scrolls_around_the_strip(
     * fill a default strip past its width and wheel over it
     * verify it did not scroll and left the event unaccepted for the form around it
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(WIDE_PIXMAP, 10))
+    serve_pictures(mocker, lambda: QPixmap(WIDE_PIXMAP, 10))
     hosted_strip.set_images(PATHS * 8)
     scrollbar = hosted_strip.horizontalScrollBar()
     assert scrollbar.maximum() > 0
@@ -800,7 +853,7 @@ def test_a_horizontal_wheel_scrolls_the_row_whoever_hosts_it(mocker: MockerFixtu
     * fill a default strip past its width and send a horizontal wheel over it
     * verify the row scrolled
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(WIDE_PIXMAP, 10))
+    serve_pictures(mocker, lambda: QPixmap(WIDE_PIXMAP, 10))
     hosted_strip.set_images(PATHS * 8)
     scrollbar = hosted_strip.horizontalScrollBar()
 
@@ -826,7 +879,7 @@ def test_the_current_frame_is_even_on_every_side_and_closed_at_its_corners(
     * verify the frame is exactly ``THUMBNAIL_BORDER`` thick on all four sides
     * verify every corner pixel carries it, and the screenshot in the middle is untouched
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: flat_pixmap())
+    serve_pictures(mocker, flat_pixmap)
     hosted_strip.set_height(ODD_STRIP_HEIGHT)
     hosted_strip.set_images(PATHS[:1])
     hosted_strip.set_current(PATHS[0])
@@ -878,9 +931,7 @@ def hosted(strip: ImageStrip, width: int, mocker: MockerFixture, qtbot: QtBot) -
     :returns: the host -- **which the caller must keep**, since pytest-qt tracks it weakly and the
         strip's content goes down with it.
     """
-    mocker.patch(
-        "rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(WIDE_PIXMAP, WIDE_PIXMAP)
-    )
+    serve_pictures(mocker, lambda: QPixmap(WIDE_PIXMAP, WIDE_PIXMAP))
     host = QWidget()
     layout = QVBoxLayout(host)
     layout.setContentsMargins(0, 0, 0, 0)
@@ -900,7 +951,7 @@ def test_a_wrapped_strip_lays_its_thumbnails_out_in_a_flow(mocker: MockerFixture
     * build a wrapped strip and paint two thumbnails
     * verify they sit in a flow layout
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    serve_pictures(mocker, lambda: QPixmap(10, 10))
     strip = ImageStrip(wrap=True)
     qtbot.addWidget(strip)
 
@@ -920,7 +971,7 @@ def test_switching_to_wrapped_keeps_the_screenshots_it_had(mocker: MockerFixture
     * paint two thumbnails on a plain strip, then ask it to wrap and to stop again
     * verify the same screenshots are on it in each layout
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    serve_pictures(mocker, lambda: QPixmap(10, 10))
     hosted_strip.set_images(PATHS)
 
     hosted_strip.set_wrap(True)
@@ -940,7 +991,7 @@ def test_switching_to_the_layout_it_already_has_rebuilds_nothing(
     * paint a thumbnail, then ask for the layout the strip already uses
     * verify the very same thumbnail widget is still in the row
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    serve_pictures(mocker, lambda: QPixmap(10, 10))
     hosted_strip.set_images(PATHS[:1])
     before = thumbnail_at(hosted_strip, 0)
 
@@ -959,7 +1010,7 @@ def test_a_wrapped_thumbnail_still_reports_its_screenshot(
     * paint two thumbnails, wrap the strip, and double-click the second
     * verify it reported its own screenshot
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    serve_pictures(mocker, lambda: QPixmap(10, 10))
     hosted_strip.set_images(PATHS)
     hosted_strip.set_wrap(True)
     activated: list[Path] = []
