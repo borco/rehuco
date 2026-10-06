@@ -95,6 +95,11 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
     """Emitted with a file's :class:`~pathlib.Path` when its associated rehu is asked for: the one that shares its
     name, or a new one if there is none yet."""
 
+    record_selected: Signal = Signal(object)
+    """Emitted with the ``(root_id, relative)`` key of the record the current row stands for -- a record itself, a
+    folder's ``info.rehu``, a file's same-name ``.rehu``, the ``.tc`` of either when that is all there is -- or
+    ``None`` when it has none (#381). Selecting never creates a record. Typed as plain ``object``, as above."""
+
     filter_requested: Signal = Signal(object, str)
     """Emitted with a :class:`~rehuco_core.CatalogField` and a value when the current browser is to be filtered on
     them -- the folder filter (#398); the window hands it to the Browsers dock."""
@@ -359,6 +364,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         self.__roots_model.fetchMore(current)
         self.__preview.show_index(current)
         self.__on_roots_current_changed()
+        self.record_selected.emit(self.__selected_record(current))
 
     def __on_roots_current_changed(self, *_args: object) -> None:
         """Bring the actions in line with the current row, whatever changed it."""
@@ -651,22 +657,56 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         """Whether a folder or file already has its rehu: the folder's ``info.rehu`` or ``info.tc``, the file's
         same-name ``.rehu`` or ``.tc``.
 
+        :param index: the folder or file.
+        :returns: whether there is one to open.
+        """
+        return self.__companion_found(index) is not None
+
+    def __companion_found(self, index: QModelIndex) -> Path | None:
+        """The rehu a folder or file already has: its ``.rehu``, else its legacy ``.tc``.
+
         Answered from the listing when it has one -- a file's neighbours are always listed, a folder's only once it
         has been opened -- and from the disk otherwise.
 
         :param index: the folder or file.
-        :returns: whether there is one to open.
+        :returns: its path, or ``None`` when it has none (or the row is neither a folder nor a file).
         """
         record = self.__companion_record(index)
         if record is None:
-            return False
+            return None
         holder = index if self.__roots_model.node_kind(index) is RootsNodeKind.FOLDER else index.parent()
         candidates = (record, record.with_suffix(".tc"))
         names = self.__roots_model.child_names(holder)
         if names is None:
-            return any(candidate.exists() for candidate in candidates)
-        wanted = {os.path.normcase(candidate.name) for candidate in candidates}
-        return bool(wanted & {os.path.normcase(name) for name in names})
+            return next((candidate for candidate in candidates if candidate.exists()), None)
+        listed = {os.path.normcase(name) for name in names}
+        return next((candidate for candidate in candidates if os.path.normcase(candidate.name) in listed), None)
+
+    def __selected_record(self, index: QModelIndex) -> tuple[UUID, str] | None:
+        """The record a selected row stands for, as the ``(root_id, relative)`` key a resource is named by (#381):
+        what opening the row would open -- a record itself, a folder's ``info.rehu``, a file's same-name ``.rehu``,
+        the ``.tc`` of either when that is all there is.
+
+        **Asking never creates one**: where opening would offer *Create*, there is nothing to show.
+
+        :param index: the row.
+        :returns: the key, or ``None`` for a root, a placeholder, and a row with no record.
+        """
+        model = self.__roots_model
+        key = model.key(index)
+        if key is None:
+            return None
+        root_id, names = key
+        match model.node_kind(index):
+            case RootsNodeKind.FOLDER:
+                found = self.__companion_found(index)
+                return None if found is None else (root_id, "/".join((*names, found.name)))
+            case RootsNodeKind.FILE:
+                if model.file_type_of(index) is FileType.RECORD:
+                    return root_id, "/".join(names)
+                found = self.__companion_found(index)
+                return None if found is None else (root_id, "/".join((*names[:-1], found.name)))
+        return None
 
     def __verify_action(self, index: QModelIndex) -> QAction:
         """The Verify action for a checksum file, on only while the resource it belongs to is there to be checked.

@@ -89,8 +89,8 @@ unlike a dock-set change, which is what that version guards."""
 
 DOCUMENTS_LAYOUT_NAMESPACE: Final = DEFAULT_LAYOUT_GROUP
 """The settings group the Documents dock's per-type default layouts sit under (#62, #320) --
-``default_layout/<type>``. A host keeping its own set of defaults (the Browsers dock, #381) passes
-another namespace, so saving a default there never changes what a document opens into."""
+``default_layout/<type>``. A host keeping its own set of defaults passes another namespace, so saving a default
+there never changes what a document opens into."""
 
 SAVE_ICON_RESOURCE: Final = ":/icons/document_save.svg"
 REVERT_ICON_RESOURCE: Final = ":/icons/document_revert.svg"
@@ -380,8 +380,8 @@ class SubDockHost:
     """What the owner of a dock manager lends a document's `DocumentSubDocks` (#380).
 
     One per manager, and reused across every `DocumentSubDocks` built into it: `DocumentWidget` builds
-    one for its document's whole life, and the Browsers dock (#381) builds a fresh one each time its
-    current resource changes. All of it is the manager's own rather than the document's -- the focus
+    one and keeps it, and a Documents preview (#39) builds a fresh set into it each time it shows another
+    document. All of it is the manager's own rather than the document's -- the focus
     tracker and the maximize toggle are per manager, the banner sits where the host's layout puts it --
     so a teardown leaves every part of it in place for the next document.
     """
@@ -779,8 +779,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
             host.widget.addAction(action)
 
         self.__web_search: Final = WebSearchAction(model, parent=self)
-        # built here and placed by the host: a `DocumentWidget` adds it as its own window's toolbar, the
-        # Browsers dock beside its own (#381)
+        # built here and placed by the host: a `DocumentWidget` adds it as its own window's toolbar
         toolbar = QToolBar(TOOLBAR_TITLE, host.widget)
         # the resource's type badge leads the toolbar (#309): first in add order, not merely first in
         # visual position, so a QToolBar squeezed for room (a restored split layout's narrower pane,
@@ -917,8 +916,8 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
 
     def teardown(self) -> None:
         """Take this document's sub-docks back out of the host and let go of the model, so the same
-        manager can host another document's (#380) -- what the Browsers dock does as its current
-        resource changes (#381).
+        manager can host another document's (#380) -- what a Documents preview does as it shows the next
+        document (#39).
 
         Synchronous where it matters: every connection on the model and on the process-wide settings is
         severed before this returns, so the model -- which may outlive this object, held by a registry

@@ -9,7 +9,7 @@ import logging
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Final, override
+from typing import Final, cast, override
 
 import PySide6QtAds as QtAds
 from borco_core.logging import LogScope
@@ -80,6 +80,8 @@ from .glyphs import TAB_CLOSE_GLYPH
 from .main_window_ui import Ui_MainWindow
 from .recycle_bin_deleter import configured_deleter
 from .rehuco import BrowsersDock, RootCatalog, RootsPanel
+from .rehuco.catalog_table_model import RowKey
+from .rehuco.selection_preview import SelectionPreview
 from .rehuco.table_browser import TableBrowser
 from .resource_events import ResourceEvents
 from .settings.checksum_settings import shared_checksum_settings
@@ -301,9 +303,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # this manager is every nested tracker's stylesheet host, and their sheet zeroes the close
         # icon on *every* tab under it -- its own included -- on the promise that a tracker draws the
         # close glyph in its place. Without a tracker of its own, the outer tabs' [x] was an empty
-        # 4 px hit area (measured on screen, #341). Nothing holds onto it: it parents itself to the
-        # manager it tracks, and no state is read back off it
-        QtAdsFocusTracker(self.__dock_manager, close_glyph=TAB_CLOSE_GLYPH)
+        # 4 px hit area (measured on screen, #341). It parents itself to the manager it tracks; it is kept (#381)
+        # to read which dock is current, since the Browsers dock and the Root Catalog dock may each drive the
+        # preview only while the reader is in them
+        self.__focus_tracker: Final = QtAdsFocusTracker(self.__dock_manager, close_glyph=TAB_CLOSE_GLYPH)
         # the maximize toggle on each outer dock tab (#341): the handler parents itself to
         # the manager, and is kept only so the close-time layout capture can read it un-maximized
         self.__maximize_handler: Final = attach_maximize_handler(self.__dock_manager)
@@ -396,6 +399,11 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # open_archive derives the companion from any file's name, an archive's or not
         self.__roots_panel.open_companion_requested.connect(self.open_archive)
         self.__roots_panel.filter_requested.connect(self.__on_folder_filter_requested)
+        # selecting a resource -- a browser's row, a Roots node with a record -- shows it in the Documents preview
+        # once the selection settles (#381); the catalog resolves its key, in the one place that does
+        self.__selection_preview: Final = SelectionPreview(self.__root_catalog, self.__show_selection_in_preview, self)
+        self.__browsers_dock.resource_selected.connect(self.__on_browser_selection)
+        self.__roots_panel.record_selected.connect(self.__on_roots_selection)
         self.__setup_docking_system()
         self.__ui.file_menu.aboutToShow.connect(lambda: self.__add_open_documents(self.__ui.file_menu))
         self.__ui.browsers_menu.aboutToShow.connect(lambda: self.__add_open_browsers(self.__ui.browsers_menu))
@@ -1907,6 +1915,34 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """
         self.__reveal_documents_dock()
         self.__documents_dock.show_in_preview(Path(path).resolve())
+
+    def __on_browser_selection(self, key: object) -> None:
+        """Hand the Browsers dock's selection to the preview -- only while that dock is the one the reader is in (#381):
+        a selection that moved on its own (a rename, a rescan) while they work elsewhere is not a request.
+
+        :param key: the one selected row's ``(root_id, relative)``, or ``None``.
+        """
+        if self.__focus_tracker.current_dock is self.__browsers_dock_widget:
+            self.__selection_preview.select(cast(RowKey | None, key))
+
+    def __on_roots_selection(self, key: object) -> None:
+        """Hand the Root Catalog dock's selection to the preview, on the same terms as :meth:`__on_browser_selection`.
+
+        :param key: the selected row's record as ``(root_id, relative)``, or ``None``.
+        """
+        if self.__focus_tracker.current_dock is self.__rehuco_dock_widget:
+            self.__selection_preview.select(cast(RowKey | None, key))
+
+    def __show_selection_in_preview(self, path: Path) -> None:
+        """Show a selected resource in the preview (#381). Unlike :meth:`show_in_preview` this does not bring the
+        Documents dock forward: it can be a tab behind the very dock the reader is selecting in, and fronting it
+        would take that dock away mid-selection. Only a Documents dock the reader has closed is opened.
+
+        :param path: the resource's path, as the catalog resolved it.
+        """
+        if self.__documents_dock_widget.isClosed():
+            self.__reveal_documents_dock()
+        self.__documents_dock.show_in_preview(path.resolve())
 
     def __on_preview_promoted(self, path: object) -> None:
         """Record a promoted preview in ``Open recents`` (#39) -- it is a file the reader opened now -- unless

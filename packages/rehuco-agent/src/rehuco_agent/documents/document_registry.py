@@ -18,12 +18,12 @@ LOG: Final = logging.getLogger(__name__)
 class DocumentRegistry(QObject):
     """Owns every open :class:`RehuDocumentModel`, one per path, and hands the same one to every holder.
 
-    A resource shown in two places -- a Documents dock and, later, the Root Catalog's current resource
-    (#381) -- is **one** view-model, so an unsaved edit in either shows in the other ([[plugins#view-model]],
-    #375). Each :meth:`acquire` is a hold and each :meth:`release` drops one; the model is parented here
-    and freed when its last holder lets go, so no holder's Qt parent decides when a document dies. The
-    unsaved-changes question belongs to that last release (:meth:`release_discards_edits`): closing one of
-    several views of a dirty document loses nothing.
+    A resource shown in two places -- a Documents dock and the Documents preview (#39, #381), say -- is **one**
+    view-model, so an unsaved edit in either shows in the other ([[plugins#view-model]], #375). Each
+    :meth:`acquire` is a hold and each :meth:`release` drops one; the model is parented here and freed when its
+    last holder lets go, so no holder's Qt parent decides when a document dies. The unsaved-changes question
+    belongs to that last release (:meth:`release_discards_edits`): closing one of several views of a dirty
+    document loses nothing.
 
     Keys follow the model: a :meth:`~RehuDocumentModel.convert` or a completed rename moves the model's
     entry to its new path, so a later :meth:`find` of the new path reaches the same model.

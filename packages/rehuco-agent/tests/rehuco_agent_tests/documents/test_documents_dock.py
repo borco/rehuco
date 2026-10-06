@@ -3223,4 +3223,95 @@ def test_an_applied_default_becomes_the_preview_layout(mocker: MockerFixture, qt
     assert on_disk_shown(widget)
 
 
+def test_showing_what_the_preview_shows_does_not_take_the_focus(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A selection resting on the resource the preview shows is nothing: the document the reader is in keeps the
+    focus (#381).
+
+    **Test steps:**
+
+    * open one document and show another in the preview, then focus the first
+    * show the preview's own document again
+    * verify the first is still the focused one
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    opened = dock.open_document(FAKE_PATH)
+    preview = dock.show_in_preview(OTHER_PATH)
+    dock.focus_document(opened)
+
+    assert dock.show_in_preview(OTHER_PATH) is preview
+
+    assert dock.focused_document_widget() is opened
+
+
+def test_the_resource_the_preview_shows_renamed_is_still_the_one_it_shows(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A rename moves the document under the preview, and the selection that follows it names the new path: the
+    preview keeps showing it, and no second one is made (#381).
+
+    **Test steps:**
+
+    * show a document in the preview and move its model, as a rename does
+    * show the new path
+    * verify the same widget and model, and still the one dock
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.show_in_preview(FAKE_PATH)
+    model = widget.model
+    model.path = THIRD_PATH
+
+    assert dock.show_in_preview(THIRD_PATH) is widget
+
+    assert widget.model is model
+    assert dock.open_document_widgets() == [widget]
+
+
+def test_opening_what_the_preview_shows_promotes_it_instead_of_opening_it_twice(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """A double-click opens a normal document, and the preview showing that one is **kept** as it: no second dock,
+    and nothing announced -- the window records the open itself (#381).
+
+    **Test steps:**
+
+    * show a document in the preview and open the same path
+    * verify the preview's own widget came back, it is no longer the preview, nothing was announced, and the next
+      show makes a new preview
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    previewed = dock.show_in_preview(FAKE_PATH)
+    spy = QSignalSpy(dock.preview_promoted)
+
+    assert dock.open_document(FAKE_PATH) is previewed
+
+    assert dock.preview_document_widget() is None
+    assert dock.open_document_widgets() == [previewed]
+    assert spy.count() == 0
+    assert dock.show_in_preview(OTHER_PATH) is not previewed
+
+
+def test_opening_the_new_document_a_missing_preview_stood_for_promotes_it_too(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """The folder open that would start a new document finds the preview already standing on that path, and keeps it.
+
+    **Test steps:**
+
+    * show a path that does not exist in the preview, then open its folder
+    * verify the preview's own widget came back and it was promoted
+    """
+    mocker.patch.object(Path, "read_text", side_effect=FileNotFoundError)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    previewed = dock.show_in_preview(FAKE_PATH)
+
+    assert dock.open_folder(FAKE_PATH.parent) is previewed
+
+    assert dock.preview_document_widget() is None
+
+
 # endregion

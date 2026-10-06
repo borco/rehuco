@@ -169,7 +169,7 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         :returns: the document's widget. A file that cannot be read opens as an empty **locked** dock
             standing in for it ([[data-model#write-integrity]]).
         """
-        return self.__activate(self.__find_dock(path) or self.__make_new_dock(path, state=state))
+        return self.__activate(self.__find_dock_to_open(path) or self.__make_new_dock(path, state=state))
 
     def open_folder(self, folder: Path) -> DocumentWidget:
         """Open the directory-scoped resource in ``folder`` ([[data-model#resource-scoping]]).
@@ -220,14 +220,14 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         tc_path = info_path.with_suffix(".tc")
         if tc_path.exists():
             return self.open_document(tc_path)
-        return self.__activate(self.__find_dock(info_path) or self.__make_new_dock(info_path, new=True))
+        return self.__activate(self.__find_dock_to_open(info_path) or self.__make_new_dock(info_path, new=True))
 
     def show_in_preview(self, path: Path) -> DocumentWidget:
         """Show ``path`` in the preview dock (#39), the way an editor's file explorer opens a file in a preview
         tab.
 
-        - A document already shown here -- in an ordinary dock, or by the preview itself -- is focused, and the
-          preview is left as it is.
+        - A document already shown in an ordinary dock is focused, and the preview is left as it is. One the preview
+          already shows is nothing at all: not even focused, since that is a selection moving over what it shows.
         - Otherwise the preview shows it **in place**: the same dock, the old document's sub-docks torn down
           and the new one's built, the old model released (:meth:`DocumentDock.show_model`). The preview's
           layout for the type it leaves is remembered first, and the new document opens with its own type's.
@@ -240,9 +240,11 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         :returns: the document's widget.
         """
         dock = self.__find_dock(path)
+        preview = self.__preview
+        if dock is not None and dock is preview:
+            return self.__document_docks[dock]
         if dock is not None:
             return self.__activate(dock)
-        preview = self.__preview
         if preview is not None and preview.document_widget.model.dirty:
             self.__promote(preview)
             preview = None
@@ -593,15 +595,30 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
             self.document_focus_changed.emit(widget)
         return widget
 
-    def __promote(self, preview: DocumentDock) -> None:
+    def __promote(self, preview: DocumentDock, *, announce: bool = True) -> None:
         """Make ``preview`` an ordinary document dock (#39), remembering the layout it leaves first.
 
         :param preview: the area's preview dock.
+        :param announce: say so (:attr:`preview_promoted`). An open that promotes it does not: the window records
+            that open in ``Open recents`` itself, under the path it was asked for.
         """
         self.__capture_preview_layout()
         preview.promote()
         self.__preview = None
-        self.preview_promoted.emit(preview.document_widget.model.path)
+        if announce:
+            self.preview_promoted.emit(preview.document_widget.model.path)
+
+    def __find_dock_to_open(self, path: Path) -> QtAds.CDockWidget | None:
+        """:meth:`__find_dock` for an ordinary open (#381): a document the preview shows is **kept**, not opened a
+        second time -- the preview is promoted, and its dock is the one to focus.
+
+        :param path: absolute filesystem path to look for.
+        :returns: the matching dock, if any.
+        """
+        dock = self.__find_dock(path)
+        if isinstance(dock, DocumentDock) and dock is self.__preview:
+            self.__promote(dock, announce=False)
+        return dock
 
     def __on_promotion_requested(self) -> None:
         """Promote the preview whose title was double-clicked (#39), resolved via ``sender()`` the way
