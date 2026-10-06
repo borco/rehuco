@@ -21,19 +21,27 @@ from typing import Any, Final
 import PySide6QtAds as QtAds
 from borco_pyside.logging import LogEntry
 from borco_pyside.qtads import tab_label
+from PySide6.QtCore import QObject
 from PySide6.QtTest import QSignalSpy
 from PySide6.QtWidgets import QDialog, QMessageBox, QWidget
-from pytest import fixture
+from pytest import LogCaptureFixture, fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.app_logging import shared_log_bridge
 from rehuco_agent.documents import document_registry
-from rehuco_agent.documents.document_dock import DIRTY_DOCK_MARKER, LOCKED_DOCK_MARKER
+from rehuco_agent.documents.document_dock import DIRTY_DOCK_MARKER, LOCKED_DOCK_MARKER, DocumentDock
 from rehuco_agent.documents.document_registry import DocumentRegistry
+from rehuco_agent.documents.document_widget import DocumentWidget
 from rehuco_agent.documents.documents_dock import DocumentsDock
-from rehuco_agent.settings.default_layout_settings import shared_default_layout_settings
+from rehuco_agent.settings.default_layout_settings import (
+    PREVIEW_LAYOUT_GROUP,
+    DefaultLayoutSettings,
+    shared_default_layout_settings,
+    shared_default_layout_settings_in,
+)
 from rehuco_agent.settings.document_session_settings import DocumentSessionSettings
 from rehuco_agent.settings.identity_settings import IdentitySettings
+from rehuco_agent.settings.image_viewer_settings import shared_image_viewer_settings
 from rehuco_core import (
     CURRENT_FORMAT_VERSION,
     REFERENCE_IMAGES_PLUGIN,
@@ -43,6 +51,8 @@ from rehuco_core import (
     RenameCoordinator,
     TaskQueue,
 )
+
+from rehuco_agent_tests.qt_connections import flush_deferred_deletes, receivers
 
 FAKE_PATH: Final = Path.cwd() / "fake" / "tutorials" / "sculpting" / "info.rehu"
 """``open_document`` asserts an absolute path; built from ``Path.cwd()`` so it's absolute on every
@@ -1327,23 +1337,26 @@ def test_focus_document_works_for_a_document_with_no_path(mocker: MockerFixture,
     assert dock.focused_document_path() is None
 
 
-def test_double_clicking_a_tab_label_does_not_raise(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """Double-clicking a document's tab label doesn't raise -- wired to a placeholder for now,
-    pending the future preview-tab-mode feature the double-click is meant to drive.
+def test_double_clicking_an_ordinary_docks_title_does_nothing(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Only a preview's title promotes on a double-click (#39); an ordinary dock's stays as it was.
 
     **Test steps:**
 
-    * open the fake path
-    * emit its tab label's `doubleClicked` signal
-    * verify nothing raises
+    * open the fake path, spying on ``preview_promoted``
+    * emit its tab label's ``doubleClicked`` signal
+    * verify nothing was promoted and the dock keeps its path as its name
     """
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
     widget = dock.open_document(FAKE_PATH)
     cdock = dock_for(dock, widget)
+    spy = QSignalSpy(dock.preview_promoted)
 
     tab_label(cdock).doubleClicked.emit()
+
+    assert spy.count() == 0
+    assert cdock.objectName() == str(FAKE_PATH)
 
 
 def test_opening_an_invalid_rehu_opens_an_empty_locked_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -2750,6 +2763,598 @@ def test_a_document_tab_carries_a_maximize_button_and_a_capture_reads_it_undone(
     assert dock.save_state() == unmaximized
     assert manager.openedDockAreas() == [first_area]
     assert button.isChecked()
+
+
+# endregion
+
+
+# region the preview dock (#39)
+
+
+REFERENCE_PACK: Final = {
+    "format_version": 1,
+    "type": "ReferenceImages",
+    "sources": [{"title": "Pack", "primary": True}],
+}
+CARVING_PATH: Final = Path.cwd() / "fake" / "tutorials" / "carving" / "info.rehu"
+
+
+def load_documents(mocker: MockerFixture, documents: dict[Path, dict[str, Any]]) -> None:
+    """Mock the filesystem so each path in ``documents`` reads as its own document, and any other as
+    :data:`TUTORIAL`.
+
+    :param mocker: pytest-mock fixture.
+    :param documents: the document JSON to serve per path.
+    """
+
+    def read_text(path: Path, *_args: object, **_kwargs: object) -> str:
+        return json.dumps(documents.get(path, TUTORIAL))
+
+    mocker.patch.object(Path, "read_text", autospec=True, side_effect=read_text)
+
+
+def preview_of(dock: DocumentsDock) -> DocumentDock:
+    """The area's preview dock, which it keeps private by design (only its widget is public).
+
+    :param dock: the documents dock.
+    :returns: its preview dock.
+    """
+    preview = dock._DocumentsDock__preview  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert isinstance(preview, DocumentDock)
+    return preview
+
+
+def on_disk_shown(widget: DocumentWidget) -> bool:
+    """Whether ``widget``'s On Disk dock is shown -- hidden as built, so a layout that shows it is told apart.
+
+    :param widget: the document widget.
+    :returns: its On Disk dock's visibility toggle.
+    """
+    on_disk = widget.sub_docks._DocumentSubDocks__on_disk_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    return bool(on_disk.toggleViewAction().isChecked())
+
+
+def show_on_disk(widget: DocumentWidget) -> None:
+    """Show ``widget``'s On Disk dock, changing its layout from the as-built one.
+
+    :param widget: the document widget.
+    """
+    widget.sub_docks._DocumentSubDocks__on_disk_dock.toggleView(True)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+
+def test_showing_documents_in_turn_loads_each_into_the_same_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The preview switches in place (#381): one dock, one widget and one model throughout, the model loading each
+    document in turn into the widgets already built -- and held under the path it shows now, so the documents it
+    moved on from are held by nothing.
+
+    **Test steps:**
+
+    * show three documents in turn in the preview
+    * verify one dock, widget and model throughout, showing the last document, named ``Preview-1``
+    * verify the registry holds that model under the last path alone
+    """
+    load_document(mocker)
+    registry = DocumentRegistry()
+    dock = DocumentsDock(registry=registry)
+    qtbot.addWidget(dock)
+
+    first = dock.show_in_preview(FAKE_PATH)
+    model = first.model
+    second = dock.show_in_preview(OTHER_PATH)
+    third = dock.show_in_preview(THIRD_PATH)
+
+    assert first is second is third
+    assert third.model is model
+    assert dock.open_document_widgets() == [third]
+    assert model.path == THIRD_PATH
+    assert preview_of(dock).objectName() == "Preview-1"
+    assert registry.find(THIRD_PATH) is model
+    assert registry.find(FAKE_PATH) is None
+    assert registry.find(OTHER_PATH) is None
+    assert registry.models() == [model]
+
+
+def test_a_switch_is_not_reported_as_a_move(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The preview's model takes another path as it loads the next record, but nothing was renamed: no move is
+    reported, so ``Open recents`` is left alone (#381).
+
+    **Test steps:**
+
+    * show a document in the preview, spying on ``document_path_changed``
+    * show another
+    * verify nothing was reported
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    dock.show_in_preview(FAKE_PATH)
+    spy = QSignalSpy(dock.document_path_changed)
+
+    dock.show_in_preview(OTHER_PATH)
+
+    assert spy.count() == 0
+
+
+def test_switching_documents_accumulates_nothing(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Across many switches nothing piles up: the documents it left have no connection left from it, and
+    its managers, its widget's children, the log bridge and the image-viewer settings carry no more than
+    for one document.
+
+    **Test steps:**
+
+    * hold each of three documents elsewhere too, so their models outlive the preview's hold, and count
+      their receivers
+    * show the first, and count the area's docks, the widget's children and the shared listeners
+    * cycle through all three twice, ending on the first again
+    * verify the other two models' receivers are back to their counts, and every other count is unchanged
+    """
+    load_document(mocker)
+    registry = DocumentRegistry()
+    dock = DocumentsDock(registry=registry)
+    qtbot.addWidget(dock)
+    paths = (FAKE_PATH, OTHER_PATH, THIRD_PATH)
+    models = [registry.acquire(path) for path in paths]
+    held = [receivers(model) for model in models]
+    image_settings = shared_image_viewer_settings()
+
+    def counts(widget: DocumentWidget) -> tuple[object, ...]:
+        flush_deferred_deletes()
+        return (
+            [len(manager.dockWidgetsMap()) for manager in managers_of(dock)],
+            len(widget.findChildren(QObject)),
+            len(shared_log_bridge()._LogBridge__scoped_sinks),  # type: ignore[attr-defined]  # pylint: disable=protected-access
+            receivers(image_settings),
+        )
+
+    widget = dock.show_in_preview(FAKE_PATH)
+    before = counts(widget)
+    for path in (*paths[1:], *paths, FAKE_PATH):
+        dock.show_in_preview(path)
+
+    assert counts(widget) == before
+    assert before[2] == 1
+    assert [receivers(model) for model in models[1:]] == held[1:]
+
+
+def test_showing_an_open_document_focuses_it_and_leaves_the_preview(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A document open in an ordinary dock is focused there, and the preview keeps what it shows; asked to
+    show what it already shows, the preview does nothing.
+
+    **Test steps:**
+
+    * open one document, then show another in the preview
+    * show the first: verify its own dock is returned and current, and the preview still shows the second
+    * show the second again: verify the same widget and model
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    opened = dock.open_document(FAKE_PATH)
+    preview = dock.show_in_preview(OTHER_PATH)
+    model = preview.model
+
+    assert dock.show_in_preview(FAKE_PATH) is opened
+    assert dock.focused_document_widget() is opened
+    assert preview.model is model
+
+    assert dock.show_in_preview(OTHER_PATH) is preview
+    assert preview.model is model
+    assert len(dock.open_document_widgets()) == 2
+
+
+def test_a_switch_of_the_current_preview_tells_the_window(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The preview stays the current dock through a switch, so the tracker says nothing -- the window still
+    hears that its focused document changed, for its title.
+
+    **Test steps:**
+
+    * show one document in the preview, then spy on ``document_focus_changed``
+    * show another
+    * verify the preview's widget was announced
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.show_in_preview(FAKE_PATH)
+    spy = QSignalSpy(dock.document_focus_changed)
+
+    dock.show_in_preview(OTHER_PATH)
+
+    assert spy.count() == 1
+    assert spy.at(0)[0] is widget
+
+
+def test_a_preview_is_marked_in_italic_and_named_apart(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The preview's title is in italic, and its name is not its path, which it does not follow.
+
+    **Test steps:**
+
+    * show a document in the preview
+    * verify an italic title naming the document, and the name ``Preview-1``
+    * move the document: verify the name is kept
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.show_in_preview(FAKE_PATH)
+    preview = preview_of(dock)
+
+    assert tab_label(preview).font().italic()
+    assert preview.windowTitle() == FAKE_LABEL
+    assert preview.objectName() == "Preview-1"
+
+    widget.model.path = THIRD_PATH
+
+    assert preview.objectName() == "Preview-1"
+
+
+def test_double_clicking_the_preview_title_promotes_it(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A double-click on its title makes the preview an ordinary dock in place, and the next document shown
+    gets a new preview of its own.
+
+    **Test steps:**
+
+    * show a document in the preview, spying on ``preview_promoted``
+    * double-click the preview's title
+    * verify the promotion was announced with its path, and the dock is named by it, no longer in italic
+    * show another document: verify a second dock, named ``Preview-2``
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.show_in_preview(FAKE_PATH)
+    promoted = preview_of(dock)
+    spy = QSignalSpy(dock.preview_promoted)
+
+    tab_label(promoted).doubleClicked.emit()
+
+    assert spy.count() == 1
+    assert spy.at(0)[0] == FAKE_PATH
+    assert not promoted.is_preview
+    assert promoted.objectName() == str(FAKE_PATH)
+    assert not tab_label(promoted).font().italic()
+    assert dock.preview_document_widget() is None
+
+    other = dock.show_in_preview(OTHER_PATH)
+
+    assert other is not widget
+    assert widget.model.path == FAKE_PATH
+    assert preview_of(dock).objectName() == "Preview-2"
+
+
+def test_a_dirty_preview_is_promoted_rather_than_replaced(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Asked for another document while it has unsaved changes, the preview keeps them as an ordinary dock,
+    without asking, and the other document goes to a new preview.
+
+    **Test steps:**
+
+    * show a document in the preview and edit it
+    * show another
+    * verify no question was asked, the edited document is still shown and dirty, and the other has a new
+      preview
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    edited = dock.show_in_preview(FAKE_PATH)
+    edited.model.title = "Changed"
+    warning = mocker.patch.object(QMessageBox, "warning")
+    spy = QSignalSpy(dock.preview_promoted)
+
+    other = dock.show_in_preview(OTHER_PATH)
+
+    warning.assert_not_called()
+    assert spy.count() == 1
+    assert other is not edited
+    assert edited.model.path == FAKE_PATH
+    assert edited.model.dirty
+    assert dock.preview_document_widget() is other
+
+
+def test_a_preview_edited_then_saved_is_replaced(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """An edit alone does not promote, and neither does one that was then saved: a clean preview is
+    replaced by the next document.
+
+    **Test steps:**
+
+    * show a document in the preview, edit it, then clear the dirty flag as a save does
+    * show another
+    * verify one dock, now showing the other, and nothing promoted
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.show_in_preview(FAKE_PATH)
+    widget.model.title = "Changed"
+    widget.model.dirty = False
+    spy = QSignalSpy(dock.preview_promoted)
+
+    assert dock.show_in_preview(OTHER_PATH) is widget
+
+    assert spy.count() == 0
+    assert widget.model.path == OTHER_PATH
+
+
+def test_a_promoted_preview_closes_as_any_dock_does(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A promoted preview is an ordinary dock: closing it dirty asks, and it leaves its manager under the
+    name it was added with.
+
+    **Test steps:**
+
+    * show a document in the preview, promote it and edit it
+    * close it, answering Discard
+    * verify the question was asked, the dock is gone, and the manager holds no ``Preview-1`` entry
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.show_in_preview(FAKE_PATH)
+    promoted = preview_of(dock)
+    tab_label(promoted).doubleClicked.emit()
+    widget.model.title = "Changed"
+    warning = mocker.patch.object(QMessageBox, "warning", return_value=QMessageBox.StandardButton.Discard)
+
+    promoted.requestCloseDockWidget()
+
+    warning.assert_called_once()
+    assert not dock.open_document_widgets()
+    assert "Preview-1" not in managers_of(dock)[0].dockWidgetsMap()
+
+
+def test_closing_the_preview_lets_the_next_show_make_another(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A closed preview is gone: the next document shown gets a new one.
+
+    **Test steps:**
+
+    * show a document in the preview and close it
+    * verify there is no preview, then show another and verify it is ``Preview-2``
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    dock.show_in_preview(FAKE_PATH)
+
+    preview_of(dock).requestCloseDockWidget()
+
+    assert dock.preview_document_widget() is None
+    dock.show_in_preview(OTHER_PATH)
+    assert preview_of(dock).objectName() == "Preview-2"
+
+
+def test_the_preview_remembers_each_types_layout(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Each type's preview opens as the preview last left that type, whatever was shown in between.
+
+    **Test steps:**
+
+    * show a tutorial in the preview and show its On Disk dock
+    * show a reference pack: verify its On Disk dock is hidden, as built
+    * show another tutorial: verify its On Disk dock is shown
+    """
+    load_documents(mocker, {OTHER_PATH: REFERENCE_PACK})
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.show_in_preview(FAKE_PATH)
+    show_on_disk(widget)
+
+    dock.show_in_preview(OTHER_PATH)
+    assert not on_disk_shown(widget)
+
+    dock.show_in_preview(THIRD_PATH)
+    assert on_disk_shown(widget)
+    assert set(shared_default_layout_settings_in(PREVIEW_LAYOUT_GROUP).states) == {
+        TUTORIAL_PLUGIN.key,
+        REFERENCE_IMAGES_PLUGIN.key,
+    }
+
+
+def test_a_type_with_no_preview_layout_opens_with_its_default(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A type the preview has never shown opens with the type's default layout.
+
+    **Test steps:**
+
+    * open a tutorial, show its On Disk dock and save that as the tutorial default
+    * show another tutorial in the preview
+    * verify its On Disk dock is shown
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    opened = dock.open_document(THIRD_PATH)
+    show_on_disk(opened)
+    shared_default_layout_settings().states[TUTORIAL_PLUGIN.key] = opened.save_layout_state()  # pylint: disable=unsupported-assignment-operation
+
+    assert on_disk_shown(dock.show_in_preview(FAKE_PATH))
+
+
+def test_the_preview_layouts_outlive_the_run(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The preview layouts are written at exit, and a later run's preview opens with them.
+
+    **Test steps:**
+
+    * show a tutorial in the preview, show its On Disk dock, and save the preview layouts
+    * verify the tutorial's is written under ``preview_layout``
+    * forget every loaded layout, build a new area and show another tutorial: verify its On Disk dock is shown
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    show_on_disk(dock.show_in_preview(FAKE_PATH))
+    save = mocker.spy(DefaultLayoutSettings, "save")
+
+    dock.save_preview_layouts()
+
+    _, settings = save.call_args.args
+    written = DefaultLayoutSettings(group=PREVIEW_LAYOUT_GROUP)
+    written.load(settings)
+    assert set(written.states) == {TUTORIAL_PLUGIN.key}
+
+    shared_default_layout_settings_in.cache_clear()
+    later = DocumentsDock()
+    qtbot.addWidget(later)
+    assert on_disk_shown(later.show_in_preview(OTHER_PATH))
+
+
+def test_the_layout_button_in_a_preview_saves_the_default_layout(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The Layout button acts on the type's default layout in a preview too, never on its preview layout.
+
+    **Test steps:**
+
+    * show a tutorial in the preview, show its On Disk dock, and save that as the default from the button
+    * verify the tutorial default is saved, and no preview layout
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.show_in_preview(FAKE_PATH)
+    show_on_disk(widget)
+
+    widget.sub_docks._DocumentSubDocks__save_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    assert set(shared_default_layout_settings().states) == {TUTORIAL_PLUGIN.key}
+    assert not shared_default_layout_settings_in(PREVIEW_LAYOUT_GROUP).states
+
+
+def test_an_applied_default_becomes_the_preview_layout(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Applying the default rearranges the preview, and that arrangement is remembered as the type's preview
+    layout like any other.
+
+    **Test steps:**
+
+    * show a tutorial in the preview, then save a default showing On Disk from an ordinary dock
+    * apply the default in the preview, then drop the default again
+    * show a reference pack, then another tutorial: verify its On Disk dock is shown
+    """
+    load_documents(mocker, {OTHER_PATH: REFERENCE_PACK})
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.show_in_preview(FAKE_PATH)
+    opened = dock.open_document(CARVING_PATH)
+    show_on_disk(opened)
+    defaults = shared_default_layout_settings()
+    defaults.states[TUTORIAL_PLUGIN.key] = opened.save_layout_state()  # pylint: disable=unsupported-assignment-operation
+
+    widget.sub_docks.apply_default_layout()
+    defaults.states.clear()
+
+    dock.show_in_preview(OTHER_PATH)
+    dock.show_in_preview(THIRD_PATH)
+    assert on_disk_shown(widget)
+
+
+def test_a_preview_logs_how_long_it_held_the_window(
+    mocker: MockerFixture, qtbot: QtBot, caplog: LogCaptureFixture
+) -> None:
+    """Each preview logs, at debug level, how long the GUI thread was held -- per phase for a switch in place, so
+    a slow one says where its time went (#381).
+
+    **Test steps:**
+
+    * show one document in the preview, then another
+    * verify a line for the new preview, then one naming the load, layout and total of the switch
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    caplog.set_level(logging.DEBUG, logger="rehuco_agent.documents.documents_dock")
+
+    dock.show_in_preview(FAKE_PATH)
+    dock.show_in_preview(OTHER_PATH)
+
+    lines = [record.getMessage() for record in caplog.records if "review of" in record.getMessage()]
+    assert lines[0].startswith(f"New preview of {FAKE_PATH}: total ")
+    assert lines[1].startswith(f"Preview of {OTHER_PATH}: load ")
+    assert all(phase in lines[1] for phase in ("layout ", "total "))
+
+
+def test_showing_what_the_preview_shows_does_not_take_the_focus(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A selection resting on the resource the preview shows is nothing: the document the reader is in keeps the
+    focus (#381).
+
+    **Test steps:**
+
+    * open one document and show another in the preview, then focus the first
+    * show the preview's own document again
+    * verify the first is still the focused one
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    opened = dock.open_document(FAKE_PATH)
+    preview = dock.show_in_preview(OTHER_PATH)
+    dock.focus_document(opened)
+
+    assert dock.show_in_preview(OTHER_PATH) is preview
+
+    assert dock.focused_document_widget() is opened
+
+
+def test_the_resource_the_preview_shows_renamed_is_still_the_one_it_shows(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A rename moves the document under the preview, and the selection that follows it names the new path: the
+    preview keeps showing it, and no second one is made (#381).
+
+    **Test steps:**
+
+    * show a document in the preview and move its model, as a rename does
+    * show the new path
+    * verify the same widget and model, and still the one dock
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.show_in_preview(FAKE_PATH)
+    model = widget.model
+    model.path = THIRD_PATH
+
+    assert dock.show_in_preview(THIRD_PATH) is widget
+
+    assert widget.model is model
+    assert dock.open_document_widgets() == [widget]
+
+
+def test_opening_what_the_preview_shows_promotes_it_instead_of_opening_it_twice(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """A double-click opens a normal document, and the preview showing that one is **kept** as it: no second dock,
+    and nothing announced -- the window records the open itself (#381).
+
+    **Test steps:**
+
+    * show a document in the preview and open the same path
+    * verify the preview's own widget came back, it is no longer the preview, nothing was announced, and the next
+      show makes a new preview
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    previewed = dock.show_in_preview(FAKE_PATH)
+    spy = QSignalSpy(dock.preview_promoted)
+
+    assert dock.open_document(FAKE_PATH) is previewed
+
+    assert dock.preview_document_widget() is None
+    assert dock.open_document_widgets() == [previewed]
+    assert spy.count() == 0
+    assert dock.show_in_preview(OTHER_PATH) is not previewed
+
+
+def test_opening_the_new_document_a_missing_preview_stood_for_promotes_it_too(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """The folder open that would start a new document finds the preview already standing on that path, and keeps it.
+
+    **Test steps:**
+
+    * show a path that does not exist in the preview, then open its folder
+    * verify the preview's own widget came back and it was promoted
+    """
+    mocker.patch.object(Path, "read_text", side_effect=FileNotFoundError)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    previewed = dock.show_in_preview(FAKE_PATH)
+
+    assert dock.open_folder(FAKE_PATH.parent) is previewed
+
+    assert dock.preview_document_widget() is None
 
 
 # endregion

@@ -59,6 +59,12 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
     """Emitted with a resource's absolute :class:`~pathlib.Path` when its row is double-clicked. Typed as
     plain ``object`` for the reason ``DocumentsDock.open_requested`` is."""
 
+    resource_selected: Signal = Signal(object)
+    """Emitted with the ``(root_id, relative)`` key of the **current** browser's one selected row, or ``None`` when
+    its selection is not one row (#381) -- the browser's own :attr:`TableBrowser.current_changed`, passed on while
+    that browser is the current one. A browser behind another is not being read, so what happens to its rows (a
+    rename, a rescan) says nothing about what the reader is looking at. Typed as plain ``object``, as above."""
+
     def __init__(
         self,
         catalog: RootCatalog,
@@ -139,8 +145,8 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
     @property
     def current_browser(self) -> TableBrowser | None:
-        """The browser whose sub-dock is the focus tracker's current one, or ``None`` while none is. The resource
-        the current-resource sub-docks show is this browser's selection (#381)."""
+        """The browser whose sub-dock is the focus tracker's current one, or ``None`` while none is. The preview
+        shows this browser's selection (:attr:`resource_selected`, #381)."""
         current = self.__focus_tracker.current_dock
         return None if current is None else self.__browsers.get(current)
 
@@ -359,8 +365,18 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__place(dock, beside)
         browser.row_activated.connect(self.open_requested)
         browser.query_changed.connect(lambda: self.__fill(browser))
+        browser.current_changed.connect(lambda key: self.__on_current_changed(browser, key))
         dock.closeRequested.connect(lambda: self.__close_browser(dock))
         return dock
+
+    def __on_current_changed(self, browser: TableBrowser, key: object) -> None:
+        """Pass a browser's selection on as :attr:`resource_selected`, when it is the current browser's (#381).
+
+        :param browser: the browser whose selection changed.
+        :param key: its one selected row's ``(root_id, relative)``, or ``None``.
+        """
+        if browser is self.current_browser:
+            self.resource_selected.emit(key)
 
     def __place(self, dock: QtAds.CDockWidget, beside: QtAds.CDockWidget | None = None) -> None:
         """Add a browser's sub-dock to the manager: into the tab strip of ``beside``, else of the first browser that

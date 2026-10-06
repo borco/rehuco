@@ -3,7 +3,6 @@
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Qt, Signal, SignalInstance
-from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QTreeView, QVBoxLayout, QWidget
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -14,6 +13,7 @@ from rehuco_agent.fields.widgets.image_selector import CHECK_COLUMN, ScreenshotL
 from rehuco_agent.fields.widgets.image_strip import ThumbnailLabel
 
 from rehuco_agent_tests.fields.field_testers import ImagesFieldTester as ImagesField
+from rehuco_agent_tests.screenshot_pictures import decodable_screenshots
 
 PATHS = [Path("/fake/info00.jpg"), Path("/fake/info01.png"), Path("/fake/info02.gif")]
 OTHER_PATHS = [Path("/fake/info00.jpg")]
@@ -234,7 +234,7 @@ def test_viewer_reports_the_curated_set_as_it_is_seeded(
     * connect to the field's ``curated_images_changed``, then build the viewer
     * verify the whole screenshot set was reported
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    decodable_screenshots(mocker)
     field = make_field(mocker)
     reported: list[list[Path]] = []
     field.curated_images_changed.connect(reported.append)
@@ -256,7 +256,7 @@ def test_viewer_reports_the_curated_set_again_after_a_curation_edit(
     * build the viewer, then hide the middle screenshot through the model binding
     * verify the field reported the set without it
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    decodable_screenshots(mocker)
     field = make_field(mocker)
     viewer = field.make_viewer(model.bind(field)).viewer
     assert isinstance(viewer, ImageStrip)
@@ -279,7 +279,7 @@ def test_viewer_seeds_the_strip_hidden_when_previews_start_hidden(
     * build the viewer with ``previews_visible=False``, hosted so the show/hide rule applies
     * verify the strip stays hidden despite having thumbnails
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    decodable_screenshots(mocker)
     field = ImagesField(
         "hidden_images",
         image_scanner=fake_scanner(mocker, PATHS),  # type: ignore[arg-type]
@@ -307,7 +307,7 @@ def test_viewer_follows_the_previews_visible_toggle_live(
     * fire the emitter hidden, then shown again
     * verify the strip followed each time
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    decodable_screenshots(mocker)
     emitter = Emitter()
     field = ImagesField(
         "hidden_images",
@@ -387,7 +387,7 @@ def test_the_viewer_strip_is_unaffected_by_a_lock(
     * build the viewer over a locked field
     * verify it is enabled and painting thumbnails
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    decodable_screenshots(mocker)
     field = make_field(mocker)
     field.set_locked(True)
 
@@ -398,3 +398,52 @@ def test_the_viewer_strip_is_unaffected_by_a_lock(
     assert viewer.isEnabled() is True
     # not an exact count: a strip rebuild leaves its previous thumbnails alive until they are collected
     assert viewer.findChildren(ThumbnailLabel)
+
+
+def test_the_viewer_reads_the_folder_once_as_it_is_built(
+    mocker: MockerFixture, qtbot: QtBot, model: RehuDocumentModel
+) -> None:
+    """Building the strip lists the screenshots once, and never paints one curated away (#381).
+
+    Its hidden list is set before its scanner: the other way round, the scanner's rebuild painted every
+    screenshot, hidden ones too, and the hidden list's rebuild read the folder a second time.
+
+    **Test steps:**
+
+    * hide one screenshot in the model, then build the viewer over a scanner that counts its reads
+    * verify the folder was listed once and the strip holds the other two
+    """
+    decodable_screenshots(mocker)
+    model.hidden_images = [PATHS[0].name]
+    scanner = fake_scanner(mocker, PATHS)
+    field = ImagesField("hidden_images", image_scanner=scanner)  # type: ignore[arg-type]
+    reported: list[list[Path]] = []
+    field.curated_images_changed.connect(reported.append)
+
+    viewer = field.make_viewer(model.bind(field)).viewer
+
+    assert isinstance(viewer, ImageStrip)
+    qtbot.addWidget(viewer)
+    assert scanner.files.call_count == 1  # type: ignore[attr-defined]
+    assert reported[-1] == PATHS[1:]
+    assert PATHS[0] not in [path for paths in reported for path in paths]
+
+
+def test_the_editor_reads_the_folder_once_as_it_is_built(
+    mocker: MockerFixture, qtbot: QtBot, model: RehuDocumentModel
+) -> None:
+    """Building the curation editor lists the screenshots once (#381): taking its scanner would rebuild the
+    rows by itself, and the seed with the document's own hidden list is that same rebuild.
+
+    **Test steps:**
+
+    * build the editor over a scanner that counts its reads
+    * verify the folder was listed once
+    """
+    scanner = fake_scanner(mocker, PATHS)
+    field = ImagesField("hidden_images", image_scanner=scanner)  # type: ignore[arg-type]
+
+    editor = field.make_editor(model.bind(field)).editor
+
+    qtbot.addWidget(editor)
+    assert scanner.screenshots.call_count == 1  # type: ignore[attr-defined]

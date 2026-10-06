@@ -168,9 +168,14 @@ class ScrapeActions(QObject):  # pylint: disable=too-many-instance-attributes
         attempt is in flight, or a countdown with a **Cancel** action while a re-fetch waits -- followed by
         the last failure as a warning, if one stands and nothing is running, replaced by the next drop's
         own outcome. A page no scraper matches is a failure like any other: the drop did not do what it
-        was dropped for."""
+        was dropped for.
+
+        Only the drops made where the document is now: one still in flight for a record a preview moved on from
+        (#381) lands and is discarded, and says nothing here meanwhile."""
         rows: list[MessageBannerRow] = []
         for chain in self.__chains:
+            if chain.path != self.__model.path:
+                continue
             if chain.deadline is None:
                 host = urlsplit(chain.url).hostname or chain.url
                 rows.append(MessageBannerRow(MessageBannerSeverity.INFO, BUSY_MESSAGE.format(host=host)))
@@ -183,7 +188,7 @@ class ScrapeActions(QObject):  # pylint: disable=too-many-instance-attributes
                 attempts=MAX_REFETCHES + 1,
             )
             rows.append(MessageBannerRow(MessageBannerSeverity.WARNING, text, chain.cancel_action))
-        if not self.__chains and self.__last_failure:
+        if not rows and self.__last_failure:
             rows.append(MessageBannerRow(MessageBannerSeverity.WARNING, self.__last_failure))
         return rows
 
@@ -295,7 +300,8 @@ class ScrapeActions(QObject):  # pylint: disable=too-many-instance-attributes
         if not self.__is_current(chain, job):
             return
         self.__end(chain)
-        self.__last_failure = str(error)
+        if self.__model.path == chain.path:
+            self.__last_failure = str(error)
         self.changed.emit()
 
     def __on_refetch(self, chain: ScrapeActions.Chain, job: ScrapeJob, request: object) -> None:
@@ -356,13 +362,17 @@ class ScrapeActions(QObject):  # pylint: disable=too-many-instance-attributes
     def __on_path_changed(self, _path: Path | None) -> None:
         """Drop every re-fetch still waiting: the document it would land on is no longer the one that
         asked. An attempt already in flight is left to land, and be discarded by :meth:`__on_result`'s own
-        path check."""
+        path check. Another record loaded in this one's place (a preview moving on, #381) also drops the last
+        failure, which was about the record before."""
         waiting = [chain for chain in self.__chains if chain.job is None]
         for chain in waiting:
             with LogScope.open(chain.path):
                 LOG.info("Dropping the scrape of %s: the document is no longer at %s.", chain.url, chain.path)
             self.__end(chain)
-        if waiting:
+        forgotten = self.__model.loading and bool(self.__last_failure)
+        if forgotten:
+            self.__last_failure = ""
+        if waiting or forgotten:
             self.changed.emit()
 
     def __end(self, chain: ScrapeActions.Chain) -> None:

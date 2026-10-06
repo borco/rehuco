@@ -89,8 +89,8 @@ unlike a dock-set change, which is what that version guards."""
 
 DOCUMENTS_LAYOUT_NAMESPACE: Final = DEFAULT_LAYOUT_GROUP
 """The settings group the Documents dock's per-type default layouts sit under (#62, #320) --
-``default_layout/<type>``. A host keeping its own set of defaults (the Browsers dock, #381) passes
-another namespace, so saving a default there never changes what a document opens into."""
+``default_layout/<type>``. A host keeping its own set of defaults passes another namespace, so saving a default
+there never changes what a document opens into."""
 
 SAVE_ICON_RESOURCE: Final = ":/icons/document_save.svg"
 REVERT_ICON_RESOURCE: Final = ":/icons/document_revert.svg"
@@ -380,8 +380,8 @@ class SubDockHost:
     """What the owner of a dock manager lends a document's `DocumentSubDocks` (#380).
 
     One per manager, and reused across every `DocumentSubDocks` built into it: `DocumentWidget` builds
-    one for its document's whole life, and the Browsers dock (#381) builds a fresh one each time its
-    current resource changes. All of it is the manager's own rather than the document's -- the focus
+    one and keeps it, and a Documents preview (#39) builds a fresh set into it each time it shows another
+    document. All of it is the manager's own rather than the document's -- the focus
     tracker and the maximize toggle are per manager, the banner sits where the host's layout puts it --
     so a teardown leaves every part of it in place for the next document.
     """
@@ -606,8 +606,9 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         # self.__form, so it is still alive to be cleared). Rebuilds clear the outgoing form themselves
         # (__rebuild_field_docks), and so does teardown. A lambda, not a bound method: Qt drops a connection
         # whose *receiver* is the object being destroyed, so a slot on self would never fire on its own
-        # destruction -- and it must re-read self.__form, which a rebuild may have replaced.
-        self.destroyed.connect(lambda: self.__form.clear_external())  # pylint: disable=unnecessary-lambda
+        # destruction -- and it must re-read self.__form, which a rebuild may have replaced. Recorded, so a
+        # teardown -- which clears the form itself -- leaves nothing behind on this object either (#39).
+        self.__connect(self.destroyed, lambda: self.__form.clear_external())  # pylint: disable=unnecessary-lambda
         # one dock per FieldsTab, in two areas: Main View leads the left one with the editor tabs behind
         # it, Description View holds the right one where the single Viewer dock sat before the split
         # (#299). The editors are built first so the left area exists for Main View to stack into, and
@@ -640,7 +641,9 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
 
         self.__revert_action: Final = QAction("&Revert", host.widget)
         ActionIconThemeHandler(self.__revert_action, REVERT_ICON_RESOURCE)
-        self.__revert_action.triggered.connect(model.revert)
+        # recorded: the action outlives a teardown until its deferred delete, and must not revert the model
+        # it was built for in that gap -- a preview dock has moved on to another document by then (#39)
+        self.__connect(self.__revert_action.triggered, model.revert)
         # disabled until the document has been saved to disk: there is nothing on disk to revert to, and
         # reverting a not-yet-written path would replace the editable document with a locked MISSING stub,
         # silently discarding the edits (#147). The first save sets saved_on_disk and re-enables it.
@@ -738,6 +741,11 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         self.__connect(model.upgradable_changed, self.__on_upgradable_changed)  # type: ignore[attr-defined]
         self.__connect(model.rename_error_changed, self.__on_rename_error_changed)  # type: ignore[attr-defined]
         self.__connect(model.active_block_changed, self.__rebuild_field_docks)
+        self.__connect(model.path_changed, self.__on_path_changed)  # type: ignore[attr-defined]
+        # every notice is asked again once a load settles: what is running or failed is told per record, and a
+        # record loaded in place of another moves none of the signals above when its lock reasons, its rename
+        # error and its upgrade offer happen to equal the last one's (#381)
+        self.__connect(model.reloaded, self.__on_reloaded)
 
         self.__apply_default_layout_action: Final = QAction("Apply Default Layout", host.widget)
         self.__apply_default_layout_action.setToolTip(APPLY_DEFAULT_LAYOUT_TOOLTIP)
@@ -776,8 +784,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
             host.widget.addAction(action)
 
         self.__web_search: Final = WebSearchAction(model, parent=self)
-        # built here and placed by the host: a `DocumentWidget` adds it as its own window's toolbar, the
-        # Browsers dock beside its own (#381)
+        # built here and placed by the host: a `DocumentWidget` adds it as its own window's toolbar
         toolbar = QToolBar(TOOLBAR_TITLE, host.widget)
         # the resource's type badge leads the toolbar (#309): first in add order, not merely first in
         # visual position, so a QToolBar squeezed for room (a restored split layout's narrower pane,
@@ -914,8 +921,8 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
 
     def teardown(self) -> None:
         """Take this document's sub-docks back out of the host and let go of the model, so the same
-        manager can host another document's (#380) -- what the Browsers dock does as its current
-        resource changes (#381).
+        manager can host another document's (#380) -- what a Documents preview does as it shows the next
+        document (#39).
 
         Synchronous where it matters: every connection on the model and on the process-wide settings is
         severed before this returns, so the model -- which may outlive this object, held by a registry
@@ -1240,6 +1247,28 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
 
         The same shape as :meth:`__on_scrape_notice_changed`, and for the same reason: an acquisition's
         outcome changes nothing about what this document can do."""
+        self.__banner.set_rows(self.__banner_rows())
+
+    def __on_path_changed(self, _path: Path | None) -> None:
+        """Let go of what belonged to the record shown before, when another is loaded in its place (#381) --
+        what a teardown and a fresh build did when a preview rebuilt its docks for each record. A rename is the
+        same record, and keeps all of it.
+
+        An open image viewer goes: it shows the last record's pictures, or follows a curation that is now
+        another record's. The thumbnail row's visibility and the stashed dock sizes are per record, so the
+        next one starts from the settings, as a freshly opened one does.
+
+        :param _path: the model's new path; unused.
+        """
+        if not self.__model.loading:
+            return
+        if self.__image_viewer is not None:
+            self.__image_viewer.close()
+        self.__image_strip_visible = None
+        self.__stashed_sizes.clear()
+
+    def __on_reloaded(self) -> None:
+        """Rebuild the inline notice strip once a load settles -- see where this is connected."""
         self.__banner.set_rows(self.__banner_rows())
 
     def __on_rename_error_changed(self) -> None:
@@ -2345,6 +2374,10 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         bridge = shared_log_bridge()
         if self.__log_scope is not None:
             self.__log_widget.detach_from(bridge)
+            # another record loaded in its place (a preview moving on, #381) is not a rename: its history is
+            # not this one's, and attaching replays its own
+            if self.__model.loading:
+                self.__log_widget.clear()
         self.__log_scope = path
         if path is not None:
             self.__log_widget.attach_to(bridge, path)

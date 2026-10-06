@@ -39,7 +39,7 @@ LOG: Final = logging.getLogger(__name__)
 
 
 # the public surface is the file operations, the reads the two docks make and the queue listener's callbacks
-class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes
+class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-many-public-methods
     """The one open ``.rehuco`` and its ``.rehudb`` cache, which the **Root Catalog** dock (its roots,
     :class:`~.roots_panel.RootsPanel`) and the **Browsers** dock (the resources the cache lists,
     :class:`~.browsers_dock.BrowsersDock`) both read (#461). Neither dock owns the file: each hears from here
@@ -291,6 +291,19 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes
     def root_paths(self) -> dict[UUID, Path]:
         """Where each root of the open file is, by id; empty while none is open."""
         return {} if self.__file is None else {root.root_id: root.path for root in self.__file.roots}
+
+    def resource_path(self, root_id: UUID, relative: str) -> Path | None:
+        """Where a resource is: the **one place** a ``(root_id, relative)`` key becomes a document's path (#381).
+
+        Both the browsers' rows and the Roots view name a resource this way, and the preview is shown through here
+        -- so a node-served resource (0.4.0) is a change to this method, not to every view.
+
+        :param root_id: the root the resource is under.
+        :param relative: its path below the root, ``/``-separated, as the cache keeps it.
+        :returns: the path, or ``None`` when the root is not one the open file lists.
+        """
+        root = self.root_paths().get(root_id)
+        return None if root is None else root / relative
 
     def resource_count(self, root: RehucoRoot) -> int:
         """How many resources the cache lists under ``root``; ``0`` when that cannot be read.

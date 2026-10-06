@@ -9,7 +9,9 @@ from pathlib import Path
 from typing import Final
 from unittest.mock import Mock
 
+from PySide6.QtCore import QSize
 from pytest_mock import MockerFixture
+from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_image_scanner import RehuDocumentImageScanner
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields.image_scanner import AfterConversion
@@ -30,21 +32,22 @@ def no_screenshots(_directory: Path, _stem: str) -> list[Path]:
 
 
 def mock_decoded_image(mocker: MockerFixture, *, width: int, is_null: bool = False) -> tuple[Mock, Mock, Mock]:
-    """Mock ``QImage`` construction in ``image_scanner`` to hand back a controllable fake image.
+    """Mock the ``QImageReader`` in ``image_scanner`` to report a controllable header and hand back a fake image.
 
     :param mocker: pytest-mock fixture.
-    :param width: the fake decoded image's reported width.
+    :param width: the image's width as its header reports it; its height is half that.
     :param is_null: whether the fake image should report itself as undecodable.
-    :returns: ``(image, scaled, constructor)`` -- the fake decoded image, the fake it scales down to,
-        and the mocked ``QImage`` constructor itself (to assert what path it was called with).
+    :returns: ``(image, reader, constructor)`` -- the fake decoded image, the fake reader (to assert the size it
+        was asked to decode at), and the mocked ``QImageReader`` constructor itself (to assert what path it was
+        called with).
     """
-    scaled = mocker.Mock()
     image = mocker.Mock()
     image.isNull.return_value = is_null
-    image.width.return_value = width
-    image.scaledToWidth.return_value = scaled
-    constructor = mocker.patch("rehuco_agent.documents.rehu_document_image_scanner.QImage", return_value=image)
-    return image, scaled, constructor
+    reader = mocker.Mock()
+    reader.size.return_value = QSize(width, width // 2)
+    reader.read.return_value = image
+    constructor = mocker.patch("rehuco_agent.documents.rehu_document_image_scanner.QImageReader", return_value=reader)
+    return image, reader, constructor
 
 
 # region files() delegation
@@ -134,7 +137,7 @@ def test_screenshots_reports_a_shared_directory(mocker: MockerFixture) -> None:
     **Test steps:**
 
     * mock ``other_record_stems`` to report a sibling, then to report none
-    * read ``screenshots()`` each time
+    * read ``screenshots()`` each time, the scanner told in between that the folder changed
     * verify ``shared_directory`` follows it
     """
     stems = mocker.patch("rehuco_agent.documents.rehu_document_image_scanner.other_record_stems", return_value=("foo",))
@@ -144,8 +147,35 @@ def test_screenshots_reports_a_shared_directory(mocker: MockerFixture) -> None:
     assert scanner.screenshots().shared_directory
 
     stems.return_value = ()
+    scanner.forget()
 
     assert not scanner.screenshots().shared_directory
+
+
+def test_screenshots_reads_the_folder_once_a_turn(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The strip and the curation list each ask as a record is shown: one reading of the folder answers both, until
+    the event loop runs again or the scanner is told the folder changed (#381).
+
+    **Test steps:**
+
+    * ask twice in one turn, then once after the event loop ran, then once after ``forget``
+    * verify the folder was read once, then again each time
+    """
+    lister = mocker.Mock(return_value=[])
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE_PATH))
+    scanner = RehuDocumentImageScanner(model, lister, no_screenshots)
+
+    scanner.screenshots()
+    scanner.screenshots()
+    assert lister.call_count == 1
+
+    qtbot.wait(1)
+    scanner.screenshots()
+    assert lister.call_count == 2
+
+    scanner.forget()
+    scanner.screenshots()
+    assert lister.call_count == 3
 
 
 def test_screenshots_is_empty_without_a_path(mocker: MockerFixture) -> None:
@@ -254,7 +284,7 @@ def test_get_markdown_viewer_image_resolves_a_bare_filename(mocker: MockerFixtur
 
     **Test steps:**
 
-    * mock ``QImage`` construction to report an in-cap image
+    * mock the ``QImageReader`` to report an in-cap image
     * resolve ``"cover.jpg"`` on a document at ``/fake/info.rehu``
     * verify ``QImage`` was constructed with the path under ``/fake``, and that image is returned
     """
@@ -273,7 +303,7 @@ def test_get_markdown_viewer_image_resolves_a_file_url(mocker: MockerFixture) ->
 
     **Test steps:**
 
-    * mock ``QImage`` construction to report an in-cap image
+    * mock the ``QImageReader`` to report an in-cap image
     * resolve ``"file:///elsewhere/cover.jpg"`` on a document at ``/fake/info.rehu``
     * verify it still resolves against ``/fake`` (the *document's* directory, not the URL's own)
     """
@@ -288,23 +318,23 @@ def test_get_markdown_viewer_image_resolves_a_file_url(mocker: MockerFixture) ->
 
 
 def test_get_markdown_viewer_image_scales_an_over_cap_image(mocker: MockerFixture) -> None:
-    """An image wider than the live max-width setting is scaled down to it.
+    """An image wider than the live max-width setting is decoded straight at it, keeping its shape -- never
+    decoded in full and scaled afterwards (#381).
 
     **Test steps:**
 
     * set the shared Markdown-rendering settings' ``max_image_width`` to 100
-    * mock ``QImage`` construction to report a 400px-wide image
-    * verify the scaled-down image (not the original) is returned, and scaling used the live cap
+    * mock a reader whose header reports a 400x200 image
+    * verify the reader was asked to decode at 100x50, the live cap, and its image is returned
     """
-    image, scaled, _ = mock_decoded_image(mocker, width=400)
+    image, reader, _ = mock_decoded_image(mocker, width=400)
     shared_markdown_rendering_settings().max_image_width = 100
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE_PATH))
 
     result = RehuDocumentImageScanner(model, no_screenshots, no_screenshots).get_markdown_viewer_image("cover.jpg")
 
-    assert result is scaled
-    image.scaledToWidth.assert_called_once()
-    assert image.scaledToWidth.call_args[0][0] == 100
+    assert result is image
+    reader.setScaledSize.assert_called_once_with(QSize(100, 50))
 
 
 def test_get_markdown_viewer_image_leaves_an_in_cap_image_untouched(mocker: MockerFixture) -> None:
@@ -312,16 +342,16 @@ def test_get_markdown_viewer_image_leaves_an_in_cap_image_untouched(mocker: Mock
 
     **Test steps:**
 
-    * mock ``QImage`` construction to report an 80px-wide image, cap well above that
+    * mock the ``QImageReader`` to report an 80px-wide image, cap well above that
     * verify the original (unscaled) image is returned
     """
-    image, _, _ = mock_decoded_image(mocker, width=80)
+    image, reader, _ = mock_decoded_image(mocker, width=80)
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE_PATH))
 
     result = RehuDocumentImageScanner(model, no_screenshots, no_screenshots).get_markdown_viewer_image("cover.jpg")
 
     assert result is image
-    image.scaledToWidth.assert_not_called()
+    reader.setScaledSize.assert_not_called()
     image.setDevicePixelRatio.assert_called_once_with(1.0)
 
 
@@ -334,13 +364,13 @@ def test_get_markdown_viewer_image_tags_the_result_with_the_callers_device_pixel
 
     **Test steps:**
 
-    * mock ``QImage`` construction to report a 300px-wide image
+    * mock the ``QImageReader`` to report a 300px-wide image
     * resolve with ``device_pixel_ratio=1.25``
     * verify the image is tagged 1.25 and is *not* scaled -- 300 raw px is still under the
       DPR-adjusted cap (350 * 1.25 = 437), even though it would exceed the un-adjusted 350 cap if
       a wider image were used
     """
-    image, _, _ = mock_decoded_image(mocker, width=300)
+    image, reader, _ = mock_decoded_image(mocker, width=300)
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE_PATH))
 
     result = RehuDocumentImageScanner(model, no_screenshots, no_screenshots).get_markdown_viewer_image(
@@ -349,7 +379,7 @@ def test_get_markdown_viewer_image_tags_the_result_with_the_callers_device_pixel
 
     assert result is image
     image.setDevicePixelRatio.assert_called_once_with(1.25)
-    image.scaledToWidth.assert_not_called()
+    reader.setScaledSize.assert_not_called()
 
 
 def test_get_markdown_viewer_image_scales_using_the_device_pixel_ratio_adjusted_cap(
@@ -365,7 +395,7 @@ def test_get_markdown_viewer_image_scales_using_the_device_pixel_ratio_adjusted_
     * mock a 400px-wide image, resolved with ``device_pixel_ratio=1.25`` (raw cap becomes 437)
     * verify it is *not* scaled, since 400 < 437 -- it would have been scaled at ``dpr=1.0``
     """
-    image, scaled, _ = mock_decoded_image(mocker, width=400)
+    image, reader, _ = mock_decoded_image(mocker, width=400)
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE_PATH))
 
     result = RehuDocumentImageScanner(model, no_screenshots, no_screenshots).get_markdown_viewer_image(
@@ -373,8 +403,7 @@ def test_get_markdown_viewer_image_scales_using_the_device_pixel_ratio_adjusted_
     )
 
     assert result is image
-    assert result is not scaled
-    image.scaledToWidth.assert_not_called()
+    reader.setScaledSize.assert_not_called()
 
 
 def test_get_markdown_viewer_image_returns_none_for_an_undecodable_file(mocker: MockerFixture) -> None:
@@ -382,7 +411,7 @@ def test_get_markdown_viewer_image_returns_none_for_an_undecodable_file(mocker: 
 
     **Test steps:**
 
-    * mock ``QImage`` construction to report a null image
+    * mock the ``QImageReader`` to report a null image
     * verify ``get_markdown_viewer_image`` returns ``None``
     """
     mock_decoded_image(mocker, width=0, is_null=True)
@@ -399,7 +428,7 @@ def test_get_markdown_viewer_image_returns_none_for_a_name_with_no_filename(mock
 
     **Test steps:**
 
-    * mock ``QImage`` construction so any decode attempt is visible
+    * mock the ``QImageReader`` so any decode attempt is visible
     * resolve ``""`` and ``"file:///elsewhere/"`` on a document at ``/fake/info.rehu``
     * verify both return ``None`` and ``QImage`` was never constructed
     """
@@ -438,7 +467,7 @@ def test_get_markdown_viewer_image_resolves_an_extension_less_reference(mocker: 
     **Test steps:**
 
     * report only ``info00.png`` as existing on disk
-    * mock ``QImage`` construction to report an in-cap image
+    * mock the ``QImageReader`` to report an in-cap image
     * resolve the extension-less name ``"info00"``
     * verify ``QImage`` was constructed with the ``.png`` candidate, and that image is returned
     """
@@ -459,7 +488,7 @@ def test_get_markdown_viewer_image_tries_extensions_in_order(mocker: MockerFixtu
     **Test steps:**
 
     * report both ``info00.jpg`` and ``info00.png`` as existing on disk
-    * mock ``QImage`` construction to report an in-cap image
+    * mock the ``QImageReader`` to report an in-cap image
     * resolve the extension-less name ``"info00"``
     * verify ``QImage`` was constructed with the ``.jpg`` candidate -- earlier in ``IMAGE_EXTENSIONS``
     """

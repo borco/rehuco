@@ -196,7 +196,7 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
         self.__verify_menu.addAction(self.__verify_action)
         self.__verify_old_action.setMenu(self.__verify_menu)
 
-        model.path_changed.connect(self.__update_enabled)  # type: ignore[attr-defined]
+        model.path_changed.connect(self.__on_path_changed)  # type: ignore[attr-defined]
         # reloaded too, for the deferred session-restore load (#66): that read reseeds `path` to an
         # equal value, so no `path_changed` fires, yet it is the moment the record's stat below
         # becomes worth taking
@@ -259,6 +259,22 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
         self.__queue.remove_listener(self)
         self.__pending.clear()
         self.__seen.clear()
+
+    def __on_path_changed(self, _path: Path | None) -> None:
+        """Follow the model to another path. A rename is the same resource, so its finding and its runs still
+        apply; another record loaded in its place (a preview moving on, #381) is not, so the last run's finding
+        goes and the runs still going stop reporting here -- they finish all the same, in the Tasks dock, and
+        write the record they were for.
+
+        :param _path: the model's new path; unused.
+        """
+        if self.__model.loading:
+            self.__pending.clear()
+            if self.__finding:
+                self.__finding = ""
+                self.__finding_clean = True
+                self.finding_changed.emit()
+        self.__update_enabled()
 
     # endregion
 
@@ -523,8 +539,11 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
         A :attr:`~RehuDocumentModel.pending` session-restore placeholder is treated like a document
         with no path: even the record's single ``stat`` can block on an offline mount (#66,
         [[mounts-and-storage#offline-mounts]]), and the deferred load's ``reloaded`` -- wired in
-        ``__init__`` -- re-runs this once the document is real.
+        ``__init__`` -- re-runs this once the document is real. A load in progress waits for its own ``reloaded``
+        too, rather than taking the ``stat`` once per field it moves (#381).
         """
+        if self.__model.loading:
+            return
         path = self.__model.path if not self.__model.pending and self.__model.saved_on_disk else None
         checksums = shared_checksum_settings()
         has_record = path is not None and self.__has_something_to_verify(path)

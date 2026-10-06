@@ -143,7 +143,9 @@ class ConversionBackupsManager:
         :returns: the inventory; see :class:`ConversionBackups`.
         """
         backups = self.__backups()
-        created = self.__created()
+        # the date is read off the .rehu itself, a whole document parse -- worth it only where there are
+        # backups to date; a resource with none is what nearly every open, and every scan, asks about (#381)
+        created = self.__created() if backups else ""
         return ConversionBackups(
             rehu_path=self.__rehu_path,
             backups=backups,

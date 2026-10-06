@@ -16,8 +16,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
-from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QImage
+from PySide6.QtCore import QSize, QTimer, QUrl
+from PySide6.QtGui import QImage, QImageReader
 from rehuco_core import IMAGE_EXTENSIONS, other_record_stems
 
 from ..fields.image_scanner import AfterConversion, ScreenshotSet
@@ -73,6 +73,8 @@ class RehuDocumentImageScanner:
         self.__lister: Final = lister
         self.__unconverted_lister: Final = unconverted_lister
         self.__after_conversion: Final = after_conversion
+        self.__listed: ScreenshotSet | None = None
+        """The last answer of :meth:`screenshots`, kept until the event loop next runs or :meth:`forget` (#381)."""
 
     def files(self) -> list[Path]:
         """Every recognized screenshot for this resource, as absolute paths.
@@ -102,16 +104,26 @@ class RehuDocumentImageScanner:
         path = self.__model.path
         if path is None or self.__model.pending:
             return ScreenshotSet()
-        directory, stem = path.parent, path.stem
-        numbered = self.__lister(directory, stem)
-        listed = set(numbered)
-        return ScreenshotSet(
-            numbered=tuple(numbered),
-            unconverted=tuple(
-                candidate for candidate in self.__unconverted_lister(directory, stem) if candidate not in listed
-            ),
-            shared_directory=bool(other_record_stems(directory, stem)),
-        )
+        # the strip and the curation list each ask as a record is shown, in the same turn of the event loop: one
+        # reading of the folder answers both (#381). Kept no longer than that turn, and forgotten at once when the
+        # document's own work changes the folder (`RehuDocumentModel.announce_folder_changed`)
+        if self.__listed is None:
+            directory, stem = path.parent, path.stem
+            numbered = self.__lister(directory, stem)
+            listed = set(numbered)
+            self.__listed = ScreenshotSet(
+                numbered=tuple(numbered),
+                unconverted=tuple(
+                    candidate for candidate in self.__unconverted_lister(directory, stem) if candidate not in listed
+                ),
+                shared_directory=bool(other_record_stems(directory, stem)),
+            )
+            QTimer.singleShot(0, self.forget)
+        return self.__listed
+
+    def forget(self) -> None:
+        """Drop the remembered listing, so the next question reads the folder again (#381)."""
+        self.__listed = None
 
     def after_conversion(self) -> dict[str, AfterConversion] | None:
         """What each pattern-matched image is once this resource is converted (#293).
@@ -152,12 +164,16 @@ class RehuDocumentImageScanner:
         path = self.__resolved(name)
         if path is None:
             return None
-        image = QImage(str(path))
+        # decoded straight at the width it is shown at, off a header read, rather than in full and then
+        # scaled: a screenshot embedded in a description is several megapixels the view never draws (#381)
+        reader = QImageReader(str(path))
+        max_width = round(shared_markdown_rendering_settings().max_image_width * device_pixel_ratio)
+        size = reader.size()
+        if size.width() > max_width:
+            reader.setScaledSize(QSize(max_width, max(1, round(size.height() * max_width / size.width()))))
+        image = reader.read()
         if image.isNull():
             return None
-        max_width = round(shared_markdown_rendering_settings().max_image_width * device_pixel_ratio)
-        if image.width() > max_width:
-            image = image.scaledToWidth(max_width, Qt.TransformationMode.SmoothTransformation)
         image.setDevicePixelRatio(device_pixel_ratio)
         return image
 

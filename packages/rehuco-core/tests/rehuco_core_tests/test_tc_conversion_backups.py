@@ -139,6 +139,24 @@ def test_an_absent_rehu_names_no_conversion_date(mocker: MockerFixture) -> None:
     assert conversion_backups(REHU_PATH).converted == ""
 
 
+def test_a_resource_with_no_backups_is_not_read_for_a_date(mocker: MockerFixture) -> None:
+    """With nothing to date, the ``.rehu`` is not parsed for its ``created`` stamp: every document open and
+    every tree scan asks this of resources that hold no backups (#381).
+
+    **Test steps:**
+
+    * mock a directory holding the ``.rehu`` and no backups
+    * read the inventory
+    * verify the document was never loaded and no date is named
+    """
+    mocks = mock_environment(mocker, listing=("info.rehu", "cover.jpg"))
+
+    inventory = conversion_backups(REHU_PATH)
+
+    mocks["load"].assert_not_called()
+    assert inventory.converted == ""
+
+
 @pytest.mark.parametrize("load_side_effect", [RehuFormatError("not JSON"), OSError("mount away")])
 def test_an_unreadable_rehu_names_no_conversion_date(mocker: MockerFixture, load_side_effect: Exception) -> None:
     """A ``.rehu`` that will not read cannot vouch for a conversion date either, so it shows none rather

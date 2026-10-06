@@ -13,7 +13,6 @@ from typing import Final
 import PySide6QtAds as QtAds
 from borco_pyside.qtads import QtAdsFocusTracker
 from borco_pyside.widgets import MessageBanner
-from PySide6.QtCore import QCoreApplication, QEvent, QMetaMethod
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 from pytest import fixture
 from pytest_mock import MockerFixture
@@ -28,6 +27,8 @@ from rehuco_agent.settings.default_layout_settings import (
     shared_default_layout_settings_in,
 )
 from rehuco_core import TUTORIAL_PLUGIN, RehuDocument
+
+from rehuco_agent_tests.qt_connections import flush_deferred_deletes, receivers
 
 DOCUMENT_PATH: Final = Path("/fake/info.rehu")
 SCREENSHOT: Final = Path("/fake/info00.jpg")
@@ -81,27 +82,6 @@ def model() -> RehuDocumentModel:
 def other_model() -> RehuDocumentModel:
     """A reference pack's view-model -- a type whose dock set differs from a tutorial's (#320)."""
     return RehuDocumentModel(RehuDocument({"type": "ReferenceImages", "sources": [{"title": "Pack", "primary": True}]}))
-
-
-def receivers(model: RehuDocumentModel) -> dict[str, int]:
-    """How many connections each of the model's signals has, ``QObject``'s own included.
-
-    :param model: the model to count on.
-    :returns: the receiver count per signal signature.
-    """
-    meta = model.metaObject()
-    counts: dict[str, int] = {}
-    for index in range(meta.methodCount()):
-        method = meta.method(index)
-        if method.methodType() == QMetaMethod.MethodType.Signal:
-            signature = bytes(method.methodSignature().data()).decode()
-            counts[signature] = model.receivers(f"2{signature}")
-    return counts
-
-
-def flush_deferred_deletes() -> None:
-    """Run every pending ``deleteLater``, so what a teardown scheduled is really gone."""
-    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
 
 
 # endregion
@@ -196,6 +176,36 @@ def test_a_teardown_closes_an_open_image_viewer(host: BareHost, model: RehuDocum
     assert viewer.isHidden()
 
 
+def test_another_record_loaded_in_place_lets_go_of_what_the_last_one_showed(
+    mocker: MockerFixture, host: BareHost, model: RehuDocumentModel
+) -> None:
+    """A record loaded into the model in place of another (a preview moving on, #381) is not a rename: the log's rows
+    and an open image viewer were the last record's, and go. A rename keeps the log's rows.
+
+    **Test steps:**
+
+    * build sub-docks, spy on the log surface's clear, and rename the resource: verify nothing was cleared
+    * open a screenshot maximized, then load another record into the model
+    * verify the log surface was cleared once and the viewer is hidden
+    """
+    sub_docks = DocumentSubDocks(model, host.lent)
+    clear = mocker.spy(sub_docks.log_widget, "clear")
+    model.path = Path("/fake/renamed/info.rehu")
+    clear.assert_not_called()
+    sub_docks._DocumentSubDocks__on_image_activated(SCREENSHOT)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    viewer = sub_docks._DocumentSubDocks__image_viewer  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert viewer is not None
+
+    other = RehuDocument(
+        {"type": "Tutorial", "sources": [{"title": "Bar", "primary": True}]}, Path("/fake/b/info.rehu")
+    )
+    mocker.patch("rehuco_agent.documents.rehu_document_model.load_or_locked", return_value=other)
+    model.load(Path("/fake/b/info.rehu"))
+
+    clear.assert_called_once()
+    assert viewer.isHidden()
+
+
 def test_a_model_change_after_teardown_reaches_nothing_torn_down(host: BareHost, model: RehuDocumentModel) -> None:
     """A teardown severs the model at once, not when the deferred deletes run: an edit made in between
     reaches nothing of the torn-down sub-docks.
@@ -213,6 +223,29 @@ def test_a_model_change_after_teardown_reaches_nothing_torn_down(host: BareHost,
     model.title = "Edited"
 
     assert save_action.isEnabled() is False
+
+
+def test_a_kept_revert_action_reverts_nothing_after_teardown(
+    mocker: MockerFixture, host: BareHost, model: RehuDocumentModel
+) -> None:
+    """The Revert action outlives a teardown until its deferred delete, and must not reach the model in that
+    gap -- a preview dock has moved on to another document by then (#39).
+
+    **Test steps:**
+
+    * stand in for the model's revert, build sub-docks over it and keep their Revert action, enabled
+    * tear down, then trigger the kept action before the deferred deletes run
+    * verify the model was not reverted
+    """
+    revert = mocker.patch.object(model, "revert")
+    sub_docks = DocumentSubDocks(model, host.lent)
+    revert_action = sub_docks.revert_action
+    revert_action.setEnabled(True)
+
+    sub_docks.teardown()
+    revert_action.trigger()
+
+    revert.assert_not_called()
 
 
 def test_a_rebuild_in_the_same_manager_binds_only_the_new_document(

@@ -19,7 +19,7 @@ from typing import Any, Final, override
 import markdown
 from borco_pyside.core import SimpleProperty
 from borco_pyside.widgets import RichTextView
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import QTimer, QUrl
 from PySide6.QtGui import QTextDocument
 from PySide6.QtWidgets import QWidget
 
@@ -146,14 +146,22 @@ class MarkdownView(RichTextView):
         self.__images_visible = True
         self.setOpenExternalLinks(True)
         self.document().setDefaultStyleSheet(css)
+        # a new scanner re-renders at the end of the turn, not at once: a document loading another record installs
+        # one and sets the new text in the same turn, and rendering for each -- the old text in the new folder, then
+        # the new -- decoded every embedded image twice (#381). The text's own render takes the pending one's place
+        self.__rerender: Final = QTimer(self)
+        self.__rerender.setSingleShot(True)
+        self.__rerender.setInterval(0)
+        self.__rerender.timeout.connect(lambda: self.set_markdown(self.__text))
         changed = self.image_scanner_changed  # type: ignore[attr-defined]
-        changed.connect(lambda _scanner: self.set_markdown(self.__text))
+        changed.connect(lambda _scanner: self.__rerender.start())
 
     def set_markdown(self, text: str) -> None:
-        """Render ``text`` and show it.
+        """Render ``text`` and show it -- which also stands in for a re-render a new scanner still has waiting.
 
         :param text: the Markdown source.
         """
+        self.__rerender.stop()
         self.__text = text
         html = render_markdown(text, self.__engine)
         self.setHtml(html if self.__images_visible else replace_images_with_placeholders(html))

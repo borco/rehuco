@@ -12,11 +12,12 @@ from datetime import timedelta
 from pathlib import Path
 from threading import Event
 from typing import Any, Final
+from uuid import uuid4
 
 import PySide6QtAds as QtAds
 from borco_pyside.logging import LogWidget
 from borco_pyside.logging.log_model import MESSAGE_COLUMN
-from borco_pyside.qtads import tab_close_button
+from borco_pyside.qtads import tab_close_button, tab_label
 from borco_pyside.qtads.qtads_pin_side_handler import DEFAULT_PIN_SIDE, PIN_SIDE_KEY
 from borco_pyside.shortcuts import BindingRole
 from PySide6.QtCore import QByteArray, QEvent, QModelIndex, QObject, Qt
@@ -31,7 +32,7 @@ from PySide6.QtWidgets import (
     QToolBar,
     QWidget,
 )
-from pytest import fixture, mark
+from pytest import MonkeyPatch, fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent import main_window
@@ -52,7 +53,7 @@ from rehuco_agent.main_window import (
     MainWindow,
 )
 from rehuco_agent.recycle_bin_deleter import RecycleBinDeleter
-from rehuco_agent.rehuco import BrowsersDock, RootCatalog, RootsPanel
+from rehuco_agent.rehuco import BrowsersDock, RootCatalog, RootsPanel, selection_preview
 from rehuco_agent.settings.checksum_settings import shared_checksum_settings
 from rehuco_agent.settings.document_session_settings import DocumentSessionSettings
 from rehuco_agent.settings.identity_settings import shared_identity_settings
@@ -2931,6 +2932,364 @@ def test_close_event_records_the_focused_document(mocker: MockerFixture, qtbot: 
 
     session = window._MainWindow__session  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     assert session.focused_path == path
+
+
+# region the preview dock (#39)
+
+
+def serve_tutorials(mocker: MockerFixture) -> None:
+    """Have every ``.rehu`` read as the same tutorial.
+
+    :param mocker: pytest-mock fixture.
+    """
+    mocker.patch.object(
+        Path, "read_text", return_value='{"format_version": 1, "type": "Tutorial", "sources": [{"title": "Foo"}]}'
+    )
+
+
+def preview_dock_of(window: MainWindow) -> QtAds.CDockWidget:
+    """The Documents dock's preview dock, reached through its private map by design.
+
+    :param window: the main window.
+    :returns: the preview's dock.
+    """
+    docs_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    preview = docs_dock.preview_document_widget()
+    docks = docs_dock._DocumentsDock__document_docks  # pylint: disable=protected-access
+    return next(dock for dock, widget in docks.items() if widget is preview)
+
+
+def test_a_preview_joins_recents_only_once_promoted(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A document shown in the preview is not a file the reader opened, until they keep it.
+
+    **Test steps:**
+
+    * show a document in the preview: verify ``Open recents`` is empty
+    * double-click the preview's title: verify the document is now the newest recent entry
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    serve_tutorials(mocker)
+    path = Path("a", "info.rehu").resolve()
+    recent_files = window._MainWindow__recent_files  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    window.show_in_preview(path)
+    assert recent_files.newest_first() == []
+
+    tab_label(preview_dock_of(window)).doubleClicked.emit()
+    assert recent_files.newest_first() == [path]
+
+
+def test_a_promoted_preview_that_failed_to_load_stays_out_of_recents(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A promoted preview whose file could not be read is no more a file opened than any other failed open.
+
+    **Test steps:**
+
+    * show a missing document in the preview and double-click its title
+    * verify ``Open recents`` stays empty
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    mocker.patch.object(Path, "read_text", side_effect=FileNotFoundError)
+
+    window.show_in_preview(Path("missing", "info.rehu").resolve())
+    tab_label(preview_dock_of(window)).doubleClicked.emit()
+
+    recent_files = window._MainWindow__recent_files  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert recent_files.newest_first() == []
+
+
+def test_a_promotion_carrying_anything_else_records_nothing(qtbot: QtBot) -> None:
+    """The promotion relay is object-typed; anything but a path is ignored, which no in-tree emitter sends.
+
+    **Test steps:**
+
+    * emit ``preview_promoted`` with a string
+    * verify ``Open recents`` stays empty
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    docs_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    docs_dock.preview_promoted.emit("a.rehu")
+
+    recent_files = window._MainWindow__recent_files  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert recent_files.newest_first() == []
+
+
+def test_the_session_leaves_the_preview_out(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The preview is transient: the session keeps the documents open in ordinary docks, not the preview, and
+    does not remember the preview as the focused one.
+
+    **Test steps:**
+
+    * open one document, then show another in the preview (now the focused one)
+    * dispatch a close event
+    * verify the session holds only the opened document, and no focused path
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    serve_tutorials(mocker)
+    mocker.patch.object(DocumentSessionSettings, "save")
+    opened = Path("a", "info.rehu").resolve()
+    previewed = Path("b", "info.rehu").resolve()
+    window.open_file(opened)
+    window.show_in_preview(previewed)
+
+    window.closeEvent(QCloseEvent())
+
+    session = window._MainWindow__session  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert list(session.items) == [opened]
+    assert session.focused_path is None
+
+
+def test_close_event_writes_the_preview_layouts(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Closing the app writes each type's preview layout (#39).
+
+    **Test steps:**
+
+    * spy on the Documents dock's ``save_preview_layouts``
+    * dispatch a close event
+    * verify it was called once
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    docs_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    save_preview_layouts = mocker.patch.object(docs_dock, "save_preview_layouts")
+    mocker.patch.object(DocumentSessionSettings, "save")
+
+    window.closeEvent(QCloseEvent())
+
+    save_preview_layouts.assert_called_once()
+
+
+SETTLE_MS: Final = 20
+"""A selection settle short enough to wait out in a test; the real one is ``SELECTION_SETTLE_MS``."""
+
+
+def selecting_window(mocker: MockerFixture, monkeypatch: MonkeyPatch, qtbot: QtBot) -> MainWindow:
+    """A window whose catalog resolves every key under one root, over documents that all read as the same tutorial,
+    with a short selection settle.
+
+    :param mocker: pytest-mock fixture.
+    :param monkeypatch: pytest monkeypatch fixture.
+    :param qtbot: pytest-qt fixture.
+    :returns: the window.
+    """
+    monkeypatch.setattr(selection_preview, "SELECTION_SETTLE_MS", SETTLE_MS)
+    serve_tutorials(mocker)
+    window = MainWindow()
+    qtbot.addWidget(window)
+    catalog = window._MainWindow__root_catalog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    mocker.patch.object(catalog, "resource_path", side_effect=lambda _root_id, relative: SELECTED_ROOT / relative)
+    return window
+
+
+SELECTED_ROOT: Final = Path("selected-root").resolve()
+SELECTED_KEY: Final = (uuid4(), "a/info.rehu")
+OTHER_SELECTED_KEY: Final = (uuid4(), "b/info.rehu")
+
+
+def drive_from(window: MainWindow, dock: Any) -> None:
+    """Make an outer dock the one the reader is in, as clicking inside it does.
+
+    :param window: the window.
+    :param dock: the outer dock.
+    """
+    window._MainWindow__focus_tracker.set_current_dock(dock)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def previewed_path(window: MainWindow) -> Path | None:
+    """The path the Documents preview shows, or ``None`` while there is no preview.
+
+    :param window: the window.
+    :returns: the path.
+    """
+    docs_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    widget = docs_dock.preview_document_widget()
+    return None if widget is None else widget.model.path
+
+
+def test_a_selection_in_the_browsers_shows_in_the_preview_once_it_settles(
+    mocker: MockerFixture, monkeypatch: MonkeyPatch, qtbot: QtBot
+) -> None:
+    """A browser's selected resource is shown in the preview, and the next one replaces it in place.
+
+    **Test steps:**
+
+    * make the Browsers dock the one the reader is in and announce a selection from it
+    * verify nothing at once, then the resource shown in the preview once it settles, with nothing in recents
+    * announce another: verify the preview shows that one, in the same single dock
+    """
+    window = selecting_window(mocker, monkeypatch, qtbot)
+    browsers = open_catalog_stand_in(window)
+    drive_from(window, browsers_dock_widget(window))
+
+    browsers.resource_selected.emit(SELECTED_KEY)
+    assert previewed_path(window) is None
+    qtbot.waitUntil(lambda: previewed_path(window) == SELECTED_ROOT / "a/info.rehu")
+    browsers.resource_selected.emit(OTHER_SELECTED_KEY)
+    qtbot.waitUntil(lambda: previewed_path(window) == SELECTED_ROOT / "b/info.rehu")
+
+    docs_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert len(docs_dock.open_document_widgets()) == 1
+    assert window._MainWindow__recent_files.newest_first() == []  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_a_selection_in_the_roots_view_shows_in_the_preview(
+    mocker: MockerFixture, monkeypatch: MonkeyPatch, qtbot: QtBot
+) -> None:
+    """The Roots view's selected record is shown the same way.
+
+    **Test steps:**
+
+    * make the Root Catalog dock the one the reader is in and announce a record from it
+    * verify the preview shows it once it settles
+    """
+    window = selecting_window(mocker, monkeypatch, qtbot)
+    drive_from(window, rehuco_dock_widget(window))
+
+    roots_panel(window).record_selected.emit(SELECTED_KEY)
+
+    qtbot.waitUntil(lambda: previewed_path(window) == SELECTED_ROOT / "a/info.rehu")
+
+
+def test_only_the_view_the_reader_is_in_drives_the_preview(
+    mocker: MockerFixture, monkeypatch: MonkeyPatch, qtbot: QtBot
+) -> None:
+    """Of the two catalog views, only the one the reader was last in drives the preview: a selection moving in the
+    other is not a request. Any other dock becoming current -- the Documents dock, the Log -- changes nothing.
+
+    **Test steps:**
+
+    * with the Root Catalog dock current, announce a selection from the Browsers dock
+    * with the Browsers dock current, announce one from the Roots view
+    * wait out the settle and verify nothing was previewed
+    * make the Documents dock current and announce one from the Browsers dock: verify it is previewed
+    """
+    window = selecting_window(mocker, monkeypatch, qtbot)
+    browsers = open_catalog_stand_in(window)
+    docs_dock_widget = window._MainWindow__documents_dock_widget  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    drive_from(window, rehuco_dock_widget(window))
+    browsers.resource_selected.emit(SELECTED_KEY)
+    drive_from(window, browsers_dock_widget(window))
+    roots_panel(window).record_selected.emit(SELECTED_KEY)
+    qtbot.wait(SETTLE_MS * 6)
+    assert previewed_path(window) is None
+
+    drive_from(window, docs_dock_widget)
+    browsers.resource_selected.emit(SELECTED_KEY)
+    qtbot.waitUntil(lambda: previewed_path(window) == SELECTED_ROOT / "a/info.rehu")
+
+
+def test_selecting_nothing_leaves_the_preview_as_it_is(
+    mocker: MockerFixture, monkeypatch: MonkeyPatch, qtbot: QtBot
+) -> None:
+    """No row, several rows, or a table a scan reset: the preview keeps what it shows, and a selection still waiting
+    is called off.
+
+    **Test steps:**
+
+    * preview a resource, then announce nothing
+    * announce another resource and then nothing before it settles
+    * verify the first is still shown
+    """
+    window = selecting_window(mocker, monkeypatch, qtbot)
+    browsers = open_catalog_stand_in(window)
+    drive_from(window, browsers_dock_widget(window))
+    browsers.resource_selected.emit(SELECTED_KEY)
+    qtbot.waitUntil(lambda: previewed_path(window) == SELECTED_ROOT / "a/info.rehu")
+
+    browsers.resource_selected.emit(None)
+    browsers.resource_selected.emit(OTHER_SELECTED_KEY)
+    browsers.resource_selected.emit(None)
+    qtbot.wait(SETTLE_MS * 6)
+
+    assert previewed_path(window) == SELECTED_ROOT / "a/info.rehu"
+
+
+def test_a_selected_resource_that_is_open_is_focused_not_previewed(
+    mocker: MockerFixture, monkeypatch: MonkeyPatch, qtbot: QtBot
+) -> None:
+    """A document open as a normal one is focused where it is; the preview stays out of it.
+
+    **Test steps:**
+
+    * open a document normally, then announce a selection of it
+    * verify it is the focused document and there is no preview
+    """
+    window = selecting_window(mocker, monkeypatch, qtbot)
+    browsers = open_catalog_stand_in(window)
+    drive_from(window, browsers_dock_widget(window))
+    window.open_file(SELECTED_ROOT / "a/info.rehu")
+    docs_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    opened = docs_dock.focused_document_widget()
+
+    browsers.resource_selected.emit(SELECTED_KEY)
+    qtbot.wait(SETTLE_MS * 6)
+
+    assert previewed_path(window) is None
+    assert docs_dock.open_document_widgets() == [opened]
+
+
+def test_double_clicking_what_the_preview_shows_keeps_it_as_a_normal_document(
+    mocker: MockerFixture, monkeypatch: MonkeyPatch, qtbot: QtBot
+) -> None:
+    """The double-click's ordinary open promotes the preview showing that document instead of opening it twice, and
+    the file is recorded in ``Open recents`` once, by the open.
+
+    **Test steps:**
+
+    * preview a resource, then open it through the ordinary route
+    * verify one dock, no preview, and the path recorded once
+    """
+    window = selecting_window(mocker, monkeypatch, qtbot)
+    browsers = open_catalog_stand_in(window)
+    drive_from(window, browsers_dock_widget(window))
+    browsers.resource_selected.emit(SELECTED_KEY)
+    qtbot.waitUntil(lambda: previewed_path(window) == SELECTED_ROOT / "a/info.rehu")
+
+    window.open_file(SELECTED_ROOT / "a/info.rehu")
+
+    docs_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert previewed_path(window) is None
+    assert len(docs_dock.open_document_widgets()) == 1
+    assert window._MainWindow__recent_files.newest_first() == [SELECTED_ROOT / "a/info.rehu"]  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_a_selection_does_not_bring_the_documents_dock_forward(
+    mocker: MockerFixture, monkeypatch: MonkeyPatch, qtbot: QtBot
+) -> None:
+    """The Documents dock can be a tab behind the dock being selected in, and fronting it would take that away: only a
+    Documents dock the reader has closed is opened -- and opening it leaves the selection with the view it came from.
+
+    **Test steps:**
+
+    * spy on the window's reveal of the Documents dock, and preview a resource with the dock open
+    * close the dock and preview another
+    * verify the dock was left alone the first time and revealed the second
+    * select the first again: verify the preview follows it
+    """
+    window = selecting_window(mocker, monkeypatch, qtbot)
+    browsers = open_catalog_stand_in(window)
+    drive_from(window, browsers_dock_widget(window))
+    reveal = mocker.spy(window, "_MainWindow__reveal_documents_dock")
+
+    browsers.resource_selected.emit(SELECTED_KEY)
+    qtbot.waitUntil(lambda: previewed_path(window) == SELECTED_ROOT / "a/info.rehu")
+    reveal.assert_not_called()
+
+    window._MainWindow__documents_dock_widget.toggleView(False)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    browsers.resource_selected.emit(OTHER_SELECTED_KEY)
+    qtbot.waitUntil(lambda: previewed_path(window) == SELECTED_ROOT / "b/info.rehu")
+
+    reveal.assert_called_once()
+    browsers.resource_selected.emit(SELECTED_KEY)
+    qtbot.waitUntil(lambda: previewed_path(window) == SELECTED_ROOT / "a/info.rehu")
+
+
+# endregion
 
 
 def test_raise_and_activate_shows_a_normal_window(mocker: MockerFixture, qtbot: QtBot) -> None:

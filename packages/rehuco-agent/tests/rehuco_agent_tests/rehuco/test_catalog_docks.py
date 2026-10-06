@@ -27,7 +27,7 @@ from uuid import UUID, uuid4
 import PySide6QtAds as QtAds
 from borco_pyside.qtads import tab_close_button, tab_label, tab_maximize_button
 from borco_pyside.widgets import MessageBanner, RowBandDelegate
-from PySide6.QtCore import QModelIndex, QPoint, Qt, QUrl
+from PySide6.QtCore import QItemSelectionModel, QModelIndex, QPoint, Qt, QUrl
 from PySide6.QtGui import QAction, QContextMenuEvent
 from PySide6.QtWidgets import (
     QApplication,
@@ -3628,6 +3628,236 @@ def test_removing_a_root_with_no_catalog_open_does_nothing_and_a_save_that_close
     assert dock.catalog.rehuco_path is None
     refreshed.assert_called_once_with()
     assert dock.catalog.save_error.startswith("Could not save")
+
+
+# endregion
+
+
+# region Selecting a resource shows it in the preview (#381)
+
+
+def select_rows(browser: TableBrowser, *rows: int) -> None:
+    """Make exactly these rows of a browser the selected ones, as a click or the arrow keys do.
+
+    :param browser: the browser.
+    :param rows: the rows to select; none clears the selection.
+    """
+    selection = browser.view.selectionModel()
+    flags = QItemSelectionModel.SelectionFlag
+    if not rows:
+        selection.clearSelection()
+    # the first row replaces the selection in one step, as a click does -- a clear and then a select would pass
+    # through a state of its own
+    for position, row in enumerate(rows):
+        selection.select(
+            browser.model.index(row, 0),
+            (flags.ClearAndSelect if position == 0 else flags.Select) | flags.Rows,
+        )
+
+
+def scan_two_records(mocker: MockerFixture, qtbot: QtBot, dock: CatalogDocks, queue: TaskQueue) -> None:
+    """Open the catalog and scan the tutorials root, which finds two records, into the first browser.
+
+    :param mocker: pytest-mock fixture.
+    :param qtbot: pytest-qt fixture.
+    :param dock: the catalog's docks.
+    :param queue: the queue the scan runs on.
+    """
+    ruby = CatalogRecord(
+        "ruby/info.rehu", RecordKind.REHU, title="Ruby", type="tutorial", current_size=1, content_hash="1"
+    )
+    scan_finding(mocker, {TUTORIALS: (tutorial_record(), ruby)})
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    dock.roots.scan_action.trigger()
+    qtbot.waitUntil(lambda: first_browser(dock).model.rowCount() == 2, timeout=WAIT_TIMEOUT_MS)
+    wait_for_jobs(qtbot, queue)
+
+
+@mark.usefixtures("served")
+def test_a_resource_key_resolves_to_its_path_in_one_place(dock: CatalogDocks) -> None:
+    """A ``(root_id, relative)`` key becomes a path through the catalog alone; a root the file does not list, or no
+    file at all, has none.
+
+    **Test steps:**
+
+    * resolve a key with nothing open, then with the catalog open: a listed root, and one the file lacks
+    * verify nothing, the root's folder joined to the relative path, and nothing
+    """
+    listed, unknown = UUID(ROOT_IDS[0]), uuid4()
+    assert dock.catalog.resource_path(listed, "python/info.rehu") is None
+
+    dock.catalog.open_rehuco(REHUCO_PATH)
+
+    assert dock.catalog.resource_path(listed, "python/info.rehu") == TUTORIALS / "python/info.rehu"
+    assert dock.catalog.resource_path(unknown, "python/info.rehu") is None
+
+
+@mark.usefixtures("served")
+def test_the_current_browsers_one_selected_row_is_announced_and_nothing_else_is(
+    mocker: MockerFixture, qtbot: QtBot, dock: CatalogDocks, queue: TaskQueue
+) -> None:
+    """One selected row names its resource; several name nothing -- and the next row names the next.
+
+    **Test steps:**
+
+    * scan two records in, make the browser current and spy on the dock's ``resource_selected``
+    * select the first row, then both, then none, then the second
+    * verify the first's key, ``None``, then the second's key -- a selection that stays empty says nothing again
+    """
+    scan_two_records(mocker, qtbot, dock, queue)
+    browser = first_browser(dock)
+    dock.browsers.focus_browser(browser)
+    announced: list[object] = []
+    dock.browsers.resource_selected.connect(announced.append)
+
+    select_rows(browser, 0)
+    select_rows(browser, 0, 1)
+    select_rows(browser)
+    select_rows(browser, 1)
+
+    assert announced == [browser.model.row_key(0), None, browser.model.row_key(1)]
+
+
+@mark.usefixtures("served")
+def test_a_browser_behind_the_current_one_announces_nothing(
+    mocker: MockerFixture, qtbot: QtBot, dock: CatalogDocks, queue: TaskQueue
+) -> None:
+    """A browser the reader is not in is not being read: what its selection does says nothing about them.
+
+    **Test steps:**
+
+    * scan two records in, add a second browser, which becomes the current one
+    * select a row of the first browser
+    * verify nothing was announced, then select one of the second and verify that was
+    """
+    scan_two_records(mocker, qtbot, dock, queue)
+    first = first_browser(dock)
+    new_browser_action = dock.browsers.new_browser_action
+    new_browser_action.trigger()
+    browsers = dock.browsers.browsers
+    second = browsers[1]
+    assert dock.browsers.current_browser is second
+    qtbot.waitUntil(lambda: second.model.rowCount() == 2, timeout=WAIT_TIMEOUT_MS)
+    announced: list[object] = []
+    dock.browsers.resource_selected.connect(announced.append)
+
+    select_rows(first, 0)
+    assert not announced
+
+    select_rows(second, 0)
+    assert announced == [second.model.row_key(0)]
+
+
+def add_records_around_the_folders(folders: Path) -> None:
+    """Give the first root what the Roots selection tests need: records of each shape the Open action knows.
+
+    ``my folder`` holds a record (``x.rehu``), a video with no record (``y.mp4``), one with a ``.rehu`` (``w.mp4``) and
+    one with only a ``.tc`` (``t.mp4``); ``alpha`` has an ``info.rehu``; ``legacy`` has only an ``info.tc``.
+
+    :param folders: the first root's folder.
+    """
+    add_files_to_a_folder(folders)
+    inside = folders / "my folder"
+    (inside / "t.mp4").write_bytes(b"t")
+    (inside / "t.tc").write_text("type: Tutorial", encoding="utf-8")
+    os.makedirs(folders / "legacy")
+    (folders / "legacy" / "info.tc").write_text("type: Tutorial", encoding="utf-8")
+
+
+def announced_on_selecting(qtbot: QtBot, dock: CatalogDocks, *names: str) -> object:
+    """What the Roots view announces once the row at ``names`` is its current one.
+
+    :param qtbot: pytest-qt fixture.
+    :param dock: the Root Catalog dock, with a catalog open.
+    :param names: the names down from the first root.
+    :returns: the last thing announced, which is the row's own: the rows on the way were announced first.
+    """
+    announced: list[object] = []
+    dock.roots.record_selected.connect(announced.append)
+    try:
+        open_root_folder(qtbot, dock, *names)
+    finally:
+        dock.roots.record_selected.disconnect(announced.append)
+    return announced[-1]
+
+
+@mark.usefixtures("served")
+def test_a_roots_row_announces_the_record_opening_it_would_open(
+    qtbot: QtBot, dock: CatalogDocks, folders: Path
+) -> None:
+    """A record names itself, a folder its ``info.rehu``, a file its same-name ``.rehu``, and the ``.tc`` of either
+    stands in when that is all there is -- the same record the Open action finds.
+
+    **Test steps:**
+
+    * make each kind of row current in turn
+    * verify the record each announced, as a root id and a ``/``-joined path
+    """
+    add_records_around_the_folders(folders)
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    root_id = UUID(ROOT_IDS[0])
+
+    assert announced_on_selecting(qtbot, dock, "my folder", "x.rehu") == (root_id, "my folder/x.rehu")
+    assert announced_on_selecting(qtbot, dock, "alpha") == (root_id, "alpha/info.rehu")
+    assert announced_on_selecting(qtbot, dock, "my folder", "w.mp4") == (root_id, "my folder/w.rehu")
+    assert announced_on_selecting(qtbot, dock, "my folder", "t.mp4") == (root_id, "my folder/t.tc")
+    assert announced_on_selecting(qtbot, dock, "legacy") == (root_id, "legacy/info.tc")
+
+
+@mark.usefixtures("served")
+def test_a_roots_row_with_no_record_announces_nothing_and_creates_none(
+    qtbot: QtBot, dock: CatalogDocks, folders: Path
+) -> None:
+    """A root, a folder with no rehu, a file with none, a file that is not a record -- each leaves the preview
+    alone, and none of them is a request to create one.
+
+    **Test steps:**
+
+    * make a root, a folder with no rehu, a video with none and a note current in turn, then no row at all
+    * verify each announced ``None``, and the folders hold exactly the files they did
+    """
+    add_records_around_the_folders(folders)
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    before = sorted(str(path) for path in folders.rglob("*"))
+    announced: list[object] = []
+    dock.roots.record_selected.connect(announced.append)
+
+    select_root(dock, 0)
+    assert announced == [None]
+    assert announced_on_selecting(qtbot, dock, "my folder") is None
+    assert announced_on_selecting(qtbot, dock, "my folder", "y.mp4") is None
+    assert announced_on_selecting(qtbot, dock, "alpha", "note.txt") is None
+    announced.clear()
+    dock.roots.roots_view.setCurrentIndex(QModelIndex())
+    assert announced == [None]
+
+    assert sorted(str(path) for path in folders.rglob("*")) == before
+
+
+@mark.usefixtures("served")
+def test_a_folder_not_yet_listed_is_asked_of_the_disk(qtbot: QtBot, dock: CatalogDocks, folders: Path) -> None:
+    """A folder the view has not listed yet has no names to ask, so its rehu is looked for on the disk.
+
+    **Test steps:**
+
+    * list the root, then make ``alpha`` current before its own listing is there
+    * verify it announced its ``info.rehu``
+    """
+    add_records_around_the_folders(folders)
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    model = dock.roots.roots_model
+    root = model.index(0, 0)
+    wait_for_root_listing(qtbot, dock, root)
+    alpha = next(
+        index for index in (model.index(row, 0, root) for row in range(model.rowCount(root))) if index.data() == "alpha"
+    )
+    assert model.child_names(alpha) is None
+    announced: list[object] = []
+    dock.roots.record_selected.connect(announced.append)
+
+    dock.roots.roots_view.setCurrentIndex(alpha)
+
+    assert announced[0] == (UUID(ROOT_IDS[0]), "alpha/info.rehu")
 
 
 # endregion

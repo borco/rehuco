@@ -509,6 +509,44 @@ def test_detach_discards_a_failure_that_arrives_afterward(qtbot: QtBot, image_do
     assert not doc_actions.notice
 
 
+def test_another_record_loaded_in_place_says_nothing_of_the_last_one_s_scrapes(
+    mocker: MockerFixture, qtbot: QtBot, image_downloads: ImageDownloads
+) -> None:
+    """Another record loaded into the model (a preview moving on, #381) drops the failure the last one's drop left,
+    and a drop still in flight for it fails without a row on the record shown now.
+
+    **Test steps:**
+
+    * fail a drop and verify its row; load another record and verify there is none
+    * drop again, load a third record while it is in flight, then let it fail
+    * verify there is still no row
+    """
+    doc_model = model()
+    executor = HoldingExecutor()
+    doc_actions = build_actions(doc_model, FakeRegistry({}), executor, FakeFetcher(), image_downloads)
+
+    def load(name: str) -> None:
+        other = RehuDocument({"type": "Tutorial", "title": name}, PATH.with_name(f"{name}.rehu"))
+        mocker.patch("rehuco_agent.documents.rehu_document_model.load_or_locked", return_value=other)
+        doc_model.load(PATH.with_name(f"{name}.rehu"))
+
+    doc_actions.submit(drop())
+    qtbot.waitUntil(lambda: bool(executor.jobs), timeout=WAIT_TIMEOUT_MS)
+    with qtbot.waitSignal(doc_actions.changed, timeout=WAIT_TIMEOUT_MS):
+        executor.run_next()
+    assert doc_actions.notice
+    load("second")
+    assert not doc_actions.notice
+
+    doc_actions.submit(drop())
+    qtbot.waitUntil(lambda: bool(executor.jobs), timeout=WAIT_TIMEOUT_MS)
+    load("third")
+    with qtbot.waitSignal(doc_actions.changed, timeout=WAIT_TIMEOUT_MS):
+        executor.run_next()
+
+    assert not doc_actions.notice
+
+
 # endregion
 # region the banner
 

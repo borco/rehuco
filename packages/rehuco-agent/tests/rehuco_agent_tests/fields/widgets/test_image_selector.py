@@ -5,13 +5,14 @@
 # arbitrary file split (same precedent as test_rehu_document_model.py, [[appendices.code-conventions]])
 # pylint: disable=too-many-lines
 
+import threading
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
 from borco_pyside.widgets import ActionButtonColumn
-from PySide6.QtCore import QModelIndex, Qt
-from PySide6.QtGui import QAction, QColor, QKeySequence, QPixmap
+from PySide6.QtCore import QModelIndex, Qt, QThreadPool
+from PySide6.QtGui import QAction, QColor, QImage, QKeySequence, QPixmap
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QLabel,
@@ -574,11 +575,14 @@ def test_selecting_a_loadable_screenshot_shows_its_dimensions(mocker: MockerFixt
 
     **Test steps:**
 
-    * seed screenshots with a stubbed loader yielding a 320x180 pixmap
+    * seed screenshots with a stubbed decode yielding a 320x180 picture
     * select the first row
     * verify the size overlay reads its dimensions
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_selector.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    mocker.patch(
+        "rehuco_agent.fields.widgets.image_selector.read_preview",
+        return_value=QImage(320, 180, QImage.Format.Format_RGB32),
+    )
     selector = ImageSelector()
     qtbot.addWidget(selector)
     selector.set_screenshots(ScreenshotSet(numbered=tuple(PATHS)), [])
@@ -587,7 +591,8 @@ def test_selecting_a_loadable_screenshot_shows_its_dimensions(mocker: MockerFixt
     assert isinstance(view, QTreeView)
     view.setCurrentIndex(view.model().index(0, 0))
 
-    assert size_overlay(selector).text() == "320 x 180"
+    # decoded on a pool thread (#381), so the overlay follows once it lands
+    qtbot.waitUntil(lambda: size_overlay(selector).text() == "320 x 180")
 
 
 def test_set_images_populates_dimensions_and_size_columns_from_disk(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -606,9 +611,12 @@ def test_set_images_populates_dimensions_and_size_columns_from_disk(mocker: Mock
     selector = ImageSelector()
     qtbot.addWidget(selector)
 
-    selector.set_screenshots(ScreenshotSet(numbered=tuple(PATHS[:1])), [])
-
     model = checkable_model(selector)
+
+    # read on a pool thread (#381): the cells fill in once the read lands
+    with qtbot.waitSignal(model.dataChanged):
+        selector.set_screenshots(ScreenshotSet(numbered=tuple(PATHS[:1])), [])
+
     assert cell(model, 0, DIMENSIONS_COLUMN) == "320 x 180"
     assert cell(model, 0, SIZE_COLUMN) == "1.4M"
 
@@ -996,6 +1004,67 @@ def test_restore_state_ignores_a_blob_qt_refuses(qtbot: QtBot) -> None:
     assert selector.sizes() == before
 
 
+def test_the_rows_are_listed_before_their_metrics_are_read(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The rows come up at once and their dimensions and size fill in later: reading them is a header read and a
+    ``stat`` per screenshot, which on a share held a document's whole open up (#381).
+
+    **Test steps:**
+
+    * hold every metrics read until released, and seed two screenshots
+    * verify both rows are listed with blank metrics
+    * release the reads and verify the cells fill in
+    """
+    release = threading.Event()
+
+    def metrics(_path: Path) -> tuple[str, str]:
+        assert release.wait(5), "the test never released the read"
+        return "320 x 180", "1.4M"
+
+    mocker.patch.object(ScreenshotListModel, "metrics", side_effect=metrics)
+    selector = ImageSelector()
+    qtbot.addWidget(selector)
+    model = checkable_model(selector)
+
+    selector.set_screenshots(ScreenshotSet(numbered=tuple(PATHS[:2])), [])
+
+    assert row_names(selector) == [PATHS[0].name, PATHS[1].name]
+    assert [cell(model, row, DIMENSIONS_COLUMN) for row in range(2)] == ["", ""]
+    release.set()
+    qtbot.waitUntil(lambda: [cell(model, row, SIZE_COLUMN) for row in range(2)] == ["1.4M", "1.4M"])
+
+
+def test_a_preview_decoded_for_a_row_left_since_is_dropped(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The preview shows the row the selection rests on: a decode for one it has left lands late and is
+    dropped, not painted over the newer one (#381).
+
+    **Test steps:**
+
+    * hold the first screenshot's decode until released, and answer the second's at once with another size
+    * select the first row, then the second, and wait for the second's picture
+    * release the first decode and verify the overlay still names the second
+    """
+    release = threading.Event()
+
+    def read(path: Path) -> QImage:
+        if path == PATHS[0]:
+            assert release.wait(5), "the test never released the decode"
+            return QImage(100, 100, QImage.Format.Format_RGB32)
+        return QImage(320, 180, QImage.Format.Format_RGB32)
+
+    mocker.patch("rehuco_agent.fields.widgets.image_selector.read_preview", side_effect=read)
+    selector = ImageSelector()
+    qtbot.addWidget(selector)
+    selector.set_screenshots(ScreenshotSet(numbered=tuple(PATHS[:2])), [])
+
+    selector.set_current_index(1)
+    qtbot.waitUntil(lambda: size_overlay(selector).text() == "320 x 180")
+    release.set()
+    QThreadPool.globalInstance().waitForDone(5000)
+    qtbot.wait(20)
+
+    assert size_overlay(selector).text() == "320 x 180"
+
+
 def test_set_images_blanks_dimensions_and_size_for_unreadable_files(qtbot: QtBot) -> None:
     """A path that doesn't resolve to a real, decodable image blanks both columns instead of raising.
 
@@ -1006,10 +1075,12 @@ def test_set_images_blanks_dimensions_and_size_for_unreadable_files(qtbot: QtBot
     """
     selector = ImageSelector()
     qtbot.addWidget(selector)
-
-    selector.set_screenshots(ScreenshotSet(numbered=tuple(PATHS[:1])), [])
-
     model = checkable_model(selector)
+
+    # the cells start blank anyway (#381), so wait for the read to land before asking
+    with qtbot.waitSignal(model.dataChanged):
+        selector.set_screenshots(ScreenshotSet(numbered=tuple(PATHS[:1])), [])
+
     assert cell(model, 0, DIMENSIONS_COLUMN) == ""
     assert cell(model, 0, SIZE_COLUMN) == ""
 
@@ -2475,13 +2546,16 @@ def test_a_read_only_list_still_lists_its_rows_and_previews_the_selection(mocker
     * select the second row
     * verify both rows are listed and the preview reports that screenshot's dimensions
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_selector.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    mocker.patch(
+        "rehuco_agent.fields.widgets.image_selector.read_preview",
+        return_value=QImage(320, 180, QImage.Format.Format_RGB32),
+    )
     selector = read_only(qtbot, FakeResource(["info00.jpg"], ["cover.jpg"]))
 
     selector.set_current_index(1)
 
     assert row_names(selector) == ["info00.jpg", "cover.jpg"]
-    assert size_overlay(selector).text() == "320 x 180"
+    qtbot.waitUntil(lambda: size_overlay(selector).text() == "320 x 180")
 
 
 def test_a_read_only_list_gives_up_its_check_boxes_and_nothing_else(qtbot: QtBot) -> None:

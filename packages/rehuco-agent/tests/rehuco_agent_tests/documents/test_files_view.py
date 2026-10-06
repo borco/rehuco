@@ -1216,4 +1216,25 @@ def test_a_detached_browser_follows_nothing(
     assert listing.call_count == 1
 
 
+def test_a_detached_browser_no_longer_follows_its_document(
+    qtbot: QtBot, view: FilesView, model: RehuDocumentModel, listing: Any
+) -> None:
+    """Detached, the browser stops hearing its document too -- the model may live on past it (#39).
+
+    **Test steps:**
+
+    * detach the browser, clear the document's path and announce a folder change through it
+    * verify the browsed folder is kept and nothing was listed
+    """
+    settle(qtbot, view)
+    view.detach()
+
+    model.path = None
+    model.announce_folder_changed(DIRECTORY)
+    qtbot.wait(10)
+
+    assert view.directory == DIRECTORY
+    assert listing.call_count == 1
+
+
 # endregion

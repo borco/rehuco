@@ -219,7 +219,7 @@ viewer surface is bound to, so the viewer re-renders without the two surfaces kn
 other. Keeping the reactive layer in the agent preserves the core's non-GUI purity ([[plugins#core-vs-plugin]]).
 
 **One view-model per open resource, app-wide** (#375). The same bindings that keep two surfaces of one document in
-step keep *two hosts* in step: a resource shown both as a Documents dock and as the Browsers dock's current resource
+step keep *two hosts* in step: a resource shown both in a Documents dock and in the Documents preview, or in two docks,
 ([[plugins#browsers]]) is **one** view-model held by both, so an edit in either shows in the other before anything is
 saved. A registry keyed by path owns the view-models and hands the same one to every holder; a view-model lives until
 its last holder lets go, and the unsaved-changes prompt belongs to that last release, not to closing one of several
@@ -300,11 +300,26 @@ workaround
 (stash `splitterSizes` on `viewToggled(False)` — `closeRequested` never fires on a toggle-hide — reapply on
 `viewToggled(True)`).
 
-**A second host for the same sub-docks.** Beside Documents, the window holds a **Rehuco** dock ([[plugins#browsers]]),
-whose own nested manager hosts the sub-docks of the *current* resource next to the browsing views. So the sub-docks,
-the document toolbar and the layout button are one reusable piece that any dock manager can host and rebuild for
-another resource (#380), not something only a Documents dock owns. Each host keeps **its own per-type default
-layouts**: a layout saved beside the Browsers dock never changes how Documents opens that type, and the other way round.
+**The sub-docks are one reusable piece.** The document sub-docks, the document toolbar and the layout button are built
+into whatever dock manager hosts them and can be torn down and rebuilt there for another resource (#380), not something
+only a Documents dock owns. A host names its own namespace for the **per-type default layouts** it keeps, so a layout
+saved in one never changes how another opens that type. Today the Documents dock is the only host; the browsers and the
+Roots view show a selected resource through its preview, below, and hold no document sub-docks of their own (#381).
+
+**The preview dock.** Documents holds at most one **preview** dock (#39), the way an editor's file explorer opens a
+file in a preview tab. Showing a `.rehu` open in an ordinary dock
+focuses that dock; showing one the preview already shows does nothing; showing any other puts it in the preview, made if
+there is none. The preview **switches in place**:
+the same dock, the old document's sub-docks torn down and the next one's built into the same manager, the old model
+released — the rebuild above, inside a document dock. It is **promoted** to an ordinary dock, in place, by
+a double-click on its title, or by being asked for another `.rehu` while it has unsaved changes — nothing is lost or
+asked, and the other `.rehu` goes to a new preview. An edit alone does not promote, nor a saved one. Its title is the
+document's label in italic; its object name is `Preview-<n>`, numbered per preview because a promoted dock keeps the
+manager registry entry it was added under ([[appendices.qt-ads#dock-registry-keys]]). It is **transient**: never in the
+session, and in `Open recents` only once promoted. Each type's preview remembers **its own layout** under
+`preview_layout/<type>`, captured whenever the preview stops showing that type (a switch, a promotion, its close, app
+exit) and written at exit; a type with none opens with its default layout. That layout is implicit: the Layout button
+in a preview acts on the type's default layout, as in any document dock.
 
 ### §13.2.5 The files sub-dock
 
@@ -610,12 +625,25 @@ and its cache** — the catalog — and both docks read it and hear from it when
     *Reference Images Columns*: that type's columns shown, every other type's hidden, a `type:` token on the line, and
     the browser named after the type. A type with no column of its own is not offered. A preset only picks the
     starting header state, filter and name; the browser is then an ordinary one and remembers no preset.
-- **The current resource's sub-docks** (#381) — exactly one selected row in the focused browser makes that resource
-  *current*, and the document sub-docks ([[plugins#dock-shell]]) show it, with its document toolbar beside the Root
-  Catalog toolbar; none or
-  several selected leaves them empty. The view-model is the one any Documents dock of the same file holds
-  ([[plugins#view-model]]), so the two stay in step unsaved. **Moving off a resource with unsaved edits opens it in
-  Documents** (or focuses it there) carrying those edits, then shows the new current resource.
+- **A selection shows in the Documents preview** (#381). The browsers and the Roots view get no document sub-docks of
+  their own: selecting a resource shows it in the preview dock ([[plugins#dock-shell]]), the one place a selected
+  resource is shown, through the one model any Documents dock of the same file holds ([[plugins#view-model]]). **Only a
+  different `.rehu` changes it.** No row, several rows, a Roots node with no record, the same resource again, the same
+  resource under a new name (a rename re-keys the current row) and a scan's reset of the table all leave the preview
+  as it is; a resource open as an ordinary document is focused there instead.
+  - **What a selection names.** A browser row names its record by `(root_id, relative)`. A Roots node names what
+    opening it would open: a record itself, a folder's `info.rehu`, a file's same-name `.rehu`, the `.tc` of either when
+    that is all there is. **A selection never creates a record**: where opening would offer *Create*, nothing is
+    shown. `RootCatalog.resource_path` is the one place a key becomes a path, so 0.4.0's re-keying (#414) and
+    node-served resources (#421) change that and nothing else.
+  - **Which view drives it.** The one the reader is in: the Browsers dock's current browser, or the Root Catalog
+    dock, while it is the current outer dock. A selection that moves on its own in a dock the reader is not in does
+    not move the preview.
+  - **It stays cheap.** A selection is shown once it has stood for 250 ms, like the filter line, so the arrow keys
+    load one document per resting row. Showing it does not bring the Documents dock forward — it can be a tab behind
+    the dock being selected in — unless the reader closed it.
+  - **A double-click is unchanged**: it opens an ordinary document, and when the preview shows that `.rehu` it is
+    promoted instead of opened twice.
 
 **The menu bar is the complete index** (#402, #465): `File`, `Root Catalog`, `Browsers`, `View` and `Tools`.
 `File` and `Browsers` are twins — the verbs that open or create, the verbs on the open set, then the open list,

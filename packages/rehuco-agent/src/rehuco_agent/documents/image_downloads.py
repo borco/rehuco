@@ -118,9 +118,9 @@ class ImageDownloads(QObject):  # pylint: disable=too-many-instance-attributes
         """The page scrapes :meth:`submit_page` is waiting to hear back from, the same shape as
         :attr:`__pending` but for the job kind that only reads a page for its images."""
 
-        self.__failures: Final[list[str]] = []
-        """What the current batch has failed with so far, in the order it happened -- see
-        :meth:`__begin_batch` for where a batch starts."""
+        self.__failures: Final[list[tuple[Path, str]]] = []
+        """What the current batch has failed with so far, in the order it happened, each with the path it was
+        submitted from -- see :meth:`__begin_batch` for where a batch starts."""
 
         self.__detached = False
         """Set by :meth:`detach`. Checked explicitly for the same reason `.ScrapeActions.__detached`
@@ -131,18 +131,23 @@ class ImageDownloads(QObject):  # pylint: disable=too-many-instance-attributes
     @property
     def notice(self) -> list[MessageBannerRow]:
         """The document's inline strip rows for a download or a page scrape in flight, then -- once
-        nothing is running -- one warning row per distinct failure of the last batch."""
+        nothing is running -- one warning row per distinct failure of the last batch.
+
+        Only what was asked from where the document is now: a preview moving on to another record (#381) leaves
+        the last one's downloads to land and be discarded, and says nothing about them."""
+        path = self.__model.path
         rows: list[MessageBannerRow] = []
-        if self.__pending_pages:
+        pages = path in self.__pending_pages.values()
+        downloads = path in self.__pending.values()
+        if pages:
             rows.append(MessageBannerRow(MessageBannerSeverity.INFO, BUSY_PAGE_MESSAGE))
-        if self.__pending:
+        if downloads:
             rows.append(MessageBannerRow(MessageBannerSeverity.INFO, BUSY_MESSAGE))
-        if not self.__pending and not self.__pending_pages:
+        if not downloads and not pages:
             # distinct, in the order they happened: a page whose every image hit the same full set
             # says so once, not once per image
-            rows.extend(
-                MessageBannerRow(MessageBannerSeverity.WARNING, failure) for failure in dict.fromkeys(self.__failures)
-            )
+            failures = dict.fromkeys(failure for submitted, failure in self.__failures if submitted == path)
+            rows.extend(MessageBannerRow(MessageBannerSeverity.WARNING, failure) for failure in failures)
         return rows
 
     def detach(self) -> None:
@@ -242,7 +247,8 @@ class ImageDownloads(QObject):  # pylint: disable=too-many-instance-attributes
         a page's images are submitted one after another, and the second must not erase what the first
         has already failed with.
         """
-        if not self.__pending and not self.__pending_pages:
+        path = self.__model.path
+        if path not in self.__pending.values() and path not in self.__pending_pages.values():
             self.__failures.clear()
 
     def __fail(self, message: str, *, with_traceback: bool = False) -> None:
@@ -256,7 +262,8 @@ class ImageDownloads(QObject):  # pylint: disable=too-many-instance-attributes
             LOG.exception("%s", message)
         else:
             LOG.warning("%s", message)
-        self.__failures.append(message)
+        # every caller has just checked the document is where the work was asked from
+        self.__failures.append((cast(Path, self.__model.path), message))
 
     def __acquire_one(self, organizer: ImageOrganizer, source: Path | ImageBytes) -> bool:
         """Read one of :meth:`acquire_local`'s sources and write it, recording a failure rather than
@@ -328,10 +335,10 @@ class ImageDownloads(QObject):  # pylint: disable=too-many-instance-attributes
         :param error: the exception `~rehuco_agent.scraping.image_download_job.ImageDownloadJob.run`
             caught.
         """
-        self.__pending.pop(job, None)
-        if self.__detached:
+        submitted_path = self.__pending.pop(job, None)
+        if self.__detached or submitted_path is None:
             return
-        self.__failures.append(str(error))
+        self.__failures.append((submitted_path, str(error)))
         self.changed.emit()
 
     def __on_page_result(self, job: ScrapeJob, submitted_path: Path, result: object) -> None:
@@ -368,8 +375,8 @@ class ImageDownloads(QObject):  # pylint: disable=too-many-instance-attributes
         :param job: the job that just failed, dropped from :attr:`__pending_pages` either way.
         :param error: the `~rehuco_agent.scraping.scrape_job.ScrapeError` `ScrapeJob.run` caught.
         """
-        self.__pending_pages.pop(job, None)
-        if self.__detached:
+        submitted_path = self.__pending_pages.pop(job, None)
+        if self.__detached or submitted_path is None:
             return
-        self.__failures.append(str(error))
+        self.__failures.append((submitted_path, str(error)))
         self.changed.emit()

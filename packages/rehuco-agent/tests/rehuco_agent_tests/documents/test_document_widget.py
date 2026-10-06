@@ -32,7 +32,7 @@ from borco_pyside.logging.log_model import MESSAGE_COLUMN
 from borco_pyside.theming import themed_svg_icon
 from borco_pyside.widgets import FlowLayout, MessageBanner, MessageBannerRow, MessageBannerSeverity, ToolBarStretch
 from PySide6.QtCore import QByteArray, QMimeData, QPointF, Qt, QUrl
-from PySide6.QtGui import QDragEnterEvent, QDropEvent, QImage, QKeySequence, QPixmap
+from PySide6.QtGui import QDragEnterEvent, QDropEvent, QImage, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
     QLabel,
@@ -138,6 +138,7 @@ from rehuco_core import (
 )
 
 from rehuco_agent_tests.qt_waits import wait_destroyed
+from rehuco_agent_tests.screenshot_pictures import decodable_screenshots
 
 TC_PATH: Final = Path("/fake/info.tc")
 TARGET_PATH: Final = Path("/fake/info.rehu")
@@ -306,7 +307,7 @@ def curate_screenshots(widget: DocumentWidget, paths: list[Path], mocker: Mocker
     :param paths: the curated screenshot set.
     :param mocker: pytest-mock fixture.
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    decodable_screenshots(mocker)
     strip = widget.findChild(ImageStrip)
     assert isinstance(strip, ImageStrip)
     strip.set_images(paths)
@@ -3266,7 +3267,7 @@ def test_applying_a_new_document_strip_layout_re_lays_out_the_one_on_screen(
 
 
 def test_applying_a_new_document_strip_height_resizes_the_one_on_screen(
-    widget: DocumentWidget, mocker: MockerFixture
+    widget: DocumentWidget, mocker: MockerFixture, qtbot: QtBot
 ) -> None:
     """A height applied in the settings resizes the strip already on screen (#161).
 
@@ -3286,7 +3287,8 @@ def test_applying_a_new_document_strip_height_resizes_the_one_on_screen(
 
     assert strip.maximumHeight() == 210
     thumbnail = strip.findChildren(ThumbnailLabel)[-1]
-    assert thumbnail.pixmap().height() == 210
+    # decoded again at the new height, in the background (#381)
+    qtbot.waitUntil(lambda: thumbnail.pixmap().height() == 210)
 
 
 def test_a_rebuilt_form_stops_the_outgoing_strip_following_the_settings(
@@ -3402,7 +3404,7 @@ def test_a_rearranged_screenshot_set_sends_the_strip_back_to_disk(
     * patch the strip's own refresh, then make the editor report a rearrangement
     * verify the strip was sent back to its scanner
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    decodable_screenshots(mocker)
     strip = widget.findChild(ImageStrip)
     assert isinstance(strip, ImageStrip)
     refresh = mocker.patch.object(strip, "refresh")
@@ -4611,7 +4613,10 @@ def test_a_legacy_tc_lists_its_pattern_matched_images_and_previews_the_selection
     * select the second row
     * verify both are listed and the preview reports that image's dimensions
     """
-    mocker.patch("rehuco_agent.fields.widgets.image_selector.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    mocker.patch(
+        "rehuco_agent.fields.widgets.image_selector.read_preview",
+        return_value=QImage(320, 180, QImage.Format.Format_RGB32),
+    )
     widget, _model = legacy_over_images(mocker, qtbot)
     selector = image_selector(widget)
 
@@ -4619,7 +4624,7 @@ def test_a_legacy_tc_lists_its_pattern_matched_images_and_previews_the_selection
 
     assert selector.screenshot_paths() == TC_IMAGES
     overlay = selector._ImageSelector__size_overlay  # type: ignore[attr-defined]  # pylint: disable=protected-access
-    assert overlay.text() == "320 x 180"
+    qtbot.waitUntil(lambda: overlay.text() == "320 x 180")
 
 
 def test_a_legacy_tc_refuses_every_edit_its_images_dock_would_make(mocker: MockerFixture, qtbot: QtBot) -> None:

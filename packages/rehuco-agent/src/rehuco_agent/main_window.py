@@ -9,7 +9,7 @@ import logging
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Final, override
+from typing import Final, cast, override
 
 import PySide6QtAds as QtAds
 from borco_core.logging import LogScope
@@ -80,6 +80,8 @@ from .glyphs import TAB_CLOSE_GLYPH
 from .main_window_ui import Ui_MainWindow
 from .recycle_bin_deleter import configured_deleter
 from .rehuco import BrowsersDock, RootCatalog, RootsPanel
+from .rehuco.catalog_table_model import RowKey
+from .rehuco.selection_preview import SelectionPreview
 from .rehuco.table_browser import TableBrowser
 from .resource_events import ResourceEvents
 from .settings.checksum_settings import shared_checksum_settings
@@ -301,9 +303,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # this manager is every nested tracker's stylesheet host, and their sheet zeroes the close
         # icon on *every* tab under it -- its own included -- on the promise that a tracker draws the
         # close glyph in its place. Without a tracker of its own, the outer tabs' [x] was an empty
-        # 4 px hit area (measured on screen, #341). Nothing holds onto it: it parents itself to the
-        # manager it tracks, and no state is read back off it
-        QtAdsFocusTracker(self.__dock_manager, close_glyph=TAB_CLOSE_GLYPH)
+        # 4 px hit area (measured on screen, #341). It parents itself to the manager it tracks; it is kept (#381)
+        # to read which dock is current, since the Browsers dock and the Root Catalog dock may each drive the
+        # preview only while the reader is in them
+        self.__focus_tracker: Final = QtAdsFocusTracker(self.__dock_manager, close_glyph=TAB_CLOSE_GLYPH)
         # the maximize toggle on each outer dock tab (#341): the handler parents itself to
         # the manager, and is kept only so the close-time layout capture can read it un-maximized
         self.__maximize_handler: Final = attach_maximize_handler(self.__dock_manager)
@@ -369,6 +372,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__documents_dock.filter_requested.connect(self.__on_filter_requested)
         self.__documents_dock.document_path_changed.connect(self.__on_document_path_changed)
         self.__documents_dock.open_requested.connect(self.__on_open_requested)
+        self.__documents_dock.preview_promoted.connect(self.__on_preview_promoted)
         # a document command set app-wide fires on the focused document from anywhere (#345); nothing
         # holds onto the router -- it parents itself to this window, which its actions are added to
         DocumentCommandRouter(self.__documents_dock, self.__command_registry, self)
@@ -395,7 +399,17 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # open_archive derives the companion from any file's name, an archive's or not
         self.__roots_panel.open_companion_requested.connect(self.open_archive)
         self.__roots_panel.filter_requested.connect(self.__on_folder_filter_requested)
+        # selecting a resource -- a browser's row, a Roots node with a record -- shows it in the Documents preview
+        # once the selection settles (#381); the catalog resolves its key, in the one place that does
+        self.__selection_preview: Final = SelectionPreview(self.__root_catalog, self.__show_selection_in_preview, self)
+        self.__browsers_dock.resource_selected.connect(self.__on_browser_selection)
+        self.__roots_panel.record_selected.connect(self.__on_roots_selection)
+        self.__selecting_dock: QtAds.CDockWidget | None = None
+        """Which of the Browsers and the Root Catalog docks the reader was last in -- the one whose selection the
+        preview follows (#381). Any other dock becoming current leaves it as it is: a Documents dock the preview
+        itself opened, or the Log, would otherwise take the arrow keys' selection away from the table they move."""
         self.__setup_docking_system()
+        self.__focus_tracker.current_dock_changed.connect(self.__on_current_dock_changed)
         self.__ui.file_menu.aboutToShow.connect(lambda: self.__add_open_documents(self.__ui.file_menu))
         self.__ui.browsers_menu.aboutToShow.connect(lambda: self.__add_open_browsers(self.__ui.browsers_menu))
         self.__setup_file_menu()
@@ -1713,6 +1727,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         for handler in self.__pin_side_handlers:
             handler.save(persistent_settings())
         self.__save_session()
+        self.__documents_dock.save_preview_layouts()
         self.__settings_dialog.save_filter_state()
         self.__recent_files.save(persistent_settings())
         self.__theme_settings.mode = self.__theme_model.mode
@@ -1791,12 +1806,14 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         the LRU order); everything else keeps its prior state but is marked closed. A brand-new
         document not yet written to its path (``saved_on_disk`` false) is skipped -- there is nothing
         on disk to restore, and reopening it via the load path would materialize a locked ``MISSING``
-        stub for a file that never existed, resurrecting edits the user discarded (#175, #147).
+        stub for a file that never existed, resurrecting edits the user discarded (#175, #147). Neither is the
+        preview (#39): it is transient, so the next run starts without one.
         """
+        preview = self.__documents_dock.preview_document_widget()
         open_widgets = {
             widget.model.path: widget
             for widget in self.__documents_dock.open_document_widgets()
-            if widget.model.path is not None and widget.model.saved_on_disk
+            if widget is not preview and widget.model.path is not None and widget.model.saved_on_disk
         }
 
         for path in open_widgets:
@@ -1807,7 +1824,8 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             self.__session.items[path] = DocumentSessionSettings.Item(  # pylint: disable=unsupported-assignment-operation
                 open=True, state=widget.save_state()
             )
-        self.__session.focused_path = self.__documents_dock.focused_document_path()
+        preview_focused = preview is not None and self.__documents_dock.focused_document_widget() is preview
+        self.__session.focused_path = None if preview_focused else self.__documents_dock.focused_document_path()
         self.__session.docks_state = self.__documents_dock.save_state()
 
         self.__session.save(persistent_settings())
@@ -1889,6 +1907,67 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         widget = self.__documents_dock.open_archive(resolved)
         if not widget.model.document.load_failed:
             self.__recent_files.record(resolved)
+
+    def show_in_preview(self, path: Path | str) -> None:
+        """Show the ``.rehu`` at ``path`` in the Documents dock's preview (#39), focusing it instead if it is
+        already open.
+
+        Unlike :meth:`open_file`, nothing joins ``Open recents``: a preview is transient, and is recorded only
+        once promoted (:meth:`__on_preview_promoted`). The Documents dock is shown and raised first, as for
+        every open (#268).
+
+        :param path: filesystem path to a ``.rehu`` file.
+        """
+        self.__reveal_documents_dock()
+        self.__documents_dock.show_in_preview(Path(path).resolve())
+
+    def __on_current_dock_changed(self, dock: object) -> None:
+        """Remember the Browsers or the Root Catalog dock as the one the preview follows, once the reader is in it.
+
+        :param dock: the outer dock now current, or ``None``.
+        """
+        if dock is self.__browsers_dock_widget or dock is self.__rehuco_dock_widget:
+            self.__selecting_dock = cast(QtAds.CDockWidget, dock)
+
+    def __on_browser_selection(self, key: object) -> None:
+        """Hand the Browsers dock's selection to the preview -- only while it is the catalog view the reader was last
+        in (#381): the other view's selection moving meanwhile is not a request.
+
+        :param key: the one selected row's ``(root_id, relative)``, or ``None``.
+        """
+        if self.__selecting_dock is self.__browsers_dock_widget:
+            self.__selection_preview.select(cast(RowKey | None, key))
+
+    def __on_roots_selection(self, key: object) -> None:
+        """Hand the Root Catalog dock's selection to the preview, on the same terms as :meth:`__on_browser_selection`.
+
+        :param key: the selected row's record as ``(root_id, relative)``, or ``None``.
+        """
+        if self.__selecting_dock is self.__rehuco_dock_widget:
+            self.__selection_preview.select(cast(RowKey | None, key))
+
+    def __show_selection_in_preview(self, path: Path) -> None:
+        """Show a selected resource in the preview (#381). Unlike :meth:`show_in_preview` this does not bring the
+        Documents dock forward: it can be a tab behind the very dock the reader is selecting in, and fronting it
+        would take that dock away mid-selection. Only a Documents dock the reader has closed is opened.
+
+        :param path: the resource's path, as the catalog resolved it.
+        """
+        if self.__documents_dock_widget.isClosed():
+            self.__reveal_documents_dock()
+        self.__documents_dock.show_in_preview(path.resolve())
+
+    def __on_preview_promoted(self, path: object) -> None:
+        """Record a promoted preview in ``Open recents`` (#39) -- it is a file the reader opened now -- unless
+        it could not be read, as :meth:`open_file` decides.
+
+        :param path: the promoted document's path, as the object-typed relay carried it.
+        """
+        if not isinstance(path, Path):
+            return
+        model = self.__document_registry.find(path)
+        if model is not None and not model.document.load_failed:
+            self.__recent_files.record(path)
 
     def __on_open_requested(self, path: object) -> None:
         """Open a record an already-open document asked for -- another resource double-clicked in its

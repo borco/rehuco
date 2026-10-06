@@ -11,7 +11,7 @@ from collections.abc import Generator, Sequence
 from contextlib import contextmanager
 from functools import partial
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, cast
 
 from borco_core.logging import LogScope
 from borco_pyside.core import ConnectionList, SimpleProperty
@@ -45,6 +45,22 @@ from .rename_holders import RenameHolderReport
 from .tc_conversion_outcomes import scan_after_conversion
 
 LOG: Final = logging.getLogger(__name__)
+
+
+def load_or_locked(path: Path) -> RehuDocument:
+    """Read ``path`` the way a holder opens it (#381): see
+    :func:`~rehuco_agent.documents.document_registry.load_or_locked`, which this defers to.
+
+    Looked up when called, not when this module loads: the registry builds models of this class, so its module
+    imports this one.
+
+    :param path: the file to read.
+    :returns: the document, or a locked stub bound to ``path``.
+    """
+    from .document_registry import load_or_locked as read  # pylint: disable=import-outside-toplevel,cyclic-import
+
+    return read(path)
+
 
 # The three groups below are **coercion** groups: they say how a plugin-block value is read and written
 # back, not which type owns it. Which fields a type *has* is the plugin's own declaration in core
@@ -436,6 +452,8 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         """True only while :meth:`__seed_from_document` is applying field values pulled from the
         document -- guards every write-through handler below so a seed is never mistaken for a user
         edit."""
+        self.__loading = False
+        """See :attr:`loading`."""
 
         self.__seed_from_document()
         self.lock_reasons = list(self.__document.lock_reasons)
@@ -564,22 +582,31 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         """Read the file this :attr:`pending` placeholder stands in for -- the deferred half of the
         session restore's open (#66), run the first time the document's tab actually becomes visible.
 
-        Delegates to :meth:`revert`: a placeholder is precisely a document bound to its path with
-        nothing read from it yet, and revert is already exactly *re-read the path and reseed
-        everything* -- including materializing the empty **locked** dock for a file that has since
-        vanished or become unparseable ([[data-model#write-integrity]]), and rebuilding the whole form
-        (:attr:`active_block_changed`) for the real type in place of the placeholder's typeless one.
+        Loads the path the way :meth:`load` loads any file -- including materializing the empty **locked** dock
+        for a file that has since vanished or become unparseable ([[data-model#write-integrity]]) -- and always
+        rebuilds the whole form (:attr:`active_block_changed`) for the real type in place of the placeholder's
+        typeless one, since that rebuild is also when the dock adopts the layout the session remembered for it.
 
-        A no-op on a model that is not (or no longer) pending, so a stale second trigger never reverts
+        A no-op on a model that is not (or no longer) pending, so a stale second trigger never reloads
         a document out from under live edits.
         """
         if self.__pending:
-            self.revert()
+            # a placeholder is always bound to the path it stands in for (create_pending)
+            self.__load(load_or_locked(cast(Path, self.path)), rebuild=True)
 
     @property
     def document(self) -> RehuDocument:
         """The wrapped document."""
         return self.__document
+
+    @property
+    def loading(self) -> bool:
+        """Whether :meth:`load` (or a revert) is mid-way through moving every field to a newly read file (#381).
+
+        Its path, dirty flag and lock reasons each announce their own change on the way, and :attr:`reloaded`
+        follows once it is all done: a consumer that re-reads the disk on any of them waits for that one.
+        """
+        return self.__loading
 
     @property
     def locked(self) -> bool:
@@ -711,53 +738,93 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             return self.__move(new_name)
 
     def revert(self) -> None:
-        """Discard in-memory edits and reseed every field from the document's file on disk.
-
-        Re-reads the file (:meth:`RehuDocument.reload`) rather than just resetting to the
-        last-loaded snapshot, so an out-of-band edit ([[data-model#write-integrity]]) is picked up
-        too. :meth:`__seed_from_document` guards itself against the reseed looking like an edit --
-        no write-back to the document, and :attr:`dirty` ends up ``False`` regardless of what it was.
-
-        **A revert always rebuilds the form** ([[plugins#plugin-blocks]], #83): it fires
-        :attr:`active_block_changed` unconditionally, so the whole composition re-resolves from the
-        reloaded document -- a revert is defined to leave the model exactly as a fresh open would. A reload
-        can change the active type, the active block's unknown fields, and the inactive-block fates
-        (claimed-then-abandoned blocks revert to carried foreign, regaining their drop button, #84)
-        all at once, and only a full rebuild re-wires a row's provenance and carry-vs-drop button -- the
-        reactive rows can only show/hide and re-read a value, never re-wire. Rather than enumerate which
-        structural axis moved (a check that has to stay exhaustive as axes are added), the coarse,
-        user-driven revert just rebuilds; the cost is negligible and it is correct by construction.
-
-        ``unknown_fields_changed`` is emitted too, for consumers that don't rebuild on
-        :attr:`active_block_changed` -- the source-preview docks re-serialize off it (#111), and it also
-        covers restored unknown active-block fields ([[plugins#fallback-editor]], #28). :attr:`reloaded`
-        fires too, for the file seam itself: reverting a *clean, unlocked* document moves no property at
-        all, so it is the only signal telling `OnDiskView` the bytes it shows may be stale (#174).
+        """Discard in-memory edits and load the document's file again, exactly as :meth:`load` loads any other
+        (#381) -- so an out-of-band edit ([[data-model#write-integrity]]) is picked up too, and a revert is fast
+        whenever the file's structure is what the form already shows. Like any open, it reads under the identity
+        set now, which an identity-setting change made since the document was opened has moved.
 
         :raises ValueError: if the document has no path (was never loaded from or saved to a file).
         """
+        path = self.path
+        if path is None:
+            raise ValueError("no path to revert from -- document was not loaded from or saved to a file")
+        self.__load(load_or_locked(path), rebuild=False)
+        with LogScope.open(path):
+            LOG.info("Reverted %s to what is on disk", path)
+
+    def load(self, path: Path) -> None:
+        """Show the ``.rehu`` (or legacy ``.tc``) at ``path`` in this model, in place of what it showed (#381).
+
+        The one way a model takes a file's contents after it is built -- a preview moving on to the next
+        resource, and :meth:`revert` loading the same file again: the file is read the way a holder opens it
+        (:func:`~rehuco_agent.documents.document_registry.load_or_locked` -- a ``.tc`` routed to its own loader,
+        a file that will not read as an empty **locked** stub), and every field is reseeded from it, which every
+        editor and viewer follows through its binding. **Nothing is rebuilt unless the form's structure
+        changed** (:meth:`__form_shape`).
+
+        :param path: the file to show.
+        """
+        self.__load(load_or_locked(path), rebuild=False)
+
+    def __load(self, document: RehuDocument, *, rebuild: bool) -> None:
+        """Adopt ``document`` and reseed every field from it, as a fresh open would leave the model.
+
+        **The form is rebuilt only when its structure moved** ([[plugins#plugin-blocks]], #83, #381):
+        :attr:`active_block_changed` fires when the type, the active block's unknown fields, the inactive
+        blocks' fates or the identity differ from what the form was built for -- the axes only a rebuild
+        re-wires (a row's provenance, its carry-vs-drop button) -- or when ``rebuild`` asks for it. Otherwise
+        the bound rows re-read their values, which is all a rebuild would have changed; it costs a few
+        milliseconds where a rebuild of every editor and viewer cost a few hundred.
+
+        ``unknown_fields_changed`` is emitted too, for consumers that don't rebuild on
+        :attr:`active_block_changed` -- the source-preview docks re-serialize off it (#111), and it also
+        covers restored unknown active-block fields ([[plugins#fallback-editor]], #28). :attr:`reloaded` fires
+        for the file seam itself: reloading a *clean, unlocked* document moves no property at all, so it is the
+        only signal telling `OnDiskView` the bytes it shows may be stale (#174). The image scanner is installed
+        afresh, which is what has the strip, the curation list and the description's embedded images read the
+        folder again -- a different file's, or this one's as it is now.
+
+        :param document: the document to show.
+        :param rebuild: rebuild the form whatever its structure -- the deferred first read of a session-restore
+            placeholder (#66), whose form was built for a document not read yet.
+        """
+        shape = self.__form_shape()
         # cleared before anything is emitted: the refresh handlers this raises (reloaded,
         # active_block_changed) are the very consumers whose I/O the pending flag was holding back (#66)
-        was_pending = self.__pending
         self.__pending = False
-        with LogScope.open(self.path):
-            self.__document.reload()
-            if was_pending:
-                # the deferred first read (#66), not a user's Revert: logged in the eager open's own
-                # words (#200, `DocumentsDock.__load_or_locked`), since it is the same event -- this
-                # file was read -- and *when* it happened is already the record's timestamp
-                LOG.info("Read %s as %s", self.path, self.__document.type or "an untyped resource")
-            else:
-                LOG.info("Reverted %s to what is on disk", self.path)
-        self.__seed_from_document()
-        self.dirty = False
-        self.rename_error = ""
-        self.lock_reasons = list(self.__document.lock_reasons)
+        self.__loading = True
+        try:
+            self.__document = document
+            self.__seed_from_document(description=False)
+            self.dirty = False
+            self.rename_error = ""
+            self.lock_reasons = list(self.__document.lock_reasons)
+        finally:
+            self.__loading = False
+        self.image_scanner = self.__make_image_scanner()
+        # after the scanner: a description renders its embedded images against the new folder, once (#381)
+        with self.__seeding_guard():
+            self.description = self.__document.description
         self.unknown_fields_changed.emit()
-        self.active_block_changed.emit()
+        if rebuild or self.__form_shape() != shape:
+            self.active_block_changed.emit()
         self.reloaded.emit()
         self.__recompute_upgradable()
         self.__log_document_state()
+
+    def __form_shape(self) -> tuple[object, ...]:
+        """What the form is built from beyond the values it binds: the type, the active block's unknown fields,
+        the inactive blocks with whether each is dropped on save, and the identity the per-user fields are
+        minted under (#381). Two documents of one shape are shown by the same rows.
+
+        :returns: the shape, comparable for equality.
+        """
+        return (
+            self.resource_type,
+            tuple(self.unknown_field_names()),
+            tuple(self.inactive_block_fates()),
+            self.__document.username,
+        )
 
     def convert(self, *, keep_backups: bool, overwrite: bool = False, deleter: Deleter | None = None) -> None:
         """Convert this locked, legacy ``.tc``-backed document into a real ``.rehu`` in place
@@ -831,6 +898,9 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
         :param directory: the folder's absolute path.
         """
+        # what the scanner last read of the folder is out of date now -- before anyone is told to read it again.
+        # Installed at construction and only ever replaced, never cleared
+        cast(RehuDocumentImageScanner, self.image_scanner).forget()
         self.folder_changed.emit(directory)
 
     def relocate(self, relocation: Relocation) -> bool:
@@ -1146,9 +1216,13 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         finally:
             self.__seeding = False
 
-    def __seed_from_document(self) -> None:
+    def __seed_from_document(self, *, description: bool = True) -> None:
         """Set every field from :attr:`document`'s current in-memory state (construction,
-        :meth:`revert`, :meth:`convert`), guarded so it is never itself mistaken for a user edit."""
+        :meth:`revert`, :meth:`convert`), guarded so it is never itself mistaken for a user edit.
+
+        :param description: seed the description too; :meth:`__load` seeds it on its own, once the new image
+            scanner is installed, so it is rendered once and against the right folder (#381).
+        """
         with self.__seeding_guard():
             self.path = self.__document.path
             self.location = self.__document.path.as_posix() if self.__document.path is not None else ""
@@ -1159,7 +1233,8 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             self.publisher = self.__document.publisher
             self.url = self.__document.url
             self.released = self.__document.released
-            self.description = self.__document.description
+            if description:
+                self.description = self.__document.description
             self.hidden_images = self.__document.hidden_images
             self.original_size = self.__document.original_size
             self.current_size = self.__document.current_size

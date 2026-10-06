@@ -30,7 +30,7 @@ from rehuco_agent import main_rc  # noqa: F401  # pylint: disable=unused-import 
 from rehuco_agent.app_logging import shared_log_bridge
 from rehuco_agent.commands import shared_command_registry
 from rehuco_agent.dialogs import conversion_backups_dialog
-from rehuco_agent.documents import document_sub_docks
+from rehuco_agent.documents import document_sub_docks, documents_dock
 from rehuco_agent.fields.widgets.markdown_view import render_markdown
 from rehuco_agent.rehuco import browsers_dock
 from rehuco_agent.run_log import shared_run_log
@@ -632,6 +632,8 @@ def isolate_shared_default_layout_settings(mocker: MockerFixture) -> Iterator[No
     # ``settings.save(persistent_settings())`` through document_sub_docks' import, so an unpatched one
     # would write the developer's real settings file from any test that triggers either action
     mocker.patch.object(document_sub_docks, "persistent_settings", return_value=fake)
+    # and the Documents dock's, which writes the preview layouts at exit (#39)
+    mocker.patch.object(documents_dock, "persistent_settings", return_value=fake)
     yield
     shared_default_layout_settings_in.cache_clear()
 
