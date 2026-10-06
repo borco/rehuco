@@ -100,14 +100,17 @@ def test_a_bigger_font_elides_the_line_again(qtbot: QtBot) -> None:
     **Test steps:**
 
     * size a label to just hold the whole line
-    * enlarge its font and verify the line is elided
+    * enlarge its font until even the primary part is wider than the label, and verify the line is elided
     """
     label = sized(qtbot, 2000)
     label.resize(label.fontMetrics().horizontalAdvance(label.full_text) + 4, 20)
     assert label.text() == label.full_text
 
+    # four times the size, not two: text does not scale linearly (hinting), and on macOS a doubled font leaves the
+    # primary part alone still fitting, which is then shown whole -- correctly, and not what this test is about
     font = label.font()
-    font.setPointSize(font.pointSize() * 2)
+    font.setPointSizeF(font.pointSizeF() * 4)
     label.setFont(font)
+    assert label.fontMetrics().horizontalAdvance(PRIMARY) > label.width()
 
     assert label.text().endswith("…")
