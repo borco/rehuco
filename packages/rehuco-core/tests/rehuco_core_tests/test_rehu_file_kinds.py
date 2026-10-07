@@ -15,6 +15,7 @@ from rehuco_core import (
     EXCLUDED_FILE_PATTERNS,
     INFO_REHU_FILENAME,
     DirectoryClassifier,
+    DirectoryListing,
     FileKind,
     FileType,
     classify_directory,
@@ -499,6 +500,48 @@ def test_what_this_calls_content_is_exactly_what_the_content_walk_returns(mocker
     }
 
     assert classified == walked
+
+
+# endregion
+
+
+# region Naming a listing already read (#457)
+
+
+def test_a_listing_is_named_for_another_record_without_reading_the_directory_again(mocker: MockerFixture) -> None:
+    """The Roots view lists a folder once, as a stranger, and asks each record that covers part of it which files are
+    its content: that question costs no second ``scandir``, which on a share is a round trip.
+
+    **Test steps:**
+
+    * classify the directory for a file-scoped ``foo.rehu``, then make ``scandir`` refuse to run
+    * name that listing again for ``info.rehu``
+    * verify the second answer is the one a fresh read for ``info.rehu`` gives, and the entries kept their stat
+    """
+    mock_tree(mocker)
+    first = classify_directory(FILE_SCOPED_PATH, DIRECTORY)
+    expected = classify_directory(DIRECTORY_SCOPED_PATH, DIRECTORY)
+    mocker.patch("os.scandir", side_effect=AssertionError("the directory was read again"))
+
+    again = DirectoryClassifier(DIRECTORY_SCOPED_PATH).reclassify(first)
+
+    assert {entry.name: entry.kind for entry in again.entries} == {entry.name: entry.kind for entry in expected.entries}
+    assert {entry.name: (entry.size, entry.modified) for entry in again.entries} == {
+        entry.name: (entry.size, entry.modified) for entry in first.entries
+    }
+
+
+def test_a_listing_that_could_not_be_read_stays_as_it_was() -> None:
+    """Gone is not empty (#245), and naming a listing cannot turn one into the other.
+
+    **Test steps:**
+
+    * name an unreachable listing for a record
+    * verify the very listing comes back
+    """
+    away = DirectoryListing(DIRECTORY, reachable=False)
+
+    assert DirectoryClassifier(DIRECTORY_SCOPED_PATH).reclassify(away) is away
 
 
 # endregion

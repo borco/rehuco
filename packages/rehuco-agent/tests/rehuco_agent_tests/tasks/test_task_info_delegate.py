@@ -464,6 +464,58 @@ def test_a_failed_job_with_no_reason_draws_an_empty_cell(image: QImage, mocker: 
 # endregion
 
 
+# region what a finished job found (#457)
+
+
+def test_a_finished_job_draws_what_it_found_across_the_whole_cell(image: QImage, mocker: MockerFixture) -> None:
+    """The line a reader came to the dock for is a sentence, so it takes the cell like a failure's reason does.
+
+    **Test steps:**
+
+    * paint a done job carrying a summary and a unit
+    * verify the summary was drawn into the whole cell, and no bar was painted
+    """
+    drawn_text = mocker.patch.object(QPainter, "drawText")
+    groove = TaskInfoDelegate.bar_rect(CELL)
+    status = JobStatus(
+        serial=1,
+        label="job",
+        state=JobState.DONE,
+        done=4,
+        total=4,
+        progress_unit=PROGRESS_UNIT_BYTES,
+        summary="Checksums verified: 210 matched.",
+    )
+
+    paint(status, image)
+
+    drawn_text.assert_called_once()
+    rect, _alignment, text = drawn_text.call_args.args
+    assert text == "Checksums verified: 210 matched."
+    assert rect.width() > FIGURE_WIDTH
+    assert color_at(image, groove.center().x(), groove.center().y()) != DONE_COLOR.name()
+
+
+def test_a_finished_job_with_nothing_to_say_still_shows_its_progress(image: QImage, mocker: MockerFixture) -> None:
+    """A job that reports no summary keeps the figure it always had.
+
+    **Test steps:**
+
+    * paint a done job with no summary
+    * verify its figure was drawn, not a sentence
+    """
+    drawn_text = mocker.patch.object(QPainter, "drawText")
+
+    paint(
+        JobStatus(serial=1, label="job", state=JobState.DONE, done=4, total=4, progress_unit=PROGRESS_UNIT_BYTES), image
+    )
+
+    assert [call.args[-1] for call in drawn_text.call_args_list] == ["4B / 4B"]
+
+
+# endregion
+
+
 def test_a_row_that_is_not_a_job_is_left_to_the_base_delegate(image: QImage, mocker: MockerFixture) -> None:
     """A cell whose status role is not a `JobStatus` is handed on untouched, the same deference
     `LogLevelDelegate` shows a foreign model.

@@ -711,10 +711,8 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
             return path / INFO_REHU_FILENAME
         if index.data(RootsFolderModel.BOOKKEEPING_ROLE) and self.__roots_model.file_type_of(index) is FileType.IMAGE:
             # a screenshot belongs to the record it is numbered after: ``info00.jpg`` to ``info.rehu``, and it is
-            # never the start of a record of its own
-            numbered = SCREENSHOT_STEM_PATTERN.match(path.stem)
-            if numbered is not None:
-                return path.with_name(f"{numbered['record']}.rehu")
+            # never the start of a record of its own (a listing calls an image a sidecar only when it is numbered)
+            return path.with_name(f"{SCREENSHOT_STEM_PATTERN.sub(r'\g<record>', path.stem)}.rehu")
         return path.with_suffix(".rehu")
 
     def __companion_exists(self, index: QModelIndex) -> bool:

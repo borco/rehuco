@@ -3011,3 +3011,73 @@ def test_a_page_that_cannot_save_has_apply_disabled_and_is_skipped_by_auto_apply
     assert actions.apply_current_page_action.isEnabled()  # type: ignore[attr-defined]
     poll_dirty_state(dialog)
     assert page.save_calls == 1
+
+
+# region A setting also applied from outside the dialog (#457)
+
+
+def test_a_page_saved_from_elsewhere_follows_when_clean_and_keeps_an_edit_when_dirty(
+    qtbot: QtBot, mocker: MockerFixture
+) -> None:
+    """The menu applies the Root Catalog setting as it is clicked; the page stages and applies on demand. The dialog
+    keeps the two honest: an untouched page follows the menu and stays clean, an edit stays an edit until it equals
+    what was applied.
+
+    **Test steps:**
+
+    * open the dialog with the Root Catalog page (setting on), and apply a change of the setting from outside
+    * verify the page's box followed, with nothing marked changed and Reset off
+    * stage the opposite in the box and verify it is marked, with Reset on
+    * apply the staged value from outside, verify it is no longer marked, and that an applied change moves the clean
+      page again
+    * stage once more and press Reset, verify the box shows the applied value and nothing is marked
+    """
+    # pylint: disable=import-outside-toplevel
+    from PySide6.QtWidgets import QCheckBox
+    from rehuco_agent.settings.root_catalog_settings import shared_root_catalog_settings
+    from rehuco_agent.settings.ui import root_catalog_page
+    from rehuco_agent.settings.ui.root_catalog_page import RootCatalogPage
+
+    mocker.patch.object(root_catalog_page, "persistent_settings")
+    settings = shared_root_catalog_settings()
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    page = RootCatalogPage()
+    dialog.add_page("Root Catalog", page)
+    check = page.findChild(QCheckBox)
+    assert check is not None
+    ui = dialog_ui(dialog)
+
+    filters = dialog._SettingsDialog__frame_filters  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    frame_filter = filters[page]
+
+    def state() -> tuple[bool, bool, bool, bool]:
+        dialog._SettingsDialog__refresh_dirty_ui()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+        return (
+            check.isChecked(),
+            page.is_dirty(),
+            bool(frame_filter.dirty_frames()),
+            ui.reset_current_page_action.isEnabled(),  # type: ignore[attr-defined]
+        )
+
+    assert state() == (True, False, False, False)
+
+    settings.auto_preview = False  # the menu, with the page untouched
+    assert state() == (False, False, False, False)
+
+    check.setChecked(True)  # staged: an edit against the applied off
+    assert state() == (True, True, True, True)
+
+    settings.auto_preview = True  # the menu applies what was staged: no longer an edit
+    assert state() == (True, False, False, False)
+
+    settings.auto_preview = False  # and an untouched page follows the menu again
+    assert state() == (False, False, False, False)
+
+    check.setChecked(True)
+    assert state() == (True, True, True, True)
+    ui.reset_current_page_action.trigger()  # type: ignore[attr-defined]
+    assert state() == (False, False, False, False)
+
+
+# endregion

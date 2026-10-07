@@ -903,3 +903,58 @@ def test_a_scratch_widget_is_not_a_value_of_its_frame(qtbot: QtBot) -> None:
 
     edits[0].setText("changed")
     assert frame_filter.dirty_frames() == [frames[0]]
+
+
+# region Rebasing onto a value saved elsewhere (#457)
+
+
+def test_rebasing_makes_a_clean_frame_follow_the_new_saved_value(qtbot: QtBot) -> None:
+    """A frame nobody typed in has nothing to keep: it shows what is saved now, and stays clean.
+
+    **Test steps:**
+
+    * build two frames, type in the second, then reload every edit with a saved value that changed elsewhere
+    * rebase onto it
+    * verify the untouched frame shows the new value and is clean
+    """
+    page, (untouched, _edited), (first, second) = make_value_page(qtbot, 2)
+    frame_filter = SettingsFrameFilter(page, "")
+    second.setText("typed")
+
+    def reload() -> None:
+        first.setText("saved elsewhere")
+        second.setText("saved elsewhere")
+
+    frame_filter.rebase(reload)
+
+    assert first.text() == "saved elsewhere"
+    assert untouched not in frame_filter.dirty_frames()
+
+
+def test_rebasing_keeps_an_edit_and_judges_it_against_the_new_saved_value(qtbot: QtBot) -> None:
+    """A typed edit survives, and is an edit only while it differs from what is saved now.
+
+    **Test steps:**
+
+    * type in two frames and rebase onto a new saved value that equals one of the edits
+    * verify both edits are still on screen, the one that equals the saved value is clean, the other is dirty
+    """
+    page, (equal, different), (first, second) = make_value_page(qtbot, 2)
+    frame_filter = SettingsFrameFilter(page, "")
+    first.setText("same as saved")
+    second.setText("something else")
+
+    def reload() -> None:
+        first.setText("same as saved")
+        second.setText("same as saved")
+
+    frame_filter.rebase(reload)
+
+    assert (first.text(), second.text()) == ("same as saved", "something else")
+    assert frame_filter.dirty_frames() == [different]
+    assert equal not in frame_filter.dirty_frames()
+    frame_filter.restore_saved(different)
+    assert second.text() == "same as saved"
+
+
+# endregion

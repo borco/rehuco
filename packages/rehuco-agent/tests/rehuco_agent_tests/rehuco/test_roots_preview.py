@@ -1,5 +1,7 @@
 """Tests for the preview the Roots view shows for a file or an empty folder (#378)."""
 
+import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Final
 from uuid import uuid4
@@ -10,6 +12,7 @@ from PySide6.QtWidgets import QFrame, QLabel, QLineEdit, QVBoxLayout
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
+from rehuco_agent.rehuco.roots_checksum import BAD_INK, OLD_BAD_INK
 from rehuco_agent.rehuco.roots_folder_model import NodeListing, RootsFolderModel
 from rehuco_agent.rehuco.roots_preview import (
     EMPTY_FOLDER,
@@ -507,3 +510,199 @@ def test_a_thumbnail_read_that_ends_after_the_preview_was_deleted_is_dropped(
     read_image = shown.preview._RootsPreview__read_image  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     read_image(1, path)
+
+
+# region The checksum of a covered file (#457)
+
+
+def stamp(days: float) -> str:
+    """When a check was made, ``days`` ago, as a record writes it.
+
+    :param days: how long ago.
+    :returns: the stamp.
+    """
+    return (datetime.now(UTC) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+@fixture(name="covered")
+def fixture_covered(qtbot: QtBot, tmp_path: Path) -> Shown:
+    """A library with ``pack``, a resource whose checksum record covers a fresh match, a fresh mismatch, an old
+    mismatch and a file it does not list, beside a video no record covers; ``pack`` is listed.
+
+    :param qtbot: pytest-qt fixture.
+    :param tmp_path: pytest's temporary directory.
+    :returns: the preview and its model.
+    """
+    library = tmp_path / "lib"
+    pack = library / "pack"
+    pack.mkdir(parents=True)
+    for name in ("info.rehu", "ok.mp4", "bad.mp4", "old.mp4", "notes.txt", "info00.jpg"):
+        (pack / name).write_bytes(b"x")
+    (library / "loose.mp4").write_bytes(b"x")
+    entries = [
+        {"name": "ok.mp4", "crc32": "aabbccdd", "verified": stamp(1), "status": "matched"},
+        {"name": "bad.mp4", "crc32": "aabbccdd", "verified": stamp(2), "status": "mismatched"},
+        {"name": "old.mp4", "crc32": "aabbccdd", "verified": stamp(400), "status": "mismatched"},
+    ]
+    (pack / "info.checksum").write_text(json.dumps({"version": 1, "files": entries}), encoding="utf-8")
+    shown = Shown(qtbot, library)
+    pack_index = shown.row("pack")
+    shown.model.fetchMore(pack_index)
+    qtbot.waitUntil(lambda: shown.model.listing_state(pack_index) is NodeListing.LISTED, timeout=WAIT_TIMEOUT_MS)
+    return shown
+
+
+def show_in_pack(shown: Shown, name: str) -> None:
+    """Show a file of ``pack`` in the pane.
+
+    :param shown: the preview and its model.
+    :param name: the file's name.
+    """
+    pack = shown.row("pack")
+    shown.preview.show_index(
+        next(
+            shown.model.index(row, 0, pack)
+            for row in range(shown.model.rowCount(pack))
+            if shown.model.index(row, 0, pack).data() == name
+        )
+    )
+
+
+def title_icon(shown: Shown) -> QLabel:
+    """The label beside the title that holds the state's icon.
+
+    :param shown: the preview.
+    :returns: the label.
+    """
+    label = shown.preview.findChild(QLabel, "title_icon")
+    assert label is not None
+    return label
+
+
+def test_a_covered_file_says_its_verdict_and_when_it_was_checked(covered: Shown) -> None:
+    """Two fixed lines: the verdict, and the date with how long ago -- and the state's icon beside the title.
+
+    **Test steps:**
+
+    * show a file with a fresh match
+    * verify the verdict, a date line ending in how long ago, an icon beside the title, and the rows shown
+    """
+    show_in_pack(covered, "ok.mp4")
+
+    verdict, checked = covered.preview.checksum_texts or ("", "")
+    assert verdict == "Matching"
+    assert checked.endswith("(1 day ago)")
+    assert not title_icon(covered).pixmap().isNull()
+    assert not covered.hidden("checksum_label")
+    assert not covered.hidden("checked_label")
+
+
+def test_a_mismatch_is_drawn_red_and_an_expired_one_orange(covered: Shown) -> None:
+    """The title and its icon take the row's warning ink, and the date line says the old finding has expired.
+
+    **Test steps:**
+
+    * show a recent mismatch and then one 400 days old
+    * verify the title's ink and the bracketed note of each
+    """
+    name = covered.preview.findChild(QLabel, "name_label")
+    assert name is not None
+
+    show_in_pack(covered, "bad.mp4")
+    assert covered.preview.checksum_texts is not None
+    assert covered.preview.checksum_texts[0] == "Not matching"
+    assert name.palette().windowText().color() == BAD_INK
+
+    show_in_pack(covered, "old.mp4")
+    texts = covered.preview.checksum_texts
+    assert texts is not None
+    _verdict, checked = texts
+    assert checked.endswith("(expired)")
+    assert name.palette().windowText().color() == OLD_BAD_INK
+
+
+def test_a_file_with_nothing_to_check_says_why(covered: Shown) -> None:
+    """A file its record does not list, one no record covers and a record's own files each give their reason.
+
+    **Test steps:**
+
+    * show an unlisted file of the resource, the record itself, a screenshot, and the loose video
+    * verify the two lines of each, and that none has an icon
+    """
+    expected = {
+        "notes.txt": ("No checksum", "Never"),
+        "info.rehu": ("No checksum", "Not applicable"),
+        "info00.jpg": ("No checksum", "Not applicable"),
+    }
+    for name, lines in expected.items():
+        show_in_pack(covered, name)
+        assert covered.preview.checksum_texts == lines, name
+        assert (title_icon(covered).pixmap().isNull()) == (name != "notes.txt"), name
+
+    covered.preview.show_index(covered.row("loose.mp4"))
+    assert covered.preview.checksum_texts == ("No checksum", "Not covered")
+    assert title_icon(covered).pixmap().isNull()
+
+
+def test_a_folder_has_no_checksum_rows(covered: Shown) -> None:
+    """Only a file has a checksum to read: a folder shows neither row and no icon.
+
+    **Test steps:**
+
+    * show a file and then the folder holding it
+    * verify the rows go, with their texts, and so does the icon
+    """
+    show_in_pack(covered, "ok.mp4")
+    covered.preview.show_index(covered.row("pack"))
+
+    assert covered.preview.checksum_texts is None
+    assert covered.hidden("checksum_label")
+    assert covered.hidden("checked_label")
+    assert title_icon(covered).pixmap().isNull()
+
+
+# endregion
+
+
+def test_the_checksum_rows_keep_one_height_whatever_a_file_says(covered: Shown) -> None:
+    """Quick scanning must not have the rows below jump: both lines reserve a line's height, with a date or without.
+
+    **Test steps:**
+
+    * show a checked file, one with no checksum, and a record
+    * verify both rows are shown each time and their reserved heights never change
+    """
+    checksum = covered.preview.findChild(QLabel, "checksum_value")
+    checked = covered.preview.findChild(QLabel, "checked_value")
+    assert checksum is not None and checked is not None
+
+    heights = set()
+    for name in ("ok.mp4", "notes.txt", "info.rehu"):
+        show_in_pack(covered, name)
+        assert not covered.hidden("checksum_value")
+        assert not covered.hidden("checked_value")
+        heights.add((checksum.minimumHeight(), checked.minimumHeight()))
+
+    assert len(heights) == 1
+    assert all(height > 0 for height in next(iter(heights)))
+
+
+def test_the_picture_is_the_last_thing_in_the_pane_below_the_buttons(shown: Shown) -> None:
+    """A picture's height varies by file; below the buttons, what sits above it stays put whatever is shown.
+
+    **Test steps:**
+
+    * find the pane's picture and its buttons in the pane's layout
+    * verify the picture comes after the buttons
+    """
+    layout = shown.preview.layout()
+    assert isinstance(layout, QVBoxLayout)
+    picture = shown.preview.findChild(ScaledImage, "image_label")
+    buttons = shown.preview.findChild(QVBoxLayout, "buttons_layout")
+    assert picture is not None and buttons is not None
+    picture_at = layout.indexOf(picture)
+    buttons_at = next(
+        i for i in range(layout.count()) if (item := layout.itemAt(i)) is not None and item.layout() is buttons
+    )
+
+    assert picture_at > buttons_at >= 0

@@ -470,14 +470,12 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
         clean = True
         finished = False
         for job in list(self.__pending):
-            report = job.report
-            if report is None:
+            outcome = job.outcome
+            if outcome is None:
                 continue
             self.__pending.remove(job)
             finished = True
-            outcome = job.outcome
-            if outcome is not None:
-                reported, clean = outcome.summary, outcome.clean
+            reported, clean = outcome.summary, outcome.clean
         if reported:
             self.__finding = reported
             self.__finding_clean = clean

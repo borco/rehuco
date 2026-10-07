@@ -33,6 +33,7 @@ from rehuco_core import (
     PROGRESS_UNIT_RESOURCES,
     JobCancelled,
     JobControl,
+    JobOutcome,
     JobPaused,
     JobScope,
     JobState,
@@ -343,6 +344,45 @@ class FailingJob(SampleJob):
         """
         del control
         raise RuntimeError("the disk went away")
+
+
+class ReportingJob(SampleJob):
+    """A job that says what it found once it has run (#457).
+
+    :param label: the job's label.
+    :param summary: what it reports once it has run; ``None`` makes it report nothing.
+    :param broken: whether reading its outcome raises.
+    """
+
+    def __init__(self, label: str = "reporting", summary: str | None = "3 matched", broken: bool = False) -> None:
+        super().__init__(label)
+        self.__summary: Final = summary
+        self.__broken: Final = broken
+        self.__ran = False
+
+    @property
+    def outcome(self) -> JobOutcome | None:
+        """What the last run found.
+
+        :returns: the outcome once the job has run, else ``None``.
+        :raises RuntimeError: when built broken.
+        """
+        if self.__broken:
+            raise RuntimeError("no report today")
+        return JobOutcome(self.__summary) if self.__ran and self.__summary is not None else None
+
+    def reset(self) -> None:
+        """Forget having run, as a retried job does."""
+        super().reset()
+        self.__ran = False
+
+    def run(self, control: JobControl) -> None:
+        """Do nothing, and remember it.
+
+        :param control: unused.
+        """
+        del control
+        self.__ran = True
 
 
 class IndeterminateJob(SampleJob):
@@ -2305,3 +2345,67 @@ def wait_for_state(listener: RecordingListener, serial: int, state: JobState) ->
             return True
         sleep(0.001)
     return False
+
+
+# region A finished job's outcome (#457)
+
+
+def test_a_finished_job_keeps_what_it_found_on_its_row(
+    queue: TaskQueue, settles: Callable[[Callable[[], bool]], None]
+) -> None:
+    """The row says what the run found, and a job that reports nothing leaves it empty.
+
+    **Test steps:**
+
+    * run a reporting job, a reporting job with nothing to say and a plain one
+    * verify only the first has a summary
+    """
+    reporting = queue.enqueue(ReportingJob())
+    silent = queue.enqueue(ReportingJob("silent", summary=None))
+    plain = queue.enqueue(RecordingJob("plain"))
+
+    settles(lambda: all(status.state is JobState.DONE for status in queue.jobs()))
+
+    summaries = {status.serial: status.summary for status in queue.jobs()}
+    assert summaries == {reporting: "3 matched", silent: None, plain: None}
+
+
+def test_a_retried_job_forgets_what_it_found(queue: TaskQueue, settles: Callable[[Callable[[], bool]], None]) -> None:
+    """A row about to run again must not go on saying what its last run found.
+
+    **Test steps:**
+
+    * run a reporting job, then retry it
+    * verify the summary is back once the second run has finished, and was cleared in between
+    """
+    serial = queue.enqueue(ReportingJob())
+    settles(lambda: queue.jobs()[0].summary == "3 matched")
+    hold = GatedJob("hold")
+    queue.enqueue(hold)
+    settles(hold.entered.is_set)
+    queue.retry(serial)
+
+    assert queue.jobs()[0].summary is None
+    hold.release.set()
+    settles(lambda: queue.jobs()[0].summary == "3 matched")
+
+
+def test_an_outcome_that_cannot_be_read_costs_only_its_summary(
+    queue: TaskQueue, settles: Callable[[Callable[[], bool]], None], caplog: pytest.LogCaptureFixture
+) -> None:
+    """A job whose report raises is still done: the engine records what happened, and warns about the rest.
+
+    **Test steps:**
+
+    * run a job whose outcome raises
+    * verify it is done with no summary, and the warning names it
+    """
+    with caplog.at_level(logging.WARNING):
+        queue.enqueue(ReportingJob("opaque", broken=True))
+        settles(lambda: all(status.state is JobState.DONE for status in queue.jobs()))
+
+    assert queue.jobs()[0].summary is None
+    assert "Task outcome could not be read: opaque" in caplog.text
+
+
+# endregion

@@ -51,6 +51,7 @@ from rehuco_agent.rehuco.roots_item_delegate import RootsItemDelegate
 from rehuco_agent.rehuco.roots_preview import RootsPreview
 from rehuco_agent.resource_events import ResourceEvents
 from rehuco_agent.settings.catalog_state_store import TABLE_BROWSER_KIND, BrowserState, CatalogState
+from rehuco_agent.settings.checksum_settings import shared_checksum_settings
 from rehuco_core import (
     FINISHED_JOB_STATES,
     CatalogCache,
@@ -3860,6 +3861,171 @@ def test_a_folder_not_yet_listed_is_asked_of_the_disk(qtbot: QtBot, dock: Catalo
     dock.roots.roots_view.setCurrentIndex(alpha)
 
     assert announced[0] == (UUID(ROOT_IDS[0]), "alpha/info.rehu")
+
+
+# endregion
+
+
+# region A checksum file's two verbs, and what follows a verify (#457)
+
+
+@mark.usefixtures("served")
+def test_verify_old_leaves_a_valid_check_alone_and_verify_checksums_checks_everything(
+    mocker: MockerFixture, qtbot: QtBot, dock: CatalogDocks, queue: TaskQueue, folders: Path
+) -> None:
+    """The checksum file's two verbs differ in one thing: whether a check still valid is skipped.
+
+    **Test steps:**
+
+    * trigger Verify old checksums, then Verify checksums, on a checksum file with its rehu beside it
+    * verify both queue a verify of the resource, the first with the settings' window and the second with none
+    """
+    add_checksum_files(folders)
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    enqueue = mocker.patch.object(queue, "enqueue")
+    paired = open_root_folder(qtbot, dock, "alpha", "info.checksum")
+    dock.roots.roots_context_actions(paired)
+
+    dock.roots.verify_old_checksums_action.trigger()
+    dock.roots.verify_checksums_action.trigger()
+
+    old, everything = (call.args[0] for call in enqueue.call_args_list)
+    assert isinstance(old, VerifyChecksumsJob)
+    assert isinstance(everything, VerifyChecksumsJob)
+    assert old.stale_after == shared_checksum_settings().stale_after
+    assert everything.stale_after is None
+
+
+@mark.usefixtures("served")
+def test_a_double_click_on_a_checksum_file_verifies_what_is_old_and_only_where_it_can(
+    mocker: MockerFixture, qtbot: QtBot, dock: CatalogDocks, queue: TaskQueue, folders: Path
+) -> None:
+    """The bold entry is what a double-click runs: Verify old checksums, when the rehu it records is beside it.
+
+    **Test steps:**
+
+    * double-click a checksum file with its rehu, and one without
+    * verify the default of each is Verify old, one verify of the resource was queued, and the lone file queued none
+    """
+    add_checksum_files(folders)
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    enqueue = mocker.patch.object(queue, "enqueue")
+    lonely = open_root_folder(qtbot, dock, "my folder", "lonely.checksum")
+    paired = open_root_folder(qtbot, dock, "alpha", "info.checksum")
+
+    dock.roots.roots_context_actions(lonely)
+    dock.roots.roots_view.doubleClicked.emit(lonely)
+    enqueue.assert_not_called()
+
+    dock.roots.roots_context_actions(paired)
+    assert dock.roots.verify_old_checksums_action.font().bold()
+    assert not dock.roots.verify_checksums_action.font().bold()
+    dock.roots.roots_view.doubleClicked.emit(paired)
+
+    enqueue.assert_called_once()
+    (job,) = enqueue.call_args.args
+    assert job.stale_after == shared_checksum_settings().stale_after
+
+
+@mark.usefixtures("served")
+def test_a_screenshot_never_offers_to_create_a_rehu_and_opens_the_record_it_belongs_to(
+    qtbot: QtBot, dock: CatalogDocks, folders: Path
+) -> None:
+    """``info00.jpg`` beside ``info.rehu`` is that record's own file: its associated rehu is the record, and a rehu of
+    its own would be a second resource inside the first.
+
+    **Test steps:**
+
+    * list a folder holding ``info.rehu`` and its ``info00.jpg``, and a picture no record numbers
+    * verify the screenshot's menu is Open and Open associated rehu, and the stranger's offers Create
+    """
+    add_files_to_a_folder(folders)
+    (folders / "alpha" / "info00.jpg").write_bytes(b"x")
+    (folders / "alpha" / "poster.jpg").write_bytes(b"x")
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    screenshot = open_root_folder(qtbot, dock, "alpha", "info00.jpg")
+    stranger = open_root_folder(qtbot, dock, "alpha", "poster.jpg")
+
+    assert dock.roots.roots_context_actions(screenshot) == [
+        dock.roots.open_file_action,
+        dock.roots.open_companion_action,
+    ]
+    assert dock.roots.roots_context_actions(stranger) == [
+        dock.roots.open_file_action,
+        dock.roots.create_companion_action,
+    ]
+    assert dock.roots.create_companion_action.text() == "Create poster.rehu"
+
+
+@mark.usefixtures("served")
+def test_reselecting_says_again_which_record_the_current_row_stands_for(
+    qtbot: QtBot, dock: CatalogDocks, folders: Path
+) -> None:
+    """A listener that has just started to care -- the preview, switched back on -- asks for the current record.
+
+    **Test steps:**
+
+    * make a folder with an ``info.rehu`` current
+    * reselect, and verify the record's key is announced
+    """
+    add_files_to_a_folder(folders)
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    open_root_folder(qtbot, dock, "alpha")
+
+    with qtbot.waitSignal(dock.roots.record_selected, timeout=WAIT_TIMEOUT_MS) as announced:
+        dock.roots.reselect()
+
+    assert announced.args == [(UUID(ROOT_IDS[0]), "alpha/info.rehu")]
+
+
+@mark.usefixtures("served")
+def test_what_a_finished_verify_rewrote_is_announced_where_there_is_someone_to_hear_it(
+    mocker: MockerFixture, qtbot: QtBot, queue: TaskQueue, folders: Path
+) -> None:
+    """With the app's events the rewritten record is announced, so every view of it follows; without, the Roots view
+    lists what is under it again itself.
+
+    **Test steps:**
+
+    * finish a verify over a panel that has events, and over one that has none
+    * verify the first announces the checksum record and the second lists the resource's folder again
+    """
+    del folders
+    events = ResourceEvents()
+    heard: list[object] = []
+    events.changed.connect(heard.append)
+    with_events = build_docks(qtbot, queue, events)
+    without = build_docks(qtbot, queue)
+    relist = mocker.patch.object(without.roots.roots_model, "relist_under")
+    resource = Path("/fake/pack/info.rehu")
+
+    with_events.roots._RootsPanel__announce_rewritten(resource)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    without.roots._RootsPanel__announce_rewritten(resource)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    qtbot.waitUntil(lambda: bool(heard), timeout=WAIT_TIMEOUT_MS)
+    assert heard == [(Path("/fake/pack/info.checksum"),)]
+    relist.assert_called_once_with(Path("/fake/pack"))
+
+
+@mark.usefixtures("served")
+def test_a_rewritten_checksum_record_lists_its_folder_again_and_nothing_else_does(
+    mocker: MockerFixture, qtbot: QtBot, followed: tuple[CatalogDocks, ResourceEvents]
+) -> None:
+    """The app saying it wrote files moves the Roots view only for a checksum record: it is the one file whose change
+    alters what the rows under it show.
+
+    **Test steps:**
+
+    * announce a checksum record and a rehu being written
+    * verify the folder of the record, and only that one, is listed again
+    """
+    dock, events = followed
+    relist = mocker.patch.object(dock.roots.roots_model, "relist_under")
+
+    events.announce_changed((Path("/fake/pack/other.rehu"), Path("/fake/pack/INFO.CHECKSUM")))
+
+    qtbot.waitUntil(lambda: relist.called, timeout=WAIT_TIMEOUT_MS)
+    relist.assert_called_once_with(Path("/fake/pack"))
 
 
 # endregion
