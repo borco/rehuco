@@ -138,7 +138,7 @@
   </action>
   <action name="create_companion_action">
    <property name="text">
-    <string>Create rehu</string>
+    <string>Create a rehu</string>
    </property>
    <property name="toolTip">
     <string>Start a new rehu record for this folder or file in Documents. Nothing is written until it is saved.</string>
@@ -165,7 +165,7 @@
     <string>Open in file explorer</string>
    </property>
    <property name="toolTip">
-    <string>Show this folder in the system's file manager.</string>
+    <string>Show this file or folder in the system's file manager.</string>
    </property>
   </action>
   <action name="filter_folder_action">
@@ -174,6 +174,46 @@
    </property>
    <property name="toolTip">
     <string>Filter the current browser to the resources under this folder.</string>
+   </property>
+  </action>
+  <action name="verify_record_action">
+   <property name="text">
+    <string>Verify all files</string>
+   </property>
+   <property name="toolTip">
+    <string>Check the files of this resource whose last check has expired, and record the ones with no checksum yet; a check that is still valid is left alone.</string>
+   </property>
+  </action>
+  <action name="generate_record_action">
+   <property name="text">
+    <string>Generate checksums for all files</string>
+   </property>
+   <property name="toolTip">
+    <string>Record a checksum for every file of this resource, replacing the ones it has.</string>
+   </property>
+  </action>
+  <action name="verify_file_action">
+   <property name="text">
+    <string>Verify this file now</string>
+   </property>
+   <property name="toolTip">
+    <string>Check this file against its checksum now, whatever its last check was.</string>
+   </property>
+  </action>
+  <action name="add_file_checksum_action">
+   <property name="text">
+    <string>Add this file's checksum</string>
+   </property>
+   <property name="toolTip">
+    <string>Hash this file now and record its checksum.</string>
+   </property>
+  </action>
+  <action name="update_file_checksum_action">
+   <property name="text">
+    <string>Update this file's checksum</string>
+   </property>
+   <property name="toolTip">
+    <string>Hash this file now and record the result as its new checksum, accepting the change.</string>
    </property>
   </action>
  </widget>

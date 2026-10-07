@@ -30,6 +30,7 @@ from borco_pyside.widgets import MessageBanner, RowBandDelegate
 from PySide6.QtCore import QItemSelectionModel, QModelIndex, QPoint, Qt, QUrl
 from PySide6.QtGui import QAction, QContextMenuEvent
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QApplication,
     QDialog,
     QLabel,
@@ -48,6 +49,7 @@ from rehuco_agent.rehuco.catalog_table_model import CatalogColumn
 from rehuco_agent.rehuco.root_storage import ROOT_STORAGE_ICONS
 from rehuco_agent.rehuco.roots_folder_model import NodeListing, RootsNodeKind
 from rehuco_agent.rehuco.roots_item_delegate import RootsItemDelegate
+from rehuco_agent.rehuco.roots_management import managing_record
 from rehuco_agent.rehuco.roots_preview import RootsPreview
 from rehuco_agent.resource_events import ResourceEvents
 from rehuco_agent.settings.catalog_state_store import TABLE_BROWSER_KIND, BrowserState, CatalogState
@@ -57,6 +59,7 @@ from rehuco_core import (
     CatalogCache,
     CatalogField,
     CatalogRecord,
+    GenerateChecksumsJob,
     JobControl,
     RecordKind,
     RehucoRoot,
@@ -70,6 +73,9 @@ from rehuco_core import (
 )
 
 from rehuco_agent_tests.conftest import MemoryCatalogStateStore
+
+REAL_READ_TEXT: Final = Path.read_text
+"""The real :meth:`Path.read_text`, bound before a fixture patches it."""
 
 REHUCO_PATH: Final = Path("/fake/home.rehuco")
 OTHER_PATH: Final = Path("/fake/other.rehuco")
@@ -2910,12 +2916,22 @@ def add_files_to_a_folder(folders: Path) -> None:
     (folders / "alpha" / "info.rehu").write_text("{}", encoding="utf-8")
 
 
+def without_separators(actions: list[QAction]) -> list[QAction]:
+    """A menu's entries, the separators left out.
+
+    :param actions: the menu's actions.
+    :returns: the others, in order.
+    """
+    return [action for action in actions if not action.isSeparator()]
+
+
 @mark.usefixtures("served")
 def test_the_context_menu_of_each_kind_of_row(qtbot: QtBot, dock: CatalogDocks, folders: Path) -> None:
     """A root offers Remove, the moves, the filter and the file manager. A folder offers **Open associated rehu** if
-    it has one and **Create info.rehu** if not, then the filter and the file manager; a rehu record Open; any other
-    file Open and then Open associated rehu or Create <name>.rehu likewise. The default -- bold, what a double-click
-    runs -- is Open in every case, and a folder with no rehu has none.
+    it has one and **Create a rehu** if nothing manages it, then the filter and the file manager; a rehu record Open
+    and the file manager; any other file Open and then Open associated rehu or Create likewise, then the file manager.
+    What manages a row (#469) ends the list under a separator with the checksum verb for it. The default -- bold, what
+    a double-click runs -- is Open in every case, and a folder with no rehu has none.
 
     **Test steps:**
 
@@ -2944,25 +2960,40 @@ def test_the_context_menu_of_each_kind_of_row(qtbot: QtBot, dock: CatalogDocks, 
 
     assert dock.roots.roots_context_actions(dock.roots.roots_model.index(0, 0))[0] is dock.roots.filter_folder_action
     assert not any(bold())
-    assert dock.roots.roots_context_actions(alpha) == [
+    assert without_separators(dock.roots.roots_context_actions(alpha)) == [
         dock.roots.open_companion_action,
         dock.roots.filter_folder_action,
         dock.roots.open_explorer_action,
+        dock.roots.generate_record_action,
     ]
     assert bold() == [False, False, True, False, False, False]
-    assert dock.roots.roots_context_actions(no_rehu) == [
+    assert without_separators(dock.roots.roots_context_actions(no_rehu)) == [
         dock.roots.create_companion_action,
         dock.roots.filter_folder_action,
         dock.roots.open_explorer_action,
     ]
-    assert dock.roots.create_companion_action.text() == "Create info.rehu"
+    assert dock.roots.create_companion_action.text() == "Create a rehu for this folder"
     assert not any(bold())
-    assert dock.roots.roots_context_actions(record) == [dock.roots.open_record_action]
+    assert without_separators(dock.roots.roots_context_actions(record)) == [
+        dock.roots.open_record_action,
+        dock.roots.open_explorer_action,
+        dock.roots.generate_record_action,
+    ]
+    assert dock.roots.generate_record_action.text() == "Generate checksums for all x.* files"
     assert bold() == [True, False, False, False, False, False]
-    assert dock.roots.roots_context_actions(bare) == [dock.roots.open_file_action, dock.roots.create_companion_action]
-    assert dock.roots.create_companion_action.text() == "Create y.rehu"
+    assert dock.roots.roots_context_actions(bare) == [
+        dock.roots.open_file_action,
+        dock.roots.create_companion_action,
+        dock.roots.open_explorer_action,
+    ]
+    assert dock.roots.create_companion_action.text() == "Create a rehu for this file"
     assert bold() == [False, True, False, False, False, False]
-    assert dock.roots.roots_context_actions(paired) == [dock.roots.open_file_action, dock.roots.open_companion_action]
+    assert without_separators(dock.roots.roots_context_actions(paired)) == [
+        dock.roots.open_file_action,
+        dock.roots.open_companion_action,
+        dock.roots.open_explorer_action,
+        dock.roots.generate_record_action,
+    ]
     assert bold() == [False, True, False, False, False, False]
     assert not dock.roots.roots_context_actions(QModelIndex())
 
@@ -3079,8 +3110,9 @@ def test_opening_and_creating_an_associated_rehu_ask_by_what_the_row_is(
 def test_the_details_pane_follows_the_current_row_and_has_a_button_for_each_menu_entry(
     mocker: MockerFixture, qtbot: QtBot, dock: CatalogDocks, folders: Path
 ) -> None:
-    """The pane beside the columns names the current row and offers a button for every entry of its context menu,
-    in order, the default in bold; clicking one does what the entry does.
+    """The pane beside the columns names the current row and offers a button for the common and the harmless of its
+    context menu, in order, the default in bold (#469); clicking one does what the entry does. Create, the filter and
+    Remove Root are never buttons.
 
     **Test steps:**
 
@@ -3091,6 +3123,7 @@ def test_the_details_pane_follows_the_current_row_and_has_a_button_for_each_menu
     dock.catalog.open_rehuco(REHUCO_PATH)
     dock.roots.show()
     opener = mocker.patch("rehuco_agent.rehuco.roots_panel.QDesktopServices.openUrl")
+    reveal = mocker.patch("rehuco_agent.rehuco.roots_panel.reveal_in_file_browser")
     preview = dock.roots.findChild(RootsPreview)
     assert preview is not None
     name = preview.findChild(QLabel, "name_label")
@@ -3105,38 +3138,37 @@ def test_the_details_pane_follows_the_current_row_and_has_a_button_for_each_menu
 
     select_root(dock, 0)
     assert [action for action, _bold in shown() if action is not None and not action.isSeparator()] == [
-        dock.roots.filter_folder_action,
         dock.roots.open_explorer_action,
-        dock.roots.remove_root_action,
     ]
     assert not any(bold for _action, bold in shown())
 
     open_root_folder(qtbot, dock, "my folder")
     assert preview.title == "my folder"
-    assert shown() == [
-        (dock.roots.create_companion_action, False),
-        (dock.roots.filter_folder_action, False),
-        (dock.roots.open_explorer_action, False),
-    ]
+    assert shown() == [(dock.roots.open_explorer_action, False)]
 
     open_root_folder(qtbot, dock, "alpha")
     assert shown()[0] == (dock.roots.open_companion_action, True)
-    open_rehu, _filter, explorer = preview.buttons
+    open_rehu, explorer, generate = preview.buttons
+    assert generate.defaultAction() is dock.roots.generate_record_action
     open_rehu.click()
     assert folder_requests == [folders / "alpha"]
+    reveal.reset_mock()
     explorer.click()
-    opener.assert_called_once_with(QUrl.fromLocalFile(str(folders / "alpha")))
+    reveal.assert_called_once_with(folders / "alpha")
 
     open_root_folder(qtbot, dock, "my folder", "x.rehu")
-    assert shown() == [(dock.roots.open_record_action, True)]
-    (open_record,) = preview.buttons
+    assert shown() == [
+        (dock.roots.open_record_action, True),
+        (dock.roots.open_explorer_action, False),
+        (dock.roots.generate_record_action, False),
+    ]
+    open_record, *_others = preview.buttons
     open_record.click()
     assert record_requests == [folders / "my folder" / "x.rehu"]
 
     open_root_folder(qtbot, dock, "my folder", "y.mp4")
-    assert shown() == [(dock.roots.open_file_action, True), (dock.roots.create_companion_action, False)]
-    open_external, create = preview.buttons
-    assert create.text() == "Create y.rehu"
+    assert shown() == [(dock.roots.open_file_action, True), (dock.roots.open_explorer_action, False)]
+    open_external, _explorer = preview.buttons
     opener.reset_mock()
     open_external.click()
     opener.assert_called_once_with(QUrl.fromLocalFile(str(folders / "my folder" / "y.mp4")))
@@ -3417,8 +3449,9 @@ def add_checksum_files(folders: Path) -> None:
 
 @mark.usefixtures("served")
 def test_a_checksum_file_offers_verify_and_it_needs_its_rehu(qtbot: QtBot, dock: CatalogDocks, folders: Path) -> None:
-    """The menu of a checksum file leads with Verify old checksums, its default, then Verify checksums, then its
-    associated rehu; both verifies are on only when the ``.rehu`` it records is beside it (#457).
+    """The menu of a checksum file holds its associated rehu and Open in file explorer, then under a separator Verify
+    old checksums, its default, and Verify checksums; both verifies are on only when the ``.rehu`` it records is
+    beside it (#457, #469).
 
     **Test steps:**
 
@@ -3431,20 +3464,23 @@ def test_a_checksum_file_offers_verify_and_it_needs_its_rehu(qtbot: QtBot, dock:
     lonely = open_root_folder(qtbot, dock, "my folder", "lonely.checksum")
 
     with_rehu = dock.roots.roots_context_actions(paired)
-    assert with_rehu == [
+    assert without_separators(with_rehu) == [
+        dock.roots.open_companion_action,
+        dock.roots.open_explorer_action,
         dock.roots.verify_old_checksums_action,
         dock.roots.verify_checksums_action,
-        dock.roots.open_companion_action,
     ]
+    assert with_rehu[2].isSeparator()
     assert dock.roots.verify_old_checksums_action.isEnabled()
     assert dock.roots.verify_checksums_action.isEnabled()
     enabled_tip = dock.roots.verify_checksums_action.toolTip()
 
     without = dock.roots.roots_context_actions(lonely)
-    assert without == [
+    assert without_separators(without) == [
+        dock.roots.create_companion_action,
+        dock.roots.open_explorer_action,
         dock.roots.verify_old_checksums_action,
         dock.roots.verify_checksums_action,
-        dock.roots.create_companion_action,
     ]
     assert not dock.roots.verify_old_checksums_action.isEnabled()
     assert not dock.roots.verify_checksums_action.isEnabled()
@@ -3498,7 +3534,7 @@ def test_verifying_twice_is_not_asking_twice(
     add_checksum_files(folders)
     dock.catalog.open_rehuco(REHUCO_PATH)
     enqueue = mocker.patch.object(queue, "enqueue")
-    mocker.patch("rehuco_agent.rehuco.roots_panel.job_already_queued", return_value=True)
+    mocker.patch("rehuco_agent.rehuco.roots_checksum_verbs.job_already_queued", return_value=True)
     paired = open_root_folder(qtbot, dock, "alpha", "info.checksum")
     dock.roots.roots_context_actions(paired)
 
@@ -3533,7 +3569,8 @@ def test_the_root_slots_refuse_without_a_current_root_and_a_move_that_goes_nowhe
         panel._RootsPanel__on_root_name_edited()  # type: ignore[attr-defined]  # pylint: disable=protected-access
         panel._RootsPanel__on_root_storage_chosen()  # type: ignore[attr-defined]  # pylint: disable=protected-access
         panel._RootsPanel__move_root(lambda _file, row: row)  # type: ignore[attr-defined]  # pylint: disable=protected-access
-        panel._RootsPanel__on_verify_checksums()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+        verbs = panel._RootsPanel__verbs  # type: ignore[attr-defined]  # pylint: disable=protected-access
+        verbs._RootsChecksumVerbs__on_verify_checksums(old=False)  # pylint: disable=protected-access
         panel._RootsPanel__on_filter_folder()  # type: ignore[attr-defined]  # pylint: disable=protected-access
         select_root(dock, 0)
         panel._RootsPanel__move_root(lambda _file, row: row)  # type: ignore[attr-defined]  # pylint: disable=protected-access
@@ -3941,20 +3978,23 @@ def test_a_screenshot_never_offers_to_create_a_rehu_and_opens_the_record_it_belo
     """
     add_files_to_a_folder(folders)
     (folders / "alpha" / "info00.jpg").write_bytes(b"x")
-    (folders / "alpha" / "poster.jpg").write_bytes(b"x")
+    (folders / "my folder" / "poster.jpg").write_bytes(b"x")
     dock.catalog.open_rehuco(REHUCO_PATH)
     screenshot = open_root_folder(qtbot, dock, "alpha", "info00.jpg")
-    stranger = open_root_folder(qtbot, dock, "alpha", "poster.jpg")
+    stranger = open_root_folder(qtbot, dock, "my folder", "poster.jpg")
 
-    assert dock.roots.roots_context_actions(screenshot) == [
+    assert without_separators(dock.roots.roots_context_actions(screenshot)) == [
         dock.roots.open_file_action,
         dock.roots.open_companion_action,
+        dock.roots.open_explorer_action,
+        dock.roots.generate_record_action,
     ]
     assert dock.roots.roots_context_actions(stranger) == [
         dock.roots.open_file_action,
         dock.roots.create_companion_action,
+        dock.roots.open_explorer_action,
     ]
-    assert dock.roots.create_companion_action.text() == "Create poster.rehu"
+    assert dock.roots.create_companion_action.text() == "Create a rehu for this file"
 
 
 @mark.usefixtures("served")
@@ -4026,6 +4066,345 @@ def test_a_rewritten_checksum_record_lists_its_folder_again_and_nothing_else_doe
 
     qtbot.waitUntil(lambda: relist.called, timeout=WAIT_TIMEOUT_MS)
     relist.assert_called_once_with(Path("/fake/pack"))
+
+
+# endregion
+
+
+# region The checksum verbs of the Roots view, and what manages a row (#469)
+
+
+def checksum_entry(name: str, status: str = "matched", **extra: str) -> dict[str, str]:
+    """One entry of a ``.checksum`` record, as a verify writes it.
+
+    :param name: the entry's name under the record's folder.
+    :param status: what the last check found.
+    :param extra: keys to add or replace.
+    :returns: the entry.
+    """
+    return {"name": name, "xxh3": "e6c632b61e964e1f", "verified": "2099-01-01T00:00:00Z", "status": status} | extra
+
+
+def write_checksum_record(path: Path, *entries: dict[str, str]) -> None:
+    """Write a ``.checksum`` record.
+
+    :param path: where.
+    :param entries: its entries.
+    """
+    path.write_text(json.dumps({"version": 1, "files": list(entries)}), encoding="utf-8")
+
+
+@fixture(name="records")
+def fixture_records(served: dict[str, Any], folders: Path, mocker: MockerFixture) -> Path:
+    """Folders of every shape a record can manage, with checksum records the lister reads.
+
+    ``res`` is an ``info.rehu`` with its ``info.checksum`` (a good, a bad and an unreadable entry, a file the record
+    does not list, a subfolder, a nested resource and a junk file); ``pair`` a file-scoped ``foo.rehu`` with its
+    ``foo.checksum``; ``bare`` an ``info.rehu`` with no checksum file; ``legacy`` an ``info.tc``; ``plain`` nothing.
+
+    **A real read for everything but the catalog**, which the ``served`` fixture otherwise answers for every file.
+
+    :param served: the served ``.rehuco``.
+    :param folders: the first root's folder.
+    :param mocker: pytest-mock fixture.
+    :returns: the first root's folder.
+    """
+
+    def read_text(self: Path, *args: Any, **kwargs: Any) -> str:
+        if self.suffix == ".rehuco":
+            return json.dumps(served)
+        return REAL_READ_TEXT(self, *args, **kwargs)
+
+    mocker.patch.object(Path, "read_text", read_text)
+    for folder in ("res/sub", "res/nested", "pair", "bare", "legacy", "plain"):
+        os.makedirs(folders / folder)
+    files = {
+        "res/info.rehu": "{}",
+        "res/ok.mp4": "o",
+        "res/bad.mp4": "b",
+        "res/weird.mp4": "w",
+        "res/new.mp4": "n",
+        "res/Thumbs.db": "t",
+        "res/sub/a.mp4": "a",
+        "res/nested/info.rehu": "{}",
+        "pair/foo.rehu": "{}",
+        "pair/foo.mp4": "f",
+        "pair/bar.mp4": "r",
+        "bare/info.rehu": "{}",
+        "bare/b.mp4": "b",
+        "legacy/info.tc": "{}",
+        "legacy/l.mp4": "l",
+        "plain/c.mp4": "c",
+    }
+    for name, text in files.items():
+        (folders / name).write_text(text, encoding="utf-8")
+    write_checksum_record(
+        folders / "res" / "info.checksum",
+        checksum_entry("ok.mp4"),
+        checksum_entry("bad.mp4", "mismatched"),
+        {"name": "weird.mp4", "xxh3": "zz"},
+        checksum_entry("sub/a.mp4"),
+    )
+    write_checksum_record(folders / "res" / "nested" / "info.checksum")
+    write_checksum_record(folders / "pair" / "foo.checksum", checksum_entry("foo.mp4"))
+    return folders
+
+
+def verbs_of(actions: list[QAction], dock: CatalogDocks) -> list[QAction]:
+    """The checksum verbs among a list of actions.
+
+    :param actions: a menu's or a pane's actions.
+    :param dock: the catalog's docks.
+    :returns: the verbs, in order.
+    """
+    roots = dock.roots
+    verbs = (
+        roots.verify_record_action,
+        roots.generate_record_action,
+        roots.verify_file_action,
+        roots.add_file_checksum_action,
+        roots.update_file_checksum_action,
+    )
+    return [action for action in actions if action in verbs]
+
+
+def pane_buttons(dock: CatalogDocks, index: QModelIndex) -> list[QAction]:
+    """What the details pane makes buttons of for a row.
+
+    :param dock: the catalog's docks.
+    :param index: the row.
+    :returns: the actions, the separators left out.
+    """
+    actions, _default = dock.roots._RootsPanel__actions_for_row(index)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    return without_separators(actions)
+
+
+def test_a_file_gets_the_verbs_its_checksum_state_calls_for(qtbot: QtBot, dock: CatalogDocks, records: Path) -> None:
+    """A file with a stored result can be verified now; one the record lacks can be added, one that no longer matches
+    or cannot be read can be updated -- and only verifying is ever a button, as the other two hash a file at once.
+
+    **Test steps:**
+
+    * open a good, a bad, an unreadable and an unlisted file of a resource that has its checksum file
+    * verify the checksum verbs of each file's menu and of its buttons
+    """
+    del records
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    roots = dock.roots
+    bulk = roots.verify_record_action
+    for name, in_menu, as_buttons in (
+        ("ok.mp4", [roots.verify_file_action], [roots.verify_file_action]),
+        ("bad.mp4", [roots.verify_file_action, roots.update_file_checksum_action], [roots.verify_file_action]),
+        ("weird.mp4", [roots.update_file_checksum_action], []),
+        ("new.mp4", [roots.add_file_checksum_action], []),
+    ):
+        index = open_root_folder(qtbot, dock, "res", name)
+        assert verbs_of(roots.roots_context_actions(index), dock) == [bulk, *in_menu], name
+        assert verbs_of(pane_buttons(dock, index), dock) == [bulk, *as_buttons], name
+    assert bulk.text() == "Verify all files in the folder"
+
+
+def test_every_checksum_verb_queues_its_job_over_the_record_that_manages_the_row(
+    mocker: MockerFixture, qtbot: QtBot, dock: CatalogDocks, queue: TaskQueue, records: Path
+) -> None:
+    """Each verb queues the job for the scope it names: a bulk verify with the settings' window, a bulk generate where
+    there is no checksum file yet, and a single file's verify or re-baseline with no window and only its own name --
+    for a file of a ``foo.rehu``, a file and a subfolder under an ``info.rehu``.
+
+    **Test steps:**
+
+    * trigger each verb on the row it belongs to, with the queue's enqueue replaced
+    * verify the job's class, the record it works over, its ``only`` and its ``stale_after``
+    """
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    enqueue = mocker.patch.object(queue, "enqueue")
+    roots = dock.roots
+    window = shared_checksum_settings().stale_after
+
+    def queued(action: QAction, *names: str) -> tuple[type[object], Path, tuple[str, ...] | None, object]:
+        index = open_root_folder(qtbot, dock, *names)
+        roots.roots_context_actions(index)
+        enqueue.reset_mock()
+        action.trigger()
+        enqueue.assert_called_once()
+        (job,) = enqueue.call_args.args
+        return type(job), job.source, job.only, job.stale_after
+
+    res, pair = records / "res" / "info.rehu", records / "pair" / "foo.rehu"
+    assert queued(roots.verify_record_action, "res", "ok.mp4") == (VerifyChecksumsJob, res, None, window)
+    assert queued(roots.verify_record_action, "res", "sub") == (VerifyChecksumsJob, res, None, window)
+    assert queued(roots.verify_record_action, "res", "sub", "a.mp4") == (VerifyChecksumsJob, res, None, window)
+    assert roots.verify_record_action.text() == "Verify all files of the parent resource"
+    assert queued(roots.verify_file_action, "res", "sub", "a.mp4") == (
+        VerifyChecksumsJob,
+        res,
+        ("sub/a.mp4",),
+        None,
+    )
+    assert queued(roots.update_file_checksum_action, "res", "bad.mp4") == (
+        GenerateChecksumsJob,
+        res,
+        ("bad.mp4",),
+        None,
+    )
+    assert queued(roots.add_file_checksum_action, "res", "new.mp4") == (GenerateChecksumsJob, res, ("new.mp4",), None)
+    assert queued(roots.verify_record_action, "pair", "foo.mp4") == (VerifyChecksumsJob, pair, None, window)
+    assert roots.verify_record_action.text() == "Verify all foo.* files"
+    assert queued(roots.verify_file_action, "pair", "foo.mp4") == (VerifyChecksumsJob, pair, ("foo.mp4",), None)
+    assert queued(roots.generate_record_action, "bare", "b.mp4") == (
+        GenerateChecksumsJob,
+        records / "bare" / "info.rehu",
+        None,
+        None,
+    )
+    assert roots.generate_record_action.text() == "Generate checksums for all files in the folder"
+
+
+def test_what_manages_a_row_decides_where_create_and_the_checksum_group_are_offered(
+    mocker: MockerFixture, qtbot: QtBot, dock: CatalogDocks, queue: TaskQueue, records: Path
+) -> None:
+    """Create is offered only where no record manages the row; the checksum group only where a ``.rehu`` does.
+
+    **Test steps:**
+
+    * ask for the menu of a stranger beside a record, a file and a folder a record manages, junk it leaves out, a
+      nested resource, a folder with a legacy ``.tc`` and a root
+    * verify Create and the checksum group in each, and that a verb triggered on a row nothing manages queues nothing
+    """
+    del records
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    roots = dock.roots
+    create, generate = roots.create_companion_action, roots.generate_record_action
+
+    def menu(*names: str) -> list[QAction]:
+        return without_separators(roots.roots_context_actions(open_root_folder(qtbot, dock, *names)))
+
+    assert create in menu("pair", "bar.mp4") and not verbs_of(menu("pair", "bar.mp4"), dock)
+    assert create in menu("plain", "c.mp4") and create in menu("plain")
+    assert create in menu("res", "Thumbs.db") and not verbs_of(menu("res", "Thumbs.db"), dock)
+    assert create not in menu("res", "sub") and roots.verify_record_action in menu("res", "sub")
+    assert create not in menu("res", "weird.mp4")
+    assert create not in menu("res", "nested") and roots.open_companion_action in menu("res", "nested")
+    assert generate in menu("bare") and generate in menu("bare", "b.mp4")
+    # a legacy .tc is a record, so nothing else offers to start one -- but it is not checksummed
+    assert create not in menu("legacy", "l.mp4") and not verbs_of(menu("legacy", "l.mp4"), dock)
+    assert not verbs_of(menu("legacy"), dock) and roots.open_companion_action in menu("legacy")
+    # a root, and the pane's buttons for a folder this record manages by a record above it
+    root = roots.roots_model.index(0, 0)
+    assert roots.verify_record_action not in roots.roots_context_actions(root)
+    assert managing_record(roots.roots_model, root) is None
+    enqueue = mocker.patch.object(queue, "enqueue")
+    open_root_folder(qtbot, dock, "plain", "c.mp4")
+    for verb in (roots.verify_record_action, roots.verify_file_action):
+        verb.trigger()
+    enqueue.assert_not_called()
+    assert pane_buttons(dock, open_root_folder(qtbot, dock, "res", "sub")) == [
+        roots.open_explorer_action,
+        roots.verify_record_action,
+    ]
+
+
+def test_a_placeholder_row_has_no_menu_and_no_buttons(
+    mocker: MockerFixture,
+    qtbot: QtBot,
+    dock: CatalogDocks,
+    served: dict[str, Any],
+    folders: Path,
+) -> None:
+    """The row an unreachable root shows in place of its folders offers nothing, and a right-click there opens no
+    menu.
+
+    **Test steps:**
+
+    * point a root at a folder that is not there and open the catalog
+    * verify the row's actions and buttons are empty, and that a right-click on it shows no menu
+    """
+    served["roots"][1]["path"] = str(folders.parent / "gone")
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    packs = dock.roots.roots_model.index(1, 0)
+    wait_for_root_listing(qtbot, dock, packs)
+    placeholder = dock.roots.roots_model.index(0, 0, packs)
+    assert dock.roots.roots_model.node_kind(placeholder) is RootsNodeKind.UNREACHABLE
+    mocker.patch("rehuco_agent.rehuco.roots_panel.QMenu", RecordingMenu)
+    RecordingMenu.shown = []
+    mocker.patch.object(dock.roots.roots_view, "index_at_global", return_value=placeholder)
+
+    assert not dock.roots.roots_context_actions(placeholder)
+    assert dock.roots._RootsPanel__actions_for_row(placeholder) == ([], None)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    dock.roots._RootsPanel__on_roots_context_menu(QPoint(1, 1))  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    assert not RecordingMenu.shown
+
+
+def test_the_empty_part_of_a_column_opens_its_folders_menu_and_leaves_the_selection(
+    mocker: MockerFixture, qtbot: QtBot, dock: CatalogDocks, records: Path
+) -> None:
+    """A right-click below the last row of a column opens the menu of the folder that column lists, acting on that
+    folder while it is open, with the selection where it was and the verbs put back for it afterwards; on the column of
+    roots it offers Scan, Add Root and Refresh; off every column it opens nothing.
+
+    **Test steps:**
+
+    * select a file in a subfolder and show the panel
+    * right-click below the rows of the folder's column, then of the roots column, then off the panel
+    * verify each menu, that Open in file explorer acted on the folder, and that nothing moved
+    """
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    roots, view = dock.roots, dock.roots.roots_view
+    reveal = mocker.patch("rehuco_agent.rehuco.roots_panel.reveal_in_file_browser")
+
+    class ChoosingMenu(QMenu):
+        """A menu that records its entries and, when asked, runs the one with this text."""
+
+        shown: list[list[str]] = []
+        chosen = ""
+
+        def exec(self, *_args: object) -> None:  # type: ignore[override]
+            """Record the entries and run the chosen one."""
+            ChoosingMenu.shown.append([action.text() for action in self.actions()])
+            for action in self.actions():
+                if action.text() == ChoosingMenu.chosen:
+                    action.trigger()
+
+    mocker.patch("rehuco_agent.rehuco.roots_panel.QMenu", ChoosingMenu)
+    ChoosingMenu.shown, ChoosingMenu.chosen = [], "Open in file explorer"
+    roots.show()
+    roots.resize(1400, 700)
+    qtbot.waitExposed(roots)
+    current = open_root_folder(qtbot, dock, "res", "sub", "a.mp4")
+    res = roots.roots_model.index_for(UUID(ROOT_IDS[0]), ("res",))
+    columns = {
+        c.rootIndex(): c for c in view.findChildren(QAbstractItemView) if c is not view and c.model() is not None
+    }
+
+    def below_the_rows(column: QAbstractItemView) -> QPoint:
+        viewport = column.viewport()
+        point = QPoint(5, viewport.height() - 5)
+        assert not column.indexAt(point).isValid()
+        return view.mapFromGlobal(viewport.mapToGlobal(point))
+
+    assert roots.verify_record_action.text() == "Verify all files of the parent resource"
+    roots._RootsPanel__on_roots_context_menu(below_the_rows(columns[res]))  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    assert [entry for entry in ChoosingMenu.shown[-1] if entry] == [
+        "Open associated rehu",
+        "Show only rehu in this folder",
+        "Open in file explorer",
+        "Verify all files in the folder",
+    ]
+    reveal.assert_called_once_with(records / "res")
+    assert view.currentIndex() == current
+    assert roots.verify_record_action.text() == "Verify all files of the parent resource"
+    assert pane_buttons(dock, current)[-2:] == [roots.verify_record_action, roots.verify_file_action]
+
+    ChoosingMenu.chosen = ""
+    roots._RootsPanel__on_roots_context_menu(below_the_rows(columns[QModelIndex()]))  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert ChoosingMenu.shown[-1] == ["Scan", "Add Root...", "Refresh"]
+    assert view.currentIndex() == current
+
+    ChoosingMenu.shown = []
+    roots._RootsPanel__on_roots_context_menu(QPoint(-500, -500))  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert not ChoosingMenu.shown
 
 
 # endregion

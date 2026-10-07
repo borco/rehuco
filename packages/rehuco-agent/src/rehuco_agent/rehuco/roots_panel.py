@@ -3,24 +3,21 @@ details of the current one (#377, #378, #461, [[plugins#rehuco-dock]]).
 """
 
 import logging
-import os
 from collections.abc import Callable
 from pathlib import Path
 from typing import Final, cast
 from uuid import UUID
 
-from borco_core.logging import LogScope
+from borco_pyside.file_browser import reveal_in_file_browser
 from borco_pyside.theming import ActionIconThemeHandler
 from borco_pyside.widgets import MessageBanner, MessageBannerRow, MessageBannerSeverity
-from PySide6.QtCore import QItemSelectionModel, QModelIndex, QPoint, Qt, QUrl, Signal
+from PySide6.QtCore import QItemSelectionModel, QModelIndex, QPersistentModelIndex, QPoint, Qt, QUrl, Signal
 from PySide6.QtGui import QAction, QDesktopServices, QFont
 from PySide6.QtWidgets import QComboBox, QDialog, QLineEdit, QMenu, QMessageBox, QWidget
 from rehuco_core import (
     CHECKSUM_RECORD_SUFFIX,
     DEFAULT_CHECKSUM_TRUST,
     DEFAULT_RENAME_COORDINATOR,
-    INFO_REHU_FILENAME,
-    SCREENSHOT_STEM_PATTERN,
     CatalogField,
     FileType,
     RehucoFile,
@@ -30,21 +27,19 @@ from rehuco_core import (
     RootFolderLister,
     RootStorage,
     TaskQueue,
-    VerifyChecksumsJob,
     checksum_record_path,
 )
 
 from ..resource_events import ResourceEvents
-from ..settings.checksum_settings import shared_checksum_settings
-from ..settings.excluded_files_settings import shared_excluded_files_settings
-from ..tasks.already_queued import job_already_queued
 from ..tasks.job_end_watcher import JobEndWatcher
 from .add_root_dialog import AddRootDialog
 from .rehuco_roots_panel_ui import Ui_RehucoRootsPanel
 from .root_catalog import RootCatalog
 from .root_storage import selected_root_storage
+from .roots_checksum_verbs import RootsChecksumVerbs
 from .roots_column_view import RootsColumnView
 from .roots_folder_model import RootsFolderModel, RootsNodeKind
+from .roots_management import companion_found, managing_record
 from .roots_preview import RootsPreview
 
 LOG: Final = logging.getLogger(__name__)
@@ -80,7 +75,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
     its :attr:`~rehuco_core.RehucoFile.lock_reason` on the banner and every edit off.
 
     :param catalog: the open catalog, whose roots this shows and edits.
-    :param queue: the task queue Verify checksums is enqueued on.
+    :param queue: the task queue the checksum verbs are enqueued on.
     :param parent: optional Qt parent.
     :param rename_coordinator: what a folder listing holds each directory read under, so it never blocks a
         rename ([[mounts-and-storage#out-of-band]]).
@@ -120,12 +115,14 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
     ) -> None:
         super().__init__(parent)
         self.__catalog: Final = catalog
-        self.__queue: Final = queue
         self.__rename_coordinator: Final = rename_coordinator
         self.__events: Final = resource_events
         self.__watcher: Final = JobEndWatcher(queue, self)
 
         self.__roots_model: Final = RootsFolderModel(self)
+        self.__target: QPersistentModelIndex | None = None
+        """The row a background menu is for while it is open: the folder its column lists. It is not the current row,
+        which the menu leaves where it was; every action reads the row it acts on through :meth:`__acting_index`."""
         self.__fallback: tuple[UUID, tuple[str, ...]] | None = None
         """Where the Roots selection goes once the rows it was in are removed: the folder they were in."""
         # connected before the view's selection model exists, so it runs before that model moves the current row to a
@@ -162,6 +159,15 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         self.__separators: Final = (QAction(self), QAction(self))
         for separator in self.__separators:
             separator.setSeparator(True)
+        self.__verbs: Final = RootsChecksumVerbs(
+            self.__roots_model,
+            self.__roots_ui,
+            queue,
+            rename_coordinator,
+            self.__watcher,
+            self.__announce_rewritten,
+            self.__acting_index,
+        )
         self.__setup_actions()
         # selection_model() is None only before a model is set (setModel just did)
         # a local, not a kept wrapper: the selection model is an object Qt made (#459)
@@ -283,6 +289,31 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         return self.__roots_ui.create_companion_action
 
     @property
+    def verify_record_action(self) -> QAction:
+        """Verifies what has not been checked lately of every file the selected row's record manages (#469)."""
+        return self.__roots_ui.verify_record_action
+
+    @property
+    def generate_record_action(self) -> QAction:
+        """Records a checksum for every file the selected row's record manages, where it has no checksum file yet."""
+        return self.__roots_ui.generate_record_action
+
+    @property
+    def verify_file_action(self) -> QAction:
+        """Checks the selected file against its checksum now, whatever its last check was."""
+        return self.__roots_ui.verify_file_action
+
+    @property
+    def add_file_checksum_action(self) -> QAction:
+        """Hashes the selected file, which has no checksum, and records it."""
+        return self.__roots_ui.add_file_checksum_action
+
+    @property
+    def update_file_checksum_action(self) -> QAction:
+        """Hashes the selected file, which no longer matches, and records the result as its checksum."""
+        return self.__roots_ui.update_file_checksum_action
+
+    @property
     def filter_folder_action(self) -> QAction:
         """Filters the current browser to the resources under the selected root or folder."""
         return self.__roots_ui.filter_folder_action
@@ -325,8 +356,6 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         ui.filter_folder_action.triggered.connect(self.__on_filter_folder)
         ui.open_record_action.triggered.connect(self.__on_open_record)
         ui.open_explorer_action.triggered.connect(self.__on_open_explorer)
-        ui.verify_checksums_action.triggered.connect(lambda: self.__on_verify_checksums(old=False))
-        ui.verify_old_checksums_action.triggered.connect(lambda: self.__on_verify_checksums(old=True))
         ui.open_file_action.triggered.connect(self.__on_open_file)
         ui.open_companion_action.triggered.connect(self.__on_companion)
         ui.create_companion_action.triggered.connect(self.__on_companion)
@@ -345,7 +374,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         is_open = self.__catalog.file is not None
         editable = self.__catalog.editable
         ui = self.__roots_ui
-        current = ui.roots_view.currentIndex()
+        current = self.__acting_index()
         row = current.row() if self.__roots_model.root_at(current) is not None else -1
         last = self.__roots_model.rowCount() - 1
         self.__preview.set_editable(editable)
@@ -390,12 +419,22 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         """Bring the actions in line with the current row, whatever changed it."""
         self.__update_enablement()
 
+    def __acting_index(self) -> QModelIndex:
+        """The row the actions act on: the one a background menu is open for, else the current row.
+
+        :returns: its index.
+        """
+        target = self.__target
+        if target is not None and target.isValid():
+            return target.model().index(target.row(), target.column(), target.parent())
+        return self.__roots_ui.roots_view.currentIndex()
+
     def __current_root_row(self) -> int:
-        """The current row of the Roots view if it is a root row.
+        """The row the actions act on, if it is a root row.
 
         :returns: its row, which is also its place in the file; ``-1`` for a folder, a file, or none.
         """
-        current = self.__roots_ui.roots_view.currentIndex()
+        current = self.__acting_index()
         return current.row() if self.__roots_model.root_at(current) is not None else -1
 
     def __on_root_name_edited(self) -> None:
@@ -484,50 +523,21 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
 
     def __on_open_record(self) -> None:
         """Open the current row's record in Documents."""
-        self.__run(self.__roots_ui.open_record_action, self.__roots_ui.roots_view.currentIndex())
+        self.__run(self.__roots_ui.open_record_action, self.__acting_index())
 
     def __on_open_file(self) -> None:
         """Open the current row's file with the application the system associates with it."""
-        self.__run(self.__roots_ui.open_file_action, self.__roots_ui.roots_view.currentIndex())
+        self.__run(self.__roots_ui.open_file_action, self.__acting_index())
 
     def __on_open_explorer(self) -> None:
-        """Show the current root or folder in the system's file manager."""
-        self.__run(self.__roots_ui.open_explorer_action, self.__roots_ui.roots_view.currentIndex())
-
-    def __on_verify_checksums(self, *, old: bool = False) -> None:
-        """Queue a verification of the resource the current checksum file belongs to.
-
-        The Checksums dock's two verbs: *Verify Old* (``old``) skips what was checked within the settings' window and
-        records what is new, and *Verify All* checks every file. They derive the same label, so a verify already
-        waiting for this resource, asked from either place, is not asked again.
-
-        :param old: whether to leave a check that is still valid alone.
-        """
-        resource = self.__verify_resource(self.__roots_ui.roots_view.currentIndex())
-        if resource is None:
-            return
-        checksums = shared_checksum_settings()
-        job = VerifyChecksumsJob(
-            resource,
-            coordinator=self.__rename_coordinator,
-            algorithm=checksums.algorithm,
-            excluded_patterns=shared_excluded_files_settings().excluded_file_patterns,
-            create_if_missing=True if checksums.create_missing_on_verify else None,
-            migrate_to=checksums.migrate_target,
-            stale_after=checksums.stale_after if old else None,
-        )
-        if job_already_queued(self.__queue, label=job.label, source=job.source):
-            LOG.info("%s is already in the task queue; it was not queued again.", job.label)
-            return
-        with LogScope.open(resource):
-            serial = self.__queue.enqueue(job)
-        self.__watcher.watch(serial, lambda: self.__announce_rewritten(resource))
+        """Show the current row in the system file manager: a folder opened, a file shown selected in its folder."""
+        self.__run(self.__roots_ui.open_explorer_action, self.__acting_index())
 
     def __announce_rewritten(self, resource: Path) -> None:
-        """Say the checksum record a finished verify may have rewritten has changed, so every view of it follows -- the
+        """Say the checksum record a finished run may have rewritten has changed, so every view of it follows -- the
         rows here, an open document's Files and Checksums views, the catalog's row for the record (#457).
 
-        :param resource: the ``.rehu`` whose record was verified.
+        :param resource: the ``.rehu`` whose record was verified or generated.
         """
         record = checksum_record_path(resource)
         if self.__events is not None:
@@ -539,7 +549,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         """Ask for the rehu that describes the current folder or file: a folder's ``info.rehu``, a file's same-name
         ``.rehu``. The main window opens the one there is or starts a new, unsaved one, which is why opening and
         creating ask the same question; which of them the menu offered is only a matter of what is on disk."""
-        index = self.__roots_ui.roots_view.currentIndex()
+        index = self.__acting_index()
         self.__run(self.__companion_action(index), index)
 
     def __run(self, action: QAction | None, index: QModelIndex) -> None:
@@ -558,7 +568,9 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         elif action in (ui.verify_old_checksums_action, ui.verify_checksums_action):
             if action.isEnabled():
                 action.trigger()
-        elif action in (ui.open_file_action, ui.open_explorer_action):
+        elif action is ui.open_explorer_action:
+            reveal_in_file_browser(path)
+        elif action is ui.open_file_action:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
         elif self.__roots_model.node_kind(index) is RootsNodeKind.FOLDER:
             self.open_folder_requested.emit(path)
@@ -591,21 +603,22 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
     def __on_filter_folder(self) -> None:
         """Filter the current browser to the resources under the current root or folder (#398)."""
         model = self.__roots_model
-        current = self.__roots_ui.roots_view.currentIndex()
+        current = self.__acting_index()
         root, key = model.root_of(current), model.key(current)
         if root is None or key is None or model.node_kind(current) not in (RootsNodeKind.ROOT, RootsNodeKind.FOLDER):
             return
         self.filter_requested.emit(CatalogField.FOLDER, "/".join((root.label, *key[1])))
 
     def roots_context_actions(self, index: QModelIndex) -> list[QAction]:
-        """What the Roots view's context menu holds for a row.
+        """What the Roots view's context menu holds for a row (#469).
 
         A root: the folder filter and Open in file explorer, then the four moves, then Remove. A folder: **Open
-        associated rehu** if it has one, **Create info.rehu** if not, then the folder filter and Open in file explorer.
-        A rehu record: Open. A checksum file: Open with its application, Verify checksums, then the associated rehu.
-        Any other file: Open with its application, then Open associated rehu or Create <name>.rehu likewise. A
-        placeholder: nothing. The row's default action, which a double-click runs, is drawn bold: Open, in every case
-        but a folder with no rehu, whose double-click does nothing -- **a rehu is only ever created from this menu**.
+        associated rehu** if it has one, **Create a rehu** if nothing manages it, the folder filter and Open in file
+        explorer. A rehu record: Open and Open in file explorer. A checksum file: its associated rehu and Open in
+        file explorer. Any other file: Open with its application, then its associated rehu or Create likewise, then
+        Open in file explorer. A placeholder: nothing. **The checksum group comes last, under a separator**, from
+        what manages the row (:meth:`__checksum_group`) -- a checksum file's own two verbs instead. The row's default
+        action, which a double-click runs, is drawn bold.
 
         :param index: the row the menu is for.
         :returns: the actions in menu order, a separator among them where the groups change.
@@ -622,21 +635,47 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
                     ui.remove_root_action,
                 ]
             case RootsNodeKind.FOLDER:
-                actions = [self.__companion_action(index), ui.filter_folder_action, ui.open_explorer_action]
+                actions = [
+                    *self.__companion_actions(index),
+                    ui.filter_folder_action,
+                    ui.open_explorer_action,
+                    *self.__checksum_group(index),
+                ]
             case RootsNodeKind.FILE:
                 file_type = self.__roots_model.file_type_of(index)
                 if file_type is FileType.RECORD:
-                    actions = [ui.open_record_action]
+                    actions = [ui.open_record_action, ui.open_explorer_action, *self.__checksum_group(index)]
                 elif file_type is FileType.MANIFEST:
-                    actions = [*self.__verify_actions(index), self.__companion_action(index)]
+                    actions = [
+                        *self.__companion_actions(index),
+                        ui.open_explorer_action,
+                        self.__separators[0],
+                        *self.__verbs.verify_actions(index),
+                    ]
                 else:
-                    actions = [ui.open_file_action, self.__companion_action(index)]
+                    actions = [
+                        ui.open_file_action,
+                        *self.__companion_actions(index),
+                        ui.open_explorer_action,
+                        *self.__checksum_group(index, file_verbs=True),
+                    ]
             case _:
                 return []
+        self.__mark_default(index)
+        return actions
+
+    def __mark_default(self, index: QModelIndex) -> None:
+        """Draw the row's default action bold, and the others plain.
+
+        The actions are shared by every row's menu and buttons, so which one is bold is decided each time a row is
+        asked for.
+
+        :param index: the row.
+        """
+        ui = self.__roots_ui
         default = self.__default_action(index)
         bold = QFont()
         bold.setBold(True)
-        # the actions are shared by every row's menu, so which one is bold is decided each time it is asked for
         for action in (
             ui.open_record_action,
             ui.open_file_action,
@@ -648,20 +687,65 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
             ui.verify_checksums_action,
         ):
             action.setFont(bold if action is default else QFont())
-        return actions
 
     def __actions_for_row(self, index: QModelIndex) -> tuple[list[QAction], QAction | None]:
-        """What the details pane makes buttons of for a row: its context menu, and its default.
+        """What the details pane makes buttons of for a row (#469): the common and the harmless, one easy click each.
+
+        **A button never starts something a reader could regret**: Open, Open in file explorer and the checksum
+        group's bulk verb and *Verify this file now*. The folder filter, Create, Remove Root, the moves and adding or
+        updating one file's checksum are in the context menu only.
 
         :param index: the row.
-        :returns: the actions in menu order, and the default one. A root has no move buttons: its grip moves it, and
-            the moves stay in its menu.
+        :returns: the actions in order, and the default one. A root has one button, Open in file explorer: its grip
+            moves it, and the rest stays in its menu.
         """
-        if self.__roots_model.node_kind(index) is RootsNodeKind.ROOT:
-            ui = self.__roots_ui
-            first_separator = self.__separators[0]
-            return [ui.filter_folder_action, ui.open_explorer_action, first_separator, ui.remove_root_action], None
-        return self.roots_context_actions(index), self.__default_action(index)
+        ui = self.__roots_ui
+        match self.__roots_model.node_kind(index):
+            case RootsNodeKind.ROOT:
+                return [ui.open_explorer_action], None
+            case RootsNodeKind.FOLDER:
+                opening = [ui.open_companion_action] if (companion_found(self.__roots_model, index) is not None) else []
+                actions = [*opening, ui.open_explorer_action, *self.__checksum_group(index)]
+            case RootsNodeKind.FILE:
+                file_type = self.__roots_model.file_type_of(index)
+                if file_type is FileType.RECORD:
+                    actions = [ui.open_record_action, ui.open_explorer_action, *self.__checksum_group(index)]
+                elif file_type is FileType.MANIFEST:
+                    actions = [ui.open_explorer_action, self.__separators[0], *self.__verbs.verify_actions(index)]
+                else:
+                    actions = [
+                        ui.open_file_action,
+                        ui.open_explorer_action,
+                        *self.__checksum_group(index, file_verbs=True, buttons=True),
+                    ]
+            case _:
+                return [], None
+        self.__mark_default(index)
+        return actions, self.__default_action(index)
+
+    def __checksum_group(self, index: QModelIndex, *, file_verbs: bool = False, buttons: bool = False) -> list[QAction]:
+        """The checksum verbs a row's menu or buttons end with (:class:`~.roots_checksum_verbs.RootsChecksumVerbs`),
+        under a separator.
+
+        :param index: the folder or file.
+        :param file_verbs: whether to add the file's own verbs.
+        :param buttons: whether the group is for the details pane.
+        :returns: the separator and the verbs; empty when nothing checksums the row.
+        """
+        verbs = self.__verbs.group(index, file_verbs=file_verbs, buttons=buttons)
+        return [self.__separators[0], *verbs] if verbs else []
+
+    def __companion_actions(self, index: QModelIndex) -> list[QAction]:
+        """The associated-rehu entry of a folder's or file's menu: Open if it has one, **Create only where nothing
+        manages it** -- not for a file an ``info.rehu`` already takes, nor a folder under one (#469).
+
+        :param index: the folder or file.
+        :returns: the one action, or none.
+        """
+        model = self.__roots_model
+        if companion_found(model, index) is not None or managing_record(model, index) is None:
+            return [self.__companion_action(index)]
+        return []
 
     def __default_action(self, index: QModelIndex) -> QAction | None:
         """What a double-click on a row does, and what the details pane's Open button runs.
@@ -674,7 +758,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         ui = self.__roots_ui
         match self.__roots_model.node_kind(index):
             case RootsNodeKind.FOLDER:
-                return ui.open_companion_action if self.__companion_exists(index) else None
+                return ui.open_companion_action if (companion_found(self.__roots_model, index) is not None) else None
             case RootsNodeKind.FILE:
                 file_type = self.__roots_model.file_type_of(index)
                 if file_type is FileType.RECORD:
@@ -687,72 +771,28 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
 
     def __companion_action(self, index: QModelIndex) -> QAction:
         """What the associated rehu of a folder or file is asked for as: opening it if it is there, creating it if not.
-        The create action names the record it would start -- ``info.rehu``, or the file's own name with ``.rehu``.
 
         :param index: the folder or file.
         :returns: the open action or the create action.
         """
         ui = self.__roots_ui
-        if self.__companion_exists(index):
+        if companion_found(self.__roots_model, index) is not None:
             return ui.open_companion_action
-        record = self.__companion_record(index)
-        if record is not None:
-            ui.create_companion_action.setText(f"Create {record.name}")
+        what = "folder" if self.__roots_model.node_kind(index) is RootsNodeKind.FOLDER else "file"
+        ui.create_companion_action.setText(f"Create a rehu for this {what}")
         return ui.create_companion_action
-
-    def __companion_record(self, index: QModelIndex) -> Path | None:
-        """Where the ``.rehu`` of a folder or file is, or would be.
-
-        :param index: the folder or file.
-        :returns: its ``info.rehu`` for a folder, its same-name ``.rehu`` for a file; ``None`` for any other row.
-        """
-        path = self.__roots_model.path_of(index)
-        if path is None:
-            return None
-        if self.__roots_model.node_kind(index) is RootsNodeKind.FOLDER:
-            return path / INFO_REHU_FILENAME
-        if index.data(RootsFolderModel.BOOKKEEPING_ROLE) and self.__roots_model.file_type_of(index) is FileType.IMAGE:
-            # a screenshot belongs to the record it is numbered after: ``info00.jpg`` to ``info.rehu``, and it is
-            # never the start of a record of its own (a listing calls an image a sidecar only when it is numbered)
-            return path.with_name(f"{SCREENSHOT_STEM_PATTERN.sub(r'\g<record>', path.stem)}.rehu")
-        return path.with_suffix(".rehu")
 
     def __folder_record(self, index: QModelIndex) -> Path | None:
         """The record a folder row stands for, for the details pane.
 
         :param index: the row.
-        :returns: the folder's ``info.rehu`` or ``info.tc``; ``None`` for any other row, or a folder with none.
+        :returns: the folder's ``info.rehu`` or ``info.tc``; ``None`` for any other row, or a folder without.
         """
-        return self.__companion_found(index) if self.__roots_model.node_kind(index) is RootsNodeKind.FOLDER else None
-
-    def __companion_exists(self, index: QModelIndex) -> bool:
-        """Whether a folder or file already has its rehu: the folder's ``info.rehu`` or ``info.tc``, the file's
-        same-name ``.rehu`` or ``.tc``.
-
-        :param index: the folder or file.
-        :returns: whether there is one to open.
-        """
-        return self.__companion_found(index) is not None
-
-    def __companion_found(self, index: QModelIndex) -> Path | None:
-        """The rehu a folder or file already has: its ``.rehu``, else its legacy ``.tc``.
-
-        Answered from the listing when it has one -- a file's neighbours are always listed, a folder's only once it
-        has been opened -- and from the disk otherwise.
-
-        :param index: the folder or file.
-        :returns: its path, or ``None`` when it has none (or the row is neither a folder nor a file).
-        """
-        record = self.__companion_record(index)
-        if record is None:
-            return None
-        holder = index if self.__roots_model.node_kind(index) is RootsNodeKind.FOLDER else index.parent()
-        candidates = (record, record.with_suffix(".tc"))
-        names = self.__roots_model.child_names(holder)
-        if names is None:
-            return next((candidate for candidate in candidates if candidate.exists()), None)
-        listed = {os.path.normcase(name) for name in names}
-        return next((candidate for candidate in candidates if os.path.normcase(candidate.name) in listed), None)
+        return (
+            companion_found(self.__roots_model, index)
+            if self.__roots_model.node_kind(index) is RootsNodeKind.FOLDER
+            else None
+        )
 
     def __selected_record(self, index: QModelIndex) -> tuple[UUID, str] | None:
         """The record a selected row stands for, as the ``(root_id, relative)`` key a resource is named by (#381):
@@ -771,74 +811,63 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         root_id, names = key
         match model.node_kind(index):
             case RootsNodeKind.FOLDER:
-                found = self.__companion_found(index)
+                found = companion_found(self.__roots_model, index)
                 return None if found is None else (root_id, "/".join((*names, found.name)))
             case RootsNodeKind.FILE:
                 if model.file_type_of(index) is FileType.RECORD:
                     return root_id, "/".join(names)
-                found = self.__companion_found(index)
+                found = companion_found(self.__roots_model, index)
                 return None if found is None else (root_id, "/".join((*names[:-1], found.name)))
         return None
 
-    def __verify_actions(self, index: QModelIndex) -> list[QAction]:
-        """The two Verify actions for a checksum file, on only while the resource it belongs to is there to be checked.
-
-        **Verify old checksums** is the file's default: it leaves a check that is still valid alone, checks the files
-        whose check has expired and records the ones with no checksum. **Verify checksums** checks every file, whatever
-        its last check was, and dates it anew.
-
-        :param index: the checksum file.
-        :returns: the two actions, enabled or not, with tooltips saying which.
-        """
-        ui = self.__roots_ui
-        resource = self.__verify_resource(index)
-        days = shared_checksum_settings().stale_days
-        for action, reason in (
-            (
-                ui.verify_old_checksums_action,
-                f"Check the files whose last check is more than {days} days old, and record the ones with no checksum "
-                "yet; a check that is still valid is left alone.",
-            ),
-            (
-                ui.verify_checksums_action,
-                "Check every file of the resource this checksum record belongs to, whatever its last check was.",
-            ),
-        ):
-            action.setEnabled(resource is not None)
-            action.setToolTip(reason if resource is not None else "There is no .rehu with this name beside it.")
-        return [ui.verify_old_checksums_action, ui.verify_checksums_action]
-
-    def __verify_resource(self, index: QModelIndex) -> Path | None:
-        """The resource a checksum file records: the ``.rehu`` that shares its name.
-
-        :param index: the checksum file.
-        :returns: the ``.rehu``'s path when it is there, else ``None``. Answered from the listing, which a file's
-            neighbours always have.
-        """
-        path = self.__roots_model.path_of(index)
-        names = self.__roots_model.child_names(index.parent())
-        if path is None or names is None:
-            return None
-        resource = path.with_suffix(".rehu")
-        return resource if os.path.normcase(resource.name) in {os.path.normcase(name) for name in names} else None
-
     def __on_roots_context_menu(self, position: QPoint) -> None:
         """Open the Roots view's context menu on the row under the pointer, making it the current row first so the
-        actions act on it.
+        actions act on it. **On the empty part of a column** it opens the menu of the folder that column lists, as a
+        file manager does for a folder's background, and the selection stays where it was (#469); on the column of
+        roots that is Scan, Add Root and Refresh.
 
         :param position: where it was asked for, in the view's coordinates.
         """
         view = self.__roots_ui.roots_view
         global_position = view.mapToGlobal(position)
         index = view.index_at_global(global_position)
-        actions = self.roots_context_actions(index)
-        if not actions:
+        if index.isValid():
+            actions = self.roots_context_actions(index)
+            if actions:
+                view.setCurrentIndex(index)
+                self.__exec_menu(actions, global_position, None)
             return
-        view.setCurrentIndex(index)
-        menu = QMenu(self)
-        menu.addActions(actions)
-        menu.exec(global_position)
-        menu.deleteLater()
+        holder = view.column_root_at_global(global_position)
+        if holder is None:
+            return
+        if holder.isValid():
+            self.__exec_menu(self.roots_context_actions(holder), global_position, QPersistentModelIndex(holder))
+        else:
+            ui = self.__roots_ui
+            self.__exec_menu([ui.scan_action, ui.add_root_action, ui.refresh_roots_action], global_position, None)
+
+    def __exec_menu(self, actions: list[QAction], position: QPoint, target: QPersistentModelIndex | None) -> None:
+        """Show a menu of actions at a point and run what is chosen.
+
+        :param actions: its entries.
+        :param position: where, in global coordinates.
+        :param target: the row the actions act on while it is open, when it is not the current one. The shared actions
+            are then put back for the current row, which the details pane's buttons mirror.
+        """
+        self.__target = target
+        try:
+            self.__update_enablement()
+            menu = QMenu(self)
+            menu.addActions(actions)
+            try:
+                menu.exec(position)
+            finally:
+                menu.deleteLater()
+        finally:
+            if target is not None:
+                self.__target = None
+                self.__update_enablement()
+                self.__preview.refresh()
 
     def __on_roots_rows_about_to_be_removed(self, parent: QModelIndex, first: int, last: int) -> None:
         """Remember where the selection falls back to if the rows about to go hold it: the folder they are in.
