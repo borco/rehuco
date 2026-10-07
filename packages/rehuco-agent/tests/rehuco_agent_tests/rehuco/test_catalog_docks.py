@@ -3111,7 +3111,7 @@ def test_the_details_pane_follows_the_current_row_and_has_a_button_for_each_menu
     assert not any(bold for _action, bold in shown())
 
     open_root_folder(qtbot, dock, "my folder")
-    assert name.text() == "my folder"
+    assert preview.title == "my folder"
     assert shown() == [
         (dock.roots.create_companion_action, False),
         (dock.roots.filter_folder_action, False),
@@ -3416,8 +3416,8 @@ def add_checksum_files(folders: Path) -> None:
 
 @mark.usefixtures("served")
 def test_a_checksum_file_offers_verify_and_it_needs_its_rehu(qtbot: QtBot, dock: CatalogDocks, folders: Path) -> None:
-    """The menu of a checksum file leads with Open in external app, then Verify checksums, then its associated rehu;
-    Verify is on only when the ``.rehu`` it records is beside it.
+    """The menu of a checksum file leads with Verify old checksums, its default, then Verify checksums, then its
+    associated rehu; both verifies are on only when the ``.rehu`` it records is beside it (#457).
 
     **Test steps:**
 
@@ -3431,19 +3431,21 @@ def test_a_checksum_file_offers_verify_and_it_needs_its_rehu(qtbot: QtBot, dock:
 
     with_rehu = dock.roots.roots_context_actions(paired)
     assert with_rehu == [
-        dock.roots.open_file_action,
+        dock.roots.verify_old_checksums_action,
         dock.roots.verify_checksums_action,
         dock.roots.open_companion_action,
     ]
+    assert dock.roots.verify_old_checksums_action.isEnabled()
     assert dock.roots.verify_checksums_action.isEnabled()
     enabled_tip = dock.roots.verify_checksums_action.toolTip()
 
     without = dock.roots.roots_context_actions(lonely)
     assert without == [
-        dock.roots.open_file_action,
+        dock.roots.verify_old_checksums_action,
         dock.roots.verify_checksums_action,
         dock.roots.create_companion_action,
     ]
+    assert not dock.roots.verify_old_checksums_action.isEnabled()
     assert not dock.roots.verify_checksums_action.isEnabled()
     assert dock.roots.verify_checksums_action.toolTip() != enabled_tip
 

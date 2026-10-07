@@ -2,6 +2,7 @@
 
 from typing import Protocol, runtime_checkable
 
+from PySide6.QtCore import SignalInstance
 from PySide6.QtWidgets import QFrame
 
 
@@ -37,6 +38,21 @@ class SettingsPage(Protocol):
         calls it once, to capture each frame's defaults snapshot, then ``drop_changes`` to put the
         saved values back; the toolbar's Defaults / Defaults All call it on demand.
         """
+
+
+@runtime_checkable
+class ExternallySavedPage(Protocol):  # pylint: disable=too-few-public-methods
+    """The optional signal a page has when what it edits can also be **saved from elsewhere** (#457).
+
+    The saved value is then not only what Apply wrote: a menu toggle applies the same setting at once. The page emits
+    ``saved_changed`` whenever the saved value changes, and the dialog rebases the page: a frame with no edit shows the
+    new saved value and stays clean, one with an edit keeps it -- compared now with the new saved value, so an edit
+    that equals it is no longer one -- and *Reset* restores the new saved value.
+    """
+
+    @property
+    def saved_changed(self) -> SignalInstance:  # pyright: ignore[reportReturnType]
+        """Emitted whenever the saved value changes, by anyone."""
 
 
 @runtime_checkable

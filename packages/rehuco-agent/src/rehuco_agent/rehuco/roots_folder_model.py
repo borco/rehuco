@@ -22,6 +22,7 @@ import itertools
 from bisect import bisect_left
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from os import path as os_path
 from pathlib import Path
@@ -41,6 +42,8 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import QFont
 from rehuco_core import (
+    DIRECTORY_SCOPED_FILENAMES,
+    DirectoryEntry,
     DirectoryListing,
     FileType,
     RehucoRoot,
@@ -50,13 +53,15 @@ from rehuco_core import (
     natural_sort_key,
 )
 
-from ..documents.files_rows import FILE_TYPE_ICONS
+from ..documents.files_rows import FILE_TYPE_ICONS, checksum_tooltip_for
+from ..settings.checksum_settings import shared_checksum_settings
 from .root_storage import (
     FOLDER_NOT_FOUND_ROW,
     ROOT_STORAGE_ICONS,
     ROOT_STORAGE_OFFLINE_ROWS,
     ROOT_STORAGE_OFFLINE_TOOLTIPS,
 )
+from .roots_checksum import BOOKKEEPING_KINDS, RowChecksum, row_checksum
 
 ROOT_MIME_TYPE: Final = "application/x-rehuco-root"
 """What a dragged root is carried as: its id. Nothing else is draggable, and nothing from outside is dropped."""
@@ -115,26 +120,46 @@ class RootFolderLoader(QObject):
     plain ``object`` for the reason ``DocumentsDock.open_requested`` is. Emitted once for every :meth:`start`, an
     unreadable folder included."""
 
-    def start(self, serial: int, lister: RootFolderLister, root_id: UUID, relative: tuple[str, ...]) -> None:
+    def start(
+        self,
+        serial: int,
+        lister: RootFolderLister,
+        root_id: UUID,
+        relative: tuple[str, ...],
+        covering: tuple[str, ...] | None = None,
+    ) -> None:
         """Read one folder on the pool.
 
         :param serial: what the answer is told apart by.
         :param lister: what lists it.
         :param root_id: the root the folder is under.
         :param relative: the folder's path under the root; empty for the root's own folder.
+        :param covering: the directory-scoped record above whose ``info.checksum`` covers this folder, if any.
         """
-        QThreadPool.globalInstance().start(lambda: self.__run(serial, lister, root_id, relative))
+        QThreadPool.globalInstance().start(lambda: self.__run(serial, lister, root_id, relative, covering))
 
-    def __run(self, serial: int, lister: RootFolderLister, root_id: UUID, relative: tuple[str, ...]) -> None:
+    def __run(
+        self,
+        serial: int,
+        lister: RootFolderLister,
+        root_id: UUID,
+        relative: tuple[str, ...],
+        covering: tuple[str, ...] | None,
+    ) -> None:
         """Read and answer, on a pool thread.
 
         :param serial: the request's serial.
         :param lister: what lists the folder.
         :param root_id: the root.
         :param relative: the folder under it.
+        :param covering: see :meth:`start`.
         """
         try:
-            listing = lister.list(root_id, relative)
+            listing = (
+                lister.list(root_id, relative)
+                if covering is None
+                else lister.list(root_id, relative, covering=covering)
+            )
         except OSError:
             listing = DirectoryListing(Path(), reachable=False)
         try:
@@ -157,6 +182,10 @@ class RootsFolderModel(QAbstractItemModel):
     * :attr:`PATH_ROLE`: a root's folder, which its row shows under its name.
     * :attr:`SIZE_ROLE` and :attr:`MODIFIED_ROLE`: a file's size in bytes and a row's modification time, as the listing
       gave them, for the preview to show without touching the disk again.
+    * :attr:`CHECKSUM_ROLE`: a covered file's :class:`~rehuco_agent.rehuco.roots_checksum.RowChecksum`, as the
+      record that covers it last found it (#457); ``None`` when no record covers the file.
+      :attr:`BOOKKEEPING_ROLE`: whether the file is a record, a checksum file or a screenshot, which no record
+      checksums.
     * :attr:`GREYED_ROLE`: whether the row is drawn greyed out -- a placeholder, or an unreachable root whose
       storage is not local. An unreachable **local** root is struck through instead (``FontRole``): a local folder
       that will not list has been deleted, where a share or a drive is merely away.
@@ -176,6 +205,8 @@ class RootsFolderModel(QAbstractItemModel):
     SIZE_ROLE: Final = int(Qt.ItemDataRole.UserRole) + 2
     MODIFIED_ROLE: Final = int(Qt.ItemDataRole.UserRole) + 3
     PATH_ROLE: Final = int(Qt.ItemDataRole.UserRole) + 4
+    CHECKSUM_ROLE: Final = int(Qt.ItemDataRole.UserRole) + 5
+    BOOKKEEPING_ROLE: Final = int(Qt.ItemDataRole.UserRole) + 6
 
     @dataclass(eq=False)
     class Node:  # pylint: disable=too-many-instance-attributes
@@ -188,6 +219,8 @@ class RootsFolderModel(QAbstractItemModel):
         :param root: the root, for a root row.
         :param size: a file's size in bytes, when the listing had it.
         :param modified: a modification time as a POSIX timestamp, when the listing had it.
+        :param checksum: what the record that covers a file says about it, when one does (#457).
+        :param bookkeeping: whether a file is a record, a checksum file or a screenshot.
         """
 
         name: str
@@ -197,6 +230,8 @@ class RootsFolderModel(QAbstractItemModel):
         root: RehucoRoot | None = None
         size: int | None = None
         modified: float | None = None
+        checksum: RowChecksum | None = None
+        bookkeeping: bool = False
         children: list[RootsFolderModel.Node] = field(default_factory=list)
         row: int = 0
         listing: NodeListing = NodeListing.UNLISTED
@@ -313,6 +348,19 @@ class RootsFolderModel(QAbstractItemModel):
             self.relist(self.__index_for(node))
             node = node.parent
 
+    def relist_under(self, path: Path) -> None:
+        """List again every loaded root and folder at or under ``path`` -- what a verify that rewrote a record covering
+        a whole folder tree has made stale.
+
+        :param path: the folder.
+        """
+        top = self.__find(path)
+        pending = [] if top is None else [top]
+        while pending:
+            node = pending.pop()
+            self.relist(self.__index_for(node))
+            pending.extend(child for child in node.children if child.kind in LISTABLE_KINDS)
+
     def relist_folder(self, path: Path) -> None:
         """List again the folder at ``path`` if it is a loaded root or folder, for a folder the app changed.
 
@@ -339,7 +387,31 @@ class RootsFolderModel(QAbstractItemModel):
         node.listing = NodeListing.PENDING
         if not node.children:
             self.__insert(node, 0, [RootsFolderModel.Node(LOADING_ROW, RootsNodeKind.LOADING, node)])
-        self.__loader.start(serial, lister, self.__root_above(node).root_id, self.__relative(node))
+        self.__loader.start(
+            serial, lister, self.__root_above(node).root_id, self.__relative(node), self.__covering(node)
+        )
+
+    def __covering(self, node: RootsFolderModel.Node) -> tuple[str, ...] | None:
+        """The directory-scoped record above ``node`` whose ``info.checksum`` covers it, as a path under the root.
+
+        Read from the listings the model already holds, so it costs no disk read: the nearest ancestor with a
+        directory-scoped record decides, and a record that has no ``info.checksum`` beside it covers nothing. An
+        ``info.rehu`` is preferred over an ``info.tc`` a conversion left beside it.
+
+        :param node: the root or folder about to be listed.
+        :returns: the record's path under its root; ``None`` when no loaded ancestor is a resource with a checksum
+            file.
+        """
+        ancestor = node.parent
+        while ancestor is not None and ancestor is not self.__top:
+            names = {child.name for child in ancestor.children if child.kind is RootsNodeKind.FILE}
+            record = next((name for name in DIRECTORY_SCOPED_FILENAMES if name in names), None)
+            if record is not None:
+                if "info.checksum" not in {name.lower() for name in names}:
+                    return None
+                return (*self.__relative(ancestor), record)
+            ancestor = ancestor.parent
+        return None
 
     def __on_listed(self, serial: int, listing: DirectoryListing) -> None:
         """Show an answer, unless the row it was for has gone or asked again since.
@@ -371,6 +443,7 @@ class RootsFolderModel(QAbstractItemModel):
         :param listing: what it holds, reachable.
         """
         entries = sorted(listing.entries, key=lambda entry: (not entry.is_directory, natural_sort_key(entry.name)))
+        stale_after, now = shared_checksum_settings().stale_after, datetime.now(UTC)
         wanted = {entry.name: entry.is_directory for entry in entries}
         children = node.children
         for row in reversed(range(len(children))):
@@ -385,21 +458,49 @@ class RootsFolderModel(QAbstractItemModel):
                     self.__insert(node, position, fresh)
                     position += len(fresh)
                     fresh = []
-                child = node.children[position]
-                if (child.file_type, child.size, child.modified) != (entry.file_type, entry.size, entry.modified):
-                    child.file_type, child.size, child.modified = entry.file_type, entry.size, entry.modified
-                    self.__changed(child)
+                self.__update_row(node.children[position], entry, listing, stale_after, now)
                 position += 1
             else:
                 kind = RootsNodeKind.FOLDER if entry.is_directory else RootsNodeKind.FILE
                 fresh.append(
                     RootsFolderModel.Node(
-                        entry.name, kind, node, entry.file_type, size=entry.size, modified=entry.modified
+                        entry.name,
+                        kind,
+                        node,
+                        entry.file_type,
+                        size=entry.size,
+                        modified=entry.modified,
+                        checksum=row_checksum(listing.covered.get(entry.name), stale_after, now),
+                        bookkeeping=entry.kind in BOOKKEEPING_KINDS,
                     )
                 )
         if fresh:
             self.__insert(node, position, fresh)
         node.listing = NodeListing.LISTED
+
+    def __update_row(
+        self,
+        child: RootsFolderModel.Node,
+        entry: DirectoryEntry,
+        listing: DirectoryListing,
+        stale_after: timedelta,
+        now: datetime,
+    ) -> None:
+        """Bring a row that is still listed up to date, announcing it only if something it shows changed.
+
+        :param child: the row.
+        :param entry: what the listing now says it is.
+        :param listing: the whole listing, for what its covering record says.
+        :param stale_after: how long a check stays fresh.
+        :param now: the instant every file of the listing is aged against.
+        """
+        checksum = row_checksum(listing.covered.get(entry.name), stale_after, now)
+        bookkeeping = entry.kind in BOOKKEEPING_KINDS
+        current = (child.file_type, child.size, child.modified, child.checksum, child.bookkeeping)
+        if current != (entry.file_type, entry.size, entry.modified, checksum, bookkeeping):
+            child.file_type, child.size, child.modified = entry.file_type, entry.size, entry.modified
+            child.checksum, child.bookkeeping = checksum, bookkeeping
+            self.__changed(child)
 
     # endregion
 
@@ -553,13 +654,22 @@ class RootsFolderModel(QAbstractItemModel):
     def child_names(self, index: ModelIndex) -> tuple[str, ...] | None:
         """The names a listed root or folder holds, as the listing gave them.
 
+        **A folder being listed again still answers** (#457): its rows stay until the answer lands, and a reader
+        asked mid-relist (the pane rebuilding its buttons as a verify's rewrite is diffed in) must not hear "nothing".
+
         :param index: a root or folder.
-        :returns: the names of its folders and files; ``None`` while it is not listed -- never asked for, still out, or
-            away -- since then nothing is known about what is in it.
+        :returns: the names of its folders and files; ``None`` while nothing is known about what is in it -- never
+            asked for, a first listing still out, or away.
         """
-        if not index.isValid() or self.__node(index).listing is not NodeListing.LISTED:
+        if not index.isValid():
             return None
-        return tuple(child.name for child in self.__node(index).children if child.kind not in PLACEHOLDER_KINDS)
+        node = self.__node(index)
+        if node.listing not in (NodeListing.LISTED, NodeListing.PENDING):
+            return None
+        names = tuple(child.name for child in node.children if child.kind not in PLACEHOLDER_KINDS)
+        if node.listing is NodeListing.PENDING and not names:
+            return None
+        return names
 
     def listing_state(self, index: ModelIndex) -> NodeListing | None:
         """Where a root's or folder's listing stands.
@@ -762,6 +872,10 @@ class RootsFolderModel(QAbstractItemModel):
                 return node.size
             case RootsFolderModel.MODIFIED_ROLE:
                 return node.modified
+            case RootsFolderModel.CHECKSUM_ROLE:
+                return node.checksum
+            case RootsFolderModel.BOOKKEEPING_ROLE:
+                return node.bookkeeping
             case RootsFolderModel.GREYED_ROLE:
                 return node.kind in PLACEHOLDER_KINDS or (
                     root is not None and unreachable and root.storage is not RootStorage.LOCAL
@@ -774,7 +888,8 @@ class RootsFolderModel(QAbstractItemModel):
                 return None
             case Qt.ItemDataRole.ToolTipRole:
                 if root is None:
-                    return None
+                    checksum = node.checksum
+                    return None if checksum is None else checksum_tooltip_for(checksum.state, checksum.untrusted)
                 tooltip = str(root.path)
                 if unreachable:
                     tooltip += "\n" + ROOT_STORAGE_OFFLINE_TOOLTIPS[root.storage]

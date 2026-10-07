@@ -442,6 +442,12 @@ carries progress and nothing else, and a status carries an outcome — so the su
 reads the report off it once it has finished, which is the same discipline `capture_state` is under. The
 engine stays free of a payload type it would have to know the shape of.
 
+**A finished job can say what it found, in one line** (#457). A job that satisfies `ReportingTaskJob` has an
+`outcome` -- a `JobOutcome(summary, clean)` -- which the engine reads once, when the job returns normally, and keeps
+on the row as `JobStatus.summary`, saved and restored like the failure reason. It is still not a payload: a sentence a
+row can show, so the Tasks dock and a document's banner say the same thing in the same words, while the per-file
+findings stay on the job and in the log.
+
 `SweepChecksumsJob` (#242) is the third, and it is what §3.1 was written for — **a job whose cursor is its
 own output**. It keeps nothing at all: re-entering `run` walks the folder again and skips every resource the
 last pass finished, because that pass wrote each record's dates as it went. Two things fell out of building

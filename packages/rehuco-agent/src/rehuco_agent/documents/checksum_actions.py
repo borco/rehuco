@@ -25,14 +25,12 @@ from PySide6.QtWidgets import QMenu
 from rehuco_core import (
     ChecksumJob,
     ChecksumRecordError,
-    ChecksumReport,
     GenerateChecksumsJob,
     JobState,
     JobStatus,
     TaskQueue,
     VerifyChecksumsJob,
     checksum_record_path,
-    checksum_report_summary,
     forget_checksums,
     legacy_manifest_for,
 )
@@ -64,21 +62,6 @@ VERIFY_ALL_LABEL: Final = "Verify &All"
 **The main one names the window it would use** (#244), the way #242's migrate checkbox names the
 algorithm it would migrate to -- rebuilt whenever the setting is read, so it can never name a window
 that is no longer set."""
-
-VERIFY_FINDING: Final = "Checksums verified: {summary}."
-GENERATE_FINDING: Final = "Checksums recorded: {summary}."
-"""What the inline banner says once a run has finished.
-
-The **summary**, not the file list: a tutorial of two hundred videos reports two hundred statuses, and
-the strip above a document is not where those belong -- the log dock has the detail, and the per-file
-view is #244's."""
-
-CLEAN_STATUSES: Final = frozenset({"matched", "unexpected"})
-"""The verdicts that are not a finding about the files.
-
-``unexpected`` is a *report* state rather than a resting one ([[data-model#checksums]]) -- the run
-adopted the file and recorded it ``matched`` -- so a resource whose only news is an adopted screenshot
-has come back clean."""
 
 PROGRESS_COALESCING_BYTES: Final = 100 * 1024 * 1024
 """How much hashing may go by unreported before this surface wakes the GUI thread again.
@@ -492,9 +475,9 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
                 continue
             self.__pending.remove(job)
             finished = True
-            template = VERIFY_FINDING if isinstance(job, VerifyChecksumsJob) else GENERATE_FINDING
-            reported = template.format(summary=checksum_report_summary(report))
-            clean = ChecksumActions.__nothing_wrong(report)
+            outcome = job.outcome
+            if outcome is not None:
+                reported, clean = outcome.summary, outcome.clean
         if reported:
             self.__finding = reported
             self.__finding_clean = clean
@@ -503,22 +486,6 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
         if finished:
             # after __update_enabled, so a view refreshing on this already sees the settled actions
             self.__record_changed()
-
-    @staticmethod
-    def __nothing_wrong(report: ChecksumReport) -> bool:
-        """Whether a run found nothing to act on.
-
-        :param report: what the run established.
-        :returns: whether every verdict was a clean one and nothing went unread.
-        """
-        return (
-            all(status in CLEAN_STATUSES for status in report.statuses.values())
-            and not report.unreadable
-            and not report.unnamed_malformed
-            # a run that could not list part of the tree is not a clean run, whether or not the record
-            # happened to hold entries under the branch it could not see (#245)
-            and not report.unreadable_directories
-        )
 
     def __update_enabled(self) -> None:
         """Offer each action exactly while it means something.

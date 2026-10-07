@@ -627,6 +627,30 @@ and its cache** — the catalog — and both docks read it and hear from it when
     *Reference Images Columns*: that type's columns shown, every other type's hidden, a `type:` token on the line, and
     the browser named after the type. A type with no column of its own is not offered. A preset only picks the
     starting header state, filter and name; the browser is then an ordinary one and remembers no preset.
+- **A covered file shows its checksum state in the Roots view** (#457). A file's state comes from **its own**
+  record only: a same-stem `foo.checksum` beside `foo.rehu`, else the nearest directory-scoped `info.checksum` at or
+  above its folder, so a covered subfolder shows states too; an entry an older `info.checksum` still holds for a file
+  `foo.rehu` now owns is ignored (#467 moves it). The lister reads the record where it lists the folder, on its
+  worker and inside the rename coordinator's hold, and carries it as `DirectoryListing.covered`; the model turns it
+  into a `RowChecksum` with `checksum_verdict_for`, so the rows and the Files dock age a result by one rule.
+  - **A file reads two ways**: *No checksum* (not listed, listed with no hash, or no record covers it) or a checked
+    result, *Matching* or *Not matching*, drawn old when the check has expired or was made at another location. A
+    record, a checksum file and a screenshot have no state (*Not applicable*).
+  - **The row** shows the state's icon right-aligned in its column, the name eliding before it; a file that did not
+    match has its name and icon in red, one whose mismatch is old in orange. **The details pane** shows the icon
+    beside a one-line title, and two fixed rows after *Modified* -- **Checksum:** the verdict, **Last check:** the
+    date and, in brackets, how long ago -- or *expired*, or *at another location* when that is why it may not count --
+    so the block never changes size from one file to the next. A picture
+    is the last thing in the pane, below the buttons, so what sits above it stays put.
+  - **A verify refreshes the rows in place** through the app's `changed` announcement of the record it rewrote.
+  - **A checksum file's default action is *Verify old checksums*** (a double-click, the bold entry): it leaves a check
+    that is still valid alone, checks the files whose check has expired and records the ones with no checksum --
+    the Checksums dock's *Verify Old*. **Verify checksums** beside it checks every file whatever its last check was.
+    A screenshot or a checksum file never offers *Create rehu*: it belongs to a record already, and its associated
+    rehu is that record.
+  - **Automatically preview the current rehu** (the `Root Catalog` menu and the Root Catalog settings page, one
+    setting) lets the Roots view's current row drive the Documents preview. Off, the preview stays where it is; the
+    table browsers' selection is not governed by it.
 - **A selection shows in the Documents preview** (#381). The browsers and the Roots view get no document sub-docks of
   their own: selecting a resource shows it in the preview dock ([[plugins#dock-shell]]), the one place a selected
   resource is shown, through the one model any Documents dock of the same file holds ([[plugins#view-model]]). **Only a

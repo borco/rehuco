@@ -11,6 +11,13 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ### Added
 
+- `RootFolderLister` also reads the checksum record that covers a listed file -- a same-stem `foo.checksum`, the folder's
+  `info.checksum`, or the one a caller names above it (`covering=`) -- and returns, as `DirectoryListing.covered`, what
+  each covered file's entry says (`CoveredFile`), under the same hold as the listing. `DirectoryClassifier.reclassify`
+  names an already-read listing for another record without a second `scandir`.
+- A task-queue job that satisfies `ReportingTaskJob` says what it found in one line: `JobOutcome(summary, clean)`, kept
+  on the row as `JobStatus.summary` and saved with a finished job. Checksum runs report their summary this way, and
+  `checksum_report_is_clean` is the rule for a clean run.
 - `RootFolderLister` lists one folder of one `.rehuco` root, asked by root id and path under the root, never by an
   absolute path: a read is one `scandir` under the rename coordinator's hold, and a folder that is gone or an unknown
   root comes back not reachable rather than raising. `CatalogCache.resource_count` says how many rows a root holds.

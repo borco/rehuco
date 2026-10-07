@@ -50,6 +50,7 @@ from rehuco_agent.settings import (
     markdown_rendering_settings,
     persistent_settings,
     reference_images_settings,
+    root_catalog_settings,
     scrapers_settings,
     screenshot_patterns_settings,
     shortcuts_settings,
@@ -70,6 +71,7 @@ from rehuco_agent.settings.location_templates_settings import shared_location_te
 from rehuco_agent.settings.logs_settings import shared_logs_settings
 from rehuco_agent.settings.markdown_rendering_settings import shared_markdown_rendering_settings
 from rehuco_agent.settings.reference_images_settings import shared_reference_images_settings
+from rehuco_agent.settings.root_catalog_settings import shared_root_catalog_settings
 from rehuco_agent.settings.scrapers_settings import shared_scrapers_settings
 from rehuco_agent.settings.screenshot_patterns_settings import shared_screenshot_patterns_settings
 from rehuco_agent.settings.shortcuts_settings import shared_shortcuts_settings
@@ -362,6 +364,19 @@ def isolate_shared_image_viewer_settings(mocker: MockerFixture) -> Iterator[None
     mocker.patch.object(image_viewer_settings, "persistent_settings", return_value=FakeSettings())
     yield
     shared_image_viewer_settings.cache_clear()
+
+
+@fixture(autouse=True)
+def isolate_shared_root_catalog_settings(mocker: MockerFixture) -> Iterator[None]:
+    """Isolate every test from the process-wide `RootCatalogSettings` singleton (#457).
+
+    Same rationale as :func:`isolate_shared_image_viewer_settings`: a test that builds a `MainWindow` would otherwise
+    pin an instance loaded from the developer's real on-disk settings, and a menu toggle would write back to it.
+    """
+    shared_root_catalog_settings.cache_clear()
+    mocker.patch.object(root_catalog_settings, "persistent_settings", return_value=FakeSettings())
+    yield
+    shared_root_catalog_settings.cache_clear()
 
 
 @fixture(autouse=True)

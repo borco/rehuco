@@ -144,12 +144,20 @@
     <string>Start a new rehu record for this folder or file in Documents. Nothing is written until it is saved.</string>
    </property>
   </action>
+  <action name="verify_old_checksums_action">
+   <property name="text">
+    <string>Verify old checksums</string>
+   </property>
+   <property name="toolTip">
+    <string>Check the files whose last check has expired, and record the ones with no checksum yet; a check that is still valid is left alone.</string>
+   </property>
+  </action>
   <action name="verify_checksums_action">
    <property name="text">
     <string>Verify checksums</string>
    </property>
    <property name="toolTip">
-    <string>Check the files of the resource this checksum record belongs to against it, on the task queue.</string>
+    <string>Check every file of the resource this checksum record belongs to, whatever its last check was.</string>
    </property>
   </action>
   <action name="open_explorer_action">

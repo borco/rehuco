@@ -7214,7 +7214,11 @@ def test_root_catalog_holds_the_catalog_files_then_the_docks_own_actions(qtbot: 
 
     assert actions[:3] == [ui.new_rehuco_action, ui.open_rehuco_action, ui.open_recent_rehucos_menu.menuAction()]
     assert actions[3].isSeparator()
-    assert actions[4:] == [roots.scan_action, roots.add_root_action, roots.remove_root_action]
+    assert actions[4:7] == [roots.scan_action, roots.add_root_action, roots.remove_root_action]
+    # then the Roots view's own toggle, set apart (#457)
+    assert actions[7].isSeparator()
+    assert actions[8].isCheckable()
+    assert len(actions) == 9
 
 
 def test_root_catalog_entries_follow_the_dock_and_scan_wakes_once_a_catalog_is_open(qtbot: QtBot) -> None:

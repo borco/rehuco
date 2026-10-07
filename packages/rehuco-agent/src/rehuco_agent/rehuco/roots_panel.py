@@ -16,8 +16,11 @@ from PySide6.QtCore import QItemSelectionModel, QModelIndex, QPoint, Qt, QUrl, S
 from PySide6.QtGui import QAction, QDesktopServices, QFont
 from PySide6.QtWidgets import QComboBox, QDialog, QLineEdit, QMenu, QMessageBox, QWidget
 from rehuco_core import (
+    CHECKSUM_RECORD_SUFFIX,
+    DEFAULT_CHECKSUM_TRUST,
     DEFAULT_RENAME_COORDINATOR,
     INFO_REHU_FILENAME,
+    SCREENSHOT_STEM_PATTERN,
     CatalogField,
     FileType,
     RehucoFile,
@@ -28,12 +31,14 @@ from rehuco_core import (
     RootStorage,
     TaskQueue,
     VerifyChecksumsJob,
+    checksum_record_path,
 )
 
 from ..resource_events import ResourceEvents
 from ..settings.checksum_settings import shared_checksum_settings
 from ..settings.excluded_files_settings import shared_excluded_files_settings
 from ..tasks.already_queued import job_already_queued
+from ..tasks.job_end_watcher import JobEndWatcher
 from .add_root_dialog import AddRootDialog
 from .rehuco_roots_panel_ui import Ui_RehucoRootsPanel
 from .root_catalog import RootCatalog
@@ -118,6 +123,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         self.__queue: Final = queue
         self.__rename_coordinator: Final = rename_coordinator
         self.__events: Final = resource_events
+        self.__watcher: Final = JobEndWatcher(queue, self)
 
         self.__roots_model: Final = RootsFolderModel(self)
         self.__fallback: tuple[UUID, tuple[str, ...]] | None = None
@@ -174,12 +180,15 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         if resource_events is not None:
             resource_events.moved.connect(self.__on_moved)
             resource_events.folder_changed.connect(self.__on_folder_changed)
+            resource_events.changed.connect(self.__on_files_changed)
 
     def detach(self) -> None:
         """Stop listening to the file announcements before the window goes."""
         if self.__events is not None:
             self.__events.moved.disconnect(self.__on_moved)
             self.__events.folder_changed.disconnect(self.__on_folder_changed)
+            self.__events.changed.disconnect(self.__on_files_changed)
+        self.__watcher.detach()
 
     # region the view and its actions
 
@@ -236,8 +245,14 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         return ui.move_to_top_action, ui.move_up_action, ui.move_down_action, ui.move_to_bottom_action
 
     @property
+    def verify_old_checksums_action(self) -> QAction:
+        """Verifies what the selected checksum file's resource has not had checked lately, and records its new files:
+        the checksum file's default action."""
+        return self.__roots_ui.verify_old_checksums_action
+
+    @property
     def verify_checksums_action(self) -> QAction:
-        """Verifies the resource of the selected checksum file, on the task queue."""
+        """Verifies every file of the selected checksum file's resource, whatever its last check was."""
         return self.__roots_ui.verify_checksums_action
 
     @property
@@ -278,7 +293,9 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
             self.__banner.set_rows(())
         else:
             roots = file.roots
-            self.__roots_model.set_roots(roots, RootFolderLister(roots, coordinator=self.__rename_coordinator))
+            self.__roots_model.set_roots(
+                roots, RootFolderLister(roots, coordinator=self.__rename_coordinator, trust=DEFAULT_CHECKSUM_TRUST)
+            )
             lock_reason = file.lock_reason
             self.__banner.set_rows(
                 [] if lock_reason is None else [MessageBannerRow(MessageBannerSeverity.WARNING, lock_reason.message)]
@@ -306,7 +323,8 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         ui.filter_folder_action.triggered.connect(self.__on_filter_folder)
         ui.open_record_action.triggered.connect(self.__on_open_record)
         ui.open_explorer_action.triggered.connect(self.__on_open_explorer)
-        ui.verify_checksums_action.triggered.connect(self.__on_verify_checksums)
+        ui.verify_checksums_action.triggered.connect(lambda: self.__on_verify_checksums(old=False))
+        ui.verify_old_checksums_action.triggered.connect(lambda: self.__on_verify_checksums(old=True))
         ui.open_file_action.triggered.connect(self.__on_open_file)
         ui.open_companion_action.triggered.connect(self.__on_companion)
         ui.create_companion_action.triggered.connect(self.__on_companion)
@@ -474,12 +492,14 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         """Show the current root or folder in the system's file manager."""
         self.__run(self.__roots_ui.open_explorer_action, self.__roots_ui.roots_view.currentIndex())
 
-    def __on_verify_checksums(self) -> None:
+    def __on_verify_checksums(self, *, old: bool = False) -> None:
         """Queue a verification of the resource the current checksum file belongs to.
 
-        The Checksums dock's plain *Verify* -- every file checked, with the same settings -- not its *Verify Old*,
-        which skips what was checked recently; the two derive the same label, so a verify already waiting for this
-        resource, asked from either place, is not asked again.
+        The Checksums dock's two verbs: *Verify Old* (``old``) skips what was checked within the settings' window and
+        records what is new, and *Verify All* checks every file. They derive the same label, so a verify already
+        waiting for this resource, asked from either place, is not asked again.
+
+        :param old: whether to leave a check that is still valid alone.
         """
         resource = self.__verify_resource(self.__roots_ui.roots_view.currentIndex())
         if resource is None:
@@ -492,12 +512,26 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
             excluded_patterns=shared_excluded_files_settings().excluded_file_patterns,
             create_if_missing=True if checksums.create_missing_on_verify else None,
             migrate_to=checksums.migrate_target,
+            stale_after=checksums.stale_after if old else None,
         )
         if job_already_queued(self.__queue, label=job.label, source=job.source):
             LOG.info("%s is already in the task queue; it was not queued again.", job.label)
             return
         with LogScope.open(resource):
-            self.__queue.enqueue(job)
+            serial = self.__queue.enqueue(job)
+        self.__watcher.watch(serial, lambda: self.__announce_rewritten(resource))
+
+    def __announce_rewritten(self, resource: Path) -> None:
+        """Say the checksum record a finished verify may have rewritten has changed, so every view of it follows -- the
+        rows here, an open document's Files and Checksums views, the catalog's row for the record (#457).
+
+        :param resource: the ``.rehu`` whose record was verified.
+        """
+        record = checksum_record_path(resource)
+        if self.__events is not None:
+            self.__events.announce_changed((record,))
+        else:
+            self.__roots_model.relist_under(record.parent)
 
     def __on_companion(self) -> None:
         """Ask for the rehu that describes the current folder or file: a folder's ``info.rehu``, a file's same-name
@@ -519,6 +553,9 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         if action is ui.open_record_action:
             if self.__roots_model.file_type_of(index) is FileType.RECORD:
                 self.open_requested.emit(path)
+        elif action in (ui.verify_old_checksums_action, ui.verify_checksums_action):
+            if action.isEnabled():
+                action.trigger()
         elif action in (ui.open_file_action, ui.open_explorer_action):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
         elif self.__roots_model.node_kind(index) is RootsNodeKind.FOLDER:
@@ -532,6 +569,22 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         :param directory: the folder.
         """
         self.__roots_model.relist_folder(directory)
+
+    def reselect(self) -> None:
+        """Say again which record the current row stands for, for a listener that has just started to care (#457)."""
+        self.record_selected.emit(self.__selected_record(self.__roots_ui.roots_view.currentIndex()))
+
+    def __on_files_changed(self, paths: tuple[Path, ...]) -> None:
+        """List again the folders whose checksum record the app rewrote, if the Roots view has them loaded (#457).
+
+        A directory-scoped record covers its subfolders too, so every loaded folder at or under it is listed again;
+        a file-scoped one only changes its own folder, which is the same call.
+
+        :param paths: the files the app wrote or replaced.
+        """
+        for path in paths:
+            if path.suffix.lower() == CHECKSUM_RECORD_SUFFIX:
+                self.__roots_model.relist_under(path.parent)
 
     def __on_filter_folder(self) -> None:
         """Filter the current browser to the resources under the current root or folder (#398)."""
@@ -573,7 +626,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
                 if file_type is FileType.RECORD:
                     actions = [ui.open_record_action]
                 elif file_type is FileType.MANIFEST:
-                    actions = [ui.open_file_action, self.__verify_action(index), self.__companion_action(index)]
+                    actions = [*self.__verify_actions(index), self.__companion_action(index)]
                 else:
                     actions = [ui.open_file_action, self.__companion_action(index)]
             case _:
@@ -589,6 +642,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
             ui.create_companion_action,
             ui.filter_folder_action,
             ui.open_explorer_action,
+            ui.verify_old_checksums_action,
             ui.verify_checksums_action,
         ):
             action.setFont(bold if action is default else QFont())
@@ -611,17 +665,21 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         """What a double-click on a row does, and what the details pane's Open button runs.
 
         :param index: the row.
-        :returns: a folder's associated rehu if it has one, a record's Open, any other file's Open with its
-            application; ``None`` for a root and a placeholder, which only navigate, and for a folder with no rehu --
-            a double-click never creates one.
+        :returns: a folder's associated rehu if it has one, a record's Open, a checksum file's verify of what is
+            old, any other file's Open with its application; ``None`` for a root and a placeholder, which only
+            navigate, and for a folder with no rehu -- a double-click never creates one.
         """
         ui = self.__roots_ui
         match self.__roots_model.node_kind(index):
             case RootsNodeKind.FOLDER:
                 return ui.open_companion_action if self.__companion_exists(index) else None
             case RootsNodeKind.FILE:
-                if self.__roots_model.file_type_of(index) is FileType.RECORD:
+                file_type = self.__roots_model.file_type_of(index)
+                if file_type is FileType.RECORD:
                     return ui.open_record_action
+                if file_type is FileType.MANIFEST:
+                    # a checksum file is opened for what it is for: checking what is old, and recording what is new
+                    return ui.verify_old_checksums_action
                 return ui.open_file_action
         return None
 
@@ -651,6 +709,12 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
             return None
         if self.__roots_model.node_kind(index) is RootsNodeKind.FOLDER:
             return path / INFO_REHU_FILENAME
+        if index.data(RootsFolderModel.BOOKKEEPING_ROLE) and self.__roots_model.file_type_of(index) is FileType.IMAGE:
+            # a screenshot belongs to the record it is numbered after: ``info00.jpg`` to ``info.rehu``, and it is
+            # never the start of a record of its own
+            numbered = SCREENSHOT_STEM_PATTERN.match(path.stem)
+            if numbered is not None:
+                return path.with_name(f"{numbered['record']}.rehu")
         return path.with_suffix(".rehu")
 
     def __companion_exists(self, index: QModelIndex) -> bool:
@@ -708,21 +772,33 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
                 return None if found is None else (root_id, "/".join((*names[:-1], found.name)))
         return None
 
-    def __verify_action(self, index: QModelIndex) -> QAction:
-        """The Verify action for a checksum file, on only while the resource it belongs to is there to be checked.
+    def __verify_actions(self, index: QModelIndex) -> list[QAction]:
+        """The two Verify actions for a checksum file, on only while the resource it belongs to is there to be checked.
+
+        **Verify old checksums** is the file's default: it leaves a check that is still valid alone, checks the files
+        whose check has expired and records the ones with no checksum. **Verify checksums** checks every file, whatever
+        its last check was, and dates it anew.
 
         :param index: the checksum file.
-        :returns: the action, enabled or not, with a tooltip saying which.
+        :returns: the two actions, enabled or not, with tooltips saying which.
         """
         ui = self.__roots_ui
         resource = self.__verify_resource(index)
-        ui.verify_checksums_action.setEnabled(resource is not None)
-        ui.verify_checksums_action.setToolTip(
-            "Check the files of the resource this checksum record belongs to against it, on the task queue."
-            if resource is not None
-            else "There is no .rehu with this name beside it to check the files of."
-        )
-        return ui.verify_checksums_action
+        days = shared_checksum_settings().stale_days
+        for action, reason in (
+            (
+                ui.verify_old_checksums_action,
+                f"Check the files whose last check is more than {days} days old, and record the ones with no checksum "
+                "yet; a check that is still valid is left alone.",
+            ),
+            (
+                ui.verify_checksums_action,
+                "Check every file of the resource this checksum record belongs to, whatever its last check was.",
+            ),
+        ):
+            action.setEnabled(resource is not None)
+            action.setToolTip(reason if resource is not None else "There is no .rehu with this name beside it.")
+        return [ui.verify_old_checksums_action, ui.verify_checksums_action]
 
     def __verify_resource(self, index: QModelIndex) -> Path | None:
         """The resource a checksum file records: the ``.rehu`` that shares its name.

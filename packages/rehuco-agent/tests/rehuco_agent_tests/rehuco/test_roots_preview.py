@@ -60,6 +60,9 @@ class Shown:
         :param name: the label's object name.
         :returns: its text.
         """
+        if name == "name_label":
+            # an eliding label shows what fits; the pane keeps the whole name
+            return self.preview.title
         label = self.preview.findChild(QLabel, name)
         assert label is not None
         return label.text()

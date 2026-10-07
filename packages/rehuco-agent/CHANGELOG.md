@@ -12,6 +12,17 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 ### Added
 
+- The Roots view shows **the checksum state of the files a checksum record covers**. A file's row has an icon at
+  the right edge of its column -- matching, not matching, no checksum, and an old, faded one when the check has
+  expired or was made at another location -- and a file that did not match has its name in red. The details pane
+  shows the same icon beside the file's name, and a **Checksum** row with the verdict and a **Last check** row with
+  the date, how long ago -- or *expired*, or *at another location*. A file is read from its own record: `foo.checksum` for a
+  `foo.rehu`, otherwise the folder's `info.checksum`, whose subfolders are covered too. A picture of an image file
+  is now shown below the pane's buttons. A checksum file's default action is now **Verify old checksums**, which
+  leaves a valid check alone and records the files that have none; **Verify checksums** checks every file. A
+  screenshot no longer offers to create a rehu of its own. `Root Catalog` > **Automatically preview the current
+  rehu**, also a Root Catalog settings page, switches off the Roots view driving the Documents preview. A checksum file's verify entries no longer go dead after a verify or a Refresh relists its folder (the pane rebuilt its buttons while the listing was still being diffed in and found no rehu beside the file). **Verify checksums** from the Roots view reports what it found on its row in
+  the Tasks panel, in the document banner's words, and the rows update when it ends.
 - The Root Catalog's **Roots view** is a column view: the first column lists the `.rehuco`'s roots and each further
   one a folder's contents, listed when you open it and never while it would block a rename. **Add Root** asks what
   the folder lives on before the folder. The selected root's **name** and **storage** are edited in the pane beside the columns

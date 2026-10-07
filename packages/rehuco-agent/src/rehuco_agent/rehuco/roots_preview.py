@@ -3,6 +3,7 @@ button for everything its context menu offers (#378)."""
 
 from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager, nullcontext
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Final
 from uuid import UUID
@@ -18,11 +19,14 @@ from PySide6.QtCore import (
     QThreadPool,
     Signal,
 )
-from PySide6.QtGui import QAction, QFont, QImage, QImageReader
+from PySide6.QtGui import QAction, QFont, QFontMetrics, QImage, QImageReader, QPalette
 from PySide6.QtWidgets import QComboBox, QFrame, QLineEdit, QSizePolicy, QToolButton, QWidget
 from rehuco_core import FileType, RehucoRoot, RenameCoordinator
 
+from ..documents.files_rows import CHECKSUM_STATE_ICONS
+from ..svg_icon_cache import SvgIconCache
 from .root_storage import fill_root_storage_combo, select_root_storage
+from .roots_checksum import RowChecksum, checksum_lines, warning_ink
 from .roots_folder_model import NodeListing, RootsFolderModel, RootsNodeKind
 from .roots_preview_ui import Ui_RootsPreview
 
@@ -56,6 +60,12 @@ EMPTY_FOLDER: Final = "Empty"
 MINIMUM_WIDTH: Final = 300
 """The least width the pane is given, in pixels -- above what any row's lines ask for, so what is shown never changes
 the width the pane needs and the splitter beside it never has to move when another row is selected."""
+
+TITLE_ICON_SIZE: Final = 16
+"""The state icon beside the title is as big as the one in the column."""
+
+SMALL_FONT_SCALE: Final = 0.85
+"""How much smaller than the pane's font the *Checked on* row is drawn, dimmed."""
 
 
 def format_size(size: int) -> str:
@@ -116,8 +126,11 @@ class RootsPreview(QWidget):
         self.__index = QPersistentModelIndex()
         self.__serial = 0
         self.__location = ""
+        self.__title = ""
+        self.__checksum_lines: tuple[str, str] | None = None
         self.__shown_root: UUID | None = None
         fill_root_storage_combo(self.__ui.root_storage_combo)
+        self.__setup_checksum_rows()
         self.image_ready.connect(self.__on_image, Qt.ConnectionType.QueuedConnection)
         self.show_index(QModelIndex())
 
@@ -142,6 +155,17 @@ class RootsPreview(QWidget):
         return "" if self.__ui.resolution_value.isHidden() else self.__ui.resolution_value.text()
 
     @property
+    def title(self) -> str:
+        """The name shown in the title, whole -- the label itself may have elided it to fit."""
+        return self.__title
+
+    @property
+    def checksum_texts(self) -> tuple[str, str] | None:
+        """The *Checksum* row's verdict and the *Checked on* row's text; ``None`` when the row shown is not a file and
+        the rows are hidden (#457)."""
+        return self.__checksum_lines
+
+    @property
     def location(self) -> str:
         """The full location shown, which the label itself may have elided to fit."""
         return self.__location
@@ -159,6 +183,18 @@ class RootsPreview(QWidget):
         """
         self.__ui.root_name_edit.setEnabled(editable)
         self.__ui.root_storage_combo.setEnabled(editable)
+
+    def __setup_checksum_rows(self) -> None:
+        """Make the *Checked on* row smaller and dimmed, and give both checksum rows the height of a line, so the
+        block never changes size from one file to the next."""
+        ui = self.__ui
+        small = QFont(ui.checked_value.font())
+        small.setPointSizeF(small.pointSizeF() * SMALL_FONT_SCALE)
+        for widget in (ui.checked_label, ui.checked_value):
+            widget.setFont(small)
+            widget.setEnabled(False)
+        ui.checked_value.setMinimumHeight(QFontMetrics(small).lineSpacing())
+        ui.checksum_value.setMinimumHeight(QFontMetrics(ui.checksum_value.font()).lineSpacing())
 
     def show_index(self, index: QModelIndex | QPersistentModelIndex) -> None:
         """Show a row.
@@ -188,8 +224,11 @@ class RootsPreview(QWidget):
         file_type = self.__model.file_type_of(index)
         kind = self.__model.node_kind(index)
         root = self.__model.root_at(index)
-        ui.name_label.setText(str(index.data() or ""))
+        self.__title = str(index.data() or "")
+        ui.name_label.set_text(self.__title)
         ui.name_label.setVisible(root is None)
+        checksum = index.data(RootsFolderModel.CHECKSUM_ROLE)
+        self.__show_checksum(index, checksum if isinstance(checksum, RowChecksum) else None, kind)
         self.__show_root_editors(root)
         if kind is RootsNodeKind.FOLDER:
             type_text = FOLDER_LABEL
@@ -214,6 +253,37 @@ class RootsPreview(QWidget):
         self.__rebuild_buttons(index)
         if path is not None and file_type is FileType.IMAGE:
             self.__start_image(path)
+
+    def __show_checksum(self, index: QModelIndex, checksum: RowChecksum | None, kind: RootsNodeKind | None) -> None:
+        """Show a file's checksum: the state's icon beside the title, and the two fixed rows under *Modified*.
+
+        :param index: the row.
+        :param checksum: what the record that covers it says, or ``None`` when none does.
+        :param kind: what the row is; only a file has the rows.
+        """
+        ui = self.__ui
+        palette = self.palette()
+        warning = warning_ink(checksum)
+        if warning is not None:
+            palette.setColor(QPalette.ColorRole.WindowText, warning)
+        ui.name_label.setPalette(palette)
+        path = None if checksum is None else CHECKSUM_STATE_ICONS.get(checksum.state)
+        if path is None or kind is not RootsNodeKind.FILE:
+            ui.title_icon.clear()
+        else:
+            pixmap = SvgIconCache().icon(path, palette.windowText().color()).pixmap(TITLE_ICON_SIZE, TITLE_ICON_SIZE)
+            ui.title_icon.setPixmap(pixmap)
+        is_file = kind is RootsNodeKind.FILE
+        for widget in (ui.checksum_label, ui.checksum_value, ui.checked_label, ui.checked_value):
+            widget.setVisible(is_file)
+        if is_file:
+            bookkeeping = bool(index.data(RootsFolderModel.BOOKKEEPING_ROLE))
+            verdict, checked = checksum_lines(checksum, bookkeeping=bookkeeping, now=datetime.now(UTC))
+            ui.checksum_value.set_text(verdict)
+            ui.checked_value.set_text(checked)
+            self.__checksum_lines = (verdict, checked)
+        else:
+            self.__checksum_lines = None
 
     def __show_root_editors(self, root: RehucoRoot | None) -> None:
         """Show a root's name and storage, or hide them for any other row.

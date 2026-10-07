@@ -330,6 +330,8 @@ class TaskQueueModel(QAbstractTableModel):
         lines = [state_text(status)]
         if status.error:
             lines.append(status.error)
+        if status.summary:
+            lines.append(status.summary)
         lines.append(resume_hint(status))
         if not status.persistable:
             lines.append(NOT_SAVED_HINT)
