@@ -5,11 +5,10 @@
 <https://gitlab.com/iborco-software/python/pyside-ibo-obsolete>
 
 Not an application but the shared **PySide6 utility library** the last two predecessors consumed as a
-git submodule — "common classes and widgets for PySide6 projects." It exists in **two generations
-that share a name**, which is the single most important thing to know about it: TutCatalog5 used the
-first, Resource Hub used a ground-up second, and telling them apart is not as easy as it should be.
+git submodule — "common classes and widgets for PySide6 projects." It exists in two generations
+that share a name: TutCatalog5 used the first, Resource Hub a ground-up second.
 
-## The two snapshots — and the trap
+## The two snapshots
 
 | | pyside-ibo-obsolete (1st) | pyside-ibo (2nd) |
 | --- | --- | --- |
@@ -18,18 +17,7 @@ first, Resource Hub used a ground-up second, and telling them apart is not as ea
 | Consumed by | [TutCatalog5](tutcatalog5.md) | [Resource Hub](resource-hub.md) |
 | Declares | `name = "pyside-ibo"`, `version = "0.1.0"` | `name = "pyside-ibo"`, `version = "0.1.0"` |
 
-> [!WARNING]
-> **They are two different libraries wearing the same name.** The first repo was renamed to
-> `pyside-ibo-obsolete` when the second was started fresh under the original name — so *both*
-> projects' `.gitmodules` point at the **identical URL**
-> (`git@gitlab.com:iborco-software/python/pyside-ibo.git`), and both `pyproject.toml`s declare the
-> same package name *and* version. Neither the URL, the name, nor the version distinguishes them.
-> **Only the pinned submodule commit does:**
->
-> - TutCatalog5 pins `7a82b82` — a commit that exists **only** in `pyside-ibo-obsolete`.
-> - Resource Hub pins `86f0085` — a commit that exists **only** in `pyside-ibo`.
->
-> Don't reason about "what pyside-ibo does" without first resolving *which* one.
+Both share one `.gitmodules` URL, so only the pinned submodule commit tells them apart (TutCatalog5 pins `7a82b82`, in `pyside-ibo-obsolete`; Resource Hub pins `86f0085`, in `pyside-ibo`).
 
 ## What each contains
 
@@ -59,83 +47,45 @@ Being a library it owns no document format. What it *touches*:
 - **Windows registry** (`sys/windows/registry.py`) — file-extension, context-menu and open-with
   registration; the Windows half of rehuco's file-association work.
 
-## Compared with rehuco
+## Ledger: what is in the code, and is it still worth digging out
 
-rehuco depends on **neither** snapshot. The standing decision is that pyside-ibo is **reference-only**
-and its utilities are reimplemented under rehuco's own conventions in `borco-core` / `borco-pyside`
-(which are themselves slated to move out to their own repository). Current correspondence:
+rehuco depends on neither snapshot; what it needs lives in `borco-core` / `borco-pyside`. The last column is the
+question that matters here: does the old code still hold something not yet in rehuco?
 
-| pyside-ibo capability | rehuco |
-| --- | --- |
-| `ApplicationSingleton` (`other_instance_run = Signal(list)`, `setup(port, secret) -> bool`) | Reimplemented in `borco_pyside/core/application_singleton.py` — pure PySide6 (QLocalServer/QLocalSocket), no third-party singleton dep |
-| `SimpleProperty` / `ObjectProperty` | `borco_pyside/core/properties.py` — `SimpleProperty` keeps the name; `TypedProperty` replaces `ObjectProperty` |
-| Windows registry helpers | `borco_core/platforms/windows/` — `file_association`, `hkcu_registry`, `file_extension_context_menu`, `directory_context_menu`; exercised by the file-association pre-work spike (LocalEdit1 depends on it) |
-| **In-app logging stack** (bridge + log widget) | **Carried, reworked** — `borco_pyside/logging/` has the bridge, the models, the view, the delegates and the widget ([[appendices.logging]]); rehuco hosts it as an app-wide log dock and one per open resource — see below for what was and was not carried |
-| `widgets/flow_layout`, `line_edit` | `borco_pyside/widgets/` (`flow_layout`, `line_edit_helpers`, `line_edit_clear_action`, …) — a wider set than either snapshot |
-| `markdown/` editor + viewer (1st only) | Not carried as-is: `rich_text_view` covers viewing; the Markdown **editor** is built on **pyside6-scintilla** (`fields/widgets/markdown_edit.py`) |
-| `image_browser/` (1st only) | Not carried: the screenshot strip/lightbox is built (tutorial plugin, click-to-maximize with prev/next); a browsable image **grid** over a whole folder/library is still a planned QML surface |
-| — | `borco_core/atomic_write.py` — Atomic write |
-| — | `borco_pyside/theming`, `qtads`, `dialogs` — Theming, QtAds helpers, dockable dialogs |
+| pyside-ibo module | Counterpart in rehuco | Worth digging out? |
+| --- | --- | --- |
+| `application_singleton` (2nd) | Built — `borco_pyside/core/application_singleton.py` | No |
+| `properties` (2nd) | Built — `SimpleProperty`, `TypedProperty` for `ObjectProperty` | No |
+| `connection_list` (both) | Built — `borco_pyside/core/connection_list.py` | No |
+| `logging/` (both) | Built — `borco_pyside/logging/`, see below | No |
+| `sys/windows/registry` (both) | Built — `borco_core/platforms/windows/` | No |
+| `sys/windows/utils` (1st): open in code editor, reveal in file explorer | Reveal built — `borco_pyside/file_browser.py`; open-in-editor not carried | TBD |
+| `markdown/` viewer (1st) | Built — `rich_text_view` | No |
+| `markdown/` editor (1st) | Built differently — on pyside6-scintilla | No |
+| `image_browser/` (1st): list model, view, delegate, single view | Strip and lightbox built; a grid over a library is [#403](https://github.com/borco/rehuco/issues/403) | **Yes** — the one piece of the 1st snapshot that #403 could start from |
+| `widgets/flow_layout`, `line_edit` (1st) | Built — `borco_pyside/widgets/` | No |
+| `widgets/hidden_tool_button` (1st): a button shown only on hover or press | Not carried | TBD |
+| `widgets/path_edit_widget` (1st) | Not carried; rehuco's path field is its own | TBD |
+| `widgets/single_selection_widget` (1st) | Not carried | TBD |
+| `core/settings`, `path_mixin`, `unique_keys_enum` (1st) | Not carried; rehuco has its own persistent-settings helpers | TBD |
+| `core/exceptions.raise_with_stacklevel`, `core/datetime.utcnow` (2nd) | Not carried | TBD |
 
 ### The in-app log surface
 
 [[[pyside-ibo#log-stack]]]
 
-For a long time the single biggest thing pyside-ibo had that rehuco did not: `borco_pyside/logging/`
-was **one function** — `setup_console_logging()`, colorized console output via colorama (~23 lines) —
-while pyside-ibo shipped an entire in-app log viewer:
+What pyside-ibo's logging had, and where rehuco's `borco_pyside/logging/` differs:
 
-- **`LogWidgetBridge(logging.Handler)`** — the interesting part. It plugs into Python's stdlib
-  logging as a handler, **caches every record it receives**, and forwards them to any widget
-  implementing the `SupportsLogging` protocol (`handle_log_record(record, message)` + a `cleared`
-  signal). Because it caches, attaching the widget *later* replays everything already logged — so
-  records emitted before the GUI existed (startup, early failures) are not lost.
-- **`LogModel`** (`QAbstractTableModel`) + **`LogFilterModel`** (`QSortFilterProxyModel`) — records
-  as filterable table data.
-- **`LogView`** (`QTableView`) + **`LogLevelDelegate`** / **`LogMessageDelegate`** — per-level
-  painting.
-- **`LogWidget`** / **`LogWindow`** (the 1st snapshot used a `log_widget_mixin` instead) — the
-  dockable/standalone surface the user actually reads.
+- **`LogWidgetBridge`**, a `logging.Handler` that caches every record and replays them to a widget attached later.
+  Carried as `LogBridge`; the sink takes a batch, not a record, and there can be several sinks, each scoped and
+  cleared independently ([[appendices.logging#routing]]). pyside-ibo had one widget, whose clear also emptied the cache.
+- **`LogModel`, `LogFilterModel`, `LogView`, the level and message delegates, `LogWidget` / `LogWindow`.** Carried.
+  Level colours are classified by `LogLevelBand.of` ([[appendices.logging#bands]]) rather than an `if` ladder that
+  missed levels between the named ones, painted as a low-alpha wash so one set works in both themes, and follow-tail
+  reads the scrollbar position rather than the wheel.
+- **`LogItem`**, a mutable dataclass that picked its own colour. Not carried; `LogEntry` is frozen and carries the scope
+  and a run-long serial.
 
-**Status in rehuco: built** — the non-GUI half in #199, the surfaces in #200. `LogBridge`, `LogModel`,
-`LogFilterModel`, the `LogRecordSink` protocol, `LogView`, the two delegates and `LogWidget` all live in
-`borco_pyside/logging/`, specified in [[appendices.logging]]; rehuco hosts that widget twice, as the
-window's own log dock and as one per open resource ([[appendices.logging#surfaces]]).
+## Importing its data
 
-The cache-then-replay design was the piece worth reusing and was. Three things were deliberately not
-carried from the **bridge**: the **names** (`LogWidgetBridge`/`SupportsLogging`) went, because the bridge
-never imports a widget; the sink takes a **batch** rather than a record, because the per-record shape
-cannot survive a job logging once per file; and there is now **more than one sink**, each scoped and
-cleared independently ([[appendices.logging#routing]]) — where the prior art had a single `widget` and
-wired its `cleared` signal back to `clear_cache()`, so emptying the view also erased the replay buffer.
-
-From the **view and delegates**, the shape was carried and three things corrected:
-
-- **Bands, not a ladder of named levels.** The prior art's level delegate chose its color with
-  `if 0 <= level <= DEBUG … elif level <= INFO …`, so a record logged at 15 or past `CRITICAL` fell
-  through to whatever came last. Classification is now `LogLevelBand.of` ([[appendices.logging#bands]]),
-  which is total by construction.
-- **Theme-aware tints, not a light-only table.** Its four hardcoded colors (`#DDDDDD`, `#FFFFFF`,
-  `#FFFFCC`, `#FFCCCC`) are opaque fills that only read on a light theme, and this app has two. The
-  colors are now supplied by the application and painted as a low-alpha wash over whatever the palette
-  already drew, so one set works in both.
-- **Follow-tail off the scroll position, not the wheel.** Its `LogView` existed to emit `wheel_rotated`,
-  and auto-scroll was toggled from the angle delta — which misses a scrollbar drag, `Page Up`, `Home`
-  and a keyboard selection, each of which leaves a reader being yanked back to the bottom. The
-  scrollbar's position is where all of them end up, so that is what is read.
-
-Also not carried: its `LogItem` (a mutable dataclass computing its own color) — `LogEntry` is frozen,
-carries the scope and the run-long serial, and holds no opinion about how it is drawn.
-
-**Originally none of this existed**, and it was scheduled first in LocalEdit7
-([[implementation-plan]]) — ahead of the task queue/dock and the checksums that ride on it, on the
-reasoning that the log dock is the simplest real dock and is what makes those two observable when
-they misbehave. It landed on the QtAds shell already in place.
-
-## Can rehuco work with it?
-
-**Not applicable in the sidecar sense** — it defines no document format, so there is no data to
-import. The relevant question is dependency, and that is settled: **rehuco does not depend on
-pyside-ibo** and takes no submodule. The library's value is as prior art — most concretely the
-`ApplicationSingleton` contract and the Windows registry recipes, both already re-expressed in
-`borco-*` under current conventions.
+None — it defines no document format.

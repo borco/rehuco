@@ -23,22 +23,17 @@ Scan a mounted volume, record its directory tree into the catalog, then browse a
 later without the media present. A pure offline-media index — no metadata editing, no web scraping,
 no per-item rich fields.
 
-## Compared with rehuco
+## Feature ledger
 
-Different problem, so most rows are N/A rather than "planned later":
+A different problem (offline volumes, not described resources), so most rows are N/A.
 
-| Capability | ibocator | rehuco |
+| Feature | ibocator | rehuco |
 | --- | --- | --- |
-| Domain | Offline disk/volume contents | Per-resource tutorials / reference images / assets |
-| Data model | One monolithic XML catalog | One `.rehu` sidecar per resource + rebuildable `.rehudb` cache |
-| Rich per-item metadata | — | Yes — typed field toolkit (text, date, rating, duration, size, tag list, path, image count, …) |
-| Search a cache when media is offline | Yes (its whole point) | Planned |
-| Web scraping / metadata enrichment | — | Yes — built-in scrapers (ArtStation, Udemy), browser-drop and URL-drop handling, an image pipeline |
-| Distribution / multi-node | — | Planned |
+| Index a volume's file tree | Yes | Not planned — a scan records `.rehu` records, not every file |
+| Browse and search a catalog with the media offline | Yes | Partly — a root that is offline keeps its cached rows (a scan leaves them alone); [#452](https://github.com/borco/rehuco/issues/452) adds cached roots read through the access seam. Only records are cached, not file trees |
+| CdCat XML import | Yes | Not planned |
+| Per-item metadata | None | n/a |
 
-## Can rehuco work for its data?
+## Importing its data
 
-**No, and by design it shouldn't.** ibocator's XML catalog describes *volumes and their file trees*,
-not individually-described learning resources; rehuco's sidecar-per-resource model targets a
-different thing entirely. There is no meaningful import path and — per the standing decision — no
-code or format to carry over. It is a curiosity in the lineage, not a predecessor to migrate.
+None, by decision: a volume tree is not a described resource, and nothing is carried over.

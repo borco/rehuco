@@ -1,4 +1,4 @@
-# TutCatalogPy3
+# TutCatalogPy3 ✓
 
 <https://gitlab.com/iborco-software/tutcatalog/tutcatalogpy3>
 
@@ -20,20 +20,17 @@ carrying `design/` and `demos/` explorations. Superseded quickly by the return t
 Primarily a viewer for `info.tc`, plus real work on shipping it as a double-clickable, OS-registered
 app. It never grew into a full catalog/editor before being set aside.
 
-## Compared with rehuco
+## Feature ledger
 
-| Capability | TutCatalogPy3 | rehuco |
+| Feature | TutCatalogPy3 | rehuco |
 | --- | --- | --- |
-| `info.tc` sidecar | Yes (YAML) | `.rehu` (JSON); reads and converts `.tc`, never writes it |
-| Viewer | Yes | Yes — read-only panels plus a screenshot lightbox |
-| `.tc` association + double-click open | Yes (Linux MIME) | Yes — Windows ProgID/AUMID and macOS `QFileOpenEvent`, single-instance forwarding |
-| Standalone packaging | PyInstaller | Yes — Briefcase-built installers (Windows/macOS) with declarative file association/icon/AUMID |
-| Scraping | Yes (scrapper) | Yes — built-in scrapers (ArtStation, Udemy), browser-drop and URL-drop handling |
-| SQLite cache / browser | Basic | Planned |
+| `info.tc` sidecar | YAML | Built — `.rehu` (JSON); `.tc` read and converted |
+| Viewer | Yes | Built |
+| File association, double-click open | Linux MIME | Built — Windows, macOS and Linux |
+| Standalone packaging | PyInstaller `.app` | Built — Briefcase installers for Windows and macOS. Linux ships through `uv tool install` |
+| Scraping | Yes | Built — ArtStation and Udemy, plus a user script |
+| SQLite cache and browser | Basic | Built |
 
-## Can rehuco work for its `info.tc`?
+## Importing its data
 
-**Yes**, via the same [field-schema](../field-schema.md) `.tc`→`.rehu` adapter (LocalEdit3); the sidecar shape
-is unchanged from the rest of the lineage. Its main contribution is packaging/OS-integration prior
-art rather than data to migrate — the file-association mechanics rehuco de-risks in pre-work echo the
-`.desktop`/MIME work here (rehuco adds macOS `QFileOpenEvent` and Windows ProgID/AUMID).
+The `info.tc` converts as in [TutCatalog](tutcatalog.md).

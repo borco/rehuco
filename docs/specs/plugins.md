@@ -58,7 +58,7 @@ is what reserves the name `core`: the registry already refuses two declarations 
 cannot call itself `core` without a rule being written for it.
 
 **Plugins span a spectrum from declarative to code.** Two earlier ideas — a code-plugin model, and a TutCatalog5
-experiment where `.rehuco` *declared* each type's fields from a fixed toolkit — are unified by layering rather than
+experiment where a user-editable TOML/JSON file *declared* each type's fields and editor/viewer pages from a fixed toolkit — are unified by layering rather than
 choosing:
 
 - **Declarative type** — a type defined purely as a *field list* over the shared field toolkit

@@ -2,11 +2,8 @@
 
 <https://gitlab.com/iborco-software/tutcatalog/tutcatalog5>
 
-A full Python/Qt6 rewrite (2024–2025) that went deep on a **typed field toolkit** — a TOML-driven
-type system with editor/viewer widget pairs for every field kind. It is the cautionary tale the
-[implementation plan](../implementation-plan.md) reacts to explicitly: it "built layers deeply …
-without reaching a usable end-to-end whole," which is exactly why rehuco opens each milestone with a
-tracer bullet instead. Its field-toolkit code is still a valuable **design** reference for slice LocalEdit2.
+A full Python/Qt6 rewrite (2024–2025) built around a **typed field toolkit** — a TOML-driven type system with
+editor/viewer widget pairs for every field kind.
 
 ## File formats
 
@@ -23,27 +20,21 @@ tracer bullet instead. Its field-toolkit code is still a valuable **design** ref
 
 ## What it did
 
-Rendered and edited `.tc` through a general, config-declared field/type system rather than a
-hard-coded viewer — the most ambitious editor of the lineage. But it stalled before becoming a
-usable end-to-end catalog, its energy spent on the toolkit rather than a working spine.
+Rendered and edited `.tc` through a config-declared field/type system rather than a hard-coded viewer.
 
-## Compared with rehuco
+## Feature ledger
 
-| Capability | TutCatalog5 | rehuco |
+| Feature | TutCatalog5 | rehuco |
 | --- | --- | --- |
-| Typed field toolkit (editor/viewer pairs) | Yes (TOML-driven) | Yes — built, with tc5's toolkit as the design reference rather than carried code |
-| `.tc` view / edit | Yes | Yes — generic editor plus the typed field toolkit |
-| YAML **and** TOML sidecars | Yes | rehuco standardizes on JSON `.rehu`; reads and converts legacy `.tc` (YAML), never writes TOML or `.tc` |
-| Reached usable end-to-end | **No** (the cautionary case) | **Yes** — tracer-bullet-first methodology delivered a daily-usable local editor |
-| SQLite cache / browser | — | Planned |
-| Scraping, web, borrow, multi-node | — | Scraping: **yes** (ArtStation, Udemy, browser/URL drops); web, borrow, multi-node: planned |
-| `ApplicationSingleton` etc. | via pyside-ibo | reimplemented in `borco-core`/`borco-pyside` |
+| User-editable configuration of fields and pages: `defaults.toml` declares each field (type, key, label, groups, completions) and, per resource type, the editor tabs and viewer pages as ordered field lists with separators. A user points the app at their own file; a new `[[fields]]` entry is stored in the `.tc` | Yes (not resource-hub, which has fixed fields) | **TBD.** The spec has the idea as *declarative types* — a type that is only a field list over the toolkit ([[plugins#core-vs-plugin]]) — but nothing lets a user declare fields or lay out pages, and no issue exists |
+| Typed field toolkit (editor/viewer pairs) | TOML-driven | Built — one class per field kind; a type's plugin declares its fields |
+| `.tc` view / edit | Yes | Built — `.rehu`; `.tc` read and converted |
+| YAML sidecar | Yes | Read for conversion only |
+| TOML sidecar | Yes | **Not planned** — not read |
+| Tutorial / ReferenceImages / Collections types | Yes | Built, except Collections' fields — see [TutCatalog4](tutcatalog4.md) |
 
-## Can rehuco work for its `.tc`?
+## Importing its data
 
-**Yes.** The YAML `.tc` maps through the standard [field-schema](../field-schema.md) `.tc`→`.rehu`
-adapter (LocalEdit3). The **TOML** variant is tc5-specific and rehuco does not read TOML sidecars, but its
-richer field names (`authors`, `extra_tags`, structured `images_count`) actually *pre-echo* rehuco's
-own target shape — where they differ, rehuco's schema is the more considered version (e.g. the
-structured `images_count` becomes a scanned integer). Nothing blocks import; tc5's lasting value is
-the toolkit design, not its data.
+The YAML `.tc` converts as in [TutCatalog4](tutcatalog4.md). The TOML variant is not read. Its field names
+(`authors`, `extra_tags`, `images_count = {declared, actual, is_complete}`, `urls`) match rehuco's target shape except
+`images_count`, which becomes a scanned integer.

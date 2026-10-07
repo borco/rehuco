@@ -1,4 +1,4 @@
-# TutCatalogPy
+# TutCatalogPy ✓
 
 <https://gitlab.com/iborco-software/tutcatalog/tutcatalogpy>
 
@@ -20,21 +20,20 @@ Scan configured folders, cache each tutorial's `info.tc` into SQLite, and presen
 filterable catalog with a separate viewer. First appearance of the "scan → cache → browse" split that
 rehuco formalizes as `.rehu` + `.rehudb`.
 
-## Compared with rehuco
+## Feature ledger
 
-| Capability | TutCatalogPy | rehuco |
+| Feature | TutCatalogPy | rehuco |
 | --- | --- | --- |
-| `info.tc` sidecar | Yes (YAML) | `.rehu` (JSON); reads and converts `.tc`, never writes it |
-| SQLite cache of the catalog | Yes | Planned |
-| Incremental scan | Basic | Planned |
-| Catalog browser (sortable/filterable) | Yes | Planned |
-| Separate viewer app | Yes | Single agent; viewing and editing are both built into it |
-| App state persistence | `.ini` (QSettings) | `.rehuco` (per-machine) + app settings |
-| Duration via ffprobe | Yes | Yes — stored field, can also measure itself from the media |
-| Scraping | Yes | Yes — built-in scrapers (ArtStation, Udemy), browser-drop and URL-drop handling |
+| `info.tc` sidecar | YAML | Built — `.rehu` (JSON); `.tc` read and converted |
+| SQLite cache of the scan | SQLAlchemy | Built — `.rehudb`, one per `.rehuco` |
+| Incremental scan | Basic | Built — only records whose modification time or size changed are re-read |
+| Sortable, filterable catalog | Yes | Built — table browsers with a filter line |
+| Separate viewer app | Yes | Not planned — one app views and edits |
+| Window and column state | `.ini` | Built — `.ini` today; moving to JSON files ([#404](https://github.com/borco/rehuco/issues/404)) |
+| Duration via ffprobe | Yes | Built |
+| Scraping | Yes | Built — ArtStation and Udemy, plus a user script |
 
-## Can rehuco work for its data?
+## Importing its data
 
-**Yes.** The `info.tc` maps through the same [field-schema](../field-schema.md) `.tc`→`.rehu` adapter
-(LocalEdit3). The SQLite cache needs **no import** — like rehuco's `.rehudb` it is declared rebuildable from
-the sidecars, so only the `.tc` files carry unique data.
+The `info.tc` converts as in [TutCatalog](tutcatalog.md). The SQLite cache holds nothing the sidecars do not, so
+nothing is imported from it.
