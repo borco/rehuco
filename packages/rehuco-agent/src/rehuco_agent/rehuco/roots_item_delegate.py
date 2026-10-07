@@ -1,4 +1,5 @@
-"""Paints a Roots view row: its glyph, its name, and the arrow that says it opens another column (#378)."""
+"""Paints a Roots view row: its glyph, its name, the arrow that says it opens another column (#378), and a covered
+file's checksum state at its right edge (#457)."""
 
 from typing import Final, override
 
@@ -8,7 +9,9 @@ from PySide6.QtCore import QRect, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QFontMetricsF, QImage, QPainter, QPalette
 from PySide6.QtWidgets import QAbstractItemView, QApplication, QStyle, QStyleOptionViewItem
 
+from ..documents.files_rows import CHECKSUM_STATE_ICONS
 from ..svg_icon_cache import SvgIconCache
+from .roots_checksum import RowChecksum, warning_ink
 from .roots_folder_model import RootsFolderModel
 from .roots_grip import GRIP_WIDTH, paint_grip
 
@@ -59,6 +62,10 @@ class RootsItemDelegate(RowBandDelegate):
     reads on the selection band as the text does. A row the model says is greyed
     (:attr:`~RootsFolderModel.GREYED_ROLE`) is drawn in the palette's disabled colours while staying selectable --
     which an unreachable root has to be, so its card can still be edited.
+
+    **A covered file shows its checksum state at the right edge** (#457): the state's icon, right-aligned in the
+    column, with the name eliding before it; a file that did not match has its name and icon in red, one whose
+    mismatch is old in orange. A folder row keeps its arrow, and only a file carries a state, so the two never meet.
 
     A ``QColumnView`` gives its columns a delegate of its own, which draws that arrow and nothing else this view
     needs, so :class:`~rehuco_agent.rehuco.roots_column_view.RootsColumnView` puts this one on each column.
@@ -111,9 +118,38 @@ class RootsItemDelegate(RowBandDelegate):
             if index.model().hasChildren(index):
                 self.__paint_arrow(painter, opt, rect)
                 rect.setRight(rect.right() - ARROW_WIDTH)
+            checksum = index.data(RootsFolderModel.CHECKSUM_ROLE)
+            if isinstance(checksum, RowChecksum):
+                color = self.__paint_checksum(painter, rect, checksum, color, selected)
             self.paint_content(painter, opt, index, rect, color)
         finally:
             painter.restore()
+
+    def __paint_checksum(
+        self, painter: QPainter, rect: QRect, checksum: RowChecksum, color: QColor, selected: bool
+    ) -> QColor:
+        """Draw a file's state icon at the right edge of ``rect``, and keep the name clear of it.
+
+        :param painter: the painter, its pen already the row's colour.
+        :param rect: what the row has left, padded; its right edge moves in to leave room for the icon.
+        :param checksum: the file's state.
+        :param color: the row's text colour.
+        :param selected: whether the row is selected, which keeps the band's own ink.
+        :returns: the colour the name is drawn in: the row's, or the warning ink of a bad file.
+        """
+        ink = color
+        warning = None if selected else warning_ink(checksum)
+        if warning is not None:
+            ink = warning
+            painter.setPen(ink)
+        path = CHECKSUM_STATE_ICONS.get(checksum.state)
+        if path is not None:
+            slot = QRect(
+                rect.right() - ICON_SIZE + 1, rect.top() + (rect.height() - ICON_SIZE) // 2, ICON_SIZE, ICON_SIZE
+            )
+            self.draw_icon(painter, path, ink, slot)
+            rect.setRight(rect.right() - ICON_SIZE - ICON_TEXT_GAP)
+        return ink
 
     @staticmethod
     def __as_shown(option: QStyleOptionViewItem, index: ModelIndex) -> QStyleOptionViewItem:
@@ -185,5 +221,8 @@ class RootsItemDelegate(RowBandDelegate):
         if index.flags() & Qt.ItemFlag.ItemIsDragEnabled:
             extra += GRIP_WIDTH
         if isinstance(index.data(RootsFolderModel.ICON_PATH_ROLE), str):
+            extra += ICON_SIZE + ICON_TEXT_GAP
+        checksum = index.data(RootsFolderModel.CHECKSUM_ROLE)
+        if isinstance(checksum, RowChecksum) and checksum.state in CHECKSUM_STATE_ICONS:
             extra += ICON_SIZE + ICON_TEXT_GAP
         return QSize(hint.width() + extra, max(hint.height(), ICON_SIZE + 2, round(QFontMetricsF(opt.font).height())))

@@ -23,7 +23,7 @@ from .settings_block_column import SettingsBlockColumn
 from .settings_dialog_ui import Ui_SettingsDialog
 from .settings_frame_filter import SettingsFrameFilter
 from .settings_frame_header import SettingsFrameHeader, header_label_of
-from .settings_page import FrameRestoringPage, SaveGatedPage, SettingsPage
+from .settings_page import ExternallySavedPage, FrameRestoringPage, SaveGatedPage, SettingsPage
 
 PAGE_ROLE: Final = Qt.ItemDataRole.UserRole + 1
 """Item-data role storing each category-tree row's page widget, for selection-driven page switching."""
@@ -231,6 +231,8 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         frame_filter.capture_defaults()
         page.drop_changes()
         frame_filter.resync_baseline()
+        if isinstance(page, ExternallySavedPage):
+            cast(ExternallySavedPage, page).saved_changed.connect(lambda: self.__rebase_page(page))
         # Property before stylesheet: the sheet's one polish then already sees the clean state, so
         # __set_frame_dirty's changed-guard never has to repolish a frame that was never edited.
         for frame in frame_filter.blocks():
@@ -780,6 +782,14 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         else:
             page.drop_changes()
         self.__frame_filters[cast(QWidget, page)].resync_baseline()
+
+    def __rebase_page(self, page: SettingsPage) -> None:
+        """Take what ``page`` now has saved as its clean baseline, keeping its staged edits (#457).
+
+        :param page: a page whose saved value changed, whether by its own Apply or by something else.
+        """
+        self.__frame_filters[cast(QWidget, page)].rebase(page.drop_changes)
+        self.__refresh_dirty_ui()
 
     def __poll_dirty_state(self) -> None:
         """Re-derive every bit of dirty-driven UI state (#77): while auto-apply is on, first commits

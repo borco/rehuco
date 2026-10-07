@@ -848,3 +848,61 @@ def test_a_verify_runs_with_the_window_it_carries() -> None:
 
     assert job.stale_after == timedelta(days=7)
     assert job.capture_state()["stale_days"] == 7
+
+
+# region What a finished run says (#457)
+
+
+def test_a_job_has_no_outcome_before_it_has_run(control: FakeControl, present: None) -> None:
+    """There is nothing to say about a run that has not happened.
+
+    **Test steps:**
+
+    * ask a verify and a generate for their outcome before running
+    * verify both say nothing
+    """
+    del control, present
+    assert VerifyChecksumsJob(INFO_PATH).outcome is None
+    assert GenerateChecksumsJob(INFO_PATH).outcome is None
+
+
+@mark.usefixtures("present")
+@mark.parametrize(
+    ("job_type", "statuses", "expected"),
+    [
+        (VerifyChecksumsJob, {VIDEO: "matched"}, ("Checksums verified: 1 matched.", True)),
+        (
+            VerifyChecksumsJob,
+            {VIDEO: "matched", ARCHIVE: "mismatched"},
+            ("Checksums verified: 1 matched, 1 mismatched.", False),
+        ),
+        (GenerateChecksumsJob, {VIDEO: "matched"}, ("Checksums recorded: 1 matched.", True)),
+    ],
+    ids=["verify clean", "verify with a mismatch", "generate"],
+)
+def test_a_finished_run_says_what_it_found_in_one_line(
+    mocker: MockerFixture,
+    control: FakeControl,
+    job_type: type[ChecksumJob],
+    statuses: dict[str, Any],
+    expected: tuple[str, bool],
+) -> None:
+    """A verify and a generate word their findings differently, and a mismatch is not a clean run.
+
+    **Test steps:**
+
+    * run each kind over a report
+    * verify the outcome's line and whether it counts as clean
+    """
+    mocker.patch("rehuco_core.checksum_jobs.verify_checksums", return_value=ChecksumReport(statuses=statuses))
+    mocker.patch("rehuco_core.checksum_jobs.generate_checksums", return_value=ChecksumReport(statuses=statuses))
+    job = job_type(INFO_PATH)
+
+    job.run(control)  # pyright: ignore[reportArgumentType]
+
+    outcome = job.outcome
+    assert outcome is not None
+    assert (outcome.summary, outcome.clean) == expected
+
+
+# endregion

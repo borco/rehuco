@@ -7,6 +7,7 @@ sleeping, so a test asserts on a state the worker has demonstrably reached.
 
 from collections.abc import Callable, Iterator
 from threading import Event, get_ident
+from time import monotonic, sleep
 from typing import Final
 
 from PySide6.QtCore import QModelIndex, Qt
@@ -25,7 +26,16 @@ from rehuco_agent.tasks.task_queue_model import (
     resume_hint,
     state_text,
 )
-from rehuco_core import JobControl, JobState, JobStatus, StopRequest, TaskJobBase, TaskQueue
+from rehuco_core import (
+    FINISHED_JOB_STATES,
+    JobControl,
+    JobOutcome,
+    JobState,
+    JobStatus,
+    StopRequest,
+    TaskJobBase,
+    TaskQueue,
+)
 
 TIMEOUT: Final = 5.0
 
@@ -75,6 +85,28 @@ class FailingJob(TaskJobBase):
         raise ValueError("nope")
 
 
+class ReportingJob(TaskJobBase):
+    """A job that says what it found once it has run (#457).
+
+    :param label: the job's label.
+    """
+
+    def __init__(self, label: str) -> None:
+        super().__init__()
+        self.label = label
+
+    @property
+    def outcome(self) -> JobOutcome:
+        """What the run found.
+
+        :returns: a fixed one-line outcome.
+        """
+        return JobOutcome("Checksums verified: 3 matched.")
+
+    def run(self, control: JobControl) -> None:
+        del control
+
+
 class PersistableJob(TaskJobBase):
     """A job satisfying `PersistableTaskJob`, so its row reads as one that survives a restart.
 
@@ -121,6 +153,23 @@ def queue() -> Iterator[TaskQueue]:
     built = TaskQueue()
     yield built
     built.shutdown(timeout=TIMEOUT)
+
+
+def wait_until_done(queue: TaskQueue) -> None:
+    """Wait until every job on the queue has ended.
+
+    Not :meth:`~rehuco_core.TaskQueue.wait_until_idle`, which answers *nothing is running*: a job just enqueued and not
+    yet picked up by the worker is not running, so under load that returns before the job has started and the
+    snapshot read next shows it still running.
+
+    :param queue: the queue to wait on.
+    """
+    deadline = monotonic() + TIMEOUT
+    while monotonic() < deadline:
+        if all(status.state in FINISHED_JOB_STATES for status in queue.jobs()):
+            return
+        sleep(0.001)
+    raise AssertionError("the queue never finished its jobs")
 
 
 @fixture
@@ -404,7 +453,7 @@ def test_the_columns_draw_label_state_and_nothing_for_progress(queue: TaskQueue,
     job = GatedJob("my job")
     job.let_finish()
     queue.enqueue(job)
-    queue.wait_until_idle(TIMEOUT)
+    wait_until_done(queue)
     deliver()
 
     assert model.data(model.index(0, LABEL_COLUMN)) == "my job"
@@ -470,7 +519,7 @@ def test_a_persistable_rows_tooltip_does_not_warn_about_being_lost(
     model = TaskQueueModel(queue)
     model.attach_to()
     queue.enqueue(PersistableJob("saved"))
-    queue.wait_until_idle(TIMEOUT)
+    wait_until_done(queue)
     deliver()
 
     tooltip = model.data(model.index(0, 0), Qt.ItemDataRole.ToolTipRole)
@@ -492,12 +541,31 @@ def test_a_failed_rows_tooltip_names_the_state_then_the_reason(queue: TaskQueue,
     model = TaskQueueModel(queue)
     model.attach_to()
     queue.enqueue(FailingJob("doomed"))
-    queue.wait_until_idle(TIMEOUT)
+    wait_until_done(queue)
     deliver()
 
     tooltip = model.data(model.index(0, 0), Qt.ItemDataRole.ToolTipRole)
 
     assert tooltip.splitlines()[:2] == ["Failed", "ValueError: nope"]
+
+
+def test_a_finished_rows_tooltip_carries_what_the_run_found(queue: TaskQueue, deliver: Callable[[], None]) -> None:
+    """The info column draws the summary, and the tooltip repeats it so it is whole when the cell elides it (#457).
+
+    **Test steps:**
+
+    * run a job that reports what it found, and let the snapshot land
+    * verify the tooltip names the state first and the summary second
+    """
+    model = TaskQueueModel(queue)
+    model.attach_to()
+    queue.enqueue(ReportingJob("reported"))
+    wait_until_done(queue)
+    deliver()
+
+    tooltip = model.data(model.index(0, 0), Qt.ItemDataRole.ToolTipRole)
+
+    assert tooltip.splitlines()[:2] == ["Done", "Checksums verified: 3 matched."]
 
 
 def test_the_headers_are_the_column_titles(queue: TaskQueue) -> None:

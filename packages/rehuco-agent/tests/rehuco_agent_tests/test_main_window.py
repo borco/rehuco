@@ -21,7 +21,7 @@ from borco_pyside.qtads import tab_close_button, tab_label
 from borco_pyside.qtads.qtads_pin_side_handler import DEFAULT_PIN_SIDE, PIN_SIDE_KEY
 from borco_pyside.shortcuts import BindingRole
 from PySide6.QtCore import QByteArray, QEvent, QModelIndex, QObject, Qt
-from PySide6.QtGui import QCloseEvent, QKeySequence
+from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -62,6 +62,7 @@ from rehuco_agent.settings.logs_settings import shared_logs_settings
 from rehuco_agent.settings.main_window_settings import MainWindowSettings
 from rehuco_agent.settings.recent_files_settings import RecentFilesSettings
 from rehuco_agent.settings.rehuco_settings import RehucoSettings
+from rehuco_agent.settings.root_catalog_settings import shared_root_catalog_settings
 from rehuco_agent.settings.session_restore_settings import SessionRestoreSettings
 from rehuco_agent.settings.tasks_settings import TasksSettings
 from rehuco_agent.settings.tray_settings import shared_tray_settings
@@ -3152,6 +3153,77 @@ def test_a_selection_in_the_roots_view_shows_in_the_preview(
     roots_panel(window).record_selected.emit(SELECTED_KEY)
 
     qtbot.waitUntil(lambda: previewed_path(window) == SELECTED_ROOT / "a/info.rehu")
+
+
+def auto_preview_entry(window: MainWindow) -> QAction:
+    """The ``Root Catalog`` menu's *Automatically preview the current rehu* toggle (#457).
+
+    :param window: the window.
+    :returns: the action.
+    """
+    ui = window._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    return next(action for action in ui.rehuco_menu.actions() if "preview the current rehu" in action.text())
+
+
+def test_the_roots_view_stops_driving_the_preview_while_automatic_preview_is_off(
+    mocker: MockerFixture, monkeypatch: MonkeyPatch, qtbot: QtBot
+) -> None:
+    """Off, a selection in the Roots view -- and one still waiting to settle -- leaves the preview where it is, while
+    the table browsers go on driving it (#457).
+
+    **Test steps:**
+
+    * switch automatic preview off, and announce a record from the Roots view with that dock current
+    * verify nothing is previewed after the settle
+    * announce a selection from the Browsers dock, now current, and verify it is previewed
+    """
+    window = selecting_window(mocker, monkeypatch, qtbot)
+    browsers = open_catalog_stand_in(window)
+    auto_preview_entry(window).setChecked(False)
+
+    drive_from(window, rehuco_dock_widget(window))
+    roots_panel(window).record_selected.emit(SELECTED_KEY)
+    qtbot.wait(SETTLE_MS * 6)
+    assert previewed_path(window) is None
+
+    drive_from(window, browsers_dock_widget(window))
+    browsers.resource_selected.emit(SELECTED_KEY)
+    qtbot.waitUntil(lambda: previewed_path(window) == SELECTED_ROOT / "a/info.rehu")
+
+
+def test_the_automatic_preview_toggle_and_the_shared_setting_are_one_choice(
+    mocker: MockerFixture, monkeypatch: MonkeyPatch, qtbot: QtBot
+) -> None:
+    """The menu's click writes the setting and persists it; a change of the setting from anywhere else -- the settings
+    page's Apply -- moves the menu without writing it again, and turning it on shows the current record at once.
+
+    **Test steps:**
+
+    * click the entry off, and verify the setting is off and was saved
+    * turn the setting on from outside, with the Roots panel's reselect watched
+    * verify the entry is checked again, nothing was saved by the follow, and the current record was asked for
+    * turn the setting off from outside and verify the entry follows without a reselect
+    """
+    window = selecting_window(mocker, monkeypatch, qtbot)
+    settings = shared_root_catalog_settings()
+    entry = auto_preview_entry(window)
+    assert entry.isCheckable()
+    assert entry.isChecked()
+    saved = mocker.patch.object(settings, "save")
+    reselect = mocker.patch.object(roots_panel(window), "reselect")
+
+    entry.setChecked(False)
+    assert settings.auto_preview is False
+    saved.assert_called_once()
+
+    settings.auto_preview = True
+    assert entry.isChecked()
+    saved.assert_called_once()
+    reselect.assert_called_once()
+
+    settings.auto_preview = False
+    assert not entry.isChecked()
+    reselect.assert_called_once()
 
 
 def test_only_the_view_the_reader_is_in_drives_the_preview(
@@ -7214,7 +7286,11 @@ def test_root_catalog_holds_the_catalog_files_then_the_docks_own_actions(qtbot: 
 
     assert actions[:3] == [ui.new_rehuco_action, ui.open_rehuco_action, ui.open_recent_rehucos_menu.menuAction()]
     assert actions[3].isSeparator()
-    assert actions[4:] == [roots.scan_action, roots.add_root_action, roots.remove_root_action]
+    assert actions[4:7] == [roots.scan_action, roots.add_root_action, roots.remove_root_action]
+    # then the Roots view's own toggle, set apart (#457)
+    assert actions[7].isSeparator()
+    assert actions[8].isCheckable()
+    assert len(actions) == 9
 
 
 def test_root_catalog_entries_follow_the_dock_and_scan_wakes_once_a_catalog_is_open(qtbot: QtBot) -> None:

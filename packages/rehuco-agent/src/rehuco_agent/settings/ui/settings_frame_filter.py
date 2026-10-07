@@ -229,6 +229,29 @@ class SettingsFrameFilter:
         """
         self.__baselines = {frame: self.__snapshot(frame) for frame, _ in self.__frames}
 
+    def rebase(self, reload: Callable[[], None]) -> None:
+        """Make what the page now has saved the baseline: a clean frame **follows** it, an edited one keeps its edit
+        (#457).
+
+        For a saved value that changed *behind the page's back* -- a menu toggle that applies the same setting at
+        once.
+
+        * A frame with no edit shows the new saved value, and stays clean: nothing was typed there, so there is
+          nothing to keep.
+        * A frame with an edit keeps it, now compared with the new saved value: an edit that equals it stops being one
+          (the user typed what someone else then applied), and any other still is.
+
+        Done the way :meth:`apply_frame` parks edits: the edited frames' values are set aside, ``reload`` puts the
+        saved values in every widget, the baseline is taken from them, and the set-aside values are written back.
+
+        :param reload: the page's ``drop_changes``, which shows the saved values.
+        """
+        edited = [self.__snapshot(frame) for frame, _ in self.__frames if self.differs_from_saved(frame)]
+        reload()
+        self.resync_baseline()
+        for snapshot in edited:
+            self.__restore(snapshot)
+
     def capture_defaults(self) -> None:
         """Snapshot every frame's current widget values as its factory-defaults snapshot (#342).
 

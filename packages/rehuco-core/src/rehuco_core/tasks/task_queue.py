@@ -30,6 +30,7 @@ from .task_job import (
     JobScope,
     JobState,
     JobStatus,
+    ReportingTaskJob,
     StopRequest,
     TaskJob,
 )
@@ -142,6 +143,7 @@ class TaskQueue:
         done: int = 0
         total: int | None = None
         error: str | None = None
+        summary: str | None = None
         stop_requested: StopRequest | None = None
         resume_requested: bool = False
 
@@ -163,6 +165,7 @@ class TaskQueue:
                 safely_interruptible=self.safely_interruptible,
                 resumes_where_it_stopped=self.resumes_where_it_stopped,
                 persistable=self.persistable,
+                summary=self.summary,
             )
 
         def unfinished(self) -> bool:
@@ -527,6 +530,7 @@ class TaskQueue:
                 entry.done = 0
                 entry.total = None
                 entry.error = None
+                entry.summary = None
                 entry.stop_requested = None
                 entry.resume_requested = False
                 self.__capture(entry)
@@ -685,6 +689,7 @@ class TaskQueue:
         done: int = 0,
         total: int | None = None,
         error: str | None = None,
+        summary: str | None = None,
     ) -> TaskQueue.Entry:
         """Take a job into the queue and tell the listeners, whether it is new or restored.
 
@@ -701,6 +706,7 @@ class TaskQueue:
         :param done: units already finished.
         :param total: units expected, or ``None``.
         :param error: why it failed, for a job restored as failed.
+        :param summary: what it found, for a job restored as done.
         :returns: the entry now in the queue.
         :raises RuntimeError: if the queue has been shut down.
         """
@@ -720,6 +726,7 @@ class TaskQueue:
             done=done,
             total=total,
             error=error,
+            summary=summary,
         )
         self.__next_serial += 1
         self.__capture(entry)
@@ -762,6 +769,7 @@ class TaskQueue:
             return None
         restored = saved if saved in FINISHED_JOB_STATES else unfinished_state
         error = item.get("error") if saved is JobState.FAILED else None
+        summary = item.get("summary") if saved is JobState.DONE else None
         done, total = self.__saved_progress(item, job)
         label = item.get("label")
         return self.__accept(
@@ -771,6 +779,7 @@ class TaskQueue:
             done=done,
             total=total,
             error=error if isinstance(error, str) else None,
+            summary=summary if isinstance(summary, str) else None,
         )
 
     @staticmethod
@@ -841,6 +850,7 @@ class TaskQueue:
             "job_state": entry.state.value,
             "state": captured.state,
             "error": entry.error,
+            "summary": entry.summary,
         }
         if entry.resumes_where_it_stopped:
             item["done"] = captured.done
@@ -1089,8 +1099,28 @@ class TaskQueue:
                     entry.resume_requested = False
                     entry.state = state
                     entry.error = error
+                    entry.summary = TaskQueue.__summary_of(entry) if state is JobState.DONE else None
                     self.__notify_updated(entry)
             self.__condition.notify_all()
+
+    @staticmethod
+    def __summary_of(entry: TaskQueue.Entry) -> str | None:
+        """What a job that just finished says it found, if it reports one (#457).
+
+        Defensive, like everything the engine asks of a job: a job whose report raises costs its own summary, never
+        the state the engine is about to record.
+
+        :param entry: the finished job.
+        :returns: its one-line outcome; ``None`` for a job that reports none.
+        """
+        if not isinstance(entry.job, ReportingTaskJob):
+            return None
+        try:
+            outcome = entry.job.outcome
+        except Exception as error:  # pylint: disable=broad-exception-caught
+            LOG.warning("Task outcome could not be read: %s", entry.label, exc_info=error)
+            return None
+        return None if outcome is None else outcome.summary
 
     @staticmethod
     def __invoke(entry: TaskQueue.Entry, control: TaskQueue.Control) -> tuple[JobState, str | None]:

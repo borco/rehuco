@@ -89,9 +89,8 @@ which that manager's `saveState()` already records, the same deal the Log and Ta
 **Today the tree is a flat list, in alphabetical order, with one group** (#277, #294, #298):
 "Checksums" (`ChecksumsPage`, #242), "Descriptions" (`DescriptionsPage`), "Files" (`FilesPage`, #226,
 #291, #298), "Identity" (`IdentityPage`, #99), "Images" (a group, below), "Logs" (`LogsPage`, #200),
-"Session" (`SessionPage`, #65), "Shortcuts" (`ShortcutsPage`, #344), "System Integration", "Tasks"
-(`TasksPage`, #202) and "Videos"
-(`VideosPage`, #225). "Images" nests three children: "Display" (`ImagesDisplayPage`), "Sidecar
+"Root Catalog" (`RootCatalogPage`, #457), "Session" (`SessionPage`, #65), "Shortcuts" (`ShortcutsPage`, #344),
+"System Integration", "Tasks" (`TasksPage`, #202) and "Videos" (`VideosPage`, #225). "Images" nests three children: "Display" (`ImagesDisplayPage`), "Sidecar
 Extensions" (`ImagesFilesPage`) and "Sidecar Names" (`ScreenshotPatternsPage`, #53, #287).
 
 "System Integration" is one page on every platform with a different class behind each (`RegistryPage`
@@ -623,6 +622,15 @@ which rebuilds its scanner in `__make_image_scanner` and announces it through `i
 the seam the strip, the selector and the Markdown view already rebind on for a `.tc` → `.rehu`
 conversion. `RegistryPage`'s actions land directly on the OS, so there is no other part of the app
 that needs to be told a save happened.
+
+**A setting that is also applied from outside the dialog** (#457): the `Root Catalog` menu's *Automatically
+preview the current rehu* writes the shared `RootCatalogSettings` the moment it is clicked, with no Apply behind it,
+so the *saved* value can change while its page is open. The page is the ordinary staged shape, and says so through
+the optional `ExternallySavedPage` protocol: it emits `saved_changed` whenever the shared setting changes, and the
+dialog answers with `SettingsFrameFilter.rebase` -- a frame with no edit shows the new saved value and stays clean
+(nothing was typed there), a frame with an edit keeps it, now compared with the new saved value, so an edit that
+equals what the menu just applied stops being one and *Reset* restores the new saved value. The menu follows an
+applied page the same way every other live consumer does, through the setting's `_changed` signal.
 
 **Testing note:** the `lru_cache`d singleton persists across test functions within one process, and
 would otherwise leak state between tests (or read the developer's real on-disk settings) — see the

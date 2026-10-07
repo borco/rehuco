@@ -34,11 +34,14 @@ names, kinds and the ``stat`` fields a listing already knew.
 import fnmatch
 import os
 import re
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Final
 
+from .checksum_record import ChecksumEntry
 from .constants import (
     ARCHIVE_EXTENSIONS,
     AUDIO_EXTENSIONS,
@@ -152,6 +155,22 @@ class DirectoryEntry:
 
 
 @dataclass(frozen=True, slots=True)
+class CoveredFile:
+    """What the record that covers a file says about it (#457).
+
+    :param entry: the file's entry in that record, or ``None`` when the record does not list it (or lists a
+        name with no readable hash) -- *no checksum* either way.
+    :param trusted_since: when this machine began trusting the record where it is, as
+        :meth:`~rehuco_core.ChecksumTrust.trusted_since` answers it; what ages a stamp (#358).
+    :param malformed: whether the record lists the file under an entry this build cannot read.
+    """
+
+    entry: ChecksumEntry | None
+    trusted_since: datetime | None
+    malformed: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class DirectoryListing:
     """One classified directory, and what the listing itself establishes (#266).
 
@@ -162,6 +181,9 @@ class DirectoryListing:
         (#245): a browser that drew an empty table over an offline mount
         ([[mounts-and-storage#offline-mounts]]) would say the resource has no files, which is the one
         thing it must not say.
+    :param covered: for each content file a checksum record covers, what that record says, by entry name (#457).
+        Empty for a listing no record covers, and for a file that is not content; **only the lister that was
+        handed the means to read records fills it**.
     :param foreign_directory_record: the name of the directory-scoped record found here that is *not*
         this resource's own, or ``None``. Whatever sits in a directory that has one belongs to that
         record wholesale (#254), subdirectories included -- so this is what decides whether the reader
@@ -172,6 +194,7 @@ class DirectoryListing:
     entries: tuple[DirectoryEntry, ...] = ()
     reachable: bool = True
     foreign_directory_record: str | None = None
+    covered: Mapping[str, CoveredFile] = field(default_factory=dict)
 
 
 # one public method is the whole of it -- classify a directory -- and everything else is the rules that
@@ -216,7 +239,36 @@ class DirectoryClassifier:
                 scanned = [(entry.name, entry.is_dir(follow_symlinks=False), self.__stat(entry)) for entry in scan]
         except OSError:
             return DirectoryListing(directory, reachable=False)
+        return self.__name(directory, scanned)
 
+    def reclassify(self, listing: DirectoryListing) -> DirectoryListing:
+        """Name an already-read listing's entries from *this* classifier's record, reading nothing (#457).
+
+        The Roots view lists a folder once, as a stranger, and then asks each record that covers part of it which
+        files are its content: this is that question, with no second ``scandir`` on a share.
+
+        :param listing: a reachable listing, from any classifier.
+        :returns: the same entries named for this record; an unreachable listing comes back as it was.
+        """
+        if not listing.reachable:
+            return listing
+        scanned = [
+            (
+                entry.name,
+                entry.is_directory,
+                None if entry.size is None and entry.modified is None else (entry.size or 0, entry.modified or 0.0),
+            )
+            for entry in listing.entries
+        ]
+        return self.__name(listing.directory, scanned)
+
+    def __name(self, directory: Path, scanned: list[tuple[str, bool, tuple[int, float] | None]]) -> DirectoryListing:
+        """Name what a directory holds -- the half of :meth:`classify` that needs no disk.
+
+        :param directory: the directory the entries are in.
+        :param scanned: ``(name, is a directory, (size, mtime) or None)`` for each entry.
+        :returns: the classified listing.
+        """
         filenames = [name for name, is_directory, _ in scanned if not is_directory]
         own_directory = directory == self.__record_path.parent
         records = self.__record_names(filenames)

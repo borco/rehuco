@@ -19,6 +19,7 @@ import pytest
 from pytest import fixture
 from rehuco_core import (
     JobControl,
+    JobOutcome,
     JobState,
     TaskJobBase,
     TaskJobRegistry,
@@ -147,6 +148,20 @@ class PlainJob(TaskJobBase):
         control.report(1, 1)
 
 
+class ReportingCounterJob(CounterJob):
+    """A persistable job that also says what it found (#457)."""
+
+    kind = "reporting-counter"
+
+    @property
+    def outcome(self) -> JobOutcome | None:
+        """What the run found.
+
+        :returns: a fixed one-line outcome.
+        """
+        return JobOutcome("2 matched")
+
+
 # endregion
 
 # region Fixtures
@@ -171,6 +186,7 @@ def registry_fixture() -> TaskJobRegistry:
     """
     registry = TaskJobRegistry()
     registry.register(CounterJob.kind, CounterJob)
+    registry.register(ReportingCounterJob.kind, ReportingCounterJob)
     return registry
 
 
@@ -758,6 +774,57 @@ def test_a_retried_job_starts_over_even_when_it_would_otherwise_carry_on(
 
     settles(lambda: queue.jobs()[0].state is JobState.DONE)
     assert resumed.entered_at == [0]
+
+
+# endregion
+
+
+# region What a finished job found (#457)
+
+
+def test_a_finished_jobs_summary_survives_a_restart(
+    queue: TaskQueue, registry: TaskJobRegistry, settles: Callable[[Callable[[], bool]], None]
+) -> None:
+    """The line a row says about a finished run is written down, and comes back on the restored row.
+
+    **Test steps:**
+
+    * run a reporting job and serialize the queue
+    * restore the items into a second queue
+    * verify the saved item carried the summary and the restored row says it
+    """
+    queue.enqueue(ReportingCounterJob("reporting"))
+    settles(lambda: all(status.state is JobState.DONE for status in queue.jobs()))
+    items = queue.serialize()
+
+    second = TaskQueue()
+    try:
+        second.restore(items, registry)
+        assert items[0].get("summary") == "2 matched"
+        assert second.jobs()[0].summary == "2 matched"
+    finally:
+        second.shutdown()
+
+
+def test_a_summary_is_only_taken_back_for_a_done_job_and_only_as_text(
+    queue: TaskQueue, registry: TaskJobRegistry
+) -> None:
+    """A summary describes a run that ended well; one on any other row, or not text, is not trusted.
+
+    **Test steps:**
+
+    * restore a failed job carrying a summary, and a done one whose summary is not text
+    * verify neither row has one
+    """
+    not_text: Any = 7
+    items: list[TaskQueueItem] = [
+        {"kind": "counter", "label": "failed", "job_state": "failed", "state": {"cursor": 0}, "summary": "stale"},
+        {"kind": "counter", "label": "odd", "job_state": "done", "state": {"cursor": 0}, "summary": not_text},
+    ]
+
+    queue.restore(items, registry)
+
+    assert [status.summary for status in queue.jobs()] == [None, None]
 
 
 # endregion

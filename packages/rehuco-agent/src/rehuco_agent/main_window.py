@@ -95,6 +95,7 @@ from .settings.main_window_settings import TOOLBARS_STATE_VERSION, MainWindowSet
 from .settings.persistent_settings import persistent_settings
 from .settings.recent_files_settings import RecentFilesSettings
 from .settings.rehuco_settings import RehucoSettings
+from .settings.root_catalog_settings import shared_root_catalog_settings
 from .settings.session_restore_settings import SessionRestoreSettings
 from .settings.tasks_settings import TasksSettings
 from .settings.theme_settings import ThemeSettings
@@ -108,6 +109,7 @@ from .settings.ui.images_files_page import ImagesFilesPage
 from .settings.ui.location_replacements_page import LocationReplacementsPage
 from .settings.ui.location_templates_page import LocationTemplatesPage
 from .settings.ui.logs_page import LogsPage
+from .settings.ui.root_catalog_page import RootCatalogPage
 from .settings.ui.scrapers_page import ScrapersPage
 from .settings.ui.screenshot_patterns_page import ScreenshotPatternsPage
 from .settings.ui.session_page import SessionPage
@@ -759,10 +761,47 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         menu.addAction(roots.scan_action)
         menu.addAction(roots.add_root_action)
         menu.addAction(roots.remove_root_action)
+        menu.addSeparator()
+        menu.addAction(self.__make_auto_preview_action())
         browsers_menu = self.__ui.browsers_menu
         browsers_menu.addAction(self.__browsers_dock.new_browser_action)
         browsers_menu.addAction(self.__browsers_dock.rename_browser_action)
         browsers_menu.addSeparator()
+
+    def __make_auto_preview_action(self) -> QAction:
+        """Make the ``Root Catalog`` menu's **Automatically preview the current rehu** toggle (#457).
+
+        One setting, several views of it: the toggle writes the shared setting as it is clicked -- it has no Apply
+        behind it -- and follows the setting when the settings page applies it, so a change in either place is a
+        change in both. Turning it on shows the Roots view's current record at once, since the reader just asked for
+        it.
+
+        :returns: the action, checked as the setting is.
+        """
+        settings = shared_root_catalog_settings()
+        action = QAction("Automatically &preview the current rehu", self)
+        action.setCheckable(True)
+        action.setChecked(settings.auto_preview)
+        action.setToolTip(
+            "Show the record of the current row of the Roots view in the Documents preview as it is reached. "
+            "When off, the preview stays as it is."
+        )
+
+        def write(checked: bool) -> None:
+            settings.auto_preview = checked
+            settings.save(persistent_settings())
+
+        action.toggled.connect(write)
+
+        def follow(value: object) -> None:
+            blocked = action.blockSignals(True)
+            action.setChecked(bool(value))
+            action.blockSignals(blocked)
+            if value:
+                self.__roots_panel.reselect()
+
+        settings.auto_preview_changed.connect(follow)
+        return action
 
     def __resync_close_actions_enabled(self) -> None:
         """Recompute ``Close Missing Files``/``Close All``'s enabled state (#96, #247).
@@ -1105,6 +1144,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         for main_key, title in sorted(location_titles.items(), key=lambda item: item[1]):
             self.__settings_dialog.add_page("Locations", title, LocationTemplatesPage(main_key))
         self.__settings_dialog.add_page("Logs", LogsPage())
+        self.__settings_dialog.add_page("Root Catalog", RootCatalogPage())
         self.__settings_dialog.add_page("Scrapers", ScrapersPage())
         self.__settings_dialog.add_page("Session", SessionPage())
         self.__settings_dialog.add_page("Shortcuts", ShortcutsPage(self.__command_registry))
@@ -1944,7 +1984,9 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         :param key: the selected row's record as ``(root_id, relative)``, or ``None``.
         """
         if self.__selecting_dock is self.__rehuco_dock_widget:
-            self.__selection_preview.select(cast(RowKey | None, key))
+            # switched off, the preview stays where it is: a selection still waiting is called off too (#457)
+            allowed = shared_root_catalog_settings().auto_preview
+            self.__selection_preview.select(cast(RowKey | None, key) if allowed else None)
 
     def __show_selection_in_preview(self, path: Path) -> None:
         """Show a selected resource in the preview (#381). Unlike :meth:`show_in_preview` this does not bring the

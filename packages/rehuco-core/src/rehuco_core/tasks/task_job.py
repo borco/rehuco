@@ -314,7 +314,41 @@ class TaskJob(Protocol):
         """
 
 
-# Twelve, and each is a distinct fact a reader of one row wants: who it is, what it is doing, how far
+@dataclass(frozen=True)
+class JobOutcome:
+    """What a finished job found, in one line a row can show (#457).
+
+    **A sentence, not a payload.** The engine stays free of any job's result type
+    ([[appendices.task-queue#first-jobs]]); a surface that needs the findings reads them off the job it
+    built. But *what happened* -- "210 matched, 2 mismatched" -- is what every reader of the Tasks dock
+    wants beside the state, and it is a string.
+
+    :param summary: the line.
+    :param clean: whether the run found nothing to act on; a surface may draw a clean line quietly.
+    """
+
+    summary: str
+    clean: bool = True
+
+
+@runtime_checkable
+class ReportingTaskJob(TaskJob, Protocol):
+    """A job that can say what it found once it has run (#457).
+
+    A second protocol rather than a wider one, as :class:`~rehuco_core.tasks.PersistableTaskJob` is: a job that
+    has nothing to report is unchanged. The engine asks once, when the job returns normally.
+    """
+
+    @property
+    def outcome(self) -> JobOutcome | None:
+        """What the last run found, or ``None`` before one has finished.
+
+        Called on the worker thread with the queue's lock held, so it formats what the run already holds and
+        reads nothing.
+        """
+
+
+# Thirteen, and each is a distinct fact a reader of one row wants: who it is, what it is doing, how far
 # it has got and in what, what went wrong, what has been asked of it, what stopping it would cost, and
 # whether it will still be here tomorrow. The last five are the job's own declarations, copied here so that a
 # status answers without reaching back for the job object -- which a reader on another thread has no
@@ -360,6 +394,8 @@ class JobStatus:
         restart. **The opt-out has to be visible** ([[appendices.task-queue#lifetime]]): a surface that
         knows a row is about to be lost at quit can say so, where one that does not would let it vanish
         silently.
+    :param summary: what a finished job found, as its :attr:`ReportingTaskJob.outcome` says it, else ``None``
+        (#457). Kept with a finished job across a restart, like :attr:`error`.
     """
 
     serial: int
@@ -374,6 +410,7 @@ class JobStatus:
     safely_interruptible: bool = True
     resumes_where_it_stopped: bool = False
     persistable: bool = False
+    summary: str | None = None
 
     @property
     def scope(self) -> JobScope:

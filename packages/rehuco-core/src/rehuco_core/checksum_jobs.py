@@ -44,10 +44,42 @@ from .tasks import (
     PROGRESS_UNIT_BYTES,
     PROGRESS_UNIT_RESOURCES,
     JobControl,
+    JobOutcome,
     TaskJobBase,
 )
 
 LOG: Final = logging.getLogger(__name__)
+
+VERIFY_FINDING: Final = "Checksums verified: {summary}."
+GENERATE_FINDING: Final = "Checksums recorded: {summary}."
+"""What a finished run says -- the document's inline banner and the Tasks dock's row, one wording (#457).
+
+The **summary**, not the file list: a tutorial of two hundred videos reports two hundred statuses, and a row is not
+where those belong -- the log has the detail, and the per-file view is #244's."""
+
+CLEAN_STATUSES: Final = frozenset({"matched", "unexpected"})
+"""The verdicts that are not a finding about the files.
+
+``unexpected`` is a *report* state rather than a resting one ([[data-model#checksums]]) -- the run
+adopted the file and recorded it ``matched`` -- so a resource whose only news is an adopted screenshot
+has come back clean."""
+
+
+def checksum_report_is_clean(report: ChecksumReport) -> bool:
+    """Whether a run found nothing to act on.
+
+    :param report: what the run established.
+    :returns: whether every verdict was a clean one and nothing went unread.
+    """
+    return (
+        all(status in CLEAN_STATUSES for status in report.statuses.values())
+        and not report.unreadable
+        and not report.unnamed_malformed
+        # a run that could not list part of the tree is not a clean run, whether or not the record
+        # happened to hold entries under the branch it could not see (#245)
+        and not report.unreadable_directories
+    )
+
 
 PRUNE_REASONS: Final[dict[ContentExclusionTier, str]] = {
     "structural": "it is a record's own bookkeeping, which is never a resource's content",
@@ -195,6 +227,22 @@ class ChecksumJob(TaskJobBase):
         """This job's resource, **as it is now** -- read from the tracked location, so a rename that
         landed mid-run answers the new path ([[appendices.task-queue#job-responsibility]], #241)."""
         return self.__location.path if self.__location is not None else None
+
+    finding = GENERATE_FINDING
+    """What a finished run says, with its summary in; a verify says its own."""
+
+    @property
+    def outcome(self) -> JobOutcome | None:
+        """What the last run found, as one line, for the Tasks dock and the document's banner alike (#457).
+
+        :returns: ``None`` before a run has finished.
+        """
+        report = self.__report
+        if report is None:
+            return None
+        return JobOutcome(
+            self.finding.format(summary=checksum_report_summary(report)), checksum_report_is_clean(report)
+        )
 
     @property
     def report(self) -> ChecksumReport | None:
@@ -459,6 +507,7 @@ class VerifyChecksumsJob(ChecksumJob):
     """
 
     kind = CHECKSUM_VERIFY_KIND
+    finding = VERIFY_FINDING
     verb = "Verify"
 
     def perform(self, control: JobControl) -> ChecksumReport:

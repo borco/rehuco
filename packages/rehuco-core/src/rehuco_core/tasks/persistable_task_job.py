@@ -102,6 +102,8 @@ class TaskQueueItem(TypedDict):
         job kept.
     :param state: the job's own :meth:`PersistableTaskJob.capture_state`.
     :param error: why a failed job failed, kept so a restored failure still says what went wrong.
+    :param summary: what a finished job found (:attr:`~rehuco_core.tasks.JobStatus.summary`), kept so a restored
+        row still says what its run found.
     :param done: units finished. **Written only for a job that declares**
         :attr:`~rehuco_core.tasks.TaskJob.resumes_where_it_stopped`, because only such a job genuinely
         is as far along as its bar says; for a job that starts over, restoring a bar that is about to
@@ -114,5 +116,6 @@ class TaskQueueItem(TypedDict):
     job_state: str
     state: dict[str, Any]
     error: NotRequired[str | None]
+    summary: NotRequired[str | None]
     done: NotRequired[int]
     total: NotRequired[int | None]

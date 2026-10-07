@@ -96,6 +96,10 @@ class TaskInfoDelegate(TaskRowDelegate):
                 # a reason is a sentence, so it takes the whole cell rather than the figure's slot
                 self.paint_text(painter, option.rect, status.error or "")
                 return
+            if status.state == JobState.DONE and status.summary:
+                # so is what a finished job found (#457): the line a reader came to the dock for
+                self.paint_text(painter, option.rect, status.summary)
+                return
             self.__paint_progress(painter, option, status)
         finally:
             painter.restore()
