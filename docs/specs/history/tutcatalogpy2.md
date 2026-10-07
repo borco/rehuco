@@ -23,21 +23,22 @@ and the viewer app were both still TODO when it stopped.
 Scan folders, parse and **display** `info.tc` in a cached, searchable catalog. Editing was not yet
 implemented. Carried a dedicated **scrapper** tool for seeding metadata from publisher pages.
 
-## Compared with rehuco
+## Feature ledger
 
-| Capability | TutCatalogPy2 | rehuco |
+| Feature | TutCatalogPy2 | rehuco |
 | --- | --- | --- |
-| `info.tc` sidecar | Yes (YAML) | `.rehu` (JSON); reads and converts `.tc`, never writes it |
-| Display fields | Yes | Yes — generic and typed field toolkit |
-| Edit fields | TODO (never landed) | Yes — atomic-saved edits through the typed field toolkit |
-| SQLite cache + search | Yes | Planned |
-| `.tc` file-type association | Yes (Linux MIME) | Yes — Windows ProgID/AUMID and macOS `QFileOpenEvent`, single-instance forwarding |
-| Scraping | Yes (scrapper tool) | Yes — built-in scrapers (ArtStation, Udemy), browser-drop and URL-drop handling |
-| Duration via ffprobe | Yes | Yes — stored field, can also measure itself from the media |
+| `info.tc` sidecar | YAML | Built — `.rehu` (JSON); `.tc` read and converted |
+| Display fields | Yes | Built |
+| Edit fields | Never landed | Built |
+| Tags dock: authors and publishers with counts, and flags (complete, error, has `info.tc`, cover, checked, disk online); click cycles ignore / include / exclude | Yes (`tags_dock.py`) | **TBD** as a dock. Filtering: Built for typed tokens (`folder`, `authors`, `tags`, `publishers`, `type`) in the table browsers' filter line; click-to-filter only for authors (right-click an authors cell, #460). **Not built**: filtering by collection or learning path, include/exclude, saved filters. Filtering by flag is not built either |
+| SQLite cache and search | Yes | Built — `.rehudb` and the filter line |
+| `.tc` file-type association | Linux MIME | Built for `.rehu` on Windows, macOS and Linux (`application/x-rehuco`) |
+| Scraping (scrapper tool) | Yes | Built — ArtStation and Udemy, plus a user script |
+| Duration via ffprobe | Yes | Built |
+| `learning_paths`, `rating`, `viewed`/`todo`/`keep`/`online` flags | Yes | Built as fields |
 
-## Can rehuco work for its `info.tc`?
+## Importing its data
 
-**Yes.** Its `examples/info.tc` is exactly the field set rehuco's [field-schema](../field-schema.md)
-enumerates; the `.tc`→`.rehu` adapter (LocalEdit3) handles the renames (`tags`→`advertised_tags`,
-`extraTags`→`extra_tags`) and the scalar `title`/`publisher`/`url`→`sources` fold. The SQLite cache
-is rebuildable and needs no import.
+`examples/info.tc` is the field set rehuco's [field schema](../field-schema.md) lists; the adapter applies the
+renames (`tags` → `advertised_tags`, `extraTags` → `extra_tags`) and the `title`/`publisher`/`url` → `sources` fold.
+The cache needs no import.

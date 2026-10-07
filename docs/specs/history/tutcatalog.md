@@ -24,25 +24,29 @@ Scan configured folders for tutorial subfolders, read each `info.tc`, and presen
 searchable catalog; open one in infoviewer to read the rendered Markdown description and edit fields.
 Duration measured with ffprobe, integrity via SFV checksums, metadata seeded by scraping.
 
-## Compared with rehuco
+## Feature ledger
 
-| Capability | TutCatalog | rehuco |
+Status is as of rehuco today. **Built** runs in the agent; **Planned** names the issue or spec; **Not planned** is a
+decision; **TBD** is a gap not yet decided or filed.
+
+| Feature | TutCatalog | rehuco |
 | --- | --- | --- |
-| `info.tc` sidecar per tutorial | Yes (YAML) | `.rehu` (JSON); reads `.tc` and converts it (single file or a bulk legacy-catalog import wizard), never writes `.tc` |
-| View / edit fields | Yes (infoviewer) | Yes — generic + typed field toolkit (text, switch, tag list, date, rating, duration, size, choice, path, image count, …) |
-| Markdown description | Yes | Yes — rendered viewer plus a Scintilla-based Markdown editor |
-| Catalog browser (folders → table) | Yes | Planned |
-| Duration via ffprobe | Yes | Yes — duration is a stored field that can also measure itself from the media (bundled media library or a configured `ffprobe`) |
-| SFV checksums | Yes (cfv) | Yes — algorithm-tagged checksums as task-queue jobs, with a per-folder sweep |
-| Metadata scraping | Yes (external script) | Yes — built-in scrapers (ArtStation, Udemy), plus browser-drop and URL-drop handling |
-| Per-machine config | `.tutcatalogrc` (YAML) | `.rehuco` |
-| Web / tablet, borrow, multi-node | — | Planned |
+| `info.tc` sidecar per tutorial | YAML | Built — `.rehu` is JSON; `.tc` is read and converted (one file or a folder tree), never written |
+| Tags / authors / publishers / learning paths browser: a tree dock, each entry with a count, click to search | Yes (`tagsview.cpp`, `tagmodel.cpp`) | **TBD** — the grouping-entity plugins ([[plugins#grouping-entities]]) are specified, none is built |
+| Rename a tag or author everywhere, from that tree (a rename onto an existing name merges) | Yes — rewrites every affected `info.tc` | **TBD** |
+| Token search: `publisher:`, `author:`, `tag:`, `xtag:`, `path:`, `name:` | Yes | Built for typed tokens (`folder`, `authors`, `tags`, `publishers`, `type`) in the table browsers' filter line; click-to-filter only for authors (right-click an authors cell, #460). **Not built**: filtering by collection or learning path, include/exclude, saved filters |
+| Saved searches (favourites) | Yes | **TBD** |
+| Catalog browser (folders → table) | Yes | Built — Browsers panel over the `.rehudb` cache, with a filter line. A change made outside the app shows after the next scan |
+| infoviewer: view and edit fields | Yes | Built |
+| Rendered Markdown description | Yes | Built, with an editor |
+| Duration via ffprobe | Yes | Built — a field that measures itself; ffprobe or a bundled media library |
+| `.sfv` checksums (cfv) | Yes | Built, as rehuco's own `.checksum` records; a legacy `.sfv` is read to seed them, never written |
+| Metadata scraping | External script | Built — ArtStation and Udemy built in, a user script supported |
+| Per-machine config: folder roots | `.tutcatalogrc` | Built — roots live in the `.rehuco` file |
+| Per-machine config: video extensions, tool paths | `.tutcatalogrc` | Built as app settings (Videos page) |
 
-## Can rehuco work for its `info.tc`?
+## Importing its data
 
-**Yes — this is precisely what rehuco's schema targets.** rehuco's [field schema](../field-schema.md)
-is explicitly "`.tc`-compatible," derived from the same field vocabulary (ground-truthed on tc4, its
-lineal successor). A `.tc`→`.rehu` adapter reads the YAML into rehuco's model (view-only at first,
-full migration in slice LocalEdit3); rehuco writes JSON `.rehu`, never `.tc`. Field renames apply on import
-(`tags`→`advertised_tags`, `extraTags`→`extra_tags`) and the scalar `title`/`publisher`/`url` fold
-into a `sources` record — all handled by the adapter.
+`info.tc` is the YAML that rehuco's [field schema](../field-schema.md) was derived from, so it converts. Renames on
+import: `tags` → `advertised_tags`, `extraTags` → `extra_tags`; the scalar `title`/`publisher`/`url` fold into a
+`sources` record.

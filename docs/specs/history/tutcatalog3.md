@@ -1,4 +1,4 @@
-# Tutcatalog 3
+# Tutcatalog 3 ✓
 
 <https://gitlab.com/iborco-software/tutcatalog/tutcatalog3>
 
@@ -20,21 +20,19 @@ Same intent as TutCatalog — scan folders, read `info.tc`, browse/edit — re-a
 CMake/Conan build. It stalled early, so much of the browser/editor never landed; the design and the
 `info.tc` format simply carried straight over to the Python rewrites that followed.
 
-## Compared with rehuco
+## Feature ledger
 
-Feature-wise identical to [TutCatalog](tutcatalog.md) (same formats, same tools), so the rehuco
-mapping is the same:
+The same features as [TutCatalog](tutcatalog.md), only partly implemented.
 
-| Capability | Tutcatalog 3 | rehuco |
+| Feature | Tutcatalog 3 | rehuco |
 | --- | --- | --- |
-| `info.tc` sidecar | Yes (YAML) | `.rehu` (JSON); reads and converts `.tc`, never writes it |
-| View / edit | Partial (incomplete rewrite) | Yes — generic and typed field toolkit, both complete |
-| Catalog browser | Partial | Planned |
-| Duration via ffprobe | Yes | Yes — stored field, can also measure itself from the media |
-| Scraping (cygwin/BeautifulSoup) | Yes | Yes — built-in scrapers (ArtStation, Udemy), browser-drop and URL-drop handling |
-| Per-machine config | `.tutcatalogrc` (YAML) | `.rehuco` |
+| `info.tc` sidecar | YAML | Built — `.rehu` (JSON); `.tc` read and converted |
+| View / edit | Partial | Built |
+| Catalog browser | Partial | Built — see [TutCatalog](tutcatalog.md) |
+| Duration via ffprobe | Yes | Built |
+| Scraping (cygwin, BeautifulSoup) | Yes | Built — ArtStation and Udemy, plus a user script |
+| Per-machine config | `.tutcatalogrc` | Built — `.rehuco` and app settings |
 
-## Can rehuco work for its `info.tc`?
+## Importing its data
 
-**Yes** — the `info.tc` is byte-for-byte the same family as TutCatalog's, so the same
-[field-schema](../field-schema.md) `.tc`→`.rehu` adapter (LocalEdit3) applies with no extra work.
+The `info.tc` is the same family as TutCatalog's; the same adapter applies.
