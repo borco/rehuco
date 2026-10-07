@@ -148,6 +148,9 @@ released becomes the body of the GitHub Release, so each entry is written to be 
   an error showing the line's problem marker stopped the rows from being read again. The rows are read first now, and
   the marker is found again each time instead of being held on to. A line edit sometimes showing two clear buttons
   (the filter line and the Location fields among them) is fixed too.
+- The Documents preview no longer carries a measured image count, size or duration from one record into the next.
+  Moving the preview to another `.rehu` clears what *Compute* filled, and a measurement still running when it moves
+  is dropped rather than written into the record now shown. The values stored in the file are untouched either way.
 
 ## [0.2.0] - 2026-09-27
 

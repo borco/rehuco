@@ -674,6 +674,11 @@ and its cache** — the catalog — and both docks read it and hear from it when
     the dock being selected in — unless the reader closed it.
   - **A double-click is unchanged**: it opens an ordinary document, and when the preview shows that `.rehu` it is
     promoted instead of opened twice.
+  - **What a session measured belongs to the record it measured** (#470). The count, size and duration readouts a
+    *Compute* filled are cleared when the preview moves to another `.rehu`, and a measurement still running then
+    reports into nothing — judged on the GUI thread after the switch, so an answer posted a moment before it is
+    dropped too. The stored values are the file's and are reseeded from the new file as every other field is. A
+    revert or a rename is not a switch: a measurement running through either still lands.
 
 **The menu bar is the complete index** (#402, #465): `File`, `Root Catalog`, `Browsers`, `View` and `Tools`.
 `File` and `Browsers` are twins — the verbs that open or create, the verbs on the open set, then the open list,
