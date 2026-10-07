@@ -8,8 +8,8 @@
 [![Linux](https://img.shields.io/codecov/c/github/borco/rehuco?flag=linux&label=Linux)](https://app.codecov.io/gh/borco/rehuco?flags%5B0%5D=linux)
 
 A personal media catalog for the things you collect to learn from and work with — video tutorials,
-online courses, archives of reference images. Today it is the part that comes first: a desktop editor
-for a resource's **details**, not for the media itself.
+online courses, archives of reference images. Today it is a desktop editor
+for a resource's **details** and a browser over the folders that hold them, not for the media itself.
 
 Those details live in a small JSON file — a `.rehu` — sitting in the folder next to the resource it
 describes, one per resource. That's the whole storage model, and the name is its stem.
@@ -35,6 +35,9 @@ rules that keep it trustworthy, the app's panels, and what isn't built.
   writes `.rehu`, and keeps backups it can roll back if the conversion goes wrong.
 - **Works in the background.** Checksums, imports and scrapes run on a task queue you can pause,
   reorder and cancel, with a log beside it.
+- **Catalogs your folders.** A `.rehuco` file names the folders to catalog; a scan records every `.rehu` under them in
+  a rebuildable cache, and filterable tables list the result. A column view of the folders shows each record's
+  details and checksum state, and selecting anything previews it beside the table.
 - **Doesn't damage what it doesn't understand.** Unrecognized fields survive a save untouched, and a
   file written by a newer version of the format opens read-only rather than being rewritten.
 - **Keeps your workspace.** Atomic saves, and each file's panel layout remembered between sessions.
@@ -51,11 +54,9 @@ Tested on Windows, macOS, and Linux.
 
 What's left of the editor is small: a page image picker (a scraping helper, not an editor feature).
 
-The next real piece is **a basic browser**: a view over a folder of resources, a rebuildable cache with
-search, so a collection can be looked through rather than opened one file at a time. See the
-[implementation plan](specs/implementation-plan.md).
+What's left of the catalog is filed in the [implementation plan](specs/implementation-plan.md).
 
-Past that point the design reaches further — playback with progress tracking, a headless node with a
+Past that the design reaches further — playback with progress tracking, a headless node with a
 REST API, sync and offline borrowing between machines, multi-user access rules, a browser interface,
 Daz3D library migration. None of it is implemented, none of it is scheduled, and some of it may never
 be: it is what the architecture is shaped to allow, and each piece has to earn its place when its turn
@@ -73,7 +74,7 @@ names are taken and the release plumbing is exercised, not because they are read
 | Package | Description | PyPI | Downloads | Python |
 | --- | --- | --- | --- | --- |
 | [rehuco-agent](https://pypi.org/project/rehuco-agent/) | PySide6 desktop GUI | [![PyPI](https://img.shields.io/pypi/v/rehuco-agent)](https://pypi.org/project/rehuco-agent/) | [![Downloads](https://static.pepy.tech/badge/rehuco-agent)](https://pepy.tech/project/rehuco-agent) | [![Python](https://img.shields.io/pypi/pyversions/rehuco-agent)](https://pypi.org/project/rehuco-agent/) |
-| [rehuco-core](https://pypi.org/project/rehuco-core/) | Shared library: models, `.rehu` I/O, legacy `.tc` reading | [![PyPI](https://img.shields.io/pypi/v/rehuco-core)](https://pypi.org/project/rehuco-core/) | [![Downloads](https://static.pepy.tech/badge/rehuco-core)](https://pepy.tech/project/rehuco-core) | [![Python](https://img.shields.io/pypi/pyversions/rehuco-core)](https://pypi.org/project/rehuco-core/) |
+| [rehuco-core](https://pypi.org/project/rehuco-core/) | Shared library: models, `.rehu` I/O, `.rehuco` and `.rehudb` cache, legacy `.tc` reading | [![PyPI](https://img.shields.io/pypi/v/rehuco-core)](https://pypi.org/project/rehuco-core/) | [![Downloads](https://static.pepy.tech/badge/rehuco-core)](https://pepy.tech/project/rehuco-core) | [![Python](https://img.shields.io/pypi/pyversions/rehuco-core)](https://pypi.org/project/rehuco-core/) |
 | [rehuco-node](https://pypi.org/project/rehuco-node/) | A reserved name; no service written yet | [![PyPI](https://img.shields.io/pypi/v/rehuco-node)](https://pypi.org/project/rehuco-node/) | [![Downloads](https://static.pepy.tech/badge/rehuco-node)](https://pepy.tech/project/rehuco-node) | [![Python](https://img.shields.io/pypi/pyversions/rehuco-node)](https://pypi.org/project/rehuco-node/) |
 
 ## Generic libraries (temporarily hosted)

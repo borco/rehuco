@@ -146,8 +146,16 @@ and the file's format version, with the URL and a tutorial's or a reference pack
 header away — and double-clicking a row opens that resource in Documents. A rename, save or deletion made in the app
 changes just its row, in place. Each table has a **filter line**: free text and `field:value` tokens (`folder`,
 `authors`, `tags`, `publishers`, `type`) narrow the rows, read from the cache again as the text settles. Clicking an
-author's name in a document sets that author on it. The Root Catalog panel lists the roots, which the `Root Catalog`
-menu adds and removes, as a column view: one column per open folder, with the details of the current row beside them.
+author's name in a document sets that author on it. The Browsers panel keeps any number of tables, each with its own
+columns, filter and name: `Browsers` > `New Table Browser` starts one from a preset (the plain columns, or one type's
+extra columns), and a browser can be renamed, cloned and deleted. They are kept by the app, not in the `.rehuco`.
+The Root Catalog panel lists the roots, which the `Root Catalog` menu adds and removes, as a column view: one column
+per open folder, with the details of the current row beside them — its checksum state where a checksum record covers
+it, and, for a `.rehu` or a folder holding one, its URL and rendered description.
+
+Selecting a row in a table, or a record in the Roots view, shows that resource in a preview panel in Documents, without
+creating anything; a double-click on a table row opens it for real. `Root Catalog` > **Automatically preview the current rehu**, also
+on the Root Catalog settings page, turns off the Roots view driving that preview. The tables always do.
 
 The biggest user is **checksums**. Beside each resource sits a `.checksum` record of *when each of its
 files was last checked and what the answer was* — not a manifest for an external tool, which is what lets
@@ -190,9 +198,9 @@ whole folder tree at once, and `Tools` > `Conversion Backups…` discards the ba
 Everything above is implemented. None of the following is, and the design documents discuss all of it at
 length, which is exactly why this section is here:
 
-**A plain browser.** The Browsers panel lists what a scan found, filtered by its line; a change made outside
-the app shows only after the next scan, and selecting a row does not yet show that resource beside the table. The other recursive walks — the checksum sweep and the legacy import, over a folder you hand them — act
-as they go and remember nothing about what they found.
+**A cache that follows the disk.** A change made to a `.rehu` outside the app shows in a table only after the next
+scan, which re-reads just the records whose modification time or size changed. The other recursive walks — the checksum
+sweep and the legacy import, over a folder you hand them — act as they go and remember nothing about what they found.
 
 **No network beyond fetching a page you drop.** No node, no REST API, no discovery, no sync between
 machines, no accounts or access rules, no web or tablet interface. `rehuco-node` is an empty package
@@ -200,10 +208,8 @@ holding its name.
 
 **No playback and no progress tracking.** rehuco describes a tutorial; it does not play one.
 
-The next thing worth building is a fuller **browser** — a column view of the roots, every column the cache stores,
-the open resource's panels beside it, and a cache that follows files as they move, so a catalog can be looked through
-instead of opened one file at a time. Past that, the design reaches toward machines sharing a catalog;
-whether that is worth building is a question the editor and the browser have to answer first.
+Past what runs, the design reaches toward machines sharing a catalog; whether that is worth building is a question
+the editor and the browser have to answer first.
 
 ## Where to go next
 

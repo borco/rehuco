@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://github.com/borco/rehuco/blob/master/LICENSE)
 [![Python versions](https://img.shields.io/pypi/pyversions/rehuco-core)](https://pypi.org/project/rehuco-core/)
 
-*Shared library for [rehuco](https://borco.github.io/rehuco/): data models, `.rehu` file I/O, legacy `.tc` conversion, checksums, and a task queue.*
+*Shared library for [rehuco](https://borco.github.io/rehuco/): data models, `.rehu` file I/O, legacy `.tc` conversion, checksums, a catalog cache, and a task queue.*
 
 [View on PyPI](https://pypi.org/project/rehuco-core/) · [View on GitHub](https://github.com/borco/rehuco)
 
@@ -30,6 +30,8 @@ It provides:
   one file or skip whatever was checked recently
 - **Content enumeration** — which files a resource covers, the images inside a reference pack's
   archives, and measured size on disk and video duration
+- **A catalog** — the `.rehuco` file naming folder roots, and the `.rehudb` SQLite cache of the records found under
+  them: an incremental scan, targeted updates after a save or rename, and filtered reads
 - **A task queue** — one long job at a time, pausable, cancellable, reorderable, optionally persisted
   across restarts
 - **Legacy `.tc` conversion** — parsing the predecessor format and converting it to `.rehu`, one file or

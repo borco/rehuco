@@ -18,7 +18,7 @@ for what's in progress.
 ## What it is
 
 `rehuco-agent` is [rehuco](https://borco.github.io/rehuco/) itself, as far as anything you can run
-goes: a desktop editor for the `.rehu` sidecar that describes one resource. Tested on Windows, macOS,
+goes: a desktop editor for the `.rehu` sidecar that describes one resource, and a browser over the folders that hold them. Tested on Windows, macOS,
 and Linux.
 
 ![The rehuco-agent editor with a reference-images resource open: edit fields and a read-only viewer alongside description, checksums, content images, files, and an app-wide log dock](https://raw.githubusercontent.com/borco/rehuco/master/docs/assets/images/rehuco-agent.png)
@@ -30,10 +30,12 @@ and Linux.
   format version opened read-only rather than rewritten
 - **Legacy `.tc` conversion** — read the predecessor format and write `.rehu`, keeping backups
 - **A workspace that persists** — per-file panel layout and session restore
+- **Root catalog and browsers** — open a `.rehuco` naming your folders, scan them into a cache, and browse it
+  in filterable tables, with a column view of the folders and a preview of whatever is selected
 - **Task queue** — background jobs (checksum sweeps, `.tc` imports, conversions) run through a
   queue dock with per-job progress, state, and log
 - **Log dock** — an app-wide log and a per-resource log, both filterable
-- **Settings** — a docked Settings page for checksums, images, identity, scrapers, and more
+- **Settings** — a docked Settings page for checksums, images, identity, scrapers, the Root Catalog, and more
 - **System tray** — an optional tray icon that closes the window to the tray instead of quitting
 
 ## Goals

@@ -120,7 +120,7 @@ Scraping itself is built (`packages/rehuco-agent/CHANGELOG.md`). What's left is 
 a page or selection dropped on the images sub-dock (#275) and a console-only CLI companion app so
 `--scrape`/`--scrape-schema` work from a packaged install (#346).
 
-## Cache DB — not started
+## Cache DB — built; the rest is filed
 
 **Goal:** point the agent at your folders, have it scan the `.rehu` files into a `.rehudb` cache, and
 browse/search the catalog on the desktop — close to the original tutcatalog. Still **one machine, no
@@ -151,7 +151,12 @@ through to view or edit any resource.
 - the Projects-style browsers ([[plugins#rehuco-dock]]) — the browsers shell with New Table Browser, clone, delete and
   per-browser state kept by the agent (#396); renaming a browser (#397); the filter line (#398); type-specific cache
   columns (#399); the New Table Browser presets (#400).
-- public docs once it runs (#382).
+- public docs (#382) — written once it ran, and `how-it-works.md` describes the roots, scan, browsers and preview as
+  they are. What remains is filed: the image browser (#403) and the table browser's rows off the GUI thread (#455).
+
+**Status:** the tracer bullet and the thickening above run. Open a `.rehuco`, scan, filter, and click through to
+view or edit any resource, with the cache following the app's own saves and renames; a change made outside the app
+shows after the next scan.
 
 ## Release 0.4.0 — watching, remote roots and borrowing (filed, not started)
 
