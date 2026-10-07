@@ -138,7 +138,9 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         self.__roots_ui: Final = Ui_RehucoRootsPanel()
         self.__roots_ui.setupUi(self)
         # the details of the current row, whatever it is, sit beside the columns
-        self.__preview: Final = RootsPreview(self.__roots_model, rename_coordinator, self.__actions_for_row)
+        self.__preview: Final = RootsPreview(
+            self.__roots_model, rename_coordinator, self.__actions_for_row, self.__folder_record
+        )
         splitter = self.__roots_ui.roots_splitter
         splitter.addWidget(self.__preview)
         splitter.setStretchFactor(0, 1)
@@ -714,6 +716,14 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
             # never the start of a record of its own (a listing calls an image a sidecar only when it is numbered)
             return path.with_name(f"{SCREENSHOT_STEM_PATTERN.sub(r'\g<record>', path.stem)}.rehu")
         return path.with_suffix(".rehu")
+
+    def __folder_record(self, index: QModelIndex) -> Path | None:
+        """The record a folder row stands for, for the details pane.
+
+        :param index: the row.
+        :returns: the folder's ``info.rehu`` or ``info.tc``; ``None`` for any other row, or a folder with none.
+        """
+        return self.__companion_found(index) if self.__roots_model.node_kind(index) is RootsNodeKind.FOLDER else None
 
     def __companion_exists(self, index: QModelIndex) -> bool:
         """Whether a folder or file already has its rehu: the folder's ``info.rehu`` or ``info.tc``, the file's

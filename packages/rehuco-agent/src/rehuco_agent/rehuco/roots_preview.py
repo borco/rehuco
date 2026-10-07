@@ -1,6 +1,7 @@
-"""The Roots view's details pane: what the current row is -- a root, a folder or a file -- the editors of a root, and a
-button for everything its context menu offers (#378)."""
+"""The Roots view's details pane: what the current row is -- a root, a folder or a file -- the editors of a root, a
+button for everything its context menu offers (#378), and what a record says about its resource (#458)."""
 
+import logging
 from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager, nullcontext
 from datetime import UTC, datetime
@@ -17,22 +18,36 @@ from PySide6.QtCore import (
     QSize,
     Qt,
     QThreadPool,
+    QUrl,
     Signal,
 )
-from PySide6.QtGui import QAction, QFont, QFontMetrics, QImage, QImageReader, QPalette
+from PySide6.QtGui import QAction, QDesktopServices, QFont, QFontMetrics, QImage, QImageReader, QPalette
 from PySide6.QtWidgets import QComboBox, QFrame, QLineEdit, QSizePolicy, QToolButton, QWidget
-from rehuco_core import FileType, RehucoRoot, RenameCoordinator
+from rehuco_core import FileType, RehucoRoot, RehuDocument, RenameCoordinator, load_tc
 
 from ..documents.files_rows import CHECKSUM_STATE_ICONS
+from ..settings.image_viewer_settings import shared_image_viewer_settings
+from ..settings.markdown_rendering_settings import shared_markdown_rendering_settings
 from ..svg_icon_cache import SvgIconCache
+from .record_images import RecordImages
 from .root_storage import fill_root_storage_combo, select_root_storage
 from .roots_checksum import RowChecksum, checksum_lines, warning_ink
 from .roots_folder_model import NodeListing, RootsFolderModel, RootsNodeKind
 from .roots_preview_ui import Ui_RootsPreview
 
+LOG: Final = logging.getLogger(__name__)
+
 type ActionsForRow = Callable[[QModelIndex], tuple[Sequence[QAction], QAction | None]]
 """What the pane asks its owner for a row: the actions its context menu holds, separators among them, and the one of
 them that is its default."""
+
+OPENABLE_SCHEMES: Final = frozenset({"http", "https"})
+"""The schemes a record's URL is a link for. A ``.rehu`` is outside input, so what it says is shown, and only a web
+address is handed to the system to open."""
+
+type RecordForRow = Callable[[QModelIndex], Path | None]
+"""What the pane asks its owner for a folder row: the record that stands for it -- its ``info.rehu`` or ``info.tc`` --
+or ``None`` when it has none."""
 
 THUMBNAIL_SIDE: Final = 320
 """The longest side, in pixels, an image's thumbnail is read at -- smaller ones are shown as they are."""
@@ -99,9 +114,19 @@ class RootsPreview(QWidget):
     The picture is read on the global thread pool inside the rename coordinator's hold, scaled as it is read, and an
     answer for a row that is no longer shown is dropped.
 
+    **A record's URL and description** (#458) are read from the file, the same way, when a ``.rehu`` or ``.tc`` row
+    becomes current -- or a folder that has one, which ``record_for`` names -- so they are as current as the file and
+    need no scan. They sit below the buttons under a line, a field the record lacks is left out, and a record with
+    neither shows no line. The description is the description dock's own view -- the same renderer, stylesheet,
+    image-width cap and previews toggle, its images resolved against the record's folder -- on the pane's background.
+    **It takes the height left below the buttons** and scrolls inside it when the text is longer, so the pane itself
+    never grows or scrolls. A record that cannot be read shows nothing more, and the reason is logged.
+
     :param model: the model the rows are of.
     :param coordinator: what an image read is held under, so it never blocks a rename; ``None`` holds nothing.
     :param actions_for: asked for a row's actions each time it is shown; ``None`` shows no buttons.
+    :param record_for: asked for the record of a folder row, whose URL and description the pane then shows; ``None``
+        shows none for a folder.
     :param parent: optional Qt parent.
     """
 
@@ -109,11 +134,15 @@ class RootsPreview(QWidget):
     """``(serial, image, size)``: one thumbnail's answer -- null when the file could not be read -- and the picture's
     own size in pixels, which the thumbnail is smaller than."""
 
+    record_ready = Signal(int, str, str)
+    """``(serial, url, description)``: what a record says, the description as Markdown -- either may be empty."""
+
     def __init__(
         self,
         model: RootsFolderModel,
         coordinator: RenameCoordinator | None = None,
         actions_for: ActionsForRow | None = None,
+        record_for: RecordForRow | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -123,15 +152,21 @@ class RootsPreview(QWidget):
         self.__model: Final = model
         self.__coordinator: Final = coordinator
         self.__actions_for: Final = actions_for
+        self.__record_for: Final = record_for
         self.__index = QPersistentModelIndex()
         self.__serial = 0
         self.__location = ""
         self.__title = ""
+        self.__url = ""
         self.__checksum_lines: tuple[str, str] | None = None
         self.__shown_root: UUID | None = None
+        self.__images: Final = RecordImages()
         fill_root_storage_combo(self.__ui.root_storage_combo)
         self.__setup_checksum_rows()
         self.image_ready.connect(self.__on_image, Qt.ConnectionType.QueuedConnection)
+        self.record_ready.connect(self.__on_record, Qt.ConnectionType.QueuedConnection)
+        self.__ui.url_value.linkActivated.connect(RootsPreview.__open_link)
+        self.__setup_description()
         self.show_index(QModelIndex())
 
     @property
@@ -166,6 +201,14 @@ class RootsPreview(QWidget):
         return self.__checksum_lines
 
     @property
+    def record_texts(self) -> tuple[str, str] | None:
+        """The URL and the description (as plain text) shown below the buttons; ``None`` while the section is hidden."""
+        ui = self.__ui
+        if ui.record_section.isHidden():
+            return None
+        return self.__url, ui.description_view.toPlainText()
+
+    @property
     def location(self) -> str:
         """The full location shown, which the label itself may have elided to fit."""
         return self.__location
@@ -183,6 +226,23 @@ class RootsPreview(QWidget):
         """
         self.__ui.root_name_edit.setEnabled(editable)
         self.__ui.root_storage_combo.setEnabled(editable)
+
+    def __setup_description(self) -> None:
+        """Make the description view the description dock's: its renderer and stylesheet, the scanner that finds its
+        images, and the previews toggle -- each followed live."""
+        view = self.__ui.description_view
+        view.image_scanner = self.__images
+        rendering = shared_markdown_rendering_settings()
+        view.apply_rendering_settings(engine=rendering.engine, css=rendering.css)
+        rendering.description_rendering_changed.connect(self.__apply_rendering)
+        previews = shared_image_viewer_settings()
+        view.set_images_visible(previews.previews_visible)
+        previews.previews_visible_changed.connect(view.set_images_visible)  # type: ignore[attr-defined]
+
+    def __apply_rendering(self) -> None:
+        """Render the description again after the Markdown settings changed."""
+        rendering = shared_markdown_rendering_settings()
+        self.__ui.description_view.apply_rendering_settings(engine=rendering.engine, css=rendering.css)
 
     def __setup_checksum_rows(self) -> None:
         """Make the *Checked on* row smaller and dimmed, and give both checksum rows the height of a line, so the
@@ -218,9 +278,11 @@ class RootsPreview(QWidget):
         index = self.__shown()
         self.__serial += 1
         ui.image_label.set_image(None)
+        self.__show_record("", "")
         ui.resolution_label.hide()
         ui.resolution_value.hide()
         path = self.__model.path_of(index)
+        self.__images.record = path
         file_type = self.__model.file_type_of(index)
         kind = self.__model.node_kind(index)
         root = self.__model.root_at(index)
@@ -253,6 +315,26 @@ class RootsPreview(QWidget):
         self.__rebuild_buttons(index)
         if path is not None and file_type is FileType.IMAGE:
             self.__start_image(path)
+        else:
+            self.__start_record_reads(index, path, file_type, kind)
+
+    def __start_record_reads(
+        self, index: QModelIndex, path: Path | None, file_type: FileType | None, kind: RootsNodeKind | None
+    ) -> None:
+        """Read the record a row stands for: a record itself, or the one a folder has.
+
+        :param index: the row.
+        :param path: the row's path.
+        :param file_type: what the row is by shape.
+        :param kind: what the row is.
+        """
+        if path is not None and file_type is FileType.RECORD:
+            self.__start_record(path)
+        elif kind is RootsNodeKind.FOLDER and self.__record_for is not None:
+            record = self.__record_for(index)
+            if record is not None:
+                self.__images.record = record
+                self.__start_record(record)
 
     def __show_checksum(self, index: QModelIndex, checksum: RowChecksum | None, kind: RootsNodeKind | None) -> None:
         """Show a file's checksum: the state's icon beside the title, and the two fixed rows under *Modified*.
@@ -393,16 +475,20 @@ class RootsPreview(QWidget):
         serial = self.__serial
         QThreadPool.globalInstance().start(lambda: self.__read_image(serial, path))
 
+    def __holding(self) -> AbstractContextManager[None]:
+        """What a read on the pool is held under, so it never blocks a rename.
+
+        :returns: the coordinator's hold, or one that holds nothing without a coordinator.
+        """
+        return nullcontext() if self.__coordinator is None else self.__coordinator.holding()
+
     def __read_image(self, serial: int, path: Path) -> None:
         """Read and scale one image, on a pool thread, and hand it back.
 
         :param serial: the request's serial.
         :param path: the image file.
         """
-        holding: AbstractContextManager[None] = (
-            nullcontext() if self.__coordinator is None else self.__coordinator.holding()
-        )
-        with holding:
+        with self.__holding():
             reader = QImageReader(str(path))
             reader.setAutoTransform(True)
             size = reader.size()
@@ -430,3 +516,66 @@ class RootsPreview(QWidget):
         ui.resolution_value.setText(f"{size.width():,} × {size.height():,}")
         ui.resolution_label.show()
         ui.resolution_value.show()
+
+    def __start_record(self, path: Path) -> None:
+        """Read a record's URL and description on the pool.
+
+        :param path: the ``.rehu`` or ``.tc`` file.
+        """
+        serial = self.__serial
+        QThreadPool.globalInstance().start(lambda: self.__read_record(serial, path))
+
+    def __read_record(self, serial: int, path: Path) -> None:
+        """Read one record, on a pool thread, and hand its URL and description back.
+
+        A record that cannot be read answers nothing, and the reason is logged.
+
+        :param serial: the request's serial.
+        :param path: the record file.
+        """
+        with self.__holding():
+            try:
+                document = load_tc(path) if path.suffix.lower() == ".tc" else RehuDocument.load(path)
+                url, description = document.url.strip(), document.description
+            except (OSError, ValueError) as error:  # a RehuFormatError is a ValueError
+                LOG.warning("Could not read %s for the details pane: %s", path, error)
+                return
+        try:
+            self.record_ready.emit(serial, url, description if description.strip() else "")
+        except RuntimeError:  # the preview was destroyed while the read was out
+            pass
+
+    def __on_record(self, serial: int, url: str, description: str) -> None:
+        """Show what a record says, unless the row it was for is no longer the one shown.
+
+        :param serial: the request's serial.
+        :param url: the record's URL.
+        :param description: the record's description, as Markdown.
+        """
+        if serial == self.__serial:
+            self.__show_record(url, description)
+
+    def __show_record(self, url: str, description: str) -> None:
+        """Fill the section under the buttons and show it, or hide it when both are empty.
+
+        :param url: the URL; empty for none.
+        :param description: the description as Markdown; empty for none.
+        """
+        ui = self.__ui
+        self.__url = url
+        openable = QUrl(url).scheme().lower() in OPENABLE_SCHEMES
+        ui.url_value.set_text(url, href=url if openable else "")
+        ui.url_value.setVisible(bool(url))
+        ui.description_view.set_markdown(description)
+        ui.description_view.setVisible(bool(description))
+        ui.record_section.setVisible(bool(url or description))
+        # the description takes what the pane has left; with none, the spacer below keeps the rest
+        self.__ui.main_layout.setStretchFactor(ui.record_section, 1 if description else 0)
+
+    @staticmethod
+    def __open_link(href: str) -> None:
+        """Open a record's URL in the system's browser.
+
+        :param href: the address of the link clicked.
+        """
+        QDesktopServices.openUrl(QUrl(href))

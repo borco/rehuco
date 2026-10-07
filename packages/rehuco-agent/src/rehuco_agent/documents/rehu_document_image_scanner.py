@@ -37,6 +37,54 @@ type AfterConversionLister = Callable[[Path, str], dict[str, AfterConversion]]
 already bound (#293)."""
 
 
+def markdown_viewer_image(record: Path | None, name: str, device_pixel_ratio: float = 1.0) -> QImage | None:
+    """Resolve an image a description embeds against its record's own directory, decode it, and scale and tag it for
+    the live Markdown max-image-width setting and a screen (#458: shared by the Roots view's details pane).
+
+    Tagging the image with the screen's ratio, rather than leaving it at ``1.0``, is what makes a small image render
+    crisp on a scaled (e.g. 125%) display instead of Qt silently stretching the raw pixels. It is decoded straight at
+    the width it is shown at, off a header read, rather than in full and then scaled: a screenshot embedded in a
+    description is several megapixels the view never draws (#381).
+
+    An extension-less ``name`` (``![](info00)``, the number-preserving conversion's own reference shape, #288) tries
+    each of :data:`~rehuco_core.IMAGE_EXTENSIONS` in turn and takes the first that exists on disk -- so a reorder that
+    swaps a `.png` into a slot a `.jpg` used to hold still resolves without the description needing an edit of its
+    own.
+
+    :param record: the record the description belongs to; ``None`` when it has no path yet, which resolves nothing.
+    :param name: a bare filename, an extension-less slot name, or a ``file://`` URL naming it.
+    :param device_pixel_ratio: the screen's device-pixel-ratio to tag the image for.
+    :returns: the (possibly scaled) image, or ``None`` if unresolvable or undecodable.
+    """
+    if record is None:
+        return None
+    filename = QUrl(name).fileName()
+    if not filename:
+        return None
+    path = record.parent / filename
+    if not path.suffix:
+        path = next(
+            (
+                with_extension
+                for extension in IMAGE_EXTENSIONS
+                if (with_extension := record.parent / f"{filename}{extension}").exists()
+            ),
+            None,
+        )
+        if path is None:
+            return None
+    reader = QImageReader(str(path))
+    max_width = round(shared_markdown_rendering_settings().max_image_width * device_pixel_ratio)
+    size = reader.size()
+    if size.width() > max_width:
+        reader.setScaledSize(QSize(max_width, max(1, round(size.height() * max_width / size.width()))))
+    image = reader.read()
+    if image.isNull():
+        return None
+    image.setDevicePixelRatio(device_pixel_ratio)
+    return image
+
+
 class RehuDocumentImageScanner:
     """Resolves one resource's screenshots against its own directory ([[data-model#image-meanings]]).
 
@@ -147,59 +195,15 @@ class RehuDocumentImageScanner:
 
     def get_markdown_viewer_image(self, name: str, device_pixel_ratio: float = 1.0) -> QImage | None:
         """Resolve ``name`` against this resource's own directory, decode it, and scale/tag it for
-        the live Markdown max-image-width setting and the caller's current screen.
+        the live Markdown max-image-width setting and the caller's current screen; see
+        :func:`markdown_viewer_image`.
 
         ``device_pixel_ratio`` is the caller's to supply (e.g. ``QWidget.devicePixelRatio()``), not
         looked up here, since only the widget actually being painted knows which screen it's
-        currently on -- a window can be dragged to a different, differently-scaled monitor, so
-        there is no single fixed "the" screen to assume. Tagging the returned image with the right
-        ratio (rather than leaving it at the default ``1.0``) is what makes a small image render
-        crisp on a scaled (e.g. 125%) display instead of Qt silently stretching the raw pixels to
-        fill the extra physical space.
+        currently on.
 
         :param name: a bare filename (``"cover.jpg"``) or a ``file://`` URL naming it.
         :param device_pixel_ratio: the screen's device-pixel-ratio to tag the image for.
         :returns: the (possibly scaled) image, or ``None`` if unresolvable or undecodable.
         """
-        path = self.__resolved(name)
-        if path is None:
-            return None
-        # decoded straight at the width it is shown at, off a header read, rather than in full and then
-        # scaled: a screenshot embedded in a description is several megapixels the view never draws (#381)
-        reader = QImageReader(str(path))
-        max_width = round(shared_markdown_rendering_settings().max_image_width * device_pixel_ratio)
-        size = reader.size()
-        if size.width() > max_width:
-            reader.setScaledSize(QSize(max_width, max(1, round(size.height() * max_width / size.width()))))
-        image = reader.read()
-        if image.isNull():
-            return None
-        image.setDevicePixelRatio(device_pixel_ratio)
-        return image
-
-    def __resolved(self, name: str) -> Path | None:
-        """Resolve ``name`` to an absolute path under this resource's own directory.
-
-        An extension-less ``name`` (``![](info00)``, the number-preserving conversion's own reference
-        shape, #288) tries each of :data:`~rehuco_core.IMAGE_EXTENSIONS` in turn and returns the first
-        that exists on disk -- so a reorder that swaps a `.png` into a slot a `.jpg` used to hold still
-        resolves without the description needing an edit of its own.
-
-        :param name: a bare filename, an extension-less slot name, or a ``file://`` URL naming it.
-        :returns: the resolved path, or ``None`` if the document has no path yet, ``name`` is empty, or
-            no candidate extension exists on disk.
-        """
-        path = self.__model.path
-        if path is None:
-            return None
-        filename = QUrl(name).fileName()
-        if not filename:
-            return None
-        candidate = path.parent / filename
-        if candidate.suffix:
-            return candidate
-        for extension in IMAGE_EXTENSIONS:
-            with_extension = path.parent / f"{filename}{extension}"
-            if with_extension.exists():
-                return with_extension
-        return None
+        return markdown_viewer_image(self.__model.path, name, device_pixel_ratio)
