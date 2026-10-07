@@ -10,7 +10,7 @@ for a folder never opened, whose own record is asked of the disk as its Open but
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
+from typing import Final, cast
 
 from PySide6.QtCore import QModelIndex
 from rehuco_core import (
@@ -67,36 +67,35 @@ class ManagingRecord:
         return "all files in the folder" if self.here else "all files of the parent resource"
 
 
-def _entries(model: RootsFolderModel, holder: QModelIndex) -> list[DirectoryEntry]:
-    """The listed rows of a root or folder, as the classifier reads them.
+def _entry(model: RootsFolderModel, child: QModelIndex) -> DirectoryEntry:
+    """One folder or file row, as the classifier reads it.
+
+    :param model: the Roots model.
+    :param child: the row.
+    :returns: its entry.
+    """
+    name = str(model.data(child))
+    if model.node_kind(child) is RootsNodeKind.FOLDER:
+        return DirectoryEntry(name, FileKind.DIRECTORY, FileType.DIRECTORY)
+    return DirectoryEntry(name, FileKind.CONTENT, model.file_type_of(child) or FileType.GENERIC)
+
+
+def _listing(model: RootsFolderModel, holder: QModelIndex) -> DirectoryListing:
+    """A root or folder that has rows as a listing -- its placeholder rows left out.
+
+    Every caller asks about a row, whose folders and root were all listed for it to be there.
 
     :param model: the Roots model.
     :param holder: the root or folder.
-    :returns: its entries; empty when it is not listed.
+    :returns: the listing.
     """
-    entries: list[DirectoryEntry] = []
-    for row in range(model.rowCount(holder)):
-        child = model.index(row, 0, holder)
-        kind = model.node_kind(child)
-        name = model.data(child)
-        if kind is RootsNodeKind.FOLDER:
-            entries.append(DirectoryEntry(str(name), FileKind.DIRECTORY, FileType.DIRECTORY))
-        elif kind is RootsNodeKind.FILE:
-            entries.append(DirectoryEntry(str(name), FileKind.CONTENT, model.file_type_of(child) or FileType.GENERIC))
-    return entries
-
-
-def _listing(model: RootsFolderModel, holder: QModelIndex) -> DirectoryListing | None:
-    """A listed root or folder as a listing.
-
-    :param model: the Roots model.
-    :param holder: the root or folder.
-    :returns: the listing; ``None`` while nothing is known about what it holds.
-    """
-    path = model.path_of(holder)
-    if path is None or model.child_names(holder) is None:
-        return None
-    return DirectoryListing(path, entries=tuple(_entries(model, holder)))
+    children = (model.index(row, 0, holder) for row in range(model.rowCount(holder)))
+    entries = tuple(
+        _entry(model, child)
+        for child in children
+        if model.node_kind(child) in (RootsNodeKind.FOLDER, RootsNodeKind.FILE)
+    )
+    return DirectoryListing(cast(Path, model.path_of(holder)), entries=entries)
 
 
 def _record_in(names: tuple[str, ...]) -> str | None:
@@ -156,23 +155,20 @@ def managing_record(model: RootsFolderModel, index: QModelIndex) -> ManagingReco
     path = model.path_of(index)
     if path is None or kind not in (RootsNodeKind.FOLDER, RootsNodeKind.FILE):
         return None
-    holder = index.parent()
-    names = model.child_names(holder)
-    listing = _listing(model, holder)
-    if names is None or listing is None:
-        return None
+    listing = _listing(model, index.parent())
     if kind is RootsNodeKind.FOLDER:
         # a folder with a record of its own is its own resource -- asked of the listing when it has one and of the
         # disk otherwise, as its Open button is, so the two never disagree on a folder never opened
         record = companion_found(model, index)
         if record is not None:
-            own_listing = _listing(model, index)
             has_checksum = (
-                checksum_record_path(record).exists() if own_listing is None else _has_checksum(own_listing, record)
+                checksum_record_path(record).exists()
+                if model.child_names(index) is None
+                else _has_checksum(_listing(model, index), record)
             )
             return ManagingRecord(record, False, True, "", has_checksum)
     else:
-        for file_name in _file_scoped_records(names):
+        for file_name in _file_scoped_records(tuple(entry.name for entry in listing.entries)):
             record = listing.directory / file_name
             if _manages(listing, record, path.name):
                 return ManagingRecord(record, True, True, path.name, _has_checksum(listing, record))
@@ -185,18 +181,16 @@ def _above(model: RootsFolderModel, index: QModelIndex, path: Path) -> ManagingR
     :param model: the Roots model.
     :param index: the folder or file row.
     :param path: its path.
-    :returns: the record; ``None`` when none takes the row, or a folder on the way is not listed.
+    :returns: the record; ``None`` when there is none, or it does not take the row.
     """
+    row_listing = _listing(model, index.parent())
     holder = index.parent()
     while holder.isValid():
         listing = _listing(model, holder)
-        if listing is None:
-            return None
         found = _record_in(tuple(entry.name for entry in listing.entries if not entry.is_directory))
         if found is not None:
             record = listing.directory / found
-            row_listing = _listing(model, index.parent())
-            if row_listing is None or not _manages(row_listing, record, path.name):
+            if not _manages(row_listing, record, path.name):
                 return None
             relative = Path(os.path.relpath(path, record.parent)).as_posix()
             return ManagingRecord(record, False, path.parent == record.parent, relative, _has_checksum(listing, record))

@@ -849,13 +849,11 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
     def __exec_menu(self, actions: list[QAction], position: QPoint, target: QPersistentModelIndex | None) -> None:
         """Show a menu of actions at a point and run what is chosen.
 
-        :param actions: its entries; nothing is shown for none.
+        :param actions: its entries.
         :param position: where, in global coordinates.
         :param target: the row the actions act on while it is open, when it is not the current one. The shared actions
             are then put back for the current row, which the details pane's buttons mirror.
         """
-        if not actions:
-            return
         self.__target = target
         try:
             self.__update_enablement()
