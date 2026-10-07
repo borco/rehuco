@@ -194,6 +194,12 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     """Fires when the set of unrecognized active-block fields changes -- i.e. one is dropped via
     :meth:`remove_unknown_field` ([[plugins#fallback-editor]], #28)."""
 
+    switched = Signal()
+    """Fires after :meth:`load` moved this model to a **different file** (#470): what belongs to one record --
+    a measurement this session made and never saved -- stops being true. Not a rename (the same record under
+    a new name) and not a revert (the same file read again), neither of which changes the path while
+    :attr:`loading`."""
+
     reloaded = Signal()
     """Fires when the document's **file seam** was crossed -- the bytes this model stands for were
     re-read or replaced wholesale: every :meth:`revert` (re-reads the file) and every :meth:`convert`
@@ -789,6 +795,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             placeholder (#66), whose form was built for a document not read yet.
         """
         shape = self.__form_shape()
+        previous_path = self.path
         # cleared before anything is emitted: the refresh handlers this raises (reloaded,
         # active_block_changed) are the very consumers whose I/O the pending flag was holding back (#66)
         self.__pending = False
@@ -809,6 +816,8 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         if rebuild or self.__form_shape() != shape:
             self.active_block_changed.emit()
         self.reloaded.emit()
+        if self.path != previous_path:
+            self.switched.emit()
         self.__recompute_upgradable()
         self.__log_document_state()
 

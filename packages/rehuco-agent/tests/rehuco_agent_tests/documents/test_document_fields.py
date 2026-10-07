@@ -4,9 +4,12 @@
 # cohesive module reads better than an arbitrary split, so the module-length cap is lifted here
 # pylint: disable=too-many-lines
 
+import json
 from pathlib import Path
+from threading import Event
 from typing import cast
 
+from PySide6.QtCore import QCoreApplication, QThreadPool
 from PySide6.QtWidgets import QGridLayout, QLabel, QRadioButton, QToolButton, QWidget
 from pytest import fixture
 from pytest_mock import MockerFixture
@@ -1186,6 +1189,181 @@ def test_every_declared_field_spec_is_claimed_by_the_core_or_a_plugin() -> None:
     declared = {*CORE_FIELD_NAMES, *(name for plugin in BUILTIN_PLUGINS for name in plugin.field_names)}
 
     assert {name for spec in MODEL_AGNOSTIC_FIELD_SPECS for name in spec.names} <= declared
+
+
+# endregion
+
+
+# region measurements and a switched record (#470)
+def two_packs(tmp_path: Path) -> tuple[Path, Path]:
+    """Two real reference-images records, so a model can switch between them without its form rebuilding.
+
+    :param tmp_path: the folder to write both under.
+    :returns: the two ``.rehu`` paths.
+    """
+    paths = (tmp_path / "a" / "info.rehu", tmp_path / "b" / "info.rehu")
+    for path in paths:
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps({"core": {"type": "reference_images"}}), encoding="utf-8")
+    return paths
+
+
+def all_editors(qtbot: QtBot, model: RehuDocumentModel) -> dict[object, QWidget]:
+    """Build every editor surface of ``model``'s form, and return them all.
+
+    A model that loads another record keeps its form and reseeds every bound editor, so a test that keeps
+    only the main tab leaves the others to be collected under the model's feet.
+
+    :param qtbot: the Qt fixture owning the built widgets.
+    :param model: the model to build the form over.
+    :returns: the surfaces by tab; the caller keeps them referenced.
+    """
+    names = NameSuggestionModel(model)
+    organizer = RehuDocumentImageOrganizer(model)
+    form = build_document_form(model, names, organizer)
+    tabs = form.make_editor(model)
+    for tab in tabs.values():
+        qtbot.addWidget(tab)
+    # the form and its helpers live as long as the surface the caller keeps
+    setattr(tabs[EDITOR_MAIN_TAB], "form_keepers", (names, organizer, form))
+    return cast(dict[object, QWidget], tabs)
+
+
+def test_a_measurement_does_not_outlive_the_record_it_was_made_for(
+    qtbot: QtBot, mocker: MockerFixture, tmp_path: Path
+) -> None:
+    """The measured count and sizes are what this session found in one record; the record that replaces it
+    in the preview starts with none (#470).
+
+    **Test steps:**
+
+    * measure the count and the size in record ``A``, with both scans mocked
+    * load record ``B`` into the same model, which keeps its form
+    * verify neither editor shows a measurement any more, and the stored values are untouched
+    """
+    mocker.patch("rehuco_agent.documents.document_fields.enumerate_content_images", return_value=[object()])
+    mocker.patch("rehuco_agent.documents.document_fields.content_size_on_disk", return_value=1024)
+    path_a, path_b = two_packs(tmp_path)
+    model = RehuDocumentModel(RehuDocument.load(path_a))
+    tabs = all_editors(qtbot, model)
+    grid = tabs[EDITOR_MAIN_TAB]
+    count, size = content_count_editor(grid), size_editor(grid)
+    compute(qtbot, count, COMPUTE_TOOLTIP)
+    compute(qtbot, size, SIZE_COMPUTE_TOOLTIP)
+    assert (count.computed, size.computed) == (1, 1024)
+
+    model.load(path_b)
+
+    assert (count.computed, size.computed) == (None, None)
+    assert model.current_count is None
+    assert model.original_size is None
+
+
+def test_an_answer_for_another_record_is_dropped(qtbot: QtBot, mocker: MockerFixture, tmp_path: Path) -> None:
+    """A scan still running when the preview moves on reports into nothing: its answer is about ``A``, and
+    ``B`` is shown (#470).
+
+    **Test steps:**
+
+    * start a count in record ``A`` whose scan waits on a gate
+    * load record ``B`` and verify the editor already left its busy state with nothing computed
+    * open the gate and let the scan finish, then verify ``B`` still shows nothing
+    * measure again in ``B`` and verify that answer lands
+    """
+    gate = Event()
+
+    def scan(*_: object) -> list[object]:
+        assert gate.wait(10)
+        return [object(), object()]
+
+    enumerate_content_images = mocker.patch(
+        "rehuco_agent.documents.document_fields.enumerate_content_images", side_effect=scan
+    )
+    path_a, path_b = two_packs(tmp_path)
+    model = RehuDocumentModel(RehuDocument.load(path_a))
+    tabs = all_editors(qtbot, model)
+    editor = content_count_editor(tabs[EDITOR_MAIN_TAB])
+    press(editor, COMPUTE_TOOLTIP)
+    assert editor.busy is True
+
+    model.load(path_b)
+    assert editor.busy is False
+    assert editor.computed is None
+    gate.set()
+    QThreadPool.globalInstance().waitForDone()
+    QCoreApplication.processEvents()
+
+    assert editor.computed is None
+
+    enumerate_content_images.side_effect = lambda *_: [object()]
+    compute(qtbot, editor, COMPUTE_TOOLTIP)
+    assert editor.computed == 1
+
+
+def test_an_answer_posted_just_before_the_switch_is_dropped_too(
+    qtbot: QtBot, mocker: MockerFixture, tmp_path: Path
+) -> None:
+    """The judgment is made on the GUI thread, after the switch, not on the worker: an answer the worker
+    posted a moment *before* the switch is still about ``A``, and is still dropped (#470).
+
+    **Test steps:**
+
+    * start a count in record ``A`` and let its scan finish, without letting the GUI thread process the
+      queued answer
+    * load record ``B``, then process the queue
+    * verify the answer never reached the editor
+    """
+    gate = Event()
+
+    def scan(*_: object) -> list[object]:
+        assert gate.wait(10)
+        return [object(), object()]
+
+    mocker.patch("rehuco_agent.documents.document_fields.enumerate_content_images", side_effect=scan)
+    path_a, path_b = two_packs(tmp_path)
+    model = RehuDocumentModel(RehuDocument.load(path_a))
+    tabs = all_editors(qtbot, model)
+    editor = content_count_editor(tabs[EDITOR_MAIN_TAB])
+    press(editor, COMPUTE_TOOLTIP)
+    gate.set()
+    # the worker has posted its answer; the GUI thread has not processed it yet
+    QThreadPool.globalInstance().waitForDone()
+
+    model.load(path_b)
+    QCoreApplication.processEvents()
+
+    assert editor.computed is None
+    assert editor.busy is False
+
+
+def test_a_measurement_that_ends_in_its_own_record_lands(qtbot: QtBot, mocker: MockerFixture, tmp_path: Path) -> None:
+    """Neither a revert of the same file nor a rename is a switch, so a scan running through one still lands
+    (#470).
+
+    **Test steps:**
+
+    * start a count in record ``A`` whose scan waits on a gate
+    * revert the model, which reads the same file again
+    * open the gate and verify the answer arrived
+    """
+    gate = Event()
+
+    def scan(*_: object) -> list[object]:
+        assert gate.wait(10)
+        return [object(), object()]
+
+    mocker.patch("rehuco_agent.documents.document_fields.enumerate_content_images", side_effect=scan)
+    path_a, _ = two_packs(tmp_path)
+    model = RehuDocumentModel(RehuDocument.load(path_a))
+    tabs = all_editors(qtbot, model)
+    editor = content_count_editor(tabs[EDITOR_MAIN_TAB])
+    press(editor, COMPUTE_TOOLTIP)
+
+    model.revert()
+    gate.set()
+    qtbot.waitUntil(lambda: not editor.busy)
+
+    assert editor.computed == 2
 
 
 # endregion

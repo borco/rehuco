@@ -5,6 +5,7 @@
 from collections.abc import Callable
 from typing import Final, override
 
+from PySide6.QtCore import SignalInstance
 from PySide6.QtWidgets import QLabel
 
 from .background_measurement import measure_in_background
@@ -39,23 +40,27 @@ class ContentCountField(Field[int | None]):
     :param measure: counts the resource's content images afresh, returning ``None`` when there is nothing
         to measure (a document with no path yet). **Called on a worker thread**, so it must touch no
         widget and no ``QObject``. Called on every ``Compute``, never on construction.
+    :param switched: fires when the document shows another record, which drops a measurement in flight and
+        clears the readout (#470); ``None`` for a document that never does.
     :param viewer_tab: the surface this field's viewer belongs to.
     :param editor_tab: the surface this field's editor belongs to.
     """
 
     TYPE = "content_count"
 
-    def __init__(
+    def __init__(  # pylint: disable=too-many-arguments
         self,
         name: str,
         label: str | None = None,
         *,
         measure: Callable[[], int | None],
+        switched: SignalInstance | None = None,
         viewer_tab: FieldsTab,
         editor_tab: FieldsTab,
     ) -> None:
         super().__init__(name, label, viewer_tab=viewer_tab, editor_tab=editor_tab)
         self.__measure: Final = measure
+        self.__switched: Final = switched
 
     @override
     def make_viewer(self, binding: FieldBinding[int | None]) -> FieldViewerWidgets:
@@ -80,5 +85,5 @@ class ContentCountField(Field[int | None]):
         # the ignore is the same one bind_value_widget above needs, for the same reason: PySide types a
         # class-level ``Signal`` as ``Signal``, not as the ``SignalInstance`` an *instance* actually
         # exposes, so no widget declaring one ever satisfies a protocol naming it statically
-        measure_in_background(editor, self.__measure)  # type: ignore[arg-type]
+        measure_in_background(editor, self.__measure, self.__switched)  # type: ignore[arg-type]
         return FieldEditorWidgets(self.editor_tab, self.make_label(), editor)

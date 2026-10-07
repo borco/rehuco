@@ -3,7 +3,7 @@
 from collections.abc import Callable
 from typing import Protocol
 
-from PySide6.QtCore import QObject, QThreadPool, Signal, SignalInstance
+from PySide6.QtCore import QObject, QThreadPool, Signal, SignalInstance, Slot
 
 
 class BackgroundMeasurement(QObject):
@@ -35,8 +35,33 @@ class BackgroundMeasurement(QObject):
 
     finished = Signal(object)
     """Fires on the GUI thread with the measurement's result -- an ``int``, or ``None`` when nothing
-    could be measured. Fires exactly once per :meth:`start`, **including when the measurement raised**,
-    so a caller that disabled its controls always gets them back."""
+    could be measured. Fires once per :meth:`start`, **including when the measurement raised**, so a
+    caller that disabled its controls always gets them back -- except for a start that :meth:`discard`
+    dropped, whose answer is about a record no longer shown."""
+
+    measured = Signal(int, object)
+    """The worker's report, ``(serial, result)``: emitted on the pool thread, delivered to :meth:`__deliver`
+    on this object's own (GUI) thread, where the serial is judged. Internal; connect to :attr:`finished`."""
+
+    def __init__(self, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self.__serial = 0
+        self.measured.connect(self.__deliver)
+
+    def discard(self) -> None:
+        """Drop the answer of every measurement started so far (#470).
+
+        What the owner calls when the record the measurement was about stops being the one shown: the
+        worker still runs to the end, but its result reaches nobody, and a measurement started afterwards
+        is unaffected. The owner resets its own busy state, since no :attr:`finished` will.
+
+        **The judgment is made on the GUI thread, not the worker's.** A result crosses threads as a queued
+        event, so a worker that compared serials itself could pass the check and post its answer a moment
+        before the switch, and the answer would still be processed after it -- landing in the record now
+        shown. Judged in :meth:`__deliver`, after the event that carried it, an answer posted before a
+        ``discard`` on the same thread is dropped too.
+        """
+        self.__serial += 1
 
     def start(self, measure: Callable[[], int | None]) -> None:
         """Run ``measure`` on a pool thread and emit :attr:`finished` with what it returns.
@@ -47,9 +72,10 @@ class BackgroundMeasurement(QObject):
 
         :param measure: the measurement, called on a worker thread.
         """
-        QThreadPool.globalInstance().start(lambda: self.__run(measure))
+        serial = self.__serial
+        QThreadPool.globalInstance().start(lambda: self.__run(measure, serial))
 
-    def __run(self, measure: Callable[[], int | None]) -> None:
+    def __run(self, measure: Callable[[], int | None], serial: int) -> None:
         """Call ``measure`` on the worker thread and emit its result, raise or no raise.
 
         The blanket catch is the point rather than a shortcut: this runs on a pool thread, where an
@@ -59,12 +85,26 @@ class BackgroundMeasurement(QObject):
         is the same answer the enumeration already gives for an unreadable directory.
 
         :param measure: the measurement to run.
+        :param serial: the discard count at :meth:`start`, handed on for :meth:`__deliver` to judge.
         """
         try:
             result = measure()
         except Exception:  # pylint: disable=broad-exception-caught
             result = None
-        self.finished.emit(result)
+        self.measured.emit(serial, result)
+
+    @Slot(int, object)
+    def __deliver(self, serial: int, result: int | None) -> None:
+        """Pass a worker's report on as :attr:`finished` unless a :meth:`discard` has outdated it.
+
+        Runs on this object's thread -- the GUI one -- so it is ordered after any ``discard`` the switch
+        made there, whatever the worker saw.
+
+        :param serial: the discard count when the measurement started.
+        :param result: what it measured.
+        """
+        if serial == self.__serial:
+            self.finished.emit(result)
 
 
 class MeasureRow(Protocol):
@@ -88,7 +128,30 @@ class MeasureRow(Protocol):
         """
 
 
-def measure_in_background(row: MeasureRow, measure: Callable[[], int | None]) -> None:
+class _SwitchHandler(QObject):
+    """What a row's discard-and-clear hangs on: a bound slot of a ``QObject`` owned by the row (#470).
+
+    :param row: the measure row, which owns this handler.
+    :param measurement: the row's runner, whose answers this drops.
+    """
+
+    def __init__(self, row: MeasureRow, measurement: BackgroundMeasurement) -> None:
+        super().__init__(row if isinstance(row, QObject) else None)
+        self.__row = row
+        self.__measurement = measurement
+
+    @Slot()
+    def on_switched(self) -> None:
+        """Drop the measurement in flight and clear the row's readout and busy state."""
+        self.__measurement.discard()
+        self.__row.show_measurement(None)
+
+
+def measure_in_background(
+    row: MeasureRow,
+    measure: Callable[[], int | None],
+    switched: SignalInstance | None = None,
+) -> None:
     """Wire ``row``'s ``Compute`` to ``measure``, run off the GUI thread ([[plugins#field-toolkit]], #223).
 
     The runner is deliberately **not** parented to the row: a running measurement holds it through the
@@ -99,9 +162,20 @@ def measure_in_background(row: MeasureRow, measure: Callable[[], int | None]) ->
     row, which Qt drops on destruction -- so a measurement outliving its row reports into nothing rather
     than into a deleted widget.
 
+    **A switch drops the answer and the reading** (#470): a document that loads another record in place
+    keeps its form, so the row would otherwise show the last record's measurement, or take the answer of a
+    scan started for it. ``switched`` fires then; the measurement in flight is discarded and the row is
+    handed ``None``, which clears its readout and its busy state.
+
     :param row: the measure row to wire, which owns its own busy state.
     :param measure: the measurement, called on a worker thread on every ``Compute``.
+    :param switched: fires when the record shown is another one; ``None`` for a row whose record never
+        changes.
     """
     measurement = BackgroundMeasurement()
     measurement.finished.connect(row.show_measurement)
     row.compute_requested.connect(lambda: measurement.start(measure))
+    if switched is not None:
+        # a QObject child of the row, so the connection to the model's signal goes when the row does: a
+        # model outlives the forms built over it, and a lambda connected here would be left behind
+        switched.connect(_SwitchHandler(row, measurement).on_switched)

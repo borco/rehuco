@@ -11,6 +11,7 @@ from collections.abc import Callable, Sequence
 from typing import Final, override
 
 from borco_pyside.widgets import equal_height_column
+from PySide6.QtCore import SignalInstance
 from PySide6.QtWidgets import QLabel, QWidget
 
 from .background_measurement import measure_in_background
@@ -73,6 +74,8 @@ class DurationPairField(Field[int | None]):
         measure -- a document with no path yet, or a probe backend that cannot run here at all. **Called
         on a worker thread**, so it must touch no widget and no ``QObject``. Called once per ``Compute``,
         never on construction.
+    :param switched: fires when the document shows another record, which drops a measurement in flight and
+        clears the readout (#470); ``None`` for a document that never does.
     :param viewer_tab: the surface this field's viewers belong to.
     :param editor_tab: the surface this field's editor belongs to.
     """
@@ -86,12 +89,14 @@ class DurationPairField(Field[int | None]):
         *,
         partner_name: str | None = None,
         measure: Callable[[], int | None],
+        switched: SignalInstance | None = None,
         viewer_tab: FieldsTab,
         editor_tab: FieldsTab,
     ) -> None:
         super().__init__(name, label, viewer_tab=viewer_tab, editor_tab=editor_tab)
         self.__partner_name: Final = partner_name
         self.__measure: Final = measure
+        self.__switched: Final = switched
 
     @property
     @override
@@ -119,7 +124,7 @@ class DurationPairField(Field[int | None]):
         # the ignore is the same one bind_value_widget above needs, for the same reason: PySide types a
         # class-level ``Signal`` as ``Signal``, not as the ``SignalInstance`` an *instance* actually
         # exposes, so no widget declaring one ever satisfies a protocol naming it statically
-        measure_in_background(editor, self.__measure)  # type: ignore[arg-type]
+        measure_in_background(editor, self.__measure, self.__switched)  # type: ignore[arg-type]
         return FieldEditorWidgets(self.editor_tab, self.__make_stacked_label(labels), editor)
 
     def __make_viewer_row(self, label: str, binding: FieldBinding[int | None]) -> FieldViewerWidgets:

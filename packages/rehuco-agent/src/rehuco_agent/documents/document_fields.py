@@ -492,9 +492,13 @@ def build_document_form(
     # images strip's scanner is. Both pairs are **one** field over both names, so each takes its callback
     # once and one press answers both rows (#232, #233 -- [[field-schema#duration-size]]). Keying by name
     # covers either shape -- a pair spec is keyed by whichever of its names leads it
-    runtime_kwargs: dict[str, dict[str, Any]] = {CURRENT_COUNT_FIELD_NAME: {"measure": measure_content_images}}
-    runtime_kwargs.update({name: {"measure": measure_size_on_disk} for name in SIZE_FIELD_NAMES})
-    runtime_kwargs.update({name: {"measure": measure_duration} for name in DURATION_FIELD_NAMES})
+    # a measurement is about the record shown, so each also hears the model move to another one (#470)
+    switched = model.switched
+    runtime_kwargs: dict[str, dict[str, Any]] = {
+        CURRENT_COUNT_FIELD_NAME: {"measure": measure_content_images, "switched": switched}
+    }
+    runtime_kwargs.update({name: {"measure": measure_size_on_disk, "switched": switched} for name in SIZE_FIELD_NAMES})
+    runtime_kwargs.update({name: {"measure": measure_duration, "switched": switched} for name in DURATION_FIELD_NAMES})
     # not a measurement, the same seam for the same reason: the learning-paths table has to know whose
     # rows are editable, where a new path's file-scoped slot comes from, and who inherits a deleted path
     # that still has subscribers -- none of which the toolkit could work out from a ``(type, name)`` pair.
