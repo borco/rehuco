@@ -197,9 +197,6 @@ class DirectoryListing:
     covered: Mapping[str, CoveredFile] = field(default_factory=dict)
 
 
-# one public method is the whole of it -- classify a directory -- and everything else is the rules that
-# answer it; a second public entry point would only be a different way to ask the same question
-# pylint: disable-next=too-few-public-methods
 class DirectoryClassifier:
     """Classifies the entries of **one** directory from ``record_path``'s point of view (#266).
 
