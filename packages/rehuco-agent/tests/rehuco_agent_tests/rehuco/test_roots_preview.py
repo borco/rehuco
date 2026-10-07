@@ -21,6 +21,7 @@ from rehuco_agent.rehuco.roots_preview import (
     MINIMUM_WIDTH,
     THUMBNAIL_SIDE,
     ActionsForRow,
+    RecordForRow,
     RootsPreview,
     format_size,
 )
@@ -36,11 +37,17 @@ DETAILS_WIDTH: Final = 320
 class Shown:
     """A preview over a listed library, with the model it reads."""
 
-    def __init__(self, qtbot: QtBot, library: Path, actions_for: ActionsForRow | None = None) -> None:
+    def __init__(
+        self,
+        qtbot: QtBot,
+        library: Path,
+        actions_for: ActionsForRow | None = None,
+        record_for: RecordForRow | None = None,
+    ) -> None:
         root = RehucoRoot(uuid4(), library, "lib", RootStorage.LOCAL)
         self.model = RootsFolderModel()
         self.model.set_roots([root], RootFolderLister([root]))
-        self.preview = RootsPreview(self.model, RenameCoordinator(), actions_for)
+        self.preview = RootsPreview(self.model, RenameCoordinator(), actions_for, record_for)
         qtbot.addWidget(self.preview)
         self.root = self.model.index(0, 0)
         qtbot.waitUntil(lambda: self.model.listing_state(self.root) is NodeListing.LISTED, timeout=WAIT_TIMEOUT_MS)
@@ -243,7 +250,7 @@ def test_each_action_of_a_row_is_a_button_in_order_with_the_default_in_bold(qtbo
         button.click()
     assert triggered == ["first", "second"]
     lines = [frame for frame in shown.preview.findChildren(QFrame) if frame.frameShape() == QFrame.Shape.HLine]
-    assert len([line for line in lines if not line.isHidden()]) == 1
+    assert len([line for line in lines if line.isVisibleTo(shown.preview)]) == 1
 
 
 def test_the_buttons_are_made_again_for_each_row_and_none_for_no_row(qtbot: QtBot, tmp_path: Path) -> None:

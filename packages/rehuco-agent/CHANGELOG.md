@@ -23,6 +23,13 @@ released becomes the body of the GitHub Release, so each entry is written to be 
   screenshot no longer offers to create a rehu of its own. `Root Catalog` > **Automatically preview the current
   rehu**, also a Root Catalog settings page, switches off the Roots view driving the Documents preview. A checksum file's verify entries no longer go dead after a verify or a Refresh relists its folder (the pane rebuilt its buttons while the listing was still being diffed in and found no rehu beside the file). **Verify checksums** from the Roots view reports what it found on its row in
   the Tasks panel, in the document banner's words, and the rows update when it ends.
+- The Roots view's details pane shows **what a record says about its resource**: for a `.rehu` or `.tc` row, or a
+  folder that has one, its **URL** (a link, elided to fit, opened in the system's browser) and its **description**,
+  rendered as the Description dock renders it -- same engine, stylesheet, image-width cap and previews toggle, its
+  images read from the record's folder -- under a line below the buttons. The description takes the height left in
+  the pane and scrolls inside it, so the details and buttons above it stay put. A field the record lacks is left
+  out; a record with neither shows no line. The record is read off the GUI thread each time a row is selected, so
+  the pane is as current as the file and needs no scan.
 - The Root Catalog's **Roots view** is a column view: the first column lists the `.rehuco`'s roots and each further
   one a folder's contents, listed when you open it and never while it would block a rename. **Add Root** asks what
   the folder lives on before the folder. The selected root's **name** and **storage** are edited in the pane beside the columns

@@ -545,7 +545,11 @@ and its cache** — the catalog — and both docks read it and hear from it when
   the columns shows the current row, whatever it is: name, type, size, when it changed, how much a folder holds and
   where it is (elided to fit), from what the listing already read, and a thumbnail for an image read off the GUI
   thread. **Below the details is a button for every entry of the row's context menu**, in its order, the default in
-  bold; a folder's menu and buttons also hold **Open in file explorer**, and its create entry is named for what it
+  bold; **below the buttons, for a `.rehu` or `.tc` row or a folder that has one, what the record says**: its URL as
+  a link (elided, opened in the system's browser) and its description, rendered as the Description dock renders it
+  and scrolling in the height the pane has left, under a line — read from the file off the GUI thread on each
+  selection, never from the cache, and dropped if the row has changed by the time it lands; a field the record
+  lacks is left out, a record with neither shows no line; a folder's menu and buttons also hold **Open in file explorer**, and its create entry is named for what it
   would start, `Create info.rehu`. `QColumnView`'s own preview column is collapsed. A root can also be
   **dragged to another place** by the grip band of dots at the left of its row — the same handle a card list has, with
   its open-hand cursor and its *Drag to reorder* tooltip — and only by it, so a click anywhere else on the row just
