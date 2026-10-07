@@ -1274,7 +1274,11 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # the menu's tail -- Settings, a separator, Quit -- is appended in code rather than declared in
         # the .ui, so it closes the menu after every row the .ui declares and Quit stays last (#64)
         # the separator ahead of Settings is also where the open-document list is inserted (__add_open_documents)
-        self.__file_menu_tail_separator = self.__ui.file_menu.addSeparator()
+        # made here, not by `addSeparator()`: the wrapper of a Qt-made action was seen "already deleted" at the next
+        # `aboutToShow` while the menu lived (the open finding of #459/#461), and a Python-made one is not
+        self.__file_menu_tail_separator = QAction(self.__ui.file_menu)
+        self.__file_menu_tail_separator.setSeparator(True)
+        self.__ui.file_menu.addAction(self.__file_menu_tail_separator)
         self.__ui.file_menu.addAction(self.__ui.settings_action)
         self.__ui.file_menu.addSeparator()
         self.__ui.file_menu.addAction(self.__ui.quit_action)
