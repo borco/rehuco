@@ -91,3 +91,16 @@ class RootsColumnView(QColumnView):
             if index.isValid():
                 return index
         return QModelIndex()
+
+    def column_root_at_global(self, position: QPoint) -> QModelIndex | None:
+        """The folder whose column holds a point on screen: the row that column lists the children of.
+
+        :param position: the point, in global coordinates.
+        :returns: the folder's or root's index; invalid for the column of roots; None off every column.
+        """
+        for column in self.findChildren(QAbstractItemView):
+            if not column.isVisible() or column is self or column.model() is None:
+                continue
+            if column.viewport().rect().contains(column.viewport().mapFromGlobal(position)):
+                return QModelIndex(column.rootIndex())
+        return None
