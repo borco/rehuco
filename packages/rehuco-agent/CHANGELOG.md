@@ -12,6 +12,16 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 ### Added
 
+- The Roots view opens **images and reference packs in the lightbox**. A double-click on an image shows the images
+  beside it, in the column's order, starting on it; a double-click on a zip or cbz that the catalog knows as
+  reference images — a record of that type manages it, its own `foo.rehu` or its folder's `info.rehu` — shows its
+  images in pack order, with no document opened. Shift, Ctrl and Ctrl+Shift choose another surface as they do in a
+  document, and **Ctrl+Alt+double-click** hands an image or a zip to the system's application instead; **Open in
+  external app** is in its menu and buttons too. A zip under an `info.rehu` offers no associated rehu of its own, being
+  that same record, and one whose record has not been scanned yet says so in the pane rather than guess. The details
+  pane describes a zip from its central directory without inflating a member: the number of files and images, the
+  size unpacked and packed, and the compression method — stored, deflated or mixed — with a warning in orange for a
+  method that is slow to read (bzip2, LZMA) and in red for one that cannot be read (deflate64, an encrypted member).
 - The Roots view shows **the checksum state of the files a checksum record covers**. A file's row has an icon at
   the right edge of its column -- matching, not matching, no checksum, and an old, faded one when the check has
   expired or was made at another location -- and a file that did not match has its name in red. The details pane

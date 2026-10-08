@@ -176,13 +176,63 @@
       </widget>
      </item>
      <item row="9" column="0">
+      <widget class="QLabel" name="unpacked_label">
+       <property name="text">
+        <string>Unpacked:</string>
+       </property>
+      </widget>
+     </item>
+     <item row="9" column="1">
+      <widget class="QLabel" name="unpacked_value">
+      </widget>
+     </item>
+     <item row="10" column="0">
+      <widget class="QLabel" name="packed_label">
+       <property name="text">
+        <string>Packed:</string>
+       </property>
+      </widget>
+     </item>
+     <item row="10" column="1">
+      <widget class="QLabel" name="packed_value">
+      </widget>
+     </item>
+     <item row="11" column="0">
+      <widget class="QLabel" name="compression_label">
+       <property name="text">
+        <string>Compression:</string>
+       </property>
+      </widget>
+     </item>
+     <item row="11" column="1">
+      <widget class="QLabel" name="compression_value">
+       <property name="wordWrap">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+     <item row="12" column="0">
+      <widget class="QLabel" name="pack_label">
+       <property name="text">
+        <string>Pack:</string>
+       </property>
+      </widget>
+     </item>
+     <item row="12" column="1">
+      <widget class="QLabel" name="pack_value">
+       <property name="wordWrap">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+     <item row="13" column="0">
       <widget class="QLabel" name="path_label">
        <property name="text">
         <string>Location:</string>
        </property>
       </widget>
      </item>
-     <item row="9" column="1">
+     <item row="13" column="1">
       <widget class="ElidedLabel" name="path_value"/>
      </item>
     </layout>

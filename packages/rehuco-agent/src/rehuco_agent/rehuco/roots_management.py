@@ -8,14 +8,19 @@ for a folder never opened, whose own record is asked of the disk as its Open but
 """
 
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import Final, cast
+from uuid import UUID
 
 from PySide6.QtCore import QModelIndex
 from rehuco_core import (
+    DEFAULT_PLUGIN_REGISTRY,
     DIRECTORY_SCOPED_FILENAMES,
     INFO_REHU_FILENAME,
+    REFERENCE_IMAGES_PLUGIN,
     SCREENSHOT_STEM_PATTERN,
     DirectoryClassifier,
     DirectoryEntry,
@@ -237,3 +242,86 @@ def companion_found(model: RootsFolderModel, index: QModelIndex) -> Path | None:
         return next((candidate for candidate in candidates if candidate.exists()), None)
     listed = {os.path.normcase(name) for name in names}
     return next((candidate for candidate in candidates if os.path.normcase(candidate.name) in listed), None)
+
+
+class PackState(StrEnum):
+    """Whether an archive is a reference-images pack, as far as the catalog cache knows (#456)."""
+
+    PACK = "pack"
+    """A record that manages it is of type reference images."""
+
+    NOT_PACK = "not_pack"
+    """Nothing manages it, or what does is of another type."""
+
+    UNSCANNED = "unscanned"
+    """A record manages it that the cache has no row for yet, so its type is unknown until Scan runs."""
+
+
+@dataclass(frozen=True, slots=True)
+class PackInfo:
+    """What the Roots view knows of an archive's place in a reference pack.
+
+    :param state: whether it is a pack.
+    :param record: the record that manages it; ``None`` when nothing does.
+    :param through_folder: whether that record is a folder's ``info.rehu`` rather than the archive's own ``foo.rehu``,
+        which is then the same record the folder's own *Open associated rehu* would open.
+    """
+
+    state: PackState
+    record: Path | None = None
+    through_folder: bool = False
+
+
+def pack_info(
+    model: RootsFolderModel, index: QModelIndex, resource_type: Callable[[Path], str | None]
+) -> PackInfo | None:
+    """Whether an archive row is a reference-images pack (#456).
+
+    The type is the **cache's** -- an indexed lookup by the record's place, no record read from disk -- so a record
+    scanned since it was last edited may say otherwise until the next scan, and one never scanned says nothing.
+
+    :param model: the Roots model.
+    :param index: the row.
+    :param resource_type: what the cache holds for a record's path: its type as spelled, or ``None`` for no row.
+    :returns: the answer; ``None`` for any row that is not an archive.
+    """
+    if model.node_kind(index) is not RootsNodeKind.FILE or model.file_type_of(index) is not FileType.ARCHIVE:
+        return None
+    managing = managing_record(model, index)
+    if managing is None:
+        return PackInfo(PackState.NOT_PACK)
+    spelled = resource_type(managing.record)
+    if spelled is None:
+        state = PackState.UNSCANNED
+    elif DEFAULT_PLUGIN_REGISTRY.main_key(spelled) == REFERENCE_IMAGES_PLUGIN.key:
+        state = PackState.PACK
+    else:
+        state = PackState.NOT_PACK
+    return PackInfo(state, managing.record, through_folder=not managing.file_scoped)
+
+
+def selected_record(model: RootsFolderModel, index: QModelIndex) -> tuple[UUID, str] | None:
+    """The record a selected row stands for, as the ``(root_id, relative)`` key a resource is named by (#381): what
+    opening the row would open -- a record itself, a folder's ``info.rehu``, a file's same-name ``.rehu``, the ``.tc``
+    of either when that is all there is.
+
+    **Asking never creates one**: where opening would offer *Create*, there is nothing to show.
+
+    :param model: the Roots model.
+    :param index: the row.
+    :returns: the key, or ``None`` for a root, a placeholder, and a row with no record.
+    """
+    key = model.key(index)
+    if key is None:
+        return None
+    root_id, names = key
+    match model.node_kind(index):
+        case RootsNodeKind.FOLDER:
+            found = companion_found(model, index)
+            return None if found is None else (root_id, "/".join((*names, found.name)))
+        case RootsNodeKind.FILE:
+            if model.file_type_of(index) is FileType.RECORD:
+                return root_id, "/".join(names)
+            found = companion_found(model, index)
+            return None if found is None else (root_id, "/".join((*names[:-1], found.name)))
+    return None

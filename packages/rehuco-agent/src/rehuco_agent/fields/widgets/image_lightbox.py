@@ -71,6 +71,28 @@ class ImageViewerMode(StrEnum):
     """A frameless window over the entire screen -- the classic photo-viewer lightbox."""
 
 
+def viewer_mode_for(modifiers: Qt.KeyboardModifier, configured: ImageViewerMode) -> ImageViewerMode:
+    """Which surface a maximized image opens on, given the keys held as it was activated (#221).
+
+    The activation's modifiers override the setting for that one viewer: **Shift** opens it over the
+    document, **Ctrl** over the whole app window, **Ctrl+Shift** over the whole screen -- so any surface
+    is one gesture away whatever the setting says -- and no modifier means the setting.
+
+    :param modifiers: the keyboard modifiers held at the activation.
+    :param configured: the surface the settings name.
+    :returns: the surface to open on.
+    """
+    shift = bool(modifiers & Qt.KeyboardModifier.ShiftModifier)
+    ctrl = bool(modifiers & Qt.KeyboardModifier.ControlModifier)
+    if ctrl and shift:
+        return ImageViewerMode.FULL_SCREEN
+    if ctrl:
+        return ImageViewerMode.APP_WINDOW_OVERLAY
+    if shift:
+        return ImageViewerMode.DOCUMENT_OVERLAY
+    return configured
+
+
 DEFAULT_BACKDROP: Final = "#1e1e1e"
 """The backdrop painted behind the image when the owner names none (#221): a neutral dark grey, fully
 opaque on every surface -- a translucent overlay let the covered document bleed through the image's

@@ -87,7 +87,6 @@ from rehuco_agent.documents.document_sub_docks import (
     STATE_WIDGET_STATE_KEY,
     DocumentSubDocks,
     type_dock_names,
-    viewer_mode_for,
 )
 from rehuco_agent.documents.document_widget import DocumentWidget
 from rehuco_agent.documents.files_view import FilesView
@@ -111,7 +110,7 @@ from rehuco_agent.fields.widgets import (
     ThumbnailRow,
     TypeBadge,
 )
-from rehuco_agent.fields.widgets.image_lightbox import STRIP_TOGGLE_BUTTON_NAME
+from rehuco_agent.fields.widgets.image_lightbox import STRIP_TOGGLE_BUTTON_NAME, viewer_mode_for
 from rehuco_agent.fields.widgets.image_selector import AFTER_CONVERSION_COLUMN, CHECK_COLUMN, PREVIEW_PANE
 from rehuco_agent.fields.widgets.image_strip import ThumbnailLabel
 from rehuco_agent.fields.widgets.path_editor import UNAVAILABLE_SUFFIX

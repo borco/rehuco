@@ -11,6 +11,11 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ### Added
 
+- `read_archive_facts` describes a zip from its central directory alone — files and images, size unpacked and packed,
+  each compression method with its member count, encrypted members — as `ArchiveFacts`, which says whether the
+  methods are slow (bzip2, LZMA) or beyond `zipfile` (deflate64, encryption). `list_archive_images` lists one
+  archive's content images in pack order, the listing the content-image scanner now shares. `CatalogCache.resource_type`
+  is an indexed lookup of a record's type by root and relative path.
 - `RootFolderLister` also reads the checksum record that covers a listed file -- a same-stem `foo.checksum`, the folder's
   `info.checksum`, or the one a caller names above it (`covering=`) -- and returns, as `DirectoryListing.covered`, what
   each covered file's entry says (`CoveredFile`), under the same hold as the listing. `DirectoryClassifier.reclassify`

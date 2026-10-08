@@ -39,7 +39,9 @@ from .root_storage import selected_root_storage
 from .roots_checksum_verbs import RootsChecksumVerbs
 from .roots_column_view import RootsColumnView
 from .roots_folder_model import RootsFolderModel, RootsNodeKind
-from .roots_management import companion_found, managing_record
+from .roots_lightbox import RootsLightbox
+from .roots_management import companion_found, managing_record, selected_record
+from .roots_opening import RootsOpening
 from .roots_preview import RootsPreview
 
 LOG: Final = logging.getLogger(__name__)
@@ -123,6 +125,8 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         self.__target: QPersistentModelIndex | None = None
         """The row a background menu is for while it is open: the folder its column lists. It is not the current row,
         which the menu leaves where it was; every action reads the row it acts on through :meth:`__acting_index`."""
+        self.__notice = ""
+        """What the last thing asked of a row has to say, on the banner until the selection moves."""
         self.__fallback: tuple[UUID, tuple[str, ...]] | None = None
         """Where the Roots selection goes once the rows it was in are removed: the folder they were in."""
         # connected before the view's selection model exists, so it runs before that model moves the current row to a
@@ -134,9 +138,12 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
 
         self.__roots_ui: Final = Ui_RehucoRootsPanel()
         self.__roots_ui.setupUi(self)
+        self.__opening: Final = RootsOpening(
+            self.__roots_model, self.__roots_ui, catalog, rename_coordinator, self, self.__show_notice
+        )
         # the details of the current row, whatever it is, sit beside the columns
         self.__preview: Final = RootsPreview(
-            self.__roots_model, rename_coordinator, self.__actions_for_row, self.__folder_record
+            self.__roots_model, rename_coordinator, self.__actions_for_row, self.__folder_record, self.__opening.pack_of
         )
         splitter = self.__roots_ui.roots_splitter
         splitter.addWidget(self.__preview)
@@ -279,6 +286,16 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         return self.__roots_ui.open_file_action
 
     @property
+    def open_lightbox_action(self) -> QAction:
+        """Shows the selected image, or the images of the selected reference pack, in the lightbox (#456)."""
+        return self.__roots_ui.open_lightbox_action
+
+    @property
+    def lightbox(self) -> RootsLightbox:
+        """What opens the lightbox for the Roots view."""
+        return self.__opening.lightbox
+
+    @property
     def open_companion_action(self) -> QAction:
         """Opens the rehu that describes the selected folder or file, which is there."""
         return self.__roots_ui.open_companion_action
@@ -323,17 +340,30 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         file = self.__catalog.file
         if file is None:
             self.__roots_model.set_roots((), None)
-            self.__banner.set_rows(())
         else:
             roots = file.roots
             self.__roots_model.set_roots(
                 roots, RootFolderLister(roots, coordinator=self.__rename_coordinator, trust=DEFAULT_CHECKSUM_TRUST)
             )
-            lock_reason = file.lock_reason
-            self.__banner.set_rows(
-                [] if lock_reason is None else [MessageBannerRow(MessageBannerSeverity.WARNING, lock_reason.message)]
-            )
+        self.__show_banner()
         self.__update_enablement()
+
+    def __show_banner(self) -> None:
+        """Show on the banner why the open file is read-only, if it is, and the notice of the last action."""
+        file = self.__catalog.file
+        lock_reason = None if file is None else file.lock_reason
+        rows = [] if lock_reason is None else [MessageBannerRow(MessageBannerSeverity.WARNING, lock_reason.message)]
+        if self.__notice:
+            rows.append(MessageBannerRow(MessageBannerSeverity.WARNING, self.__notice))
+        self.__banner.set_rows(rows)
+
+    def __show_notice(self, notice: str) -> None:
+        """Say something about what was just asked of a row, until the selection moves.
+
+        :param notice: the sentence; empty to take it down.
+        """
+        self.__notice = notice
+        self.__show_banner()
 
     def __setup_actions(self) -> None:
         """Give every action its themed icon and connect it."""
@@ -357,6 +387,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         ui.open_record_action.triggered.connect(self.__on_open_record)
         ui.open_explorer_action.triggered.connect(self.__on_open_explorer)
         ui.open_file_action.triggered.connect(self.__on_open_file)
+        ui.open_lightbox_action.triggered.connect(self.__on_open_lightbox)
         ui.open_companion_action.triggered.connect(self.__on_companion)
         ui.create_companion_action.triggered.connect(self.__on_companion)
         for action, move in (
@@ -411,9 +442,11 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         :param _previous: the row that was current.
         """
         self.__roots_model.fetchMore(current)
+        if self.__notice:
+            self.__show_notice("")
         self.__preview.show_index(current)
         self.__on_roots_current_changed()
-        self.record_selected.emit(self.__selected_record(current))
+        self.record_selected.emit(selected_record(self.__roots_model, current))
 
     def __on_roots_current_changed(self, *_args: object) -> None:
         """Bring the actions in line with the current row, whatever changed it."""
@@ -517,8 +550,14 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
     def __on_roots_double_clicked(self, index: QModelIndex) -> None:
         """Run a row's default action (:meth:`__default_action`); a root has none, and only navigates.
 
+        **Ctrl+Alt** held hands an image or an archive to the system's application instead (#456); Ctrl or Shift alone
+        belong to the lightbox's choice of surface.
+
         :param index: the row.
         """
+        if self.__opening.external_requested(index):
+            self.__run(self.__roots_ui.open_file_action, index)
+            return
         self.__run(self.__default_action(index), index)
 
     def __on_open_record(self) -> None:
@@ -528,6 +567,10 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
     def __on_open_file(self) -> None:
         """Open the current row's file with the application the system associates with it."""
         self.__run(self.__roots_ui.open_file_action, self.__acting_index())
+
+    def __on_open_lightbox(self) -> None:
+        """Show the current row's images in the lightbox."""
+        self.__run(self.__roots_ui.open_lightbox_action, self.__acting_index())
 
     def __on_open_explorer(self) -> None:
         """Show the current row in the system file manager: a folder opened, a file shown selected in its folder."""
@@ -572,6 +615,8 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
             reveal_in_file_browser(path)
         elif action is ui.open_file_action:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+        elif action is ui.open_lightbox_action:
+            self.__opening.open(index, path)
         elif self.__roots_model.node_kind(index) is RootsNodeKind.FOLDER:
             self.open_folder_requested.emit(path)
         else:
@@ -586,7 +631,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
 
     def reselect(self) -> None:
         """Say again which record the current row stands for, for a listener that has just started to care (#457)."""
-        self.record_selected.emit(self.__selected_record(self.__roots_ui.roots_view.currentIndex()))
+        self.record_selected.emit(selected_record(self.__roots_model, self.__roots_ui.roots_view.currentIndex()))
 
     def __on_files_changed(self, paths: tuple[Path, ...]) -> None:
         """List again the folders whose checksum record the app rewrote, if the Roots view has them loaded (#457).
@@ -654,7 +699,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
                     ]
                 else:
                     actions = [
-                        ui.open_file_action,
+                        *self.__opening.actions(index),
                         *self.__companion_actions(index),
                         ui.open_explorer_action,
                         *self.__checksum_group(index, file_verbs=True),
@@ -679,6 +724,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         for action in (
             ui.open_record_action,
             ui.open_file_action,
+            ui.open_lightbox_action,
             ui.open_companion_action,
             ui.create_companion_action,
             ui.filter_folder_action,
@@ -714,7 +760,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
                     actions = [ui.open_explorer_action, self.__separators[0], *self.__verbs.verify_actions(index)]
                 else:
                     actions = [
-                        ui.open_file_action,
+                        *self.__opening.actions(index),
                         ui.open_explorer_action,
                         *self.__checksum_group(index, file_verbs=True, buttons=True),
                     ]
@@ -766,7 +812,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
                 if file_type is FileType.MANIFEST:
                     # a checksum file is opened for what it is for: checking what is old, and recording what is new
                     return ui.verify_old_checksums_action
-                return ui.open_file_action
+                return ui.open_lightbox_action if self.__opening.shows_in_lightbox(index) else ui.open_file_action
         return None
 
     def __companion_action(self, index: QModelIndex) -> QAction:
@@ -793,32 +839,6 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
             if self.__roots_model.node_kind(index) is RootsNodeKind.FOLDER
             else None
         )
-
-    def __selected_record(self, index: QModelIndex) -> tuple[UUID, str] | None:
-        """The record a selected row stands for, as the ``(root_id, relative)`` key a resource is named by (#381):
-        what opening the row would open -- a record itself, a folder's ``info.rehu``, a file's same-name ``.rehu``,
-        the ``.tc`` of either when that is all there is.
-
-        **Asking never creates one**: where opening would offer *Create*, there is nothing to show.
-
-        :param index: the row.
-        :returns: the key, or ``None`` for a root, a placeholder, and a row with no record.
-        """
-        model = self.__roots_model
-        key = model.key(index)
-        if key is None:
-            return None
-        root_id, names = key
-        match model.node_kind(index):
-            case RootsNodeKind.FOLDER:
-                found = companion_found(self.__roots_model, index)
-                return None if found is None else (root_id, "/".join((*names, found.name)))
-            case RootsNodeKind.FILE:
-                if model.file_type_of(index) is FileType.RECORD:
-                    return root_id, "/".join(names)
-                found = companion_found(self.__roots_model, index)
-                return None if found is None else (root_id, "/".join((*names[:-1], found.name)))
-        return None
 
     def __on_roots_context_menu(self, position: QPoint) -> None:
         """Open the Roots view's context menu on the row under the pointer, making it the current row first so the

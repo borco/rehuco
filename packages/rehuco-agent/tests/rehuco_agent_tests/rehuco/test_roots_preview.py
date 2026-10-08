@@ -21,6 +21,7 @@ from rehuco_agent.rehuco.roots_preview import (
     MINIMUM_WIDTH,
     THUMBNAIL_SIDE,
     ActionsForRow,
+    PackForRow,
     RecordForRow,
     RootsPreview,
     format_size,
@@ -43,11 +44,12 @@ class Shown:
         library: Path,
         actions_for: ActionsForRow | None = None,
         record_for: RecordForRow | None = None,
+        pack_for: PackForRow | None = None,
     ) -> None:
         root = RehucoRoot(uuid4(), library, "lib", RootStorage.LOCAL)
         self.model = RootsFolderModel()
         self.model.set_roots([root], RootFolderLister([root]))
-        self.preview = RootsPreview(self.model, RenameCoordinator(), actions_for, record_for)
+        self.preview = RootsPreview(self.model, RenameCoordinator(), actions_for, record_for, pack_for)
         qtbot.addWidget(self.preview)
         self.root = self.model.index(0, 0)
         qtbot.waitUntil(lambda: self.model.listing_state(self.root) is NodeListing.LISTED, timeout=WAIT_TIMEOUT_MS)

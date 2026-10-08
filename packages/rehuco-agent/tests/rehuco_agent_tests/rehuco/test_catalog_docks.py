@@ -3974,7 +3974,8 @@ def test_a_screenshot_never_offers_to_create_a_rehu_and_opens_the_record_it_belo
     **Test steps:**
 
     * list a folder holding ``info.rehu`` and its ``info00.jpg``, and a picture no record numbers
-    * verify the screenshot's menu is Open and Open associated rehu, and the stranger's offers Create
+    * verify the screenshot's menu is Open (the lightbox), Open in external app and Open associated rehu, and the
+      stranger's offers Create
     """
     add_files_to_a_folder(folders)
     (folders / "alpha" / "info00.jpg").write_bytes(b"x")
@@ -3984,12 +3985,14 @@ def test_a_screenshot_never_offers_to_create_a_rehu_and_opens_the_record_it_belo
     stranger = open_root_folder(qtbot, dock, "my folder", "poster.jpg")
 
     assert without_separators(dock.roots.roots_context_actions(screenshot)) == [
+        dock.roots.open_lightbox_action,
         dock.roots.open_file_action,
         dock.roots.open_companion_action,
         dock.roots.open_explorer_action,
         dock.roots.generate_record_action,
     ]
     assert dock.roots.roots_context_actions(stranger) == [
+        dock.roots.open_lightbox_action,
         dock.roots.open_file_action,
         dock.roots.create_companion_action,
         dock.roots.open_explorer_action,

@@ -1,5 +1,6 @@
 """rehuco-core: shared library for models, .rehu I/O, and sync primitives."""
 
+from .archive_facts import ArchiveFacts, read_archive_facts
 from .checksum_algorithms import (
     CHECKSUM_ALGORITHMS,
     CHECKSUM_READ_CHUNK_SIZE,
@@ -140,7 +141,7 @@ from .rehu_content_files import (
     enumerate_content_files,
     excluded_content_names,
 )
-from .rehu_content_images import ContentImageEntry, enumerate_content_images
+from .rehu_content_images import ContentImageEntry, enumerate_content_images, list_archive_images
 from .rehu_document import (
     AuthorEntry,
     PluginBlock,
@@ -328,6 +329,7 @@ __all__ = [
     "TITLE_KEY",
     "INDEX_KEY",
     "ARCHIVE_EXTENSIONS",
+    "ArchiveFacts",
     "AUDIO_EXTENSIONS",
     "AuthorEntry",
     "BACKUP_SUFFIX",
@@ -555,6 +557,8 @@ __all__ = [
     "enumerate_content_files",
     "excluded_content_names",
     "enumerate_content_images",
+    "list_archive_images",
+    "read_archive_facts",
     "excessive_entry_reason",
     "excessive_nesting_reason",
     "forget_checksums",

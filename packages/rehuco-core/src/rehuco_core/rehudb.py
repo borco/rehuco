@@ -574,6 +574,22 @@ class CatalogCache:
         sql = "SELECT COUNT(*) FROM resources WHERE root_id = ?"
         return self.__connection.execute(sql, (str(root_id),)).fetchone()[0]
 
+    def resource_type(self, root_id: UUID, relative: str) -> str | None:
+        """The type a cached record says its resource is, for the Roots view to tell a reference pack (#456).
+
+        An indexed lookup on ``(root_id, path_key)`` -- no record is read from disk, so a record the cache has not
+        scanned yet answers ``None`` until the next scan.
+
+        :param root_id: the root.
+        :param relative: the record's root-relative path.
+        :returns: the type as the record spells it (an alias included, ``""`` for a typeless record), or ``None``
+            when no row holds that path.
+        """
+        row = self.__connection.execute(
+            "SELECT type FROM resources WHERE root_id = ? AND path_key = ?", (str(root_id), catalog_path_key(relative))
+        ).fetchone()
+        return None if row is None else row[0]
+
     def signature(self, root_id: UUID, relative: str) -> RecordSignature | None:
         """One row's signature, for verify-on-access ([[data-model#scan-and-staleness]]).
 

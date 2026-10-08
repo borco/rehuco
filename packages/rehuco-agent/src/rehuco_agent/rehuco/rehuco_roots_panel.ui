@@ -128,6 +128,14 @@
     <string>Open this file with the application the system associates with it.</string>
    </property>
   </action>
+  <action name="open_lightbox_action">
+   <property name="text">
+    <string>Open</string>
+   </property>
+   <property name="toolTip">
+    <string>Show the images in the lightbox.</string>
+   </property>
+  </action>
   <action name="open_companion_action">
    <property name="text">
     <string>Open associated rehu</string>

@@ -69,6 +69,75 @@ class ContentImageEntry:
         return self.ZIP_KIND, self.name, self.size, self.crc
 
 
+MACOSX_DIRNAME: Final = "__MACOSX"
+"""The folder macOS's AppleDouble metadata sidecars are zipped into; nothing under it is content."""
+
+
+def is_content_image(path: PurePosixPath, extensions: tuple[str, ...]) -> bool:
+    """Whether an archive member's path, or a loose file's relative one, is a recognized content image, per
+    [[data-model#image-meanings]]'s notes.
+
+    Excludes dot-files and anything under a ``__MACOSX`` directory (macOS's AppleDouble metadata sidecar) before
+    checking the extension -- the same filter inside an archive and out of one.
+
+    :param path: the path to classify.
+    :param extensions: the recognized image extensions, lower-case.
+    :returns: whether it counts as a content image.
+    """
+    if path.name.startswith("."):
+        return False
+    if MACOSX_DIRNAME in path.parts[:-1]:
+        return False
+    return path.suffix.lower() in extensions
+
+
+def image_order(entry: ContentImageEntry) -> tuple[tuple[tuple[NaturalRun, ...], ...], tuple[NaturalRun, ...]]:
+    """An image's place inside its group: by its folder, then by its name, both natural.
+
+    Ordering by folder first is what puts an archive's root images before its folders' and a folder's own images
+    before its subfolders', rather than interleaving them by name the way a plain path order would (``a.jpg``,
+    ``bar/x.jpg``, ``z.jpg``), which would split the root's images around a folder.
+
+    :param entry: the image.
+    :returns: its folder's :func:`~rehuco_core.natural_sort.natural_path_sort_key` (the root's sorting first), then
+        its name's :func:`~rehuco_core.natural_sort.natural_sort_key`.
+    """
+    path = PurePosixPath(entry.name)
+    folder = path.parent.as_posix()
+    return natural_path_sort_key("" if folder == "." else folder), natural_sort_key(path.name)
+
+
+def list_archive_images(
+    archive: Path, extensions: tuple[str, ...], coordinator: RenameCoordinator | None = None
+) -> list[ContentImageEntry]:
+    """List one archive's recognized image members, in pack order.
+
+    Sorted by :func:`image_order`, never in the central directory's order ([[reference-images#image-identity]]),
+    which is whatever the packer wrote and is not a promise, while a reference pack's folders and names are how its
+    author ordered it. Read from the central directory alone, inside the coordinator's hold when one is given, so a
+    rename waits for one directory read and no member is inflated.
+
+    :param archive: the archive file to read.
+    :param extensions: the recognized image extensions, matched case-insensitively.
+    :param coordinator: the rename barrier to read inside, or ``None`` for none.
+    :returns: one :class:`ContentImageEntry` per recognized member, or empty when ``archive`` is absent, not a zip,
+        truncated, or otherwise unreadable -- reported as empty rather than raised.
+    """
+    wanted = tuple(extension.lower() for extension in extensions)
+    hold = coordinator.holding() if coordinator is not None else nullcontext()
+    try:
+        with hold, shared_read_open(archive) as file, zipfile.ZipFile(file) as opened:
+            infolist = opened.infolist()
+    except OSError, zipfile.BadZipFile:
+        return []
+    entries = [
+        ContentImageEntry(archive, info.filename, info.file_size, info.CRC)
+        for info in infolist
+        if not info.is_dir() and is_content_image(PurePosixPath(info.filename), wanted)
+    ]
+    return sorted(entries, key=image_order)
+
+
 class ContentImageScanner:  # pylint: disable=too-few-public-methods
     """Enumerates one reference-images resource's content images ([[data-model#resource-scoping]]).
 
@@ -100,8 +169,6 @@ class ContentImageScanner:  # pylint: disable=too-few-public-methods
         set the checksums are handed, so an image a user's glob excludes is shown by neither.
     """
 
-    __MACOSX_DIRNAME: Final = "__MACOSX"
-
     def __init__(
         self,
         rehu_path: Path,
@@ -125,15 +192,15 @@ class ContentImageScanner:  # pylint: disable=too-few-public-methods
         for path in enumerate_content_files(self.__rehu_path, self.__excluded_patterns).files:
             relative = PurePosixPath(path.relative_to(directory).as_posix())
             if path.suffix.lower() in ARCHIVE_EXTENSIONS:
-                groups[relative.as_posix()] = self.__list_archive_images(path)
-            elif self.__is_content_image(relative):
+                groups[relative.as_posix()] = list_archive_images(path, self.__extensions, self.__coordinator)
+            elif is_content_image(relative, self.__extensions):
                 loose = self.__loose_image(path, relative)
                 if loose is not None:
                     folder = relative.parent.as_posix()
                     groups.setdefault("" if folder == "." else folder, []).append(loose)
         entries: list[ContentImageEntry] = []
         for group in sorted(groups, key=self.__group_order):
-            entries.extend(sorted(groups[group], key=self.__image_order))
+            entries.extend(sorted(groups[group], key=image_order))
         return entries
 
     @staticmethod
@@ -147,45 +214,6 @@ class ContentImageScanner:  # pylint: disable=too-few-public-methods
         :returns: its :func:`~rehuco_core.natural_sort.natural_path_sort_key`.
         """
         return natural_path_sort_key(group)
-
-    @staticmethod
-    def __image_order(entry: ContentImageEntry) -> tuple[tuple[tuple[NaturalRun, ...], ...], tuple[NaturalRun, ...]]:
-        """An image's place inside its group: by its folder, then by its name, both natural.
-
-        Ordering by folder first is what puts an archive's root images before its folders' and a folder's
-        own images before its subfolders', rather than interleaving them by name the way a plain
-        path order would (``a.jpg``, ``bar/x.jpg``, ``z.jpg``), which would split the root's images around
-        a folder.
-
-        :param entry: the image.
-        :returns: its folder's :func:`~rehuco_core.natural_sort.natural_path_sort_key` (the root's sorting
-            first), then its name's :func:`~rehuco_core.natural_sort.natural_sort_key`.
-        """
-        path = PurePosixPath(entry.name)
-        folder = path.parent.as_posix()
-        return natural_path_sort_key("" if folder == "." else folder), natural_sort_key(path.name)
-
-    def __list_archive_images(self, archive: Path) -> list[ContentImageEntry]:
-        """List one archive's recognized image entries.
-
-        Sorted later with the rest of their group (:meth:`__image_order`) -- never in the central
-        directory's order ([[reference-images#image-identity]]), which is whatever the packer wrote and is
-        not a promise, while a reference pack's folders and names are how its author ordered it.
-
-        :param archive: the archive file to read.
-        :returns: one :class:`ContentImageEntry` per recognized entry, or empty when ``archive`` is
-            absent, not a zip, truncated, or otherwise unreadable -- reported as empty rather than raised.
-        """
-        try:
-            with self.__holding(), shared_read_open(archive) as file, zipfile.ZipFile(file) as opened:
-                infolist = opened.infolist()
-        except OSError, zipfile.BadZipFile:
-            return []
-        return [
-            ContentImageEntry(archive, info.filename, info.file_size, info.CRC)
-            for info in infolist
-            if not info.is_dir() and self.__is_content_image(PurePosixPath(info.filename))
-        ]
 
     def __loose_image(self, path: Path, relative: PurePosixPath) -> ContentImageEntry | None:
         """One loose image, keyed by its ``stat`` ([[reference-images#image-identity]]).
@@ -205,22 +233,6 @@ class ContentImageScanner:  # pylint: disable=too-few-public-methods
     def __holding(self) -> AbstractContextManager[None]:
         """The coordinator's hold, or nothing to hold when there is no coordinator."""
         return self.__coordinator.holding() if self.__coordinator is not None else nullcontext()
-
-    def __is_content_image(self, path: PurePosixPath) -> bool:
-        """Whether an archive member's path, or a loose file's relative one, is a recognized content
-        image, per [[data-model#image-meanings]]'s notes.
-
-        Excludes dot-files and anything under a ``__MACOSX`` directory (macOS's AppleDouble metadata
-        sidecar) before checking the extension -- the same filter inside an archive and out of one.
-
-        :param path: the path to classify.
-        :returns: whether it counts as a content image.
-        """
-        if path.name.startswith("."):
-            return False
-        if self.__MACOSX_DIRNAME in path.parts[:-1]:
-            return False
-        return path.suffix.lower() in self.__extensions
 
 
 def enumerate_content_images(
