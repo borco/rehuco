@@ -4,13 +4,14 @@ import zipfile
 from pathlib import Path
 from typing import Final
 
-from PySide6.QtCore import QEvent
+from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QColor, QImage
 from PySide6.QtWidgets import QApplication, QWidget
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.content_images.archive_cache import ArchiveCache
+from rehuco_agent.fields.widgets import ImageLightbox, ImageViewerMode
 from rehuco_agent.rehuco.roots_lightbox import EMPTY_PACK_MESSAGE, RootsLightbox
 from rehuco_core import RenameCoordinator
 
@@ -213,3 +214,27 @@ def test_a_second_viewer_replaces_the_first_and_closing_the_lightbox_closes_both
     QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
 
     assert lightbox.viewer is None
+
+
+def test_the_keys_held_at_the_activation_pick_the_surface_though_the_listing_lands_later(
+    qtbot: QtBot, tmp_path: Path, lightbox: RootsLightbox, mocker: MockerFixture
+) -> None:
+    """Ctrl held at the double-click covers the app window, as in a document, even when it is let go before the zip
+    has been listed.
+
+    **Test steps:**
+
+    * open a zip with Ctrl held, and let it go before the listing lands
+    * verify the viewer was built over the app window
+    """
+    keys = mocker.patch(
+        "rehuco_agent.rehuco.roots_lightbox.QApplication.keyboardModifiers",
+        return_value=Qt.KeyboardModifier.ControlModifier,
+    )
+    built = mocker.patch("rehuco_agent.rehuco.roots_lightbox.ImageLightbox", wraps=ImageLightbox)
+
+    lightbox.open_archive(make_pack(tmp_path / "pack.zip", ("a.png",)))
+    keys.return_value = Qt.KeyboardModifier.NoModifier
+    qtbot.waitUntil(lambda: built.called, timeout=WAIT_TIMEOUT_MS)
+
+    assert built.call_args.args[2] is ImageViewerMode.APP_WINDOW_OVERLAY

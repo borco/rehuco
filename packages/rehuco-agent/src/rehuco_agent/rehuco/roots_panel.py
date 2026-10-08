@@ -759,8 +759,11 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
                 elif file_type is FileType.MANIFEST:
                     actions = [ui.open_explorer_action, self.__separators[0], *self.__verbs.verify_actions(index)]
                 else:
+                    # an archive's own rehu is opened from its pane as from its menu (#456); a file's is in its menu
+                    found = file_type is FileType.ARCHIVE and companion_found(self.__roots_model, index) is not None
                     actions = [
                         *self.__opening.actions(index),
+                        *([ui.open_companion_action] if found else []),
                         ui.open_explorer_action,
                         *self.__checksum_group(index, file_verbs=True, buttons=True),
                     ]

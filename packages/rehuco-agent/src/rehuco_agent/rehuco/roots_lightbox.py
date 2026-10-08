@@ -17,7 +17,14 @@ from rehuco_core import ContentImageEntry, RenameCoordinator, list_archive_image
 
 from ..documents.content_images.archive_cache import ArchiveCache
 from ..documents.content_images.content_images_model import ArchiveImageSource
-from ..fields.widgets import ImageLightbox, ImageSource, PathImageSource, ThumbnailLoader, viewer_mode_for
+from ..fields.widgets import (
+    ImageLightbox,
+    ImageSource,
+    ImageViewerMode,
+    PathImageSource,
+    ThumbnailLoader,
+    viewer_mode_for,
+)
 from ..settings.image_viewer_settings import shared_image_viewer_settings
 from ..settings.reference_images_settings import shared_reference_images_settings
 
@@ -74,7 +81,7 @@ class ListingJob(QRunnable):
             self.__signals.deleteLater()
 
 
-class RootsLightbox(QObject):
+class RootsLightbox(QObject):  # pylint: disable=too-many-instance-attributes
     """Opens the lightbox for the Roots view: over a zip's images, or over the images of a folder.
 
     **One viewer at a time**: opening another closes the previous one and lets go of its archive handles. Nothing is
@@ -102,6 +109,8 @@ class RootsLightbox(QObject):
         self.__viewer: ImageLightbox | None = None
         self.__cache: ArchiveCache | None = None
         self.__strip_visible: bool | None = None
+        self.__pending_mode = ImageViewerMode.DOCUMENT_OVERLAY
+        """The surface the archive whose listing is out was asked for, read from the keys at the activation."""
 
     @property
     def viewer(self) -> ImageLightbox | None:
@@ -116,6 +125,8 @@ class RootsLightbox(QObject):
         :param archive: the zip or cbz.
         """
         self.__generation += 1
+        # the keys are read now, at the activation: the listing lands later, when they are no longer held
+        self.__pending_mode = self.__mode()
         pool = QThreadPool.globalInstance()
         signals = ListingSignals(pool)
         signals.listed.connect(self.__on_listed)
@@ -133,7 +144,7 @@ class RootsLightbox(QObject):
         self.__generation += 1
         if not images:
             return
-        self.__show(PathImageSource(images, images[0].parent), start, None)
+        self.__show(PathImageSource(images, images[0].parent), start, None, self.__mode())
 
     @Slot(int, object, list)
     def __on_listed(self, generation: int, archive: Path, entries: list[ContentImageEntry]) -> None:
@@ -149,14 +160,24 @@ class RootsLightbox(QObject):
             self.nothing_to_show.emit(EMPTY_PACK_MESSAGE.format(name=archive.name))
             return
         cache = ArchiveCache(self.__coordinator)
-        self.__show(ArchiveImageSource(entries, cache, archive.parent), 0, cache)
+        self.__show(ArchiveImageSource(entries, cache, archive.parent), 0, cache, self.__pending_mode)
 
-    def __show(self, source: ImageSource, index: int, cache: ArchiveCache | None) -> None:
+    @staticmethod
+    def __mode() -> ImageViewerMode:
+        """The surface the keys held right now ask for: **Shift** the Roots dock, **Ctrl** the app window,
+        **Ctrl+Shift** the whole screen, none the setting -- as in a document.
+
+        :returns: the surface.
+        """
+        return viewer_mode_for(QApplication.keyboardModifiers(), shared_image_viewer_settings().mode)
+
+    def __show(self, source: ImageSource, index: int, cache: ArchiveCache | None, mode: ImageViewerMode) -> None:
         """Build the viewer over a source, as the settings ask, replacing any open one.
 
         :param source: the images to navigate.
         :param index: where to start.
         :param cache: the archive handles the source reads through, closed with the viewer; ``None`` for files.
+        :param mode: the surface to paint on, chosen when the viewer was asked for.
         """
         self.__close_viewer()
         settings = shared_image_viewer_settings()
@@ -164,7 +185,7 @@ class RootsLightbox(QObject):
         viewer = ImageLightbox(
             source,
             index,
-            viewer_mode_for(QApplication.keyboardModifiers(), settings.mode),
+            mode,
             self.__host,
             loader=self.__loader,
             strip_visible=strip_visible,

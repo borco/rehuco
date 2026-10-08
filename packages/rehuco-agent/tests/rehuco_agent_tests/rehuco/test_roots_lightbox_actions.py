@@ -81,9 +81,10 @@ def test_a_pack_archive_opens_in_the_lightbox_and_offers_the_external_app_and_it
         roots.open_companion_action,
     ]
     assert roots.open_file_action.text() == "Open in external app"
-    assert pane_buttons(dock, pack)[:3] == [
+    assert pane_buttons(dock, pack)[:4] == [
         roots.open_lightbox_action,
         roots.open_file_action,
+        roots.open_companion_action,
         roots.open_explorer_action,
     ]
     assert roots.open_lightbox_action.font().bold() and not roots.open_file_action.font().bold()
@@ -103,7 +104,7 @@ def test_a_pack_through_its_folders_record_offers_no_associated_rehu_of_its_own(
     **Test steps:**
 
     * make ``alpha/inner.zip`` a reference pack through ``alpha/info.rehu``
-    * verify its menu has the lightbox and the external app, and neither the open nor the create entry
+    * verify its menu and its buttons have the lightbox and the external app, and neither the open nor the create entry
     """
     add_pack_files(folders)
     dock.catalog.open_rehuco(REHUCO_PATH)
@@ -115,6 +116,11 @@ def test_a_pack_through_its_folders_record_offers_no_associated_rehu_of_its_own(
 
     assert menu[:2] == [roots.open_lightbox_action, roots.open_file_action]
     assert roots.open_companion_action not in menu and roots.create_companion_action not in menu
+    assert pane_buttons(dock, inner)[:3] == [
+        roots.open_lightbox_action,
+        roots.open_file_action,
+        roots.open_explorer_action,
+    ]
 
 
 @mark.usefixtures("served")
