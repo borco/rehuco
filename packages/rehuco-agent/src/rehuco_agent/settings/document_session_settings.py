@@ -1,22 +1,32 @@
-"""Per-file session state: which `.rehu` files were open, LRU-capped on save (#21)."""
+"""Per-file session state: which `.rehu` files were open, LRU-capped on save (#21).
+
+Kept in ``document-session.json`` in the config folder, not the ``.ini`` (#404): every remembered document carries a
+dock-layout blob, so the group was most of the ``.ini``. The old ``[documents]`` group is neither read nor removed.
+"""
 
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Final, cast
+from typing import Any, Final
 
-from PySide6.QtCore import QByteArray, QSettings
+from . import state_file
+from .persistent_settings import config_folder
 
 MAXIMUM_REMEMBERED_FILES: Final = 10
 """LRU cap on remembered closed files. Configurable later in settings; a constant for now."""
 
-GROUP: Final = "documents"
-FOCUSED_PATH_KEY: Final = "focused_path"
-DOCKS_STATE_KEY: Final = "docks_state"
-ITEMS_KEY: Final = "items"
-ITEM_PATH_KEY: Final = "path"
-ITEM_OPEN_KEY: Final = "open"
-ITEM_STATE_KEY: Final = "state"
+SESSION_FILENAME: Final = "document-session.json"
+"""What the session is called, in the app's own config folder."""
+SESSION_VERSION: Final = 1
+"""Schema version of the file. A file of another version reads as no session."""
+
+
+def document_session_path() -> Path:
+    """Where the session lives: :func:`~.persistent_settings.config_folder`, beside ``task-queue.json``.
+
+    :returns: the file's path, whether or not it exists.
+    """
+    return config_folder() / SESSION_FILENAME
 
 
 @dataclass
@@ -86,44 +96,51 @@ class DocumentSessionSettings:
             self.focused_path = after[0] if after else open_others[-1] if open_others else None
         del self.items[path]  # pylint: disable=unsupported-delete-operation
 
-    def load(self, settings: QSettings) -> None:
-        """Replace the current items (and focused path) with what's in persistent storage.
+    def load(self, path: Path | None = None) -> None:
+        """Replace the current items (and focused path) with what is in the session file.
 
         Paths are not resolved here (#464): each was when saved, and resolving one under an unreachable share blocks
         the start ([[appendices.code-conventions#worker-threads]], :mod:`borco_core.path_presence`).
 
-        :param settings: the ``QSettings`` to read from.
+        :param path: the session file; :func:`document_session_path` unless a test says otherwise. A missing or
+            unreadable one leaves an empty session.
         """
-        settings.beginGroup(GROUP)
-        focused = str(settings.value(FOCUSED_PATH_KEY, ""))
-        self.focused_path = Path(focused) if focused else None
-        docks_state = cast(QByteArray, settings.value(DOCKS_STATE_KEY, QByteArray(), type=QByteArray))
-        self.docks_state = bytes(docks_state.data())
         self.items.clear()
-        for index in range(settings.beginReadArray(ITEMS_KEY)):
-            settings.setArrayIndex(index)
-            path = Path(str(settings.value(ITEM_PATH_KEY, "")))
-            state = cast(QByteArray, settings.value(ITEM_STATE_KEY, QByteArray(), type=QByteArray))
-            self.items[path] = DocumentSessionSettings.Item(  # pylint: disable=unsupported-assignment-operation
-                open=bool(settings.value(ITEM_OPEN_KEY, False, type=bool)),
-                state=bytes(state.data()),
-            )
-        settings.endArray()
-        settings.endGroup()
+        self.focused_path = None
+        self.docks_state = b""
+        values = state_file.read_state_file(path if path is not None else document_session_path(), SESSION_VERSION)
+        if values is not None:
+            self.__read(values)
 
-    def save(self, settings: QSettings) -> None:
-        """Save the focused path and the LRU-pruned items to persistent storage.
+    def save(self, path: Path | None = None) -> None:
+        """Save the focused path and the LRU-pruned items to the session file.
 
-        :param settings: the ``QSettings`` to write to.
+        :param path: the session file; :func:`document_session_path` unless a test says otherwise.
         """
-        settings.beginGroup(GROUP)
-        settings.setValue(FOCUSED_PATH_KEY, self.focused_path.as_posix() if self.focused_path else "")
-        settings.setValue(DOCKS_STATE_KEY, QByteArray(self.docks_state))
-        settings.beginWriteArray(ITEMS_KEY)
-        for index, (path, item) in enumerate(self.items_to_save().items()):
-            settings.setArrayIndex(index)
-            settings.setValue(ITEM_PATH_KEY, path.as_posix())
-            settings.setValue(ITEM_OPEN_KEY, item.open)
-            settings.setValue(ITEM_STATE_KEY, QByteArray(item.state))
-        settings.endArray()
-        settings.endGroup()
+        path = path if path is not None else document_session_path()
+        values = {
+            "focused_path": self.focused_path.as_posix() if self.focused_path else "",
+            "docks_state": state_file.encode_bytes(self.docks_state),
+            "items": [
+                {"path": item_path.as_posix(), "open": item.open, "state": state_file.encode_bytes(item.state)}
+                for item_path, item in self.items_to_save().items()
+            ],
+        }
+        state_file.write_state_file(path, SESSION_VERSION, values)
+
+    def __read(self, values: dict[str, Any]) -> None:
+        """Take the session from a file's values, skipping an entry that is not one.
+
+        :param values: what :func:`~.state_file.read_state_file` returned.
+        """
+        focused = values.get("focused_path")
+        self.focused_path = Path(focused) if isinstance(focused, str) and focused else None
+        self.docks_state = state_file.decode_bytes(values.get("docks_state"))
+        entries = values.get("items")
+        for entry in entries if isinstance(entries, list) else []:
+            if not isinstance(entry, dict) or not isinstance(entry.get("path"), str) or not entry["path"]:
+                continue
+            self.items[Path(entry["path"])] = DocumentSessionSettings.Item(  # pylint: disable=unsupported-assignment-operation
+                open=entry.get("open") is True,
+                state=state_file.decode_bytes(entry.get("state")),
+            )

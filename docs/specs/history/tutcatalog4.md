@@ -45,7 +45,7 @@ buttons), verify checksums, and seed metadata via per-site scrapers. It also han
 | Scrapers: artstation, udemy | Yes | Built |
 | Scrapers: class101, newmastersacademy, schoolism, wingfox | Yes | **TBD** |
 | Windows `.tc` association | Registry | Built — Windows, macOS and Linux |
-| Mixed TOML/YAML/JSON/INI config | Yes | Built as `.ini` today; moving to JSON ([#404](https://github.com/borco/rehuco/issues/404)) |
+| Mixed TOML/YAML/JSON/INI config | Yes | Built: `.ini` for preferences, JSON files for the session and layouts ([#404](https://github.com/borco/rehuco/issues/404)) |
 
 ## Importing its data
 

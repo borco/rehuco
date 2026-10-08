@@ -1,27 +1,38 @@
 """The saved default document dock layouts, one per resource type, applied to newly opened documents
-(#62, #320)."""
+(#62, #320).
+
+Each group's blobs live in ``layouts/<group>.json`` in the config folder, not the ``.ini`` (#404). The old ``.ini``
+group is neither read nor removed.
+"""
 
 from dataclasses import dataclass, field
 from functools import cache
-from typing import Final, cast
+from pathlib import Path
+from typing import Final
 
-from PySide6.QtCore import QByteArray, QSettings
+from . import state_file
+from .persistent_settings import config_folder
 
-from .persistent_settings import persistent_settings
+LAYOUTS_FOLDER: Final = "layouts"
+"""The folder of the per-group files, in the app's own config folder."""
+LAYOUTS_VERSION: Final = 1
+"""Schema version of the files. A file of another version reads as no defaults saved."""
 
 GROUP: Final = "default_layout"
-STATE_KEY: Final = "state"
-"""Each type's blob sits at ``default_layout/<type>/state``. Before #320 one untyped blob sat at
-``default_layout/state``; it was written against the pre-split dock set, so it is dropped rather than
-migrated -- :meth:`DefaultLayoutSettings.load` ignores it and :meth:`DefaultLayoutSettings.save` removes it."""
-UNTYPED_GROUP: Final = "_untyped"
-"""The group the empty type's blob sits under (#354): ``default_layout//state`` is malformed, and the
-pre-#320 ``default_layout/state`` is the blob :meth:`DefaultLayoutSettings.save` drops. Translated at
-this storage boundary only -- in :attr:`DefaultLayoutSettings.states` the empty type keys by ``""``."""
+"""The group of the Documents dock's defaults, and the name of their file (:func:`default_layouts_path`)."""
 PREVIEW_LAYOUT_GROUP: Final = "preview_layout"
 """The group the Documents dock's preview keeps each type's last arrangement under (#39), beside :data:`GROUP`.
 Implicit: captured whenever the preview stops showing a type's layout, never read or written from the UI -- the
 Layout button in the preview acts on :data:`GROUP`, as in any document dock."""
+
+
+def default_layouts_path(group: str) -> Path:
+    """Where ``group``'s layouts live, in :func:`~.persistent_settings.config_folder`.
+
+    :param group: the settings group (:attr:`DefaultLayoutSettings.group`).
+    :returns: the file's path, whether or not it exists.
+    """
+    return config_folder() / LAYOUTS_FOLDER / f"{group}.json"
 
 
 @dataclass
@@ -44,7 +55,7 @@ class DefaultLayoutSettings:
     resource type, keyed by the type's main key
     (:attr:`~rehuco_agent.documents.document_sub_docks.DocumentSubDocks.layout_type`). A type with no entry
     has no default: no inheritance across types, so a tutorial layout never lands on a reference pack
-    (#320). A type-less document keys by ``""``, stored under :data:`UNTYPED_GROUP` (#354)."""
+    (#320). A type-less document keys by ``""`` (#354)."""
 
     def state_for(self, layout_type: str) -> bytes:
         """The saved default of one type.
@@ -54,39 +65,30 @@ class DefaultLayoutSettings:
         """
         return self.states.get(layout_type, b"")
 
-    def load(self, settings: QSettings) -> None:
-        """Replace the current states with what's in persistent storage.
+    def load(self, path: Path | None = None) -> None:
+        """Replace the current states with what is in the group's file.
 
-        :param settings: the ``QSettings`` to read from.
+        :param path: the group's file; :func:`default_layouts_path` unless a test says otherwise. A missing or
+            unreadable one leaves no default saved.
         """
-        settings.beginGroup(self.group)
         self.states.clear()
-        for group in settings.childGroups():
-            settings.beginGroup(group)
-            state = bytes(cast(QByteArray, settings.value(STATE_KEY, QByteArray(), type=QByteArray)).data())
-            settings.endGroup()
+        values = state_file.read_state_file(
+            path if path is not None else default_layouts_path(self.group), LAYOUTS_VERSION
+        )
+        saved = values.get("states") if values is not None else None
+        for layout_type, blob in (saved if isinstance(saved, dict) else {}).items():
+            state = state_file.decode_bytes(blob)
             if state:
-                layout_type = "" if group == UNTYPED_GROUP else group
                 self.states[layout_type] = state  # pylint: disable=unsupported-assignment-operation
-        settings.endGroup()
 
-    def save(self, settings: QSettings) -> None:
-        """Save the current states to persistent storage, dropping every type no longer held and the
-        pre-#320 untyped blob.
+    def save(self, path: Path | None = None) -> None:
+        """Save the current states to the group's file, dropping every type no longer held.
 
-        :param settings: the ``QSettings`` to write to.
+        :param path: the group's file; :func:`default_layouts_path` unless a test says otherwise.
         """
-        settings.beginGroup(self.group)
-        settings.remove(STATE_KEY)
-        groups = {layout_type or UNTYPED_GROUP: state for layout_type, state in self.states.items()}
-        for stale in settings.childGroups():
-            if stale not in groups:
-                settings.remove(stale)
-        for group, state in groups.items():
-            settings.beginGroup(group)
-            settings.setValue(STATE_KEY, QByteArray(state))
-            settings.endGroup()
-        settings.endGroup()
+        path = path if path is not None else default_layouts_path(self.group)
+        values = {"states": {layout_type: state_file.encode_bytes(state) for layout_type, state in self.states.items()}}
+        state_file.write_state_file(path, LAYOUTS_VERSION, values)
 
 
 @cache
@@ -103,7 +105,7 @@ def shared_default_layout_settings_in(group: str) -> DefaultLayoutSettings:
     :returns: the shared instance.
     """
     settings = DefaultLayoutSettings(group=group)
-    settings.load(persistent_settings())
+    settings.load()
     return settings
 
 

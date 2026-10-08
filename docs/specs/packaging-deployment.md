@@ -597,7 +597,8 @@ consumer can reach `design/icons/`, and copy only where it cannot**:
 **The agent and the node share their files, per machine and OS user**, under the organization folder every borco app
 uses. What they keep: both apps' settings side by side (`rehuco-agent.ini`, and the node's own settings file), their
 caches (`.rehudb`, [[data-model#local-file-trio]]), and their durable local state — the retention store
-([[mounts-and-storage#durable-retention]]), the saved task queue, the scraper browser's persona, crash dumps. Where it
+([[mounts-and-storage#durable-retention]]), the saved task queue, the open-document session and the window and
+dock layouts (JSON files, not the `.ini`, #404), the scraper browser's persona, crash dumps. Where it
 goes follows each platform's own convention:
 
 | Platform | Settings | Durable state | Caches |

@@ -29,7 +29,7 @@ rehuco formalizes as `.rehu` + `.rehudb`.
 | Incremental scan | Basic | Built — only records whose modification time or size changed are re-read |
 | Sortable, filterable catalog | Yes | Built — table browsers with a filter line |
 | Separate viewer app | Yes | Not planned — one app views and edits |
-| Window and column state | `.ini` | Built — `.ini` today; moving to JSON files ([#404](https://github.com/borco/rehuco/issues/404)) |
+| Window and column state | `.ini` | Built — the layouts and the session are JSON files, the `.ini` keeps preferences ([#404](https://github.com/borco/rehuco/issues/404)) |
 | Duration via ffprobe | Yes | Built |
 | Scraping | Yes | Built — ArtStation and Udemy, plus a user script |
 
