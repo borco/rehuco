@@ -107,7 +107,9 @@ class RememberedPaths(QObject):  # pylint: disable=too-many-instance-attributes
             elif restore.restore_local_documents:
                 if self.__presence.local_presence(path) is Presence.PRESENT:
                     now.add(path)
-                elif self.__presence.local_presence(path) is Presence.OFFLINE:
+                else:
+                    # a gone one was forgotten at construction, so what is left is one the operating system gave no
+                    # verdict on (a permission error): not restored, not lost
                     self.__kept_open.add(path)
         return now
 
@@ -116,6 +118,19 @@ class RememberedPaths(QObject):  # pylint: disable=too-many-instance-attributes
         """The documents that were open and are not now -- their device has not answered, or has not yet -- which
         the session must go on recording as open so they come back."""
         return frozenset(self.__kept_open)
+
+    def reached(self, path: Path | None) -> None:
+        """The user opened ``path`` themselves, so from now on its dock -- open or closed -- is what the session
+        records, not :attr:`still_open`.
+
+        Without this, a document whose share was off at start, came back, and was then opened and **closed** by
+        hand would be re-marked open at the next save and come back against the user's choice.
+
+        :param path: the record just shown in a dock (``widget.model.path``, never the folder or archive opened);
+            ``None`` -- a document with no file yet -- reaches nothing the session could hold.
+        """
+        if path is not None:
+            self.__kept_open.discard(path)
 
     def defer_rehuco(self, path: Path) -> bool:
         """Leave the ``.rehuco`` at ``path`` to be opened when its device answers, if it is on one that must be asked.

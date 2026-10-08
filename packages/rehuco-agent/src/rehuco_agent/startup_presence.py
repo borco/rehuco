@@ -20,7 +20,6 @@ it only emits a signal, which Qt delivers to the GUI thread; and :meth:`~Startup
 when the window closes, so an answer racing the teardown is dropped.
 """
 
-import logging
 import sys
 from collections.abc import Iterable
 from pathlib import Path
@@ -29,8 +28,6 @@ from typing import Final
 from borco_core import Device, Presence, PresenceScan, device_of, presence_of
 from borco_core.platforms.linux.mount_table import read_mounts
 from PySide6.QtCore import QObject, Qt, Signal, Slot
-
-LOG: Final = logging.getLogger(__name__)
 
 
 class StartupPresence(QObject):

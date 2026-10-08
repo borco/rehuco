@@ -334,6 +334,7 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         :param focus: make it current, loading it -- the session's focused document arriving before the user chose
             another.
         """
+        previous = self.__tracker.current_dock
         self.__restoring_session = True
         try:
             dock = self.__find_dock(path) or self.__make_new_dock(path, state=item.state, lazy=True)
@@ -341,6 +342,10 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
             self.__restoring_session = False
         if focus:
             self.__activate(dock)
+        elif previous is not None and previous is not dock:
+            # QtAds makes every dock current as it is added, which is right for the start (the last one made is
+            # replaced by the session's focused one) and wrong here, where the user may be working in the previous one
+            self.__tracker.set_current_dock(previous)
 
     def open_document_widgets(self) -> list[DocumentWidget]:
         """Every currently open document's widget, in no particular order.

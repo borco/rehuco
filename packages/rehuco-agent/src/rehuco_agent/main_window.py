@@ -1986,6 +1986,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__reveal_documents_dock()
         resolved = Path(path).resolve()
         widget = self.__documents_dock.open_document(resolved)
+        self.__reached(widget)
         if not widget.model.document.load_failed:
             self.__recent_files.record(resolved)
 
@@ -2004,6 +2005,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__reveal_documents_dock()
         resolved = Path(path).resolve()
         widget = self.__documents_dock.open_folder(resolved)
+        self.__reached(widget)
         if not widget.model.document.load_failed:
             self.__recent_files.record(resolved)
 
@@ -2023,6 +2025,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__reveal_documents_dock()
         resolved = Path(path).resolve()
         widget = self.__documents_dock.open_archive(resolved)
+        self.__reached(widget)
         if not widget.model.document.load_failed:
             self.__recent_files.record(resolved)
 
@@ -2037,7 +2040,16 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         :param path: filesystem path to a ``.rehu`` file.
         """
         self.__reveal_documents_dock()
-        self.__documents_dock.show_in_preview(Path(path).resolve())
+        self.__reached(self.__documents_dock.show_in_preview(Path(path).resolve()))
+
+    def __reached(self, widget: DocumentWidget) -> None:
+        """Tell the remembered paths the user reached ``widget``'s record themselves (#464), so a document the session
+        was keeping open for a share that was off follows its dock from now on -- a close included.
+
+        :param widget: the document just opened or previewed; its model's path is the record, never the folder or
+            archive the open was asked for.
+        """
+        self.__remembered.reached(widget.model.path)
 
     def __on_current_dock_changed(self, dock: object) -> None:
         """Remember the Browsers or the Root Catalog dock as the one the preview follows, once the reader is in it.
