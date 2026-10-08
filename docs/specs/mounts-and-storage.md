@@ -270,6 +270,15 @@ Rules:
   [[mounts-and-storage#durable-retention]] version comparison (re-pull only what moved); the mount coming back does not
   force a full rescan.
 
+**The agent applies the same rules to what it remembers (#464).** At start, the recent files, the recent root
+catalogs and the session's open documents are each judged *present*, *gone* or *offline*
+(`borco_core.path_presence`). A fixed local drive is checked at once — it answers, so a missing file is gone. A
+share, a removable drive or a disc is classified without touching it (the drive letter's type, the mount table), its
+server is asked with a 0.3 s connection attempt rather than a `stat` (measured: a `stat` under a switched-off SMB host
+blocks **21 s**, the connection attempt 0.3 s), and only a server that answered is `stat`-ed. All of it runs on
+daemon threads, so neither the start nor the quit waits for a dead mount. *Gone* is forgotten; *offline* is kept, shown
+disabled, and asked again next run.
+
 Deployment note: mount the shares **soft / with short timeouts** so failed syscalls return an error quickly rather than
 hanging. Hard mounts defeat this discipline and should be avoided for swarm storage.
 

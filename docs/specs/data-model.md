@@ -910,11 +910,19 @@ it never locks on its own.
 
 The same presentation extends to the *refuse* row and beyond it — **every open attempt yields a document view, never a
 modal error box.** A file that is refused (the grammar row above), one that cannot be parsed at all (or trips the
-read-time sanity caps), and one that is simply *gone* (deleted between sessions) each open as an **empty, locked**
+read-time sanity caps), and one that is simply *gone* each open as an **empty, locked**
 view — never dirty, never savable — whose notice names the failure (for a parse error, including the parser's own
 line/column). Fixing the file by hand and reverting retries in place, refreshing the notice with any new failure, so
 there is no reopen-and-fail loop. "Missing" stays a distinct cause from "unparseable": bulk-closing the docks of
 vanished files must never sweep away a dock whose file the user is mid-repair.
+
+"Gone" is an *explicit open* of a path (a dialog, the command line, a file deleted while its dock was open) — **not a
+restore or a recent** (#464). A document remembered from the last session, and an entry of `Open Recent`, whose file
+was deleted in between is **forgotten**, not reopened as an empty locked dock: until the app can show an absent
+record from a retained copy ([[mounts-and-storage#durable-retention]], Release 0.4.0) such a dock can show nothing.
+Forgotten means the device answered and does not hold the file; one that did not answer (a share whose server is
+off, an unplugged drive) is *offline*, not gone — its entry is kept, disabled, and its session document stays
+remembered as open ([[mounts-and-storage#offline-mounts]]).
 
 **A failing save gets the same treatment from the other side — a surface, not a traceback.** Reading is not the only
 place file I/O can fail: a save writes bytes, and the write itself can fail transiently — most importantly onto an

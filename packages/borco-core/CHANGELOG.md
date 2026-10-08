@@ -9,6 +9,14 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ## [Unreleased]
 
+### Added
+
+- `borco_core.path_presence` — whether a remembered path is still there, without waiting on a machine that is off:
+  `device_of` classifies a path's storage (local, network, removable, optical) from local state only, and
+  `presence_of` / `PresenceScan` answer *present*, *gone* or *offline*, asking a network path's server with a short
+  connection attempt before any `stat` (a `stat` under a switched-off SMB host blocks for 21 s). The scan runs on daemon
+  threads, so quitting never waits for it.
+
 ## [0.2.0] - 2026-09-27
 
 ### Added

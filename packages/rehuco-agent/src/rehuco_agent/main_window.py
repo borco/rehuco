@@ -83,6 +83,7 @@ from .rehuco import BrowsersDock, RootCatalog, RootsPanel
 from .rehuco.catalog_table_model import RowKey
 from .rehuco.selection_preview import SelectionPreview
 from .rehuco.table_browser import TableBrowser
+from .remembered_paths import RememberedPaths
 from .resource_events import ResourceEvents
 from .settings.checksum_settings import shared_checksum_settings
 from .settings.checksum_trust_store import checksum_trust_path
@@ -443,7 +444,15 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
         self.__session: Final = DocumentSessionSettings()
         self.__session.load(persistent_settings())
+        # which remembered files are still there (#464): a fixed local drive is judged right here, anything else
+        # is asked on daemon threads and reaches the handlers below once it answers -- the start waits for nothing
+        self.__remembered: Final = RememberedPaths(self.__recent_files, self.__rehuco_settings, self.__session, self)
+        self.__remembered.document_arrived.connect(self.__on_document_arrived)
+        self.__remembered.rehuco_arrived.connect(self.__on_rehuco_arrived)
+        self.__remembered.layout_due.connect(self.__on_late_layout_due)
+        self.__root_catalog.rehuco_path_changed.connect(self.__remembered.clear_deferred_rehuco)
         self.__restore_session_if_enabled()
+        self.__remembered.start()
 
         self.__setup_view_menu()
 
@@ -958,6 +967,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             return
         for path in paths:
             action = menu.addAction(str(path))
+            action.setEnabled(not self.__remembered.unavailable(path))
             action.triggered.connect(lambda _checked=False, path=path: self.__open_rehuco_or_report(path))
 
     def __on_save_all(self) -> None:
@@ -1052,6 +1062,9 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             title = path_label(path)
             action = QWidgetAction(menu)
             action.setDefaultWidget(RehuDocumentMenuEntry(title, path, menu))
+            # a file on a share or a removable drive stays disabled until its device has answered, and for good
+            # if it never does (#464): it is not known to be there, so it is not offered
+            action.setEnabled(not self.__remembered.unavailable(path))
             action.triggered.connect(lambda _checked=False, path=path: self.open_path(path))
             menu.addAction(action)
 
@@ -1753,11 +1766,17 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             event.ignore()
             return
 
+        # the guards have passed, so the window is going: no answer from the presence scan may reach it from here on.
+        # A call still blocked on a switched-off server is left where it is -- its thread is a daemon, and the process
+        # does not wait for it (borco_core.path_presence, #464)
+        self.__remembered.stop()
+
         # the open catalog is remembered and detached before the queue is shut down, for the reason the Tasks
         # widget is detached first (__shutdown_task_queue): shutdown calls every listener still attached, and a
         # listener whose cache is closing has nothing left to say (#377). Detaching it lets the file go, which is
-        # when the Browsers dock remembers its browsers
-        self.__rehuco_settings.current_path = self.__root_catalog.rehuco_path
+        # when the Browsers dock remembers its browsers. A catalog still waiting for its device (#464) is still the
+        # one to reopen
+        self.__rehuco_settings.current_path = self.__root_catalog.rehuco_path or self.__remembered.deferred_rehuco
         self.__rehuco_settings.save(persistent_settings())
         self.__roots_panel.detach()
         self.__root_catalog.detach()
@@ -1801,8 +1820,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """
         session_restore_settings = SessionRestoreSettings()
         session_restore_settings.load(persistent_settings())
-        if session_restore_settings.restore_documents:
-            self.__restore_session()
+        self.__restore_session(session_restore_settings)
         if session_restore_settings.restore_root_catalog:
             self.__restore_rehuco()
 
@@ -1812,25 +1830,76 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         Nothing is asked of the user at start: a file that is gone or unreadable is logged by the dock and
         forgotten here, so the next run does not trip over it again. Revealed like a session restore is --
         the outer layout restored afterwards still has the last word on whether the dock ends up visible.
+
+        One on a share or a removable drive is **not opened here** (#464): whether its device is there is not known
+        until it has been asked, and the start does not wait for that. :meth:`__on_rehuco_arrived` opens it when it
+        answers; until then it stays the one to reopen, so a device that never answers loses nothing.
         """
         path = self.__rehuco_settings.current_path
-        if path is None:
+        if path is None or self.__remembered.defer_rehuco(path):
             return
         if self.__root_catalog.open_rehuco(path):
             self.__reveal_catalog_docks()
         else:
             self.__rehuco_settings.current_path = None
 
-    def __restore_session(self) -> None:
-        """Reopen every document the last session left open, restoring its dock layout and focus --
+    def __on_rehuco_arrived(self, path: Path) -> None:
+        """The deferred ``.rehuco`` is there (#464): open it, unless the user opened another catalog meanwhile."""
+        if self.__root_catalog.rehuco_path is not None:
+            return
+        if self.__root_catalog.open_rehuco(path):
+            self.__reveal_catalog_docks()
+        else:
+            self.__rehuco_settings.current_path = None
+
+    def __restore_session(self, restore: SessionRestoreSettings) -> None:
+        """Reopen the documents the last session left open that are there, restoring their dock layout and focus --
         without reading any of their files up front (#66); see ``DocumentsDock.restore_session``.
+
+        **Only the documents on fixed local drives are restored here** (#464), and only those whose file is there: a
+        delete between sessions is forgotten instead of made into an empty locked ``missing`` dock. A document on a
+        share or a removable drive comes later, through :meth:`__on_document_arrived`, once its device answers; one
+        whose device does not answer is not shown and stays remembered as open (:meth:`__save_session`).
 
         Reveals the Documents dock first, like every other open funnel (#268) -- see
         :meth:`__reveal_documents_dock` for why the outer layout restored afterwards still has the last
         word on whether it ends up visible.
+
+        :param restore: the Session page's choices: which kinds of storage to restore documents from. Both off is
+            the old single toggle off (#408): nothing is restored and the Documents dock is left as the layout has it.
+        """
+        if not restore.restore_local_documents and not restore.restore_remote_documents:
+            return
+        now = self.__remembered.documents_to_restore_now(restore)
+        self.__reveal_documents_dock()
+        self.__documents_dock.restore_session(self.__session, now)
+
+    def __on_document_arrived(self, path: Path, item: DocumentSessionSettings.Item, take_focus: bool) -> None:
+        """A remote document of the last session is there (#464): restore it now, as the others were -- revealing
+        the Documents dock as any open does (#268), since the start may have had nothing local to reveal it for.
+
+        The session's focused document takes the focus only when it was this one, the start is still settling and the
+        user has not focused another document meanwhile.
         """
         self.__reveal_documents_dock()
-        self.__documents_dock.restore_session(self.__session)
+        idle = self.__documents_dock.focused_document_path() is None
+        self.__documents_dock.restore_late(path, item, focus=take_focus and idle)
+
+    def __on_late_layout_due(self) -> None:
+        """Every awaited remote document has answered (#464): lay the documents out as the session left them, now
+        that the docks the saved layout names all exist.
+
+        **Not if the user has opened anything meanwhile.** ``CDockManager.restoreState`` closes every dock the saved
+        layout does not name (measured: a dock added after the save reads ``isClosed()`` after the restore), so a
+        document the user opened in the first seconds, or a preview they made, would vanish. Then the late docks stay
+        tabbed where they landed, which is the lesser loss.
+        """
+        session_open = {path for path, item in self.__session.items.items() if item.open}
+        if self.__documents_dock.preview_document_widget() is not None or any(
+            widget.model.path not in session_open for widget in self.__documents_dock.open_document_widgets()
+        ):
+            return
+        self.__documents_dock.restore_state(self.__session.docks_state)
 
     def __save_window_state(self) -> None:
         """Persist this window's current size/position, toolbar layout, outer dock layout, and the
@@ -1868,6 +1937,11 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             self.__session.items[path] = DocumentSessionSettings.Item(  # pylint: disable=unsupported-assignment-operation
                 open=True, state=widget.save_state()
             )
+        # a document that was open and is not now because its device never answered this run (#464) is still open as
+        # far as the session goes: closing it here would forget it for good just because a server was off
+        for path in self.__remembered.still_open:
+            if path in self.__session.items and path not in open_widgets:
+                self.__session.items[path].open = True
         preview_focused = preview is not None and self.__documents_dock.focused_document_widget() is preview
         self.__session.focused_path = None if preview_focused else self.__documents_dock.focused_document_path()
         self.__session.docks_state = self.__documents_dock.save_state()

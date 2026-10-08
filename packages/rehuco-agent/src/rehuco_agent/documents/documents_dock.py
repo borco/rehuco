@@ -3,6 +3,7 @@
 
 import logging
 import time
+from collections.abc import Container
 from pathlib import Path
 from typing import Final, cast
 
@@ -269,7 +270,7 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         self.__capture_preview_layout()
         self.__preview_layouts().save(persistent_settings())
 
-    def restore_session(self, session: DocumentSessionSettings) -> None:
+    def restore_session(self, session: DocumentSessionSettings, only: Container[Path] | None = None) -> None:
         """Recreate every document the last session left open (#21), restoring its dock layout and
         focus -- touching **none of their files** up front (#66).
 
@@ -286,21 +287,26 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         act real visibility signals don't cover while the window is hidden. A legacy ``.tc`` is never
         made a placeholder (:meth:`__make_new_dock`): it always loads here, same as before.
 
-        A path that has since gone missing or become unparseable still reopens -- as an empty,
-        **locked** dock materialized in its place ([[data-model#write-integrity]]) once its tab is
-        actually shown, not skipped and not a dialog per file. Until then the tab shows no lock
+        **A path whose file is gone is not asked for here** (#464): ``MainWindow`` has already found out which
+        remembered documents are there -- a fixed local drive answers at once, and a share or removable drive is
+        asked on a thread and reaches :meth:`restore_late` once it answers -- and passes ``only``, so no empty locked
+        ``missing`` dock is made for a delete between sessions. A path that is there but has become unparseable
+        still reopens as an empty, **locked** dock materialized in its place ([[data-model#write-integrity]]) once
+        its tab is actually shown, not skipped and not a dialog per file. Until then the tab shows no lock
         marker and does not count as missing (:meth:`has_missing_documents`) -- knowing either would
         take the very read this defers. The outer layout (splits/tabs between documents) is restored
         only once every document it references has already been (re)created -- :meth:`restore_state`
         matches saved entries up to currently-registered docks by name; it does not create any itself.
 
         :param session: the loaded session (#65) to restore.
+        :param only: the paths to restore; ``None`` restores every open one. A path outside it is left as the
+            session has it, neither restored nor forgotten.
         """
         self.__restoring_session = True
         try:
             opened: dict[Path, QtAds.CDockWidget] = {}
             for path, item in session.items.items():
-                if not item.open:
+                if not item.open or (only is not None and path not in only):
                     continue
                 # the remembered layout rides the open itself (#62): the dock applies exactly one
                 # layout per document -- this one, or the saved default only where this one fails to
@@ -313,6 +319,28 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         focused_dock = opened.get(session.focused_path) if session.focused_path is not None else None
         if focused_dock is not None:
             self.__activate(focused_dock)  # loads it now (#66) -- it is the first thing shown
+
+    def restore_late(self, path: Path, item: DocumentSessionSettings.Item, *, focus: bool = False) -> None:
+        """Restore one document of the last session after the window is up: its storage only just answered (#464).
+
+        A document on a share or a removable drive cannot be restored with the others, because whether it is there is
+        not known until a server has been asked, and the start does not wait for that
+        ([[appendices.code-conventions#worker-threads]]). It is made exactly as :meth:`restore_session` makes one --
+        a pending dock around a placeholder model, its own remembered layout applied, read when its tab reaches the
+        screen. It is **not** made current unless asked: the user may already be working in another document.
+
+        :param path: the document's path.
+        :param item: its session entry, whose ``state`` is its own dock layout.
+        :param focus: make it current, loading it -- the session's focused document arriving before the user chose
+            another.
+        """
+        self.__restoring_session = True
+        try:
+            dock = self.__find_dock(path) or self.__make_new_dock(path, state=item.state, lazy=True)
+        finally:
+            self.__restoring_session = False
+        if focus:
+            self.__activate(dock)
 
     def open_document_widgets(self) -> list[DocumentWidget]:
         """Every currently open document's widget, in no particular order.

@@ -67,20 +67,42 @@ class DocumentSessionSettings:
             pruned[path] = item
         return pruned
 
+    def forget(self, path: Path) -> None:
+        """Drop ``path`` for good (#464): its file is gone, and the device it was on answered to say so.
+
+        Its remembered layout goes with it -- there is nothing left to lay out -- and so does the focus, which moves
+        to the open document next in line (the one after it in the order the session lists them, else the one before),
+        or to none.
+
+        :param path: the remembered document; a no-op when it is not remembered.
+        """
+        if path not in self.items:
+            return
+        if self.focused_path == path:
+            order = list(self.items)
+            position = order.index(path)
+            open_others = [other for other in order if other != path and self.items[other].open]
+            after = [other for other in open_others if order.index(other) > position]
+            self.focused_path = after[0] if after else open_others[-1] if open_others else None
+        del self.items[path]  # pylint: disable=unsupported-delete-operation
+
     def load(self, settings: QSettings) -> None:
         """Replace the current items (and focused path) with what's in persistent storage.
+
+        Paths are not resolved here (#464): each was when saved, and resolving one under an unreachable share blocks
+        the start ([[appendices.code-conventions#worker-threads]], :mod:`borco_core.path_presence`).
 
         :param settings: the ``QSettings`` to read from.
         """
         settings.beginGroup(GROUP)
         focused = str(settings.value(FOCUSED_PATH_KEY, ""))
-        self.focused_path = Path(focused).resolve() if focused else None
+        self.focused_path = Path(focused) if focused else None
         docks_state = cast(QByteArray, settings.value(DOCKS_STATE_KEY, QByteArray(), type=QByteArray))
         self.docks_state = bytes(docks_state.data())
         self.items.clear()
         for index in range(settings.beginReadArray(ITEMS_KEY)):
             settings.setArrayIndex(index)
-            path = Path(str(settings.value(ITEM_PATH_KEY, ""))).resolve()
+            path = Path(str(settings.value(ITEM_PATH_KEY, "")))
             state = cast(QByteArray, settings.value(ITEM_STATE_KEY, QByteArray(), type=QByteArray))
             self.items[path] = DocumentSessionSettings.Item(  # pylint: disable=unsupported-assignment-operation
                 open=bool(settings.value(ITEM_OPEN_KEY, False, type=bool)),

@@ -61,12 +61,22 @@
        </widget>
       </item>
       <item>
-       <widget class="QCheckBox" name="restore_documents_check_box">
+       <widget class="QCheckBox" name="restore_local_documents_check_box">
         <property name="text">
-         <string>Opened documents</string>
+         <string>Opened documents on local storage</string>
         </property>
         <property name="toolTip">
-         <string>When off, the app starts with no documents open. Sessions keep being recorded on close either way.</string>
+         <string>When off, the app starts without the documents that were open on a drive of this computer. Sessions keep being recorded on close either way.</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QCheckBox" name="restore_remote_documents_check_box">
+        <property name="text">
+         <string>Opened documents on remote or removable storage</string>
+        </property>
+        <property name="toolTip">
+         <string>When off, the app starts without the documents that were open on a network share, a removable drive or a disc. When on, they open as soon as their storage answers; one that does not answer stays remembered as open and returns with its storage.</string>
         </property>
        </widget>
       </item>

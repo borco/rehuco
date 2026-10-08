@@ -110,6 +110,16 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 ### Changed
 
+- **Open Recent and the restored session no longer keep files that are gone.** A rehu deleted since the last run
+  is forgotten at start instead of coming back as an empty, locked *missing* tab, and drops out of `File` > `Open
+  Recent` and `Root Catalog` > `Open Recent`. Only a file the drive *answered* it does not hold is forgotten: one on a
+  share whose server is off, an unplugged drive or a disc is kept, shown disabled in the recents, and a document of
+  the session on it is not opened but stays remembered as open, so it returns with its storage. A document on a
+  network share or a removable drive now opens a moment after the window, as soon as its storage answers, instead of
+  the start waiting on it; quitting never waits on it either. The Session page's **Opened documents** check is two:
+  **Opened documents on local storage** and **Opened documents on remote or removable storage**, each keeping the
+  choice the old one held. A root catalog on a share is reopened the same way.
+
 - **Creating a rehu for a file takes its checksum at once.** When `foo.rehu` is first saved beside a `foo.zip` that
   the folder's `info.checksum` lists, the entry moves into `foo.checksum`, so the Roots view, the Files dock and the
   Checksums tab show the file's checksum straight away instead of *No checksum* until the next verify of the folder.
