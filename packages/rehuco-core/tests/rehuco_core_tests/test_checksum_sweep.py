@@ -576,6 +576,28 @@ def test_a_sweep_allowed_to_create_records_baselines_the_resource_that_had_none(
     assert list(catalog.entries_of(PAINTING)) == ["lesson1.mp4"]
 
 
+def test_a_sweep_counts_and_names_the_files_it_added(
+    catalog: FakeCatalog, freezer: FrozenDateTimeFactory, caplog: Any
+) -> None:
+    """A new file a sweep checksums is counted *added* and named under its resource (#467).
+
+    **Test steps:**
+
+    * drop a new file into one resource after its record was written, and sweep
+    * check the tally counts it added and the log names it with its resource
+    """
+    freezer.move_to(MUCH_LATER)
+    catalog.files[ROOT / "painting" / "lesson2.mp4"] = b"a second lesson"
+
+    job = sweep(stale_after=WEEK)
+    with caplog.at_level("INFO", logger="rehuco_core.checksum_jobs"):
+        run(job)
+
+    assert job.tally is not None
+    assert job.tally.statuses["added"] == 1
+    assert f"{PAINTING}: checksum added for new file lesson2.mp4" in caplog.text
+
+
 def test_a_root_that_will_not_list_fails_the_sweep(catalog: FakeCatalog) -> None:
     """A folder that would not list means the run has nothing to say, which is not a clean sweep (#245).
 
@@ -853,8 +875,9 @@ def test_a_sweep_over_a_moved_catalog_re_reads_it_and_trusts_every_resource(
         (SweepTally(resources=0, unreadable_branches=1), "0 resources, 1 unreadable directory"),
         (SweepTally(resources=2, statuses={"matched": 4}, pruned=3), "2 resources, 4 matched, 3 pruned"),
         (SweepTally(resources=2, statuses={"matched": 4}, moved=1), "2 resources, 4 matched, 1 moved"),
+        (SweepTally(resources=2, statuses={"added": 3, "matched": 4}), "2 resources, 4 matched, 3 added"),
     ],
-    ids=["one resource", "verdicts", "not checked", "branches", "one branch", "pruned", "moved"],
+    ids=["one resource", "verdicts", "not checked", "branches", "one branch", "pruned", "moved", "added"],
 )
 def test_a_summary_says_what_a_sweep_established(tally: SweepTally, expected: str) -> None:
     """One line, in :func:`~rehuco_core.checksum_report_summary`'s voice.

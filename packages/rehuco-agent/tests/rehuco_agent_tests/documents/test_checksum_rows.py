@@ -238,6 +238,43 @@ def test_a_covered_file_and_an_uncovered_one_both_appear(disk: FakeDisk) -> None
     assert by_name[ARCHIVE].verified is None
 
 
+def test_an_older_builds_unexpected_entry_reads_as_not_recorded(disk: FakeDisk) -> None:
+    """A hash-less ``unexpected`` entry says nothing about its file, so the tab reads it as unlisted (#467).
+
+    **Test steps:**
+
+    * put a record listing the video with a name and an ``unexpected`` status and no hash
+    * read the rows
+    * check the video's row has no status, the missing glyph and its tooltip, and the summary counts it as not
+      recorded
+    """
+    disk.put_record([{"name": VIDEO, "status": "unexpected"}])
+
+    rows = read_checksum_rows(INFO_PATH, PATTERNS, STALE_AFTER, NOW)
+
+    video = next(row for row in rows.rows if row.name == VIDEO)
+    assert video.status == ""
+    assert video.checksum_state is FileChecksumState.MISSING
+    assert CHECKSUM_STATE_TOOLTIPS[video.checksum_state] == "No checksum recorded for this file."
+    assert tally_text(tally_rows(rows.rows)) == "2 files · 2 not recorded"
+
+
+def test_a_hash_less_missing_entry_keeps_its_status_for_delete_missing(disk: FakeDisk) -> None:
+    """A hash-less entry whose file is gone still reads ``missing``, which *Delete missing* is offered for (#244).
+
+    **Test steps:**
+
+    * put a record listing a gone file with a name, a ``missing`` status and no hash
+    * read the rows
+    * check its row keeps the ``missing`` status
+    """
+    disk.put_record([{"name": "gone.zip", "status": "missing"}])
+
+    rows = read_checksum_rows(INFO_PATH, PATTERNS, STALE_AFTER, NOW)
+
+    assert next(row for row in rows.rows if row.name == "gone.zip").status == "missing"
+
+
 def test_a_resource_with_no_record_shows_every_content_file(disk: FakeDisk) -> None:
     """The dock is worth opening before anything has ever run (#244).
 

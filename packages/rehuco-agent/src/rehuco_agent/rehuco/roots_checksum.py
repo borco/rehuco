@@ -6,9 +6,10 @@ turns those into a :class:`RowChecksum` (the model's data) and into the pane's w
 the model cannot disagree, and none of the wording is buried in a widget.
 
 **A file reads two ways.** It has *no checksum* -- the record does not list it, or lists it with no hash (the
-*unexpected* entry of a record written before #467 reads the same), or no record covers it -- or it has a checked
+*unexpected* entry of a record written before #467 is one), or no record covers it -- or it has a checked
 result, aged by :func:`~rehuco_agent.documents.files_rows.checksum_verdict_for`: *matching* or *not matching*, and
-old when the check has expired or was made where this machine did not trust the record yet (#358).
+old when the check has expired or was made where this machine did not trust the record yet (#358). A claim moved here
+from another record (#257, #467) has a hash and no result yet: it reads *not checked yet*, old and not a warning.
 """
 
 from dataclasses import dataclass
@@ -47,6 +48,10 @@ VERDICT_WORDS: Final = {
 the second line's."""
 
 NO_CHECKSUM: Final = "No checksum"
+NOT_CHECKED_YET: Final = "Not checked yet"
+"""The verdict of a claim moved here from another record (#467): a hash this record has never checked, so neither
+*matching* nor *not matching* is true of it yet."""
+
 NEVER_CHECKED: Final = "Never"
 NOT_COVERED: Final = "Not covered"
 NOT_APPLICABLE: Final = "Not applicable"
@@ -67,8 +72,9 @@ OTHER_LOCATION_NOTE: Final = "at another location"
 class RowChecksum:
     """What a covered file's row shows.
 
-    :param state: the file's state; never :attr:`~FileChecksumState.UNEXPECTED`, which reads as *missing* here.
-    :param untrusted: whether the stamp is old only because this machine has not trusted the record where it is.
+    :param state: the file's state.
+    :param untrusted: whether the stamp is old only because this machine has not trusted the record where it is, or
+        the entry is a claim moved here that this record has not checked yet.
     :param verified: when the file was last checked, or ``None`` when it never was.
     """
 
@@ -93,8 +99,6 @@ def row_checksum(covered: CoveredFile | None, stale_after: timedelta, now: datet
     if entry is None or entry.digest is None:
         return RowChecksum(FileChecksumState.MISSING)
     state, untrusted = checksum_verdict_for(entry, stale_after, now, covered.trusted_since)
-    if state is FileChecksumState.UNEXPECTED:
-        return RowChecksum(FileChecksumState.MISSING)
     return RowChecksum(state, untrusted, entry.verified)
 
 
@@ -111,7 +115,8 @@ def checksum_lines(checksum: RowChecksum | None, *, bookkeeping: bool, now: date
         return NO_CHECKSUM, NOT_APPLICABLE if bookkeeping else NOT_COVERED
     verdict = VERDICT_WORDS.get(checksum.state, NO_CHECKSUM)
     if checksum.verified is None:
-        return verdict, NEVER_CHECKED
+        # a dateless state is untrusted only when it is a moved claim (checksum_verdict_for)
+        return NOT_CHECKED_YET if checksum.untrusted else verdict, NEVER_CHECKED
     return verdict, checked_text(checksum, now)
 
 

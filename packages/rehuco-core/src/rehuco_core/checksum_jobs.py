@@ -31,12 +31,19 @@ from typing import Any, Final
 
 from .checksum_algorithms import CHECKSUM_ALGORITHMS, DEFAULT_CHECKSUM_ALGORITHM
 from .checksum_record import ChecksumRecordError, checksum_record_path
+from .checksum_reporting import (
+    GENERATE_FINDING,
+    PRUNE_REASONS,
+    VERIFY_FINDING,
+    checksum_report_is_clean,
+    checksum_report_summary,
+    status_counts_text,
+)
 from .checksum_seeding import legacy_manifest_for, log_legacy_seed
 from .checksum_trust import DEFAULT_CHECKSUM_TRUST, ChecksumTrust
 from .constants import EXCLUDED_FILE_PATTERNS
 from .rehu_catalog import enumerate_catalog_resources
 from .rehu_checksums import ChecksumReport, generate_checksums, verify_checksums
-from .rehu_content_files import ContentExclusionTier
 from .rename_coordination import DEFAULT_RENAME_COORDINATOR, RenameCoordinator
 from .resource_scoping import resource_name
 from .tasks import (
@@ -49,47 +56,6 @@ from .tasks import (
 )
 
 LOG: Final = logging.getLogger(__name__)
-
-VERIFY_FINDING: Final = "Checksums verified: {summary}."
-GENERATE_FINDING: Final = "Checksums recorded: {summary}."
-"""What a finished run says -- the document's inline banner and the Tasks dock's row, one wording (#457).
-
-The **summary**, not the file list: a tutorial of two hundred videos reports two hundred statuses, and a row is not
-where those belong -- the log has the detail, and the per-file view is #244's."""
-
-CLEAN_STATUSES: Final = frozenset({"matched", "unexpected"})
-"""The verdicts that are not a finding about the files.
-
-``unexpected`` is a *report* state rather than a resting one ([[data-model#checksums]]) -- the run
-adopted the file and recorded it ``matched`` -- so a resource whose only news is an adopted screenshot
-has come back clean."""
-
-
-def checksum_report_is_clean(report: ChecksumReport) -> bool:
-    """Whether a run found nothing to act on.
-
-    :param report: what the run established.
-    :returns: whether every verdict was a clean one and nothing went unread.
-    """
-    return (
-        all(status in CLEAN_STATUSES for status in report.statuses.values())
-        and not report.unreadable
-        and not report.unnamed_malformed
-        # a run that could not list part of the tree is not a clean run, whether or not the record
-        # happened to hold entries under the branch it could not see (#245)
-        and not report.unreadable_directories
-    )
-
-
-PRUNE_REASONS: Final[dict[ContentExclusionTier, str]] = {
-    "structural": "it is a record's own bookkeeping, which is never a resource's content",
-    "junk": "its name matches an excluded-files pattern",
-}
-"""How each exclusion tier reads in the log line naming a dropped entry (#254).
-
-The sentence lives here rather than in :mod:`rehuco_core.rehu_content_files`, which answers *which tier*
-and has no reader to address; a tier a build does not know cannot occur, since both ends read the same
-:data:`~rehuco_core.ContentExclusionTier`."""
 
 CHECKSUM_GENERATE_KIND: Final = "checksum-generate"
 CHECKSUM_VERIFY_KIND: Final = "checksum-verify"
@@ -307,7 +273,21 @@ class ChecksumJob(TaskJobBase):
             log_legacy_seed(report.seed)
         self.__log_pruned(report)
         self.__log_moved(report)
+        self.__log_added(report)
         LOG.info("%s: %s", self.label, checksum_report_summary(report))
+
+    @staticmethod
+    def __log_added(report: ChecksumReport) -> None:
+        """Name every file the run gave its first checksum (#467).
+
+        Beside the dropped and moved lines, which already name their files: the summary counts how many were
+        added, and this is where a reader finds out which.
+
+        :param report: what the run established.
+        """
+        for name, status in report.statuses.items():
+            if status == "added":
+                LOG.info("Checksum added for new file %s", name)
 
     @staticmethod
     def __log_pruned(report: ChecksumReport) -> None:
@@ -569,57 +549,6 @@ class VerifyChecksumsJob(ChecksumJob):
         return f"This resource has no checksum record yet: {record}"
 
 
-def checksum_report_summary(report: ChecksumReport) -> str:
-    """One line saying what a run established, for a log record and a banner alike.
-
-    Counts rather than names: a tutorial of two hundred videos reports two hundred statuses, and the
-    question a verify raises is *how many of what*. Which files those were is the record's answer, and
-    the dock that shows it is #244's.
-
-    :param report: what the run established.
-    :returns: the summary, e.g. ``"210 matched, 2 mismatched, 1 missing"``, or a plain statement when
-        the run established nothing.
-    """
-    counts: dict[str, int] = {}
-    for status in report.statuses.values():
-        counts[status] = counts.get(status, 0) + 1
-    parts = [f"{count} {status}" for status, count in sorted(counts.items())]
-    if report.skipped:
-        parts.append(f"{len(report.skipped)} skipped")
-    if report.unreadable:
-        parts.append(f"{len(report.unreadable)} unreadable")
-    if report.unnamed_malformed:
-        parts.append(f"{report.unnamed_malformed} unnamed malformed")
-    if report.seed is not None:
-        # named rather than counted, because a seed happens once in a resource's life and which file
-        # it came from is the thing a reader wants back later (#243)
-        parts.append(f"seeded {len(report.seed.entries)} from {report.seed.manifest.name}")
-        if report.seed.dropped:
-            count = len(report.seed.dropped)
-            parts.append(f"{count} seed line{'' if count == 1 else 's'} dropped")
-        if report.seed.ignored:
-            count = len(report.seed.ignored)
-            parts.append(f"{count} manifest{'' if count == 1 else 's'} ignored")
-        if report.seed.retired:
-            # named rather than counted, for the reason the seed itself is: retirement happens once in a
-            # resource's life, and *which file stopped being the authority* is what a reader wants back
-            parts.append(f"retired {', '.join(manifest.name for manifest in report.seed.retired)}")
-    if report.pruned:
-        # counted here and named in the log (:meth:`ChecksumJob.__log_pruned`), because this is the one
-        # part of a run that takes something away and a reader has to be able to find out what (#254)
-        parts.append(f"{len(report.pruned)} pruned")
-    if report.moved:
-        # the other half of what a record catching up with the coverage rule does, and the half that has
-        # to be visible: these entries left this record for another one, rather than ceasing to exist
-        parts.append(f"{len(report.moved)} moved")
-    if report.unreadable_directories:
-        # the one part that is not a count of files: a branch that would not list has no files to
-        # count, which is exactly why it has to be said out loud (#245)
-        count = len(report.unreadable_directories)
-        parts.append(f"{count} unreadable director{'y' if count == 1 else 'ies'}")
-    return ", ".join(parts) if parts else "nothing to check"
-
-
 # a tally's members are the outcomes a sweep can have, one counter each; collapsing any of them into a
 # dict of counts would make the ones a reader has to be told about (#254, #257) indistinguishable from
 # the verdicts, which are already a dict for exactly the opposite reason
@@ -673,7 +602,7 @@ def sweep_summary(tally: SweepTally) -> str:
     :returns: the summary, e.g. ``"412 resources, 9850 matched, 2 mismatched, 12 without a record"``.
     """
     parts = [f"{tally.resources} resource{'' if tally.resources == 1 else 's'}"]
-    parts.extend(f"{count} {status}" for status, count in sorted(tally.statuses.items()))
+    parts.extend(status_counts_text(tally.statuses))
     if tally.without_record:
         parts.append(f"{tally.without_record} without a record")
     if tally.failed:
@@ -877,8 +806,10 @@ class SweepChecksumsJob(TaskJobBase):
         tally.moved += len(report.moved)
         for name, covering in report.moved.items():
             LOG.info("%s: moved %r into %s as %r.", rehu_path, name, covering.record, covering.name)
-        for status in report.statuses.values():
+        for name, status in report.statuses.items():
             tally.statuses[status] = tally.statuses.get(status, 0) + 1
+            if status == "added":
+                LOG.info("%s: checksum added for new file %s", rehu_path, name)
 
     def root_path(self) -> Path:
         """The folder this sweep works over, refusing a job that has none.

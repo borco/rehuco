@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from datetime import timedelta
 from pathlib import Path
 from threading import Event
-from typing import Any, Final
+from typing import Any, Final, cast
 
 from pytest import fixture, mark, raises
 from pytest_mock import MockerFixture
@@ -487,6 +487,30 @@ def test_every_moved_claim_is_named_in_the_log_with_where_it_went(
     assert "1 moved" in caplog.text
 
 
+def test_every_added_file_is_named_in_the_log(
+    mocker: MockerFixture, control: FakeControl, present: None, caplog: Any
+) -> None:
+    """The summary counts the files a run gave their first checksum; the log says which (#467).
+
+    **Test steps:**
+
+    * run a verify reporting one file matched and one added
+    * check the added file is named in its own line, the matched one is not, and the summary says *added*
+    """
+    del present
+    mocker.patch(
+        "rehuco_core.checksum_jobs.verify_checksums",
+        return_value=ChecksumReport(statuses={VIDEO: "matched", ARCHIVE: "added"}),
+    )
+
+    with caplog.at_level("INFO", logger="rehuco_core.checksum_jobs"):
+        VerifyChecksumsJob(INFO_PATH).run(control)  # pyright: ignore[reportArgumentType]
+
+    assert f"Checksum added for new file {ARCHIVE}" in caplog.text
+    assert f"Checksum added for new file {VIDEO}" not in caplog.text
+    assert "1 matched, 1 added" in caplog.text
+
+
 @mark.parametrize("request_stop", ["pause", "cancel"])
 def test_a_stop_travels_out_of_the_run_untouched(
     mocker: MockerFixture, control: FakeControl, present: None, request_stop: str
@@ -779,6 +803,15 @@ def test_several_resources_enqueue_several_jobs_and_run_one_at_a_time(mocker: Mo
             ChecksumReport(statuses={VIDEO: "matched"}, unreadable_directories=("extras", "raw")),
             "1 matched, 2 unreadable directories",
         ),
+        (
+            ChecksumReport(statuses={"a": "added", "b": "mismatched", "c": "matched", "d": "added", "e": "matched"}),
+            "2 matched, 1 mismatched, 2 added",
+        ),
+        (
+            # a status this build does not know, which only a record from a newer build could hand back
+            ChecksumReport(statuses=cast(Any, {"a": "malformed", "b": "matched", "c": "invented"})),
+            "1 matched, 1 malformed, 1 invented",
+        ),
     ],
     ids=[
         "nothing",
@@ -790,6 +823,8 @@ def test_several_resources_enqueue_several_jobs_and_run_one_at_a_time(mocker: Mo
         "pruned",
         "moved",
         "several unreadable directories",
+        "added after the checked",
+        "unknown status last",
     ],
 )
 def test_a_summary_counts_what_a_run_established(report: ChecksumReport, expected: str) -> None:
@@ -876,9 +911,14 @@ def test_a_job_has_no_outcome_before_it_has_run(control: FakeControl, present: N
             {VIDEO: "matched", ARCHIVE: "mismatched"},
             ("Checksums verified: 1 matched, 1 mismatched.", False),
         ),
+        (
+            VerifyChecksumsJob,
+            {VIDEO: "matched", ARCHIVE: "added"},
+            ("Checksums verified: 1 matched, 1 added.", True),
+        ),
         (GenerateChecksumsJob, {VIDEO: "matched"}, ("Checksums recorded: 1 matched.", True)),
     ],
-    ids=["verify clean", "verify with a mismatch", "generate"],
+    ids=["verify clean", "verify with a mismatch", "verify that added a file is clean", "generate"],
 )
 def test_a_finished_run_says_what_it_found_in_one_line(
     mocker: MockerFixture,

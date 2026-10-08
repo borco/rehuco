@@ -41,6 +41,7 @@ from rehuco_agent.documents.files_rows import (
     FilesSortProxy,
     FilesTableModel,
     ModelIndex,
+    checksum_tooltip_for,
 )
 from rehuco_core import (
     ChecksumRecordError,
@@ -529,18 +530,40 @@ def test_the_untrusted_location_tooltip_replaces_the_age_ones_wording(mocker: Mo
     assert model.index(row, CHECKSUM_COLUMN).data(Qt.ItemDataRole.ToolTipRole) == "Not yet verified at this location."
 
 
-def test_an_unexpected_entry_is_not_folded_into_bad(mocker: MockerFixture) -> None:
-    """``unexpected`` is a report state, not a mismatch, and the two must not draw the same glyph (#303).
+def test_an_older_builds_unexpected_entry_reads_as_no_checksum(mocker: MockerFixture) -> None:
+    """A hash-less ``unexpected`` entry says nothing about its file, so it reads as no entry at all (#467).
 
     **Test steps:**
 
-    * record an entry resting at ``unexpected``
-    * verify it reads as its own state rather than BAD
+    * record an entry with a name and an ``unexpected`` status and no hash, as an older build wrote one
+    * verify it reads as MISSING -- no glyph of its own -- with the missing tooltip
     """
     mock_listing(mocker)
-    mock_record(mocker, [entry("notes.pdf", status="unexpected")])
+    mock_record(mocker, [{"name": "notes.pdf", "status": "unexpected"}])
 
-    assert read(mocker)["notes.pdf"].checksum_state is FileChecksumState.UNEXPECTED
+    row = read(mocker)["notes.pdf"]
+
+    assert row.checksum_state is FileChecksumState.MISSING
+    assert checksum_tooltip_for(row.checksum_state, row.untrusted_location) == "No checksum recorded for this file."
+
+
+def test_a_moved_claim_reads_old_and_not_yet_verified_here(mocker: MockerFixture) -> None:
+    """A claim moved in from another record carries a hash and no date or verdict (#257, #467): it needs a recheck,
+    and is not drawn as a mismatch.
+
+    **Test steps:**
+
+    * record an entry holding a name and a hash only
+    * verify it reads old-ok, flagged as not yet verified here, with that tooltip
+    """
+    mock_listing(mocker)
+    mock_record(mocker, [{"name": "notes.pdf", "xxh3": "0" * 16}])
+
+    row = read(mocker)["notes.pdf"]
+
+    assert row.checksum_state is FileChecksumState.OLD_OK
+    assert row.untrusted_location
+    assert checksum_tooltip_for(row.checksum_state, row.untrusted_location) == "Not yet verified at this location."
 
 
 def test_a_malformed_entry_is_not_folded_into_bad(mocker: MockerFixture) -> None:

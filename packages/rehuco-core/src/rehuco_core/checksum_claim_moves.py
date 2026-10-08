@@ -38,11 +38,19 @@ milliseconds the write takes rather than colliding with it, and the queue is ser
 What is *not* covered is another process, or this app's own in-place
 :func:`~rehuco_core.forget_checksums`, touching the covering record in the same instant -- the same
 last-writer-wins window every record already has, one resource further away than usual.
+
+**A new file-scoped record takes its claims at once** (#467, :func:`take_enclosing_claims`). A verify of the
+losing record makes the move whenever it next runs; until then the file reads *no checksum* everywhere that
+reads a file from its own record only. So creating ``foo.rehu`` beside a ``foo.zip`` that ``info.checksum``
+lists runs the same move from the other end, straight after the record's first save: what moves, the
+cleared date, the order of the two writes and every decline are the hand-over's own -- only *when* is new.
 """
 
 import logging
+import os
 from collections.abc import Collection, Mapping
-from pathlib import Path
+from dataclasses import dataclass
+from pathlib import Path, PurePosixPath
 from typing import Any, Final
 
 from .checksum_record import (
@@ -58,8 +66,10 @@ from .checksum_record import (
     save_checksum_record,
 )
 from .checksum_seeding import legacy_manifest_for
-from .rehu_content_files import CoveringRecord
+from .constants import EXCLUDED_FILE_PATTERNS
+from .rehu_content_files import CoveringRecord, covering_content_records
 from .rename_coordination import RenameCoordinator
+from .resource_scoping import DIRECTORY_SCOPED_FILENAMES, is_directory_scoped
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -213,3 +223,168 @@ def hand_over_claims(
         keeps its claims in the losing record for a later run.
     """
     return ClaimHandover(claims, entries, coordinator).hand_over()
+
+
+@dataclass(frozen=True, slots=True)
+class TakenClaims:
+    """What a new record took from the record enclosing it (#467).
+
+    :param source: the losing ``.checksum`` -- the enclosing directory-scoped record's.
+    :param moved: the claims written into the new record's ``.checksum``, by the name the losing record spells
+        them under, each with the name the new record spells it under.
+    :param pruned: whether the losing record was rewritten without them; ``False`` leaves the claims in both
+        records, which the losing record's next verify resolves.
+    """
+
+    source: Path
+    moved: dict[str, CoveringRecord]
+    pruned: bool
+
+
+def enclosing_directory_record(rehu_path: Path) -> Path | None:
+    """The nearest directory-scoped record at or above a record's own directory -- who covered its files before it.
+
+    :param rehu_path: a file-scoped record's path.
+    :returns: the ``info.rehu`` (or, unconverted, ``info.tc``) of the deepest directory holding one, starting with
+        ``rehu_path``'s own; ``None`` when no directory up to the filesystem's root holds one. A directory that
+        cannot be read holds none.
+    """
+    for directory in (rehu_path.parent, *rehu_path.parent.parents):
+        for filename in DIRECTORY_SCOPED_FILENAMES:
+            candidate = directory / filename
+            if candidate.is_file():
+                return candidate
+    return None
+
+
+def take_enclosing_claims(
+    rehu_path: Path,
+    *,
+    coordinator: RenameCoordinator | None = None,
+    excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS,
+) -> TakenClaims | None:
+    """Move the entries a new file-scoped record covers out of the enclosing record's ``.checksum`` (#467).
+
+    What a verify of the enclosing record would do on its next run (#257), done as the record arrives: an entry
+    for ``foo.zip`` in ``info.checksum`` moves to ``foo.checksum`` the moment ``foo.rehu`` is saved, so the file
+    reads its claim from its own record straight away. The move is the hand-over's (:func:`hand_over_claims`):
+    the digest and algorithm are carried and the date and status cleared, so the file reads as needing a
+    recheck until the new record's next verify; the new record is written first and the enclosing one after,
+    each inside a :meth:`~rehuco_core.RenameCoordinator.holding` block; and a destination that cannot be written,
+    or whose legacy manifest has not seeded it yet (#243), keeps its claims where they are.
+
+    **Called once the record is on disk**, because coverage is read from the records present: until
+    ``foo.rehu`` exists, ``foo.zip`` is still the enclosing record's. The listing and the record reads happen
+    outside the hold, so a rename waits only for the two writes.
+
+    :param rehu_path: the record just written. A directory-scoped one takes nothing here.
+    :param coordinator: the rename barrier to write through (#241), or ``None`` for a private one.
+    :param excluded_patterns: the junk globs the content walk is given, so coverage is read as a verify reads it.
+    :returns: what moved; ``None`` when nothing did -- no enclosing record, no ``.checksum`` beside it, one this
+        build cannot read, no entry the new record covers, or a destination that declined.
+    """
+    owed = owed_claims(rehu_path, excluded_patterns)
+    if owed is None:
+        return None
+    source, claims, entries = owed
+    if not claims:
+        return None
+    coordinator = coordinator if coordinator is not None else RenameCoordinator()
+    moved = hand_over_claims(claims, entries, coordinator=coordinator)
+    if not moved:
+        return None
+    for name, covering in moved.items():
+        LOG.info(
+            "Moved %r from %s into %s as %r: that record covers it now.", name, source, covering.record, covering.name
+        )
+    return TakenClaims(source, moved, prune_claims(source, moved, coordinator))
+
+
+def owed_claims(
+    rehu_path: Path, excluded_patterns: tuple[str, ...]
+) -> tuple[Path, dict[str, CoveringRecord], dict[str, Any]] | None:
+    """What the enclosing record holds that a new file-scoped record covers -- the reading half of
+    :func:`take_enclosing_claims`, which writes nothing.
+
+    :param rehu_path: the record just written.
+    :param excluded_patterns: the junk globs the content walk is given.
+    :returns: the enclosing ``.checksum``, the claims bound for ``rehu_path``'s own by the name that record spells
+        them under, and the raw entries carrying them; ``None`` for a directory-scoped record, one with no
+        enclosing record, or an enclosing ``.checksum`` that is absent or that this build cannot read.
+    """
+    if is_directory_scoped(rehu_path):
+        return None
+    enclosing = enclosing_directory_record(rehu_path)
+    if enclosing is None:
+        return None
+    source = checksum_record_path(enclosing)
+    try:
+        record = load_checksum_record(source)
+    except FileNotFoundError:
+        return None
+    except (OSError, ChecksumRecordError) as error:
+        LOG.warning("%s could not be read, so no checksum moved from it to %s: %s", source, rehu_path, error)
+        return None
+    entries = covered_entries(record[CHECKSUM_FILES_KEY], enclosing, rehu_path)
+    own = os.path.normcase(checksum_record_path(rehu_path))
+    claims = {
+        name: found
+        for name, found in covering_content_records(enclosing, entries, excluded_patterns).items()
+        if os.path.normcase(checksum_record_path(found.record)) == own
+    }
+    return source, claims, entries
+
+
+def covered_entries(raw_entries: list[Any], enclosing: Path, rehu_path: Path) -> dict[str, Any]:
+    """The enclosing record's entries a file-scoped record could cover, by name -- its same-stem siblings.
+
+    A cheap filter on the name before coverage is asked properly (:func:`~rehuco_core.covering_content_records`),
+    so an ``info.checksum`` of two thousand entries costs the listings along one path rather than one per
+    directory it names.
+
+    :param raw_entries: the enclosing record's entries as loaded.
+    :param enclosing: the enclosing record.
+    :param rehu_path: the file-scoped record.
+    :returns: the first entry of each name in ``rehu_path``'s directory whose stem is the record's, in the
+        record's own order.
+    """
+    directory = PurePosixPath(rehu_path.parent.relative_to(enclosing.parent).as_posix())
+    stem = rehu_path.stem.lower()
+    entries: dict[str, Any] = {}
+    for raw in raw_entries:
+        name = checksum_entry_name(raw)
+        if name is None or name in entries:
+            continue
+        path = PurePosixPath(name)
+        if path.parent == directory and os.path.splitext(path.name)[0].lower() == stem:
+            entries[name] = raw
+    return entries
+
+
+def prune_claims(source: Path, moved: Mapping[str, CoveringRecord], coordinator: RenameCoordinator) -> bool:
+    """Drop the entries that moved from the record they left, now that they are written where they went.
+
+    :param source: the losing ``.checksum``.
+    :param moved: the names that moved, as that record spells them.
+    :param coordinator: the rename barrier the write goes through (#241).
+    :returns: whether the record was rewritten; a failure leaves the claims in both records, which is logged and
+        resolved by that record's next verify.
+    """
+    location = coordinator.track(source)
+    try:
+        with coordinator.holding():
+            path = location.path
+            record = load_checksum_record(path)
+            record[CHECKSUM_FILES_KEY] = [
+                raw for raw in record[CHECKSUM_FILES_KEY] if checksum_entry_name(raw) not in moved
+            ]
+            save_checksum_record(path, record)
+    except (OSError, ChecksumRecordError) as error:
+        LOG.warning(
+            "%s still lists the checksums that moved out of it, which are now in both records until its next "
+            "verify: %s",
+            source,
+            error,
+        )
+        return False
+    return True

@@ -103,9 +103,10 @@ class FileChecksumState(StrEnum):
     Drawn as an **empty cell** -- there is no claim here, which is different from a claim of ignorance."""
 
     MISSING = "missing"
-    """Content this record holds no hash for -- whether because the resource has no ``.checksum`` at all
-    or because that record skips this file. Deliberately one state rather than two: both are *nothing is
-    recorded about these bytes*, and the remedy for both is the same generate."""
+    """Content this record holds no hash for -- whether because the resource has no ``.checksum`` at all,
+    because that record skips this file, or because it lists the file with no hash (the ``unexpected`` an
+    older build wrote, #467). Deliberately one state rather than three: all are *nothing is recorded about
+    these bytes*, and the remedy for all is the same generate."""
 
     OK = "ok"
     """Hashed, matched, and checked recently enough that a *Verify Old* would skip it."""
@@ -121,26 +122,18 @@ class FileChecksumState(StrEnum):
     :data:`OLD_OK` is what makes the column say *a fresh check would tell you something* rather than
     conflating never-checked with checked-long-ago."""
 
-    UNEXPECTED = "unexpected"
-    """The record's entry for this file rests at [[data-model#checksums]]'s ``unexpected`` -- a report
-    state rather than a resting one, ordinarily rewritten to ``matched`` the moment a sweep adopts the
-    file. An entry actually resting here was written by something other than this build's own runs, and
-    is rare enough to be worth telling apart from a genuine mismatch (#303). Carries no ``verified``
-    stamp worth aging, so there is no ``old_`` pair."""
-
     MALFORMED = "malformed"
     """The entry's hash sits under a key this build cannot read (#303). Distinct from
-    ``unexpected``/``mismatched``: this build has made **no claim at all** about the bytes and never
+    :data:`MISSING` and ``mismatched``: this build has made **no claim at all** about the bytes and never
     re-hashes them -- drawing it as a mismatch would assert a check that never happened, and drawing it
     as :data:`MISSING` would invite a generate that overwrites a neighbour's entry. Never actually
     written by this build ([[data-model#checksums]]), so an entry resting here came from elsewhere.
     Carries no ``verified`` stamp either, so there is no ``old_`` pair."""
 
 
-UNEXPECTED_STATUS: Final = "unexpected"
 MALFORMED_STATUS: Final = "malformed"
-"""The two raw record statuses :func:`checksum_state_for` resolves before falling back to the
-matched/fresh split -- mirroring :mod:`~rehuco_agent.documents.checksum_rows`'s own
+"""The raw record status :func:`checksum_state_for` resolves before falling back to the matched/fresh
+split -- mirroring :mod:`~rehuco_agent.documents.checksum_rows`'s own
 :data:`~rehuco_agent.documents.checksum_rows.MISSING_STATUS`."""
 
 CHECKSUM_STATE_ICONS: Final[dict[FileChecksumState, str]] = {
@@ -149,7 +142,6 @@ CHECKSUM_STATE_ICONS: Final[dict[FileChecksumState, str]] = {
     FileChecksumState.BAD: ":/icons/checksum_bad.svg",
     FileChecksumState.OLD_OK: ":/icons/checksum_old_ok.svg",
     FileChecksumState.OLD_BAD: ":/icons/checksum_old_bad.svg",
-    FileChecksumState.UNEXPECTED: ":/icons/checksum_unexpected.svg",
     FileChecksumState.MALFORMED: ":/icons/checksum_malformed.svg",
 }
 """:data:`FileChecksumState.NONE` is absent rather than mapped to a blank glyph -- an empty cell is the
@@ -164,7 +156,6 @@ CHECKSUM_STATE_TOOLTIPS: Final[dict[FileChecksumState, str]] = {
     FileChecksumState.BAD: "Checksum did not match when it was last checked.",
     FileChecksumState.OLD_OK: "Checksum matched, but the check is old.",
     FileChecksumState.OLD_BAD: "Checksum did not match, and the check is old.",
-    FileChecksumState.UNEXPECTED: "Found on disk with no recorded hash, and reported rather than adopted.",
     FileChecksumState.MALFORMED: "This entry's hash is under a key this build cannot read.",
 }
 """What each glyph means, in a sentence -- what makes an icon-only column readable on first meeting."""
@@ -324,12 +315,17 @@ def checksum_state_for(
     :param trusted_since: when this machine began trusting the record's current location
         (:meth:`~rehuco_core.ChecksumTrust.trusted_since`, #358); the untracked default keeps age the
         only gate, matching every caller with no trust source of its own.
-    :returns: the state.
+    :returns: the state; :data:`FileChecksumState.MISSING` for an entry with no hash, which says nothing
+        about its file whatever status it carries, and :data:`FileChecksumState.OLD_OK` for a hash with no
+        verdict yet -- a claim moved here from another record, which this one has not checked (#467) and
+        which nothing says failed.
     """
-    if entry.status == UNEXPECTED_STATUS:
-        return FileChecksumState.UNEXPECTED
+    if entry.digest is None:
+        return FileChecksumState.MISSING
     if entry.status == MALFORMED_STATUS:
         return FileChecksumState.MALFORMED
+    if entry.status is None:
+        return FileChecksumState.OLD_OK
     matched = entry.status == MATCHED_STATUS
     if is_checksum_fresh(entry, stale_after, now, trusted_since):
         return FileChecksumState.OK if matched else FileChecksumState.BAD
@@ -347,9 +343,11 @@ def checksum_verdict_for(
 
     The second answer is defined by what it means, not by which input produced it: **age alone would call
     this entry current, and trust here does not** -- so a dateless entry, or one whose check is simply old,
-    is old for the ordinary reason at any location, and a report-state entry is never old at all. Kept as
-    a flag beside the state rather than folded into a third glyph state: the record's verdict (matched or
-    not) is one axis, and *why* a check would run again is a second one that only the tooltip says.
+    is old for the ordinary reason at any location, and a hash-less or malformed entry is never old at all.
+    **One more entry is not yet verified here: a claim moved in from another record** (#467), a hash with no
+    date and no verdict, which this record has never checked wherever it sits. Kept as a flag beside the
+    state rather than folded into a third glyph state: the record's verdict (matched or not) is one axis, and
+    *why* a check would run again is a second one that only the tooltip says.
 
     One resolver for both docks, the same reason :func:`checksum_state_for` is: computed once, here, so
     neither table has to re-derive the invariant that the flag only ever accompanies an ``old_`` state.
@@ -361,6 +359,8 @@ def checksum_verdict_for(
     :returns: the state, and whether the location is the one reason it is not current.
     """
     state = checksum_state_for(entry, stale_after, now, trusted_since)
+    if entry.digest is not None and entry.status is None:
+        return state, True
     untrusted_location = state in OLD_CHECKSUM_STATES and is_checksum_fresh(entry, stale_after, now)
     return state, untrusted_location
 

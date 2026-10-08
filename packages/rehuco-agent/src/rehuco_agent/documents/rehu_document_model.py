@@ -27,12 +27,14 @@ from rehuco_core import (
     RehuDocument,
     Relocation,
     RenameCoordinator,
+    checksum_record_path,
     convert_tc,
     is_directory_scoped,
     rehu_rename_conflict,
     rename_rehu_resource,
     scan_rehu_screenshot_files,
     scan_unconverted_screenshots,
+    take_enclosing_claims,
 )
 
 from ..fields.field import Field, FieldBinding
@@ -659,13 +661,21 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         ``save()`` already restamps it to :data:`~rehuco_core.CURRENT_FORMAT_VERSION` on write, so
         there is no separate migrate call -- this is the only one needed, whether reached from the
         toolbar's Save action or the inline banner's Upgrade action.
+
+        **The first save of a file-scoped record takes its checksums** (#467): the entries the enclosing
+        ``info.checksum`` holds for the files this record now covers move into its own ``.checksum`` at once,
+        rather than at that record's next verify (:func:`~rehuco_core.take_enclosing_claims`).
         """
+        first_save = not self.saved_on_disk
+        changed: tuple[Path, ...] = ()
         with LogScope.open(self.path):
             self.__document.save()
             LOG.info("Saved %s", self.path)
+            if first_save and self.path is not None:
+                changed = self.__take_enclosing_claims(self.path)
         self.dirty = False
         if self.path is not None:
-            self.files_changed.emit((self.path,))
+            self.files_changed.emit((self.path, *changed))
         # the file now exists on disk, so there is finally something to revert to: mark saved_on_disk so
         # DocumentSubDocks re-enables Revert (#147). Set once and never unset -- a later out-of-band
         # deletion still leaves this a document that *was* saved, whose revert is the fix-retry loop.
@@ -673,6 +683,21 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         # explicit, not left to the dirty_changed connection alone: a clean-but-upgradable document
         # (the Upgrade path) saves without dirty ever having been True, so no dirty_changed would fire
         self.__recompute_upgradable()
+
+    def __take_enclosing_claims(self, path: Path) -> tuple[Path, ...]:
+        """Move the checksums a new record covers out of the enclosing record's ``.checksum`` (#467).
+
+        :param path: the record just written for the first time.
+        :returns: the two ``.checksum`` files a move rewrote, for :attr:`files_changed`; empty when nothing moved.
+        """
+        taken = take_enclosing_claims(
+            path,
+            coordinator=self.__rename_coordinator,
+            excluded_patterns=shared_excluded_files_settings().excluded_file_patterns,
+        )
+        if taken is None:
+            return ()
+        return (checksum_record_path(path), taken.source)
 
     def rename_conflicts(self, new_name: str) -> bool:
         """Whether renaming to ``new_name`` would land on something already there
