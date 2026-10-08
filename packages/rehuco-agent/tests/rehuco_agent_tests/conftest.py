@@ -12,6 +12,7 @@ pytest-xdist, where each worker is its own process with its own subset of module
 a different 33 depending on how the scheduler happened to split the work (#262).
 """
 
+import json
 import logging
 import sys
 import threading
@@ -30,7 +31,6 @@ from rehuco_agent import main_rc  # noqa: F401  # pylint: disable=unused-import 
 from rehuco_agent.app_logging import shared_log_bridge
 from rehuco_agent.commands import shared_command_registry
 from rehuco_agent.dialogs import conversion_backups_dialog
-from rehuco_agent.documents import document_sub_docks, documents_dock
 from rehuco_agent.fields.widgets.markdown_view import render_markdown
 from rehuco_agent.rehuco import browsers_dock
 from rehuco_agent.run_log import shared_run_log
@@ -38,7 +38,6 @@ from rehuco_agent.scraping.registry import shared_scraper_registry
 from rehuco_agent.scraping.scraper_executor import shared_scraper_executor
 from rehuco_agent.settings import (
     checksum_settings,
-    default_layout_settings,
     deletion_settings,
     description_editor_settings,
     excluded_files_settings,
@@ -54,6 +53,7 @@ from rehuco_agent.settings import (
     scrapers_settings,
     screenshot_patterns_settings,
     shortcuts_settings,
+    state_file,
     tray_settings,
     videos_settings,
     web_search_settings,
@@ -630,25 +630,51 @@ def isolate_tasks_page_settings(mocker: MockerFixture) -> FakeSettings:
     return fake
 
 
+class MemoryStateFiles:
+    """An in-memory stand-in for the state files (#404): what :mod:`rehuco_agent.settings.state_file` would keep on
+    disk, held by path, so no test ever touches a real config folder."""
+
+    def __init__(self) -> None:
+        self.files: dict[Path, str] = {}
+        """Each written file's JSON text, by path."""
+
+    def read(self, path: Path, version: int) -> dict[str, Any] | None:
+        """Answer as ``read_state_file`` does for the file held at ``path``."""
+        text = self.files.get(path)
+        values = json.loads(text) if text is not None else None
+        return values if isinstance(values, dict) and values.get("version") == version else None
+
+    def write(self, path: Path, version: int, values: dict[str, Any]) -> None:
+        """Keep the JSON ``write_state_file`` would write."""
+        self.files[path] = json.dumps({"version": version, **values})  # pylint: disable=unsupported-assignment-operation
+
+
+@fixture(autouse=True, name="state_files")
+def isolate_state_files(mocker: MockerFixture) -> MemoryStateFiles:
+    """Keep the settings that live in JSON files (#404) off the developer's real config folder.
+
+    Patched on :mod:`~rehuco_agent.settings.state_file` itself, which the session, window and layout settings call
+    through the module, so one patch covers every consumer.
+
+    :returns: the in-memory files, for a test that wants to seed them or assert on what was written.
+    """
+    files = MemoryStateFiles()
+    mocker.patch.object(state_file, "read_state_file", side_effect=files.read)
+    mocker.patch.object(state_file, "write_state_file", side_effect=files.write)
+    return files
+
+
 @fixture(autouse=True)
-def isolate_shared_default_layout_settings(mocker: MockerFixture) -> Iterator[None]:
+def isolate_shared_default_layout_settings() -> Iterator[None]:
     """Isolate every test from the process-wide `DefaultLayoutSettings` singleton (#62).
 
     Same rationale as :func:`isolate_shared_markdown_rendering_settings`: every `DocumentsDock` reads
     this when it builds a new document dock, and every `DocumentWidget`'s "Save current layout as
     default"/"Reset default layout" actions write it. Without this, whichever test first opened a
     document would pin an instance loaded from the developer's real on-disk settings for the rest of
-    the session -- and could overwrite the layout they actually saved as their default.
+    the session. (The layouts are saved to a file, which :func:`isolate_state_files` keeps in memory.)
     """
     shared_default_layout_settings_in.cache_clear()
-    fake = FakeSettings()
-    mocker.patch.object(default_layout_settings, "persistent_settings", return_value=fake)
-    # the widget's own import site too, same as the tray fixture below: the Save/Reset actions call
-    # ``settings.save(persistent_settings())`` through document_sub_docks' import, so an unpatched one
-    # would write the developer's real settings file from any test that triggers either action
-    mocker.patch.object(document_sub_docks, "persistent_settings", return_value=fake)
-    # and the Documents dock's, which writes the preview layouts at exit (#39)
-    mocker.patch.object(documents_dock, "persistent_settings", return_value=fake)
     yield
     shared_default_layout_settings_in.cache_clear()
 
