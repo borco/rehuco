@@ -208,3 +208,20 @@ def test_a_stale_answer_is_dropped_and_other_rows_show_no_archive_lines(qtbot: Q
     QApplication.processEvents()
 
     assert shown.preview.archive_texts == {}
+
+
+def test_an_archive_read_that_ends_after_the_preview_was_deleted_is_dropped(
+    qtbot: QtBot, library: Path, mocker: MockerFixture
+) -> None:
+    """The worker's last step, telling the preview, does not raise once the preview is gone.
+
+    **Test steps:**
+
+    * make telling the preview raise, as a deleted C++ object does, and run the read of a zip
+    * verify nothing is raised
+    """
+    shown = Shown(qtbot, library)
+    mocker.patch.object(shown.preview, "archive_ready").emit.side_effect = RuntimeError
+    read_archive = shown.preview._RootsPreview__read_archive  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    read_archive(1, library / "stored.zip", (".jpg",))

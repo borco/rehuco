@@ -187,15 +187,15 @@ def test_closing_the_viewer_lets_go_of_the_archive(
     assert lightbox.viewer is None
 
 
-def test_a_second_viewer_replaces_the_first_and_closing_the_lightbox_closes_both_ends(
+def test_a_second_viewer_replaces_the_first_and_lets_go_of_its_archive(
     qtbot: QtBot, tmp_path: Path, lightbox: RootsLightbox, mocker: MockerFixture
 ) -> None:
-    """One viewer at a time: opening images after a zip closes the zip's, and closing the lightbox drops the rest.
+    """One viewer at a time: opening images after a zip closes the zip's viewer and its archive handles.
 
     **Test steps:**
 
     * open a zip, then loose images over it
-    * verify the zip's cache was closed and the new viewer stands, then close the lightbox and verify none is left
+    * verify the zip's cache was closed and the new viewer stands
     """
     close = mocker.spy(ArchiveCache, "close")
     lightbox.open_archive(make_pack(tmp_path / "pack.zip", ("a.png",)))
@@ -210,10 +210,31 @@ def test_a_second_viewer_replaces_the_first_and_closing_the_lightbox_closes_both
     assert lightbox.viewer is not None and lightbox.viewer is not first
     assert close.call_count == 1
 
-    lightbox.close()
-    QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
 
-    assert lightbox.viewer is None
+def test_the_thumbnail_row_the_user_toggled_is_how_the_next_viewer_opens(
+    tmp_path: Path, lightbox: RootsLightbox, mocker: MockerFixture
+) -> None:
+    """The row starts as the setting says, and a viewer's toggle carries over to the next one.
+
+    **Test steps:**
+
+    * open images, have the viewer report its row hidden, then open them again
+    * verify the second viewer was built with the row hidden
+    """
+    built = mocker.patch("rehuco_agent.rehuco.roots_lightbox.ImageLightbox", wraps=ImageLightbox)
+    image = tmp_path / "a.png"
+    picture(image)
+    lightbox.open_images([image], 0)
+    viewer = lightbox.viewer
+    assert viewer is not None
+
+    viewer.strip_visible_changed.emit(False)
+    lightbox.open_images([image], 0)
+
+    assert built.call_args.kwargs["strip_visible"] is False
+    viewer.strip_visible_changed.emit(True)
+    lightbox.open_images([image], 0)
+    assert built.call_args.kwargs["strip_visible"] is True
 
 
 def test_the_keys_held_at_the_activation_pick_the_surface_though_the_listing_lands_later(

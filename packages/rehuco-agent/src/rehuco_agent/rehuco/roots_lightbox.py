@@ -81,7 +81,7 @@ class ListingJob(QRunnable):
             self.__signals.deleteLater()
 
 
-class RootsLightbox(QObject):  # pylint: disable=too-many-instance-attributes
+class RootsLightbox(QObject):
     """Opens the lightbox for the Roots view: over a zip's images, or over the images of a folder.
 
     **One viewer at a time**: opening another closes the previous one and lets go of its archive handles. Nothing is
@@ -107,7 +107,6 @@ class RootsLightbox(QObject):  # pylint: disable=too-many-instance-attributes
         self.__loader: Final = ThumbnailLoader(self)
         self.__generation = 0
         self.__viewer: ImageLightbox | None = None
-        self.__cache: ArchiveCache | None = None
         self.__strip_visible: bool | None = None
         self.__pending_mode = ImageViewerMode.DOCUMENT_OVERLAY
         """The surface the archive whose listing is out was asked for, read from the keys at the activation."""
@@ -138,12 +137,10 @@ class RootsLightbox(QObject):  # pylint: disable=too-many-instance-attributes
     def open_images(self, images: Sequence[Path], start: int) -> None:
         """Show loose image files, starting on one of them.
 
-        :param images: the files, in the order to browse them.
+        :param images: the files, in the order to browse them; never empty, as the one asked for is among them.
         :param start: the position to open on.
         """
         self.__generation += 1
-        if not images:
-            return
         self.__show(PathImageSource(images, images[0].parent), start, None, self.__mode())
 
     @Slot(int, object, list)
@@ -195,7 +192,6 @@ class RootsLightbox(QObject):  # pylint: disable=too-many-instance-attributes
             double_click_closes=settings.lightbox_double_click_closes,
         )
         self.__viewer = viewer
-        self.__cache = cache
         # the closure holds the cache itself: by the time `destroyed` fires the viewer's wrapper is gone, and the
         # next viewer must not close the handles of this one's successor
         viewer.destroyed.connect(lambda: self.__on_viewer_gone(viewer, cache))
@@ -219,20 +215,10 @@ class RootsLightbox(QObject):  # pylint: disable=too-many-instance-attributes
             cache.close()
         if self.__viewer is viewer:
             self.__viewer = None
-            self.__cache = None
 
     def __close_viewer(self) -> None:
         """Close the viewer on screen, if any; it deletes itself and lets go of its handles."""
         viewer = self.__viewer
         self.__viewer = None
-        self.__cache = None
         if viewer is not None:
             viewer.close()
-
-    def close(self) -> None:
-        """Close the viewer and let go of its archive, for an owner that is going away."""
-        self.__generation += 1
-        cache = self.__cache
-        self.__close_viewer()
-        if cache is not None:
-            cache.close()

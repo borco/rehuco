@@ -135,5 +135,5 @@ class RootsOpening:
             sibling_path = model.path_of(sibling)
             if sibling_path is not None and model.file_type_of(sibling) is FileType.IMAGE:
                 images.append(sibling_path)
-        if path in images:
-            self.__lightbox.open_images(images, images.index(path))
+        # the row is among its own siblings, so the list holds it
+        self.__lightbox.open_images(images, images.index(path))

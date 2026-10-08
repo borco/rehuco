@@ -3,17 +3,20 @@
 The docks, the in-memory cache and the real folders are :mod:`test_catalog_docks`' own fixtures, imported by name.
 """
 
+import sqlite3
 from pathlib import Path
 
 from borco_pyside.widgets import MessageBanner
 from PySide6.QtCore import QModelIndex, Qt, QUrl
 from PySide6.QtWidgets import QLabel
-from pytest import mark, param
+from pytest import LogCaptureFixture, mark, param
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
+from rehuco_core import CatalogCache, TaskQueue
 
 from .test_catalog_docks import (  # noqa: F401  # pylint: disable=unused-import
     REHUCO_PATH,
+    TUTORIALS,
     CatalogDocks,
     child_names,
     fixture_database,
@@ -23,6 +26,9 @@ from .test_catalog_docks import (  # noqa: F401  # pylint: disable=unused-import
     fixture_served,
     open_root_folder,
     pane_buttons,
+    scan_finding,
+    tutorial_record,
+    wait_for_jobs,
     without_separators,
 )
 
@@ -252,3 +258,54 @@ def test_a_notice_from_the_lightbox_shows_on_the_banner_until_the_selection_move
     first: QModelIndex = image.siblingAtRow(0)
     dock.roots.roots_view.setCurrentIndex(first)
     assert "pack.zip holds no images." not in banner_text(dock)
+
+
+@mark.usefixtures("served")
+def test_open_on_the_current_image_shows_it_in_the_lightbox(
+    mocker: MockerFixture, qtbot: QtBot, dock: CatalogDocks, folders: Path
+) -> None:
+    """The Open entry of the menu and of the pane does what a double-click does.
+
+    **Test steps:**
+
+    * make a picture current and trigger Open (the lightbox)
+    * verify the lightbox was given the folder's pictures, on that one
+    """
+    add_pack_files(folders)
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    opened = mocker.patch.object(dock.roots.lightbox, "open_images")
+    image = open_root_folder(qtbot, dock, "my folder", "c.png")
+    listed = [name for name in child_names(dock, image.parent()) if name.endswith((".png", ".jpg"))]
+
+    dock.roots.open_lightbox_action.trigger()
+
+    opened.assert_called_once_with([folders / "my folder" / name for name in listed], listed.index("c.png"))
+
+
+@mark.usefixtures("served")
+def test_the_catalog_says_a_records_type_from_its_cache_row(
+    mocker: MockerFixture, qtbot: QtBot, dock: CatalogDocks, queue: TaskQueue, caplog: LogCaptureFixture
+) -> None:
+    """The type is the scanned row's: nothing before a catalog is open, nothing for a record not scanned or outside
+    every root, and a cache that cannot be read is logged and answers nothing.
+
+    **Test steps:**
+
+    * ask before opening, then open and scan a root holding a tutorial record
+    * verify the record's type, none for an unscanned record and one outside the roots
+    * make the cache fail and verify the answer is none and the failure is logged
+    """
+    record = TUTORIALS / "python" / "info.rehu"
+    assert dock.catalog.resource_type(record) is None
+    scan_finding(mocker, {TUTORIALS: (tutorial_record(),)})
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    dock.roots.scan_action.trigger()
+    wait_for_jobs(qtbot, queue)
+
+    assert dock.catalog.resource_type(record) == "tutorial"
+    assert dock.catalog.resource_type(TUTORIALS / "other" / "info.rehu") is None
+    assert dock.catalog.resource_type(Path("/elsewhere/info.rehu")) is None
+
+    mocker.patch.object(CatalogCache, "resource_type", side_effect=sqlite3.OperationalError("locked"))
+    assert dock.catalog.resource_type(record) is None
+    assert "Could not read the type of" in caplog.text
