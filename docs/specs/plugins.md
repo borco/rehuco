@@ -539,11 +539,21 @@ and its cache** — the catalog — and both docks read it and hear from it when
   also offers **Verify checksums**, which queues a verify of the `.rehu` that shares its name — the same job the
   Checksums dock queues — and is off while there is no such `.rehu`. A file's menu
   offers **Open in external app** and the same pair for the `.rehu` that shares its name, and a `.rehu` or `.tc`
-  file's offers **Open**. The first entry of a menu is the row's **default action**, drawn bold: what a double-click
+  file's offers **Open**. **An image, and a zip the cache knows as reference images** (#456) — a record of that type
+  manages it, its own `foo.rehu` or its folder's `info.rehu`; a record not scanned yet makes it no pack until Scan runs,
+  and the pane says so — have **Open** first, which shows the images in the lightbox with no document in the way: a zip's
+  images in pack order from its central directory, an image with the images beside it in the column's order, starting
+  on it. The surface follows the image-viewer settings, with Shift, Ctrl and Ctrl+Shift picking another as in a
+  document; **Ctrl+Alt+double-click** hands the image or zip to the system's application instead, which **Open in
+  external app** also does. A zip under an `info.rehu` has no associated-rehu entry of its own, being that same record.
+  The first entry of a menu is the row's **default action**, drawn bold: what a double-click
   runs. A rehu is never created by a double-click, so a folder with none has no default. A **details pane** beside
   the columns shows the current row, whatever it is: name, type, size, when it changed, how much a folder holds and
   where it is (elided to fit), from what the listing already read, and a thumbnail for an image read off the GUI
-  thread. **Below the details is a button for every entry of the row's context menu**, in its order, the default in
+  thread; **for a zip, what it is made of** (#456), from its central directory without inflating a member: how many
+  files and how many are images, the size unpacked and packed, the compression method — stored, deflated or mixed, with
+  a warning for one slow to read (bzip2, LZMA) or one `zipfile` cannot read (deflate64, encryption) — and whether it is a
+  reference pack. **Below the details is a button for every entry of the row's context menu**, in its order, the default in
   bold; **below the buttons, for a `.rehu` or `.tc` row or a folder that has one, what the record says**: its URL as
   a link (elided, opened in the system's browser) and its description, rendered as the Description dock renders it
   and scrolling in the height the pane has left, under a line — read from the file off the GUI thread on each

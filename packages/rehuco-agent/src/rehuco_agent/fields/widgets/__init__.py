@@ -10,7 +10,7 @@ from .date_edit import DateEdit
 from .duration_edit import DurationEdit
 from .duration_measurement_edit import DurationMeasurementEdit
 from .expand_toggle_button import ExpandToggleButton
-from .image_lightbox import ImageLightbox, ImageViewerMode
+from .image_lightbox import ImageLightbox, ImageViewerMode, viewer_mode_for
 from .image_selector import ImageSelector
 from .image_source import (
     ImageDescription,
@@ -74,6 +74,7 @@ __all__ = [
     "ImageSource",
     "ImageStrip",
     "ImageViewerMode",
+    "viewer_mode_for",
     "ImageVisibility",
     "PathImageSource",
     "ScreenshotKey",

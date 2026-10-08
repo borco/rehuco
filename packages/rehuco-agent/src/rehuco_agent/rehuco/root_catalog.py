@@ -305,6 +305,23 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         root = self.root_paths().get(root_id)
         return None if root is None else root / relative
 
+    def resource_type(self, record: Path) -> str | None:
+        """The type the cache holds for a record, as an indexed lookup -- nothing is read from disk (#456).
+
+        :param record: the ``.rehu`` or ``.tc``, by its absolute path.
+        :returns: the type as the record spells it; ``None`` when the record is outside every root, or the cache has
+            no row for it yet (it is read by the next scan) or cannot be read.
+        """
+        cache = self.__cache
+        if cache is None:
+            return None
+        try:
+            location = cache.locate(record)
+            return None if location is None else cache.resource_type(location.root.root_id, location.relative)
+        except sqlite3.Error as error:
+            LOG.error("Could not read the type of %s from the cache: %s", record, error)
+            return None
+
     def resource_count(self, root: RehucoRoot) -> int:
         """How many resources the cache lists under ``root``; ``0`` when that cannot be read.
 

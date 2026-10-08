@@ -804,6 +804,29 @@ def test_a_signature_is_what_its_row_was_read_at(filled: tuple[CatalogCache, Reh
     assert cache.signature(first.root_id, "p.rehu") is None
 
 
+def test_a_resource_type_is_what_its_row_says_found_by_its_place(
+    filled: tuple[CatalogCache, RehucoRoot, RehucoRoot],
+) -> None:
+    """An indexed lookup by root and relative path: the type as the record spells it, ``None`` for a path with no row
+    (#456).
+
+    **Test steps:**
+
+    * scan a reference-images record, a typeless one and a record under the other root
+    * verify the type of each, its path in other case, a missing path and the wrong root
+    """
+    cache, first, second = filled
+    cache.apply_root_scan(first.root_id, [record("Pack/info.rehu", type="ReferenceImages"), record("plain.rehu")])
+    cache.apply_root_scan(second.root_id, [record("other.rehu", type="tutorial")])
+
+    assert cache.resource_type(first.root_id, "Pack/info.rehu") == "ReferenceImages"
+    assert cache.resource_type(first.root_id, "pack/INFO.rehu") == "ReferenceImages"
+    assert cache.resource_type(first.root_id, "plain.rehu") == ""
+    assert cache.resource_type(first.root_id, "missing.rehu") is None
+    assert cache.resource_type(first.root_id, "other.rehu") is None
+    assert cache.resource_type(second.root_id, "other.rehu") == "tutorial"
+
+
 def test_a_signature_matches_only_a_readable_uncleared_row_of_the_same_time_and_size() -> None:
     """An error row and a cleared one are always read again."""
     assert RecordSignature("a", 7, 3).matches(7, 3)

@@ -34,11 +34,11 @@ from ..fields.widgets import (
     ImageLightbox,
     ImageSelector,
     ImageSource,
-    ImageViewerMode,
     PathImageSource,
     ScreenshotRowsImageSource,
     ThumbnailLoader,
     TypeBadge,
+    viewer_mode_for,
 )
 from ..recycle_bin_deleter import configured_deleter
 from ..resource_events import ResourceEvents
@@ -164,28 +164,6 @@ def type_dock_names(layout_type: str) -> frozenset[str]:
         whose plugin isn't installed here.
     """
     return TYPE_DOCK_NAMES.get(layout_type, frozenset())
-
-
-def viewer_mode_for(modifiers: Qt.KeyboardModifier, configured: ImageViewerMode) -> ImageViewerMode:
-    """Which surface a maximized image opens on, given the keys held as it was activated (#221).
-
-    The activation's modifiers override the setting for that one viewer: **Shift** opens it over the
-    document, **Ctrl** over the whole app window, **Ctrl+Shift** over the whole screen -- so any surface
-    is one gesture away whatever the setting says -- and no modifier means the setting.
-
-    :param modifiers: the keyboard modifiers held at the activation.
-    :param configured: the surface the settings name.
-    :returns: the surface to open on.
-    """
-    shift = bool(modifiers & Qt.KeyboardModifier.ShiftModifier)
-    ctrl = bool(modifiers & Qt.KeyboardModifier.ControlModifier)
-    if ctrl and shift:
-        return ImageViewerMode.FULL_SCREEN
-    if ctrl:
-        return ImageViewerMode.APP_WINDOW_OVERLAY
-    if shift:
-        return ImageViewerMode.DOCUMENT_OVERLAY
-    return configured
 
 
 class UrlDropFilter(QObject):

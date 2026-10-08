@@ -1,5 +1,6 @@
 """The Roots view's details pane: what the current row is -- a root, a folder or a file -- the editors of a root, a
-button for everything its context menu offers (#378), and what a record says about its resource (#458)."""
+button for everything its context menu offers (#378), what a record says about its resource (#458), and what a zip is
+made of (#456)."""
 
 import logging
 from collections.abc import Callable, Sequence
@@ -22,17 +23,27 @@ from PySide6.QtCore import (
     Signal,
 )
 from PySide6.QtGui import QAction, QDesktopServices, QFont, QFontMetrics, QImage, QImageReader, QPalette
-from PySide6.QtWidgets import QComboBox, QFrame, QLineEdit, QSizePolicy, QToolButton, QWidget
-from rehuco_core import FileType, RehucoRoot, RehuDocument, RenameCoordinator, load_tc
+from PySide6.QtWidgets import QComboBox, QFrame, QLabel, QLineEdit, QSizePolicy, QToolButton, QWidget
+from rehuco_core import (
+    ArchiveFacts,
+    FileType,
+    RehucoRoot,
+    RehuDocument,
+    RenameCoordinator,
+    load_tc,
+    read_archive_facts,
+)
 
 from ..documents.files_rows import CHECKSUM_STATE_ICONS
 from ..settings.image_viewer_settings import shared_image_viewer_settings
 from ..settings.markdown_rendering_settings import shared_markdown_rendering_settings
+from ..settings.reference_images_settings import shared_reference_images_settings
 from ..svg_icon_cache import SvgIconCache
 from .record_images import RecordImages
 from .root_storage import fill_root_storage_combo, select_root_storage
-from .roots_checksum import RowChecksum, checksum_lines, warning_ink
+from .roots_checksum import BAD_INK, OLD_BAD_INK, RowChecksum, checksum_lines, warning_ink
 from .roots_folder_model import NodeListing, RootsFolderModel, RootsNodeKind
+from .roots_management import PackInfo, PackState
 from .roots_preview_ui import Ui_RootsPreview
 
 LOG: Final = logging.getLogger(__name__)
@@ -48,6 +59,10 @@ address is handed to the system to open."""
 type RecordForRow = Callable[[QModelIndex], Path | None]
 """What the pane asks its owner for a folder row: the record that stands for it -- its ``info.rehu`` or ``info.tc`` --
 or ``None`` when it has none."""
+
+type PackForRow = Callable[[QModelIndex], PackInfo | None]
+"""What the pane asks its owner for an archive row: whether it is a reference pack, and through which record; ``None``
+for a row that is not an archive."""
 
 THUMBNAIL_SIDE: Final = 320
 """The longest side, in pixels, an image's thumbnail is read at -- smaller ones are shown as they are."""
@@ -71,6 +86,17 @@ SMALL_SIZE: Final = 1000
 """Below this many bytes the human form is the byte count, so it is not said twice."""
 
 EMPTY_FOLDER: Final = "Empty"
+
+UNREADABLE_ARCHIVE: Final = "Not a readable zip"
+"""What an archive whose central directory cannot be read says it holds."""
+
+SLOW_METHOD_NOTE: Final = "slow to read"
+UNREADABLE_METHOD_NOTE: Final = "cannot be read"
+
+PACK_TEXTS: Final = {
+    PackState.UNSCANNED: "Not scanned yet: Scan to know whether it is a reference pack",
+}
+"""What the *Pack* row says for a state that is not a pack; a pack names its record instead."""
 
 MINIMUM_WIDTH: Final = 300
 """The least width the pane is given, in pixels -- above what any row's lines ask for, so what is shown never changes
@@ -114,6 +140,11 @@ class RootsPreview(QWidget):
     The picture is read on the global thread pool inside the rename coordinator's hold, scaled as it is read, and an
     answer for a row that is no longer shown is dropped.
 
+    **A zip's contents** (#456) are read from its central directory on the pool, inside the coordinator's hold, when
+    an archive row becomes current: how many files (and images), their size unpacked and packed, and the compression
+    method -- with a warning for one that is slow to read and another that cannot be read at all. A *Pack* row says
+    whether the cache knows it as a reference pack, through which record, or that it has not scanned it yet.
+
     **A record's URL and description** (#458) are read from the file, the same way, when a ``.rehu`` or ``.tc`` row
     becomes current -- or a folder that has one, which ``record_for`` names -- so they are as current as the file and
     need no scan. They sit below the buttons under a line, a field the record lacks is left out, and a record with
@@ -127,6 +158,7 @@ class RootsPreview(QWidget):
     :param actions_for: asked for a row's actions each time it is shown; ``None`` shows no buttons.
     :param record_for: asked for the record of a folder row, whose URL and description the pane then shows; ``None``
         shows none for a folder.
+    :param pack_for: asked for an archive row, to say whether it is a reference pack; ``None`` says nothing of it.
     :param parent: optional Qt parent.
     """
 
@@ -137,12 +169,16 @@ class RootsPreview(QWidget):
     record_ready = Signal(int, str, str)
     """``(serial, url, description)``: what a record says, the description as Markdown -- either may be empty."""
 
-    def __init__(
+    archive_ready = Signal(int, object)
+    """``(serial, facts)``: what a zip's central directory says, or ``None`` when it could not be read."""
+
+    def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
         model: RootsFolderModel,
         coordinator: RenameCoordinator | None = None,
         actions_for: ActionsForRow | None = None,
         record_for: RecordForRow | None = None,
+        pack_for: PackForRow | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -153,6 +189,7 @@ class RootsPreview(QWidget):
         self.__coordinator: Final = coordinator
         self.__actions_for: Final = actions_for
         self.__record_for: Final = record_for
+        self.__pack_for: Final = pack_for
         self.__index = QPersistentModelIndex()
         self.__serial = 0
         self.__location = ""
@@ -165,6 +202,7 @@ class RootsPreview(QWidget):
         self.__setup_checksum_rows()
         self.image_ready.connect(self.__on_image, Qt.ConnectionType.QueuedConnection)
         self.record_ready.connect(self.__on_record, Qt.ConnectionType.QueuedConnection)
+        self.archive_ready.connect(self.__on_archive, Qt.ConnectionType.QueuedConnection)
         self.__ui.url_value.linkActivated.connect(RootsPreview.__open_link)
         self.__setup_description()
         self.show_index(QModelIndex())
@@ -207,6 +245,20 @@ class RootsPreview(QWidget):
         if ui.record_section.isHidden():
             return None
         return self.__url, ui.description_view.toPlainText()
+
+    @property
+    def archive_texts(self) -> dict[str, str]:
+        """What the archive rows say, by row (``contents``, ``unpacked``, ``packed``, ``compression``, ``pack``), the
+        shown ones only; empty while none is."""
+        ui = self.__ui
+        rows = {
+            "contents": (ui.contents_label, ui.contents_value),
+            "unpacked": (ui.unpacked_label, ui.unpacked_value),
+            "packed": (ui.packed_label, ui.packed_value),
+            "compression": (ui.compression_label, ui.compression_value),
+            "pack": (ui.pack_label, ui.pack_value),
+        }
+        return {name: value.text() for name, (_label, value) in rows.items() if not value.isHidden() and value.text()}
 
     @property
     def location(self) -> str:
@@ -308,6 +360,8 @@ class RootsPreview(QWidget):
             value.setText(text)
             label.setVisible(bool(text))
             value.setVisible(bool(text))
+        self.__show_archive(None)
+        self.__show_pack(index)
         self.__location = "" if path is None else str(path)
         ui.path_value.set_text(self.__location)
         ui.path_label.setVisible(bool(self.__location))
@@ -315,6 +369,8 @@ class RootsPreview(QWidget):
         self.__rebuild_buttons(index)
         if path is not None and file_type is FileType.IMAGE:
             self.__start_image(path)
+        elif path is not None and file_type is FileType.ARCHIVE and kind is RootsNodeKind.FILE:
+            self.__start_archive(path)
         else:
             self.__start_record_reads(index, path, file_type, kind)
 
@@ -516,6 +572,97 @@ class RootsPreview(QWidget):
         ui.resolution_value.setText(f"{size.width():,} × {size.height():,}")
         ui.resolution_label.show()
         ui.resolution_value.show()
+
+    def __show_pack(self, index: QModelIndex) -> None:
+        """Say whether an archive row is a reference pack: the *Pack* row, from the cache and so immediate.
+
+        :param index: the row.
+        """
+        ui = self.__ui
+        info = None if self.__pack_for is None else self.__pack_for(index)
+        if info is None or info.state is PackState.NOT_PACK:
+            text = ""
+        elif info.state is PackState.PACK and info.record is not None:
+            text = f"Reference images, through {info.record.name}"
+        else:
+            text = PACK_TEXTS.get(info.state, "")
+        ui.pack_value.setText(text)
+        ui.pack_label.setVisible(bool(text))
+        ui.pack_value.setVisible(bool(text))
+
+    def __start_archive(self, path: Path) -> None:
+        """Read a zip's central directory on the pool.
+
+        :param path: the archive file.
+        """
+        serial = self.__serial
+        extensions = shared_reference_images_settings().content_image_extensions
+        QThreadPool.globalInstance().start(lambda: self.__read_archive(serial, path, extensions))
+
+    def __read_archive(self, serial: int, path: Path, extensions: tuple[str, ...]) -> None:
+        """Read one archive's facts, on a pool thread, and hand them back.
+
+        :param serial: the request's serial.
+        :param path: the archive file.
+        :param extensions: the recognized image extensions.
+        """
+        facts = read_archive_facts(path, extensions, self.__coordinator)
+        try:
+            self.archive_ready.emit(serial, facts)
+        except RuntimeError:  # the preview was destroyed while the read was out
+            pass
+
+    def __on_archive(self, serial: int, facts: object) -> None:
+        """Show what an archive is made of, unless the row it was for is no longer the one shown.
+
+        :param serial: the request's serial.
+        :param facts: what was read: an :class:`~rehuco_core.ArchiveFacts`, or ``None`` for a zip that is not readable.
+        """
+        if serial == self.__serial:
+            self.__show_archive(facts if isinstance(facts, ArchiveFacts) else None, read=True)
+
+    def __show_archive(self, facts: ArchiveFacts | None, *, read: bool = False) -> None:
+        """Fill the archive rows, or hide them.
+
+        :param facts: what the central directory says.
+        :param read: whether the read has answered; with no facts, the zip is then not readable.
+        """
+        ui = self.__ui
+        if facts is None and not read:
+            for widget in (
+                ui.unpacked_label,
+                ui.unpacked_value,
+                ui.packed_label,
+                ui.packed_value,
+                ui.compression_label,
+                ui.compression_value,
+            ):
+                widget.hide()
+            return
+        if facts is None:
+            contents = UNREADABLE_ARCHIVE
+            shown: tuple[tuple[QLabel, QLabel, str], ...] = ()
+        else:
+            files = f"{facts.files:,} file{'' if facts.files == 1 else 's'}"
+            contents = f"{files} ({facts.images:,} image{'' if facts.images == 1 else 's'})"
+            note = UNREADABLE_METHOD_NOTE if facts.unreadable else SLOW_METHOD_NOTE if facts.slow else ""
+            method = facts.method_text
+            shown = (
+                (ui.unpacked_label, ui.unpacked_value, format_size(facts.unpacked)),
+                (ui.packed_label, ui.packed_value, format_size(facts.packed)),
+                (ui.compression_label, ui.compression_value, f"{method} - {note}" if method and note else method),
+            )
+            palette = self.palette()
+            if note:
+                palette.setColor(QPalette.ColorRole.WindowText, BAD_INK if facts.unreadable else OLD_BAD_INK)
+            ui.compression_value.setPalette(palette)
+        ui.contents_value.setText(contents)
+        ui.contents_label.show()
+        ui.contents_value.show()
+        for label, value, text in shown:
+            value.setText(text)
+            label.setVisible(bool(text))
+            value.setVisible(bool(text))
 
     def __start_record(self, path: Path) -> None:
         """Read a record's URL and description on the pool.
