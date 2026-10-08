@@ -37,6 +37,15 @@ class RehucoSettings:
         """
         self.recent.record(path)
 
+    def forget(self, path: Path) -> None:
+        """Drop ``path`` from the recents and, when it is the one to reopen, from there too (#464): the file is gone.
+
+        :param path: the remembered ``.rehuco``.
+        """
+        self.recent.forget(path)
+        if self.current_path == path:
+            self.current_path = None
+
     def newest_first(self) -> list[Path]:
         """Every remembered path, most recently opened first."""
         return self.recent.newest_first()
@@ -44,12 +53,15 @@ class RehucoSettings:
     def load(self, settings: QSettings) -> None:
         """Replace the current state with what is in persistent storage.
 
+        Stored paths are not resolved (#464): each was when recorded, and resolving one under an unreachable share
+        blocks ([[appendices.code-conventions#worker-threads]], :mod:`borco_core.path_presence`).
+
         :param settings: the ``QSettings`` to read from.
         """
         settings.beginGroup(GROUP)
         current = str(settings.value(CURRENT_PATH_KEY, ""))
         settings.endGroup()
-        self.current_path = Path(current).resolve() if current else None
+        self.current_path = Path(current) if current else None
         self.recent.load(settings)
 
     def save(self, settings: QSettings) -> None:

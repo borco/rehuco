@@ -8,6 +8,7 @@ without ever touching real storage.
 
 from pathlib import Path
 from typing import Any, Final
+from unittest.mock import patch
 
 from pytest import fixture
 from rehuco_agent.settings.recent_files_settings import MAXIMUM_RECENT_FILES, RecentFilesSettings
@@ -244,3 +245,57 @@ def test_load_defaults_to_empty_when_nothing_was_saved(settings: FakeSettings) -
 
 
 # endregion
+
+
+def test_forget_drops_a_remembered_path() -> None:
+    """A path whose file is gone is dropped for good (#464).
+
+    **Test steps:**
+
+    * record two paths and forget the older one
+    * verify only the other remains
+    """
+    recent = RecentFilesSettings()
+    recent.record(FIRST)
+    recent.record(SECOND)
+
+    recent.forget(FIRST)
+
+    assert recent.newest_first() == [SECOND]
+
+
+def test_forgetting_a_path_that_is_not_remembered_changes_nothing() -> None:
+    """Forgetting is idempotent: the file may already have been dropped by another route (#464).
+
+    **Test steps:**
+
+    * record one path and forget another
+    * verify the list is unchanged
+    """
+    recent = RecentFilesSettings()
+    recent.record(FIRST)
+
+    recent.forget(SECOND)
+
+    assert recent.newest_first() == [FIRST]
+
+
+def test_load_does_not_resolve_the_stored_paths(settings: FakeSettings) -> None:
+    """Loading takes the stored paths as they are: resolving one under an unreachable share blocks, and each was
+    resolved when recorded (#464).
+
+    **Test steps:**
+
+    * save a path, then make ``Path.resolve`` fail the test if it is called
+    * load into a fresh instance
+    * verify the path came back unchanged
+    """
+    saved = RecentFilesSettings()
+    saved.record(FIRST)
+    saved.save(settings)  # type: ignore[arg-type]
+    loaded = RecentFilesSettings()
+
+    with patch.object(Path, "resolve", side_effect=AssertionError("resolve() must not run on load")):
+        loaded.load(settings)  # type: ignore[arg-type]
+
+    assert loaded.newest_first() == [FIRST]

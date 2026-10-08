@@ -6,6 +6,7 @@ themselves are a `RecentFilesSettings`, tested in its own module; here only thei
 
 from pathlib import Path
 from typing import Final
+from unittest.mock import patch
 
 from pytest import fixture
 from rehuco_agent.settings.recent_files_settings import MAXIMUM_RECENT_FILES
@@ -137,3 +138,63 @@ def test_loading_replaces_what_was_there(settings: FakeSettings) -> None:
     rehuco.load(settings)  # type: ignore[arg-type]
 
     assert not rehuco.newest_first()
+
+
+def test_forget_drops_a_catalog_from_the_recents_and_from_the_one_to_reopen() -> None:
+    """A ``.rehuco`` that is gone is neither listed nor reopened (#464).
+
+    **Test steps:**
+
+    * record two catalogs and make the older one the one to reopen
+    * forget it
+    * verify it left the recents and nothing is left to reopen
+    """
+    settings = RehucoSettings()
+    settings.record(FIRST)
+    settings.record(SECOND)
+    settings.current_path = FIRST
+
+    settings.forget(FIRST)
+
+    assert settings.newest_first() == [SECOND]
+    assert settings.current_path is None
+
+
+def test_forgetting_another_catalog_keeps_the_one_to_reopen() -> None:
+    """Only the catalog that is gone stops being the one to reopen (#464).
+
+    **Test steps:**
+
+    * record two catalogs and make one the one to reopen
+    * forget the other
+    * verify the one to reopen is unchanged
+    """
+    settings = RehucoSettings()
+    settings.record(FIRST)
+    settings.record(SECOND)
+    settings.current_path = FIRST
+
+    settings.forget(SECOND)
+
+    assert settings.current_path == FIRST
+    assert settings.newest_first() == [FIRST]
+
+
+def test_load_does_not_resolve_the_catalog_to_reopen(settings: FakeSettings) -> None:
+    """The catalog to reopen is read as stored (#464): resolving a path under an unreachable share blocks.
+
+    **Test steps:**
+
+    * save a catalog as the one to reopen, then make ``Path.resolve`` fail the test if it is called
+    * load into a fresh instance
+    * verify the path came back unchanged
+    """
+    saved = RehucoSettings()
+    saved.current_path = FIRST
+    saved.save(settings)  # type: ignore[arg-type]
+    loaded = RehucoSettings()
+
+    with patch.object(Path, "resolve", side_effect=AssertionError("resolve() must not run on load")):
+        loaded.load(settings)  # type: ignore[arg-type]
+
+    assert loaded.current_path == FIRST

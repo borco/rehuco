@@ -88,6 +88,26 @@ A command can be reached from several places; each has one job.
 - **One `QAction` serves every surface**, so enabled state, text and shortcut are decided once, by the widget
   that owns it.
 
+### Worker threads
+
+[[[appendices.code-conventions#worker-threads]]]
+
+Two kinds of background work, two kinds of thread. The reasoning, and the measurements behind it, are in the module
+docstring of `borco_core.path_presence` — read it there, where the code is.
+
+- **Bounded work whose answer goes back to a widget runs on a `QThreadPool`** (`QThreadPool.globalInstance()`, a
+  `QRunnable` posting its answer, judged on the GUI thread so a stale one is dropped — [[appendices.task-queue#serial]]
+  explains why the task queue is not one). This is the default, and nearly all of the agent's background work.
+- **Work that can block on storage or a network the app does not control, and so must never hold up quitting, runs on
+  a Python `threading.Thread(daemon=True)`** with a `threading.Event` to stop it. Qt joins its pools at exit, so a
+  worker stuck in a call to a switched-off server keeps the process alive for as long as the call takes (21 s measured
+  for an SMB host); a daemon thread is simply left behind. Nothing is killed: `QThread.terminate()` is unsafe, and a
+  `QThread` destroyed while running aborts the process.
+- **A daemon thread holds no Qt object and delivers nothing after `stop()`.** Its callback runs on its own thread and
+  only emits a signal, which Qt queues to the GUI thread; the owner stops it first thing when the window closes.
+- First users: the task queue's worker ([[appendices.task-queue#teardown]], daemon for the same reason) and
+  `borco_core.PresenceScan` (#464).
+
 ## 3. Markdown
 
 [[[appendices.code-conventions#markdown]]]

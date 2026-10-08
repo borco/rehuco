@@ -12,7 +12,8 @@ from .session_page_ui import Ui_SessionPage
 class SessionPage(QWidget):
     """Configure whether the previous session's open documents and root catalog come back on the next start.
 
-    Two checkboxes, staged in the widget until :meth:`save_changes` writes them -- the same shape as
+    Three checkboxes (the documents on local storage, those on remote or removable storage, the root catalog), staged
+    in the widget until :meth:`save_changes` writes them -- the same shape as
     every other settings page here.
 
     :param parent: optional Qt parent.
@@ -29,14 +30,16 @@ class SessionPage(QWidget):
         saved = SessionRestoreSettings()
         saved.load(persistent_settings())
         return (
-            self.__ui.restore_documents_check_box.isChecked() != saved.restore_documents
+            self.__ui.restore_local_documents_check_box.isChecked() != saved.restore_local_documents
+            or self.__ui.restore_remote_documents_check_box.isChecked() != saved.restore_remote_documents
             or self.__ui.restore_root_catalog_check_box.isChecked() != saved.restore_root_catalog
         )
 
     def save_changes(self) -> None:
         """Persist the staged choices."""
         settings = SessionRestoreSettings(
-            restore_documents=self.__ui.restore_documents_check_box.isChecked(),
+            restore_local_documents=self.__ui.restore_local_documents_check_box.isChecked(),
+            restore_remote_documents=self.__ui.restore_remote_documents_check_box.isChecked(),
             restore_root_catalog=self.__ui.restore_root_catalog_check_box.isChecked(),
         )
         settings.save(persistent_settings())
@@ -53,5 +56,6 @@ class SessionPage(QWidget):
 
     def __stage(self, settings: SessionRestoreSettings) -> None:
         """Show ``settings`` in the checkboxes."""
-        self.__ui.restore_documents_check_box.setChecked(settings.restore_documents)
+        self.__ui.restore_local_documents_check_box.setChecked(settings.restore_local_documents)
+        self.__ui.restore_remote_documents_check_box.setChecked(settings.restore_remote_documents)
         self.__ui.restore_root_catalog_check_box.setChecked(settings.restore_root_catalog)

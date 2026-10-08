@@ -56,6 +56,13 @@ class RecentFilesSettings:
         self.paths.clear()
         self.paths.update(rebuilt)
 
+    def forget(self, path: Path) -> None:
+        """Drop ``path`` for good (#464): its file is gone, and the device it was on answered to say so.
+
+        :param path: the remembered path; a no-op when it is not remembered.
+        """
+        self.paths.pop(path, None)
+
     def newest_first(self) -> list[Path]:
         """Every remembered path, most-recently-opened first."""
         return list(reversed(self.paths))
@@ -63,13 +70,18 @@ class RecentFilesSettings:
     def load(self, settings: QSettings) -> None:
         """Replace the current paths with what's in persistent storage.
 
+        **Paths are not resolved here** (#464): every one was resolved when :meth:`record` was handed it, and
+        ``Path.resolve()`` on a path under a share whose server is off blocks for as long as the network takes to
+        give up -- 1.3 s measured for an unknown host, with the window not yet built. See
+        :mod:`borco_core.path_presence` for what is measured and how the remembered paths are checked instead.
+
         :param settings: the ``QSettings`` to read from.
         """
         settings.beginGroup(self.group)
         self.paths.clear()
         for index in range(settings.beginReadArray(PATHS_KEY)):
             settings.setArrayIndex(index)
-            path = Path(str(settings.value(PATH_KEY, ""))).resolve()
+            path = Path(str(settings.value(PATH_KEY, "")))
             self.paths[path] = None  # pylint: disable=unsupported-assignment-operation
         settings.endArray()
         settings.endGroup()
