@@ -36,12 +36,14 @@ from rehuco_core import (
     EXCLUDED_FILE_PATTERNS,
     FORMAT_VERSION_KEY,
     SCREENSHOT_NAME_PATTERNS,
+    CoveringRecord,
     LearningPathEntry,
     LockReasonKind,
     RehuDocument,
     Relocation,
     RenameCoordinator,
     RenameYieldTimeout,
+    TakenClaims,
     current_block_version,
     scan_rehu_screenshot_files,
     scan_unconverted_screenshots,
@@ -2611,6 +2613,59 @@ def test_a_save_announces_the_record_it_wrote(mocker: MockerFixture) -> None:
     model.save()
 
     assert written == [(path,)]
+
+
+def test_the_first_save_takes_the_checksums_the_new_record_covers(mocker: MockerFixture) -> None:
+    """A new record's first save moves its files' entries out of the enclosing record at once (#467), and says
+    both checksum files changed so the views reading them follow.
+
+    **Test steps:**
+
+    * build a not-yet-saved ``foo.rehu`` model through a coordinator, with the move mocked to report one
+    * save it
+    * verify the move was asked for that record, through that coordinator, and ``files_changed`` carried the
+      record and both checksum files
+    """
+    path = Path("/fake/sculpting/foo.rehu")
+    coordinator = RenameCoordinator()
+    model = RehuDocumentModel.create_new(path, rename_coordinator=coordinator)
+    mocker.patch.object(model.document, "save")
+    source = Path("/fake/sculpting/info.checksum")
+    take = mocker.patch(
+        "rehuco_agent.documents.rehu_document_model.take_enclosing_claims",
+        return_value=TakenClaims(source, {"foo.zip": CoveringRecord(path, "foo.zip")}, pruned=True),
+    )
+    written: list[object] = []
+    model.files_changed.connect(written.append)
+
+    model.save()
+
+    take.assert_called_once()
+    assert take.call_args.args == (path,)
+    assert take.call_args.kwargs["coordinator"] is coordinator
+    assert written == [(path, Path("/fake/sculpting/foo.checksum"), source)]
+
+
+def test_only_the_first_save_takes_checksums(mocker: MockerFixture) -> None:
+    """A record already on disk took what it covers when it was created; a later save moves nothing (#467).
+
+    **Test steps:**
+
+    * build a not-yet-saved model with the move mocked to find nothing, and save it twice
+    * verify the move was asked for once, and the second save announced only the record
+    """
+    path = Path("/fake/sculpting/foo.rehu")
+    model = RehuDocumentModel.create_new(path)
+    mocker.patch.object(model.document, "save")
+    take = mocker.patch("rehuco_agent.documents.rehu_document_model.take_enclosing_claims", return_value=None)
+    written: list[object] = []
+    model.files_changed.connect(written.append)
+
+    model.save()
+    model.save()
+
+    take.assert_called_once()
+    assert written == [(path,), (path,)]
 
 
 def test_a_convert_announces_the_new_record_and_the_tc_it_replaced(mocker: MockerFixture) -> None:

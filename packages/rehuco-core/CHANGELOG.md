@@ -69,13 +69,21 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ### Changed
 
+- A verify reports a file it gives its first checksum as `added` rather than `unexpected`. The summary reads
+  `210 matched, 2 mismatched, 3 added` (checked verdicts first), `added` counts as clean, and each added file is
+  logged by name: *Checksum added for new file foo.zip*. A new file the run cannot read gets no entry and is counted
+  unreadable; an older record's hash-less `unexpected` entry is read as no entry, so no record needs migrating.
+- `take_enclosing_claims(rehu_path)` moves the checksum entries a new file-scoped record covers out of the enclosing
+  directory-scoped record's `.checksum` into its own, as a verify of the enclosing record would. Called right after
+  the record is first written, it returns `TakenClaims`, or `None` when nothing moved. `enclosing_directory_record`
+  finds that record.
 - A `.rehuco` is version 2: a root's `removable` flag became a `storage` (`removable` for a flagged root, otherwise
   `local`), migrated when a file is read and written back on its next save. A build that predates this opens the
   file read-only.
 - An image named by a legacy screenshot pattern (`01.jpg`, `cover.jpg`, `sample-01.jpg`, ...) is content
   in every folder: enumerated, checksummed and measured like any other file. Only a `<record>NN` image
   beside its record is a screenshot sidecar. A `.checksum` written before this lacks such files, and the
-  next verify adopts them as unexpected.
+  next verify adopts them as added.
 - Converting a `.tc` measures `current_size` after renaming its screenshots, so the size never counts the
   images the conversion itself claims.
 - A rename's executed plan is a `Relocation`, available as `RehuRenamer.relocation`. Its `relocate(path)` gives a

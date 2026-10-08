@@ -17,7 +17,6 @@
         <file alias="icons/checksum_ok.svg">../../../../design/icons/checksum_ok.svg</file>
         <file alias="icons/checksum_old_bad.svg">../../../../design/icons/checksum_old_bad.svg</file>
         <file alias="icons/checksum_old_ok.svg">../../../../design/icons/checksum_old_ok.svg</file>
-        <file alias="icons/checksum_unexpected.svg">../../../../design/icons/checksum_unexpected.svg</file>
         <file alias="icons/checksum_verify.svg">../../../../design/icons/checksum_verify.svg</file>
         <file alias="icons/document_checksum.svg">../../../../design/icons/document_checksum.svg</file>
         <file alias="icons/document_content_reference_images.svg">../../../../design/icons/document_content_reference_images.svg</file>

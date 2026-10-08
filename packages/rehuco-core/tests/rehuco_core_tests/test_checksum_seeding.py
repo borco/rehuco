@@ -430,13 +430,13 @@ def test_content_the_manifest_never_listed_is_adopted(disk: FakeDisk) -> None:
 
     * put a ``.sfv`` naming only the video
     * verify
-    * check the archive was reported unexpected and recorded matched under the default algorithm
+    * check the archive was reported added and recorded matched under the default algorithm
     """
     put_sfv(disk, f"{VIDEO} {VIDEO_CRC}")
 
     report = verify_checksums(INFO_PATH)
 
-    assert report.statuses == {VIDEO: "matched", ARCHIVE: "unexpected"}
+    assert report.statuses == {VIDEO: "matched", ARCHIVE: "added"}
     assert disk.entries[ARCHIVE][DEFAULT_CHECKSUM_ALGORITHM] == digest_of(ARCHIVE_BYTES)
     assert disk.entries[ARCHIVE]["status"] == "matched"
 
@@ -804,7 +804,7 @@ def test_the_summary_names_the_manifest_a_run_was_seeded_from(disk: FakeDisk) ->
     report = verify_checksums(INFO_PATH)
 
     assert checksum_report_summary(report) == (
-        "1 matched, 1 unexpected, seeded 1 from info.md5, 1 seed line dropped, 1 manifest ignored, "
+        "1 matched, 1 added, seeded 1 from info.md5, 1 seed line dropped, 1 manifest ignored, "
         "retired info.md5, info.sfv"
     )
 

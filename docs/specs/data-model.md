@@ -173,6 +173,7 @@ shows an image its checksum does not cover:
 - [#257: feat: a pruned claim moves to the record that now covers it](https://github.com/borco/rehuco/issues/257)
 - [#256: feat: import options — convert the .sfv, and optionally verify](https://github.com/borco/rehuco/issues/256)
 - [#259: fix: a legacy manifest is never retired once its claim is in the record](https://github.com/borco/rehuco/issues/259)
+- [#467: feat: creating a foo.rehu moves its entries into foo.checksum at once, and a verify reports new files as added, not unexpected](https://github.com/borco/rehuco/issues/467)
 
 - **The algorithm was measured rather than inherited** (#203). This section used to say the choice was *"subject to
   change pending benchmarking"* and named nobody to run it — the only benchmarking job the specs describe
@@ -249,7 +250,7 @@ shows an image its checksum does not cover:
     "files": [
       { "name": "foo1/bar1.zip", "crc32": "42342424",
         "verified": "2026-08-04T23:34:56Z", "status": "matched" },
-      { "name": "bar2.zip", "status": "unexpected" },
+      { "name": "bar2.zip", "xxh3": "0123456789abcdef" },
       { "name": "foo3/bar3.zip", "xxh3": "42342424",
         "verified": "2026-08-04T23:34:56Z", "status": "mismatched" }
     ]
@@ -259,9 +260,12 @@ shows an image its checksum does not cover:
   `name` is relative to the `.rehu`, POSIX-separated, never absolute and never escaping the directory. **The hash key
   is the algorithm tag**, at most one per entry and present only once hashed — which is how *record which algorithm was
   used per entry* is satisfied literally, and it is genuinely per entry, so `crc32` and `xxh3` entries sit side by side
-  and changing the configured algorithm invalidates nothing. `status` is `matched` / `mismatched` / `missing` /
-  `unexpected` / `malformed`; a `malformed` entry is one the reading build cannot read, and it costs itself while its
-  neighbours still verify.
+  and changing the configured algorithm invalidates nothing. A recorded `status` is `matched` / `mismatched` /
+  `missing`; a run also *reports* `added` (a file it gave its first hash, recorded `matched`) and `malformed` (an
+  entry the reading build cannot read, which costs itself while its neighbours still verify), and writes neither.
+  `bar2.zip` above has a hash and no date or status: a claim moved in from another record and not yet checked by this
+  one, which reads as needing a recheck. An entry with **no** hash says nothing about its file and reads as no entry
+  at all — the `"status": "unexpected"` older builds wrote for a file they could not read is one (#467).
 
 - **Generate and verify take the same selection**, because they are two halves of one workflow and a selection meaning
   different things in each would be a trap: which files (one, a set, or everything), and a staleness window whose
@@ -277,8 +281,9 @@ shows an image its checksum does not cover:
   if it fails, the entry is `mismatched`, keeps its old key, and the new hash is discarded. Blessing bad bytes under a
   new name would produce a record that then looks clean forever.
 
-- **A sweep adopts** a content file with no recorded hash — hash it, date it, record it `matched` — so `unexpected` is
-  a report state rather than a resting one.
+- **A sweep adopts** a content file with no recorded hash — hash it, date it, record it `matched` — and reports it
+  `added`, naming each one in the resource's log. A file goes from *no checksum* to *verified* in one step, so there
+  is no state in between to show; one the run cannot read gets no entry and is counted unreadable (#467).
 
 - **A resource checksummed before this app existed is verified, not baselined** (#243). The catalog carries `.sfv`
   files written by tutcatalog4 and by external checkers, with `.md5`/`.sha*` here and there. Those suffixes were
@@ -518,7 +523,14 @@ shows an image its checksum does not cover:
     a legitimate edit — makes the covering record's next verify report `mismatched` on a file that is fine, and
     accepting it takes a targeted Generate. It fails in the safe direction: a false alarm rather than a clean-looking
     record over bad bytes.
-- **Excluded files are never reported as unexpected**, in either tier — that list comes from the same enumeration the
+- **A new file-scoped record takes its claims at once** (#467). Creating `foo.rehu` beside a `foo.zip` that
+  `info.checksum` lists runs the same move from the other end, straight after the record's first save, instead of
+  waiting for the next verify of `info.checksum` — until then `foo.zip` would read *no checksum*, since a file is read
+  from its own record only. Nothing about *what* moves, the cleared date, the write order or the declines is new; only
+  *when*. The moved file reads as needing a recheck, never as a mismatch, and its first verify there rechecks it under
+  its recorded algorithm. A new directory-scoped `info.rehu` does not do this: its claims move at the enclosing
+  record's next verify, as before.
+- **Excluded files are never reported as added**, in either tier — that list comes from the same enumeration the
   record was generated over (#226), so a `Thumbs.db` a Windows browse dropped into the directory, and an edited or
   newly added screenshot, all leave a verify clean.
 - The Qt app provides UI to generate and verify checksums on demand; each such operation is a task in the task queue
@@ -561,8 +573,8 @@ shows an image its checksum does not cover:
     overwrite and it is the honest name for what a first run does; the toolbar shows it only then. Re-baselining
     anything else is `Ctrl+A` plus *Generate Selection*.
   - **Delete Missing is scoped to `missing` rows**, and means *the missing ones among what you selected*. Dropping
-    the entry of a file that is still on disk achieves nothing — the next verify adopts it straight back, since
-    `unexpected` is a report state rather than a resting one — so scoping the action removes that trap instead of
+    the entry of a file that is still on disk achieves nothing — the next verify adopts it straight back and reports
+    it `added` — so scoping the action removes that trap instead of
     explaining it. It hashes nothing, so it is one atomic write in place rather than a queued run: forgetting
     entries is core's third operation over a record, taking **names** rather than a status, because which entries
     deserve dropping is the view's judgement and the format is core's.

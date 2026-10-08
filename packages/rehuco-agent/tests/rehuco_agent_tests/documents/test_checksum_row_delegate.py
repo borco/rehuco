@@ -318,14 +318,13 @@ def test_no_claim_draws_no_glyph(delegate: ChecksumRowDelegate, palette: QPalett
         FileChecksumState.BAD,
         FileChecksumState.OLD_OK,
         FileChecksumState.OLD_BAD,
-        FileChecksumState.UNEXPECTED,
         FileChecksumState.MALFORMED,
     ],
 )
 def test_every_checksum_state_draws_a_glyph(
     delegate: ChecksumRowDelegate, palette: QPalette, state: FileChecksumState
 ) -> None:
-    """The seven the column can draw -- the same set the file browser's own checksum column reports
+    """The six the column can draw -- the same set the file browser's own checksum column reports
     (#303) -- each drawn, so a verdict with no glyph would read as no verdict.
 
     **Test steps:**

@@ -479,16 +479,16 @@ def test_a_deleted_file_is_missing(disk: FakeDisk) -> None:
     assert disk.entries[ARCHIVE]["status"] == "missing"
 
 
-def test_an_added_file_is_unexpected_and_adopted(disk: FakeDisk) -> None:
-    """A content file the record does not cover is reported unexpected and recorded matched.
+def test_a_new_file_is_added_and_adopted(disk: FakeDisk) -> None:
+    """A content file the record does not cover is reported added and recorded matched (#467).
 
-    ``unexpected`` is a report state, never a resting one ([[data-model#checksums]]): the sweep adopts
-    the file so the next verify has something to check it against.
+    ``added`` is a report word, never a resting state ([[data-model#checksums]]): the file goes from no
+    checksum to verified in one step, so the next verify has something to check it against.
 
     **Test steps:**
 
     * generate, drop a new archive into the tree, verify
-    * check it is reported unexpected but recorded matched under a fresh hash
+    * check it is reported added but recorded matched under a fresh hash
     * verify again and check it now simply matches
     """
     generate_checksums(INFO_PATH)
@@ -496,7 +496,7 @@ def test_an_added_file_is_unexpected_and_adopted(disk: FakeDisk) -> None:
 
     report = verify_checksums(INFO_PATH)
 
-    assert report.statuses["extras/bonus.zip"] == "unexpected"
+    assert report.statuses["extras/bonus.zip"] == "added"
     assert disk.entries["extras/bonus.zip"] == {
         "name": "extras/bonus.zip",
         DEFAULT_CHECKSUM_ALGORITHM: digest_of(b"a bonus pack"),
@@ -976,7 +976,7 @@ def test_an_entry_with_no_readable_name_is_counted(disk: FakeDisk) -> None:
     report = verify_checksums(INFO_PATH)
 
     assert report.unnamed_malformed == 4
-    assert report.statuses == {ARCHIVE: "matched", VIDEO: "unexpected"}
+    assert report.statuses == {ARCHIVE: "matched", VIDEO: "added"}
     assert disk.record["files"][:4] == broken
 
 
@@ -1061,7 +1061,8 @@ def test_a_file_that_cannot_be_read_keeps_its_entry_through_a_generate(disk: Fak
 
 
 def test_a_listed_but_unhashed_file_that_is_gone_is_missing(disk: FakeDisk) -> None:
-    """A resting ``unexpected`` whose file has since gone is missing, and gains no hash.
+    """A hash-less entry (an older build's ``unexpected``) whose file has since gone is missing, and gains
+    no hash.
 
     **Test steps:**
 
@@ -1099,7 +1100,7 @@ def test_a_listed_but_unhashed_file_that_cannot_be_read_is_left_alone(disk: Fake
 
 
 def test_a_file_that_vanishes_before_it_is_read_is_not_adopted(disk: FakeDisk) -> None:
-    """A file listed by the scan and gone by the read is nothing at all, not an unexpected one.
+    """A file listed by the scan and gone by the read is nothing at all, not an added one.
 
     **Test steps:**
 
@@ -1110,24 +1111,28 @@ def test_a_file_that_vanishes_before_it_is_read_is_not_adopted(disk: FakeDisk) -
 
     report = verify_checksums(INFO_PATH, create_if_missing=True)
 
-    assert report.statuses == {ARCHIVE: "unexpected"}
+    assert report.statuses == {ARCHIVE: "added"}
     assert set(disk.entries) == {ARCHIVE}
 
 
-def test_an_adopted_file_that_cannot_be_read_rests_unexpected(disk: FakeDisk) -> None:
-    """An unlisted file that refuses to open is recorded by name alone, to be hashed another day.
+def test_a_new_file_that_cannot_be_read_is_unreadable_and_unlisted(disk: FakeDisk) -> None:
+    """An unlisted file that refuses to open gets no entry at all, and is counted unreadable, not added (#467).
+
+    An entry with a name and no hash says nothing a missing entry does not, so none is written: the file
+    stays *no checksum* until a run can read it.
 
     **Test steps:**
 
     * verify from nothing, with the video refusing to open
-    * check it is reported unexpected and recorded with a name, a status and no hash
+    * check it is reported unreadable, not added, and the record does not list it
     """
     disk.open_errors[DIRECTORY / VIDEO] = PermissionError(VIDEO)
 
     report = verify_checksums(INFO_PATH, create_if_missing=True)
 
-    assert report.statuses[VIDEO] == "unexpected"
-    assert disk.entries[VIDEO] == {"name": VIDEO, "status": "unexpected"}
+    assert report.unreadable == (VIDEO,)
+    assert report.statuses == {ARCHIVE: "added"}
+    assert set(disk.entries) == {ARCHIVE}
 
 
 # endregion
@@ -1397,11 +1402,11 @@ def test_a_verify_may_be_told_to_start_from_nothing(disk: FakeDisk) -> None:
     **Test steps:**
 
     * verify a resource that has never been generated, allowing the record to be created
-    * check every content file was reported unexpected and recorded matched
+    * check every content file was reported added and recorded matched
     """
     report = verify_checksums(INFO_PATH, create_if_missing=True)
 
-    assert report.statuses == {VIDEO: "unexpected", ARCHIVE: "unexpected"}
+    assert report.statuses == {VIDEO: "added", ARCHIVE: "added"}
     assert set(disk.entries) == {VIDEO, ARCHIVE}
 
 
@@ -1733,19 +1738,21 @@ def test_a_hash_recorded_in_upper_case_still_compares(disk: FakeDisk) -> None:
 
 
 def test_an_entry_with_no_hash_yet_parses(disk: FakeDisk) -> None:
-    """A resting ``unexpected`` -- listed, never hashed -- is a shape the format defines.
+    """A hash-less entry -- listed, never hashed, as an older build's ``unexpected`` -- is a shape the
+    format reads, and reads as no checksum (#467).
 
     **Test steps:**
 
     * seed an entry holding only a name and a status, and verify
-    * check it was hashed, dated and recorded matched
+    * check it was reported added, as an unlisted file is, and hashed, dated and recorded matched
     """
     disk.seed_record([{"name": VIDEO, "status": "unexpected"}])
 
     report = verify_checksums(INFO_PATH, only=[VIDEO])
 
-    assert report.statuses == {VIDEO: "matched"}
+    assert report.statuses == {VIDEO: "added"}
     assert disk.entries[VIDEO][DEFAULT_CHECKSUM_ALGORITHM] == digest_of(VIDEO_BYTES)
+    assert disk.entries[VIDEO]["status"] == "matched"
 
 
 def test_an_empty_report_is_the_default(disk: FakeDisk) -> None:
@@ -2571,7 +2578,7 @@ def test_a_forgotten_entry_is_adopted_again_by_the_next_verify(disk: FakeDisk) -
 
     report = verify_checksums(INFO_PATH)
 
-    assert report.statuses[VIDEO] == "unexpected"
+    assert report.statuses[VIDEO] == "added"
     assert disk.entries[VIDEO]["status"] == "matched"
 
 

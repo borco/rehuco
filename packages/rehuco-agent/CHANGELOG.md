@@ -110,6 +110,15 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 ### Changed
 
+- **Creating a rehu for a file takes its checksum at once.** When `foo.rehu` is first saved beside a `foo.zip` that
+  the folder's `info.checksum` lists, the entry moves into `foo.checksum`, so the Roots view, the Files dock and the
+  Checksums tab show the file's checksum straight away instead of *No checksum* until the next verify of the folder.
+  The moved checksum reads **Not checked yet** (an old, faded icon; *Not yet verified at this location* on hover)
+  until the file's first verify there, which rechecks it. A moved checksum no longer shows as *Not matching* in
+  orange.
+- A verify that checksums a new file says it **added** it: *Checksums verified: 210 matched, 2 mismatched, 3 added.*
+  The resource's log names each one. The *unexpected* checksum icon is gone: an entry an older build left with no
+  hash reads as **No checksum** in the Files dock, the Checksums tab and the Roots view.
 - The current card of a document's **Locations** field is no longer filled in the selection blue: its add and delete
   buttons, shown for as long as it is current, mark it.
 - A root's **Removable** checkbox is gone: what a root lives on is its **storage**, chosen when it is added and
@@ -131,7 +140,7 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 - An image named by a legacy screenshot pattern (`01.jpg`, `cover.jpg`, ...) is content: the Files panel
   lists it as such, and checksums, size on disk and duration include it. Beside the `.rehu` it is still
   offered for conversion in the Images panel. The screenshot name patterns setting no longer affects
-  checksums or measurements. The next verify of an existing `.checksum` adopts such files as unexpected.
+  checksums or measurements. The next verify of an existing `.checksum` adds such files.
 - What the app does to files shows at once in every place that shows them, without a rescan. When a resource is
   renamed, an open document stored inside it is re-pointed too: a member of a renamed collection folder, or a
   `.rehu` in a renamed folder. The Root Catalog table follows renames, saves and conversions. The Files panel

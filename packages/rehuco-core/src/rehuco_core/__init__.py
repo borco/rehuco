@@ -7,18 +7,16 @@ from .checksum_algorithms import (
     ChecksumAlgorithm,
     ChecksumDigest,
 )
-from .checksum_claim_moves import hand_over_claims
+from .checksum_claim_moves import TakenClaims, enclosing_directory_record, hand_over_claims, take_enclosing_claims
 from .checksum_jobs import (
     CHECKSUM_GENERATE_KIND,
     CHECKSUM_SWEEP_KIND,
     CHECKSUM_VERIFY_KIND,
-    PRUNE_REASONS,
     ChecksumJob,
     GenerateChecksumsJob,
     SweepChecksumsJob,
     SweepTally,
     VerifyChecksumsJob,
-    checksum_report_summary,
     sweep_summary,
 )
 from .checksum_record import (
@@ -36,6 +34,7 @@ from .checksum_record import (
     parse_checksum_entry,
     save_checksum_record,
 )
+from .checksum_reporting import PRUNE_REASONS, checksum_report_summary
 from .checksum_seeding import (
     LEGACY_MANIFEST_ALGORITHMS,
     LegacyDrop,
@@ -522,6 +521,7 @@ __all__ = [
     "TcImportJob",
     "TcScreenshotPlan",
     "TcScreenshotScanner",
+    "TakenClaims",
     "USERS_KEY",
     "UnconvertedScreenshot",
     "UnlinkDeleter",
@@ -550,6 +550,7 @@ __all__ = [
     "delete_screenshot",
     "discard_conversion_backups",
     "duplicate_source_rows",
+    "enclosing_directory_record",
     "enumerate_catalog_resources",
     "enumerate_content_files",
     "excluded_content_names",
@@ -610,6 +611,7 @@ __all__ = [
     "seed_checksum_record",
     "seed_from_legacy_manifest",
     "sweep_summary",
+    "take_enclosing_claims",
     "tc_to_rehu_data",
     "verify_checksums",
     "learning_path_records_by_scope",

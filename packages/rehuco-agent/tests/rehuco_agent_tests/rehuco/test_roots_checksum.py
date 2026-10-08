@@ -13,6 +13,7 @@ from rehuco_agent.rehuco.roots_checksum import (
     NEVER_CHECKED,
     NO_CHECKSUM,
     NOT_APPLICABLE,
+    NOT_CHECKED_YET,
     NOT_COVERED,
     OLD_BAD_INK,
     RowChecksum,
@@ -73,12 +74,12 @@ def test_a_file_no_record_covers_has_no_state() -> None:
     [
         covered(None),
         covered(entry(digest=None, days=None, status=None)),
-        covered(entry(digest="aabbccdd", status="unexpected")),
+        covered(entry(digest=None, status="unexpected")),
     ],
-    ids=["not listed", "listed with no hash", "reported unexpected"],
+    ids=["not listed", "listed with no hash", "an older build's unexpected"],
 )
 def test_a_file_with_no_hash_of_its_own_reads_as_no_checksum(file: CoveredFile) -> None:
-    """Not listed, listed without a hash, and the old *unexpected* all say the same: nothing is recorded.
+    """Not listed, listed without a hash, and an older build's *unexpected* all say the same: nothing is recorded.
 
     **Test steps:**
 
@@ -128,6 +129,23 @@ def test_a_checked_file_reads_the_verdict_the_files_dock_reads(
     assert row is not None
     assert (row.state, row.untrusted) == (state, untrusted)
     assert row.verified == file.entry.verified  # type: ignore[union-attr]
+
+
+def test_a_moved_claim_reads_not_checked_yet_and_is_no_warning() -> None:
+    """A claim moved in from another record has a hash and no date or verdict (#257, #467): it needs a recheck, and
+    nothing says it failed.
+
+    **Test steps:**
+
+    * ask for the state of a file whose entry carries a hash and nothing else
+    * verify it is old, not yet verified here, undated, drawn in the row's own ink, and the pane says *Not checked
+      yet* / *Never*
+    """
+    row = row_checksum(covered(entry(status=None, days=None)), WINDOW, NOW)
+
+    assert row == RowChecksum(FileChecksumState.OLD_OK, untrusted=True, verified=None)
+    assert warning_ink(row) is None
+    assert checksum_lines(row, bookkeeping=False, now=NOW) == (NOT_CHECKED_YET, NEVER_CHECKED)
 
 
 # endregion

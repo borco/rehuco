@@ -120,13 +120,13 @@ is exactly this shape."""
 class ChecksumReport:  # pylint: disable=too-many-instance-attributes
     """What one generate or verify established ([[data-model#checksums]], #203).
 
-    The *run's* answers, which are not always the record's: an adopted file is reported ``unexpected``
-    -- that is what the run found -- while the record now holds it ``matched`` under a fresh hash, so
-    the state does not rest. Nothing skipped or untouched appears in :attr:`statuses`.
+    The *run's* answers, which are not always the record's: an adopted file is reported ``added`` --
+    that is what the run did -- while the record holds it ``matched`` under a fresh hash, so the word
+    never rests (#467). Nothing skipped or untouched appears in :attr:`statuses`.
 
     :param statuses: per file name, what this run established -- hashed-and-compared verdicts,
-        ``missing``, ``unexpected``, and ``malformed`` for an entry with a readable name this build
-        cannot read.
+        ``missing``, ``added``, and ``malformed`` for an entry with a readable name this build cannot
+        read.
     :param skipped: the names left alone because they were verified within ``stale_after`` -- what a
         sweep (#242) counts to say how much recent work it saved.
     :param unreadable: the names the run could not read -- the file refused (a permission refusal, a
@@ -261,7 +261,8 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
         under a new name would launder corruption into a record that then looks clean forever.
 
         A selected content file with no recorded hash is **adopted** -- hashed, dated, recorded
-        ``matched`` -- and reported ``unexpected``, so that is a report state rather than a resting one.
+        ``matched`` -- and reported ``added``, a report word rather than a resting state (#467); one that
+        cannot be read is reported unreadable and left unlisted.
         The exclusion set never touches a verdict: entries are checked whatever it says, and it only
         decides which unlisted files exist to be adopted ([[data-model#checksums]]).
 
@@ -561,10 +562,12 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
         return self.__rewritten(raw, entry, algorithm, digest, "matched")
 
     def __adopt_listed(self, raw: Any, entry: ChecksumEntry) -> Any:
-        """Adopt an entry that is listed but has never been hashed -- a resting ``unexpected``.
+        """Adopt an entry that is listed but has never been hashed -- the hash-less ``unexpected`` an older
+        build wrote for a file it could not read.
 
-        Its being listed outranks today's exclusion set: whoever recorded the name meant the file, so
-        it is hashed even when the enumeration no longer covers it.
+        Listed without a hash reads exactly as not listed (#467), so it is reported ``added`` the way an
+        unlisted file is. Its being listed outranks today's exclusion set: whoever recorded the name meant
+        the file, so it is hashed even when the enumeration no longer covers it.
 
         :param raw: the entry as loaded.
         :param entry: its parsed view, known to carry no hash.
@@ -579,28 +582,28 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
         except OSError:
             self.__unreadable.append(entry.name)
             return raw
-        self.__statuses[entry.name] = "matched"
+        self.__statuses[entry.name] = "added"
         return self.__rewritten(raw, entry, self.__algorithm, digest, "matched")
 
     def __adopt(self, name: str) -> Any | None:
         """Adopt one content file the record does not list -- hash it, date it, record it ``matched``.
 
-        Reported ``unexpected``, because that is what the run *found*; recorded ``matched``, so
-        ``unexpected`` never rests ([[data-model#checksums]], #203).
+        Reported ``added``, because that is what the run *did*; recorded ``matched``, so the file goes from
+        *no checksum* to *verified* in one step with no state in between ([[data-model#checksums]], #467).
 
         :param name: the content file's name.
-        :returns: the fresh entry; a hash-less resting ``unexpected`` when the file cannot be read; or
-            ``None`` when it vanished between the enumeration and the read, in which case it is not
-            reported either -- there is nothing there to be unexpected.
+        :returns: the fresh entry; or ``None`` when it vanished between the enumeration and the read, in which
+            case it is not reported either, or when it cannot be read, in which case it is reported unreadable
+            and stays unlisted -- *no checksum* is what it was, and an entry with no hash would say the same.
         """
-        self.__statuses[name] = "unexpected"
         try:
             digest = self.__digest(self.__content[name], (self.__algorithm,))[0]
         except FileNotFoundError:
-            del self.__statuses[name]
             return None
         except OSError:
-            return {CHECKSUM_NAME_KEY: name, CHECKSUM_STATUS_KEY: "unexpected"}
+            self.__unreadable.append(name)
+            return None
+        self.__statuses[name] = "added"
         return self.__fresh_entry(name, digest)
 
     # endregion
@@ -973,7 +976,7 @@ def verify_checksums(  # pylint: disable=too-many-arguments
     """Verify ``rehu_path``'s content against its ``.checksum`` record ([[data-model#checksums]], #203).
 
     See :meth:`ChecksumRun.verify` for the contract: recorded entries are checked under their own
-    algorithms, unlisted content is adopted and reported ``unexpected``, and ``migrate_to`` moves
+    algorithms, unlisted content is adopted and reported ``added``, and ``migrate_to`` moves
     matched entries onto a new algorithm from the same single read.
 
     Entries for files no resource's content could ever include -- a ``.orig`` backup, a junk-glob match,

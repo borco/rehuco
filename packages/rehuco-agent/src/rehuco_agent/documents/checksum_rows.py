@@ -8,7 +8,7 @@ answer, the same set the size scan counts, so a file the table calls uncovered i
 verify would adopt.
 
 **The table shows the record, not the last run's report** (#244). The two differ on purpose -- a run
-*reports* an adopted file ``unexpected`` while *recording* it ``matched`` -- and a view of the report
+*reports* an adopted file ``added`` while *recording* it ``matched`` -- and a view of the report
 would go stale the moment anything else touched the resource. The transient report is the inline strip's
 and the log's (#204).
 
@@ -133,10 +133,14 @@ def checksum_row_for(
     :param now: the instant to measure freshness against.
     :param trusted_since: when this machine began trusting the record's current location
         (:meth:`~rehuco_core.ChecksumTrust.trusted_since`).
-    :returns: the row.
+    :returns: the row; an entry with no hash reads as a file the record does not cover (#467), keeping only a
+        ``missing`` status, which is what *Delete missing* is offered for.
     """
     state, untrusted_location = checksum_verdict_for(entry, stale_after, now, trusted_since)
-    return ChecksumRow(entry.name, entry.status or "", entry.verified, state, untrusted_location)
+    status = entry.status or ""
+    if entry.digest is None and status != MISSING_STATUS:
+        status = ""
+    return ChecksumRow(entry.name, status, entry.verified, state, untrusted_location)
 
 
 def read_checksum_rows(

@@ -16,14 +16,17 @@ The shape, beside ``foo.rehu`` as ``foo.checksum`` (``info.rehu`` -> ``info.chec
       "files": [
         { "name": "foo1/bar1.zip", "crc32": "42342424",
           "verified": "2026-08-04T23:34:56Z", "status": "matched" },
-        { "name": "bar2.zip", "status": "unexpected" },
+        { "name": "bar2.zip", "xxh3": "0123456789abcdef" },
         { "name": "foo3/bar3.zip", "xxh3": "42342424",
           "verified": "2026-08-04T23:34:56Z", "status": "mismatched" }
       ]
     }
 
 **The hash key is the algorithm tag**, at most one per entry, present only once the file has been
-hashed. This is how [[data-model#checksums]]'s *record which algorithm was used per entry* is satisfied,
+hashed. ``bar2.zip`` above carries a hash and no date or status: a claim moved here from another record
+(#257, #467), not yet checked by this one. An entry with **no** hash says nothing about its file and reads
+as no entry at all -- the ``"status": "unexpected"`` an older build wrote for a file it could not read is
+one (#467). This is how [[data-model#checksums]]'s *record which algorithm was used per entry* is satisfied,
 and it is genuinely per entry: a resource may hold ``crc32`` and ``xxh3`` entries side by side, so
 changing the configured algorithm invalidates nothing already recorded.
 
@@ -60,23 +63,23 @@ same spelling a ``.rehu``'s ``created``/``updated`` carry ([[field-schema#record
 CHECKSUM_STATUS_KEY: Final = "status"
 """An entry's key holding what the last check answered -- one of :data:`ChecksumStatus`'s values."""
 
-ChecksumStatus = Literal["matched", "mismatched", "missing", "unexpected", "malformed"]
+ChecksumStatus = Literal["matched", "mismatched", "missing", "added", "malformed"]
 """What one check of one file can answer ([[data-model#checksums]], #203).
 
 ``matched`` / ``mismatched`` -- the file was hashed and compared. ``missing`` -- the record lists it and
-the disk does not hold it. ``unexpected`` -- the disk holds it and the record carries no hash for it; a
-report state rather than a resting one, since a sweep adopts such a file
-(:func:`~rehuco_core.rehu_checksums.verify_checksums`). ``malformed`` -- an entry this build cannot
-read; it costs itself, is carried through untouched, and its neighbours still verify. ``malformed`` is
-only ever *reported*, never written into an entry: writing anything into an entry this build cannot
-read is what carrying it through byte-for-byte exists to avoid."""
+the disk does not hold it. ``added`` -- the disk holds it and the record carried no hash for it, so the
+run hashed it and recorded it ``matched`` (:func:`~rehuco_core.rehu_checksums.verify_checksums`, #467);
+only ever *reported*, since the file goes from no checksum to verified in one step. ``malformed`` -- an
+entry this build cannot read; it costs itself, is carried through untouched, and its neighbours still
+verify. ``malformed`` is only ever *reported* too, never written into an entry: writing anything into an
+entry this build cannot read is what carrying it through byte-for-byte exists to avoid."""
 
 MATCHED_STATUS: Final = "matched"
 """The one :data:`ChecksumStatus` value a surface reasons about by name -- *this file was hashed and the
 record's hash agreed*.
 
-Every other value is *not that* -- the split the agent's checksum glyphs turn on, once ``unexpected``
-and ``malformed`` have been told apart ([[plugins#files-subdock]], #266, #303); the words themselves stay
+Every other value is *not that* -- the split the agent's checksum glyphs turn on, once a hash-less entry
+and ``malformed`` have been told apart ([[plugins#files-subdock]], #266, #303, #467); the words themselves stay
 the record's, spelled once here rather than quoted at each caller."""
 
 HEX_DIGEST_PATTERN: Final = re.compile(r"[0-9a-fA-F]+")
@@ -104,7 +107,7 @@ class ChecksumEntry:
 
     :param name: the file's name, relative to the ``.rehu``, POSIX-separated.
     :param algorithm: the recorded hash's algorithm tag, or ``None`` when the entry has never been
-        hashed (a resting ``unexpected``).
+        hashed -- which reads as no checksum at all (#467).
     :param digest: the recorded hash, exactly as spelled on disk, or ``None`` with ``algorithm``.
     :param verified: when the file was last checked, or ``None`` when it never was -- or when the
         recorded value does not parse, which deliberately reads as *never*: an unreadable date only
