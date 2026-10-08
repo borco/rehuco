@@ -3,11 +3,9 @@
 ``rehuco-core`` knows nothing of browsers -- they are the Browsers dock's own state (#461), kept here under the
 catalog's rehuco id so that moving or renaming the ``.rehuco`` keeps them, as it keeps the ``.rehudb``
 ([[data-model#local-file-trio]]). It is a file of its own, not the ``.ini``: a nested dock layout is a binary blob
-that grows with use, and an ``.ini`` already holds too many of those (#404).
+that grows with use, and those moved out of the ``.ini`` too (#404).
 """
 
-import base64
-import binascii
 import json
 import logging
 from dataclasses import dataclass, field
@@ -18,6 +16,7 @@ from uuid import UUID
 from borco_core import atomic_write_text
 
 from .persistent_settings import config_folder
+from .state_file import decode_bytes, encode_bytes
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -113,7 +112,7 @@ class CatalogStateStore:
             return CatalogState()
         return CatalogState(
             browsers=self.__read_browsers(values.get("browsers"), path),
-            layout=self.__read_bytes(values.get("layout")) if version == CATALOG_STATE_VERSION else b"",
+            layout=decode_bytes(values.get("layout")) if version == CATALOG_STATE_VERSION else b"",
         )
 
     def save(self, rehuco_id: UUID, state: CatalogState) -> None:
@@ -131,11 +130,11 @@ class CatalogStateStore:
                     "kind": browser.kind,
                     "name": browser.name,
                     "filter": browser.filter,
-                    "columns": base64.b64encode(browser.columns).decode("ascii"),
+                    "columns": encode_bytes(browser.columns),
                 }
                 for browser in state.browsers
             ],
-            "layout": base64.b64encode(state.layout).decode("ascii"),
+            "layout": encode_bytes(state.layout),
         }
         try:
             # the folder does not exist until something is first written to it
@@ -143,20 +142,6 @@ class CatalogStateStore:
             atomic_write_text(path, json.dumps(payload, indent=2) + "\n")
         except OSError:
             LOG.exception("The state of the catalog could not be saved to %s.", path)
-
-    @staticmethod
-    def __read_bytes(value: object) -> bytes:
-        """Decode one base64 value, or nothing for a missing or damaged one.
-
-        :param value: what the file holds.
-        :returns: the bytes.
-        """
-        if not isinstance(value, str):
-            return b""
-        try:
-            return base64.b64decode(value.encode("ascii"), validate=True)
-        except binascii.Error, ValueError:
-            return b""
 
     def __read_browsers(self, values: object, path: Path) -> list[BrowserState]:
         """Read the browser list, skipping an entry that is malformed or repeats an id.
@@ -193,4 +178,4 @@ class CatalogStateStore:
         kind, name, filter_text = entry.get("kind"), entry.get("name"), entry.get("filter", "")
         if not isinstance(kind, str) or not isinstance(name, str) or not isinstance(filter_text, str):
             return None
-        return BrowserState(browser_id, kind, name, filter_text, self.__read_bytes(entry.get("columns")))
+        return BrowserState(browser_id, kind, name, filter_text, decode_bytes(entry.get("columns")))

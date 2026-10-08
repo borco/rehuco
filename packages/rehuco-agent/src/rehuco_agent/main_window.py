@@ -419,7 +419,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__setup_root_catalog_menu()
 
         self.__window_settings: Final = MainWindowSettings()
-        self.__window_settings.load(persistent_settings())
+        self.__window_settings.load()
         if self.__window_settings.geometry:
             self.restoreGeometry(QByteArray(self.__window_settings.geometry))
         self.restoreState(QByteArray(self.__window_settings.toolbars_state), TOOLBARS_STATE_VERSION)
@@ -443,7 +443,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__theme_model: Final = ThemeModel(self.__theme_settings.mode)
 
         self.__session: Final = DocumentSessionSettings()
-        self.__session.load(persistent_settings())
+        self.__session.load()
         # which remembered files are still there (#464): a fixed local drive is judged right here, anything else
         # is asked on daemon threads and reaches the handlers below once it answers -- the start waits for nothing
         self.__remembered: Final = RememberedPaths(self.__recent_files, self.__rehuco_settings, self.__session, self)
@@ -1910,7 +1910,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             self.__window_settings.outer_docks_state = bytes(self.__dock_manager.saveState().data())
         self.__window_settings.log_widget_state = self.__log_widget.save_state()
         self.__window_settings.task_queue_state = self.__task_queue_widget.save_state()
-        self.__window_settings.save(persistent_settings())
+        self.__window_settings.save()
 
     def __save_session(self) -> None:
         """Snapshot every open document's dock layout and focus, and persist the open-file set.
@@ -1946,7 +1946,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__session.focused_path = None if preview_focused else self.__documents_dock.focused_document_path()
         self.__session.docks_state = self.__documents_dock.save_state()
 
-        self.__session.save(persistent_settings())
+        self.__session.save()
 
     def open_path(self, path: Path | str) -> None:
         """Open ``path``, dispatching to :meth:`open_file`, :meth:`open_folder`, or

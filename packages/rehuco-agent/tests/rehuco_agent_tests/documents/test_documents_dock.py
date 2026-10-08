@@ -3183,9 +3183,9 @@ def test_the_preview_layouts_outlive_the_run(mocker: MockerFixture, qtbot: QtBot
 
     dock.save_preview_layouts()
 
-    _, settings = save.call_args.args
+    save.assert_called_once()
     written = DefaultLayoutSettings(group=PREVIEW_LAYOUT_GROUP)
-    written.load(settings)
+    written.load()
     assert set(written.states) == {TUTORIAL_PLUGIN.key}
 
     shared_default_layout_settings_in.cache_clear()

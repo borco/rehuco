@@ -137,7 +137,7 @@ def mock_persistent_settings(mocker: MockerFixture) -> Any:
     otherwise return a truthy, garbage ``MagicMock`` for calls like ``value(KEY, QByteArray(),
     type=QByteArray)``, since ``bytes(MagicMock())`` doesn't raise -- which would make every
     ``MainWindow()`` in these tests spuriously call ``restoreGeometry`` with junk bytes.
-    ``beginReadArray`` must return an int (``DocumentSessionSettings.load`` feeds it to ``range()``).
+    ``beginReadArray`` must return an int (``RecentFilesSettings.load`` feeds it to ``range()``).
 
     Patched at **two** import sites: this module's own, and ``rehuco_agent.settings.persistent_settings``'s
     -- the one ``config_folder()`` resolves through, which is where ``task_queue_path()`` and
@@ -2548,8 +2548,8 @@ def test_restore_documents_off_skips_reopening_the_saved_session(
     rehuco_file = tmp_path / "home.rehuco"
     rehuco_file.touch()
 
-    def fake_session_load(self: DocumentSessionSettings, settings: object) -> None:
-        del settings
+    def fake_session_load(self: DocumentSessionSettings, path: object = None) -> None:
+        del path
         self.items[open_path] = DocumentSessionSettings.Item(open=True, state=b"state-bytes")  # pylint: disable=unsupported-assignment-operation
 
     def fake_rehuco_load(self: RehucoSettings, settings: object) -> None:
@@ -2708,8 +2708,8 @@ def test_restores_window_geometry_when_previously_saved(mocker: MockerFixture, q
     * verify ``restoreGeometry`` was called with those bytes
     """
 
-    def fake_load(self: MainWindowSettings, settings: object) -> None:
-        del settings
+    def fake_load(self: MainWindowSettings, path: object = None) -> None:
+        del path
         self.geometry = b"geometry-bytes"
 
     mocker.patch.object(MainWindowSettings, "load", fake_load)
@@ -2809,8 +2809,8 @@ def test_close_event_saves_an_open_settings_dock_as_open(mocker: MockerFixture, 
     window_settings = first._MainWindow__window_settings  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     saved_state = window_settings.outer_docks_state
 
-    def fake_load(self: MainWindowSettings, settings: object) -> None:
-        del settings
+    def fake_load(self: MainWindowSettings, path: object = None) -> None:
+        del path
         self.outer_docks_state = saved_state
 
     mocker.patch.object(MainWindowSettings, "load", fake_load)
@@ -2847,8 +2847,8 @@ def test_a_floating_closed_settings_dock_restores_floating_and_closed(mocker: Mo
     window_settings = first._MainWindow__window_settings  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     saved_state = window_settings.outer_docks_state
 
-    def fake_load(self: MainWindowSettings, settings: object) -> None:
-        del settings
+    def fake_load(self: MainWindowSettings, path: object = None) -> None:
+        del path
         self.outer_docks_state = saved_state
 
     mocker.patch.object(MainWindowSettings, "load", fake_load)
@@ -2906,8 +2906,8 @@ def test_toolbars_state_round_trips_the_action_bar_area(mocker: MockerFixture, q
     window_settings = first._MainWindow__window_settings  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     saved_state = window_settings.toolbars_state
 
-    def fake_load(self: MainWindowSettings, settings: object) -> None:
-        del settings
+    def fake_load(self: MainWindowSettings, path: object = None) -> None:
+        del path
         self.toolbars_state = saved_state
 
     mocker.patch.object(MainWindowSettings, "load", fake_load)
@@ -4137,8 +4137,8 @@ def test_a_documents_dock_left_closed_stays_closed_after_a_restart(mocker: Mocke
     first._MainWindow__save_window_state()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     saved = first._MainWindow__window_settings  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
-    def fake_load(self: MainWindowSettings, settings: object) -> None:
-        del settings
+    def fake_load(self: MainWindowSettings, path: object = None) -> None:
+        del path
         self.outer_docks_state = saved.outer_docks_state
 
     mocker.patch.object(MainWindowSettings, "load", fake_load)
@@ -4166,8 +4166,8 @@ def test_an_unusable_saved_layout_leaves_the_documents_dock_open(mocker: MockerF
     * verify the Documents dock is open and placed in an area
     """
 
-    def fake_load(self: MainWindowSettings, settings: object) -> None:
-        del settings
+    def fake_load(self: MainWindowSettings, path: object = None) -> None:
+        del path
         self.outer_docks_state = b"not a dock layout"
 
     mocker.patch.object(MainWindowSettings, "load", fake_load)
@@ -4196,8 +4196,8 @@ def test_an_unusable_saved_layout_leaves_the_settings_dock_as_built(mocker: Mock
     * verify the Settings dock is closed, still tabbed beside Documents, and nothing floats
     """
 
-    def fake_load(self: MainWindowSettings, settings: object) -> None:
-        del settings
+    def fake_load(self: MainWindowSettings, path: object = None) -> None:
+        del path
         self.outer_docks_state = b"not a dock layout"
 
     mocker.patch.object(MainWindowSettings, "load", fake_load)
@@ -4282,8 +4282,8 @@ def test_a_restored_layout_is_not_reseeded_on_show(mocker: MockerFixture, qtbot:
     first._MainWindow__save_window_state()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     saved = first._MainWindow__window_settings  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
-    def fake_load(self: MainWindowSettings, settings: object) -> None:
-        del settings
+    def fake_load(self: MainWindowSettings, path: object = None) -> None:
+        del path
         self.outer_docks_state = saved.outer_docks_state
 
     mocker.patch.object(MainWindowSettings, "load", fake_load)
@@ -4568,8 +4568,8 @@ def test_the_log_docks_visibility_survives_a_restart(mocker: MockerFixture, qtbo
     first._MainWindow__save_window_state()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     saved = first._MainWindow__window_settings  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
-    def fake_load(self: MainWindowSettings, settings: object) -> None:
-        del settings
+    def fake_load(self: MainWindowSettings, path: object = None) -> None:
+        del path
         self.outer_docks_state = saved.outer_docks_state
 
     mocker.patch.object(MainWindowSettings, "load", fake_load)
@@ -4681,8 +4681,8 @@ def test_the_log_surfaces_filters_are_restored_on_start(mocker: MockerFixture, q
     source_ui.search_edit.setText("a search")
     saved = source.log_widget.save_state()
 
-    def fake_load(self: MainWindowSettings, settings: object) -> None:
-        del settings
+    def fake_load(self: MainWindowSettings, path: object = None) -> None:
+        del path
         self.log_widget_state = saved
 
     mocker.patch.object(MainWindowSettings, "load", fake_load)
@@ -5184,8 +5184,8 @@ def test_the_task_queue_docks_visibility_survives_a_restart(mocker: MockerFixtur
     first._MainWindow__save_window_state()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     saved = first._MainWindow__window_settings  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
-    def fake_load(self: MainWindowSettings, settings: object) -> None:
-        del settings
+    def fake_load(self: MainWindowSettings, path: object = None) -> None:
+        del path
         self.outer_docks_state = saved.outer_docks_state
 
     mocker.patch.object(MainWindowSettings, "load", fake_load)
@@ -5591,8 +5591,8 @@ def test_the_tasks_dock_s_nested_layout_is_restored_on_start(mocker: MockerFixtu
     source_log_dock.toggleView(True)
     saved = source_widget.save_state()
 
-    def fake_load(self: MainWindowSettings, settings: object) -> None:
-        del settings
+    def fake_load(self: MainWindowSettings, path: object = None) -> None:
+        del path
         self.task_queue_state = saved
 
     mocker.patch.object(MainWindowSettings, "load", fake_load)
@@ -5929,8 +5929,8 @@ def test_a_pinned_layout_survives_a_restart(mocker: MockerFixture, qtbot: QtBot)
     source_settings = source._MainWindow__window_settings  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     saved = source_settings.outer_docks_state
 
-    def fake_load(self: MainWindowSettings, settings: object) -> None:
-        del settings
+    def fake_load(self: MainWindowSettings, path: object = None) -> None:
+        del path
         self.outer_docks_state = saved
 
     mocker.patch.object(MainWindowSettings, "load", fake_load)
@@ -6028,8 +6028,8 @@ def test_restoring_a_sidebar_pinned_settings_dock_creates_no_floating_window(
     qtbot.addWidget(first)
     saved = pinned_settings_layout(first, open_dock=True)
 
-    def fake_load(self: MainWindowSettings, settings: object) -> None:
-        del settings
+    def fake_load(self: MainWindowSettings, path: object = None) -> None:
+        del path
         self.outer_docks_state = saved
 
     mocker.patch.object(MainWindowSettings, "load", fake_load)
@@ -6059,8 +6059,8 @@ def test_a_closed_pinned_settings_dock_restores_closed_and_pinned(mocker: Mocker
     qtbot.addWidget(first)
     saved = pinned_settings_layout(first, open_dock=False)
 
-    def fake_load(self: MainWindowSettings, settings: object) -> None:
-        del settings
+    def fake_load(self: MainWindowSettings, path: object = None) -> None:
+        del path
         self.outer_docks_state = saved
 
     mocker.patch.object(MainWindowSettings, "load", fake_load)
@@ -6106,8 +6106,8 @@ def test_a_floating_settings_dock_waits_for_the_main_window(mocker: MockerFixtur
     first._MainWindow__save_window_state()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     saved = first._MainWindow__window_settings.outer_docks_state  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
-    def fake_load(self: MainWindowSettings, settings: object) -> None:
-        del settings
+    def fake_load(self: MainWindowSettings, path: object = None) -> None:
+        del path
         self.outer_docks_state = saved
 
     mocker.patch.object(MainWindowSettings, "load", fake_load)
@@ -6152,8 +6152,8 @@ def test_a_restored_floating_dock_shows_after_the_main_window(mocker: MockerFixt
     first._MainWindow__save_window_state()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     saved = first._MainWindow__window_settings.outer_docks_state  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
-    def fake_load(self: MainWindowSettings, settings: object) -> None:
-        del settings
+    def fake_load(self: MainWindowSettings, path: object = None) -> None:
+        del path
         self.outer_docks_state = saved
 
     mocker.patch.object(MainWindowSettings, "load", fake_load)
@@ -6216,8 +6216,8 @@ def test_a_restored_floating_dock_is_shown_at_once_with_the_window_on_windows(
     first._MainWindow__save_window_state()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     saved = first._MainWindow__window_settings.outer_docks_state  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
-    def fake_load(self: MainWindowSettings, settings: object) -> None:
-        del settings
+    def fake_load(self: MainWindowSettings, path: object = None) -> None:
+        del path
         self.outer_docks_state = saved
 
     mocker.patch.object(MainWindowSettings, "load", fake_load)
@@ -6277,8 +6277,8 @@ def test_a_restored_floating_dock_is_shown_plainly_elsewhere(mocker: MockerFixtu
     first._MainWindow__save_window_state()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     saved = first._MainWindow__window_settings.outer_docks_state  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
-    def fake_load(self: MainWindowSettings, settings: object) -> None:
-        del settings
+    def fake_load(self: MainWindowSettings, path: object = None) -> None:
+        del path
         self.outer_docks_state = saved
 
     mocker.patch.object(MainWindowSettings, "load", fake_load)
@@ -6870,8 +6870,8 @@ def test_restore_root_catalog_off_skips_reopening_the_rehuco(mocker: MockerFixtu
         del settings
         self.current_path = REHUCO_FILE
 
-    def fake_session_load(self: DocumentSessionSettings, settings: object) -> None:
-        del settings
+    def fake_session_load(self: DocumentSessionSettings, path: object = None) -> None:
+        del path
         self.items[open_path] = DocumentSessionSettings.Item(open=True, state=b"state-bytes")  # pylint: disable=unsupported-assignment-operation
 
     def fake_restore_settings_load(self: SessionRestoreSettings, settings: object) -> None:
@@ -6998,8 +6998,8 @@ def test_a_catalog_dock_survives_an_outer_layout_round_trip_open(
     first._MainWindow__save_window_state()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     saved = first._MainWindow__window_settings  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
-    def fake_load(self: MainWindowSettings, settings: object) -> None:
-        del settings
+    def fake_load(self: MainWindowSettings, path: object = None) -> None:
+        del path
         self.outer_docks_state = saved.outer_docks_state
 
     mocker.patch.object(MainWindowSettings, "load", fake_load)
@@ -7497,10 +7497,10 @@ def seed_remembered(  # pylint: disable=too-many-arguments  # one keyword per li
         for path in rehuco_recents:
             self.record(path)
 
-    def session_load(self: DocumentSessionSettings, settings: object) -> None:
-        del settings
-        for path in session_open:
-            self.items[path] = DocumentSessionSettings.Item(open=True, state=b"state-" + path.name.encode())  # pylint: disable=unsupported-assignment-operation
+    def session_load(self: DocumentSessionSettings, path: object = None) -> None:
+        del path
+        for opened in session_open:
+            self.items[opened] = DocumentSessionSettings.Item(open=True, state=b"state-" + opened.name.encode())  # pylint: disable=unsupported-assignment-operation
         self.focused_path = focused
 
     mocker.patch.object(RecentFilesSettings, "load", recent_load)
@@ -8044,7 +8044,7 @@ def test_closing_stops_the_presence_scan_before_anything_else_is_saved(mocker: M
     qtbot.addWidget(window)
     scan = remembered_of(window)._RememberedPaths__presence._StartupPresence__scan  # pylint: disable=protected-access
     scan.stop.side_effect = lambda: calls.append("stop")
-    mocker.patch.object(DocumentSessionSettings, "save", lambda self, settings: calls.append("save"))  # noqa: ARG005
+    mocker.patch.object(DocumentSessionSettings, "save", lambda self: calls.append("save"))  # noqa: ARG005
 
     window.closeEvent(QCloseEvent())
 

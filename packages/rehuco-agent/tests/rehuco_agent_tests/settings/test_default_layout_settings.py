@@ -1,279 +1,175 @@
 """Tests for DefaultLayoutSettings: the saved default document dock layout of each type (#62, #320, #354).
 
-Uses a hand-rolled in-memory stand-in for ``QSettings`` (see ``test_main_window_settings.py`` for the
-same rationale) rather than a real one or ``tmp_path``.
+The layouts live in one JSON file per group (#404); conftest's autouse ``state_files`` keeps them in memory (see
+``test_document_session_settings.py`` for the same rationale).
 """
 
-from collections.abc import Iterator
-from typing import Any
+import json
 
-from PySide6.QtCore import QByteArray
-from pytest import fixture
-from pytest_mock import MockerFixture
-from rehuco_agent.settings import default_layout_settings
 from rehuco_agent.settings.default_layout_settings import (
     GROUP,
-    UNTYPED_GROUP,
+    PREVIEW_LAYOUT_GROUP,
     DefaultLayoutSettings,
+    default_layouts_path,
     shared_default_layout_settings,
     shared_default_layout_settings_in,
 )
 
-# region fixtures
-# Mirrors every other settings test's FakeSettings exactly -- kept as a separate copy rather than a
-# shared import, matching this codebase's settings-test convention.
-# pylint: disable=duplicate-code
+from rehuco_agent_tests.conftest import MemoryStateFiles
 
 
-class FakeSettings:  # pylint: disable=invalid-name,missing-function-docstring,redefined-builtin
-    """A minimal in-memory stand-in for the ``QSettings`` group/value API.
-
-    Groups nest on a prefix stack, since this section opens one group per type inside its own
-    (``default_layout/<type>/state``, #320), and it enumerates and removes those child groups.
-    """
-
-    def __init__(self) -> None:
-        self.__data: dict[str, Any] = {}
-        self.__prefixes: list[str] = []
-
-    @property
-    def __prefix(self) -> str:
-        return "".join(self.__prefixes)
-
-    def beginGroup(self, name: str) -> None:  # noqa: N802
-        self.__prefixes.append(f"{name}/")
-
-    def endGroup(self) -> None:  # noqa: N802
-        if self.__prefixes:
-            self.__prefixes.pop()
-
-    def setValue(self, key: str, value: Any) -> None:  # noqa: N802
-        self.__data[self.__prefix + key] = value  # pylint: disable=unsupported-assignment-operation
-
-    def value(self, key: str, default: Any = None, type: Any = None) -> Any:  # noqa: A002, N802
-        del type
-        return self.__data.get(self.__prefix + key, default)
-
-    def childGroups(self) -> list[str]:  # noqa: N802
-        prefix = self.__prefix
-        nested = (key[len(prefix) :] for key in self.__data if key.startswith(prefix))
-        return sorted({rest.split("/")[0] for rest in nested if "/" in rest})
-
-    def remove(self, key: str) -> None:
-        full = self.__prefix + key
-        for stored in list(self.__data):
-            if stored == full or stored.startswith(full + "/") or (not key and stored.startswith(full)):
-                del self.__data[stored]  # pylint: disable=unsupported-delete-operation
-
-    def keys(self) -> list[str]:
-        """Every stored key, for asserting on what a save left behind."""
-        return sorted(self.__data)
-
-
-@fixture
-def settings() -> FakeSettings:
-    """A fresh in-memory settings stand-in."""
-    return FakeSettings()
-
-
-# pylint: enable=duplicate-code
-
-
-@fixture(autouse=True)
-def clear_shared_instance_cache() -> Iterator[None]:
-    """Clear the ``lru_cache``-backed singleton before and after every test (see
-    ``test_markdown_rendering_settings.py`` for the full rationale)."""
-    shared_default_layout_settings_in.cache_clear()
-    yield
-    shared_default_layout_settings_in.cache_clear()
-
-
-# endregion
-
-# region defaults
-
-
-def test_a_fresh_install_has_no_saved_default() -> None:
-    """No default has ever been saved on a fresh install, for any type.
-
-    **Test steps:**
-
-    * build a `DefaultLayoutSettings` with no stored values
-    * verify it holds no state, and asking for a type answers empty
-    """
-    settings = DefaultLayoutSettings()
-
-    assert not settings.states
-    assert settings.state_for("tutorial") == b""
-
-
-# endregion
-
-# region storage
-
-
-def test_the_states_round_trip_through_storage(settings: FakeSettings) -> None:
-    """Each type's saved default is read back exactly as it was written, under its own group (#320).
+def test_the_states_round_trip_through_storage(state_files: MemoryStateFiles) -> None:
+    """Each type's blob is saved to the group's file and read back unchanged.
 
     **Test steps:**
 
     * save a settings object holding two types' states
-    * verify each landed at ``default_layout/<type>/state``
-    * load a fresh one from the same storage and verify it came back unchanged
+    * verify the group's file was written
+    * load a fresh one and verify it came back unchanged
     """
     saved = DefaultLayoutSettings(states={"tutorial": b"tutorial blob", "reference_images": b"pack blob"})
-    saved.save(settings)  # pyright: ignore[reportArgumentType]
+    saved.save()
 
-    assert settings.keys() == ["default_layout/reference_images/state", "default_layout/tutorial/state"]
+    assert list(state_files.files) == [default_layouts_path(GROUP)]
 
     loaded = DefaultLayoutSettings()
-    loaded.load(settings)  # pyright: ignore[reportArgumentType]
+    loaded.load()
 
     assert loaded == saved
 
 
-def test_loading_from_empty_storage_yields_no_default(settings: FakeSettings) -> None:
-    """A first run has no stored group at all, and must not read as a real saved default.
+def test_loading_with_no_file_yields_no_default() -> None:
+    """A first run has no file, and must not read as a real saved default.
 
     **Test steps:**
 
-    * load from storage nothing was ever saved to
+    * load into an instance holding a state, with nothing ever saved
     * verify the result equals a default-constructed settings object
     """
-    loaded = DefaultLayoutSettings()
-    loaded.load(settings)  # pyright: ignore[reportArgumentType]
+    loaded = DefaultLayoutSettings(states={"tutorial": b"stale"})
+    loaded.load()
 
     assert loaded == DefaultLayoutSettings()
 
 
-def test_saving_drops_a_reset_type_and_the_untyped_blob(settings: FakeSettings) -> None:
-    """A type popped from the states leaves storage on the next save, and so does the untyped blob a
-    pre-#320 build wrote at ``default_layout/state`` -- dropped, not migrated, since it was written
-    against the pre-split dock set (#320).
+def test_saving_drops_a_reset_type() -> None:
+    """A type popped from the states leaves storage on the next save.
 
     **Test steps:**
 
-    * seed storage with the untyped blob and two types, then load
-    * verify the untyped blob was ignored
-    * pop one type, save, and verify only the other remains in storage
+    * save two types, load them back, pop one and save again
+    * verify a fresh load holds only the other
     """
-    settings.beginGroup("default_layout")
-    settings.setValue("state", QByteArray(b"old untyped blob"))
-    settings.endGroup()
-    both = DefaultLayoutSettings(states={"tutorial": b"t", "reference_images": b"r"})
-    both.save(settings)  # pyright: ignore[reportArgumentType]
+    DefaultLayoutSettings(states={"tutorial": b"t", "reference_images": b"r"}).save()
     loaded = DefaultLayoutSettings()
-    loaded.load(settings)  # pyright: ignore[reportArgumentType]
+    loaded.load()
     assert loaded.states == {"tutorial": b"t", "reference_images": b"r"}
 
     loaded.states.pop("tutorial")
-    loaded.save(settings)  # pyright: ignore[reportArgumentType]
+    loaded.save()
 
-    assert settings.keys() == ["default_layout/reference_images/state"]
+    again = DefaultLayoutSettings()
+    again.load()
+    assert again.states == {"reference_images": b"r"}
 
 
-def test_the_empty_types_state_round_trips_under_its_own_group(settings: FakeSettings) -> None:
-    """The empty type's default is stored under :data:`UNTYPED_GROUP` -- never the malformed
-    ``default_layout//state``, nor the legacy untyped ``default_layout/state`` a save drops -- and read
-    back keyed by ``""`` (#354).
+def test_the_empty_types_state_round_trips() -> None:
+    """The empty type -- a document with no type -- keeps its default, keyed by ``""`` (#354).
 
     **Test steps:**
 
     * save a settings object holding the empty type's state and a tutorial's
-    * verify the empty type landed at ``default_layout/<UNTYPED_GROUP>/state``
-    * load a fresh one from the same storage and verify it came back unchanged
-    * pop the empty type, save, and verify its group left storage
+    * load a fresh one and verify it came back unchanged
     """
     saved = DefaultLayoutSettings(states={"": b"untyped blob", "tutorial": b"tutorial blob"})
-    saved.save(settings)  # pyright: ignore[reportArgumentType]
-
-    assert settings.keys() == [f"default_layout/{UNTYPED_GROUP}/state", "default_layout/tutorial/state"]
+    saved.save()
 
     loaded = DefaultLayoutSettings()
-    loaded.load(settings)  # pyright: ignore[reportArgumentType]
+    loaded.load()
+
     assert loaded == saved
 
-    loaded.states.pop("")
-    loaded.save(settings)  # pyright: ignore[reportArgumentType]
 
-    assert settings.keys() == ["default_layout/tutorial/state"]
-
-
-def test_an_empty_stored_state_reads_as_no_default(settings: FakeSettings) -> None:
-    """A type whose stored blob is empty has no default, the same as a type never saved.
+def test_an_empty_stored_state_reads_as_no_default(state_files: MemoryStateFiles) -> None:
+    """A type whose stored blob is empty or damaged has no default, the same as a type never saved.
 
     **Test steps:**
 
-    * store an empty blob under a type and load
-    * verify the type is absent from the states
+    * seed a file with an empty blob, a damaged one and a good one
+    * verify only the good one is loaded
     """
-    settings.beginGroup("default_layout")
-    settings.beginGroup("collection")
-    settings.setValue("state", QByteArray())
-    settings.endGroup()
-    settings.endGroup()
+    state_files.files[default_layouts_path(GROUP)] = json.dumps(
+        {"version": 1, "states": {"collection": "", "broken": "not base64!", "tutorial": "dGFi"}}
+    )
 
     loaded = DefaultLayoutSettings()
-    loaded.load(settings)  # pyright: ignore[reportArgumentType]
+    loaded.load()
+
+    assert loaded.states == {"tutorial": b"tab"}
+
+
+def test_a_file_that_holds_no_states_reads_as_no_default(state_files: MemoryStateFiles) -> None:
+    """A hand-damaged file costs the defaults and nothing else (#404).
+
+    **Test steps:**
+
+    * seed a file whose ``states`` is a list
+    * verify nothing is loaded
+    """
+    state_files.files[default_layouts_path(GROUP)] = json.dumps({"version": 1, "states": ["tutorial"]})
+
+    loaded = DefaultLayoutSettings()
+    loaded.load()
 
     assert not loaded.states
 
 
-def test_the_shared_instance_is_the_same_object_every_time(mocker: MockerFixture) -> None:
+def test_the_shared_instance_is_the_same_object_every_time() -> None:
     """A document's Save must be what the next opened document reads, not a disconnected copy (#62).
 
     **Test steps:**
 
-    * mock persistent storage and ask for the shared instance twice
-    * verify both calls answered the same object, loaded once
+    * ask for the shared instance twice
+    * verify both calls answered the same object
     """
-    stored = FakeSettings()
-    mocker.patch.object(default_layout_settings, "persistent_settings", return_value=stored)
-
     assert shared_default_layout_settings() is shared_default_layout_settings()
 
 
-def test_a_group_of_its_own_round_trips_beside_the_documents_group(settings: FakeSettings) -> None:
-    """A settings object with a group of its own stores, loads and prunes only under that group, and
-    leaves the Documents dock's defaults alone (#380).
+def test_a_group_of_its_own_round_trips_beside_the_documents_group() -> None:
+    """A settings object with a group of its own stores and loads only its own file, and leaves the Documents dock's
+    defaults alone (#380).
 
     **Test steps:**
 
     * save a Documents settings object and one under another group, each holding a tutorial's state
-    * verify each landed under its own group
+    * verify each landed in its own file
     * load a fresh one of the other group and verify it read only its own state
-    * pop its tutorial, save, and verify the Documents group's state is still stored
     """
-    DefaultLayoutSettings(states={"tutorial": b"documents blob"}).save(settings)  # pyright: ignore[reportArgumentType]
-    own = DefaultLayoutSettings(group="rehuco_layout", states={"tutorial": b"own blob"})
-    own.save(settings)  # pyright: ignore[reportArgumentType]
+    DefaultLayoutSettings(states={"tutorial": b"documents blob"}).save()
+    DefaultLayoutSettings(group="rehuco_layout", states={"tutorial": b"own blob"}).save()
 
-    assert settings.keys() == ["default_layout/tutorial/state", "rehuco_layout/tutorial/state"]
+    assert default_layouts_path(GROUP) != default_layouts_path("rehuco_layout")
 
     loaded = DefaultLayoutSettings(group="rehuco_layout")
-    loaded.load(settings)  # pyright: ignore[reportArgumentType]
+    loaded.load()
+    documents = DefaultLayoutSettings()
+    documents.load()
+
     assert loaded.states == {"tutorial": b"own blob"}
-
-    loaded.states.pop("tutorial")
-    loaded.save(settings)  # pyright: ignore[reportArgumentType]
-
-    assert settings.keys() == ["default_layout/tutorial/state"]
+    assert documents.states == {"tutorial": b"documents blob"}
 
 
-def test_each_group_has_its_own_shared_instance(mocker: MockerFixture) -> None:
-    """The Documents dock's shared instance is the one its group names, and another group's is a
-    different object, loaded from its own group (#380).
+def test_each_group_has_its_own_shared_instance() -> None:
+    """The Documents dock's shared instance is the one its group names, and another group's is a different object,
+    loaded from its own file (#380).
 
     **Test steps:**
 
-    * mock persistent storage holding a state under another group
+    * save a state under another group
     * verify the Documents instance is the one kept for its group
     * verify the other group's instance is a different object holding only its own state
     """
-    stored = FakeSettings()
-    own_saved = DefaultLayoutSettings(group="rehuco_layout", states={"tutorial": b"own blob"})
-    own_saved.save(stored)  # pyright: ignore[reportArgumentType]
-    mocker.patch.object(default_layout_settings, "persistent_settings", return_value=stored)
+    DefaultLayoutSettings(group="rehuco_layout", states={"tutorial": b"own blob"}).save()
 
     documents = shared_default_layout_settings()
     own = shared_default_layout_settings_in("rehuco_layout")
@@ -284,4 +180,15 @@ def test_each_group_has_its_own_shared_instance(mocker: MockerFixture) -> None:
     assert not documents.states
 
 
-# endregion
+def test_the_preview_layouts_have_a_file_of_their_own() -> None:
+    """The preview's per-type arrangements are kept apart from the type defaults (#39, #404).
+
+    **Test steps:**
+
+    * ask for both groups' paths
+    * verify they are different files in the same folder
+    """
+    defaults, preview = default_layouts_path(GROUP), default_layouts_path(PREVIEW_LAYOUT_GROUP)
+
+    assert defaults != preview
+    assert defaults.parent == preview.parent

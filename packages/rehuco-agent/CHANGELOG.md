@@ -110,6 +110,14 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 ### Changed
 
+- **The open documents and the window and dock layouts are kept in files of their own, not the `.ini`.** The
+  `.ini` had grown to about 40 KB, most of it layout data. The session is now `document-session.json`, the
+  window `main-window.json`, and the default layouts `layouts/default_layout.json` and `layouts/preview_layout.json`,
+  all in the app's folder beside it. **The first launch starts from the default layout with no remembered
+  documents**: what the `.ini` held is not carried over. Its old `[documents]`, `[main_window]`,
+  `[default_layout]` and `[preview_layout]` sections are no longer read and are left in place; delete them by hand
+  to shrink the file. An older build started afterwards still finds them, and opens with that old session and
+  layout. Preferences stay in the `.ini`.
 - **Open Recent and the restored session no longer keep files that are gone.** A rehu deleted since the last run
   is forgotten at start instead of coming back as an empty, locked *missing* tab, and drops out of `File` > `Open
   Recent` and `Root Catalog` > `Open Recent`. Only a file the drive *answered* it does not hold is forgotten: one on a

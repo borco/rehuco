@@ -21,7 +21,6 @@ from ..settings.default_layout_settings import (
     shared_default_layout_settings_in,
 )
 from ..settings.document_session_settings import DocumentSessionSettings
-from ..settings.persistent_settings import persistent_settings
 from .confirm_and_save_dirty import confirm_and_save_dirty
 from .document_dock import DocumentDock
 from .document_registry import DocumentRegistry
@@ -268,7 +267,7 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         """Remember the preview's current layout for its type, and write every type's preview layout to the
         settings (#39) -- at app exit, the last moment the preview stops showing its layout."""
         self.__capture_preview_layout()
-        self.__preview_layouts().save(persistent_settings())
+        self.__preview_layouts().save()
 
     def restore_session(self, session: DocumentSessionSettings, only: Container[Path] | None = None) -> None:
         """Recreate every document the last session left open (#21), restoring its dock layout and

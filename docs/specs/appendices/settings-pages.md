@@ -636,7 +636,10 @@ applied page the same way every other live consumer does, through the setting's 
 would otherwise leak state between tests (or read the developer's real on-disk settings) — see the
 autouse `isolate_shared_markdown_rendering_settings` fixture in
 `packages/rehuco-agent/tests/rehuco_agent_tests/conftest.py`, which clears the cache and mocks `persistent_settings()`
-around every test. A new page with its own shared settings object needs the equivalent, reactive or
+around every test. The session, the window state and the default layouts live in JSON files, not the `.ini` (#404):
+the autouse `isolate_state_files` fixture keeps those in memory, patching `state_file.read_state_file` /
+`write_state_file`, and a test that must see what was written takes it as `state_files`. A new page with
+its own shared settings object needs the equivalent, reactive or
 not — `isolate_shared_image_viewer_settings` is the second reactive one, and
 `isolate_shared_identity_settings` / `isolate_shared_reference_images_settings` /
 `isolate_shared_excluded_files_settings` / `isolate_shared_legacy_screenshots_settings` /

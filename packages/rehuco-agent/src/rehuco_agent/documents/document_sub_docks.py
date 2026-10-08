@@ -50,7 +50,6 @@ from ..settings.deletion_settings import DeletionKind
 from ..settings.excluded_files_settings import shared_excluded_files_settings
 from ..settings.image_viewer_settings import ImageViewerSettings, shared_image_viewer_settings
 from ..settings.logs_settings import shared_logs_settings
-from ..settings.persistent_settings import persistent_settings
 from ..settings.reference_images_settings import shared_reference_images_settings
 from .checksum_actions import ChecksumActions
 from .checksum_view import ChecksumView
@@ -1644,14 +1643,14 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         per-document widget state."""
         settings = self.__default_layouts()
         settings.states[self.layout_type] = self.save_layout_state()  # pylint: disable=unsupported-assignment-operation
-        settings.save(persistent_settings())
+        settings.save()
 
     def __on_reset_default_layout(self) -> None:
         """Clear this type's saved default layout and no other's (#62, #320); a later "Apply default
         layout" falls back to each document's own as-built layout again."""
         settings = self.__default_layouts()
         settings.states.pop(self.layout_type, None)
-        settings.save(persistent_settings())
+        settings.save()
 
     def __update_default_layout_actions(self) -> None:
         """Label the Save/Reset entries with the type whose default they touch (#320) -- "(no type)"

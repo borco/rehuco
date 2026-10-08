@@ -1,12 +1,21 @@
 """MainWindow's own geometry and outer dock layout, persisted across restarts
-(#21, #47)."""
+(#21, #47).
+
+Kept in ``main-window.json`` in the config folder, not the ``.ini`` (#404): the layout blobs were most of the group.
+The old ``[main_window]`` group is neither read nor removed.
+"""
 
 from dataclasses import dataclass, field
-from typing import Final, cast
+from pathlib import Path
+from typing import Final
 
-from PySide6.QtCore import QByteArray, QSettings
+from . import state_file
+from .persistent_settings import config_folder
 
-GROUP: Final = "main_window"
+WINDOW_FILENAME: Final = "main-window.json"
+"""What the state is called, in the app's own config folder."""
+WINDOW_VERSION: Final = 1
+"""Schema version of the file. A file of another version reads as nothing saved."""
 GEOMETRY_KEY: Final = "geometry"
 OUTER_DOCKS_STATE_KEY: Final = "outer_docks_state"
 OUTER_DOCKS_STATE_VERSION_KEY: Final = "outer_docks_state_version"
@@ -57,6 +66,15 @@ Bumped to 8 when the Root Catalog dock split in two (#461): the Roots view becam
 content and the browsers moved to a new Browsers dock. A v7 blob knows nothing of the Browsers dock, and its Root
 Catalog dock is the old shell, sized and placed for browsers; both start from the window's default instead."""
 
+
+def main_window_state_path() -> Path:
+    """Where the window's state lives: :func:`~.persistent_settings.config_folder`, beside ``task-queue.json``.
+
+    :returns: the file's path, whether or not it exists.
+    """
+    return config_folder() / WINDOW_FILENAME
+
+
 TOOLBARS_STATE_VERSION: Final = 2
 """Version passed to Qt's own ``QMainWindow.saveState``/``restoreState`` (the toolbar-area/floating
 layout for ``action_bar`` -- distinct from :data:`OUTER_DOCKS_STATE_VERSION`,
@@ -65,10 +83,6 @@ returns ``False`` and leaves the default layout), so this is passed straight thr
 checked here. Bump whenever the toolbar set changes."""
 
 
-# Mirrors UnsavedChangesDialogSettings's shape exactly (same geometry-blob load/save, different
-# GROUP) -- kept as a separate class rather than a shared base since the two may diverge as each
-# widget's settings grow (e.g. #38's dialog vs. this window).
-# pylint: disable=duplicate-code
 @dataclass
 class MainWindowSettings:
     """The main window's saved geometry (size/position), outer dock layout, and toolbar layout."""
@@ -105,46 +119,41 @@ class MainWindowSettings:
     version of its own for the inner one
     (:data:`~rehuco_agent.tasks.task_queue_widget.STATE_VERSION`)."""
 
-    def load(self, settings: QSettings) -> None:
-        """Replace the current geometry, outer dock state, and toolbar state with what's in
-        persistent storage.
+    def load(self, path: Path | None = None) -> None:
+        """Replace the current geometry, outer dock state, and toolbar state with what is in the state file.
 
-        :param settings: the ``QSettings`` to read from.
+        :param path: the state file; :func:`main_window_state_path` unless a test says otherwise. A missing or
+            unreadable one leaves nothing saved.
         """
-        settings.beginGroup(GROUP)
-        state = cast(QByteArray, settings.value(GEOMETRY_KEY, QByteArray(), type=QByteArray))
-        self.geometry = bytes(state.data())
+        values = state_file.read_state_file(path if path is not None else main_window_state_path(), WINDOW_VERSION)
+        self.__read(values or {})
 
-        version = cast(int, settings.value(OUTER_DOCKS_STATE_VERSION_KEY, 0, type=int))
-        if version == OUTER_DOCKS_STATE_VERSION:
-            docks_state = cast(QByteArray, settings.value(OUTER_DOCKS_STATE_KEY, QByteArray(), type=QByteArray))
-            self.outer_docks_state = bytes(docks_state.data())
+    def save(self, path: Path | None = None) -> None:
+        """Save the geometry, outer dock state, and toolbar state to the state file.
+
+        :param path: the state file; :func:`main_window_state_path` unless a test says otherwise.
+        """
+        path = path if path is not None else main_window_state_path()
+        values = {
+            GEOMETRY_KEY: state_file.encode_bytes(self.geometry),
+            OUTER_DOCKS_STATE_KEY: state_file.encode_bytes(self.outer_docks_state),
+            OUTER_DOCKS_STATE_VERSION_KEY: OUTER_DOCKS_STATE_VERSION,
+            TOOLBARS_STATE_KEY: state_file.encode_bytes(self.toolbars_state),
+            LOG_WIDGET_STATE_KEY: state_file.encode_bytes(self.log_widget_state),
+            TASK_QUEUE_STATE_KEY: state_file.encode_bytes(self.task_queue_state),
+        }
+        state_file.write_state_file(path, WINDOW_VERSION, values)
+
+    def __read(self, values: dict[str, object]) -> None:
+        """Take the state from a file's values; the outer dock blob only if it is of the current version.
+
+        :param values: what :func:`~.state_file.read_state_file` returned, or nothing.
+        """
+        self.geometry = state_file.decode_bytes(values.get(GEOMETRY_KEY))
+        if values.get(OUTER_DOCKS_STATE_VERSION_KEY) == OUTER_DOCKS_STATE_VERSION:
+            self.outer_docks_state = state_file.decode_bytes(values.get(OUTER_DOCKS_STATE_KEY))
         else:
             self.outer_docks_state = b""
-
-        toolbars_state = cast(QByteArray, settings.value(TOOLBARS_STATE_KEY, QByteArray(), type=QByteArray))
-        self.toolbars_state = bytes(toolbars_state.data())
-
-        log_widget_state = cast(QByteArray, settings.value(LOG_WIDGET_STATE_KEY, QByteArray(), type=QByteArray))
-        self.log_widget_state = bytes(log_widget_state.data())
-
-        task_queue_state = cast(QByteArray, settings.value(TASK_QUEUE_STATE_KEY, QByteArray(), type=QByteArray))
-        self.task_queue_state = bytes(task_queue_state.data())
-        settings.endGroup()
-
-    def save(self, settings: QSettings) -> None:
-        """Save the geometry, outer dock state, and toolbar state to persistent storage.
-
-        :param settings: the ``QSettings`` to write to.
-        """
-        settings.beginGroup(GROUP)
-        settings.setValue(GEOMETRY_KEY, QByteArray(self.geometry))
-        settings.setValue(OUTER_DOCKS_STATE_KEY, QByteArray(self.outer_docks_state))
-        settings.setValue(OUTER_DOCKS_STATE_VERSION_KEY, OUTER_DOCKS_STATE_VERSION)
-        settings.setValue(TOOLBARS_STATE_KEY, QByteArray(self.toolbars_state))
-        settings.setValue(LOG_WIDGET_STATE_KEY, QByteArray(self.log_widget_state))
-        settings.setValue(TASK_QUEUE_STATE_KEY, QByteArray(self.task_queue_state))
-        settings.endGroup()
-
-
-# pylint: enable=duplicate-code
+        self.toolbars_state = state_file.decode_bytes(values.get(TOOLBARS_STATE_KEY))
+        self.log_widget_state = state_file.decode_bytes(values.get(LOG_WIDGET_STATE_KEY))
+        self.task_queue_state = state_file.decode_bytes(values.get(TASK_QUEUE_STATE_KEY))

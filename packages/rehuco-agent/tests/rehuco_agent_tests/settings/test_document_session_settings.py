@@ -1,17 +1,21 @@
 """Tests for DocumentSessionSettings: LRU-capped per-file open/state bookkeeping ([[implementation-plan]] #21).
 
-Uses a hand-rolled in-memory stand-in for ``QSettings`` rather than a real one (backed by the
-registry/an ini file) or ``tmp_path`` -- it implements just the narrow group/array/value subset
-``DocumentSessionSettings.load``/``save`` actually calls, so persistence is exercised end-to-end
-without ever touching real storage.
+The session lives in a JSON file (#404); conftest's autouse ``state_files`` keeps it in memory, so persistence is
+exercised end-to-end without ever touching real storage.
 """
 
+import json
 from pathlib import Path
-from typing import Any, Final
+from typing import Final
 from unittest.mock import patch
 
-from pytest import fixture
-from rehuco_agent.settings.document_session_settings import MAXIMUM_REMEMBERED_FILES, DocumentSessionSettings
+from rehuco_agent.settings.document_session_settings import (
+    MAXIMUM_REMEMBERED_FILES,
+    DocumentSessionSettings,
+    document_session_path,
+)
+
+from rehuco_agent_tests.conftest import MemoryStateFiles
 
 FIRST: Final = Path.cwd() / "fake" / "first.rehu"
 SECOND: Final = Path.cwd() / "fake" / "second.rehu"
@@ -19,75 +23,6 @@ THIRD: Final = Path.cwd() / "fake" / "third.rehu"
 
 
 # region fixtures
-# Mirrors test_recent_files_settings.py's own FakeSettings exactly (same array-capable QSettings
-# stand-in -- RecentFilesSettings uses the same beginReadArray/beginWriteArray shape as this class)
-# -- kept as a separate copy rather than a shared import, matching this codebase's settings-test
-# convention (see conftest.py's own FakeSettings for the simpler variant).
-# pylint: disable=duplicate-code
-class FakeSettings:  # pylint: disable=invalid-name,missing-function-docstring,redefined-builtin
-    """A minimal in-memory stand-in for the ``QSettings`` group/array/value API.
-
-    Method names and the ``type=`` parameter deliberately mirror ``QSettings``'s own C++-derived
-    API (``beginGroup``/``setValue``/etc, and ``value(key, default, type=...)``), since
-    :meth:`DocumentSessionSettings.load`/:meth:`~DocumentSessionSettings.save` call them by name --
-    hence the blanket naming/docstring/builtin-shadowing suppression above, scoped to this class.
-    """
-
-    def __init__(self) -> None:
-        self.__data: dict[str, Any] = {}
-        self.__group = ""
-        self.__array_key = ""
-        self.__array_index = 0
-        self.__in_array = False
-
-    def beginGroup(self, name: str) -> None:  # noqa: N802  (Qt API name)
-        self.__group = f"{name}/"
-
-    def endGroup(self) -> None:  # noqa: N802
-        self.__group = ""
-
-    def beginWriteArray(self, key: str) -> None:  # noqa: N802
-        self.__array_key = self.__group + key
-        self.__in_array = True
-        self.__data[f"{self.__array_key}/size"] = 0
-
-    def beginReadArray(self, key: str) -> int:  # noqa: N802
-        self.__array_key = self.__group + key
-        self.__in_array = True
-        return self.__data.get(f"{self.__array_key}/size", 0)
-
-    def setArrayIndex(self, index: int) -> None:  # noqa: N802
-        self.__array_index = index
-        size_key = f"{self.__array_key}/size"
-        self.__data[size_key] = max(self.__data.get(size_key, 0), index + 1)
-
-    def setValue(self, key: str, value: Any) -> None:  # noqa: N802
-        self.__data[self.__full_key(key)] = value
-
-    def value(self, key: str, default: Any = None, type: Any = None) -> Any:  # noqa: A002, N802
-        del type
-        return self.__data.get(self.__full_key(key), default)
-
-    def endArray(self) -> None:  # noqa: N802
-        self.__in_array = False
-        self.__array_key = ""
-
-    def __full_key(self, key: str) -> str:
-        """The storage key for ``key``: array-indexed while inside an array, else group-scoped."""
-        if self.__in_array:
-            return f"{self.__array_key}/{self.__array_index}/{key}"
-        return self.__group + key
-
-
-# pylint: enable=duplicate-code
-
-
-@fixture
-def settings() -> FakeSettings:
-    """A fresh in-memory settings stand-in."""
-    return FakeSettings()
-
-
 # endregion
 
 
@@ -133,7 +68,7 @@ def test_items_to_save_prunes_closed_items_beyond_the_cap() -> None:
 
 
 # region load/save tests
-def test_save_then_load_round_trips_items(settings: FakeSettings) -> None:
+def test_save_then_load_round_trips_items() -> None:
     """Saving and reloading reproduces the same open flags and state bytes, keyed by path.
 
     **Test steps:**
@@ -146,16 +81,16 @@ def test_save_then_load_round_trips_items(settings: FakeSettings) -> None:
     session.items[FIRST] = DocumentSessionSettings.Item(open=True, state=b"first-state")
     session.items[SECOND] = DocumentSessionSettings.Item(open=False, state=b"second-state")
 
-    session.save(settings)  # type: ignore[arg-type]
+    session.save()
 
     restored = DocumentSessionSettings()
-    restored.load(settings)  # type: ignore[arg-type]
+    restored.load()
 
     assert restored.items[FIRST.resolve()] == DocumentSessionSettings.Item(open=True, state=b"first-state")
     assert restored.items[SECOND.resolve()] == DocumentSessionSettings.Item(open=False, state=b"second-state")
 
 
-def test_save_prunes_before_writing(settings: FakeSettings) -> None:
+def test_save_prunes_before_writing() -> None:
     """Saving only persists the LRU-pruned items, not the full in-memory set.
 
     **Test steps:**
@@ -167,14 +102,14 @@ def test_save_prunes_before_writing(settings: FakeSettings) -> None:
     for i in range(MAXIMUM_REMEMBERED_FILES + 5):
         session.items[Path.cwd() / "fake" / f"{i}.rehu"] = DocumentSessionSettings.Item(open=False)
 
-    session.save(settings)  # type: ignore[arg-type]
+    session.save()
 
     restored = DocumentSessionSettings()
-    restored.load(settings)  # type: ignore[arg-type]
+    restored.load()
     assert len(restored.items) == MAXIMUM_REMEMBERED_FILES
 
 
-def test_save_then_load_round_trips_the_focused_document(settings: FakeSettings) -> None:
+def test_save_then_load_round_trips_the_focused_document() -> None:
     """Saving and reloading reproduces the focused document's path, alongside the items array.
 
     **Test steps:**
@@ -187,16 +122,16 @@ def test_save_then_load_round_trips_the_focused_document(settings: FakeSettings)
     session.items[FIRST] = DocumentSessionSettings.Item(open=True)
     session.focused_path = FIRST
 
-    session.save(settings)  # type: ignore[arg-type]
+    session.save()
 
     restored = DocumentSessionSettings()
-    restored.load(settings)  # type: ignore[arg-type]
+    restored.load()
 
     assert restored.focused_path == FIRST.resolve()
     assert FIRST.resolve() in restored.items
 
 
-def test_load_defaults_to_no_focused_document_when_nothing_was_saved(settings: FakeSettings) -> None:
+def test_load_defaults_to_no_focused_document_when_nothing_was_saved() -> None:
     """Loading from settings that never had a focused document saved yields ``None``.
 
     **Test steps:**
@@ -206,15 +141,15 @@ def test_load_defaults_to_no_focused_document_when_nothing_was_saved(settings: F
     * verify the focused document is ``None``
     """
     session = DocumentSessionSettings()
-    session.save(settings)  # type: ignore[arg-type]
+    session.save()
 
     restored = DocumentSessionSettings()
-    restored.load(settings)  # type: ignore[arg-type]
+    restored.load()
 
     assert restored.focused_path is None
 
 
-def test_load_clears_prior_items(settings: FakeSettings) -> None:
+def test_load_clears_prior_items() -> None:
     """Loading replaces whatever items were already present, rather than merging with them.
 
     **Test steps:**
@@ -224,14 +159,88 @@ def test_load_clears_prior_items(settings: FakeSettings) -> None:
     """
     session = DocumentSessionSettings()
     session.items[FIRST] = DocumentSessionSettings.Item(open=True)
-    session.save(settings)  # type: ignore[arg-type]
+    session.save()
 
     restored = DocumentSessionSettings()
     restored.items[THIRD] = DocumentSessionSettings.Item(open=True)
-    restored.load(settings)  # type: ignore[arg-type]
+    restored.load()
 
     assert THIRD not in restored.items
     assert FIRST.resolve() in restored.items
+
+
+def test_load_with_no_file_leaves_an_empty_session() -> None:
+    """A first run, or a deleted file, has no session (#404).
+
+    **Test steps:**
+
+    * load into an instance that already holds an item and a focus, with nothing saved
+    * verify the item, the focus and the dock layout are all gone
+    """
+    session = DocumentSessionSettings()
+    session.items[FIRST] = DocumentSessionSettings.Item(open=True)
+    session.focused_path = FIRST
+    session.docks_state = b"stale"
+
+    session.load()
+
+    assert not session.items
+    assert session.focused_path is None
+    assert session.docks_state == b""
+
+
+def test_the_documents_docks_layout_round_trips() -> None:
+    """The layout between the open documents is kept beside the items (#404).
+
+    **Test steps:**
+
+    * save a session with a dock layout, load it into a fresh instance
+    * verify the layout bytes came back
+    """
+    session = DocumentSessionSettings()
+    session.docks_state = b"\x00layout\xff"
+    session.save()
+
+    restored = DocumentSessionSettings()
+    restored.load()
+
+    assert restored.docks_state == b"\x00layout\xff"
+
+
+def test_an_open_item_with_no_layout_survives_a_round_trip() -> None:
+    """An entry kept open for storage that did not answer has no dock, and is still kept (#464, #404).
+
+    **Test steps:**
+
+    * save an open item whose layout is empty
+    * verify it comes back open with an empty layout
+    """
+    session = DocumentSessionSettings()
+    session.items[FIRST] = DocumentSessionSettings.Item(open=True)
+    session.save()
+
+    restored = DocumentSessionSettings()
+    restored.load()
+
+    assert restored.items[FIRST] == DocumentSessionSettings.Item(open=True, state=b"")
+
+
+def test_a_file_entry_that_is_not_a_document_is_skipped(state_files: MemoryStateFiles) -> None:
+    """Hand-damaged entries cost only themselves (#404).
+
+    **Test steps:**
+
+    * seed a file whose items hold a good entry, a non-object, and an entry with no path
+    * verify only the good one is loaded
+    """
+    state_files.files[document_session_path()] = json.dumps(
+        {"version": 1, "items": [{"path": FIRST.as_posix(), "open": True}, 7, {"open": True}, {"path": ""}]}
+    )
+
+    session = DocumentSessionSettings()
+    session.load()
+
+    assert list(session.items) == [FIRST]
 
 
 # endregion
@@ -246,8 +255,8 @@ def test_forget_drops_the_item_and_its_layout() -> None:
     * verify only the other remains
     """
     session = DocumentSessionSettings()
-    session.items[FIRST] = DocumentSessionSettings.Item(open=True, state=b"first")  # pylint: disable=unsupported-assignment-operation
-    session.items[SECOND] = DocumentSessionSettings.Item(open=True, state=b"second")  # pylint: disable=unsupported-assignment-operation
+    session.items[FIRST] = DocumentSessionSettings.Item(open=True, state=b"first")
+    session.items[SECOND] = DocumentSessionSettings.Item(open=True, state=b"second")
 
     session.forget(FIRST)
 
@@ -263,7 +272,7 @@ def test_forgetting_an_unknown_path_changes_nothing() -> None:
     * verify the item and the focus are unchanged
     """
     session = DocumentSessionSettings()
-    session.items[FIRST] = DocumentSessionSettings.Item(open=True)  # pylint: disable=unsupported-assignment-operation
+    session.items[FIRST] = DocumentSessionSettings.Item(open=True)
     session.focused_path = FIRST
 
     session.forget(SECOND)
@@ -281,8 +290,8 @@ def test_forgetting_an_unfocused_document_leaves_the_focus() -> None:
     * verify the focus stays on the second
     """
     session = DocumentSessionSettings()
-    session.items[FIRST] = DocumentSessionSettings.Item(open=True)  # pylint: disable=unsupported-assignment-operation
-    session.items[SECOND] = DocumentSessionSettings.Item(open=True)  # pylint: disable=unsupported-assignment-operation
+    session.items[FIRST] = DocumentSessionSettings.Item(open=True)
+    session.items[SECOND] = DocumentSessionSettings.Item(open=True)
     session.focused_path = SECOND
 
     session.forget(FIRST)
@@ -300,7 +309,7 @@ def test_forgetting_the_focused_document_focuses_the_next_open_one() -> None:
     """
     session = DocumentSessionSettings()
     for path in (FIRST, SECOND, THIRD):
-        session.items[path] = DocumentSessionSettings.Item(open=True)  # pylint: disable=unsupported-assignment-operation
+        session.items[path] = DocumentSessionSettings.Item(open=True)
     session.focused_path = FIRST
 
     session.forget(FIRST)
@@ -318,7 +327,7 @@ def test_forgetting_the_last_focused_document_focuses_the_one_before() -> None:
     """
     session = DocumentSessionSettings()
     for path in (FIRST, SECOND, THIRD):
-        session.items[path] = DocumentSessionSettings.Item(open=True)  # pylint: disable=unsupported-assignment-operation
+        session.items[path] = DocumentSessionSettings.Item(open=True)
     session.focused_path = THIRD
 
     session.forget(THIRD)
@@ -335,8 +344,8 @@ def test_forgetting_the_only_open_document_leaves_nothing_focused() -> None:
     * verify nothing is focused
     """
     session = DocumentSessionSettings()
-    session.items[FIRST] = DocumentSessionSettings.Item(open=True)  # pylint: disable=unsupported-assignment-operation
-    session.items[SECOND] = DocumentSessionSettings.Item(open=False)  # pylint: disable=unsupported-assignment-operation
+    session.items[FIRST] = DocumentSessionSettings.Item(open=True)
+    session.items[SECOND] = DocumentSessionSettings.Item(open=False)
     session.focused_path = FIRST
 
     session.forget(FIRST)
@@ -344,7 +353,7 @@ def test_forgetting_the_only_open_document_leaves_nothing_focused() -> None:
     assert session.focused_path is None
 
 
-def test_load_does_not_resolve_the_stored_paths(settings: FakeSettings) -> None:
+def test_load_does_not_resolve_the_stored_paths() -> None:
     """Loading takes the stored paths as they are (#464): resolving one under an unreachable share blocks.
 
     **Test steps:**
@@ -354,13 +363,13 @@ def test_load_does_not_resolve_the_stored_paths(settings: FakeSettings) -> None:
     * verify both came back unchanged
     """
     saved = DocumentSessionSettings()
-    saved.items[FIRST] = DocumentSessionSettings.Item(open=True)  # pylint: disable=unsupported-assignment-operation
+    saved.items[FIRST] = DocumentSessionSettings.Item(open=True)
     saved.focused_path = FIRST
-    saved.save(settings)  # type: ignore[arg-type]
+    saved.save()
     loaded = DocumentSessionSettings()
 
     with patch.object(Path, "resolve", side_effect=AssertionError("resolve() must not run on load")):
-        loaded.load(settings)  # type: ignore[arg-type]
+        loaded.load()
 
     assert list(loaded.items) == [FIRST]
     assert loaded.focused_path == FIRST
