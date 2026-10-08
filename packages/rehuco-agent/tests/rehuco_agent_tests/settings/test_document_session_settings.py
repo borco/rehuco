@@ -178,7 +178,7 @@ def test_load_with_no_file_leaves_an_empty_session() -> None:
     * verify the item, the focus and the dock layout are all gone
     """
     session = DocumentSessionSettings()
-    session.items[FIRST] = DocumentSessionSettings.Item(open=True)  # pylint: disable=unsupported-assignment-operation
+    session.items[FIRST] = DocumentSessionSettings.Item(open=True)
     session.focused_path = FIRST
     session.docks_state = b"stale"
 
@@ -216,7 +216,7 @@ def test_an_open_item_with_no_layout_survives_a_round_trip() -> None:
     * verify it comes back open with an empty layout
     """
     session = DocumentSessionSettings()
-    session.items[FIRST] = DocumentSessionSettings.Item(open=True)  # pylint: disable=unsupported-assignment-operation
+    session.items[FIRST] = DocumentSessionSettings.Item(open=True)
     session.save()
 
     restored = DocumentSessionSettings()
@@ -255,8 +255,8 @@ def test_forget_drops_the_item_and_its_layout() -> None:
     * verify only the other remains
     """
     session = DocumentSessionSettings()
-    session.items[FIRST] = DocumentSessionSettings.Item(open=True, state=b"first")  # pylint: disable=unsupported-assignment-operation
-    session.items[SECOND] = DocumentSessionSettings.Item(open=True, state=b"second")  # pylint: disable=unsupported-assignment-operation
+    session.items[FIRST] = DocumentSessionSettings.Item(open=True, state=b"first")
+    session.items[SECOND] = DocumentSessionSettings.Item(open=True, state=b"second")
 
     session.forget(FIRST)
 
@@ -272,7 +272,7 @@ def test_forgetting_an_unknown_path_changes_nothing() -> None:
     * verify the item and the focus are unchanged
     """
     session = DocumentSessionSettings()
-    session.items[FIRST] = DocumentSessionSettings.Item(open=True)  # pylint: disable=unsupported-assignment-operation
+    session.items[FIRST] = DocumentSessionSettings.Item(open=True)
     session.focused_path = FIRST
 
     session.forget(SECOND)
@@ -290,8 +290,8 @@ def test_forgetting_an_unfocused_document_leaves_the_focus() -> None:
     * verify the focus stays on the second
     """
     session = DocumentSessionSettings()
-    session.items[FIRST] = DocumentSessionSettings.Item(open=True)  # pylint: disable=unsupported-assignment-operation
-    session.items[SECOND] = DocumentSessionSettings.Item(open=True)  # pylint: disable=unsupported-assignment-operation
+    session.items[FIRST] = DocumentSessionSettings.Item(open=True)
+    session.items[SECOND] = DocumentSessionSettings.Item(open=True)
     session.focused_path = SECOND
 
     session.forget(FIRST)
@@ -309,7 +309,7 @@ def test_forgetting_the_focused_document_focuses_the_next_open_one() -> None:
     """
     session = DocumentSessionSettings()
     for path in (FIRST, SECOND, THIRD):
-        session.items[path] = DocumentSessionSettings.Item(open=True)  # pylint: disable=unsupported-assignment-operation
+        session.items[path] = DocumentSessionSettings.Item(open=True)
     session.focused_path = FIRST
 
     session.forget(FIRST)
@@ -327,7 +327,7 @@ def test_forgetting_the_last_focused_document_focuses_the_one_before() -> None:
     """
     session = DocumentSessionSettings()
     for path in (FIRST, SECOND, THIRD):
-        session.items[path] = DocumentSessionSettings.Item(open=True)  # pylint: disable=unsupported-assignment-operation
+        session.items[path] = DocumentSessionSettings.Item(open=True)
     session.focused_path = THIRD
 
     session.forget(THIRD)
@@ -344,8 +344,8 @@ def test_forgetting_the_only_open_document_leaves_nothing_focused() -> None:
     * verify nothing is focused
     """
     session = DocumentSessionSettings()
-    session.items[FIRST] = DocumentSessionSettings.Item(open=True)  # pylint: disable=unsupported-assignment-operation
-    session.items[SECOND] = DocumentSessionSettings.Item(open=False)  # pylint: disable=unsupported-assignment-operation
+    session.items[FIRST] = DocumentSessionSettings.Item(open=True)
+    session.items[SECOND] = DocumentSessionSettings.Item(open=False)
     session.focused_path = FIRST
 
     session.forget(FIRST)
@@ -363,7 +363,7 @@ def test_load_does_not_resolve_the_stored_paths() -> None:
     * verify both came back unchanged
     """
     saved = DocumentSessionSettings()
-    saved.items[FIRST] = DocumentSessionSettings.Item(open=True)  # pylint: disable=unsupported-assignment-operation
+    saved.items[FIRST] = DocumentSessionSettings.Item(open=True)
     saved.focused_path = FIRST
     saved.save()
     loaded = DocumentSessionSettings()

@@ -79,7 +79,7 @@ class DefaultLayoutSettings:
         for layout_type, blob in (saved if isinstance(saved, dict) else {}).items():
             state = state_file.decode_bytes(blob)
             if state:
-                self.states[layout_type] = state  # pylint: disable=unsupported-assignment-operation
+                self.states[layout_type] = state
 
     def save(self, path: Path | None = None) -> None:
         """Save the current states to the group's file, dropping every type no longer held.

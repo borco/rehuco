@@ -94,7 +94,7 @@ class DocumentSessionSettings:
             open_others = [other for other in order if other != path and self.items[other].open]
             after = [other for other in open_others if order.index(other) > position]
             self.focused_path = after[0] if after else open_others[-1] if open_others else None
-        del self.items[path]  # pylint: disable=unsupported-delete-operation
+        del self.items[path]
 
     def load(self, path: Path | None = None) -> None:
         """Replace the current items (and focused path) with what is in the session file.
@@ -140,7 +140,7 @@ class DocumentSessionSettings:
         for entry in entries if isinstance(entries, list) else []:
             if not isinstance(entry, dict) or not isinstance(entry.get("path"), str) or not entry["path"]:
                 continue
-            self.items[Path(entry["path"])] = DocumentSessionSettings.Item(  # pylint: disable=unsupported-assignment-operation
+            self.items[Path(entry["path"])] = DocumentSessionSettings.Item(
                 open=entry.get("open") is True,
                 state=state_file.decode_bytes(entry.get("state")),
             )

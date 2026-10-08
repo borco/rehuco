@@ -62,7 +62,7 @@ def fixture_scan_class(mocker: MockerFixture) -> Any:
     return mocker.patch.object(startup_presence, "PresenceScan")
 
 
-class Lists:  # pylint: disable=too-few-public-methods,too-many-instance-attributes
+class Lists:  # pylint: disable=too-few-public-methods
     """The three remembered lists and the object judging them, as one window holds them."""
 
     def __init__(  # pylint: disable=too-many-arguments  # one keyword per list a window remembers
@@ -84,9 +84,9 @@ class Lists:  # pylint: disable=too-few-public-methods,too-many-instance-attribu
         self.rehuco.current_path = current
         self.session = DocumentSessionSettings()
         for path in session_open:
-            self.session.items[path] = DocumentSessionSettings.Item(open=True, state=b"layout")  # pylint: disable=unsupported-assignment-operation
+            self.session.items[path] = DocumentSessionSettings.Item(open=True, state=b"layout")
         for path in session_closed:
-            self.session.items[path] = DocumentSessionSettings.Item(open=False)  # pylint: disable=unsupported-assignment-operation
+            self.session.items[path] = DocumentSessionSettings.Item(open=False)
         self.session.focused_path = focused
         self.remembered = RememberedPaths(self.recent_files, self.rehuco, self.session)
         self.arrived: list[tuple[Path, DocumentSessionSettings.Item, bool]] = []
