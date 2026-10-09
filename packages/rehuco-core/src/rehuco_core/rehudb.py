@@ -50,7 +50,7 @@ from uuid import UUID
 from borco_core import fold
 
 from .constants import REHUDB_SUFFIX
-from .migrations.rehudb import BASE_VERSION, CHAIN, SchemaChain
+from .migrations.rehudb import BASE_VERSION, CHAIN, FOLD_STAMP_VERSION, SchemaChain
 from .migrations.runner import chain_head
 from .plugins import DEFAULT_PLUGIN_REGISTRY, PluginRegistry
 from .rehuco_file import RehucoRoot
@@ -264,6 +264,15 @@ TOKEN_CLAUSES: Final = {
 }
 """The clause each token field adds but ``folder``, each with exactly one parameter -- folded for a value table's."""
 
+FOLD_PROBE: Final = "\u0130 \u00df \ufb01 \u210c e\u0301 \u00c5 \u01c4 \u03a3\u03c2 \u1e9e \uff05 \u00e9 \u0141"
+"""Text that exercises every step of :func:`borco_core.fold`: letters casefolding turns into two (``İ``, ``ß``), a
+ligature, a letter NFKD turns into a capital, a decomposed and a precomposed accent, a digraph, final sigma, a fullwidth
+sign and a letter with a stroke that fold cannot decompose. What it folds to is the fingerprint of ``fold`` the cache
+keeps (``cache_meta``): a rule that changes shows in at least one of them."""
+
+FOLD_STAMP_KEY: Final = "fold"
+"""The ``cache_meta`` key the fingerprint lives under."""
+
 TERM_CLAUSE: Final = "(r.folded_title LIKE ? ESCAPE '\\' OR r.folded_path LIKE ? ESCAPE '\\')"
 """What one free-text term adds: found in the folded title or the folded path (schema v5, #475), both parameters the
 same pattern -- a stored column each, since folding every row through a Python SQL function per read measured 10-30x
@@ -408,6 +417,8 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
         try:
             cls.__configure(connection, fresh=version == BASE_VERSION)
             cls.__migrate(connection, version, chain)
+            if cls.__user_version(connection) >= FOLD_STAMP_VERSION:
+                cls.__refold_if_stale(connection)
         except BaseException:
             connection.close()
             raise
@@ -825,6 +836,47 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
             connection.execute("PRAGMA auto_vacuum = INCREMENTAL")
         connection.execute("PRAGMA journal_mode = WAL").fetchall()
         connection.execute("PRAGMA foreign_keys = ON")
+
+    @staticmethod
+    def __fold_is_current(connection: sqlite3.Connection) -> bool:
+        """Whether the fingerprint the file keeps is what :data:`FOLD_PROBE` folds to now."""
+        stored = connection.execute("SELECT value FROM cache_meta WHERE key = ?", (FOLD_STAMP_KEY,)).fetchone()
+        return stored is not None and stored[0] == fold(FOLD_PROBE)
+
+    @classmethod
+    def __refold_if_stale(cls, connection: sqlite3.Connection) -> None:
+        """Write the folded columns again from the real ones when the ``fold`` that wrote them is not this one (#475).
+
+        The file keeps what :data:`FOLD_PROBE` folded to when it last wrote them; a different answer now -- an edit to
+        ``fold``, or a Python whose Unicode tables moved -- or none at all (a file just upgraded, whose columns are
+        empty) means they cannot be trusted, and a search would silently miss rows. The check is a single read; the
+        refill is one transaction of about a second per 100k resources, and no scan.
+
+        :param connection: the cache, at a version with ``cache_meta``.
+        """
+        if cls.__fold_is_current(connection):
+            return
+        with cls.__write(connection):
+            # another process may have refilled while this one waited for the write lock
+            if cls.__fold_is_current(connection):
+                return
+            resources = connection.execute("SELECT id, title, path FROM resources").fetchall()
+            connection.executemany(
+                "UPDATE resources SET folded_title = ?, folded_path = ? WHERE id = ?",
+                [(fold(title), fold(path), resource_id) for resource_id, title, path in resources],
+            )
+            for table, _ in JOINS:
+                names = connection.execute(f"SELECT id, name FROM {table}").fetchall()  # nosec  # B608: fixed names
+                connection.executemany(
+                    f"UPDATE {table} SET folded = ? WHERE id = ?",  # nosec  # B608: fixed names
+                    [(fold(name), value_id) for value_id, name in names],
+                )
+            connection.execute(
+                "INSERT INTO cache_meta (key, value) VALUES (?, ?) "
+                "ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+                (FOLD_STAMP_KEY, fold(FOLD_PROBE)),
+            )
+        LOG.info("Wrote the catalog cache's folded search columns again: another fold wrote them.")
 
     @classmethod
     def __migrate(cls, connection: sqlite3.Connection, version: int, chain: SchemaChain) -> None:

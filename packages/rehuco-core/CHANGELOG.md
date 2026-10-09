@@ -84,7 +84,8 @@ Changelogs are per package in this monorepo, matching the per-package release ta
   matches every word rather than one phrase. Terms and `authors` / `tags` / `publishers` values ignore case and
   diacritics both ways (`borco_core.fold`). The cache is schema v5: the folded title and path of each resource and
   an indexed folded name per author, tag and publisher, filled from the stored rows on upgrade (about 1 s per 100k
-  resources), with no rescan.
+  resources), with no rescan. The cache remembers which `fold` wrote them and writes them again, the same way, the
+  next time it opens under a different one.
 - A verify reports a file it gives its first checksum as `added` rather than `unexpected`. The summary reads
   `210 matched, 2 mismatched, 3 added` (checked verdicts first), `added` counts as clean, and each added file is
   logged by name: *Checksum added for new file foo.zip*. A new file the run cannot read gets no entry and is counted

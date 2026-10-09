@@ -618,7 +618,8 @@ and its cache** — the catalog — and both docks read it and hear from it when
     thread, with filtering over the rows already loaded, behind the same `CatalogQuery`. **Case and diacritics:** free
     text and `authors`, `tags`, `publishers` values ignore both, either way round — "jose" finds "José" and "José"
     finds "Jose" — through one `fold` (`borco_core`: NFKD, casefold, combining marks dropped; `ß` is `ss`), applied to
-    the terms and to the text searched. The cache stores the folded title, path and value names (schema v5), since
+    the terms and to the text searched. The cache stores the folded title, path and value names (schema v5, written
+    again whenever `fold` changes), since
     folding every row in a Python SQL function per read measured 10–30× slower (a rare word at 30k resources: 864 ms
     against 44 ms).
     `type` and a `folder`'s root label fold ASCII only (SQLite's `NOCASE`); the path beneath the root

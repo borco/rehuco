@@ -808,9 +808,12 @@ The cache is the stdlib `sqlite3` module in rehuco-core, Qt-free, one connection
   rebuild*, which a disposable cache can always afford. There is no downgrade: a cache **newer** than the build is
   never written, but discarded and rebuilt from the `.rehu` files, the reason logged. A step that adds columns
   keeps the rows but clears their stat signature, so they show the new columns empty rather than wrong and the
-  next scan of any kind reads them again (v3, v4). A column derived from what the row already holds is filled by the
-  step itself instead (v5, the folded spellings) -- and since those copies are only as good as `borco_core.fold`, a
-  change to `fold` needs a step of its own that refills them.
+  next scan of any kind reads them again (v3, v4). A column derived from what the row already holds is not filled by a
+  step at all, since a step is a frozen record (v5, the folded spellings, starts empty): see the next point.
+- **The folded columns follow `borco_core.fold`** (v5, #475). `cache_meta` (v6) keeps what a fixed probe string folds
+  to; opening the cache under a `fold` that gives another answer — an edit to it, or a Python whose Unicode tables
+  moved — or finding none (a file just upgraded) writes every folded column again from the real ones, in one
+  transaction, with no rescan (about a second per 100k resources). So `fold` may change with no migration.
 - **Created with `PRAGMA auto_vacuum = INCREMENTAL`** (it must precede the first table), so removing a root —
   whose resources cascade away — returns its space with a cheap `PRAGMA incremental_vacuum` rather than a full
   `VACUUM` rewrite.

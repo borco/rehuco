@@ -5,8 +5,9 @@ Both sides go through :func:`fold`, the search terms and the text searched, so w
 the two meet. A search box holds a :class:`TextMatcher` built from its text and asks it about each row; a database
 stores each searched text folded and compares those columns against folded terms.
 
-A stored folded copy is only as good as the :func:`fold` that wrote it: changing :func:`fold` needs a schema step that
-refills them (``rehuco_core.migrations.rehudb``, version 5 being the first).
+A stored folded copy is only as good as the :func:`fold` that wrote it. The cache keeps a fingerprint of the
+:func:`fold` it last wrote with and writes the copies again, from the real columns, when it opens under a different
+one -- so :func:`fold` can change without a version bump or a migration.
 
 Words are separated by whitespace; a ``"..."`` run is one term, with ``\\"`` and ``\\\\`` its only escapes, and an
 unclosed quote runs to the end of the line.
