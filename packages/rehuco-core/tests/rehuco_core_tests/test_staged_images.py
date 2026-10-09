@@ -339,3 +339,18 @@ def test_a_file_that_cannot_be_pruned_is_skipped(tmp_path: Path, mocker: MockerF
 
 
 # endregion
+
+
+def test_a_long_basename_with_no_extension_is_cut_whole() -> None:
+    """With no dot to keep, the whole basename is what gives way, the id and the mark still there.
+
+    **Test steps:**
+
+    * name a path whose only segment is very long and has no extension
+    * verify the name fits, keeps the id, and ends in the mark
+    """
+    name = staged_name(ID, "b" * 300)
+
+    assert len(name.encode()) <= MAX_NAME_BYTES
+    assert name.startswith(f"rehu-{ID}__b")
+    assert name.endswith(SHORTENED_MARK)

@@ -110,6 +110,7 @@ def test_the_press_drag_filter_reports_a_draggable_thing_and_leaves_the_events_a
     PressDragFilter(widget, lambda point: "left" if point.x() < 100 else None, reported.append)
     far = QPoint(0, 3 * QApplication.startDragDistance())
 
+    QTest.mouseDClick(widget, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, QPoint(10, 10))
     QTest.mousePress(widget, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, QPoint(10, 10))
     QApplication.sendEvent(
         widget, mouse(QEvent.Type.MouseMove, QPoint(10, 10) + far, Qt.MouseButton.NoButton, Qt.MouseButton.LeftButton)

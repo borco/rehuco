@@ -1,6 +1,6 @@
 """The Roots view's column view (#378)."""
 
-from typing import override
+from typing import cast, override
 
 from borco_pyside.widgets import ReorderDrag
 from PySide6.QtCore import QModelIndex, QPersistentModelIndex, QPoint, Qt, Signal
@@ -72,9 +72,10 @@ class RootsColumnView(QColumnView):
             return QPersistentModelIndex(index) if is_image else None
 
         def start(token: object) -> None:
-            if isinstance(token, QPersistentModelIndex) and token.isValid():
-                row = column.model().index(token.row(), token.column(), token.parent())
-                self.image_drag_requested.emit(row, viewport, viewport.grab(column.visualRect(row)))
+            # a row removed since the press comes back invalid, and the owner turns an invalid row away
+            held = cast(QPersistentModelIndex, token)
+            row = column.model().index(held.row(), held.column(), held.parent())
+            self.image_drag_requested.emit(row, viewport, viewport.grab(column.visualRect(row)))
 
         PressDragFilter(viewport, image_row_at, start)
 

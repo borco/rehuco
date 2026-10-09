@@ -1348,7 +1348,7 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes,
         :returns: ``True`` for a swallowed key; ``False`` otherwise, the double-click being observed
             rather than consumed.
         """
-        if isinstance(event, QMouseEvent) and self.__exporter is not None:
+        if isinstance(event, QMouseEvent) and self.__exporter is not None and watched is not self.__list:
             self.__track_drag(watched, event)
         if (
             watched is self.__preview
@@ -1390,14 +1390,13 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes,
                 if watched is viewport:
                     index = self.__list.indexAt(event.position().toPoint())
                     row = index.row() if index.isValid() else -1
-                elif watched is self.__preview:
-                    row = self.current_index
                 else:
-                    return
+                    row = self.current_index
                 self.__press.press(event, row if 0 <= row < len(paths) else None)
             case QEvent.Type.MouseMove:
-                row = self.__press.moved(event)
-                if isinstance(row, int) and exporter is not None and watched in (viewport, self.__preview):
+                pressed = self.__press.moved(event)
+                if isinstance(pressed, int) and exporter is not None:
+                    row = pressed
                     cell = self.__list.visualRect(self.__list_model.index(row, NAME_COLUMN))
                     picture = self.__preview.pixmap() if watched is self.__preview else viewport.grab(cell)
                     exporter.drag_path(self.__preview if watched is self.__preview else viewport, paths[row], picture)

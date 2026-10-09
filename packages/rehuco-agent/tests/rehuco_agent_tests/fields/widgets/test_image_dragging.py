@@ -168,3 +168,72 @@ def test_a_press_on_no_row_or_without_an_exporter_drags_nothing(qtbot: QtBot, mo
 
 
 # endregion
+
+
+def test_a_preview_with_no_picture_has_no_picture_area(qtbot: QtBot) -> None:
+    """Nothing to drag from a label that shows nothing.
+
+    **Test steps:**
+
+    * ask an empty preview where its picture is
+    * verify there is no area
+    """
+    preview = PreviewLabel()
+    qtbot.addWidget(preview)
+
+    assert preview.image_rect().isEmpty()
+
+
+def test_the_previews_double_click_still_asks_for_the_viewer_with_an_exporter(
+    qtbot: QtBot, mocker: MockerFixture
+) -> None:
+    """Watching the preview for a drag changes nothing it did: a double-click on it still opens the curating viewer.
+
+    **Test steps:**
+
+    * give a selector an exporter and double-click its preview, on the current screenshot
+    * verify the viewer was asked for, on that row, and nothing dragged
+    """
+    selector = shown(qtbot, FakeResource(["info00.jpg", "info01.jpg"]))
+    exporter = mocker.Mock(spec=ImageExporter)
+    selector.set_exporter(exporter)
+    selector.set_current_index(1)
+    preview = selector.findChild(PreviewLabel)
+    assert isinstance(preview, PreviewLabel)
+    asked: list[int] = []
+    selector.viewer_requested.connect(asked.append)
+
+    QTest.mouseDClick(preview, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, QPoint(5, 5))
+
+    assert asked == [1]
+    exporter.drag_path.assert_not_called()
+
+
+def test_a_strip_press_that_barely_moves_drags_nothing(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """A press that moves less than the drag distance is a click, not a drag.
+
+    **Test steps:**
+
+    * press a strip thumbnail and move one pixel
+    * verify the exporter was not asked
+    """
+    mocker.patch(
+        "rehuco_agent.fields.widgets.image_strip.ThumbnailLoader",
+        return_value=mocker.Mock(failed=lambda *_args: False, request=lambda *_args: QPixmap(20, 20)),
+    )
+    host = QWidget()
+    qtbot.addWidget(host)
+    strip = ImageStrip(parent=host)
+    exporter = mocker.Mock(spec=ImageExporter)
+    strip.set_exporter(exporter)
+    strip.set_images([Path("/fake/info00.jpg")])
+    host.show()
+    label = strip.findChildren(ThumbnailLabel)[0]
+
+    QTest.mousePress(label, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, QPoint(3, 3))
+    QApplication.sendEvent(
+        label, mouse(QEvent.Type.MouseMove, QPoint(3, 4), Qt.MouseButton.NoButton, Qt.MouseButton.LeftButton)
+    )
+    QTest.mouseRelease(label, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, QPoint(3, 4))
+
+    exporter.drag_path.assert_not_called()

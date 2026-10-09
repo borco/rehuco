@@ -6542,3 +6542,21 @@ def test_an_acquired_image_refreshes_the_conversion_backup_actions(
 
 
 # endregion
+
+
+def test_the_folder_an_exported_file_is_named_relative_to_is_the_records(
+    saved_widget: DocumentWidget, widget: DocumentWidget
+) -> None:
+    """Files taken out of a document are named relative to its record's folder (#395); a document with no path has
+    none to be relative to, and they are named by their own name.
+
+    **Test steps:**
+
+    * ask a saved document and a pathless one for that folder
+    * verify the saved record's folder, and none
+    """
+    saved = saved_widget.sub_docks._DocumentSubDocks__record_folder()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    pathless = widget.sub_docks._DocumentSubDocks__record_folder()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    assert saved == LOG_DOCUMENT_PATH.parent
+    assert pathless is None

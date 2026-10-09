@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 from typing import Final
 
-from PySide6.QtCore import QEvent, QModelIndex, QPoint, Qt
+from PySide6.QtCore import QEvent, QModelIndex, QPersistentModelIndex, QPoint, Qt
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QAbstractItemView, QApplication, QWidget
@@ -187,3 +187,30 @@ def test_dragging_the_picture_in_the_details_pane_exports_that_image(
     assert staged_names(drag_class) == ["rehu-my folder__b.png"]
     (shown,) = drag_class.return_value.setPixmap.call_args.args
     assert isinstance(shown, QPixmap) and not shown.isNull()
+
+
+def test_a_row_that_is_gone_or_a_picture_that_is_gone_drags_nothing(
+    mocker: MockerFixture, qtbot: QtBot, dock: CatalogDocks, folders: Path
+) -> None:
+    """An image row removed between the press and the move comes back invalid, and a details pane whose picture was
+    cleared in the meantime has none to drag: either is turned away.
+
+    **Test steps:**
+
+    * report an invalid row as dragged
+    * report a drag of the details pane while it shows no picture
+    * verify no drag was built
+    """
+    add_pack_files(folders)
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    drag_class = mocker.patch("rehuco_agent.fields.widgets.image_export.QDrag")
+    open_root_folder(qtbot, dock, "my folder")
+    widget = QWidget()
+    qtbot.addWidget(widget)
+    preview = dock.roots.findChild(RootsPreview)
+    assert isinstance(preview, RootsPreview)
+
+    dock.roots.roots_view.image_drag_requested.emit(QModelIndex(), widget, QPixmap())
+    preview._RootsPreview__on_image_drag(QPersistentModelIndex())  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    drag_class.assert_not_called()

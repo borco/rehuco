@@ -302,10 +302,10 @@ class RootsPreview(QWidget):
 
         :param token: the row, as :meth:`__image_token` gave it.
         """
+        del token
         image = self.image
-        if isinstance(token, QPersistentModelIndex) and token.isValid() and image is not None:
-            row = self.__shown()
-            self.image_drag_requested.emit(row, self.__ui.image_label, QPixmap.fromImage(image))
+        if image is not None:
+            self.image_drag_requested.emit(self.__shown(), self.__ui.image_label, QPixmap.fromImage(image))
 
     def __setup_description(self) -> None:
         """Make the description view the description dock's: its renderer and stylesheet, the scanner that finds its

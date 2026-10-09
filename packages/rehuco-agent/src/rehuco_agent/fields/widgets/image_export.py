@@ -167,11 +167,6 @@ class ImageExporter:
         self.__origin: Final = origin
         self.__base: Final = base
 
-    @property
-    def folder(self) -> Path:
-        """The staging folder."""
-        return self.__folder
-
     def mime_data(self, source: ImageSource, index: int) -> QMimeData | None:
         """Stage one image and describe it for a drop or a paste.
 
