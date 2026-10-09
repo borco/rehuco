@@ -10,7 +10,7 @@ from typing import overload
 
 from PySide6.QtCore import QByteArray, Signal
 from PySide6.QtGui import QAction
-from PySide6.QtWidgets import QLabel, QMenu, QToolButton, QWidget
+from PySide6.QtWidgets import QLabel, QMenu, QSplitter, QToolButton, QWidget
 
 class DockWidgetArea:
     """A drop-location selector for `CDockManager.addDockWidget`/`setCentralWidget` (e.g.
@@ -27,6 +27,9 @@ RightDockWidgetArea: DockWidgetArea
 
 LeftDockWidgetArea: DockWidgetArea
 """Docks in a new area split off to the left of the reference area."""
+
+TopDockWidgetArea: DockWidgetArea
+"""Docks in a new area split off above the reference area."""
 
 BottomDockWidgetArea: DockWidgetArea
 """Docks in a new area split off below the reference area -- where the app-wide log dock goes (#200),
@@ -85,6 +88,13 @@ class CAutoHideDockContainer(QWidget):
         which is *not* written back to its `preferredAutoHideSideBarLocation`
         ([[appendices.qt-ads#auto-hide-preferred-side]])."""
 
+    def tabIndex(self) -> int:
+        """This container's tab's position in its sidebar."""
+
+    def setSize(self, size: int) -> None:
+        """Set the slid-out panel's extent across its border: the width for a left or right sidebar,
+        the height for a top or bottom one."""
+
 class CAutoHideSideBar(QWidget):
     """One of a `CDockManager`'s four sidebars, holding the `CAutoHideTab`s of the docks pinned to
     that border."""
@@ -104,11 +114,22 @@ class CTitleBarButton(QToolButton):
 class CDockAreaTitleBar(QWidget):
     """The title-bar strip above a `CDockAreaWidget`'s tabs (`objectName() == "dockAreaTitleBar"`)."""
 
+class CDockSplitter(QSplitter):
+    """A `QSplitter` QtAds lays areas and nested splitters out in. Every container's tree is rooted in
+    one (`CDockContainerWidget.rootSplitter`), which QtAds often leaves holding a single child splitter
+    ([[appendices.qt-ads#structural-layout]])."""
+
 class CDockContainerWidget(QWidget):
     """The surface a set of areas is laid out on: a `CDockManager` **is** one (its main container),
     and every `CFloatingDockContainer` window holds another. The scope an area's siblings are found
     in -- `CDockManager.openedDockAreas()` covers the main container only, so a floating window's
     areas are reached through its own container ([[appendices.qt-ads#area-maximize]])."""
+
+    def rootSplitter(self) -> CDockSplitter:
+        """The splitter this container's areas are laid out under."""
+
+    def floatingWidget(self) -> CFloatingDockContainer | None:
+        """The floating window holding this container, or `None` for the manager's main one."""
 
     def openedDockAreas(self) -> list[CDockAreaWidget]:
         """Every currently-open (not `isHidden()`) area of this container, in no guaranteed order --
@@ -159,6 +180,15 @@ class CDockAreaWidget(QWidget):
     def openedDockWidgets(self) -> list[CDockWidget]:
         """This area's open (not closed) docks, in tab order -- the tabs a maximized dock's
         neighbours are hidden from ([[appendices.qt-ads#area-maximize]])."""
+
+    def dockWidgets(self) -> list[CDockWidget]:
+        """Every dock in this area, open or closed, in tab order."""
+
+    def currentDockWidget(self) -> CDockWidget | None:
+        """The dock of this area's current tab."""
+
+    def parentSplitter(self) -> CDockSplitter | None:
+        """The splitter this area sits in."""
 
 class CElidingLabel(QLabel):
     """A `QLabel` that elides overflowing text instead of overflowing its bounds. Also the default
@@ -426,7 +456,7 @@ class CDockWidget(QWidget):
         keyboard focus. A no-op if it's already the area's current tab, or has no area yet. Fires
         `CDockAreaWidget.currentChanged` when the current tab actually changes."""
 
-class CDockManager(QWidget):
+class CDockManager(CDockContainerWidget):
     """The top-level docking surface: owns every `CDockAreaWidget`/`CDockWidget` placed into it
     via `addDockWidget`/`setCentralWidget`. Nestable -- a `CDockWidget`'s content can itself embed
     another `CDockManager` (`rehuco_agent`'s dock-in-dock shell, [[nodes#single-instance]])."""

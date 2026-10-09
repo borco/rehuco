@@ -1,5 +1,6 @@
 """Tests for QtAdsFloatingShowGuard: floating dock windows held off the screen until released."""
 
+import gc
 from collections.abc import Iterator
 from typing import Final
 
@@ -161,3 +162,28 @@ def test_without_an_application_the_guard_is_inert(mocker: MockerFixture) -> Non
     assert not guard.release()
     install.assert_not_called()
     remove.assert_not_called()
+
+
+def test_release_finds_a_held_container_whose_wrapper_nobody_kept(shown_manager: QtAds.CDockManager) -> None:
+    """The guard keeps no container wrapper: it finds the held ones again by the attribute it set.
+
+    A container shown in the middle of a QtAds call -- a second dock tabbed into a floating window by a
+    structural restore (#102) -- had the wrapper the filter saw invalidated before that call returned, while
+    the window lived on, so a guard holding wrappers failed at its own release.
+
+    **Test steps:**
+
+    * arm a guard and float a dock, keeping no reference to its container
+    * collect garbage, then release the guard
+    * verify the container came back, attribute cleared
+    """
+    guard = QtAdsFloatingShowGuard()
+    dock = floating_dock(shown_manager, "unreferenced")
+    gc.collect()
+
+    held = guard.release()
+
+    container = dock.floatingDockContainer()
+    assert held == (container,)
+    assert container is not None
+    assert container.testAttribute(DONT_SHOW) is False
