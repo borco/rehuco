@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final, override
 
+from borco_core import TextMatcher
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, QPersistentModelIndex, QSortFilterProxyModel, Qt
 from rehuco_core import StrandedManifestPlan, TcConversionPlan
 
@@ -285,12 +286,9 @@ class TcConversionPlanTableModel(QAbstractTableModel):
 
 
 class TcConversionPlanFilterProxyModel(QSortFilterProxyModel):
-    """Shows only rows whose path or flags contain the filter text, case-insensitive (#192).
-
-    A plain-substring match, the same shape
-    :class:`~rehuco_agent.settings.ui.settings_dialog.SettingsDialog.CategoryFilterProxyModel` uses and
-    for the same reason: a regex round trip through Qt's own fixed-string filter would need
-    un-escaping :meth:`set_filter_text`'s plain text back out of it to match against.
+    """Shows only rows whose path, target, screenshots, flags and outcome match the filter text (#192): every word
+    found in one of them, a quoted run as one phrase, case and accents ignored -- :class:`~borco_core.TextMatcher`,
+    as every search box (#475).
 
     Sorting is left to the base class's default (by whichever column the view's header was clicked
     on), unlike :class:`~rehuco_agent.fields.widgets.learning_paths_table_model.LearningPathScopeFilterProxyModel`:
@@ -301,28 +299,28 @@ class TcConversionPlanFilterProxyModel(QSortFilterProxyModel):
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
-        self.__filter_text = ""
+        self.__matcher = TextMatcher()
 
     def set_filter_text(self, text: str) -> None:
         """Update the filter text and re-evaluate every row.
 
         :param text: the text to match the path, target, screenshots, flags and outcome columns
-            against, case-insensitively.
+            against.
         """
-        self.__filter_text = text
+        self.__matcher = TextMatcher.of(text)
         # invalidateFilter() is deprecated in this Qt version; invalidate() is the non-deprecated
         # equivalent, and this proxy never overrides lessThan so it costs nothing extra here.
         self.invalidate()
 
     @override
     def filterAcceptsRow(self, source_row: int, source_parent: ModelIndex) -> bool:  # noqa: N802  (Qt API name)
-        if not self.__filter_text:
+        if not self.__matcher:
             return True
         model = self.sourceModel()
-        needle = self.__filter_text.lower()
         columns = (PATH_COLUMN, TARGET_COLUMN, SCREENSHOTS_COLUMN, FLAGS_COLUMN, OUTCOME_COLUMN)
-        return any(
-            needle
-            in str(model.data(model.index(source_row, column, source_parent), Qt.ItemDataRole.DisplayRole)).lower()
-            for column in columns
+        return self.__matcher.matches(
+            *(
+                str(model.data(model.index(source_row, column, source_parent), Qt.ItemDataRole.DisplayRole))
+                for column in columns
+            )
         )

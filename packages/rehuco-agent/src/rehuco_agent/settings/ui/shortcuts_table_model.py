@@ -3,6 +3,7 @@
 from collections.abc import Iterable
 from typing import Any, Final, override
 
+from borco_core import TextMatcher
 from borco_pyside.shortcuts import Command, CommandRegistry, CommandScope, Conflict, Keymap, find_conflicts, keys_text
 from borco_pyside.shortcuts.keymap import keys_collide, scopes_overlap
 from PySide6.QtCore import (
@@ -305,12 +306,10 @@ class ShortcutsTableModel(QAbstractTableModel):
         """Everything the search box matches a row against.
 
         :param command: the row's command.
-        :returns: name, description, and the effective keys spelled natively and portably, lower case.
+        :returns: name, description, and the effective keys spelled natively and portably.
         """
         keys = self.__keymap.effective_keys(command)
-        return " ".join(
-            (command.name, command.description, keys_text(keys), keys_text(keys, native=False), command.id)
-        ).lower()
+        return " ".join((command.name, command.description, keys_text(keys), keys_text(keys, native=False), command.id))
 
     def __refresh(self) -> None:
         """Recompute the conflicts and tell the views every cell may have changed."""
@@ -320,8 +319,9 @@ class ShortcutsTableModel(QAbstractTableModel):
 
 
 class ShortcutsFilterProxyModel(QSortFilterProxyModel):
-    """Narrows the shortcuts table to the rows whose name, description or key text contains the search text,
-    and sorts it.
+    """Narrows the shortcuts table to the rows whose name, description and key text match the search text -- every
+    word found, a quoted run as one phrase, case and accents ignored (:class:`~borco_core.TextMatcher`, #475) -- and
+    sorts it.
 
     Also what sorts the table, by the clicked column's display text; sorting by no column (``-1``) gives back
     the order the commands were declared in.
@@ -335,21 +335,20 @@ class ShortcutsFilterProxyModel(QSortFilterProxyModel):
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
-        self.__filter_text = ""
+        self.__matcher = TextMatcher()
         self.setDynamicSortFilter(False)
 
     def set_filter_text(self, text: str) -> None:
-        """Show only the rows containing ``text``.
+        """Show only the rows matching ``text``.
 
         :param text: the search text; blank shows every row.
         """
-        self.__filter_text = text.strip().lower()
+        self.__matcher = TextMatcher.of(text)
         self.invalidate()
 
     @override
     def filterAcceptsRow(self, source_row: int, source_parent: ModelIndex) -> bool:  # noqa: N802  (Qt API name)
-        if not self.__filter_text:
+        if not self.__matcher:
             return True
         model = self.sourceModel()
-        text = model.index(source_row, 0, source_parent).data(SEARCH_TEXT_ROLE)
-        return self.__filter_text in str(text)
+        return self.__matcher.matches(str(model.index(source_row, 0, source_parent).data(SEARCH_TEXT_ROLE)))

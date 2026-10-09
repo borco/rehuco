@@ -348,7 +348,7 @@ def test_a_browser_from_a_preset_takes_its_name_columns_and_filter(qtbot: QtBot)
     assert browser.name == "Tutorial"
     assert hidden_columns(browser) == {CatalogColumn.TITLE}
     assert browser.filter_edit.text() == browser.filter_text == "type:tutorial"
-    assert browser.query == CatalogQuery("", ((CatalogField.TYPE, "tutorial"),))
+    assert browser.query == CatalogQuery((), ((CatalogField.TYPE, "tutorial"),))
 
 
 def test_a_browser_from_a_preset_is_remembered_and_cloned_like_any_other(qtbot: QtBot) -> None:
@@ -383,7 +383,7 @@ def test_a_remembered_columns_word_is_dropped_on_load_without_a_problem(qtbot: Q
     qtbot.addWidget(browser)
 
     assert browser.filter_edit.text() == browser.filter_text == "type:tutorial"
-    assert browser.query == CatalogQuery("", ((CatalogField.TYPE, "tutorial"),))
+    assert browser.query == CatalogQuery((), ((CatalogField.TYPE, "tutorial"),))
     assert not browser.filter_problems
     assert hidden_columns(browser) == DEFAULT_HIDDEN
     assert browser.state().filter == "type:tutorial"
@@ -606,7 +606,7 @@ def test_typing_applies_the_filter_once_the_text_settles(qtbot: QtBot, browser: 
     with qtbot.waitSignal(browser.query_changed, timeout=FILTER_SETTLE_MS * 10) as changed:
         qtbot.keyClicks(browser.filter_edit, "type:tutorial")
         assert browser.query == CatalogQuery()
-    assert changed.args == [CatalogQuery("", ((CatalogField.TYPE, "tutorial"),))]
+    assert changed.args == [CatalogQuery((), ((CatalogField.TYPE, "tutorial"),))]
     assert browser.filter_text == "type:tutorial"
 
 
@@ -621,7 +621,7 @@ def test_enter_applies_the_filter_without_waiting(qtbot: QtBot, browser: TableBr
     qtbot.keyClicks(browser.filter_edit, "blender")
     qtbot.keyClick(browser.filter_edit, Qt.Key.Key_Return)
 
-    assert browser.query == CatalogQuery("blender")
+    assert browser.query == CatalogQuery(("blender",))
 
 
 def test_an_unknown_field_is_reported_on_the_line(browser: TableBrowser) -> None:
@@ -660,7 +660,7 @@ def test_a_browser_built_from_a_state_applies_its_filter(qtbot: QtBot) -> None:
     qtbot.addWidget(browser)
 
     assert browser.filter_edit.text() == state.filter
-    assert browser.query == CatalogQuery("", ((CatalogField.TYPE, "tutorial"),))
+    assert browser.query == CatalogQuery((), ((CatalogField.TYPE, "tutorial"),))
 
 
 def test_the_state_and_a_clone_carry_the_line_as_typed(qtbot: QtBot, browser: TableBrowser) -> None:
@@ -691,7 +691,7 @@ def test_setting_a_token_replaces_its_field_on_the_line_and_applies_it(browser: 
     browser.set_token("authors", "Foo Bar")
 
     assert browser.filter_text == 'intro authors:"Foo Bar"'
-    assert browser.query == CatalogQuery("intro", ((CatalogField.AUTHORS, "Foo Bar"),))
+    assert browser.query == CatalogQuery(("intro",), ((CatalogField.AUTHORS, "Foo Bar"),))
 
 
 # endregion
@@ -791,7 +791,7 @@ def test_choosing_an_author_sets_that_field_only_and_keeps_the_rest_of_the_line(
 
     actions[0].trigger()
     assert browser.filter_text == 'intro tags:python authors:"Jane \\"J\\" Doe"'
-    assert browser.query == CatalogQuery("intro", ((CatalogField.TAGS, "python"), (CatalogField.AUTHORS, name)))
+    assert browser.query == CatalogQuery(("intro",), ((CatalogField.TAGS, "python"), (CatalogField.AUTHORS, name)))
 
 
 def test_an_author_already_on_the_line_is_offered_to_be_cleared(

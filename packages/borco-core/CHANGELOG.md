@@ -17,6 +17,11 @@ Changelogs are per package in this monorepo, matching the per-package release ta
   connection attempt before any `stat` (a `stat` under a switched-off SMB host blocks for 21 s). The scan runs on daemon
   threads, so quitting never waits for it.
 
+- `borco_core.text_search` — searching text the way a person types it. `fold` ignores case and diacritics (NFKD,
+  casefold, combining marks dropped: "José" and "Jose" fold alike, `ß` to `ss`, `ﬁ` to `fi`); `search_terms` splits a
+  search into words, a `"quoted run"` being one; `TextMatcher.of(text).matches(*texts)` is true when every word is
+  found in one of the texts. `read_value` reads one bare or quoted value, `\"` and `\\` its only escapes.
+
 ## [0.2.0] - 2026-09-27
 
 ### Added

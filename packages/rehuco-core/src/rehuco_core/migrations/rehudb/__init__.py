@@ -18,6 +18,8 @@ import sqlite3
 from collections.abc import Callable
 from typing import Final
 
+from borco_core import fold
+
 from ..runner import chain_head
 
 SchemaStep = Callable[[sqlite3.Connection], None]
@@ -114,6 +116,9 @@ V3_COLUMNS: Final = (
 """The type-specific columns version 3 adds to ``resources``, with their SQL types -- frozen, like
 :data:`V1_STATEMENTS`."""
 
+V5_VALUE_TABLES: Final = ("authors", "tags", "publishers")
+"""The value tables version 5 gives a folded name -- frozen, like :data:`V1_STATEMENTS`."""
+
 
 def create_schema_v1(connection: sqlite3.Connection) -> None:
     """0 -> 1: the first schema -- roots, the resources under them, and the three value tables with their joins.
@@ -172,11 +177,38 @@ def add_format_version_v4(connection: sqlite3.Connection) -> None:
     connection.execute("UPDATE resources SET mtime_ns = 0, content_hash = ''")
 
 
+def add_folded_search_columns_v5(connection: sqlite3.Connection) -> None:
+    """4 -> 5: the folded spellings a search compares against (#475) -- a resource's title and path, and each
+    author's, tag's and publisher's name, indexed -- as :func:`borco_core.fold` writes them: case and diacritics
+    ignored, so "jose" finds "José" at the speed of a plain ``LIKE`` and an indexed lookup.
+
+    Filled here from the rows already stored rather than by a rescan: nothing the fold needs is on disk.
+
+    :param connection: the cache, inside the transaction the caller opened.
+    """
+    connection.execute("ALTER TABLE resources ADD COLUMN folded_title TEXT NOT NULL DEFAULT ''")
+    connection.execute("ALTER TABLE resources ADD COLUMN folded_path TEXT NOT NULL DEFAULT ''")
+    rows = connection.execute("SELECT id, title, path FROM resources").fetchall()
+    connection.executemany(
+        "UPDATE resources SET folded_title = ?, folded_path = ? WHERE id = ?",
+        [(fold(title), fold(path), resource_id) for resource_id, title, path in rows],
+    )
+    for table in V5_VALUE_TABLES:
+        connection.execute(f"ALTER TABLE {table} ADD COLUMN folded TEXT NOT NULL DEFAULT ''")
+        names = connection.execute(f"SELECT id, name FROM {table}").fetchall()  # nosec  # B608: fixed names
+        connection.executemany(
+            f"UPDATE {table} SET folded = ? WHERE id = ?",  # nosec  # B608: fixed names
+            [(fold(name), value_id) for value_id, name in names],
+        )
+        connection.execute(f"CREATE INDEX {table}_folded ON {table} (folded)")
+
+
 CHAIN: Final[SchemaChain] = (
     (1, create_schema_v1),
     (2, add_join_spellings_v2),
     (3, add_type_fields_v3),
     (4, add_format_version_v4),
+    (5, add_folded_search_columns_v5),
 )
 """This target's ordered ``(target, step)`` chain."""
 

@@ -608,14 +608,20 @@ and its cache** — the catalog — and both docks read it and hear from it when
   - **The current resource** (#379) is the one selected row's, named by its root's id and root-relative path;
     none or several selected name none. Every browser is multi-select.
   - **The filter line** (#398) is GitHub-style: free text plus `field:value` or `field:"quoted value"` tokens
-    (`folder`, `authors`, `tags`, `publishers`, `type`), all ANDed; the free text is one phrase matched in a title or
-    path, and a repeated field must match both values. It picks the rows **by query, not by proxy**: as the text
+    (`folder`, `authors`, `tags`, `publishers`, `type`), all ANDed. Free text is **one term per word**, each found in a
+    title or a path (either one), so `foo bar` finds "bar then foo"; a `"quoted run"` is one term, the phrase (#475).
+    A repeated field must match both values. It picks the rows **by query, not by proxy**: as the text
     settles (or on Enter) it is compiled to the cache's query and the browser's rows are read again, so the table and
     its status line only ever hold what matches. A read costs about 21 µs per row it returns (#407): the cache's own
     token clauses must be index-driven rather than correlated per row, and what a refresh does with the rows — a status
     total, a sort — must not call back into Qt once per row. Past roughly 30k resources a read belongs on a worker
-    thread, with filtering over the rows already loaded, behind the same `CatalogQuery`. **Case:** `authors`, `tags`,
-    `publishers`, `type` and a `folder`'s root label fold ASCII only (SQLite's `NOCASE`); the path beneath the root
+    thread, with filtering over the rows already loaded, behind the same `CatalogQuery`. **Case and diacritics:** free
+    text and `authors`, `tags`, `publishers` values ignore both, either way round — "jose" finds "José" and "José"
+    finds "Jose" — through one `fold` (`borco_core`: NFKD, casefold, combining marks dropped; `ß` is `ss`), applied to
+    the terms and to the text searched. The cache stores the folded title, path and value names (schema v5), since
+    folding every row in a Python SQL function per read measured 10–30× slower (a rare word at 30k resources: 864 ms
+    against 44 ms).
+    `type` and a `folder`'s root label fold ASCII only (SQLite's `NOCASE`); the path beneath the root
     folds as the filesystem does (`os.path.normcase`), the rule Roots navigates by — so `folder:lib/FÖLDER` finds
     `Földer` on Windows and not on Linux, where `folder:lib/G03` does not find `g03`. The **status line** totals what
     the model holds, never what a row's `None` hides: the size and the image count each say how many rows they leave

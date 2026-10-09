@@ -672,7 +672,7 @@ def test_the_filter_finds_each_images_page_under_its_group(qtbot: QtBot) -> None
     **Test steps:**
 
     * construct a real ``MainWindow``
-    * filter by a Sidecar Names (screenshot patterns) term, then by a Sidecar Extensions term
+    * filter by a Sidecar Names (screenshot patterns) term, then by a quoted Sidecar Extensions phrase
     * verify each time the visible tree is the "Images" row with exactly that one child
     """
     window = MainWindow()
@@ -693,7 +693,8 @@ def test_the_filter_finds_each_images_page_under_its_group(qtbot: QtBot) -> None
     dialog_ui.filter_edit.setText("sidecar image name patterns")
     assert visible_titles(QModelIndex()) == ["Images", "Sidecar Names"]
 
-    dialog_ui.filter_edit.setText("sidecar image extensions")
+    # quoted: as bare words they are all on the Sidecar Names page too (its help text mentions extensions)
+    dialog_ui.filter_edit.setText('"sidecar image extensions"')
     assert visible_titles(QModelIndex()) == ["Images", "Sidecar Extensions"]
 
 

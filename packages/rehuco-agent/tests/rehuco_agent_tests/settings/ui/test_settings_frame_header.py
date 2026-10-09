@@ -131,7 +131,7 @@ def test_the_buttons_are_flagged_as_neither_settings_nor_captions(qtbot: QtBot) 
         assert button.property(ActionButtonColumn.NOT_A_CAPTION_PROPERTY) is True
     frame_filter = SettingsFrameFilter(page, "Videos")
 
-    assert frame_filter.field_labels() == ["duration probe"]
+    assert frame_filter.field_labels() == ["Duration probe"]
     header.reset_action.setChecked(True)  # a checkable flip on the action, were the button counted
     assert frame_filter.dirty_frames() == []
     edit.setText("changed")

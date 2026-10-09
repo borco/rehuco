@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Final, override
 
 import humanize
+from borco_core import TextMatcher
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, QPersistentModelIndex, QSortFilterProxyModel, Qt
 from rehuco_core import ConversionBackups
 
@@ -268,12 +269,8 @@ class ConversionBackupsTableModel(QAbstractTableModel):
 
 
 class ConversionBackupsFilterProxyModel(QSortFilterProxyModel):
-    """Shows only rows whose text columns contain the filter text, case-insensitive (#193).
-
-    A plain-substring match, the same shape
-    :class:`~rehuco_agent.dialogs.tc_conversion_plan_table_model.TcConversionPlanFilterProxyModel` uses
-    and for the same reason: a regex round trip through Qt's own fixed-string filter would need
-    un-escaping :meth:`set_filter_text`'s plain text back out of it to match against.
+    """Shows only rows whose text columns match the filter text (#193): every word found in one of them, a quoted
+    run as one phrase, case and accents ignored -- :class:`~borco_core.TextMatcher`, as every search box (#475).
 
     Typing a flag's own word (:data:`TIE_BREAK_FLAG`) is how the review pass is reached, which is why
     the Flags column is one of the columns matched rather than a separate control.
@@ -283,27 +280,27 @@ class ConversionBackupsFilterProxyModel(QSortFilterProxyModel):
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
-        self.__filter_text = ""
+        self.__matcher = TextMatcher()
 
     def set_filter_text(self, text: str) -> None:
         """Update the filter text and re-evaluate every row.
 
         :param text: the text to match the resource, converted, backups, flags and outcome columns
-            against, case-insensitively.
+            against.
         """
-        self.__filter_text = text
+        self.__matcher = TextMatcher.of(text)
         # invalidateFilter() is deprecated in this Qt version; invalidate() is the non-deprecated
         # equivalent, and this proxy never overrides lessThan so it costs nothing extra here.
         self.invalidate()
 
     @override
     def filterAcceptsRow(self, source_row: int, source_parent: ModelIndex) -> bool:  # noqa: N802  (Qt API name)
-        if not self.__filter_text:
+        if not self.__matcher:
             return True
         model = self.sourceModel()
-        needle = self.__filter_text.lower()
-        return any(
-            needle
-            in str(model.data(model.index(source_row, column, source_parent), Qt.ItemDataRole.DisplayRole)).lower()
-            for column in TEXT_COLUMNS
+        return self.__matcher.matches(
+            *(
+                str(model.data(model.index(source_row, column, source_parent), Qt.ItemDataRole.DisplayRole))
+                for column in TEXT_COLUMNS
+            )
         )
