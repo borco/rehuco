@@ -394,24 +394,40 @@ practice mode is deferred ([[reference-images#practice-sessions]]).
   preview, and a Roots row or the picture in its details pane — or **Copy** (Ctrl+C, a toolbar button, the context menu)
   on the grid and in a lightbox, hands another app two things at once: a **byte-identical copy** staged in the
   app's cache folder (`staged/`), and the decoded pixels. File-aware apps (Explorer, Finder, PureRef, GIMP, Krita,
-  Blender) take the file; bitmap-only ones take the pixels. An archive member has no file of its own and a loose
-  image's name says nothing of where it came from, so the copy is named
-  `rehu-<origin>__<path segments joined by __>` — the image's path relative to its record, an archive a segment of its
-  own: `foo.zip/bar/a.jpg` becomes `rehu-<uuid>__foo.zip__bar__a.jpg`. The origin is the record's id; a record with
-  none (a `.tc`, an old `.rehu`) is named by its location folder, or a file-scoped record by its stem; in the Roots
-  view, an image no record manages is named by its folder. `parse_staged_name` reads the origin and the path back, and
-  tells an id from a location by its shape. Names are capped at 200 UTF-8 bytes, shortening the folders between the
-  origin and the basename first and never the id. **The bytes are never changed** — no EXIF, XMP or PNG text — so a
-  copy found later in a board or a downloads folder stays identifiable by its content hash even once renamed. The
-  drag is a copy and nothing else, so a file manager never moves the staged file away; staged files outlive the drop
-  and a paste hours later, a re-export of the same image reuses its file, and files unused for seven days are pruned
-  when the app starts. **In a lightbox the drag starts on the picture** while the whole image is in view; once the
-  viewer can zoom, a zoomed-in image pans under the same gesture instead.
-  **A record's own screenshots are not taken back in.** The Images dock declines a drop whose image *is* one of that
-  record's screenshots — the original of a drag out of this app (carried beside the staged copy), or the dropped file
-  itself from a file manager — and acquires anything else: an image out of the pack (the way to make screenshots
-  when the originals are gone), another record's screenshot even from the same folder (`info01.jpg` dropped on
-  `foo.rehu` makes `foo01.jpg`), a file from anywhere. In a multi-file drop only the record's own are left out.
+  Blender) take the file; bitmap-only ones take the pixels.
+  - **The name says where the image came from.** An archive member has no file of its own and a loose image's name says
+    nothing of its resource, so the copy is named `rehu-<origin>__<path segments joined by __>` — the image's path
+    relative to its record, an archive a segment of its own: `foo.zip/bar/a.jpg` becomes
+    `rehu-<uuid>__foo.zip__bar__a.jpg`. The origin is the record's id; a record with none (a `.tc`, an old `.rehu`) is
+    named by its location folder, or a file-scoped record by its stem. `parse_staged_name` reads the origin and the path
+    back, and tells an id from a location by its shape. Names are capped at 200 UTF-8 bytes, shortening the folders
+    between the origin and the basename first, then a location origin, and only last the basename's stem (its extension
+    kept); an id is never shortened.
+  - **In the Roots view, with no document open,** an image is named by the record that manages it — the id the catalog
+    cache holds for that record, else its location as above — with its path relative to that record's folder, so a
+    pack's image exported from the Roots lightbox and from the document carries the same name. An image no record
+    manages is named by its folder. The lightbox's info box reads relative to the same folder.
+  - **The bytes are never changed** — no EXIF, XMP or PNG text — so a copy found later in a board or a downloads folder
+    stays identifiable by its content hash even once renamed. The drag is a copy and nothing else, so a file manager
+    never moves the staged file away; staged files outlive the drop and a paste hours later, a re-export of the same
+    image reuses its file, and files unused for seven days are pruned when the app starts.
+  - **In a lightbox the drag starts on the picture**, not the backdrop beside it, so a double-click still closes the
+    viewer. That holds while the whole image is in view: once the viewer can zoom, a zoomed-in image **pans** under the
+    same gesture instead, and is dragged out from its thumbnail or by Copy (`ImageLightbox.drag_enabled` is where that
+    answer goes).
+  - **A record's own screenshots are not taken back in.** The Images dock declines a drop whose image *is* one of that
+    record's screenshots — the original of a drag out of this app (carried beside the staged copy), or the dropped file
+    itself from a file manager — and acquires anything else: an image out of the pack (the way to make screenshots
+    when the originals are gone), another record's screenshot even from the same folder (`info01.jpg` dropped on
+    `foo.rehu` makes `foo01.jpg`), a file from anywhere. In a multi-file drop only the record's own are left out.
+  - **Limitations, accepted.** Two records with **no id** that share a location name — `Pack/info.tc` under two roots —
+    stage the same file name, so exporting one image of each with the same path makes the later replace the earlier's
+    staged file, and a paste of the first then delivers the second's bytes. A root's id would not fix it for a record
+    opened from outside every root; converting the `.tc` gives it an id, which ends it. And the drop guard compares
+    paths after `normcase` and `abspath` only: a screenshot dropped from a file manager under another spelling of the
+    same file — through a symlink, a mapped drive versus its UNC path, an 8.3 short name, or a macOS name in another
+    Unicode normalization — is not recognized, and is acquired as a duplicate. A drag out of this app is never
+    affected, since it carries the scanner's own path.
 - **Pinterest-like search** — a fuzzy text box; empty text picks a random starting image. Clicking an image
   shows it large together with similar images, so browsing is a walk through neighbourhoods rather than a
   result list. "Similar" needs no model at query time (the embeddings are stored); text needs the encoder or

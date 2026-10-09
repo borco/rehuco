@@ -279,6 +279,11 @@ blocks **21 s**, the connection attempt 0.3 s), and only a server that answered 
 daemon threads, so neither the start nor the quit waits for a dead mount. *Gone* is forgotten; *offline* is kept, shown
 disabled, and asked again next run.
 
+*Limitation, accepted:* a session document kept open because its share was off is matched against what the user opens
+by hand by its **resolved** path, while the session stores the path as it was opened. A path whose resolved form
+changed between runs — a mapped drive now reached through its UNC path, a folder moved behind a symlink — is not
+matched, so a document the user opened and then closed by that other spelling comes back open at the next start.
+
 Deployment note: mount the shares **soft / with short timeouts** so failed syscalls return an error quickly rather than
 hanging. Hard mounts defeat this discipline and should be avoided for swarm storage.
 
