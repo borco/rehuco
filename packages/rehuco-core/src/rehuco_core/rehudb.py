@@ -876,7 +876,7 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
                 "ON CONFLICT (key) DO UPDATE SET value = excluded.value",
                 (FOLD_STAMP_KEY, fold(FOLD_PROBE)),
             )
-        LOG.info("Wrote the catalog cache's folded search columns again: another fold wrote them.")
+        LOG.info("Wrote the catalog cache's folded search columns: another fold wrote them, or none had yet.")
 
     @classmethod
     def __migrate(cls, connection: sqlite3.Connection, version: int, chain: SchemaChain) -> None:
