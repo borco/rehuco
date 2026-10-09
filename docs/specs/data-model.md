@@ -809,7 +809,8 @@ The cache is the stdlib `sqlite3` module in rehuco-core, Qt-free, one connection
   never written, but discarded and rebuilt from the `.rehu` files, the reason logged. A step that adds columns
   keeps the rows but clears their stat signature, so they show the new columns empty rather than wrong and the
   next scan of any kind reads them again (v3, v4). A column derived from what the row already holds is filled by the
-  step itself instead (v5, the folded spellings).
+  step itself instead (v5, the folded spellings) -- and since those copies are only as good as `borco_core.fold`, a
+  change to `fold` needs a step of its own that refills them.
 - **Created with `PRAGMA auto_vacuum = INCREMENTAL`** (it must precede the first table), so removing a root —
   whose resources cascade away — returns its space with a cheap `PRAGMA incremental_vacuum` rather than a full
   `VACUUM` rewrite.

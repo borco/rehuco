@@ -3,7 +3,10 @@ diacritics are ignored both ways -- "jose" finds "José" and "José" finds "Jose
 
 Both sides go through :func:`fold`, the search terms and the text searched, so whichever spelling is typed or stored
 the two meet. A search box holds a :class:`TextMatcher` built from its text and asks it about each row; a database
-search registers :func:`fold` as a function and compares folded columns against folded terms.
+stores each searched text folded and compares those columns against folded terms.
+
+A stored folded copy is only as good as the :func:`fold` that wrote it: changing :func:`fold` needs a schema step that
+refills them (``rehuco_core.migrations.rehudb``, version 5 being the first).
 
 Words are separated by whitespace; a ``"..."`` run is one term, with ``\\"`` and ``\\\\`` its only escapes, and an
 unclosed quote runs to the end of the line.
