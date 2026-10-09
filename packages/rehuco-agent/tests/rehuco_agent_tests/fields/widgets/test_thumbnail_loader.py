@@ -80,6 +80,10 @@ class RecordingSource:
         del index
         return QSize()
 
+    def read(self, index: int) -> bytes | None:
+        """Nothing is stored -- these images only exist decoded."""
+        del index
+
     def load(self, index: int, max_height: int | None) -> QImage:
         """Wait at the gate, record the position, and return a small image -- or a null one."""
         self.started.set()

@@ -5,6 +5,7 @@
 # (same precedent as test_rehu_document_model.py, [[appendices.code-conventions]])
 # pylint: disable=too-many-lines
 
+import os
 from collections.abc import Callable, Hashable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,7 +22,14 @@ from borco_pyside.widgets import MessageBanner, MessageBannerRow, MessageBannerS
 from PySide6.QtCore import QByteArray, QEvent, QMimeData, QObject, Qt, Signal, SignalInstance
 from PySide6.QtGui import QAction, QColor, QDropEvent, QIcon
 from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QToolBar, QWidget
-from rehuco_core import IMAGE_EXTENSIONS, REFERENCE_IMAGES_PLUGIN, TaskQueue, backup_path, originals_to_back_up
+from rehuco_core import (
+    IMAGE_EXTENSIONS,
+    REFERENCE_IMAGES_PLUGIN,
+    TaskQueue,
+    backup_path,
+    originals_to_back_up,
+    staging_origin,
+)
 
 from ..app_logging import LOG_VIEW_ICON_RESOURCE, build_log_widget, shared_log_bridge
 from ..asking_deleter import AskingDeleter
@@ -31,6 +39,7 @@ from ..fields import FieldsTab, StatefulWidget
 from ..fields.type_field import type_label
 from ..fields.widgets import (
     CuratingImageLightbox,
+    ImageExporter,
     ImageLightbox,
     ImageSelector,
     ImageSource,
@@ -40,6 +49,7 @@ from ..fields.widgets import (
     TypeBadge,
     viewer_mode_for,
 )
+from ..fields.widgets.image_export import ORIGINAL_FILE_MIME
 from ..recycle_bin_deleter import configured_deleter
 from ..resource_events import ResourceEvents
 from ..scraping.image_pipeline import MIME_EXTENSIONS, ImageBytes
@@ -50,6 +60,7 @@ from ..settings.deletion_settings import DeletionKind
 from ..settings.excluded_files_settings import shared_excluded_files_settings
 from ..settings.image_viewer_settings import ImageViewerSettings, shared_image_viewer_settings
 from ..settings.logs_settings import shared_logs_settings
+from ..settings.persistent_settings import staging_folder
 from ..settings.reference_images_settings import shared_reference_images_settings
 from .checksum_actions import ChecksumActions
 from .checksum_view import ChecksumView
@@ -242,6 +253,15 @@ class ImageDropFilter(QObject):
        screenshots can be re-fetched from their source page (a redesign, a fixed link, a higher-resolution
        asset) without a scrape's fields or description touching the ``.rehu`` at all.
 
+    **A record's own screenshots are never acquired again** (#395). Dragging one -- from its strip, its images
+    editor, a lightbox, or a file manager -- onto its own Images dock would add a numbered copy of an image the set
+    already holds. A drop is declined when the file it really is -- the original a drag out of this app names
+    (:data:`~rehuco_agent.fields.widgets.image_export.ORIGINAL_FILE_MIME`), else the dropped file itself -- is one of
+    the screenshots this record's scanner lists: in its folder, and named as *its* screenshots are. Anything else is
+    acquired as before: an image out of the pack's archive, a screenshot of **another** record (including one beside
+    this one in the same folder), a file from anywhere. Decided once per drag, when it enters, so a drag over the dock
+    does not read the folder at every move.
+
     **A link and an image are told apart by extension, not by drop shape.** Both reach Qt as a plain
     ``text/uri-list`` URL with nothing else distinguishing them ([[acquisition-tooling#drop-source-url]],
     §15.1.1), so the one signal available is the URL's own path -- a recognized image suffix takes case
@@ -260,6 +280,9 @@ class ImageDropFilter(QObject):
         super().__init__()
         self.__image_downloads: Final = image_downloads
         self.__model: Final = model
+        self.__own: frozenset[str] | None = None
+        """This record's own screenshots, as they stood when the drag over the dock entered it (#395), by their
+        normalized paths; ``None`` before any drag has."""
 
     @override
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802 (Qt override)
@@ -277,7 +300,13 @@ class ImageDropFilter(QObject):
         if self.__model.locked or self.__model.path is None:
             return False
         data = drop_event.mimeData()
+        if event.type() == QEvent.Type.DragEnter or self.__own is None:
+            self.__own = self.__own_screenshots()
         local_files = self.__local_files(data)
+        if self.__is_own_drag(data, local_files):
+            drop_event.ignore()
+            return True
+        local_files = [file for file in local_files if self.__path_key(file) not in self.__own]
         image_bytes = None if local_files else self.__image_bytes(data)
         drop = None if local_files or image_bytes is not None else UrlDrop.parse(data)
         if not local_files and image_bytes is None and drop is None:
@@ -294,6 +323,39 @@ class ImageDropFilter(QObject):
                 else:
                     self.__image_downloads.submit_page(drop)
         return True
+
+    @staticmethod
+    def __path_key(path: Path) -> str:
+        """A path as screenshots are compared by: absolute, and in the file system's own case rules.
+
+        :param path: the file.
+        :returns: the key.
+        """
+        return os.path.normcase(os.path.abspath(path))
+
+    def __own_screenshots(self) -> frozenset[str]:
+        """The files this record's scanner lists as its screenshots, numbered or pattern-matched (#395).
+
+        :returns: their keys; empty with no scanner.
+        """
+        scanner = self.__model.image_scanner
+        return frozenset(self.__path_key(path) for path in scanner.files()) if scanner is not None else frozenset()
+
+    def __is_own_drag(self, data: QMimeData, local_files: list[Path]) -> bool:
+        """Whether a drag is of nothing but this record's own screenshots, so a drop would only duplicate them (#395).
+
+        A drag out of this app names the file the image really is (:data:`ORIGINAL_FILE_MIME`), because the file it
+        carries is a staged copy; any other drag is judged by the files it carries. A multi-file drop that holds one
+        of them and something else is not declined: the other files are acquired, and this one left out.
+
+        :param data: the drag's mime data.
+        :param local_files: the recognized image files it carries.
+        :returns: whether it is to be declined.
+        """
+        own = self.__own or frozenset()
+        if data.hasFormat(ORIGINAL_FILE_MIME):
+            return self.__path_key(Path(bytes(data.data(ORIGINAL_FILE_MIME).data()).decode())) in own
+        return bool(local_files) and all(self.__path_key(file) in own for file in local_files)
 
     @staticmethod
     def __local_files(data: QMimeData) -> list[Path]:
@@ -511,6 +573,10 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         grid and every lightbox row it opens. Per document rather than per surface, so a thumbnail the
         grid decoded is the one the lightbox's row paints."""
 
+        self.__image_exporter: Final = ImageExporter(staging_folder(), self.__staging_origin, self.__record_folder)
+        """What stages an image dragged or copied out of this document (#395) -- from the Content Images grid and
+        from every lightbox it opens, named by this resource whichever surface it left from."""
+
         self.__viewer_follows_curation = True
         """Whether an open maximized viewer is showing the **curated** set, and so is re-pointed when
         that set changes (#161) -- as opposed to a folder's images from the Files sub-dock (#266), which
@@ -575,6 +641,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         # a clicked screenshot opens maximized here, not in the field that reported it: only this layer
         # knows the document the viewer belongs to, and it is the one that reads the user's surface
         # preference (#160)
+        self.__form.connect_image_export(self.__image_exporter)
         self.__form.connect_image_activations(self.__on_image_activated, self.__on_curated_images_changed)
         # and a screenshot double-clicked in the images editor, over every row of it (#370)
         self.__form.connect_image_curations(self.__on_curation_viewer_requested, self.__on_curation_rows_changed)
@@ -1311,6 +1378,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         # their connection as they are collected (Qt severs a dead QObject sender's connections).
         self.__form.connect_status_messages(self.status_message)
         self.__form.connect_filter_requests(self.filter_requested)
+        self.__form.connect_image_export(self.__image_exporter)
         self.__form.connect_image_activations(self.__on_image_activated, self.__on_curated_images_changed)
         self.__form.connect_image_curations(self.__on_curation_viewer_requested, self.__on_curation_rows_changed)
         editor_min_heights = {EDITOR_IMAGES_TAB: IMAGES_DOCK_MIN_HEIGHT}
@@ -1654,6 +1722,24 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         images = self.__curated_images if path in self.__curated_images else [path]
         self.__open_image_viewer(self.__path_source(images), images.index(path))
 
+    def __record_folder(self) -> Path | None:
+        """The folder this document's record sits in -- what an image file taken out is named relative to (#395).
+
+        :returns: the folder; ``None`` while the document has no path.
+        """
+        path = self.__model.path
+        return path.parent if path is not None else None
+
+    def __staging_origin(self) -> str:
+        """What an image taken out of this document is named by: its id, else where its record is (#395).
+
+        Asked at every export, so a record saved for the first time, or renamed, since the document opened is
+        named as it is now.
+
+        :returns: the origin, as :func:`rehuco_core.staging_origin` says.
+        """
+        return staging_origin(self.__model.document.id, self.__model.path)
+
     def __path_source(self, images: list[Path]) -> PathImageSource:
         """An image source over ``images`` that names each relative to this document's directory.
 
@@ -1744,6 +1830,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
             info_visible=settings.lightbox_info_visible,
             backdrop=QColor(settings.lightbox_backdrop),
             double_click_closes=settings.lightbox_double_click_closes,
+            exporter=self.__image_exporter,
         )
         self.__image_viewer = viewer
         # cleared on both paths: dismissal (which hides it before Qt gets round to deleting it) and
@@ -2250,6 +2337,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
             min_height=settings.content_rows_min_height,
             max_height=settings.content_rows_max_height,
             flags=self.__content_display_flags(),
+            exporter=self.__image_exporter,
         )
         view.set_previews_visible(settings.previews_visible)
         view.image_activated.connect(self.__on_content_image_activated)

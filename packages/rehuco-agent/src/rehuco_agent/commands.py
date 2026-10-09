@@ -96,6 +96,16 @@ REFRESH_CONTENT_IMAGES: Final = Command(
     DOCUMENT,
     "content_images",
 )
+COPY_IMAGE: Final = Command(
+    "images.copy",
+    "Copy image",
+    "Copy the selected or shown image, to paste it into another app",
+    (QKeySequence.StandardKey.Copy,),
+    # focused-only on purpose: app-wide, it would take Ctrl+C from every text field
+    (CommandScope.DOCUMENT_FOCUSED,),
+    # armed on the Content Images grid and on a lightbox, never both, and on no text field
+    "images",
+)
 COMPLETE_IMAGES: Final = Command(
     "document.description.complete_images",
     "Complete image names",
@@ -142,6 +152,7 @@ COMMANDS: Final = (
     MAXIMIZE_DOCK,
     REFRESH_FILES,
     REFRESH_CONTENT_IMAGES,
+    COPY_IMAGE,
     COMPLETE_IMAGES,
     CONVERT_SCREENSHOT,
     TOGGLE_SCREENSHOT_VISIBILITY,

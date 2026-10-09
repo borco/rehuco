@@ -11,6 +11,7 @@ from pytest import LogCaptureFixture, fixture, raises
 from pytest_mock import MockerFixture
 from rehuco_agent.app import APP_ID, Application, leave_launch_directory, run
 from rehuco_agent.linux_registration import DESKTOP_FILE_NAME
+from rehuco_agent.settings.persistent_settings import STAGED_IMAGES_MAX_AGE, staging_folder
 
 FAKE_PATH: Final = "/fake/tutorials/sculpting/info.rehu"
 FAKE_HOME: Final = Path("/fake/home")
@@ -233,6 +234,32 @@ def test_run_marks_a_forwarder_and_never_becomes_primary(mocker: MockerFixture, 
     run_log.become_forwarder.assert_called_once_with()
     run_log.become_primary.assert_not_called()
     run_log.watch.assert_not_called()
+
+
+def test_only_the_primary_prunes_the_staged_images(mocker: MockerFixture, run_log: MagicMock) -> None:
+    """The images staged for other apps are pruned once per start, by the process that stays (#395): a forwarding
+    launch must not delete what the running one has just staged.
+
+    **Test steps:**
+
+    * run as a forwarder, then as the primary, with the prune watched
+    * verify it ran once, over the staging folder with the seven-day age
+    """
+    del run_log
+    mocker.patch("rehuco_agent.app.Application")
+    singleton_cls = mocker.patch("rehuco_agent.app.ApplicationSingleton")
+    prune = mocker.patch("rehuco_agent.app.prune_staged")
+
+    singleton_cls.return_value.setup.return_value = False
+    run(["rehuco-agent"])
+    prune.assert_not_called()
+    singleton_cls.return_value.setup.return_value = True
+    run(["rehuco-agent"])
+
+    prune.assert_called_once()
+    folder, age, _now = prune.call_args.args
+    assert folder == staging_folder()
+    assert age == STAGED_IMAGES_MAX_AGE
 
 
 def test_run_marks_the_primary_and_watches_the_application(mocker: MockerFixture, run_log: MagicMock) -> None:

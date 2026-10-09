@@ -673,7 +673,9 @@ explicitly:
   `foo/001.jpg` in a reference pack is plain content.
 - **Content images inside a reference-image zip** — part of the **monolithic, immutable, checksummed resource**, exactly
   like a tutorial's video files. The app never edits these. Refreshing such a zip is a deliberate, manual, out-of-band
-  action that also requires manually refreshing its checksum; it is not done through this app.
+  action that also requires manually refreshing its checksum; it is not done through this app. An image dragged or
+  copied out to another app is a byte-identical copy staged in the app's cache folder, never a change to the zip
+  ([[reference-images#modes]]).
 
 The reference-images plugin's per-image tags and redaction overlays ([[plugins#refimages-plugin]]) describe *content
 images inside the zip* but are stored as **app-managed mutable metadata alongside `.rehu`/screenshots**, keyed to images

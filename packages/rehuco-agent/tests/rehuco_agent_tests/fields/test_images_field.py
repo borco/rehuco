@@ -2,17 +2,18 @@
 
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Qt, Signal, SignalInstance
+from PySide6.QtCore import QObject, QPoint, Qt, Signal, SignalInstance
 from PySide6.QtWidgets import QTreeView, QVBoxLayout, QWidget
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields.image_scanner import ScreenshotSet
-from rehuco_agent.fields.widgets import ImageSelector, ImageStrip
-from rehuco_agent.fields.widgets.image_selector import CHECK_COLUMN, ScreenshotListModel
+from rehuco_agent.fields.widgets import ImageExporter, ImageSelector, ImageStrip
+from rehuco_agent.fields.widgets.image_selector import CHECK_COLUMN, NAME_COLUMN, ScreenshotListModel
 from rehuco_agent.fields.widgets.image_strip import ThumbnailLabel
 
 from rehuco_agent_tests.fields.field_testers import ImagesFieldTester as ImagesField
+from rehuco_agent_tests.fields.widgets.test_image_dragging import press_and_drag
 from rehuco_agent_tests.screenshot_pictures import decodable_screenshots
 
 PATHS = [Path("/fake/info00.jpg"), Path("/fake/info01.png"), Path("/fake/info02.gif")]
@@ -447,3 +448,40 @@ def test_the_editor_reads_the_folder_once_as_it_is_built(
 
     qtbot.addWidget(editor)
     assert scanner.screenshots.call_count == 1  # type: ignore[attr-defined]
+
+
+def test_the_exporter_the_owner_hands_over_reaches_the_strip_and_the_editor(
+    mocker: MockerFixture, qtbot: QtBot, model: RehuDocumentModel
+) -> None:
+    """A field given an exporter (`ImageExportable`, #395) builds its strip and its editor already holding it, so a
+    thumbnail dragged out of either reaches it.
+
+    **Test steps:**
+
+    * hand the field an exporter, then build its viewer and its editor
+    * press-and-move a strip thumbnail and an editor row
+    * verify the exporter was asked to drag a screenshot from each
+    """
+    decodable_screenshots(mocker)
+    field = make_field(mocker)
+    exporter = mocker.Mock(spec=ImageExporter)
+    field.set_image_exporter(exporter)
+    host = QWidget()
+    qtbot.addWidget(host)
+    strip = field.make_viewer(model.bind(field)).viewer
+    selector = field.make_editor(model.bind(field)).editor
+    assert isinstance(strip, ImageStrip)
+    assert isinstance(selector, ImageSelector)
+    strip.setParent(host)
+    selector.setParent(host)
+    host.resize(400, 600)
+    host.show()
+    qtbot.waitExposed(host)
+    label = strip.findChildren(ThumbnailLabel)[0]
+    view = selector.findChild(QTreeView)
+    assert isinstance(view, QTreeView)
+
+    press_and_drag(label, QPoint(3, 3))
+    press_and_drag(view.viewport(), view.visualRect(view.model().index(0, NAME_COLUMN)).center())
+
+    assert exporter.drag_path.call_count == 2

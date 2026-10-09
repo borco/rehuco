@@ -4,6 +4,7 @@
 
 import logging
 import os
+import time
 from pathlib import Path
 from typing import Final, override
 
@@ -22,6 +23,7 @@ from borco_pyside.widgets import (
     MessageBannerSeverity,
     MessageBannerSeverityStyle,
 )
+from rehuco_core import prune_staged
 
 from . import main_rc  # noqa: F401  # pylint: disable=unused-import  # registers :/icons/... resources
 from .app_logging import shared_log_bridge
@@ -29,7 +31,7 @@ from .fields.colors import ERROR_COLOR, INFO_COLOR, WARNING_COLOR
 from .linux_registration import DESKTOP_FILE_NAME
 from .main_window import MainWindow
 from .run_log import shared_run_log
-from .settings.persistent_settings import persistent_settings
+from .settings.persistent_settings import STAGED_IMAGES_MAX_AGE, persistent_settings, staging_folder
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -235,6 +237,8 @@ def run(argv: list[str]) -> int:
             return exit_code
         run_log.become_primary()
         run_log.watch(app)
+        # the primary alone: a second launch only forwards, and must not delete what the running one just staged
+        prune_staged(staging_folder(), STAGED_IMAGES_MAX_AGE, time.time())
 
         def open_forwarded(paths: list[str]) -> None:
             """Bring this instance forward, then open whatever it was handed.

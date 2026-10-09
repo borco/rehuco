@@ -2,6 +2,7 @@
 
 import logging
 from collections.abc import Sequence
+from datetime import timedelta
 from pathlib import Path
 from typing import Final
 
@@ -53,6 +54,23 @@ def cache_folder() -> Path:
         LOG.warning("No cache location is known on this host; the cache goes under the config folder.")
         return config_folder() / "cache"
     return Path(base) / ORGANIZATION_NAME / APPLICATION_NAME
+
+
+STAGED_IMAGES_FOLDER_NAME: Final = "staged"
+"""The cache subfolder an image dragged or copied out of the app is staged in (#395)."""
+
+STAGED_IMAGES_MAX_AGE: Final = timedelta(days=7)
+"""How long a staged image is kept after its last use: long enough for a paste days after the copy, short enough
+that the folder never grows into a second library."""
+
+
+def staging_folder() -> Path:
+    """Where an image taken out of the app is staged -- under :func:`cache_folder`, since every file there is
+    rebuildable and local ([[reference-images#modes]]).
+
+    :returns: the folder. Not created by this call; ``stage_image`` makes it.
+    """
+    return cache_folder() / STAGED_IMAGES_FOLDER_NAME
 
 
 def read_stored_strings(value: object) -> tuple[str, ...]:

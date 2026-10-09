@@ -36,6 +36,7 @@ from PySide6.QtCore import (
     QModelIndex,
     QObject,
     QPersistentModelIndex,
+    QRect,
     QRunnable,
     Qt,
     QThreadPool,
@@ -60,6 +61,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QSizePolicy,
     QSplitter,
+    QStyle,
     QTreeView,
     QVBoxLayout,
     QWidget,
@@ -73,6 +75,7 @@ from ...item_action_icons import apply_action_column_icons
 from ...recycle_bin_deleter import configured_deleter
 from ..image_organizer import ImageOrganizer
 from ..image_scanner import AfterConversion, ImageScanner, ScreenshotSet
+from .image_export import ImageExporter, PressTracker
 from .image_source import ImageVisibility
 
 LOG: Final = logging.getLogger(__name__)
@@ -183,6 +186,19 @@ class PreviewLabel(QLabel):
         """
         self.__source = pixmap
         self.__rescale()
+
+    def image_rect(self) -> QRect:
+        """Where the scaled image is drawn, in the label's coordinates -- the part of it that is picture rather than
+        margin (#395).
+
+        :returns: the image's rect; an empty one with no image.
+        """
+        pixmap = self.pixmap()
+        if pixmap.isNull():
+            return QRect()
+        return QStyle.alignedRect(
+            self.layoutDirection(), self.alignment(), pixmap.deviceIndependentSize().toSize(), self.contentsRect()
+        )
 
     def __rescale(self) -> None:
         """Repaint the source pixmap scaled to fit the label, or clear when there is none."""
@@ -967,6 +983,8 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes,
         self.__stashed_state: bytes | None = None
         # which selection the preview's decode answers (#381): the latest wins, an earlier one is dropped
         self.__preview_serial = 0
+        self.__exporter: ImageExporter | None = None
+        self.__press: Final = PressTracker()
 
         self.__preview_pane: Final = QWidget()
         overlay = QGridLayout(self.__preview_pane)
@@ -1033,12 +1051,7 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes,
         self.__list_model.dataChanged.connect(self.__on_data_changed)
         self.__list.selectionModel().currentChanged.connect(self.__on_current_changed)
         self.__list.doubleClicked.connect(self.__on_double_clicked)
-        # the preview is a passive label, so its double-click is caught here rather than subclassed in:
-        # the same label class paints the maximized viewer, where a double-click means something else
-        self.__preview.installEventFilter(self)
-        # the list too: a curating key its action is not taking must not fall through to the view's own
-        # handling -- a bare C would otherwise type-ahead to the first row starting with "c" (#370)
-        self.__list.installEventFilter(self)
+        self.__watch_widgets()
         self.screenshots_changed.connect(self.rows_changed)
         self.image_scanner_changed.connect(lambda _scanner: self.__refresh())  # type: ignore[attr-defined]
         self.image_organizer_changed.connect(lambda _organizer: self.__apply_organizer())  # type: ignore[attr-defined]
@@ -1048,6 +1061,19 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes,
         self.current_index_changed.connect(self.__apply_row_actions)
         self.screenshots_changed.connect(self.__apply_row_actions)
         self.__apply_organizer()
+
+    def __watch_widgets(self) -> None:
+        """Filter the events of the widgets this editor reacts to for itself.
+
+        The preview is a passive label, so its double-click is caught here rather than subclassed in: the same label
+        class paints the maximized viewer, where a double-click means something else. The list too: a curating key
+        its action is not taking must not fall through to the view's own handling -- a bare C would otherwise
+        type-ahead to the first row starting with "c" (#370). And the list's viewport, where a row is pressed: that is
+        where an image is dragged out of it (#395).
+        """
+        self.__preview.installEventFilter(self)
+        self.__list.installEventFilter(self)
+        self.__list.viewport().installEventFilter(self)
 
     def __make_visibility_action(self) -> QAction:
         """Build the action Space fires on the list: the current row's check box, from the keyboard (#370).
@@ -1328,6 +1354,8 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes,
         :returns: ``True`` for a swallowed key; ``False`` otherwise, the double-click being observed
             rather than consumed.
         """
+        if isinstance(event, QMouseEvent) and self.__exporter is not None and watched is not self.__list:
+            self.__track_drag(watched, event)
         if (
             watched is self.__preview
             and event.type() == QEvent.Type.MouseButtonDblClick
@@ -1344,6 +1372,44 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes,
         ):
             return True
         return super().eventFilter(watched, event)
+
+    def set_exporter(self, exporter: ImageExporter | None) -> None:
+        """Let a screenshot be dragged out of the preview or the list as a file and as pixels (#395).
+
+        :param exporter: what stages an image taken out; ``None`` for no drag.
+        """
+        self.__exporter = exporter
+
+    def __track_drag(self, watched: QObject, event: QMouseEvent) -> None:
+        """Start dragging a screenshot out of the preview, or out of the list row it was pressed on, once the pointer
+        has moved far enough from the press (#395). Only observes: the press, the selection and the double-click
+        behave as they always did.
+
+        :param watched: the preview or the list's viewport.
+        :param event: the mouse event.
+        """
+        viewport = self.__list.viewport()
+        exporter = self.__exporter
+        paths = self.__list_model.paths()
+        match event.type():
+            case QEvent.Type.MouseButtonPress:
+                if watched is viewport:
+                    index = self.__list.indexAt(event.position().toPoint())
+                    row = index.row() if index.isValid() else -1
+                else:
+                    row = self.current_index
+                self.__press.press(event, row if 0 <= row < len(paths) else None)
+            case QEvent.Type.MouseMove:
+                pressed = self.__press.moved(event)
+                if isinstance(pressed, int) and exporter is not None:
+                    row = pressed
+                    cell = self.__list.visualRect(self.__list_model.index(row, NAME_COLUMN))
+                    picture = self.__preview.pixmap() if watched is self.__preview else viewport.grab(cell)
+                    exporter.drag_path(self.__preview if watched is self.__preview else viewport, paths[row], picture)
+            case QEvent.Type.MouseButtonRelease:
+                self.__press.release()
+            case _:
+                pass
 
     def __is_curating_key(self, event: QKeyEvent) -> bool:
         """Whether ``event`` is one of Convert's or the toggle's keys, as the keymap has them now -- a

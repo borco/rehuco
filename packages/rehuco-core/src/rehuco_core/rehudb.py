@@ -352,7 +352,7 @@ def rehudb_path(cache_dir: Path, rehuco_id: UUID) -> Path:
     return cache_dir / f"{rehuco_id}{REHUDB_SUFFIX}"
 
 
-class CatalogCache:
+class CatalogCache:  # pylint: disable=too-many-public-methods
     """An open ``.rehudb``, current-version, on the thread that opened it.
 
     Built by :meth:`open`; closed by :meth:`close` or by leaving a ``with`` block.
@@ -587,6 +587,21 @@ class CatalogCache:
         """
         row = self.__connection.execute(
             "SELECT type FROM resources WHERE root_id = ? AND path_key = ?", (str(root_id), catalog_path_key(relative))
+        ).fetchone()
+        return None if row is None else row[0]
+
+    def resource_uuid(self, root_id: UUID, relative: str) -> str | None:
+        """The id a cached record carries, for the Roots view to name an image copied out of its resource (#395).
+
+        An indexed lookup like :meth:`resource_type`: nothing is read from disk.
+
+        :param root_id: the root.
+        :param relative: the record's root-relative path.
+        :returns: the id, ``""`` for a legacy record (which has none until converted), or ``None`` when no row holds
+            that path.
+        """
+        row = self.__connection.execute(
+            "SELECT uuid FROM resources WHERE root_id = ? AND path_key = ?", (str(root_id), catalog_path_key(relative))
         ).fetchone()
         return None if row is None else row[0]
 

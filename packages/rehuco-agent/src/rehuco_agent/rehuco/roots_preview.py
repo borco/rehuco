@@ -16,13 +16,14 @@ from PySide6.QtCore import (
     QLocale,
     QModelIndex,
     QPersistentModelIndex,
+    QPoint,
     QSize,
     Qt,
     QThreadPool,
     QUrl,
     Signal,
 )
-from PySide6.QtGui import QAction, QDesktopServices, QFont, QFontMetrics, QImage, QImageReader, QPalette
+from PySide6.QtGui import QAction, QDesktopServices, QFont, QFontMetrics, QImage, QImageReader, QPalette, QPixmap
 from PySide6.QtWidgets import QComboBox, QFrame, QLabel, QLineEdit, QSizePolicy, QToolButton, QWidget
 from rehuco_core import (
     ArchiveFacts,
@@ -35,6 +36,7 @@ from rehuco_core import (
 )
 
 from ..documents.files_rows import CHECKSUM_STATE_ICONS
+from ..fields.widgets.image_export import PressDragFilter
 from ..settings.image_viewer_settings import shared_image_viewer_settings
 from ..settings.markdown_rendering_settings import shared_markdown_rendering_settings
 from ..settings.reference_images_settings import shared_reference_images_settings
@@ -63,6 +65,10 @@ or ``None`` when it has none."""
 type PackForRow = Callable[[QModelIndex], PackInfo | None]
 """What the pane asks its owner for an archive row: whether it is a reference pack, and through which record; ``None``
 for a row that is not an archive."""
+
+type DragImage = Callable[[QModelIndex, QWidget, QPixmap], None]
+"""Drags an image row out to other apps (#395): the row, the widget the drag starts from, and the picture shown under
+the pointer. The owner knows what record manages the row."""
 
 THUMBNAIL_SIDE: Final = 320
 """The longest side, in pixels, an image's thumbnail is read at -- smaller ones are shown as they are."""
@@ -180,6 +186,7 @@ class RootsPreview(QWidget):
         record_for: RecordForRow | None = None,
         pack_for: PackForRow | None = None,
         parent: QWidget | None = None,
+        drag_image: DragImage | None = None,
     ) -> None:
         super().__init__(parent)
         self.__ui: Final = Ui_RootsPreview()
@@ -190,6 +197,7 @@ class RootsPreview(QWidget):
         self.__actions_for: Final = actions_for
         self.__record_for: Final = record_for
         self.__pack_for: Final = pack_for
+        self.__drag_image: Final = drag_image
         self.__index = QPersistentModelIndex()
         self.__serial = 0
         self.__location = ""
@@ -205,6 +213,7 @@ class RootsPreview(QWidget):
         self.archive_ready.connect(self.__on_archive, Qt.ConnectionType.QueuedConnection)
         self.__ui.url_value.linkActivated.connect(RootsPreview.__open_link)
         self.__setup_description()
+        PressDragFilter(self.__ui.image_label, self.__image_token, self.__on_image_drag)
         self.show_index(QModelIndex())
 
     @property
@@ -278,6 +287,27 @@ class RootsPreview(QWidget):
         """
         self.__ui.root_name_edit.setEnabled(editable)
         self.__ui.root_storage_combo.setEnabled(editable)
+
+    def __image_token(self, point: QPoint) -> object | None:
+        """What a press on the picture would drag: the row shown, while it is an image whose picture is up (#395).
+
+        :param point: where the press landed; unused, the whole picture being one thing.
+        :returns: the row, or ``None``.
+        """
+        del point
+        index = self.__shown()
+        shown = self.image is not None and index.isValid() and self.__model.file_type_of(index) is FileType.IMAGE
+        return QPersistentModelIndex(index) if shown else None
+
+    def __on_image_drag(self, token: object) -> None:
+        """Report that the picture was dragged away from (#395).
+
+        :param token: the row, as :meth:`__image_token` gave it.
+        """
+        del token
+        image = self.image
+        if image is not None and self.__drag_image is not None:
+            self.__drag_image(self.__shown(), self.__ui.image_label, QPixmap.fromImage(image))
 
     def __setup_description(self) -> None:
         """Make the description view the description dock's: its renderer and stylesheet, the scanner that finds its

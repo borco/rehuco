@@ -5,17 +5,19 @@ from pathlib import Path
 from typing import Final
 
 from PySide6.QtCore import QEvent, Qt
-from PySide6.QtGui import QColor, QImage
+from PySide6.QtGui import QColor, QGuiApplication, QImage
 from PySide6.QtWidgets import QApplication, QWidget
-from pytest import fixture
+from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.content_images.archive_cache import ArchiveCache
 from rehuco_agent.fields.widgets import ImageLightbox, ImageViewerMode
-from rehuco_agent.rehuco.roots_lightbox import EMPTY_PACK_MESSAGE, RootsLightbox
+from rehuco_agent.rehuco.roots_lightbox import EMPTY_PACK_MESSAGE, ImagesOwner, RootsLightbox
 from rehuco_core import RenameCoordinator
 
 WAIT_TIMEOUT_MS: Final = 10_000
+
+ID: Final = "0f8fad5b-d9cb-469f-a165-70867728950e"
 
 
 def picture(path: Path, width: int = 8) -> None:
@@ -259,3 +261,63 @@ def test_the_keys_held_at_the_activation_pick_the_surface_though_the_listing_lan
     qtbot.waitUntil(lambda: built.called, timeout=WAIT_TIMEOUT_MS)
 
     assert built.call_args.args[2] is ImageViewerMode.APP_WINDOW_OVERLAY
+
+
+def clipboard_names() -> list[str]:
+    """The file names the clipboard holds, cleared after reading.
+
+    :returns: the names, in order.
+    """
+    held = QGuiApplication.clipboard().mimeData()
+    assert held is not None
+    names = [Path(url.toLocalFile()).name for url in held.urls()]
+    QGuiApplication.clipboard().clear()
+    return names
+
+
+@mark.usefixtures("real_path_stat")
+def test_an_image_copied_out_of_a_pack_is_named_by_its_owner_and_its_path_under_the_record(
+    qtbot: QtBot, tmp_path: Path, lightbox: RootsLightbox
+) -> None:
+    """A pack a record manages is named as a document names it (#395): by the record's id, its path relative to the
+    record's folder, the archive a segment of its own -- which the info box reads too.
+
+    **Test steps:**
+
+    * open a zip in a subfolder of a resource, owned by the resource's record
+    * verify the image is described relative to the record's folder
+    * copy it and verify the staged name
+    """
+    resource = tmp_path / "Pack"
+    (resource / "sub").mkdir(parents=True)
+    pack = make_pack(resource / "sub" / "pack.zip", ("a.png",))
+
+    lightbox.open_archive(pack, ImagesOwner(ID, resource))
+    qtbot.waitUntil(lambda: lightbox.viewer is not None, timeout=WAIT_TIMEOUT_MS)
+    viewer = lightbox.viewer
+    assert viewer is not None
+
+    assert viewer.source.describe(0).path_text == "sub/pack.zip/a.png"
+    viewer.copy_current()
+    assert clipboard_names() == [f"rehu-{ID}__sub__pack.zip__a.png"]
+
+
+@mark.usefixtures("real_path_stat")
+def test_an_image_no_record_manages_is_named_by_its_folder(tmp_path: Path, lightbox: RootsLightbox) -> None:
+    """With no record over it, a loose image is named by the folder it sits in (#395).
+
+    **Test steps:**
+
+    * open a picture file with no owner and copy it
+    * verify the staged name is the folder's and the file's
+    """
+    (tmp_path / "Shots").mkdir()
+    image = tmp_path / "Shots" / "a.png"
+    picture(image)
+
+    lightbox.open_images([image], 0)
+    viewer = lightbox.viewer
+    assert viewer is not None
+    viewer.copy_current()
+
+    assert clipboard_names() == ["rehu-Shots__a.png"]

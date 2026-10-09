@@ -12,7 +12,8 @@ from PySide6.QtWidgets import QLabel
 from pytest import LogCaptureFixture, mark, param
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_core import CatalogCache, TaskQueue
+from rehuco_agent.rehuco.roots_lightbox import ImagesOwner
+from rehuco_core import CatalogCache, CatalogRecord, RecordKind, TaskQueue
 
 from .test_catalog_docks import (  # noqa: F401  # pylint: disable=unused-import
     REHUCO_PATH,
@@ -97,7 +98,8 @@ def test_a_pack_archive_opens_in_the_lightbox_and_offers_the_external_app_and_it
 
     roots.roots_view.doubleClicked.emit(pack)
 
-    opened.assert_called_once_with(folders / "my folder" / "pack.zip")
+    # named by its own record, which the cache has no id for until a scan: by the record's stem (#395)
+    opened.assert_called_once_with(folders / "my folder" / "pack.zip", ImagesOwner("pack", folders / "my folder"))
 
 
 @mark.usefixtures("served")
@@ -191,7 +193,8 @@ def test_an_image_opens_in_the_lightbox_with_the_images_beside_it(
     ]
     roots.roots_view.doubleClicked.emit(image)
 
-    opened.assert_called_once_with([folders / "my folder" / name for name in listed], listed.index("b.png"))
+    # no record manages a loose picture here, so the lightbox names it by its folder (#395)
+    opened.assert_called_once_with([folders / "my folder" / name for name in listed], listed.index("b.png"), None)
     assert sorted(listed) == ["a.jpg", "b.png", "c.png"]
 
 
@@ -279,7 +282,7 @@ def test_open_on_the_current_image_shows_it_in_the_lightbox(
 
     dock.roots.open_lightbox_action.trigger()
 
-    opened.assert_called_once_with([folders / "my folder" / name for name in listed], listed.index("c.png"))
+    opened.assert_called_once_with([folders / "my folder" / name for name in listed], listed.index("c.png"), None)
 
 
 @mark.usefixtures("served")
@@ -309,3 +312,59 @@ def test_the_catalog_says_a_records_type_from_its_cache_row(
     mocker.patch.object(CatalogCache, "resource_type", side_effect=sqlite3.OperationalError("locked"))
     assert dock.catalog.resource_type(record) is None
     assert "Could not read the type of" in caplog.text
+
+
+@mark.usefixtures("served")
+def test_the_catalog_says_a_records_id_from_its_cache_row(
+    mocker: MockerFixture, qtbot: QtBot, dock: CatalogDocks, queue: TaskQueue, caplog: LogCaptureFixture
+) -> None:
+    """The id is the scanned row's (#395): nothing before a catalog is open, nothing for a record not scanned or
+    outside every root, and a cache that cannot be read is logged and answers nothing.
+
+    **Test steps:**
+
+    * ask before opening, then open and scan a root holding a record with an id
+    * verify the record's id, none for an unscanned record and one outside the roots
+    * make the cache fail and verify the answer is none and the failure is logged
+    """
+    record = TUTORIALS / "python" / "info.rehu"
+    identifier = "0f8fad5b-d9cb-469f-a165-70867728950e"
+    assert dock.catalog.resource_uuid(record) is None
+    scanned = CatalogRecord("python/info.rehu", RecordKind.REHU, uuid=identifier, type="tutorial", content_hash="0")
+    scan_finding(mocker, {TUTORIALS: (scanned,)})
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    dock.roots.scan_action.trigger()
+    wait_for_jobs(qtbot, queue)
+
+    assert dock.catalog.resource_uuid(record) == identifier
+    assert dock.catalog.resource_uuid(TUTORIALS / "other" / "info.rehu") is None
+    assert dock.catalog.resource_uuid(Path("/elsewhere/info.rehu")) is None
+
+    mocker.patch.object(CatalogCache, "resource_uuid", side_effect=sqlite3.OperationalError("locked"))
+    assert dock.catalog.resource_uuid(record) is None
+    assert "Could not read the id of" in caplog.text
+
+
+@mark.usefixtures("served")
+def test_a_pack_under_a_scanned_record_is_named_by_the_records_id(
+    mocker: MockerFixture, qtbot: QtBot, dock: CatalogDocks, folders: Path
+) -> None:
+    """A zip under a folder's ``info.rehu`` is named by the id the cache holds for that record, its paths relative to
+    the record's folder (#395).
+
+    **Test steps:**
+
+    * make ``alpha/inner.zip`` a pack of ``alpha/info.rehu``, whose cache row carries an id, and double-click it
+    * verify the lightbox was asked for the zip, owned by that id and that folder
+    """
+    add_pack_files(folders)
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    identifier = "0f8fad5b-d9cb-469f-a165-70867728950e"
+    mocker.patch.object(dock.catalog, "resource_type", return_value="ReferenceImages")
+    mocker.patch.object(dock.catalog, "resource_uuid", return_value=identifier)
+    opened = mocker.patch.object(dock.roots.lightbox, "open_archive")
+    pack = open_root_folder(qtbot, dock, "alpha", "inner.zip")
+
+    dock.roots.roots_view.doubleClicked.emit(pack)
+
+    opened.assert_called_once_with(folders / "alpha" / "inner.zip", ImagesOwner(identifier, folders / "alpha"))

@@ -3,10 +3,14 @@
 A document's own lightbox lives inside its Documents dock and reads what that document's Content Images or Files
 sub-dock holds. Here there is no document: a double-click on a zip lists its images from the central directory, a
 double-click on an image takes the images beside it, and the same :class:`~..fields.widgets.ImageLightbox` shows them.
+
+An image copied or dragged out of it (#395) is named as one taken out of a document is: by the record that manages it
+-- its id, else its location -- and its path relative to that record; an image no record manages, by its folder.
 """
 
 import logging
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
@@ -18,6 +22,7 @@ from rehuco_core import ContentImageEntry, RenameCoordinator, list_archive_image
 from ..documents.content_images.archive_cache import ArchiveCache
 from ..documents.content_images.content_images_model import ArchiveImageSource
 from ..fields.widgets import (
+    ImageExporter,
     ImageLightbox,
     ImageSource,
     ImageViewerMode,
@@ -26,11 +31,33 @@ from ..fields.widgets import (
     viewer_mode_for,
 )
 from ..settings.image_viewer_settings import shared_image_viewer_settings
+from ..settings.persistent_settings import staging_folder
 from ..settings.reference_images_settings import shared_reference_images_settings
 
 LOG: Final = logging.getLogger(__name__)
 
 EMPTY_PACK_MESSAGE: Final = "{name} holds no images the lightbox can show."
+
+
+@dataclass(frozen=True, slots=True)
+class ImagesOwner:
+    """Whose images the lightbox shows, as an image copied out of it is named (#395).
+
+    :ivar origin: what the staged name says the images came from (:func:`rehuco_core.staging_origin`).
+    :ivar folder: what an image's path is named relative to -- the record's folder, as in a document.
+    """
+
+    origin: str
+    folder: Path
+
+    @classmethod
+    def folder_of(cls, file: Path) -> ImagesOwner:
+        """The owner of a file no record manages: its folder, by name.
+
+        :param file: the image or the archive.
+        :returns: the owner.
+        """
+        return cls(file.parent.name, file.parent)
 
 
 class ListingSignals(QObject):
@@ -108,24 +135,26 @@ class RootsLightbox(QObject):
         self.__generation = 0
         self.__viewer: ImageLightbox | None = None
         self.__strip_visible: bool | None = None
-        self.__pending_mode = ImageViewerMode.DOCUMENT_OVERLAY
-        """The surface the archive whose listing is out was asked for, read from the keys at the activation."""
+        self.__pending = (ImageViewerMode.DOCUMENT_OVERLAY, ImagesOwner("", Path()))
+        """The surface the archive whose listing is out was asked for, read from the keys at the activation, and
+        whose images it holds."""
 
     @property
     def viewer(self) -> ImageLightbox | None:
         """The viewer on screen, or ``None`` while there is none."""
         return self.__viewer
 
-    def open_archive(self, archive: Path) -> None:
+    def open_archive(self, archive: Path, owner: ImagesOwner | None = None) -> None:
         """Show the images of a zip, in pack order, starting on the first.
 
         The listing is read on the pool; a request overtaken by a newer one is dropped when it lands.
 
         :param archive: the zip or cbz.
+        :param owner: whose images they are; the zip's folder when ``None``.
         """
         self.__generation += 1
         # the keys are read now, at the activation: the listing lands later, when they are no longer held
-        self.__pending_mode = self.__mode()
+        self.__pending = (self.__mode(), owner if owner is not None else ImagesOwner.folder_of(archive))
         pool = QThreadPool.globalInstance()
         signals = ListingSignals(pool)
         signals.listed.connect(self.__on_listed)
@@ -134,14 +163,16 @@ class RootsLightbox(QObject):
         job.setAutoDelete(True)
         pool.start(job)
 
-    def open_images(self, images: Sequence[Path], start: int) -> None:
+    def open_images(self, images: Sequence[Path], start: int, owner: ImagesOwner | None = None) -> None:
         """Show loose image files, starting on one of them.
 
         :param images: the files, in the order to browse them; never empty, as the one asked for is among them.
         :param start: the position to open on.
+        :param owner: whose images they are; their folder when ``None``.
         """
         self.__generation += 1
-        self.__show(PathImageSource(images, images[0].parent), start, None, self.__mode())
+        owner = owner if owner is not None else ImagesOwner.folder_of(images[0])
+        self.__show(PathImageSource(images, owner.folder), start, None, self.__mode(), owner)
 
     @Slot(int, object, list)
     def __on_listed(self, generation: int, archive: Path, entries: list[ContentImageEntry]) -> None:
@@ -156,8 +187,9 @@ class RootsLightbox(QObject):
         if not entries:
             self.nothing_to_show.emit(EMPTY_PACK_MESSAGE.format(name=archive.name))
             return
+        mode, owner = self.__pending
         cache = ArchiveCache(self.__coordinator)
-        self.__show(ArchiveImageSource(entries, cache, archive.parent), 0, cache, self.__pending_mode)
+        self.__show(ArchiveImageSource(entries, cache, owner.folder), 0, cache, mode, owner)
 
     @staticmethod
     def __mode() -> ImageViewerMode:
@@ -168,13 +200,16 @@ class RootsLightbox(QObject):
         """
         return viewer_mode_for(QApplication.keyboardModifiers(), shared_image_viewer_settings().mode)
 
-    def __show(self, source: ImageSource, index: int, cache: ArchiveCache | None, mode: ImageViewerMode) -> None:
+    def __show(
+        self, source: ImageSource, index: int, cache: ArchiveCache | None, mode: ImageViewerMode, owner: ImagesOwner
+    ) -> None:
         """Build the viewer over a source, as the settings ask, replacing any open one.
 
         :param source: the images to navigate.
         :param index: where to start.
         :param cache: the archive handles the source reads through, closed with the viewer; ``None`` for files.
         :param mode: the surface to paint on, chosen when the viewer was asked for.
+        :param owner: whose images they are, as one copied out is named.
         """
         self.__close_viewer()
         settings = shared_image_viewer_settings()
@@ -190,6 +225,7 @@ class RootsLightbox(QObject):
             info_visible=settings.lightbox_info_visible,
             backdrop=QColor(settings.lightbox_backdrop),
             double_click_closes=settings.lightbox_double_click_closes,
+            exporter=ImageExporter(staging_folder(), lambda: owner.origin),
         )
         self.__viewer = viewer
         # the closure holds the cache itself: by the time `destroyed` fires the viewer's wrapper is gone, and the

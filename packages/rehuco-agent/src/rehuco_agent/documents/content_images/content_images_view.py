@@ -6,20 +6,25 @@ point here is geometry computed once, in one pass (`pack_rows`), and painted fro
 paints only the rows in the viewport, asks the `ThumbnailLoader` for exactly those thumbnails, and asks
 the model for the headers of the rows one screen ahead so the pack settles before they scroll in.
 
-Read-only, visibly so: no context menu, no drag. A single click **selects** one image (and a click on
-the selected one clears it); a double-click selects it and opens it maximized; a click on a banner
-collapses or expands the group under it. The path of the selected image -- or, with none selected, of the hovered
-one -- is reported through :attr:`ContentImagesView.status_changed` for the dock's status line.
+Read-only: nothing here changes the pack. A single click **selects** one image (and a click on the selected one
+clears it); a double-click selects it and opens it maximized; a click on a banner collapses or expands the group under
+it. The path of the selected image -- or, with none selected, of the hovered one -- is reported through
+:attr:`ContentImagesView.status_changed` for the dock's status line.
+
+An image **leaves the app** by a drag, or by **Copy** (``Ctrl+C``, the toolbar, the context menu) on the selected one
+(#395): another app receives a byte-identical copy staged under a name that says where it came from, and its pixels
+(:class:`~rehuco_agent.fields.widgets.image_export.ImageExporter`).
 """
 
 from collections import Counter
 from typing import Final, override
 
-from borco_pyside.theming import ActionIconThemeHandler
+from borco_pyside.theming import ActionIconThemeHandler, GlyphActionIconThemeHandler
 from borco_pyside.widgets.elided_label import ElidedLabel
 from PySide6.QtCore import QEvent, QPoint, QRect, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QAction,
+    QContextMenuEvent,
     QCursor,
     QKeyEvent,
     QMouseEvent,
@@ -29,11 +34,13 @@ from PySide6.QtGui import (
     QPalette,
     QResizeEvent,
 )
-from PySide6.QtWidgets import QAbstractScrollArea, QFrame, QToolBar, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QAbstractScrollArea, QApplication, QFrame, QMenu, QToolBar, QVBoxLayout, QWidget
 
-from ...commands import REFRESH_CONTENT_IMAGES, shared_command_registry
+from ...commands import COPY_IMAGE, REFRESH_CONTENT_IMAGES, shared_command_registry
+from ...fields.widgets.image_export import ImageExporter
 from ...fields.widgets.image_strip import THUMBNAIL_BORDER
 from ...fields.widgets.thumbnail_loader import ThumbnailLoader, thumbnail_cache_key
+from ...glyphs import COPY_ACTION_GLYPH
 from ..files_view import REFRESH_ICON_RESOURCE
 from .banners import ContentDisplayFlags, banner_rows, group_of
 from .content_images_model import ArchiveImageSource, ContentImagesModel
@@ -97,6 +104,7 @@ class ContentImagesView(QAbstractScrollArea):  # pylint: disable=too-many-instan
     :param max_height: the tallest flush row.
     :param flags: which boundaries are bannered; the defaults (banners on, a top folder named like its zip
         hidden) when ``None``.
+    :param exporter: what stages an image dragged or copied out (#395); with none, nothing leaves the grid.
     """
 
     image_activated = Signal(int)
@@ -118,10 +126,12 @@ class ContentImagesView(QAbstractScrollArea):  # pylint: disable=too-many-instan
         min_height: int = 140,
         max_height: int = 260,
         flags: ContentDisplayFlags | None = None,
+        exporter: ImageExporter | None = None,
     ) -> None:
         super().__init__(parent)
         self.__model: Final = model
         self.__loader: Final = loader
+        self.__exporter: Final = exporter
         self.__min_height = min_height
         self.__max_height = max_height
         self.__flags = flags if flags is not None else ContentDisplayFlags()
@@ -135,12 +145,25 @@ class ContentImagesView(QAbstractScrollArea):  # pylint: disable=too-many-instan
         self.__selected: int | None = None
         self.__hovered: int | None = None
         self.__swallow_release = False
+        self.__pressed: tuple[QPoint, int, ImageExporter] | None = None
+        """Where a left press landed on an image, which, and what stages it -- what a move past the drag distance
+        drags."""
+        self.__dragged = False
+        """Whether a drag started since the last press: the release that may follow is not a click."""
         self.__previews_visible = True
+        self.__copy_action: Final = QAction("&Copy", self)
+        GlyphActionIconThemeHandler(self.__copy_action, COPY_ACTION_GLYPH.codepoint, COPY_ACTION_GLYPH.family)
+        # scoped to this grid's own subtree, so Ctrl+C reaches it only once an image was clicked here
+        shared_command_registry().bind(
+            self.__copy_action, COPY_IMAGE.id, tooltip="Copy the selected image, to paste it into another app."
+        )
+        self.addAction(self.__copy_action)
+        self.__copy_action.setEnabled(False)
+        self.__copy_action.triggered.connect(self.copy_selected)
         self.setFrameShape(QFrame.Shape.NoFrame)
         # focus on a click, for the keyboard navigation: the arrows move the selection, +/- fold the
         # current group, ESC clears the selection
         self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
-        self.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         # the window's own background, not a text field's: this is a surface of images and labels,
@@ -184,6 +207,23 @@ class ContentImagesView(QAbstractScrollArea):  # pylint: disable=too-many-instan
     def selected(self) -> int | None:
         """The selected image's position, or ``None``."""
         return self.__selected
+
+    @property
+    def copy_action(self) -> QAction:
+        """Copies the selected image out of the app (``Ctrl+C``, #395); enabled while one is selected and there is
+        an exporter to stage it."""
+        return self.__copy_action
+
+    def copy_selected(self) -> None:
+        """Put the selected image on the clipboard, as a staged file and as pixels (#395).
+
+        Says so on the status line when the image cannot be read; does nothing with nothing selected.
+        """
+        index = self.__selected
+        if index is None or self.__exporter is None:
+            return
+        if not self.__exporter.copy(self.__source, index):
+            self.status_changed.emit(f"Could not copy {self.__source.describe(index).path_text}")
 
     @property
     def collapsed(self) -> frozenset[str]:
@@ -284,6 +324,7 @@ class ContentImagesView(QAbstractScrollArea):  # pylint: disable=too-many-instan
         if index == self.__selected:
             return
         self.__selected = index
+        self.__copy_action.setEnabled(index is not None and self.__exporter is not None)
         self.selection_changed.emit(index)
         self.__report_status()
         self.viewport().update()
@@ -542,13 +583,78 @@ class ContentImagesView(QAbstractScrollArea):  # pylint: disable=too-many-instan
         self.reveal(nearest)
 
     @override
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        """Remember a left press on an image: a move past the drag distance from it drags that image out (#395).
+
+        :param event: the Qt mouse event, forwarded to the base class.
+        """
+        super().mousePressEvent(event)
+        self.__dragged = False
+        self.__pressed = None
+        exporter = self.__exporter
+        if event.button() != Qt.MouseButton.LeftButton or exporter is None:
+            return
+        point = event.position().toPoint()
+        index = self.index_at(point)
+        if index is not None:
+            self.__pressed = (point, index, exporter)
+
+    @override
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
-        """Track the hovered image for the status line.
+        """Track the hovered image for the status line, and drag a pressed image out once the pointer has moved far
+        enough from the press (#395).
 
         :param event: the Qt mouse event, forwarded to the base class.
         """
         super().mouseMoveEvent(event)
-        self.__set_hovered(self.index_at(event.position().toPoint()))
+        point = event.position().toPoint()
+        self.__set_hovered(self.index_at(point))
+        pressed = self.__pressed
+        if pressed is None or not event.buttons() & Qt.MouseButton.LeftButton:
+            return
+        start, index, exporter = pressed
+        if (point - start).manhattanLength() >= QApplication.startDragDistance():
+            self.__drag(index, exporter)
+
+    def __drag(self, index: int, exporter: ImageExporter) -> None:
+        """Select an image and drag it out, as a staged file and as pixels; returns once it is dropped.
+
+        :param index: the image's position.
+        :param exporter: what stages it.
+        """
+        self.__pressed = None
+        self.__dragged = True
+        self.set_selected(index)
+        picture = self.viewport().grab(self.__cell_rect(index))
+        if not exporter.drag(self.viewport(), self.__source, index, picture):
+            self.status_changed.emit(f"Could not copy {self.__source.describe(index).path_text}")
+
+    def __cell_rect(self, index: int) -> QRect:
+        """Where an image is drawn, in viewport coordinates.
+
+        :param index: the image's position.
+        :returns: its cell; an empty rect before the first pack.
+        """
+        layout = self.__layout
+        x, y, w, h = layout.rects[index] if layout is not None else (0, 0, 0, 0)
+        return QRect(x, y - self.verticalScrollBar().value(), w, h)
+
+    @override
+    def contextMenuEvent(self, event: QContextMenuEvent) -> None:
+        """Offer **Copy** for the image under the pointer, selecting it first; nothing over a gap or a banner.
+
+        :param event: the Qt context-menu event, in viewport coordinates.
+        """
+        index = self.index_at(event.pos())
+        if index is None:
+            return
+        self.set_selected(index)
+        menu = QMenu(self)
+        try:
+            menu.addAction(self.__copy_action)
+            menu.exec(event.globalPos())
+        finally:
+            menu.deleteLater()
 
     @override
     def leaveEvent(self, event: QEvent) -> None:
@@ -566,12 +672,17 @@ class ContentImagesView(QAbstractScrollArea):  # pylint: disable=too-many-instan
 
         Release, not press, and only when the release lands where the press did -- the standard "this
         was a click, not a drag away" test. The release that ends a double-click is swallowed, or the
-        open would be followed by a stray toggle of the selection.
+        open would be followed by a stray toggle of the selection; so is one that ends a drag out.
 
         :param event: the Qt mouse event, forwarded to the base class.
         """
         super().mouseReleaseEvent(event)
         if event.button() != Qt.MouseButton.LeftButton:
+            return
+        self.__pressed = None
+        if self.__dragged:
+            # cleared by the next press too: a platform whose drag swallows the release never sends this one
+            self.__dragged = False
             return
         if self.__swallow_release:
             self.__swallow_release = False
@@ -764,6 +875,8 @@ class ContentImagesView(QAbstractScrollArea):  # pylint: disable=too-many-instan
         """
         self.__layout = None
         self.__source = self.__model.source
+        # a press on the old sequence names an image the new one may not hold
+        self.__pressed = None
         self.__collapsed.clear()
         self.__reveal_banner = None
         self.__reveal_index = None
@@ -823,6 +936,8 @@ class ContentImagesPanel(QWidget):
         self.__refresh_action.triggered.connect(self.refresh_requested)
         toolbar = QToolBar(self)
         toolbar.addAction(self.__refresh_action)
+        # the grid's own: its Ctrl+C is armed only while the grid has focus, never from a sibling of it
+        toolbar.addAction(view.copy_action)
         # elided to the dock's width -- a member path inside a deep archive can be far longer than
         # the dock is wide; the inset is the strip's, not the label's, so it elides to its real width
         self.__status: Final = ElidedLabel(self)

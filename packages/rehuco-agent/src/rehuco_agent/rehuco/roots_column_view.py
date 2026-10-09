@@ -1,12 +1,16 @@
 """The Roots view's column view (#378)."""
 
-from typing import override
+from typing import cast, override
 
 from borco_pyside.widgets import ReorderDrag
-from PySide6.QtCore import QModelIndex, QPersistentModelIndex, QPoint, Qt
+from PySide6.QtCore import QModelIndex, QPersistentModelIndex, QPoint, Qt, Signal
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QAbstractItemView, QColumnView, QWidget
+from rehuco_core import FileType
 
+from ..fields.widgets.image_export import PressDragFilter
 from .root_row_delegate import RootRowDelegate
+from .roots_folder_model import RootsFolderModel
 from .roots_grip import RootsGripFilter
 from .roots_item_delegate import RootsItemDelegate
 
@@ -21,8 +25,15 @@ class RootsColumnView(QColumnView):
     a file, whether it has a preview widget or not, and this view has a details pane of its own beside it that shows
     every row, a folder's and a root's too -- so that column is collapsed to nothing.
 
+    **An image row can be dragged out** (#395): a press on one that moves the drag distance reports it through
+    :attr:`image_drag_requested`, for the owner -- which knows what record manages the row -- to export.
+
     :param parent: optional Qt parent.
     """
+
+    image_drag_requested = Signal(QModelIndex, QWidget, QPixmap)
+    """``(row, widget, picture)``: an image row has been dragged away from; the widget is the one the drag starts
+    from and the picture is the row as drawn."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -35,6 +46,7 @@ class RootsColumnView(QColumnView):
         column = super().createColumn(index)
         if index.isValid():
             column.setItemDelegate(RootsItemDelegate(column))
+            self.__make_image_rows_draggable(column)
         else:
             # the first column lists the roots, which have a folder to show under their names, and are reordered by
             # a drag whose shadow the delegate paints and the grip filter moves
@@ -43,6 +55,29 @@ class RootsColumnView(QColumnView):
             RootsColumnView.__make_reorderable(column, drag)
         self.__collapse_preview_column()
         return column
+
+    def __make_image_rows_draggable(self, column: QAbstractItemView) -> None:
+        """Let a row of an image file in a column be dragged out to other apps (#395).
+
+        :param column: a column listing a folder's children.
+        """
+        viewport = column.viewport()
+
+        def image_row_at(point: QPoint) -> object | None:
+            index = column.indexAt(point)
+            model = column.model()
+            is_image = (
+                index.isValid() and isinstance(model, RootsFolderModel) and model.file_type_of(index) is FileType.IMAGE
+            )
+            return QPersistentModelIndex(index) if is_image else None
+
+        def start(token: object) -> None:
+            # a row removed since the press comes back invalid, and the owner turns an invalid row away
+            held = cast(QPersistentModelIndex, token)
+            row = column.model().index(held.row(), held.column(), held.parent())
+            self.image_drag_requested.emit(row, viewport, viewport.grab(column.visualRect(row)))
+
+        PressDragFilter(viewport, image_row_at, start)
 
     @staticmethod
     def __make_reorderable(column: QAbstractItemView, drag: ReorderDrag) -> None:

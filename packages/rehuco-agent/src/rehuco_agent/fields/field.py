@@ -3,11 +3,14 @@
 import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, Final, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Final, Protocol, runtime_checkable
 
 from borco_pyside.core import ConnectionList
 from PySide6.QtCore import SignalInstance
 from PySide6.QtWidgets import QLabel, QWidget
+
+if TYPE_CHECKING:
+    from .widgets.image_export import ImageExporter
 
 
 @dataclass
@@ -226,6 +229,22 @@ class ImageActivator(Protocol):  # pylint: disable=too-few-public-methods
     including the first time it is populated. An activation names *where* to start; this is what lets
     the owner's viewer keep following the same live set afterwards rather than the snapshot it opened
     on (#161)."""
+
+
+@runtime_checkable
+class ImageExportable(Protocol):  # pylint: disable=too-few-public-methods
+    """A field whose images can be **dragged out of the app** (#395) -- the ``images`` strip and screenshots editor.
+
+    The owner-routes-it shape once more: the field draws the thumbnails and notices the drag, the owner
+    (`DocumentSubDocks`) knows the document the images belong to and how an image taken out is named and staged
+    (:meth:`FieldsForm.connect_image_export`).
+    """
+
+    def set_image_exporter(self, exporter: ImageExporter | None) -> None:
+        """Take what stages an image dragged out of this field's widgets -- before they are built.
+
+        :param exporter: the owner's exporter; ``None`` for no drag.
+        """
 
 
 @runtime_checkable
