@@ -105,6 +105,7 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         self.__queue: Final = queue
         self.__rename_coordinator: Final = rename_coordinator
         self.__events: Final = resource_events
+        self.__listening_to_events = resource_events is not None
         self.__file: RehucoFile | None = None
         self.__cache: CatalogCache | None = None
         self.__load_error = ""
@@ -196,9 +197,13 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
 
     def detach(self) -> None:
         """Stop listening to the queue and the file announcements, and let the open file go -- the docks hear
-        :attr:`closing` -- before the window goes ([[appendices.task-queue#teardown]])."""
+        :attr:`closing` -- before the window goes ([[appendices.task-queue#teardown]]).
+
+        Safe to call again: a window closed twice (the tray's hide, then a quit) detaches twice, and the second time
+        there is nothing left to disconnect."""
         self.__queue.remove_listener(self)
-        if self.__events is not None:
+        if self.__events is not None and self.__listening_to_events:
+            self.__listening_to_events = False
             self.__events.moved.disconnect(self.__on_moved)
             self.__events.changed.disconnect(self.__on_files_changed)
         self.__release_session()

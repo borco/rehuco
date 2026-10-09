@@ -33,6 +33,8 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ### Changed
 
+- `LogFilterModel.search` matches every word of the search, in any order, a `"quoted run"` as one phrase, ignoring case
+  and diacritics (`borco_core.TextMatcher`), where it matched the whole text as one case-insensitive substring.
 - The current card of a card list is no longer filled and outlined in the selection colour: it is painted like any
   other card, and its add and delete buttons, shown for as long as it is current, are its only mark. `CardStyle`
   ships no `CURRENT` state and `CardStyle.style_for` takes the card's states alone; a flagged card shows its state's

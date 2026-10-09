@@ -295,7 +295,7 @@ def test_a_list_editors_frame_still_matches_its_own_real_caption(qtbot: QtBot) -
 
 
 def test_field_labels_gathers_each_frames_caption_text(qtbot: QtBot) -> None:
-    """``field_labels`` returns one gathered (lowercased) caption string per frame, for the tree filter.
+    """``field_labels`` returns one gathered caption string per frame, as shown, for the tree filter.
 
     **Test steps:**
 
@@ -305,7 +305,7 @@ def test_field_labels_gathers_each_frames_caption_text(qtbot: QtBot) -> None:
     page, _ = make_page(qtbot, [["Engine", "CSS"], ["Maximum image width"]])
     frame_filter = SettingsFrameFilter(page, "Markdown Rendering")
 
-    assert frame_filter.field_labels() == ["engine css", "maximum image width"]
+    assert frame_filter.field_labels() == ["Engine CSS", "Maximum image width"]
 
 
 # region frame-level dirty tracking (#77)

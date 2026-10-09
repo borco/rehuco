@@ -24,8 +24,8 @@ FAKE_PATH: Path = Path("/fake/rehuco-agent.log")
 
 
 def build_run_log() -> RunLog:
-    """A fresh `RunLog` over a settings object nobody else shares, and a path nothing on disk answers
-    to (the fixtures below patch or naturally hit a missing file, never a real one).
+    """A fresh `RunLog` over a settings object nobody else shares, and a path never touched on disk: the
+    autouse :func:`patch_filesystem` stands in for every file the log reads or writes.
 
     :returns: the run log, not started.
     """
@@ -37,11 +37,21 @@ def patch_filesystem(mocker: MockerFixture) -> None:
     """Every test in this file starts a `RunLog` at least once; none of them means to create a real
     directory or write a real record -- the handler's own file is stood in for, the same way
     ``test_shared_rotating_file_handler.py`` stands in for it at the handler level alone.
+
+    The sentinel too, by default (#475): no leftover one is read, writing it does nothing, reopening it for
+    ``faulthandler`` fails quietly (so the real ``faulthandler`` is never pointed anywhere), and removing it
+    succeeds. A test about one of those patches it again. Before, they reached the disk under ``/fake`` and
+    passed only while ``C:\\fake`` did not exist.
     """
     mocker.patch.object(Path, "mkdir")
     stream = mocker.MagicMock()
     stream.tell.return_value = 0  # keeps a rotating handler from ever thinking it's past maxBytes
     mocker.patch.object(SharedRotatingFileHandler, "_open", return_value=stream)
+    mocker.patch.object(Path, "read_text", side_effect=FileNotFoundError)
+    mocker.patch("rehuco_agent.run_log.atomic_write_text")
+    mocker.patch.object(Path, "open", side_effect=OSError)
+    mocker.patch.object(Path, "unlink")
+    mocker.patch("rehuco_agent.run_log.faulthandler.enable")
 
 
 # region construction and live limits
@@ -456,9 +466,7 @@ def test_a_sentinel_write_failure_is_logged_not_raised(mocker: MockerFixture, ca
 def test_no_leftover_sentinel_stays_quiet(mocker: MockerFixture, caplog: LogCaptureFixture) -> None:
     """The ordinary case -- the last run exited cleanly and removed its own sentinel -- says nothing.
 
-    ``FAKE_PATH``'s folder genuinely does not exist, so reading the sentinel fails with
-    ``FileNotFoundError`` without needing to be mocked, the same convention `test_checksum_trust_store.py`
-    uses for a fake, never-created path.
+    :func:`patch_filesystem` reads no sentinel: the read fails with ``FileNotFoundError``.
 
     **Test steps:**
 

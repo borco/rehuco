@@ -134,6 +134,11 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 ### Changed
 
+- **Searching matches every word, in any order, and ignores accents.** In a table browser's filter line, `blender
+  intro` now finds "Intro to Blender", with each word in the title or the path; type `"intro to"` in quotes to find
+  the phrase. Case and diacritics are ignored both ways — `jose` finds "José" and `José` finds "Jose" — in the free
+  text and in `authors:`, `tags:` and `publishers:` values. The search boxes of Settings, Shortcuts, the log and the
+  `.tc` conversion and backups dialogs match the same way.
 - **The open documents and the window and dock layouts are kept in files of their own, not the `.ini`.** The
   `.ini` had grown to about 40 KB, most of it layout data. The session is now `document-session.json`, the
   window `main-window.json`, and the default layouts `layouts/default_layout.json` and `layouts/preview_layout.json`,

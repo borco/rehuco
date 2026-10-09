@@ -6,17 +6,17 @@ from rehuco_agent.rehuco.filter_line import format_token, parse_filter, with_tok
 from rehuco_core import CatalogField, CatalogQuery
 
 
-def test_free_text_only_is_the_query_text_with_its_words_joined_by_one_space() -> None:
-    """Words that are not tokens make up the free text, however they were spaced.
+def test_free_text_only_is_one_term_per_word() -> None:
+    """Words that are not tokens are free-text terms, one each, however they were spaced.
 
     **Test steps:**
 
     * parse two words with extra whitespace around and between them
-    * verify the query's text joins them with one space, with no tokens or problems
+    * verify the query holds them as two terms, with no tokens or problems
     """
     parsed = parse_filter("  blender    intro ")
 
-    assert parsed.query == CatalogQuery("blender intro")
+    assert parsed.query == CatalogQuery(("blender", "intro"))
     assert (parsed.problems, parsed.tokens) == ((), ())
 
 
@@ -29,7 +29,7 @@ def test_each_field_token_compiles_to_its_catalog_field(field: CatalogField) -> 
     * parse ``<field>:value`` for each field
     * verify the query carries that field and value, and no free text
     """
-    assert parse_filter(f"{field.value}:value").query == CatalogQuery("", ((field, "value"),))
+    assert parse_filter(f"{field.value}:value").query == CatalogQuery((), ((field, "value"),))
 
 
 def test_tokens_only_leave_no_free_text() -> None:
@@ -42,7 +42,7 @@ def test_tokens_only_leave_no_free_text() -> None:
     """
     parsed = parse_filter("type:tutorial tags:python")
 
-    assert parsed.query == CatalogQuery("", ((CatalogField.TYPE, "tutorial"), (CatalogField.TAGS, "python")))
+    assert parsed.query == CatalogQuery((), ((CatalogField.TYPE, "tutorial"), (CatalogField.TAGS, "python")))
 
 
 def test_free_text_and_tokens_mix_in_any_order() -> None:
@@ -55,7 +55,7 @@ def test_free_text_and_tokens_mix_in_any_order() -> None:
     """
     parsed = parse_filter("intro authors:Foo course")
 
-    assert parsed.query == CatalogQuery("intro course", ((CatalogField.AUTHORS, "Foo"),))
+    assert parsed.query == CatalogQuery(("intro", "course"), ((CatalogField.AUTHORS, "Foo"),))
 
 
 def test_a_quoted_value_keeps_its_spaces_and_unescapes_quotes_and_backslashes() -> None:
@@ -77,10 +77,10 @@ def test_quoted_free_text_is_one_phrase() -> None:
     **Test steps:**
 
     * parse a quoted phrase, then an empty quoted run beside a word
-    * verify the phrase is the query's text, and the empty run adds nothing
+    * verify the phrase is one term, and the empty run adds none
     """
-    assert parse_filter('"blender  intro"').query == CatalogQuery("blender  intro")
-    assert parse_filter('"" intro').query == CatalogQuery("intro")
+    assert parse_filter('"blender  intro"').query == CatalogQuery(("blender  intro",))
+    assert parse_filter('"" intro').query == CatalogQuery(("intro",))
 
 
 def test_an_unclosed_quote_runs_to_the_end_of_the_line() -> None:
@@ -133,7 +133,7 @@ def test_an_unknown_field_is_reported_and_the_rest_still_applies() -> None:
     parsed = parse_filter("intro colour:red type:tutorial")
 
     assert parsed.problems == ('Unknown field "colour"',)
-    assert parsed.query == CatalogQuery("intro", ((CatalogField.TYPE, "tutorial"),))
+    assert parsed.query == CatalogQuery(("intro",), ((CatalogField.TYPE, "tutorial"),))
 
 
 def test_a_token_with_no_value_yet_is_ignored_without_a_word() -> None:
@@ -160,7 +160,7 @@ def test_a_columns_word_typed_now_is_an_unknown_field() -> None:
     """
     parsed = parse_filter("columns:title type:tutorial")
 
-    assert parsed.query == CatalogQuery("", ((CatalogField.TYPE, "tutorial"),))
+    assert parsed.query == CatalogQuery((), ((CatalogField.TYPE, "tutorial"),))
     assert parsed.problems == ('Unknown field "columns"',)
 
 

@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Final
 from uuid import uuid4
 
+from borco_core import fold
 from pytest import LogCaptureFixture, fixture, mark, raises
 from pytest_mock import MockerFixture
 from rehuco_core import (
@@ -35,7 +36,7 @@ from rehuco_core import (
     rehudb_path,
 )
 from rehuco_core.migrations.rehudb import CHAIN, CURRENT_VERSION
-from rehuco_core.rehudb import BUSY_TIMEOUT_MS
+from rehuco_core.rehudb import BUSY_TIMEOUT_MS, FOLD_PROBE
 
 CACHE_PATH: Final = Path("/fake/cache/rehuco.rehudb")
 
@@ -679,6 +680,151 @@ def test_a_version_3_cache_upgrades_with_no_format_version_and_stale(
 
 # endregion
 
+# region The folded columns follow fold
+
+
+def folded_columns(database: MemoryDatabase) -> tuple[object, object, object]:
+    """What the first resource's folded title and path, and the first author's folded name, are, read raw."""
+    return (
+        database.scalar("SELECT folded_title FROM resources"),
+        database.scalar("SELECT folded_path FROM resources"),
+        database.scalar("SELECT folded FROM authors"),
+    )
+
+
+def one_record_cache(cache: CatalogCache) -> None:
+    """Fill ``cache`` with one accented resource and author."""
+    rehuco, first, _ = two_roots()
+    cache.reconcile_roots(rehuco.roots)
+    cache.apply_root_scan(first.root_id, [record("Caf\u00e9/info.rehu", title="Caf\u00e9", authors=("Jos\u00e9",))])
+
+
+def test_a_new_cache_remembers_the_fold_that_writes_it(database: MemoryDatabase, cache: CatalogCache) -> None:
+    """The fingerprint is there from the first open, and the columns are written with that fold (#475).
+
+    **Test steps:**
+
+    * create a cache and store an accented resource
+    * verify the file keeps what the probe folds to, and the folded columns hold the folded text
+    """
+    one_record_cache(cache)
+
+    assert database.scalar("SELECT value FROM cache_meta WHERE key = 'fold'") == fold(FOLD_PROBE)
+    assert folded_columns(database) == ("cafe", "cafe/info.rehu", "jose")
+
+
+def test_a_cache_written_by_another_fold_is_written_again_from_the_real_columns(
+    database: MemoryDatabase, cache: CatalogCache
+) -> None:
+    """A fingerprint that is not today's means the folded columns cannot be trusted: they are rebuilt (#475).
+
+    **Test steps:**
+
+    * store a resource, then ruin its folded columns and stamp the file with another fingerprint
+    * reopen the cache
+    * verify the columns hold the folded text again, the fingerprint is today's, and a search finds the row
+    """
+    one_record_cache(cache)
+    database.keeper.execute("UPDATE resources SET folded_title = 'x', folded_path = 'x'")
+    database.keeper.execute("UPDATE authors SET folded = 'x'")
+    database.keeper.execute("UPDATE cache_meta SET value = 'another fold'")
+    cache.close()
+
+    with CatalogCache.open(CACHE_PATH) as reopened:
+        assert titles(reopened, CatalogQuery(("cafe",), ((CatalogField.AUTHORS, "JOSE"),))) == ["Caf\u00e9"]
+
+    assert folded_columns(database) == ("cafe", "cafe/info.rehu", "jose")
+    assert database.scalar("SELECT value FROM cache_meta WHERE key = 'fold'") == fold(FOLD_PROBE)
+
+
+def test_a_cache_written_by_this_fold_is_not_touched_on_open(database: MemoryDatabase, cache: CatalogCache) -> None:
+    """The check is one read: a file with today's fingerprint keeps its columns as they are, however they look.
+
+    **Test steps:**
+
+    * store a resource and alter a folded column by hand, leaving the fingerprint alone
+    * reopen the cache
+    * verify the altered column is still altered
+    """
+    one_record_cache(cache)
+    database.keeper.execute("UPDATE resources SET folded_title = 'untouched'")
+    cache.close()
+
+    CatalogCache.open(CACHE_PATH).close()
+
+    assert database.scalar("SELECT folded_title FROM resources") == "untouched"
+
+
+def test_an_edit_to_fold_rewrites_the_columns_on_the_next_open(
+    database: MemoryDatabase, cache: CatalogCache, mocker: MockerFixture
+) -> None:
+    """Changing how folding works needs no migration or version bump: the probe folds differently, so the file is
+    written again (#475).
+
+    **Test steps:**
+
+    * store an accented resource, then reopen under a fold that also upper-cases
+    * verify the columns hold the new fold's text
+    """
+    one_record_cache(cache)
+    cache.close()
+    mocker.patch("rehuco_core.rehudb.fold", side_effect=lambda text: text.upper())
+
+    CatalogCache.open(CACHE_PATH).close()
+
+    assert folded_columns(database) == ("CAF\u00c9", "CAF\u00c9/INFO.REHU", "JOS\u00c9")
+
+
+def test_a_cache_upgraded_from_before_the_folded_columns_gets_them_filled(
+    memory: Callable[[], MemoryDatabase], mocker: MockerFixture
+) -> None:
+    """The version-5 step only adds empty columns; the open that follows fills them from the stored rows (#475).
+
+    **Test steps:**
+
+    * build a version-4 cache holding an accented resource
+    * reopen it with the full chain
+    * verify the stamp is current and a search for the unaccented spelling finds the row
+    """
+    database = memory()
+    mocker.patch("rehuco_core.rehudb.sqlite3.connect", side_effect=database.connect)
+    mocker.patch.object(Path, "mkdir", autospec=True)
+    rehuco, first, _ = two_roots()
+    with CatalogCache.open(CACHE_PATH, chain=CHAIN[:4]) as old:
+        old.reconcile_roots(rehuco.roots)
+        database.keeper.execute(
+            "INSERT INTO resources (root_id, path, path_key, kind, title, mtime_ns, size, content_hash, scanned_at) "
+            "VALUES (?, 'a/info.rehu', 'a/info.rehu', 'rehu', 'Caf\u00e9', 42, 7, 'abc', 0)",
+            (str(first.root_id),),
+        )
+
+    with CatalogCache.open(CACHE_PATH) as upgraded:
+        assert upgraded.schema_version == CURRENT_VERSION
+        assert titles(upgraded, CatalogQuery(("cafe",))) == ["Caf\u00e9"]
+
+
+def test_a_refill_another_process_finished_while_this_one_waited_is_not_done_twice(
+    database: MemoryDatabase, cache: CatalogCache, mocker: MockerFixture
+) -> None:
+    """The fingerprint is read again once the write lock is held (#475).
+
+    **Test steps:**
+
+    * ruin a folded column, then reopen with the check answering "stale" before the lock and "current" after it
+    * verify the column was not rewritten
+    """
+    one_record_cache(cache)
+    database.keeper.execute("UPDATE resources SET folded_title = 'untouched'")
+    cache.close()
+    mocker.patch.object(CatalogCache, "_CatalogCache__fold_is_current", side_effect=[False, True])
+
+    CatalogCache.open(CACHE_PATH).close()
+
+    assert database.scalar("SELECT folded_title FROM resources") == "untouched"
+
+
+# endregion
+
 # region Targeted updates
 
 TUTORIALS: Final = Path("D:/tutorials")
@@ -1000,15 +1146,89 @@ def test_every_row_comes_back_in_root_order(library: CatalogCache) -> None:
 
 def test_free_text_matches_title_or_path_case_insensitively(library: CatalogCache) -> None:
     """Free text is a substring of either."""
-    assert titles(library, CatalogQuery("RIG")) == ["Rigging"]
-    assert titles(library, CatalogQuery("zbrush")) == ["Sculpt_1"]
+    assert titles(library, CatalogQuery(("RIG",))) == ["Rigging"]
+    assert titles(library, CatalogQuery(("zbrush",))) == ["Sculpt_1"]
+
+
+def test_free_text_terms_all_match_in_any_order(library: CatalogCache) -> None:
+    """``foo bar`` is every word, not the phrase (#475); a term may be in the title and another in the path.
+
+    **Test steps:**
+
+    * read with two words in the other order, with a phrase that is not there, and with a title word and a path word
+    * verify the words match, the phrase does not, and the split match finds its row
+    """
+    assert titles(library, CatalogQuery(("rig", "blender"))) == ["Rigging"]
+    assert not titles(library, CatalogQuery(("rig blender",)))
+    assert titles(library, CatalogQuery(("donut", "blender"))) == ["Donut 100%"]
+    assert not titles(library, CatalogQuery(("donut", "zbrush")))
+
+
+def test_free_text_and_values_ignore_diacritics_both_ways(cache: CatalogCache) -> None:
+    """ "jose" finds "José" and "José" finds "Jose", for a title and an author alike, an NFD title and ``ß`` (#475).
+
+    **Test steps:**
+
+    * store resources with accented, decomposed and ``ß`` titles and authors
+    * verify plain and accented terms find them, and an accented author token finds the plain spelling
+    """
+    rehuco, first, _ = two_roots()
+    cache.reconcile_roots(rehuco.roots)
+    cache.apply_root_scan(
+        first.root_id,
+        [
+            record("a/info.rehu", title="Café José", authors=("José",)),
+            record("b/info.rehu", title="Cafe Jose", authors=("Jose",)),
+            record("c/info.rehu", title="Résumé"),
+            record("d/info.rehu", title="Straße"),
+        ],
+    )
+
+    assert titles(cache, CatalogQuery(("jose",))) == ["Café José", "Cafe Jose"]
+    assert titles(cache, CatalogQuery(("JOSÉ", "cafe"))) == ["Café José", "Cafe Jose"]
+    assert titles(cache, CatalogQuery(("resume",))) == ["Résumé"]
+    assert titles(cache, CatalogQuery(("strasse",))) == ["Straße"]
+    assert titles(cache, CatalogQuery(tokens=((CatalogField.AUTHORS, "jose"),))) == ["Café José", "Cafe Jose"]
+    assert titles(cache, CatalogQuery(tokens=((CatalogField.AUTHORS, "JOSÉ"),))) == ["Café José", "Cafe Jose"]
+
+
+def test_a_fullwidth_percent_in_a_term_is_not_a_wildcard(cache: CatalogCache) -> None:
+    """``％`` folds to ``%``, and is escaped after folding so it stays a character (#475).
+
+    **Test steps:**
+
+    * store a title with a percent and one without, search with the fullwidth percent
+    * verify only the title holding a percent matches
+    """
+    rehuco, first, _ = two_roots()
+    cache.reconcile_roots(rehuco.roots)
+    cache.apply_root_scan(first.root_id, [record("a/info.rehu", title="50% off"), record("b/info.rehu", title="500")])
+
+    assert titles(cache, CatalogQuery(("0％",))) == ["50% off"]
+
+
+def test_a_moved_row_keeps_its_folded_path(library: CatalogCache) -> None:
+    """A rewritten path is searchable by its new name, not its old one (#475).
+
+    **Test steps:**
+
+    * rescan a root with a record at a path that differs only in how it is spelled, and leave another unchanged
+    * verify free text finds the new spelling and the unchanged row's path
+    """
+    first = library.roots()[0]
+    library.apply_root_scan(
+        first.root_id, [record("blender/donut/info.rehu", title="Donut 100%")], unchanged=("zbrush/info.rehu",)
+    )
+
+    assert titles(library, CatalogQuery(("zbrush",))) == ["Sculpt_1"]
+    assert titles(library, CatalogQuery(("donut",))) == ["Donut 100%"]
 
 
 def test_free_text_takes_like_wildcards_literally(library: CatalogCache) -> None:
     """``%`` and ``_`` are characters a title can hold, not patterns a reader meant."""
-    assert titles(library, CatalogQuery("0%")) == ["Donut 100%"]
-    assert titles(library, CatalogQuery("t_1")) == ["Sculpt_1"]
-    assert not titles(library, CatalogQuery("_ig"))
+    assert titles(library, CatalogQuery(("0%",))) == ["Donut 100%"]
+    assert titles(library, CatalogQuery(("t_1",))) == ["Sculpt_1"]
+    assert not titles(library, CatalogQuery(("_ig",)))
 
 
 def test_a_value_token_matches_one_value_whole_and_case_insensitively(library: CatalogCache) -> None:
@@ -1110,7 +1330,7 @@ def test_a_token_on_its_own_reads_resources_through_an_index_never_a_scan(
 
 def test_tokens_and_text_must_all_match(library: CatalogCache) -> None:
     """Every condition narrows."""
-    query = CatalogQuery("o", ((CatalogField.AUTHORS, "Ann"), (CatalogField.TAGS, "3d")))
+    query = CatalogQuery(("o",), ((CatalogField.AUTHORS, "Ann"), (CatalogField.TAGS, "3d")))
 
     assert titles(library, query) == ["Donut 100%"]
 

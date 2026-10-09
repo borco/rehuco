@@ -47,8 +47,10 @@ from types import TracebackType
 from typing import Final, Self
 from uuid import UUID
 
+from borco_core import fold
+
 from .constants import REHUDB_SUFFIX
-from .migrations.rehudb import BASE_VERSION, CHAIN, SchemaChain
+from .migrations.rehudb import BASE_VERSION, CHAIN, FOLD_STAMP_VERSION, SchemaChain
 from .migrations.runner import chain_head
 from .plugins import DEFAULT_PLUGIN_REGISTRY, PluginRegistry
 from .rehuco_file import RehucoRoot
@@ -227,17 +229,18 @@ class CatalogRow:
 
 @dataclass(frozen=True, slots=True)
 class CatalogQuery:
-    """Which rows to read: free text over title and path, and field tokens, all of which must match.
+    """Which rows to read: free-text terms over title and path, and field tokens, all of which must match.
 
-    The structure a filter line parses into (#398); parsing ``field:"value"`` is the line's business, so
-    this takes the tokens already split.
+    The structure a filter line parses into (#398); parsing ``field:"value"`` and splitting the free text into terms
+    is the line's business, so this takes them already split.
 
-    :param text: matched case-insensitively anywhere in a title or a root-relative path; empty matches all.
+    :param terms: each matched anywhere in a title or a root-relative path, either one, ignoring case and diacritics
+        (:func:`borco_core.fold`, #475); none matches all.
     :param tokens: ``(field, value)`` pairs. ``folder`` is a ``<label>/<relative path>`` prefix; ``authors``,
-        ``tags`` and ``publishers`` match one value whole, case-insensitively; ``type`` matches the type.
+        ``tags`` and ``publishers`` match one value whole, ignoring case and diacritics; ``type`` matches the type.
     """
 
-    text: str = ""
+    terms: tuple[str, ...] = ()
     tokens: tuple[tuple[CatalogField, str], ...] = ()
 
 
@@ -251,15 +254,29 @@ JOINS: Final = (
 TOKEN_CLAUSES: Final = {
     CatalogField.TYPE: "r.type = ? COLLATE NOCASE",
     **{
-        # driven from the value's unique name index and the join's value index, not probed once per resource (#454)
+        # driven from the value's folded-name index and the join's value index, not probed once per resource (#454)
         CatalogField(table): (
             f"r.id IN (SELECT j.resource_id FROM {join} j JOIN {table} v ON v.id = j.value_id "  # nosec  # B608: fixed
-            "WHERE v.name = ?)"
+            "WHERE v.folded = ?)"
         )
         for table, join in JOINS
     },
 }
-"""The clause each token field adds but ``folder``, each with exactly one parameter."""
+"""The clause each token field adds but ``folder``, each with exactly one parameter -- folded for a value table's."""
+
+FOLD_PROBE: Final = "\u0130 \u00df \ufb01 \u210c e\u0301 \u00c5 \u01c4 \u03a3\u03c2 \u1e9e \uff05 \u00e9 \u0141"
+"""Text that exercises every step of :func:`borco_core.fold`: letters casefolding turns into two (``İ``, ``ß``), a
+ligature, a letter NFKD turns into a capital, a decomposed and a precomposed accent, a digraph, final sigma, a fullwidth
+sign and a letter with a stroke that fold cannot decompose. What it folds to is the fingerprint of ``fold`` the cache
+keeps (``cache_meta``): a rule that changes shows in at least one of them."""
+
+FOLD_STAMP_KEY: Final = "fold"
+"""The ``cache_meta`` key the fingerprint lives under."""
+
+TERM_CLAUSE: Final = "(r.folded_title LIKE ? ESCAPE '\\' OR r.folded_path LIKE ? ESCAPE '\\')"
+"""What one free-text term adds: found in the folded title or the folded path (schema v5, #475), both parameters the
+same pattern -- a stored column each, since folding every row through a Python SQL function per read measured 10-30x
+slower."""
 
 FOLDER_ROOT_CLAUSE: Final = "r.root_id IN (SELECT id FROM roots WHERE label = ? COLLATE NOCASE)"
 """A root by its label, folded as ASCII only, as the label's uniqueness is.
@@ -400,6 +417,8 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
         try:
             cls.__configure(connection, fresh=version == BASE_VERSION)
             cls.__migrate(connection, version, chain)
+            if cls.__user_version(connection) >= FOLD_STAMP_VERSION:
+                cls.__refold_if_stale(connection)
         except BaseException:
             connection.close()
             raise
@@ -539,8 +558,8 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
             kept = {self.__upsert(connection, key, record, stamp) for record in records}
             for path in unchanged:
                 row = connection.execute(
-                    "UPDATE resources SET path = ? WHERE root_id = ? AND path_key = ? RETURNING id",
-                    (path, key, catalog_path_key(path)),
+                    "UPDATE resources SET path = ?, folded_path = ? WHERE root_id = ? AND path_key = ? RETURNING id",
+                    (path, fold(path), key, catalog_path_key(path)),
                 ).fetchone()
                 if row is not None:
                     kept.add(row[0])
@@ -818,6 +837,47 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
         connection.execute("PRAGMA journal_mode = WAL").fetchall()
         connection.execute("PRAGMA foreign_keys = ON")
 
+    @staticmethod
+    def __fold_is_current(connection: sqlite3.Connection) -> bool:
+        """Whether the fingerprint the file keeps is what :data:`FOLD_PROBE` folds to now."""
+        stored = connection.execute("SELECT value FROM cache_meta WHERE key = ?", (FOLD_STAMP_KEY,)).fetchone()
+        return stored is not None and stored[0] == fold(FOLD_PROBE)
+
+    @classmethod
+    def __refold_if_stale(cls, connection: sqlite3.Connection) -> None:
+        """Write the folded columns again from the real ones when the ``fold`` that wrote them is not this one (#475).
+
+        The file keeps what :data:`FOLD_PROBE` folded to when it last wrote them; a different answer now -- an edit to
+        ``fold``, or a Python whose Unicode tables moved -- or none at all (a file just upgraded, whose columns are
+        empty) means they cannot be trusted, and a search would silently miss rows. The check is a single read; the
+        refill is one transaction of about a second per 100k resources, and no scan.
+
+        :param connection: the cache, at a version with ``cache_meta``.
+        """
+        if cls.__fold_is_current(connection):
+            return
+        with cls.__write(connection):
+            # another process may have refilled while this one waited for the write lock
+            if cls.__fold_is_current(connection):
+                return
+            resources = connection.execute("SELECT id, title, path FROM resources").fetchall()
+            connection.executemany(
+                "UPDATE resources SET folded_title = ?, folded_path = ? WHERE id = ?",
+                [(fold(title), fold(path), resource_id) for resource_id, title, path in resources],
+            )
+            for table, _ in JOINS:
+                names = connection.execute(f"SELECT id, name FROM {table}").fetchall()  # nosec  # B608: fixed names
+                connection.executemany(
+                    f"UPDATE {table} SET folded = ? WHERE id = ?",  # nosec  # B608: fixed names
+                    [(fold(name), value_id) for value_id, name in names],
+                )
+            connection.execute(
+                "INSERT INTO cache_meta (key, value) VALUES (?, ?) "
+                "ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+                (FOLD_STAMP_KEY, fold(FOLD_PROBE)),
+            )
+        LOG.info("Wrote the catalog cache's folded search columns: another fold wrote them, or none had yet.")
+
     @classmethod
     def __migrate(cls, connection: sqlite3.Connection, version: int, chain: SchemaChain) -> None:
         """Run every step ``version`` is below, each in its own transaction with its stamp.
@@ -847,10 +907,12 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
         key = catalog_path_key(record.path)
         CatalogCache.__adopt_legacy_row(connection, root_id, record, key)
         (resource_id,) = connection.execute(
-            f"INSERT INTO resources (root_id, path_key, scanned_at, {names}) "  # nosec  # B608: fixed names
-            f"VALUES (?, ?, ?, {', '.join('?' * len(RESOURCE_COLUMNS))}) "
-            f"ON CONFLICT (root_id, path_key) DO UPDATE SET scanned_at = excluded.scanned_at, {updates} RETURNING id",
-            (root_id, key, stamp, *fields),
+            "INSERT INTO resources (root_id, path_key, scanned_at, folded_title, folded_path, "
+            f"{names}) "  # nosec  # B608: fixed names
+            f"VALUES (?, ?, ?, ?, ?, {', '.join('?' * len(RESOURCE_COLUMNS))}) "
+            "ON CONFLICT (root_id, path_key) DO UPDATE SET scanned_at = excluded.scanned_at, "
+            f"folded_title = excluded.folded_title, folded_path = excluded.folded_path, {updates} RETURNING id",
+            (root_id, key, stamp, fold(record.title), fold(record.path), *fields),
         ).fetchone()
         for (table, join), names_of in zip(JOINS, (record.authors, record.tags, record.publishers), strict=True):
             CatalogCache.__write_values(connection, table, join, resource_id, names_of)
@@ -886,7 +948,8 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
                 os.path.splitext(row_name)[0].casefold() == stem
             ):
                 connection.execute(
-                    "UPDATE resources SET path = ?, path_key = ? WHERE id = ?", (record.path, key, resource_id)
+                    "UPDATE resources SET path = ?, path_key = ?, folded_path = ? WHERE id = ?",
+                    (record.path, key, fold(record.path), resource_id),
                 )
                 return
 
@@ -944,8 +1007,8 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
         for resource_id, path in moving:
             rebased = "/".join((destination, *path.split("/")[depth:]))
             connection.execute(
-                "UPDATE resources SET path = ?, path_key = ? WHERE id = ?",
-                (rebased, catalog_path_key(rebased), resource_id),
+                "UPDATE resources SET path = ?, path_key = ?, folded_path = ? WHERE id = ?",
+                (rebased, catalog_path_key(rebased), fold(rebased), resource_id),
             )
         return len(moving)
 
@@ -976,11 +1039,11 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
             stored on the join exactly as spelled, since the value row it shares with other resources keeps only the
             first spelling ever written.
         """
-        insert_value = f"INSERT INTO {table} (name) VALUES (?) ON CONFLICT DO NOTHING"  # nosec  # B608: fixed names
+        insert_value = f"INSERT INTO {table} (name, folded) VALUES (?, ?) ON CONFLICT DO NOTHING"  # nosec  # B608
         select_value = f"SELECT id FROM {table} WHERE name = ?"  # nosec  # B608: fixed names
         connection.execute(f"DELETE FROM {join} WHERE resource_id = ?", (resource_id,))  # nosec  # B608: fixed names
         for position, name in enumerate(name for name in names if name):
-            connection.execute(insert_value, (name,))
+            connection.execute(insert_value, (name, fold(name)))
             (value_id,) = connection.execute(select_value, (name,)).fetchone()
             connection.execute(
                 f"INSERT OR IGNORE INTO {join} (resource_id, value_id, position, name) VALUES (?, ?, ?, ?)",
@@ -1007,9 +1070,10 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
         if ids is not None:
             clauses.append(f"r.id IN ({', '.join('?' * len(ids))})")
             parameters += ids
-        if query.text:
-            clauses.append("(r.title LIKE ? ESCAPE '\\' OR r.path LIKE ? ESCAPE '\\')")
-            pattern = f"%{CatalogCache.__escaped(query.text)}%"
+        for term in query.terms:
+            # escaped after folding, since a compatibility form can fold into a wildcard (``％`` to ``%``)
+            pattern = f"%{CatalogCache.__escaped(fold(term))}%"
+            clauses.append(TERM_CLAUSE)
             parameters += [pattern, pattern]
         for field, value in query.tokens:
             if field is CatalogField.FOLDER:
@@ -1018,7 +1082,7 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
                 parameters += folder_parameters
             else:
                 clauses.append(TOKEN_CLAUSES[field])
-                parameters.append(value)
+                parameters.append(value if field is CatalogField.TYPE else fold(value))
         return " AND ".join(clauses), tuple(parameters)
 
     @staticmethod

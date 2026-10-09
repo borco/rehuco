@@ -7,6 +7,7 @@ from typing import Final
 from uuid import UUID, uuid4
 
 import humanize
+from borco_core import fold
 from borco_pyside.theming import GlyphActionIconThemeHandler
 from borco_pyside.widgets import HeaderSectionsMenu, RowBandDelegate
 from PySide6.QtCore import QByteArray, QModelIndex, QPoint, Qt, QTimer, Signal
@@ -31,7 +32,8 @@ PROBLEMS_ACTION_NAME: Final = "filter_problems_action"
 kept, because the wrapper of a C++-owned action has been seen invalidated while the action lived on (#459)."""
 
 FILTER_HELP: Final = (
-    f'Free text, and field:value or field:"quoted value" tokens: {", ".join(field.value for field in CatalogField)}.'
+    'Words, each found in a title or path; "quoted words" as one phrase; case and accents ignored. '
+    f'Then field:value or field:"quoted value" tokens: {", ".join(field.value for field in CatalogField)}.'
 )
 """The filter line's tooltip: its grammar, under whatever it could not apply."""
 
@@ -340,15 +342,13 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
         if not authors:
             return
         applied = {
-            token.value.casefold()
-            for token in parse_filter(self.__ui.filter_edit.text()).tokens
-            if token.name == "authors"
+            fold(token.value) for token in parse_filter(self.__ui.filter_edit.text()).tokens if token.name == "authors"
         }
         # a child of this widget, so a failed ``exec`` must not leave it behind for the browser's life (#459)
         menu = QMenu(self)
         try:
             for author in authors:
-                clearing = author.casefold() in applied
+                clearing = fold(author) in applied
                 text = f"Clear the filter by {author}" if clearing else f"Filter by {author}"
                 action = menu.addAction(text)
                 action.triggered.connect(

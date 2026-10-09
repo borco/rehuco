@@ -2,8 +2,10 @@
 :class:`~rehuco_core.CatalogQuery` a browser's rows come from. Which columns show is the header's alone (#379).
 
 Words are separated by whitespace; a ``"..."`` run is one value, with ``\\"`` and ``\\\\`` its only escapes, and an
-unclosed quote runs to the end of the line. A word that starts with a name and a colon is a token -- ``name:value``
-or ``name:"quoted value"`` -- and every other word is free text. Tokens and the free text are ANDed.
+unclosed quote runs to the end of the line -- :func:`borco_core.read_value`, the quoting every search box shares. A
+word that starts with a name and a colon is a token -- ``name:value`` or ``name:"quoted value"`` -- and every other
+word is a free-text term: ``foo bar`` finds what holds both, in any order, and ``"foo bar"`` the phrase. Every term and
+every token must match.
 """
 
 import re
@@ -11,6 +13,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Final
 
+from borco_core import read_value
 from rehuco_core import CatalogField, CatalogQuery
 
 RETIRED_TOKENS: Final = ("columns",)
@@ -41,7 +44,7 @@ class FilterToken:
 class ParsedFilter:
     """What a filter line says.
 
-    :param query: the free text and every field token, in the line's order.
+    :param query: the free-text terms and every field token, in the line's order.
     :param problems: one sentence per word that was not applied -- an unknown field. The rest of the line still
         applies.
     :param tokens: every ``name:value`` word, applied or not, so the line can be rewritten around them.
@@ -60,14 +63,14 @@ def parse_filter(text: str) -> ParsedFilter:
     :param text: the line.
     :returns: the query and what could not be applied.
     """
-    free: list[str] = []
+    terms: list[str] = []
     tokens: list[FilterToken] = []
     fields: list[tuple[CatalogField, str]] = []
     problems: list[str] = []
     for name, value, start, end in split_words(text):
         if name is None:
             if value:
-                free.append(value)
+                terms.append(value)
             continue
         tokens.append(FilterToken(name, value, start, end))
         if not value:
@@ -76,7 +79,7 @@ def parse_filter(text: str) -> ParsedFilter:
             fields.append((CatalogField(name), value))
         except ValueError:
             problems.append(f'Unknown field "{name}"')
-    return ParsedFilter(CatalogQuery(" ".join(free), tuple(fields)), tuple(problems), tuple(tokens))
+    return ParsedFilter(CatalogQuery(tuple(terms), tuple(fields)), tuple(problems), tuple(tokens))
 
 
 def format_token(name: str, value: str) -> str:
@@ -150,39 +153,3 @@ def split_words(text: str) -> Iterator[tuple[str | None, str, int, int]]:
             position = matched.end()
         value, position = read_value(text, position)
         yield name, value, start, position
-
-
-def read_value(text: str, position: int) -> tuple[str, int]:
-    """Read one value: a quoted run, or everything up to the next whitespace.
-
-    :param text: the line.
-    :param position: where the value starts.
-    :returns: the value and where it ends.
-    """
-    if position < len(text) and text[position] == '"':
-        return read_quoted(text, position + 1)
-    end = position
-    while end < len(text) and not text[end].isspace():
-        end += 1
-    return text[position:end], end
-
-
-def read_quoted(text: str, position: int) -> tuple[str, int]:
-    """Read a quoted run, its opening quote already consumed.
-
-    :param text: the line.
-    :param position: just past the opening quote.
-    :returns: the unescaped value and where the run ends -- past the closing quote, or the end of the line.
-    """
-    chars: list[str] = []
-    while position < len(text):
-        char = text[position]
-        if char == "\\" and position + 1 < len(text):
-            chars.append(text[position + 1])
-            position += 2
-            continue
-        if char == '"':
-            return "".join(chars), position + 1
-        chars.append(char)
-        position += 1
-    return "".join(chars), position

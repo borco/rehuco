@@ -3,6 +3,7 @@
 from collections.abc import Iterable
 from typing import override
 
+from borco_core import TextMatcher
 from PySide6.QtCore import QModelIndex, QObject, QPersistentModelIndex, QSortFilterProxyModel
 
 from .log_entry import LogEntry
@@ -35,6 +36,7 @@ class LogFilterModel(QSortFilterProxyModel):
         super().__init__(parent)
         self.__visible_bands = frozenset(LogLevelBand)
         self.__search = ""
+        self.__matcher = TextMatcher()
 
     @property
     def visible_bands(self) -> frozenset[LogLevelBand]:
@@ -69,21 +71,23 @@ class LogFilterModel(QSortFilterProxyModel):
 
     @property
     def search(self) -> str:
-        """Substring a record's formatted message must contain, case-insensitively; empty matches all."""
+        """What a record's formatted message must match: every word in it, a quoted run as one phrase, case and accents
+        ignored (:class:`~borco_core.TextMatcher`); empty matches all."""
         return self.__search
 
     @search.setter
     def search(self, search: str) -> None:
-        """Show only records whose message contains ``search``.
+        """Show only records whose message matches ``search``.
 
         Matched against the formatted message rather than the raw one, so what a reader searches for
         is what the table shows them -- including the parts the format string added.
 
-        :param search: the substring to look for; empty to stop searching.
+        :param search: the words to look for; empty to stop searching.
         """
         if search == self.__search:
             return
         self.__search = search
+        self.__matcher = TextMatcher.of(search)
         self.__refilter()
 
     def __refilter(self) -> None:
@@ -104,4 +108,4 @@ class LogFilterModel(QSortFilterProxyModel):
             return super().filterAcceptsRow(source_row, source_parent)
         if LogLevelBand.of(entry.record.levelno) not in self.__visible_bands:
             return False
-        return not self.__search or self.__search.casefold() in entry.message.casefold()
+        return self.__matcher.matches(entry.message)

@@ -114,6 +114,13 @@ V3_COLUMNS: Final = (
 """The type-specific columns version 3 adds to ``resources``, with their SQL types -- frozen, like
 :data:`V1_STATEMENTS`."""
 
+V5_VALUE_TABLES: Final = ("authors", "tags", "publishers")
+"""The value tables version 5 gives a folded name -- frozen, like :data:`V1_STATEMENTS`."""
+
+FOLD_STAMP_VERSION: Final = 6
+"""The first version whose file has the ``cache_meta`` table, and so a fingerprint of the ``fold`` that wrote its folded
+columns (:meth:`~rehuco_core.rehudb.CatalogCache.open` compares it)."""
+
 
 def create_schema_v1(connection: sqlite3.Connection) -> None:
     """0 -> 1: the first schema -- roots, the resources under them, and the three value tables with their joins.
@@ -172,11 +179,42 @@ def add_format_version_v4(connection: sqlite3.Connection) -> None:
     connection.execute("UPDATE resources SET mtime_ns = 0, content_hash = ''")
 
 
+def add_folded_search_columns_v5(connection: sqlite3.Connection) -> None:
+    """4 -> 5: the columns a search compares folded spellings in (#475) -- a resource's title and path, and each
+    author's, tag's and publisher's name, the names indexed -- so "jose" finds "José" at the speed of a plain ``LIKE``
+    and an indexed lookup.
+
+    The columns start empty. Filling them is not this step's business: it would need :func:`borco_core.fold` as it is
+    today, and a step is a frozen record. :meth:`~rehuco_core.rehudb.CatalogCache.open` fills them -- from the rows
+    already stored, with no rescan -- because the file carries no fingerprint of a ``fold`` yet (version 6).
+
+    :param connection: the cache, inside the transaction the caller opened.
+    """
+    connection.execute("ALTER TABLE resources ADD COLUMN folded_title TEXT NOT NULL DEFAULT ''")
+    connection.execute("ALTER TABLE resources ADD COLUMN folded_path TEXT NOT NULL DEFAULT ''")
+    for table in V5_VALUE_TABLES:
+        connection.execute(f"ALTER TABLE {table} ADD COLUMN folded TEXT NOT NULL DEFAULT ''")
+        connection.execute(f"CREATE INDEX {table}_folded ON {table} (folded)")
+
+
+def add_cache_meta_v6(connection: sqlite3.Connection) -> None:
+    """5 -> 6: a place for facts about the cache itself (#475) -- today one, a fingerprint of the ``fold`` that wrote
+    the folded columns, so a change to ``fold`` is noticed and the columns written again.
+
+    The table starts empty, which reads as "no fingerprint": the next open fills the folded columns and writes it.
+
+    :param connection: the cache, inside the transaction the caller opened.
+    """
+    connection.execute("CREATE TABLE cache_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+
+
 CHAIN: Final[SchemaChain] = (
     (1, create_schema_v1),
     (2, add_join_spellings_v2),
     (3, add_type_fields_v3),
     (4, add_format_version_v4),
+    (5, add_folded_search_columns_v5),
+    (6, add_cache_meta_v6),
 )
 """This target's ordered ``(target, step)`` chain."""
 

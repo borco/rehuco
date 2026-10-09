@@ -3,6 +3,7 @@
 from collections.abc import Callable
 from typing import Final, Protocol, cast, runtime_checkable
 
+from borco_core import TextMatcher
 from borco_pyside.widgets import ActionButtonColumn, ItemListEditor
 from PySide6.QtCore import QAbstractItemModel, QAbstractListModel, QModelIndex, Qt
 from PySide6.QtWidgets import (
@@ -65,12 +66,14 @@ class SettingsFrameFilter:
     subclass such as a decorative rule isn't mistaken for a settings group); a frame nested inside
     another is part of its parent's text, not a group of its own.
 
-    Matching rules for :meth:`apply`, given filter text *foo*:
+    Matching rules for :meth:`apply`, given filter text *foo* -- matched as every search box matches
+    (:class:`~borco_core.TextMatcher`, #475: every word found, a quoted run one phrase, case and accents
+    ignored):
 
     - empty *foo* -> every frame shown;
     - *foo* matches the page title and ``show_full_on_title_match`` -> every frame shown (a title
       match shows the page in full, whether or not individual frames also match);
-    - otherwise -> exactly the frames whose gathered text contains *foo* are shown, the rest hidden
+    - otherwise -> exactly the frames whose gathered text matches *foo* are shown, the rest hidden
       (so a *foo* matching nothing leaves every frame hidden).
 
     Also the home of this page's **frame-level dirty tracking** (#77): `SettingsPage.is_dirty` only
@@ -98,7 +101,7 @@ class SettingsFrameFilter:
     """
 
     def __init__(self, page: QWidget, title: str) -> None:
-        self.__title_lower = title.lower()
+        self.__title = title
         frames = [child for child in page.findChildren(QFrame) if self.__is_group_frame(child, page)]
         self.__frames = [(frame, self.__frame_text(frame)) for frame in frames]
         self.__baselines = {frame: self.__snapshot(frame) for frame in frames}
@@ -119,21 +122,18 @@ class SettingsFrameFilter:
         return [frame for frame, _ in self.__frames]
 
     def apply(self, text: str, show_full_on_title_match: bool) -> None:
-        """Show only the frames matching ``text`` (case-insensitive substring), per the class rules.
+        """Show only the frames matching ``text``, per the class rules.
 
         :param text: the filter text; empty shows every frame.
         :param show_full_on_title_match: whether a title match shows the whole page, regardless of
             which individual frames match.
         """
-        if not text:
-            self.__set_all_visible(True)
-            return
-        needle = text.lower()
-        if show_full_on_title_match and needle in self.__title_lower:
+        matcher = TextMatcher.of(text)
+        if not matcher or (show_full_on_title_match and matcher.matches(self.__title)):
             self.__set_all_visible(True)
             return
         for frame, frame_text in self.__frames:
-            frame.setVisible(needle in frame_text)
+            frame.setVisible(matcher.matches(frame_text))
 
     def dirty_frames(self) -> list[QFrame]:
         """Which of this page's top-level frames have a :data:`ValueWidget` differing from the
@@ -437,13 +437,13 @@ class SettingsFrameFilter:
 
     @staticmethod
     def __frame_text(frame: QFrame) -> str:
-        """The lowercased, space-joined user-visible caption text of every widget inside ``frame``.
+        """The space-joined user-visible caption text of every widget inside ``frame``.
 
         A widget carrying `ActionButtonColumn.NOT_A_CAPTION_PROPERTY` is skipped -- its `text()` mirrors a
         `QAction` shared by every list editor (#302), not a caption particular to this frame.
 
         :param frame: the frame to gather searchable text from.
-        :returns: the concatenated captions, lowercased for case-insensitive matching.
+        :returns: the concatenated captions, as shown -- the matcher folds them.
         """
         parts: list[str] = []
         for widget in frame.findChildren(QWidget):
@@ -453,4 +453,4 @@ class SettingsFrameFilter:
                 parts.append(widget.text())
             elif isinstance(widget, QGroupBox):
                 parts.append(widget.title())
-        return " ".join(part for part in parts if part).lower()
+        return " ".join(part for part in parts if part)

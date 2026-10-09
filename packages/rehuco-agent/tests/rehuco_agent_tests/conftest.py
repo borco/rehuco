@@ -18,7 +18,7 @@ import sys
 import threading
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, ClassVar, Final
 from unittest.mock import patch
 from uuid import UUID
 
@@ -136,10 +136,14 @@ class FakeSettings:  # pylint: disable=invalid-name,missing-function-docstring,r
         del type
         return self.__data.get(self.__prefix + key, default)
 
+    file_name: ClassVar[str] = ""
+    """Set once per session by :func:`isolate_config_folder`."""
+
     def fileName(self) -> str:  # noqa: N802
-        """A fake ``.ini`` path -- what `default_scripts_folder` derives its default folder from
-        (#269), so a test never computes one under the developer's real config directory."""
-        return "/fake/borco/rehuco-agent.ini"
+        """An ``.ini`` path in the session's temporary folder -- what ``config_folder()`` and every app-owned file
+        is derived from (#269, #361), so a test never lands under the developer's real config directory, nor
+        under a ``/fake`` path that is a real ``C:\\fake`` on Windows and was left behind by a run (#475)."""
+        return self.file_name
 
     def childGroups(self) -> list[str]:  # noqa: N802
         """The first path segment of every key nested at least one level under the open group -- what
@@ -191,6 +195,18 @@ class FakeSettings:  # pylint: disable=invalid-name,missing-function-docstring,r
 
 REAL_PATH_STAT: Final = Path.stat
 """``Path.stat`` as the standard library has it, bound at import -- before :func:`default_path_stat_size` stands in."""
+
+
+@fixture(autouse=True, scope="session")
+def isolate_config_folder(tmp_path_factory: TempPathFactory) -> None:
+    """Name the settings file :class:`FakeSettings` reports in a temporary folder for the whole session (#475).
+
+    One folder for the session, not one per test: most tests write nothing there, and a write that does happen
+    lands in pytest's temporary tree instead of a real folder elsewhere.
+
+    :param tmp_path_factory: pytest's session temporary-directory factory.
+    """
+    FakeSettings.file_name = str(tmp_path_factory.mktemp("config") / "rehuco-agent.ini")
 
 
 @fixture(autouse=True, scope="session")
