@@ -585,10 +585,8 @@ member an *unpinned* dock's `autoHideLocation()` reports, and it is the enum's l
 first. Worth stating because the zero value being a real side (Top) makes a falsy-means-unset reading
 silently wrong.
 
-Pin state — which docks, and which sidebar — is part of `CDockManager.saveState()` and comes back
-from `restoreState()`, so a dock left *pinned* needs no persistence of its own; what that needs is a
-layout-state version bump, since a blob written before sidebars existed describes every dock as
-docked-or-closed. A dock left **unpinned** is the case the layout cannot cover: the blob records no
+Pin state — which docks, and which sidebar — is part of the saved layout's `pinned` list
+([[appendices.qt-ads#structural-layout]]), so a dock left *pinned* needs no persistence of its own. A dock left **unpinned** is the case the layout cannot cover: the blob records no
 pin, and so says nothing about where the next one should go — which is why the remembered side is
 stored separately, and why a dock nobody has ever pinned stores nothing at all rather than the
 current default (a stored default would read as a choice the user made, and outlive a later change to
@@ -832,3 +830,89 @@ dock. Any dock whose `objectName()` can change after it is added must leave its 
 Either way, a removed dock comes out parentless and is deleted with `deleteLater()`: freed on the spot —
 which is what Python dropping its last reference does to a removed dock it owns — it goes ahead of the
 events the removal posted, and the next `processEvents` was measured to crash or hang.
+
+## 14. Layouts are saved as a structural tree, not QtAds' blob
+
+[[[appendices.qt-ads#structural-layout]]]
+
+Every dock manager in the app saves its layout through `borco_pyside.qtads.QtAdsLayout`. It does not use
+`CDockManager.saveState()`, because that blob is all-or-nothing (#102):
+
+- `restoreState` leaves a dock the blob does not name in no area at all, silently.
+- `saveState` writes only docks that sit in an area.
+
+So one bad save lost a dock for good: every later session restored it as missing and saved it as missing.
+No version guard catches this, because it happens within one layout version. That is how the Browsers dock vanished
+from the outer layout, and why a floating window holding two browsers came back empty.
+
+**The format** is a JSON-able dict, so it fits the JSON state files and a CBOR envelope alike:
+
+```text
+{"format": 1,
+ "main":     Node,
+ "floating": [{"geometry": [x, y, w, h], "root": Node}],
+ "pinned":   [{"side": "left|right|top|bottom", "docks": [Dock], "size": int}],
+ "unplaced": [Dock]}
+Node = {"split": "h"|"v", "sizes": [int], "children": [Node]} | {"area": [Dock], "current": name}
+Dock = {"name": objectName, "closed": bool, "state": base64?}
+```
+
+Each dock's entry carries its content's own state through the caller's hook: the Log dock's filters, the
+Tasks dock's nested layout, a document dock's `StatefulWidget`s, a browser's `BrowserState`. That way, a dock the
+layout drops takes nothing else with it. QtAds' config flags are not part of the format. A tree is
+normalized on save and on restore alike: QtAds roots every container in a splitter that often holds one
+child, and can nest a splitter in one that runs the same way. The tree keeps neither shape.
+
+**Save starts from the docks**, not from `floatingWidgets()`/`dockContainers()`: each dock's area names its
+container. A floating window the manager lost track of is still saved; one such case was seen in #488, cause
+unproven. The manager's own container is told apart by identity, not by `floatingWidget()`. That call
+answers the nearest floating window *above* a container, so a nested manager inside a floated outer dock
+(Tasks) reports the outer window as its own (measured).
+
+**Restore degrades per node:**
+
+- A malformed node is dropped.
+- A dock the tree names that the manager lacks is skipped. A caller whose layout defines its docks (the browsers)
+  builds it from the entry's state instead.
+- A dock the manager has that the tree does not name goes to the caller's default place.
+
+The rest restores either way. Anything that is not a dict of format 1, an old blob among them, restores nothing.
+Old blobs are not migrated; the built layout is kept once.
+
+**No placeholder docks.** QtAds has no public way to make an empty area, and Scrutiny Debugger's rewrite of
+the same thing inserts throwaway docks to build the tree. That approach needs a bare `processEvents()` before
+removing them, or `DockAreaTabBarPrivate::updateTabs()` crashes. Here every manager builds its docks before it
+restores, and the tree is pruned to the docks that exist before anything moves. So every area the restore
+builds has a real dock to seed it.
+
+**Build order:**
+
+1. A splitter first places one seed area per child: each child's first dock, `Right`/`Bottom` of the previous
+   seed.
+2. Only then does each child expand from its seed, so every insertion targets a lone area. Beside an area whose
+   splitter runs the other way, QtAds wraps the two in a new splitter; beside one that runs the same way, the
+   new area joins it.
+3. Tabs go in with `Center`.
+4. Docks are opened or closed, and each area's current tab is set.
+5. Splitter sizes are applied last, once the whole tree exists, because every insertion resets its splitter's
+   sizes. A splitter that also holds an area the tree does not name keeps QtAds' sizes.
+6. The restore ends by emitting `stateRestored`, which the helpers above re-track on.
+
+**Three traps the build has to step around (measured):**
+
+- **A closed dock must be opened before it is moved.** QtAds moves a closed dock as an *open* one with its tab
+  still hidden. The dock reports itself open, so no later `toggleView(True)` shows the tab. A restored
+  document came back with tab-less areas, and a Content Images dock that never loaded, since it loads on
+  `viewToggled(True)`.
+- **A floating dock must be docked before it is pinned**, as in §10.6.
+- **Never read a splitter's panes with `QSplitter.widget(i)` through a temporary wrapper.** PySide registers
+  what `widget(i)` returns as a child of the splitter's Python wrapper. When that wrapper is freed,
+  shiboken's `_destroyParentInfo` invalidates every Qt-made wrapper below each pane, while the objects live
+  on. Python-made wrappers stay valid. The symptom was "already deleted" on a document toolbar's
+  `QWidgetAction` at the next type-dock rebuild. `shiboken6.dump(wrapper)` lists a wrapper's registered
+  children. `children()` with `indexOf()` registers nothing, and skips `QSplitterHandle`, which `indexOf()`
+  also answers for.
+
+`QtAdsFloatingShowGuard` (§11) keeps no container wrapper for a related reason. A container the restore shows
+in the middle of a QtAds call had the wrapper the guard's filter saw invalidated before the call returned. The
+guard finds its containers again at release by the `WA_DontShowOnScreen` it set.
