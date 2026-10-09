@@ -135,10 +135,9 @@ class RootsLightbox(QObject):
         self.__generation = 0
         self.__viewer: ImageLightbox | None = None
         self.__strip_visible: bool | None = None
-        self.__pending_mode = ImageViewerMode.DOCUMENT_OVERLAY
-        """The surface the archive whose listing is out was asked for, read from the keys at the activation."""
-        self.__pending_owner: ImagesOwner | None = None
-        """Whose images the archive whose listing is out holds."""
+        self.__pending = (ImageViewerMode.DOCUMENT_OVERLAY, ImagesOwner("", Path()))
+        """The surface the archive whose listing is out was asked for, read from the keys at the activation, and
+        whose images it holds."""
 
     @property
     def viewer(self) -> ImageLightbox | None:
@@ -155,8 +154,7 @@ class RootsLightbox(QObject):
         """
         self.__generation += 1
         # the keys are read now, at the activation: the listing lands later, when they are no longer held
-        self.__pending_mode = self.__mode()
-        self.__pending_owner = owner if owner is not None else ImagesOwner.folder_of(archive)
+        self.__pending = (self.__mode(), owner if owner is not None else ImagesOwner.folder_of(archive))
         pool = QThreadPool.globalInstance()
         signals = ListingSignals(pool)
         signals.listed.connect(self.__on_listed)
@@ -189,9 +187,9 @@ class RootsLightbox(QObject):
         if not entries:
             self.nothing_to_show.emit(EMPTY_PACK_MESSAGE.format(name=archive.name))
             return
+        mode, owner = self.__pending
         cache = ArchiveCache(self.__coordinator)
-        owner = self.__pending_owner if self.__pending_owner is not None else ImagesOwner.folder_of(archive)
-        self.__show(ArchiveImageSource(entries, cache, owner.folder), 0, cache, self.__pending_mode, owner)
+        self.__show(ArchiveImageSource(entries, cache, owner.folder), 0, cache, mode, owner)
 
     @staticmethod
     def __mode() -> ImageViewerMode:
@@ -202,7 +200,7 @@ class RootsLightbox(QObject):
         """
         return viewer_mode_for(QApplication.keyboardModifiers(), shared_image_viewer_settings().mode)
 
-    def __show(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+    def __show(
         self, source: ImageSource, index: int, cache: ArchiveCache | None, mode: ImageViewerMode, owner: ImagesOwner
     ) -> None:
         """Build the viewer over a source, as the settings ask, replacing any open one.

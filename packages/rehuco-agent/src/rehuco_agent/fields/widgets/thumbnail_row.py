@@ -19,9 +19,10 @@ from PySide6.QtCore import (
     Qt,
     Signal,
 )
-from PySide6.QtGui import QPainter, QPainterPath, QPalette, QPixmap, QWheelEvent
+from PySide6.QtGui import QMouseEvent, QPainter, QPainterPath, QPalette, QPixmap, QWheelEvent
 from PySide6.QtWidgets import QAbstractItemView, QFrame, QListView, QStyledItemDelegate, QStyleOptionViewItem, QWidget
 
+from .image_export import ImageExporter, PressTracker
 from .image_source import ImageSource
 from .image_strip import THUMBNAIL_BORDER
 from .thumbnail_loader import ThumbnailLoader
@@ -158,6 +159,10 @@ class ThumbnailRow(QListView):
         self.__loader: Final = loader
         self.__height = height
         self.__current = -1
+        self.__exporter: ImageExporter | None = None
+        self.__press: Final = PressTracker()
+        self.__dragged = False
+        """Whether a drag started since the last press: the click that may follow it is not a click."""
         self.__model: Final = ImageSourceModel(self)
         self.setModel(self.__model)
         self.setItemDelegate(ThumbnailDelegate(self))
@@ -178,7 +183,7 @@ class ThumbnailRow(QListView):
         self.setStyleSheet("QListView { background: transparent; }")
         self.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFixedHeight(height)
-        self.clicked.connect(lambda index: self.activated_index.emit(index.row()))
+        self.clicked.connect(self.__on_clicked)
         # tracking on the viewport (the widget the pointer is actually over) is what makes the view
         # report the item under a moving pointer (``entered``); ``viewportEntered`` is the pointer
         # over the row but over no item
@@ -187,6 +192,55 @@ class ThumbnailRow(QListView):
         self.entered.connect(self.__on_entered)
         self.viewportEntered.connect(lambda: self.__set_hovered(-1))
         loader.ready.connect(self.__on_thumbnail_ready)
+
+    def set_exporter(self, exporter: ImageExporter | None) -> None:
+        """Let a thumbnail be dragged out of the row as a file and as pixels (#395).
+
+        :param exporter: what stages an image taken out; ``None`` for no drag.
+        """
+        self.__exporter = exporter
+
+    @override
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        """Remember a left press on a thumbnail as where a drag may start (#395).
+
+        :param event: the Qt mouse event, forwarded to the base class.
+        """
+        super().mousePressEvent(event)
+        self.__dragged = False
+        index = self.indexAt(event.position().toPoint())
+        self.__press.press(event, index.row() if index.isValid() and self.__exporter is not None else None)
+
+    @override
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        """Drag a pressed thumbnail out once the pointer has moved far enough from it (#395).
+
+        :param event: the Qt mouse event, forwarded to the base class.
+        """
+        super().mouseMoveEvent(event)
+        row = self.__press.moved(event)
+        source = self.__model.source
+        exporter = self.__exporter
+        if isinstance(row, int) and exporter is not None and source is not None:
+            self.__dragged = True
+            exporter.drag(self.viewport(), source, row, self.thumbnail(row) or QPixmap())
+
+    @override
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        """Let go of the press.
+
+        :param event: the Qt mouse event, forwarded to the base class.
+        """
+        super().mouseReleaseEvent(event)
+        self.__press.release()
+
+    def __on_clicked(self, index: QModelIndex) -> None:
+        """Report a click on a thumbnail -- unless it is the release that ends a drag out of the row.
+
+        :param index: the clicked thumbnail.
+        """
+        if not self.__dragged:
+            self.activated_index.emit(index.row())
 
     @property
     def row_height(self) -> int:

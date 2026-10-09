@@ -10,10 +10,12 @@ from pathlib import Path
 from typing import Final, Protocol
 
 from PySide6.QtCore import QModelIndex, Qt
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QPixmap
 from PySide6.QtWidgets import QApplication, QWidget
 from rehuco_core import FileType, RenameCoordinator, staging_origin
 
+from ..fields.widgets import ImageExporter
+from ..settings.persistent_settings import staging_folder
 from .rehuco_roots_panel_ui import Ui_RehucoRootsPanel
 from .roots_folder_model import RootsFolderModel
 from .roots_lightbox import ImagesOwner, RootsLightbox
@@ -141,6 +143,20 @@ class RootsOpening:
                 images.append(sibling_path)
         # the row is among its own siblings, so the list holds it
         self.__lightbox.open_images(images, images.index(path), owner)
+
+    def drag_image(self, index: QModelIndex, widget: QWidget, picture: QPixmap) -> None:
+        """Drag an image row out to other apps, as a file and as pixels, named as the lightbox names its images (#395).
+
+        :param index: the image's row.
+        :param widget: the widget the drag starts from.
+        :param picture: what to show under the pointer.
+        """
+        path = self.__model.path_of(index)
+        if path is None:
+            return
+        owner = self.owner_of(index) or ImagesOwner.folder_of(path)
+        exporter = ImageExporter(staging_folder(), lambda: owner.origin, lambda: owner.folder)
+        exporter.drag_path(widget, path, picture)
 
     def owner_of(self, index: QModelIndex) -> ImagesOwner | None:
         """Whose images a row's lightbox shows, as an image copied out of it is named (#395): the record that manages

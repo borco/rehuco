@@ -17,7 +17,7 @@ from PySide6.QtCore import QObject, QSignalBlocker, Signal, SignalInstance
 from .field import Field, FieldBinding, FieldEditorWidgets, FieldsTab, FieldViewerWidgets
 from .image_organizer import ImageOrganizer
 from .image_scanner import ImageScanner, ScreenshotSet
-from .widgets import ImageSelector, ImageStrip
+from .widgets import ImageExporter, ImageSelector, ImageStrip
 from .widgets.image_selector import PREVIEW_HEIGHT
 
 IMAGE_STRIP_HEIGHT: Final = 150
@@ -154,6 +154,7 @@ class ImagesField(Field[list[str]], QObject):  # pylint: disable=too-many-instan
         self.__previews_visible_changed: Final = previews_visible_changed
         self.__selector_preview_height: Final = selector_preview_height
         self.__selector_preview_height_changed: Final = selector_preview_height_changed
+        self.__image_exporter: ImageExporter | None = None
         self.__locked = False
         """The document's lock state as the owner last reported it (`LockAware`, #292) -- kept so an
         editor built *after* a lock was applied (a form rebuild on a type switch) starts read-only
@@ -174,9 +175,17 @@ class ImagesField(Field[list[str]], QObject):  # pylint: disable=too-many-instan
         self.__locked = locked
         self.locked_changed.emit(locked)
 
+    def set_image_exporter(self, exporter: ImageExporter | None) -> None:
+        """Take what stages a screenshot dragged out of this field's strip or editor (`ImageExportable`, #395).
+
+        :param exporter: the owner's exporter; ``None`` for no drag.
+        """
+        self.__image_exporter = exporter
+
     @override
     def make_viewer(self, binding: FieldBinding[list[str]]) -> FieldViewerWidgets:
         strip = ImageStrip(height=self.__strip_height, wrap=self.__strip_wrap)
+        strip.set_exporter(self.__image_exporter)
         strip.set_requested_visible(self.__previews_visible)
         # wired before it is seeded, not after: seeding is itself a rebuild, and the owner needs that
         # first curated set as much as any later one -- it is what a thumbnail click opens against (#161)
@@ -211,6 +220,7 @@ class ImagesField(Field[list[str]], QObject):  # pylint: disable=too-many-instan
     @override
     def make_editor(self, binding: FieldBinding[list[str]]) -> FieldEditorWidgets:
         selector = ImageSelector(preview_height=self.__selector_preview_height)
+        selector.set_exporter(self.__image_exporter)
         selector.set_previews_visible(self.__previews_visible)
         selector.image_organizer = self.__image_organizer
         # seeded before the rows are, so a locked document's list is never briefly offered as editable;

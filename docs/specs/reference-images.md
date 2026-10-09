@@ -389,8 +389,10 @@ practice mode is deferred ([[reference-images#practice-sessions]]).
   unacceptable, and a blur box must be drawn over the pixels the user will actually see. The working image is
   shown **first, as a placeholder, and swapped for the original when it arrives** — progressive, never
   blocking on the archive; an unreachable archive leaves the placeholder and says so.
-- **Taking an image out** (#395) — a drag from the Content Images grid or from any lightbox, or **Copy** (Ctrl+C, a
-  toolbar button, the context menu), hands another app two things at once: a **byte-identical copy** staged in the
+- **Taking an image out** (#395) — a drag from almost anywhere an image is shown — the Content Images grid, the
+  picture and the thumbnail row of any lightbox, the Description's image strip, the images editor's list and its
+  preview, and a Roots row or the picture in its details pane — or **Copy** (Ctrl+C, a toolbar button, the context menu)
+  on the grid and in a lightbox, hands another app two things at once: a **byte-identical copy** staged in the
   app's cache folder (`staged/`), and the decoded pixels. File-aware apps (Explorer, Finder, PureRef, GIMP, Krita,
   Blender) take the file; bitmap-only ones take the pixels. An archive member has no file of its own and a loose
   image's name says nothing of where it came from, so the copy is named
@@ -405,6 +407,11 @@ practice mode is deferred ([[reference-images#practice-sessions]]).
   and a paste hours later, a re-export of the same image reuses its file, and files unused for seven days are pruned
   when the app starts. **In a lightbox the drag starts on the picture** while the whole image is in view; once the
   viewer can zoom, a zoomed-in image pans under the same gesture instead.
+  **A record's own screenshots are not taken back in.** The Images dock declines a drop whose image *is* one of that
+  record's screenshots — the original of a drag out of this app (carried beside the staged copy), or the dropped file
+  itself from a file manager — and acquires anything else: an image out of the pack (the way to make screenshots
+  when the originals are gone), another record's screenshot even from the same folder (`info01.jpg` dropped on
+  `foo.rehu` makes `foo01.jpg`), a file from anywhere. In a multi-file drop only the record's own are left out.
 - **Pinterest-like search** — a fuzzy text box; empty text picks a random starting image. Clicking an image
   shows it large together with similar images, so browsing is a walk through neighbourhoods rather than a
   result list. "Similar" needs no model at query time (the embeddings are stored); text needs the encoder or

@@ -316,8 +316,8 @@ def test_the_context_menu_selects_the_image_and_offers_copy(
             viewport, QContextMenuEvent(QContextMenuEvent.Reason.Mouse, point, viewport.mapToGlobal(point))
         )
 
-    (menu,) = RecordingMenu.shown
-    assert menu == [exporting.copy_action]
+    assert len(RecordingMenu.shown) == 1
+    assert RecordingMenu.shown[0] == [exporting.copy_action]
     assert exporting.selected == 1
 
 

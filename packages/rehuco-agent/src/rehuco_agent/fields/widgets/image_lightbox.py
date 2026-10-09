@@ -578,6 +578,7 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes,to
         self.__preview.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         layout.addWidget(self.__preview, 0, 0)
         self.__strip: Final = self.__make_strip()
+        self.__strip.set_exporter(exporter)
         layout.addWidget(self.__strip, 1, 0)
         # the screenshot takes every pixel the fixed-height thumbnail row leaves
         layout.setRowStretch(0, 1)
@@ -610,21 +611,7 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes,to
         self.__show_current()
 
         if host is not None:
-            host.installEventFilter(self)
-            # an app-window overlay is not a descendant of the document it belongs to, so closing that
-            # document would otherwise leave the viewer up, covering the app with a screenshot of a
-            # document that no longer exists. The other two modes are parented into the document and
-            # are destroyed with it, needing no such guard.
-            if host is not document:
-                document.destroyed.connect(self.__on_document_destroyed)
-            # an overlay is a plain child widget, so Qt offers it no modality: clicking another
-            # document's dock tab hands the keyboard to whatever is underneath, and ESC then reaches
-            # nothing at all (#160). Focus is pulled back whenever it lands on the surface this viewer
-            # covers, which is exactly the region the user cannot see or click past anyway.
-            # cast, not an isinstance guard: a QWidget cannot be constructed without a QApplication,
-            # so this widget existing at all is proof instance() is one
-            application = cast(QApplication, QApplication.instance())
-            application.focusChanged.connect(self.__on_focus_changed)
+            self.__cover(host, document)
 
         self.__owner: QWidget | None = document
         # dropped the moment Qt reports the document gone, so a dismissal after that restores nothing;
@@ -638,6 +625,28 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes,to
             # delete the focused editor while the viewer is up, and re-focusing a deleted widget on
             # dismiss would raise
             self.__previous_focus.destroyed.connect(self.__forget_previous_focus)
+
+    def __cover(self, host: QWidget, document: QWidget) -> None:
+        """Track the surface an overlay covers, and keep the keyboard on it.
+
+        :param host: the surface this viewer covers.
+        :param document: the open document this viewer belongs to.
+        """
+        host.installEventFilter(self)
+        # an app-window overlay is not a descendant of the document it belongs to, so closing that
+        # document would otherwise leave the viewer up, covering the app with a screenshot of a
+        # document that no longer exists. The other two modes are parented into the document and
+        # are destroyed with it, needing no such guard.
+        if host is not document:
+            document.destroyed.connect(self.__on_document_destroyed)
+        # an overlay is a plain child widget, so Qt offers it no modality: clicking another
+        # document's dock tab hands the keyboard to whatever is underneath, and ESC then reaches
+        # nothing at all (#160). Focus is pulled back whenever it lands on the surface this viewer
+        # covers, which is exactly the region the user cannot see or click past anyway.
+        # cast, not an isinstance guard: a QWidget cannot be constructed without a QApplication,
+        # so this widget existing at all is proof instance() is one
+        application = cast(QApplication, QApplication.instance())
+        application.focusChanged.connect(self.__on_focus_changed)
 
     @property
     def current_index(self) -> int:

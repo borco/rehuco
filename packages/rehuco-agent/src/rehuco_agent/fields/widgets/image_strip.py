@@ -28,6 +28,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLayout, QScrollArea, QWidget
 
 from ..image_scanner import ImageScanner
+from .image_export import ImageExporter, PressTracker
 from .image_source import ImageVisibility, ScreenshotRowsImageSource
 from .thumbnail_loader import ThumbnailLoader, thumbnail_cache_key
 
@@ -59,10 +60,14 @@ class ThumbnailLabel(QLabel):
     clicked = Signal(Path)
     """Fires with :attr:`path` when the thumbnail is left double-clicked."""
 
+    drag_started = Signal(Path)
+    """Fires with :attr:`path` when the thumbnail is pressed and the pointer moves far enough to drag it out (#395)."""
+
     def __init__(self, path: Path, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.__path: Final = path
         self.__current = False
+        self.__press: Final = PressTracker()
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
     @property
@@ -120,6 +125,17 @@ class ThumbnailLabel(QLabel):
         """
         super().mousePressEvent(event)
         event.accept()
+        self.__press.press(event, self.__path)
+
+    @override
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        """Report a drag once the pointer has moved far enough from the press (#395).
+
+        :param event: the Qt mouse-move event, forwarded to the base class.
+        """
+        super().mouseMoveEvent(event)
+        if self.__press.moved(event) is not None:
+            self.drag_started.emit(self.__path)
 
     @override
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
@@ -129,6 +145,7 @@ class ThumbnailLabel(QLabel):
         """
         super().mouseReleaseEvent(event)
         event.accept()
+        self.__press.release()
 
     @override
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
@@ -198,6 +215,7 @@ class ImageStrip(QScrollArea):  # pylint: disable=too-many-instance-attributes
         """The files the row was last built for, by identity and by name, with the height and pixel ratio -- what a
         rebuild compares against to skip one that would change nothing (#381); ``None`` before the first."""
         self.__current: Path | None = None
+        self.__exporter: ImageExporter | None = None
         self.__requested_visible = True
         self.__row: QLayout
         # the pictures are decoded off the GUI thread into the app's one pixmap cache (#381): a strip decoding
@@ -431,6 +449,23 @@ class ImageStrip(QScrollArea):  # pylint: disable=too-many-instance-attributes
         hidden = set(self.__hidden)
         self.set_images([path for path in files if path.name not in hidden])
 
+    def set_exporter(self, exporter: ImageExporter | None) -> None:
+        """Let a thumbnail be dragged out of the strip as a file and as pixels (#395).
+
+        :param exporter: what stages an image taken out; ``None`` for no drag.
+        """
+        self.__exporter = exporter
+
+    def __on_drag_started(self, path: Path) -> None:
+        """Drag a thumbnail's screenshot out, showing its own picture under the pointer.
+
+        :param path: the screenshot.
+        """
+        label = self.__thumbnails.get(path)
+        exporter = self.__exporter
+        if label is not None and exporter is not None:
+            exporter.drag_path(label, path, label.pixmap())
+
     def set_images(self, paths: list[Path]) -> None:
         """Replace the strip's thumbnails with the given screenshot paths, in order.
 
@@ -474,6 +509,7 @@ class ImageStrip(QScrollArea):  # pylint: disable=too-many-instance-attributes
                 continue
             label = ThumbnailLabel(path)
             label.clicked.connect(self.image_activated)
+            label.drag_started.connect(self.__on_drag_started)
             pixmap = self.__loader.request(self, source, index, thumbnail_height, ratio)
             if pixmap is None:
                 self.__waiting[thumbnail_cache_key(key, thumbnail_height, ratio)] = path  # pylint: disable=unsupported-assignment-operation

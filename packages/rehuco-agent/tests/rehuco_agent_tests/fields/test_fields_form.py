@@ -24,6 +24,7 @@ from rehuco_agent.fields.field import (
     FieldViewerWidgets,
     FilterRequester,
     ImageActivator,
+    ImageExportable,
     LockAware,
     StatusReporter,
 )
@@ -839,3 +840,25 @@ def test_a_tab_is_exempt_from_the_lock_only_when_every_field_on_it_is_lock_aware
         editor_tab=TEST_EDITOR_TAB,
     )
     assert FieldsForm([TextField("title"), shared]).lock_aware_editor_tabs == frozenset()
+
+
+def test_connect_image_export_hands_the_exporter_to_exportable_fields_only(mocker: MockerFixture) -> None:
+    """``connect_image_export`` gives each ``ImageExportable`` field what stages an image dragged out of it, and
+    leaves plain fields alone (#395).
+
+    **Test steps:**
+
+    * build a form of a plain field and an ``images`` field
+    * connect an exporter to the form
+    * verify the images field was handed it, and that only it is an ``ImageExportable``
+    """
+    plain = TextField("title")
+    images = ImagesField("hidden_images", image_scanner=mocker.Mock(files=mocker.Mock(return_value=[])))
+    handed = mocker.patch.object(images, "set_image_exporter")
+    exporter = mocker.Mock()
+
+    FieldsForm([plain, images]).connect_image_export(exporter)
+
+    handed.assert_called_once_with(exporter)
+    assert isinstance(images, ImageExportable)
+    assert not isinstance(plain, ImageExportable)

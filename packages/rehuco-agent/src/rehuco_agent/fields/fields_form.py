@@ -18,10 +18,11 @@ from .field import (
     HeaderPinned,
     ImageActivator,
     ImageCurator,
+    ImageExportable,
     LockAware,
     StatusReporter,
 )
-from .widgets import ImageSelector
+from .widgets import ImageExporter, ImageSelector
 
 LABEL_COLUMN: Final = 0
 MISC_COLUMN: Final = 1
@@ -122,6 +123,18 @@ class FieldsForm:
             if isinstance(field, ImageActivator):
                 field.image_activated.connect(activated)
                 field.curated_images_changed.connect(curated_changed)
+
+    def connect_image_export(self, exporter: ImageExporter | None) -> None:
+        """Hand every image-dragging field what stages an image taken out of the app (#395).
+
+        The `ImageExportable` counterpart of :meth:`connect_image_activations`, and called at the same moment for the
+        same reason: before the field builds its widgets, which read it as they are made.
+
+        :param exporter: the owner's exporter.
+        """
+        for field in self.__fields:
+            if isinstance(field, ImageExportable):
+                field.set_image_exporter(exporter)
 
     def connect_image_curations(
         self, requested: Callable[[ImageSelector, int], None], rows_changed: Callable[[ImageSelector], None]

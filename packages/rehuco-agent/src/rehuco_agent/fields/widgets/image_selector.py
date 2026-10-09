@@ -75,6 +75,7 @@ from ...item_action_icons import apply_action_column_icons
 from ...recycle_bin_deleter import configured_deleter
 from ..image_organizer import ImageOrganizer
 from ..image_scanner import AfterConversion, ImageScanner, ScreenshotSet
+from .image_export import ImageExporter, PressTracker
 from .image_source import ImageVisibility
 
 LOG: Final = logging.getLogger(__name__)
@@ -982,6 +983,8 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes,
         self.__stashed_state: bytes | None = None
         # which selection the preview's decode answers (#381): the latest wins, an earlier one is dropped
         self.__preview_serial = 0
+        self.__exporter: ImageExporter | None = None
+        self.__press: Final = PressTracker()
 
         self.__preview_pane: Final = QWidget()
         overlay = QGridLayout(self.__preview_pane)
@@ -1054,6 +1057,8 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes,
         # the list too: a curating key its action is not taking must not fall through to the view's own
         # handling -- a bare C would otherwise type-ahead to the first row starting with "c" (#370)
         self.__list.installEventFilter(self)
+        # and the list's viewport, where a row is pressed: that is where an image is dragged out of it (#395)
+        self.__list.viewport().installEventFilter(self)
         self.screenshots_changed.connect(self.rows_changed)
         self.image_scanner_changed.connect(lambda _scanner: self.__refresh())  # type: ignore[attr-defined]
         self.image_organizer_changed.connect(lambda _organizer: self.__apply_organizer())  # type: ignore[attr-defined]
@@ -1343,6 +1348,8 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes,
         :returns: ``True`` for a swallowed key; ``False`` otherwise, the double-click being observed
             rather than consumed.
         """
+        if isinstance(event, QMouseEvent) and self.__exporter is not None:
+            self.__track_drag(watched, event)
         if (
             watched is self.__preview
             and event.type() == QEvent.Type.MouseButtonDblClick
@@ -1359,6 +1366,45 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes,
         ):
             return True
         return super().eventFilter(watched, event)
+
+    def set_exporter(self, exporter: ImageExporter | None) -> None:
+        """Let a screenshot be dragged out of the preview or the list as a file and as pixels (#395).
+
+        :param exporter: what stages an image taken out; ``None`` for no drag.
+        """
+        self.__exporter = exporter
+
+    def __track_drag(self, watched: QObject, event: QMouseEvent) -> None:
+        """Start dragging a screenshot out of the preview, or out of the list row it was pressed on, once the pointer
+        has moved far enough from the press (#395). Only observes: the press, the selection and the double-click
+        behave as they always did.
+
+        :param watched: the preview or the list's viewport.
+        :param event: the mouse event.
+        """
+        viewport = self.__list.viewport()
+        exporter = self.__exporter
+        paths = self.__list_model.paths()
+        match event.type():
+            case QEvent.Type.MouseButtonPress:
+                if watched is viewport:
+                    index = self.__list.indexAt(event.position().toPoint())
+                    row = index.row() if index.isValid() else -1
+                elif watched is self.__preview:
+                    row = self.current_index
+                else:
+                    return
+                self.__press.press(event, row if 0 <= row < len(paths) else None)
+            case QEvent.Type.MouseMove:
+                row = self.__press.moved(event)
+                if isinstance(row, int) and exporter is not None and watched in (viewport, self.__preview):
+                    cell = self.__list.visualRect(self.__list_model.index(row, NAME_COLUMN))
+                    picture = self.__preview.pixmap() if watched is self.__preview else viewport.grab(cell)
+                    exporter.drag_path(self.__preview if watched is self.__preview else viewport, paths[row], picture)
+            case QEvent.Type.MouseButtonRelease:
+                self.__press.release()
+            case _:
+                pass
 
     def __is_curating_key(self, event: QKeyEvent) -> bool:
         """Whether ``event`` is one of Convert's or the toggle's keys, as the keymap has them now -- a

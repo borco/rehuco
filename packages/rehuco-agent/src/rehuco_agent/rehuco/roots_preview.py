@@ -16,13 +16,14 @@ from PySide6.QtCore import (
     QLocale,
     QModelIndex,
     QPersistentModelIndex,
+    QPoint,
     QSize,
     Qt,
     QThreadPool,
     QUrl,
     Signal,
 )
-from PySide6.QtGui import QAction, QDesktopServices, QFont, QFontMetrics, QImage, QImageReader, QPalette
+from PySide6.QtGui import QAction, QDesktopServices, QFont, QFontMetrics, QImage, QImageReader, QPalette, QPixmap
 from PySide6.QtWidgets import QComboBox, QFrame, QLabel, QLineEdit, QSizePolicy, QToolButton, QWidget
 from rehuco_core import (
     ArchiveFacts,
@@ -35,6 +36,7 @@ from rehuco_core import (
 )
 
 from ..documents.files_rows import CHECKSUM_STATE_ICONS
+from ..fields.widgets.image_export import PressDragFilter
 from ..settings.image_viewer_settings import shared_image_viewer_settings
 from ..settings.markdown_rendering_settings import shared_markdown_rendering_settings
 from ..settings.reference_images_settings import shared_reference_images_settings
@@ -172,6 +174,10 @@ class RootsPreview(QWidget):
     archive_ready = Signal(int, object)
     """``(serial, facts)``: what a zip's central directory says, or ``None`` when it could not be read."""
 
+    image_drag_requested = Signal(QModelIndex, QWidget, QPixmap)
+    """``(row, widget, picture)``: the picture of an image row has been dragged away from (#395); the owner, which knows
+    what record manages the row, exports it."""
+
     def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
         model: RootsFolderModel,
@@ -205,6 +211,7 @@ class RootsPreview(QWidget):
         self.archive_ready.connect(self.__on_archive, Qt.ConnectionType.QueuedConnection)
         self.__ui.url_value.linkActivated.connect(RootsPreview.__open_link)
         self.__setup_description()
+        PressDragFilter(self.__ui.image_label, self.__image_token, self.__on_image_drag)
         self.show_index(QModelIndex())
 
     @property
@@ -278,6 +285,27 @@ class RootsPreview(QWidget):
         """
         self.__ui.root_name_edit.setEnabled(editable)
         self.__ui.root_storage_combo.setEnabled(editable)
+
+    def __image_token(self, point: QPoint) -> object | None:
+        """What a press on the picture would drag: the row shown, while it is an image whose picture is up (#395).
+
+        :param point: where the press landed; unused, the whole picture being one thing.
+        :returns: the row, or ``None``.
+        """
+        del point
+        index = self.__shown()
+        shown = self.image is not None and index.isValid() and self.__model.file_type_of(index) is FileType.IMAGE
+        return QPersistentModelIndex(index) if shown else None
+
+    def __on_image_drag(self, token: object) -> None:
+        """Report that the picture was dragged away from (#395).
+
+        :param token: the row, as :meth:`__image_token` gave it.
+        """
+        image = self.image
+        if isinstance(token, QPersistentModelIndex) and token.isValid() and image is not None:
+            row = self.__shown()
+            self.image_drag_requested.emit(row, self.__ui.image_label, QPixmap.fromImage(image))
 
     def __setup_description(self) -> None:
         """Make the description view the description dock's: its renderer and stylesheet, the scanner that finds its

@@ -21,6 +21,7 @@ from rehuco_agent.fields.widgets import (
     ScreenshotRowsImageSource,
 )
 from rehuco_agent.fields.widgets.image_selector import PreviewLabel
+from rehuco_agent.fields.widgets.thumbnail_row import ThumbnailRow
 
 pytestmark = mark.usefixtures("real_path_stat")
 
@@ -205,8 +206,8 @@ def test_the_context_menu_offers_copy(
         viewer, QContextMenuEvent(QContextMenuEvent.Reason.Mouse, centre, viewer.mapToGlobal(centre))
     )
 
-    (menu,) = RecordingMenu.shown
-    assert menu == [viewer.copy_action]
+    assert len(RecordingMenu.shown) == 1
+    assert RecordingMenu.shown[0] == [viewer.copy_action]
 
 
 def test_pressing_the_picture_and_moving_drags_a_copy_out(
@@ -309,3 +310,48 @@ def test_the_curating_viewer_copies_too(
     assert [Path(url.toLocalFile()).name for url in held.urls()] == [f"rehu-{ID}__screenshots__a.png"]
     viewer.close()
     qtbot.waitUntil(lambda: not viewer.isVisible())
+
+
+def test_a_thumbnail_dragged_out_of_the_viewers_row_is_taken_out_too(
+    qtbot: QtBot, document: QWidget, resource: Path, staging: Path, mocker: MockerFixture
+) -> None:
+    """The viewer's own thumbnail row drags what it shows, through the viewer's exporter.
+
+    **Test steps:**
+
+    * open a viewer with its row shown and press-and-move the second thumbnail, with ``QDrag`` replaced
+    * verify one copy drag carrying that screenshot's staged file, and that the viewer stayed on the first
+    """
+    drag_class = mocker.patch("rehuco_agent.fields.widgets.image_export.QDrag")
+    images = [resource / "screenshots" / "a.png", resource / "screenshots" / "b.png"]
+    viewer = ImageLightbox(
+        PathImageSource(images, resource),
+        0,
+        ImageViewerMode.DOCUMENT_OVERLAY,
+        document,
+        strip_visible=True,
+        exporter=ImageExporter(staging, lambda: ID),
+    )
+    viewer.reveal()
+    row = viewer.findChild(ThumbnailRow)
+    assert isinstance(row, ThumbnailRow)
+    qtbot.waitUntil(lambda: not row.visualRect(row.model().index(1, 0)).isEmpty())
+    start = row.visualRect(row.model().index(1, 0)).center()
+
+    QTest.mousePress(row.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, start)
+    move_to_widget = QPoint(start.x(), start.y() + 3 * QApplication.startDragDistance())
+    QApplication.sendEvent(
+        row.viewport(),
+        QMouseEvent(
+            QEvent.Type.MouseMove,
+            QPointF(move_to_widget),
+            QPointF(move_to_widget),
+            Qt.MouseButton.NoButton,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        ),
+    )
+
+    (mime,) = drag_class.return_value.setMimeData.call_args.args
+    assert Path(mime.urls()[0].toLocalFile()).name == f"rehu-{ID}__screenshots__b.png"
+    assert viewer.current_index == 0

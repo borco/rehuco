@@ -352,7 +352,7 @@ def rehudb_path(cache_dir: Path, rehuco_id: UUID) -> Path:
     return cache_dir / f"{rehuco_id}{REHUDB_SUFFIX}"
 
 
-class CatalogCache:
+class CatalogCache:  # pylint: disable=too-many-public-methods
     """An open ``.rehudb``, current-version, on the thread that opened it.
 
     Built by :meth:`open`; closed by :meth:`close` or by leaving a ``with`` block.

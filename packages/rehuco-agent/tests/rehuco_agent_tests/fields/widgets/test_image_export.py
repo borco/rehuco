@@ -270,7 +270,7 @@ def test_an_image_that_cannot_be_read_starts_no_drag(
     drag_class.assert_not_called()
 
 
-def test_every_source_reads_the_bytes_as_stored(resource: Path, mocker: MockerFixture) -> None:
+def test_every_source_reads_the_bytes_as_stored(resource: Path) -> None:
     """A file's bytes from disk, a screenshot row's from its file, a content image's through the archive cache.
 
     **Test steps:**
