@@ -18,7 +18,7 @@ from borco_pyside.qtads import QtAdsFloatingShowGuard, QtAdsFocusTracker, QtAdsP
 from borco_pyside.shortcuts import BindingRole
 from borco_pyside.theming import ActionIconThemeHandler, ThemeManager, ThemeMenu, ThemeModel
 from borco_pyside.widgets import ToolBarStretch
-from PySide6.QtCore import QByteArray
+from PySide6.QtCore import QByteArray, Qt
 from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QIcon, QShowEvent
 from PySide6.QtWidgets import (
     QApplication,
@@ -2175,7 +2175,8 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
                     self.__recent_files.replace(recorded, recorded.with_stem(new_path.stem))
 
     def raise_and_activate(self) -> None:
-        """Bring this window to the foreground, restoring it first if minimized ([[nodes#single-instance]]).
+        """Bring this window to the foreground, restoring it first if minimized ([[nodes#single-instance]])
+        -- to where it was minimized from, snap or maximize included (:meth:`__show_restored`, #489).
 
         Called whenever a path is opened -- including a forwarded open from a second process via
         the single-instance guard -- so the running app visibly comes forward rather than silently
@@ -2208,7 +2209,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # armed around the show only, so a floating window legitimately on screen already (a forwarded
         # open while the app is up) is not touched -- only what this show itself brings up too early
         floating_show_guard = QtAdsFloatingShowGuard()
-        self.__show_at_once(self, self.showNormal if self.isMinimized() else self.show)
+        self.__show_at_once(self, self.__show_restored if self.isMinimized() else self.show)
         self.__floating_docks_hidden_with_window.extend(floating_show_guard.release())
         for container in self.__floating_docks_hidden_with_window:
             self.__show_at_once(container, container.show)
@@ -2221,6 +2222,28 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
             window_activation.force_foreground(self)
 
+    def __show_restored(self) -> None:
+        """Show this window out of a minimize, where it was minimized from (#489): a maximize, or a
+        snap/tile to part of the screen, as readily as a normal rectangle.
+
+        Not ``showNormal()``, which asks for the *normal* state outright and so un-maximizes on every
+        platform. A maximize is a Qt window state, so clearing the minimized bit alone keeps it
+        everywhere; a snap is not one anywhere -- the window manager owns it -- and on macOS and Linux
+        the manager puts a tiled window back where it was on its own. On Windows, Qt's own un-minimize
+        is ``SW_SHOWNORMAL``, which drops a snap, so there the native restore does it instead. The
+        ``show()`` is for a window hidden to the tray while minimized, which has to come back under Qt's
+        own visibility bookkeeping; on a window merely minimized it is a no-op (Qt returns early from a
+        show on a widget that is not hidden).
+        """
+        if sys.platform == "win32":
+            from borco_pyside.platforms.windows import window_activation  # pylint: disable=import-outside-toplevel
+
+            self.show()
+            window_activation.restore_if_minimized(self)
+            return
+        self.setWindowState(self.windowState() & ~Qt.WindowState.WindowMinimized)
+        self.show()
+
     @staticmethod
     def __show_at_once(window: QWidget, show: Callable[[], None]) -> None:
         """Run ``show`` on ``window`` so that it is on screen, painted, when this returns (#308).
@@ -2231,7 +2254,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         clock. Elsewhere it is the plain ``show``.
 
         :param window: the top-level widget ``show`` puts on screen.
-        :param show: the show to run -- ``show`` or ``showNormal``, whichever the caller means.
+        :param show: the show to run -- ``show`` or :meth:`__show_restored`, whichever the caller means.
         """
         if sys.platform != "win32":
             show()

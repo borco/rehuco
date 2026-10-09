@@ -3400,25 +3400,31 @@ def test_raise_and_activate_shows_a_normal_window(mocker: MockerFixture, qtbot: 
 
 
 def test_raise_and_activate_restores_a_minimized_window(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A minimized window is restored via ``showNormal()`` instead of ``show()``.
+    """Off Windows, a minimized window is restored by clearing its minimized state alone, so a maximize
+    survives -- not via ``showNormal()``, which un-maximizes (#489).
 
     **Test steps:**
 
-    * force ``sys.platform`` to ``"linux"``, mark the window minimized
+    * force ``sys.platform`` to ``"linux"``, mark the window minimized and maximized
     * call ``raise_and_activate``
-    * verify ``showNormal`` (not ``show``) was called
+    * verify the window state set keeps the maximize and drops the minimize, ``show`` was called, and
+      ``showNormal`` was not
     """
     mocker.patch("rehuco_agent.main_window.sys.platform", "linux")
     window = MainWindow()
     qtbot.addWidget(window)
     mocker.patch.object(window, "isMinimized", return_value=True)
+    states = Qt.WindowState
+    mocker.patch.object(window, "windowState", return_value=states.WindowMinimized | states.WindowMaximized)
+    set_window_state = mocker.patch.object(window, "setWindowState")
     show_normal = mocker.patch.object(window, "showNormal")
     show = mocker.patch.object(window, "show")
 
     window.raise_and_activate()
 
-    show_normal.assert_called_once_with()
-    show.assert_not_called()
+    set_window_state.assert_called_once_with(states.WindowMaximized)
+    show.assert_called_once_with()
+    show_normal.assert_not_called()
 
 
 def test_raise_and_activate_forces_foreground_on_windows(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -3452,6 +3458,57 @@ def test_raise_and_activate_forces_foreground_on_windows(mocker: MockerFixture, 
     window.raise_and_activate()
 
     force_foreground.assert_called_once_with(window)
+
+
+def test_raise_and_activate_leaves_a_minimized_window_to_the_windows_helper(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """On Windows a minimized window is restored natively, in the show itself, not with ``showNormal()``.
+
+    ``showNormal()`` there is ``SW_SHOWNORMAL``, which drops a maximize or a snap to half the screen along
+    with the minimize; ``restore_if_minimized`` is the ``SW_RESTORE`` that keeps it. It runs with the
+    show, before the floating docks are put back and inside the show-at-once wrapper (#308), rather than
+    being left to ``force_foreground`` at the end. Built before faking ``sys.platform``, for the reason
+    ``test_raise_and_activate_forces_foreground_on_windows`` gives.
+
+    **Test steps:**
+
+    * build the window with the real platform still in effect, and mark it minimized
+    * force ``sys.platform`` to ``"win32"`` and mock the Windows-only helpers, recording the order of the
+      restore against the docks' shows and the foreground helper
+    * call ``raise_and_activate`` with one floating dock put away
+    * verify ``show`` then ``restore_if_minimized`` ran (not ``showNormal``), before the dock's show and
+      the foreground helper
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    mocker.patch.object(window, "isMinimized", return_value=True)
+    show_normal = mocker.patch.object(window, "showNormal")
+    mocker.patch.object(window, "raise_")
+    mocker.patch.object(window, "activateWindow")
+    container = mocker.MagicMock()
+    window._MainWindow__floating_docks_hidden_with_window.append(container)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    order: list[str] = []
+    mocker.patch.object(window, "show", side_effect=lambda: order.append("show"))
+    container.show.side_effect = lambda: order.append("dock")
+    mocker.patch("rehuco_agent.main_window.sys.platform", "win32")
+    mocker.patch("borco_pyside.platforms.windows.window_transitions.open_transition_disabled")
+    mocker.patch("borco_pyside.platforms.windows.window_painting.paint_now")
+    restore = mocker.patch(
+        "borco_pyside.platforms.windows.window_activation.restore_if_minimized",
+        side_effect=lambda w: order.append("restore"),
+    )
+    mocker.patch(
+        "borco_pyside.platforms.windows.window_activation.force_foreground",
+        side_effect=lambda w: order.append("foreground"),
+    )
+
+    window.raise_and_activate()
+
+    show_normal.assert_not_called()
+    restore.assert_called_once_with(window)
+    assert order == ["show", "restore", "dock", "foreground"]
 
 
 def test_raise_and_activate_skips_the_windows_helper_elsewhere(mocker: MockerFixture, qtbot: QtBot) -> None:
