@@ -615,6 +615,9 @@ goes follows each platform's own convention:
 - **Linux follows XDG**, as its users and tools expect: settings under the config directory, durable state under the
   data directory, and disposable caches under the cache directory, which backup tools and cleaners know to skip. The
   `XDG_*` variables are honored when set; the paths in parentheses are their defaults.
+- **Images handed to other apps are staged under the caches**, in `staged/` (#395): byte-identical copies of the images
+  dragged or copied out, named by where they came from ([[reference-images#modes]]). They outlive the drop and a later
+  paste, and the agent deletes the ones unused for seven days when it starts.
 - **Not everything in it is disposable.** Caches can be deleted and rebuilt; the retention store of a removable root,
   per-user state not yet synced, and `.rehusw` ([[data-model#local-file-trio]]) cannot. Deleting the folder wholesale
   loses them.

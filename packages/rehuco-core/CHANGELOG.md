@@ -11,6 +11,12 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ### Added
 
+- `staged_name` names an image taken out of a resource `rehu-<origin>__<path segments joined by __>`, safe on Windows
+  and macOS and capped at 200 UTF-8 bytes without shortening an id or the basename's extension; `parse_staged_name`
+  reads the origin and the path back as `StagedImageName`, whose `uuid` tells an id from a location. `staging_origin`
+  picks the origin: the record's id, else its location folder or stem. `stage_image` writes the image's bytes
+  unchanged into a staging folder (reusing an identical copy), and `prune_staged` deletes the copies unused for an
+  age. `CatalogCache.resource_uuid` is an indexed lookup of a record's id by root and relative path.
 - `read_archive_facts` describes a zip from its central directory alone — files and images, size unpacked and packed,
   each compression method with its member count, encrypted members — as `ArchiveFacts`, which says whether the
   methods are slow (bzip2, LZMA) or beyond `zipfile` (deflate64, encryption). `list_archive_images` lists one

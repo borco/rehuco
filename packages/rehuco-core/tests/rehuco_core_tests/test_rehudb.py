@@ -827,6 +827,30 @@ def test_a_resource_type_is_what_its_row_says_found_by_its_place(
     assert cache.resource_type(second.root_id, "other.rehu") == "tutorial"
 
 
+def test_a_resource_uuid_is_what_its_row_says_found_by_its_place(
+    filled: tuple[CatalogCache, RehucoRoot, RehucoRoot],
+) -> None:
+    """An indexed lookup by root and relative path: the record's id, ``""`` for a legacy record, ``None`` for a path
+    with no row (#395).
+
+    **Test steps:**
+
+    * scan a record with an id, a legacy one without, and a record under the other root
+    * verify the id of each, its path in other case, a missing path and the wrong root
+    """
+    cache, first, second = filled
+    identifier = "0f8fad5b-d9cb-469f-a165-70867728950e"
+    cache.apply_root_scan(first.root_id, [record("Pack/info.rehu", uuid=identifier), record("old.tc")])
+    cache.apply_root_scan(second.root_id, [record("other.rehu", uuid="x")])
+
+    assert cache.resource_uuid(first.root_id, "Pack/info.rehu") == identifier
+    assert cache.resource_uuid(first.root_id, "pack/INFO.rehu") == identifier
+    assert cache.resource_uuid(first.root_id, "old.tc") == ""
+    assert cache.resource_uuid(first.root_id, "missing.rehu") is None
+    assert cache.resource_uuid(first.root_id, "other.rehu") is None
+    assert cache.resource_uuid(second.root_id, "other.rehu") == "x"
+
+
 def test_a_signature_matches_only_a_readable_uncleared_row_of_the_same_time_and_size() -> None:
     """An error row and a cleared one are always read again."""
     assert RecordSignature("a", 7, 3).matches(7, 3)

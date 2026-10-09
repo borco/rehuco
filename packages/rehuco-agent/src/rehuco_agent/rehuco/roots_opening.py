@@ -12,12 +12,12 @@ from typing import Final, Protocol
 from PySide6.QtCore import QModelIndex, Qt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QApplication, QWidget
-from rehuco_core import FileType, RenameCoordinator
+from rehuco_core import FileType, RenameCoordinator, staging_origin
 
 from .rehuco_roots_panel_ui import Ui_RehucoRootsPanel
 from .roots_folder_model import RootsFolderModel
-from .roots_lightbox import RootsLightbox
-from .roots_management import PackInfo, PackState, pack_info
+from .roots_lightbox import ImagesOwner, RootsLightbox
+from .roots_management import PackInfo, PackState, managing_record, pack_info
 
 EXTERNAL_OPEN_MODIFIERS: Final = Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.AltModifier
 """The keys held at a double-click that hand an image or an archive to the system's application instead of the
@@ -31,11 +31,14 @@ EXTERNAL_OPEN_TOOLTIP: Final = (
 PLAIN_OPEN_TOOLTIP: Final = "Open this file with the application the system associates with it."
 
 
-class TypeSource(Protocol):  # pylint: disable=too-few-public-methods
+class TypeSource(Protocol):
     """What the cache says of a record: the open catalog."""
 
     def resource_type(self, record: Path) -> str | None:
         """The type the cache holds for a record, or ``None`` for none."""
+
+    def resource_uuid(self, record: Path) -> str | None:
+        """The id the cache holds for a record, or ``None`` for none."""
 
 
 class RootsOpening:
@@ -125,8 +128,9 @@ class RootsOpening:
         :param path: its path.
         """
         model = self.__model
+        owner = self.owner_of(index)
         if model.file_type_of(index) is FileType.ARCHIVE:
-            self.__lightbox.open_archive(path)
+            self.__lightbox.open_archive(path, owner)
             return
         holder = index.parent()
         images: list[Path] = []
@@ -136,4 +140,17 @@ class RootsOpening:
             if sibling_path is not None and model.file_type_of(sibling) is FileType.IMAGE:
                 images.append(sibling_path)
         # the row is among its own siblings, so the list holds it
-        self.__lightbox.open_images(images, images.index(path))
+        self.__lightbox.open_images(images, images.index(path), owner)
+
+    def owner_of(self, index: QModelIndex) -> ImagesOwner | None:
+        """Whose images a row's lightbox shows, as an image copied out of it is named (#395): the record that manages
+        the row -- by the id the cache holds for it, else by its location -- with paths relative to its folder.
+
+        :param index: the image or archive row.
+        :returns: the owner; ``None`` when no record manages the row, which the lightbox names by its folder.
+        """
+        managing = managing_record(self.__model, index)
+        if managing is None:
+            return None
+        record = managing.record
+        return ImagesOwner(staging_origin(self.__types.resource_uuid(record) or "", record), record.parent)

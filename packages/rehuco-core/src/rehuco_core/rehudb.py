@@ -590,6 +590,21 @@ class CatalogCache:
         ).fetchone()
         return None if row is None else row[0]
 
+    def resource_uuid(self, root_id: UUID, relative: str) -> str | None:
+        """The id a cached record carries, for the Roots view to name an image copied out of its resource (#395).
+
+        An indexed lookup like :meth:`resource_type`: nothing is read from disk.
+
+        :param root_id: the root.
+        :param relative: the record's root-relative path.
+        :returns: the id, ``""`` for a legacy record (which has none until converted), or ``None`` when no row holds
+            that path.
+        """
+        row = self.__connection.execute(
+            "SELECT uuid FROM resources WHERE root_id = ? AND path_key = ?", (str(root_id), catalog_path_key(relative))
+        ).fetchone()
+        return None if row is None else row[0]
+
     def signature(self, root_id: UUID, relative: str) -> RecordSignature | None:
         """One row's signature, for verify-on-access ([[data-model#scan-and-staleness]]).
 

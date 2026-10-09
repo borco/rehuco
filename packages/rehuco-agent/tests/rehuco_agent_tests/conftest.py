@@ -18,14 +18,15 @@ import sys
 import threading
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
+from unittest.mock import patch
 from uuid import UUID
 
 from borco_core.logging import SharedRotatingFileHandler
 from borco_pyside.logging import LogBridge
 from borco_pyside.shortcuts import CommandRegistry
 from PySide6.QtCore import qInstallMessageHandler
-from pytest import fixture
+from pytest import TempPathFactory, fixture
 from pytest_mock import MockerFixture
 from rehuco_agent import main_rc  # noqa: F401  # pylint: disable=unused-import  # registers :/icons/... resources
 from rehuco_agent.app_logging import shared_log_bridge
@@ -188,6 +189,24 @@ class FakeSettings:  # pylint: disable=invalid-name,missing-function-docstring,r
 # pylint: enable=duplicate-code,unsupported-assignment-operation,unsupported-delete-operation
 
 
+REAL_PATH_STAT: Final = Path.stat
+"""``Path.stat`` as the standard library has it, bound at import -- before :func:`default_path_stat_size` stands in."""
+
+
+@fixture(autouse=True, scope="session")
+def isolate_cache_folder(tmp_path_factory: TempPathFactory) -> Iterator[None]:
+    """Point the app's cache folder at a temporary one for the whole session (#395).
+
+    What reads it through :mod:`~rehuco_agent.settings.persistent_settings` -- the staging folder of an image copied
+    out, and the startup prune of it -- would otherwise write to, and delete from, the user's own cache. A module that
+    imported ``cache_folder`` by name (the root catalog) is patched where it is used, by its own tests.
+
+    :param tmp_path_factory: pytest's session temporary-directory factory.
+    """
+    with patch("rehuco_agent.settings.persistent_settings.cache_folder", return_value=tmp_path_factory.mktemp("cache")):
+        yield
+
+
 @fixture(autouse=True)
 def default_path_stat_size(mocker: MockerFixture) -> None:
     """Give ``Path.stat()`` a usable ``st_size`` by default, for every test that mocks ``Path.read_text``
@@ -215,6 +234,20 @@ def default_path_stat_size(mocker: MockerFixture) -> None:
             return mocker.Mock(st_size=0, st_mtime=0.0)
 
     mocker.patch.object(Path, "stat", default_stat)
+
+
+@fixture
+def real_path_stat(default_path_stat_size: None, mocker: MockerFixture) -> None:
+    """Put the real ``Path.stat()`` back, for a test that writes real files under ``tmp_path`` (#395).
+
+    The stand-in of :func:`default_path_stat_size` answers a missing file with a ``Mock``, so an atomic write to a
+    new path -- which reads the destination's mode first -- dies in ``stat.S_IMODE``.
+
+    :param default_path_stat_size: the stand-in this replaces, so it is in place first.
+    :param mocker: pytest-mock fixture.
+    """
+    del default_path_stat_size
+    mocker.patch.object(Path, "stat", REAL_PATH_STAT)
 
 
 @fixture(autouse=True, scope="session")

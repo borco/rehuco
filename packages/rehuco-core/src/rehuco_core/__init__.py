@@ -234,6 +234,14 @@ from .resource_scoping import (
     resource_name,
 )
 from .root_folders import RootFolderLister
+from .staged_images import (
+    StagedImageName,
+    parse_staged_name,
+    prune_staged,
+    stage_image,
+    staged_name,
+    staging_origin,
+)
 from .storage_traits import readers_must_yield_for_directory_rename
 from .tasks import (
     DEFAULT_SHUTDOWN_TIMEOUT,
@@ -496,6 +504,7 @@ __all__ = [
     "ScreenshotRename",
     "ScreenshotSkipReason",
     "ScreenshotSlotMatch",
+    "StagedImageName",
     "StopRequest",
     "StrandedManifestPlan",
     "SweepChecksumsJob",
@@ -614,6 +623,11 @@ __all__ = [
     "screenshot_name_patterns_state",
     "seed_checksum_record",
     "seed_from_legacy_manifest",
+    "parse_staged_name",
+    "prune_staged",
+    "stage_image",
+    "staged_name",
+    "staging_origin",
     "sweep_summary",
     "take_enclosing_claims",
     "tc_to_rehu_data",

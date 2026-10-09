@@ -10,6 +10,7 @@ from .date_edit import DateEdit
 from .duration_edit import DurationEdit
 from .duration_measurement_edit import DurationMeasurementEdit
 from .expand_toggle_button import ExpandToggleButton
+from .image_export import ImageExporter, image_mime
 from .image_lightbox import ImageLightbox, ImageViewerMode, viewer_mode_for
 from .image_selector import ImageSelector
 from .image_source import (
@@ -69,6 +70,8 @@ __all__ = [
     "SourcesEditor",
     "UrlEditDropFilter",
     "ImageDescription",
+    "ImageExporter",
+    "image_mime",
     "ImageLightbox",
     "ImageSelector",
     "ImageSource",

@@ -12,6 +12,14 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 ### Added
 
+- **An image can be dragged or copied out to other apps.** Drag one from the Content Images grid or from any lightbox,
+  or press **Ctrl+C** (also on the grid's toolbar and in both context menus), and another app gets an unchanged copy
+  of the file along with its pixels: Explorer, Finder, PureRef, GIMP, Krita and Blender take the file; a browser or a
+  chat app takes the picture. The copy is named after where it came from — `rehu-<resource id>__pack.zip__bar__a.jpg`
+  for `bar/a.jpg` inside `pack.zip` — so an image found later in a reference board or a downloads folder can be traced
+  back to its resource. A record with no id yet (a `.tc`) is named by its folder instead, as is an image in the Roots
+  view that no record manages. In a lightbox the drag starts on the picture, so a double-click still closes it. The
+  copies are kept in the app's cache folder (`staged`) and deleted when unused for seven days.
 - The Roots view opens **images and reference packs in the lightbox**. A double-click on an image shows the images
   beside it, in the column's order, starting on it; a double-click on a zip or cbz that the catalog knows as
   reference images — a record of that type manages it, its own `foo.rehu` or its folder's `info.rehu` — shows its

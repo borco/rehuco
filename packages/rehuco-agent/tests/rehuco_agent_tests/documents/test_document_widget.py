@@ -4895,6 +4895,44 @@ def test_an_activation_carrying_anything_else_opens_no_viewer(widget: DocumentWi
     assert widget.sub_docks._DocumentSubDocks__image_viewer is None  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
 
+def test_a_viewer_the_document_opens_copies_out_under_the_document_id(qtbot: QtBot) -> None:
+    """Every lightbox a document opens can take its image out (#395), named by the document's id.
+
+    **Test steps:**
+
+    * build a widget over a new document, which has an id, and open a folder viewer from the Files sub-dock
+    * verify the viewer offers Copy and a drag, and what it stages is named by the id
+    """
+    document = RehuDocument.new(Path("/fake/library/sculpting/info.rehu"))
+    widget = DocumentWidget(RehuDocumentModel(document))
+    qtbot.addWidget(widget)
+    view = files_dock(widget).widget()
+    assert isinstance(view, FilesView)
+    folder = [Path("/fake/library/sculpting/a.jpg")]
+
+    view.images_activated.emit(folder, folder[0])
+
+    viewer = widget.sub_docks._DocumentSubDocks__image_viewer  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert viewer is not None
+    assert viewer.copy_action is not None
+    assert viewer.drag_enabled()
+    assert document.id
+    assert widget.sub_docks._DocumentSubDocks__staging_origin() == document.id  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+
+def test_a_legacy_document_names_what_it_copies_out_by_its_folder(legacy_widget: DocumentWidget) -> None:
+    """A ``.tc`` has no id until converted (#395): an image taken out of it is named by the record's folder.
+
+    **Test steps:**
+
+    * ask the legacy widget what it names an image taken out of it by
+    * verify the ``info.tc``'s folder name
+    """
+    origin = legacy_widget.sub_docks._DocumentSubDocks__staging_origin()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    assert origin == TC_PATH.parent.name
+
+
 def test_a_curation_edit_does_not_re_point_a_folder_viewer(widget: DocumentWidget) -> None:
     """A viewer opened from the Files sub-dock shows the folder, and a curation edit says nothing about
     the folder -- re-pointing it at the strip's set would silently swap what the reader was looking at

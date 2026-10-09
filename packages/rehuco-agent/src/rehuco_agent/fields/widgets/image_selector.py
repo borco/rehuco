@@ -36,6 +36,7 @@ from PySide6.QtCore import (
     QModelIndex,
     QObject,
     QPersistentModelIndex,
+    QRect,
     QRunnable,
     Qt,
     QThreadPool,
@@ -60,6 +61,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QSizePolicy,
     QSplitter,
+    QStyle,
     QTreeView,
     QVBoxLayout,
     QWidget,
@@ -183,6 +185,19 @@ class PreviewLabel(QLabel):
         """
         self.__source = pixmap
         self.__rescale()
+
+    def image_rect(self) -> QRect:
+        """Where the scaled image is drawn, in the label's coordinates -- the part of it that is picture rather than
+        margin (#395).
+
+        :returns: the image's rect; an empty one with no image.
+        """
+        pixmap = self.pixmap()
+        if pixmap.isNull():
+            return QRect()
+        return QStyle.alignedRect(
+            self.layoutDirection(), self.alignment(), pixmap.deviceIndependentSize().toSize(), self.contentsRect()
+        )
 
     def __rescale(self) -> None:
         """Repaint the source pixmap scaled to fit the label, or clear when there is none."""

@@ -371,6 +371,8 @@ checksums, with one more dimension:
 started. The order of building is the browser, then blur, then Pinterest browsing ([[implementation-plan]]);
 practice mode is deferred ([[reference-images#practice-sessions]]).
 
+- [#395: feat: drag or copy a content image out to other apps — a staged copy named by its origin, plus the pixels](https://github.com/borco/rehuco/issues/395)
+
 - **Browse a pack as it is** — the archive's members in zip order with natural sort
   ([[reference-images#image-identity]]). This is #221's surface, and needs only tier 0. Its tracer needs
   **no sidecar and no model**: `ContentImageScanner` already enumerates the members, the lightbox already shows
@@ -387,6 +389,22 @@ practice mode is deferred ([[reference-images#practice-sessions]]).
   unacceptable, and a blur box must be drawn over the pixels the user will actually see. The working image is
   shown **first, as a placeholder, and swapped for the original when it arrives** — progressive, never
   blocking on the archive; an unreachable archive leaves the placeholder and says so.
+- **Taking an image out** (#395) — a drag from the Content Images grid or from any lightbox, or **Copy** (Ctrl+C, a
+  toolbar button, the context menu), hands another app two things at once: a **byte-identical copy** staged in the
+  app's cache folder (`staged/`), and the decoded pixels. File-aware apps (Explorer, Finder, PureRef, GIMP, Krita,
+  Blender) take the file; bitmap-only ones take the pixels. An archive member has no file of its own and a loose
+  image's name says nothing of where it came from, so the copy is named
+  `rehu-<origin>__<path segments joined by __>` — the image's path relative to its record, an archive a segment of its
+  own: `foo.zip/bar/a.jpg` becomes `rehu-<uuid>__foo.zip__bar__a.jpg`. The origin is the record's id; a record with
+  none (a `.tc`, an old `.rehu`) is named by its location folder, or a file-scoped record by its stem; in the Roots
+  view, an image no record manages is named by its folder. `parse_staged_name` reads the origin and the path back, and
+  tells an id from a location by its shape. Names are capped at 200 UTF-8 bytes, shortening the folders between the
+  origin and the basename first and never the id. **The bytes are never changed** — no EXIF, XMP or PNG text — so a
+  copy found later in a board or a downloads folder stays identifiable by its content hash even once renamed. The
+  drag is a copy and nothing else, so a file manager never moves the staged file away; staged files outlive the drop
+  and a paste hours later, a re-export of the same image reuses its file, and files unused for seven days are pruned
+  when the app starts. **In a lightbox the drag starts on the picture** while the whole image is in view; once the
+  viewer can zoom, a zoomed-in image pans under the same gesture instead.
 - **Pinterest-like search** — a fuzzy text box; empty text picks a random starting image. Clicking an image
   shows it large together with similar images, so browsing is a walk through neighbourhoods rather than a
   result list. "Similar" needs no model at query time (the embeddings are stored); text needs the encoder or

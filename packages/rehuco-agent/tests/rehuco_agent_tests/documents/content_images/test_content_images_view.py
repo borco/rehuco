@@ -965,17 +965,14 @@ def test_a_reset_drops_the_old_table_before_the_repack(
     qtbot.waitUntil(lambda: view.layout_table is not None and len(view.layout_table.rects) == 1)
 
 
-def test_the_view_offers_no_editing_affordance(view: ContentImagesView) -> None:
-    """Read-only, visibly so: no context menu, no drag, and focus only by a click -- for the keyboard
-    navigation, never to type into. (Selection is a view state, not an edit.)
+def test_the_view_takes_focus_only_by_a_click(view: ContentImagesView) -> None:
+    """Focus only by a click -- for the keyboard navigation and Copy, never to type into.
 
     **Test steps:**
 
-    * verify the context-menu policy, the focus policy and the absence of a drag start
+    * verify the focus policy
     """
-    assert view.contextMenuPolicy() == Qt.ContextMenuPolicy.NoContextMenu
     assert view.focusPolicy() == Qt.FocusPolicy.ClickFocus
-    assert not hasattr(view, "startDrag")
 
 
 def test_visible_thumbnails_are_decoded_and_painted(

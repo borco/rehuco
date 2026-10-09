@@ -79,6 +79,11 @@ class ArchiveImageSource:
         data = self.__cache.read(self.__entries[index])
         return decode_image(data, max_height) if data is not None else QImage()
 
+    def read(self, index: int) -> bytes | None:
+        """The image's bytes as the archive or the file holds them, through the cache; ``None`` when they cannot
+        be read."""
+        return self.__cache.read(self.__entries[index])
+
 
 def member_pixel_size(cache: ArchiveCache, entry: ContentImageEntry) -> QSize:
     """One member's pixel size, off a partial inflate first and the whole member only when the header

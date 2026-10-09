@@ -106,6 +106,13 @@ class ImageSource(Protocol):
         :returns: the image, or a null one when it cannot be decoded.
         """
 
+    def read(self, index: int) -> bytes | None:  # pyright: ignore[reportReturnType]
+        """The image's bytes exactly as stored, undecoded -- what a copy taken out of the app holds (#395).
+
+        :param index: the position.
+        :returns: the bytes, or ``None`` when they cannot be read.
+        """
+
 
 DECODE_OVERSAMPLE: Final = 2
 """How many times the asked-for height a thumbnail is decoded at before the final smooth downscale.
@@ -258,11 +265,15 @@ class PathImageSource:
 
     def load(self, index: int, max_height: int | None) -> QImage:
         """Decode the file; null when it cannot be read or is not an image."""
+        data = self.read(index)
+        return decode_image(data, max_height) if data is not None else QImage()
+
+    def read(self, index: int) -> bytes | None:
+        """The file's bytes; ``None`` when it cannot be read."""
         try:
-            data = self.__paths[index].read_bytes()
+            return self.__paths[index].read_bytes()
         except OSError:
-            return QImage()
-        return decode_image(data, max_height)
+            return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -348,3 +359,7 @@ class ScreenshotRowsImageSource:
     def load(self, index: int, max_height: int | None) -> QImage:
         """Decode the file; null when it cannot be read or is not an image."""
         return self.__files.load(index, max_height)
+
+    def read(self, index: int) -> bytes | None:
+        """The file's bytes; ``None`` when it cannot be read."""
+        return self.__files.read(index)

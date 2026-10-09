@@ -21,10 +21,12 @@ from typing import Final, cast, override
 
 import humanize
 from borco_pyside.theming import glyph_icon, read_resource_bytes, recolored_svg_icon
-from PySide6.QtCore import QEvent, QObject, QSize, Qt, Signal
+from PySide6.QtCore import QEvent, QObject, QPoint, QSize, Qt, Signal
 from PySide6.QtGui import (
+    QAction,
     QCloseEvent,
     QColor,
+    QContextMenuEvent,
     QEnterEvent,
     QIcon,
     QKeyEvent,
@@ -41,12 +43,15 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QLabel,
     QMainWindow,
+    QMenu,
     QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
+from ...commands import COPY_IMAGE, shared_command_registry
 from ...glyphs import LIGHTBOX_CLOSE_GLYPH
+from .image_export import ImageExporter
 from .image_selector import PreviewLabel
 from .image_source import ImageDescription, ImageSource
 from .thumbnail_loader import ThumbnailLoader
@@ -496,6 +501,11 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes,to
     all. Every path funnels through ``close()``, and the widget deletes itself afterwards
     (``WA_DeleteOnClose``).
 
+    **The image leaves the app** (#395) -- when the owner hands over an exporter -- by **Copy** (``Ctrl+C``, the
+    context menu) or by a **drag** that starts on the picture itself: another app receives a byte-identical copy
+    staged under a name that says where it came from, and its pixels. A press on the backdrop beside the picture
+    drags nothing, and neither does a press that does not move -- so a double-click still dismisses.
+
     :param source: the images to navigate, in order; an empty one shows nothing and closes on the
         first navigation.
     :param current: the position to open on, clamped into the source.
@@ -512,6 +522,8 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes,to
         when the owner names none.
     :param double_click_closes: whether a double-click on the image dismisses the viewer
         (keyword-only).
+    :param exporter: what stages an image copied or dragged out (keyword-only, #395); with none, nothing leaves
+        the viewer.
     """
 
     closed = Signal()
@@ -534,6 +546,7 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes,to
         info_visible: bool = False,
         backdrop: QColor | None = None,
         double_click_closes: bool = True,
+        exporter: ImageExporter | None = None,
     ) -> None:
         host = None if mode is ImageViewerMode.FULL_SCREEN else self.__overlay_host(mode, document)
         flags = Qt.WindowType.Widget if host is not None else Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint
@@ -547,6 +560,10 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes,to
         self.__source: ImageSource = source
         self.__index = min(max(current, 0), max(len(source) - 1, 0))
         self.__loader: Final = loader if loader is not None else ThumbnailLoader(self)
+        self.__exporter: Final = exporter
+        self.__press: QPoint | None = None
+        """Where a left press landed on the picture -- what a move past the drag distance drags (#395)."""
+        self.__copy_action: Final = self.__make_copy_action() if exporter is not None else None
 
         self.__strip_height = strip_height
         layout = QGridLayout(self)
@@ -681,6 +698,26 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes,to
         """
         self.__double_click_closes = closes
 
+    @property
+    def copy_action(self) -> QAction | None:
+        """Copies the image on screen out of the app (``Ctrl+C``, #395); ``None`` with no exporter."""
+        return self.__copy_action
+
+    def copy_current(self) -> None:
+        """Put the image on screen on the clipboard, as a staged file and as pixels (#395)."""
+        if self.__exporter is not None and len(self.__source) > 0:
+            self.__exporter.copy(self.__source, self.__index)
+
+    def drag_enabled(self) -> bool:
+        """Whether a press on the picture that moves drags the image out (#395).
+
+        Always, while the whole image is in view -- which, with no zoom, it always is. **A zoomed-in image is to pan
+        under the same gesture instead** ([[reference-images#modes]]); this is where that answer goes.
+
+        :returns: whether a press may drag.
+        """
+        return self.__exporter is not None
+
     def set_strip_visible(self, visible: bool) -> None:
         """Show or hide the thumbnail row from outside, exactly as its own toggle does (#161).
 
@@ -788,6 +825,61 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes,to
                 self.__strip_toggle.toggle()
             case _:
                 super().keyPressEvent(event)
+
+    @override
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        """Remember a left press on the picture -- not the backdrop beside it -- as where a drag may start (#395).
+
+        Only reaches here from the image area: the bands, the corner controls and the thumbnail row take their own
+        presses.
+
+        :param event: the Qt mouse event, forwarded to the base class.
+        """
+        super().mousePressEvent(event)
+        point = event.position().toPoint()
+        on_picture = self.__preview.image_rect().translated(self.__preview.pos()).contains(point)
+        left = event.button() == Qt.MouseButton.LeftButton
+        self.__press = point if left and on_picture and self.drag_enabled() else None
+
+    @override
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        """Drag the image out once a press on the picture has moved far enough (#395).
+
+        :param event: the Qt mouse event, forwarded to the base class.
+        """
+        super().mouseMoveEvent(event)
+        press = self.__press
+        exporter = self.__exporter
+        if press is None or exporter is None or not event.buttons() & Qt.MouseButton.LeftButton:
+            return
+        if (event.position().toPoint() - press).manhattanLength() >= QApplication.startDragDistance():
+            self.__press = None
+            exporter.drag(self, self.__source, self.__index, self.__preview.pixmap())
+
+    @override
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        """A press let go without moving far drags nothing.
+
+        :param event: the Qt mouse event, forwarded to the base class.
+        """
+        super().mouseReleaseEvent(event)
+        self.__press = None
+
+    @override
+    def contextMenuEvent(self, event: QContextMenuEvent) -> None:
+        """Offer **Copy** for the image on screen (#395); nothing with no exporter.
+
+        :param event: the Qt context-menu event.
+        """
+        action = self.__copy_action
+        if action is None:
+            return
+        menu = QMenu(self)
+        try:
+            menu.addAction(action)
+            menu.exec(event.globalPos())
+        finally:
+            menu.deleteLater()
 
     @override
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
@@ -1138,6 +1230,17 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes,to
         self.__info_toggle.setStyleSheet(OVERLAY_BUTTON_STYLE)
         stack.addWidget(self.__info_toggle, 0, Qt.AlignmentFlag.AlignLeft)
         return corner
+
+    def __make_copy_action(self) -> QAction:
+        """Build the viewer's Copy (#395), on ``Ctrl+C`` while the viewer has the keyboard.
+
+        :returns: the action, added to this viewer and wired to copy the image on screen.
+        """
+        action = QAction("&Copy", self)
+        shared_command_registry().bind(action, COPY_IMAGE.id, tooltip="Copy this image, to paste it into another app.")
+        self.addAction(action)
+        action.triggered.connect(self.copy_current)
+        return action
 
     def __make_close_button(self) -> CornerButton:
         """Build the corner close affordance, drawn white on this viewer's own dark backdrop.
