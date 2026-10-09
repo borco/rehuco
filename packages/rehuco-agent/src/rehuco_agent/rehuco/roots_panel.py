@@ -120,6 +120,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         self.__catalog: Final = catalog
         self.__rename_coordinator: Final = rename_coordinator
         self.__events: Final = resource_events
+        self.__listening_to_events = resource_events is not None
         self.__watcher: Final = JobEndWatcher(queue, self)
 
         self.__roots_model: Final = RootsFolderModel(self)
@@ -200,8 +201,10 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
             resource_events.changed.connect(self.__on_files_changed)
 
     def detach(self) -> None:
-        """Stop listening to the file announcements before the window goes."""
-        if self.__events is not None:
+        """Stop listening to the file announcements before the window goes. Safe to call again: the second time
+        there is nothing left to disconnect."""
+        if self.__events is not None and self.__listening_to_events:
+            self.__listening_to_events = False
             self.__events.moved.disconnect(self.__on_moved)
             self.__events.folder_changed.disconnect(self.__on_folder_changed)
             self.__events.changed.disconnect(self.__on_files_changed)

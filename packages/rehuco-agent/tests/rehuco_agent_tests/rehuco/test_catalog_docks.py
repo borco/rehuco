@@ -15,8 +15,8 @@ import json
 import logging
 import os
 import sqlite3
-import tempfile
 import threading
+import warnings
 from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
@@ -52,6 +52,7 @@ from rehuco_agent.rehuco.roots_item_delegate import RootsItemDelegate
 from rehuco_agent.rehuco.roots_management import managing_record
 from rehuco_agent.rehuco.roots_preview import RootsPreview
 from rehuco_agent.resource_events import ResourceEvents
+from rehuco_agent.settings import persistent_settings
 from rehuco_agent.settings.catalog_state_store import TABLE_BROWSER_KIND, BrowserState, CatalogState
 from rehuco_agent.settings.checksum_settings import shared_checksum_settings
 from rehuco_core import (
@@ -128,15 +129,17 @@ class MemoryDatabase:
 
 @fixture(name="database")
 def fixture_database(mocker: MockerFixture) -> Generator[MemoryDatabase]:
-    """Route every connection the cache opens to one fresh in-memory database, and fake the folder.
+    """Route every connection the cache opens to one fresh in-memory database.
+
+    Its folder is the session's temporary cache folder (``isolate_cache_folder``), so making it is harmless and
+    nothing about folders needs faking: no file is ever written there, the database being in memory.
 
     :param mocker: pytest-mock fixture.
     :yields: the database; its keeper is closed when the test ends.
     """
     database = MemoryDatabase()
     mocker.patch("rehuco_core.rehudb.sqlite3.connect", side_effect=database.connect)
-    mocker.patch.object(Path, "mkdir", autospec=True)
-    mocker.patch("rehuco_agent.rehuco.root_catalog.cache_folder", return_value=Path("/fake/cache"))
+    mocker.patch("rehuco_agent.rehuco.root_catalog.cache_folder", return_value=persistent_settings.cache_folder())
     yield database
     database.keeper.close()
 
@@ -2082,6 +2085,27 @@ def test_with_nothing_open_an_announcement_is_nothing(qtbot: QtBot, queue: TaskQ
     assert not dock.browsers.browsers
 
 
+def test_detaching_twice_disconnects_once_and_says_nothing(qtbot: QtBot, queue: TaskQueue) -> None:
+    """A window closed twice (the tray's hide, then a quit) detaches its catalog and Roots view twice; the second time
+    there is nothing left to disconnect, and Qt must not warn about it (#475).
+
+    **Test steps:**
+
+    * build the docks over real announcements and detach them twice, with warnings raised as errors
+    * verify nothing was raised, and a later announcement still reaches nobody
+    """
+    events = ResourceEvents()
+    dock = build_docks(qtbot, queue, events)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        dock.detach()
+        dock.detach()
+    events.announce_moved(Relocation(((TUTORIALS, PACKS),)))
+
+    assert not dock.browsers.browsers
+
+
 def is_on_screen(dock: CatalogDocks, browser: TableBrowser) -> bool:
     """Whether ``browser``'s sub-dock is open in an area its manager shows.
 
@@ -2293,25 +2317,23 @@ def test_a_filter_set_from_the_dock_replaces_that_fields_token(dock: CatalogDock
 
 
 @fixture(name="folders")
-def fixture_folders(served: dict[str, Any]) -> Generator[Path]:
-    """Point both served roots at real folders: ``tutorials`` holds ``alpha`` (with ``sub`` and a note) and a folder
-    with a space in its name; ``packs`` is empty.
-
-    Not under ``tmp_path``: the ``database`` fixture replaces ``Path.mkdir``, which is what pytest makes that folder
-    with, so the folders are made with :func:`os.makedirs` in a directory of their own.
+def fixture_folders(served: dict[str, Any], tmp_path: Path) -> Path:
+    """Point both served roots at real folders under ``tmp_path``: ``tutorials`` holds ``alpha`` (with ``sub`` and a
+    note) and a folder with a space in its name; ``packs`` is empty.
 
     :param served: the served ``.rehuco``.
-    :yields: the ``tutorials`` folder, with everything removed when the test ends.
+    :param tmp_path: pytest's temporary folder, which it keeps and clears later -- nothing here is deleted while a
+        reader of the dock or the queue may still hold a file in it.
+    :returns: the ``tutorials`` folder.
     """
-    with tempfile.TemporaryDirectory() as base:
-        tutorials, packs = Path(base) / "tutorials", Path(base) / "packs"
-        os.makedirs(tutorials / "alpha" / "sub")
-        os.makedirs(tutorials / "my folder")
-        os.makedirs(packs)
-        (tutorials / "alpha" / "note.txt").write_text("n", encoding="utf-8")
-        served["roots"][0]["path"] = str(tutorials)
-        served["roots"][1]["path"] = str(packs)
-        yield tutorials
+    tutorials, packs = tmp_path / "tutorials", tmp_path / "packs"
+    (tutorials / "alpha" / "sub").mkdir(parents=True)
+    (tutorials / "my folder").mkdir()
+    packs.mkdir()
+    (tutorials / "alpha" / "note.txt").write_text("n", encoding="utf-8")
+    served["roots"][0]["path"] = str(tutorials)
+    served["roots"][1]["path"] = str(packs)
+    return tutorials
 
 
 def child_names(dock: CatalogDocks, parent: QModelIndex) -> list[str]:
@@ -3286,8 +3308,7 @@ def fixture_listening(
     dock = build_docks(qtbot, queue, events)
     dock.catalog.open_rehuco(REHUCO_PATH)
     yield dock, events, folders
-    if dock.catalog.rehuco_path is not None:  # a test may have detached it already, which cannot be done twice
-        dock.detach()
+    dock.detach()  # a test may have detached it already: that does no harm
 
 
 def test_an_announced_rename_renames_the_row_in_place(
