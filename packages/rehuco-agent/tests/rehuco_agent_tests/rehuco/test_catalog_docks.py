@@ -11,6 +11,7 @@ and every scan job's, on the worker thread, reach the same one.
 # test_main_window.py and test_rehu_document_model.py
 # pylint: disable=too-many-lines
 
+import base64
 import json
 import logging
 import os
@@ -1129,35 +1130,217 @@ def test_the_layout_comes_back_with_the_catalog(dock: CatalogDocks) -> None:
     assert first.dockAreaWidget() is not second.dockAreaWidget()
 
 
-def test_a_remembered_catalog_with_no_layout_tabs_every_browser_together(
-    served: Any, dock: CatalogDocks, catalog_store: MemoryCatalogStateStore
+def browser_entry(state: BrowserState, *, name: str | None = None, data: bytes | None = None) -> dict[str, Any]:
+    """A browser's sub-dock entry, as the layout stores it.
+
+    :param state: the browser the entry carries.
+    :param name: the sub-dock name, if not the browser's id.
+    :param data: the entry's state bytes, if not ``state``'s own.
+    :returns: the entry.
+    """
+    raw = state.to_bytes() if data is None else data
+    return {
+        "name": str(state.browser_id) if name is None else name,
+        "closed": False,
+        "state": base64.b64encode(raw).decode("ascii"),
+    }
+
+
+def remember(catalog_store: MemoryCatalogStateStore, main: dict[str, Any]) -> None:
+    """Remember a layout whose main container is ``main`` for the served catalog.
+
+    :param catalog_store: the in-memory store.
+    :param main: the main container's node.
+    """
+    states = catalog_store.states
+    states[UUID(REHUCO_ID)] = CatalogState({"format": 1, "main": main})
+
+
+def remembered_browsers(catalog_store: MemoryCatalogStateStore) -> list[BrowserState]:
+    """The browsers the served catalog's remembered layout carries, in tree order.
+
+    :param catalog_store: the in-memory store.
+    :returns: every entry's browser.
+    """
+    states = catalog_store.states
+    layout = states[UUID(REHUCO_ID)].layout
+    assert layout is not None
+    browsers: list[BrowserState] = []
+    nodes: list[Any] = [layout["main"]]
+    while nodes:
+        node = nodes.pop(0)
+        if "area" in node:
+            for entry in node["area"]:
+                browser = BrowserState.from_bytes(base64.b64decode(entry["state"]))
+                assert browser is not None
+                browsers.append(browser)
+        else:
+            nodes[:0] = node["children"]
+    return browsers
+
+
+TUTORIALS_BROWSER: Final = BrowserState(uuid4(), TABLE_BROWSER_KIND, "Tutorials", "type:tutorial")
+PACKS_BROWSER: Final = BrowserState(uuid4(), TABLE_BROWSER_KIND, "Packs")
+SPLIT_BROWSERS: Final = {
+    "split": "h",
+    "sizes": [],
+    "children": [{"area": [browser_entry(TUTORIALS_BROWSER)]}, {"area": [browser_entry(PACKS_BROWSER)]}],
+}
+"""A main container splitting the two browsers side by side."""
+
+
+@mark.usefixtures("served")
+def test_a_remembered_layout_builds_its_browsers_tabbed_together(
+    dock: CatalogDocks, catalog_store: MemoryCatalogStateStore
 ) -> None:
-    """Browsers remembered without a layout -- what a catalog saved before #461 is read as, its layout having nested
-    the Roots view among them -- open with their names, every one on screen in one tab strip.
+    """The layout is the browser set (#102): each entry builds its browser, with its name and filter, where the
+    layout put it -- here two tabs of one area, the second current.
 
     **Test steps:**
 
-    * remember two named browsers and no layout for the served catalog
-    * open it
-    * verify both browsers by name, both shown, sharing one area
+    * remember a layout with one area holding two browser entries, the second current
+    * open the catalog
+    * verify both browsers by id, name and filter, both shown, sharing one area, the second its current tab
     """
-    del served
-    states = catalog_store.states
-    states[UUID(REHUCO_ID)] = CatalogState(
-        [
-            BrowserState(uuid4(), TABLE_BROWSER_KIND, "Tutorials", "type:tutorial"),
-            BrowserState(uuid4(), TABLE_BROWSER_KIND, "Packs"),
-        ]
+    remember(
+        catalog_store,
+        {
+            "area": [browser_entry(TUTORIALS_BROWSER), browser_entry(PACKS_BROWSER)],
+            "current": str(PACKS_BROWSER.browser_id),
+        },
     )
 
     dock.catalog.open_rehuco(REHUCO_PATH)
 
     tutorials, packs = dock.browsers.browsers
+    assert (tutorials.browser_id, packs.browser_id) == (TUTORIALS_BROWSER.browser_id, PACKS_BROWSER.browser_id)
     assert (tutorials.name, packs.name) == ("Tutorials", "Packs")
     assert tutorials.filter_text == "type:tutorial"
     assert is_on_screen(dock, tutorials)
     assert is_on_screen(dock, packs)
-    assert dock.browsers.browser_dock(tutorials).dockAreaWidget() is dock.browsers.browser_dock(packs).dockAreaWidget()
+    area = dock.browsers.browser_dock(tutorials).dockAreaWidget()
+    assert area is not None
+    assert area is dock.browsers.browser_dock(packs).dockAreaWidget()
+    assert area.currentDockWidget() is dock.browsers.browser_dock(packs)
+
+
+@mark.usefixtures("served")
+def test_a_remembered_layout_splits_its_browsers_side_by_side(
+    dock: CatalogDocks, catalog_store: MemoryCatalogStateStore
+) -> None:
+    """A split in the layout is a split on screen: two browsers in areas of their own, side by side.
+
+    **Test steps:**
+
+    * remember a layout splitting two browser areas horizontally
+    * open the catalog
+    * verify both browsers shown, each in its own area, in one horizontal splitter
+    """
+    remember(catalog_store, SPLIT_BROWSERS)
+
+    dock.catalog.open_rehuco(REHUCO_PATH)
+
+    tutorials, packs = dock.browsers.browsers
+    assert is_on_screen(dock, tutorials)
+    assert is_on_screen(dock, packs)
+    first_area = dock.browsers.browser_dock(tutorials).dockAreaWidget()
+    second_area = dock.browsers.browser_dock(packs).dockAreaWidget()
+    assert first_area is not None
+    assert second_area is not None
+    assert first_area is not second_area
+    splitter = first_area.parentWidget()
+    assert isinstance(splitter, QSplitter)
+    assert splitter is second_area.parentWidget()
+    assert splitter.orientation() == Qt.Orientation.Horizontal
+
+
+@mark.usefixtures("served")
+def test_a_browser_added_to_a_restored_layout_is_placed_beside_the_others(
+    dock: CatalogDocks, catalog_store: MemoryCatalogStateStore
+) -> None:
+    """A browser the layout does not name -- one added after it was saved -- joins a restored browser's area.
+
+    **Test steps:**
+
+    * remember a layout splitting two browsers, and open the catalog
+    * trigger New Table Browser
+    * verify the three browsers are shown, the new one tabbed beside one of the others
+    """
+    remember(catalog_store, SPLIT_BROWSERS)
+    dock.catalog.open_rehuco(REHUCO_PATH)
+
+    dock.browsers.new_browser_action.trigger()
+
+    tutorials, packs, added = dock.browsers.browsers
+    assert all(is_on_screen(dock, browser) for browser in (tutorials, packs, added))
+    assert dock.browsers.browser_dock(added).dockAreaWidget() in (
+        dock.browsers.browser_dock(tutorials).dockAreaWidget(),
+        dock.browsers.browser_dock(packs).dockAreaWidget(),
+    )
+
+
+@mark.usefixtures("served")
+@mark.parametrize(
+    "packs_entry",
+    [
+        param({"name": str(PACKS_BROWSER.browser_id), "closed": False}, id="no state"),
+        param(browser_entry(PACKS_BROWSER, data=b"junk"), id="a state that is not a browser"),
+        param(browser_entry(PACKS_BROWSER, name=str(uuid4())), id="a browser of another id"),
+    ],
+)
+def test_a_layout_entry_that_carries_no_browser_of_its_name_is_dropped(
+    dock: CatalogDocks, catalog_store: MemoryCatalogStateStore, packs_entry: dict[str, Any]
+) -> None:
+    """An entry the restore cannot build its browser from costs only itself: the rest of the layout restores.
+
+    **Test steps:**
+
+    * remember a layout splitting a good browser entry and a damaged one
+    * open the catalog
+    * verify only the good browser exists, shown
+    """
+    remember(
+        catalog_store,
+        {
+            "split": "h",
+            "sizes": [],
+            "children": [{"area": [browser_entry(TUTORIALS_BROWSER)]}, {"area": [packs_entry]}],
+        },
+    )
+
+    dock.catalog.open_rehuco(REHUCO_PATH)
+
+    assert [browser.browser_id for browser in dock.browsers.browsers] == [TUTORIALS_BROWSER.browser_id]
+    assert is_on_screen(dock, first_browser(dock))
+
+
+@mark.usefixtures("served")
+@mark.parametrize(
+    "layout",
+    [
+        param({"format": 1, "main": {"area": [browser_entry(PACKS_BROWSER, data=b"junk")]}}, id="no entry builds"),
+        param({"format": 99, "main": {"area": [browser_entry(PACKS_BROWSER)]}}, id="another format"),
+        param({"format": 1}, id="an empty tree"),
+    ],
+)
+def test_a_layout_that_builds_no_browser_opens_one_default_browser(
+    dock: CatalogDocks, catalog_store: MemoryCatalogStateStore, layout: dict[str, Any]
+) -> None:
+    """A layout that restores no browser leaves the catalog as it is the first time: one default browser.
+
+    **Test steps:**
+
+    * remember a layout none of whose entries builds a browser, or one of another format
+    * open the catalog
+    * verify one browser named "Browser", shown
+    """
+    states = catalog_store.states
+    states[UUID(REHUCO_ID)] = CatalogState(layout)
+
+    dock.catalog.open_rehuco(REHUCO_PATH)
+
+    assert [browser.name for browser in dock.browsers.browsers] == ["Browser"]
+    assert is_on_screen(dock, first_browser(dock))
 
 
 # endregion
@@ -1532,43 +1715,42 @@ def test_a_read_only_catalogs_browsers_are_remembered_too(
 
     * open a catalog stamped by a newer build and add a browser
     * close it
-    * verify the store holds both browsers
+    * verify the remembered layout carries both browsers
     """
     served["format_version"] = 999
     dock.catalog.open_rehuco(REHUCO_PATH)
     assert dock.browsers.new_browser_action.isEnabled()
     dock.browsers.new_browser_action.trigger()
+    ids = [browser.browser_id for browser in dock.browsers.browsers]
 
     dock.catalog.close_rehuco()
 
-    states = catalog_store.states
-    assert len(states[UUID(REHUCO_ID)].browsers) == 2
+    assert [browser.browser_id for browser in remembered_browsers(catalog_store)] == ids
 
 
 @mark.usefixtures("served")
-def test_a_layout_naming_a_browser_that_is_gone_restores_without_crashing(
+def test_a_closed_catalogs_layout_carries_each_browsers_filter_and_columns(
     dock: CatalogDocks, catalog_store: MemoryCatalogStateStore
 ) -> None:
-    """The layout was saved with two browsers; the store now lists one. Opening restores what it can and shows
-    every browser it builds.
+    """Each browser rides in its own sub-dock's entry: closing writes its name, filter and header state there.
 
     **Test steps:**
 
-    * open a catalog with two browsers, close it, and drop the second from the store, keeping the layout
-    * open it again
-    * verify the one browser is shown
+    * open a catalog, filter its browser and widen a column
+    * close it
+    * verify the layout's one entry carries that browser, with the filter and a header state
     """
     dock.catalog.open_rehuco(REHUCO_PATH)
-    dock.browsers.new_browser_action.trigger()
+    browser = first_browser(dock)
+    browser.set_filter_text("type:tutorial")
+    browser.view.horizontalHeader().resizeSection(0, 233)
+    expected = browser.state()
+
     dock.catalog.close_rehuco()
-    states = catalog_store.states
-    states[UUID(REHUCO_ID)].browsers.pop()
 
-    dock.catalog.open_rehuco(REHUCO_PATH)
-
-    assert len(dock.browsers.browsers) == 1
-    assert not dock.browsers.browser_dock(first_browser(dock)).isClosed()
-    assert is_on_screen(dock, first_browser(dock))
+    assert remembered_browsers(catalog_store) == [expected]
+    assert expected.filter == "type:tutorial"
+    assert expected.columns
 
 
 # endregion

@@ -8,9 +8,9 @@ from typing import Any, Final, cast
 import cbor2
 import PySide6QtAds as QtAds
 from borco_pyside.logging import LogWidget
-from borco_pyside.qtads import QtAdsAutoHideButtonSuppressor, QtAdsFocusTracker
+from borco_pyside.qtads import QtAdsAutoHideButtonSuppressor, QtAdsFocusTracker, QtAdsLayout
 from borco_pyside.theming import ActionIconThemeHandler
-from PySide6.QtCore import QByteArray, QItemSelectionModel, QPoint
+from PySide6.QtCore import QItemSelectionModel, QPoint
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QHeaderView, QMainWindow, QMenu, QMessageBox, QWidget
 from rehuco_core import (
@@ -54,21 +54,6 @@ QUEUE_DOCK_TITLE: Final = "Queue"
 LOG_DOCK_TITLE: Final = "Log"
 """Tab titles of the two sub-docks. ``Log`` matches the window's own dock and every resource's, because
 all three are the same surface about a different subject ([[appendices.logging#surfaces]])."""
-
-STATE_VERSION_KEY: Final = "version"
-STATE_VERSION: Final = 1
-"""Schema version of :meth:`TaskQueueWidget.save_state`'s blob. The nested layout is keyed by dock
-object name, so any change to the sub-dock set makes an older blob incompatible: QtAds's
-``restoreState`` would accept it and silently hide the current docks. Bump this on any such change;
-:meth:`TaskQueueWidget.restore_state` ignores a blob whose version differs, keeping the built default
-(the table alone, the log hidden) instead."""
-
-STATE_DOCK_MANAGER_KEY: Final = "dock_manager"
-STATE_LOG_WIDGET_KEY: Final = "log_widget"
-"""Where the nested dock layout and the log surface's own filters live in that blob. The second is read
-outside :data:`STATE_VERSION`'s guard on purpose, the same way ``MainWindow``'s is: that version guards
-the *dock set*, while this is one widget's bands, search and tail-follow, each defaulted individually
-([[appendices.logging#surfaces]])."""
 
 RETRIABLE_STATES: Final = frozenset({JobState.FAILED, JobState.CANCELLED})
 """The states :meth:`~rehuco_core.TaskQueue.retry` accepts -- a finished job that can be run again.
@@ -414,51 +399,43 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
         return self.__log_widget
 
     def save_state(self) -> bytes:
-        """Serialize this shell's nested dock layout and its log surface's own filters.
+        """Serialize this shell's nested dock layout, its log surface's own filters folded into the log dock's entry
+        (`~borco_pyside.qtads.QtAdsLayout`, #102).
 
         :returns: cbor2-encoded state, suitable for :meth:`restore_state`.
         """
         with self.__maximize_handler.unmaximized():
-            dock_manager_state = bytes(self.__dock_manager.saveState().data())
-        return cbor2.dumps(
-            {
-                STATE_VERSION_KEY: STATE_VERSION,
-                STATE_DOCK_MANAGER_KEY: dock_manager_state,
-                STATE_LOG_WIDGET_KEY: self.__log_widget.save_state(),
-            }
-        )
+            layout = QtAdsLayout(self.__dock_manager).save(
+                lambda dock: self.__log_widget.save_state() if dock is self.__log_dock else None
+            )
+        return cbor2.dumps(layout)
 
     def restore_state(self, state: bytes) -> bool:
         """Restore a layout previously captured by :meth:`save_state`.
 
-        The log surface's filters are restored first and unconditionally: they are one widget's own
-        choices, each read defensively, and a blob whose *dock set* no longer matches is still a
-        perfectly good answer about them.
-
         :param state: the cbor2-encoded state to restore.
-        :returns: ``True`` if the nested dock manager's own state was restored; ``False`` if ``state``
-            was empty, malformed, not in the expected shape, or of an incompatible
-            :data:`STATE_VERSION` (in which case the built default layout is kept).
+        :returns: ``True`` if the nested layout was restored; ``False`` if ``state`` was empty or not a layout (in
+            which case the built default layout is kept).
         """
         try:
             values: Any = cbor2.loads(state)
         except cbor2.CBORDecodeError:
             return False
-        if not isinstance(values, dict):
-            return False
+        return QtAdsLayout(self.__dock_manager).restore(
+            values,
+            place_unnamed=self.__place_unnamed_dock,
+            restore_dock_state=lambda dock, saved: (
+                self.__log_widget.restore_state(saved) if dock is self.__log_dock else None
+            ),
+        )
 
-        log_widget_state = values.get(STATE_LOG_WIDGET_KEY)
-        if isinstance(log_widget_state, bytes):
-            self.__log_widget.restore_state(log_widget_state)
+    def __place_unnamed_dock(self, dock: QtAds.CDockWidget) -> None:
+        """Show a sub-dock the saved layout does not name as it is built: the table open, the log hidden. Both
+        are built into an area before the restore, so each already has its place.
 
-        # an incompatible blob would restore cleanly yet hide the current sub-docks, leaving the Tasks
-        # dock blank -- ignore it and keep the built default instead
-        if values.get(STATE_VERSION_KEY) != STATE_VERSION:
-            return False
-        dock_manager_state = values.get(STATE_DOCK_MANAGER_KEY, b"")
-        if not isinstance(dock_manager_state, bytes) or not dock_manager_state:
-            return False
-        return bool(self.__dock_manager.restoreState(QByteArray(dock_manager_state)))
+        :param dock: the dock the layout left out.
+        """
+        dock.toggleView(dock is not self.__log_dock)
 
     # endregion
 

@@ -17,6 +17,7 @@ the closed-dock-size workaround ([[packaging-deployment#qml-regression]]).
 # per module, the convention every settings test's own FakeSettings already follows here.
 # pylint: disable=duplicate-code
 
+import base64
 import json
 import logging
 from collections.abc import Iterator
@@ -82,9 +83,6 @@ from rehuco_agent.documents.document_sub_docks import (
     SAVE_DEFAULT_LAYOUT_LABEL,
     SAVE_PREVIEW_ICON_RESOURCE,
     STATE_IMAGE_STRIP_VISIBLE_KEY,
-    STATE_VERSION,
-    STATE_VERSION_KEY,
-    STATE_WIDGET_STATE_KEY,
     DocumentSubDocks,
     type_dock_names,
 )
@@ -1589,6 +1587,126 @@ def test_restore_size_is_a_noop_for_a_dock_with_no_area(mocker: MockerFixture, w
     set_sizes.assert_not_called()
 
 
+def layout_dock_entries(layout: object) -> Iterator[dict[str, Any]]:
+    """Every dock entry of a stored layout tree (`~borco_pyside.qtads.QtAdsLayout`), wherever it sits.
+
+    :param layout: the stored tree, or any node of it.
+    :returns: the entries, in tree order.
+    """
+    if isinstance(layout, list):
+        for item in layout:
+            yield from layout_dock_entries(item)
+        return
+    if not isinstance(layout, dict):
+        return
+    if "name" in layout:
+        yield layout
+        return
+    for key in ("main", "floating", "root", "pinned", "docks", "unplaced", "area", "children"):
+        yield from layout_dock_entries(layout.get(key))
+
+
+def saved_dock_entries(state: bytes) -> dict[str, dict[str, Any]]:
+    """The dock entries of a document's saved state, by dock name.
+
+    :param state: what ``save_state`` or ``save_layout_state`` returned.
+    :returns: each dock's entry.
+    """
+    return {entry["name"]: entry for entry in layout_dock_entries(cbor2.loads(state)["dock_manager"])}
+
+
+def entry_widget_state(entry: dict[str, Any]) -> dict[str, bytes]:
+    """The persisting widgets' state a dock entry carries (#102).
+
+    :param entry: one dock entry.
+    :returns: each `StatefulWidget`'s saved bytes by object name; nothing if the entry carries none.
+    """
+    if "state" not in entry:
+        return {}
+    return cbor2.loads(base64.b64decode(entry["state"]))
+
+
+def docks_carrying(state: bytes, object_name: str) -> list[str]:
+    """The docks whose saved entry carries a widget's state.
+
+    :param state: what ``save_state`` returned.
+    :param object_name: the `StatefulWidget`'s object name.
+    :returns: the dock names, in tree order.
+    """
+    return [name for name, entry in saved_dock_entries(state).items() if object_name in entry_widget_state(entry)]
+
+
+def dock_holding(widget: DocumentWidget, inner: QWidget) -> str:
+    """The name of the dock whose content holds ``inner``.
+
+    :param widget: the document widget to inspect.
+    :param inner: a widget inside one of its docks.
+    :returns: that dock's object name.
+    """
+    manager = widget._DocumentWidget__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    names = [
+        name
+        for name, dock in manager.dockWidgetsMap().items()
+        if dock.widget() is inner or dock.widget().isAncestorOf(inner)
+    ]
+    assert len(names) == 1
+    return names[0]
+
+
+def with_dock_state(state: bytes, dock_name: str, dock_state: bytes) -> bytes:
+    """A saved state with one dock's entry carrying ``dock_state`` instead of what it carried.
+
+    :param state: what ``save_state`` returned.
+    :param dock_name: the dock whose entry to change.
+    :param dock_state: the raw bytes the entry should carry.
+    :returns: the changed state.
+    """
+    values = cbor2.loads(state)
+    for entry in layout_dock_entries(values["dock_manager"]):
+        if entry["name"] == dock_name:
+            entry["state"] = base64.b64encode(dock_state).decode("ascii")
+    return cbor2.dumps(values)
+
+
+def test_save_state_round_trips_the_layout_current_dock_stash_and_image_strip(
+    qtbot: QtBot, widget: DocumentWidget, model: RehuDocumentModel
+) -> None:
+    """Everything the sub-dock state holds comes back on a fresh widget (#102): which docks are open, the
+    dock that was current, the stashed sizes and the image-strip choice.
+
+    **Test steps:**
+
+    * open the Main Editor and On Disk, make the editor current, stash a size and show the image strip
+    * save the state and restore it into a fresh widget over the same model
+    * verify the same docks are open, the editor is current, and the stash and strip choice carried over
+    * verify saving the fresh widget gives back every dock open or closed as it was saved
+    """
+    widget.toggle_action(EDITOR_MAIN_TAB).trigger()
+    on_disk_dock(widget).toggleView(True)
+    manager = widget._DocumentWidget__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    widget._DocumentWidget__tracker.set_current_dock(manager.findDockWidget("editor:Main Editor"))  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    stashed = widget.sub_docks._DocumentSubDocks__stashed_sizes  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    stashed["editor:Images"] = [120, 80]
+    widget.sub_docks._DocumentSubDocks__image_strip_visible = True  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    state = widget.save_state()
+
+    fresh = DocumentWidget(model)
+    qtbot.addWidget(fresh)
+    assert fresh.restore_state(state) is True
+
+    assert open_field_tabs(fresh) == open_field_tabs(widget)
+    assert on_disk_dock(fresh).toggleViewAction().isChecked() is True
+    tracker = fresh._DocumentWidget__tracker  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert tracker.current_dock.objectName() == "editor:Main Editor"
+    fresh_stashed = fresh.sub_docks._DocumentSubDocks__stashed_sizes  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert fresh_stashed["editor:Images"] == [120, 80]
+    assert fresh.sub_docks._DocumentSubDocks__image_strip_visible is True  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    fresh_entries = saved_dock_entries(fresh.save_state())
+    assert {name: entry["closed"] for name, entry in fresh_entries.items()} == {
+        name: entry["closed"] for name, entry in saved_dock_entries(state).items()
+    }
+
+
 def test_save_state_round_trips_through_restore_state(widget: DocumentWidget) -> None:
     """A dock layout saved via ``save_state`` restores cleanly through ``restore_state``.
 
@@ -1649,62 +1767,63 @@ def test_restore_state_tolerates_a_non_bytes_current_dock_entry(widget: Document
     assert widget.restore_state(cbor2.dumps(payload)) is True
 
 
-def test_restore_state_rejects_malformed_bytes(widget: DocumentWidget) -> None:
-    """Malformed (non-cbor2) bytes are rejected rather than raising.
+def test_restore_state_rejects_malformed_bytes_and_keeps_the_layout(widget: DocumentWidget) -> None:
+    """Malformed (non-cbor2) bytes are rejected rather than raising, and the layout stands.
 
     **Test steps:**
 
-    * call ``restore_state`` with bytes that aren't valid cbor2
-    * verify it reports failure
+    * open On Disk, then call ``restore_state`` with bytes that aren't valid cbor2
+    * verify it reports failure and On Disk is still open
     """
+    on_disk_dock(widget).toggleView(True)
+
     assert widget.restore_state(b"not cbor2") is False
+    assert on_disk_dock(widget).toggleViewAction().isChecked() is True
 
 
-def test_restore_state_rejects_a_non_dict_payload(widget: DocumentWidget) -> None:
-    """A validly-encoded but wrongly-shaped payload (not a dict) is rejected rather than raising.
+def test_restore_state_rejects_a_non_dict_payload_and_keeps_the_layout(widget: DocumentWidget) -> None:
+    """A validly-encoded but wrongly-shaped payload (not a dict) is rejected rather than raising, and the
+    layout stands.
 
     **Test steps:**
 
-    * call ``restore_state`` with cbor2-encoded bytes that decode to a list, not a dict
-    * verify it reports failure
+    * open On Disk, then call ``restore_state`` with cbor2-encoded bytes that decode to a list
+    * verify it reports failure and On Disk is still open
     """
+    on_disk_dock(widget).toggleView(True)
+
     assert widget.restore_state(cbor2.dumps([1, 2, 3])) is False
+    assert on_disk_dock(widget).toggleViewAction().isChecked() is True
 
 
-def test_restore_state_rejects_a_dict_with_garbage_dock_manager_bytes(widget: DocumentWidget) -> None:
-    """A validly-encoded dict payload whose dock-manager bytes aren't a real saved state is
-    rejected by QtAds's own ``restoreState``, rather than refreshing the toggle icons for it.
-
-    **Test steps:**
-
-    * call ``restore_state`` with a dict payload whose ``dock_manager`` entry is garbage bytes
-    * verify it reports failure
-    """
-    payload = cbor2.loads(widget.save_state())
-    payload["dock_manager"] = b"not a real dock manager state"
-
-    assert widget.restore_state(cbor2.dumps(payload)) is False
-
-
-def test_restore_state_rejects_an_incompatible_version_and_keeps_docks_visible(widget: DocumentWidget) -> None:
-    """A blob from an incompatible schema version is ignored, keeping the default all-visible layout.
-
-    An older blob (e.g. from before the docks were renamed, #26) would otherwise ``restoreState``
-    cleanly yet hide the current docks -- a blank window -- and a subsequently shown dock would float.
+@mark.parametrize(
+    "dock_manager",
+    [b"an opaque QtAds blob from before #102", {"format": 0, "main": {}}, [1, 2, 3], None],
+    ids=["old-blob", "other-format", "list", "missing"],
+)
+def test_restore_state_rejects_a_dock_manager_value_that_is_not_a_layout(
+    widget: DocumentWidget, dock_manager: object
+) -> None:
+    """A dict payload whose ``dock_manager`` value is not a layout tree is rejected, and the layout stands --
+    an old QtAds blob among them, which is what every state saved before #102 holds (#102).
 
     **Test steps:**
 
-    * save the widget's real state, then strip its ``version`` key (as an older blob would lack it)
-    * verify restore reports failure and the as-built layout stands -- both viewers shown, the
-      editors still hidden behind their toggles (#299)
+    * save the widget's state, then replace its ``dock_manager`` value (or drop it)
+    * open the Main Editor, then call ``restore_state`` with that payload
+    * verify it reports failure, both viewers are still shown and the Main Editor still open
     """
     payload = cbor2.loads(widget.save_state())
-    del payload["version"]
+    if dock_manager is None:
+        del payload["dock_manager"]
+    else:
+        payload["dock_manager"] = dock_manager
+    widget.toggle_action(EDITOR_MAIN_TAB).trigger()
 
     assert widget.restore_state(cbor2.dumps(payload)) is False
     assert widget.toggle_action(VIEWER_MAIN_TAB).isChecked() is True
     assert widget.toggle_action(VIEWER_DESCRIPTION_TAB).isChecked() is True
-    assert widget.toggle_action(EDITOR_MAIN_TAB).isChecked() is False
+    assert widget.toggle_action(EDITOR_MAIN_TAB).isChecked() is True
 
 
 def test_restore_state_tolerates_a_payload_without_stashed_sizes(widget: DocumentWidget) -> None:
@@ -1898,23 +2017,31 @@ def test_building_the_inspection_docks_leaves_the_main_viewer_current(widget: Do
     assert docks[VIEWER_MAIN_TAB].isCurrentTab() is True
 
 
-def test_restore_state_rejects_a_pre_inspection_dock_blob_and_keeps_them_hidden(widget: DocumentWidget) -> None:
-    """A blob from before the inspection docks existed (an older ``version``) is ignored, keeping the
-    default layout -- so both stay hidden rather than restoring to some invented state (#111).
-
-    The ``STATE_VERSION`` bump is what draws that line: an older blob knows nothing of these docks.
+def test_a_layout_that_never_names_the_inspection_docks_puts_them_back_hidden(widget: DocumentWidget) -> None:
+    """A layout that knows nothing of the inspection docks -- one saved before they existed -- restores,
+    and puts each of them back hidden beside the Description View, where construction stacks them
+    (#111, #102), rather than in some invented state.
 
     **Test steps:**
 
-    * save the widget's real (v4) state, then roll its ``version`` back to the pre-inspection-dock 3
-    * verify restore reports failure and both inspection docks are still hidden
+    * save the widget's state with both inspection docks open, then drop their entries from the layout
+    * restore it
+    * verify it restored, both are hidden, and each sits in the Description View's area
     """
+    save_preview_dock(widget).toggleView(True)
+    on_disk_dock(widget).toggleView(True)
     payload = cbor2.loads(widget.save_state())
-    payload["version"] = 3
+    dropped = {save_preview_dock(widget).objectName(), on_disk_dock(widget).objectName()}
+    for entry in layout_dock_entries(payload["dock_manager"]):
+        if entry["name"] in dropped:
+            entry["name"] = "no such dock"
 
-    assert widget.restore_state(cbor2.dumps(payload)) is False
-    assert save_preview_dock(widget).toggleViewAction().isChecked() is False
-    assert on_disk_dock(widget).toggleViewAction().isChecked() is False
+    assert widget.restore_state(cbor2.dumps(payload)) is True
+
+    description = widget.sub_docks._DocumentSubDocks__viewer_docks[VIEWER_DESCRIPTION_TAB]  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    for dock in (save_preview_dock(widget), on_disk_dock(widget)):
+        assert dock.toggleViewAction().isChecked() is False
+        assert dock.dockAreaWidget() is description.dockAreaWidget()  # pylint: disable=no-member
 
 
 def test_inspection_docks_open_their_own_area_when_there_are_no_viewer_docks(
@@ -2295,12 +2422,15 @@ def test_save_state_round_trips_the_path_field_expand_state(qtbot: QtBot, widget
 
     **Test steps:**
 
-    * expand the location editor and save the widget's state
+    * expand the location editor and save the widget's state; verify its state rides in the entry of the
+      dock holding it, and no other (#102)
     * build a fresh widget (collapsed) and restore that state
     * verify the fresh widget's location editor is now expanded
     """
-    location_editor(widget).expanded = True
+    editor = location_editor(widget)
+    editor.expanded = True
     state = widget.save_state()
+    assert docks_carrying(state, editor.objectName()) == [dock_holding(widget, editor)]
 
     fresh = DocumentWidget(
         RehuDocumentModel(RehuDocument({"type": "Tutorial", "sources": [{"title": "Foo", "primary": True}]}))
@@ -2319,7 +2449,8 @@ def test_save_state_round_trips_the_authors_editor_mode(qtbot: QtBot, widget: Do
 
     **Test steps:**
 
-    * switch the authors editor to the record rows and save the widget's state
+    * switch the authors editor to the record rows and save the widget's state; verify its state rides in
+      the entry of the dock holding it, and no other (#102)
     * build a fresh widget (comma line) and restore that state
     * verify the fresh widget's authors editor opens in the rows
     """
@@ -2327,6 +2458,7 @@ def test_save_state_round_trips_the_authors_editor_mode(qtbot: QtBot, widget: Do
     assert len(editors) == 1
     editors[0].set_advanced(True)
     state = widget.save_state()
+    assert docks_carrying(state, editors[0].objectName()) == [dock_holding(widget, editors[0])]
 
     fresh = DocumentWidget(
         RehuDocumentModel(RehuDocument({"type": "Tutorial", "sources": [{"title": "Foo", "primary": True}]}))
@@ -2368,13 +2500,15 @@ def test_save_state_round_trips_the_image_selector_split(qtbot: QtBot, widget: D
 
     **Test steps:**
 
-    * drag the images editor's split to a lopsided position and save the widget's state
+    * drag the images editor's split to a lopsided position and save the widget's state; verify its state
+      rides in the entry of the dock holding it, and no other (#102)
     * build a fresh widget and restore that state
     * verify the fresh widget's images editor opens at the same split
     """
     selector = image_selector(widget)
     selector.setSizes([220, 80])
     state = widget.save_state()
+    assert docks_carrying(state, selector.objectName()) == [dock_holding(widget, selector)]
 
     fresh = DocumentWidget(
         RehuDocumentModel(RehuDocument({"type": "Tutorial", "sources": [{"title": "Foo", "primary": True}]}))
@@ -2387,33 +2521,62 @@ def test_save_state_round_trips_the_image_selector_split(qtbot: QtBot, widget: D
     assert fresh_selector.sizes() == selector.sizes()
 
 
-def test_restore_state_tolerates_a_payload_without_widget_state(widget: DocumentWidget) -> None:
-    """A dict payload missing the per-widget state entry still restores cleanly.
+def test_restore_state_tolerates_dock_entries_without_widget_state(widget: DocumentWidget) -> None:
+    """A layout whose dock entries carry no widget state -- a type's default, say -- still restores
+    cleanly, leaving each widget as it is.
 
     **Test steps:**
 
-    * save the widget's real state, then strip its ``widget_state`` entry
-    * verify ``restore_state`` still reports success
+    * expand the location editor, save the widget's state, then strip every dock entry's state
+    * collapse the editor and restore
+    * verify ``restore_state`` reports success and the editor stayed collapsed
     """
+    editor = location_editor(widget)
+    editor.expanded = True
     payload = cbor2.loads(widget.save_state())
-    del payload["widget_state"]
+    for entry in layout_dock_entries(payload["dock_manager"]):
+        entry.pop("state", None)
+    editor.expanded = False
 
     assert widget.restore_state(cbor2.dumps(payload)) is True
+    assert editor.expanded is False
 
 
 def test_restore_state_ignores_a_widget_state_entry_for_an_unknown_widget(widget: DocumentWidget) -> None:
-    """A saved widget-state entry naming no current widget is ignored, and the known one still applies.
+    """A dock entry's widget state naming no widget in that dock is ignored, and the known one still
+    applies.
 
     **Test steps:**
 
-    * save state, then add a bogus widget name to the ``widget_state`` entry and expand the real one
+    * save state, then make the location editor's dock entry carry its expanded state and a bogus name
     * restore it and verify the real editor expanded and no error was raised for the bogus name
     """
-    payload = cbor2.loads(widget.save_state())
-    payload["widget_state"] = {"location": b"\x01", "no_such_widget": b"\x01"}
+    editor = location_editor(widget)
+    dock_state = cbor2.dumps({editor.objectName(): b"\x01", "no_such_widget": b"\x01"})
+    state = with_dock_state(widget.save_state(), dock_holding(widget, editor), dock_state)
 
-    assert widget.restore_state(cbor2.dumps(payload)) is True
-    assert location_editor(widget).expanded is True
+    assert widget.restore_state(state) is True
+    assert editor.expanded is True
+
+
+@mark.parametrize("dock_state", [b"\x1c", cbor2.dumps([1, 2, 3])], ids=["not-cbor", "not-a-dict"])
+def test_restore_state_ignores_a_dock_state_that_is_not_a_widget_map(widget: DocumentWidget, dock_state: bytes) -> None:
+    """A dock entry whose state is not CBOR, or not a map of widget states, is ignored: the layout still
+    restores and the dock's widgets keep what they have.
+
+    **Test steps:**
+
+    * expand the location editor, save the state, and replace its dock entry's state with ``dock_state``
+    * collapse the editor and restore
+    * verify ``restore_state`` reports success and the editor stayed collapsed
+    """
+    editor = location_editor(widget)
+    editor.expanded = True
+    state = with_dock_state(widget.save_state(), dock_holding(widget, editor), dock_state)
+    editor.expanded = False
+
+    assert widget.restore_state(state) is True
+    assert editor.expanded is False
 
 
 def test_clicking_a_location_suggestion_renames_through_the_model(
@@ -3150,8 +3313,8 @@ def test_a_layout_saved_before_the_thumbnail_row_existed_falls_back_to_the_setti
 ) -> None:
     """A blob with no row entry keeps its dock layout and takes the row from the shared setting (#161).
 
-    Regression guard for reading the entry defensively rather than behind a `STATE_VERSION` bump: an
-    older blob is still a perfectly good dock layout, and rejecting it would reset the user's tabs.
+    Regression guard for reading the entry defensively: an older state is still a perfectly good dock
+    layout, and rejecting it would reset the user's tabs.
 
     **Test steps:**
 
@@ -4000,18 +4163,19 @@ def test_a_number_after_everything_caps_an_open_surface_again(widget: DocumentWi
 def test_the_log_surfaces_filters_ride_the_documents_saved_layout(widget: DocumentWidget) -> None:
     """Which bands this resource's log shows is persisted with its dock layout, by protocol (#200).
 
-    No new state key: the surface satisfies `StatefulWidget` and carries an object name, so the layout
-    blob's existing widget-state map collects it the same way the path editor's expand state is.
+    No new state key: the surface satisfies `StatefulWidget` and carries an object name, so its log
+    dock's layout entry carries it the same way the path editor's dock carries its expand state (#102).
 
     **Test steps:**
 
-    * hide a band and save the document's state
+    * hide a band and save the document's state; verify the log dock's entry, and no other, carries it
     * restore it into a fresh widget over the same model
     * verify the band came back hidden
     """
     source_ui = widget.log_widget._LogWidget__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
     source_ui.show_debugs_action.setChecked(False)
     state = widget.save_state()
+    assert docks_carrying(state, widget.log_widget.objectName()) == [dock_holding(widget, widget.log_widget)]
 
     restored = DocumentWidget(widget.model)
     restored.restore_state(state)
@@ -4020,36 +4184,19 @@ def test_the_log_surfaces_filters_ride_the_documents_saved_layout(widget: Docume
     assert not restored_ui.show_debugs_action.isChecked()
 
 
-def test_a_layout_of_another_manual_version_is_rejected(widget: DocumentWidget) -> None:
-    """The version still guards the blob (#200, #320): one written under a different number is ignored
-    rather than restored. Since #320 it stands for a semantic change to the blob alone -- a dock-set
-    change no longer needs a bump, since a restore tolerates a blob from another set.
-
-    **Test steps:**
-
-    * roll a saved blob's version back one
-    * restore it
-    * verify it was refused
-    """
-    values = cbor2.loads(widget.save_state())
-    values[STATE_VERSION_KEY] = STATE_VERSION - 1
-
-    assert widget.restore_state(cbor2.dumps(values)) is False
-
-
 def test_a_layout_from_another_dock_set_restores_and_reattaches_what_it_never_named(
     widget: DocumentWidget, refimages_widget: DocumentWidget, qtbot: QtBot
 ) -> None:
-    """A blob written against a different dock set restores (#320): a named dock that isn't built is
-    skipped, and a built dock the blob never named -- which QtAds leaves closed and area-less, to open
-    floating on its next toggle -- is re-attached hidden into the Description View's area.
+    """A layout written against a different dock set restores (#320, #102): a named dock that isn't built
+    is skipped, and a built dock the layout never named is put back hidden into the Description View's
+    area -- so its next toggle opens it docked there, not floating.
 
     **Test steps:**
 
-    * restore a reference pack's blob (naming Content Images) onto a tutorial; verify it restored
-    * restore a tutorial's blob (never naming it) onto a pack whose Content Images is open; verify it
-      restored, the dock is closed and still has an area, and toggling it on shows it docked beside
-      Description View rather than floating
+    * restore a reference pack's layout (naming Content Images) onto a tutorial; verify it restored
+    * restore a tutorial's layout (never naming it) onto a pack whose Content Images is open; verify it
+      restored, the dock is closed and sits in the Description View's area, and toggling it on shows it
+      docked beside Description View rather than floating
     """
     pack_blob = refimages_widget.save_layout_state()
     tutorial_blob = widget.save_layout_state()
@@ -4059,12 +4206,12 @@ def test_a_layout_from_another_dock_set_restores_and_reattaches_what_it_never_na
     content_images.toggleView(True)
     assert refimages_widget.restore_state(tutorial_blob) is True
 
+    description = refimages_widget.sub_docks._DocumentSubDocks__viewer_docks[VIEWER_DESCRIPTION_TAB]  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert content_images.isClosed()
-    assert content_images.dockAreaWidget() is not None
+    assert content_images.dockAreaWidget() is description.dockAreaWidget()  # pylint: disable=no-member
     content_images.toggleView(True)
     qtbot.wait(1)
     assert not content_images.isFloating()
-    description = refimages_widget.sub_docks._DocumentSubDocks__viewer_docks[VIEWER_DESCRIPTION_TAB]  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert content_images.dockAreaWidget() is description.dockAreaWidget()  # pylint: disable=no-member
 
 
@@ -4380,14 +4527,17 @@ def test_the_saved_default_is_layout_only(widget: DocumentWidget) -> None:
 
     **Test steps:**
 
-    * trigger Save
-    * verify the stored blob carries neither the widget-state nor the image-strip entry
+    * expand the location editor (so this document has widget state to leak), then trigger Save
+    * verify no dock entry of the stored layout carries any state, and there is no image-strip entry
     """
+    location_editor(widget).expanded = True
     widget.sub_docks._DocumentSubDocks__save_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
-    payload = cbor2.loads(shared_default_layout_settings().state_for(TUTORIAL_PLUGIN.key))
-    assert STATE_WIDGET_STATE_KEY not in payload
-    assert STATE_IMAGE_STRIP_VISIBLE_KEY not in payload
+    stored = shared_default_layout_settings().state_for(TUTORIAL_PLUGIN.key)
+    entries = saved_dock_entries(stored)
+    assert entries
+    assert not [name for name, entry in entries.items() if "state" in entry]
+    assert STATE_IMAGE_STRIP_VISIBLE_KEY not in cbor2.loads(stored)
 
 
 def test_reset_default_layout_clears_only_its_types_default(widget: DocumentWidget) -> None:
@@ -4470,20 +4620,20 @@ def test_apply_default_layout_falls_back_to_the_as_built_layout_when_none_is_sav
 
 
 def test_apply_default_layout_falls_back_when_the_saved_default_is_stale(widget: DocumentWidget) -> None:
-    """A default saved under an older ``STATE_VERSION`` must not turn Apply into a silent no-op (#62).
+    """A default whose layout is not one this build reads must not turn Apply into a silent no-op (#62).
 
-    ``restore_state`` rejects such a blob and returns ``False``; without the fallback keying on that
-    return, a non-empty-but-stale default -- what every saved default becomes on the next version
-    bump -- would leave the button doing nothing, forever, with no way to tell why.
+    ``restore_state`` rejects such a default and returns ``False``; without the fallback keying on that
+    return, a non-empty-but-stale default -- what every default saved before #102 is, an opaque QtAds
+    blob -- would leave the button doing nothing, forever, with no way to tell why.
 
     **Test steps:**
 
-    * seed the shared default with this widget's own layout, its version rolled back one
+    * seed the shared default with this widget's own layout, its dock layout swapped for an old QtAds blob
     * toggle the On Disk dock visible (off as-built), then trigger Apply
     * verify the dock is hidden again -- the as-built fallback ran, not the stale blob
     """
     payload = cbor2.loads(widget.save_layout_state())
-    payload[STATE_VERSION_KEY] -= 1
+    payload["dock_manager"] = b"an opaque QtAds blob from before #102"
     shared_default_layout_settings().states[TUTORIAL_PLUGIN.key] = cbor2.dumps(payload)  # pylint: disable=unsupported-assignment-operation
     on_disk_dock(widget).toggleView(True)
 
@@ -5374,6 +5524,57 @@ def test_a_pending_documents_stored_layout_lands_on_the_docks_its_first_read_bui
     content_images_dock(widget).toggleView(False)
     pending.revert()
     assert content_images_dock(widget).toggleViewAction().isChecked() is False
+
+
+def test_a_pending_packs_own_area_docks_show_their_tabs_and_content_after_the_first_read(
+    qtbot: QtBot, mocker: MockerFixture, tmp_path: Path
+) -> None:
+    """A session-restored reference pack whose stored layout gives Content Images and the Images editor
+    areas of their own comes back with both open **and showing** once its first read builds them (#102):
+    each tab is visible, and Content Images has enumerated its archives without a manual Refresh.
+
+    Regression guard: placing a dock that was closed while the layout is built opened it with its tab still
+    hidden -- the dock reported itself open, so nothing showed the tab again -- and the grid stayed empty
+    until Refresh.
+
+    **Test steps:**
+
+    * open Content Images and the Images editor on a pack, each in an area of its own, and save its state
+    * build a shown widget over a pending placeholder of a pack, hand it that state, and load it
+    * verify both docks are open with their tabs visible
+    * verify Content Images lists the enumerated entry
+    """
+    pack = DocumentWidget(RehuDocumentModel(RehuDocument({"type": "ReferenceImages", "sources": []})))
+    qtbot.addWidget(pack)
+    pack_manager = pack._DocumentWidget__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    pack_images = pack_manager.findDockWidget("editor:Images")
+    pack_content = content_images_dock(pack)
+    pack_manager.addDockWidget(QtAds.RightDockWidgetArea, pack_content)
+    pack_manager.addDockWidget(QtAds.BottomDockWidgetArea, pack_images)
+    pack_content.toggleView(True)
+    pack_images.toggleView(True)
+    stored = pack.save_state()
+
+    info_path = tmp_path / "pack" / "info.rehu"
+    mocker.patch.object(Path, "read_text", return_value=json.dumps({"type": "ReferenceImages", "sources": []}))
+    found = [ContentImageEntry(info_path.parent / "pack.zip", "a.jpg", 0, 0)]
+    mocker.patch.object(content_images_model, "enumerate_content_images", return_value=found)
+    pending = RehuDocumentModel.create_pending(info_path)
+    widget = DocumentWidget(pending)
+    qtbot.addWidget(widget)
+    widget.show()
+    qtbot.waitExposed(widget)
+    widget.adopt_layout(stored)
+
+    pending.load_pending()
+    qtbot.wait(1)
+
+    manager = widget._DocumentWidget__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    for dock in (content_images_dock(widget), manager.findDockWidget("editor:Images")):
+        assert dock.isClosed() is False
+        tab = dock.tabWidget()
+        assert tab.isVisible()
+    qtbot.waitUntil(lambda: len(content_images_view(widget).source) == 1, timeout=WAIT_TIMEOUT_MS)
 
 
 def test_a_pending_document_with_an_unusable_stored_layout_gets_its_types_current_layout(

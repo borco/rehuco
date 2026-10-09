@@ -10,11 +10,12 @@ import PySide6QtAds as QtAds
 from borco_pyside.qtads import (
     QtAdsAutoHideButtonSuppressor,
     QtAdsFocusTracker,
+    QtAdsLayout,
     QtAdsTabContextActions,
     remove_dock_widget,
 )
 from borco_pyside.theming import ActionIconThemeHandler
-from PySide6.QtCore import QByteArray, Signal
+from PySide6.QtCore import Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QInputDialog, QMainWindow, QMenu, QWidget
 from rehuco_core import CatalogField, CatalogQuery, CatalogRow, RehucoFile
@@ -22,7 +23,7 @@ from rehuco_core import CatalogField, CatalogQuery, CatalogRow, RehucoFile
 from ..dock_maximize import attach_maximize_handler
 from ..filter_urls import filter_url_token
 from ..glyphs import TAB_CLOSE_GLYPH
-from ..settings.catalog_state_store import CatalogState, CatalogStateStore
+from ..settings.catalog_state_store import BrowserState, CatalogState, CatalogStateStore
 from .browser_presets import DEFAULT_PRESET, BrowserPreset, browser_presets
 from .root_catalog import RootCatalog
 from .table_browser import TableBrowser
@@ -299,21 +300,31 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
         and put every sub-dock back where it sat. Their rows are read when the catalog says it
         :attr:`~.root_catalog.RootCatalog.refreshed`, right after.
 
-        Every browser exists *before* the layout is restored: QtAds restores by dock object name and creates none.
+        The layout defines the browsers (#102): each sub-dock's entry carries its browser, which is built as the
+        restore reaches it.
 
         :param file: the catalog just opened.
         """
         state = self.__catalog_store.load(file.rehuco_id)
-        for browser in [TableBrowser(saved) for saved in state.browsers] or [TableBrowser()]:
-            self.__add_browser(browser)
-        if state.layout:
-            self.__dock_manager.restoreState(QByteArray(state.layout))
-        # a browser the layout does not know is left closed, or in an area the restore took out of the manager --
-        # shown there it would be invisible, and every browser added beside it too. It is placed again instead
-        for dock in [dock for dock in self.__browsers if not self.__is_placed(dock)]:
-            remove_dock_widget(self.__dock_manager, dock)
-            self.__place(dock)
+        # every browser of the catalog is built from the layout and placed as it is added, so none is unnamed
+        QtAdsLayout(self.__dock_manager).restore(
+            state.layout, place_unnamed=lambda dock: None, create_dock=self.__create_browser_dock
+        )
+        if not self.__browsers:
+            self.__add_browser(TableBrowser())
         self.__update_enablement()
+
+    def __create_browser_dock(self, name: str, state: bytes | None) -> QtAds.CDockWidget | None:
+        """Build the browser a restored layout names, from what its entry carries.
+
+        :param name: the sub-dock's object name -- the browser's id.
+        :param state: the entry's :class:`BrowserState`, as bytes.
+        :returns: the browser's sub-dock, or ``None`` if the entry carries no browser of that id.
+        """
+        saved = BrowserState.from_bytes(state) if state is not None else None
+        if saved is None or str(saved.browser_id) != name:
+            return None
+        return self.__add_browser(TableBrowser(saved))
 
     def __on_closing(self, file: RehucoFile) -> None:
         """Remember ``file``'s browsers and layout, then close every browser.
@@ -331,9 +342,17 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
         :param file: the catalog being left.
         """
         with self.__maximize_handler.unmaximized():
-            layout = bytes(self.__dock_manager.saveState().data())
-        browsers = [browser.state() for browser in self.__browsers.values()]
-        self.__catalog_store.save(file.rehuco_id, CatalogState(browsers, layout))
+            layout = QtAdsLayout(self.__dock_manager).save(self.__browser_state)
+        self.__catalog_store.save(file.rehuco_id, CatalogState(layout))
+
+    def __browser_state(self, dock: QtAds.CDockWidget) -> bytes | None:
+        """What a browser's sub-dock entry carries: the browser itself.
+
+        :param dock: one of this shell's sub-docks.
+        :returns: its browser's :class:`BrowserState`, as bytes.
+        """
+        browser = self.__browsers.get(dock)
+        return browser.state().to_bytes() if browser is not None else None
 
     # endregion
 
@@ -388,7 +407,7 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
         anchor = (
             beside
             if beside is not None
-            else next((other for other in self.__browsers if self.__is_placed(other)), None)
+            else next((other for other in self.__browsers if other.dockAreaWidget() is not None), None)
         )
         area = None if anchor is None else anchor.dockAreaWidget()
         if area is not None:
@@ -396,16 +415,6 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
         else:
             self.__dock_manager.addDockWidget(QtAds.CenterDockWidgetArea, dock)
         self.__tab_menus.add(dock, dock.titleBarActions(), lambda: self.__focus_tracker.set_current_dock(dock))
-
-    def __is_placed(self, dock: QtAds.CDockWidget) -> bool:
-        """Whether ``dock`` is open in an area the manager -- or a floating window of it -- shows.
-
-        :param dock: a browser's sub-dock.
-        :returns: ``False`` for a dock closed, or left in an area a layout restore took off the manager.
-        """
-        if dock.isClosed():
-            return False
-        return dock.isFloating() or dock.dockAreaWidget() in self.__dock_manager.openedDockAreas()
 
     def __browser_actions(self, dock: QtAds.CDockWidget) -> list[QAction]:
         """Rename and Clone for ``dock``'s browser, bound to that dock whichever one is current. Deleting is its [x].

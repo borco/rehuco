@@ -14,7 +14,7 @@ from typing import Final, cast, override
 import PySide6QtAds as QtAds
 from borco_core.logging import LogScope
 from borco_pyside.logging import LogWidget
-from borco_pyside.qtads import QtAdsFloatingShowGuard, QtAdsFocusTracker, QtAdsPinSideHandler
+from borco_pyside.qtads import QtAdsFloatingShowGuard, QtAdsFocusTracker, QtAdsLayout, QtAdsPinSideHandler
 from borco_pyside.shortcuts import BindingRole
 from borco_pyside.theming import ActionIconThemeHandler, ThemeManager, ThemeMenu, ThemeModel
 from borco_pyside.widgets import ToolBarStretch
@@ -128,9 +128,7 @@ SETTINGS_DIALOG_OBJECT_NAME: Final = "settings_dialog"
 
 Still spelled *dialog*, and deliberately: the value keys the dock's remembered pin side under
 :data:`DOCK_PIN_SIDES_GROUP` (#279), which no version guards, so a rename would silently orphan that --
-and it is the name every layout blob carries, so a rename is a bump of
-:data:`~rehuco_agent.settings.main_window_settings.OUTER_DOCKS_STATE_VERSION` whether or not one was
-meant."""
+and it is the name every saved layout carries, so a renamed dock would come back at its built place."""
 
 SETTINGS_DOCK_TITLE: Final = "Settings"
 
@@ -254,7 +252,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
     """The single top-level window: a `CDockManager` holding a **Documents** dock around
     :class:`DocumentsDock`, with a **Settings** dock (#47) registered on the same outer manager -- not
     merged into `DocumentsDock`'s own nested one. Six peer docks in all, each placed once and each
-    leaving its own visibility to the manager's ``saveState()``, the Settings one included since #307
+    leaving its own visibility to the manager's saved layout, the Settings one included since #307
     (see :meth:`__add_settings_dock`). The **Root Catalog** dock (#377) and the **Browsers** dock (#461) are tabbed
     beside Documents the same way.
 
@@ -423,8 +421,6 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         if self.__window_settings.geometry:
             self.restoreGeometry(QByteArray(self.__window_settings.geometry))
         self.restoreState(QByteArray(self.__window_settings.toolbars_state), TOOLBARS_STATE_VERSION)
-        self.__log_widget.restore_state(self.__window_settings.log_widget_state)
-        self.__task_queue_widget.restore_state(self.__window_settings.task_queue_state)
 
         self.__recent_files: Final = RecentFilesSettings()
         self.__recent_files.load(persistent_settings())
@@ -459,22 +455,22 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # must be called after restoring the geometry and the session (open documents) so
         # the outer dock layout can be restored to the right place, and any floating
         # dock's own window is already created and ready to be restored to its prior
-        # visibility (#55). Skipped when empty (no session saved yet): CDockManager.restoreState()
-        # would return False anyway, but only after Qt's qUncompress() logs a spurious "Input data is
-        # corrupted" warning to stderr for the invalid-as-qCompress empty buffer.
+        # visibility (#55).
         # A layout that actually restored already carries the user's own splitter sizes, so seeding a
         # default over it is exactly what must not happen -- the restore's own verdict is what decides, not
-        # merely whether a blob was present (a stale or corrupted one is refused, and then there *is*
-        # nothing but the as-built layout) -- and a refused blob is only discovered by making the call.
-        restored = False
-        if self.__window_settings.outer_docks_state:
-            restored = bool(self.__dock_manager.restoreState(QByteArray(self.__window_settings.outer_docks_state)))
+        # merely whether a layout was present (a malformed one is refused, and then there *is* nothing but the
+        # as-built layout).
+        restored = QtAdsLayout(self.__dock_manager).restore(
+            self.__window_settings.outer_layout,
+            place_unnamed=self.__place_unnamed_outer_dock,
+            restore_dock_state=self.__restore_outer_dock_state,
+        )
         # not Final: showEvent sets it the first time it seeds
         self.__bottom_dock_heights_seeded = restored
-        # a layout describing a dock the user floated as floating *and open* is restored by showing its
-        # container there and then, before this window exists on screen -- the guard kept that off
-        # the screen; released here, it hands the container back hidden, to wait for
-        # raise_and_activate, which shows it above this window instead of ahead of it (#306)
+        # a layout describing a floating window can have it shown there and then, before this window exists on screen
+        # -- QtAds holds back a window holding one dock until its manager shows, but tabbing a second dock into it
+        # shows it at once (#102) -- the guard kept that off the screen; released here, it hands the container back
+        # hidden, to wait for raise_and_activate, which shows it above this window instead of ahead of it (#306)
         self.__floating_docks_hidden_with_window.extend(floating_show_guard.release())
         # and anything else already on screen as construction ends waits the same way -- nothing
         # should be, every show during __init__ having been guarded, so this is belt over braces
@@ -1330,9 +1326,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
         **Open by default**, unlike those two: the documents area is what the window is *for*, and a
         first run that showed nothing but chrome would leave nowhere for an opened file to land until the
-        user found a toggle. An older saved layout describes this area as a central widget instead, which
-        is what :data:`~rehuco_agent.settings.main_window_settings.OUTER_DOCKS_STATE_VERSION`'s bump
-        discards.
+        user found a toggle.
 
         :returns: the dock, open.
         """
@@ -1448,12 +1442,11 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         A plain ``CDockWidget``, not a `DockableDialog`: that framework's whole addition over a dock is
         the "Restore on start" checkbox, which belongs to a modeless dialog and not to a log -- whether
         this reopens with the window is simply whether it was open when the window closed, which the
-        outer manager's own ``saveState()`` already records.
+        outer manager's saved layout already records.
 
         **Hidden by default**, and the dock area is the bottom one: a log is read across the width of the
         window, under the thing it is about, and a first run should show the resource being edited rather
-        than a log of having opened it. An older saved layout knows nothing of this dock, which is what
-        :data:`~rehuco_agent.settings.main_window_settings.OUTER_DOCKS_STATE_VERSION`'s bump is for.
+        than a log of having opened it.
 
         The widget is attached to the bridge here, at construction, rather than on first reveal: the
         replay is what makes a dock opened later worth opening, and it costs one batch of rows in a model
@@ -1511,8 +1504,8 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
         The same shape as :meth:`__add_log_dock`, and for the same reasons: a plain ``CDockWidget``
         rather than a `DockableDialog` (whose only addition, the "Restore on start" checkbox, belongs
-        to a modeless dialog and not to a queue whose visibility the outer manager's own
-        ``saveState()`` already records), placed beside it in the bottom area, hidden until asked for.
+        to a modeless dialog and not to a queue whose visibility the outer manager's saved layout
+        already records), placed beside it in the bottom area, hidden until asked for.
 
         :returns: the dock, hidden.
         """
@@ -1889,17 +1882,12 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """Every awaited remote document has answered (#464): lay the documents out as the session left them, now
         that the docks the saved layout names all exist.
 
-        **Not if the user has opened anything meanwhile.** ``CDockManager.restoreState`` closes every dock the saved
-        layout does not name (measured: a dock added after the save reads ``isClosed()`` after the restore), so a
-        document the user opened in the first seconds, or a preview they made, would vanish. Then the late docks stay
-        tabbed where they landed, which is the lesser loss.
+        A document the user opened in the first seconds stays where it is, since the layout does not name it (#102).
+        **Not while a preview is shown**: the restore would move it out of the place the user is looking at.
         """
-        session_open = {path for path, item in self.__session.items.items() if item.open}
-        if self.__documents_dock.preview_document_widget() is not None or any(
-            widget.model.path not in session_open for widget in self.__documents_dock.open_document_widgets()
-        ):
+        if self.__documents_dock.preview_document_widget() is not None:
             return
-        self.__documents_dock.restore_state(self.__session.docks_state)
+        self.__documents_dock.restore_state(self.__session.docks_layout)
 
     def __save_window_state(self) -> None:
         """Persist this window's current size/position, toolbar layout, outer dock layout, and the
@@ -1907,10 +1895,40 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__window_settings.geometry = bytes(self.saveGeometry().data())
         self.__window_settings.toolbars_state = bytes(self.saveState(TOOLBARS_STATE_VERSION).data())
         with self.__maximize_handler.unmaximized():
-            self.__window_settings.outer_docks_state = bytes(self.__dock_manager.saveState().data())
-        self.__window_settings.log_widget_state = self.__log_widget.save_state()
-        self.__window_settings.task_queue_state = self.__task_queue_widget.save_state()
+            self.__window_settings.outer_layout = QtAdsLayout(self.__dock_manager).save(self.__outer_dock_state)
         self.__window_settings.save()
+
+    def __outer_dock_state(self, dock: QtAds.CDockWidget) -> bytes | None:
+        """The content state an outer dock's layout entry carries (#102): the Log dock's filters and the Tasks dock's
+        nested layout. The other docks restore their content at moments of their own -- the session, a catalog.
+
+        :param dock: an outer dock.
+        :returns: its content's state, or ``None``.
+        """
+        if dock is self.__log_dock:
+            return self.__log_widget.save_state()
+        if dock is self.__task_queue_dock:
+            return self.__task_queue_widget.save_state()
+        return None
+
+    def __restore_outer_dock_state(self, dock: QtAds.CDockWidget, state: bytes) -> None:
+        """Hand an outer dock the content state :meth:`__outer_dock_state` saved for it.
+
+        :param dock: an outer dock.
+        :param state: what its layout entry carried.
+        """
+        if dock is self.__log_dock:
+            self.__log_widget.restore_state(state)
+        elif dock is self.__task_queue_dock:
+            self.__task_queue_widget.restore_state(state)
+
+    def __place_unnamed_outer_dock(self, dock: QtAds.CDockWidget) -> None:
+        """Leave an outer dock the saved layout does not name where the window built it (#102) -- Log and Tasks in
+        the bottom area, the rest tabbed beside Documents -- closed, but Documents itself, which stays open.
+
+        :param dock: the dock the layout left out.
+        """
+        dock.toggleView(dock is self.__documents_dock_widget)
 
     def __save_session(self) -> None:
         """Snapshot every open document's dock layout and focus, and persist the open-file set.
@@ -1944,7 +1962,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
                 self.__session.items[path].open = True
         preview_focused = preview is not None and self.__documents_dock.focused_document_widget() is preview
         self.__session.focused_path = None if preview_focused else self.__documents_dock.focused_document_path()
-        self.__session.docks_state = self.__documents_dock.save_state()
+        self.__session.docks_layout = self.__documents_dock.save_state()
 
         self.__session.save()
 
@@ -2280,7 +2298,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         honest in both directions: the dock stays *open* as far as `CDockWidget.isClosed` is
         concerned, so :meth:`raise_and_activate` puts back exactly what was on screen, and a Quit
         from the tray while hidden still persists the dock as open for the next launch (the outer
-        manager's ``saveState()`` reads that same flag) rather than recording the tray's own
+        manager's saved layout reads that same flag) rather than recording the tray's own
         bookkeeping as the user's choice.
         """
         self.__defer_visible_floating_docks()

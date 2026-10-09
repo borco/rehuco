@@ -11,12 +11,12 @@ class QtAdsFloatingShowGuard(QObject):
     """Stops any `CFloatingDockContainer` shown while this guard is armed from reaching the screen.
 
     For the one window in a dock-shell app that restores its layout during construction. QtAds'
-    ``CDockManager.addDockWidgetFloating`` defers a freshly floated dock's window until its owner is
-    shown (it parks the container in QtAds' own uninitialised-floating-widgets list), but
-    ``CDockManager.restoreState`` does not: a layout describing a dock as floating **and open** has its
-    container shown the moment the blob is applied, regardless of whether the owning window exists on
-    screen yet. Since the restore has to happen before that window is first shown -- restoring
-    afterwards visibly resettles a layout the user is already looking at -- the dialog would otherwise
+    ``CDockManager.addDockWidgetFloating`` defers a freshly floated dock's window until its owner is shown (it parks
+    the container in QtAds' own uninitialised-floating-widgets list), but only while it holds that one dock: adding a
+    second dock to its area -- what a layout restore does to rebuild a floating window of several (`QtAdsLayout`,
+    #102), as ``CDockManager.restoreState`` did for any floating-and-open dock -- shows it at once, regardless of
+    whether the owning window exists on screen yet. Since the restore has to happen before that window is first shown
+    -- restoring afterwards visibly resettles a layout the user is already looking at -- the dialog would otherwise
     appear, alone, a moment ahead of the window it belongs to.
 
     **Hiding the container again afterwards is not enough**, which is what this class exists for: the
@@ -38,11 +38,16 @@ class QtAdsFloatingShowGuard(QObject):
 
     Armed from construction and disarmed by :meth:`release`, which is also the only way to get the
     containers back -- a guard never released leaves them invisible for good.
+
+    **No container's Python wrapper is kept** between the two: a container shown in the middle of a QtAds
+    call -- a second dock tabbed into a floating window by a structural restore (#102) -- has the wrapper the
+    filter saw invalidated before that call returns, while the window lives on. :meth:`release` finds the
+    held containers again by the attribute the filter set, which nothing else in the app sets.
     """
 
     def __init__(self) -> None:
         super().__init__()
-        self.__held: Final[list[QtAds.CFloatingDockContainer]] = []
+        self.__armed = True
         self.__app: Final = QApplication.instance()
         if self.__app is not None:
             self.__app.installEventFilter(self)
@@ -65,7 +70,6 @@ class QtAdsFloatingShowGuard(QObject):
         """
         if event.type() == QEvent.Type.Show and isinstance(watched, QtAds.CFloatingDockContainer):
             watched.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
-            self.__held.append(watched)
         return False
 
     def release(self) -> tuple[QtAds.CFloatingDockContainer, ...]:
@@ -75,12 +79,19 @@ class QtAdsFloatingShowGuard(QObject):
         matter -- then cleared, so a plain ``show()`` maps a real window. Calling this twice is harmless;
         the second call returns nothing.
 
-        :returns: the containers held since construction, in the order they were shown.
+        :returns: the containers held since construction.
         """
+        if not self.__armed:
+            return ()
+        self.__armed = False
         if self.__app is not None:
             self.__app.removeEventFilter(self)
-        held = tuple(self.__held)
-        self.__held.clear()
+        held = tuple(
+            widget
+            for widget in QApplication.topLevelWidgets()
+            if isinstance(widget, QtAds.CFloatingDockContainer)
+            and widget.testAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen)
+        )
         for container in held:
             if container.isVisible():
                 container.hide()

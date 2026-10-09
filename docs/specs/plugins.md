@@ -290,8 +290,9 @@ alone, and that layout only ever meant "no type yet" — so picking a type for a
 type's default (saved, else as-built). A session-restored document's stored layout still wins over this: its type
 arriving from the deferred first read is not a switch. A layout restores onto a dock set other than the one it was
 written against: a dock it names that isn't built is skipped, and a built dock it never names is put back hidden
-where it always lives (QtAds would otherwise leave it area-less, to open floating). That tolerance is what retires
-the hand-bumped layout version: adding a dock to one type no longer resets anyone's layouts.
+where it always lives ([[appendices.qt-ads#structural-layout]]). That tolerance is what retires the hand-bumped layout
+version: adding a dock to one type no longer resets anyone's layouts. Each dock's persisting widgets ride in that
+dock's own entry of the layout, so a dock the layout drops takes nothing else with it.
 
 The open-and-forward and single-instance semantics this shell realizes are owned by [[nodes#local-vs-swarm]] (local-file
 mode) and [[nodes#single-instance]] (single-instance / file association); session persistence and the close guard are a

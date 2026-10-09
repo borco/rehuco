@@ -180,31 +180,60 @@ def test_load_with_no_file_leaves_an_empty_session() -> None:
     session = DocumentSessionSettings()
     session.items[FIRST] = DocumentSessionSettings.Item(open=True)
     session.focused_path = FIRST
-    session.docks_state = b"stale"
+    session.docks_layout = {"format": 1, "main": {"area": [{"name": "stale", "closed": False}]}}
 
     session.load()
 
     assert not session.items
     assert session.focused_path is None
-    assert session.docks_state == b""
+    assert session.docks_layout is None
 
 
 def test_the_documents_docks_layout_round_trips() -> None:
-    """The layout between the open documents is kept beside the items (#404).
+    """The layout between the open documents is kept beside the items, as the tree it is (#404, #102).
 
     **Test steps:**
 
-    * save a session with a dock layout, load it into a fresh instance
-    * verify the layout bytes came back
+    * save a session with a dock layout tree, load it into a fresh instance
+    * verify the same tree came back
     """
+    layout = {
+        "format": 1,
+        "main": {
+            "split": "h",
+            "sizes": [300, 200],
+            "children": [
+                {"area": [{"name": "a", "closed": False}, {"name": "b", "closed": True}], "current": "a"},
+                {"area": [{"name": "c", "closed": False, "state": "AAE="}]},
+            ],
+        },
+    }
     session = DocumentSessionSettings()
-    session.docks_state = b"\x00layout\xff"
+    session.docks_layout = layout
     session.save()
 
     restored = DocumentSessionSettings()
     restored.load()
 
-    assert restored.docks_state == b"\x00layout\xff"
+    assert restored.docks_layout == layout
+
+
+def test_a_stored_docks_layout_that_is_not_a_tree_loads_as_none(state_files: MemoryStateFiles) -> None:
+    """A stored layout that is not a dict -- the encoded bytes a session saved before #102 holds under its old
+    key, or anything else -- loads as no layout, so the documents keep where they open (#102).
+
+    **Test steps:**
+
+    * seed a file whose stored layout is a string
+    * load it
+    * verify it has no layout
+    """
+    state_files.files[document_session_path()] = json.dumps({"version": 1, "docks_layout": "AAE="})
+
+    restored = DocumentSessionSettings()
+    restored.load()
+
+    assert restored.docks_layout is None
 
 
 def test_an_open_item_with_no_layout_survives_a_round_trip() -> None:

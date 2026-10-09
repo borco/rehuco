@@ -15,11 +15,12 @@ surface may ask about, :attr:`~rehuco_core.JobStatus.resumes_where_it_stopped`
 # module reads better than an arbitrary split.
 # pylint: disable=too-many-lines
 
+import base64
 import logging
 from collections.abc import Callable, Iterator
 from threading import Event
 from time import monotonic, sleep
-from typing import Final
+from typing import Any, Final
 
 import cbor2
 import PySide6QtAds as QtAds
@@ -37,11 +38,10 @@ from rehuco_agent.settings.logs_settings import shared_logs_settings
 from rehuco_agent.tasks import task_queue_widget as widget_module
 from rehuco_agent.tasks.task_queue_model import STARTS_OVER_HINT
 from rehuco_agent.tasks.task_queue_widget import (
+    LOG_DOCK_NAME,
     PAUSE_TOOLTIP,
+    QUEUE_DOCK_NAME,
     STARTS_OVER_SOME_TOOLTIP,
-    STATE_DOCK_MANAGER_KEY,
-    STATE_VERSION,
-    STATE_VERSION_KEY,
     TaskQueueWidget,
 )
 from rehuco_core import JobControl, JobScope, JobState, JobStatus, TaskJobBase, TaskQueue
@@ -1448,78 +1448,135 @@ def test_the_surface_is_re_capped_as_either_limit_changes(widget: TaskQueueWidge
     assert widget.log_widget.limit == 12
 
 
+def layout_dock_entries(layout: object) -> list[dict[str, Any]]:
+    """Every dock entry of a stored layout tree (`~borco_pyside.qtads.QtAdsLayout`, #102), in place.
+
+    :param layout: the decoded tree, or any node of it.
+    :returns: the entries themselves, wherever they sit in the tree.
+    """
+    if isinstance(layout, list):
+        return [entry for item in layout for entry in layout_dock_entries(item)]
+    if not isinstance(layout, dict):
+        return []
+    if "name" in layout:
+        return [layout]
+    return [entry for value in layout.values() for entry in layout_dock_entries(value)]
+
+
+def saved_dock_entries(state: bytes) -> dict[str, dict[str, Any]]:
+    """The dock entries of a shell's saved state, by dock name.
+
+    :param state: what ``save_state`` returned.
+    :returns: each dock's entry.
+    """
+    return {entry["name"]: entry for entry in layout_dock_entries(cbor2.loads(state))}
+
+
 def test_the_nested_layout_round_trips(queue: TaskQueue, qtbot: QtBot) -> None:
-    """A shown Log sub-dock is shown again in a shell restored from the saved blob (#276).
+    """A shown Log sub-dock is shown again in a shell restored from the saved state, and the log
+    surface's filters ride the log dock's own entry (#276, #102).
 
     **Test steps:**
 
-    * show the log sub-dock on one shell and save its state
+    * show the log sub-dock and turn the debug band off on one shell, and save its state
+    * verify the log dock's entry carries the surface's state and the table's carries none
     * build a second shell and restore that state into it
-    * verify the restore reported success and the second shell's log dock is open
+    * verify the restore reported success, the second shell's log dock is open, and the band came back off
     """
     source = TaskQueueWidget(queue)
     qtbot.addWidget(source)
     log_dock_of(source).toggleView(True)
+    source_ui = source.log_widget._LogWidget__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    source_ui.show_debugs_action.setChecked(False)
     state = source.save_state()
+
+    entries = saved_dock_entries(state)
+    log_entry = entries[LOG_DOCK_NAME]
+    assert base64.b64decode(log_entry["state"]) == source.log_widget.save_state()
+    assert "state" not in entries[QUEUE_DOCK_NAME]
 
     restored = TaskQueueWidget(queue)
     qtbot.addWidget(restored)
 
     assert restored.restore_state(state) is True
     assert log_dock_of(restored).isClosed() is False
+    restored_ui = restored.log_widget._LogWidget__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert restored_ui.show_debugs_action.isChecked() is False
 
 
 def test_an_unusable_blob_keeps_the_built_layout(widget: TaskQueueWidget) -> None:
-    """An empty, malformed or foreign-versioned blob is refused, leaving the log hidden as built (#276).
-
-    Restoring one would succeed and then hide whichever sub-docks it had never heard of, which for a
-    two-dock shell is a blank Tasks dock.
+    """An empty, malformed or non-layout blob is refused, leaving the log hidden as built (#276, #102).
 
     **Test steps:**
 
-    * hand the widget an empty blob, a malformed one, one that is not a mapping at all, one carrying a
-      foreign version, and two of the right version whose layout bytes are unusable
+    * hand the widget an empty blob, a malformed one, one that is not a mapping at all, one of another
+      format, and the envelope a shell saved before #102
     * verify each was refused and the log dock is still closed
     """
-    foreign = cbor2.dumps({STATE_VERSION_KEY: STATE_VERSION + 1, STATE_DOCK_MANAGER_KEY: b"whatever"})
-    # the right version, but nothing to restore from: an absent key, and a value of the wrong type.
-    # Handing either to ``restoreState`` is what Qt logs a spurious "Input data is corrupted" for
-    missing_layout = cbor2.dumps({STATE_VERSION_KEY: STATE_VERSION})
-    wrong_type_layout = cbor2.dumps({STATE_VERSION_KEY: STATE_VERSION, STATE_DOCK_MANAGER_KEY: 42})
+    other_format = cbor2.dumps({"format": 0, "main": {"area": [{"name": LOG_DOCK_NAME, "closed": False}]}})
+    old_envelope = cbor2.dumps({"version": 1, "dock_manager": b"an opaque QtAds blob", "log_widget": b""})
 
     assert widget.restore_state(b"") is False
     assert widget.restore_state(b"not cbor at all") is False
     assert widget.restore_state(cbor2.dumps(["not", "a", "mapping"])) is False
-    assert widget.restore_state(foreign) is False
-    assert widget.restore_state(missing_layout) is False
-    assert widget.restore_state(wrong_type_layout) is False
+    assert widget.restore_state(other_format) is False
+    assert widget.restore_state(old_envelope) is False
     assert log_dock_of(widget).isClosed() is True
 
 
-def test_the_log_surface_s_own_filters_survive_a_restore(queue: TaskQueue, qtbot: QtBot) -> None:
-    """What the reader narrowed the log to is part of this shell's state (#276).
-
-    Restored ahead of the version guard, since a blob whose *dock set* no longer matches is still a
-    perfectly good answer about one widget's filters.
+def test_the_log_filters_restore_only_with_the_layout(widget: TaskQueueWidget) -> None:
+    """The log surface's filters ride the layout (#102): a state the layout cannot restore leaves them as
+    they are.
 
     **Test steps:**
 
-    * turn the debug band off on one shell and save its state
-    * restore that state into a second shell
-    * verify the band came back off
+    * turn the debug band off and save the state, then turn it back on
+    * restore that state with its format number changed
+    * verify it was refused and the band is still on
     """
-    source = TaskQueueWidget(queue)
-    qtbot.addWidget(source)
-    source_ui = source.log_widget._LogWidget__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
-    source_ui.show_debugs_action.setChecked(False)
-    state = source.save_state()
+    ui = widget.log_widget._LogWidget__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    ui.show_debugs_action.setChecked(False)
+    values = cbor2.loads(widget.save_state())
+    ui.show_debugs_action.setChecked(True)
+    values["format"] = 0
 
-    restored = TaskQueueWidget(queue)
-    qtbot.addWidget(restored)
-    restored.restore_state(state)
+    assert widget.restore_state(cbor2.dumps(values)) is False
+    assert ui.show_debugs_action.isChecked() is True
 
-    restored_ui = restored.log_widget._LogWidget__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
-    assert restored_ui.show_debugs_action.isChecked() is False
+
+def test_a_layout_that_never_names_the_log_puts_it_back_hidden_at_the_right(
+    widget: TaskQueueWidget, qtbot: QtBot
+) -> None:
+    """A saved layout that does not name the log dock restores, and the log goes back where it is built:
+    hidden, beside the table on its right (#102).
+
+    **Test steps:**
+
+    * save the shell's state with the log's entry renamed away, then open the log
+    * restore that state
+    * verify it restored and the log is closed
+    * show the shell and toggle the log on; verify it sits in its own area, to the right of the table
+    """
+    values = cbor2.loads(widget.save_state())
+    for entry in layout_dock_entries(values):
+        if entry["name"] == LOG_DOCK_NAME:
+            entry["name"] = "no such dock"
+    state = cbor2.dumps(values)
+    log_dock_of(widget).toggleView(True)
+
+    assert widget.restore_state(state) is True
+    assert log_dock_of(widget).isClosed() is True
+
+    widget.resize(800, 600)
+    widget.show()
+    log_dock_of(widget).toggleView(True)
+    manager = widget._TaskQueueWidget__dock_manager  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    queue_dock = manager.findDockWidget(QUEUE_DOCK_NAME)
+    log_area = log_dock_of(widget).dockAreaWidget()
+    queue_area = queue_dock.dockAreaWidget()
+    assert log_area is not None and queue_area is not None
+    assert log_area is not queue_area
+    qtbot.waitUntil(lambda: log_area.geometry().left() >= queue_area.geometry().right(), timeout=10_000)
 
 
 # endregion

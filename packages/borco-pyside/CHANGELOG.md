@@ -11,6 +11,11 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ### Added
 
+- `QtAdsLayout`: saves a `CDockManager`'s layout as a JSON-able tree of splitters, tabbed areas, floating windows
+  and sidebars, and restores it by moving the manager's own docks into place. Each part restores on its own: a dock the
+  tree names that the manager lacks is skipped, or built by a `create_dock` hook; a dock the tree does not name goes
+  to a `place_unnamed` hook; a malformed node is dropped. A hook stores each dock's content state in its entry and
+  hands it back on restore.
 - `ReorderDrag`, `drop_slot` and `paint_drag_ghost`: what a list reordered by dragging shows while an item is
   dragged -- the item leaves its place, one shadow stands where it would land and the other items close up around it --
   shared by the card list and any item view that reorders its rows the same way.
@@ -53,6 +58,8 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ### Fixed
 
+- `QtAdsFloatingShowGuard.release` no longer fails with "already deleted" when a floating window was shown in the
+  middle of a QtAds call: the guard keeps no wrapper of the windows it holds and finds them again when released.
 - `force_foreground` restores a window only when it is minimized. It restored every window, which took a maximized
   or snapped one back to its normal size and position. The restore is `restore_if_minimized`, which a window's own
   show path can call too: the native restore is the one route back from a minimize that keeps a snap, where Qt's
