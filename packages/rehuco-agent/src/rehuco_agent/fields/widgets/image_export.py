@@ -77,6 +77,12 @@ class PressTracker:
 
     def __init__(self) -> None:
         self.__pressed: tuple[QPoint, object] | None = None
+        self.__dragged = False
+
+    @property
+    def dragged(self) -> bool:
+        """Whether the press since the last one has turned into a drag -- so the release that follows is not a click."""
+        return self.__dragged
 
     def press(self, event: QMouseEvent, token: object | None) -> None:
         """Remember a left press on ``token``, or forget any when it is on nothing draggable.
@@ -84,6 +90,7 @@ class PressTracker:
         :param event: the press.
         :param token: what is under it; ``None`` for nothing draggable.
         """
+        self.__dragged = False
         left = event.button() == Qt.MouseButton.LeftButton
         self.__pressed = (event.position().toPoint(), token) if left and token is not None else None
 
@@ -100,6 +107,7 @@ class PressTracker:
         if (event.position().toPoint() - start).manhattanLength() < QApplication.startDragDistance():
             return None
         self.__pressed = None
+        self.__dragged = True
         return token
 
     def release(self) -> None:

@@ -161,8 +161,6 @@ class ThumbnailRow(QListView):
         self.__current = -1
         self.__exporter: ImageExporter | None = None
         self.__press: Final = PressTracker()
-        self.__dragged = False
-        """Whether a drag started since the last press: the click that may follow it is not a click."""
         self.__model: Final = ImageSourceModel(self)
         self.setModel(self.__model)
         self.setItemDelegate(ThumbnailDelegate(self))
@@ -207,7 +205,6 @@ class ThumbnailRow(QListView):
         :param event: the Qt mouse event, forwarded to the base class.
         """
         super().mousePressEvent(event)
-        self.__dragged = False
         index = self.indexAt(event.position().toPoint())
         self.__press.press(event, index.row() if index.isValid() and self.__exporter is not None else None)
 
@@ -222,7 +219,6 @@ class ThumbnailRow(QListView):
         source = self.__model.source
         exporter = self.__exporter
         if isinstance(row, int) and exporter is not None and source is not None:
-            self.__dragged = True
             exporter.drag(self.viewport(), source, row, self.thumbnail(row) or QPixmap())
 
     @override
@@ -239,7 +235,7 @@ class ThumbnailRow(QListView):
 
         :param index: the clicked thumbnail.
         """
-        if not self.__dragged:
+        if not self.__press.dragged:
             self.activated_index.emit(index.row())
 
     @property

@@ -4178,7 +4178,7 @@ def pane_buttons(dock: CatalogDocks, index: QModelIndex) -> list[QAction]:
     :param index: the row.
     :returns: the actions, the separators left out.
     """
-    actions, _default = dock.roots._RootsPanel__actions_for_row(index)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    actions, _default = dock.roots._RootsPanel__rows.buttons(index)  # type: ignore[attr-defined]  # pylint: disable=protected-access
     return without_separators(actions)
 
 
@@ -4333,7 +4333,7 @@ def test_a_placeholder_row_has_no_menu_and_no_buttons(
     mocker.patch.object(dock.roots.roots_view, "index_at_global", return_value=placeholder)
 
     assert not dock.roots.roots_context_actions(placeholder)
-    assert dock.roots._RootsPanel__actions_for_row(placeholder) == ([], None)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert dock.roots._RootsPanel__rows.buttons(placeholder) == ([], None)  # type: ignore[attr-defined]  # pylint: disable=protected-access
     dock.roots._RootsPanel__on_roots_context_menu(QPoint(1, 1))  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     assert not RecordingMenu.shown

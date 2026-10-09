@@ -103,7 +103,7 @@ def test_dragging_a_thumbnail_drags_its_image_out_and_the_release_that_follows_n
     drag.exec.assert_called_once_with(Qt.DropAction.CopyAction)
     (mime,) = drag.setMimeData.call_args.args
     assert Path(mime.urls()[0].toLocalFile()).name == f"rehu-{ID}__b.png"
-    assert activated == []
+    assert not activated
 
 
 def test_a_plain_click_still_activates_a_thumbnail(

@@ -1051,14 +1051,7 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes,
         self.__list_model.dataChanged.connect(self.__on_data_changed)
         self.__list.selectionModel().currentChanged.connect(self.__on_current_changed)
         self.__list.doubleClicked.connect(self.__on_double_clicked)
-        # the preview is a passive label, so its double-click is caught here rather than subclassed in:
-        # the same label class paints the maximized viewer, where a double-click means something else
-        self.__preview.installEventFilter(self)
-        # the list too: a curating key its action is not taking must not fall through to the view's own
-        # handling -- a bare C would otherwise type-ahead to the first row starting with "c" (#370)
-        self.__list.installEventFilter(self)
-        # and the list's viewport, where a row is pressed: that is where an image is dragged out of it (#395)
-        self.__list.viewport().installEventFilter(self)
+        self.__watch_widgets()
         self.screenshots_changed.connect(self.rows_changed)
         self.image_scanner_changed.connect(lambda _scanner: self.__refresh())  # type: ignore[attr-defined]
         self.image_organizer_changed.connect(lambda _organizer: self.__apply_organizer())  # type: ignore[attr-defined]
@@ -1068,6 +1061,19 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes,
         self.current_index_changed.connect(self.__apply_row_actions)
         self.screenshots_changed.connect(self.__apply_row_actions)
         self.__apply_organizer()
+
+    def __watch_widgets(self) -> None:
+        """Filter the events of the widgets this editor reacts to for itself.
+
+        The preview is a passive label, so its double-click is caught here rather than subclassed in: the same label
+        class paints the maximized viewer, where a double-click means something else. The list too: a curating key
+        its action is not taking must not fall through to the view's own handling -- a bare C would otherwise
+        type-ahead to the first row starting with "c" (#370). And the list's viewport, where a row is pressed: that is
+        where an image is dragged out of it (#395).
+        """
+        self.__preview.installEventFilter(self)
+        self.__list.installEventFilter(self)
+        self.__list.viewport().installEventFilter(self)
 
     def __make_visibility_action(self) -> QAction:
         """Build the action Space fires on the list: the current row's check box, from the keyboard (#370).

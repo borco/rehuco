@@ -233,7 +233,8 @@ def test_a_file_drags_by_its_path_and_a_missing_base_names_it_by_its_own_name(
     assert exporter.drag_path(widget, shot, QPixmap(10, 10))
     assert bare.drag_path(widget, shot, QPixmap(10, 10))
 
-    names = [
-        Path(call.args[0].urls()[0].toLocalFile()).name for call in drag_class.return_value.setMimeData.call_args_list
-    ]
+    names = []
+    for call in drag_class.return_value.setMimeData.call_args_list:
+        (mime,) = call.args
+        names.append(Path(mime.urls()[0].toLocalFile()).name)
     assert names == [f"rehu-{ID}__screenshots__a.png", f"rehu-{ID}__a.png"]

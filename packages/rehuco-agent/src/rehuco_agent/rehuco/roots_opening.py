@@ -72,6 +72,8 @@ class RootsOpening:
         self.__types: Final = types
         self.__lightbox: Final = RootsLightbox(host, coordinator)
         self.__lightbox.nothing_to_show.connect(notify)
+        # an image row dragged out of a column to other apps (#395)
+        ui.roots_view.image_drag_requested.connect(self.drag_image)
 
     @property
     def lightbox(self) -> RootsLightbox:

@@ -66,6 +66,10 @@ type PackForRow = Callable[[QModelIndex], PackInfo | None]
 """What the pane asks its owner for an archive row: whether it is a reference pack, and through which record; ``None``
 for a row that is not an archive."""
 
+type DragImage = Callable[[QModelIndex, QWidget, QPixmap], None]
+"""Drags an image row out to other apps (#395): the row, the widget the drag starts from, and the picture shown under
+the pointer. The owner knows what record manages the row."""
+
 THUMBNAIL_SIDE: Final = 320
 """The longest side, in pixels, an image's thumbnail is read at -- smaller ones are shown as they are."""
 
@@ -174,10 +178,6 @@ class RootsPreview(QWidget):
     archive_ready = Signal(int, object)
     """``(serial, facts)``: what a zip's central directory says, or ``None`` when it could not be read."""
 
-    image_drag_requested = Signal(QModelIndex, QWidget, QPixmap)
-    """``(row, widget, picture)``: the picture of an image row has been dragged away from (#395); the owner, which knows
-    what record manages the row, exports it."""
-
     def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
         model: RootsFolderModel,
@@ -186,6 +186,7 @@ class RootsPreview(QWidget):
         record_for: RecordForRow | None = None,
         pack_for: PackForRow | None = None,
         parent: QWidget | None = None,
+        drag_image: DragImage | None = None,
     ) -> None:
         super().__init__(parent)
         self.__ui: Final = Ui_RootsPreview()
@@ -196,6 +197,7 @@ class RootsPreview(QWidget):
         self.__actions_for: Final = actions_for
         self.__record_for: Final = record_for
         self.__pack_for: Final = pack_for
+        self.__drag_image: Final = drag_image
         self.__index = QPersistentModelIndex()
         self.__serial = 0
         self.__location = ""
@@ -304,8 +306,8 @@ class RootsPreview(QWidget):
         """
         del token
         image = self.image
-        if image is not None:
-            self.image_drag_requested.emit(self.__shown(), self.__ui.image_label, QPixmap.fromImage(image))
+        if image is not None and self.__drag_image is not None:
+            self.__drag_image(self.__shown(), self.__ui.image_label, QPixmap.fromImage(image))
 
     def __setup_description(self) -> None:
         """Make the description view the description dock's: its renderer and stylesheet, the scanner that finds its

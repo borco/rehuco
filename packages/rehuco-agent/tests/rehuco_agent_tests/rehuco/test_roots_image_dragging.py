@@ -76,8 +76,11 @@ def staged_names(drag_class: object) -> list[str]:
     :param drag_class: the patched ``QDrag``.
     :returns: the names.
     """
-    calls = drag_class.return_value.setMimeData.call_args_list  # type: ignore[attr-defined]
-    return [Path(call.args[0].urls()[0].toLocalFile()).name for call in calls]
+    names = []
+    for call in drag_class.return_value.setMimeData.call_args_list:  # type: ignore[attr-defined]
+        (mime,) = call.args
+        names.append(Path(mime.urls()[0].toLocalFile()).name)
+    return names
 
 
 def test_dragging_an_image_row_out_of_a_column_exports_it(
