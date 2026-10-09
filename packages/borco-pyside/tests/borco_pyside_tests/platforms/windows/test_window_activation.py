@@ -108,6 +108,30 @@ def test_force_foreground_keeps_a_window_that_is_not_minimized_in_place(mocker: 
 
 
 @mark.windows
+def test_restore_if_minimized_restores_only_a_minimized_window(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """``restore_if_minimized`` sends ``SW_RESTORE`` to a minimized window, and nothing to one on screen.
+
+    **Test steps:**
+
+    * mock ``IsIconic`` and ``ShowWindow``
+    * call ``restore_if_minimized`` with the window reported minimized, then not
+    * verify ``ShowWindow(hwnd, SW_RESTORE)`` was sent once, for the minimized case only
+    """
+    widget = QWidget()
+    qtbot.addWidget(widget)
+    widget.show()
+
+    is_iconic = mocker.patch(f"{WA}.ctypes.windll.user32.IsIconic", create=True, return_value=True)
+    show_window = mocker.patch(f"{WA}.ctypes.windll.user32.ShowWindow", create=True, return_value=True)
+
+    window_activation.restore_if_minimized(widget)
+    is_iconic.return_value = False
+    window_activation.restore_if_minimized(widget)
+
+    show_window.assert_called_once_with(int(widget.winId()), window_activation.SW_RESTORE)
+
+
+@mark.windows
 def test_force_foreground_skips_attach_when_already_foreground_thread(mocker: MockerFixture, qtbot: QtBot) -> None:
     """When the foreground window's thread is this process's own thread, ``AttachThreadInput``
     is skipped entirely -- calling it with matching thread ids fails and would make the paired

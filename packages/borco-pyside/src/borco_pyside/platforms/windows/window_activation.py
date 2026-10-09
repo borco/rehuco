@@ -27,9 +27,24 @@ or maximize included; a maximized or snapped one to its normal size and position
 to a minimized window."""
 
 
+def restore_if_minimized(window: QWidget) -> None:
+    """Take ``window`` out of a minimize, back to the placement it was minimized from -- a maximize or a snap to
+    half the screen included. A window that is not minimized is left exactly where it is.
+
+    This is the native ``SW_RESTORE``, and the only route that keeps a snap: Qt's ``showNormal()`` is
+    ``SW_SHOWNORMAL``, which drops the snap or maximize along with the minimize.
+
+    :param window: the top-level window to restore.
+    """
+    user32 = ctypes.windll.user32
+    hwnd = int(window.winId())
+    if user32.IsIconic(hwnd):
+        user32.ShowWindow(hwnd, SW_RESTORE)
+
+
 def force_foreground(window: QWidget) -> None:
-    """Bring ``window`` to the real foreground, restoring it first only if minimized -- a maximized or snapped
-    window keeps its placement.
+    """Bring ``window`` to the real foreground, restoring it first only if minimized
+    (:func:`restore_if_minimized`) -- a maximized or snapped window keeps its placement.
 
     :param window: the already-shown top-level window to bring to the foreground.
     """
@@ -52,8 +67,7 @@ def force_foreground(window: QWidget) -> None:
             LOG.warning("AttachThreadInput(attach) failed for thread %d -> %d", current_thread, foreground_thread)
 
     try:
-        if user32.IsIconic(hwnd):
-            user32.ShowWindow(hwnd, SW_RESTORE)
+        restore_if_minimized(window)
         if not user32.BringWindowToTop(hwnd):
             LOG.warning("BringWindowToTop failed for hwnd %d", hwnd)
         if not user32.SetForegroundWindow(hwnd):

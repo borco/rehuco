@@ -52,7 +52,9 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 ### Fixed
 
 - `force_foreground` restores a window only when it is minimized. It restored every window, which took a maximized
-  or snapped one back to its normal size and position.
+  or snapped one back to its normal size and position. The restore is `restore_if_minimized`, which a window's own
+  show path can call too: the native restore is the one route back from a minimize that keeps a snap, where Qt's
+  `showNormal()` drops it.
 - Pinning a dock that has a `QtAdsPinSideHandler` no longer invalidates the Python wrappers of objects Qt made
   inside that dock while the objects still exist, which made them raise "already deleted" on next use. The
   handler now asks the dock for its slide-out container rather than asking the container for its dock: that
