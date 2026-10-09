@@ -28,7 +28,7 @@ def test_force_foreground_attaches_borrows_input_and_detaches(mocker: MockerFixt
     **Test steps:**
 
     * mock every ``user32``/``kernel32`` call the helper makes, recording ``AttachThreadInput``
-      calls in order
+      calls in order, with the window reported minimized
     * call ``force_foreground`` on a real (shown) widget
     * verify the foreground/current thread ids were looked up, ``AttachThreadInput`` was called
       to attach then to detach (in that order), and the window was restored, raised, and made
@@ -51,6 +51,7 @@ def test_force_foreground_attaches_borrows_input_and_detaches(mocker: MockerFixt
         create=True,
         side_effect=lambda a, b, c: attach_calls.append((a, b, c)) or True,
     )
+    mocker.patch(f"{WA}.ctypes.windll.user32.IsIconic", create=True, return_value=True)
     mocker.patch(
         f"{WA}.ctypes.windll.user32.ShowWindow",
         create=True,
@@ -74,6 +75,36 @@ def test_force_foreground_attaches_borrows_input_and_detaches(mocker: MockerFixt
     assert show_window_calls == [(hwnd, 9)]
     assert bring_to_top_calls == [hwnd]
     assert set_foreground_calls == [hwnd]
+
+
+@mark.windows
+def test_force_foreground_keeps_a_window_that_is_not_minimized_in_place(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A window on screen is not restored: ``SW_RESTORE`` would take a maximized or snapped window back to
+    its normal rectangle, so a forwarded open would un-snap a window snapped to half the screen.
+
+    **Test steps:**
+
+    * mock every ``user32``/``kernel32`` call the helper makes, with the window reported not minimized
+    * call ``force_foreground``
+    * verify ``ShowWindow`` was never called, while the window was still made the foreground window
+    """
+    widget = QWidget()
+    qtbot.addWidget(widget)
+    widget.show()
+
+    mocker.patch(f"{WA}.ctypes.windll.user32.GetForegroundWindow", create=True, return_value=FOREGROUND_HWND)
+    mocker.patch(f"{WA}.ctypes.windll.user32.GetWindowThreadProcessId", create=True, return_value=FOREGROUND_THREAD)
+    mocker.patch(f"{WA}.ctypes.windll.kernel32.GetCurrentThreadId", create=True, return_value=CURRENT_THREAD)
+    mocker.patch(f"{WA}.ctypes.windll.user32.AttachThreadInput", create=True, return_value=True)
+    mocker.patch(f"{WA}.ctypes.windll.user32.IsIconic", create=True, return_value=False)
+    show_window = mocker.patch(f"{WA}.ctypes.windll.user32.ShowWindow", create=True, return_value=True)
+    mocker.patch(f"{WA}.ctypes.windll.user32.BringWindowToTop", create=True, return_value=True)
+    set_foreground = mocker.patch(f"{WA}.ctypes.windll.user32.SetForegroundWindow", create=True, return_value=True)
+
+    window_activation.force_foreground(widget)
+
+    show_window.assert_not_called()
+    set_foreground.assert_called_once_with(int(widget.winId()))
 
 
 @mark.windows

@@ -2208,7 +2208,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # armed around the show only, so a floating window legitimately on screen already (a forwarded
         # open while the app is up) is not touched -- only what this show itself brings up too early
         floating_show_guard = QtAdsFloatingShowGuard()
-        self.__show_at_once(self, self.showNormal if self.isMinimized() else self.show)
+        # on Windows a minimized window is restored by force_foreground below instead: Qt's showNormal() there
+        # is SW_SHOWNORMAL, which drops a maximize or a snap to half the screen along with the minimize
+        restore = self.isMinimized() and sys.platform != "win32"
+        self.__show_at_once(self, self.showNormal if restore else self.show)
         self.__floating_docks_hidden_with_window.extend(floating_show_guard.release())
         for container in self.__floating_docks_hidden_with_window:
             self.__show_at_once(container, container.show)

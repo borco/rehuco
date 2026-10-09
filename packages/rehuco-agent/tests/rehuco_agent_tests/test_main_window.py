@@ -3454,6 +3454,43 @@ def test_raise_and_activate_forces_foreground_on_windows(mocker: MockerFixture, 
     force_foreground.assert_called_once_with(window)
 
 
+def test_raise_and_activate_leaves_a_minimized_window_to_the_windows_helper(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """On Windows a minimized window is shown with ``show()``, not ``showNormal()``.
+
+    ``showNormal()`` there is ``SW_SHOWNORMAL``, which drops a maximize or a snap to half the screen along
+    with the minimize; the foreground helper's own ``SW_RESTORE`` puts the window back where it was. Built
+    before faking ``sys.platform``, for the reason ``test_raise_and_activate_forces_foreground_on_windows``
+    gives.
+
+    **Test steps:**
+
+    * build the window with the real platform still in effect, and mark it minimized
+    * force ``sys.platform`` to ``"win32"`` and mock the Windows-only helpers
+    * call ``raise_and_activate``
+    * verify ``show`` (not ``showNormal``) was called, and the foreground helper too
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    mocker.patch.object(window, "isMinimized", return_value=True)
+    show = mocker.patch.object(window, "show")
+    show_normal = mocker.patch.object(window, "showNormal")
+    mocker.patch.object(window, "raise_")
+    mocker.patch.object(window, "activateWindow")
+
+    mocker.patch("rehuco_agent.main_window.sys.platform", "win32")
+    mocker.patch("borco_pyside.platforms.windows.window_transitions.open_transition_disabled")
+    mocker.patch("borco_pyside.platforms.windows.window_painting.paint_now")
+    force_foreground = mocker.patch("borco_pyside.platforms.windows.window_activation.force_foreground")
+
+    window.raise_and_activate()
+
+    show.assert_called_once_with()
+    show_normal.assert_not_called()
+    force_foreground.assert_called_once_with(window)
+
+
 def test_raise_and_activate_skips_the_windows_helper_elsewhere(mocker: MockerFixture, qtbot: QtBot) -> None:
     """Off Windows, the platform-specific foreground helper is never invoked.
 

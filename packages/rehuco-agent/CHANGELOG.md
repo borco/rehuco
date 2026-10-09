@@ -202,6 +202,8 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 - The Documents preview no longer carries a measured image count, size or duration from one record into the next.
   Moving the preview to another `.rehu` clears what *Compute* filled, and a measurement still running when it moves
   is dropped rather than written into the record now shown. The values stored in the file are untouched either way.
+- Opening a file or folder from Explorer while the window is snapped to half the screen, or maximized, keeps it
+  there. A minimized window comes back to where it was minimized from rather than to its normal size.
 
 ## [0.2.0] - 2026-09-27
 
