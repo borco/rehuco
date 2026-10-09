@@ -16,10 +16,10 @@ from urllib.parse import urlsplit
 import cbor2
 import PySide6QtAds as QtAds
 from borco_pyside.logging import LogWidget
-from borco_pyside.qtads import QtAdsFocusTracker, QtAdsMaximizeHandler
+from borco_pyside.qtads import QtAdsFocusTracker, QtAdsLayout, QtAdsMaximizeHandler
 from borco_pyside.theming import ActionIconThemeHandler
 from borco_pyside.widgets import MessageBanner, MessageBannerRow, MessageBannerSeverity, ToolBarStretch
-from PySide6.QtCore import QByteArray, QEvent, QMimeData, QObject, Qt, Signal, SignalInstance
+from PySide6.QtCore import QEvent, QMimeData, QObject, Qt, Signal, SignalInstance
 from PySide6.QtGui import QAction, QColor, QDropEvent, QIcon
 from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QToolBar, QWidget
 from rehuco_core import (
@@ -77,25 +77,16 @@ from .scrape_actions import ScrapeActions
 from .source_views import OnDiskView, SavePreviewView
 from .web_search_action import WebSearchAction
 
-STATE_VERSION_KEY: Final = "version"
-STATE_VERSION: Final = 9
-"""Schema version of :meth:`DocumentSubDocks.save_state`'s blob: :meth:`DocumentSubDocks.restore_state`
-ignores a blob whose version differs, keeping the layout it has. Bump it for a **semantic** change to
-the blob only. A change to the dock set -- a dock added, removed or renamed, which is what every bump
-up to 9 was for -- needs none since #320: the dock set is per type, and a restore tolerates a blob
-whose set differs from the widget's (QtAds skips a named dock that isn't built, and the restore
-re-attaches a built dock the blob never named, hidden, where construction puts it), so nothing has to
-be remembered and nobody's layouts reset."""
-
 STATE_DOCK_MANAGER_KEY: Final = "dock_manager"
+"""The dock layout (`~borco_pyside.qtads.QtAdsLayout`, #102). Each dock's entry carries its persisting widgets'
+own state (`StatefulWidget`), so a dock the layout drops takes nothing else with it. A dock set that differs from
+the widget's restores too (#320): a dock the layout names but this document lacks is skipped, and one it never
+names is put back hidden where construction puts it."""
 STATE_STASHED_SIZES_KEY: Final = "stashed_sizes"
 STATE_CURRENT_DOCK_KEY: Final = "current_dock"
-STATE_WIDGET_STATE_KEY: Final = "widget_state"
 STATE_IMAGE_STRIP_VISIBLE_KEY: Final = "image_strip_visible"
-"""Whether this document's maximized image viewer shows its thumbnail row (#161). Read defensively
-rather than behind a :data:`STATE_VERSION` bump: a blob written before this key existed is still a
-perfectly good dock layout, and the missing value simply falls back to the shared setting's default --
-unlike a dock-set change, which is what that version guards."""
+"""Whether this document's maximized image viewer shows its thumbnail row (#161). Read defensively: a
+missing value falls back to the shared setting's default."""
 
 DOCUMENTS_LAYOUT_NAMESPACE: Final = DEFAULT_LAYOUT_GROUP
 """The settings group the Documents dock's per-type default layouts sit under (#62, #320) --
@@ -1043,11 +1034,8 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         """
         return cbor2.dumps(
             {
-                **self.__layout_state(),
+                **self.__layout_state(self.__dock_widget_state),
                 STATE_IMAGE_STRIP_VISIBLE_KEY: self.__image_strip_visible,
-                STATE_WIDGET_STATE_KEY: {
-                    name: widget.save_state() for name, widget in self.__stateful_widgets().items()
-                },
             }
         )
 
@@ -1064,19 +1052,20 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         :returns: cbor2-encoded layout, suitable for :meth:`restore_state`
             (:attr:`~rehuco_agent.settings.default_layout_settings.DefaultLayoutSettings.state`).
         """
-        return cbor2.dumps(self.__layout_state())
+        return cbor2.dumps(self.__layout_state(None))
 
-    def __layout_state(self) -> dict[str, Any]:
+    def __layout_state(self, dock_state: Callable[[QtAds.CDockWidget], bytes | None] | None) -> dict[str, Any]:
         """The dock-layout entries shared by :meth:`save_state` and :meth:`save_layout_state`.
 
         Read with any maximized sub-dock undone for the capture (#341): a maximize is session-only,
-        and a blob taken over hidden areas would record them at zero.
+        and a layout taken over hidden areas would record them at zero.
+
+        :param dock_state: what each dock's entry carries, or ``None`` for the layout alone.
         """
         with self.__maximize_handler.unmaximized():
-            dock_manager_state = bytes(self.__dock_manager.saveState().data())
+            layout = QtAdsLayout(self.__dock_manager).save(dock_state)
         return {
-            STATE_VERSION_KEY: STATE_VERSION,
-            STATE_DOCK_MANAGER_KEY: dock_manager_state,
+            STATE_DOCK_MANAGER_KEY: layout,
             STATE_STASHED_SIZES_KEY: self.__stashed_sizes,
             STATE_CURRENT_DOCK_KEY: self.__tracker.save_state(),
         }
@@ -1084,28 +1073,20 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
     def restore_state(self, state: bytes) -> bool:
         """Restore a dock layout previously captured by :meth:`save_state`.
 
-        :param state: the cbor2-encoded state to restore.
-        A blob written against a **different dock set** restores too (#320) -- a type's default onto a
+        A layout written against a **different dock set** restores too (#320) -- a type's default onto a
         document switched to that type, a reference pack's own session layout onto its still-typeless
-        placeholder: QtAds skips a named dock that isn't built, and a built dock the blob never named
-        is left closed with no area, which is repaired here by re-attaching it hidden into the
-        Description View's area, exactly where construction stacks it -- otherwise its next toggle
-        would open it floating.
+        placeholder: a named dock that isn't built is skipped, and a built dock the layout never named is
+        stacked hidden into the Description View's area, exactly where construction puts it.
 
         :param state: the cbor2-encoded state to restore.
-        :returns: ``True`` if the dock manager's own state was restored successfully; ``False`` if
-            ``state`` was empty, malformed, not in the expected shape, or of an incompatible
-            :data:`STATE_VERSION` -- in each of which the current layout is kept.
+        :returns: ``True`` if the dock layout was restored; ``False`` if ``state`` was empty, malformed or not
+            in the expected shape -- in each of which the current layout is kept.
         """
         try:
             values: Any = cbor2.loads(state)
         except cbor2.CBORDecodeError:
             return False
         if not isinstance(values, dict):
-            return False
-        # An incompatible (e.g. pre-rename) blob would restore cleanly but hide the current docks,
-        # leaving a blank window -- ignore it and keep the default all-visible layout instead.
-        if values.get(STATE_VERSION_KEY) != STATE_VERSION:
             return False
 
         stashed_sizes = values.get(STATE_STASHED_SIZES_KEY)
@@ -1117,45 +1098,53 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         if isinstance(strip_visible, bool):
             self.__image_strip_visible = strip_visible
 
-        dock_manager_state = values.get(STATE_DOCK_MANAGER_KEY, b"")
-        # restoreState() fires viewToggled(True) for every dock it reconstructs, even ones never
-        # really hidden/shown in the user-facing sense -- without this guard, __on_view_toggled
-        # would re-apply __stashed_sizes (last updated on some earlier, unrelated hide/show toggle,
-        # not necessarily reflecting the sizes actually being restored here) right on top of the
-        # correct sizes restoreState() itself just set, clobbering them with stale data
+        # the restore toggles docks open and closed as it places them -- without this guard,
+        # __on_view_toggled would re-apply __stashed_sizes (last updated on some earlier, unrelated hide/show
+        # toggle) right on top of the sizes being restored, clobbering them with stale data
         self.__restoring_layout = True
         try:
-            restored = bool(self.__dock_manager.restoreState(QByteArray(dock_manager_state)))
+            restored = QtAdsLayout(self.__dock_manager).restore(
+                values.get(STATE_DOCK_MANAGER_KEY),
+                place_unnamed=self.__stack_hidden_beside_description_view,
+                restore_dock_state=self.__restore_dock_widget_state,
+            )
         finally:
             self.__restoring_layout = False
         if restored:
-            self.__reattach_unmentioned_docks()
-            # re-select the dock that was current -- restoreState above only recovers the current
-            # tab within each area, not which of two split (viewer/editor) areas actually had focus
+            # re-select the dock that was current -- the layout only recovers the current tab within
+            # each area, not which of two split (viewer/editor) areas actually had focus
             current_dock_state = values.get(STATE_CURRENT_DOCK_KEY, b"")
             if isinstance(current_dock_state, bytes):
                 self.__tracker.restore_state(current_dock_state)
-
-        widget_state = values.get(STATE_WIDGET_STATE_KEY)
-        if isinstance(widget_state, dict):
-            widgets = self.__stateful_widgets()
-            for name, saved in widget_state.items():
-                widget = widgets.get(name)
-                if widget is not None and isinstance(saved, bytes):
-                    widget.restore_state(saved)
         return restored
 
-    def __reattach_unmentioned_docks(self) -> None:
-        """Put back, hidden, every dock a just-restored layout never named (#320).
+    def __dock_widget_state(self, dock: QtAds.CDockWidget) -> bytes | None:
+        """The persisting widgets' state a dock's layout entry carries (#25, #102).
 
-        QtAds leaves such a dock closed and area-less (measured offscreen against this QtAds version);
-        shown from there it would open as a floating window. Re-adding it to the Description View's
-        area and hiding it makes its next toggle land where the dock always lives instead. A closed
-        dock that the layout *did* name keeps its area, so only the area-less ones are touched.
+        :param dock: one of this document's docks.
+        :returns: the cbor2-encoded states of its `StatefulWidget` instances by object name, or ``None`` if it
+            has none.
         """
-        for dock in self.__dock_manager.dockWidgetsMap().values():
-            if dock.dockAreaWidget() is None:
-                self.__stack_hidden_beside_description_view(dock)
+        widgets = self.__stateful_widgets_of(dock)
+        return cbor2.dumps({name: widget.save_state() for name, widget in widgets.items()}) if widgets else None
+
+    def __restore_dock_widget_state(self, dock: QtAds.CDockWidget, state: bytes) -> None:
+        """Hand a dock's persisting widgets the state :meth:`__dock_widget_state` saved for them.
+
+        :param dock: one of this document's docks.
+        :param state: what its layout entry carried.
+        """
+        try:
+            values: Any = cbor2.loads(state)
+        except cbor2.CBORDecodeError:
+            return
+        if not isinstance(values, dict):
+            return
+        widgets = self.__stateful_widgets_of(dock)
+        for name, saved in values.items():
+            widget = widgets.get(name)
+            if widget is not None and isinstance(saved, bytes):
+                widget.restore_state(saved)
 
     def __stateful_widgets(self) -> dict[str, StatefulWidget]:
         """The persisting widgets (`StatefulWidget`) across all docks, keyed by object name.
@@ -1172,12 +1161,22 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         """
         widgets: dict[str, StatefulWidget] = {}
         for dock in self.__dock_manager.dockWidgetsMap().values():
-            content = dock.widget()
-            for widget in (content, *content.findChildren(QWidget)):
-                name = widget.objectName()
-                if name and isinstance(widget, StatefulWidget):
-                    widgets[name] = widget
+            widgets.update(self.__stateful_widgets_of(dock))
         return widgets
+
+    @staticmethod
+    def __stateful_widgets_of(dock: QtAds.CDockWidget) -> dict[str, StatefulWidget]:
+        """The persisting widgets (`StatefulWidget`) in one dock, keyed by object name.
+
+        :param dock: one of this document's docks.
+        :returns: the stateful widgets, keyed by their object name.
+        """
+        content = dock.widget()
+        return {
+            widget.objectName(): widget
+            for widget in (content, *content.findChildren(QWidget))
+            if widget.objectName() and isinstance(widget, StatefulWidget)
+        }
 
     def __connect(self, signal: SignalInstance, slot: Callable[..., object]) -> None:
         """Connect ``slot`` to a signal of something that outlives this object, and remember the pair
@@ -1623,7 +1622,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         never-laid-out widget). Two cases and no third:
 
         - opened with a **stored** layout (a session restore): that layout; if it cannot restore
-          (corrupted, another :data:`STATE_VERSION`), the type's current layout -- its saved default,
+          (corrupted, or not a layout), the type's current layout -- its saved default,
           else as-built;
         - opened with **none** (a file opened fresh): the type's current layout, the same way.
 
@@ -1653,7 +1652,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
 
         Falls back on :meth:`restore_state` *failing*, not merely on the stored blob being empty: an
         empty blob is "never saved" (or reset), but a non-empty one can be just as unusable --
-        corrupted, or of another :data:`STATE_VERSION` -- and treating it as a default would make this
+        corrupted, or not a layout -- and treating it as a default would make this
         a permanent silent no-op rather than the reset the action promises.
         """
         if not self.restore_state(self.__default_layouts().state_for(self.layout_type)):
@@ -2497,9 +2496,9 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
     def __stack_hidden_beside_description_view(self, dock: QtAds.CDockWidget) -> None:
         """Stack ``dock`` into the Description View's area and hide it -- how every inspection dock is
         placed at construction (#111), and where a restored layout's unmentioned dock is put back
-        (:meth:`__reattach_unmentioned_docks`, #320).
+        (:meth:`restore_state`, #320).
 
-        :param dock: the dock to place; a fresh one, or one QtAds left area-less.
+        :param dock: the dock to place; a fresh one, or one a restored layout never named.
         """
         neighbour = self.__description_view_dock()
         area = neighbour.dockAreaWidget() if neighbour is not None else None

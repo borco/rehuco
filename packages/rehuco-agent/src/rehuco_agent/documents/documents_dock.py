@@ -5,11 +5,11 @@ import logging
 import time
 from collections.abc import Container
 from pathlib import Path
-from typing import Final, cast
+from typing import Any, Final, cast
 
 import PySide6QtAds as QtAds
-from borco_pyside.qtads import QtAdsAutoHideButtonSuppressor, QtAdsFocusTracker, remove_dock_widget
-from PySide6.QtCore import QByteArray, Signal
+from borco_pyside.qtads import QtAdsAutoHideButtonSuppressor, QtAdsFocusTracker, QtAdsLayout, remove_dock_widget
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QMainWindow, QMessageBox, QWidget
 from rehuco_core import INFO_REHU_FILENAME, LockReasonKind, TaskQueue
 
@@ -311,7 +311,7 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
                 # layout per document -- this one, or the saved default only where this one fails to
                 # restore -- instead of adopting the default first and having this overwrite it later
                 opened[path] = self.__find_dock(path) or self.__make_new_dock(path, state=item.state, lazy=True)
-            self.restore_state(session.docks_state)
+            self.restore_state(session.docks_layout)
         finally:
             self.__restoring_session = False
 
@@ -469,39 +469,37 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         dock = next(dock for dock, w in self.__document_docks.items() if w is widget)
         self.__activate(dock)
 
-    def save_state(self) -> bytes:
+    def save_state(self) -> dict[str, Any]:
         """Serialize this dock's own layout (splits/tabs between currently open documents).
 
-        :returns: the raw ``CDockManager.saveState()`` bytes, suitable for :meth:`restore_state`
-            (:class:`~rehuco_agent.settings.document_session_settings.DocumentSessionSettings.docks_state`).
-            Matches saved docks up by each dock's ``objectName()`` (a `DocumentDock`'s own
-            path-derived identity), so only meaningful once every document that was part of it has been
-            reopened (their docks recreated with the same identifiers) again.
+        :returns: the layout tree (`~borco_pyside.qtads.QtAdsLayout`), suitable for :meth:`restore_state`
+            (:attr:`~rehuco_agent.settings.document_session_settings.DocumentSessionSettings.docks_layout`).
+            Matches saved docks up by each dock's ``objectName()`` (a `DocumentDock`'s own path-derived identity).
         """
         with self.__maximize_handler.unmaximized():
-            return bytes(self.__dock_manager.saveState().data())
+            return QtAdsLayout(self.__dock_manager).save()
 
-    def restore_state(self, state: bytes) -> bool:
-        """Restore a previously-saved outer layout.
+    def restore_state(self, layout: object) -> bool:
+        """Restore a previously-saved layout over the documents open now.
 
-        Must be called only after every document dock that was part of it has already been
-        (re-)opened -- ``CDockManager.restoreState()`` repositions currently-registered docks to
-        match the saved layout by name; it does not (re-)create any docks itself. The tracker
-        re-tracks every rebuilt area itself (it listens on ``stateRestored``), so nothing extra is
-        needed here for tab switches to keep updating the current dock after a restore.
+        Moves the docks it names into place and creates none: a document it names that is not open is skipped,
+        and an open one it does not name stays where it is (#102). The tracker re-tracks every rebuilt area itself
+        (it listens on ``stateRestored``), so nothing extra is needed here for tab switches to keep updating the
+        current dock after a restore.
 
-        Empty ``state`` (no session saved yet) short-circuits before reaching
-        ``CDockManager.restoreState()`` -- it would return ``False`` anyway, but only after Qt's
-        ``qUncompress()`` logs a spurious "Input data is corrupted" warning to stderr, since an empty
-        buffer isn't a valid ``qCompress`` payload.
-
-        :param state: the raw bytes from a prior :meth:`save_state`.
-        :returns: ``True`` if the dock manager's own state was restored successfully; ``False`` if
-            ``state`` was empty or not a recognized ``CDockManager`` state.
+        :param layout: the tree from a prior :meth:`save_state`.
+        :returns: ``True`` if the layout was restored; ``False`` if there was none, or it was not a layout.
         """
-        if not state:
-            return False
-        return bool(self.__dock_manager.restoreState(QByteArray(state)))
+        return QtAdsLayout(self.__dock_manager).restore(layout, place_unnamed=self.__place_unnamed_dock)
+
+    @staticmethod
+    def __place_unnamed_dock(dock: QtAds.CDockWidget) -> None:
+        """Leave a document the restored layout does not name where it is: every document's dock is tabbed into an
+        area as it opens, so it already has a place.
+
+        :param dock: the document's dock.
+        """
+        del dock
 
     def __activate(self, dock: QtAds.CDockWidget) -> DocumentWidget:
         """Make ``dock`` the current dock and return its widget.

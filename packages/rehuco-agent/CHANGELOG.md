@@ -134,6 +134,11 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 ### Changed
 
+- **Window and dock layouts are saved in a new format, so layouts saved by an older build are ignored once.** The
+  first start after updating opens the main window, every document, the Tasks dock and each catalog's browsers in
+  their default arrangement. Each catalog opens with one default browser, so its old browsers and their filters are
+  lost. To start completely clean, delete `main-window.json`, `document-session.json`, the `layouts` folder and the
+  `catalogs` folder in the app's config folder.
 - **Searching matches every word, in any order, and ignores accents.** In a table browser's filter line, `blender
   intro` now finds "Intro to Blender", with each word in the title or the path; type `"intro to"` in quotes to find
   the phrase. Case and diacritics are ignored both ways — `jose` finds "José" and `José` finds "Jose" — in the free
@@ -196,6 +201,13 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 ### Fixed
 
+- **A dock no longer disappears from the saved layout for good.** A dock missing from a saved layout was restored
+  as closed with no place, and saved again as missing, so it never came back. The Browsers dock vanished that way.
+  Now a dock the saved layout does not mention comes back closed in its usual place, and the rest of the layout is
+  kept. This applies to the main window, the documents area, each document's docks, the Tasks dock and each
+  catalog's browsers.
+- A floating window holding two or more docks — the Browsers and Root Catalog docks together, say —
+  comes back with all of them. It used to come back empty.
 - A checked, unsaved document in the `File` menu no longer touches its title in the Fusion style: the entry reserves
   two more pixels beside its marks.
 - Right-clicking a table browser's header could stop showing the column menu until the app was restarted. The menu

@@ -49,9 +49,10 @@ class DocumentSessionSettings:
     focused_path: Path | None = field(default=None)
     """Which open document was focused when the session was last saved, if any."""
 
-    docks_state: bytes = field(default=b"")
-    """``DocumentsDock.save_state()``'s own layout (splits/tabs between open documents), restored
-    via ``DocumentsDock.restore_state()`` only after every document it references has reopened."""
+    docks_layout: dict[str, Any] | None = field(default=None)
+    """``DocumentsDock.save_state()``'s own layout tree (splits/tabs between open documents,
+    `~borco_pyside.qtads.QtAdsLayout`), restored via ``DocumentsDock.restore_state()`` once the documents it
+    references have reopened. ``None`` before any session has been saved."""
 
     def items_to_save(self) -> OrderedDict[Path, DocumentSessionSettings.Item]:
         """The items to persist: every open item, plus the newest closed ones up to the LRU cap.
@@ -107,7 +108,7 @@ class DocumentSessionSettings:
         """
         self.items.clear()
         self.focused_path = None
-        self.docks_state = b""
+        self.docks_layout = None
         values = state_file.read_state_file(path if path is not None else document_session_path(), SESSION_VERSION)
         if values is not None:
             self.__read(values)
@@ -120,7 +121,7 @@ class DocumentSessionSettings:
         path = path if path is not None else document_session_path()
         values = {
             "focused_path": self.focused_path.as_posix() if self.focused_path else "",
-            "docks_state": state_file.encode_bytes(self.docks_state),
+            "docks_layout": self.docks_layout,
             "items": [
                 {"path": item_path.as_posix(), "open": item.open, "state": state_file.encode_bytes(item.state)}
                 for item_path, item in self.items_to_save().items()
@@ -135,7 +136,8 @@ class DocumentSessionSettings:
         """
         focused = values.get("focused_path")
         self.focused_path = Path(focused) if isinstance(focused, str) and focused else None
-        self.docks_state = state_file.decode_bytes(values.get("docks_state"))
+        docks_layout = values.get("docks_layout")
+        self.docks_layout = docks_layout if isinstance(docks_layout, dict) else None
         entries = values.get("items")
         for entry in entries if isinstance(entries, list) else []:
             if not isinstance(entry, dict) or not isinstance(entry.get("path"), str) or not entry["path"]:

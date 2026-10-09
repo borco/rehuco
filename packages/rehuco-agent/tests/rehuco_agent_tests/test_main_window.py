@@ -5,6 +5,7 @@
 # split, so the module-length cap is lifted here rather than fragmenting it.
 # pylint: disable=too-many-lines
 
+import base64
 import logging
 from collections.abc import Callable, Generator, Iterator
 from contextlib import contextmanager
@@ -19,7 +20,7 @@ import PySide6QtAds as QtAds
 from borco_core import Device, Presence, StorageKind, device_of
 from borco_pyside.logging import LogWidget
 from borco_pyside.logging.log_model import MESSAGE_COLUMN
-from borco_pyside.qtads import tab_close_button, tab_label
+from borco_pyside.qtads import QtAdsLayout, tab_close_button, tab_label
 from borco_pyside.qtads.qtads_pin_side_handler import DEFAULT_PIN_SIDE, PIN_SIDE_KEY
 from borco_pyside.shortcuts import BindingRole
 from PySide6.QtCore import QByteArray, QEvent, QModelIndex, QObject, Qt
@@ -41,6 +42,7 @@ from rehuco_agent import main_window
 from rehuco_agent.app_logging import shared_log_bridge
 from rehuco_agent.commands import QUIT, SAVE_DOCUMENT, shared_command_registry
 from rehuco_agent.documents.document_sub_docks import LOG_DOCK_MIN_HEIGHT
+from rehuco_agent.documents.documents_dock import DocumentsDock
 from rehuco_agent.glyphs import TAB_CLOSE_GLYPH
 from rehuco_agent.main_window import (
     BROWSERS_DOCK_OBJECT_NAME,
@@ -184,6 +186,72 @@ def dock_entries() -> Callable[[MainWindow], list[Any]]:
         return list(window._MainWindow__dynamic_documents_menu_actions)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
     return factory
+
+
+def layout_entries(layout: dict[str, Any]) -> list[dict[str, Any]]:
+    """Every dock entry of a saved layout tree (#102): the main container's, the floating windows', the
+    sidebars' and the unplaced ones.
+
+    :param layout: a tree `QtAdsLayout` saved.
+    :returns: the entries, in no promised order.
+    """
+
+    def walk(node: dict[str, Any]) -> list[dict[str, Any]]:
+        if "area" in node:
+            return list(node["area"])
+        return [entry for child in node["children"] for entry in walk(child)]
+
+    entries = walk(layout["main"]) if "main" in layout else []
+    for window in layout.get("floating", []):
+        entries.extend(walk(window["root"]))
+    for side in layout.get("pinned", []):
+        entries.extend(side["docks"])
+    entries.extend(layout.get("unplaced", []))
+    return entries
+
+
+def layout_entry(layout: dict[str, Any], name: str) -> dict[str, Any]:
+    """One dock's entry in a saved layout tree (#102).
+
+    :param layout: a tree `QtAdsLayout` saved.
+    :param name: the dock's object name.
+    :returns: its entry.
+    """
+    return next(entry for entry in layout_entries(layout) if entry["name"] == name)
+
+
+def without_dock(node: dict[str, Any], name: str) -> dict[str, Any] | None:
+    """A copy of a saved layout node with one dock's entry taken out, and any area or splitter left empty
+    dropped with it -- a layout written before that dock existed (#102).
+
+    :param node: a node of a saved tree.
+    :param name: the dock's object name.
+    :returns: the pruned node, or ``None`` if nothing is left of it.
+    """
+    if "area" in node:
+        docks = [entry for entry in node["area"] if entry["name"] != name]
+        return {**node, "area": docks} if docks else None
+    children: list[dict[str, Any]] = []
+    sizes: list[int] = []
+    for child, size in zip(node["children"], node["sizes"], strict=True):
+        pruned = without_dock(child, name)
+        if pruned is not None:
+            children.append(pruned)
+            sizes.append(size)
+    return {**node, "children": children, "sizes": sizes} if children else None
+
+
+def strip_dock_states(node: Any) -> Any:
+    """A copy of a saved layout tree with every dock entry's ``state`` taken out, leaving the structure alone.
+
+    :param node: a saved tree, or any part of one.
+    :returns: the copy.
+    """
+    if isinstance(node, dict):
+        return {key: strip_dock_states(value) for key, value in node.items() if key != "state"}
+    if isinstance(node, list):
+        return [strip_dock_states(item) for item in node]
+    return node
 
 
 def test_installs_a_dock_manager_as_the_central_widget(qtbot: QtBot) -> None:
@@ -2761,15 +2829,15 @@ def test_close_event_saves_the_window_geometry(mocker: MockerFixture, qtbot: QtB
     save.assert_called_once()
 
 
-def test_close_event_saves_the_outer_docks_state(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """Closing the app saves the outer dock manager's own layout (central dock + settings dock, #47).
+def test_close_event_saves_the_outer_layout(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Closing the app saves the outer dock manager's own layout (#47, #102).
 
     **Test steps:**
 
     * construct ``MainWindow``
     * mock ``MainWindowSettings.save`` to detect the call
     * dispatch a close event
-    * verify the recorded outer dock state is real, non-empty ``CDockManager`` state
+    * verify the recorded outer layout is a tree naming the Documents and Settings docks
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -2779,7 +2847,9 @@ def test_close_event_saves_the_outer_docks_state(mocker: MockerFixture, qtbot: Q
     window.closeEvent(event)
 
     window_settings = window._MainWindow__window_settings  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    assert window_settings.outer_docks_state != b""
+    assert window_settings.outer_layout is not None
+    names = {entry["name"] for entry in layout_entries(window_settings.outer_layout)}
+    assert {DOCUMENTS_DOCK_OBJECT_NAME, SETTINGS_DIALOG_OBJECT_NAME} <= names
     save.assert_called_once()
 
 
@@ -2808,11 +2878,11 @@ def test_close_event_saves_an_open_settings_dock_as_open(mocker: MockerFixture, 
     first.closeEvent(QCloseEvent())
 
     window_settings = first._MainWindow__window_settings  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    saved_state = window_settings.outer_docks_state
+    saved_state = window_settings.outer_layout
 
     def fake_load(self: MainWindowSettings, path: object = None) -> None:
         del path
-        self.outer_docks_state = saved_state
+        self.outer_layout = saved_state
 
     mocker.patch.object(MainWindowSettings, "load", fake_load)
 
@@ -2829,14 +2899,13 @@ def test_a_floating_closed_settings_dock_restores_floating_and_closed(mocker: Mo
     """A Settings dock the user floated out and then closed comes back exactly so: closed, in a
     floating container that is rebuilt but not shown, and it opens floating when asked (#307).
 
-    Floated by hand because since #307 nothing else floats it -- the previous build's own floating
-    default is what the version bump discards. A docked-and-closed round trip would prove nothing here:
+    Floated by hand because since #307 nothing else floats it. A docked-and-closed round trip would prove nothing here:
     the dock is *built* closed, so that assertion passes on a window whose restore never ran.
 
     **Test steps:**
 
     * float one window's Settings dock out, close it, and capture the layout it saves
-    * seed ``MainWindowSettings.load`` with that blob and construct a second window
+    * seed ``MainWindowSettings.load`` with that layout and construct a second window
     * verify the dock is closed, its container exists and is hidden, and opening it floats
     """
     first = MainWindow()
@@ -2846,11 +2915,11 @@ def test_a_floating_closed_settings_dock_restores_floating_and_closed(mocker: Mo
 
     first._MainWindow__save_window_state()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     window_settings = first._MainWindow__window_settings  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    saved_state = window_settings.outer_docks_state
+    saved_state = window_settings.outer_layout
 
     def fake_load(self: MainWindowSettings, path: object = None) -> None:
         del path
-        self.outer_docks_state = saved_state
+        self.outer_layout = saved_state
 
     mocker.patch.object(MainWindowSettings, "load", fake_load)
 
@@ -4197,7 +4266,7 @@ def test_a_documents_dock_left_closed_stays_closed_after_a_restart(mocker: Mocke
 
     def fake_load(self: MainWindowSettings, path: object = None) -> None:
         del path
-        self.outer_docks_state = saved.outer_docks_state
+        self.outer_layout = saved.outer_layout
 
     mocker.patch.object(MainWindowSettings, "load", fake_load)
 
@@ -4209,24 +4278,21 @@ def test_a_documents_dock_left_closed_stays_closed_after_a_restart(mocker: Mocke
 
 def test_an_unusable_saved_layout_leaves_the_documents_dock_open(mocker: MockerFixture, qtbot: QtBot) -> None:
     """A saved layout that cannot be applied leaves the window's own default standing, Documents dock
-    open and placed (#268).
+    open and placed (#268, #102).
 
-    This is what the :data:`~rehuco_agent.settings.main_window_settings.OUTER_DOCKS_STATE_VERSION`
-    bump buys: a v3 blob describes this area as a *central widget*, a structure the manager no longer
-    has, so it is discarded at load rather than restored into a shell with no central area. Here the
-    blob is refused one step later, by ``CDockManager.restoreState`` itself, which pins the same
-    guarantee without having to forge a layout the current shell can no longer produce.
+    A layout of another format -- one written by an older build, say -- restores nothing, so the window
+    keeps the layout it built rather than anything half-applied.
 
     **Test steps:**
 
-    * seed ``MainWindowSettings.load`` with a blob that is not a dock layout at all
+    * seed ``MainWindowSettings.load`` with a layout of an unknown format
     * construct a ``MainWindow``
     * verify the Documents dock is open and placed in an area
     """
 
     def fake_load(self: MainWindowSettings, path: object = None) -> None:
         del path
-        self.outer_docks_state = b"not a dock layout"
+        self.outer_layout = {"format": 0, "main": {"area": [{"name": DOCUMENTS_DOCK_OBJECT_NAME, "closed": True}]}}
 
     mocker.patch.object(MainWindowSettings, "load", fake_load)
 
@@ -4243,20 +4309,20 @@ def test_an_unusable_saved_layout_leaves_the_settings_dock_as_built(mocker: Mock
     -- a closed tab in the Documents area, in no window of its own (#307).
 
     The startup path that used to float it as a fallback, and the reason that fallback could go: the
-    dock is placed once and never re-placed, so a refused blob costs nothing to recover from and
+    dock is placed once and never re-placed, so a refused layout costs nothing to recover from and
     builds no `CFloatingDockContainer` for QtAds to leave behind
     ([[appendices.qt-ads#auto-hide-abandoned-float]]).
 
     **Test steps:**
 
-    * seed ``MainWindowSettings.load`` with a blob that is not a dock layout at all
+    * seed ``MainWindowSettings.load`` with a layout of an unknown format
     * construct a ``MainWindow``
     * verify the Settings dock is closed, still tabbed beside Documents, and nothing floats
     """
 
     def fake_load(self: MainWindowSettings, path: object = None) -> None:
         del path
-        self.outer_docks_state = b"not a dock layout"
+        self.outer_layout = {"format": 0, "main": {"area": [{"name": DOCUMENTS_DOCK_OBJECT_NAME, "closed": True}]}}
 
     mocker.patch.object(MainWindowSettings, "load", fake_load)
 
@@ -4342,7 +4408,7 @@ def test_a_restored_layout_is_not_reseeded_on_show(mocker: MockerFixture, qtbot:
 
     def fake_load(self: MainWindowSettings, path: object = None) -> None:
         del path
-        self.outer_docks_state = saved.outer_docks_state
+        self.outer_layout = saved.outer_layout
 
     mocker.patch.object(MainWindowSettings, "load", fake_load)
 
@@ -4612,7 +4678,7 @@ def test_the_log_docks_visibility_survives_a_restart(mocker: MockerFixture, qtbo
     """A log dock left open is open again on the next launch -- it rides the outer dock layout (#200).
 
     The other half of "state survives a restart": the filters have their own test above; this pins
-    the visibility, which is the outer ``CDockManager``'s ``saveState()``'s to carry.
+    the visibility, which is the outer layout's to carry.
 
     **Test steps:**
 
@@ -4628,7 +4694,7 @@ def test_the_log_docks_visibility_survives_a_restart(mocker: MockerFixture, qtbo
 
     def fake_load(self: MainWindowSettings, path: object = None) -> None:
         del path
-        self.outer_docks_state = saved.outer_docks_state
+        self.outer_layout = saved.outer_layout
 
     mocker.patch.object(MainWindowSettings, "load", fake_load)
 
@@ -4636,6 +4702,44 @@ def test_the_log_docks_visibility_survives_a_restart(mocker: MockerFixture, qtbo
     qtbot.addWidget(second)
 
     assert not log_dock(second).isClosed()
+
+
+def test_an_outer_dock_the_saved_layout_does_not_name_comes_back_closed_at_its_built_place(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """A dock the saved layout does not name -- one added after the layout was written -- comes back closed, in the
+    main window rather than in no area at all, and the rest of the layout restores around it (#102).
+
+    **Test steps:**
+
+    * open one window's Log and Tasks docks, save its window state, and take the Log dock's entry out of it
+    * seed ``MainWindowSettings.load`` with that layout and construct a second window
+    * verify the Log dock is closed and placed in the main container, and the Tasks dock is open as saved
+    """
+    first = MainWindow()
+    qtbot.addWidget(first)
+    log_dock(first).toggleView(True)
+    task_queue_dock(first).toggleView(True)
+    first._MainWindow__save_window_state()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    saved = first._MainWindow__window_settings.outer_layout  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    layout = {**saved, "main": without_dock(saved["main"], LOG_DOCK_OBJECT_NAME)}
+    assert all(entry["name"] != LOG_DOCK_OBJECT_NAME for entry in layout_entries(layout))
+
+    def fake_load(self: MainWindowSettings, path: object = None) -> None:
+        del path
+        self.outer_layout = layout
+
+    mocker.patch.object(MainWindowSettings, "load", fake_load)
+
+    second = MainWindow()
+    qtbot.addWidget(second)
+
+    restored = log_dock(second)
+    area = restored.dockAreaWidget()
+    assert restored.isClosed() is True
+    assert area is not None
+    assert area.dockContainer() is second._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert task_queue_dock(second).isClosed() is False
 
 
 def test_the_log_dock_replays_records_logged_before_it_was_ever_shown(qtbot: QtBot) -> None:
@@ -4703,13 +4807,14 @@ def test_changing_the_app_limit_re_caps_the_open_log_surface(qtbot: QtBot) -> No
 
 
 def test_close_event_saves_the_log_surfaces_filters(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """Closing the app saves which bands the log dock was showing, and what it was searching for.
+    """Closing the app saves which bands the log dock was showing, and what it was searching for -- in the
+    log dock's own entry of the outer layout (#102).
 
     **Test steps:**
 
     * construct ``MainWindow``
     * mock ``MainWindowSettings.save`` and dispatch a close event
-    * verify a non-empty log widget state was recorded
+    * verify the log dock's entry carries the log surface's own state
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -4719,17 +4824,19 @@ def test_close_event_saves_the_log_surfaces_filters(mocker: MockerFixture, qtbot
     window.closeEvent(event)
 
     window_settings = window._MainWindow__window_settings  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    assert window_settings.log_widget_state != b""
+    entry = layout_entry(window_settings.outer_layout, LOG_DOCK_OBJECT_NAME)
+    assert base64.b64decode(entry["state"]) == window.log_widget.save_state()
     save.assert_called_once()
 
 
 def test_the_log_surfaces_filters_are_restored_on_start(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A restart brings the log dock back under the filters it was left with.
+    """A restart brings the log dock back under the filters it was left with, carried by the outer layout
+    (#102).
 
     **Test steps:**
 
-    * save a state with the debug band hidden and a search typed
-    * seed ``MainWindowSettings.load`` with it and construct a window
+    * hide the debug band and type a search on one window, and save its window state
+    * seed ``MainWindowSettings.load`` with that outer layout and construct a window
     * verify both came back
     """
     source = MainWindow()
@@ -4737,11 +4844,12 @@ def test_the_log_surfaces_filters_are_restored_on_start(mocker: MockerFixture, q
     source_ui = source.log_widget._LogWidget__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
     source_ui.show_debugs_action.setChecked(False)
     source_ui.search_edit.setText("a search")
-    saved = source.log_widget.save_state()
+    source._MainWindow__save_window_state()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    saved = source._MainWindow__window_settings.outer_layout  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
     def fake_load(self: MainWindowSettings, path: object = None) -> None:
         del path
-        self.log_widget_state = saved
+        self.outer_layout = saved
 
     mocker.patch.object(MainWindowSettings, "load", fake_load)
 
@@ -4751,6 +4859,38 @@ def test_the_log_surfaces_filters_are_restored_on_start(mocker: MockerFixture, q
     restored_ui = window.log_widget._LogWidget__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert not restored_ui.show_debugs_action.isChecked()
     assert restored_ui.search_edit.text() == "a search"
+
+
+def test_a_state_on_an_outer_dock_that_carries_none_is_ignored(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Only the Log and Tasks docks carry content state in the outer layout; a state on another dock -- a
+    hand-edited file -- reaches no widget, and the layout still restores (#102).
+
+    **Test steps:**
+
+    * save one window's outer layout, then give the Settings dock's entry a state
+    * construct a window over that layout
+    * verify it built without error and the Settings dock is where the layout put it
+    """
+    source = MainWindow()
+    qtbot.addWidget(source)
+    source._MainWindow__save_window_state()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    saved = source._MainWindow__window_settings.outer_layout  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    settings_entry = layout_entry(saved, SETTINGS_DIALOG_OBJECT_NAME)
+    settings_entry["state"] = base64.b64encode(b"not for anyone").decode("ascii")
+
+    def fake_load(self: MainWindowSettings, path: object = None) -> None:
+        del path
+        self.outer_layout = saved
+
+    mocker.patch.object(MainWindowSettings, "load", fake_load)
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    dock_manager = window._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    settings_dock = dock_manager.findDockWidget(SETTINGS_DIALOG_OBJECT_NAME)
+    assert settings_dock is not None
+    assert settings_dock.dockAreaWidget() is not None
 
 
 def test_registers_the_logs_page(qtbot: QtBot) -> None:
@@ -5244,7 +5384,7 @@ def test_the_task_queue_docks_visibility_survives_a_restart(mocker: MockerFixtur
 
     def fake_load(self: MainWindowSettings, path: object = None) -> None:
         del path
-        self.outer_docks_state = saved.outer_docks_state
+        self.outer_layout = saved.outer_layout
 
     mocker.patch.object(MainWindowSettings, "load", fake_load)
 
@@ -5612,14 +5752,14 @@ def test_restored_unfinished_work_comes_back_held_unless_resuming_is_asked_for(
 def test_close_event_saves_the_tasks_dock_s_nested_layout(mocker: MockerFixture, qtbot: QtBot) -> None:
     """Closing the app saves the Tasks dock's own sub-dock layout, not just the outer one (#276).
 
-    The outer manager's ``saveState()`` records where the Tasks dock sits; what its *nested* shell looks
-    like inside is a blob of the shell's own.
+    The outer layout records where the Tasks dock sits, and its entry carries what the *nested* shell looks
+    like inside (#102).
 
     **Test steps:**
 
     * construct ``MainWindow``
     * mock ``MainWindowSettings.save`` and dispatch a close event
-    * verify a non-empty task queue state was recorded
+    * verify the Tasks dock's entry carries the shell's own state
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -5629,7 +5769,8 @@ def test_close_event_saves_the_tasks_dock_s_nested_layout(mocker: MockerFixture,
     window.closeEvent(event)
 
     window_settings = window._MainWindow__window_settings  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    assert window_settings.task_queue_state != b""
+    entry = layout_entry(window_settings.outer_layout, TASK_QUEUE_DOCK_OBJECT_NAME)
+    assert base64.b64decode(entry["state"]) == task_queue_dock(window).widget().save_state()
     save.assert_called_once()
 
 
@@ -5638,8 +5779,8 @@ def test_the_tasks_dock_s_nested_layout_is_restored_on_start(mocker: MockerFixtu
 
     **Test steps:**
 
-    * open the Log sub-dock on one window's Tasks shell and save that shell's state
-    * seed ``MainWindowSettings.load`` with it and construct a second window
+    * open the Log sub-dock on one window's Tasks shell and save that window's state
+    * seed ``MainWindowSettings.load`` with its outer layout and construct a second window
     * verify the sub-dock came back open
     """
     source = MainWindow()
@@ -5647,11 +5788,12 @@ def test_the_tasks_dock_s_nested_layout_is_restored_on_start(mocker: MockerFixtu
     source_widget = task_queue_dock(source).widget()
     source_log_dock = source_widget._TaskQueueWidget__log_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
     source_log_dock.toggleView(True)
-    saved = source_widget.save_state()
+    source._MainWindow__save_window_state()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    saved = source._MainWindow__window_settings.outer_layout  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
     def fake_load(self: MainWindowSettings, path: object = None) -> None:
         del path
-        self.task_queue_state = saved
+        self.outer_layout = saved
 
     mocker.patch.object(MainWindowSettings, "load", fake_load)
 
@@ -5805,7 +5947,7 @@ def test_the_remembered_side_survives_a_restart(qtbot: QtBot, mock_persistent_se
     """Where a dock was last pinned is written on close and picked up by the next window (#279).
 
     Asserted with the dock left **unpinned** at close, which is the case the saved layout cannot cover
-    on its own: a blob that records no pin says nothing about where the next one should go.
+    on its own: a layout that records no pin says nothing about where the next one should go.
 
     **Test steps:**
 
@@ -5975,7 +6117,7 @@ def test_a_pinned_layout_survives_a_restart(mocker: MockerFixture, qtbot: QtBot)
     **Test steps:**
 
     * pin one window's Log dock and capture its outer layout through ``closeEvent``
-    * seed ``MainWindowSettings.load`` with that blob and construct a second window
+    * seed ``MainWindowSettings.load`` with that layout and construct a second window
     * verify the Log dock comes back pinned to the same sidebar
     """
     source = MainWindow()
@@ -5985,11 +6127,11 @@ def test_a_pinned_layout_survives_a_restart(mocker: MockerFixture, qtbot: QtBot)
     source_log.setAutoHide(True)
     source.closeEvent(QCloseEvent())
     source_settings = source._MainWindow__window_settings  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    saved = source_settings.outer_docks_state
+    saved = source_settings.outer_layout
 
     def fake_load(self: MainWindowSettings, path: object = None) -> None:
         del path
-        self.outer_docks_state = saved
+        self.outer_layout = saved
 
     mocker.patch.object(MainWindowSettings, "load", fake_load)
 
@@ -6034,7 +6176,7 @@ def test_the_tasks_shells_sub_docks_are_not_pinnable(qtbot: QtBot) -> None:
     assert not tasks.dockAreaWidget().titleBarButton(QtAds.TitleBarButtonAutoHide).isHidden()
 
 
-def pinned_settings_layout(window: MainWindow, open_dock: bool) -> bytes:
+def pinned_settings_layout(window: MainWindow, open_dock: bool) -> dict[str, Any]:
     """Pin ``window``'s Settings dock into the main container's left sidebar and return the layout
     that saves (#306).
 
@@ -6043,7 +6185,7 @@ def pinned_settings_layout(window: MainWindow, open_dock: bool) -> bytes:
     main window's -- the wrong container entirely, and not the one the bug needs.
 
     ``__save_window_state()`` rather than ``closeEvent``, which would take the whole window down --
-    the task queue included -- for a blob this only needs one method to produce.
+    the task queue included -- for a layout this only needs one method to produce.
 
     :param window: the window to pin and read.
     :param open_dock: whether the dock is left open (pinned and in play) or closed afterwards.
@@ -6056,7 +6198,7 @@ def pinned_settings_layout(window: MainWindow, open_dock: bool) -> bytes:
     QApplication.processEvents()
     dock.toggleView(open_dock)
     window._MainWindow__save_window_state()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    return window._MainWindow__window_settings.outer_docks_state  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    return window._MainWindow__window_settings.outer_layout  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
 
 def test_restoring_a_sidebar_pinned_settings_dock_creates_no_floating_window(
@@ -6079,7 +6221,7 @@ def test_restoring_a_sidebar_pinned_settings_dock_creates_no_floating_window(
     **Test steps:**
 
     * pin one window's Settings dock into the left sidebar and capture the layout it saves
-    * seed ``MainWindowSettings.load`` with that blob and construct a second window
+    * seed ``MainWindowSettings.load`` with that layout and construct a second window
     * verify the second window holds no floating container, and its Settings dock is pinned
     """
     first = MainWindow()
@@ -6088,7 +6230,7 @@ def test_restoring_a_sidebar_pinned_settings_dock_creates_no_floating_window(
 
     def fake_load(self: MainWindowSettings, path: object = None) -> None:
         del path
-        self.outer_docks_state = saved
+        self.outer_layout = saved
 
     mocker.patch.object(MainWindowSettings, "load", fake_load)
 
@@ -6110,7 +6252,7 @@ def test_a_closed_pinned_settings_dock_restores_closed_and_pinned(mocker: Mocker
     **Test steps:**
 
     * pin one window's Settings dock into the left sidebar, toggle it off, and capture the layout
-    * seed ``MainWindowSettings.load`` with that blob and construct a second window
+    * seed ``MainWindowSettings.load`` with that layout and construct a second window
     * verify the second window's dock is closed, still pinned, and built no floating container
     """
     first = MainWindow()
@@ -6119,7 +6261,7 @@ def test_a_closed_pinned_settings_dock_restores_closed_and_pinned(mocker: Mocker
 
     def fake_load(self: MainWindowSettings, path: object = None) -> None:
         del path
-        self.outer_docks_state = saved
+        self.outer_layout = saved
 
     mocker.patch.object(MainWindowSettings, "load", fake_load)
 
@@ -6138,10 +6280,12 @@ def test_a_floating_settings_dock_waits_for_the_main_window(mocker: MockerFixtur
 
     The sibling of the sidebar case, and the one no amount of placement fixes: here the layout is
     right and the dock genuinely belongs in a window of its own, but
-    ``CDockManager.restoreState`` shows that window the instant it applies the blob, and the restore
+    the layout restore shows that window the instant it floats the dock, and the restore
     has to run during ``__init__`` for the layout to land at all (#55). So the container is held back
     instead -- by `QtAdsFloatingShowGuard` while it is being created, which is what stops the native
-    window ever being mapped, then on the same list ``hide_to_tray`` uses.
+    window ever being mapped, then on the same list ``hide_to_tray`` uses. A lone floated dock may not be
+    shown during construction at all (QtAds parks a freshly floated container until its manager is shown),
+    and then the guard around ``raise_and_activate``'s own show is what catches it; either way it waits.
 
     Asserted through ``raise_and_activate`` rather than ``show()`` because that is how the app itself
     comes up (`Application.show_main_window`, `TrayIcon`), and it is what puts the docks back.
@@ -6154,19 +6298,19 @@ def test_a_floating_settings_dock_waits_for_the_main_window(mocker: MockerFixtur
     **Test steps:**
 
     * float one window's Settings dock out, open, and capture the layout it saves
-    * seed ``MainWindowSettings.load`` with that blob and construct a second window
-    * verify its container exists but is not visible, and is queued for the window's own show
-    * ``raise_and_activate`` and verify the floating dock is now up
+    * seed ``MainWindowSettings.load`` with that layout and construct a second window
+    * verify its container exists but is not visible
+    * ``raise_and_activate`` and verify the floating dock is now up, and nothing is left waiting
     """
     first = MainWindow()
     qtbot.addWidget(first)
     float_open_settings_dock(first)
     first._MainWindow__save_window_state()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    saved = first._MainWindow__window_settings.outer_docks_state  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    saved = first._MainWindow__window_settings.outer_layout  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
     def fake_load(self: MainWindowSettings, path: object = None) -> None:
         del path
-        self.outer_docks_state = saved
+        self.outer_layout = saved
 
     mocker.patch.object(MainWindowSettings, "load", fake_load)
 
@@ -6177,7 +6321,6 @@ def test_a_floating_settings_dock_waits_for_the_main_window(mocker: MockerFixtur
     deferred = second._MainWindow__floating_docks_hidden_with_window  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     assert container is not None
     assert container.isVisible() is False
-    assert deferred == [container]
 
     second.raise_and_activate()
 
@@ -6200,7 +6343,7 @@ def test_a_restored_floating_dock_shows_after_the_main_window(mocker: MockerFixt
     **Test steps:**
 
     * float one window's Settings dock out, open, and capture the layout it saves
-    * seed that blob and construct a second ``MainWindow`` under a spy recording every top-level
+    * seed that layout and construct a second ``MainWindow`` under a spy recording every top-level
       ``Show`` and whether it was guarded
     * ``raise_and_activate`` and verify the container's first real show follows the window's
     """
@@ -6208,11 +6351,11 @@ def test_a_restored_floating_dock_shows_after_the_main_window(mocker: MockerFixt
     qtbot.addWidget(first)
     float_open_settings_dock(first)
     first._MainWindow__save_window_state()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    saved = first._MainWindow__window_settings.outer_docks_state  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    saved = first._MainWindow__window_settings.outer_layout  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
     def fake_load(self: MainWindowSettings, path: object = None) -> None:
         del path
-        self.outer_docks_state = saved
+        self.outer_layout = saved
 
     mocker.patch.object(MainWindowSettings, "load", fake_load)
     shows: list[tuple[str, bool]] = []
@@ -6262,7 +6405,7 @@ def test_a_restored_floating_dock_is_shown_at_once_with_the_window_on_windows(
     **Test steps:**
 
     * float one window's Settings dock out, open, and capture the layout it saves
-    * seed that blob and construct a second window with the real platform in effect
+    * seed that layout and construct a second window with the real platform in effect
     * fake ``sys.platform`` to ``"win32"``, mock the three Windows-only helpers plus both ``show``\\ s
       and the window's ``raise_``, all on one recorder
     * ``raise_and_activate`` and verify the order: each show bracketed by the transition context and
@@ -6272,11 +6415,11 @@ def test_a_restored_floating_dock_is_shown_at_once_with_the_window_on_windows(
     qtbot.addWidget(first)
     float_open_settings_dock(first)
     first._MainWindow__save_window_state()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    saved = first._MainWindow__window_settings.outer_docks_state  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    saved = first._MainWindow__window_settings.outer_layout  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
     def fake_load(self: MainWindowSettings, path: object = None) -> None:
         del path
-        self.outer_docks_state = saved
+        self.outer_layout = saved
 
     mocker.patch.object(MainWindowSettings, "load", fake_load)
     second = MainWindow()
@@ -6286,7 +6429,9 @@ def test_a_restored_floating_dock_is_shown_at_once_with_the_window_on_windows(
 
     mocker.patch("rehuco_agent.main_window.sys.platform", "win32")
     recorder = mocker.MagicMock()
-    recorder.attach_mock(mocker.patch.object(second, "show"), "show")
+    # wrapping the real show: a restored floating container may be parked by QtAds until its manager is
+    # shown, and it is then the window's own show that brings it up, for the guard to hand back
+    recorder.attach_mock(mocker.patch.object(second, "show", wraps=second.show), "show")
     recorder.attach_mock(mocker.patch.object(container, "show"), "container_show")
     recorder.attach_mock(mocker.patch.object(second, "raise_"), "raise_")
     recorder.attach_mock(mocker.patch("borco_pyside.platforms.windows.window_painting.paint_now"), "paint_now")
@@ -6326,18 +6471,18 @@ def test_a_restored_floating_dock_is_shown_plainly_elsewhere(mocker: MockerFixtu
     **Test steps:**
 
     * float one window's Settings dock out, open, and capture the layout it saves
-    * seed that blob, fake ``sys.platform`` to ``"linux"``, construct a second window
+    * seed that layout, fake ``sys.platform`` to ``"linux"``, construct a second window
     * ``raise_and_activate`` and verify the container came up and neither helper was called
     """
     first = MainWindow()
     qtbot.addWidget(first)
     float_open_settings_dock(first)
     first._MainWindow__save_window_state()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    saved = first._MainWindow__window_settings.outer_docks_state  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    saved = first._MainWindow__window_settings.outer_layout  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
     def fake_load(self: MainWindowSettings, path: object = None) -> None:
         del path
-        self.outer_docks_state = saved
+        self.outer_layout = saved
 
     mocker.patch.object(MainWindowSettings, "load", fake_load)
     mocker.patch("rehuco_agent.main_window.sys.platform", "linux")
@@ -6353,6 +6498,53 @@ def test_a_restored_floating_dock_is_shown_plainly_elsewhere(mocker: MockerFixtu
     assert container.isVisible() is True
     paint_now.assert_not_called()
     no_fade.assert_not_called()
+
+
+def test_catalog_docks_tabbed_in_one_floating_window_restore_together(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The Browsers and Root Catalog docks tabbed together in a floating window come back in one floating window, held
+    back for the main window like any restored floating dock (#102, #488).
+
+    The case the opaque layout lost: a floating window the outer manager had stopped tracking was not saved at all.
+
+    **Test steps:**
+
+    * float one window's Browsers dock, tab the Root Catalog dock into its window, and save the window state
+    * seed ``MainWindowSettings.load`` with that layout and construct a second window
+    * verify both docks are open in one floating container, held back until ``raise_and_activate`` shows it
+    """
+    first = MainWindow()
+    qtbot.addWidget(first)
+    dock_manager = first._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    browsers = main_dock(first, BROWSERS_DOCK_OBJECT_NAME)
+    rehuco = main_dock(first, REHUCO_DOCK_OBJECT_NAME)
+    dock_manager.addDockWidgetFloating(browsers)
+    rehuco.toggleView(True)
+    dock_manager.addDockWidget(QtAds.CenterDockWidgetArea, rehuco, browsers.dockAreaWidget())
+    assert rehuco.floatingDockContainer() is browsers.floatingDockContainer() is not None
+    first._MainWindow__save_window_state()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    saved = first._MainWindow__window_settings.outer_layout  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    def fake_load(self: MainWindowSettings, path: object = None) -> None:
+        del path
+        self.outer_layout = saved
+
+    mocker.patch.object(MainWindowSettings, "load", fake_load)
+
+    second = MainWindow()
+    qtbot.addWidget(second)
+
+    restored_browsers = main_dock(second, BROWSERS_DOCK_OBJECT_NAME)
+    restored_rehuco = main_dock(second, REHUCO_DOCK_OBJECT_NAME)
+    container = restored_browsers.floatingDockContainer()
+    assert container is not None
+    assert restored_rehuco.floatingDockContainer() is container
+    assert restored_browsers.isClosed() is False
+    assert restored_rehuco.isClosed() is False
+    assert container.isVisible() is False
+
+    second.raise_and_activate()
+
+    assert container.isVisible() is True
 
 
 # endregion
@@ -6413,7 +6605,7 @@ def test_an_outer_dock_maximizes_and_the_close_time_capture_reads_it_undone(
     # the strip on a later turn of the event loop, and a capture before that differs from every
     # later one whether or not anything is maximized in between
     qtbot.wait(100)
-    unmaximized = bytes(manager.saveState().data())
+    unmaximized = QtAdsLayout(manager).save()
     qtbot.waitUntil(lambda: handler.button(log_dock(window)) is not None, timeout=10_000)
     button = handler.button(log_dock(window))
     assert button is not None
@@ -6424,7 +6616,7 @@ def test_an_outer_dock_maximizes_and_the_close_time_capture_reads_it_undone(
     window.closeEvent(QCloseEvent())
 
     window_settings = window._MainWindow__window_settings  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    assert window_settings.outer_docks_state == unmaximized
+    assert strip_dock_states(window_settings.outer_layout) == unmaximized
 
 
 # region the Root Catalog dock (#377)
@@ -7058,7 +7250,7 @@ def test_a_catalog_dock_survives_an_outer_layout_round_trip_open(
 
     def fake_load(self: MainWindowSettings, path: object = None) -> None:
         del path
-        self.outer_docks_state = saved.outer_docks_state
+        self.outer_layout = saved.outer_layout
 
     mocker.patch.object(MainWindowSettings, "load", fake_load)
     second = MainWindow()
@@ -7784,26 +7976,65 @@ def test_the_saved_layout_is_reapplied_once_the_late_documents_are_in(mocker: Mo
     mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_session")
     mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_late")
     restore_state = mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_state")
+    layout = {"format": 1, "main": {"area": [{"name": "late", "closed": False}]}}
 
     window = MainWindow()
     qtbot.addWidget(window)
-    window._MainWindow__session.docks_state = b"layout"  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    window._MainWindow__session.docks_layout = layout  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     restore_state.reset_mock()
     answer(window, remote, Presence.PRESENT)
 
-    restore_state.assert_called_once_with(b"layout")
+    restore_state.assert_called_once_with(layout)
 
 
-@mark.parametrize("what", ["another document", "a preview"])
-def test_the_saved_layout_is_not_reapplied_over_what_the_user_opened(
-    mocker: MockerFixture, qtbot: QtBot, what: str
+def test_the_saved_layout_is_reapplied_around_a_document_the_user_opened(
+    mocker: MockerFixture, qtbot: QtBot, tmp_path: Path
 ) -> None:
-    """``restoreState`` closes every dock the saved layout does not name, so a document the user opened meanwhile, or a
-    preview they made, would vanish: the late documents stay where they landed instead (#464).
+    """A document the user opened while the share was still answering does not stop the late restore, and stays
+    where it is: the saved layout does not name it (#464, #102).
+
+    The user's file does not exist, so it opens as the empty locked dock that stands in for an unreadable one --
+    a real document dock all the same, which is all the restore sees of one.
 
     **Test steps:**
 
-    * seed one remote open document, and report a document outside the session, or a preview, as open
+    * seed one remote open document, construct ``MainWindow``, and open another document
+    * give the session a saved layout that does not name it
+    * deliver the answer that the remote document is there
+    * verify the layout was applied, and the user's document is still open in the area it was in
+    """
+    remote = Path("//nas/share/pack/info.rehu")
+    seed_remembered(mocker, session_open=(remote,))
+    treat_as_remote(mocker, remote)
+    mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_session")
+    mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_late")
+    restore_state = mocker.spy(DocumentsDock, "restore_state")
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.open_file(tmp_path / "opened-by-the-user.rehu")
+    documents = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    (opened,) = documents._DocumentsDock__document_docks  # pylint: disable=protected-access
+    area = opened.dockAreaWidget()
+    assert area is not None
+    late_layout = {"format": 1, "main": {"area": [{"name": "the-late-document", "closed": False}]}}
+    window._MainWindow__session.docks_layout = late_layout  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    restore_state.reset_mock()
+    answer(window, remote, Presence.PRESENT)
+
+    assert restore_state.call_count == 1
+    assert restore_state.spy_return is True
+    assert opened.isClosed() is False
+    assert opened.dockAreaWidget() is area
+
+
+def test_the_saved_layout_is_not_reapplied_over_a_preview(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A preview shown while the share was still answering keeps the late documents where they landed: the restore
+    would move it out of the place the user is looking at (#464, #102).
+
+    **Test steps:**
+
+    * seed one remote open document, and report a preview as shown
     * construct ``MainWindow`` and deliver the answer that the remote one is there
     * verify ``restore_state`` was not called after construction
     """
@@ -7814,13 +8045,10 @@ def test_the_saved_layout_is_not_reapplied_over_what_the_user_opened(
     mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_late")
     restore_state = mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_state")
     widget = mocker.MagicMock()
-    widget.model.path = Path("opened-by-the-user.rehu")
+    widget.model.path = Path("previewed-by-the-user.rehu")
     widget.model.dirty = False  # a dirty one would pop the real save dialog when the window closes
     widget.save_state.return_value = b""  # the close saves it into the session
-    if what == "another document":
-        mocker.patch("rehuco_agent.main_window.DocumentsDock.open_document_widgets", return_value=[widget])
-    else:
-        mocker.patch("rehuco_agent.main_window.DocumentsDock.preview_document_widget", return_value=widget)
+    mocker.patch("rehuco_agent.main_window.DocumentsDock.preview_document_widget", return_value=widget)
 
     window = MainWindow()
     qtbot.addWidget(window)

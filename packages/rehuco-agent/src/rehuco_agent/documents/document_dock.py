@@ -256,8 +256,8 @@ class DocumentDock(QtAds.CDockWidget):
         Just the path itself, not the resource's UUID ([[data-model#stable-identity]]) -- a
         ``.tc``-backed document has no UUID until a live :meth:`~RehuDocumentModel.convert` mints
         one partway through an already-open dock's lifetime. Renaming an already-registered dock's
-        ``objectName()`` propagates to what a layout capture records (confirmed empirically:
-        ``CDockManager.saveState()`` reads ``objectName()`` fresh, not from a stale add-time cache),
+        ``objectName()`` propagates to what a layout capture records (`~borco_pyside.qtads.QtAdsLayout` reads
+        ``objectName()`` fresh, not the registry's add-time key),
         so this dock resyncs it on every :attr:`~RehuDocumentModel.path_changed`
         (:meth:`__resync_object_name`) instead of needing the identifier to be transition-immune by
         construction. The manager's own dock registry does **not** follow a rename -- it stays keyed by

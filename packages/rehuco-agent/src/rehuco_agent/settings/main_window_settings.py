@@ -7,7 +7,7 @@ The old ``[main_window]`` group is neither read nor removed.
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Final
+from typing import Any, Final
 
 from . import state_file
 from .persistent_settings import config_folder
@@ -17,54 +17,8 @@ WINDOW_FILENAME: Final = "main-window.json"
 WINDOW_VERSION: Final = 1
 """Schema version of the file. A file of another version reads as nothing saved."""
 GEOMETRY_KEY: Final = "geometry"
-OUTER_DOCKS_STATE_KEY: Final = "outer_docks_state"
-OUTER_DOCKS_STATE_VERSION_KEY: Final = "outer_docks_state_version"
+OUTER_LAYOUT_KEY: Final = "outer_layout"
 TOOLBARS_STATE_KEY: Final = "toolbars_state"
-LOG_WIDGET_STATE_KEY: Final = "log_widget_state"
-TASK_QUEUE_STATE_KEY: Final = "task_queue_state"
-
-OUTER_DOCKS_STATE_VERSION: Final = 8
-"""Schema version of :attr:`MainWindowSettings.outer_docks_state`. The outer dock set (the Documents
-dock and its five sibling docks -- Log, Tasks, Settings, Root Catalog and Browsers) is keyed by dock object
-name, so any change to that set makes an older blob incompatible: ``CDockManager.restoreState``
-would accept it and silently hide docks not present in the saved layout. Bump this whenever the
-outer dock set changes; :meth:`MainWindowSettings.load` discards a blob whose version differs,
-keeping the default (all-visible) layout instead.
-
-Bumped to 2 when the app-wide log dock was added (#200): a v1 blob knows nothing of it, so restoring
-one would leave that dock in whatever state QtAds invents for a dock the layout never mentions, rather
-than the deliberately-hidden-by-default one the window builds.
-
-Bumped to 3 when the app-wide task queue dock was added (#202), for the same reason.
-
-Bumped to 4 when the documents area stopped being the manager's central widget and became an ordinary,
-hideable **Documents** dock (#268). This one is not merely a dock the older layout does not mention: a
-v3 blob describes a *central* area, a structure QtAds reconstructs before it places anything around it,
-so restoring one into a shell that has no central widget is not a dock left in an invented state but a
-layout rebuilt around a hole. Discarded once, and rebuilt from the window's own default.
-
-Bumped to 5 when the four main docks became pinnable (#279). A v4 blob knows nothing of the four
-sidebars a pinned dock collapses into -- it was written by a build that had none -- so restoring one
-describes each dock as docked-or-closed and nothing else. Discarded rather than restored sidebar-less,
-for the reason the whole guard exists: a layout QtAds accepts and quietly under-describes is worse
-than the default one the window builds for itself.
-
-Bumped to 6 when the Settings dock became a plain `CDockWidget`, closed and tabbed beside Documents
-(#307). The one bump so far with the dock set and every object name unchanged: a v5 blob is structurally
-this layout, and QtAds would restore it without complaint. It is discarded anyway because of what it
-says about Settings -- the build before #307 floated that dock *by default* and its "Restore on start"
-checkbox saved it closed, so every install that never touched it carries a blob placing Settings in a
-floating window nobody chose. Restoring that would keep the whole installed base on the placement the
-release removed, and only fresh installs would ever see the new one. The guard's job is to refuse a blob
-that describes the wrong layout; this one describes the previous build's default.
-
-Bumped to 7 when the Root Catalog dock joined the outer set, tabbed beside Documents (#377). A v6 blob knows
-nothing of it, so restoring one would leave that dock in whatever state QtAds invents for a dock the layout
-never mentions, rather than the closed one the window builds.
-
-Bumped to 8 when the Root Catalog dock split in two (#461): the Roots view became the Root Catalog dock's whole
-content and the browsers moved to a new Browsers dock. A v7 blob knows nothing of the Browsers dock, and its Root
-Catalog dock is the old shell, sized and placed for browsers; both start from the window's default instead."""
 
 
 def main_window_state_path() -> Path:
@@ -77,7 +31,7 @@ def main_window_state_path() -> Path:
 
 TOOLBARS_STATE_VERSION: Final = 2
 """Version passed to Qt's own ``QMainWindow.saveState``/``restoreState`` (the toolbar-area/floating
-layout for ``action_bar`` -- distinct from :data:`OUTER_DOCKS_STATE_VERSION`,
+layout for ``action_bar`` -- distinct from :attr:`MainWindowSettings.outer_layout`,
 which is QtAds' own, separate state). Qt rejects a mismatched version itself (``restoreState``
 returns ``False`` and leaves the default layout), so this is passed straight through rather than
 checked here. Bump whenever the toolbar set changes."""
@@ -90,34 +44,15 @@ class MainWindowSettings:
     geometry: bytes = field(default=b"")
     """The window's ``saveGeometry()`` blob, or empty before any session has been saved."""
 
-    outer_docks_state: bytes = field(default=b"")
-    """The outer ``CDockManager``'s ``saveState()`` blob (the Documents dock and its four siblings --
-    Log, Tasks, Settings and Root Catalog), or empty before any session has been saved or after an incompatible
-    :data:`OUTER_DOCKS_STATE_VERSION`."""
+    outer_layout: dict[str, Any] | None = None
+    """The outer manager's layout tree (`~borco_pyside.qtads.QtAdsLayout`, #102): the Documents dock and its
+    siblings, with the Log dock's filters and the Tasks dock's nested layout folded into their entries. ``None``
+    before any session has been saved."""
 
     toolbars_state: bytes = field(default=b"")
     """Qt's own ``QMainWindow.saveState()`` blob -- the ``action_bar`` toolbar's area/floating
-    layout, distinct from :attr:`outer_docks_state` (QtAds' own docks). Empty before any session
+    layout, distinct from :attr:`outer_layout` (QtAds' own docks). Empty before any session
     has been saved."""
-
-    log_widget_state: bytes = field(default=b"")
-    """The app-wide log surface's own blob (#200): which level bands are shown, whether the tail is
-    followed, and what is searched for.
-
-    Kept outside :data:`OUTER_DOCKS_STATE_VERSION`'s guard on purpose, the same way
-    ``DocumentSubDocks``' image-strip key is: that version guards the *dock set*, while this is one
-    widget's filters, read key by key and defaulting individually
-    (:meth:`~borco_pyside.logging.LogWidget.restore_state`). A blob written before a filter existed is
-    still a perfectly good answer about the others."""
-
-    task_queue_state: bytes = field(default=b"")
-    """The Tasks dock's **nested** shell blob (#276): its two sub-docks' layout and its log surface's own
-    filters, as :meth:`~rehuco_agent.tasks.TaskQueueWidget.save_state` writes them.
-
-    Outside :data:`OUTER_DOCKS_STATE_VERSION`'s guard for the same reason
-    :attr:`log_widget_state` is -- that version is about the *outer* dock set, and this blob carries a
-    version of its own for the inner one
-    (:data:`~rehuco_agent.tasks.task_queue_widget.STATE_VERSION`)."""
 
     def load(self, path: Path | None = None) -> None:
         """Replace the current geometry, outer dock state, and toolbar state with what is in the state file.
@@ -136,24 +71,17 @@ class MainWindowSettings:
         path = path if path is not None else main_window_state_path()
         values = {
             GEOMETRY_KEY: state_file.encode_bytes(self.geometry),
-            OUTER_DOCKS_STATE_KEY: state_file.encode_bytes(self.outer_docks_state),
-            OUTER_DOCKS_STATE_VERSION_KEY: OUTER_DOCKS_STATE_VERSION,
+            OUTER_LAYOUT_KEY: self.outer_layout,
             TOOLBARS_STATE_KEY: state_file.encode_bytes(self.toolbars_state),
-            LOG_WIDGET_STATE_KEY: state_file.encode_bytes(self.log_widget_state),
-            TASK_QUEUE_STATE_KEY: state_file.encode_bytes(self.task_queue_state),
         }
         state_file.write_state_file(path, WINDOW_VERSION, values)
 
     def __read(self, values: dict[str, object]) -> None:
-        """Take the state from a file's values; the outer dock blob only if it is of the current version.
+        """Take the state from a file's values.
 
         :param values: what :func:`~.state_file.read_state_file` returned, or nothing.
         """
         self.geometry = state_file.decode_bytes(values.get(GEOMETRY_KEY))
-        if values.get(OUTER_DOCKS_STATE_VERSION_KEY) == OUTER_DOCKS_STATE_VERSION:
-            self.outer_docks_state = state_file.decode_bytes(values.get(OUTER_DOCKS_STATE_KEY))
-        else:
-            self.outer_docks_state = b""
+        outer_layout = values.get(OUTER_LAYOUT_KEY)
+        self.outer_layout = outer_layout if isinstance(outer_layout, dict) else None
         self.toolbars_state = state_file.decode_bytes(values.get(TOOLBARS_STATE_KEY))
-        self.log_widget_state = state_file.decode_bytes(values.get(LOG_WIDGET_STATE_KEY))
-        self.task_queue_state = state_file.decode_bytes(values.get(TASK_QUEUE_STATE_KEY))

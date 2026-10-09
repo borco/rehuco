@@ -1,18 +1,20 @@
-"""Tests for the per-catalog state file: the Browsers dock's browsers and layout (#396, #461).
+"""Tests for the per-catalog state file: the Browsers dock's layout, each browser in its sub-dock's entry (#396,
+#461, #102).
 
-No file is ever created: ``Path.read_text`` serves the file and ``atomic_write_text`` is captured.
+The config folder is the test's ``tmp_path``: every file is real, and nothing outside it is touched.
 """
 
 import json
 import logging
 from pathlib import Path
-from unittest.mock import MagicMock
+from typing import Any
 from uuid import uuid4
 
-from pytest import LogCaptureFixture, fixture
+from pytest import LogCaptureFixture, fixture, mark
 from pytest_mock import MockerFixture
 from rehuco_agent.settings import catalog_state_store as store_module
 from rehuco_agent.settings.catalog_state_store import (
+    CATALOG_STATE_VERSION,
     TABLE_BROWSER_KIND,
     BrowserState,
     CatalogState,
@@ -22,42 +24,45 @@ from rehuco_agent.settings.catalog_state_store import (
 
 REHUCO_ID = uuid4()
 FIRST = BrowserState(uuid4(), TABLE_BROWSER_KIND, "Everything", 'type:"tutorial"', b"\x00\x01header")
-SECOND = BrowserState(uuid4(), TABLE_BROWSER_KIND, "Tutorials")
-STATE = CatalogState([FIRST, SECOND], layout=b"layout\xff")
+LAYOUT: dict[str, Any] = {
+    "format": 1,
+    "main": {
+        "split": "h",
+        "sizes": [300, 500],
+        "children": [
+            {"area": [{"name": str(FIRST.browser_id), "closed": False, "state": "c3RhdGU="}]},
+            {"area": [{"name": "other", "closed": True}], "current": "other"},
+        ],
+    },
+}
+STATE = CatalogState(LAYOUT)
 
 
-@fixture(autouse=True)
-def config(mocker: MockerFixture) -> None:
-    """A fixed config folder, so no test reads the developer's real one."""
-    mocker.patch.object(store_module, "config_folder", return_value=Path("/fake/config"))
+@fixture(name="config")
+def config_fixture(real_path_stat: None, mocker: MockerFixture, tmp_path: Path) -> Path:
+    """The test's own config folder, so no test reads or writes the developer's real one.
 
-
-@fixture(name="written")
-def written_fixture(mocker: MockerFixture) -> MagicMock:
-    """The captured write, with the folder creation mocked away."""
-    mocker.patch.object(Path, "mkdir", autospec=True)
-    return mocker.patch.object(store_module, "atomic_write_text")
-
-
-def serve(mocker: MockerFixture, text: str) -> None:
-    """Make every ``read_text`` answer ``text``.
-
+    :param real_path_stat: the real ``Path.stat``, which the atomic write of a new file needs.
     :param mocker: the mocker.
+    :param tmp_path: the test's folder.
+    :returns: the config folder.
+    """
+    del real_path_stat
+    mocker.patch.object(store_module, "config_folder", return_value=tmp_path)
+    return tmp_path
+
+
+def serve(text: str) -> None:
+    """Put ``text`` where the state of :data:`REHUCO_ID` is read from.
+
     :param text: what the file holds.
     """
-    mocker.patch.object(Path, "read_text", return_value=text)
+    path = catalog_state_path(REHUCO_ID)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
 
 
-def saved_text(written: MagicMock) -> str:
-    """What the last write was asked to put on disk.
-
-    :param written: the captured ``atomic_write_text``.
-    :returns: the text.
-    """
-    return written.call_args[0][1]
-
-
-def test_the_path_is_the_ids_json_in_the_catalogs_folder() -> None:
+def test_the_path_is_the_ids_json_in_the_catalogs_folder(config: Path) -> None:
     """The file is named by the rehuco id, in a folder of its own, and two ids never share one.
 
     **Test steps:**
@@ -65,216 +70,234 @@ def test_the_path_is_the_ids_json_in_the_catalogs_folder() -> None:
     * ask for the path of a known id and of another
     * verify the first is ``<config>/catalogs/<id>.json`` and the two differ
     """
-    assert catalog_state_path(REHUCO_ID) == Path("/fake/config/catalogs") / f"{REHUCO_ID}.json"
+    assert catalog_state_path(REHUCO_ID) == config / "catalogs" / f"{REHUCO_ID}.json"
     assert catalog_state_path(REHUCO_ID) != catalog_state_path(uuid4())
 
 
-def test_a_state_survives_a_round_trip(mocker: MockerFixture, written: MagicMock) -> None:
-    """Browsers keep their order, names, filters and bytes, and so do the layout and the roots header.
+@mark.usefixtures("config")
+def test_a_layout_survives_a_round_trip() -> None:
+    """The layout comes back as it was saved: its splits, sizes, entries and their states.
 
     **Test steps:**
 
-    * save a state, then serve the written text back and load it
+    * save a state, then load it
     * verify the loaded state equals the saved one
     """
     store = CatalogStateStore()
     store.save(REHUCO_ID, STATE)
-    serve(mocker, saved_text(written))
 
     assert store.load(REHUCO_ID) == STATE
 
 
-def test_a_save_writes_the_ids_path_and_creates_its_folder(mocker: MockerFixture) -> None:
-    """The write goes to the id's path, after making the folder that may not exist yet.
+@mark.usefixtures("config")
+def test_no_layout_survives_a_round_trip() -> None:
+    """A state with no layout -- one default browser next time -- is saved as such, not as an empty layout.
 
     **Test steps:**
 
-    * save a state with ``mkdir`` and the write captured
-    * verify the folder was made and the write named the id's path
+    * save an empty state, then load it
+    * verify the layout is ``None``
     """
-    mkdir = mocker.patch.object(Path, "mkdir", autospec=True)
-    write = mocker.patch.object(store_module, "atomic_write_text")
+    store = CatalogStateStore()
+    store.save(REHUCO_ID, CatalogState())
 
+    assert store.load(REHUCO_ID) == CatalogState(None)
+
+
+@mark.usefixtures("config")
+def test_a_save_writes_the_ids_path_and_creates_its_folder() -> None:
+    """The write goes to the id's path, after making the folder that does not exist yet.
+
+    **Test steps:**
+
+    * save a state into a config folder with no ``catalogs`` folder
+    * verify the id's file now holds this version and the layout
+    """
     CatalogStateStore().save(REHUCO_ID, STATE)
 
-    mkdir.assert_called_once()
-    assert write.call_args[0][0] == catalog_state_path(REHUCO_ID)
+    written = json.loads(catalog_state_path(REHUCO_ID).read_text(encoding="utf-8"))
+    assert written == {"version": CATALOG_STATE_VERSION, "layout": LAYOUT}
 
 
-def test_a_missing_file_is_an_empty_state(mocker: MockerFixture) -> None:
+@mark.usefixtures("config")
+def test_a_missing_file_is_an_empty_state() -> None:
     """A catalog never seen before has nothing remembered.
 
     **Test steps:**
 
-    * make the read raise ``FileNotFoundError``
-    * verify the state is empty
+    * load an id no file was written for
+    * verify the state has no layout
     """
-    mocker.patch.object(Path, "read_text", side_effect=FileNotFoundError)
-
-    assert CatalogStateStore().load(REHUCO_ID) == CatalogState()
+    assert CatalogStateStore().load(REHUCO_ID) == CatalogState(None)
 
 
-def test_an_unreadable_file_is_an_empty_state_and_logged(mocker: MockerFixture, caplog: LogCaptureFixture) -> None:
+@mark.usefixtures("config")
+def test_an_unreadable_file_is_an_empty_state_and_logged(caplog: LogCaptureFixture) -> None:
     """A read that fails costs the remembered state, and says so.
 
     **Test steps:**
 
-    * make the read raise ``OSError``
-    * verify the state is empty and an error was logged
+    * put a folder where the id's file should be, so reading it fails
+    * verify the state has no layout and an error was logged
     """
-    mocker.patch.object(Path, "read_text", side_effect=OSError("denied"))
+    catalog_state_path(REHUCO_ID).mkdir(parents=True)
 
     with caplog.at_level(logging.ERROR):
         state = CatalogStateStore().load(REHUCO_ID)
 
-    assert state == CatalogState()
+    assert state == CatalogState(None)
     assert "could not be read" in caplog.text
 
 
-def test_a_file_that_is_not_json_is_an_empty_state(mocker: MockerFixture) -> None:
+@mark.usefixtures("config")
+def test_a_file_that_is_not_json_is_an_empty_state() -> None:
     """Damaged text is ignored.
 
     **Test steps:**
 
     * serve text that is not JSON
-    * verify the state is empty
+    * verify the state has no layout
     """
-    serve(mocker, "{not json")
+    serve("{not json")
 
-    assert CatalogStateStore().load(REHUCO_ID) == CatalogState()
+    assert CatalogStateStore().load(REHUCO_ID) == CatalogState(None)
 
 
-def test_another_version_is_an_empty_state(mocker: MockerFixture) -> None:
-    """A file of another version is not guessed at.
+@mark.usefixtures("config")
+@mark.parametrize(
+    "values",
+    [
+        {"version": 99, "layout": LAYOUT},
+        {"version": 1, "layout": LAYOUT},
+        {"layout": LAYOUT},
+        [CATALOG_STATE_VERSION, LAYOUT],
+    ],
+    ids=["a later version", "an earlier version", "no version", "not an object"],
+)
+def test_a_file_of_another_shape_is_an_empty_state(values: object) -> None:
+    """A file of another version, or no state file at all, is not guessed at: its layout is not read.
 
     **Test steps:**
 
-    * serve a file stamped with a different version
-    * verify the state is empty
+    * serve a file whose version is not this build's, or that is not an object
+    * verify the state has no layout
     """
-    serve(mocker, json.dumps({"version": 99, "browsers": [{"id": str(uuid4()), "kind": "table", "name": "x"}]}))
+    serve(json.dumps(values))
 
-    assert CatalogStateStore().load(REHUCO_ID) == CatalogState()
+    assert CatalogStateStore().load(REHUCO_ID) == CatalogState(None)
 
 
-def test_a_file_from_before_the_split_keeps_its_browsers_and_drops_its_layout(
-    mocker: MockerFixture, written: MagicMock
-) -> None:
-    """A version 1 file's layout nests the Roots view among the browsers, which no longer share a shell with it:
-    its browsers are read whole, its layout not at all (#461).
+@mark.usefixtures("config")
+@mark.parametrize("layout", [None, "bGF5b3V0", [LAYOUT], 7], ids=["null", "a string", "a list", "a number"])
+def test_a_layout_that_is_not_an_object_is_no_layout(layout: object) -> None:
+    """A layout value that is not a tree -- an old base64 blob among them -- opens the default browser.
 
     **Test steps:**
 
-    * save the state, then serve what was written stamped as version 1
-    * verify the browsers -- names, filters, columns -- come back and the layout is empty
+    * serve a file of this version whose layout is not an object
+    * verify the state has no layout
     """
-    CatalogStateStore().save(REHUCO_ID, STATE)
-    values = json.loads(saved_text(written))
-    values["version"] = 1
-    serve(mocker, json.dumps(values))
+    serve(json.dumps({"version": CATALOG_STATE_VERSION, "layout": layout}))
 
-    assert CatalogStateStore().load(REHUCO_ID) == CatalogState([FIRST, SECOND])
+    assert CatalogStateStore().load(REHUCO_ID) == CatalogState(None)
 
 
-def test_malformed_and_repeated_browsers_are_skipped(mocker: MockerFixture, written: MagicMock) -> None:
-    """A bad entry costs only itself.
-
-    **Test steps:**
-
-    * serve a file whose list holds a good browser, a repeat of it, junk, an id that is not a uuid and a missing name
-    * verify only the first good browser is read
-    """
-    CatalogStateStore().save(REHUCO_ID, CatalogState([FIRST]))
-    values = json.loads(saved_text(written))
-    good = values["browsers"][0]
-    nameless = {key: value for key, value in good.items() if key != "name"}
-    values["browsers"] = [good, dict(good), "junk", {**good, "id": "nope"}, nameless]
-    serve(mocker, json.dumps(values))
-
-    assert CatalogStateStore().load(REHUCO_ID).browsers == [FIRST]
-
-
-def test_a_browsers_value_that_is_not_a_list_is_no_browsers(mocker: MockerFixture) -> None:
-    """A damaged list costs the browsers, not the layout.
-
-    **Test steps:**
-
-    * serve a file whose ``browsers`` is a string but whose layout is intact
-    * verify no browsers and the layout read
-    """
-    serve(mocker, json.dumps({"version": 2, "browsers": "nope", "layout": "bGF5b3V0"}))
-
-    state = CatalogStateStore().load(REHUCO_ID)
-
-    assert not state.browsers
-    assert state.layout == b"layout"
-
-
-def test_a_file_that_still_carries_a_roots_header_loads(mocker: MockerFixture) -> None:
-    """The Roots table's header state a build before the column view wrote is ignored, not an error (#378).
-
-    **Test steps:**
-
-    * serve a file with a layout and a ``roots_header``
-    * verify the layout is read and nothing else is lost
-    """
-    serve(mocker, json.dumps({"version": 2, "browsers": [], "layout": "bGF5b3V0", "roots_header": "cm9vdHM="}))
-
-    assert CatalogStateStore().load(REHUCO_ID) == CatalogState(layout=b"layout")
-
-
-def test_damaged_bytes_read_as_empty(mocker: MockerFixture, written: MagicMock) -> None:
-    """A base64 value that does not decode is an empty blob, not an error.
-
-    **Test steps:**
-
-    * serve a file whose layout and a browser's columns are not valid base64
-    * verify each reads as empty bytes
-    """
-    CatalogStateStore().save(REHUCO_ID, CatalogState([FIRST]))
-    values = json.loads(saved_text(written))
-    values["layout"] = "!!!"
-    values["browsers"][0]["columns"] = "é"
-    serve(mocker, json.dumps(values))
-
-    state = CatalogStateStore().load(REHUCO_ID)
-
-    assert state.layout == b""
-    assert state.browsers == [BrowserState(FIRST.browser_id, FIRST.kind, FIRST.name, FIRST.filter)]
-
-
-def test_missing_or_non_text_bytes_read_as_empty(mocker: MockerFixture, written: MagicMock) -> None:
-    """A blob that is absent or not a string is an empty blob, not an error.
-
-    **Test steps:**
-
-    * serve a file with no layout and a browser whose columns are ``null``
-    * verify each reads as empty bytes and the browser is kept
-    """
-    CatalogStateStore().save(REHUCO_ID, CatalogState([FIRST]))
-    values = json.loads(saved_text(written))
-    del values["layout"]
-    values["browsers"][0]["columns"] = None
-    serve(mocker, json.dumps(values))
-
-    state = CatalogStateStore().load(REHUCO_ID)
-
-    assert state.layout == b""
-    assert state.browsers == [BrowserState(FIRST.browser_id, FIRST.kind, FIRST.name, FIRST.filter)]
-
-
-def test_a_failed_write_is_logged_not_raised(mocker: MockerFixture, caplog: LogCaptureFixture) -> None:
+def test_a_failed_write_is_logged_not_raised(config: Path, caplog: LogCaptureFixture) -> None:
     """Losing the layout must not block closing.
 
     **Test steps:**
 
-    * make the write raise ``OSError`` and save
-    * verify nothing was raised and an error was logged
+    * put a file where the ``catalogs`` folder should be, so the save cannot make it
+    * save, and verify nothing was raised and an error was logged
     """
-    mocker.patch.object(Path, "mkdir", autospec=True)
-    mocker.patch.object(store_module, "atomic_write_text", side_effect=OSError("disk full"))
+    (config / store_module.CATALOG_STATE_FOLDER).write_text("", encoding="utf-8")
 
     with caplog.at_level(logging.ERROR):
         CatalogStateStore().save(REHUCO_ID, STATE)
 
     assert "could not be saved" in caplog.text
+
+
+# region A browser in its layout entry
+
+
+def entry(**values: object) -> bytes:
+    """A browser entry as :meth:`BrowserState.to_bytes` writes :data:`FIRST`, with ``values`` replacing or adding keys.
+
+    :param values: the keys to change; ``None`` removes one.
+    :returns: the entry's bytes.
+    """
+    fields = json.loads(FIRST.to_bytes())
+    fields.update(values)
+    return json.dumps({key: value for key, value in fields.items() if value is not None}).encode("utf-8")
+
+
+def test_a_browser_survives_a_round_trip_through_its_bytes() -> None:
+    """A browser's entry keeps its id, kind, name, filter and header state.
+
+    **Test steps:**
+
+    * turn a browser with columns into bytes and back, and one with none
+    * verify each equals the original
+    """
+    bare = BrowserState(uuid4(), TABLE_BROWSER_KIND, "Tutorials")
+
+    assert BrowserState.from_bytes(FIRST.to_bytes()) == FIRST
+    assert BrowserState.from_bytes(bare.to_bytes()) == bare
+
+
+def test_a_browser_with_no_filter_or_bad_columns_reads_with_none() -> None:
+    """A filter left out is no filter, and columns that are missing or not base64 are no header state.
+
+    **Test steps:**
+
+    * read entries with no filter, no columns and columns that do not decode
+    * verify each reads, with an empty filter or empty columns
+    """
+    assert BrowserState.from_bytes(entry(filter=None)) == BrowserState(
+        FIRST.browser_id, FIRST.kind, FIRST.name, "", FIRST.columns
+    )
+    no_columns = BrowserState(FIRST.browser_id, FIRST.kind, FIRST.name, FIRST.filter)
+    assert BrowserState.from_bytes(entry(columns=None)) == no_columns
+    assert BrowserState.from_bytes(entry(columns="!!!")) == no_columns
+
+
+@mark.parametrize(
+    "data",
+    [
+        b"\xff\xfe",
+        b"{not json",
+        b'["a", "list"]',
+        entry(id=None),
+        entry(id="not a uuid"),
+        entry(kind=None),
+        entry(kind=3),
+        entry(name=None),
+        entry(name=["x"]),
+        entry(filter=False),
+    ],
+    ids=[
+        "not utf-8",
+        "not json",
+        "not an object",
+        "no id",
+        "a bad id",
+        "no kind",
+        "a kind that is not text",
+        "no name",
+        "a name that is not text",
+        "a filter that is not text",
+    ],
+)
+def test_an_entry_that_is_not_a_browser_reads_as_none(data: bytes) -> None:
+    """An entry that cannot be a browser is refused whole, rather than built half-way.
+
+    **Test steps:**
+
+    * read the damaged entry
+    * verify there is no browser
+    """
+    assert BrowserState.from_bytes(data) is None
+
+
+# endregion

@@ -1390,11 +1390,10 @@ def test_opening_an_invalid_rehu_opens_an_empty_locked_dock(mocker: MockerFixtur
 def test_restore_state_retracks_current_tab_after_area_recreation(mocker: MockerFixture, qtbot: QtBot) -> None:
     """Tab switches keep updating the current dock even after ``restore_state`` recreates areas.
 
-    ``CDockManager.restoreState()`` rebuilds every affected ``CDockAreaWidget`` from scratch,
-    orphaning any ``currentChanged`` connection made before the call -- confirmed empirically to
-    otherwise leave :meth:`DocumentsDock.focused_document_path` stuck on whatever was current
-    before restore, never picking up a tab switch made afterwards (the reported regression: the
-    focused document was no longer updated in the saved session after a restart).
+    A restore may move documents into areas it builds, orphaning any ``currentChanged`` connection made
+    on the old ones -- which would leave :meth:`DocumentsDock.focused_document_path` stuck on whatever
+    was current before restore, never picking up a tab switch made afterwards (the reported regression:
+    the focused document was no longer updated in the saved session after a restart).
 
     **Test steps:**
 
@@ -1421,18 +1420,61 @@ def test_restore_state_retracks_current_tab_after_area_recreation(mocker: Mocker
     assert dock.focused_document_path() == FAKE_PATH
 
 
-def test_restore_state_returns_false_for_empty_state(qtbot: QtBot) -> None:
-    """An empty (never-saved) state is rejected without touching the current layout.
+def test_restore_state_returns_false_for_no_layout_and_keeps_the_documents_where_they_are(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """No layout (never saved), or something that is not one -- the opaque bytes a session saved before #102
+    holds -- is rejected without touching the current layout.
 
     **Test steps:**
 
-    * restore an empty byte string on a dock with nothing open
-    * verify it reports failure
+    * open two documents and split the second to the right of the first
+    * restore no layout, an old blob, and a tree of another format
+    * verify each reports failure and the two documents still sit in different areas
     """
+    load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
+    first = dock_for(dock, dock.open_document(FAKE_PATH))
+    second = dock_for(dock, dock.open_document(OTHER_PATH))
+    manager = dock._DocumentsDock__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    manager.addDockWidget(QtAds.RightDockWidgetArea, second)
 
-    assert dock.restore_state(b"") is False
+    for layout in (None, b"an opaque QtAds blob", {"format": 0, "main": {}}):
+        assert dock.restore_state(layout) is False
+    assert first.dockAreaWidget() is not second.dockAreaWidget()
+
+
+def test_restore_state_puts_documents_back_and_leaves_an_unnamed_one_where_it_is(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """A saved layout moves the documents it names back into place, and a document it does not name -- one
+    opened since -- stays open where it is (#102).
+
+    **Test steps:**
+
+    * open two documents, split the second to the right, and save the layout
+    * tab the second back beside the first, and open a third
+    * restore the saved layout
+    * verify it restored, the first two sit in different areas again, and the third is still open in an area
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    first = dock_for(dock, dock.open_document(FAKE_PATH))
+    second = dock_for(dock, dock.open_document(OTHER_PATH))
+    manager = dock._DocumentsDock__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    manager.addDockWidget(QtAds.RightDockWidgetArea, second)
+    layout = dock.save_state()
+    manager.addDockWidget(QtAds.CenterDockWidgetArea, second, first.dockAreaWidget())
+    assert first.dockAreaWidget() is second.dockAreaWidget()
+    third = dock_for(dock, dock.open_document(THIRD_PATH))
+
+    assert dock.restore_state(layout) is True
+
+    assert first.dockAreaWidget() is not second.dockAreaWidget()
+    assert not third.isClosed()
+    assert third.dockAreaWidget() is not None
 
 
 def test_dock_object_name_is_the_document_path_regardless_of_id(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -2648,9 +2690,9 @@ def test_restore_session_restores_the_outer_dock_layout(mocker: MockerFixture, q
 
     **Test steps:**
 
-    * seed a session with one open item and a saved outer layout blob
+    * seed a session with one open item and a saved outer layout tree
     * restore the session
-    * verify ``restore_state`` was called with that blob
+    * verify ``restore_state`` was called with that tree
     """
     mocker.patch.object(Path, "read_text", return_value="")
     dock = DocumentsDock()
@@ -2658,11 +2700,12 @@ def test_restore_session_restores_the_outer_dock_layout(mocker: MockerFixture, q
     restore_state = mocker.patch.object(dock, "restore_state")
     session = DocumentSessionSettings()
     session.items[FAKE_PATH] = DocumentSessionSettings.Item(open=True)  # pylint: disable=unsupported-assignment-operation
-    session.docks_state = b"outer-state"
+    layout = {"format": 1, "main": {"area": [{"name": FAKE_PATH.as_posix(), "closed": False}]}}
+    session.docks_layout = layout
 
     dock.restore_session(session)
 
-    restore_state.assert_called_once_with(b"outer-state")
+    restore_state.assert_called_once_with(layout)
 
 
 # endregion
