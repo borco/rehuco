@@ -146,6 +146,30 @@ def test_show_main_window_titles_a_floating_window_after_its_dock(mocker: Mocker
     assert flags & QtAds.CDockManager.eConfigFlag.FloatingContainerHasWidgetTitle
 
 
+def test_show_main_window_pins_without_hover_to_peek(mocker: MockerFixture) -> None:
+    """The auto-hide flags are QtAds' defaults alone, without ``AutoHideShowOnMouseOver``.
+
+    Its 500 ms hover delay keeps a raw pointer to the last hovered sidebar tab, and fired into it after the tab
+    was deleted: unpinning a dock under the mouse crashed the app (#492).
+
+    **Test steps:**
+
+    * mock ``MainWindow`` and ``CDockManager.setAutoHideConfigFlags``
+    * call ``show_main_window``
+    * verify pinning is enabled and hover-to-peek is not
+    """
+    mocker.patch("rehuco_agent.app.MainWindow")
+    mocker.patch("rehuco_agent.app.QtAds.CDockManager.setConfigFlags")
+    set_auto_hide_flags = mocker.patch("rehuco_agent.app.QtAds.CDockManager.setAutoHideConfigFlags")
+
+    Application.show_main_window(SimpleNamespace(_Application__main_window=None))  # type: ignore[arg-type]
+
+    (flags,), _ = set_auto_hide_flags.call_args
+    auto_hide_flags = QtAds.CDockManager.eAutoHideFlag
+    assert flags & auto_hide_flags.AutoHideFeatureEnabled
+    assert not flags & auto_hide_flags.AutoHideShowOnMouseOver
+
+
 def test_open_path_delegates_to_the_main_window(mocker: MockerFixture) -> None:
     """``open_path`` hands the path to the (single) main window's ``open_path``, which does the
     file-vs-folder dispatch (#43).

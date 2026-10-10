@@ -13,6 +13,7 @@ from borco_pyside.qtads.qtads_layout import (
     LayoutSplit,
     common_splitter,
     normalized,
+    placed_area,
     splitter_panes,
 )
 from PySide6.QtCore import QRect
@@ -563,6 +564,60 @@ def test_a_floating_dock_is_docked_before_it_is_pinned_and_leaves_no_window(wind
 
     assert docks["B"].autoHideLocation() == QtAds.SideBarBottom
     assert all(not container.isVisible() for container in window.findChildren(QtAds.CFloatingDockContainer))
+
+
+def test_a_manager_that_never_pins_docks_a_pinned_entry_in_its_main_container(window: QMainWindow) -> None:
+    """With ``pins=False`` a ``pinned`` entry is laid into the main container instead: pinning would grow a nested
+    manager a sidebar of its own, and only a dock QtAds stole ever wrote such an entry (#491).
+
+    **Test steps:**
+
+    * pin a dock, then restore with ``pins=False`` a layout naming it pinned
+    * verify it is unpinned, in the main container, and saved as no pin
+    """
+    manager, docks = make_manager(window, "AB")
+    docks["B"].setAutoHide(True, QtAds.SideBarLeft)
+    pinned = [{"side": "left", "docks": [{"name": "B", "closed": False}], "size": 300}]
+
+    QtAdsLayout(manager, pins=False).restore(tree(area("A"), pinned=pinned), place_unnamed=ignore)
+
+    assert not docks["B"].isAutoHide()
+    assert placed_area(docks["B"]).dockContainer() is manager
+    assert "pinned" not in QtAdsLayout(manager).save()
+
+
+def test_a_dock_pinned_to_its_side_in_another_managers_sidebar_is_brought_home(
+    window: QMainWindow, qtbot: QtBot
+) -> None:
+    """A dock pinned to the stored side is left alone only when the sidebar is this manager's own: QtAds pins a
+    nested manager's dock into an outer sidebar ([[appendices.qt-ads#recursive-sidebar-drop]]), and the restore
+    pins it back here instead.
+
+    **Test steps:**
+
+    * nest a manager in a dock of an outer one, and pin its dock into the outer left sidebar
+    * restore the nested manager's layout naming the dock pinned left
+    * verify the dock is pinned left in the nested manager's sidebar, and owned by it
+    """
+    outer, outer_docks = make_manager(window, "H")
+    inner = QtAds.CDockManager(outer_docks["H"])
+    outer_docks["H"].setWidget(inner)
+    dock = QtAds.CDockWidget(inner, "S")
+    dock.setObjectName("S")
+    dock.setWidget(QLabel("S"))
+    inner.addDockWidget(CENTER, dock)
+    qtbot.wait(10)
+    outer.createAndSetupAutoHideContainer(QtAds.SideBarLeft, dock, -1)
+
+    QtAdsLayout(inner).restore(
+        {"format": 1, "pinned": [{"side": "left", "docks": [{"name": "S", "closed": False}]}]}, place_unnamed=ignore
+    )
+
+    container = dock.autoHideDockContainer()
+    assert container is not None
+    assert container.sideBarLocation() == QtAds.SideBarLeft
+    assert container.dockContainer() is inner
+    assert dock.dockManager() is inner
 
 
 def test_the_restore_announces_itself_as_a_restored_state(window: QMainWindow, qtbot: QtBot) -> None:

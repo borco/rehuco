@@ -516,8 +516,12 @@ class CDockManager(CDockContainerWidget):
         on each dock area, a minimize button on a slid-out dock, and collapse on a click outside it
         (verified against the installed binding -- see [[appendices.qt-ads#auto-hide-flags]])."""
 
+        AutoHideFeatureEnabled: CDockManager.eAutoHideFlag
+        """Pinning on at all -- part of `DefaultAutoHideConfig`."""
+
         AutoHideShowOnMouseOver: CDockManager.eAutoHideFlag
-        """Slides a pinned dock out on hovering its sidebar tab, not only on clicking it."""
+        """Slides a pinned dock out on hovering its sidebar tab, not only on clicking it. Not set by the app: its
+        delay timer fires into a deleted sidebar tab (#492)."""
 
         AutoHideSideBarsIconOnly: CDockManager.eAutoHideFlag
         """Shows only each sidebar tab's icon, dropping its title -- which needs every pinnable dock
@@ -584,6 +588,13 @@ class CDockManager(CDockContainerWidget):
 
     def openedDockAreas(self) -> list[CDockAreaWidget]:
         """Every currently-open (visible) dock area of this manager, in no guaranteed order."""
+
+    def createAndSetupAutoHideContainer(
+        self, area: SideBarLocation, dock_widget: CDockWidget, tab_index: int = -1
+    ) -> CAutoHideDockContainer:
+        """Pin `dock_widget` into this container's sidebar at `area` -- re-homing it to this manager when it
+        belongs to another, which is how QtAds' recursive sidebar drop steals a nested manager's dock (#491).
+        Called by tests to reproduce that drop without a drag."""
 
     def addAutoHideDockWidget(self, location: SideBarLocation, dock_widget: CDockWidget) -> CAutoHideTab:
         """Pin `dock_widget` into the sidebar at `location`, whatever its
