@@ -117,7 +117,9 @@ def read_archive_facts(
     try:
         with hold, shared_read_open(archive) as file, zipfile.ZipFile(file) as opened:
             infolist = opened.infolist()
-    except OSError, zipfile.BadZipFile:
+    except OSError, zipfile.BadZipFile, UnicodeDecodeError, NotImplementedError:
+        # UnicodeDecodeError: a member name flagged UTF-8 that is not; NotImplementedError: an extract version above
+        # the 6.3 zipfile supports
         return None
     members = [info for info in infolist if not info.is_dir()]
     methods: dict[int, int] = {}

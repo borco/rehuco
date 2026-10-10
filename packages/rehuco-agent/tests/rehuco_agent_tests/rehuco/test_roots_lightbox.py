@@ -7,13 +7,15 @@ from typing import Final
 from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QColor, QGuiApplication, QImage
 from PySide6.QtWidgets import QApplication, QWidget
-from pytest import fixture, mark
+from pytest import LogCaptureFixture, fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.content_images.archive_cache import ArchiveCache
 from rehuco_agent.fields.widgets import ImageLightbox, ImageViewerMode
 from rehuco_agent.rehuco.roots_lightbox import EMPTY_PACK_MESSAGE, ImagesOwner, RootsLightbox
 from rehuco_core import RenameCoordinator
+
+from rehuco_agent_tests.crafted_zips import write_future_version_zip, write_undecodable_name_zip
 
 WAIT_TIMEOUT_MS: Final = 10_000
 
@@ -122,6 +124,44 @@ def test_an_archive_with_no_images_opens_nothing_and_says_so(
 
     assert notice.args == [EMPTY_PACK_MESSAGE.format(name="notes.zip")]
     assert lightbox.viewer is None
+
+
+def test_a_zip_python_cannot_decode_or_support_has_nothing_to_show(
+    qtbot: QtBot, tmp_path: Path, lightbox: RootsLightbox
+) -> None:
+    """``zipfile`` raises on these, and the owner is still told, with no viewer (#480).
+
+    **Test steps:**
+
+    * open a zip with a UTF-8 flagged member name that is not UTF-8, and one claiming extract version 7.0
+    * verify each tells its owner there is nothing to show and no viewer exists
+    """
+    for pack in (write_undecodable_name_zip(tmp_path / "name.zip"), write_future_version_zip(tmp_path / "v.zip")):
+        with qtbot.waitSignal(lightbox.nothing_to_show, timeout=WAIT_TIMEOUT_MS) as notice:
+            lightbox.open_archive(pack)
+
+        assert notice.args == [EMPTY_PACK_MESSAGE.format(name=pack.name)]
+        assert lightbox.viewer is None
+
+
+def test_a_listing_that_raises_unexpectedly_is_logged_and_nothing_is_shown(
+    qtbot: QtBot, tmp_path: Path, lightbox: RootsLightbox, mocker: MockerFixture, caplog: LogCaptureFixture
+) -> None:
+    """Nothing escapes the pool job: the owner is told there is nothing to show, and the failure is logged (#480).
+
+    **Test steps:**
+
+    * make the listing raise, and open a zip
+    * verify the notice, that no viewer exists and that the error was logged
+    """
+    mocker.patch("rehuco_agent.rehuco.roots_lightbox.list_archive_images", side_effect=ValueError("boom"))
+    pack = make_pack(tmp_path / "pack.zip", ("a.png",))
+
+    with qtbot.waitSignal(lightbox.nothing_to_show, timeout=WAIT_TIMEOUT_MS):
+        lightbox.open_archive(pack)
+
+    assert lightbox.viewer is None
+    assert "pack.zip" in caplog.text and "boom" in caplog.text
 
 
 def test_a_listing_overtaken_by_a_newer_request_is_dropped(

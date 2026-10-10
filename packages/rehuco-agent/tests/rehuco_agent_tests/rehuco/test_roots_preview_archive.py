@@ -7,7 +7,7 @@ from typing import Final
 from PySide6.QtCore import QThreadPool
 from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import QApplication, QLabel
-from pytest import fixture
+from pytest import LogCaptureFixture, fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.rehuco.roots_checksum import BAD_INK, OLD_BAD_INK
@@ -20,6 +20,8 @@ from rehuco_agent.rehuco.roots_preview import (
     format_size,
 )
 from rehuco_core import ArchiveFacts
+
+from rehuco_agent_tests.crafted_zips import write_future_version_zip, write_undecodable_name_zip
 
 from .test_roots_preview import WAIT_TIMEOUT_MS, Shown
 
@@ -166,6 +168,42 @@ def test_a_file_that_is_no_zip_says_so(qtbot: QtBot, library: Path) -> None:
     shown.preview.show_index(shown.row("broken.zip"))
 
     assert wait_for_archive(qtbot, shown) == {"contents": UNREADABLE_ARCHIVE}
+
+
+def test_a_zip_python_cannot_decode_or_support_says_so(qtbot: QtBot, library: Path) -> None:
+    """``zipfile`` raises on these, and the rows still land on *not readable* (#480).
+
+    **Test steps:**
+
+    * add a zip with a UTF-8 flagged member name that is not UTF-8, and one claiming extract version 7.0
+    * show each and verify the contents line
+    """
+    write_undecodable_name_zip(library / "name.zip")
+    write_future_version_zip(library / "version.zip")
+    shown = Shown(qtbot, library)
+
+    for name in ("name.zip", "version.zip"):
+        shown.preview.show_index(shown.row(name))
+        assert wait_for_archive(qtbot, shown) == {"contents": UNREADABLE_ARCHIVE}
+
+
+def test_a_reader_that_raises_unexpectedly_is_logged_and_the_zip_reads_as_not_readable(
+    qtbot: QtBot, library: Path, mocker: MockerFixture, caplog: LogCaptureFixture
+) -> None:
+    """Nothing escapes the pool job: the rows say *not readable* and the failure is in the log (#480).
+
+    **Test steps:**
+
+    * make the facts reader raise, and show a zip
+    * verify the contents line and that the error was logged
+    """
+    mocker.patch("rehuco_agent.rehuco.roots_preview.read_archive_facts", side_effect=ValueError("boom"))
+    shown = Shown(qtbot, library)
+
+    shown.preview.show_index(shown.row("stored.zip"))
+
+    assert wait_for_archive(qtbot, shown) == {"contents": UNREADABLE_ARCHIVE}
+    assert "stored.zip" in caplog.text and "boom" in caplog.text
 
 
 def test_the_pack_row_says_which_record_makes_a_zip_a_pack_and_when_nothing_is_known(

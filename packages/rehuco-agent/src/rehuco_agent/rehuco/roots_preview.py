@@ -636,7 +636,12 @@ class RootsPreview(QWidget):
         :param path: the archive file.
         :param extensions: the recognized image extensions.
         """
-        facts = read_archive_facts(path, extensions, self.__coordinator)
+        try:
+            facts = read_archive_facts(path, extensions, self.__coordinator)
+        except Exception:  # pylint: disable=broad-exception-caught
+            # the pool would swallow it and the rows would stay blank: answer as an unreadable zip
+            LOG.exception("Reading the facts of %s failed", path)
+            facts = None
         try:
             self.archive_ready.emit(serial, facts)
         except RuntimeError:  # the preview was destroyed while the read was out

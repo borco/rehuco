@@ -13,6 +13,8 @@ from pytest_mock import MockerFixture
 from rehuco_agent.documents.content_images.archive_cache import HEADER_BYTES, ArchiveCache, ArchiveHandle
 from rehuco_core import ContentImageEntry, RenameCoordinator
 
+from rehuco_agent_tests.crafted_zips import write_future_version_zip, write_undecodable_name_zip
+
 MODULE: Final = "rehuco_agent.documents.content_images.archive_cache"
 
 ARCHIVE: Final = Path("/fake/pack/pack.zip")
@@ -239,6 +241,22 @@ def test_an_unopenable_archive_reads_as_nothing(mocker: MockerFixture) -> None:
     assert cache.read_head(MEMBER) is None
     # the file a zip could not be read off is not left open behind it
     truncated.close.assert_called_once()
+
+
+def test_a_zip_python_cannot_decode_or_support_reads_as_nothing(tmp_path: Path) -> None:
+    """``zipfile`` raises ``UnicodeDecodeError`` and ``NotImplementedError`` on these; the cache reads ``None`` (#480).
+
+    **Test steps:**
+
+    * craft a zip with a UTF-8 flagged member name that is not UTF-8, and one claiming extract version 7.0
+    * verify reading a member of each comes back ``None``
+    """
+    cache = ArchiveCache()
+
+    for archive in (write_undecodable_name_zip(tmp_path / "name.zip"), write_future_version_zip(tmp_path / "v.zip")):
+        assert cache.read(ContentImageEntry(archive, "a.jpg", 7, 0)) is None
+
+    cache.close()
 
 
 def test_a_missing_member_reads_as_nothing(mocker: MockerFixture) -> None:
