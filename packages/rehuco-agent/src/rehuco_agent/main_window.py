@@ -7,7 +7,7 @@
 
 import logging
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from pathlib import Path
 from typing import Final, cast, override
 
@@ -248,37 +248,33 @@ def location_group_title(main_key: str) -> str:
     return label if label.endswith("s") else f"{label}s"
 
 
-class TitleBarActionsUnlessFloatingAlone(QObject):
-    """Gives a dock its title-bar actions everywhere except alone in a floating window (#488,
+class TabHiddenWhileFloatingAlone(QObject):
+    """Hides a dock's tab while it is alone in a floating window, and shows it again once it is not (#488,
     [[appendices.qt-ads#floating-titles]]).
 
-    QtAds hides the title bar -- and with it the tab -- of a dock alone in a floating window, the window's own
-    title saying what it is, **unless the dock has title-bar actions**, which it keeps reachable by keeping the
-    bar. So a dock with actions floated alone showed a lone tab no other dock does. Taking the actions off for
-    as long as it floats alone lets QtAds apply its own rule to it as to every other dock; they go back as it
-    docks or is joined by another dock. Meanwhile the window has no button for them: ``Browsers`` > ``New Table
-    Browser`` is in the menu as well, but the Root Catalog's Refresh is on its title bar only.
+    QtAds hides the whole title bar -- and with it the tab -- of a dock alone in a floating window, the window's
+    own title saying what it is, **unless the dock has title-bar actions**, which it keeps reachable by keeping
+    the bar. So a dock with actions floated alone kept a lone tab no other dock shows. Hiding just that tab keeps
+    the bar and its buttons and drops the tab that names the window a second time. The tab comes back as another
+    dock joins the window or the dock docks again -- only a tab this hid, so the neighbours' tabs a maximize hides
+    on purpose stay hidden.
 
     **When to re-decide.** ``CDockWidget.isFloating()`` is true exactly while the dock is alone in a floating
     window. No one signal marks every change of it (measured): ``topLevelChanged`` covers a dock joining or
     leaving the window, but not the dock re-docking or floating out again, which reparent it instead. So both
-    are watched, and the decision runs a turn of the event loop later, once QtAds has finished the move. After
-    handing the actions back, the title bar's buttons are rebuilt: QtAds otherwise leaves them out until the
-    current tab next changes (measured).
+    are watched, and the decision runs a turn of the event loop later, once QtAds has finished the move.
 
     A ``QObject`` parented to ``dock`` -- built once, with nothing to hold onto. It reads the dock from its Qt
     parent on each use rather than keeping it: a kept wrapper closes a cycle with the child wrapper the dock's
     own holds, and Python's collector then clears this object's attributes while its C++ side still filters
     the dock's events (measured, in a test's teardown).
 
-    :param dock: the dock whose title-bar actions to manage.
-    :param actions: its title-bar actions.
+    :param dock: the dock whose tab to manage.
     """
 
-    def __init__(self, dock: QtAds.CDockWidget, actions: Sequence[QAction]) -> None:
+    def __init__(self, dock: QtAds.CDockWidget) -> None:
         super().__init__(dock)
-        self.__actions: Final = list(actions)
-        dock.setTitleBarActions(self.__actions)
+        self.__tab_hidden = False
         dock.topLevelChanged.connect(self.__schedule)
         dock.installEventFilter(self)
 
@@ -300,13 +296,15 @@ class TitleBarActionsUnlessFloatingAlone(QObject):
         QTimer.singleShot(0, self, self.__apply)
 
     def __apply(self) -> None:
-        """Take the actions off while the dock floats alone, and put them back otherwise."""
+        """Hide the tab while the dock floats alone; show it again, if this hid it, once it does not."""
         dock = cast(QtAds.CDockWidget, self.parent())
-        dock.setTitleBarActions([] if dock.isFloating() else self.__actions)
-        area = dock.dockAreaWidget()
-        if area is not None:
-            area.titleBar().updateDockWidgetActionsButtons()
-            area.updateTitleBarVisibility()
+        if dock.isFloating():
+            dock.tabWidget().setVisible(False)
+            self.__tab_hidden = True
+        elif self.__tab_hidden:
+            self.__tab_hidden = False
+            if not dock.isClosed():
+                dock.tabWidget().setVisible(True)
 
 
 class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
@@ -1612,7 +1610,8 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             | features.DockWidgetPinnable
         )
         dock.setWidget(self.__roots_panel)
-        TitleBarActionsUnlessFloatingAlone(dock, self.__roots_panel.title_bar_actions)
+        dock.setTitleBarActions(self.__roots_panel.title_bar_actions)
+        TabHiddenWhileFloatingAlone(dock)
         self.__dock_manager.addDockWidget(
             QtAds.CenterDockWidgetArea, dock, self.__documents_dock_widget.dockAreaWidget()
         )
@@ -1640,7 +1639,8 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             | features.DockWidgetPinnable
         )
         dock.setWidget(self.__browsers_dock)
-        TitleBarActionsUnlessFloatingAlone(dock, self.__browsers_dock.title_bar_actions)
+        dock.setTitleBarActions(self.__browsers_dock.title_bar_actions)
+        TabHiddenWhileFloatingAlone(dock)
         self.__dock_manager.addDockWidget(
             QtAds.CenterDockWidgetArea, dock, self.__documents_dock_widget.dockAreaWidget()
         )

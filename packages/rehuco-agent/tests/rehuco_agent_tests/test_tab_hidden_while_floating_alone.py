@@ -1,5 +1,5 @@
-"""Tests for TitleBarActionsUnlessFloatingAlone: a dock with title-bar actions shows no lone tab when floated
-alone, and has its actions back everywhere else (#488)."""
+"""Tests for TabHiddenWhileFloatingAlone: a dock with title-bar actions floated alone shows no tab, keeps its
+title bar and buttons, and has its tab back once it is not alone (#488)."""
 
 from collections.abc import Iterator
 from typing import NamedTuple
@@ -10,7 +10,7 @@ from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QAbstractButton, QLabel, QMainWindow
 from pytest import fixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.main_window import TitleBarActionsUnlessFloatingAlone
+from rehuco_agent.main_window import TabHiddenWhileFloatingAlone
 
 
 class Shell(NamedTuple):
@@ -20,7 +20,7 @@ class Shell(NamedTuple):
     documents: QtAds.CDockWidget
     roots: QtAds.CDockWidget
     refresh: QAction
-    handler: TitleBarActionsUnlessFloatingAlone
+    handler: TabHiddenWhileFloatingAlone
 
 
 def make_dock(manager: QtAds.CDockManager, name: str) -> QtAds.CDockWidget:
@@ -52,15 +52,24 @@ def area_of(dock: QtAds.CDockWidget) -> QtAds.CDockAreaWidget:
     return area
 
 
+def tab_shown(dock: QtAds.CDockWidget) -> bool:
+    """Whether ``dock``'s own tab is shown.
+
+    :param dock: a placed dock.
+    :returns: whether its tab is not hidden.
+    """
+    return not dock.tabWidget().isHidden()
+
+
 def button_shown(dock: QtAds.CDockWidget, action: QAction) -> bool:
-    """Whether ``dock``'s area title bar shows a button for ``action``.
+    """Whether ``dock``'s area title bar is shown with a button for ``action``.
 
     :param dock: a placed dock.
     :param action: one of its title-bar actions.
-    :returns: whether a button carrying it is visible in the bar.
+    :returns: whether the bar is shown and a button carrying it is visible in it.
     """
     title_bar = area_of(dock).titleBar()
-    return any(
+    return not title_bar.isHidden() and any(
         action in button.actions() and button.isVisibleTo(title_bar)
         for button in title_bar.findChildren(QAbstractButton)
     )
@@ -68,8 +77,8 @@ def button_shown(dock: QtAds.CDockWidget, action: QAction) -> bool:
 
 @fixture(name="shell")
 def fixture_shell(qtbot: QtBot) -> Iterator[Shell]:
-    """A shown window whose Root Catalog dock carries a Refresh action through the handler, tabbed beside
-    Documents and current.
+    """A shown window whose Root Catalog dock carries a Refresh action and the handler, tabbed beside Documents
+    and current.
 
     A generator fixture so the window lives for the whole test: ``qtbot.addWidget`` keeps only a weakref.
     """
@@ -82,75 +91,72 @@ def fixture_shell(qtbot: QtBot) -> Iterator[Shell]:
     manager.addDockWidget(QtAds.CenterDockWidgetArea, documents)
     roots = make_dock(manager, "Root Catalog")
     refresh = QAction("Refresh", window)
-    handler = TitleBarActionsUnlessFloatingAlone(roots, [refresh])
+    roots.setTitleBarActions([refresh])
+    handler = TabHiddenWhileFloatingAlone(roots)
     manager.addDockWidget(QtAds.CenterDockWidgetArea, roots, area_of(documents))
     area_of(roots).setCurrentDockWidget(roots)
     settle(qtbot)
     yield Shell(manager, documents, roots, refresh, handler)
 
 
-def test_a_docked_dock_keeps_its_actions(shell: Shell) -> None:
-    """Docked in the main window, the dock has its actions and its title bar shows them.
+def test_a_docked_dock_shows_its_tab(shell: Shell) -> None:
+    """Docked in the main window, the dock shows its tab and its buttons.
 
     **Test steps:**
 
     * build the shell (the dock tabbed beside Documents, current)
-    * verify the dock carries its action and the bar shows a button for it
+    * verify its tab and its Refresh button are shown
     """
-    assert shell.roots.titleBarActions() == [shell.refresh]
+    assert tab_shown(shell.roots)
     assert button_shown(shell.roots, shell.refresh)
 
 
-def test_floated_alone_the_dock_loses_its_actions_and_its_title_bar(qtbot: QtBot, shell: Shell) -> None:
-    """Alone in a floating window, the dock has no actions, so QtAds hides its title bar -- the tab with it.
+def test_floated_alone_the_dock_hides_its_tab_and_keeps_its_buttons(qtbot: QtBot, shell: Shell) -> None:
+    """Alone in a floating window, the dock's tab is hidden while its title bar and buttons stay.
 
     **Test steps:**
 
     * float the dock on its own
-    * verify it has no title-bar actions and its area's title bar is hidden
+    * verify its tab is hidden and its Refresh button still shown
     """
     shell.roots.setFloating()
     settle(qtbot)
 
     assert shell.roots.isFloating()
-    assert shell.roots.titleBarActions() == []
-    assert area_of(shell.roots).titleBar().isHidden()
+    assert not tab_shown(shell.roots)
+    assert button_shown(shell.roots, shell.refresh)
 
 
-def test_joined_by_another_dock_the_actions_come_back(qtbot: QtBot, shell: Shell) -> None:
-    """A second dock tabbed into the floating window gives the dock its actions back; taken out again, they go.
+def test_joined_by_another_dock_the_tab_comes_back(qtbot: QtBot, shell: Shell) -> None:
+    """A second dock tabbed into the floating window brings the dock's tab back; taken out again, it goes.
 
     **Test steps:**
 
-    * float the dock alone, then tab Documents into its window and make the dock current
-    * verify its actions are back and shown
+    * float the dock alone, then tab Documents into its window
+    * verify both tabs are shown
     * float Documents out again
-    * verify the dock, alone again, has no actions
+    * verify the dock, alone again, hides its tab
     """
     shell.roots.setFloating()
     settle(qtbot)
 
     shell.manager.addDockWidgetTabToArea(shell.documents, area_of(shell.roots))
-    area_of(shell.roots).setCurrentDockWidget(shell.roots)
     settle(qtbot)
-    assert shell.roots.titleBarActions() == [shell.refresh]
-    assert button_shown(shell.roots, shell.refresh)
+    assert tab_shown(shell.roots)
+    assert tab_shown(shell.documents)
 
     shell.documents.setFloating()
     settle(qtbot)
-    assert shell.roots.titleBarActions() == []
+    assert not tab_shown(shell.roots)
 
 
-def test_docked_back_the_buttons_show_without_a_tab_change(qtbot: QtBot, shell: Shell) -> None:
-    """Re-docked into the main window, the dock's buttons are rebuilt at once, not on the next tab change.
-
-    QtAds builds a title bar's action buttons as the current tab changes, so actions handed back to a dock
-    already current would show no button until then.
+def test_docked_back_the_tab_comes_back(qtbot: QtBot, shell: Shell) -> None:
+    """Re-docked into the main window, the dock shows its tab and its buttons again.
 
     **Test steps:**
 
     * float the dock alone, then tab it back beside Documents and make it current
-    * verify its actions are back and the bar shows a button for them
+    * verify its tab and its Refresh button are shown
     """
     shell.roots.setFloating()
     settle(qtbot)
@@ -160,8 +166,42 @@ def test_docked_back_the_buttons_show_without_a_tab_change(qtbot: QtBot, shell: 
     settle(qtbot)
 
     assert not shell.roots.isFloating()
-    assert shell.roots.titleBarActions() == [shell.refresh]
+    assert tab_shown(shell.roots)
     assert button_shown(shell.roots, shell.refresh)
+
+
+def test_a_tab_hidden_by_someone_else_stays_hidden(qtbot: QtBot, shell: Shell) -> None:
+    """A tab the handler did not hide is never shown by it -- as a maximize hides its neighbours' tabs.
+
+    **Test steps:**
+
+    * hide the docked dock's tab from outside, then make the handler re-decide
+    * verify the tab stays hidden
+    """
+    shell.roots.tabWidget().setVisible(False)
+    shell.handler.eventFilter(shell.roots, QEvent(QEvent.Type.ParentChange))
+    settle(qtbot)
+
+    assert not tab_shown(shell.roots)
+
+
+def test_a_closed_dock_does_not_get_its_tab_back(qtbot: QtBot, shell: Shell) -> None:
+    """A dock closed after its tab was hidden is not given it back: QtAds hides a closed dock's tab itself.
+
+    **Test steps:**
+
+    * float the dock alone, tab Documents into its window, then close the dock and make the handler re-decide
+    * verify its tab is hidden
+    """
+    shell.roots.setFloating()
+    settle(qtbot)
+    shell.manager.addDockWidgetTabToArea(shell.documents, area_of(shell.roots))
+    shell.roots.toggleView(False)
+    shell.handler.eventFilter(shell.roots, QEvent(QEvent.Type.ParentChange))
+    settle(qtbot)
+
+    assert shell.roots.isClosed()
+    assert not tab_shown(shell.roots)
 
 
 def test_only_the_docks_own_reparenting_redecides(qtbot: QtBot, shell: Shell) -> None:
@@ -169,38 +209,21 @@ def test_only_the_docks_own_reparenting_redecides(qtbot: QtBot, shell: Shell) ->
 
     **Test steps:**
 
-    * float the dock alone, then hand it its actions behind the handler's back
+    * float the dock alone, then show its tab behind the handler's back
     * send a reparenting event of another object through the filter
-    * verify the actions are left as they are
+    * verify the tab is left shown
     * send one of the dock's own
-    * verify the actions are taken off again, and neither event was swallowed
+    * verify the tab is hidden again, and neither event was swallowed
     """
     shell.roots.setFloating()
     settle(qtbot)
-    shell.roots.setTitleBarActions([shell.refresh])
+    shell.roots.tabWidget().setVisible(True)
     reparented = QEvent(QEvent.Type.ParentChange)
 
     assert shell.handler.eventFilter(QObject(), reparented) is False
     settle(qtbot)
-    assert shell.roots.titleBarActions() == [shell.refresh]
+    assert tab_shown(shell.roots)
 
     assert shell.handler.eventFilter(shell.roots, reparented) is False
     settle(qtbot)
-    assert shell.roots.titleBarActions() == []
-
-
-def test_a_dock_in_no_area_keeps_its_actions(qtbot: QtBot, shell: Shell) -> None:
-    """A dock taken out of every area is not alone in a floating window, so it has its actions, and there is no
-    title bar to update.
-
-    **Test steps:**
-
-    * take the dock out of the manager, then make the handler re-decide
-    * verify the dock is in no area and carries its actions
-    """
-    shell.manager.removeDockWidget(shell.roots)
-    shell.handler.eventFilter(shell.roots, QEvent(QEvent.Type.ParentChange))
-    settle(qtbot)
-
-    assert shell.roots.dockAreaWidget() is None
-    assert shell.roots.titleBarActions() == [shell.refresh]
+    assert not tab_shown(shell.roots)

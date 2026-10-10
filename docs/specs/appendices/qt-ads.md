@@ -932,12 +932,11 @@ Three QtAds behaviours decide what a floating dock window is called and whether 
   end with it, which is how one dock reads "Settings - rehuco".
 - **A dock alone in a floating window has its title bar hidden -- unless it has title-bar actions.** QtAds keeps
   the bar so the actions stay reachable, and the bar carries the dock's tab, which names the window a second
-  time. Clearing the actions and calling `CDockAreaWidget.updateTitleBarVisibility()` hides it as for any other
-  dock (measured). `CDockWidget.isFloating()` is true exactly while a dock is alone in a floating window, not
-  for one sharing its window with another open dock.
+  time. Hiding the tab widget alone (`tabWidget().setVisible(False)`) keeps the bar and its buttons; QtAds
+  neither re-shows a hidden tab on a resize or a current change, and shows it again itself when the dock is
+  inserted into another area (measured). `CDockWidget.isFloating()` is true exactly while a dock is alone in a
+  floating window, not for one sharing its window with another open dock.
 - **No one signal marks a dock entering or leaving that state** (measured): `topLevelChanged` fires as another
   dock joins or leaves its window, but not as the dock itself re-docks or floats out, which reparent it
-  (`QEvent.ParentChange`). And actions handed back to a dock that is already its area's current tab show no
-  buttons until the current tab next changes, unless `CDockAreaTitleBar.updateDockWidgetActionsButtons()` is
-  called. `TitleBarActionsUnlessFloatingAlone` (`main_window.py`) watches both, decides a turn of the event loop
-  later, and rebuilds the buttons.
+  (`QEvent.ParentChange`). `TabHiddenWhileFloatingAlone` (`main_window.py`) watches both, decides a turn of the
+  event loop later, and shows again only a tab it hid, so the tabs a maximize hides (§12) stay hidden.

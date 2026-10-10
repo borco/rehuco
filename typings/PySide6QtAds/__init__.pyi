@@ -114,10 +114,6 @@ class CTitleBarButton(QToolButton):
 class CDockAreaTitleBar(QWidget):
     """The title-bar strip above a `CDockAreaWidget`'s tabs (`objectName() == "dockAreaTitleBar"`)."""
 
-    def updateDockWidgetActionsButtons(self) -> None:
-        """Rebuild the buttons for the current dock's title-bar actions -- which QtAds otherwise does only as the
-        current tab changes, so actions handed to a dock already current show no buttons until then (measured)."""
-
 class CDockSplitter(QSplitter):
     """A `QSplitter` QtAds lays areas and nested splitters out in. Every container's tree is rooted in
     one (`CDockContainerWidget.rootSplitter`), which QtAds often leaves holding a single child splitter
@@ -164,10 +160,6 @@ class CDockAreaWidget(QWidget):
 
     def currentIndex(self) -> int:
         """The index of this area's currently-selected (front) tab."""
-
-    def updateTitleBarVisibility(self) -> None:
-        """Show or hide this area's title bar by QtAds' rule: hidden for a dock alone in a floating window, unless
-        that dock has title-bar actions."""
 
     def titleBar(self) -> CDockAreaTitleBar:
         """This area's title bar (the strip above its tabs), e.g. to re-polish it after a

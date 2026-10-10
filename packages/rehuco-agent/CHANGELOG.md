@@ -225,7 +225,8 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 - A floating dock window is no longer titled "python". A window holding one dock takes its title, as in
   "Settings - rehuco"; one holding several as tabs takes the current tab's, and one holding them side by side is
   titled "rehuco", as is the main window. The Root Catalog and Browsers docks no longer show their tab when floated
-  alone, as no other dock does; their title-bar buttons come back as soon as they are docked or joined by another dock.
+  alone, as no other dock does, and keep their title-bar buttons; the tab comes back as soon as they are docked or
+  joined by another dock.
 
 ## [0.2.0] - 2026-09-27
 
