@@ -15,6 +15,8 @@ from rehuco_core import (
     read_archive_facts,
 )
 
+from rehuco_core_tests.crafted_zips import write_future_version_zip, write_undecodable_name_zip
+
 PAYLOAD: Final = b"0123456789" * 200
 """Compressible, so a deflated member is smaller than its stored twin."""
 
@@ -222,3 +224,21 @@ def test_listing_an_unreadable_archive_gives_nothing(tmp_path: Path) -> None:
 
     assert list_archive_images(tmp_path / "gone.zip", CONTENT_IMAGE_EXTENSIONS) == []
     assert list_archive_images(text, CONTENT_IMAGE_EXTENSIONS) == []
+
+
+def test_a_zip_python_cannot_decode_or_support_has_no_facts_and_no_images(tmp_path: Path) -> None:
+    """``zipfile`` raises ``UnicodeDecodeError`` and ``NotImplementedError`` on these; both read as not readable (#480).
+
+    **Test steps:**
+
+    * craft a zip with a UTF-8 flagged member name that is not UTF-8, and one claiming extract version 7.0
+    * verify the facts are ``None`` and the image listing empty for each
+    """
+    crafted = (
+        write_undecodable_name_zip(tmp_path / "name.zip"),
+        write_future_version_zip(tmp_path / "version.zip"),
+    )
+
+    for archive in crafted:
+        assert read_archive_facts(archive, CONTENT_IMAGE_EXTENSIONS) is None
+        assert list_archive_images(archive, CONTENT_IMAGE_EXTENSIONS) == []

@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from typing import Final
 from unittest.mock import MagicMock
 
+from pytest import mark
 from pytest_mock import MockerFixture
 from rehuco_core import (
     INFO_REHU_FILENAME,
@@ -766,17 +767,28 @@ def test_absent_archive_reports_empty_without_raising(mocker: MockerFixture) -> 
     assert not enumerate_content_images(FILE_SCOPED_PATH)
 
 
-def test_not_a_zip_or_truncated_archive_reports_empty_without_raising(mocker: MockerFixture) -> None:
-    """A file that isn't a valid zip (or a truncated one) contributes no entries, not a crash.
+@mark.parametrize(
+    "error",
+    [
+        zipfile.BadZipFile(),
+        UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte"),
+        NotImplementedError("zip file version 7.0"),
+    ],
+    ids=["bad-zip", "undecodable-name", "future-version"],
+)
+def test_an_archive_zipfile_cannot_read_reports_empty_without_raising(mocker: MockerFixture, error: Exception) -> None:
+    """A file that isn't a valid zip, a truncated one, or one whose central directory ``zipfile`` refuses (a member
+    name flagged UTF-8 that is not, an extract version above the one it supports -- #480) contributes no entries, not a
+    crash.
 
     **Test steps:**
 
-    * mock ``zipfile.ZipFile`` to raise ``BadZipFile``
+    * mock ``zipfile.ZipFile`` to raise the error
     * enumerate
     * verify the result is empty, no exception propagates
     """
     mock_siblings(mocker, ["foo.zip"])
-    mock_archives(mocker, {DIRECTORY / "foo.zip": zipfile.BadZipFile()})
+    mock_archives(mocker, {DIRECTORY / "foo.zip": error})
 
     assert not enumerate_content_images(FILE_SCOPED_PATH)
 
