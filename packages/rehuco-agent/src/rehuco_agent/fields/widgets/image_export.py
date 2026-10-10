@@ -251,12 +251,17 @@ class ImageExporter:
         drag = QDrag(widget)
         drag.setMimeData(mime)
         if not picture.isNull():
-            bound = QSize(DRAG_PIXMAP_SIZE, DRAG_PIXMAP_SIZE)
-            if picture.width() > bound.width() or picture.height() > bound.height():
+            # QDrag's picture and hot spot are in logical pixels; a pixmap's width() is in device pixels.
+            ratio = picture.devicePixelRatio()
+            logical = picture.deviceIndependentSize()
+            if logical.width() > DRAG_PIXMAP_SIZE or logical.height() > DRAG_PIXMAP_SIZE:
+                bound = QSize(DRAG_PIXMAP_SIZE, DRAG_PIXMAP_SIZE) * ratio
                 picture = picture.scaled(
                     bound, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
                 )
+                picture.setDevicePixelRatio(ratio)
+                logical = picture.deviceIndependentSize()
             drag.setPixmap(picture)
-            drag.setHotSpot(QPoint(picture.width() // 2, picture.height() // 2))
+            drag.setHotSpot(QPoint(int(logical.width()) // 2, int(logical.height()) // 2))
         drag.exec(Qt.DropAction.CopyAction)
         return True

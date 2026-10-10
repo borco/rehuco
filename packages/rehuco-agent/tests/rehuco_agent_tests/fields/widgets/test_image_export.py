@@ -224,6 +224,44 @@ def test_a_drag_is_a_copy_carrying_the_staged_file_and_a_small_picture(
     assert (hot_spot.x(), hot_spot.y()) == (DRAG_PIXMAP_SIZE // 2, DRAG_PIXMAP_SIZE // 4)
 
 
+def test_a_drag_measures_a_high_dpi_picture_in_logical_pixels(
+    staging: Path, resource: Path, mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """QDrag's picture and hot spot are logical pixels, so a pixmap of ratio 2 is capped and held by its logical middle.
+
+    **Test steps:**
+
+    * with ``QDrag`` replaced, drag a 400x200 device-pixel picture of ratio 2 (200x100 logical, under the cap)
+    * verify it is kept whole, the hot spot at its logical middle
+    * drag a 1200x600 one of ratio 2 (600x300 logical)
+    * verify it is shrunk to 256 logical pixels wide, ratio kept, the hot spot at its logical middle
+    """
+    widget = QWidget()
+    qtbot.addWidget(widget)
+    drag_class = mocker.patch("rehuco_agent.fields.widgets.image_export.QDrag")
+    exporter = ImageExporter(staging, lambda: ID)
+    source = PathImageSource([resource / "screenshots" / "a.png"], resource)
+    small = QPixmap(400, 200)
+    small.setDevicePixelRatio(2)
+    large = QPixmap(1200, 600)
+    large.setDevicePixelRatio(2)
+    drag = drag_class.return_value
+
+    exporter.drag(widget, source, 0, small)
+    (kept,) = drag.setPixmap.call_args.args
+    (hot_spot,) = drag.setHotSpot.call_args.args
+    exporter.drag(widget, source, 0, large)
+    (shown,) = drag.setPixmap.call_args.args
+    (shrunk_hot_spot,) = drag.setHotSpot.call_args.args
+
+    assert (kept.width(), kept.height()) == (400, 200)
+    assert (hot_spot.x(), hot_spot.y()) == (100, 50)
+    assert shown.deviceIndependentSize().toSize().width() == DRAG_PIXMAP_SIZE
+    assert shown.deviceIndependentSize().toSize().height() == DRAG_PIXMAP_SIZE // 2
+    assert shown.devicePixelRatio() == 2
+    assert (shrunk_hot_spot.x(), shrunk_hot_spot.y()) == (DRAG_PIXMAP_SIZE // 2, DRAG_PIXMAP_SIZE // 4)
+
+
 def test_a_drag_keeps_a_small_picture_and_goes_without_a_null_one(
     staging: Path, resource: Path, mocker: MockerFixture, qtbot: QtBot
 ) -> None:
