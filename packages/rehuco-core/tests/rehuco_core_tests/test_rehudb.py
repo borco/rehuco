@@ -959,14 +959,17 @@ def test_a_resource_type_is_what_its_row_says_found_by_its_place(
     **Test steps:**
 
     * scan a reference-images record, a typeless one and a record under the other root
-    * verify the type of each, its path in other case, a missing path and the wrong root
+    * verify the type of each, its path in other case (found only where the filesystem folds case),
+      a missing path and the wrong root
     """
     cache, first, second = filled
     cache.apply_root_scan(first.root_id, [record("Pack/info.rehu", type="ReferenceImages"), record("plain.rehu")])
     cache.apply_root_scan(second.root_id, [record("other.rehu", type="tutorial")])
 
     assert cache.resource_type(first.root_id, "Pack/info.rehu") == "ReferenceImages"
-    assert cache.resource_type(first.root_id, "pack/INFO.rehu") == "ReferenceImages"
+    assert cache.resource_type(first.root_id, "pack/INFO.rehu") == (
+        "ReferenceImages" if catalog_path_key("A") == catalog_path_key("a") else None
+    )
     assert cache.resource_type(first.root_id, "plain.rehu") == ""
     assert cache.resource_type(first.root_id, "missing.rehu") is None
     assert cache.resource_type(first.root_id, "other.rehu") is None
@@ -982,7 +985,8 @@ def test_a_resource_uuid_is_what_its_row_says_found_by_its_place(
     **Test steps:**
 
     * scan a record with an id, a legacy one without, and a record under the other root
-    * verify the id of each, its path in other case, a missing path and the wrong root
+    * verify the id of each, its path in other case (found only where the filesystem folds case),
+      a missing path and the wrong root
     """
     cache, first, second = filled
     identifier = "0f8fad5b-d9cb-469f-a165-70867728950e"
@@ -990,7 +994,9 @@ def test_a_resource_uuid_is_what_its_row_says_found_by_its_place(
     cache.apply_root_scan(second.root_id, [record("other.rehu", uuid="x")])
 
     assert cache.resource_uuid(first.root_id, "Pack/info.rehu") == identifier
-    assert cache.resource_uuid(first.root_id, "pack/INFO.rehu") == identifier
+    assert cache.resource_uuid(first.root_id, "pack/INFO.rehu") == (
+        identifier if catalog_path_key("A") == catalog_path_key("a") else None
+    )
     assert cache.resource_uuid(first.root_id, "old.tc") == ""
     assert cache.resource_uuid(first.root_id, "missing.rehu") is None
     assert cache.resource_uuid(first.root_id, "other.rehu") is None
