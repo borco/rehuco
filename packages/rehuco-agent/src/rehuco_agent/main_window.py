@@ -14,7 +14,13 @@ from typing import Final, cast, override
 import PySide6QtAds as QtAds
 from borco_core.logging import LogScope
 from borco_pyside.logging import LogWidget
-from borco_pyside.qtads import QtAdsFloatingShowGuard, QtAdsFocusTracker, QtAdsLayout, QtAdsPinSideHandler
+from borco_pyside.qtads import (
+    QtAdsFloatingShowGuard,
+    QtAdsFocusTracker,
+    QtAdsLayout,
+    QtAdsLoneTabHider,
+    QtAdsPinSideHandler,
+)
 from borco_pyside.shortcuts import BindingRole
 from borco_pyside.theming import ActionIconThemeHandler, ThemeManager, ThemeMenu, ThemeModel
 from borco_pyside.widgets import ToolBarStretch
@@ -311,6 +317,9 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # the maximize toggle on each outer dock tab (#341): the handler parents itself to
         # the manager, and is kept only so the close-time layout capture can read it un-maximized
         self.__maximize_handler: Final = attach_maximize_handler(self.__dock_manager)
+        # the Root Catalog and Browsers docks carry title-bar actions, which keeps their title bar -- tab included --
+        # when floated alone; this hides that lone tab (#488, [[appendices.qt-ads#floating-titles]]). Parents itself
+        QtAdsLoneTabHider(self.__dock_manager)
         self.__settings_dialog: Final = SettingsDialog()
         self.__register_settings_pages()
         # after registration, not folded into SettingsDialog.__init__: add_page's own "first page

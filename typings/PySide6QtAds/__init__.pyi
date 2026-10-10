@@ -149,6 +149,9 @@ class CDockAreaWidget(QWidget):
     def setCurrentIndex(self, index: int) -> None:
         """Bring the tab at `index` to the front, hiding whichever tab was previously current."""
 
+    def setCurrentDockWidget(self, dock_widget: CDockWidget) -> None:
+        """Bring `dock_widget`'s tab to the front, as `setCurrentIndex` does for its index."""
+
     def index(self, dock_widget: CDockWidget) -> int:
         """The tab index `dock_widget` occupies in this area, for use with `setCurrentIndex`."""
 
@@ -436,8 +439,12 @@ class CDockWidget(QWidget):
         """Whether this dock is currently closed/hidden (its `toggleViewAction` unchecked)."""
 
     def isFloating(self) -> bool:
-        """Whether this dock currently lives in its own floating container, rather than docked
-        into a `CDockAreaWidget` split within its manager's normal layout."""
+        """Whether this dock is alone in a floating window: `False` for one sharing its window with another open
+        dock, as tabs or side by side (measured)."""
+
+    topLevelChanged: Signal
+    """Emitted with whether this dock has become, or stopped being, alone in a floating window, as another dock
+    joins or leaves it. Not for the dock itself re-docking or floating out (measured): those reparent it."""
 
     def floatingDockContainer(self) -> CFloatingDockContainer | None:
         """This dock's floating container, or `None` if it isn't currently floating
@@ -446,6 +453,9 @@ class CDockWidget(QWidget):
     def toggleView(self, open: bool = ...) -> None:
         """Show (`open=True`) or hide (`open=False`) this dock, as its `toggleViewAction` does --
         firing `viewToggled` with the new visibility."""
+
+    def setFloating(self) -> None:
+        """Tear this dock out of its area into a floating window of its own."""
 
     def requestCloseDockWidget(self) -> None:
         """Ask ADS to close this dock as if its close button were clicked, honoring
@@ -476,6 +486,11 @@ class CDockManager(CDockContainerWidget):
         MiddleMouseButtonClosesTab: CDockManager.eConfigFlag
         """Middle-clicking a tab closes it, the same as clicking its `[x]` button."""
 
+        FloatingContainerHasWidgetTitle: CDockManager.eConfigFlag
+        """A floating window holding a single dock takes that dock's title; without it, every floating
+        window takes `floatingContainersTitle()`, the application's display name by default. Part of
+        QtAds' defaults, which an explicit `setConfigFlags` replaces."""
+
         def __or__(self, other: CDockManager.eConfigFlag) -> CDockManager.eConfigFlag:
             """Combine two flags into one selector, mirroring the C++ enum's `|` (Qt flag)
             operator."""
@@ -484,6 +499,7 @@ class CDockManager(CDockContainerWidget):
     AllTabsHaveCloseButton: eConfigFlag
     DockAreaHasTabsMenuButton: eConfigFlag
     MiddleMouseButtonClosesTab: eConfigFlag
+    FloatingContainerHasWidgetTitle: eConfigFlag
 
     class eAutoHideFlag:
         """One global auto-hide (pinning) toggle, OR'd together and passed to
@@ -629,6 +645,14 @@ class CDockManager(CDockContainerWidget):
         recreating a previously-floating dock (which shows its container immediately regardless).
 
         :returns: the new floating container.
+        """
+
+    def addDockWidgetTabToArea(
+        self, dock_widget: CDockWidget, target_area: CDockAreaWidget, index: int = ...
+    ) -> CDockAreaWidget:
+        """Add `dock_widget` as a tab of `target_area`, at the end unless `index` says otherwise.
+
+        :returns: the area it was added to.
         """
 
     def splitterSizes(self, dock_area_widget: CDockAreaWidget) -> list[int]:

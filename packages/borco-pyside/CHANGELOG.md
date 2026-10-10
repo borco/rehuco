@@ -19,6 +19,9 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 - `ReorderDrag`, `drop_slot` and `paint_drag_ghost`: what a list reordered by dragging shows while an item is
   dragged -- the item leaves its place, one shadow stands where it would land and the other items close up around it --
   shared by the card list and any item view that reorders its rows the same way.
+- `QtAdsLoneTabHider`, which hides the tab of a dock with title-bar actions while it is alone in a floating window --
+  QtAds keeps such a dock's title bar for its buttons, and the tab with it, naming the window a second time -- and
+  shows it again once another dock joins or the dock docks.
 - `QtAdsTabContextActions`, which puts a dock's own actions at the top of its tab's right-click menu, above QtAds'
   *Detach* and *Close* and set apart by a separator, for the docks it is given and no others.
 - `RowBandDelegate`, which paints a selected row as one band with padded text instead of a box per cell.

@@ -33,7 +33,7 @@ Currently provides:
   `platforms.windows.window_activation`).
 - **`borco_pyside.qtads`** — generic helpers for `pyside6-qtads` (QtAds): `QtAdsFocusTracker` (which dock
   is current, per manager), `QtAdsMaximizeHandler` (a maximize toggle on every dock's tab),
-  `QtAdsAutoHideButtonSuppressor`, `QtAdsPinSideHandler`, `QtAdsFloatingShowGuard`, `tab_close_button`,
+  `QtAdsAutoHideButtonSuppressor`, `QtAdsPinSideHandler`, `QtAdsFloatingShowGuard`, `QtAdsLoneTabHider`, `tab_close_button`,
   `tab_label`, `tab_maximize_button`.
 - **`borco_pyside.recycle_bin`** — moving a file to the Recycle Bin / Trash through `send2trash`, behind
   one `RecycleBin` singleton; refuses with `NoRecycleBinError` when no bin is reachable for the path
