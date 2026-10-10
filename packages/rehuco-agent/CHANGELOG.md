@@ -222,6 +222,10 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 - Opening a file or folder from the file manager while the window is maximized, or snapped to part of the screen,
   keeps it there. A minimized window comes back to where it was minimized from -- maximized, snapped or tiled --
   rather than to its normal size, on every platform.
+- A floating dock window is no longer titled "python". A window holding one dock takes its title, as in
+  "Settings - rehuco"; one holding several as tabs takes the current tab's, and one holding them side by side is
+  titled "rehuco", as is the main window. The Root Catalog and Browsers docks no longer show their tab when floated
+  alone, as no other dock does; their title-bar buttons come back as soon as they are docked or joined by another dock.
 
 ## [0.2.0] - 2026-09-27
 

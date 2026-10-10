@@ -6,7 +6,9 @@ from types import SimpleNamespace
 from typing import Final
 from unittest.mock import MagicMock
 
-from PySide6.QtGui import QFileOpenEvent, QGuiApplication
+from PySide6.QtGui import QFileOpenEvent, QGuiApplication  # isort: skip
+
+import PySide6QtAds as QtAds
 from pytest import LogCaptureFixture, fixture, raises
 from pytest_mock import MockerFixture
 from rehuco_agent.app import APP_ID, Application, leave_launch_directory, run
@@ -121,6 +123,28 @@ def test_show_main_window_builds_it_once_and_reuses_it(mocker: MockerFixture) ->
     window_cls.assert_called_once_with()
     assert first is second is window_cls.return_value
     assert window_cls.return_value.raise_and_activate.call_count == 2
+
+
+def test_show_main_window_titles_a_floating_window_after_its_dock(mocker: MockerFixture) -> None:
+    """The QtAds flags set before the first manager keep ``FloatingContainerHasWidgetTitle``.
+
+    The set replaces QtAds' defaults, and without this one a floating window holding a single dock
+    took the app's title instead of the dock's -- "python", with no display name set.
+
+    **Test steps:**
+
+    * mock ``MainWindow`` and ``CDockManager.setConfigFlags``
+    * call ``show_main_window``
+    * verify the flags passed include ``FloatingContainerHasWidgetTitle``
+    """
+    mocker.patch("rehuco_agent.app.MainWindow")
+    set_config_flags = mocker.patch("rehuco_agent.app.QtAds.CDockManager.setConfigFlags")
+    mocker.patch("rehuco_agent.app.QtAds.CDockManager.setAutoHideConfigFlags")
+
+    Application.show_main_window(SimpleNamespace(_Application__main_window=None))  # type: ignore[arg-type]
+
+    (flags,), _ = set_config_flags.call_args
+    assert flags & QtAds.CDockManager.eConfigFlag.FloatingContainerHasWidgetTitle
 
 
 def test_open_path_delegates_to_the_main_window(mocker: MockerFixture) -> None:

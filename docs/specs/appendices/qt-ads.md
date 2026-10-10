@@ -916,3 +916,28 @@ builds has a real dock to seed it.
 `QtAdsFloatingShowGuard` (§11) keeps no container wrapper for a related reason. A container the restore shows
 in the middle of a QtAds call had the wrapper the guard's filter saw invalidated before the call returned. The
 guard finds its containers again at release by the `WA_DontShowOnScreen` it set.
+
+## 15. A floating window's title, and a lone dock's tab
+
+[[[appendices.qt-ads#floating-titles]]]
+
+Three QtAds behaviours decide what a floating dock window is called and whether it shows a tab (#488):
+
+- **`setConfigFlags` replaces QtAds' defaults; it does not add to them.** `FloatingContainerHasWidgetTitle` is
+  one of those defaults, so an app that sets its own flags drops it unless it lists it again. Without it every
+  floating window takes `CDockManager.floatingContainersTitle()`, which falls back to the application's display
+  name and then to its *application name* -- argv[0], "python" under a dev run. With it, a window holding one
+  area takes that area's current tab's title, and a window of several areas takes `floatingContainersTitle()`.
+  The app sets the display name ("rehuco"); Windows then appends it to any top-level title that does not already
+  end with it, which is how one dock reads "Settings - rehuco".
+- **A dock alone in a floating window has its title bar hidden -- unless it has title-bar actions.** QtAds keeps
+  the bar so the actions stay reachable, and the bar carries the dock's tab, which names the window a second
+  time. Clearing the actions and calling `CDockAreaWidget.updateTitleBarVisibility()` hides it as for any other
+  dock (measured). `CDockWidget.isFloating()` is true exactly while a dock is alone in a floating window, not
+  for one sharing its window with another open dock.
+- **No one signal marks a dock entering or leaving that state** (measured): `topLevelChanged` fires as another
+  dock joins or leaves its window, but not as the dock itself re-docks or floats out, which reparent it
+  (`QEvent.ParentChange`). And actions handed back to a dock that is already its area's current tab show no
+  buttons until the current tab next changes, unless `CDockAreaTitleBar.updateDockWidgetActionsButtons()` is
+  called. `TitleBarActionsUnlessFloatingAlone` (`main_window.py`) watches both, decides a turn of the event loop
+  later, and rebuilds the buttons.

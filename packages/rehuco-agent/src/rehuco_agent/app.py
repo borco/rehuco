@@ -38,6 +38,10 @@ LOG: Final = logging.getLogger(__name__)
 APP_ID: Final = "rehuco-agent"
 """Stable per-app identifier for :class:`ApplicationSingleton`'s local-server name."""
 
+APPLICATION_DISPLAY_NAME: Final = "rehuco"
+"""The app's name in window titles -- the main window's own title, and the suffix the platform adds to every
+other top-level's, a floating dock's included."""
+
 ICON_RESOURCE: Final = ":/icons/rehuco-agent.svg"
 """qrc path to the app icon, registered by importing :mod:`rehuco_agent.main_rc`."""
 
@@ -84,6 +88,11 @@ class Application(QApplication):
         # constructed here; mocking away QApplication.__init__ instead risks a crash, since
         # setWindowIcon() below needs a genuinely-constructed object, not a skipped one
         super().__init__(argv)
+        # the name the platform appends to top-level window titles ("Settings - rehuco" on a floated dock) and
+        # the title QtAds gives a floating window holding several docks -- unset, both fall back to the
+        # application name, which is argv[0] ("python"). Only the display name: the application name keys
+        # QSettings' storage
+        self.setApplicationDisplayName(APPLICATION_DISPLAY_NAME)
         self.setWindowIcon(QIcon(ICON_RESOURCE))
         for font_resource in ICON_FONT_RESOURCES:
             QFontDatabase.addApplicationFont(font_resource)
@@ -136,12 +145,16 @@ class Application(QApplication):
             # rather than in any one window's own __init__: show_main_window() is currently the
             # earliest point that builds a window at all, and the only one reached solely by the
             # primary instance -- if some other QtAds-based window is ever built before
-            # MainWindow, move these calls ahead of that construction instead.
+            # MainWindow, move these calls ahead of that construction instead. The set replaces QtAds'
+            # defaults rather than adding to them, so FloatingContainerHasWidgetTitle -- a floating window
+            # holding one dock takes that dock's title, not the app's -- has to be listed too
+            # ([[appendices.qt-ads#floating-titles]])
             config_flags = QtAds.CDockManager.eConfigFlag
             QtAds.CDockManager.setConfigFlags(
                 config_flags.AllTabsHaveCloseButton
                 | config_flags.DockAreaHasTabsMenuButton
                 | config_flags.MiddleMouseButtonClosesTab
+                | config_flags.FloatingContainerHasWidgetTitle
             )
             # pinning (#279), under the same before-the-first-manager rule. DefaultAutoHideConfig is
             # QtAds' own recommended set -- pinning enabled, a pin button on each dock area, a
