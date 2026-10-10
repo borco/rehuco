@@ -291,6 +291,64 @@ def test_an_undecodable_image_settles_as_failed(loader: ThumbnailLoader, qtbot: 
     assert source.loaded == [0]
 
 
+def test_a_decode_withdrawn_while_it_ran_is_not_marked_failed(
+    single_worker_loader: ThumbnailLoader, qtbot: QtBot
+) -> None:
+    """A null answer from a decode its requester withdrew proves nothing about the image -- the surface may have
+    gone with the archive it read -- so it is not remembered as failed, and the image is asked for afresh (#479).
+
+    **Test steps:**
+
+    * hold the gate, request an image that decodes to nothing and wait until the worker is blocked on it
+    * withdraw it with ``retain``, release the gate, and verify it landed without being marked failed
+    * request it again and verify it is decoded again, and that this answer, not withdrawn, marks it failed
+    """
+    source = RecordingSource(1, ["broken"])
+    source.gate.clear()
+    single_worker_loader.request(OWNER, source, 0, 20)
+    qtbot.waitUntil(source.started.is_set)
+
+    single_worker_loader.retain(OWNER, [])
+    with qtbot.waitSignal(single_worker_loader.ready, timeout=5000):
+        source.gate.set()
+
+    assert source.loaded == [0]
+    assert not single_worker_loader.failed("broken", 20)
+    with qtbot.waitSignal(single_worker_loader.ready, timeout=5000):
+        single_worker_loader.request(OWNER, source, 0, 20)
+    assert source.loaded == [0, 0]
+    assert single_worker_loader.failed("broken", 20)
+
+
+def test_only_the_withdrawn_decodes_forgive_a_null_answer(single_worker_loader: ThumbnailLoader, qtbot: QtBot) -> None:
+    """A decode the requester still wants, and one another requester asked for, fail as ever when they come back
+    empty, though a withdrawal happened while they ran (#479).
+
+    **Test steps:**
+
+    * hold the gate, request a broken image and wait until the worker is blocked on it
+    * have its owner ``retain`` it, then release the gate and verify it is marked failed
+    * do the same with another owner retaining nothing, and verify the image is marked failed
+    """
+    kept = RecordingSource(1, ["broken-kept"])
+    kept.gate.clear()
+    single_worker_loader.request(OWNER, kept, 0, 20)
+    qtbot.waitUntil(kept.started.is_set)
+    single_worker_loader.retain(OWNER, [thumbnail_cache_key("broken-kept", 20)])
+    with qtbot.waitSignal(single_worker_loader.ready, timeout=5000):
+        kept.gate.set()
+    assert single_worker_loader.failed("broken-kept", 20)
+
+    other = RecordingSource(1, ["broken-other"])
+    other.gate.clear()
+    single_worker_loader.request(OWNER, other, 0, 20)
+    qtbot.waitUntil(other.started.is_set)
+    single_worker_loader.retain(OTHER_OWNER, [])
+    with qtbot.waitSignal(single_worker_loader.ready, timeout=5000):
+        other.gate.set()
+    assert single_worker_loader.failed("broken-other", 20)
+
+
 def test_the_cache_limit_is_raised_never_lowered() -> None:
     """Building a loader lifts the process-wide cache limit to its floor and leaves a higher one alone.
 
@@ -454,6 +512,43 @@ def test_the_pointer_over_an_item_reports_it_at_once_and_leaving_reports_none(
     assert hovered[-1] == -1
 
     source.gate.set()
+
+
+def test_a_destroyed_row_withdraws_what_it_asked_for_and_leaves_another_surface_alone(
+    single_worker_loader: ThumbnailLoader, qtbot: QtBot
+) -> None:
+    """A row that goes -- a lightbox closed over a pack -- takes its still-queued decodes with it, since what they read
+    through may be closed by then; a decode another surface queued on the same loader is untouched (#479).
+
+    **Test steps:**
+
+    * hold the gate with one request of another surface at a worker, then paint a row over three images, queueing them
+    * delete the row and release the gate
+    * verify the other surface's image was decoded and none of the row's was
+    """
+    holder = RecordingSource(1, ["held"])
+    holder.gate.clear()
+    single_worker_loader.request(OTHER_OWNER, holder, 0, 20)
+    qtbot.waitUntil(holder.started.is_set)
+    queued = RecordingSource(3)
+    host = QWidget()
+    qtbot.addWidget(host)
+    row = ThumbnailRow(single_worker_loader, host, height=20)
+    row.set_source(queued)
+    host.resize(400, 20)
+    row.resize(400, 20)
+    host.show()
+    qtbot.waitExposed(host)
+    row.grab()
+
+    row.deleteLater()
+    QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
+    holder.gate.set()
+    qtbot.waitUntil(lambda: single_worker_loader.cached("held", 20) is not None)
+    qtbot.wait(50)
+
+    assert holder.loaded == [0]
+    assert not queued.loaded
 
 
 def test_a_new_height_re_requests_at_that_height(loader: ThumbnailLoader, qtbot: QtBot, mocker: MockerFixture) -> None:

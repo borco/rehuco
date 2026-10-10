@@ -1,18 +1,25 @@
 """Tests for the lightbox the Roots view opens over a zip's images or a folder's (#456)."""
 
+import threading
 import zipfile
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
 
-from PySide6.QtCore import QEvent, Qt
-from PySide6.QtGui import QColor, QGuiApplication, QImage
+from PySide6.QtCore import QEvent, QObject, Qt, QThreadPool
+from PySide6.QtGui import QColor, QGuiApplication, QImage, QPixmapCache
 from PySide6.QtWidgets import QApplication, QWidget
-from pytest import LogCaptureFixture, fixture, mark
+from pytest import LogCaptureFixture, MonkeyPatch, fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.content_images.archive_cache import ArchiveCache
+from rehuco_agent.documents.content_images.content_images_model import ArchiveImageSource
 from rehuco_agent.fields.widgets import ImageLightbox, ImageViewerMode
+from rehuco_agent.fields.widgets.thumbnail_loader import ThumbnailLoader
+from rehuco_agent.fields.widgets.thumbnail_row import ThumbnailRow
+from rehuco_agent.rehuco import roots_lightbox
 from rehuco_agent.rehuco.roots_lightbox import EMPTY_PACK_MESSAGE, ImagesOwner, RootsLightbox
+from rehuco_agent.settings.image_viewer_settings import shared_image_viewer_settings
 from rehuco_core import RenameCoordinator
 
 from rehuco_agent_tests.crafted_zips import write_future_version_zip, write_undecodable_name_zip
@@ -251,6 +258,123 @@ def test_a_second_viewer_replaces_the_first_and_lets_go_of_its_archive(
 
     assert lightbox.viewer is not None and lightbox.viewer is not first
     assert close.call_count == 1
+
+
+class RecordingLoader(ThumbnailLoader):
+    """A loader on a pool of two threads that records itself, so a test can reach the one the lightbox keeps."""
+
+    INSTANCES: Final[list[RecordingLoader]] = []
+
+    def __init__(self, parent: QObject | None = None, pool: QThreadPool | None = None) -> None:
+        del pool
+        own_pool = QThreadPool()
+        own_pool.setMaxThreadCount(2)
+        super().__init__(parent, own_pool)
+        self.INSTANCES.append(self)
+
+
+@dataclass
+class ThumbnailGate:
+    """Holds every thumbnail decode of an archive until released, and records the ones a worker has taken."""
+
+    released: threading.Event = field(default_factory=threading.Event)
+    started: list[int] = field(default_factory=list)
+
+
+@fixture(name="gated_thumbnails")
+def fixture_gated_thumbnails(monkeypatch: MonkeyPatch) -> ThumbnailGate:
+    """Make the lightbox's loader a `RecordingLoader` and hold the thumbnails of an archive at a gate.
+
+    The gate is on thumbnails only (``max_height`` set): the viewer's main image loads on the GUI thread through the
+    same method, and holding that would deadlock the test.
+
+    :param monkeypatch: pytest fixture.
+    :returns: the gate.
+    """
+    QPixmapCache.clear()
+    RecordingLoader.INSTANCES.clear()
+    monkeypatch.setattr(roots_lightbox, "ThumbnailLoader", RecordingLoader)
+    monkeypatch.setattr(shared_image_viewer_settings(), "strip_visible", True)
+    gate = ThumbnailGate()
+    original_load = ArchiveImageSource.load
+
+    def gated_load(self: ArchiveImageSource, index: int, max_height: int | None) -> QImage:
+        if max_height is not None:
+            gate.started.append(index)
+            gate.released.wait()
+        return original_load(self, index, max_height)
+
+    monkeypatch.setattr(ArchiveImageSource, "load", gated_load)
+    return gate
+
+
+def open_pack_with_row(qtbot: QtBot, lightbox: RootsLightbox, pack: Path) -> ImageLightbox:
+    """Open a pack and paint the viewer's thumbnail row, so its decodes are asked for.
+
+    :param qtbot: pytest-qt fixture.
+    :param lightbox: the lightbox.
+    :param pack: the zip.
+    :returns: the viewer.
+    """
+    lightbox.open_archive(pack)
+    qtbot.waitUntil(lambda: lightbox.viewer is not None, timeout=WAIT_TIMEOUT_MS)
+    viewer = lightbox.viewer
+    assert viewer is not None
+    row = viewer.findChild(ThumbnailRow)
+    assert row is not None and row.isVisibleTo(viewer)
+    row.viewport().grab()
+    return viewer
+
+
+def thumbnail_states(loader: ThumbnailLoader, viewer: ImageLightbox) -> list[str]:
+    """Where each of the viewer's thumbnails stands in the loader.
+
+    :param loader: the loader the viewer's row reads through.
+    :param viewer: the viewer.
+    :returns: ``cached``, ``failed`` or ``pending``, one per image.
+    """
+    row = viewer.findChild(ThumbnailRow)
+    assert row is not None
+    height, ratio = row.row_height, row.devicePixelRatio()
+    source = viewer.source
+    keys = [source.key(index) for index in range(len(source))]
+    return [
+        "cached" if loader.cached(key, height, ratio) else "failed" if loader.failed(key, height, ratio) else "pending"
+        for key in keys
+    ]
+
+
+def test_a_pack_reopened_after_its_viewer_closed_mid_decode_shows_every_thumbnail(
+    qtbot: QtBot, tmp_path: Path, host: QWidget, gated_thumbnails: ThumbnailGate
+) -> None:
+    """The viewer's archive cache is closed before its thumbnail row is gone, so a decode a worker already took reads
+    nothing; that must not stay on the panel's loader as a failure for the same pack opened again (#479).
+
+    **Test steps:**
+
+    * open a six-image pack with the thumbnail row shown, paint it, and hold the decodes at a gate while two are
+      running
+    * close the viewer, release the gate, and wait for the two decodes to land
+    * open the same pack again and verify every thumbnail is decoded and none is marked failed
+    """
+    lightbox = RootsLightbox(host, RenameCoordinator())
+    loader = RecordingLoader.INSTANCES.pop()
+    landed: list[str] = []
+    loader.ready.connect(landed.append)
+    pack = make_pack(tmp_path / "pack.zip", tuple(f"{index}.png" for index in range(6)))
+    first = open_pack_with_row(qtbot, lightbox, pack)
+    qtbot.waitUntil(lambda: len(gated_thumbnails.started) >= 2, timeout=WAIT_TIMEOUT_MS)
+    running = len(gated_thumbnails.started)
+
+    first.close()
+    QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
+    assert lightbox.viewer is None
+    gated_thumbnails.released.set()
+    qtbot.waitUntil(lambda: len(landed) >= running, timeout=WAIT_TIMEOUT_MS)
+    second = open_pack_with_row(qtbot, lightbox, pack)
+
+    qtbot.waitUntil(lambda: "pending" not in thumbnail_states(loader, second), timeout=WAIT_TIMEOUT_MS)
+    assert thumbnail_states(loader, second) == ["cached"] * 6
 
 
 def test_the_thumbnail_row_the_user_toggled_is_how_the_next_viewer_opens(
