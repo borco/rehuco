@@ -12,8 +12,9 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 ### Added
 
-- **What changes on disk outside the app shows without a Scan.** Moving to a folder in the Roots view lists it again
-  and checks its records, and the `info.rehu` or `info.tc` above that manages it; opening or reloading a document checks
+- **What changes on disk outside the app shows without a Scan.** Moving to a folder in the Roots view lists it again and
+  checks its records, and the `info.rehu` or `info.tc` above that manages it -- not when moving between the files in it,
+  and not more than once every few seconds for the same folder (F5 always does); opening or reloading a document checks
   its record. A record added or edited outside the app is read into the catalog on the spot, so a zip's details no
   longer say *Not scanned yet* once its folder is listed. Everything that shows the record follows: the Browsers table,
   the Roots details pane, and an open document -- which reloads itself, or, with unsaved edits, keeps them and says on

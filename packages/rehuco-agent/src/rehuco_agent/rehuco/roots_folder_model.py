@@ -19,6 +19,7 @@ derive from its ancestors, so renaming a folder renames a whole loaded subtree b
 """
 
 import itertools
+import time
 from bisect import bisect_left
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -163,6 +164,8 @@ class RootsFolderModel(QAbstractItemModel):
         :param modified: a modification time as a POSIX timestamp, when the listing had it.
         :param checksum: what the record that covers a file says about it, when one does (#457).
         :param bookkeeping: whether a file is a record, a checksum file or a screenshot.
+        :param listed_at: :func:`time.monotonic` when its listing last landed, reachable or not; ``None`` until one
+            has.
         """
 
         name: str
@@ -178,6 +181,7 @@ class RootsFolderModel(QAbstractItemModel):
         row: int = 0
         listing: NodeListing = NodeListing.UNLISTED
         request: int = 0
+        listed_at: float | None = None
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -241,6 +245,7 @@ class RootsFolderModel(QAbstractItemModel):
         if current.path != root.path:
             self.__remove_children(node)
             node.listing = NodeListing.UNLISTED
+            node.listed_at = None
             self.__request(node)
         self.__changed(node)
 
@@ -267,17 +272,31 @@ class RootsFolderModel(QAbstractItemModel):
         if self.canFetchMore(parent):
             self.__request(node)
 
-    def relist(self, index: ModelIndex) -> None:
+    def relist(self, index: ModelIndex, *, unless_listed_within: float | None = None) -> bool:
         """List a loaded root or folder again, in place.
 
         Rows already shown stay until the answer lands, and a folder never asked for is left to be fetched when a
         view first wants it.
 
+        **A freshness window**, for a caller that asks on every visit (#487): a folder whose listing is still out, or
+        landed less than ``unless_listed_within`` seconds ago by :func:`time.monotonic`, is shown as it is and not asked
+        again. Nothing runs to enforce it -- the time of the last answer is compared at the next ask. A caller that
+        must list again whatever came before (F5, a write the app made) gives no window.
+
         :param index: the root or folder.
+        :param unless_listed_within: seconds a listing stays fresh, or ``None`` for none.
+        :returns: whether a listing was started.
         """
         node = self.__node(index)
-        if node is not self.__top and node.kind in LISTABLE_KINDS and node.listing is not NodeListing.UNLISTED:
-            self.__request(node)
+        if node is self.__top or node.kind not in LISTABLE_KINDS or node.listing is NodeListing.UNLISTED:
+            return False
+        if unless_listed_within is not None and (
+            node.listing is NodeListing.PENDING
+            or (node.listed_at is not None and time.monotonic() - node.listed_at < unless_listed_within)
+        ):
+            return False
+        self.__request(node)
+        return True
 
     def relist_chain(self, index: ModelIndex) -> None:
         """List again every loaded root and folder from ``index``'s own root down to ``index`` -- the columns on
@@ -399,6 +418,7 @@ class RootsFolderModel(QAbstractItemModel):
         node = self.__pending.pop(serial, None)
         if node is None or node.request != serial:
             return
+        node.listed_at = time.monotonic()
         for row in reversed(range(len(node.children))):
             if node.children[row].kind in PLACEHOLDER_KINDS:
                 self.__remove(node, row)

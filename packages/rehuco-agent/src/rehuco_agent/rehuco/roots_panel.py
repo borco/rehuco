@@ -59,6 +59,11 @@ MOVE_TO_BOTTOM_ICON: Final = ":/icons/items_bottom.svg"
 DETAILS_PANE_WIDTH: Final = 320
 """How wide the details pane beside the Roots view's columns starts, in pixels."""
 
+FRESH_LISTING_SECONDS: Final = 5.0
+"""How long a folder's listing stays fresh for the selection that returns to it (#487): within this many seconds it is
+shown as it was listed, so hopping between sibling folders lists each once. F5 never waits. Not a setting: it has no
+effect anyone can see outside the race "changed outside the app, then came back within N seconds"."""
+
 
 # the public surface is read accessors for the view and its actions, which the window and the tests drive -- one
 # cohesive widget, not a class waiting to be split
@@ -438,14 +443,14 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
 
     # region the Roots view
 
-    def __on_roots_current_row_changed(self, current: QModelIndex, _previous: QModelIndex) -> None:
-        """List the folder that became current if nobody has yet, whether or not the view is on screen to ask, and
-        bring the actions and the card in line.
+    def __on_roots_current_row_changed(self, current: QModelIndex, previous: QModelIndex) -> None:
+        """List the folder the selection entered -- for the first time, or again once its last listing is no longer
+        fresh -- whether or not the view is on screen to ask, and bring the actions and the card in line.
 
         :param current: the new current row.
-        :param _previous: the row that was current.
+        :param previous: the row that was current.
         """
-        self.__relist_current(current)
+        self.__relist_entered(current, previous)
         if self.__notice:
             self.__show_notice("")
         self.__preview.show_index(current)
@@ -626,19 +631,37 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         else:
             self.open_companion_requested.emit(path)
 
-    def __relist_current(self, current: QModelIndex) -> None:
-        """List the folder that became current -- or the one a current file is in -- whether or not the view is on
-        screen to ask: for the first time, or again, so a visit to a folder listed earlier shows what changed on disk
-        since, and its records are verified with it (#487).
+    def __folder_of(self, index: QModelIndex) -> QModelIndex:
+        """The folder a row is shown in: its own for a root or folder, the one holding it for a file.
+
+        :param index: any row.
+        :returns: the folder's index; invalid for a placeholder, or no row.
+        """
+        match self.__roots_model.node_kind(index):
+            case RootsNodeKind.ROOT | RootsNodeKind.FOLDER:
+                return index
+            case RootsNodeKind.FILE:
+                return index.parent()
+        return QModelIndex()
+
+    def __relist_entered(self, current: QModelIndex, previous: QModelIndex) -> None:
+        """List the folder the selection has entered, and verify its records with the listing (#487).
+
+        Moving between the files of one folder enters nothing. A folder listed before is listed again only once its last
+        listing is no longer fresh (:data:`FRESH_LISTING_SECONDS`), so hopping between sibling folders reads each
+        once; F5 lists whatever its age.
 
         :param current: the new current row.
+        :param previous: the row that was current.
         """
         model = self.__roots_model
-        folder = current.parent() if model.node_kind(current) is RootsNodeKind.FILE else current
+        folder = self.__folder_of(current)
+        if not folder.isValid() or folder == self.__folder_of(previous):
+            return
         if model.listing_state(folder) is NodeListing.UNLISTED:
             model.fetchMore(folder)
         else:
-            model.relist(folder)
+            model.relist(folder, unless_listed_within=FRESH_LISTING_SECONDS)
 
     def __follow_the_catalog(self, catalog: RootCatalog) -> None:
         """Show what the open catalog holds as it changes; and have every listing check its records against the cache,

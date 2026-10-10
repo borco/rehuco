@@ -14,9 +14,11 @@ from unittest.mock import MagicMock
 
 from PySide6.QtCore import QThreadPool
 from PySide6.QtWidgets import QLabel
-from pytest import LogCaptureFixture, mark
+from pytest import LogCaptureFixture, fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
+from rehuco_agent.rehuco.root_folder_loader import RootFolderLoader
+from rehuco_agent.rehuco.roots_panel import FRESH_LISTING_SECONDS
 from rehuco_agent.resource_events import ResourceEvents
 from rehuco_core import CatalogRecordReader, RecordsChecked, RehuDocument
 
@@ -430,6 +432,132 @@ def test_a_write_back_that_changes_nothing_announces_no_row(
 
     rows.assert_not_called()
     verified.assert_not_called()
+
+
+# endregion
+
+
+# region When the selection lists a folder again (#487)
+
+
+class Clock:  # pylint: disable=too-few-public-methods
+    """A clock the test moves by hand, standing in for ``time.monotonic``."""
+
+    def __init__(self) -> None:
+        self.now = 1000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def listed_folders(start: MagicMock) -> list[tuple[str, ...]]:
+    """The folders a spy on :meth:`RootFolderLoader.start` was asked to list, in order.
+
+    :param start: the spy.
+    :returns: each call's folder, as the names below its root.
+    """
+    return [call.args[3] for call in start.call_args_list]
+
+
+def select(dock: CatalogDocks, *names: str) -> None:
+    """Make a folder or file of the first root the Roots view's current row.
+
+    :param dock: the catalog's docks.
+    :param names: the names down from the first root.
+    """
+    file = dock.catalog.file
+    assert file is not None
+    first, *_ = file.roots
+    dock.roots.roots_view.setCurrentIndex(dock.roots.roots_model.index_for(first.root_id, names))
+
+
+@fixture(name="visited")
+def fixture_visited(
+    qtbot: QtBot, dock: CatalogDocks, folders: Path, mocker: MockerFixture
+) -> tuple[CatalogDocks, Clock, MagicMock]:
+    """A catalog whose first root's ``alpha`` and ``my folder`` have both been entered, with every later listing spied
+    on and the clock held by hand.
+
+    :param qtbot: pytest-qt fixture.
+    :param dock: the catalog's docks.
+    :param folders: the first root's folder; ``alpha`` gets a second file.
+    :param mocker: pytest-mock fixture.
+    :returns: the docks, the clock and the spy on listings.
+    """
+    clock = Clock()
+    mocker.patch("rehuco_agent.rehuco.roots_folder_model.time.monotonic", clock)
+    (folders / "alpha" / "second.txt").write_text("s", encoding="utf-8")
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    open_root_folder(qtbot, dock, "alpha")
+    open_root_folder(qtbot, dock, "my folder")
+    settle(qtbot)
+    return dock, clock, mocker.patch.object(RootFolderLoader, "start")
+
+
+@mark.usefixtures("served")
+def test_moving_between_the_files_of_one_folder_lists_nothing(visited: tuple[CatalogDocks, Clock, MagicMock]) -> None:
+    """Arrowing through a folder's files enters no folder, so no listing is started per file -- on the folder's own
+    account, not because its listing is still fresh (#487).
+
+    **Test steps:**
+
+    * enter a folder, and let its listing go stale
+    * make each of two of its files the current row in turn
+    * verify no listing was started by moving between them
+    """
+    dock, clock, start = visited
+    select(dock, "alpha")
+    clock.now += FRESH_LISTING_SECONDS + 1
+    start.reset_mock()
+
+    select(dock, "alpha", "note.txt")
+    select(dock, "alpha", "second.txt")
+    select(dock, "alpha", "note.txt")
+
+    start.assert_not_called()
+
+
+@mark.usefixtures("served")
+def test_returning_to_a_folder_lists_it_again_only_once_its_listing_is_stale(
+    visited: tuple[CatalogDocks, Clock, MagicMock],
+) -> None:
+    """A folder the selection comes back to within the window is shown as it was; after it, it is read again -- by a
+    time stamp compared at the visit, not by a timer (#487).
+
+    **Test steps:**
+
+    * return to a folder listed a moment ago: verify nothing is started
+    * move the clock past the window and return to the other: verify only that folder is listed again
+    """
+    dock, clock, start = visited
+    select(dock, "alpha")
+    start.assert_not_called()
+
+    clock.now += FRESH_LISTING_SECONDS + 1
+    select(dock, "my folder")
+
+    assert listed_folders(start) == [("my folder",)]
+
+
+@mark.usefixtures("served")
+def test_refresh_lists_the_open_folders_again_whatever_their_age(
+    visited: tuple[CatalogDocks, Clock, MagicMock],
+) -> None:
+    """F5 never waits for a window (#487).
+
+    **Test steps:**
+
+    * make a folder listed a moment ago the current row, and press Refresh
+    * verify the folder and the root above it were listed again
+    """
+    dock, _clock, start = visited
+    select(dock, "alpha")
+    start.reset_mock()
+
+    dock.roots.refresh_roots_action.trigger()
+
+    assert ("alpha",) in listed_folders(start)
+    assert () in listed_folders(start)
 
 
 # endregion
