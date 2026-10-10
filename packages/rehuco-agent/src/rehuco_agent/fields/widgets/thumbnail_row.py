@@ -134,7 +134,8 @@ class ThumbnailDelegate(QStyledItemDelegate):
             painter.fillPath(ring, option.palette.color(QPalette.ColorRole.Highlight))
 
 
-class ThumbnailRow(QListView):
+# one over the cap for the requester token (#479), which is the row's identity towards the loader
+class ThumbnailRow(QListView):  # pylint: disable=too-many-instance-attributes
     """A fixed-height, horizontally flowing row of lazily decoded thumbnails (#221).
 
     Frameless and transparent so nothing but the thumbnails is drawn on whatever hosts it; takes no
@@ -157,6 +158,7 @@ class ThumbnailRow(QListView):
     def __init__(self, loader: ThumbnailLoader, parent: QWidget | None = None, height: int = 96) -> None:
         super().__init__(parent)
         self.__loader: Final = loader
+        self.__requester: Final = object()
         self.__height = height
         self.__current = -1
         self.__exporter: ImageExporter | None = None
@@ -190,6 +192,13 @@ class ThumbnailRow(QListView):
         self.entered.connect(self.__on_entered)
         self.viewportEntered.connect(lambda: self.__set_hovered(-1))
         loader.ready.connect(self.__on_thumbnail_ready)
+        # the row asks as a token of its own, and a closure withdraws what it asked for when it is
+        # destroyed (#479): the loader may outlive it (the Roots lightbox keeps one for the panel's life),
+        # and the decodes still queued would run against whatever the surface read through, closed by then.
+        # The closure holds the token, not the row, whose wrapper may be gone by the time it runs; the token
+        # keeps its identity for as long as the closure lives, which `id(self)` would not
+        requester: Final = self.__requester
+        self.destroyed.connect(lambda: loader.retain(requester, ()))
 
     def set_exporter(self, exporter: ImageExporter | None) -> None:
         """Let a thumbnail be dragged out of the row as a file and as pixels (#395).
@@ -296,7 +305,7 @@ class ThumbnailRow(QListView):
         source = self.__model.source
         if source is None:
             return None
-        return self.__loader.request(self, source, index, self.__height, self.devicePixelRatio())
+        return self.__loader.request(self.__requester, source, index, self.__height, self.devicePixelRatio())
 
     def cached_thumbnail(self, index: int) -> QPixmap | None:
         """The thumbnail for ``index`` if it is already decoded, requesting nothing -- what a size hint
