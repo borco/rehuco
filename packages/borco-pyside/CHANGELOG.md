@@ -61,6 +61,10 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ### Fixed
 
+- `CardListEditor` finds a card's tab-order widgets among the card's own descendants instead of walking the window's
+  focus chain. `nextInFocusChain()` registers each widget it returns as a child of the wrapper it was called on, so the
+  walk hung every Qt-made widget's wrapper in the window from the card's, and deleting the card invalidated them all
+  while the widgets lived on.
 - `QtAdsFloatingShowGuard.release` no longer fails with "already deleted" when a floating window was shown in the
   middle of a QtAds call: the guard keeps no wrapper of the windows it holds and finds them again when released.
 - `force_foreground` restores a window only when it is minimized. It restored every window, which took a maximized

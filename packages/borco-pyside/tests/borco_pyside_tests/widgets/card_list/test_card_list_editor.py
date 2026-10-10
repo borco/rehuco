@@ -181,8 +181,8 @@ def flag_duplicates(items: Sequence[Any]) -> list[dict[str, str]]:
     return states
 
 
-@fixture
-def page(qtbot: QtBot) -> Iterator[Page]:
+@fixture(name="page")
+def fixture_page(qtbot: QtBot) -> Iterator[Page]:
     """Three cards, ``a``, ``b``, ``c``, on a shown and active window.
 
     :param qtbot: pytest-qt bot.
