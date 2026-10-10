@@ -83,6 +83,11 @@ class CAutoHideDockContainer(QWidget):
     def dockWidget(self) -> CDockWidget:
         """The pinned dock this container holds."""
 
+    def dockContainer(self) -> CDockContainerWidget | None:
+        """The container whose sidebar holds this panel -- found by walking up the widget tree, so it can
+        be another manager's than the dock's own registry: a recursive sidebar drop pins a nested
+        manager's dock into an outer one (#491)."""
+
     def sideBarLocation(self) -> SideBarLocation:
         """Which sidebar this container's tab sits in -- the side the dock was actually pinned to,
         which is *not* written back to its `preferredAutoHideSideBarLocation`

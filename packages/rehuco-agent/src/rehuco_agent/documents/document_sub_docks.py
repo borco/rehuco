@@ -1103,7 +1103,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         # toggle) right on top of the sizes being restored, clobbering them with stale data
         self.__restoring_layout = True
         try:
-            restored = QtAdsLayout(self.__dock_manager).restore(
+            restored = QtAdsLayout(self.__dock_manager, pins=False).restore(
                 values.get(STATE_DOCK_MANAGER_KEY),
                 place_unnamed=self.__stack_hidden_beside_description_view,
                 restore_dock_state=self.__restore_dock_widget_state,
