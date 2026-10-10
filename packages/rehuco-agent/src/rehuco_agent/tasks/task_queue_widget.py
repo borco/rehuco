@@ -8,7 +8,7 @@ from typing import Any, Final, cast
 import cbor2
 import PySide6QtAds as QtAds
 from borco_pyside.logging import LogWidget
-from borco_pyside.qtads import QtAdsAutoHideButtonSuppressor, QtAdsFocusTracker, QtAdsLayout
+from borco_pyside.qtads import QtAdsAutoHideButtonSuppressor, QtAdsFocusTracker, QtAdsLayout, QtAdsPinGuard
 from borco_pyside.theming import ActionIconThemeHandler
 from PySide6.QtCore import QItemSelectionModel, QPoint
 from PySide6.QtGui import QColor
@@ -175,6 +175,8 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
         # same for the pin button, and for the same reason (#279): pinning belongs to the window's own
         # docks, and this shell's two sub-docks live inside one of them
         QtAdsAutoHideButtonSuppressor(self.__dock_manager)
+        # and a pin the button never offered is undone as it happens (#491)
+        QtAdsPinGuard(self.__dock_manager, pins=False)
         # the maximize toggle on each sub-dock's tab (#341); kept only so save_state can read
         # the layout un-maximized
         self.__maximize_handler: Final = attach_maximize_handler(self.__dock_manager)
@@ -421,7 +423,7 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
             values: Any = cbor2.loads(state)
         except cbor2.CBORDecodeError:
             return False
-        return QtAdsLayout(self.__dock_manager).restore(
+        return QtAdsLayout(self.__dock_manager, pins=False).restore(
             values,
             place_unnamed=self.__place_unnamed_dock,
             restore_dock_state=lambda dock, saved: (

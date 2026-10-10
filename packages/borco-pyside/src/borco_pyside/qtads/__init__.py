@@ -7,6 +7,7 @@ from .qtads_focus_tracker import QtAdsFocusTracker
 from .qtads_layout import QtAdsLayout
 from .qtads_lone_tab_hider import QtAdsLoneTabHider
 from .qtads_maximize_handler import QtAdsMaximizeHandler
+from .qtads_pin_guard import QtAdsPinGuard
 from .qtads_pin_side_handler import QtAdsPinSideHandler
 from .qtads_tab_context_actions import QtAdsTabContextActions
 from .qtads_widgets import tab_close_button, tab_label, tab_maximize_button
@@ -18,6 +19,7 @@ __all__ = [
     "QtAdsLayout",
     "QtAdsLoneTabHider",
     "QtAdsMaximizeHandler",
+    "QtAdsPinGuard",
     "QtAdsPinSideHandler",
     "QtAdsTabContextActions",
     "remove_dock_widget",

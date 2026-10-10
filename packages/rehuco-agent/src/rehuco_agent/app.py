@@ -158,15 +158,15 @@ class Application(QApplication):
             )
             # pinning (#279), under the same before-the-first-manager rule. DefaultAutoHideConfig is
             # QtAds' own recommended set -- pinning enabled, a pin button on each dock area, a
-            # minimize button on a slid-out dock, and collapse on a click outside it -- so only the
-            # hover-to-peek addition is spelled out. AutoHideSideBarsIconOnly is deliberately absent:
+            # minimize button on a slid-out dock, and collapse on a click outside it -- and nothing is added to
+            # it. AutoHideShowOnMouseOver (hover to peek) is deliberately absent: its delay timer keeps a raw
+            # pointer to the last hovered sidebar tab and fires into it after that tab is deleted, so unpinning a
+            # dock under the mouse crashed the app (#492). AutoHideSideBarsIconOnly is deliberately absent too:
             # it drops each sidebar tab's title in favour of the dock's icon, and no dock here sets
             # one, so it would leave the sidebar saying nothing at all
             # ([[appendices.qt-ads#auto-hide-icon-only]]).
             auto_hide_flags = QtAds.CDockManager.eAutoHideFlag
-            QtAds.CDockManager.setAutoHideConfigFlags(
-                auto_hide_flags.DefaultAutoHideConfig | auto_hide_flags.AutoHideShowOnMouseOver
-            )
+            QtAds.CDockManager.setAutoHideConfigFlags(auto_hide_flags.DefaultAutoHideConfig)
             self.__main_window = MainWindow()
         self.__main_window.raise_and_activate()
         return self.__main_window

@@ -19,6 +19,7 @@ from borco_pyside.qtads import (
     QtAdsFocusTracker,
     QtAdsLayout,
     QtAdsLoneTabHider,
+    QtAdsPinGuard,
     QtAdsPinSideHandler,
 )
 from borco_pyside.shortcuts import BindingRole
@@ -314,6 +315,9 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # to read which dock is current, since the Browsers dock and the Root Catalog dock may each drive the
         # preview only while the reader is in them
         self.__focus_tracker: Final = QtAdsFocusTracker(self.__dock_manager, close_glyph=TAB_CLOSE_GLYPH)
+        # a floating window dropped onto a sidebar pins the nested docks inside it too -- a browser out of
+        # Browsers -- and this sends each straight back to its own manager (#491). Parents itself to the manager
+        QtAdsPinGuard(self.__dock_manager)
         # the maximize toggle on each outer dock tab (#341): the handler parents itself to
         # the manager, and is kept only so the close-time layout capture can read it un-maximized
         self.__maximize_handler: Final = attach_maximize_handler(self.__dock_manager)

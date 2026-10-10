@@ -83,6 +83,11 @@ class CAutoHideDockContainer(QWidget):
     def dockWidget(self) -> CDockWidget:
         """The pinned dock this container holds."""
 
+    def dockContainer(self) -> CDockContainerWidget | None:
+        """The container whose sidebar holds this panel -- found by walking up the widget tree, so it can
+        be another manager's than the dock's own registry: a recursive sidebar drop pins a nested
+        manager's dock into an outer one (#491)."""
+
     def sideBarLocation(self) -> SideBarLocation:
         """Which sidebar this container's tab sits in -- the side the dock was actually pinned to,
         which is *not* written back to its `preferredAutoHideSideBarLocation`
@@ -511,8 +516,12 @@ class CDockManager(CDockContainerWidget):
         on each dock area, a minimize button on a slid-out dock, and collapse on a click outside it
         (verified against the installed binding -- see [[appendices.qt-ads#auto-hide-flags]])."""
 
+        AutoHideFeatureEnabled: CDockManager.eAutoHideFlag
+        """Pinning on at all -- part of `DefaultAutoHideConfig`."""
+
         AutoHideShowOnMouseOver: CDockManager.eAutoHideFlag
-        """Slides a pinned dock out on hovering its sidebar tab, not only on clicking it."""
+        """Slides a pinned dock out on hovering its sidebar tab, not only on clicking it. Not set by the app: its
+        delay timer fires into a deleted sidebar tab (#492)."""
 
         AutoHideSideBarsIconOnly: CDockManager.eAutoHideFlag
         """Shows only each sidebar tab's icon, dropping its title -- which needs every pinnable dock
@@ -579,6 +588,13 @@ class CDockManager(CDockContainerWidget):
 
     def openedDockAreas(self) -> list[CDockAreaWidget]:
         """Every currently-open (visible) dock area of this manager, in no guaranteed order."""
+
+    def createAndSetupAutoHideContainer(
+        self, area: SideBarLocation, dock_widget: CDockWidget, tab_index: int = -1
+    ) -> CAutoHideDockContainer:
+        """Pin `dock_widget` into this container's sidebar at `area` -- re-homing it to this manager when it
+        belongs to another, which is how QtAds' recursive sidebar drop steals a nested manager's dock (#491).
+        Called by tests to reproduce that drop without a drag."""
 
     def addAutoHideDockWidget(self, location: SideBarLocation, dock_widget: CDockWidget) -> CAutoHideTab:
         """Pin `dock_widget` into the sidebar at `location`, whatever its

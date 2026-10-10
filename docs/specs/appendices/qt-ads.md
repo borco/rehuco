@@ -493,7 +493,10 @@ attribute, both on the flag enum and promoted onto `CDockManager` itself — the
 [[appendices.qt-ads#verify-bindings-live]] check applied to a preset rather than a method. Its value
 is 1283: `AutoHideFeatureEnabled | DockAreaHasAutoHideButton | AutoHideHasMinimizeButton |
 AutoHideCloseOnOutsideMouseClick`. So a caller spelling out "collapse on an outside click" is
-restating the default, and only `AutoHideShowOnMouseOver` (hover to peek) is a genuine addition.
+restating the default, and only `AutoHideShowOnMouseOver` (hover to peek) would be a genuine addition —
+which the app does **not** set: its 500 ms delay timer holds a raw `CAutoHideTab*` (QtAds 5.0.0,
+`DockContainerWidget.cpp:155`) that nothing clears when the tab is deleted, so unpinning a dock the mouse
+just entered or left fires the timer into freed memory and crashes (#492, confirmed under page heap).
 
 **The flags are `CDockManager` statics**, like `eConfigFlag` — set before the first manager, shared
 by every manager in the process, nested ones included. Set *after* one exists they still reach areas
@@ -656,6 +659,31 @@ dock reads as open" — QtAds state that does not survive an operation one would
 And while a dock is closed, `isFloating()` returns `False` even inside a floating container — it wants
 the container to have an *open* top-level dock widget. Read `floatingDockContainer() is not None`
 instead, or a test of the closed-and-floating case asserts the opposite of what it means.
+
+### 10.7 A floating window dropped on a sidebar pins the nested managers' docks inside it
+
+[[[appendices.qt-ads#recursive-sidebar-drop]]]
+
+**Question (#491):** a browser sub-dock — a dock of the Browsers dock's *nested* manager — turned up pinned on
+the main window's sidebar, beside an empty Browsers. Nothing in the app pins it.
+
+**QtAds does, through a recursive search.** Dropping a floating window onto a sidebar runs
+`DockContainerWidgetPrivate::dropIntoAutoHideSideBar` (QtAds 5.0.0, `DockContainerWidget.cpp:607`), which
+collects the window's areas with `findChildren<CDockAreaWidget*>(…, Qt::FindChildrenRecursively)`. The search
+reaches through the Browsers dock into its nested manager, and every dock of every area found is pinned into
+the target sidebar by `createAndSetupAutoHideContainer` (`:1571`), which **re-homes** it
+(`setDockManager`) when the target belongs to another manager. No `DockWidgetPinnable` check is made on this
+path ([[appendices.qt-ads#pinnable-is-not-a-lever]]). The nested manager is never told: its
+`dockWidgetsMap()` still lists the dock, and no signal fires on it. `dropIntoContainer` (`:479`) and
+`dropIntoSection` (`:674`) search the same recursive way.
+
+**What is observable** is the target manager's `autoHideWidgetCreated`, which fires for the stolen dock as
+for any other pin (measured). Unpinning the dock (`setAutoHide(False)`) and then `addDockWidget` on the nested
+manager puts it back — owner and container both the nested manager again (measured). `QtAdsPinGuard` does
+exactly that on every manager, deferred a turn so QtAds' drop finishes walking the window first; on a manager
+that never pins it also unpins any of its own docks a border drop pinned there. And `QtAdsLayout` restores a
+nested manager's `pinned` entries into its main container (`pins=False`), so a layout saved while a dock sat
+stolen does not grow the nested manager a sidebar of its own on the next start.
 
 ## 11. `restoreState` puts a floating dock on screen before its owner exists
 

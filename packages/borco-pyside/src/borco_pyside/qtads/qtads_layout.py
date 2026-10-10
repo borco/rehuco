@@ -108,11 +108,17 @@ class QtAdsLayout:
     builds has a real dock to seed it: no placeholder docks. Splitter sizes are applied once the whole
     tree exists, since every insertion resets its splitter's sizes.
 
+    **A manager that never pins** (``pins=False``, a nested one) restores a ``pinned`` entry into its main
+    container instead: pinning there would grow the manager a sidebar of its own, and such an entry is only
+    ever written by a dock QtAds pinned against the manager's will (#491).
+
     :param dock_manager: the manager whose layout to save or restore.
+    :param pins: whether the manager pins docks into its sidebars.
     """
 
-    def __init__(self, dock_manager: QtAds.CDockManager) -> None:
+    def __init__(self, dock_manager: QtAds.CDockManager, *, pins: bool = True) -> None:
         self.__dock_manager: Final = dock_manager
+        self.__pins: Final = pins
 
     def save(self, dock_state: Callable[[QtAds.CDockWidget], bytes | None] | None = None) -> dict[str, Any]:
         """Walk the manager's layout into a tree.
@@ -329,10 +335,13 @@ class QtAdsLayout:
             cast(QtAds.CFloatingDockContainer, seed.floatingDockContainer()).setGeometry(geometry)
 
     def __build_pinned(self, side: QtAds.SideBarLocation, docks: list[LayoutDock], size: object) -> None:
-        """Pin ``docks`` to ``side``, in order.
+        """Pin ``docks`` to ``side``, in order -- or, for a manager that never pins, dock them in its main
+        container.
 
         A dock outside the main container is docked there first: pinning a floating dock leaves its old
-        window behind ([[appendices.qt-ads#auto-hide-abandoned-float]]).
+        window behind ([[appendices.qt-ads#auto-hide-abandoned-float]]). A dock already pinned to ``side`` is
+        left alone only when the sidebar is this manager's: one QtAds pinned into another manager's sidebar
+        (#491) is brought home like any other.
 
         :param side: the sidebar.
         :param docks: the docks, in tab order.
@@ -340,16 +349,16 @@ class QtAdsLayout:
         """
         for entry in docks:
             dock = entry.widget
-            if dock.isAutoHide():
-                if dock.autoHideLocation() == side:
-                    continue
-                dock.setAutoHide(False)
+            if self.__pins and self.__is_pinned_here(dock, side):
+                continue
             self.__prepare_move(dock)
             area = dock.dockAreaWidget()
             if area is None or area.dockContainer() is not self.__dock_manager:
                 self.__dock_manager.addDockWidget(
                     QtAds.CenterDockWidgetArea, dock, next(iter(self.__main_areas()), None)
                 )
+            if not self.__pins:
+                continue
             dock.setAutoHide(True, side)
             container = dock.autoHideDockContainer()
             if container is not None and isinstance(size, int) and size > 0:
@@ -379,6 +388,20 @@ class QtAdsLayout:
             seeds.append(self.__dock_manager.addDockWidget(direction, seed, seeds[-1]))
         for child, seed_area in zip(node.children, seeds, strict=True):
             self.__expand(child, seed_area)
+
+    def __is_pinned_here(self, dock: QtAds.CDockWidget, side: QtAds.SideBarLocation) -> bool:
+        """Whether ``dock`` is already pinned to ``side`` in this manager's own sidebar.
+
+        :param dock: the dock.
+        :param side: the sidebar.
+        :returns: ``False`` for a dock pinned to the same side of another manager's sidebar.
+        """
+        container = dock.autoHideDockContainer()
+        return (
+            container is not None
+            and container.sideBarLocation() == side
+            and container.dockContainer() is self.__dock_manager
+        )
 
     def __prepare_move(self, dock: QtAds.CDockWidget) -> None:
         """Ready ``dock`` to be moved: out of its sidebar if it is pinned, and open if it is closed.

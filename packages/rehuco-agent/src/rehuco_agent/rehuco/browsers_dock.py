@@ -11,6 +11,7 @@ from borco_pyside.qtads import (
     QtAdsAutoHideButtonSuppressor,
     QtAdsFocusTracker,
     QtAdsLayout,
+    QtAdsPinGuard,
     QtAdsTabContextActions,
     remove_dock_widget,
 )
@@ -87,6 +88,8 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
         )
         # pinning belongs to the window's own docks, and this shell's sub-docks live inside one of them
         QtAdsAutoHideButtonSuppressor(self.__dock_manager)
+        # and a pin the button never offered is undone as it happens (#491)
+        QtAdsPinGuard(self.__dock_manager, pins=False)
         self.__maximize_handler: Final = attach_maximize_handler(self.__dock_manager)
         self.__tab_menus: Final = QtAdsTabContextActions(self.__dock_manager)
 
@@ -307,7 +310,7 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """
         state = self.__catalog_store.load(file.rehuco_id)
         # every browser of the catalog is built from the layout and placed as it is added, so none is unnamed
-        QtAdsLayout(self.__dock_manager).restore(
+        QtAdsLayout(self.__dock_manager, pins=False).restore(
             state.layout, place_unnamed=lambda dock: None, create_dock=self.__create_browser_dock
         )
         if not self.__browsers:

@@ -8,7 +8,13 @@ from pathlib import Path
 from typing import Any, Final, cast
 
 import PySide6QtAds as QtAds
-from borco_pyside.qtads import QtAdsAutoHideButtonSuppressor, QtAdsFocusTracker, QtAdsLayout, remove_dock_widget
+from borco_pyside.qtads import (
+    QtAdsAutoHideButtonSuppressor,
+    QtAdsFocusTracker,
+    QtAdsLayout,
+    QtAdsPinGuard,
+    remove_dock_widget,
+)
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QMainWindow, QMessageBox, QWidget
 from rehuco_core import INFO_REHU_FILENAME, LockReasonKind, TaskQueue
@@ -154,6 +160,9 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         # governed by a process-wide flag no per-dock feature can narrow. Nothing holds onto it --
         # it parents itself to the manager it suppresses.
         QtAdsAutoHideButtonSuppressor(self.__dock_manager)
+        # and the pins the button never offered -- a drop onto a border, a nested dock stolen by one -- are
+        # undone as they happen (#491); parents itself to the manager too
+        QtAdsPinGuard(self.__dock_manager, pins=False)
         # the maximize toggle on each document's tab (#341), filling the documents area; kept
         # only so the session capture can read the layout un-maximized
         self.__maximize_handler: Final = attach_maximize_handler(self.__dock_manager)
@@ -490,7 +499,7 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         :param layout: the tree from a prior :meth:`save_state`.
         :returns: ``True`` if the layout was restored; ``False`` if there was none, or it was not a layout.
         """
-        return QtAdsLayout(self.__dock_manager).restore(layout, place_unnamed=self.__place_unnamed_dock)
+        return QtAdsLayout(self.__dock_manager, pins=False).restore(layout, place_unnamed=self.__place_unnamed_dock)
 
     @staticmethod
     def __place_unnamed_dock(dock: QtAds.CDockWidget) -> None:

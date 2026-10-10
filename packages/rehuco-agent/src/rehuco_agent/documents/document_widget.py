@@ -4,7 +4,7 @@ from typing import Final
 
 import PySide6QtAds as QtAds
 from borco_pyside.logging import LogWidget
-from borco_pyside.qtads import QtAdsAutoHideButtonSuppressor, QtAdsFocusTracker
+from borco_pyside.qtads import QtAdsAutoHideButtonSuppressor, QtAdsFocusTracker, QtAdsPinGuard
 from borco_pyside.widgets import MessageBanner
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QAction
@@ -100,6 +100,8 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         # button comes from a process-wide flag, so it is suppressed per manager rather than cleared
         # per dock. Nothing holds onto it -- it parents itself to the manager it suppresses.
         QtAdsAutoHideButtonSuppressor(self.__dock_manager)
+        # and a pin the button never offered is undone as it happens (#491); parents itself to the manager too
+        QtAdsPinGuard(self.__dock_manager, pins=False)
         # the maximize toggle on each sub-dock's tab (#341), filling this document; handed to the
         # sub-docks so every layout capture reads them un-maximized, and so a dock toggle exits it first
         self.__maximize_handler: Final = attach_maximize_handler(self.__dock_manager)
