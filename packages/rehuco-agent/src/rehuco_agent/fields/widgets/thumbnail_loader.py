@@ -90,6 +90,8 @@ class DecodeQueue:
         self.__lock: Final = threading.Lock()
         self.__pending: Final[deque[PendingDecode]] = deque()
         self.__queued: Final[set[str]] = set()
+        self.__running: Final[dict[str, int]] = {}
+        self.__withdrawn: Final[set[str]] = set()
         self.__workers = 0
         self.__stopped: Final = threading.Event()
 
@@ -117,23 +119,32 @@ class DecodeQueue:
     def retain(self, owner: int, wanted: set[str]) -> None:
         """Withdraw every request of ``owner`` but those in ``wanted``.
 
+        A decode a worker already took cannot be stopped, but it is marked withdrawn: whatever it
+        answers is no verdict on the image (#479), as its surface may have gone with the archive it read.
+
         :param owner: the requester's identity.
         :param wanted: the cache keys it still wants.
         """
         with self.__lock:
+            self.__withdrawn.update(key for key, who in self.__running.items() if who == owner and key not in wanted)
             dropped = [job for job in self.__pending if job.owner == owner and job.cache_key not in wanted]
             kept = [job for job in self.__pending if job.owner != owner or job.cache_key in wanted]
             self.__pending.clear()
             self.__pending.extend(kept)
             self.__queued.difference_update(job.cache_key for job in dropped)
 
-    def settle(self, cache_key: str) -> None:
+    def settle(self, cache_key: str) -> bool:
         """Forget ``cache_key`` as queued: its decode landed, so a later request may queue it again.
 
         :param cache_key: the request's cache key.
+        :returns: whether the decode was withdrawn while it ran, so a null answer proves nothing.
         """
         with self.__lock:
             self.__queued.discard(cache_key)
+            self.__running.pop(cache_key, None)
+            withdrawn = cache_key in self.__withdrawn
+            self.__withdrawn.discard(cache_key)
+            return withdrawn
 
     def take_next(self) -> tuple[ImageSource, int, int, float, str] | None:
         """Pop the newest pending request, for a worker.
@@ -145,6 +156,8 @@ class DecodeQueue:
             if self.__stopped.is_set() or not self.__pending:
                 return None
             job = self.__pending.pop()
+            running = self.__running  # bound to a local: `pylint_qt` reads a subscripted attribute as a signal
+            running[job.cache_key] = job.owner
             return job.source, job.position, job.height, job.ratio, job.cache_key
 
     def worker_done(self) -> None:
@@ -276,7 +289,9 @@ class ThumbnailLoader(QObject):
     def retain(self, requester: object, cache_keys: Iterable[str]) -> None:
         """Withdraw every request ``requester`` made but those in ``cache_keys`` -- what it still shows.
 
-        Another requester's pending decodes are left alone.
+        Another requester's pending decodes are left alone. A decode already running is not stopped, but
+        a null answer from it no longer marks the image failed: the surface that asked may have gone
+        with the archive it read (#479).
 
         :param requester: the surface whose requests to prune.
         :param cache_keys: the cache keys it still wants.
@@ -293,9 +308,11 @@ class ThumbnailLoader(QObject):
         :param cache_key: the thumbnail's cache key.
         :param image: the decoded image, possibly null.
         """
-        self.__queue.settle(cache_key)
+        withdrawn = self.__queue.settle(cache_key)
         if image.isNull():
-            self.__failed.add(cache_key)
+            # a decode withdrawn while it ran may have read an archive closed under it: no verdict (#479)
+            if not withdrawn:
+                self.__failed.add(cache_key)
         else:
             QPixmapCache.insert(cache_key, QPixmap.fromImage(image))
         self.ready.emit(cache_key)
