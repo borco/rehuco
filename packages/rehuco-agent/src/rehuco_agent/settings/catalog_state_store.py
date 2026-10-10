@@ -16,7 +16,7 @@ from uuid import UUID
 from borco_core import atomic_write_text
 
 from .persistent_settings import config_folder
-from .state_file import decode_bytes, encode_bytes
+from .state_file import UNREAD, decode_bytes, encode_bytes, read_json_file, set_aside_unread
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -120,20 +120,12 @@ class CatalogStateStore:
         :returns: its state; empty when there is none, or none that can be read.
         """
         path = catalog_state_path(rehuco_id)
-        try:
-            text = path.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            return CatalogState()
-        except OSError:
-            LOG.exception("The saved state of %s could not be read.", path)
-            return CatalogState()
-        try:
-            values: Any = json.loads(text)
-        except ValueError:
-            LOG.error("The saved state %s is not readable JSON; it is ignored.", path)
+        values = read_json_file(path)
+        if values is None:
             return CatalogState()
         if not isinstance(values, dict) or values.get("version") != CATALOG_STATE_VERSION:
             LOG.warning("The saved state %s is not in a shape this build reads; it is ignored.", path)
+            UNREAD.add(path)
             return CatalogState()
         layout = values.get("layout")
         return CatalogState(layout if isinstance(layout, dict) else None)
@@ -149,6 +141,7 @@ class CatalogStateStore:
         try:
             # the folder does not exist until something is first written to it
             path.parent.mkdir(parents=True, exist_ok=True)
+            set_aside_unread(path)
             atomic_write_text(path, json.dumps(payload, indent=2) + "\n")
         except OSError:
             LOG.exception("The state of the catalog could not be saved to %s.", path)

@@ -23,6 +23,7 @@ from rehuco_core import (
 )
 
 from ..settings.persistent_settings import config_folder
+from ..settings.state_file import UNREAD, read_json_file, set_aside_unread
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -91,20 +92,12 @@ class TaskQueueStore:
 
         :returns: the saved items, in the order they were written; empty when there are none to read.
         """
-        try:
-            text = self.__path.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            return []
-        except OSError:
-            LOG.exception("The saved task queue could not be read; starting with an empty queue.")
-            return []
-        try:
-            saved = json.loads(text)
-        except ValueError:
-            LOG.exception("The saved task queue is not readable JSON; starting with an empty queue.")
+        saved = read_json_file(self.__path, "saved task queue")
+        if saved is None:
             return []
         if not isinstance(saved, list):
             LOG.warning("The saved task queue is not a list of tasks; starting with an empty queue.")
+            UNREAD.add(self.__path)
             return []
         # a record off disk is only *claimed* to be an item; what it actually holds is checked where it
         # is used, by the restore that has to survive a hand-edited file anyway.
@@ -149,6 +142,7 @@ class TaskQueueStore:
             try:
                 # the config folder does not exist until something is first written there (#361)
                 self.__path.parent.mkdir(parents=True, exist_ok=True)
+                set_aside_unread(self.__path)
                 atomic_write_text(self.__path, json.dumps(items, indent=2))
             except OSError:
                 LOG.exception("The task queue could not be saved to %s.", self.__path)
