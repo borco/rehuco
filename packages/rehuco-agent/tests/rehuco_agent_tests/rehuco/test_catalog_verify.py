@@ -5,18 +5,20 @@ The cache is the real one over the suite's in-memory database, and the folders a
 ``.rehuco`` itself is served.
 """
 
+import logging
 import threading
 from pathlib import Path
+from sqlite3 import OperationalError
 from typing import Any
 from unittest.mock import MagicMock
 
 from PySide6.QtCore import QThreadPool
 from PySide6.QtWidgets import QLabel
-from pytest import mark
+from pytest import LogCaptureFixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.resource_events import ResourceEvents
-from rehuco_core import CatalogRecordReader, RehuDocument
+from rehuco_core import CatalogRecordReader, RecordsChecked, RehuDocument
 
 from .test_catalog_docks import (  # noqa: F401  # pylint: disable=unused-import
     REHUCO_PATH,
@@ -217,3 +219,217 @@ def test_the_files_open_documents_stand_for_are_read_on_the_pool_and_announced(
         dock.catalog.read_signatures([record, folders / "gone.rehu"])
 
     assert seen.args == [{record: (stat.st_mtime_ns, stat.st_size)}]
+
+
+# region What goes wrong between the GUI thread and the pool (#487)
+
+
+def seam(dock: CatalogDocks, name: str) -> Any:
+    """One of the catalog's private members, which these tests reach by design: the thread hops cannot be provoked
+    through the public surface.
+
+    :param dock: the catalog's docks.
+    :param name: the member's name.
+    :returns: it.
+    """
+    return getattr(dock.catalog, f"_RootCatalog__{name}")
+
+
+@mark.usefixtures("served")
+def test_a_cache_that_cannot_be_read_verifies_nothing_and_says_so(
+    qtbot: QtBot, dock: CatalogDocks, folders: Path, mocker: MockerFixture, caplog: LogCaptureFixture
+) -> None:
+    """A failing plan is logged, and nothing is queued (#487).
+
+    **Test steps:**
+
+    * make the plan fail with a database error, and verify a record
+    * verify the error is logged and nothing is announced
+    """
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    mocker.patch("rehuco_agent.rehuco.root_catalog.CatalogRecordUpdater.plan", side_effect=OperationalError("locked"))
+    seen = MagicMock()
+    dock.catalog.files_seen.connect(seen)
+
+    with caplog.at_level(logging.ERROR):
+        dock.catalog.verify_records([folders / "alpha" / "info.rehu"], key="probe")
+    settle(qtbot)
+
+    assert "Could not read the cache" in caplog.text
+    seen.assert_not_called()
+
+
+@mark.usefixtures("served")
+def test_a_check_that_fails_is_logged_and_still_releases_its_key(
+    qtbot: QtBot, dock: CatalogDocks, folders: Path, mocker: MockerFixture, caplog: LogCaptureFixture
+) -> None:
+    """The pool swallows what escapes a job, so a failing check answers empty: the key is released and nothing is
+    announced (#487).
+
+    **Test steps:**
+
+    * make the check fail, and verify a record that has a row to check
+    * verify the failure is logged, nothing is announced, and the key no longer waits for an answer
+    """
+    write_pack_record(folders / "alpha" / "info.rehu")
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    mocker.patch("rehuco_agent.rehuco.root_catalog.check_records", side_effect=RuntimeError("boom"))
+    seen = MagicMock()
+    dock.catalog.files_seen.connect(seen)
+
+    with caplog.at_level(logging.ERROR):
+        dock.catalog.verify_records([folders / "alpha" / "info.rehu"], key="probe")
+        settle(qtbot)
+
+    assert "Could not verify 1 records" in caplog.text
+    assert not seam(dock, "latest_verify")
+    seen.assert_not_called()
+
+
+@mark.usefixtures("served")
+def test_a_check_superseded_before_it_starts_does_nothing(dock: CatalogDocks, mocker: MockerFixture) -> None:
+    """A newer check of the same key leaves an older one that has not started to do nothing (#487).
+
+    **Test steps:**
+
+    * note a newer check for a key, then run an older one
+    * verify it compared nothing with the disk
+    """
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    check = mocker.patch("rehuco_agent.rehuco.root_catalog.check_records")
+    seam(dock, "latest_verify")["probe"] = 2
+
+    seam(dock, "run_verify")(1, "probe", seam(dock, "cache"), [])
+
+    check.assert_not_called()
+
+
+@mark.usefixtures("served")
+def test_an_answer_superseded_while_it_was_out_is_dropped_on_the_gui_thread(dock: CatalogDocks, folders: Path) -> None:
+    """A newer check of a key makes an older answer that arrives late say nothing: it is judged where it lands, not
+    where it was made (#487).
+
+    **Test steps:**
+
+    * note a newer check for a key, then deliver an older answer that saw a file
+    * verify nothing was announced, and the newer check is still waited for
+    """
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    seen = MagicMock()
+    dock.catalog.files_seen.connect(seen)
+    seam(dock, "latest_verify")["probe"] = 2
+    stale = RecordsChecked([], {folders / "alpha" / "info.rehu": (1, 1)})
+
+    seam(dock, "on_verified")(1, "probe", seam(dock, "cache"), stale)
+
+    seen.assert_not_called()
+    assert dict(seam(dock, "latest_verify")) == {"probe": 2}
+
+
+@mark.usefixtures("served")
+def test_an_answer_for_a_catalog_that_is_gone_is_dropped_quietly(dock: CatalogDocks, mocker: MockerFixture) -> None:
+    """The pool may finish after the window is gone: the answer has nowhere to go, and that is not an error (#487).
+
+    **Test steps:**
+
+    * make every answer's emit fail as a destroyed object's does
+    * run a check, and a read of file states: verify neither raises
+    """
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    seam(dock, "latest_verify")["probe"] = 1
+    dead = mocker.MagicMock()
+    dead.answered.emit.side_effect = RuntimeError("Internal C++ object already deleted")
+    dead.statted.emit.side_effect = RuntimeError("Internal C++ object already deleted")
+    mocker.patch.object(dock.catalog, "_RootCatalog__verifier", dead)
+
+    seam(dock, "run_verify")(1, "probe", seam(dock, "cache"), [])
+    seam(dock, "run_stat")(1, [])
+
+    dead.answered.emit.assert_called_once()
+    dead.statted.emit.assert_called_once()
+
+
+@mark.usefixtures("served")
+def test_a_read_of_file_states_that_fails_still_answers_and_says_nothing_of_it(
+    dock: CatalogDocks, mocker: MockerFixture, caplog: LogCaptureFixture
+) -> None:
+    """An unexpected failure is logged, and an answer with no files announces nothing (#487).
+
+    **Test steps:**
+
+    * read the state of a file whose stat raises something that is no OSError
+    * verify the failure is logged, and the empty answer announces nothing
+    """
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    seen = MagicMock()
+    dock.catalog.files_seen.connect(seen)
+    bad = mocker.MagicMock()
+    bad.stat.side_effect = RuntimeError("boom")
+
+    with caplog.at_level(logging.ERROR):
+        seam(dock, "run_stat")(1, [bad])
+    seam(dock, "on_statted")(1, {})
+
+    assert "Could not read the state of 1 files" in caplog.text
+    seen.assert_not_called()
+
+
+def verify_a_new_record(qtbot: QtBot, dock: CatalogDocks, folders: Path) -> tuple[MagicMock, MagicMock]:
+    """Verify a record the cache has no row for, through whatever now writes the findings back.
+
+    :param qtbot: pytest-qt fixture.
+    :param dock: the catalog's docks.
+    :param folders: the first root's folder.
+    :returns: what heard :attr:`~RootCatalog.rows_changed` and :attr:`~RootCatalog.records_verified`.
+    """
+    write_pack_record(folders / "alpha" / "info.rehu")
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    rows, verified = MagicMock(), MagicMock()
+    dock.catalog.rows_changed.connect(rows)
+    dock.catalog.records_verified.connect(verified)
+    dock.catalog.verify_records([folders / "alpha" / "info.rehu"], key="probe")
+    settle(qtbot)
+    return rows, verified
+
+
+@mark.usefixtures("served")
+def test_a_write_back_that_fails_is_logged_and_announces_no_row(
+    qtbot: QtBot, dock: CatalogDocks, folders: Path, mocker: MockerFixture, caplog: LogCaptureFixture
+) -> None:
+    """A failed write is logged, and says no row changed (#487).
+
+    **Test steps:**
+
+    * verify a record the cache has no row for, with the write-back failing
+    * verify the failure is logged and no row change is announced
+    """
+    mocker.patch("rehuco_agent.rehuco.root_catalog.CatalogRecordUpdater.apply", side_effect=OperationalError("locked"))
+
+    with caplog.at_level(logging.ERROR):
+        rows, verified = verify_a_new_record(qtbot, dock, folders)
+
+    assert "Could not update the cache" in caplog.text
+    rows.assert_not_called()
+    verified.assert_not_called()
+
+
+@mark.usefixtures("served")
+def test_a_write_back_that_changes_nothing_announces_no_row(
+    qtbot: QtBot, dock: CatalogDocks, folders: Path, mocker: MockerFixture
+) -> None:
+    """A write that left every row as it was is quiet (#487).
+
+    **Test steps:**
+
+    * verify a record the cache has no row for, with a write-back that changes nothing
+    * verify no row change is announced
+    """
+    mocker.patch("rehuco_agent.rehuco.root_catalog.CatalogRecordUpdater.apply", return_value=set())
+
+    rows, verified = verify_a_new_record(qtbot, dock, folders)
+
+    rows.assert_not_called()
+    verified.assert_not_called()
+
+
+# endregion

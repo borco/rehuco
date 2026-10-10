@@ -97,3 +97,20 @@ def test_a_report_of_the_file_as_the_model_last_read_or_wrote_it_changes_nothing
     model.note_file_signature(*on_disk(path))
 
     assert (reloads, model.changed_on_disk) == ([], False)
+
+
+def test_a_document_whose_file_cannot_be_read_has_nothing_to_compare_with(tmp_path: Path) -> None:
+    """A model standing for a file that is not there never reloads, nor flags: a report cannot tell it anything.
+
+    **Test steps:**
+
+    * build a model over a path with no file, and report some file state
+    * verify it neither reloaded nor flagged
+    """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, tmp_path / "missing" / "info.rehu"))
+    reloads: list[None] = []
+    model.reloaded.connect(lambda: reloads.append(None))
+
+    model.note_file_signature(7, 3)
+
+    assert (reloads, model.changed_on_disk) == ([], False)

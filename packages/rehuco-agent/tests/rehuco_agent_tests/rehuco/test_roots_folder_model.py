@@ -897,3 +897,25 @@ def test_the_questions_asked_about_no_row_or_a_placeholder_are_answered_with_not
     assert model.data(QModelIndex()) is None
     assert model.key(placeholder) is None
     assert alpha.data(Qt.ItemDataRole.ToolTipRole) is None
+
+
+def test_fetching_a_folder_already_listed_lists_nothing_again(
+    qtbot: QtBot, library: Path, mocker: MockerFixture
+) -> None:
+    """A view may ask for more of a folder it has: only an unlisted one is read (#487 lists a folder again only when
+    the panel says so, through :meth:`relist`).
+
+    **Test steps:**
+
+    * list a folder, then fetch it again
+    * verify no second read was started
+    """
+    model = make_model(qtbot, [make_root(library)])
+    root = model.index(0, 0)
+    folder = child(model, root, names(model, root)[0])
+    open_folder(qtbot, model, folder)
+    start = mocker.patch.object(RootFolderLoader, "start")
+
+    model.fetchMore(folder)
+
+    start.assert_not_called()

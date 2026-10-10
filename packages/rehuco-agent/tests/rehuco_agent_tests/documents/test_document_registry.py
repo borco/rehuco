@@ -546,3 +546,26 @@ def test_what_the_disk_shows_reaches_the_model_of_that_path_only(mocker: MockerF
     registry.note_file_signatures({FAKE_PATH: (7, 3), OTHER_PATH: (8, 4)})
 
     noted.assert_called_once_with(7, 3)
+
+
+def test_a_reload_of_a_document_with_no_path_is_not_announced(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A model whose path is gone has nothing for the catalog to check (#487).
+
+    **Test steps:**
+
+    * acquire a path, take the model's path away, and revert it
+    * verify nothing more was announced
+    """
+    del qtbot
+    load_document(mocker)
+    events = ResourceEvents()
+    heard: list[object] = []
+    events.accessed.connect(heard.append)
+    registry = DocumentRegistry(resource_events=events)
+    model = registry.acquire(FAKE_PATH)
+    model.path = None
+    heard.clear()
+
+    model.reloaded.emit()
+
+    assert not heard

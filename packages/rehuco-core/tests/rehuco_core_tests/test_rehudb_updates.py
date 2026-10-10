@@ -260,4 +260,14 @@ def test_a_plan_reads_the_roots_once_and_checks_a_record_once(cache: MagicMock) 
     cache.locate.assert_called_once_with(RECORD, cache.roots.return_value)
 
 
+def test_a_finding_the_cache_did_not_change_by_is_not_a_change(disk: Disk, cache: MagicMock, read: MagicMock) -> None:
+    """A write that leaves the row as it was is not reported as one."""
+    del disk, read
+    checker = updater(cache)
+    checked = check_records(checker.plan([RECORD]), RenameCoordinator())
+    cache.upsert_record.return_value = False
+
+    assert checker.apply(checked.findings) == set()
+
+
 # endregion
