@@ -5,6 +5,7 @@ from .qtads_dock_removal import remove_dock_widget
 from .qtads_floating_show_guard import QtAdsFloatingShowGuard
 from .qtads_focus_tracker import QtAdsFocusTracker
 from .qtads_layout import QtAdsLayout
+from .qtads_lone_tab_hider import QtAdsLoneTabHider
 from .qtads_maximize_handler import QtAdsMaximizeHandler
 from .qtads_pin_side_handler import QtAdsPinSideHandler
 from .qtads_tab_context_actions import QtAdsTabContextActions
@@ -15,6 +16,7 @@ __all__ = [
     "QtAdsFloatingShowGuard",
     "QtAdsFocusTracker",
     "QtAdsLayout",
+    "QtAdsLoneTabHider",
     "QtAdsMaximizeHandler",
     "QtAdsPinSideHandler",
     "QtAdsTabContextActions",

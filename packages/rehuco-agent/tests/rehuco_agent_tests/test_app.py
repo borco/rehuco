@@ -6,9 +6,8 @@ from types import SimpleNamespace
 from typing import Final
 from unittest.mock import MagicMock
 
-from PySide6.QtGui import QFileOpenEvent, QGuiApplication  # isort: skip
-
 import PySide6QtAds as QtAds
+from PySide6.QtGui import QFileOpenEvent, QGuiApplication
 from pytest import LogCaptureFixture, fixture, raises
 from pytest_mock import MockerFixture
 from rehuco_agent.app import APP_ID, Application, leave_launch_directory, run

@@ -938,5 +938,5 @@ Three QtAds behaviours decide what a floating dock window is called and whether 
   floating window, not for one sharing its window with another open dock.
 - **No one signal marks a dock entering or leaving that state** (measured): `topLevelChanged` fires as another
   dock joins or leaves its window, but not as the dock itself re-docks or floats out, which reparent it
-  (`QEvent.ParentChange`). `TabHiddenWhileFloatingAlone` (`main_window.py`) watches both, decides a turn of the
+  (`QEvent.ParentChange`). `QtAdsLoneTabHider` (`borco_pyside.qtads`) watches both, decides a turn of the
   event loop later, and shows again only a tab it hid, so the tabs a maximize hides (§12) stay hidden.
