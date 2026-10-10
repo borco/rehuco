@@ -2,16 +2,17 @@
 [[plugins#rehuco-dock]], [[data-model#cache-schema]]).
 """
 
+import itertools
 import logging
 import sqlite3
 import threading
-from collections.abc import Sequence
+from collections.abc import Hashable, Iterable, Sequence
 from pathlib import Path
 from typing import Final
 from uuid import UUID
 
 from borco_core.logging import LogScope
-from PySide6.QtCore import QObject, Qt, Signal
+from PySide6.QtCore import QObject, Qt, QThreadPool, Signal
 from rehuco_core import (
     DEFAULT_RENAME_COORDINATOR,
     FINISHED_JOB_STATES,
@@ -20,6 +21,8 @@ from rehuco_core import (
     CatalogRecordUpdater,
     CatalogRow,
     JobStatus,
+    RecordCheck,
+    RecordsChecked,
     RehucoFile,
     RehucoFileError,
     RehucoRoot,
@@ -29,6 +32,7 @@ from rehuco_core import (
     ScanCatalogRootJob,
     TaskJob,
     TaskQueue,
+    check_records,
     rehudb_path,
 )
 
@@ -87,11 +91,29 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
     """Emitted with the ``set`` of cache row ids a change may have touched; only those are to be read again
     (#379)."""
 
+    records_verified: Signal = Signal(object)
+    """Emitted with the ``set`` of record :class:`~pathlib.Path` objects whose rows a verify-on-access changed (#487),
+    after :attr:`rows_changed` has said which rows: what the cache says of them -- a type, a title -- is new."""
+
+    files_seen: Signal = Signal(object)
+    """Emitted with a ``dict`` of file :class:`~pathlib.Path` objects, each with the ``(modification time in ns, size)``
+    it has on disk now -- every record a verify looked at, changed or not, and every file :meth:`read_signatures` was
+    asked about (#487). Whatever shows one compares it with what it showed; the cache is not asked."""
+
     class Marshaller(QObject):
         """Carries "one of our jobs may have finished" across the thread boundary, and nothing else."""
 
         queue_changed = Signal()
         """Carries nothing: the payload is whatever the queue says by the time the slot runs."""
+
+    class Verifier(QObject):
+        """Carries a verify-on-access answer from the pool to the GUI thread, and nothing else."""
+
+        answered = Signal(int, object, object, object)
+        """``(serial, key, cache, findings)``: one check's answer, judged on the GUI thread."""
+
+        statted = Signal(int, object)
+        """``(serial, signatures)``: what :meth:`RootCatalog.read_signatures` found, judged on the GUI thread."""
 
     def __init__(
         self,
@@ -119,10 +141,19 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
 
         self.__marshaller: Final = RootCatalog.Marshaller(self)
         self.__marshaller.queue_changed.connect(self.__on_queue_changed, Qt.ConnectionType.QueuedConnection)
+        self.__verifier: Final = RootCatalog.Verifier(self)
+        self.__verifier.answered.connect(self.__on_verified, Qt.ConnectionType.QueuedConnection)
+        self.__verifier.statted.connect(self.__on_statted, Qt.ConnectionType.QueuedConnection)
+        self.__latest_stat = 0
+        self.__verify_serials: Final = itertools.count(1)
+        self.__latest_verify: Final[dict[Hashable, int]] = {}
+        """The newest verify asked for per key, under :attr:`__lock`: an older one still queued does nothing, and an
+        older answer is dropped."""
         queue.add_listener(self)
         if resource_events is not None:
             resource_events.moved.connect(self.__on_moved)
             resource_events.changed.connect(self.__on_files_changed)
+            resource_events.accessed.connect(self.__on_accessed)
 
     # region the open file
 
@@ -206,6 +237,7 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
             self.__listening_to_events = False
             self.__events.moved.disconnect(self.__on_moved)
             self.__events.changed.disconnect(self.__on_files_changed)
+            self.__events.accessed.disconnect(self.__on_accessed)
         self.__release_session()
 
     def __fail(self, message: str) -> bool:
@@ -538,6 +570,140 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         del paused
 
     # endregion
+
+    # endregion
+
+    # region verify-on-access
+
+    def verify_records(self, paths: Iterable[Path], *, key: Hashable) -> None:
+        """Check each record's row against its file and bring the cache in line, off the GUI thread (#487,
+        [[data-model#scan-and-staleness]]).
+
+        What the cache holds is read here, the ``stat`` and any read run on the pool, and the answer is written back
+        on this thread -- a share can block a ``stat`` for its whole timeout, and the cache is this thread's.
+        **A newer call with the same** ``key`` **supersedes an older one** still out: its answer is dropped, and one
+        not yet started does nothing.
+
+        :param paths: records' absolute paths; those that are no record, or under no root, are passed over.
+        :param key: what the call is about -- a listed folder, an opened record -- for superseding.
+        """
+        cache = self.__cache
+        if cache is None:
+            return
+        try:
+            checks = CatalogRecordUpdater(cache, coordinator=self.__rename_coordinator).plan(paths)
+        except sqlite3.Error as error:
+            LOG.error("Could not read the cache of %s to verify records: %s", self.rehuco_path, error)
+            return
+        if not checks:
+            return
+        serial = next(self.__verify_serials)
+        with self.__lock:
+            self.__latest_verify[key] = serial  # pylint: disable=unsupported-assignment-operation
+        QThreadPool.globalInstance().start(lambda: self.__run_verify(serial, key, cache, checks))
+
+    def __run_verify(self, serial: int, key: Hashable, cache: CatalogCache, checks: list[RecordCheck]) -> None:
+        """Compare the records with the disk, on a pool thread, and answer; never touches ``cache`` itself.
+
+        :param serial: the call's serial.
+        :param key: what the call is about.
+        :param cache: only handed back, to tell the answer which cache it was planned against.
+        :param checks: what to compare.
+        """
+        with self.__lock:
+            if self.__latest_verify.get(key) != serial:
+                return
+        try:
+            checked = check_records(checks, self.__rename_coordinator)
+        except Exception:  # pylint: disable=broad-exception-caught  # the pool swallows what escapes: no answer would come
+            LOG.exception("Could not verify %d records against the disk.", len(checks))
+            checked = RecordsChecked([], {})
+        try:
+            self.__verifier.answered.emit(serial, key, cache, checked)
+        except RuntimeError:  # the catalog was destroyed while the check was out
+            pass
+
+    def __on_verified(self, serial: int, key: Hashable, cache: CatalogCache, checked: RecordsChecked) -> None:
+        """Say what the disk showed, and write what the cache did not know into it -- unless the check was superseded,
+        or the cache is not this one any more (GUI thread).
+
+        :param serial: the call's serial.
+        :param key: what the call is about.
+        :param cache: the cache the check was planned against.
+        :param checked: what the disk said.
+        """
+        with self.__lock:
+            if self.__latest_verify.get(key) != serial:
+                return
+            del self.__latest_verify[key]  # pylint: disable=unsupported-delete-operation
+        if checked.seen:
+            self.files_seen.emit(checked.seen)
+        findings = checked.findings
+        if cache is not self.__cache or not findings:
+            return
+        paths = [finding.check.path for finding in findings]
+        try:
+            affected = cache.resource_ids(paths)
+            changed = CatalogRecordUpdater(cache, coordinator=self.__rename_coordinator).apply(findings)
+            affected |= cache.resource_ids(paths)
+        except (OSError, sqlite3.Error) as error:
+            LOG.error("Could not update the cache of %s: %s", self.rehuco_path, error)
+            return
+        if changed:
+            self.rows_changed.emit(affected)
+            self.records_verified.emit(changed)
+
+    def read_signatures(self, paths: Iterable[Path]) -> None:
+        """Read the modification time and size of files on the pool and announce them as :attr:`files_seen` --
+        what a scan's end asks of the files open documents stand for, which no row of the cache can say (#487).
+
+        A newer call supersedes an older one still out.
+
+        :param paths: the files' absolute paths.
+        """
+        wanted = list(paths)
+        if not wanted:
+            return
+        self.__latest_stat = serial = next(self.__verify_serials)
+        QThreadPool.globalInstance().start(lambda: self.__run_stat(serial, wanted))
+
+    def __run_stat(self, serial: int, paths: list[Path]) -> None:
+        """Stat the files on a pool thread, each under the rename hold, and answer.
+
+        :param serial: the call's serial.
+        :param paths: the files.
+        """
+        signatures: dict[Path, tuple[int, int]] = {}
+        try:
+            for path in paths:
+                with self.__rename_coordinator.holding():
+                    try:
+                        stat = path.stat()
+                    except OSError:
+                        continue
+                signatures[path] = (stat.st_mtime_ns, stat.st_size)
+        except Exception:  # pylint: disable=broad-exception-caught  # the pool swallows what escapes: no answer would come
+            LOG.exception("Could not read the state of %d files.", len(paths))
+        try:
+            self.__verifier.statted.emit(serial, signatures)
+        except RuntimeError:  # the catalog was destroyed while the read was out
+            pass
+
+    def __on_statted(self, serial: int, signatures: dict[Path, tuple[int, int]]) -> None:
+        """Pass on what the pool read, unless a newer read was asked for (GUI thread).
+
+        :param serial: the call's serial.
+        :param signatures: the files' times and sizes.
+        """
+        if serial == self.__latest_stat and signatures:
+            self.files_seen.emit(signatures)
+
+    def __on_accessed(self, paths: tuple[Path, ...]) -> None:
+        """Verify the records the app is opening (#487).
+
+        :param paths: the records.
+        """
+        self.verify_records(paths, key=paths)
 
     # endregion
 

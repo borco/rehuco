@@ -19,6 +19,7 @@ derive from its ancestors, so renaming a folder renames a whole loaded subtree b
 """
 
 import itertools
+import time
 from bisect import bisect_left
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -36,7 +37,6 @@ from PySide6.QtCore import (
     QObject,
     QPersistentModelIndex,
     Qt,
-    QThreadPool,
     QTimer,
     Signal,
 )
@@ -50,11 +50,13 @@ from rehuco_core import (
     Relocation,
     RootFolderLister,
     RootStorage,
+    is_record_name,
     natural_sort_key,
 )
 
 from ..documents.files_rows import FILE_TYPE_ICONS, checksum_tooltip_for
 from ..settings.checksum_settings import shared_checksum_settings
+from .root_folder_loader import RootFolderLoader
 from .root_storage import (
     FOLDER_NOT_FOUND_ROW,
     ROOT_STORAGE_ICONS,
@@ -104,70 +106,6 @@ PLACEHOLDER_KINDS: Final = (RootsNodeKind.LOADING, RootsNodeKind.UNREACHABLE)
 LISTABLE_KINDS: Final = (RootsNodeKind.ROOT, RootsNodeKind.FOLDER)
 
 
-class RootFolderLoader(QObject):
-    """Runs a :class:`~rehuco_core.RootFolderLister` read on the global thread pool and hands the answer back on the
-    thread this lives on, through a queued signal.
-
-    The mechanism is :class:`~rehuco_agent.documents.files_rows.FilesRowsLoader`'s, but **keyed**: it is
-    single-generation and answers for one resource's ``.rehu``, where a column view has several folders out at once,
-    each told apart by the serial its caller chose.
-
-    :param parent: optional Qt parent.
-    """
-
-    listed = Signal(int, object)
-    """``(serial, listing)``: one request's answer, a :class:`~rehuco_core.rehu_file_kinds.DirectoryListing`. Typed as
-    plain ``object`` for the reason ``DocumentsDock.open_requested`` is. Emitted once for every :meth:`start`, an
-    unreadable folder included."""
-
-    def start(
-        self,
-        serial: int,
-        lister: RootFolderLister,
-        root_id: UUID,
-        relative: tuple[str, ...],
-        covering: tuple[str, ...] | None = None,
-    ) -> None:
-        """Read one folder on the pool.
-
-        :param serial: what the answer is told apart by.
-        :param lister: what lists it.
-        :param root_id: the root the folder is under.
-        :param relative: the folder's path under the root; empty for the root's own folder.
-        :param covering: the directory-scoped record above whose ``info.checksum`` covers this folder, if any.
-        """
-        QThreadPool.globalInstance().start(lambda: self.__run(serial, lister, root_id, relative, covering))
-
-    def __run(
-        self,
-        serial: int,
-        lister: RootFolderLister,
-        root_id: UUID,
-        relative: tuple[str, ...],
-        covering: tuple[str, ...] | None,
-    ) -> None:
-        """Read and answer, on a pool thread.
-
-        :param serial: the request's serial.
-        :param lister: what lists the folder.
-        :param root_id: the root.
-        :param relative: the folder under it.
-        :param covering: see :meth:`start`.
-        """
-        try:
-            listing = (
-                lister.list(root_id, relative)
-                if covering is None
-                else lister.list(root_id, relative, covering=covering)
-            )
-        except OSError:
-            listing = DirectoryListing(Path(), reachable=False)
-        try:
-            self.listed.emit(serial, listing)
-        except RuntimeError:  # the owner was destroyed while the read was out
-            pass
-
-
 # a model is one cohesive surface: the tree, its lazy fetch, its in-place edits and the follow of a rename all turn
 # on the same nodes, and splitting them would only pass those nodes around
 # pylint: disable-next=too-many-public-methods
@@ -200,6 +138,11 @@ class RootsFolderModel(QAbstractItemModel):
     """``(root id, row)``: a root was dropped, and should end up at ``row`` in the list as it will be. The model changes
     nothing itself -- the file owns the order -- so whoever hears this edits the file and shows the result."""
 
+    records_listed = Signal(object, object)
+    """``(folder, records)``: a folder just listed, and the absolute paths of the records that bear on it -- those it
+    holds and the directory-scoped one above that manages it -- for their rows to be verified (#487). Emitted for every
+    listing that could read the folder, a relist included."""
+
     ICON_PATH_ROLE: Final = int(Qt.ItemDataRole.UserRole)
     GREYED_ROLE: Final = int(Qt.ItemDataRole.UserRole) + 1
     SIZE_ROLE: Final = int(Qt.ItemDataRole.UserRole) + 2
@@ -221,6 +164,8 @@ class RootsFolderModel(QAbstractItemModel):
         :param modified: a modification time as a POSIX timestamp, when the listing had it.
         :param checksum: what the record that covers a file says about it, when one does (#457).
         :param bookkeeping: whether a file is a record, a checksum file or a screenshot.
+        :param listed_at: :func:`time.monotonic` when its listing last landed, reachable or not; ``None`` until one
+            has.
         """
 
         name: str
@@ -236,6 +181,7 @@ class RootsFolderModel(QAbstractItemModel):
         row: int = 0
         listing: NodeListing = NodeListing.UNLISTED
         request: int = 0
+        listed_at: float | None = None
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -299,6 +245,7 @@ class RootsFolderModel(QAbstractItemModel):
         if current.path != root.path:
             self.__remove_children(node)
             node.listing = NodeListing.UNLISTED
+            node.listed_at = None
             self.__request(node)
         self.__changed(node)
 
@@ -325,17 +272,31 @@ class RootsFolderModel(QAbstractItemModel):
         if self.canFetchMore(parent):
             self.__request(node)
 
-    def relist(self, index: ModelIndex) -> None:
+    def relist(self, index: ModelIndex, *, unless_listed_within: float | None = None) -> bool:
         """List a loaded root or folder again, in place.
 
         Rows already shown stay until the answer lands, and a folder never asked for is left to be fetched when a
         view first wants it.
 
+        **A freshness window**, for a caller that asks on every visit (#487): a folder whose listing is still out, or
+        landed less than ``unless_listed_within`` seconds ago by :func:`time.monotonic`, is shown as it is and not asked
+        again. Nothing runs to enforce it -- the time of the last answer is compared at the next ask. A caller that
+        must list again whatever came before (F5, a write the app made) gives no window.
+
         :param index: the root or folder.
+        :param unless_listed_within: seconds a listing stays fresh, or ``None`` for none.
+        :returns: whether a listing was started.
         """
         node = self.__node(index)
-        if node is not self.__top and node.kind in LISTABLE_KINDS and node.listing is not NodeListing.UNLISTED:
-            self.__request(node)
+        if node is self.__top or node.kind not in LISTABLE_KINDS or node.listing is NodeListing.UNLISTED:
+            return False
+        if unless_listed_within is not None and (
+            node.listing is NodeListing.PENDING
+            or (node.listed_at is not None and time.monotonic() - node.listed_at < unless_listed_within)
+        ):
+            return False
+        self.__request(node)
+        return True
 
     def relist_chain(self, index: ModelIndex) -> None:
         """List again every loaded root and folder from ``index``'s own root down to ``index`` -- the columns on
@@ -391,6 +352,41 @@ class RootsFolderModel(QAbstractItemModel):
             serial, lister, self.__root_above(node).root_id, self.__relative(node), self.__covering(node)
         )
 
+    def __announce_records(self, node: RootsFolderModel.Node) -> None:
+        """Say which records a folder bears on: those it shows, and the one above that manages it (#487).
+
+        :param node: the root or folder, whose rows are the listing's.
+        """
+        folder = self.__root_above(node).path.joinpath(*self.__relative(node))
+        records = [
+            folder / child.name
+            for child in node.children
+            if child.kind is RootsNodeKind.FILE and is_record_name(child.name)
+        ]
+        above = self.__record_above(node)
+        if above is not None:
+            records.append(self.__root_above(node).path.joinpath(*above))
+        self.records_listed.emit(folder, tuple(records))
+
+    def __record_above(self, node: RootsFolderModel.Node) -> tuple[str, ...] | None:
+        """The directory-scoped record above ``node`` that manages it, as a path under the root.
+
+        Read from the listings the model already holds, like :meth:`__covering` -- which also wants a checksum file
+        beside it, where this wants only the record. The nearest ancestor with one decides; ``info.rehu`` before
+        ``info.tc``.
+
+        :param node: the root or folder.
+        :returns: the record's path under its root; ``None`` when no loaded ancestor holds one.
+        """
+        ancestor = node.parent
+        while ancestor is not None and ancestor is not self.__top:
+            names = {child.name for child in ancestor.children if child.kind is RootsNodeKind.FILE}
+            record = next((name for name in DIRECTORY_SCOPED_FILENAMES if name in names), None)
+            if record is not None:
+                return (*self.__relative(ancestor), record)
+            ancestor = ancestor.parent
+        return None
+
     def __covering(self, node: RootsFolderModel.Node) -> tuple[str, ...] | None:
         """The directory-scoped record above ``node`` whose ``info.checksum`` covers it, as a path under the root.
 
@@ -422,11 +418,13 @@ class RootsFolderModel(QAbstractItemModel):
         node = self.__pending.pop(serial, None)
         if node is None or node.request != serial:
             return
+        node.listed_at = time.monotonic()
         for row in reversed(range(len(node.children))):
             if node.children[row].kind in PLACEHOLDER_KINDS:
                 self.__remove(node, row)
         if listing.reachable:
             self.__show_entries(node, listing)
+            self.__announce_records(node)
         else:
             self.__remove_children(node)
             node.listing = NodeListing.UNREACHABLE

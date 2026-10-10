@@ -369,3 +369,30 @@ def test_a_folder_shows_the_url_and_description_of_its_own_rehu(qtbot: QtBot, sh
     qtbot.wait(100)
 
     assert shown.preview.record_texts is None
+
+
+def test_a_record_changed_on_disk_since_the_pane_read_it_is_read_again(
+    qtbot: QtBot, shown: Shown, tmp_path: Path
+) -> None:
+    """The pane compares what the disk shows now with what it read, not with the cache (#487).
+
+    **Test steps:**
+
+    * show a record, then rewrite it outside the app
+    * report the file as it was read: verify nothing is read again
+    * report it as it is now: verify the pane shows the new description
+    """
+    path = tmp_path / "lib" / "text_only.rehu"
+    show_record(qtbot, shown, "text_only.rehu")
+    read_at = path.stat()
+    write_record(path, description="Rewritten outside the app, at more length.")
+
+    shown.preview.follow_files({path: (read_at.st_mtime_ns, read_at.st_size)})
+    assert (shown.preview.record_texts or ("", ""))[1] == "Just words."
+
+    now = path.stat()
+    shown.preview.follow_files({path: (now.st_mtime_ns, now.st_size)})
+    qtbot.waitUntil(
+        lambda: (shown.preview.record_texts or ("", ""))[1] == "Rewritten outside the app, at more length.",
+        timeout=WAIT_TIMEOUT_MS,
+    )

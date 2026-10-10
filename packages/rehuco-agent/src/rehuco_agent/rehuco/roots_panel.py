@@ -38,7 +38,7 @@ from .root_catalog import RootCatalog
 from .root_storage import selected_root_storage
 from .roots_checksum_verbs import RootsChecksumVerbs
 from .roots_column_view import RootsColumnView
-from .roots_folder_model import RootsFolderModel, RootsNodeKind
+from .roots_folder_model import NodeListing, RootsFolderModel, RootsNodeKind
 from .roots_lightbox import RootsLightbox
 from .roots_management import selected_record
 from .roots_opening import RootsOpening
@@ -58,6 +58,11 @@ MOVE_TO_BOTTOM_ICON: Final = ":/icons/items_bottom.svg"
 
 DETAILS_PANE_WIDTH: Final = 320
 """How wide the details pane beside the Roots view's columns starts, in pixels."""
+
+FRESH_LISTING_SECONDS: Final = 5.0
+"""How long a folder's listing stays fresh for the selection that returns to it (#487): within this many seconds it is
+shown as it was listed, so hopping between sibling folders lists each once. F5 never waits. Not a setting: it has no
+effect anyone can see outside the race "changed outside the app, then came back within N seconds"."""
 
 
 # the public surface is read accessors for the view and its actions, which the window and the tests drive -- one
@@ -192,8 +197,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
             signal.connect(self.__on_roots_current_changed)
         self.__preview.root_name_edit.editingFinished.connect(self.__on_root_name_edited)
         self.__preview.root_storage_combo.activated.connect(self.__on_root_storage_chosen)
-        catalog.refreshed.connect(self.__refresh)
-        catalog.rehuco_path_changed.connect(self.__update_enablement)
+        self.__follow_the_catalog(catalog)
         self.__update_enablement()
         if resource_events is not None:
             resource_events.moved.connect(self.__on_moved)
@@ -439,14 +443,14 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
 
     # region the Roots view
 
-    def __on_roots_current_row_changed(self, current: QModelIndex, _previous: QModelIndex) -> None:
-        """List the folder that became current if nobody has yet, whether or not the view is on screen to ask, and
-        bring the actions and the card in line.
+    def __on_roots_current_row_changed(self, current: QModelIndex, previous: QModelIndex) -> None:
+        """List the folder the selection entered -- for the first time, or again once its last listing is no longer
+        fresh -- whether or not the view is on screen to ask, and bring the actions and the card in line.
 
         :param current: the new current row.
-        :param _previous: the row that was current.
+        :param previous: the row that was current.
         """
-        self.__roots_model.fetchMore(current)
+        self.__relist_entered(current, previous)
         if self.__notice:
             self.__show_notice("")
         self.__preview.show_index(current)
@@ -626,6 +630,73 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
             self.open_folder_requested.emit(path)
         else:
             self.open_companion_requested.emit(path)
+
+    def __folder_of(self, index: QModelIndex) -> QModelIndex:
+        """The folder a row is shown in: its own for a root or folder, the one holding it for a file.
+
+        :param index: any row.
+        :returns: the folder's index; invalid for a placeholder, or no row.
+        """
+        match self.__roots_model.node_kind(index):
+            case RootsNodeKind.ROOT | RootsNodeKind.FOLDER:
+                return index
+            case RootsNodeKind.FILE:
+                return index.parent()
+        return QModelIndex()
+
+    def __relist_entered(self, current: QModelIndex, previous: QModelIndex) -> None:
+        """List the folder the selection has entered, and verify its records with the listing (#487).
+
+        Moving between the files of one folder enters nothing. A folder listed before is listed again only once its last
+        listing is no longer fresh (:data:`FRESH_LISTING_SECONDS`), so hopping between sibling folders reads each
+        once; F5 lists whatever its age.
+
+        :param current: the new current row.
+        :param previous: the row that was current.
+        """
+        model = self.__roots_model
+        folder = self.__folder_of(current)
+        if not folder.isValid() or folder == self.__folder_of(previous):
+            return
+        if model.listing_state(folder) is NodeListing.UNLISTED:
+            model.fetchMore(folder)
+        else:
+            model.relist(folder, unless_listed_within=FRESH_LISTING_SECONDS)
+
+    def __follow_the_catalog(self, catalog: RootCatalog) -> None:
+        """Show what the open catalog holds as it changes; and have every listing check its records against the cache,
+        and the pane follow what that finds (#487).
+
+        :param catalog: the open catalog.
+        """
+        catalog.refreshed.connect(self.__refresh)
+        catalog.rehuco_path_changed.connect(self.__update_enablement)
+        self.__roots_model.records_listed.connect(self.__on_records_listed)
+        catalog.records_verified.connect(self.__on_records_verified)
+        catalog.files_seen.connect(self.__preview.follow_files)
+
+    def __on_records_listed(self, folder: Path, records: tuple[Path, ...]) -> None:
+        """Verify the records a listed folder bears on against the cache, off the GUI thread (#487).
+
+        :param folder: the folder just listed; a newer listing of it supersedes a verify still out.
+        :param records: the records it holds and the one above that manages it.
+        """
+        self.__catalog.verify_records(records, key=folder)
+
+    def __on_records_verified(self, changed: set[Path]) -> None:
+        """Show the current row again when a verify changed the record its pack line comes from (#487).
+
+        Only then: a verify landing elsewhere restarts nothing, as with :meth:`RootsPreview.follow`.
+
+        :param changed: the records whose rows changed.
+        """
+        current = self.__roots_ui.roots_view.currentIndex()
+        pack = self.__opening.pack_of(current)
+        selected = selected_record(self.__roots_model, current)
+        shown = None if selected is None else self.__catalog.resource_path(*selected)
+        if (pack is not None and pack.record in changed) or (shown is not None and shown in changed):
+            self.__preview.refresh()
+            self.__update_enablement()
 
     def __on_folder_changed(self, directory: Path) -> None:
         """List a folder again that the app changed the contents of, if the Roots view has it loaded.

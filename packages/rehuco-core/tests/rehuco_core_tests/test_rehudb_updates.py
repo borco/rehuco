@@ -22,6 +22,7 @@ from rehuco_core import (
     RecordKind,
     RecordSignature,
     RenameCoordinator,
+    check_records,
 )
 
 ROOT: Final = Path("/fake/library")
@@ -196,6 +197,77 @@ def test_a_record_found_gone_on_access_is_removed(disk: Disk, cache: MagicMock, 
 
     cache.remove.assert_called_once_with(RECORD)
     read.assert_not_called()
+
+
+# endregion
+
+# region Verifying across threads (#487)
+
+
+def test_a_check_reports_what_every_record_looks_like_changed_or_not(
+    disk: Disk, cache: MagicMock, read: MagicMock
+) -> None:
+    """A record its row still matches finds nothing, and is still reported as seen: whatever shows it compares."""
+    del disk
+    cache.signature.return_value = RecordSignature("course/info.rehu", 7, 3)
+    checker = updater(cache)
+
+    checked = check_records(checker.plan([RECORD]), RenameCoordinator())
+
+    assert (checked.findings, checked.seen) == ([], {RECORD: (7, 3)})
+    read.assert_not_called()
+
+
+def test_a_finding_the_cache_moved_past_while_it_was_out_is_dropped(
+    disk: Disk, cache: MagicMock, read: MagicMock
+) -> None:
+    """A save or a scan that wrote the row after the plan wins over the older read."""
+    del disk, read
+    checker = updater(cache)
+    checks = checker.plan([RECORD])
+    checked = check_records(checks, RenameCoordinator())
+    cache.signature.return_value = RecordSignature("course/info.rehu", 9, 3)  # written meanwhile
+
+    assert checker.apply(checked.findings) == set()
+
+    cache.upsert_record.assert_not_called()
+
+
+def test_a_finding_whose_record_was_renamed_while_it_was_out_is_dropped(
+    disk: Disk, cache: MagicMock, read: MagicMock
+) -> None:
+    """The rename rebased the row already, and the listing that follows it verifies again."""
+    del disk, read
+    checker = updater(cache)
+    checks = checker.plan([RECORD])
+    checked = check_records(checks, RenameCoordinator())
+    checks[0].tracked.moved_to(ROOT / "renamed/info.rehu")
+
+    assert checker.apply(checked.findings) == set()
+
+    cache.upsert_record.assert_not_called()
+    cache.remove.assert_not_called()
+
+
+def test_a_plan_reads_the_roots_once_and_checks_a_record_once(cache: MagicMock) -> None:
+    """A listing of a big folder plans hundreds of records: one query for the roots, and no record twice."""
+    checker = updater(cache)
+
+    checks = checker.plan([RECORD, RECORD, ROOT / "course/video.mp4"])
+
+    assert [check.path for check in checks] == [RECORD]
+    cache.roots.assert_called_once_with()
+    cache.locate.assert_called_once_with(RECORD, cache.roots.return_value)
+
+
+def test_a_finding_the_cache_did_not_change_by_is_not_a_change(disk: Disk, cache: MagicMock, read: MagicMock) -> None:
+    """A write that leaves the row as it was is not reported as one."""
+    del disk, read
+    checker = updater(cache)
+    checked = check_records(checker.plan([RECORD]), RenameCoordinator())
+    cache.upsert_record.return_value = False
+
+    assert checker.apply(checked.findings) == set()
 
 
 # endregion

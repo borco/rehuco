@@ -214,7 +214,7 @@ from .rehudb_jobs import (
     ScanCatalogRootJob,
 )
 from .rehudb_scan import CatalogRecordReader, CatalogRootScan, RootScanOutcome, RootScanResult, ScanProgress
-from .rehudb_updates import CatalogRecordUpdater
+from .rehudb_updates import CatalogRecordUpdater, RecordCheck, RecordFinding, RecordsChecked, check_records
 from .relocation import Relocation
 from .rename_coordination import (
     DEFAULT_RENAME_COORDINATOR,
@@ -371,6 +371,10 @@ __all__ = [
     "CatalogRecord",
     "CatalogRecordReader",
     "CatalogRecordUpdater",
+    "RecordCheck",
+    "RecordFinding",
+    "RecordsChecked",
+    "check_records",
     "CatalogRoot",
     "CatalogRootJob",
     "CatalogRootScan",

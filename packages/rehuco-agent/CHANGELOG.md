@@ -12,6 +12,16 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 ### Added
 
+- **What changes on disk outside the app shows without a Scan.** Moving to a folder in the Roots view lists it again and
+  checks its records, and the `info.rehu` or `info.tc` above that manages it -- not when moving between the files in it,
+  and not more than once every few seconds for the same folder (F5 always does); opening or reloading a document checks
+  its record. A record added or edited outside the app is read into the catalog on the spot, so a zip's details no
+  longer say *Not scanned yet* once its folder is listed. Everything that shows the record follows: the Browsers table,
+  the Roots details pane, and an open document -- which reloads itself, or, with unsaved edits, keeps them and says on
+  its banner that the file changed (Revert loads it, Save overwrites it). The end of a Scan checks the open documents'
+  files the same way. The checking runs in the background, never on the window.
+- **Reloading a reference pack reads its Content Images again**, so a zip changed outside the app shows with the
+  document's Revert, with no Refresh of the dock as well.
 - **An image can be dragged or copied out to other apps.** Drag one from the Content Images grid, from any lightbox
   (the picture or its thumbnails), from the Description's image strip, from the images editor (its list or its
   preview), or from the Roots view (a row or the picture in the details pane), or press **Ctrl+C** on the grid or in a
@@ -201,6 +211,8 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 ### Fixed
 
+- **Clicking the Roots view no longer raises "already deleted"** after a card was deleted from a document's Sources or
+  Locations, or a reload rebuilt them: the card list's tab order no longer reaches the rest of the window (borco-pyside).
 - **A dock no longer disappears from the saved layout for good.** A dock missing from a saved layout was restored
   as closed with no place, and saved again as missing, so it never came back. The Browsers dock vanished that way.
   Now a dock the saved layout does not mention comes back closed in its usual place, and the rest of the layout is

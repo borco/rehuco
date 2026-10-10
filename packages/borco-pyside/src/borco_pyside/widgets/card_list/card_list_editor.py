@@ -418,19 +418,19 @@ class CardListEditor(QWidget):
         return bool(widget.focusPolicy().value & Qt.FocusPolicy.TabFocus.value)
 
     def __focus_chain(self, card: Card) -> list[QWidget]:
-        """The widgets Tab visits inside ``card``, in the content's own focus order.
+        """The widgets Tab visits inside ``card``: the content and its descendants that take tab focus, depth first in
+        child order -- the order a content builds its widgets in.
+
+        **Never walks the window's focus chain** (rehuco#487). ``nextInFocusChain()`` registers the widget it hands
+        back as a child of the wrapper it was called on, so a walk from a card around the whole window hung every
+        Qt-made widget's wrapper there from the card's -- and deleting the card invalidated them all while the widgets
+        lived on: another dock's list columns raised *already deleted* at the next click.
 
         :param card: the card.
         :returns: its focusable widgets.
         """
         content = card.content
-        widgets = [content] if self.__takes_tab_focus(content) else []
-        widget = content.nextInFocusChain()
-        while widget is not None and widget is not content:
-            if content.isAncestorOf(widget) and self.__takes_tab_focus(widget):
-                widgets.append(widget)
-            widget = widget.nextInFocusChain()
-        return widgets
+        return [widget for widget in (content, *content.findChildren(QWidget)) if self.__takes_tab_focus(widget)]
 
     def __restitch_tab_order(self) -> None:
         """Chain every card's edit widgets in row order, so Tab follows the cards as they now stand."""

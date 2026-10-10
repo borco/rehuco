@@ -396,6 +396,11 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     dirty = SimpleProperty(False)
     """True when the model holds edits not yet saved to disk."""
 
+    changed_on_disk = SimpleProperty(False)
+    """True when the file was changed outside this model since it last read or wrote it, while the model holds unsaved
+    edits that a reload would discard (#487). Cleared by anything that reads or writes the file: a revert, a load, a
+    save. A clean model never shows it: it just reloads (:meth:`note_file_signature`)."""
+
     saved_on_disk = SimpleProperty(True)
     """Whether this document has ever been persisted to its path -- i.e. whether there is a file on disk
     to revert to. ``True`` for a **loaded** document (it stands for a file on disk -- even one that later
@@ -462,8 +467,14 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         edit."""
         self.__loading = False
         """See :attr:`loading`."""
+        self.__disk_signature: tuple[int, int] | None = None
+        """The file's modification time and size as this model last read or wrote it, or ``None`` before any."""
 
         self.__seed_from_document()
+        if not pending:
+            # the document was just read from its file, as a revert reads it: what is there now is what it holds. An
+            # unread placeholder touches nothing on disk (#66); its deferred read stamps it
+            self.__stamp_disk()
         self.lock_reasons = list(self.__document.lock_reasons)
         self.image_scanner = self.__make_image_scanner()
         self.__recompute_upgradable()
@@ -674,6 +685,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             if first_save and self.path is not None:
                 changed = self.__take_enclosing_claims(self.path)
         self.dirty = False
+        self.__stamp_disk()
         if self.path is not None:
             self.files_changed.emit((self.path, *changed))
         # the file now exists on disk, so there is finally something to revert to: mark saved_on_disk so
@@ -831,6 +843,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             self.dirty = False
             self.rename_error = ""
             self.lock_reasons = list(self.__document.lock_reasons)
+            self.__stamp_disk()
         finally:
             self.__loading = False
         self.image_scanner = self.__make_image_scanner()
@@ -910,6 +923,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.dirty = False
         self.rename_error = ""
         self.lock_reasons = list(self.__document.lock_reasons)
+        self.__stamp_disk()
         self.image_scanner = self.__make_image_scanner()
         self.unknown_fields_changed.emit()
         self.reloaded.emit()
@@ -917,6 +931,34 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.__log_document_state()
         # the new record first: the catalog reads it into the `.tc`'s row before finding the `.tc` gone
         self.files_changed.emit(tuple(path for path in (self.__document.path, legacy_path) if path is not None))
+
+    def note_file_signature(self, mtime_ns: int, size: int) -> None:
+        """Hear that the file on disk has this modification time and size, and follow it if it is not what this model
+        read or wrote (#487, verify-on-access).
+
+        A clean model reloads at once -- every editor and viewer follows. One with unsaved edits is left as it is, with
+        :attr:`changed_on_disk` raised: a reload would discard them, and a save would overwrite the other change, so the
+        user chooses. A model not yet read, or standing for a file that was never written, has nothing to compare.
+
+        :param mtime_ns: the file's modification time now.
+        :param size: its size now.
+        """
+        if self.__pending or self.__disk_signature is None or self.__disk_signature == (mtime_ns, size):
+            return
+        if self.dirty:
+            self.changed_on_disk = True
+        else:
+            self.revert()
+
+    def __stamp_disk(self) -> None:
+        """Remember the file as it is now, as this model's own read or write of it, and drop :attr:`changed_on_disk`."""
+        path = self.path
+        try:
+            stat = None if path is None else path.stat()
+        except OSError:
+            stat = None
+        self.__disk_signature = None if stat is None else (stat.st_mtime_ns, stat.st_size)
+        self.changed_on_disk = False
 
     def announce_files_changed(self, paths: Sequence[Path]) -> None:
         """Say that this document's work wrote or replaced ``paths`` -- for a collaborator that writes files on
