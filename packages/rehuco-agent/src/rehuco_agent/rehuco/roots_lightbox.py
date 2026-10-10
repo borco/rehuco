@@ -102,7 +102,12 @@ class ListingJob(QRunnable):
 
     def run(self) -> None:
         try:
-            entries = list_archive_images(self.__archive, self.__extensions, self.__coordinator)
+            try:
+                entries = list_archive_images(self.__archive, self.__extensions, self.__coordinator)
+            except Exception:  # pylint: disable=broad-exception-caught
+                # the pool would swallow it and no answer would ever arrive: the owner is told there is nothing
+                LOG.exception("Listing the images of %s failed", self.__archive)
+                entries = []
             self.__signals.listed.emit(self.__generation, self.__archive, entries)
         finally:
             self.__signals.deleteLater()

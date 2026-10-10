@@ -253,8 +253,10 @@ class ArchiveCache:  # pylint: disable=too-many-instance-attributes
                         with handle.archive.open(name) as member:
                             return member.read() if limit is None else member.read(limit)
                 except OSError, zipfile.BadZipFile, KeyError, RuntimeError, ValueError:
-                    # KeyError: the member is not in this archive any more; RuntimeError: encrypted;
-                    # ValueError: a member whose compression this zipfile cannot inflate
+                    # KeyError: the member is not in this archive any more; RuntimeError: encrypted, and
+                    # (as NotImplementedError) a compression this zipfile has no decompressor for;
+                    # ValueError: a bad member, and (as UnicodeDecodeError) a local header name flagged
+                    # UTF-8 that is not (#480)
                     return None
                 finally:
                     self.__let_go_if_wanted(archive, handle)
@@ -419,7 +421,8 @@ class ArchiveCache:  # pylint: disable=too-many-instance-attributes
             return None
         try:
             archive = zipfile.ZipFile(file)  # pylint: disable=consider-using-with
-        except OSError, zipfile.BadZipFile:
+        except OSError, zipfile.BadZipFile, UnicodeDecodeError, NotImplementedError:
+            # the last two: a member name flagged UTF-8 that is not, and an extract version zipfile cannot read
             file.close()
             return None
         return ArchiveHandle(file, archive, readers_must_yield_for_directory_rename(path))
