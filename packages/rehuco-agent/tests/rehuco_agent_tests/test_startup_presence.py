@@ -173,18 +173,20 @@ def test_an_answer_about_a_forgotten_path_is_dropped(qtbot: QtBot, scan_class: A
 
     **Test steps:**
 
-    * construct over one remote path, forget it, and deliver an answer for it
-    * verify nothing was emitted and the path is no longer remote
+    * construct over two remote paths, forget the first, and deliver an answer for it and then for the second
+    * wait until the second is heard: answers arrive in the order they were sent, so the first has had its turn
+    * verify only the second was emitted and the first is no longer remote
     """
-    presence = StartupPresence([REMOTE])
-    heard: list[Any] = []
-    presence.answered.connect(lambda *args: heard.append(args))
+    presence = StartupPresence([REMOTE, OTHER_REMOTE])
+    heard: list[tuple[Path, Presence]] = []
+    presence.answered.connect(lambda path, verdict: heard.append((path, verdict)))
 
     presence.forget(REMOTE)
     deliver(scan_class, REMOTE, Presence.PRESENT)
-    qtbot.wait(50)
+    deliver(scan_class, OTHER_REMOTE, Presence.PRESENT)
+    qtbot.waitUntil(lambda: bool(heard))
 
-    assert not heard
+    assert heard == [(OTHER_REMOTE, Presence.PRESENT)]
     assert not presence.is_remote(REMOTE)
 
 

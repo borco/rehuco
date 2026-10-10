@@ -7,6 +7,7 @@ The **verdicts** (:func:`presence_of`, ``_judge``) have the stat, the volume che
 ``test_path_presence_scan.py``.
 """
 
+import time
 from pathlib import Path
 from typing import Final
 
@@ -17,7 +18,7 @@ from borco_core.platforms.linux.mount_table import Mount
 from pytest import mark
 from pytest_mock import MockerFixture
 
-from .path_presence_support import MODULE, Probe, local, network
+from .path_presence_support import MODULE, TIMEOUT, Probe, UnansweringServer, local, network
 
 FILE: Final = Path("/fake/pack/file.rehu")
 """A stand-in for a remembered path; nothing here is ever really read."""
@@ -456,6 +457,27 @@ def test_unreachable_when_the_connection_fails(probe: Probe) -> None:
     probe.error = TimeoutError()
 
     assert path_presence._reachable(network()) is False  # pylint: disable=protected-access
+
+
+def test_a_server_that_never_answers_is_given_up_on_at_the_timeout(unanswering_server: UnansweringServer) -> None:
+    """A connection left hanging is abandoned after :data:`REACH_TIMEOUT`, not after the operating system's own wait,
+    which is what makes a switched-off server cost a third of a second instead of 21 (#464).
+
+    Nothing is replaced: a real listener whose queue is full leaves the connection unanswered.
+
+    **Test steps:**
+
+    * ask about a server on a listener that never accepts, and time the call
+    * verify it is not reachable, and that the call waited the timeout out -- not refused at once -- and no longer
+    """
+    device = network(host=unanswering_server.host, port=unanswering_server.port)
+
+    started = time.monotonic()
+    reachable = path_presence._reachable(device)  # pylint: disable=protected-access
+    waited = time.monotonic() - started
+
+    assert reachable is False
+    assert REACH_TIMEOUT * 0.9 <= waited < min(REACH_TIMEOUT + 2.0, TIMEOUT)
 
 
 # --- _judge / presence_of ---------------------------------------------------------------------------------------

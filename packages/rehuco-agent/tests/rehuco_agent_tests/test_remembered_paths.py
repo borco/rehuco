@@ -5,12 +5,15 @@ and an answer is delivered by emitting what ``StartupPresence`` would. What is a
 forgotten, who is restored now, who is awaited, who arrives late and with what -- which is the whole of this class.
 """
 
+import socket
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, Final
 
-from borco_core import Device, Presence, StorageKind, device_of
+from borco_core import Device, Presence, StorageKind, device_of, path_presence
 from pytest import fixture
 from pytest_mock import MockerFixture
+from pytestqt.qtbot import QtBot
 from rehuco_agent import startup_presence
 from rehuco_agent.remembered_paths import SETTLING_SECONDS, RememberedPaths
 from rehuco_agent.settings.document_session_settings import DocumentSessionSettings
@@ -560,3 +563,67 @@ def test_a_document_with_no_file_reaches_nothing(qapp: Any, scan_class: Any) -> 
     lists.remembered.reached(None)
 
     assert lists.remembered.still_open == {REMOTE}
+
+
+@fixture(name="dead_server")
+def fixture_dead_server() -> Iterator[tuple[str, int]]:
+    """A real listener on the loopback address that never completes a connection: its queue of waiting connections is
+    full, so the next one hangs until the caller gives up -- what a switched-off machine looks like to a probe.
+
+    :returns: its ``(host, port)``; closed when the test ends.
+    """
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(0)
+    address: tuple[str, int] = listener.getsockname()
+    fillers: list[socket.socket] = []
+    while True:  # until a connection hangs: the queue is then full, whatever this system's backlog is
+        assert len(fillers) < 64, "the queue never filled"
+        try:
+            fillers.append(socket.create_connection(address, timeout=0.05))
+        except TimeoutError:
+            break
+    yield address
+    for filler in fillers:
+        filler.close()
+    listener.close()
+
+
+def test_a_document_on_a_server_that_never_answers_is_kept_through_the_real_scan(
+    qtbot: QtBot, mocker: MockerFixture, dead_server: tuple[str, int]
+) -> None:
+    """A share whose server hangs does not make its file gone: the entry stays, disabled and open for the next run,
+    the verdict coming from the real scan and the real probe (#464).
+
+    Only the classification is replaced, in the start and in the scan, to put one path on the listener that never
+    answers; neither the scan, the probe nor the verdict is.
+
+    **Test steps:**
+
+    * put one path on that listener and remember it in the recents and as an open, focused document
+    * construct ``RememberedPaths``, await the document, start the scan and wait for its answer
+    * verify the answer is *offline*, the path is still in both lists and unavailable, it is still recorded as open,
+      and nothing arrived
+    """
+    path = Path("/dead-server/pack/info.rehu")
+    host, port = dead_server
+    device = Device(StorageKind.NETWORK, Path("/dead-server"), host, port)
+    mocker.patch.object(startup_presence, "device_of", return_value=device)  # the start's own classification...
+    mocker.patch.object(path_presence, "device_of", return_value=device)  # ...and the scan's
+    lists = Lists(recents=(path,), session_open=(path,), focused=path)
+    heard: list[tuple[Path, Presence]] = []
+    lists.remembered._RememberedPaths__presence.answered.connect(  # type: ignore[attr-defined]  # pylint: disable=protected-access
+        lambda answered, verdict: heard.append((answered, verdict))
+    )
+    lists.remembered.documents_to_restore_now(SessionRestoreSettings())
+
+    lists.remembered.start()
+    qtbot.waitUntil(lambda: bool(heard), timeout=5000)
+    lists.remembered.stop()
+
+    assert heard == [(path, Presence.OFFLINE)]
+    assert lists.recent_files.newest_first() == [path]
+    assert lists.remembered.unavailable(path)
+    assert lists.remembered.still_open == frozenset({path})
+    assert path in lists.session.items
+    assert not lists.arrived
