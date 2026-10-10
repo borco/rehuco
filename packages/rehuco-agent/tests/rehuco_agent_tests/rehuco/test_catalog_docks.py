@@ -147,13 +147,20 @@ def fixture_database(mocker: MockerFixture) -> Generator[MemoryDatabase]:
 
 @fixture(name="served")
 def fixture_served(mocker: MockerFixture) -> dict[str, Any]:
-    """Serve ``HOME`` as the content of every ``.rehuco`` read; the test may edit what is served.
+    """Serve ``HOME`` as the content of every ``.rehuco`` read; the test may edit what is served. **Every other file is
+    read for real** -- a record the catalog verifies on access (#487) must not read as the catalog.
 
     :param mocker: pytest-mock fixture.
     :returns: the served document, copied fresh for this test.
     """
     document = json.loads(json.dumps(HOME))
-    mocker.patch.object(Path, "read_text", side_effect=lambda *_args, **_kwargs: json.dumps(document))
+
+    def read_text(self: Path, *args: Any, **kwargs: Any) -> str:
+        if self.suffix == ".rehuco":
+            return json.dumps(document)
+        return REAL_READ_TEXT(self, *args, **kwargs)
+
+    mocker.patch.object(Path, "read_text", read_text)
     return document
 
 
@@ -4308,20 +4315,12 @@ def fixture_records(served: dict[str, Any], folders: Path, mocker: MockerFixture
     does not list, a subfolder, a nested resource and a junk file); ``pair`` a file-scoped ``foo.rehu`` with its
     ``foo.checksum``; ``bare`` an ``info.rehu`` with no checksum file; ``legacy`` an ``info.tc``; ``plain`` nothing.
 
-    **A real read for everything but the catalog**, which the ``served`` fixture otherwise answers for every file.
-
     :param served: the served ``.rehuco``.
     :param folders: the first root's folder.
     :param mocker: pytest-mock fixture.
     :returns: the first root's folder.
     """
-
-    def read_text(self: Path, *args: Any, **kwargs: Any) -> str:
-        if self.suffix == ".rehuco":
-            return json.dumps(served)
-        return REAL_READ_TEXT(self, *args, **kwargs)
-
-    mocker.patch.object(Path, "read_text", read_text)
+    del served, mocker
     for folder in ("res/sub", "res/nested", "pair", "bare", "legacy", "plain"):
         os.makedirs(folders / folder)
     files = {

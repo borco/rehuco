@@ -637,7 +637,7 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
         ).fetchone()
         return RecordSignature(*row) if row is not None else None
 
-    def locate(self, path: Path) -> CatalogLocation | None:
+    def locate(self, path: Path, roots: Sequence[CatalogRoot] | None = None) -> CatalogLocation | None:
         """Which root ``path`` is under, and where beneath it.
 
         Compared component by component, each one normalized as the filesystem would
@@ -645,13 +645,15 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
         ``D:/lib2/x.rehu`` anywhere. Where roots nest, the innermost one answers.
 
         :param path: an absolute path.
+        :param roots: :meth:`roots`, when the caller has just read them for many paths -- one query instead of one per
+            path (#487); read here when ``None``.
         :returns: the location, its relative part spelled as ``path`` spells it; ``None`` outside every root, and
             for a root's own folder, which is no record.
         """
         parts = self.__normalized_parts(path)
         holding = (
             root
-            for root in self.roots()
+            for root in (self.roots() if roots is None else roots)
             if len(parts) > len(root.path.parts) and parts[: len(root.path.parts)] == self.__normalized_parts(root.path)
         )
         best = max(holding, key=lambda root: len(root.path.parts), default=None)

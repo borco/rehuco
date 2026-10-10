@@ -56,3 +56,21 @@ def test_an_announcement_off_the_gui_thread_arrives_on_it(qtbot: QtBot) -> None:
 
     assert moved.args == [RELOCATION]
     assert threads == [events.thread()]
+
+
+def test_an_access_is_announced_with_the_records_opened(qtbot: QtBot) -> None:
+    """Opening a record is announced, for the catalog to verify it (#487): nothing was written.
+
+    **Test steps:**
+
+    * announce two records as accessed
+    * verify one announcement carries both
+    """
+    del qtbot
+    events = ResourceEvents()
+    heard: list[object] = []
+    events.accessed.connect(heard.append)
+
+    events.announce_accessed([FOLDER / "info.rehu", FOLDER / "foo.rehu"])
+
+    assert heard == [(FOLDER / "info.rehu", FOLDER / "foo.rehu")]

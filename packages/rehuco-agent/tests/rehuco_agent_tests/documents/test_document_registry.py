@@ -483,3 +483,66 @@ def test_the_renaming_document_adopts_its_rename_exactly_once(mocker: MockerFixt
 
 
 # endregion
+
+
+def test_an_open_is_announced_as_an_access_once_and_a_new_document_never(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Building a model for a file is an access the catalog verifies (#487); a second holder of it, or a document
+    that is not on disk yet, is not.
+
+    **Test steps:**
+
+    * acquire one path twice, and start a new document at another
+    * verify the one path was announced once, and the new one never
+    """
+    del qtbot
+    load_document(mocker)
+    events = ResourceEvents()
+    heard: list[object] = []
+    events.accessed.connect(heard.append)
+    registry = DocumentRegistry(resource_events=events)
+
+    registry.acquire(FAKE_PATH)
+    registry.acquire(FAKE_PATH)
+    registry.acquire(OTHER_PATH, new=True)
+
+    assert heard == [(FAKE_PATH,)]
+
+
+def test_a_reload_is_announced_as_an_access(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A revert reads the file again -- the one way an edit made outside the app reaches a document left open (#487).
+
+    **Test steps:**
+
+    * acquire a path, then revert its model
+    * verify the path was announced again
+    """
+    del qtbot
+    load_document(mocker)
+    events = ResourceEvents()
+    heard: list[object] = []
+    events.accessed.connect(heard.append)
+    registry = DocumentRegistry(resource_events=events)
+    model = registry.acquire(FAKE_PATH)
+
+    model.revert()
+
+    assert heard == [(FAKE_PATH,), (FAKE_PATH,)]
+
+
+def test_what_the_disk_shows_reaches_the_model_of_that_path_only(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A file's time and size go to the model that stands for it; a path nobody holds is passed over (#487).
+
+    **Test steps:**
+
+    * hold one path, and report it and a path nobody holds
+    * verify the held model alone heard, with what was reported
+    """
+    del qtbot
+    load_document(mocker)
+    registry = DocumentRegistry()
+    model = registry.acquire(FAKE_PATH)
+    noted = mocker.patch.object(model, "note_file_signature")
+
+    registry.note_file_signatures({FAKE_PATH: (7, 3), OTHER_PATH: (8, 4)})
+
+    noted.assert_called_once_with(7, 3)

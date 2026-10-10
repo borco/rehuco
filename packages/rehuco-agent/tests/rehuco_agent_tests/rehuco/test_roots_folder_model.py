@@ -13,12 +13,12 @@ from PySide6.QtCore import QMimeData, QModelIndex, QPersistentModelIndex, Qt
 from pytest import fixture, mark, param
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
+from rehuco_agent.rehuco.root_folder_loader import RootFolderLoader
 from rehuco_agent.rehuco.root_storage import ROOT_STORAGE_ICONS
 from rehuco_agent.rehuco.roots_folder_model import (
     LOADING_ROW,
     ROOT_MIME_TYPE,
     NodeListing,
-    RootFolderLoader,
     RootsFolderModel,
     RootsNodeKind,
 )

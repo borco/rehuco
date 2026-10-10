@@ -405,6 +405,11 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             rename_coordinator=self.__rename_coordinator,
             resource_events=self.__resource_events,
         )
+        # whatever a verify or a scan's end sees on disk reaches the open documents, each comparing it with what it
+        # loaded -- not with the cache, which an earlier look may already have brought up to date (#487); a scan says
+        # nothing of which records it read, so the open documents' files are looked at when it ends
+        self.__root_catalog.files_seen.connect(self.__document_registry.note_file_signatures)
+        self.__root_catalog.refreshed.connect(self.__check_open_documents)
         self.__browsers_dock: Final = BrowsersDock(self.__root_catalog, self, stylesheet_host=self.__dock_manager)
         # a resource double-clicked in a browser or opened from the Roots view opens through the ordinary route (#377)
         self.__browsers_dock.open_requested.connect(self.open_path)
@@ -1978,6 +1983,13 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__session.docks_layout = self.__documents_dock.save_state()
 
         self.__session.save()
+
+    def __check_open_documents(self) -> None:
+        """Have the files the open documents stand for looked at, so one changed outside the app is followed or flagged
+        (#487)."""
+        self.__root_catalog.read_signatures(
+            path for model in self.__document_registry.models() if (path := model.path) is not None
+        )
 
     def open_path(self, path: Path | str) -> None:
         """Open ``path``, dispatching to :meth:`open_file`, :meth:`open_folder`, or

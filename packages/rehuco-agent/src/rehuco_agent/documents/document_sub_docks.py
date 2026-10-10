@@ -134,6 +134,12 @@ IMAGES_DOCK_MIN_HEIGHT: Final = 200
 """Size floors a splitter drag can't cross, chosen by eye against a real layout so each dock keeps its
 header and summary readable rather than being squeezed to a sliver."""
 
+CHANGED_ON_DISK_MESSAGE: Final = (
+    "This file was changed outside the app while you have unsaved edits here. "
+    "<i>Revert</i> loads the file as it is now and discards them; <i>Save</i> overwrites the change."
+)
+"""The notice for a document whose file changed on disk under unsaved edits (#487)."""
+
 UPGRADE_MESSAGE: Final = "This document uses an older format — click the <i>Upgrade</i> button to bring it up to date."
 """The upgrade offer's inline banner message (#89, [[data-model#schema-version]]); names the toolbar
 button by the label it actually carries, the same way the banner already names Revert/Convert as *the*
@@ -726,6 +732,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         # yet, so its set is completed at its first read (__rebuild_type_docks) -- which is why none of
         # these is Final
         self.__content_images_model: ContentImagesModel | None = None
+        self.__content_images_read_in_load = False
         self.__content_images_view: ContentImagesView | None = None
         self.__content_images_dock: QtAds.CDockWidget | None = None
         self.__awaiting_type = model.pending
@@ -774,6 +781,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         self.__banner.set_rows(self.__banner_rows())
         self.__connect(model.lock_reasons_changed, self.__on_lock_reasons_changed)  # type: ignore[attr-defined]
         self.__connect(model.upgradable_changed, self.__on_upgradable_changed)  # type: ignore[attr-defined]
+        self.__connect(model.changed_on_disk_changed, self.__on_upgradable_changed)  # type: ignore[attr-defined]
         self.__connect(model.rename_error_changed, self.__on_rename_error_changed)  # type: ignore[attr-defined]
         self.__connect(model.active_block_changed, self.__rebuild_field_docks)
         self.__connect(model.path_changed, self.__on_path_changed)  # type: ignore[attr-defined]
@@ -1311,8 +1319,14 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         self.__stashed_sizes.clear()
 
     def __on_reloaded(self) -> None:
-        """Rebuild the inline notice strip once a load settles -- see where this is connected."""
+        """Rebuild the inline notice strip once a load settles -- see where this is connected -- and read the content
+        images again: a reload is how a changed zip is picked up, and the dock should not wait for its own Refresh.
+        A load that moved the path has just read them (:meth:`__on_content_images_path_changed`), and does not again."""
         self.__banner.set_rows(self.__banner_rows())
+        if self.__content_images_read_in_load:
+            self.__content_images_read_in_load = False
+        else:
+            self.__refresh_content_images()
 
     def __on_rename_error_changed(self) -> None:
         """Rebuild the inline notice strip as a failed rename is reported or cleared (#162).
@@ -1542,6 +1556,8 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
             its last failure (#73).
         """
         rows = [MessageBannerRow(MessageBannerSeverity.WARNING, reason.message) for reason in self.__model.lock_reasons]
+        if self.__model.changed_on_disk:
+            rows.append(MessageBannerRow(MessageBannerSeverity.WARNING, CHANGED_ON_DISK_MESSAGE))
         if self.__model.upgradable:
             rows.append(MessageBannerRow(MessageBannerSeverity.INFO, UPGRADE_MESSAGE))
         if self.__model.rename_error:
@@ -2396,6 +2412,9 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         """
         self.__let_go_of_archives(wait_for_readers=True)
         self.__refresh_content_images()
+        # a preview moving to another file changes the path and reloads in one go; the reload need not open every
+        # archive a second time
+        self.__content_images_read_in_load = self.__model.loading
 
     def __let_go_of_archives(self, wait_for_readers: bool) -> None:
         """Close the Content Images dock's open archives, if this type has the dock (#347, #355).

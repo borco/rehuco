@@ -11,6 +11,12 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ### Added
 
+- `CatalogRecordUpdater.verify` is now three steps, so a caller can keep the disk off the thread that owns the cache:
+  `plan` reads the rows' signatures, `check_records` (any thread, never the cache) compares them with the files and
+  reads what changed, and `apply` writes the findings back, dropping one whose row a save or a scan rewrote, or whose
+  record a rename moved, in the meantime. What `check_records` returns, `RecordsChecked`, also gives every record's
+  modification time and size as it saw them, changed or not, for whatever shows a record to compare with what it read. `CatalogCache.locate` takes the roots when the caller has them, so planning
+  many records asks the database once.
 - `staged_name` names an image taken out of a resource `rehu-<origin>__<path segments joined by __>`, safe on Windows
   and macOS and capped at 200 UTF-8 bytes without shortening an id or the basename's extension; `parse_staged_name`
   reads the origin and the path back as `StagedImageName`, whose `uuid` tells an id from a location. `staging_origin`

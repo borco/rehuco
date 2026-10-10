@@ -41,12 +41,17 @@ class ResourceEvents(QObject):
     """Emitted with the :class:`~pathlib.Path` of a folder whose listing the app changed without saying which
     files: screenshots renumbered, deleted, converted or written."""
 
+    accessed: Signal = Signal(object)
+    """Emitted with a tuple of the :class:`~pathlib.Path` objects of records the app is about to show -- a document
+    just opened -- so the catalog cache can be checked against them (verify-on-access, #487). Nothing was written."""
+
     class Marshaller(QObject):
         """Carries each announcement onto the events' own thread."""
 
         moved: Signal = Signal(object)
         changed: Signal = Signal(object)
         folder_changed: Signal = Signal(object)
+        accessed: Signal = Signal(object)
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -54,6 +59,7 @@ class ResourceEvents(QObject):
         self.__marshaller.moved.connect(self.moved)
         self.__marshaller.changed.connect(self.changed)
         self.__marshaller.folder_changed.connect(self.folder_changed)
+        self.__marshaller.accessed.connect(self.accessed)
 
     def announce_moved(self, relocation: Relocation) -> None:
         """Announce a rename -- the :class:`~rehuco_core.RenameCoordinator` listener the window registers.
@@ -75,3 +81,10 @@ class ResourceEvents(QObject):
         :param directory: the folder's absolute path.
         """
         self.__marshaller.folder_changed.emit(directory)
+
+    def announce_accessed(self, paths: Sequence[Path]) -> None:
+        """Announce records the app is opening, for the cache to verify them (#487).
+
+        :param paths: the records' absolute paths.
+        """
+        self.__marshaller.accessed.emit(tuple(paths))

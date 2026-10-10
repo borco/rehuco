@@ -798,7 +798,13 @@ The cache is the stdlib `sqlite3` module in rehuco-core, Qt-free, one connection
 - **Between scans, one record at a time** (#373). A save or a conversion re-reads its record into its row (`upsert`);
   a deleted one loses its row (`remove`); opening, browsing to or serving one compares its row's signature with the
   file and re-reads it on a mismatch (verify-on-access, [[data-model#scan-and-staleness]]). A record missing under an
-  online root is gone; under an offline one nothing changes.
+  online root is gone; under an offline one nothing changes. The agent verifies whenever a Roots folder is listed — on
+  every visit, not only the first: its records and the directory-scoped one above that manages it — and whenever a
+  document is opened or reloaded (#487). The rows are read on the cache's thread, the `stat` and any read run on the
+  pool, and a finding the cache has moved past meanwhile — a save, a scan or a rename — is dropped rather than written.
+  **Each view compares with what it showed, not with the cache**: every check reports every record's stat signature,
+  changed or not, so the Roots pane and an open document follow a change the cache learned from an earlier look; a
+  clean document reloads, one with unsaved edits says on its banner that the file changed.
 - **A type's columns are where the cache and its plugin meet** (#399). The cache says which type-specific fields
   it stores; the plugin declares which fields its type has; a type contributes the fields in both, and a scan fills
   only those — so a stray key in another type's block, or a type no plugin here claims, reads empty. Labels are the

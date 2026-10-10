@@ -1,6 +1,7 @@
 """One shared view-model per open document, whoever shows it ([[plugins#view-model]])."""
 
 import logging
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Final, cast
 
@@ -117,6 +118,11 @@ class DocumentRegistry(QObject):
         model.path_changed.connect(self.__on_path_changed)  # type: ignore[attr-defined]
         model.files_changed.connect(self.__events.announce_changed)
         model.folder_changed.connect(self.__events.announce_folder_changed)
+        model.reloaded.connect(self.__on_reloaded)
+        if not new and not model.pending:
+            # opening is the access verify-on-access hears of (#487); a focus of a model already held is not one, and
+            # an unread placeholder is announced by the read that loads it (its reload), never before (#66)
+            self.__events.announce_accessed((path,))
         return model
 
     def release(self, model: RehuDocumentModel) -> None:
@@ -137,6 +143,7 @@ class DocumentRegistry(QObject):
         model.path_changed.disconnect(self.__on_path_changed)  # type: ignore[attr-defined]
         model.files_changed.disconnect(self.__events.announce_changed)
         model.folder_changed.disconnect(self.__events.announce_folder_changed)
+        model.reloaded.disconnect(self.__on_reloaded)
         model.deleteLater()
 
     def release_discards_edits(self, model: RehuDocumentModel) -> bool:
@@ -148,6 +155,25 @@ class DocumentRegistry(QObject):
         :raises KeyError: if ``model`` is not held here.
         """
         return model.dirty and self.__holders[model] == 1
+
+    def note_file_signatures(self, signatures: Mapping[Path, tuple[int, int]]) -> None:
+        """Tell the held models what the files they stand for look like on disk now (#487). Each model compares it with
+        what it loaded, and follows or flags a difference (:meth:`RehuDocumentModel.note_file_signature`); a path
+        nobody holds is ignored.
+
+        :param signatures: each file's path, with its modification time in nanoseconds and its size.
+        """
+        for path, (mtime_ns, size) in signatures.items():
+            model = self.__models.get(path)
+            if model is not None:
+                model.note_file_signature(mtime_ns, size)
+
+    def __on_reloaded(self) -> None:
+        """Announce the file a held model just read again as accessed, so the catalog cache is checked against it: a
+        revert is the one way an out-of-band edit reaches a document that stays open (#487)."""
+        path = cast(RehuDocumentModel, self.sender()).path
+        if path is not None:
+            self.__events.announce_accessed((path,))
 
     def __on_path_changed(self, path: Path | None) -> None:
         """Move the sending model's key to its new ``path``.

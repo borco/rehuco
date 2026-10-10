@@ -183,15 +183,15 @@ def widget(qtbot: QtBot, model: RehuDocumentModel) -> DocumentWidget:
     return widget
 
 
-@fixture
-def refimages_model() -> RehuDocumentModel:
+@fixture(name="refimages_model")
+def fixture_refimages_model() -> RehuDocumentModel:
     """A view-model over a reference pack -- the one type that adds a dock of its own (Content
     Images, #221) to the common shell (#320)."""
     return RehuDocumentModel(RehuDocument({"type": "ReferenceImages", "sources": [{"title": "Pack", "primary": True}]}))
 
 
-@fixture
-def refimages_widget(qtbot: QtBot, refimages_model: RehuDocumentModel) -> DocumentWidget:
+@fixture(name="refimages_widget")
+def fixture_refimages_widget(qtbot: QtBot, refimages_model: RehuDocumentModel) -> DocumentWidget:
     """A constructed :class:`DocumentWidget` over the reference pack, registered for teardown."""
     widget = DocumentWidget(refimages_model)
     qtbot.addWidget(widget)
