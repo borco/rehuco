@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Final
 from unittest.mock import MagicMock
 
-from pytest import LogCaptureFixture, fixture
+from pytest import LogCaptureFixture, fixture, mark
 from pytest_mock import MockerFixture
 from rehuco_agent.settings import state_file
 from rehuco_agent.settings.state_file import decode_bytes, encode_bytes
@@ -151,3 +151,135 @@ def test_a_damaged_blob_decodes_to_nothing() -> None:
     * verify each is empty
     """
     assert [decode_bytes(value) for value in (None, 7, "not base64!", "é")] == [b""] * 4
+
+
+# region An unreadable file is kept (#478)
+
+
+@fixture(name="folder")
+def folder_fixture(real_path_stat: None, tmp_path: Path) -> Path:
+    """A real folder for the files, with the real ``Path.stat`` an atomic write needs."""
+    del real_path_stat
+    return tmp_path
+
+
+def test_a_file_that_is_not_utf8_reads_as_absent_and_is_logged(folder: Path, caplog: LogCaptureFixture) -> None:
+    """Bytes no decoder takes must not stop the agent starting.
+
+    **Test steps:**
+
+    * write a file that is not valid UTF-8
+    * verify it reads as ``None`` and the failure was logged
+    """
+    path = folder / "state.json"
+    path.write_bytes(b"\xff\xfe{")
+
+    assert real_read(path, 1) is None
+    assert "could not be read" in caplog.text
+
+
+@mark.parametrize(
+    "content",
+    [b"\xff\xfe{", b"{not json", json.dumps({"version": 2}).encode(), json.dumps([1]).encode()],
+    ids=["not-utf8", "not-json", "other-version", "not-an-object"],
+)
+def test_a_file_that_read_as_absent_is_kept_as_bak_by_the_next_write(folder: Path, content: bytes) -> None:
+    """The load that follows starts empty, and its save must not destroy the file.
+
+    **Test steps:**
+
+    * write a file that reads as absent, read it, then write a state to the same path
+    * verify the new state is in place and the old bytes are in ``<name>.bak``
+    """
+    path = folder / "state.json"
+    path.write_bytes(content)
+    assert real_read(path, 1) is None
+
+    real_write(path, 1, {"answer": 42})
+
+    assert real_read(path, 1) == {"version": 1, "answer": 42}
+    assert (folder / "state.json.bak").read_bytes() == content
+
+
+def test_a_read_that_fails_with_permission_error_keeps_the_file(folder: Path, mocker: MockerFixture) -> None:
+    """A lock at startup gone by the time of the save leaves the good file recoverable.
+
+    **Test steps:**
+
+    * write a good file, make one read of it raise ``PermissionError``
+    * write a state to the path
+    * verify the good file's content is in ``<name>.bak``
+    """
+    path = folder / "state.json"
+    path.write_text(json.dumps({"version": 1, "answer": 1}), encoding="utf-8")
+    read = mocker.patch.object(Path, "read_text", side_effect=PermissionError("locked"))
+    assert real_read(path, 1) is None
+    mocker.stop(read)
+
+    real_write(path, 1, {"answer": 2})
+
+    assert json.loads((folder / "state.json.bak").read_text(encoding="utf-8")) == {"version": 1, "answer": 1}
+
+
+def test_a_file_that_read_fine_or_was_never_read_gets_no_bak(folder: Path) -> None:
+    """Only a failed read earns a backup, so an ordinary save leaves nothing behind.
+
+    **Test steps:**
+
+    * write a state, read it back and write again; write a state to another path never read
+    * verify no ``.bak`` exists
+    """
+    path = folder / "state.json"
+    real_write(path, 1, {"answer": 1})
+    assert real_read(path, 1) is not None
+    real_write(path, 1, {"answer": 2})
+    real_write(folder / "other.json", 1, {})
+
+    assert not list(folder.glob("*.bak"))
+
+
+def test_the_file_is_kept_once_however_many_saves_follow(folder: Path) -> None:
+    """The first save sets the damaged file aside; later saves replace the good one it wrote.
+
+    **Test steps:**
+
+    * read a damaged file, write twice
+    * verify the ``.bak`` still holds the damaged bytes
+    """
+    path = folder / "state.json"
+    path.write_bytes(b"\xff")
+    assert real_read(path, 1) is None
+
+    real_write(path, 1, {"answer": 1})
+    real_write(path, 1, {"answer": 2})
+
+    assert (folder / "state.json.bak").read_bytes() == b"\xff"
+
+
+def test_a_set_aside_that_fails_is_tried_again_by_the_next_save(
+    folder: Path, mocker: MockerFixture, caplog: LogCaptureFixture
+) -> None:
+    """A lock still held at save time must not forget the file.
+
+    **Test steps:**
+
+    * read a damaged file, make ``Path.replace`` fail and write
+    * verify the failure was logged and no ``.bak`` exists
+    * let the replace work and write again
+    * verify the damaged bytes are in ``<name>.bak``
+    """
+    path = folder / "state.json"
+    path.write_bytes(b"\xff")
+    assert real_read(path, 1) is None
+    replace = mocker.patch.object(Path, "replace", side_effect=PermissionError("locked"))
+
+    real_write(path, 1, {"answer": 1})
+
+    assert "could not be set aside" in caplog.text
+    assert not (folder / "state.json.bak").exists()
+    mocker.stop(replace)
+    real_write(path, 1, {"answer": 2})
+    assert (folder / "state.json.bak").exists()
+
+
+# endregion

@@ -36,6 +36,7 @@ LAYOUT: dict[str, Any] = {
     },
 }
 STATE = CatalogState(LAYOUT)
+NOT_UTF8 = bytes([0xFF, 0xFE, 0x7B])
 
 
 @fixture(name="config")
@@ -301,3 +302,28 @@ def test_an_entry_that_is_not_a_browser_reads_as_none(data: bytes) -> None:
 
 
 # endregion
+
+
+@mark.usefixtures("config")
+def test_a_file_that_is_not_utf8_is_an_empty_state_kept_as_bak_by_the_next_save(caplog: LogCaptureFixture) -> None:
+    """Bytes no decoder takes do not stop the agent, and the next save does not destroy them (#478).
+
+    **Test steps:**
+
+    * put a file that is not valid UTF-8 where the id's state is read from
+    * verify it loads as an empty state, logged
+    * save a state
+    * verify the new state is in place and the old bytes are in ``<name>.bak``
+    """
+    path = catalog_state_path(REHUCO_ID)
+    path.parent.mkdir(parents=True)
+    path.write_bytes(NOT_UTF8)
+    store = CatalogStateStore()
+
+    with caplog.at_level(logging.ERROR):
+        assert store.load(REHUCO_ID) == CatalogState(None)
+    store.save(REHUCO_ID, STATE)
+
+    assert "could not be read" in caplog.text
+    assert store.load(REHUCO_ID) == STATE
+    assert path.with_name(path.name + ".bak").read_bytes() == NOT_UTF8

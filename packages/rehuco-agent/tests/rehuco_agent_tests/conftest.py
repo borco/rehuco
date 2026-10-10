@@ -710,6 +710,9 @@ def isolate_state_files(mocker: MockerFixture) -> MemoryStateFiles:
     files = MemoryStateFiles()
     mocker.patch.object(state_file, "read_state_file", side_effect=files.read)
     mocker.patch.object(state_file, "write_state_file", side_effect=files.write)
+    # the stores that read JSON through the module directly remember a file that failed to read (#478),
+    # process-wide; a test's damaged file must not have a later test's save set it aside
+    state_file.UNREAD.clear()
     return files
 
 

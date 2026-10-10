@@ -359,6 +359,47 @@ def test_an_unreadable_file_starts_empty_and_says_so(
     assert "task queue" in caplog.text
 
 
+def test_a_file_that_is_not_utf8_starts_empty_and_says_so(
+    store: TaskQueueStore, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Bytes no decoder takes must not stop the app starting (#478).
+
+    **Test steps:**
+
+    * make reading the file raise ``UnicodeDecodeError``
+    * read it
+    * verify the queue reads as empty and the failure was logged
+    """
+    not_utf8 = UnicodeDecodeError("utf-8", bytes([0xFF]), 0, 1, "invalid start byte")
+    mocker.patch.object(Path, "read_text", side_effect=not_utf8)
+
+    with caplog.at_level(logging.ERROR):
+        assert store.read_items() == []
+
+    assert "task queue" in caplog.text
+
+
+def test_a_file_that_could_not_be_read_is_set_aside_before_the_next_save(
+    store: TaskQueueStore, disk: FakeDisk, mocker: MockerFixture
+) -> None:
+    """The empty queue the app started with must not overwrite the file that failed to read (#478).
+
+    **Test steps:**
+
+    * put text that is not JSON on disk and read it
+    * save
+    * verify the file was set aside before the write
+    """
+    disk.text = "{not json"
+    aside = mocker.patch.object(store_module, "set_aside_unread", side_effect=lambda _: disk.events.append("aside"))
+    store.read_items()
+
+    store.save()
+
+    assert aside.call_args.args == (QUEUE_PATH,)
+    assert disk.events.index("aside") < disk.events.index("write")
+
+
 # endregion
 
 # region Writing
