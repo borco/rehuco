@@ -18,6 +18,7 @@ from .path_presence_support import (
     TIMEOUT,
     Answers,
     Probe,
+    UnansweringServer,
     fake_devices,
     fake_exists,
     join_scan_threads,
@@ -363,6 +364,31 @@ def test_scan_drops_an_answer_when_stopped_during_a_probe(mocker: MockerFixture,
 
     assert scan.stopped
     assert not answers.received
+
+
+def test_scan_keeps_a_path_whose_server_does_not_answer_in_time(
+    mocker: MockerFixture, unanswering_server: UnansweringServer
+) -> None:
+    """A server that never answers makes its path offline -- kept, never gone -- through the real probe (#464).
+
+    Neither the probe nor the verdict is replaced: the scan really asks a listener that leaves the connection hanging,
+    and the file is one that *would* be found if the server were asked, so only the timeout can make it offline.
+
+    **Test steps:**
+
+    * scan a path whose share is a listener that never accepts, with a stat that would find the file
+    * wait for the scan to finish
+    * verify one answer, offline
+    """
+    path = Path("/mnt/nas/a")
+    fake_devices(mocker, {path: network(host=unanswering_server.host, port=unanswering_server.port)})
+    fake_exists(mocker, {path: True})
+    answers = Answers()
+
+    PresenceScan([path], answers).start()
+    join_scan_threads()
+
+    assert answers.received == [(path, Presence.OFFLINE)]
 
 
 def test_scan_is_not_stopped_until_told() -> None:

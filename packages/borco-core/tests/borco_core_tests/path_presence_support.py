@@ -3,6 +3,7 @@
 Kept out of the test files so the verdict tests and the scan tests, split only for length, speak the same fakes.
 """
 
+import socket
 import threading
 from contextlib import nullcontext
 from pathlib import Path
@@ -92,6 +93,44 @@ class Probe:
         if self.error is not None:
             raise self.error
         return nullcontext()
+
+
+class UnansweringServer:
+    """A real listener on the loopback address that never completes a connection: its queue of waiting connections is
+    full, so the next one is left hanging until the caller's timeout -- what a machine that is switched off looks like
+    to :func:`socket.create_connection`, with no network touched."""
+
+    MAX_FILLERS: Final = 64
+    """The most connections made to fill the queue, whatever backlog the system really gives a ``listen(0)``."""
+
+    def __init__(self) -> None:
+        self.__listener = socket.socket()
+        self.__listener.bind(("127.0.0.1", 0))
+        self.__listener.listen(0)
+        self.address: tuple[str, int] = self.__listener.getsockname()
+        self.__fillers: list[socket.socket] = []
+        while True:  # connect until one hangs: the queue is then full
+            assert len(self.__fillers) < self.MAX_FILLERS, "the queue never filled"
+            try:
+                self.__fillers.append(socket.create_connection(self.address, timeout=0.05))
+            except TimeoutError:
+                break
+
+    @property
+    def host(self) -> str:
+        """The address to connect to."""
+        return self.address[0]
+
+    @property
+    def port(self) -> int:
+        """The port to connect to."""
+        return self.address[1]
+
+    def close(self) -> None:
+        """Close the listener and the connections that fill it."""
+        for filler in self.__fillers:
+            filler.close()
+        self.__listener.close()
 
 
 class Answers:  # pylint: disable=too-few-public-methods
