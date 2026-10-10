@@ -29,6 +29,7 @@ from rehuco_core import EXCLUDED_FILE_PATTERNS, ContentImageEntry, RenameCoordin
 from ...fields.widgets.image_source import ImageDescription, decode_image, image_size
 from .archive_cache import ArchiveCache
 from .banners import archive_relative_path
+from .jpeg_header import jpeg_header_is_cut
 
 type ModelIndex = QModelIndex | QPersistentModelIndex
 type TierZeroKey = tuple[str, str, int, int]
@@ -88,15 +89,18 @@ class ArchiveImageSource:
 def member_pixel_size(cache: ArchiveCache, entry: ContentImageEntry) -> QSize:
     """One member's pixel size, off a partial inflate first and the whole member only when the header
     is not in that first slice -- what `HeaderJob` reads its own dimensions column with, and what
-    `ArchiveImageSource.pixel_size` reads the hover overlay's line with.
+    `ArchiveImageSource.pixel_size` reads the hover overlay's line with. A JPEG whose slice ends before
+    its frame header never reaches Qt cut off, which would log a warning per image (#490).
 
     :param cache: the open-handle cache to read the member through.
     :param entry: the member.
     :returns: the size, or an invalid one when the header cannot be read.
     """
     head = cache.read_head(entry)
-    size = image_size(head) if head is not None else QSize()
-    if head is not None and not size.isValid():
+    if head is None:
+        return QSize()
+    size = QSize() if jpeg_header_is_cut(head) else image_size(head)
+    if not size.isValid():
         whole = cache.read(entry)
         size = image_size(whole) if whole is not None else QSize()
     return size
