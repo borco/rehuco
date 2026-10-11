@@ -9,7 +9,7 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ## [Unreleased]
 
-## [0.3.0] - 2026-10-11
+## [0.3.0] - 2026-10-12
 
 ### Added
 

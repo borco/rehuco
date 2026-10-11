@@ -10,7 +10,7 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 ## [Unreleased]
 
-## [0.3.0] - 2026-10-11
+## [0.3.0] - 2026-10-12
 
 ### Added
 
