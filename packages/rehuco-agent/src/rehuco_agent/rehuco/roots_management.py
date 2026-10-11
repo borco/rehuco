@@ -263,13 +263,10 @@ class PackInfo:
 
     :param state: whether it is a pack.
     :param record: the record that manages it; ``None`` when nothing does.
-    :param through_folder: whether that record is a folder's ``info.rehu`` rather than the archive's own ``foo.rehu``,
-        which is then the same record the folder's own *Open associated rehu* would open.
     """
 
     state: PackState
     record: Path | None = None
-    through_folder: bool = False
 
 
 def pack_info(
@@ -297,7 +294,7 @@ def pack_info(
         state = PackState.PACK
     else:
         state = PackState.NOT_PACK
-    return PackInfo(state, managing.record, through_folder=not managing.file_scoped)
+    return PackInfo(state, managing.record)
 
 
 def selected_record(model: RootsFolderModel, index: QModelIndex) -> tuple[UUID, str] | None:

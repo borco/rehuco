@@ -21,7 +21,12 @@ from rehuco_agent.rehuco.roots_preview import (
 )
 from rehuco_core import ArchiveFacts
 
-from rehuco_agent_tests.crafted_zips import write_future_version_zip, write_undecodable_name_zip
+from rehuco_agent_tests.crafted_zips import (
+    write_corrupt_directory_zip,
+    write_encrypted_member_zip,
+    write_future_version_zip,
+    write_undecodable_name_zip,
+)
 
 from .test_roots_preview import WAIT_TIMEOUT_MS, Shown
 
@@ -156,6 +161,24 @@ def test_a_method_zipfile_cannot_read_is_warned_about_in_red(
     assert ink(shown, "compression_value") == BAD_INK
 
 
+def test_an_encrypted_member_is_warned_about_in_red(qtbot: QtBot, library: Path) -> None:
+    """The directory flags the member, and the pane says it cannot be read before anything is opened.
+
+    **Test steps:**
+
+    * show a zip whose directory flags its member as encrypted
+    * verify the compression line says it cannot be read, in red
+    """
+    write_encrypted_member_zip(library / "locked.zip")
+    shown = Shown(qtbot, library)
+    shown.preview.show_index(shown.row("locked.zip"))
+
+    text = wait_for_archive(qtbot, shown)["compression"]
+
+    assert text == f"Stored - {UNREADABLE_METHOD_NOTE}"
+    assert ink(shown, "compression_value") == BAD_INK
+
+
 def test_a_file_that_is_no_zip_says_so(qtbot: QtBot, library: Path) -> None:
     """A damaged archive is reported, not raised, and shows no sizes.
 
@@ -175,14 +198,16 @@ def test_a_zip_python_cannot_decode_or_support_says_so(qtbot: QtBot, library: Pa
 
     **Test steps:**
 
-    * add a zip with a UTF-8 flagged member name that is not UTF-8, and one claiming extract version 7.0
+    * add a zip with a UTF-8 flagged member name that is not UTF-8, one claiming extract version 7.0, and one whose
+      end record is intact over a corrupt central directory
     * show each and verify the contents line
     """
     write_undecodable_name_zip(library / "name.zip")
     write_future_version_zip(library / "version.zip")
+    write_corrupt_directory_zip(library / "directory.zip")
     shown = Shown(qtbot, library)
 
-    for name in ("name.zip", "version.zip"):
+    for name in ("name.zip", "version.zip", "directory.zip"):
         shown.preview.show_index(shown.row(name))
         assert wait_for_archive(qtbot, shown) == {"contents": UNREADABLE_ARCHIVE}
 
@@ -256,10 +281,15 @@ def test_an_archive_read_that_ends_after_the_preview_was_deleted_is_dropped(
     **Test steps:**
 
     * make telling the preview raise, as a deleted C++ object does, and run the read of a zip
-    * verify nothing is raised
+    * verify the read returned, having tried to tell the preview once, and that no archive line is shown
     """
     shown = Shown(qtbot, library)
-    mocker.patch.object(shown.preview, "archive_ready").emit.side_effect = RuntimeError
+    signal = mocker.patch.object(shown.preview, "archive_ready")
+    signal.emit.side_effect = RuntimeError
     read_archive = shown.preview._RootsPreview__read_archive  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     read_archive(1, library / "stored.zip", (".jpg",))
+    QApplication.processEvents()
+
+    signal.emit.assert_called_once()
+    assert shown.preview.archive_texts == {}
