@@ -155,10 +155,13 @@ class ThumbnailLabel(QLabel):
         image is shown -- the Files sub-dock's rows and the Content Images grid, where a single click
         selects. Accepted for the same reason the press is.
 
-        :param event: the Qt mouse event, forwarded to the base class.
+        The base class would replay it as a press, re-arming the drag tracker: a double-click that opened the viewer,
+        held and moved, would then also drag from the label underneath (#395). So it is not forwarded.
+
+        :param event: the Qt mouse event.
         """
-        super().mouseDoubleClickEvent(event)
         event.accept()
+        self.__press.release()
         if event.button() == Qt.MouseButton.LeftButton and self.rect().contains(event.position().toPoint()):
             self.clicked.emit(self.__path)
 

@@ -6,9 +6,12 @@ out of the pack, another record's screenshot even from the same folder, a file f
 its drop helpers are :mod:`test_document_widget`' own, imported by name.
 """
 
+import os
 from pathlib import Path
 
-from PySide6.QtCore import QByteArray, QMimeData, QUrl
+from PySide6.QtCore import QByteArray, QMimeData, QPoint, Qt, QUrl
+from PySide6.QtGui import QDragEnterEvent, QDragMoveEvent
+from PySide6.QtWidgets import QApplication
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -18,8 +21,11 @@ from rehuco_agent.fields.widgets.image_export import ORIGINAL_FILE_MIME
 from rehuco_core import RehuDocument
 
 from .test_document_widget import (
+    EDITOR_IMAGES_TAB,
     LOG_DOCUMENT_PATH,
     drag_onto_images_dock,
+    image_bytes_mime_data,
+    images_dock,
     local_file_mime_data,
 )
 
@@ -187,3 +193,103 @@ def test_the_guard_is_decided_for_each_drag_as_it_enters(
 
     assert results == [(True, True), (False, False), (True, True)]
     assert acquire.call_count == 2
+
+
+def test_a_drag_over_the_dock_reuses_the_screenshots_read_when_it_entered(
+    saved_widget: DocumentWidget, saved_model: RehuDocumentModel, qtbot: QtBot, mocker: MockerFixture
+) -> None:
+    """Moving over the dock does not read the folder again: the verdict of the enter stands for the whole drag.
+
+    The enter goes through Qt's dispatch as every drop here does; the moves go to the installed filter by hand, because
+    a synthetic ``DragMove`` sent with ``QApplication.sendEvent`` after an ignored enter is dropped inside
+    ``QApplication.notify`` before it reaches any event filter, the application's included (probed, 2026-10-11).
+
+    **Test steps:**
+
+    * list one screenshot and drag it onto the dock, then move over the dock twice
+    * make the scanner list nothing between the moves
+    * verify the scanner was read once, and the file was refused at the enter and at both moves
+    """
+    assert saved_model.image_scanner is not None
+    scanner_files = mocker.patch.object(saved_model.image_scanner, "files", return_value=[OWN])
+    saved_widget.show()
+    qtbot.waitExposed(saved_widget)
+    saved_widget.toggle_action(EDITOR_IMAGES_TAB).trigger()
+    dock = images_dock(saved_widget)
+    drop_filter = saved_widget.sub_docks._DocumentSubDocks__image_drop_filter  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    data = local_file_mime_data(OWN)
+
+    enter = QDragEnterEvent(
+        QPoint(), Qt.DropAction.CopyAction, data, Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier
+    )
+    QApplication.sendEvent(dock, enter)
+    scanner_files.return_value = []
+    moves = []
+    for _ in range(2):
+        move = QDragMoveEvent(
+            QPoint(), Qt.DropAction.CopyAction, data, Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier
+        )
+        assert drop_filter.eventFilter(dock, move)
+        moves.append(move.isAccepted())
+
+    assert (enter.isAccepted(), moves) == (False, [False, False])
+    assert scanner_files.call_count == 1
+
+
+def test_a_drop_that_carries_only_pixels_is_acquired_as_pixels(
+    saved_widget: DocumentWidget, saved_model: RehuDocumentModel, qtbot: QtBot, mocker: MockerFixture
+) -> None:
+    """With no file and no original to compare, nothing can say it is one of the record's own: the bytes are taken.
+
+    **Test steps:**
+
+    * list one screenshot and drop a bare image payload
+    * verify it was accepted and acquired once
+    """
+    list_screenshots(saved_model, mocker, OWN)
+    acquire = mocker.patch.object(saved_widget.sub_docks._DocumentSubDocks__image_downloads, "acquire_local")  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    assert drag_onto_images_dock(saved_widget, qtbot, image_bytes_mime_data()) == (True, True)
+
+    acquire.assert_called_once()
+
+
+def test_a_staged_copy_carrying_pixels_but_no_original_is_acquired_by_its_file_alone(
+    saved_widget: DocumentWidget, saved_model: RehuDocumentModel, qtbot: QtBot, mocker: MockerFixture
+) -> None:
+    """An archive member dragged out of the app carries its pixels as well as its staged file, and is acquired once,
+    as the file: the pixels beside a file are not a second image.
+
+    **Test steps:**
+
+    * list one screenshot and drop a staged copy with pixels and no original
+    * verify the staged file alone was acquired, once
+    """
+    list_screenshots(saved_model, mocker, OWN)
+    acquire = mocker.patch.object(saved_widget.sub_docks._DocumentSubDocks__image_downloads, "acquire_local")  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    assert drag_onto_images_dock(saved_widget, qtbot, our_drag(None, with_pixels=True)) == (True, True)
+
+    acquire.assert_called_once_with([STAGED])
+
+
+def test_a_screenshot_through_another_spelling_of_its_path_is_declined_only_where_paths_fold_case(
+    saved_widget: DocumentWidget, saved_model: RehuDocumentModel, qtbot: QtBot, mocker: MockerFixture
+) -> None:
+    """Paths are compared as the file system compares them: the same name in capitals is the same file on Windows and
+    another file on a case-sensitive system, where it is acquired.
+
+    **Test steps:**
+
+    * list one screenshot and drag the same path with its name in capitals, naming it as the original
+    * verify it was refused where the platform folds case, and accepted where it does not
+    """
+    list_screenshots(saved_model, mocker, OWN)
+    acquire = mocker.patch.object(saved_widget.sub_docks._DocumentSubDocks__image_downloads, "acquire_local")  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    shouted = FOLDER / OWN.name.upper()
+    folds = os.path.normcase(str(shouted)) == os.path.normcase(str(OWN))
+
+    result = drag_onto_images_dock(saved_widget, qtbot, our_drag(shouted))
+
+    assert result == ((False, False) if folds else (True, True))
+    assert acquire.call_count == (0 if folds else 1)

@@ -1,7 +1,6 @@
 """Tests for the pieces that let any widget drag an image out of the app: the press tracker, the generic press-and-drag
 filter, the original-file hint a drag carries, and the exporter's path-based entry points (#395)."""
 
-from collections.abc import Iterator
 from pathlib import Path
 from typing import Final
 
@@ -183,13 +182,6 @@ def exporting(tmp_path: Path) -> tuple[ImageExporter, Path]:
     image.fill(Qt.GlobalColor.darkRed)
     assert image.save(str(shot))
     return ImageExporter(tmp_path / "staged", lambda: ID, lambda: folder), shot
-
-
-@fixture
-def clipboard() -> Iterator[None]:
-    """Leave the clipboard empty after the test."""
-    yield
-    QGuiApplication.clipboard().clear()
 
 
 def test_a_file_exports_by_its_path_named_relative_to_the_record_folder_and_carries_its_original(

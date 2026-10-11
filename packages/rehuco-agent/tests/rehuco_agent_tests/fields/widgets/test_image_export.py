@@ -1,7 +1,6 @@
 """Tests for :mod:`rehuco_agent.fields.widgets.image_export` -- an image taken out of the app as a staged file and its
 pixels (#395), and the sources' undecoded reads it stages from."""
 
-from collections.abc import Iterator
 from pathlib import Path
 from typing import Final
 from unittest.mock import MagicMock
@@ -56,13 +55,6 @@ def resource(tmp_path: Path) -> Path:
     folder = tmp_path / "Pack"
     write_png(folder / "screenshots" / "a.png")
     return folder
-
-
-@fixture
-def clipboard() -> Iterator[None]:
-    """Leave the clipboard empty after the test, whatever it put there."""
-    yield
-    QGuiApplication.clipboard().clear()
 
 
 def test_the_mime_data_carries_the_file_and_the_pixels(tmp_path: Path) -> None:

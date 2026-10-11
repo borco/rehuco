@@ -428,18 +428,16 @@ def test_the_keys_held_at_the_activation_pick_the_surface_though_the_listing_lan
 
 
 def clipboard_names() -> list[str]:
-    """The file names the clipboard holds, cleared after reading.
+    """The file names the clipboard holds.
 
     :returns: the names, in order.
     """
     held = QGuiApplication.clipboard().mimeData()
     assert held is not None
-    names = [Path(url.toLocalFile()).name for url in held.urls()]
-    QGuiApplication.clipboard().clear()
-    return names
+    return [Path(url.toLocalFile()).name for url in held.urls()]
 
 
-@mark.usefixtures("real_path_stat")
+@mark.usefixtures("real_path_stat", "clipboard")
 def test_an_image_copied_out_of_a_pack_is_named_by_its_owner_and_its_path_under_the_record(
     qtbot: QtBot, tmp_path: Path, lightbox: RootsLightbox
 ) -> None:
@@ -466,7 +464,7 @@ def test_an_image_copied_out_of_a_pack_is_named_by_its_owner_and_its_path_under_
     assert clipboard_names() == [f"rehu-{ID}__sub__pack.zip__a.png"]
 
 
-@mark.usefixtures("real_path_stat")
+@mark.usefixtures("real_path_stat", "clipboard")
 def test_an_image_no_record_manages_is_named_by_its_folder(tmp_path: Path, lightbox: RootsLightbox) -> None:
     """With no record over it, a loose image is named by the folder it sits in (#395).
 

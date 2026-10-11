@@ -1,9 +1,12 @@
 """Tests for ImagesField: the lightbox strip viewer and the curation editor binding."""
 
 from pathlib import Path
+from unittest.mock import MagicMock
 
 from PySide6.QtCore import QObject, QPoint, Qt, Signal, SignalInstance
+from PySide6.QtGui import QImage
 from PySide6.QtWidgets import QTreeView, QVBoxLayout, QWidget
+from pytest import mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
@@ -450,22 +453,53 @@ def test_the_editor_reads_the_folder_once_as_it_is_built(
     assert scanner.screenshots.call_count == 1  # type: ignore[attr-defined]
 
 
+def staged_names(drag_class: MagicMock) -> list[str]:
+    """The staged file names the drags made so far carried, in order.
+
+    :param drag_class: the replaced ``QDrag``.
+    :returns: the names.
+    """
+    names: list[str] = []
+    for call in drag_class.return_value.setMimeData.call_args_list:
+        (mime,) = call.args
+        names.append(Path(mime.urls()[0].toLocalFile()).name)
+    return names
+
+
+def write_screenshots(folder: Path) -> list[Path]:
+    """Write three small real screenshots into a new folder.
+
+    :param folder: the folder to create.
+    :returns: the files.
+    """
+    folder.mkdir()
+    files = [folder / name for name in ("info00.png", "info01.png", "info02.png")]
+    image = QImage(8, 6, QImage.Format.Format_RGB32)
+    image.fill(Qt.GlobalColor.darkYellow)
+    for file in files:
+        assert image.save(str(file))
+    return files
+
+
+@mark.usefixtures("real_path_stat")
 def test_the_exporter_the_owner_hands_over_reaches_the_strip_and_the_editor(
-    mocker: MockerFixture, qtbot: QtBot, model: RehuDocumentModel
+    mocker: MockerFixture, qtbot: QtBot, model: RehuDocumentModel, tmp_path: Path
 ) -> None:
     """A field given an exporter (`ImageExportable`, #395) builds its strip and its editor already holding it, so a
-    thumbnail dragged out of either reaches it.
+    thumbnail dragged out of either stages its screenshot through it.
 
     **Test steps:**
 
-    * hand the field an exporter, then build its viewer and its editor
-    * press-and-move a strip thumbnail and an editor row
-    * verify the exporter was asked to drag a screenshot from each
+    * over three real screenshots, hand the field a real exporter, then build its viewer and its editor
+    * press-and-move a strip thumbnail and an editor row, with ``QDrag`` replaced
+    * verify each drag carried that screenshot's staged file
     """
     decodable_screenshots(mocker)
-    field = make_field(mocker)
-    exporter = mocker.Mock(spec=ImageExporter)
-    field.set_image_exporter(exporter)
+    folder = tmp_path / "Pack"
+    files = write_screenshots(folder)
+    field = ImagesField("hidden_images", image_scanner=fake_scanner(mocker, files))  # type: ignore[arg-type]
+    field.set_image_exporter(ImageExporter(tmp_path / "staged", lambda: "rec", lambda: folder))
+    drag_class = mocker.patch("rehuco_agent.fields.widgets.image_export.QDrag")
     host = QWidget()
     qtbot.addWidget(host)
     strip = field.make_viewer(model.bind(field)).viewer
@@ -482,6 +516,7 @@ def test_the_exporter_the_owner_hands_over_reaches_the_strip_and_the_editor(
     assert isinstance(view, QTreeView)
 
     press_and_drag(label, QPoint(3, 3))
-    press_and_drag(view.viewport(), view.visualRect(view.model().index(0, NAME_COLUMN)).center())
+    press_and_drag(view.viewport(), view.visualRect(view.model().index(1, NAME_COLUMN)).center())
 
-    assert exporter.drag_path.call_count == 2
+    names = staged_names(drag_class)
+    assert names == ["rehu-rec__info00.png", "rehu-rec__info01.png"]
