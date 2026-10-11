@@ -9,8 +9,10 @@ from pathlib import Path
 from typing import Final
 from unittest.mock import patch
 
+from pytest import mark
 from rehuco_agent.settings.document_session_settings import (
     MAXIMUM_REMEMBERED_FILES,
+    SESSION_VERSION,
     DocumentSessionSettings,
     document_session_path,
 )
@@ -131,22 +133,21 @@ def test_save_then_load_round_trips_the_focused_document() -> None:
     assert FIRST.resolve() in restored.items
 
 
-def test_load_defaults_to_no_focused_document_when_nothing_was_saved() -> None:
-    """Loading from settings that never had a focused document saved yields ``None``.
+def test_load_defaults_to_no_focused_document_when_the_file_holds_none(state_files: MemoryStateFiles) -> None:
+    """A file that names no focused document clears the focus the instance had (#483).
 
     **Test steps:**
 
-    * save a session with no focused document set
-    * load into a fresh instance
+    * seed an instance with a focused document, and a file stamped with the version and nothing else
+    * load the file
     * verify the focused document is ``None``
     """
-    session = DocumentSessionSettings()
-    session.save()
+    state_files.files[document_session_path()] = json.dumps({"version": SESSION_VERSION})
+    session = DocumentSessionSettings(focused_path=FIRST)
 
-    restored = DocumentSessionSettings()
-    restored.load()
+    session.load()
 
-    assert restored.focused_path is None
+    assert session.focused_path is None
 
 
 def test_load_clears_prior_items() -> None:
@@ -187,6 +188,57 @@ def test_load_with_no_file_leaves_an_empty_session() -> None:
     assert not session.items
     assert session.focused_path is None
     assert session.docks_layout is None
+
+
+def test_a_file_of_another_version_reads_as_an_empty_session(state_files: MemoryStateFiles) -> None:
+    """A session file written by a build of another version is ignored whole, not half-read (#404, #483).
+
+    **Test steps:**
+
+    * seed a file one version ahead, holding an open item, a focus and a dock layout
+    * load it into an instance already holding an item, a focus and a layout
+    * verify the session is empty, and nothing of the file's was taken
+    """
+    state_files.files[document_session_path()] = json.dumps(
+        {
+            "version": SESSION_VERSION + 1,
+            "focused_path": FIRST.as_posix(),
+            "docks_layout": {"format": 1, "main": {"area": []}},
+            "items": [{"path": FIRST.as_posix(), "open": True}],
+        }
+    )
+    session = DocumentSessionSettings(focused_path=SECOND, docks_layout={"format": 1})
+    session.items[THIRD] = DocumentSessionSettings.Item(open=True)
+
+    session.load()
+
+    assert not session.items
+    assert session.focused_path is None
+    assert session.docks_layout is None
+
+
+@mark.parametrize("stored", ["true", 1, "yes", None, [True]])
+def test_an_open_flag_that_is_not_a_bool_reads_as_closed(state_files: MemoryStateFiles, stored: object) -> None:
+    """Only a stored ``true`` reopens a document; a hand-edited ``"true"`` or ``1`` leaves it closed (#483).
+
+    **Test steps:**
+
+    * seed a file with an item whose ``open`` is something other than a bool, and one stored ``true``
+    * load it
+    * verify the odd one reads closed, the real ``true`` open, and both are kept
+    """
+    state_files.files[document_session_path()] = json.dumps(
+        {
+            "version": SESSION_VERSION,
+            "items": [{"path": FIRST.as_posix(), "open": stored}, {"path": SECOND.as_posix(), "open": True}],
+        }
+    )
+
+    session = DocumentSessionSettings()
+    session.load()
+
+    assert session.items[FIRST].open is False
+    assert session.items[SECOND].open is True
 
 
 def test_the_documents_docks_layout_round_trips() -> None:

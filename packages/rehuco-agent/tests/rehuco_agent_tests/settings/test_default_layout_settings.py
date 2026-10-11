@@ -8,6 +8,7 @@ import json
 
 from rehuco_agent.settings.default_layout_settings import (
     GROUP,
+    LAYOUTS_VERSION,
     PREVIEW_LAYOUT_GROUP,
     DefaultLayoutSettings,
     default_layouts_path,
@@ -135,20 +136,24 @@ def test_the_shared_instance_is_the_same_object_every_time() -> None:
     assert shared_default_layout_settings() is shared_default_layout_settings()
 
 
-def test_a_group_of_its_own_round_trips_beside_the_documents_group() -> None:
+def test_a_group_of_its_own_round_trips_beside_the_documents_group(state_files: MemoryStateFiles) -> None:
     """A settings object with a group of its own stores and loads only its own file, and leaves the Documents dock's
     defaults alone (#380).
 
     **Test steps:**
 
     * save a Documents settings object and one under another group, each holding a tutorial's state
-    * verify each landed in its own file
+    * verify each group wrote a file of its own, holding only its own state
     * load a fresh one of the other group and verify it read only its own state
     """
     DefaultLayoutSettings(states={"tutorial": b"documents blob"}).save()
     DefaultLayoutSettings(group="rehuco_layout", states={"tutorial": b"own blob"}).save()
 
-    assert default_layouts_path(GROUP) != default_layouts_path("rehuco_layout")
+    assert set(state_files.files) == {default_layouts_path(GROUP), default_layouts_path("rehuco_layout")}
+    assert json.loads(state_files.files[default_layouts_path(GROUP)])["states"] == {"tutorial": "ZG9jdW1lbnRzIGJsb2I="}
+    assert json.loads(state_files.files[default_layouts_path("rehuco_layout")])["states"] == {
+        "tutorial": "b3duIGJsb2I="
+    }
 
     loaded = DefaultLayoutSettings(group="rehuco_layout")
     loaded.load()
@@ -180,15 +185,43 @@ def test_each_group_has_its_own_shared_instance() -> None:
     assert not documents.states
 
 
-def test_the_preview_layouts_have_a_file_of_their_own() -> None:
-    """The preview's per-type arrangements are kept apart from the type defaults (#39, #404).
+def test_the_preview_layouts_have_a_file_of_their_own(state_files: MemoryStateFiles) -> None:
+    """The preview's per-type arrangements are kept apart from the type defaults (#39, #404, #483).
 
     **Test steps:**
 
-    * ask for both groups' paths
-    * verify they are different files in the same folder
+    * save a type's default and the preview's arrangement of the same type
+    * verify two files were written, in the same folder
+    * verify each loads back only its own blob
     """
-    defaults, preview = default_layouts_path(GROUP), default_layouts_path(PREVIEW_LAYOUT_GROUP)
+    DefaultLayoutSettings(states={"tutorial": b"default"}).save()
+    DefaultLayoutSettings(group=PREVIEW_LAYOUT_GROUP, states={"tutorial": b"preview"}).save()
 
-    assert defaults != preview
+    defaults, preview = default_layouts_path(GROUP), default_layouts_path(PREVIEW_LAYOUT_GROUP)
+    assert set(state_files.files) == {defaults, preview}
     assert defaults.parent == preview.parent
+    default_loaded = DefaultLayoutSettings()
+    default_loaded.load()
+    preview_loaded = DefaultLayoutSettings(group=PREVIEW_LAYOUT_GROUP)
+    preview_loaded.load()
+    assert default_loaded.states == {"tutorial": b"default"}
+    assert preview_loaded.states == {"tutorial": b"preview"}
+
+
+def test_a_file_of_another_version_reads_as_no_default(state_files: MemoryStateFiles) -> None:
+    """A layouts file written by a build of another version is ignored whole (#404, #483).
+
+    **Test steps:**
+
+    * seed a file one version ahead, holding a good blob
+    * load it into an instance already holding a state
+    * verify no state is held
+    """
+    state_files.files[default_layouts_path(GROUP)] = json.dumps(
+        {"version": LAYOUTS_VERSION + 1, "states": {"tutorial": "dGFi"}}
+    )
+    loaded = DefaultLayoutSettings(states={"reference_images": b"stale"})
+
+    loaded.load()
+
+    assert not loaded.states
