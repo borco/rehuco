@@ -101,12 +101,14 @@ class UnansweringServer:
     to :func:`socket.create_connection`, with no network touched."""
 
     MAX_FILLERS: Final = 64
-    """The most connections made to fill the queue, whatever backlog the system really gives a ``listen(0)``."""
+    """The most connections made to fill the queue, whatever backlog the system really gives a ``listen(1)``."""
 
     def __init__(self) -> None:
         self.__listener = socket.socket()
         self.__listener.bind(("127.0.0.1", 0))
-        self.__listener.listen(0)
+        # 1, not 0: macOS reads a backlog of 0 as its default (``kern.ipc.somaxconn``, 128), never filled by
+        # MAX_FILLERS; 1 fills after one connection there and on Windows, after two on Linux (measured)
+        self.__listener.listen(1)
         self.address: tuple[str, int] = self.__listener.getsockname()
         self.__fillers: list[socket.socket] = []
         while True:  # connect until one hangs: the queue is then full

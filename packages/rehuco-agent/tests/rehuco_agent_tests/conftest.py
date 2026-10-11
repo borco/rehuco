@@ -872,7 +872,10 @@ def clipboard(qapp: object) -> Iterator[None]:
 
     A test that copies an image writes the real clipboard when the platform is not offscreen; clearing it afterwards
     would still lose what was there, and a clear after an assertion is skipped by a failure. This restores every format
-    held at the start, in a ``finally``, whatever the test did.
+    held at the start, in a ``finally``, whatever the test did -- or clears it when nothing was held, which is every
+    test under the offscreen platform: a process that exits with a Python-made ``QMimeData`` on the clipboard
+    segfaults in Qt's teardown (measured; CI's serial run, exit 139). A run on a real platform that restores data
+    still ends that way.
 
     :param qapp: the application, which the clipboard needs.
     """
@@ -886,4 +889,7 @@ def clipboard(qapp: object) -> Iterator[None]:
     try:
         yield
     finally:
-        board.setMimeData(saved)
+        if saved.formats():
+            board.setMimeData(saved)
+        else:
+            board.clear()
