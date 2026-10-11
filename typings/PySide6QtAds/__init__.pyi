@@ -155,6 +155,16 @@ class CDockContainerWidget(QWidget):
         """Take `dock_widget` out of its area. Called on a manager through this class, it skips the manager's
         registry and its removal signals."""
 
+    def dropWidget(
+        self,
+        widget: QWidget,
+        drop_area: DockWidgetArea,
+        target_area_widget: CDockAreaWidget | None,
+        tab_index: int = -1,
+    ) -> None:
+        """Drop a dock or area at `drop_area` -- what a drag-preview drop calls. It takes the dock off its old area
+        through the area's own `removeDockWidget`, which no manager removal signal reports."""
+
     def openedDockAreas(self) -> list[CDockAreaWidget]:
         """Every currently-open (not `isHidden()`) area of this container, in no guaranteed order --
         an area hidden with plain `setVisible(False)` drops out of it (verified)."""

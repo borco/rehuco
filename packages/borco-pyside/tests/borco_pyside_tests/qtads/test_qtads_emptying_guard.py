@@ -219,6 +219,53 @@ def test_a_manager_emptied_twice_parks_one_ballast_at_a_time(nest: Nest) -> None
     assert nest.inner.dockAreaCount() == 1
 
 
+def test_dragging_the_last_dock_to_an_edge_keeps_the_floating_window(nest: Nest) -> None:
+    """A drop takes the dragged dock off its area through the area itself, never through the manager, so no manager
+    removal signal hears it: dragging the manager's only dock onto its own container's edge empties the container for
+    a moment all the same. The window stays, and the dock lands in an area of its own with no ballast left beside it.
+
+    **Test steps:**
+
+    * remove one nested dock, then drop the other onto its container's left edge, as a drag does
+    * verify the window, both outer docks and the dragged dock survive the pending deletions
+    * verify the manager holds one visible area, holding just the dragged dock
+    """
+    first, sole = nest.subs
+    remove(nest.inner, first)
+
+    nest.inner.dropWidget(sole, QtAds.LeftDockWidgetArea, None, -1)
+    settle()
+
+    assert nest_alive(nest)
+    assert shiboken6.isValid(sole)
+    area = sole.dockAreaWidget()
+    assert nest.inner.dockAreaCount() == 1
+    assert area is not None and area.dockWidgets() == [sole]
+    assert area.isVisible()
+
+
+def test_a_dock_floated_out_of_an_emptied_manager_keeps_the_floating_window(nest: Nest) -> None:
+    """A dock the emptied manager floats joins no area of its main container, so the ballast leaving empties that
+    container again; the removal parks a fresh ballast before QtAds looks, and the window stays.
+
+    **Test steps:**
+
+    * empty the nested manager, then float a new dock out of it
+    * verify the window survives the pending deletions and the main container keeps its one area
+    """
+    for dock in nest.subs:
+        remove(nest.inner, dock)
+    floated = QtAds.CDockWidget(nest.inner, "C")
+    floated.setObjectName("C")
+    floated.setWidget(QLabel("C"))
+
+    nest.inner.addDockWidgetFloating(floated)
+    settle()
+
+    assert nest_alive(nest)
+    assert nest.inner.dockAreaCount() == 1
+
+
 def test_a_removal_that_leaves_a_dock_parks_nothing(nest: Nest) -> None:
     """Only the last dock's removal parks: with a dock left, the manager keeps its own area.
 

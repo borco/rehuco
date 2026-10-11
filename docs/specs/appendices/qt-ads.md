@@ -707,15 +707,23 @@ the upward twin of 10.7's downward search.
 **Every nested manager in the app empties somewhere.** The Browsers dock empties as a catalog closes and on the last
 browser's [x]. The Documents dock empties as its last document closes. A document's sub-docks empty in `teardown`,
 which a preview moving to a document another holder already has runs on the host it keeps. Tasks never removes a dock.
-None of their docks is `DockWidgetFloatable`, so a drag cannot empty one. `QtAdsLayout`'s moves always leave the seed's
-area standing.
+None of their docks is `DockWidgetFloatable`, but all are `DockWidgetMovable`, and a **drag** empties one too: dragging
+a manager's only dock onto its own container's edge goes through `dropWidget` and the drag-preview drops
+(`moveToNewSection`, `dropIntoSection`, `dropIntoContainer`), which take the dock off its old area through
+`CDockAreaWidget::removeDockWidget` itself. That area removal runs the same check, and no manager removal signal
+(`dockWidgetAboutToBeRemoved`, `dockWidgetRemoved`) is emitted on that path (measured: a guard listening there lost the
+window). `QtAdsLayout`'s moves always leave the seed's area standing.
 
-**The fix keeps the count above zero.** `borco_pyside.qtads.QtAdsEmptyingGuard`, on every nested manager, listens to
-`dockWidgetAboutToBeRemoved`, which `CDockManager::removeDockWidget` emits before the area goes. When the dock is all
-the manager's own container holds and a floating window is above it, the guard parks a **ballast** dock in an area of
-its own, closed, so the container keeps one area. Its closed area is hidden and takes no room. The next
-`dockWidgetAdded` unparks it, whether the new dock went into an area of its own or into the ballast's. The ballast goes
-in and out through `CDockContainerWidget.addDockWidget` / `removeDockWidget` called on the manager, which skip the
+**The fix keeps the count above zero, from inside the removal.** `CDockContainerWidget::removeDockArea` emits
+`dockAreasRemoved` as its last step, and `CDockAreaWidget::removeDockWidget` tests `dockAreaCount() == 0` only after
+that call returns, so a slot on the signal runs on every path, drags included, and in time.
+`borco_pyside.qtads.QtAdsEmptyingGuard`, on every nested manager, listens there: when the container has just lost its
+last area and a floating window is above it, it parks a **ballast** dock in an area of its own, closed, so the count is
+one again by the time QtAds looks. Its closed area is hidden and takes no room. The next dock unparks it, whether added
+through the manager (`dockWidgetAdded`) or dropped back in (`dockAreasAdded`), into an area of its own or the
+ballast's. Park and unpark are both synchronous: `QtAdsLayout.restore` reads the areas and splitter counts straight
+after each add, and a ballast left standing a turn longer would cost a restored splitter its sizes. The ballast goes in
+and out through `CDockContainerWidget.addDockWidget` / `removeDockWidget` called on the manager, which skip the
 manager's registry, so `dockWidgetsMap()` never lists it (measured) and a layout save, the tab walks and the app's own
 dock lists never see it. With no floating window above, nothing is parked: QtAds leaves the manager empty, which is
 harmless there.
