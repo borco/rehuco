@@ -69,6 +69,12 @@ def build_nest(qtbot: QtBot, *, floating: bool, guarded: bool = True) -> tuple[Q
         outer.addDockWidgetFloating(sibling)
     outer.addDockWidget(BOTTOM, host, sibling.dockAreaWidget())
     subs = [add_dock(inner, name) for name in ("A", "B")]
+    settle()
+    if floating and (window := sibling.floatingDockContainer()) is not None and not window.isVisible():
+        # Linux's offscreen plugin hides a new floating window on the next event pass (measured; Windows' offscreen
+        # and WSLg's Wayland keep it shown), which would fail every visibility check before the test acts
+        window.show()
+        settle()
     return main, Nest(outer, sibling, host, inner, subs)
 
 
