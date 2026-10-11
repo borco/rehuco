@@ -643,12 +643,18 @@ class ContentImagesView(QAbstractScrollArea):  # pylint: disable=too-many-instan
     def contextMenuEvent(self, event: QContextMenuEvent) -> None:
         """Offer **Copy** for the image under the pointer, selecting it first; nothing over a gap or a banner.
 
+        The Menu key sends a synthetic position that means nothing here, so it acts on the current selection.
+
         :param event: the Qt context-menu event, in viewport coordinates.
         """
-        index = self.index_at(event.pos())
-        if index is None:
-            return
-        self.set_selected(index)
+        if event.reason() == QContextMenuEvent.Reason.Keyboard:
+            if self.__selected is None:
+                return
+        else:
+            index = self.index_at(event.pos())
+            if index is None:
+                return
+            self.set_selected(index)
         menu = QMenu(self)
         try:
             menu.addAction(self.__copy_action)

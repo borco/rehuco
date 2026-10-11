@@ -1,16 +1,19 @@
 """Tests for taking an image out of the Content Images grid -- a drag, or Copy on the selected one (#395)."""
 
-from collections.abc import Iterator
 from pathlib import Path
 from typing import Final
 
+from borco_pyside.logging.log_model import LogModel
+from borco_pyside.logging.log_view import LogView
+from borco_pyside.shortcuts import CommandScope
 from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
-from PySide6.QtGui import QAction, QContextMenuEvent, QGuiApplication, QMouseEvent
+from PySide6.QtGui import QAction, QContextMenuEvent, QGuiApplication, QKeySequence, QMouseEvent
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QMenu, QToolBar
+from PySide6.QtWidgets import QApplication, QLineEdit, QMainWindow, QMenu, QToolBar, QVBoxLayout, QWidget
 from pytest import MonkeyPatch, fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
+from rehuco_agent.commands import COPY_IMAGE
 from rehuco_agent.documents.content_images import (
     ContentDisplayFlags,
     ContentImagesModel,
@@ -70,13 +73,6 @@ def exporting(
     content_model.set_entries([entry(PACK, "a.png"), entry(PACK, "sub/b.png")], REHU_DIRECTORY)
     settle(qtbot, built, content_model)
     return built
-
-
-@fixture
-def clipboard() -> Iterator[None]:
-    """Leave the clipboard empty after the test, whatever it put there."""
-    yield
-    QGuiApplication.clipboard().clear()
 
 
 def centre_of(view: ContentImagesView, index: int) -> QPoint:
@@ -319,6 +315,89 @@ def test_the_context_menu_selects_the_image_and_offers_copy(
     assert len(RecordingMenu.shown) == 1
     assert RecordingMenu.shown[0] == [exporting.copy_action]
     assert exporting.selected == 1
+
+
+def test_the_menu_key_acts_on_the_selection_not_on_the_image_under_a_synthetic_position(
+    exporting: ContentImagesView, monkeypatch: MonkeyPatch
+) -> None:
+    """The Menu key sends a context-menu event at a position that means nothing here, so it offers Copy for the
+    selected image and leaves the selection where it was; with nothing selected there is no menu.
+
+    **Test steps:**
+
+    * with the menu recorded, send a keyboard context-menu event with nothing selected
+    * select the second image and send one whose position lies over the first
+    * verify no menu the first time, then one holding Copy, and the second image still selected
+    """
+    monkeypatch.setattr("rehuco_agent.documents.content_images.content_images_view.QMenu", RecordingMenu)
+    RecordingMenu.shown = []
+    viewport = exporting.viewport()
+    over_first = centre_of(exporting, 0)
+
+    QApplication.sendEvent(
+        viewport,
+        QContextMenuEvent(QContextMenuEvent.Reason.Keyboard, over_first, viewport.mapToGlobal(over_first)),
+    )
+    assert not RecordingMenu.shown
+    exporting.set_selected(1)
+    QApplication.sendEvent(
+        viewport,
+        QContextMenuEvent(QContextMenuEvent.Reason.Keyboard, over_first, viewport.mapToGlobal(over_first)),
+    )
+
+    assert len(RecordingMenu.shown) == 1
+    assert RecordingMenu.shown[0] == [exporting.copy_action]
+    assert exporting.selected == 1
+
+
+def test_the_grids_ctrl_c_is_scoped_to_the_grid_and_armed_by_nothing_else(
+    qtbot: QtBot, exporting: ContentImagesView
+) -> None:
+    """Copy is a focused-document command of the ``images`` focus group, carried by the grid's own subtree: Ctrl+C
+    reaches it once the grid has focus, and never from a text field or the log view beside it.
+
+    **Test steps:**
+
+    * verify the command's scope and focus group, and that the grid's action carries the Copy keys within its subtree
+    * put the grid, a line edit and a log view in one active window, with an image selected
+    * press Ctrl+C with the line edit focused, then the log view, then the grid
+    * verify the grid's Copy fired only for the last
+    """
+    assert COPY_IMAGE.scopes == (CommandScope.DOCUMENT_FOCUSED,)
+    assert COPY_IMAGE.focus_group == "images"
+    action = exporting.copy_action
+    assert action.shortcuts() == QKeySequence.keyBindings(QKeySequence.StandardKey.Copy)
+    assert action.shortcutContext() == Qt.ShortcutContext.WidgetWithChildrenShortcut
+    assert action in exporting.actions()
+
+    window = QMainWindow()
+    qtbot.addWidget(window)
+    holder = QWidget()
+    layout = QVBoxLayout(holder)
+    field = QLineEdit()
+    log_model = LogModel(limit=10)
+    log = LogView()
+    log.setModel(log_model)
+    for widget in (exporting, field, log):
+        layout.addWidget(widget)
+    window.setCentralWidget(holder)
+    window.resize(1000, 700)
+    window.show()
+    window.activateWindow()
+    qtbot.waitActive(window)
+    exporting.set_selected(0)
+    fired: list[bool] = []
+    action.triggered.connect(lambda: fired.append(True))
+
+    try:
+        for focused in (field, log, exporting):
+            focused.setFocus()
+            qtbot.waitUntil(focused.hasFocus)
+            QTest.keyClick(focused, Qt.Key.Key_C, Qt.KeyboardModifier.ControlModifier)
+            assert len(fired) == (1 if focused is exporting else 0)
+    finally:
+        # the grid is the fixture's, closed by qtbot at teardown: give it back before the window takes it along
+        exporting.setParent(None)
 
 
 def test_the_panel_puts_copy_on_its_toolbar(

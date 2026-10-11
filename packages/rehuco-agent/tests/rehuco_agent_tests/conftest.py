@@ -25,7 +25,8 @@ from uuid import UUID
 from borco_core.logging import SharedRotatingFileHandler
 from borco_pyside.logging import LogBridge
 from borco_pyside.shortcuts import CommandRegistry
-from PySide6.QtCore import qInstallMessageHandler
+from PySide6.QtCore import QMimeData, qInstallMessageHandler
+from PySide6.QtGui import QGuiApplication
 from pytest import TempPathFactory, fixture
 from pytest_mock import MockerFixture
 from rehuco_agent import main_rc  # noqa: F401  # pylint: disable=unused-import  # registers :/icons/... resources
@@ -863,3 +864,26 @@ def isolate_settings_dialog_settings(mocker: MockerFixture) -> FakeSettings:
     fake = FakeSettings()
     mocker.patch.object(settings_dialog, "persistent_settings", return_value=fake)
     return fake
+
+
+@fixture
+def clipboard(qapp: object) -> Iterator[None]:
+    """Hand a test the system clipboard and put back what the developer had on it (#485).
+
+    A test that copies an image writes the real clipboard when the platform is not offscreen; clearing it afterwards
+    would still lose what was there, and a clear after an assertion is skipped by a failure. This restores every format
+    held at the start, in a ``finally``, whatever the test did.
+
+    :param qapp: the application, which the clipboard needs.
+    """
+    del qapp
+    board = QGuiApplication.clipboard()
+    saved = QMimeData()
+    held = board.mimeData()
+    if held is not None:
+        for mime_format in held.formats():
+            saved.setData(mime_format, held.data(mime_format))
+    try:
+        yield
+    finally:
+        board.setMimeData(saved)

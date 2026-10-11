@@ -1,6 +1,5 @@
 """Tests for taking the image on screen out of a lightbox -- Copy, and a drag that starts on the picture (#395)."""
 
-from collections.abc import Iterator
 from pathlib import Path
 from typing import Final
 
@@ -20,6 +19,7 @@ from rehuco_agent.fields.widgets import (
     PathImageSource,
     ScreenshotRowsImageSource,
 )
+from rehuco_agent.fields.widgets.image_lightbox import NEXT_BUTTON_NAME
 from rehuco_agent.fields.widgets.image_selector import PreviewLabel
 from rehuco_agent.fields.widgets.thumbnail_row import ThumbnailRow
 
@@ -67,13 +67,6 @@ def document(qtbot: QtBot) -> QWidget:
     return widget
 
 
-@fixture
-def clipboard() -> Iterator[None]:
-    """Leave the clipboard empty after the test, whatever it put there."""
-    yield
-    QGuiApplication.clipboard().clear()
-
-
 def open_viewer(qtbot: QtBot, document: QWidget, resource: Path, exporter: ImageExporter | None) -> ImageLightbox:
     """Open a document-overlay viewer over the two screenshots, its row hidden, and wait for the picture.
 
@@ -99,23 +92,62 @@ def picture_rect(viewer: ImageLightbox) -> QRect:
     return preview.image_rect().translated(preview.pos())
 
 
-def move_to(viewer: ImageLightbox, point: QPoint) -> None:
-    """Move the pointer to ``point`` with the left button held.
+def target_at(viewer: ImageLightbox, point: QPoint) -> QWidget:
+    """The widget Qt would deliver a mouse event at ``point`` to: the child under it, else the viewer itself (the
+    picture is transparent to the mouse, so a press on it reaches the viewer).
+
+    :param viewer: the viewer.
+    :param point: where, in the viewer's coordinates.
+    :returns: the widget.
+    """
+    return viewer.childAt(point) or viewer
+
+
+def move_to(viewer: ImageLightbox, point: QPoint, target: QWidget | None = None) -> None:
+    """Move the pointer to ``point`` with the left button held, to ``target`` -- the widget that took the press, as Qt
+    grabs the mouse for it -- or else to the widget under the point.
 
     :param viewer: the viewer.
     :param point: where to, in the viewer's coordinates.
+    :param target: the widget that took the press.
     """
-    at = QPointF(point)
+    receiver = target or target_at(viewer, point)
+    local = QPointF(receiver.mapFrom(viewer, point))
     QApplication.sendEvent(
-        viewer,
+        receiver,
         QMouseEvent(
             QEvent.Type.MouseMove,
-            at,
-            viewer.mapToGlobal(at),
+            local,
+            receiver.mapToGlobal(local),
             Qt.MouseButton.LeftButton,
             Qt.MouseButton.LeftButton,
             Qt.KeyboardModifier.NoModifier,
         ),
+    )
+
+
+def press(viewer: ImageLightbox, point: QPoint) -> QWidget:
+    """Press the left button at ``point`` on the widget under it, the way the window system delivers it.
+
+    :param viewer: the viewer.
+    :param point: where, in the viewer's coordinates.
+    :returns: the widget that was pressed.
+    """
+    target = target_at(viewer, point)
+    QTest.mousePress(target, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, target.mapFrom(viewer, point))
+    return target
+
+
+def release(viewer: ImageLightbox, point: QPoint, target: QWidget | None = None) -> None:
+    """Let go of the left button at ``point``, on the widget that took the press or else the one under it.
+
+    :param viewer: the viewer.
+    :param point: where, in the viewer's coordinates.
+    :param target: the widget that took the press.
+    """
+    receiver = target or target_at(viewer, point)
+    QTest.mouseRelease(
+        receiver, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, receiver.mapFrom(viewer, point)
     )
 
 
@@ -126,8 +158,7 @@ def press_and_move(viewer: ImageLightbox, start: QPoint, distance: int) -> None:
     :param start: where the button goes down.
     :param distance: how far to move.
     """
-    QTest.mousePress(viewer, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, start)
-    move_to(viewer, start + QPoint(0, distance))
+    move_to(viewer, start + QPoint(0, distance), press(viewer, start))
 
 
 def test_copy_takes_the_image_on_screen_and_rides_ctrl_c(
@@ -253,7 +284,7 @@ def test_a_press_beside_the_picture_or_one_that_barely_moves_drags_nothing(
 
     press_and_move(viewer, backdrop, 3 * QApplication.startDragDistance())
     press_and_move(viewer, picture.center(), 1)
-    QTest.mouseRelease(viewer, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, picture.center())
+    release(viewer, picture.center())
     move_to(viewer, picture.center() + QPoint(0, 3 * QApplication.startDragDistance()))
 
     drag_class.assert_not_called()
@@ -274,10 +305,83 @@ def test_a_double_click_on_the_picture_still_closes_the_viewer(
     closed: list[bool] = []
     viewer.closed.connect(lambda: closed.append(True))
 
-    QTest.mouseDClick(viewer, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, picture_rect(viewer).center())
+    centre = picture_rect(viewer).center()
+    target = target_at(viewer, centre)
+    QTest.mouseDClick(target, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, target.mapFrom(viewer, centre))
 
     assert closed == [True]
     drag_class.assert_not_called()
+
+
+def test_a_press_on_a_navigation_band_that_moves_drags_nothing(
+    qtbot: QtBot, document: QWidget, resource: Path, staging: Path, mocker: MockerFixture
+) -> None:
+    """The prev/next bands lie over the picture, but they are not the picture: the band takes the press, so the
+    viewer never sees it and a move from it drags nothing.
+
+    **Test steps:**
+
+    * with ``QDrag`` replaced, find the next band's middle, which lies inside the picture's drawn area
+    * verify the press lands on the band, then move well past the drag distance
+    * verify no drag was built and the viewer did not step
+    * press-and-move the picture just beside the band and verify that does drag
+    """
+    drag_class = mocker.patch("rehuco_agent.fields.widgets.image_export.QDrag")
+    viewer = open_viewer(qtbot, document, resource, ImageExporter(staging, lambda: ID))
+    band = viewer.findChild(QWidget, NEXT_BUTTON_NAME)
+    assert isinstance(band, QWidget)
+    middle = band.geometry().center()
+    assert picture_rect(viewer).contains(middle)
+    assert target_at(viewer, middle) is band
+
+    press_and_move(viewer, middle, 3 * QApplication.startDragDistance())
+
+    drag_class.assert_not_called()
+    assert viewer.current_index == 0
+    release(viewer, middle, band)
+    press_and_move(viewer, picture_rect(viewer).center(), 3 * QApplication.startDragDistance())
+    drag_class.return_value.exec.assert_called_once()
+
+
+def test_a_right_click_on_a_thumbnail_of_the_viewers_row_offers_no_menu(
+    qtbot: QtBot, document: QWidget, resource: Path, staging: Path, monkeypatch: MonkeyPatch
+) -> None:
+    """The viewer's Copy copies the image on screen, so a menu raised over a *thumbnail* would mislead: the row takes
+    the right-click and offers nothing.
+
+    **Test steps:**
+
+    * open a viewer with its row shown, the menu recorded
+    * ask for a context menu over a thumbnail, and over the picture
+    * verify only the picture's offered one
+    """
+    monkeypatch.setattr("rehuco_agent.fields.widgets.image_lightbox.QMenu", RecordingMenu)
+    RecordingMenu.shown = []
+    images = [resource / "screenshots" / "a.png", resource / "screenshots" / "b.png"]
+    viewer = ImageLightbox(
+        PathImageSource(images, resource),
+        0,
+        ImageViewerMode.DOCUMENT_OVERLAY,
+        document,
+        strip_visible=True,
+        exporter=ImageExporter(staging, lambda: ID),
+    )
+    viewer.reveal()
+    row = viewer.findChild(ThumbnailRow)
+    assert isinstance(row, ThumbnailRow)
+    qtbot.waitUntil(lambda: not row.visualRect(row.model().index(1, 0)).isEmpty())
+    on_thumbnail = row.viewport().mapTo(viewer, row.visualRect(row.model().index(1, 0)).center())
+    assert target_at(viewer, on_thumbnail) is row.viewport()
+
+    for point in (on_thumbnail, picture_rect(viewer).center()):
+        receiver = target_at(viewer, point)
+        local = receiver.mapFrom(viewer, point)
+        QApplication.sendEvent(
+            receiver, QContextMenuEvent(QContextMenuEvent.Reason.Mouse, local, receiver.mapToGlobal(local))
+        )
+
+    assert len(RecordingMenu.shown) == 1
+    assert RecordingMenu.shown[0] == [viewer.copy_action]
 
 
 def test_the_curating_viewer_copies_too(

@@ -19,7 +19,7 @@ from PySide6.QtCore import (
     Qt,
     Signal,
 )
-from PySide6.QtGui import QMouseEvent, QPainter, QPainterPath, QPalette, QPixmap, QWheelEvent
+from PySide6.QtGui import QContextMenuEvent, QMouseEvent, QPainter, QPainterPath, QPalette, QPixmap, QWheelEvent
 from PySide6.QtWidgets import QAbstractItemView, QFrame, QListView, QStyledItemDelegate, QStyleOptionViewItem, QWidget
 
 from .image_export import ImageExporter, PressTracker
@@ -238,6 +238,15 @@ class ThumbnailRow(QListView):  # pylint: disable=too-many-instance-attributes
         """
         super().mouseReleaseEvent(event)
         self.__press.release()
+
+    @override
+    def contextMenuEvent(self, event: QContextMenuEvent) -> None:
+        """Offer no menu: left to propagate, a right-click here would reach the viewer's, whose Copy copies the image
+        on screen rather than the thumbnail pointed at (#395).
+
+        :param event: the Qt context-menu event, accepted and left alone.
+        """
+        event.accept()
 
     def __on_clicked(self, index: QModelIndex) -> None:
         """Report a click on a thumbnail -- unless it is the release that ends a drag out of the row.
