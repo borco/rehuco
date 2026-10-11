@@ -15,7 +15,12 @@ from rehuco_core import (
     read_archive_facts,
 )
 
-from rehuco_core_tests.crafted_zips import write_future_version_zip, write_undecodable_name_zip
+from rehuco_core_tests.crafted_zips import (
+    write_corrupt_directory_zip,
+    write_encrypted_member_zip,
+    write_future_version_zip,
+    write_undecodable_name_zip,
+)
 
 PAYLOAD: Final = b"0123456789" * 200
 """Compressible, so a deflated member is smaller than its stored twin."""
@@ -103,24 +108,56 @@ def test_a_mixed_archive_says_how_many_members_use_each_method(tmp_path: Path) -
     assert facts.method_text == "Mixed (2 stored, 1 deflated)"
 
 
-def test_bzip2_and_lzma_are_readable_but_slow_and_other_methods_are_unreadable() -> None:
-    """The warnings are decided by the method alone.
+def test_a_bzip2_or_lzma_zip_is_detected_as_readable_but_slow(tmp_path: Path) -> None:
+    """The warnings come from the methods the directory of a real zip records.
 
     **Test steps:**
 
-    * build facts for bzip2, lzma, zstd, deflate64 and an encrypted deflated member
+    * write a bzip2 zip and an lzma zip
+    * verify each is read as slow, readable and named for its method
+    """
+    for method, name in ((zipfile.ZIP_BZIP2, "BZip2"), (zipfile.ZIP_LZMA, "LZMA")):
+        archive = write_zip(tmp_path / f"{name}.zip", {"a.jpg": method, "b.jpg": method})
+
+        facts = read_archive_facts(archive, CONTENT_IMAGE_EXTENSIONS)
+
+        assert facts is not None
+        assert facts.methods == {method: 2}
+        assert facts.method_text == name
+        assert facts.slow and not facts.unreadable
+
+
+def test_the_methods_zipfile_cannot_inflate_and_encryption_make_an_archive_unreadable() -> None:
+    """The unreadable verdict is decided by the method and the encrypted count alone.
+
+    **Test steps:**
+
+    * build facts for zstd, deflate64 and an encrypted deflated member
     * verify which are slow and which are unreadable
     """
 
     def facts(method: int, encrypted: int = 0) -> ArchiveFacts:
         return ArchiveFacts(1, 1, 10, 5, {method: 1}, encrypted)
 
-    assert facts(zipfile.ZIP_BZIP2).slow and not facts(zipfile.ZIP_BZIP2).unreadable
-    assert facts(zipfile.ZIP_LZMA).slow and not facts(zipfile.ZIP_LZMA).unreadable
     assert not facts(zipfile.ZIP_ZSTANDARD).slow and not facts(zipfile.ZIP_ZSTANDARD).unreadable
     assert facts(9).unreadable and facts(9).method_text == "Deflate64"
     assert facts(zipfile.ZIP_DEFLATED, encrypted=1).unreadable
     assert ArchiveFacts(0, 0, 0, 0, {}).method_text == ""
+
+
+def test_an_encrypted_member_in_a_real_zip_makes_it_unreadable(tmp_path: Path) -> None:
+    """The flag bit the directory carries is counted, whatever the method says.
+
+    **Test steps:**
+
+    * write a zip whose directory flags its only member as encrypted
+    * verify the facts count one encrypted member and read the archive as unreadable
+    """
+    facts = read_archive_facts(write_encrypted_member_zip(tmp_path / "locked.zip"), CONTENT_IMAGE_EXTENSIONS)
+
+    assert facts is not None
+    assert facts.encrypted == 1 and facts.files == 1
+    assert facts.unreadable and not facts.slow
 
 
 def test_an_empty_archive_has_nothing_in_it(tmp_path: Path) -> None:
@@ -147,7 +184,8 @@ def test_a_file_that_is_no_zip_or_is_gone_has_no_facts(tmp_path: Path) -> None:
 
     **Test steps:**
 
-    * read a text file named ``.zip``, a truncated zip and a missing path
+    * read a text file named ``.zip``, a truncated zip, a zip whose end record is intact over a corrupt central
+      directory, and a missing path
     * verify each answers ``None``
     """
     text = tmp_path / "text.zip"
@@ -155,9 +193,12 @@ def test_a_file_that_is_no_zip_or_is_gone_has_no_facts(tmp_path: Path) -> None:
     whole = write_zip(tmp_path / "whole.zip", {"a.jpg": zipfile.ZIP_STORED})
     truncated = tmp_path / "cut.zip"
     truncated.write_bytes(whole.read_bytes()[:-30])
+    corrupt = write_corrupt_directory_zip(tmp_path / "corrupt.zip")
 
     assert read_archive_facts(text, CONTENT_IMAGE_EXTENSIONS) is None
     assert read_archive_facts(truncated, CONTENT_IMAGE_EXTENSIONS) is None
+    assert read_archive_facts(corrupt, CONTENT_IMAGE_EXTENSIONS) is None
+    assert list_archive_images(corrupt, CONTENT_IMAGE_EXTENSIONS) == []
     assert read_archive_facts(tmp_path / "gone.zip", CONTENT_IMAGE_EXTENSIONS) is None
 
 
