@@ -6,6 +6,7 @@
 # pylint: disable=too-many-lines
 
 import base64
+import json
 import logging
 from collections.abc import Callable, Generator, Iterator
 from contextlib import contextmanager
@@ -60,11 +61,15 @@ from rehuco_agent.main_window import (
 from rehuco_agent.recycle_bin_deleter import RecycleBinDeleter
 from rehuco_agent.rehuco import BrowsersDock, RootCatalog, RootsPanel, selection_preview
 from rehuco_agent.settings.checksum_settings import shared_checksum_settings
-from rehuco_agent.settings.document_session_settings import DocumentSessionSettings
+from rehuco_agent.settings.document_session_settings import (
+    SESSION_VERSION,
+    DocumentSessionSettings,
+    document_session_path,
+)
 from rehuco_agent.settings.identity_settings import shared_identity_settings
 from rehuco_agent.settings.image_viewer_settings import PREVIEWS_VISIBLE_KEY, shared_image_viewer_settings
 from rehuco_agent.settings.logs_settings import shared_logs_settings
-from rehuco_agent.settings.main_window_settings import MainWindowSettings
+from rehuco_agent.settings.main_window_settings import WINDOW_VERSION, MainWindowSettings, main_window_state_path
 from rehuco_agent.settings.recent_files_settings import RecentFilesSettings
 from rehuco_agent.settings.rehuco_settings import RehucoSettings
 from rehuco_agent.settings.root_catalog_settings import shared_root_catalog_settings
@@ -102,6 +107,8 @@ from rehuco_core import (
     TaskJobBase,
     TaskQueue,
 )
+
+from rehuco_agent_tests.conftest import MemoryStateFiles
 
 SWEEP_ROOT: Final = Path("/fake/library")
 """The folder a sweep test points the chooser at -- never read, since no sweep here does real work."""
@@ -2958,6 +2965,40 @@ def test_close_event_saves_the_toolbars_state(mocker: MockerFixture, qtbot: QtBo
     window_settings = window._MainWindow__window_settings  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     assert window_settings.toolbars_state != b""
     save.assert_called_once()
+
+
+def test_closing_the_window_writes_the_window_and_session_files(
+    mocker: MockerFixture, qtbot: QtBot, state_files: MemoryStateFiles
+) -> None:
+    """Closing the app leaves ``main-window.json`` and ``document-session.json`` at the paths their settings name
+    (#404, #483), with the geometry the window had and a window state a fresh load reads back.
+
+    **Test steps:**
+
+    * construct ``MainWindow`` and make ``saveGeometry`` answer known bytes
+    * dispatch a close event, with no settings stand-in
+    * verify both files were written at the paths the settings name (beside the preview's layouts file), each
+      stamped with its version
+    * verify the window file holds the geometry, and a fresh ``MainWindowSettings`` reads it back with the layouts
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    mocker.patch.object(window, "saveGeometry", return_value=QByteArray(b"new-geometry"))
+    state_files.files.clear()
+
+    window.closeEvent(QCloseEvent())
+
+    assert {main_window_state_path(), document_session_path()} <= set(state_files.files)
+    window_file = json.loads(state_files.files[main_window_state_path()])
+    session_file = json.loads(state_files.files[document_session_path()])
+    assert window_file["version"] == WINDOW_VERSION
+    assert session_file["version"] == SESSION_VERSION
+    assert base64.b64decode(window_file["geometry"]) == b"new-geometry"
+    restored = MainWindowSettings()
+    restored.load()
+    assert restored.geometry == b"new-geometry"
+    assert restored.outer_layout is not None
+    assert restored.toolbars_state != b""
 
 
 def test_toolbars_state_round_trips_the_action_bar_area(mocker: MockerFixture, qtbot: QtBot) -> None:

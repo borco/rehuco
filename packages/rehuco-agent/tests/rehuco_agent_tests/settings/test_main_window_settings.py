@@ -6,7 +6,7 @@ The state lives in a JSON file (#404); conftest's autouse ``state_files`` keeps 
 
 import json
 
-from rehuco_agent.settings.main_window_settings import MainWindowSettings, main_window_state_path
+from rehuco_agent.settings.main_window_settings import WINDOW_VERSION, MainWindowSettings, main_window_state_path
 
 from rehuco_agent_tests.conftest import MemoryStateFiles
 
@@ -30,15 +30,17 @@ def test_save_then_load_round_trips_the_geometry() -> None:
     assert restored.geometry == b"some-geometry-blob"
 
 
-def test_load_defaults_to_empty_geometry_when_nothing_was_saved() -> None:
-    """Loading from settings that never had geometry saved yields empty bytes, not an error.
+def test_load_defaults_to_empty_geometry_when_the_file_holds_none(state_files: MemoryStateFiles) -> None:
+    """A file that holds no geometry clears the one the instance had, rather than leaving it (#483).
 
     **Test steps:**
 
-    * load into a fresh instance from an empty settings stand-in
+    * seed an instance with geometry, and a file stamped with the version and nothing else
+    * load the file
     * verify the geometry is empty
     """
-    window_settings = MainWindowSettings()
+    state_files.files[main_window_state_path()] = json.dumps({"version": WINDOW_VERSION})
+    window_settings = MainWindowSettings(geometry=b"stale")
 
     window_settings.load()
 
@@ -88,15 +90,17 @@ def test_a_stored_outer_layout_that_is_not_a_tree_reads_as_none(state_files: Mem
     assert window_settings.geometry == b"geometry"
 
 
-def test_load_defaults_to_no_outer_layout_when_nothing_was_saved() -> None:
-    """Loading from settings that never had an outer layout saved yields ``None``.
+def test_load_defaults_to_no_outer_layout_when_the_file_holds_none(state_files: MemoryStateFiles) -> None:
+    """A file that holds no outer layout clears the one the instance had (#483).
 
     **Test steps:**
 
-    * load into a fresh instance from an empty settings stand-in
+    * seed an instance with an outer layout, and a file stamped with the version and nothing else
+    * load the file
     * verify the outer layout is ``None``
     """
-    window_settings = MainWindowSettings()
+    state_files.files[main_window_state_path()] = json.dumps({"version": WINDOW_VERSION})
+    window_settings = MainWindowSettings(outer_layout={"format": 1, "main": {"area": []}})
 
     window_settings.load()
 
@@ -122,15 +126,17 @@ def test_save_then_load_round_trips_the_toolbars_state() -> None:
     assert restored.toolbars_state == b"some-toolbars-state-blob"
 
 
-def test_load_defaults_to_empty_toolbars_state_when_nothing_was_saved() -> None:
-    """Loading from settings that never had a toolbars state saved yields empty bytes.
+def test_load_defaults_to_empty_toolbars_state_when_the_file_holds_none(state_files: MemoryStateFiles) -> None:
+    """A file that holds no toolbars state clears the one the instance had (#483).
 
     **Test steps:**
 
-    * load into a fresh instance from an empty settings stand-in
+    * seed an instance with toolbars state, and a file stamped with the version and nothing else
+    * load the file
     * verify the toolbars state is empty
     """
-    window_settings = MainWindowSettings()
+    state_files.files[main_window_state_path()] = json.dumps({"version": WINDOW_VERSION})
+    window_settings = MainWindowSettings(toolbars_state=b"stale")
 
     window_settings.load()
 
@@ -138,18 +144,47 @@ def test_load_defaults_to_empty_toolbars_state_when_nothing_was_saved() -> None:
 
 
 def test_load_with_no_file_leaves_nothing_saved() -> None:
-    """A first run, or a deleted file, has no window state (#404).
+    """A first run, or a deleted file, has no window state (#404, #483).
 
     **Test steps:**
 
-    * load into an instance that already holds geometry, with nothing saved
-    * verify the geometry is gone
+    * seed an instance with geometry, an outer layout and toolbars state, with nothing saved
+    * load it
+    * verify all three are gone
     """
-    window_settings = MainWindowSettings(geometry=b"stale")
+    window_settings = MainWindowSettings(
+        geometry=b"stale", outer_layout={"format": 1, "main": {"area": []}}, toolbars_state=b"stale"
+    )
 
     window_settings.load()
 
     assert window_settings.geometry == b""
+    assert window_settings.outer_layout is None
+    assert window_settings.toolbars_state == b""
+
+
+def test_a_file_of_another_version_reads_as_nothing_saved(state_files: MemoryStateFiles) -> None:
+    """A window file written by a build of another version is ignored whole, not half-read (#404, #483).
+
+    **Test steps:**
+
+    * seed a file one version ahead, holding good geometry, an outer layout and toolbars state
+    * load it into an instance already holding values
+    * verify every field went, and nothing of the file's was taken
+    """
+    state_files.files[main_window_state_path()] = json.dumps(
+        {
+            "version": WINDOW_VERSION + 1,
+            "geometry": "Z2VvbWV0cnk=",
+            "outer_layout": {"format": 1, "main": {"area": []}},
+            "toolbars_state": "dG9vbGJhcnM=",
+        }
+    )
+    window_settings = MainWindowSettings(geometry=b"stale", outer_layout={"format": 1}, toolbars_state=b"stale")
+
+    window_settings.load()
+
+    assert window_settings == MainWindowSettings()
 
 
 def test_a_damaged_blob_reads_as_empty(state_files: MemoryStateFiles) -> None:

@@ -652,3 +652,60 @@ not — `isolate_shared_image_viewer_settings` is the second reactive one, and
   deletes with its row and the frame's Reset/Defaults restore it with the rows. Its
   `isolate_shared_web_search_settings` sits beside the others, and the document toolbar's Search the Web
   action searches through the active engine.
+
+## 7. The state files (#404)
+
+[[[appendices.settings-pages#state-files]]]
+
+What is large or grows with use does not live in the `.ini`: the document session, the window's geometry and dock
+layout, and the default dock layouts are JSON files under the app's own config folder (`config_folder()`, the
+`rehuco-agent/` folder beside the `.ini`), next to `task-queue.json` ([[appendices.task-queue#lifetime]]).
+`settings/state_file.py` reads and writes all three.
+
+**Common shape.** One JSON object per file, `"version"` first, then the fields below. A blob (Qt's `saveGeometry()`
+and `saveState()`, a document's dock-layout state) is spelled **base64** so JSON can hold it; a layout *tree*
+(`QtAdsLayout`) is a nested object, stored as it is. Writes are atomic (`borco_core.atomic_write_text`), whole-file, and
+made when the owner closes, never on progress. A write that fails is logged, never raised.
+
+**Lenient on read.** A file that is missing, unreadable, not JSON, not an object, or **of another `version` than the
+build reads** is treated as if it were absent: the settings object is left (or reset) to its empty defaults, the cause
+is logged, and the app starts. A missing file is not logged. A file that existed but read as absent is moved aside as
+`<name>.bak` by the next write to it, so a newer build's file, or one a virus scanner briefly locked, is not lost to
+the first save (#478). Inside a readable file, a field of the wrong type, a damaged base64 blob or a malformed list
+entry costs only itself.
+
+### `document-session.json`
+
+`DocumentSessionSettings`, version `1`. Which `.rehu` files were open, in most-recently-used order.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `focused_path` | string | POSIX-style path of the document that had the focus; `""` for none |
+| `docks_layout` | object | `DocumentsDock.save_state()`'s layout tree (splits and tabs between the open documents); anything but an object reads as none |
+| `items` | list of objects | each `{"path": string, "open": bool, "state": base64}`; an entry with no non-empty string `path` is skipped, and `open` is open only when it is the JSON `true` |
+
+`state` is the document's own dock-layout state (`DocumentWidget.save_state()`, cbor2-encoded). On save, every open
+entry is kept and the closed ones are cut to the newest few (`MAXIMUM_REMEMBERED_FILES` in all). Paths are stored as
+saved and are not resolved on load, so a share that is down cannot stall the start.
+
+### `main-window.json`
+
+`MainWindowSettings`, version `1`. The main window as it was closed.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `geometry` | base64 | `QMainWindow.saveGeometry()`; empty restores nothing |
+| `outer_layout` | object | the outer dock manager's layout tree (Documents, Log, Tasks, Settings and the rest), with the Log dock's filters and the Tasks dock's nested layout folded into their entries; anything but an object reads as none |
+| `toolbars_state` | base64 | `QMainWindow.saveState()` for the toolbar area; Qt checks its own version (`TOOLBARS_STATE_VERSION`) and keeps the default on a mismatch |
+
+### `layouts/<group>.json`
+
+`DefaultLayoutSettings`, version `1`; one file per **group**, so the sets never meet. `default_layout.json` holds the
+Documents dock's saved default layouts and `preview_layout.json` the preview's last arrangement of each type; a host
+with defaults of its own names another group.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `states` | object | resource type's main key (`""` for a document with no type) to a base64 `DocumentSubDocks.save_layout_state()` blob; a type whose blob is empty or damaged has no default |
+
+A type with no entry has no default: layouts are never inherited across types.
