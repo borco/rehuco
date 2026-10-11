@@ -11,6 +11,9 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ### Added
 
+- `QtAdsEmptyingGuard`, which keeps a nested `CDockManager` from being left with no area while a floating window is
+  above it: QtAds retires the nearest floating window above a container that empties, so emptying a manager nested in a
+  floated dock -- by a removal or a drag -- deleted the outer window and every dock in it.
 - `QtAdsLayout`: saves a `CDockManager`'s layout as a JSON-able tree of splitters, tabbed areas, floating windows
   and sidebars, and restores it by moving the manager's own docks into place. Each part restores on its own: a dock the
   tree names that the manager lacks is skipped, or built by a `create_dock` hook; a dock the tree does not name goes

@@ -683,7 +683,54 @@ manager puts it back — owner and container both the nested manager again (meas
 exactly that on every manager, deferred a turn so QtAds' drop finishes walking the window first; on a manager
 that never pins it also unpins any of its own docks a border drop pinned there. And `QtAdsLayout` restores a
 nested manager's `pinned` entries into its main container (`pins=False`), so a layout saved while a dock sat
-stolen does not grow the nested manager a sidebar of its own on the next start.
+stolen does not grow the nested manager a sidebar of its own on the next start. The same blindness to nesting runs
+upward too ([[appendices.qt-ads#nested-emptied-float]]).
+
+### 10.8 Emptying a nested manager deletes the floating window above it
+
+[[[appendices.qt-ads#nested-emptied-float]]]
+
+**Question (#493):** with the Root Catalog dock floating over the Browsers and Log docks, creating or switching a
+catalog deleted the whole floating window — all three docks, their toggle actions with them, until a restart.
+
+**QtAds retires the wrong window.** When an area loses its last dock and its container is left with no area,
+`CDockAreaWidget::removeDockWidget` (QtAds 5.0.0, `DockAreaWidget.cpp:603`) calls `finishDropOperation()` on
+`DockContainer->floatingWidget()`: the window is hidden, its container lets go of every area, and it is
+`deleteLater()`ed and unregistered. That is meant for the container's own floating window, the one a drag just
+emptied. But `floatingWidget()` is `findParent<CFloatingDockContainer*>`, the nearest floating window *above* the
+container, the same walk §14 met in `QtAdsLayout.save`. So a nested manager emptied inside a dock of an outer floating
+window deletes the **outer** window, and every dock in it goes with the next turn of the event loop (measured, bare
+QtAds and the app alike). It is the removal that does it: the Browsers dock lets every browser go as a catalog closes,
+before the next catalog's are built. Nothing undoes `finishDropOperation()` afterwards, and nothing signals it. It is
+the upward twin of 10.7's downward search.
+
+**Every nested manager in the app empties somewhere.** The Browsers dock empties as a catalog closes and on the last
+browser's [x]. The Documents dock empties as its last document closes. A document's sub-docks empty in `teardown`,
+which a preview moving to a document another holder already has runs on the host it keeps. Tasks never removes a dock.
+None of their docks is `DockWidgetFloatable`, but all are `DockWidgetMovable`, and a **drag** empties one too: dragging
+a manager's only dock onto its own container's edge goes through `dropWidget` and the drag-preview drops
+(`moveToNewSection`, `dropIntoSection`, `dropIntoContainer`), which take the dock off its old area through
+`CDockAreaWidget::removeDockWidget` itself. That area removal runs the same check, and no manager removal signal
+(`dockWidgetAboutToBeRemoved`, `dockWidgetRemoved`) is emitted on that path (measured: a guard listening there lost the
+window). `QtAdsLayout`'s moves always leave the seed's area standing.
+
+**The fix keeps the count above zero, from inside the removal.** `CDockContainerWidget::removeDockArea` emits
+`dockAreasRemoved` as its last step, and `CDockAreaWidget::removeDockWidget` tests `dockAreaCount() == 0` only after
+that call returns, so a slot on the signal runs on every path, drags included, and in time.
+`borco_pyside.qtads.QtAdsEmptyingGuard`, on every nested manager, listens there: when the container has just lost its
+last area and a floating window is above it, it parks a **ballast** dock in an area of its own, closed, so the count is
+one again by the time QtAds looks. Its closed area is hidden and takes no room. The next dock unparks it, whether added
+through the manager (`dockWidgetAdded`) or dropped back in (`dockAreasAdded`), into an area of its own or the
+ballast's. Park and unpark are both synchronous: `QtAdsLayout.restore` reads the areas and splitter counts straight
+after each add, and a ballast left standing a turn longer would cost a restored splitter its sizes. The ballast goes in
+and out through `CDockContainerWidget.addDockWidget` / `removeDockWidget` called on the manager, which skip the
+manager's registry, so `dockWidgetsMap()` never lists it (measured) and a layout save, the tab walks and the app's own
+dock lists never see it. With no floating window above, nothing is parked: QtAds leaves the manager empty, which is
+harmless there.
+
+`addDockWidgetFloating` returns a wrapper of the window that was measured to go invalid while the window lives on, the
+Qt-made-wrapper trap of §14's last bullet. Find the window again through a dock's `floatingDockContainer()` rather
+than holding the wrapper.
 
 ## 11. `restoreState` puts a floating dock on screen before its owner exists
 
@@ -895,7 +942,8 @@ child, and can nest a splitter in one that runs the same way. The tree keeps nei
 container. A floating window the manager lost track of is still saved; one such case was seen in #488, cause
 unproven. The manager's own container is told apart by identity, not by `floatingWidget()`. That call
 answers the nearest floating window *above* a container, so a nested manager inside a floated outer dock
-(Tasks) reports the outer window as its own (measured).
+(Tasks) reports the outer window as its own (measured), the walk that has QtAds delete that outer window when the
+nested manager empties ([[appendices.qt-ads#nested-emptied-float]]).
 
 **Restore degrades per node:**
 

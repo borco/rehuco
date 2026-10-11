@@ -8,7 +8,13 @@ from typing import Any, Final, cast
 import cbor2
 import PySide6QtAds as QtAds
 from borco_pyside.logging import LogWidget
-from borco_pyside.qtads import QtAdsAutoHideButtonSuppressor, QtAdsFocusTracker, QtAdsLayout, QtAdsPinGuard
+from borco_pyside.qtads import (
+    QtAdsAutoHideButtonSuppressor,
+    QtAdsEmptyingGuard,
+    QtAdsFocusTracker,
+    QtAdsLayout,
+    QtAdsPinGuard,
+)
 from borco_pyside.theming import ActionIconThemeHandler
 from PySide6.QtCore import QItemSelectionModel, QPoint
 from PySide6.QtGui import QColor
@@ -177,6 +183,8 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
         QtAdsAutoHideButtonSuppressor(self.__dock_manager)
         # and a pin the button never offered is undone as it happens (#491)
         QtAdsPinGuard(self.__dock_manager, pins=False)
+        # never emptied under a floating window, which QtAds would delete with everything in it (#493)
+        QtAdsEmptyingGuard(self.__dock_manager)
         # the maximize toggle on each sub-dock's tab (#341); kept only so save_state can read
         # the layout un-maximized
         self.__maximize_handler: Final = attach_maximize_handler(self.__dock_manager)
