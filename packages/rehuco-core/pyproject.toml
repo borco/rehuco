@@ -19,7 +19,7 @@ classifiers = [
 ]
 requires-python = ">=3.14"
 dependencies = [
-    "borco-core",
+    "borco-core>=0.3.0",
     "pillow",
     # the bundled duration probe (#224). Its wheels carry libmediainfo itself for Windows, macOS and
     # Linux, so the three installers gain a probe rather than a runtime dependency on an FFmpeg the

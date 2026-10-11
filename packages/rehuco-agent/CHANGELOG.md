@@ -10,6 +10,8 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-11
+
 ### Added
 
 - **What changes on disk outside the app shows without a Scan.** Moving to a folder in the Roots view lists it again and

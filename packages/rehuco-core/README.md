@@ -32,6 +32,7 @@ It provides:
   archives, and measured size on disk and video duration
 - **A catalog** — the `.rehuco` file naming folder roots, and the `.rehudb` SQLite cache of the records found under
   them: an incremental scan, targeted updates after a save or rename, and filtered reads
+- **Staged images** — an image taken out of a resource, written unchanged under a name that traces it back
 - **A task queue** — one long job at a time, pausable, cancellable, reorderable, optionally persisted
   across restarts
 - **Legacy `.tc` conversion** — parsing the predecessor format and converting it to `.rehu`, one file or

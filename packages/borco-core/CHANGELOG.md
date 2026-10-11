@@ -9,6 +9,8 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-11
+
 ### Added
 
 - `borco_core.path_presence` — whether a remembered path is still there, without waiting on a machine that is off:

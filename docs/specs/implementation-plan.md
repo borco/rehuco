@@ -17,7 +17,7 @@ Companion to `architecture-design.md`. What was planned and how it landed is in 
 package's `CHANGELOG.md`; this page tracks only what's still ahead, against the original personal
 priorities:
 
-1. View/edit local `.rehu` for tutorials and reference images — **done** (`rehuco-agent` 0.1.0–0.2.0).
+1. View/edit local `.rehu` for tutorials and reference images — **done** (`rehuco-agent` 0.1.0–0.3.0).
 2. Scan folders into a cached catalog and search it — close to the original tutcatalog — **not started**.
 3. Watch a tutorial from a tablet/local browser — **superseded**: the work queue now builds an in-app
    player first (see "Tutorials — direction revised" below); the node/web approach is further out, not

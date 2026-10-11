@@ -9,6 +9,8 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-11
+
 ### Added
 
 - `QtAdsEmptyingGuard`, which keeps a nested `CDockManager` from being left with no area while a floating window is

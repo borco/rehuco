@@ -20,7 +20,7 @@ classifiers = [
 ]
 requires-python = ">=3.14"
 dependencies = [
-    "borco-core",
+    "borco-core>=0.3.0",
     # Essentials, not the `PySide6` meta-package: that one exists only to require Essentials *and*
     # Addons, so naming it pulls ~440-490 MB of QtWebEngine/Qt3D/QuickThreeD nothing here imports
     # ([[packaging-deployment#channels]]). Essentials ships the same `PySide6` package directory.

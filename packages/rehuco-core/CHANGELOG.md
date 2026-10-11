@@ -9,6 +9,8 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-11
+
 ### Added
 
 - `CatalogRecordUpdater.verify` is now three steps, so a caller can keep the disk off the thread that owns the cache:

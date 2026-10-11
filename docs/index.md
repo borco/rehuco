@@ -7,6 +7,20 @@
 [![macOS](https://img.shields.io/codecov/c/github/borco/rehuco?flag=macos&label=macOS)](https://app.codecov.io/gh/borco/rehuco?flags%5B0%5D=macos)
 [![Linux](https://img.shields.io/codecov/c/github/borco/rehuco?flag=linux&label=Linux)](https://app.codecov.io/gh/borco/rehuco?flags%5B0%5D=linux)
 
+## Install
+
+The desktop app, `rehuco-agent`, is the only program here. Either:
+
+- **Download an installer** from the [latest release](https://github.com/borco/rehuco/releases/latest): a
+  Windows `.msi`, a macOS `.dmg` or a Linux `.AppImage`. They are not code-signed yet, so Windows SmartScreen and
+  macOS Gatekeeper will ask you to confirm the first launch.
+- **Or install from PyPI** (Python 3.14+): `pip install rehuco-agent`, or `uv tool install rehuco-agent`, then run
+  `rehuco-agent`.
+
+The `.rehu` format is still moving, so keep backups of anything you point it at.
+
+## What it is
+
 A personal media catalog for the things you collect to learn from and work with — video tutorials,
 online courses, archives of reference images. Today it is a desktop editor
 for a resource's **details** and a browser over the folders that hold them, not for the media itself.
@@ -17,7 +31,9 @@ describes, one per resource. That's the whole storage model, and the name is its
 **[How it works](specs/how-it-works.md)** is one page on the whole system as it stands: the file, the
 rules that keep it trustworthy, the app's panels, and what isn't built.
 
-![The rehuco-agent editor with a reference-images resource open: edit fields and a read-only viewer alongside description, checksums, content images, files, and an app-wide log dock](assets/images/rehuco-agent.png)
+![The rehuco-agent editor with a reference-images resource open: edit fields and a read-only viewer alongside description, checksums, content images, files, and an app-wide log dock](assets/images/rehuco-agent--documents.png)
+
+![The Root Catalog panel's column view of a root's folders with a details pane for the selected item, above a Browsers panel listing the catalog's records in a filterable table](assets/images/rehuco-agent--browser-and-root-catalog.png)
 
 ## What it does
 
@@ -38,6 +54,10 @@ rules that keep it trustworthy, the app's panels, and what isn't built.
 - **Catalogs your folders.** A `.rehuco` file names the folders to catalog; a scan records every `.rehu` under them in
   a rebuildable cache, and filterable tables list the result. A column view of the folders shows each record's
   details and checksum state, and selecting anything previews it beside the table.
+- **Follows the disk.** A record added or edited outside the app is read into the catalog when its folder is
+  listed or its document reloaded, with no Scan needed, and an open document says when its file changed.
+- **Hands images to other apps.** Drag an image out of the app, or press Ctrl+C on it, and Explorer, Finder,
+  PureRef, GIMP, Krita, Blender, a browser or a chat app takes it, the copy named after the resource it came from.
 - **Doesn't damage what it doesn't understand.** Unrecognized fields survive a save untouched, and a
   file written by a newer version of the format opens read-only rather than being rewritten.
 - **Keeps your workspace.** Atomic saves, and each file's panel layout remembered between sessions.

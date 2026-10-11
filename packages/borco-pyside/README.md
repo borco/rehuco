@@ -33,11 +33,13 @@ Currently provides:
   `platforms.windows.window_activation`).
 - **`borco_pyside.qtads`** — generic helpers for `pyside6-qtads` (QtAds): `QtAdsFocusTracker` (which dock
   is current, per manager), `QtAdsMaximizeHandler` (a maximize toggle on every dock's tab),
-  `QtAdsAutoHideButtonSuppressor`, `QtAdsPinSideHandler`, `QtAdsFloatingShowGuard`, `QtAdsLoneTabHider`, `tab_close_button`,
+  `QtAdsAutoHideButtonSuppressor`, `QtAdsLayout` (save and restore a dock layout), `QtAdsEmptyingGuard`, `QtAdsPinSideHandler`, `QtAdsFloatingShowGuard`, `QtAdsLoneTabHider`, `tab_close_button`,
   `tab_label`, `tab_maximize_button`.
 - **`borco_pyside.recycle_bin`** — moving a file to the Recycle Bin / Trash through `send2trash`, behind
   one `RecycleBin` singleton; refuses with `NoRecycleBinError` when no bin is reachable for the path
   (on Windows, decided per drive up front via `SHQueryRecycleBinW`) rather than deleting permanently.
+- **`borco_pyside.shortcuts`** — shortcuts as declared `Command`s with a scope, a `Keymap` of the user's overrides,
+  conflict detection, and a `CommandRegistry` that re-keys bound actions when the keymap changes.
 - **`borco_pyside.theming`** — theme switching, SVG recoloring, and themed action icons: `ThemeManager`,
   `ThemeMenu`, `ThemeModel`, `ActionIconThemeHandler`.
 - **`borco_pyside.widgets`** — reusable widgets: `CardListEditor` (items edited as draggable cards),

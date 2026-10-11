@@ -20,9 +20,9 @@ classifiers = [
 ]
 requires-python = ">=3.14"
 dependencies = [
-    "rehuco-core",
-    "borco-core",
-    "borco-pyside",
+    "rehuco-core>=0.3.0",
+    "borco-core>=0.3.0",
+    "borco-pyside>=0.3.0",
     # Essentials, not the `PySide6` meta-package -- see the note in borco-pyside's pyproject.toml.
     "PySide6-Essentials>=6.9",
     # >=5.0.0.2: rationale in borco-pyside's pyproject.toml, which owns the `QtAdsFocusTracker` code

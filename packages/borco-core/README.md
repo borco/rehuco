@@ -27,6 +27,10 @@ Currently provides:
   `SharedRotatingFileHandler`, a rotating log file several processes can append to.
 - **`borco_core.shared_read`** — `shared_read_open`, reading a file without blocking its rename on Windows.
 - **`borco_core.file_holders`** — which processes hold a file open (Windows Restart Manager).
+- **`borco_core.path_presence`** — whether a remembered path is still there (*present*, *gone* or *offline*)
+  without blocking on a switched-off network host.
+- **`borco_core.text_search`** — searching text the way a person types it: case- and accent-insensitive,
+  every word matched, `"quoted runs"` kept whole.
 - **`borco_core.platforms`** — Windows registry, file association and shell context menus; Linux XDG
   desktop entries, MIME packages and icon-theme installation.
 
