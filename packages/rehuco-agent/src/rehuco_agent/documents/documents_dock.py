@@ -10,6 +10,7 @@ from typing import Any, Final, cast
 import PySide6QtAds as QtAds
 from borco_pyside.qtads import (
     QtAdsAutoHideButtonSuppressor,
+    QtAdsEmptyingGuard,
     QtAdsFocusTracker,
     QtAdsLayout,
     QtAdsPinGuard,
@@ -163,6 +164,8 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         # and the pins the button never offered -- a drop onto a border, a nested dock stolen by one -- are
         # undone as they happen (#491); parents itself to the manager too
         QtAdsPinGuard(self.__dock_manager, pins=False)
+        # never emptied under a floating window, which QtAds would delete with everything in it (#493)
+        QtAdsEmptyingGuard(self.__dock_manager)
         # the maximize toggle on each document's tab (#341), filling the documents area; kept
         # only so the session capture can read the layout un-maximized
         self.__maximize_handler: Final = attach_maximize_handler(self.__dock_manager)

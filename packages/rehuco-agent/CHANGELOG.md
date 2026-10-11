@@ -211,6 +211,10 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 ### Fixed
 
+- **A floating window holding the Browsers or the Documents dock no longer disappears.** Creating or switching root
+  catalogs, closing the last document, or the preview moving on to another document deleted the whole window -- the
+  Root Catalog, Browsers and Log docks with it, their toolbar buttons gone until a restart -- whenever those docks
+  floated together. They now stay where they were.
 - **Clicking the Roots view no longer raises "already deleted"** after a card was deleted from a document's Sources or
   Locations, or a reload rebuilt them: the card list's tab order no longer reaches the rest of the window (borco-pyside).
 - **A dock no longer disappears from the saved layout for good.** A dock missing from a saved layout was restored

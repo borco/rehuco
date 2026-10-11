@@ -134,7 +134,26 @@ class CDockContainerWidget(QWidget):
         """The splitter this container's areas are laid out under."""
 
     def floatingWidget(self) -> CFloatingDockContainer | None:
-        """The floating window holding this container, or `None` for the manager's main one."""
+        """The nearest floating window *above* this container, or `None` -- found up the parent chain, so a
+        nested manager inside a dock of a floating window answers that outer window
+        ([[appendices.qt-ads#nested-emptied-float]])."""
+
+    def dockAreaCount(self) -> int:
+        """How many areas this container holds, hidden ones included."""
+
+    def addDockWidget(
+        self,
+        area: DockWidgetArea,
+        dock_widget: CDockWidget,
+        dock_area_widget: CDockAreaWidget | None = None,
+        index: int = -1,
+    ) -> CDockAreaWidget:
+        """Place `dock_widget` in this container. Called as `CDockContainerWidget.addDockWidget(manager, ...)`
+        on a manager, it skips the manager's registry (`dockWidgetsMap()`, measured) and `dockWidgetAdded`."""
+
+    def removeDockWidget(self, dock_widget: CDockWidget) -> None:
+        """Take `dock_widget` out of its area. Called on a manager through this class, it skips the manager's
+        registry and its removal signals."""
 
     def openedDockAreas(self) -> list[CDockAreaWidget]:
         """Every currently-open (not `isHidden()`) area of this container, in no guaranteed order --
@@ -191,6 +210,9 @@ class CDockAreaWidget(QWidget):
 
     def dockWidgets(self) -> list[CDockWidget]:
         """Every dock in this area, open or closed, in tab order."""
+
+    def dockWidgetsCount(self) -> int:
+        """How many docks this area holds, open or closed."""
 
     def currentDockWidget(self) -> CDockWidget | None:
         """The dock of this area's current tab."""

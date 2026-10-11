@@ -9,6 +9,7 @@ from typing import Final, cast
 import PySide6QtAds as QtAds
 from borco_pyside.qtads import (
     QtAdsAutoHideButtonSuppressor,
+    QtAdsEmptyingGuard,
     QtAdsFocusTracker,
     QtAdsLayout,
     QtAdsPinGuard,
@@ -90,6 +91,8 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
         QtAdsAutoHideButtonSuppressor(self.__dock_manager)
         # and a pin the button never offered is undone as it happens (#491)
         QtAdsPinGuard(self.__dock_manager, pins=False)
+        # never emptied under a floating window, which QtAds would delete with everything in it (#493)
+        QtAdsEmptyingGuard(self.__dock_manager)
         self.__maximize_handler: Final = attach_maximize_handler(self.__dock_manager)
         self.__tab_menus: Final = QtAdsTabContextActions(self.__dock_manager)
 
