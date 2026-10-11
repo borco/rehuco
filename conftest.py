@@ -49,6 +49,25 @@ def pytest_runtest_teardown() -> Iterator[None]:
         qt_core.QCoreApplication.sendPostedEvents(None, qt_core.QEvent.Type.DeferredDelete)
 
 
+def pytest_sessionfinish() -> None:
+    """Leave the clipboard empty before the process exits, under the offscreen platform.
+
+    A process that exits while the clipboard holds a ``QMimeData`` made in Python segfaults in Qt's teardown, after
+    every test passed (measured on all three platforms; exit 139, or ``0xC0000005`` on Windows). Only a serial run
+    shows it -- under xdist the crash is a worker's, and goes unreported. A test that copies takes the ``clipboard``
+    fixture, but one that copies without it leaves data a later test's fixture then restores as just such an object.
+
+    Not on a real platform, where clearing would lose what the developer had on the clipboard. Qt is only touched
+    when a test already loaded it.
+    """
+    qt_gui = sys.modules.get("PySide6.QtGui")
+    if os.environ.get("QT_QPA_PLATFORM") != "offscreen" or qt_gui is None:
+        return
+    app = qt_gui.QGuiApplication.instance()
+    if app is not None:
+        qt_gui.QGuiApplication.clipboard().clear()
+
+
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     """Skip collected tests marked for a platform other than the one currently running.
 

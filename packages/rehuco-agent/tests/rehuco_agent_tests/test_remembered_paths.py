@@ -574,7 +574,7 @@ def fixture_dead_server() -> Iterator[tuple[str, int]]:
     """
     listener = socket.socket()
     listener.bind(("127.0.0.1", 0))
-    listener.listen(0)
+    listener.listen(1)  # not 0, which macOS reads as its default backlog of 128 (as ``UnansweringServer`` says)
     address: tuple[str, int] = listener.getsockname()
     fillers: list[socket.socket] = []
     while True:  # until a connection hangs: the queue is then full, whatever this system's backlog is

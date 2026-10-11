@@ -351,7 +351,7 @@ def test_the_menu_key_acts_on_the_selection_not_on_the_image_under_a_synthetic_p
 
 
 def test_the_grids_ctrl_c_is_scoped_to_the_grid_and_armed_by_nothing_else(
-    qtbot: QtBot, exporting: ContentImagesView
+    qtbot: QtBot, exporting: ContentImagesView, clipboard: None
 ) -> None:
     """Copy is a focused-document command of the ``images`` focus group, carried by the grid's own subtree: Ctrl+C
     reaches it once the grid has focus, and never from a text field or the log view beside it.
@@ -363,6 +363,7 @@ def test_the_grids_ctrl_c_is_scoped_to_the_grid_and_armed_by_nothing_else(
     * press Ctrl+C with the line edit focused, then the log view, then the grid
     * verify the grid's Copy fired only for the last
     """
+    del clipboard  # the grid's Ctrl+C really copies
     assert COPY_IMAGE.scopes == (CommandScope.DOCUMENT_FOCUSED,)
     assert COPY_IMAGE.focus_group == "images"
     action = exporting.copy_action
