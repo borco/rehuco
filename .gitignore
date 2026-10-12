@@ -1,6 +1,9 @@
 # Claude Code
 /.claude/*local*
 
+# the "rehuco-agent (local settings)" launch configuration's settings and cache (#494)
+/.local_settings/
+
 # Qt generated files
 *_rc.py
 *_ui.py

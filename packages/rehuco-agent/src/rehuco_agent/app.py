@@ -2,6 +2,7 @@
 ([[nodes#single-instance]]).
 """
 
+import hashlib
 import logging
 import os
 import time
@@ -31,7 +32,12 @@ from .fields.colors import ERROR_COLOR, INFO_COLOR, WARNING_COLOR
 from .linux_registration import DESKTOP_FILE_NAME
 from .main_window import MainWindow
 from .run_log import shared_run_log
-from .settings.persistent_settings import STAGED_IMAGES_MAX_AGE, persistent_settings, staging_folder
+from .settings.persistent_settings import (
+    STAGED_IMAGES_MAX_AGE,
+    persistent_settings,
+    settings_dir,
+    staging_folder,
+)
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -68,6 +74,30 @@ only in their web/Flutter packages, so a glyph drawn from it can only ever be a 
 silhouette ([[appendices.theming_and_styling#duotone-font-limitation]])."""
 
 
+SETTINGS_DIR_DIGEST_LENGTH: Final = 8
+"""Hex digits of a settings dir's hash in :func:`instance_app_id` -- enough to tell a handful of folders apart."""
+
+
+def instance_app_id() -> str:
+    """The single-instance id of this run: :data:`APP_ID`, or one of its own for a settings dir (#494).
+
+    A run with its own settings must not forward to one using another's -- a dev build launched beside the
+    installed one would hand it its paths and quit. Two runs on the same folder still share one instance.
+    """
+    folder = settings_dir()
+    if folder is None:
+        return APP_ID
+    digest = hashlib.sha1(os.path.normcase(folder).encode("utf-8"), usedforsecurity=False).hexdigest()
+    return f"{APP_ID}-{digest[:SETTINGS_DIR_DIGEST_LENGTH]}"
+
+
+def application_display_name() -> str:
+    """:data:`APPLICATION_DISPLAY_NAME`, with a settings dir's name after it so the window says which state it
+    runs on (#494)."""
+    folder = settings_dir()
+    return APPLICATION_DISPLAY_NAME if folder is None else f"{APPLICATION_DISPLAY_NAME} [{folder.name}]"
+
+
 class Application(QApplication):
     """The single ``QApplication``, holding the one :class:`MainWindow` every path opens into.
 
@@ -92,7 +122,7 @@ class Application(QApplication):
         # the title QtAds gives a floating window holding several docks -- unset, both fall back to the
         # application name, which is argv[0] ("python"). Only the display name: the application name keys
         # QSettings' storage
-        self.setApplicationDisplayName(APPLICATION_DISPLAY_NAME)
+        self.setApplicationDisplayName(application_display_name())
         self.setWindowIcon(QIcon(ICON_RESOURCE))
         for font_resource in ICON_FONT_RESOURCES:
             QFontDatabase.addApplicationFont(font_resource)
@@ -231,7 +261,7 @@ def run(argv: list[str]) -> int:
     exit_code: int | None = None
     try:
         QGuiApplication.setDesktopFileName(DESKTOP_FILE_NAME)
-        LOG.info("Settings file: %s", persistent_settings().fileName())
+        LOG.info("Settings file: %s", Path(persistent_settings().fileName()))
         app = Application(argv)
         singleton = ApplicationSingleton(app)
         # resolved here, in the launching process, rather than left to whichever process ends up opening
@@ -243,7 +273,7 @@ def run(argv: list[str]) -> int:
         # default: the two are the same in production (``run(sys.argv)``), but this function's contract
         # is that its *parameter* is the argv -- honored when primary (opened below), so also honored
         # when forwarding, rather than silently substituting the process's real command line
-        if not singleton.setup(APP_ID, resolved_paths):
+        if not singleton.setup(instance_app_id(), resolved_paths):
             # not primary: setup() already forwarded the resolved paths to the existing primary
             run_log.become_forwarder()
             exit_code = 0

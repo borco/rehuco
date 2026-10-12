@@ -11,7 +11,14 @@ from typing import Final
 import pytest
 from pytest_mock import MockerFixture
 from rehuco_agent import __version__
-from rehuco_agent.__main__ import main
+from rehuco_agent.__main__ import SETTINGS_DIR_ENVIRONMENT_VARIABLE, main, resolve_settings_dir
+from rehuco_agent.settings.persistent_settings import (
+    APPLICATION_NAME,
+    CONFIG_CACHE_FOLDER_NAME,
+    cache_folder,
+    persistent_settings,
+    settings_dir,
+)
 
 FAKE_ARGV0: Final = "/fake/rehuco-agent-dev"
 """No ``.exe``/drive-letter shape -- argv[0] isn't a Windows executable on this path."""
@@ -174,3 +181,164 @@ def test_a_gui_launch_exception_is_logged_and_reraised(monkeypatch: pytest.Monke
         main()
 
     run_log.log_exception.assert_called_once_with(error, "main()")
+
+
+def test_the_settings_dir_flag_wins_over_the_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The flag is the more deliberate of the two, so it decides when both are given (#494).
+
+    **Test steps:**
+
+    * resolve a flag and an environment value that differ
+    * verify the flag's folder is the answer
+    """
+    monkeypatch.chdir(tmp_path)
+
+    assert resolve_settings_dir(tmp_path / "flag", str(tmp_path / "env")) == tmp_path / "flag"
+
+
+def test_the_settings_dir_falls_back_to_the_environment(tmp_path: Path) -> None:
+    """Without the flag, the environment variable's folder is used (#494).
+
+    **Test steps:**
+
+    * resolve no flag and an environment value
+    * verify the environment's folder is the answer
+    """
+    assert resolve_settings_dir(None, str(tmp_path / "env")) == tmp_path / "env"
+
+
+@pytest.mark.parametrize("environment", [None, ""])
+def test_no_settings_dir_is_chosen_without_a_flag_or_a_value(environment: str | None) -> None:
+    """An unset or empty variable is no choice: the platform's locations stay (#494).
+
+    **Test steps:**
+
+    * resolve no flag with an absent or empty environment value
+    * verify there is no folder
+    """
+    assert resolve_settings_dir(None, environment) is None
+
+
+def test_a_relative_settings_dir_is_made_absolute_against_the_launch_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The GUI leaves its launch directory before reading a setting, so the folder is pinned down first (#494).
+
+    **Test steps:**
+
+    * launch from a temporary directory and resolve a relative flag and a relative environment value
+    * verify both come back absolute, under that directory
+    """
+    monkeypatch.chdir(tmp_path)
+
+    assert resolve_settings_dir(Path("rel"), None) == tmp_path / "rel"
+    assert resolve_settings_dir(None, "rel") == tmp_path / "rel"
+
+
+def test_a_gui_launch_with_a_settings_dir_creates_it_and_uses_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture
+) -> None:
+    """``--settings-dir`` takes effect before the GUI starts (#494).
+
+    **Test steps:**
+
+    * force a non-registration platform, set ``sys.argv`` to argv[0] plus ``--settings-dir`` for a missing folder
+    * mock ``run`` and verify ``main()`` returns its code
+    * verify the folder exists and is the settings dir while ``run`` is called
+    """
+    folder = tmp_path / "dev"
+    monkeypatch.setattr("sys.platform", "darwin")
+    monkeypatch.setattr("sys.argv", [FAKE_ARGV0, "--settings-dir", str(folder)])
+    seen: list[Path | None] = []
+    mocker.patch("rehuco_agent.app.run", side_effect=lambda _argv: seen.append(settings_dir()) or 0)
+
+    assert main() == 0
+    assert folder.is_dir()
+    assert seen == [folder]
+
+
+def test_a_gui_launch_takes_the_settings_dir_from_the_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture
+) -> None:
+    """The environment variable does what the flag does when no flag is given (#494).
+
+    **Test steps:**
+
+    * set the variable and launch without the flag
+    * verify the settings dir in effect during ``run`` is the variable's folder
+    """
+    monkeypatch.setattr("sys.platform", "darwin")
+    monkeypatch.setattr("sys.argv", [FAKE_ARGV0])
+    monkeypatch.setenv(SETTINGS_DIR_ENVIRONMENT_VARIABLE, str(tmp_path / "env"))
+    seen: list[Path | None] = []
+    mocker.patch("rehuco_agent.app.run", side_effect=lambda _argv: seen.append(settings_dir()) or 0)
+
+    assert main() == 0
+    assert seen == [tmp_path / "env"]
+
+
+def test_a_launch_without_a_settings_dir_leaves_the_platforms_locations(
+    monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture
+) -> None:
+    """Nothing changes for a run that asks for nothing (#494).
+
+    **Test steps:**
+
+    * launch with no flag and the variable removed
+    * verify no settings dir was in effect during ``run``
+    """
+    monkeypatch.setattr("sys.platform", "darwin")
+    monkeypatch.setattr("sys.argv", [FAKE_ARGV0])
+    monkeypatch.delenv(SETTINGS_DIR_ENVIRONMENT_VARIABLE, raising=False)
+    seen: list[Path | None] = []
+    mocker.patch("rehuco_agent.app.run", side_effect=lambda _argv: seen.append(settings_dir()) or 0)
+
+    assert main() == 0
+    assert seen == [None]
+
+
+def test_a_settings_dir_that_is_a_file_is_a_usage_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture
+) -> None:
+    """A file cannot hold settings, so the launch stops with argparse's usage error (#494).
+
+    **Test steps:**
+
+    * point ``--settings-dir`` at an existing file
+    * mock ``run`` and verify ``main()`` exits ``2`` without launching and without a settings dir
+    """
+    not_a_folder = tmp_path / "file"
+    not_a_folder.write_text("", encoding="utf-8")
+    monkeypatch.setattr("sys.argv", [FAKE_ARGV0, "--settings-dir", str(not_a_folder)])
+    run = mocker.patch("rehuco_agent.app.run", return_value=0)
+
+    with pytest.raises(SystemExit) as excinfo:
+        main()
+
+    assert excinfo.value.code == 2
+    run.assert_not_called()
+    assert settings_dir() is None
+
+
+def test_info_reports_where_the_settings_and_cache_are(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``--info`` says which state a run would use, so a development build is easy to tell from the installed one
+    (#494).
+
+    **Test steps:**
+
+    * ask for ``--info`` with ``--settings-dir`` on a non-registration platform, with the session's stand-ins for the
+      settings and the cache folder replaced by the real ones
+    * verify the output names the ini and the cache under that folder, in the platform's own spelling
+    """
+    monkeypatch.setattr("sys.platform", "darwin")
+    monkeypatch.setattr("sys.argv", [FAKE_ARGV0, "--info", "--settings-dir", str(tmp_path)])
+    mocker.patch("rehuco_agent.settings.persistent_settings.cache_folder", new=cache_folder)
+    mocker.patch("rehuco_agent.settings.persistent_settings.persistent_settings", new=persistent_settings)
+
+    assert main() == 0
+
+    lines = capsys.readouterr().out.splitlines()
+    assert f"settings: {tmp_path / f'{APPLICATION_NAME}.ini'}" in lines
+    assert f"cache: {tmp_path / APPLICATION_NAME / CONFIG_CACHE_FOLDER_NAME}" in lines

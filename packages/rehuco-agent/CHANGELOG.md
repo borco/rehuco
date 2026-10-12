@@ -10,6 +10,14 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 ## [Unreleased]
 
+### Added
+
+- **A run can keep its settings and cache in a folder of its own**: `rehuco-agent --settings-dir DIR`, or the
+  `REHUCO_AGENT_SETTINGS_DIR` environment variable. The settings file, the saved session and layouts, the task queue,
+  the scraper persona and the catalog cache all go under `DIR`, and the run is an instance of its own -- it opens its
+  own window instead of handing its files to an agent already running elsewhere. The window title shows the folder's
+  name, and `--info` prints where the settings and cache are.
+
 ## [0.3.0] - 2026-10-12
 
 ### Added

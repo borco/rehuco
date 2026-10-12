@@ -72,6 +72,7 @@ from rehuco_agent.settings.location_replacements_settings import shared_location
 from rehuco_agent.settings.location_templates_settings import shared_location_templates_settings
 from rehuco_agent.settings.logs_settings import shared_logs_settings
 from rehuco_agent.settings.markdown_rendering_settings import shared_markdown_rendering_settings
+from rehuco_agent.settings.persistent_settings import set_settings_dir
 from rehuco_agent.settings.reference_images_settings import shared_reference_images_settings
 from rehuco_agent.settings.root_catalog_settings import shared_root_catalog_settings
 from rehuco_agent.settings.scrapers_settings import shared_scrapers_settings
@@ -208,6 +209,17 @@ def isolate_config_folder(tmp_path_factory: TempPathFactory) -> None:
     :param tmp_path_factory: pytest's session temporary-directory factory.
     """
     FakeSettings.file_name = str(tmp_path_factory.mktemp("config") / "rehuco-agent.ini")
+
+
+@fixture(autouse=True)
+def reset_settings_dir() -> Iterator[None]:
+    """Leave no settings dir in effect after a test (#494).
+
+    The override is process-wide state, set by ``main()`` for a run: a test that sets it, directly or by launching
+    with ``--settings-dir``, would otherwise move every later test's settings and cache.
+    """
+    yield
+    set_settings_dir(None)
 
 
 @fixture(autouse=True, scope="session")

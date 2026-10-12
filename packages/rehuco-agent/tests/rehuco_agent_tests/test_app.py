@@ -10,9 +10,17 @@ import PySide6QtAds as QtAds
 from PySide6.QtGui import QFileOpenEvent, QGuiApplication
 from pytest import LogCaptureFixture, fixture, raises
 from pytest_mock import MockerFixture
-from rehuco_agent.app import APP_ID, Application, leave_launch_directory, run
+from rehuco_agent.app import (
+    APP_ID,
+    APPLICATION_DISPLAY_NAME,
+    Application,
+    application_display_name,
+    instance_app_id,
+    leave_launch_directory,
+    run,
+)
 from rehuco_agent.linux_registration import DESKTOP_FILE_NAME
-from rehuco_agent.settings.persistent_settings import STAGED_IMAGES_MAX_AGE, staging_folder
+from rehuco_agent.settings.persistent_settings import STAGED_IMAGES_MAX_AGE, set_settings_dir, staging_folder
 
 FAKE_PATH: Final = "/fake/tutorials/sculpting/info.rehu"
 FAKE_HOME: Final = Path("/fake/home")
@@ -498,3 +506,66 @@ def test_run_shows_the_window_for_a_forward_carrying_no_paths(mocker: MockerFixt
 
     app_instance.show_main_window.assert_called_once_with()
     app_instance.open_path.assert_not_called()
+
+
+def test_a_run_without_a_settings_dir_keeps_the_shared_instance_id_and_name() -> None:
+    """Nothing changes for a run that asks for nothing (#494).
+
+    **Test steps:**
+
+    * ask for the instance id and display name with no settings dir in effect
+    * verify they are the plain app id and display name
+    """
+    assert instance_app_id() == APP_ID
+    assert application_display_name() == APPLICATION_DISPLAY_NAME
+
+
+def test_a_settings_dir_gets_an_instance_id_of_its_own(tmp_path: Path) -> None:
+    """A run with its own settings must not forward to one using other settings, nor the other way round (#494).
+
+    **Test steps:**
+
+    * take the instance id for two settings folders, one of them twice
+    * verify each differs from the plain app id, the same folder gives the same id, and two folders give two
+    """
+    set_settings_dir(tmp_path / "one")
+    first = instance_app_id()
+    assert instance_app_id() == first
+    set_settings_dir(tmp_path / "two")
+    second = instance_app_id()
+
+    assert first.startswith(f"{APP_ID}-")
+    assert first != APP_ID
+    assert second != first
+
+
+def test_a_settings_dir_names_itself_in_the_display_name(tmp_path: Path) -> None:
+    """The window says which state it runs on (#494).
+
+    **Test steps:**
+
+    * put the settings under a folder and ask for the display name
+    * verify it is the plain name followed by the folder's name
+    """
+    set_settings_dir(tmp_path / ".local_settings")
+
+    assert application_display_name() == f"{APPLICATION_DISPLAY_NAME} [.local_settings]"
+
+
+def test_run_claims_the_instance_id_of_its_settings_dir(mocker: MockerFixture, tmp_path: Path) -> None:
+    """``run`` hands the single-instance check the settings dir's own id, not the shared one (#494).
+
+    **Test steps:**
+
+    * put the settings under a folder, mock ``Application`` and ``ApplicationSingleton``, make ``setup`` forward
+    * call ``run`` and verify ``setup`` was given that folder's instance id
+    """
+    set_settings_dir(tmp_path)
+    mocker.patch("rehuco_agent.app.Application")
+    singleton = mocker.patch("rehuco_agent.app.ApplicationSingleton").return_value
+    singleton.setup.return_value = False
+
+    run(["rehuco-agent"])
+
+    singleton.setup.assert_called_once_with(instance_app_id(), [])
+    assert instance_app_id() != APP_ID
