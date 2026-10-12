@@ -812,6 +812,40 @@ def test_registers_no_reference_images_page_of_its_own(qtbot: QtBot) -> None:
     assert "Reference Images" not in [model.item(row).text() for row in range(model.rowCount())]
 
 
+def test_the_base_title_is_the_application_display_name(qtbot: QtBot) -> None:
+    """The window titles itself after the display name, which a settings dir decorates (#494) -- not after the
+    ``.ui``, or the platform would append the name to a title that lacks it, "rehuco - rehuco [dev]".
+
+    **Test steps:**
+
+    * set a display name on the application, construct ``MainWindow``, then clear the name again
+    * verify the window title is that name
+    """
+    QApplication.setApplicationDisplayName("rehuco [dev]")
+    try:
+        window = MainWindow()
+        qtbot.addWidget(window)
+    finally:
+        QApplication.setApplicationDisplayName("")
+
+    assert window.windowTitle() == "rehuco [dev]"
+
+
+def test_the_base_title_is_the_uis_without_a_display_name(qtbot: QtBot) -> None:
+    """A bare ``QApplication`` names nothing, and the ``.ui``'s own title stands.
+
+    **Test steps:**
+
+    * construct ``MainWindow`` under the test application, which sets no display name
+    * verify the window title is the ``.ui``'s
+    """
+    assert not QApplication.applicationDisplayName()
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert window.windowTitle() == "rehuco"
+
+
 def test_on_document_focus_changed_shows_the_label_alongside_the_base_title(
     mocker: MockerFixture, qtbot: QtBot
 ) -> None:

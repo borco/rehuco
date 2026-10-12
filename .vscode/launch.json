@@ -30,6 +30,26 @@
             }
         },
         {
+            // Same as "rehuco-agent", with its settings and cache kept in this checkout's gitignored
+            // .local_settings folder and its own running instance (#494), so a dev run never touches
+            // the installed agent's state or forwards to it.
+            "name": "rehuco-agent (local settings)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/packages/rehuco-agent/src/rehuco_agent/__main__.py",
+            "args": ["--settings-dir", "${workspaceFolder}/.local_settings"],
+            "console": "integratedTerminal",
+            "linux": {
+                "python": "${workspaceFolder}/.venv/bin/python"
+            },
+            "osx": {
+                "python": "${workspaceFolder}/.venv/bin/python"
+            },
+            "windows": {
+                "python": "${workspaceFolder}/.venv/Scripts/python.exe"
+            }
+        },
+        {
             // Linux-only: renders on the host's GNOME Wayland session (visible in the Hyper-V
             // console), since a Remote-SSH shell inherits no display environment of its own.
             "name": "rehuco-agent (remote)",

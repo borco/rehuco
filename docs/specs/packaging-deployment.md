@@ -628,3 +628,8 @@ goes follows each platform's own convention:
 - **The move from today's location is manual.** The agent's files currently sit in a `borco/rehuco-agent` folder
   beside its `.ini` (#361) — Roaming on Windows, `~/.config` on Linux. They are moved once, by hand — or deleted and
   let the app recreate them — and no migration code is written for it.
+- **A run can be pointed at a folder of its own** (#494): `rehuco-agent --settings-dir DIR`, or
+  `REHUCO_AGENT_SETTINGS_DIR` (the flag wins). Everything above then lives under `DIR` instead —
+  `DIR/rehuco-agent.ini`, the durable state in `DIR/rehuco-agent/`, the caches in `DIR/rehuco-agent/cache/` — and the
+  run has its own single instance ([[nodes#single-instance]]). It keeps a development build off the installed one's
+  files while their formats diverge; the window title names the folder.

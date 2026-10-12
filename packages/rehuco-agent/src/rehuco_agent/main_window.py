@@ -279,6 +279,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__ui.setupUi(self)
         self.__bind_ui_actions()
         self.centralWidget().hide()
+        # the display name, not the .ui's "rehuco": a settings dir decorates the name (#494), and the platform
+        # appends it to any top-level title that lacks it -- "rehuco - rehuco [dev]" otherwise. A bare
+        # QApplication (the tests') sets none, and the .ui's title stands
+        self.setWindowTitle(QApplication.applicationDisplayName() or self.windowTitle())
         self.__base_window_title: Final = self.windowTitle()
         # every action __add_open_documents itself added on the last rebuild -- removed and
         # rebuilt from scratch each time, so the rebuild never has to know or guess what's

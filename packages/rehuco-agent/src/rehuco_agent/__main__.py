@@ -1,16 +1,21 @@
-"""CLI entry point: ``rehuco-agent [--version] [--info] [--register|--unregister] [paths...]``
+"""CLI entry point: ``rehuco-agent [--version] [--info] [--register|--unregister] [--settings-dir DIR] [paths...]``
 (register/unregister: Windows and Linux); ``rehuco-agent --scrape URL [--scrapers-folder DIR]
 [--output PATH]`` and ``rehuco-agent --scrape-schema PATH`` run a scrape from the console, no GUI
 ([[acquisition-tooling#scraper-registry]])."""
 
 import argparse
 import ctypes
+import os
 import sys
 from pathlib import Path
 from typing import Final
 
 from rehuco_agent import __version__
 from rehuco_agent.archives import ARCHIVE_EXTENSIONS
+
+SETTINGS_DIR_ENVIRONMENT_VARIABLE: Final = "REHUCO_AGENT_SETTINGS_DIR"
+"""Names a folder that replaces the platform's settings and cache locations for this run (#494); the
+``--settings-dir`` flag wins over it."""
 
 REGISTRATION_PLATFORMS: Final = ("win32", "linux")
 """Platforms whose parser defines ``--register``/``--unregister``.
@@ -51,6 +56,54 @@ def print_registration_info(exe_path: Path) -> None:
             print(f"registered: {command}")
     else:
         print("registration is declared by the app bundle on macOS; there is no runtime state to query")
+
+
+def resolve_settings_dir(flag: Path | None, environment: str | None) -> Path | None:
+    """The folder this run keeps its settings and cache under (#494): the flag's, else the environment's.
+
+    Made absolute here, against the launch directory, because the GUI leaves that directory before it first
+    reads a setting (``leave_launch_directory``).
+
+    :param flag: ``--settings-dir``, or ``None`` when absent.
+    :param environment: :data:`SETTINGS_DIR_ENVIRONMENT_VARIABLE`'s value; ``None`` or empty when unset.
+    :returns: the absolute folder, or ``None`` for the platform's locations.
+    """
+    if flag is not None:
+        return flag.resolve()
+    if environment:
+        return Path(environment).resolve()
+    return None
+
+
+def apply_settings_dir(parser: argparse.ArgumentParser, flag: Path | None) -> None:
+    """Put this run's settings and cache under the folder :func:`resolve_settings_dir` names, creating it.
+
+    Runs before anything reads a setting -- the scrape CLI and the GUI both do.
+
+    :param parser: reports a path that is not a folder, and exits.
+    :param flag: ``--settings-dir``, or ``None`` when absent.
+    """
+    folder = resolve_settings_dir(flag, os.environ.get(SETTINGS_DIR_ENVIRONMENT_VARIABLE))
+    if folder is None:
+        return
+    if folder.exists() and not folder.is_dir():
+        parser.error(f"--settings-dir: {folder} is not a folder")
+    folder.mkdir(parents=True, exist_ok=True)
+    # imported only here: the module pulls in PySide6.QtCore, which a plain --register need not pay for
+    # pylint: disable-next=import-outside-toplevel
+    from rehuco_agent.settings.persistent_settings import set_settings_dir
+
+    set_settings_dir(folder)
+
+
+def print_settings_info() -> None:
+    """Print where this run's settings file and cache folder are, for ``--info``."""
+    # pylint: disable-next=import-outside-toplevel
+    from rehuco_agent.settings.persistent_settings import cache_folder, persistent_settings
+
+    # through Path, like the cache: QSettings answers with forward slashes on every platform
+    print(f"settings: {Path(persistent_settings().fileName())}")
+    print(f"cache: {cache_folder()}")
 
 
 # pylint: disable-next=too-many-return-statements,too-many-branches,too-many-statements
@@ -140,9 +193,17 @@ def main() -> int:
     scrape_group.add_argument(
         "--scrape-schema", metavar="PATH", type=Path, help="write the scrape-result JSON schema to PATH and exit"
     )
+    parser.add_argument(
+        "--settings-dir",
+        metavar="DIR",
+        type=Path,
+        help=f"keep this run's settings and cache under DIR, with its own running instance (default: "
+        f"${SETTINGS_DIR_ENVIRONMENT_VARIABLE}, else the platform's locations)",
+    )
     args = parser.parse_args()
     if args.scrape is None and (args.scrapers_folder is not None or args.output is not None):
         parser.error("--scrapers-folder and --output only apply with --scrape")
+    apply_settings_dir(parser, args.settings_dir)
 
     # Checked first and returns immediately: neither combines with --version/--info/--register/
     # --unregister, and both need none of the platform machinery below. Imported here, not at module
@@ -162,6 +223,7 @@ def main() -> int:
         print(f"version: {__version__}")
     if args.info:
         print_registration_info(exe_path)
+        print_settings_info()
     queried = args.version or args.info
 
     # args.register/args.unregister don't exist at all off REGISTRATION_PLATFORMS (the parser never

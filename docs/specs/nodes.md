@@ -177,7 +177,9 @@ matches Qt's `QLocalServer`/single-application approach.)
   ([[nodes#two-roles]]).
 - **Robustness:** if bind fails *and* connect also fails, assume a crashed holder left a stale socket — reclaim it and
   become the main instance. The socket name must be **scoped per OS user and per swarm**, so separate users or
-  side-by-side swarms ([[multiplicity#overview]]) don't collide on one socket and forward to the wrong instance.
+  side-by-side swarms ([[multiplicity#overview]]) don't collide on one socket and forward to the wrong instance. A run
+  with its own settings folder ([[packaging-deployment#app-folders]]) takes a name of its own too, from that folder's
+  path, so a development build never forwards to the installed one (#494).
 - **Platform mechanics live in [[packaging-deployment#app-identity]].** How each OS delivers a double-clicked `.rehu`
   into the running instance — and the file-association and app-identity registration it needs — is OS-specific and is
   covered under packaging ([[packaging-deployment#app-identity]]).

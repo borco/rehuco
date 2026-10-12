@@ -13,9 +13,38 @@ LOG: Final = logging.getLogger(__name__)
 ORGANIZATION_NAME: Final = "borco"
 APPLICATION_NAME: Final = "rehuco-agent"
 
+CONFIG_CACHE_FOLDER_NAME: Final = "cache"
+"""The subfolder of :func:`config_folder` that :func:`cache_folder` answers when the cache does not get a
+location of its own: under a settings dir, or on a host with no known cache location."""
+
+__settings_dir: Path | None = None  # pylint: disable=invalid-name
+
+
+def set_settings_dir(folder: Path | None) -> None:
+    """Keep this run's whole per-user state under ``folder`` instead of the platform's locations (#494).
+
+    The ``.ini`` becomes ``folder/rehuco-agent.ini``, so :func:`config_folder` follows it to
+    ``folder/rehuco-agent/``, and :func:`cache_folder` answers ``folder/rehuco-agent/cache/`` -- the layout of
+    the platform's settings folder, the cache in it rather than in a location of its own, since a settings dir
+    roams nowhere. A module variable read at call time rather than a patched function: every caller imports the
+    three functions by name. Set it before anything reads a setting -- the ``shared_*`` loaders cache what they
+    first read.
+
+    :param folder: an absolute folder, or ``None`` for the platform's locations.
+    """
+    global __settings_dir  # pylint: disable=global-statement
+    __settings_dir = folder
+
+
+def settings_dir() -> Path | None:
+    """The folder :func:`set_settings_dir` put this run's state under, or ``None`` for the platform's locations."""
+    return __settings_dir
+
 
 def persistent_settings() -> QSettings:
     """A ``QSettings`` pointed at rehuco-agent's persistent per-user storage."""
+    if __settings_dir is not None:
+        return QSettings(str(__settings_dir / f"{APPLICATION_NAME}.ini"), QSettings.Format.IniFormat)
     return QSettings(
         QSettings.Format.IniFormat, QSettings.Scope.UserScope, ORGANIZATION_NAME, application=APPLICATION_NAME
     )
@@ -47,12 +76,14 @@ def cache_folder() -> Path:
 
     :returns: the cache directory. Not created by this call; ``CatalogCache.open`` makes its own parent.
     """
+    if __settings_dir is not None:
+        return config_folder() / CONFIG_CACHE_FOLDER_NAME
     base = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.GenericCacheLocation)
     if not base:
         # Qt answers nothing on a host with no known cache location; a relative path would then put the
         # cache wherever the app was launched from, so the config folder is the lesser evil
         LOG.warning("No cache location is known on this host; the cache goes under the config folder.")
-        return config_folder() / "cache"
+        return config_folder() / CONFIG_CACHE_FOLDER_NAME
     return Path(base) / ORGANIZATION_NAME / APPLICATION_NAME
 
 
