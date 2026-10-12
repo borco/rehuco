@@ -127,6 +127,10 @@ package name out of the tag, so that one form covers all five; `release-agent.ym
 `rehuco-agent-*.*.*`, which is why an agent tag fires both workflows and any other package's fires only the
 publish.
 
+**Libraries publish before the app**: tag `borco-core`, `borco-pyside` and `rehuco-core` first, so the agent's
+release resolves the versions it was built against. And **a tag runs the workflow files as of the tagged commit**, so
+a fix to a workflow reaches only tags cut after it — why the first agent release on PyPI is `0.1.1`.
+
 ## 5. What the tagged run does, and how to redo it
 
 [[[appendices.release-runbook#tagged-run]]]
@@ -181,7 +185,9 @@ rather than to the repository as a whole.
 All five projects already exist on pypi.org, so their publishers are added under each project's **Settings →
 Publishing** rather than through the pending-publisher form. On TestPyPI they may not exist at all — its
 namespace is entirely separate from pypi.org's, and a name held on one is not reserved on the other — so
-those go in as *pending* publishers, which create the project on the first successful upload.
+those go in as *pending* publishers, which create the project on the first successful upload. A pending publisher is
+unique on owner, repository, workflow and environment, so all five cannot be pending at once: register one, publish
+it, then register the next.
 
 Once a package has published, the install is worth a check from a throwaway environment. TestPyPI hosts none
 of the dependencies, so it has to be the primary index with real PyPI behind it:

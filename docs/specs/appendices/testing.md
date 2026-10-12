@@ -132,6 +132,25 @@ when qa runs on macOS/Linux:
   is enabled, so it would itself be flagged on Windows, where the import resolves fine. A
   module-level ignore is platform-safe.
 
+### 4.1 pylint and pyright traps
+
+[[[appendices.testing#lint-traps]]]
+
+- **A pragma goes stale when the code under it changes** (#470, #404): delete it. `make pylint` hides
+  `useless-suppression`; check with `uv run pylint --enable=useless-suppression <paths>`. Messages can also flicker
+  between identical runs (#343); a pragma for one of those names `useless-suppression` too.
+- **`pylint_qt` reads any `obj.attr[i]` as a subscripted signal** in a module importing PySide (#376, #457, #485):
+  bind to a local or unpack (`(mime,) = call.args`, never `call.args[0].urls()`).
+- **Pyright's PySide stubs lack some members**: `QKeySequence.__getitem__`, `QObject.staticMetaObject`,
+  `CDockAreaWidget.currentDockWidget` (use `dockWidget(currentIndex())`). The QtAds stub is hand-kept: add a member the
+  code or a test newly uses (#491: `createAndSetupAutoHideContainer`, `AutoHideFeatureEnabled`).
+- **A module-level annotation's name can be undefined and the import still succeed** (#459): only ruff and pyright
+  catch it.
+- **Import what a test patches from where it is defined** (#464). pylint cannot infer a mock's recorded argument
+  (`not-callable`): call it in a helper with one reasoned pragma.
+- **pylint refuses `bar` as a name** (#392, #376), and **a name-mangled call through another instance reads as
+  unused** (#400).
+
 ## 5. Coverage of platform-specific code
 
 [[[appendices.testing#platform-coverage]]]
@@ -181,3 +200,140 @@ macOS/Linux uic couldn't resolve a `.ui`'s `.qrc` to its package and emitted a b
 `make uis` (`ModuleNotFoundError: No module named 'main_rc'`). Fixed by deriving the separator from
 `$(OS)`. The lesson: a green `pytest` depends on `make uis` having generated correct, *importable*
 `_ui.py`/`_rc.py` first (both are gitignored and rebuilt, never hand-edited).
+
+## 7. Reading a QA run
+
+[[[appendices.testing#reading-a-run]]]
+
+- **A green summary line is not a green check** (#402). `make qa` stops at the first red step, pylint prints
+  `10.00/10` even when failing, and an `echo` after a background `make` reports the wrong code. Run
+  `make qa > log; echo $?` from the repo root, then grep the log for `: [CRWE]NNNN:`, `^FAILED`, `error:` and
+  `Error N`. `make pyright`'s summary goes to stderr: read `*>&1` in PowerShell.
+- **Run `make` from Git Bash on Windows** (#343): PowerShell breaks `uname`, so `make uis` silently does nothing.
+- **A hung `make` or pytest keeps running after it is stopped** (#459). Find its `uv`/`pytest`/`python` children by
+  command line (`Get-CimInstance Win32_Process`) and stop only those; never `taskkill /IM python.exe` (#102), and never
+  `git stash` across such a run. A clean second worktree, detached at master, runs master's suite beside a branch.
+- **A parallel `cov` failure is rarely the newest diff.** Re-run on master, reproduce deterministically, and fix a race
+  with a gate job occupying the worker ([[appendices.testing#races]]), never a longer wait.
+
+## 8. Probing the real app
+
+[[[appendices.testing#probing]]]
+
+- **Probe a stated premise before building on it** (#393, #345, #373, #407, #454, #457, #485): ten lines on a scratch
+  tree. Every one of these turned out false: "a sub-dock can float", "`None` vs `0` separates unmeasured from empty",
+  "`QLabel.pixmap()` drops the device-pixel ratio" (it follows the label's). Query the real cache read-only before
+  trusting a total.
+- **Headless, a bare `MainWindow()` writes the real config on teardown** (#400, #461, #491). Before any app import,
+  call `set_settings_dir(scratch)` (#494; it moves the `.ini`, `config_folder()` and `cache_folder()`), or set
+  `QSettings.setPath(IniFormat, UserScope, scratch)` and `QStandardPaths.setTestModeEnabled(True)`. Copy the user's
+  config files in, run `Application(argv).show_main_window()`, and end with `os._exit(0)` so nothing saves back. A
+  real `RootsPanel` (#457) needs `RootCatalog(queue, resource_events=events)`, `RehuDocument.new` records and a poll on
+  `queue.jobs()`. A bare-QtAds probe needs the auto-hide flags ([[appendices.qt-ads#auto-hide-flags]]).
+- **Launch a development build with `--settings-dir`** (#494), from the `rehuco-agent (local settings)` configuration
+  (`.local_settings`). Without it a second launch forwards to whichever agent is already running and exits
+  ([[nodes#single-instance]], #460), so the window on screen can be another checkout's: "primary already running …
+  forwarded argv" in the run log says so, and each run's `argv` there says which build it was.
+- **A flash is invisible to the suite** (#306): probe with a watchdog thread that writes its findings and calls
+  `os._exit`.
+
+## 9. Races and background work
+
+[[[appendices.testing#races]]]
+
+- **A state a fast background job passes through is held with a gate** (#484): patch the job's reader to
+  `release.wait()`, assert the intermediate state, then set the event (also at teardown). Without the gate the test
+  passes by timing alone.
+- **A stale-answer guard runs on the GUI thread, not the worker** (#470): emit `(serial, result)` and judge it in a
+  slot; prove it with `QThreadPool.waitForDone()` between the answer and the switch.
+- **`TaskQueue.wait_until_idle` is true before a just-enqueued job starts** (#457): poll the job's state.
+- **A server that never answers is a real listener with a full queue** (#482): `listen(0)`, then
+  `create_connection(timeout=0.05)` until one raises `TimeoutError` (assert that, not just `OSError`); proven on Windows
+  and Linux.
+- **A fake clock replaces the module's own `time` name** (`mocker.patch("pkg.mod.time",
+  SimpleNamespace(monotonic=clock))`), never `time.monotonic`, which Qt and pytest-qt read.
+- **An unclosed SQLite connection warns under whichever test the GC runs in** (#372). A shared-cache memory database
+  takes table locks WAL never does: "table is locked" in parallel runs only (`PRAGMA read_uncommitted`, #377).
+- **A worker crash with no assertion is often a `QThread` destroyed while running** (3324cf1): reproduce it with a
+  worker that lingers after `super().run()`.
+- **A native crash in pytest-qt's `_process_events` is an earlier test's deferred work** (#102): run the file 8–12
+  times, narrow it with targeted `sendPostedEvents(obj, DeferredDelete)`, and fix the source.
+- **Stale connections are countable** (#380): `obj.receivers("2" + signature)` around a build and teardown, plus
+  `sendPostedEvents(None, DeferredDelete)`.
+- **Gating a lightbox decode** (#479): gate `ArchiveImageSource.load` only when `max_height is not None` (the main
+  image loads on the GUI thread); clear `QPixmapCache` per test; monkeypatch `roots_lightbox.ThumbnailLoader`.
+
+## 10. Driving Qt offscreen
+
+[[[appendices.testing#offscreen-qt]]]
+
+- **Synthetic input goes to the widget under the point** (#485): `viewer.childAt(p) or viewer`, mapped with `mapFrom`,
+  then moves to the widget that took the press. Sending straight to a container skips its children's hit-testing, so a
+  test of "the band takes the press" passes vacuously.
+- **`qtbot.mouseMove` can be dropped under load** (#321, #378, #462, #457): `QApplication.sendEvent` a `QMouseEvent`.
+  Text can draw no ink once an icon font has loaded: assert on `drawText` calls through a `QPainter` subclass (keep the
+  `QImage`). `QIcon.paint` never reaches a Python `drawPixmap`: read pixels. Skip ink-dependent tests where text draws
+  nothing (#465).
+- **Text does not scale linearly** (#462): enlarge until the part overflows, and assert that.
+- **Key presses** (#344, #345): a `MainWindow` test window never activates, so assert on `shortcuts()`; a bare host
+  `QMainWindow` that is shown, activated and waited on takes a real `ApplicationShortcut` press.
+- **A PySide signal is cached on the instance after first access** (#462): patch the instance, not the class. Make
+  `emit` raise `RuntimeError` rather than `shiboken6.delete` a widget. An unshown widget gets no `resizeEvent`.
+- **`startDragDistance()` is 0 without an application** (#395): take `qtbot`.
+- **A disabled `QAction.trigger()` does nothing, and the settings dialog refreshes enablement on a timer** (#457): call
+  `__refresh_dirty_ui` between staging and triggering.
+- **An empty-area menu is testable offscreen** (#469): show, resize, `waitExposed`, pick a point below a column's
+  `viewport()`, and patch the module's `QMenu` with a recording `exec`.
+- **A modal question lives behind a public method of its owner** (#344), which the fixture replaces per instance.
+- **A Scintilla autocomplete popup on a shown editor corrupts the heap offscreen** (#343): `autoCCancel()` first, and
+  use `QWidget.setFocus(editor)`.
+- **A test's shown window must be held** (#491): a window built in a helper and dropped dies with its wrapper, taking
+  its dock managers along ("already deleted" at the first call); a generator fixture yields while holding it. A
+  `.show()` without `qtbot.addWidget` leaks a window (#383).
+- **A mock widget handed to a `MainWindow` is saved and closed at teardown** (#464): set `dirty = False` and
+  `save_state.return_value = b""`, or the real modal pops or `QByteArray` fails.
+- **A test that loads a model in place keeps every tab and the form alive** (#470): build all tabs, and hang the form
+  on the returned surface (`all_editors`).
+- **The clipboard is the shared `clipboard` fixture** in `conftest.py`, which restores what the developer had in a
+  `finally` (#485). A `QDrag` is replaced and the staged name asserted through a real `ImageExporter`, never a
+  `Mock(spec=…)`.
+- **Drags in tests** (#387, #461, #485): send `DragEnter` before `Drop` and keep the `QMimeData` alive; only events to
+  `window.windowHandle()` exercise parent routing. A synthetic `DragMove` after an ignored enter never reaches any event
+  filter (dropped in `QApplication.notify`, the application's included): hand it to the installed filter's
+  `eventFilter` directly.
+
+## 11. The suite's own fixtures and patches
+
+[[[appendices.testing#suite-fixtures]]]
+
+- **A real folder is pytest's `tmp_path`, nothing hand-rolled** (#475); never mock `Path.mkdir`. A `/fake/…` path is
+  a real `C:\fake` on Windows. Real records under `tmp_path` give real cache rows (verify-on-access, #487); no
+  `resource_type` mock.
+- **The agent suite's `Path.stat` answers a missing file with a `Mock`** (#458): `touch()` first, or use
+  `real_path_stat` (#395). The session's cache folder is temporary (`isolate_cache_folder`).
+- **The `served` fixture patches `Path.read_text` for every file** (#469): re-patch it to serve `.rehuco` only
+  (`REAL_READ_TEXT`). A checksum record is `{"version": 1, "files": [{name, xxh3, verified, status}]}`.
+- **The suite swaps `persistent_settings` in its own module for an in-memory fake** (#494): a test of the real override
+  patches the real function back; `reset_settings_dir` (autouse) clears the override. Native window titles can be read
+  with `GetWindowTextW`; a top-level title lacking the application display name gets it appended.
+- **`mocker.patch.object(instance, "method")` misses a collaborator built with the bound method** (#456): hand it the
+  object.
+- **Fixtures are imported by name from a sibling module** (`test_catalog_docks`' `fixture_database`/`served`/`saves`,
+  a card list's page; #487, #493) and keep their name (`@fixture(name=…)`, as `fixture_dock`). Past the size cap a
+  test module splits the same way ([[appendices.code-conventions#python]]).
+- **Test helpers' id counters start far above explicit ids** (#379). **Never build expected text from the checkout's
+  path** (#398): a never-shown menu elides it.
+- **A platform branch is a module constant** so a test can flip it (#402).
+- **A "defaults when nothing was saved" test seeds the instance first** (#483): loading into a fresh object whose
+  defaults are already empty passes whatever `load()` does. Prove such a test by making `load()` a bare `return`.
+- **Test each half of a split toggle against the other** (#408).
+- **Assert a query plan one clause at a time** (#454): `set_trace_callback` + `EXPLAIN QUERY PLAN`, no `SCAN r`. An
+  `OR` uses an index only when every term is on the table's indexed columns; prove the test by restoring the old
+  clause.
+- **A coverage gap in an untouched file is real** (#462, #344, #457): reach a defensive branch with a test, or delete a
+  guard no caller can reach. An `elif` loop that can skip is a partial branch: filter in a comprehension.
+- **A bad zip by patching bytes** (#480, #484): `writestr(ZipInfo)` resets `flag_bits`, so set it in the central
+  directory entry afterwards (`PK\x01\x02` + 8 is the flag byte; encrypted is bit 0); swap a UTF-8 name's bytes for
+  invalid ones of the same length; blank the `PK\x01\x02` signature to leave the end record intact over a corrupt
+  directory. Both packages keep a copy of `crafted_zips.py`.
+- **`make check-slugs` reads `[[x.y]]` in test code** (#485): `== [[widget.action]]`, a list of lists, trips it.
