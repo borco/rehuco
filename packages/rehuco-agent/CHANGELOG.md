@@ -10,6 +10,15 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 ## [Unreleased]
 
+### Changed
+
+- **The agent keeps its files in one `borco/rehuco` folder, shared with the node.** On Windows that is
+  `%LOCALAPPDATA%\borco\rehuco` (it was Roaming, plus a cache folder elsewhere), on macOS `~/Library/Application
+  Support/borco/rehuco`, and on Linux `borco/rehuco` under `$XDG_CONFIG_HOME`, `$XDG_DATA_HOME` and `$XDG_CACHE_HOME`.
+  The files are not moved for you: copy the old `borco/rehuco-agent` folder, `rehuco-agent.ini` and the old cache
+  folder's `.rehudb` files across, or let the app start afresh. `--settings-dir DIR` now puts everything directly in
+  `DIR`, and `--info` also prints the data folder.
+
 ### Added
 
 - **A run can keep its settings and cache in a folder of its own**: `rehuco-agent --settings-dir DIR`, or the

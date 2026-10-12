@@ -625,11 +625,13 @@ goes follows each platform's own convention:
   folder is the user's choice.
 - **One folder assumes the agent and node run as the same OS user** — the launch-on-login case of
   [[nodes#two-roles]]. A node installed as a system service runs under its own account, and so has its own folder.
-- **The move from today's location is manual.** The agent's files currently sit in a `borco/rehuco-agent` folder
-  beside its `.ini` (#361) — Roaming on Windows, `~/.config` on Linux. They are moved once, by hand — or deleted and
-  let the app recreate them — and no migration code is written for it.
+- **The move from the earlier location is manual.** Before #412 the agent's files sat in a `borco/rehuco-agent` folder
+  beside its `.ini` (#361) — Roaming on Windows, `~/.config` on Linux — and its caches in `borco/rehuco-agent` under
+  the platform's cache location. They are moved once, by hand — or deleted and let the app recreate them — and no
+  migration code is written for it.
+- **The agent's files sit loose in these folders**, with no subfolder of their own; a node instance keeps its files in
+  `nodes/<name>/` ([[multiplicity#instances]]).
 - **A run can be pointed at a folder of its own** (#494): `rehuco-agent --settings-dir DIR`, or
-  `REHUCO_AGENT_SETTINGS_DIR` (the flag wins). Everything above then lives under `DIR` instead —
-  `DIR/rehuco-agent.ini`, the durable state in `DIR/rehuco-agent/`, the caches in `DIR/rehuco-agent/cache/` — and the
-  run has its own single instance ([[nodes#single-instance]]). It keeps a development build off the installed one's
+  `REHUCO_AGENT_SETTINGS_DIR` (the flag wins). Everything above then lives in `DIR` instead —
+  settings, durable state and caches alike, the layout of Windows and macOS — and the run has its own single instance ([[nodes#single-instance]]). It keeps a development build off the installed one's
   files while their formats diverge; the window title names the folder.

@@ -16,32 +16,18 @@ construction), so editing these settings affects only documents opened or conver
 already open. Setting both to the same value is a supported configuration -- there is no uniqueness constraint.
 """
 
-import getpass
 from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Final, cast
 
 from PySide6.QtCore import QSettings
-from rehuco_core import DEFAULT_CURRENT_USERNAME, DEFAULT_UNKNOWN_USERNAME
+from rehuco_core import DEFAULT_UNKNOWN_USERNAME, default_username
 
 from .persistent_settings import persistent_settings
 
 GROUP: Final = "identity"
 CURRENT_USERNAME_KEY: Final = "username"
 UNKNOWN_USERNAME_KEY: Final = "unknown_username"
-
-
-def default_username() -> str:
-    """The default **current** username: the OS login name, or core's
-    :data:`~rehuco_core.DEFAULT_CURRENT_USERNAME` (``admin``) when the platform can't produce one
-    ([[field-schema#per-user-shared]]'s seeding rule).
-
-    :returns: the current username a fresh install (nothing persisted yet) starts with.
-    """
-    try:
-        return getpass.getuser()
-    except OSError:
-        return DEFAULT_CURRENT_USERNAME
 
 
 @dataclass

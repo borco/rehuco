@@ -432,6 +432,28 @@ def test_mediainfo_reads_a_file_with_no_video_track_as_length_only(mocker: Mocke
     assert MediaInfoDurationProbe().probe_video(Path("a.mp4")) == VideoFacts(4.0, None, None)
 
 
+@mark.parametrize("raw", ["n/a", "", "0", -5, True])
+def test_a_frame_size_reported_as_no_positive_number_reads_as_unknown(mocker: MockerFixture, raw: object) -> None:
+    """A backend may spell a dimension as text it could not measure, zero, or a flag; none of those is a size.
+
+    **Test steps:**
+
+    * parse a file whose Video track reports ``raw`` for both dimensions
+    * verify the facts keep the duration and have no size
+    """
+    mocker.patch(
+        f"{MODULE}.MediaInfo.parse",
+        return_value=fake_media_info(
+            [
+                SimpleNamespace(track_type="General", duration=4000),
+                SimpleNamespace(track_type="Video", duration=4000, width=raw, height=raw),
+            ]
+        ),
+    )
+
+    assert MediaInfoDurationProbe().probe_video(Path("a.mp4")) == VideoFacts(4.0, None, None)
+
+
 def test_mediainfo_treats_a_parse_failure_as_an_unreadable_file(mocker: MockerFixture) -> None:
     """Whatever the library and the ctypes layer under it raise -- a truncated file, a name the C API
     cannot represent, a mount that went away -- means the same thing to a scan.

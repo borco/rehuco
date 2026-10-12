@@ -70,6 +70,7 @@ from rehuco_agent.settings.identity_settings import shared_identity_settings
 from rehuco_agent.settings.image_viewer_settings import PREVIEWS_VISIBLE_KEY, shared_image_viewer_settings
 from rehuco_agent.settings.logs_settings import shared_logs_settings
 from rehuco_agent.settings.main_window_settings import WINDOW_VERSION, MainWindowSettings, main_window_state_path
+from rehuco_agent.settings.persistent_settings import folders
 from rehuco_agent.settings.recent_files_settings import RecentFilesSettings
 from rehuco_agent.settings.rehuco_settings import RehucoSettings
 from rehuco_agent.settings.root_catalog_settings import shared_root_catalog_settings
@@ -94,6 +95,7 @@ from rehuco_core import (
     DEFAULT_DELETER_PROVIDER,
     DEFAULT_PLUGIN_REGISTRY,
     INFO_REHU_FILENAME,
+    AppFolders,
     CatalogField,
     JobControl,
     JobState,
@@ -160,9 +162,12 @@ def mock_persistent_settings(mocker: MockerFixture) -> Any:
     settings = mocker.MagicMock()
     settings.value.side_effect = lambda key, default=None, type=None: default  # noqa: A002
     settings.beginReadArray.return_value = 0
-    # under this very test *file*, so the config folder's parent is a file on every OS and each store's
-    # mkdir/write fails and is logged -- ``/dev/null/…`` is a creatable ``C:\dev\null\…`` on Windows (#361)
-    settings.fileName.return_value = str(Path(__file__) / "settings.ini")
+    # the data folder under this very test *file*, so its parent is a file on every OS and each store's
+    # mkdir/write fails and is logged -- ``/dev/null/…`` is a creatable ``C:\dev\null\…`` on Windows (#361). The cache
+    # stays the session's own: a catalog must still open.
+    session = folders()
+    broken = AppFolders(settings=session.settings, data=Path(__file__) / "app", cache=session.cache)
+    mocker.patch("rehuco_agent.settings.persistent_settings.app_folders", return_value=broken)
     mocker.patch("rehuco_agent.settings.persistent_settings.persistent_settings", return_value=settings)
     return mocker.patch("rehuco_agent.main_window.persistent_settings", return_value=settings)
 
@@ -818,25 +823,22 @@ def test_the_base_title_is_the_application_display_name(qtbot: QtBot) -> None:
 
     **Test steps:**
 
-    * set a display name on the application, construct ``MainWindow``, then clear the name again
+    * set a display name on the application and construct ``MainWindow``
     * verify the window title is that name
     """
     QApplication.setApplicationDisplayName("rehuco [dev]")
-    try:
-        window = MainWindow()
-        qtbot.addWidget(window)
-    finally:
-        QApplication.setApplicationDisplayName("")
+    window = MainWindow()
+    qtbot.addWidget(window)
 
     assert window.windowTitle() == "rehuco [dev]"
 
 
 def test_the_base_title_is_the_uis_without_a_display_name(qtbot: QtBot) -> None:
-    """A bare ``QApplication`` names nothing, and the ``.ui``'s own title stands.
+    """An application naming nothing leaves the ``.ui``'s own title standing.
 
     **Test steps:**
 
-    * construct ``MainWindow`` under the test application, which sets no display name
+    * construct ``MainWindow`` with the empty display name every test starts with
     * verify the window title is the ``.ui``'s
     """
     assert not QApplication.applicationDisplayName()

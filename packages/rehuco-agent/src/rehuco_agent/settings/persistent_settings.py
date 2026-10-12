@@ -1,34 +1,25 @@
 """App-wide persistent settings storage, shared by every settings section (e.g. `DocumentSessionSettings`)."""
 
-import logging
 from collections.abc import Sequence
 from datetime import timedelta
 from pathlib import Path
 from typing import Final
 
-from PySide6.QtCore import QSettings, QStandardPaths
+from PySide6.QtCore import QSettings
+from rehuco_core import AppFolders, app_folders
 
-LOG: Final = logging.getLogger(__name__)
-
-ORGANIZATION_NAME: Final = "borco"
 APPLICATION_NAME: Final = "rehuco-agent"
-
-CONFIG_CACHE_FOLDER_NAME: Final = "cache"
-"""The subfolder of :func:`config_folder` that :func:`cache_folder` answers when the cache does not get a
-location of its own: under a settings dir, or on a host with no known cache location."""
 
 __settings_dir: Path | None = None  # pylint: disable=invalid-name
 
 
 def set_settings_dir(folder: Path | None) -> None:
-    """Keep this run's whole per-user state under ``folder`` instead of the platform's locations (#494).
+    """Keep this run's whole per-user state in ``folder`` instead of the platform's locations (#494).
 
-    The ``.ini`` becomes ``folder/rehuco-agent.ini``, so :func:`config_folder` follows it to
-    ``folder/rehuco-agent/``, and :func:`cache_folder` answers ``folder/rehuco-agent/cache/`` -- the layout of
-    the platform's settings folder, the cache in it rather than in a location of its own, since a settings dir
-    roams nowhere. A module variable read at call time rather than a patched function: every caller imports the
-    three functions by name. Set it before anything reads a setting -- the ``shared_*`` loaders cache what they
-    first read.
+    The ``.ini``, the durable state and the caches all go directly in ``folder`` -- the layout of Windows and macOS,
+    since a settings dir roams nowhere. A module variable read at call time rather than a patched function: every
+    caller imports the functions by name. Set it before anything reads a setting -- the ``shared_*`` loaders cache
+    what they first read.
 
     :param folder: an absolute folder, or ``None`` for the platform's locations.
     """
@@ -37,54 +28,43 @@ def set_settings_dir(folder: Path | None) -> None:
 
 
 def settings_dir() -> Path | None:
-    """The folder :func:`set_settings_dir` put this run's state under, or ``None`` for the platform's locations."""
+    """The folder :func:`set_settings_dir` put this run's state in, or ``None`` for the platform's locations."""
     return __settings_dir
 
 
-def persistent_settings() -> QSettings:
-    """A ``QSettings`` pointed at rehuco-agent's persistent per-user storage."""
+def folders() -> AppFolders:
+    """The folders this run keeps its files in ([[packaging-deployment#app-folders]], #412).
+
+    :returns: the settings dir's one folder when one is set, else the platform's folders.
+    """
     if __settings_dir is not None:
-        return QSettings(str(__settings_dir / f"{APPLICATION_NAME}.ini"), QSettings.Format.IniFormat)
-    return QSettings(
-        QSettings.Format.IniFormat, QSettings.Scope.UserScope, ORGANIZATION_NAME, application=APPLICATION_NAME
-    )
+        return AppFolders.single(__settings_dir)
+    return app_folders()
+
+
+def persistent_settings() -> QSettings:
+    """A ``QSettings`` on rehuco-agent's ``.ini``, in the settings folder."""
+    return QSettings(str(folders().settings / f"{APPLICATION_NAME}.ini"), QSettings.Format.IniFormat)
 
 
 def config_folder() -> Path:
-    """This app's own config directory -- where every file the app owns lives, apart from the ``.ini``
-    itself (#361).
+    """Where the durable files the app owns live, apart from the ``.ini`` itself -- the saved task queue, the
+    session, the layouts, crash dumps, the scraper persona (#361, #412).
 
-    Derived from `persistent_settings`'s own `.ini` location rather than `QStandardPaths.AppConfigLocation`
-    -- that call needs an organization/application name set on `QCoreApplication`, which nothing in this
-    app does today, while the `.ini`'s path already carries both. Its *parent* alone is the
-    **organization** directory (``…/borco/``, shared by every borco app), so the application name is
-    appended here to land under this app's own config directory specifically. A file written straight into
-    the parent would sit loose among other apps' settings.
+    The data folder: the same as the settings folder on Windows and macOS, `$XDG_DATA_HOME` on Linux.
 
-    :returns: this app's config directory. Not created by this call.
+    :returns: the folder. Not created by this call.
     """
-    return Path(persistent_settings().fileName()).parent / APPLICATION_NAME
+    return folders().data
 
 
 def cache_folder() -> Path:
-    """This app's local cache directory -- where a rebuildable file lives that must not roam or sit on a
-    network share, such as a ``.rehudb`` ([[data-model#local-file-trio]], #377).
+    """Where a rebuildable file lives that must not sit on a network share, such as a ``.rehudb``
+    ([[data-model#local-file-trio]], #377).
 
-    Not :func:`config_folder`: that one follows the ``.ini``, which a roaming profile carries between
-    machines, and a SQLite cache is neither portable nor safe there. Named like the config folder
-    (organization, then application) so a reader finds the two side by side.
-
-    :returns: the cache directory. Not created by this call; ``CatalogCache.open`` makes its own parent.
+    :returns: the cache folder. Not created by this call; ``CatalogCache.open`` makes its own parent.
     """
-    if __settings_dir is not None:
-        return config_folder() / CONFIG_CACHE_FOLDER_NAME
-    base = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.GenericCacheLocation)
-    if not base:
-        # Qt answers nothing on a host with no known cache location; a relative path would then put the
-        # cache wherever the app was launched from, so the config folder is the lesser evil
-        LOG.warning("No cache location is known on this host; the cache goes under the config folder.")
-        return config_folder() / CONFIG_CACHE_FOLDER_NAME
-    return Path(base) / ORGANIZATION_NAME / APPLICATION_NAME
+    return folders().cache
 
 
 STAGED_IMAGES_FOLDER_NAME: Final = "staged"

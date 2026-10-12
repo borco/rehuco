@@ -1,38 +1,35 @@
 """Tests for the app-wide persistent settings storage helper."""
 
-import logging
 from pathlib import Path
 
 from PySide6.QtCore import QSettings
-from pytest import LogCaptureFixture, fixture, mark
+from pytest import mark
 from pytest_mock import MockerFixture
 from rehuco_agent.settings.persistent_settings import (
     APPLICATION_NAME,
-    CONFIG_CACHE_FOLDER_NAME,
-    ORGANIZATION_NAME,
     cache_folder,
     config_folder,
+    folders,
     persistent_settings,
     read_stored_strings,
     set_settings_dir,
     settings_dir,
 )
+from rehuco_core import AppFolders
 
 
 def test_persistent_settings_is_scoped_to_this_app() -> None:
-    """The returned ``QSettings`` is an ini-format, per-user store identified as rehuco-agent's.
+    """The returned ``QSettings`` is an ini-format store, in rehuco-agent's ``.ini`` in the settings folder (#412).
 
     **Test steps:**
 
     * call ``persistent_settings``
-    * verify its format, scope, organization, and application name
+    * verify its format and that its file is named after the app, in the settings folder
     """
     settings = persistent_settings()
 
     assert settings.format() == QSettings.Format.IniFormat
-    assert settings.scope() == QSettings.Scope.UserScope
-    assert settings.organizationName() == ORGANIZATION_NAME
-    assert settings.applicationName() == APPLICATION_NAME
+    assert Path(settings.fileName()) == folders().settings / f"{APPLICATION_NAME}.ini"
 
 
 def test_a_stored_list_is_read_back_verbatim() -> None:
@@ -82,51 +79,21 @@ def test_a_value_of_a_type_no_list_was_stored_as_reads_as_nothing(value: object)
     assert not read_stored_strings(value)
 
 
-def test_the_cache_folder_is_this_apps_own_under_the_local_cache_location(mocker: MockerFixture) -> None:
-    """A rebuildable cache lives in the platform's local cache directory, organization then application --
-    never beside the ``.ini``, which a roaming profile carries between machines (#377).
+def test_the_folders_are_the_platforms_when_no_settings_dir_is_set(tmp_path: Path, mocker: MockerFixture) -> None:
+    """Without a settings dir, ``config_folder`` and ``cache_folder`` answer core's data and cache folders (#412).
 
     **Test steps:**
 
-    * point Qt's generic cache location at a fake folder
-    * verify the cache folder is that folder's organization/application subfolder
+    * make core's ``app_folders`` answer three distinct folders
+    * verify the data folder is ``config_folder``, the cache folder is ``cache_folder``, and the ``.ini`` is in the
+      settings folder
     """
-    mocker.patch(
-        "rehuco_agent.settings.persistent_settings.QStandardPaths.writableLocation", return_value="/fake/cache"
-    )
+    platform = AppFolders(settings=tmp_path / "config", data=tmp_path / "data", cache=tmp_path / "cache")
+    mocker.patch("rehuco_agent.settings.persistent_settings.app_folders", return_value=platform)
 
-    assert cache_folder() == Path("/fake/cache") / ORGANIZATION_NAME / APPLICATION_NAME
-
-
-def test_the_cache_folder_falls_back_under_the_config_folder_when_the_host_knows_no_cache_location(
-    mocker: MockerFixture, caplog: LogCaptureFixture
-) -> None:
-    """Qt may answer nothing; a relative path would then land wherever the app was launched from, so the
-    config folder is used instead, and the fallback is logged (#377).
-
-    **Test steps:**
-
-    * make Qt's generic cache location empty and the config folder known
-    * verify the cache folder is a ``cache`` folder under the config folder, and a warning was logged
-    """
-    mocker.patch("rehuco_agent.settings.persistent_settings.QStandardPaths.writableLocation", return_value="")
-    mocker.patch("rehuco_agent.settings.persistent_settings.config_folder", return_value=Path("/fake/config"))
-
-    with caplog.at_level(logging.WARNING):
-        folder = cache_folder()
-
-    assert folder == Path("/fake/config/cache")
-    assert "No cache location" in caplog.text
-
-
-@fixture(name="real_settings")
-def fixture_real_settings(mocker: MockerFixture) -> None:
-    """Put the real ``persistent_settings`` back where ``config_folder`` looks it up.
-
-    The suite swaps it for an in-memory stand-in in that module (see ``conftest``), which would hide the very
-    thing these tests are about: where the real store goes under a settings dir (#494).
-    """
-    mocker.patch("rehuco_agent.settings.persistent_settings.persistent_settings", new=persistent_settings)
+    assert config_folder() == tmp_path / "data"
+    assert cache_folder() == tmp_path / "cache"
+    assert Path(persistent_settings().fileName()) == tmp_path / "config" / f"{APPLICATION_NAME}.ini"
 
 
 def test_no_settings_dir_is_in_effect_by_default() -> None:
@@ -140,16 +107,15 @@ def test_no_settings_dir_is_in_effect_by_default() -> None:
     assert settings_dir() is None
 
 
-def test_a_settings_dir_holds_the_ini_beside_the_apps_own_folder(tmp_path: Path, real_settings: None) -> None:
-    """The layout under the folder is the platform's own: ``rehuco-agent.ini`` beside ``rehuco-agent/`` (#494).
+def test_a_settings_dir_holds_the_ini_the_state_and_the_cache_alike(tmp_path: Path) -> None:
+    """Under a settings dir all three folders are the dir itself, the layout of Windows and macOS (#494, #412).
 
     **Test steps:**
 
     * put the settings under a temporary folder
     * verify the ini is an ini-format file named after the app in that folder
-    * verify the config folder is the app's folder beside it
+    * verify the config folder and the cache folder are that folder
     """
-    del real_settings
     set_settings_dir(tmp_path)
 
     settings = persistent_settings()
@@ -157,7 +123,8 @@ def test_a_settings_dir_holds_the_ini_beside_the_apps_own_folder(tmp_path: Path,
     assert settings_dir() == tmp_path
     assert settings.format() == QSettings.Format.IniFormat
     assert Path(settings.fileName()) == tmp_path / f"{APPLICATION_NAME}.ini"
-    assert config_folder() == tmp_path / APPLICATION_NAME
+    assert config_folder() == tmp_path
+    assert cache_folder() == tmp_path
 
 
 def test_a_value_saved_under_a_settings_dir_lands_in_its_ini(tmp_path: Path) -> None:
@@ -177,33 +144,18 @@ def test_a_value_saved_under_a_settings_dir_lands_in_its_ini(tmp_path: Path) -> 
     assert persistent_settings().value("section/key") == "value"
 
 
-def test_a_settings_dir_keeps_the_cache_inside_the_apps_folder(tmp_path: Path, real_settings: None) -> None:
-    """Nothing is left in the platform's cache location, and the cache sits in the app's folder like the rest (#494).
-
-    **Test steps:**
-
-    * put the settings under a temporary folder
-    * verify the cache folder is ``cache`` under the config folder
-    """
-    del real_settings
-    set_settings_dir(tmp_path)
-
-    assert cache_folder() == tmp_path / APPLICATION_NAME / CONFIG_CACHE_FOLDER_NAME
-
-
 def test_clearing_the_settings_dir_returns_to_the_platforms_locations(tmp_path: Path, mocker: MockerFixture) -> None:
     """``None`` undoes the override (#494).
 
     **Test steps:**
 
     * set a settings dir, then clear it
-    * verify none is in effect and the cache is under the platform's cache location again
+    * verify none is in effect and the folders are core's again
     """
-    mocker.patch(
-        "rehuco_agent.settings.persistent_settings.QStandardPaths.writableLocation", return_value="/fake/cache"
-    )
-    set_settings_dir(tmp_path)
+    platform = AppFolders(settings=tmp_path / "config", data=tmp_path / "data", cache=tmp_path / "cache")
+    mocker.patch("rehuco_agent.settings.persistent_settings.app_folders", return_value=platform)
+    set_settings_dir(tmp_path / "elsewhere")
     set_settings_dir(None)
 
     assert settings_dir() is None
-    assert cache_folder() == Path("/fake/cache") / ORGANIZATION_NAME / APPLICATION_NAME
+    assert folders() == platform

@@ -10,7 +10,8 @@ from typing import Any
 from pytest import fixture
 from pytest_mock import MockerFixture
 from rehuco_agent.settings import identity_settings
-from rehuco_agent.settings.identity_settings import IdentitySettings, default_username, shared_identity_settings
+from rehuco_agent.settings.identity_settings import IdentitySettings, shared_identity_settings
+from rehuco_core import default_username
 
 
 # region fixtures

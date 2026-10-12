@@ -14,7 +14,7 @@ from rehuco_agent import __version__
 from rehuco_agent.archives import ARCHIVE_EXTENSIONS
 
 SETTINGS_DIR_ENVIRONMENT_VARIABLE: Final = "REHUCO_AGENT_SETTINGS_DIR"
-"""Names a folder that replaces the platform's settings and cache locations for this run (#494); the
+"""Names a folder that replaces the platform's settings, data and cache locations for this run (#494); the
 ``--settings-dir`` flag wins over it."""
 
 REGISTRATION_PLATFORMS: Final = ("win32", "linux")
@@ -59,7 +59,7 @@ def print_registration_info(exe_path: Path) -> None:
 
 
 def resolve_settings_dir(flag: Path | None, environment: str | None) -> Path | None:
-    """The folder this run keeps its settings and cache under (#494): the flag's, else the environment's.
+    """The folder this run keeps its settings, data and cache in (#494): the flag's, else the environment's.
 
     Made absolute here, against the launch directory, because the GUI leaves that directory before it first
     reads a setting (``leave_launch_directory``).
@@ -76,7 +76,7 @@ def resolve_settings_dir(flag: Path | None, environment: str | None) -> Path | N
 
 
 def apply_settings_dir(parser: argparse.ArgumentParser, flag: Path | None) -> None:
-    """Put this run's settings and cache under the folder :func:`resolve_settings_dir` names, creating it.
+    """Put this run's settings, data and cache in the folder :func:`resolve_settings_dir` names, creating it.
 
     Runs before anything reads a setting -- the scrape CLI and the GUI both do.
 
@@ -97,13 +97,14 @@ def apply_settings_dir(parser: argparse.ArgumentParser, flag: Path | None) -> No
 
 
 def print_settings_info() -> None:
-    """Print where this run's settings file and cache folder are, for ``--info``."""
+    """Print where this run's settings file, durable state and cache folder are, for ``--info``."""
     # pylint: disable-next=import-outside-toplevel
-    from rehuco_agent.settings.persistent_settings import cache_folder, persistent_settings
+    from rehuco_agent.settings.persistent_settings import APPLICATION_NAME, folders
 
-    # through Path, like the cache: QSettings answers with forward slashes on every platform
-    print(f"settings: {Path(persistent_settings().fileName())}")
-    print(f"cache: {cache_folder()}")
+    where = folders()
+    print(f"settings: {where.settings / f'{APPLICATION_NAME}.ini'}")
+    print(f"data: {where.data}")
+    print(f"cache: {where.cache}")
 
 
 # pylint: disable-next=too-many-return-statements,too-many-branches,too-many-statements
@@ -197,7 +198,7 @@ def main() -> int:
         "--settings-dir",
         metavar="DIR",
         type=Path,
-        help=f"keep this run's settings and cache under DIR, with its own running instance (default: "
+        help=f"keep this run's settings, data and cache in DIR, with its own running instance (default: "
         f"${SETTINGS_DIR_ENVIRONMENT_VARIABLE}, else the platform's locations)",
     )
     args = parser.parse_args()

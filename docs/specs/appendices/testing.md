@@ -225,8 +225,7 @@ macOS/Linux uic couldn't resolve a `.ui`'s `.qrc` to its package and emitted a b
   "`QLabel.pixmap()` drops the device-pixel ratio" (it follows the label's). Query the real cache read-only before
   trusting a total.
 - **Headless, a bare `MainWindow()` writes the real config on teardown** (#400, #461, #491). Before any app import,
-  call `set_settings_dir(scratch)` (#494; it moves the `.ini`, `config_folder()` and `cache_folder()`), or set
-  `QSettings.setPath(IniFormat, UserScope, scratch)` and `QStandardPaths.setTestModeEnabled(True)`. Copy the user's
+  call `set_settings_dir(scratch)` (#494; it moves the `.ini`, `config_folder()` and `cache_folder()` into `scratch`). Copy the user's
   config files in, run `Application(argv).show_main_window()`, and end with `os._exit(0)` so nothing saves back. A
   real `RootsPanel` (#457) needs `RootCatalog(queue, resource_events=events)`, `RehuDocument.new` records and a poll on
   `queue.jobs()`. A bare-QtAds probe needs the auto-hide flags ([[appendices.qt-ads#auto-hide-flags]]).
@@ -310,7 +309,7 @@ macOS/Linux uic couldn't resolve a `.ui`'s `.qrc` to its package and emitted a b
   a real `C:\fake` on Windows. Real records under `tmp_path` give real cache rows (verify-on-access, #487); no
   `resource_type` mock.
 - **The agent suite's `Path.stat` answers a missing file with a `Mock`** (#458): `touch()` first, or use
-  `real_path_stat` (#395). The session's cache folder is temporary (`isolate_cache_folder`).
+  `real_path_stat` (#395). The session's settings, data and cache folders are temporary (`isolate_app_folders`, #412).
 - **The `served` fixture patches `Path.read_text` for every file** (#469): re-patch it to serve `.rehuco` only
   (`REAL_READ_TEXT`). A checksum record is `{"version": 1, "files": [{name, xxh3, verified, status}]}`.
 - **The suite swaps `persistent_settings` in its own module for an in-memory fake** (#494): a test of the real override

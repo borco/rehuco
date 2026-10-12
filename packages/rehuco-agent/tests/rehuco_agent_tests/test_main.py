@@ -14,9 +14,6 @@ from rehuco_agent import __version__
 from rehuco_agent.__main__ import SETTINGS_DIR_ENVIRONMENT_VARIABLE, main, resolve_settings_dir
 from rehuco_agent.settings.persistent_settings import (
     APPLICATION_NAME,
-    CONFIG_CACHE_FOLDER_NAME,
-    cache_folder,
-    persistent_settings,
     settings_dir,
 )
 
@@ -320,25 +317,23 @@ def test_a_settings_dir_that_is_a_file_is_a_usage_error(
     assert settings_dir() is None
 
 
-def test_info_reports_where_the_settings_and_cache_are(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture, capsys: pytest.CaptureFixture[str]
+def test_info_reports_where_the_settings_data_and_cache_are(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """``--info`` says which state a run would use, so a development build is easy to tell from the installed one
     (#494).
 
     **Test steps:**
 
-    * ask for ``--info`` with ``--settings-dir`` on a non-registration platform, with the session's stand-ins for the
-      settings and the cache folder replaced by the real ones
-    * verify the output names the ini and the cache under that folder, in the platform's own spelling
+    * ask for ``--info`` with ``--settings-dir`` on a non-registration platform
+    * verify the output names the ini, the data and the cache in that folder, in the platform's own spelling
     """
     monkeypatch.setattr("sys.platform", "darwin")
     monkeypatch.setattr("sys.argv", [FAKE_ARGV0, "--info", "--settings-dir", str(tmp_path)])
-    mocker.patch("rehuco_agent.settings.persistent_settings.cache_folder", new=cache_folder)
-    mocker.patch("rehuco_agent.settings.persistent_settings.persistent_settings", new=persistent_settings)
 
     assert main() == 0
 
     lines = capsys.readouterr().out.splitlines()
     assert f"settings: {tmp_path / f'{APPLICATION_NAME}.ini'}" in lines
-    assert f"cache: {tmp_path / APPLICATION_NAME / CONFIG_CACHE_FOLDER_NAME}" in lines
+    assert f"data: {tmp_path}" in lines
+    assert f"cache: {tmp_path}" in lines

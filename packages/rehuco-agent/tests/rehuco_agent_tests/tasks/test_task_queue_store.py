@@ -17,8 +17,7 @@ from typing import Any, Final
 import pytest
 from pytest import fixture
 from pytest_mock import MockerFixture
-from rehuco_agent.settings import persistent_settings as persistent_settings_module
-from rehuco_agent.settings.persistent_settings import APPLICATION_NAME
+from rehuco_agent.settings.persistent_settings import config_folder
 from rehuco_agent.tasks import TASK_QUEUE_FILENAME, TaskQueueStore, task_queue_path
 from rehuco_agent.tasks import task_queue_store as store_module
 from rehuco_core import JobControl, JobState, TaskJobBase, TaskJobRegistry, TaskQueue
@@ -255,20 +254,16 @@ def settles_fixture() -> Callable[[Callable[[], bool]], None]:
 # region Where the file lives
 
 
-def test_the_queue_file_sits_in_the_app_config_folder(mocker: MockerFixture) -> None:
+def test_the_queue_file_sits_in_the_app_config_folder() -> None:
     """Per-user and per-scope without this module knowing what either means on this OS, and in the app's
-    own folder rather than loose in the organization one every borco app shares (#361).
+    own config folder (#361, #412).
 
     **Test steps:**
 
-    * point the settings at a known file
-    * verify the queue file is named in the app's folder beside it
+    * ask for the queue file's path
+    * verify it is named in the config folder
     """
-    settings = mocker.Mock()
-    settings.fileName.return_value = str(Path.cwd() / "fake" / "rehuco-agent.ini")
-    mocker.patch.object(persistent_settings_module, "persistent_settings", return_value=settings)
-
-    assert task_queue_path() == Path.cwd() / "fake" / APPLICATION_NAME / TASK_QUEUE_FILENAME
+    assert task_queue_path() == config_folder() / TASK_QUEUE_FILENAME
 
 
 # endregion

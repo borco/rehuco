@@ -11,6 +11,9 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ### Added
 
+- `app_folders()` answers where the agent and the node keep their files without Qt: one `borco/rehuco` folder on
+  Windows (`%LOCALAPPDATA%`) and macOS, the XDG config / data / cache split on Linux. `default_username()` is the OS
+  login name, or `admin` when the platform has none.
 - Per-user watch progress on a tutorial's videos. `record_progress(path, username, relative, position, duration, *,
   viewed)` is the one write path for every player: it re-reads the record as the host's `current_username`, replaces
   only that user's entry for that file, and leaves `updated` alone. With `WatchRules`' two settings, reaching within
