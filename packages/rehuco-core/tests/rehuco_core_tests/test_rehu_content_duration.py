@@ -1,15 +1,16 @@
-"""Tests for the video-duration scan (#224): the two shipped probes, and the sum over the same content
-set the size scan and the checksums read.
+"""Tests for the video-duration scan (#224): the two shipped probes, the per-file ``videos`` map (#410),
+and the sum over the same content set the size scan and the checksums read.
 """
 
 # the shipped extension set is spelled out here on purpose -- asserting it against the constant it is
 # read from would pass however the constant changed, so the second copy *is* the test
 # pylint: disable=duplicate-code
 
+import json
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Final
+from typing import Final, override
 
 from pytest import approx, mark, param, raises
 from pytest_mock import MockerFixture
@@ -24,7 +25,10 @@ from rehuco_core import (
     DurationProbeError,
     FfprobeDurationProbe,
     MediaInfoDurationProbe,
+    VideoFacts,
     content_duration,
+    content_video_files,
+    content_videos,
 )
 
 DIRECTORY: Final = Path("/fake/tutorial")
@@ -40,7 +44,8 @@ class FakeProbe(DurationProbe):
     Stands in for a real backend everywhere the question is *how the sum behaves*, which is separate
     from *how a container is read* -- the two shipped probes have their own tests below.
 
-    :param durations: fractional seconds per file name; a name absent from it reads as unreadable.
+    :param durations: fractional seconds per file name; a name absent from it reads as unreadable. Every
+        file answers a 1920x1080 frame.
     :param unavailable: the reason this probe cannot run, or ``None`` when it can.
     """
 
@@ -52,14 +57,17 @@ class FakeProbe(DurationProbe):
         self.__unavailable: Final = unavailable
         self.probed: Final[list[Path]] = []
 
+    @override
     def unavailable_reason(self) -> str | None:
         """Whatever the test declared."""
         return self.__unavailable
 
-    def probe(self, path: Path) -> float | None:
+    @override
+    def probe_video(self, path: Path) -> VideoFacts | None:
         """Record the request and answer from the table."""
         self.probed.append(path)
-        return self.__durations.get(path.name)
+        duration = self.__durations.get(path.name)
+        return VideoFacts(duration, 1920, 1080) if duration is not None else None
 
 
 def mock_content_files(mocker: MockerFixture, filenames: list[str]) -> None:
@@ -383,6 +391,47 @@ def test_mediainfo_answers_nothing_for_a_file_carrying_no_container_duration(
     assert MediaInfoDurationProbe().probe(Path("a.mp4")) is None
 
 
+def test_mediainfo_reads_the_first_video_tracks_size(mocker: MockerFixture) -> None:
+    """The ``videos`` map records each file's frame size beside its length (#410): the duration is still
+    the container's, the size the first Video track's.
+
+    **Test steps:**
+
+    * parse a file with a General track and two Video tracks
+    * verify the facts carry the General duration and the first Video track's size
+    """
+    mocker.patch(
+        f"{MODULE}.MediaInfo.parse",
+        return_value=fake_media_info(
+            [
+                SimpleNamespace(track_type="General", duration=2500),
+                SimpleNamespace(track_type="Video", duration=1000, width=1920, height=1080),
+                SimpleNamespace(track_type="Video", duration=1000, width=640, height=360),
+            ]
+        ),
+    )
+
+    assert MediaInfoDurationProbe().probe_video(Path("a.mp4")) == VideoFacts(2.5, 1920, 1080)
+
+
+def test_mediainfo_reads_a_file_with_no_video_track_as_length_only(mocker: MockerFixture) -> None:
+    """An audio-only file under a video extension keeps its length and has no size.
+
+    **Test steps:**
+
+    * parse a file with a General and an Audio track only
+    * verify the facts carry the duration and no size
+    """
+    mocker.patch(
+        f"{MODULE}.MediaInfo.parse",
+        return_value=fake_media_info(
+            [SimpleNamespace(track_type="General", duration=4000), SimpleNamespace(track_type="Audio", duration=4000)]
+        ),
+    )
+
+    assert MediaInfoDurationProbe().probe_video(Path("a.mp4")) == VideoFacts(4.0, None, None)
+
+
 def test_mediainfo_treats_a_parse_failure_as_an_unreadable_file(mocker: MockerFixture) -> None:
     """Whatever the library and the ctypes layer under it raise -- a truncated file, a name the C API
     cannot represent, a mount that went away -- means the same thing to a scan.
@@ -471,21 +520,69 @@ def test_ffprobe_reads_the_duration_off_stdout(mocker: MockerFixture) -> None:
     * verify the executable and flags it ran, and the fractional seconds it read back
     """
     mocker.patch(f"{MODULE}.which", return_value="/usr/bin/ffprobe")
-    run = mocker.patch(f"{MODULE}.subprocess.run", return_value=SimpleNamespace(stdout="2.500000\n"))
+    run = mocker.patch(f"{MODULE}.subprocess.run", return_value=SimpleNamespace(stdout=ffprobe_output("2.500000")))
 
     assert FfprobeDurationProbe().probe(Path("/fake/a.mp4")) == approx(2.5)
 
     command = run.call_args.args[0]
     assert command[0] == "/usr/bin/ffprobe"
-    assert "format=duration" in command
+    assert "format=duration:stream=width,height" in command
     assert command[-1] == str(Path("/fake/a.mp4"))
+
+
+def test_ffprobe_reads_the_first_video_streams_size(mocker: MockerFixture) -> None:
+    """The ``videos`` map records each file's frame size beside its length (#410), read from the first
+    video stream the call selected.
+
+    **Test steps:**
+
+    * run the probe over a file whose output carries a stream size
+    * verify the facts carry the duration, width and height
+    """
+    mocker.patch(f"{MODULE}.which", return_value="/usr/bin/ffprobe")
+    mocker.patch(
+        f"{MODULE}.subprocess.run",
+        return_value=SimpleNamespace(stdout=ffprobe_output("2.500000", {"width": 1280, "height": 720})),
+    )
+
+    assert FfprobeDurationProbe().probe_video(Path("/fake/a.mp4")) == VideoFacts(2.5, 1280, 720)
+
+
+def test_ffprobe_reads_a_file_with_no_video_stream_as_length_only(mocker: MockerFixture) -> None:
+    """An audio-only file under a video extension still has a length worth counting; it just has no
+    frame size.
+
+    **Test steps:**
+
+    * run the probe over a file whose output lists no stream
+    * verify the facts carry the duration and no size
+    """
+    mocker.patch(f"{MODULE}.which", return_value="/usr/bin/ffprobe")
+    mocker.patch(f"{MODULE}.subprocess.run", return_value=SimpleNamespace(stdout=ffprobe_output("3.0")))
+
+    assert FfprobeDurationProbe().probe_video(Path("/fake/a.mp4")) == VideoFacts(3.0, None, None)
+
+
+def ffprobe_output(duration: str | None, stream: dict[str, object] | None = None) -> str:
+    """Build what ``ffprobe -of json`` prints for one file.
+
+    :param duration: the container's duration as ffprobe spells it, or ``None`` for a container with none.
+    :param stream: the first video stream's entries, or ``None`` for a file with no video stream.
+    :returns: the JSON text.
+    """
+    payload: dict[str, object] = {"format": {} if duration is None else {"duration": duration}}
+    if stream is not None:
+        payload["streams"] = [stream]
+    return json.dumps(payload)
 
 
 @mark.parametrize(
     "stdout",
     [
         param("", id="nothing-printed-for-a-file-it-could-not-open"),
-        param("N/A\n", id="container-carrying-no-duration"),
+        param('{"format": {"duration": "N/A"}}', id="container-carrying-no-duration"),
+        param('{"format": {}}', id="container-reporting-no-duration-at-all"),
+        param("[]", id="not-an-object"),
     ],
 )
 def test_ffprobe_treats_unparseable_output_as_an_unreadable_file(mocker: MockerFixture, stdout: str) -> None:
@@ -541,6 +638,92 @@ def test_ffprobe_refuses_to_probe_with_nothing_to_run(mocker: MockerFixture) -> 
 # endregion
 
 
+# region content_videos tests
+def test_the_videos_map_keys_each_probed_file_relative_to_its_folder(mocker: MockerFixture) -> None:
+    """A directory-scoped record keys its videos by their POSIX path under its folder, the key its users'
+    progress entries share ([[field-schema#watch-progress]], #410). A file the probe cannot read has no
+    length to record and is left out; a non-video is never probed.
+
+    **Test steps:**
+
+    * enumerate nested videos, an unreadable one and a PDF
+    * verify the map's keys, values and order
+    """
+    mock_content_files(mocker, ["01 Basics/a.mp4", "01 Basics/broken.mp4", "notes.pdf", "b.mkv"])
+
+    videos = content_videos(REHU_PATH, FakeProbe({"a.mp4": 2.5, "b.mkv": 4.0}))
+
+    assert videos == {"01 Basics/a.mp4": VideoFacts(2.5, 1920, 1080), "b.mkv": VideoFacts(4.0, 1920, 1080)}
+
+
+def test_a_standalone_records_video_is_keyed_without_its_stem(mocker: MockerFixture) -> None:
+    """A standalone ``<stem>.rehu`` describes one media file, keyed by its name with the stem removed, so
+    renaming the stem keeps the key ([[field-schema#watch-progress]]).
+
+    **Test steps:**
+
+    * enumerate a standalone record's one video
+    * verify it is keyed by its extension alone
+    """
+    mocker.patch(
+        f"{MODULE}.enumerate_content_files",
+        return_value=ContentEnumeration(DIRECTORY, [DIRECTORY / "Lesson.MP4"]),
+    )
+
+    videos = content_videos(DIRECTORY / "lesson.rehu", FakeProbe({"Lesson.MP4": 7.0}))
+
+    assert videos == {".MP4": VideoFacts(7.0, 1920, 1080)}
+
+
+def test_the_total_is_the_rounded_sum_of_the_videos_map(mocker: MockerFixture) -> None:
+    """``content_duration`` is :func:`content_videos` summed and rounded once -- the two can never
+    disagree about which files a tutorial holds.
+
+    **Test steps:**
+
+    * enumerate three videos
+    * verify the total equals the rounded sum of the map's durations
+    """
+    mock_content_files(mocker, ["a.mp4", "b.mp4", "c.mp4"])
+    probe = FakeProbe({"a.mp4": 1.4, "b.mp4": 1.4, "c.mp4": 0.0})
+
+    videos = content_videos(REHU_PATH, probe)
+
+    assert content_duration(REHU_PATH, probe) == round(sum(facts.duration for facts in videos.values())) == 3
+
+
+def test_listing_the_video_files_probes_nothing(mocker: MockerFixture) -> None:
+    """The auto-viewed rule needs only which videos are on disk, never their lengths (#410).
+
+    **Test steps:**
+
+    * enumerate videos and a non-video
+    * verify the listing holds the videos only
+    """
+    mock_content_files(mocker, ["a.mp4", "notes.pdf", "b.MKV"])
+
+    assert content_video_files(REHU_PATH) == [DIRECTORY / "a.mp4", DIRECTORY / "b.MKV"]
+
+
+def test_an_unavailable_probe_refuses_the_videos_map_too(mocker: MockerFixture) -> None:
+    """A misconfigured backend must not read as a tutorial with no video, per file any more than in total.
+
+    **Test steps:**
+
+    * build the map with a probe that cannot run
+    * verify it raises before anything is probed
+    """
+    mock_content_files(mocker, ["a.mp4"])
+    probe = FakeProbe({"a.mp4": 1.0}, unavailable="Nothing to run.")
+
+    with raises(DurationProbeError, match="Nothing to run."):
+        content_videos(REHU_PATH, probe)
+    assert not probe.probed
+
+
+# endregion
+
+
 # region Cross-backend tests
 def test_both_backends_total_the_same_tree_identically(mocker: MockerFixture) -> None:
     """Selecting the other backend changes which code path ran and nothing else -- the durations are a
@@ -563,7 +746,7 @@ def test_both_backends_total_the_same_tree_identically(mocker: MockerFixture) ->
     mocker.patch(
         f"{MODULE}.subprocess.run",
         side_effect=lambda command, **_kwargs: SimpleNamespace(
-            stdout="2.500000" if command[-1].endswith("a.mp4") else "2.600000"
+            stdout=ffprobe_output("2.500000" if command[-1].endswith("a.mp4") else "2.600000")
         ),
     )
 

@@ -68,6 +68,7 @@ from .constants import (
     REHUDB_SUFFIX,
     VIDEO_EXTENSIONS,
 )
+from .content_keys import content_key, content_path, is_valid_content_key
 from .content_reading import DEFAULT_CONTENT_CHUNK_SIZE, read_content_chunks
 from .learning_path_entries import (
     LearningPathEntry,
@@ -107,6 +108,7 @@ from .plugins import (
     PluginRegistry,
     PluginSpec,
 )
+from .record_merge import merge_write
 from .rehu_catalog import (
     CatalogCheckpoint,
     CatalogDirectory,
@@ -129,7 +131,10 @@ from .rehu_content_duration import (
     DurationProbeError,
     FfprobeDurationProbe,
     MediaInfoDurationProbe,
+    VideoFacts,
     content_duration,
+    content_video_files,
+    content_videos,
 )
 from .rehu_content_files import (
     ContentEnumeration,
@@ -326,6 +331,19 @@ from .tc_screenshots import (
     screenshot_name_patterns_state,
 )
 from .titled_index import INDEX_KEY, TITLE_KEY, titled_index, with_titled_index
+from .watch_progress import (
+    END_TOLERANCE_SECONDS,
+    ProgressEntry,
+    WatchRules,
+    WatchTotals,
+    reached_end,
+    read_progress,
+    read_videos,
+    record_progress,
+    set_progress_entry,
+    set_videos,
+    watch_totals,
+)
 
 __version__ = "0.3.0"
 
@@ -425,6 +443,7 @@ __all__ = [
     "DiscardBackupsJob",
     "DurationProbe",
     "DurationProbeError",
+    "END_TOLERANCE_SECONDS",
     "EXCLUDED_FILE_PATTERNS",
     "FINISHED_JOB_STATES",
     "FORMAT_VERSION_KEY",
@@ -469,6 +488,7 @@ __all__ = [
     "PluginBlock",
     "PluginRegistry",
     "PluginSpec",
+    "ProgressEntry",
     "RECORD_SUFFIXES",
     "REFERENCE_IMAGES_FIELD_NAMES",
     "REFERENCE_IMAGES_PLUGIN",
@@ -542,6 +562,9 @@ __all__ = [
     "UnlinkDeleter",
     "VerifyChecksumsJob",
     "VIDEO_EXTENSIONS",
+    "VideoFacts",
+    "WatchRules",
+    "WatchTotals",
     "__version__",
     "author_name",
     "authors_comma_editable",
@@ -556,6 +579,10 @@ __all__ = [
     "collection_records",
     "compiled_screenshot_name_patterns",
     "content_duration",
+    "content_key",
+    "content_path",
+    "content_video_files",
+    "content_videos",
     "content_size_on_disk",
     "conversion_backups",
     "convert_screenshot",
@@ -584,12 +611,14 @@ __all__ = [
     "is_legacy_record_name",
     "is_legacy_screenshot",
     "is_record_name",
+    "is_valid_content_key",
     "legacy_manifest_candidates",
     "legacy_manifest_for",
     "legacy_manifests_among",
     "load_checksum_record",
     "load_tc",
     "log_legacy_seed",
+    "merge_write",
     "migrate_block_data",
     "migrate_checksum_data",
     "migrate_rehu_data",
@@ -604,7 +633,11 @@ __all__ = [
     "parse_checksum_entry",
     "plan_screenshot_renumbering",
     "plan_tc_conversion",
+    "reached_end",
     "read_content_chunks",
+    "read_progress",
+    "read_videos",
+    "record_progress",
     "readable_legacy_manifest",
     "readers_must_yield_for_directory_rename",
     "rehu_rename_conflict",
@@ -627,6 +660,8 @@ __all__ = [
     "screenshot_name_patterns_state",
     "seed_checksum_record",
     "seed_from_legacy_manifest",
+    "set_progress_entry",
+    "set_videos",
     "parse_staged_name",
     "prune_staged",
     "stage_image",
@@ -636,6 +671,7 @@ __all__ = [
     "take_enclosing_claims",
     "tc_to_rehu_data",
     "verify_checksums",
+    "watch_totals",
     "learning_path_records_by_scope",
     "learning_path_ref",
     "owned_learning_paths",
