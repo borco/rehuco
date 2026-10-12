@@ -61,8 +61,7 @@ GATED_ROW = ScraperRow(
 # a shared import, matching this codebase's settings-test convention.
 # pylint: disable=duplicate-code
 class FakeSettings:  # pylint: disable=invalid-name,missing-function-docstring,redefined-builtin
-    """A minimal in-memory stand-in for the ``QSettings`` group/value API, plus ``fileName`` -- what
-    `default_scripts_folder` derives its default from."""
+    """A minimal in-memory stand-in for the ``QSettings`` group/value API."""
 
     def __init__(self) -> None:
         self.__data: dict[str, Any] = {}
@@ -82,9 +81,6 @@ class FakeSettings:  # pylint: disable=invalid-name,missing-function-docstring,r
     def value(self, key: str, default: Any = None, type: Any = None) -> Any:  # noqa: A002, N802
         del type
         return self.__data.get(self.__group + key, default)
-
-    def fileName(self) -> str:  # noqa: N802
-        return "/fake/borco/rehuco-agent.ini"
 
 
 # pylint: enable=duplicate-code

@@ -132,7 +132,7 @@ class MemoryDatabase:
 def fixture_database(mocker: MockerFixture) -> Generator[MemoryDatabase]:
     """Route every connection the cache opens to one fresh in-memory database.
 
-    Its folder is the session's temporary cache folder (``isolate_cache_folder``), so making it is harmless and
+    Its folder is the session's temporary cache folder (``isolate_app_folders``), so making it is harmless and
     nothing about folders needs faking: no file is ever written there, the database being in memory.
 
     :param mocker: pytest-mock fixture.

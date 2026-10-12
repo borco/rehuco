@@ -12,8 +12,8 @@ from typing import Any
 
 from pytest import fixture
 from pytest_mock import MockerFixture
-from rehuco_agent.settings import persistent_settings as persistent_settings_module
 from rehuco_agent.settings import scrapers_settings
+from rehuco_agent.settings.persistent_settings import config_folder
 from rehuco_agent.settings.scrapers_settings import (
     Browser,
     ScrapersSettings,
@@ -29,9 +29,7 @@ from rehuco_agent.settings.scrapers_settings import (
 # shared import, matching this codebase's settings-test convention.
 # pylint: disable=duplicate-code
 class FakeSettings:  # pylint: disable=invalid-name,missing-function-docstring,redefined-builtin
-    """A minimal in-memory stand-in for the ``QSettings`` group/value API, plus ``fileName`` -- what
-    :func:`default_scripts_folder` derives its default folder from.
-    """
+    """A minimal in-memory stand-in for the ``QSettings`` group/value API."""
 
     def __init__(self) -> None:
         self.__data: dict[str, Any] = {}
@@ -50,9 +48,6 @@ class FakeSettings:  # pylint: disable=invalid-name,missing-function-docstring,r
         del type
         return self.__data.get(self.__group + key, default)
 
-    def fileName(self) -> str:  # noqa: N802
-        return "/fake/borco/rehuco-agent.ini"
-
 
 @fixture
 def settings() -> FakeSettings:
@@ -67,10 +62,8 @@ def settings() -> FakeSettings:
 def clear_shared_instance_cache(mocker: MockerFixture) -> Iterator[None]:
     """Clear the ``lru_cache``-backed singleton before and after every test, and patch
     ``persistent_settings`` so :func:`default_scripts_folder` never reaches the developer's real
-    config directory (see ``test_markdown_rendering_settings.py`` for the full rationale) -- patched
-    where :func:`~rehuco_agent.settings.persistent_settings.config_folder` resolves it too (#361)."""
+    config directory (see ``test_markdown_rendering_settings.py`` for the full rationale)."""
     mocker.patch.object(scrapers_settings, "persistent_settings", return_value=FakeSettings())
-    mocker.patch.object(persistent_settings_module, "persistent_settings", return_value=FakeSettings())
     shared_scrapers_settings.cache_clear()
     yield
     shared_scrapers_settings.cache_clear()
@@ -100,9 +93,9 @@ def test_default_scripts_folder_lives_under_this_apps_own_config_directory() -> 
     **Test steps:**
 
     * ask for the default scripts folder
-    * verify it is nested under the app name, under the fake ``.ini``'s parent
+    * verify it is ``scrapers`` under the config folder
     """
-    assert default_scripts_folder() == Path("/fake/borco/rehuco-agent/scrapers")
+    assert default_scripts_folder() == config_folder() / "scrapers"
 
 
 def test_effective_scripts_folder_returns_the_configured_value() -> None:
@@ -158,8 +151,8 @@ def test_persona_folder_is_nested_under_this_apps_config_directory_per_browser()
     * ask for Firefox's and Chrome's persona folders
     * verify both are nested under the app's config directory, by browser name
     """
-    assert persona_folder(Browser.FIREFOX) == Path("/fake/borco/rehuco-agent/persona/firefox")
-    assert persona_folder(Browser.CHROME) == Path("/fake/borco/rehuco-agent/persona/chrome")
+    assert persona_folder(Browser.FIREFOX) == config_folder() / "persona" / "firefox"
+    assert persona_folder(Browser.CHROME) == config_folder() / "persona" / "chrome"
 
 
 def test_uses_browser_is_true_for_a_needs_browser_scraper_even_when_not_ticked() -> None:

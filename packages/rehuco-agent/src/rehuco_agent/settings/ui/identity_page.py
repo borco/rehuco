@@ -6,9 +6,9 @@ See [[field-schema#per-user-shared]].
 from typing import Final
 
 from PySide6.QtWidgets import QWidget
-from rehuco_core import DEFAULT_UNKNOWN_USERNAME
+from rehuco_core import DEFAULT_UNKNOWN_USERNAME, default_username
 
-from ..identity_settings import IdentitySettings, default_username, shared_identity_settings
+from ..identity_settings import IdentitySettings, shared_identity_settings
 from ..persistent_settings import persistent_settings
 from .identity_page_ui import Ui_IdentityPage
 
@@ -24,7 +24,7 @@ class IdentityPage(QWidget):
     open/conversion reads (`DocumentsDock`) -- already-open documents keep the username they were
     constructed with (see `rehuco_agent.settings.identity_settings`). A staged value that is blank (nothing
     but whitespace) stands for "no name" and resolves to its own default instead (current ->
-    :func:`~rehuco_agent.settings.identity_settings.default_username`, unknown ->
+    :func:`~rehuco_core.default_username`, unknown ->
     :data:`~rehuco_core.DEFAULT_UNKNOWN_USERNAME`), the same fallback ``IdentitySettings.load`` applies --
     an identity is never saved empty.
 

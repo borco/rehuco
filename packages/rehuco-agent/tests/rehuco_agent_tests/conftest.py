@@ -18,7 +18,7 @@ import sys
 import threading
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, ClassVar, Final
+from typing import Any, Final
 from unittest.mock import patch
 from uuid import UUID
 
@@ -90,7 +90,7 @@ from rehuco_agent.settings.ui import (
 )
 from rehuco_agent.settings.videos_settings import shared_videos_settings
 from rehuco_agent.settings.web_search_settings import shared_web_search_settings
-from rehuco_core import DEFAULT_CHECKSUM_TRUST, DEFAULT_DELETER_PROVIDER
+from rehuco_core import DEFAULT_CHECKSUM_TRUST, DEFAULT_DELETER_PROVIDER, AppFolders
 
 
 # Mirrors every dedicated settings test's own FakeSettings exactly (see e.g.
@@ -137,15 +137,6 @@ class FakeSettings:  # pylint: disable=invalid-name,missing-function-docstring,r
     def value(self, key: str, default: Any = None, type: Any = None) -> Any:  # noqa: A002, N802
         del type
         return self.__data.get(self.__prefix + key, default)
-
-    file_name: ClassVar[str] = ""
-    """Set once per session by :func:`isolate_config_folder`."""
-
-    def fileName(self) -> str:  # noqa: N802
-        """An ``.ini`` path in the session's temporary folder -- what ``config_folder()`` and every app-owned file
-        is derived from (#269, #361), so a test never lands under the developer's real config directory, nor
-        under a ``/fake`` path that is a real ``C:\\fake`` on Windows and was left behind by a run (#475)."""
-        return self.file_name
 
     def childGroups(self) -> list[str]:  # noqa: N802
         """The first path segment of every key nested at least one level under the open group -- what
@@ -199,18 +190,6 @@ REAL_PATH_STAT: Final = Path.stat
 """``Path.stat`` as the standard library has it, bound at import -- before :func:`default_path_stat_size` stands in."""
 
 
-@fixture(autouse=True, scope="session")
-def isolate_config_folder(tmp_path_factory: TempPathFactory) -> None:
-    """Name the settings file :class:`FakeSettings` reports in a temporary folder for the whole session (#475).
-
-    One folder for the session, not one per test: most tests write nothing there, and a write that does happen
-    lands in pytest's temporary tree instead of a real folder elsewhere.
-
-    :param tmp_path_factory: pytest's session temporary-directory factory.
-    """
-    FakeSettings.file_name = str(tmp_path_factory.mktemp("config") / "rehuco-agent.ini")
-
-
 @fixture(autouse=True)
 def reset_settings_dir() -> Iterator[None]:
     """Leave no settings dir in effect after a test (#494).
@@ -223,16 +202,22 @@ def reset_settings_dir() -> Iterator[None]:
 
 
 @fixture(autouse=True, scope="session")
-def isolate_cache_folder(tmp_path_factory: TempPathFactory) -> Iterator[None]:
-    """Point the app's cache folder at a temporary one for the whole session (#395).
+def isolate_app_folders(tmp_path_factory: TempPathFactory) -> Iterator[None]:
+    """Point the app's settings, data and cache folders at temporary ones for the whole session (#475, #395, #412).
 
-    What reads it through :mod:`~rehuco_agent.settings.persistent_settings` -- the staging folder of an image copied
-    out, and the startup prune of it -- would otherwise write to, and delete from, the user's own cache. A module that
-    imported ``cache_folder`` by name (the root catalog) is patched where it is used, by its own tests.
+    Everything derived from them -- the ``.ini``, the task queue, the layouts, the staging folder of an image copied
+    out, a catalog's ``.rehudb`` -- would otherwise be written to, and deleted from, the developer's own folders.
+    Three folders rather than one, so a test reading the wrong one fails. One set for the session, not per test: most
+    tests write nothing there, and a write that does lands in pytest's temporary tree.
 
     :param tmp_path_factory: pytest's session temporary-directory factory.
     """
-    with patch("rehuco_agent.settings.persistent_settings.cache_folder", return_value=tmp_path_factory.mktemp("cache")):
+    folders = AppFolders(
+        settings=tmp_path_factory.mktemp("settings"),
+        data=tmp_path_factory.mktemp("data"),
+        cache=tmp_path_factory.mktemp("cache"),
+    )
+    with patch("rehuco_agent.settings.persistent_settings.app_folders", return_value=folders):
         yield
 
 

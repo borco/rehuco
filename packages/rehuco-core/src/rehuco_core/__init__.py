@@ -1,5 +1,6 @@
 """rehuco-core: shared library for models, .rehu I/O, and sync primitives."""
 
+from .app_folders import APP_FOLDER_NAME, ORGANIZATION_FOLDER_NAME, AppFolders, app_folders
 from .archive_facts import ArchiveFacts, read_archive_facts
 from .checksum_algorithms import (
     CHECKSUM_ALGORITHMS,
@@ -70,6 +71,7 @@ from .constants import (
 )
 from .content_keys import content_key, content_path, is_valid_content_key
 from .content_reading import DEFAULT_CONTENT_CHUNK_SIZE, read_content_chunks
+from .default_username import default_username
 from .learning_path_entries import (
     LearningPathEntry,
     learning_path_records_by_scope,
@@ -358,6 +360,10 @@ __all__ = [
     "TITLE_KEY",
     "INDEX_KEY",
     "ARCHIVE_EXTENSIONS",
+    "APP_FOLDER_NAME",
+    "ORGANIZATION_FOLDER_NAME",
+    "AppFolders",
+    "app_folders",
     "ArchiveFacts",
     "AUDIO_EXTENSIONS",
     "AuthorEntry",
@@ -586,6 +592,7 @@ __all__ = [
     "content_duration",
     "content_key",
     "content_path",
+    "default_username",
     "content_video_files",
     "content_videos",
     "content_size_on_disk",
