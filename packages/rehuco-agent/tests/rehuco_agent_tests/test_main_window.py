@@ -823,25 +823,22 @@ def test_the_base_title_is_the_application_display_name(qtbot: QtBot) -> None:
 
     **Test steps:**
 
-    * set a display name on the application, construct ``MainWindow``, then clear the name again
+    * set a display name on the application and construct ``MainWindow``
     * verify the window title is that name
     """
     QApplication.setApplicationDisplayName("rehuco [dev]")
-    try:
-        window = MainWindow()
-        qtbot.addWidget(window)
-    finally:
-        QApplication.setApplicationDisplayName("")
+    window = MainWindow()
+    qtbot.addWidget(window)
 
     assert window.windowTitle() == "rehuco [dev]"
 
 
 def test_the_base_title_is_the_uis_without_a_display_name(qtbot: QtBot) -> None:
-    """A bare ``QApplication`` names nothing, and the ``.ui``'s own title stands.
+    """An application naming nothing leaves the ``.ui``'s own title standing.
 
     **Test steps:**
 
-    * construct ``MainWindow`` under the test application, which sets no display name
+    * construct ``MainWindow`` with the empty display name every test starts with
     * verify the window title is the ``.ui``'s
     """
     assert not QApplication.applicationDisplayName()

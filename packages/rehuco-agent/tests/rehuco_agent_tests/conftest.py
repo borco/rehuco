@@ -191,6 +191,16 @@ REAL_PATH_STAT: Final = Path.stat
 
 
 @fixture(autouse=True)
+def reset_application_display_name() -> None:
+    """Start every test with an empty display name -- an application naming nothing.
+
+    Until one is set, Qt answers the application name instead, which pytest-qt sets; and a test that sets one would
+    otherwise hand it to every later test in its worker. A test needing a name sets it itself.
+    """
+    QGuiApplication.setApplicationDisplayName("")
+
+
+@fixture(autouse=True)
 def reset_settings_dir() -> Iterator[None]:
     """Leave no settings dir in effect after a test (#494).
 
