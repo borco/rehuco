@@ -1611,9 +1611,10 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         document's own username, the rest inline in the block ([[field-schema#per-user-shared]],
         #99) -- the write half of :meth:`__read_field`'s split. ``None`` (only ever reachable for the
         optional-scalar members of :data:`TYPE_FIELD_INT_NAMES` and :data:`TYPE_FIELD_STR_NAMES` -- the
-        bool/str-list fields never hold it) **removes** the key rather than writing a JSON ``null`` --
-        ``set_active_field``/``set_active_user_field`` are generic value writers with no such rule of their own, unlike
-        `RehuDocument`'s typed scalar properties ([[field-schema#deferred-items]]). No-op while the
+        bool/str-list fields never hold it) **removes** the key rather than writing a JSON ``null``: for a
+        per-user key that rule is core's (``set_active_user_field``, #410), for a shared one it is kept
+        here, ``set_active_field`` being a generic value writer with no such rule of its own
+        ([[field-schema#deferred-items]]). No-op while the
         model is seeding (construction, :meth:`revert`, or :meth:`convert`) -- see the comment there.
 
         :param key: the type-field key that changed.
@@ -1622,10 +1623,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         if self.__seeding:
             return
         if key in USER_FIELD_NAMES:
-            if value is None:
-                self.__document.remove_active_user_field(key)
-            else:
-                self.__document.set_active_user_field(key, value)
+            self.__document.set_active_user_field(key, value)
         else:
             if value is None:
                 self.__document.remove_active_field(key)

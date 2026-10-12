@@ -9,6 +9,32 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ## [Unreleased]
 
+### Added
+
+- Per-user watch progress on a tutorial's videos. `record_progress(path, username, relative, position, duration, *,
+  viewed)` is the one write path for every player: it re-reads the record as the host's `current_username`, replaces
+  only that user's entry for that file, and leaves `updated` alone. With `WatchRules`' two settings, reaching within
+  a second of a file's end marks it viewed, and the tutorial is marked viewed at the moment its last file is — every
+  video on disk and every missing file with an entry. `watch_totals` sums the watched seconds per folder and for the
+  whole tutorial, a viewed file counting its full length and a missing file still counting. `read_progress`,
+  `set_progress_entry`, `read_videos` and `set_videos` read and write the two maps, `ProgressEntry` and
+  `WatchTotals` describe them.
+- `merge_write` re-reads a record, applies one change and writes it back atomically, one writer at a time per record
+  in a process, so a progress write and a metadata write both survive. `RehuDocument.save` takes
+  `touch_updated=False` for a write that must not stamp `updated` or `created`.
+- `DurationProbe.probe_video` reads a video's frame size beside its length, as `VideoFacts`; `content_videos` probes
+  each of a resource's videos into the `videos` map, and `content_video_files` lists them without probing. Both are
+  keyed by `content_key`: the path under an `info.rehu`'s folder, or a standalone `<stem>.rehu`'s file name without
+  the stem. `content_path` resolves a key back, refusing one that could reach outside the resource.
+- `RehuDocument.user_field`, `set_user_field` and `remove_user_field` take the username, for a caller serving
+  several users.
+
+### Changed
+
+- Writing `None` to a per-user field (`set_active_user_field`, `set_user_field`) removes the key instead of storing
+  a JSON `null`.
+- The ffprobe probe asks for JSON output, to read the frame size along with the duration.
+
 ## [0.3.0] - 2026-10-12
 
 ### Added

@@ -581,8 +581,8 @@ read against:
 - **Two independent facts per file.** `position` is where playback last stopped — the resume point, and nothing more.
   `viewed` means *watched to the end at least once* — the same word, and the same meaning, as the tutorial's own
   `viewed`. Neither drives the other: a rewatch moves `position` and leaves `viewed` alone, so reviewing a finished
-  video still resumes where the review stopped. Reaching the end — scrubbed there or not — sets `viewed` **when a
-  setting says so** (on by default); `viewed` is also a checkbox, so the user can set or clear it by hand. The common
+  video still resumes where the review stopped. Reaching the end — scrubbed there or not, within a second of the
+  file's length, since a player stops a frame or two short — sets `viewed` **when a setting says so** (on by default); `viewed` is also a checkbox, so the user can set or clear it by hand. The common
   path needs no hands; the setting and the checkbox are the flexibility.
 - **The tutorial's `viewed` is the user's verdict** ([[field-schema#boolean-flags]]) that the tutorial is fully
   watched, which can be true with some files never opened, because the ones that mattered were. Setting it changes
@@ -591,10 +591,10 @@ read against:
   never as a standing rule: a tutorial unchecked by hand while all its files are viewed stays unchecked, and
   unchecking a file never unchecks the tutorial.
 - **Keys are paths relative to the record**, posix separators, so moving a resource as a whole keeps every key. For a
-  directory-scoped `info.rehu` the key is the path under its directory. For a **standalone `<stem>.rehu`** the key is
-  the file name **with the stem removed** — `foo.rehu` describing `foo.mp4` and `foo-part2.mp4` keys them as
-  `.mp4` and `-part2.mp4` — so renaming the stem ([[plugins#tutorial-plugin]]'s path row) keeps them too. The same
-  rule keys `videos`.
+  directory-scoped `info.rehu` the key is the path under its directory. A **standalone `<stem>.rehu`** describes one
+  single media file ([[data-model#single-file]]) — a tutorial of several files is a folder with its own `info.rehu`
+  — and keys it by its name **with the stem removed**: `foo.rehu` describing `foo.mp4` keys it as `.mp4`, so renaming
+  the stem ([[plugins#tutorial-plugin]]'s path row) keeps it too. The same rule keys `videos`.
 - **A file that is gone keeps its entry.** An entry whose file is not on disk is shown as *missing* — derived when
   listing, never stored — and still counts in every total below. Archival removes videos on purpose
   ([[borrowing#scheduled-archival]]), and the legacy habit was to delete videos as they were watched

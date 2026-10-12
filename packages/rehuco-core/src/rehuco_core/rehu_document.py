@@ -412,7 +412,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         data: dict[str, Any] = {CORE_BLOCK_KEY: {"id": str(uuid4())}}
         return cls(data, Path(path) if path is not None else None, plugins=plugins, username=username)
 
-    def save(self, path: Path | str | None = None) -> None:
+    def save(self, path: Path | str | None = None, *, touch_updated: bool = True) -> None:
         """Atomically write the document back to disk as pretty-printed JSON, in canonical key order.
 
         Every rule about the file's *content* was already applied to ``__data`` at construction, and
@@ -449,6 +449,11 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
           writing. A save that rewrites an *unchanged* record -- the #89 Upgrade restamp (the baseline
           already carries the migrated layout), a save-as copy -- leaves it alone: writing is not
           editing, and "record last edited" must not decay into "record last written".
+        - **``touch_updated=False`` stamps neither timestamp** (#410): a per-user write such as watch
+          progress describes one person's viewing, not the resource, so it must not move ``updated``
+          ([[field-schema#watch-progress]]); and it goes through
+          :func:`~rehuco_core.record_merge.merge_write`, which only ever rewrites a file that exists, so
+          there is no first write for ``created`` to mark.
 
         **Key order is imposed on the way out, and only there**: the text this writes comes from
         :meth:`serialize`, which lays the keys out with
@@ -462,6 +467,8 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         completely different orders.
 
         :param path: destination; defaults to the path the document was loaded from.
+        :param touch_updated: whether a changed save stamps ``updated`` (and a first write ``created``);
+            ``False`` for per-user writes. Defaults to ``True``.
         :raises ValueError: if no path is given and the document has no loaded path, or if a
             save-blocking lock is in force (:data:`SAVE_BLOCKING_LOCK_KINDS`) -- an ``INVALID_FIELD``
             document (whose coerced defaults would overwrite the malformed-but-recoverable original) or
@@ -482,7 +489,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         if target is None:
             raise ValueError("No path given and document was not loaded from a file.")
         core_writable = isinstance(self.__data.get(CORE_BLOCK_KEY, {}), dict)
-        if self.__on_disk_format_version is None and core_writable and not self.created:
+        if touch_updated and self.__on_disk_format_version is None and core_writable and not self.created:
             # no file was ever written for this record, so this write *is* the first: stamp `created`
             # ([[field-schema#record-timestamps]], #168). Ahead of the changed-check below, so a new
             # document saved without a single edit carries one too -- and the stamp is itself a change,
@@ -493,7 +500,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
             # ([[data-model#schema-version]]).
             self.created = self.__utc_now_timestamp()
         text = self.serialize()
-        if text != self.__saved_serialization:
+        if touch_updated and text != self.__saved_serialization:
             # the record's content changed since load/last save, so this save is an *edit* landing on
             # disk: stamp `updated` with the save's own time ([[field-schema#record-timestamps]], #142).
             # An unchanged save -- an upgrade restamp or a save-as copy -- skips this branch: writing is
@@ -761,7 +768,9 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         if block_reason is not None:
             reasons.append(block_reason)
         reasons.extend(
-            invalid_field_reasons(self.core, self.active_block, self.__active_user_map(), self.primary_source)
+            invalid_field_reasons(
+                self.core, self.active_block, self.__active_user_map(self.__username), self.primary_source
+            )
         )
         return reasons
 
@@ -1373,7 +1382,22 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         :param default: value to return when the block, the ``users`` map, this user, or the key is absent.
         :returns: the stored value, or ``default`` when absent.
         """
-        return self.__active_user_map().get(key, default)
+        return self.user_field(self.__username, key, default)
+
+    def user_field(self, username: str, key: str, default: Any = None) -> Any:
+        """Read a **per-user** value for the given ``username`` ([[field-schema#per-user-shared]], #410).
+
+        :meth:`active_user_field` for a caller that serves several users -- a node answering each user's
+        request, a progress write naming whose progress it records -- where the document's own username,
+        fixed at construction, is only the agent's identity. Same defensive read: anything absent or
+        malformed reads as ``default``.
+
+        :param username: whose submap to read.
+        :param key: the per-user key to read inside that user's sub-map.
+        :param default: value to return when the block, the ``users`` map, the user, or the key is absent.
+        :returns: the stored value, or ``default`` when absent.
+        """
+        return self.__active_user_map(username).get(key, default)
 
     def set_active_user_field(self, key: str, value: Any) -> None:
         """Write a **per-user** value into the active block's ``users`` map, under this document's own
@@ -1384,27 +1408,50 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         present but malformed (not an object) is replaced rather than crashed on, the same way
         :meth:`set_active_field` replaces a malformed block ([[data-model#write-integrity]]).
 
+        ``None`` **removes** the key instead of writing a JSON ``null`` (:meth:`set_user_field`).
+
         :param key: the per-user key to write inside this user's sub-map.
-        :param value: the value to store.
+        :param value: the value to store, or ``None`` to remove the key.
         :raises ValueError: if the document's :attr:`type` is unset -- there is no block to write into.
         """
-        self.__active_user_or_create()[key] = value
+        self.set_user_field(self.__username, key, value)
 
-    def __active_user_or_create(self) -> dict[str, Any]:
-        """Return this user's mutable per-user sub-map, installing the ``users`` map and the sub-map when
+    def set_user_field(self, username: str, key: str, value: Any) -> None:
+        """Write a **per-user** value for the given ``username`` ([[field-schema#per-user-shared]], #410),
+        creating the block, the ``users`` map, and that user's sub-map on demand.
+
+        ``None`` **removes** the key rather than storing a JSON ``null``: an unset per-user field is an
+        absent key, the same rule the typed scalar properties keep for shared fields
+        ([[field-schema#deferred-items]]). The rule lives here, in core, so the agent's form, the node and a
+        progress write all clear a field the same way; removing never creates a submap
+        (:meth:`remove_user_field`).
+
+        :param username: whose submap to write.
+        :param key: the per-user key to write inside that user's sub-map.
+        :param value: the value to store, or ``None`` to remove the key.
+        :raises ValueError: if the document's :attr:`type` is unset and ``value`` is not ``None``.
+        """
+        if value is None:
+            self.remove_user_field(username, key)
+            return
+        self.__active_user_or_create(username)[key] = value
+
+    def __active_user_or_create(self, username: str) -> dict[str, Any]:
+        """Return ``username``'s mutable per-user sub-map, installing the ``users`` map and the sub-map when
         either is absent or malformed.
 
-        :returns: the per-user dict for this document's username, attached by reference into ``data`` so
-            mutating it in place is reflected on the next :meth:`save`.
+        :param username: whose submap to return.
+        :returns: the per-user dict, attached by reference into ``data`` so mutating it in place is
+            reflected on the next :meth:`save`.
         """
         users = self.__active_users_or_create()
-        user = users.get(self.__username)
+        user = users.get(username)
         if not isinstance(user, dict):
             user = {}
-            users[self.__username] = user
+            users[username] = user
         return user
 
-    def __active_user_map(self) -> dict[str, Any]:
+    def __active_user_map(self, username: str) -> dict[str, Any]:
         """This document's per-user submap **as stored** ([[field-schema#per-user-shared]]), or an empty
         dict when the block, the ``users`` map, or this user is absent or malformed.
 
@@ -1418,9 +1465,11 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
 
         A **present** submap is returned by reference (the empty stand-in is not, which is exactly why
         it stands in for nothing): deleting through it edits the document, while deleting through the
-        stand-in is the no-op the absent case wants."""
+        stand-in is the no-op the absent case wants.
+
+        :param username: whose submap to resolve."""
         users = self.active_block.get(USERS_KEY)
-        user = users.get(self.__username) if isinstance(users, dict) else None
+        user = users.get(username) if isinstance(users, dict) else None
         return user if isinstance(user, dict) else {}
 
     def remove_active_user_field(self, key: str) -> bool:
@@ -1432,7 +1481,18 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         :returns: ``True`` if the key was present and removed, ``False`` if the block, the ``users`` map,
             this user, or the key was absent.
         """
-        user = self.__active_user_map()
+        return self.remove_user_field(self.__username, key)
+
+    def remove_user_field(self, username: str, key: str) -> bool:
+        """Delete a **per-user** key from ``username``'s submap (#410); :meth:`remove_active_user_field` for
+        a caller serving several users. Never creates anything, so removing an absent key leaves the
+        document unchanged.
+
+        :param username: whose submap to edit.
+        :param key: the per-user key to delete.
+        :returns: ``True`` if the key was present and removed, ``False`` otherwise.
+        """
+        user = self.__active_user_map(username)
         if key in user:
             del user[key]
             return True
