@@ -189,6 +189,7 @@ matches Qt's `QLocalServer`/single-application approach.)
 [[[nodes#access-seam]]]
 
 - [#409: docs: access seam, owning-node rule, views, node hosting and instances](https://github.com/borco/rehuco/issues/409)
+- [#413: refactor(core): resource keys, key relocation, an access router and a change feed](https://github.com/borco/rehuco/issues/413)
 
 Some roots are reachable only through the node that owns them — a disk on another box, or a share only that box
 mounts. To make their resources behave like local ones — browsed, viewed, played and edited from the agent — every
@@ -198,14 +199,17 @@ for a node's roots. Status: decided, built from #413 on.
 
 **Keys, not paths.** A resource is identified by a `ResourceKey`:
 
-- `LocalKey(path)` — the resolved absolute path, so a local root maps to a key at no cost.
+- `LocalKey(path)` — the absolute path, so a local root maps to a key at no cost; never resolved, which would touch
+  the disk.
 - `NodeKey(node_id, root_id, relative)` — a root of another node, and the path under it; the owning node resolves it
   to its own `LocalKey`. The `.rehudb` cache already stores resources as root plus root-relative path
   ([[data-model#cache-schema]]), so its rows map straight onto it.
 
 A key is a **location**, not an identity: recognizing one resource reached by two routes stays a UUID question
 ([[mounts-and-storage#uuid-not-paths]]). Only a `LocalKey` exposes a path, so code that would treat a remote resource
-as a file does not type-check.
+as a file does not type-check. A `LocalKey` compares as its `Path` does — `os.path.normcase`'s rule, the one a rename
+uses: case folded on Windows, kept on POSIX; a `NodeKey` compares its path **as spelled** — the owning node hands out
+its own canonical spelling, and folding by this machine's rule would merge two files a case-sensitive node keeps apart.
 
 **Operations, not bytes.** The interface is built from small groups — records (load, save, `record_progress`, legacy
 conversion), a resource's file listing, screenshots (scan, read, reorder, convert, acquire, remove), content images
