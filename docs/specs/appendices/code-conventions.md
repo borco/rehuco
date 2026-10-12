@@ -39,6 +39,10 @@ itself is written.
 - **Comments:** only when the *why* is non-obvious (hidden constraint, subtle invariant, bug workaround). No
   narration of what the code does.
 - **Line length:** 120 (ruff enforced).
+- **Size caps:** a source module past a pylint cap splits along a cohesive seam (`RootsChecksumVerbs`,
+  `RootsRowActions`), never by inlining or a pragma; a pragma is right only for a module that is one cohesive thing
+  (`CatalogCache`), and says why. `too-many-locals` is cured by a helper. A test module past 1000 lines is split,
+  importing helpers from its sibling (#457, #458, #469, #395).
 
 ## 2. PySide6 UI
 
@@ -103,6 +107,8 @@ docstring of `borco_core.path_presence` — read it there, where the code is.
   worker stuck in a call to a switched-off server keeps the process alive for as long as the call takes (21 s measured
   for an SMB host); a daemon thread is simply left behind. Nothing is killed: `QThread.terminate()` is unsafe, and a
   `QThread` destroyed while running aborts the process.
+- **A pool job never lets a reader's exception escape** (#480): the pool swallows it and no answer ever arrives.
+  Catch broadly with a reasoned pragma, log it, and answer *unreadable*.
 - **A daemon thread holds no Qt object and delivers nothing after `stop()`.** Its callback runs on its own thread and
   only emits a signal, which Qt queues to the GUI thread; the owner stops it first thing when the window closes.
 - First users: the task queue's worker ([[appendices.task-queue#teardown]], daemon for the same reason) and

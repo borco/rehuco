@@ -44,6 +44,17 @@ doc is the detailed home and the entry here is a one-line pointer.
   predecessor
   [histories](../history/README.md) that carried it).
 
+## Architecture
+
+[[[appendices.post-mortem#architecture]]]
+
+- **The agent as a node client for every swarm operation.** The agent was to reach the catalog only through a node,
+  never reading it from the filesystem itself, which would have made a refactor of everything already built. Replaced
+  by #409's local-first agent: roots no node owns are reached directly, and a node is used only for what crosses
+  machines. Detail: [[nodes#local-vs-swarm]].
+- **A node never embedded in the agent** (#405). Replaced by two hosting modes, the user's choice: a child process
+  of the agent, or an installed service. Detail: [[nodes#two-roles]].
+
 ## Process
 
 [[[appendices.post-mortem#process]]]

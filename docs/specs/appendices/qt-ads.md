@@ -154,6 +154,9 @@ property + highlight styling on the tab (a `FocusHighlighting`-free equivalent o
 `focused` property), so callers own their titles outright and there is no marker-vs-dirty-suffix
 conflict from two writers touching one `windowTitle`.
 
+**Register a dock with the tracker before placing it** (#398): `addDockWidget` itself makes the dock current, so the
+tracker emits from inside that call, and a dock registered afterwards misses its own first selection.
+
 ## 3. `restoreState` doesn't restore which *split* area was current
 
 [[[appendices.qt-ads#restore-current-split]]]
@@ -500,7 +503,9 @@ just entered or left fires the timer into freed memory and crashes (#492, confir
 
 **The flags are `CDockManager` statics**, like `eConfigFlag` — set before the first manager, shared
 by every manager in the process, nested ones included. Set *after* one exists they still reach areas
-created later (verified), which is what lets a test turn pinning on for its own duration.
+created later (verified), which is what lets a test turn pinning on for its own duration. A bare-QtAds probe
+needs them too (#491): without `setAutoHideConfigFlags(DefaultAutoHideConfig)` every pin silently does nothing, and
+the probe "shows" no signals.
 
 ### 10.1 `DockWidgetPinnable` gates neither the button nor the pin
 
@@ -1016,3 +1021,13 @@ Three QtAds behaviours decide what a floating dock window is called and whether 
   dock joins or leaves its window, but not as the dock itself re-docks or floats out, which reparent it
   (`QEvent.ParentChange`). `QtAdsLoneTabHider` (`borco_pyside.qtads`) watches both, decides a turn of the
   event loop later, and shows again only a tab it hid, so the tabs a maximize hides (§12) stay hidden.
+
+## 16. Who owns a dock once it is closed or floated
+
+[[[appendices.qt-ads#dock-ownership]]]
+
+- **A closed dock has no Qt parent** (#345): anything that finds a dock by walking up from a widget, or reads its
+  owner through `parent()`, gets nothing while the dock is closed. rehuco's document sub-docks are not floatable.
+- **The window `addDockWidgetFloating` returns can be deleted under its caller** (#493): QtAds retires a floating
+  container when its last area empties, so the wrapper held from that call goes stale. Find the window again through
+  a dock's `floatingDockContainer()` each time it is needed ([[appendices.qt-ads#nested-emptied-float]]).

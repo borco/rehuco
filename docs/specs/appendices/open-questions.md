@@ -220,3 +220,26 @@ Flagging gaps so they're a deliberate choice rather than an oversight.
   convention. This happens to compute the same base as Windows Explorer's own size column (base-1024 math, just
   `KB`/`MB`/`GB`-style labels instead of GNU's bare letters); revisit if a different convention (decimal/SI, IEC
   `KiB`/`MiB`/`GiB`, or matching Explorer's own labels) turns out to be wanted.
+- **Own the QtAds binding?** (estimated 2026-10-10) Forking Qt-Advanced-Docking-System and writing a shiboken binding
+  on the `pyside6-scintilla` template (scikit-build-core, `cibuildwheel` ×4, stubs) is ~8–14 h to parity; the
+  workarounds then go one by one, `QtAdsPinGuard` (#491) and `QtAdsEmptyingGuard` (#493) among them. `pyside6_qtads` is
+  obsolete, not a base. `QMainWindow` + `QDockWidget` instead is ~10–15 h and loses pinning. Not urgent until a QtAds
+  bug Python cannot work around, a PyPI `pyside6-qtads` lagging PySide6 or Python, or plugin tabs needing C++.
+  Unverified: whether `dropIntoContainer`/`dropIntoSection`, which search recursively like #491's case, misplace
+  nested docks.
+- **Identity collapse on import** — imports file per-user state under `unknown` while the viewer reads the current
+  identity, so a converted resource shows no learning paths until the two agree (#189). Whether this is *the*
+  migration flow is undecided.
+- **The multi-file manifest block may answer nothing asked** — reference images don't need it (#197), its last caller
+  ([[daz3d-personal-database#multi-part]]) has the opposite shape, and a standalone `<stem>.rehu` describes one file
+  ([[data-model#single-file]]). Decide, then file.
+- **`public` is reserved by convention only** — nothing refuses it as the identity ([[field-schema#per-user-shared]]).
+- **A location is a name; where it lives is a separate axis** (#322) — "which root or node" is its own control, or the
+  move step (#339, #443), not more Locations rows.
+- **`type:` and a `folder:` root label fold ASCII only** (SQLite `NOCASE`), while free text and
+  `authors`/`tags`/`publishers` fold case and diacritics since #475.
+- **The history pages' missing rows** (#471) — tag, author, publisher and learning-path browsers (TutCatalog's tree
+  dock, whose rename rewrote every `info.tc`; TutCatalogPy2's include/exclude dock), filters by collection, path or
+  flag, saved filters, and TutCatalog5's user-editable fields ([[plugins#core-vs-plugin]]). Decide, then file.
+- **A checksum file with no rehu** defaults to a disabled *Verify old checksums* (#457), so a double-click does
+  nothing; whether Open is the fallback is undecided.
