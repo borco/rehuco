@@ -17,7 +17,9 @@ from rehuco_core import (
     WatchRules,
     WatchTotals,
     current_block_version,
+    forget_progress,
     merge_write,
+    missing_progress_keys,
     read_progress,
     read_videos,
     record_progress,
@@ -105,7 +107,7 @@ def test_a_progress_write_replaces_only_its_own_entry(tmp_path: Path, freezer: F
         "admin": {
             "rating": 4,
             "progress": {
-                "a.mp4": {"position": 12.5, "duration": 100.0, "viewed": False},
+                "a.mp4": {"position": 12.5, "duration": 100.0, "size": 0, "viewed": False},
                 "b.mp4": {"position": 5.0, "viewed": False},
             },
         },
@@ -127,8 +129,8 @@ def test_progress_is_recorded_under_the_username_given(tmp_path: Path) -> None:
     record_progress(path, "bob", "a.mp4", 2.0, 10.0)
 
     assert users_of(path) == {
-        "alice": {"progress": {"a.mp4": {"position": 1.0, "duration": 10.0, "viewed": False}}},
-        "bob": {"progress": {"a.mp4": {"position": 2.0, "duration": 10.0, "viewed": False}}},
+        "alice": {"progress": {"a.mp4": {"position": 1.0, "duration": 10.0, "size": 0, "viewed": False}}},
+        "bob": {"progress": {"a.mp4": {"position": 2.0, "duration": 10.0, "size": 0, "viewed": False}}},
     }
 
 
@@ -152,7 +154,7 @@ def test_a_progress_write_never_hands_the_owners_legacy_flags_to_another_user(tm
 
     assert users_of(path) == {
         "owner": {"rating": 4, "viewed": True},
-        "bob": {"progress": {"a.mp4": {"position": 1.0, "duration": 10.0, "viewed": False}}},
+        "bob": {"progress": {"a.mp4": {"position": 1.0, "duration": 10.0, "size": 0, "viewed": False}}},
     }
 
 
@@ -173,8 +175,8 @@ def test_an_unknown_length_keeps_the_one_already_recorded(tmp_path: Path) -> Non
     record_progress(path, "admin", "b.mp4", 3.0, None)
 
     assert users_of(path)["admin"]["progress"] == {
-        "a.mp4": {"position": 2.0, "duration": 60.0, "viewed": False},
-        "b.mp4": {"position": 3.0, "viewed": False},
+        "a.mp4": {"position": 2.0, "duration": 60.0, "size": 0, "viewed": False},
+        "b.mp4": {"position": 3.0, "size": 0, "viewed": False},
     }
 
 
@@ -192,7 +194,7 @@ def test_a_standalone_records_progress_is_keyed_without_its_stem(tmp_path: Path)
     record_progress(path, "admin", ".mp4", 60.0, 60.0)
 
     assert users_of(path) == {
-        "admin": {"progress": {".mp4": {"position": 60.0, "duration": 60.0, "viewed": True}}, "viewed": True}
+        "admin": {"progress": {".mp4": {"position": 60.0, "duration": 60.0, "size": 0, "viewed": True}}, "viewed": True}
     }
 
 
@@ -309,7 +311,7 @@ def test_a_rewatch_moves_the_position_and_keeps_viewed(tmp_path: Path) -> None:
 
     entry = record_progress(path, "admin", "a.mp4", 10.0, 100.0)
 
-    assert entry == ProgressEntry(10.0, 100.0, True)
+    assert entry == ProgressEntry(10.0, 100.0, True, 0)
 
 
 def test_the_checkbox_sets_or_clears_viewed_whatever_the_position(tmp_path: Path) -> None:
@@ -361,7 +363,9 @@ def test_with_the_setting_off_the_tutorial_is_left_alone(tmp_path: Path) -> None
 
     record_progress(path, "admin", "a.mp4", 10.0, 10.0, rules=rules)
 
-    assert users_of(path)["admin"] == {"progress": {"a.mp4": {"position": 10.0, "duration": 10.0, "viewed": True}}}
+    assert users_of(path)["admin"] == {
+        "progress": {"a.mp4": {"position": 10.0, "duration": 10.0, "size": 0, "viewed": True}}
+    }
 
 
 def test_a_tutorial_unchecked_by_hand_stays_unchecked(tmp_path: Path) -> None:
@@ -644,6 +648,133 @@ def test_an_empty_tutorial_totals_nothing() -> None:
     * verify the one zero total
     """
     assert watch_totals([], {}, {}) == {"": WatchTotals()}
+
+
+# endregion
+
+
+# region the file's size, missing entries and forgetting (#411)
+def test_a_progress_write_records_the_files_size(tmp_path: Path) -> None:
+    """The entry carries the file's size off disk -- the evidence a rename is told by once the file is gone.
+
+    **Test steps:**
+
+    * record progress on a 5-byte file
+    * verify the stored entry's size
+    """
+    path = make_tutorial(tmp_path / "t", [])
+    (tmp_path / "t" / "a.mp4").write_bytes(b"12345")
+
+    entry = record_progress(path, "admin", "a.mp4", 1.0, 10.0)
+
+    assert entry.size == 5
+    assert users_of(path)["admin"]["progress"]["a.mp4"]["size"] == 5
+
+
+def test_a_file_gone_at_write_time_keeps_its_recorded_size(tmp_path: Path) -> None:
+    """A write on a file that can no longer be read keeps the size stored before, and records none when there was
+    none.
+
+    **Test steps:**
+
+    * record progress on a file, delete it, record again
+    * record progress on a file that never existed
+    * verify the first keeps its size and the second has none
+    """
+    path = make_tutorial(tmp_path / "t", [])
+    (tmp_path / "t" / "a.mp4").write_bytes(b"123")
+    record_progress(path, "admin", "a.mp4", 1.0, 10.0)
+    (tmp_path / "t" / "a.mp4").unlink()
+
+    assert record_progress(path, "admin", "a.mp4", 2.0, 10.0).size == 3
+    assert record_progress(path, "admin", "b.mp4", 2.0, 10.0).size is None
+    assert "size" not in users_of(path)["admin"]["progress"]["b.mp4"]
+
+
+@mark.parametrize("size", [param(-1, id="negative"), param(1.5, id="float"), param(True, id="bool"), param("3")])
+def test_a_malformed_stored_size_reads_as_unknown(size: object) -> None:
+    """A size another build or a hand edit spelled wrong reads as unknown -- which keeps the entry from moving --
+    rather than as a size that could match the wrong file.
+
+    **Test steps:**
+
+    * read an entry with a malformed size
+    * verify it reads as ``None``
+    """
+    assert ProgressEntry.from_stored({"position": 1.0, "size": size}).size is None
+
+
+def test_missing_entries_are_those_whose_file_is_not_on_disk() -> None:
+    """Missing is derived from the listing, never stored: an entry whose key is not among the files on disk.
+
+    **Test steps:**
+
+    * list two files on disk against three entries
+    * verify the one missing key
+    """
+    entries = {"a.mp4": ProgressEntry(1.0), "gone/c.mp4": ProgressEntry(2.0), "b.mp4": ProgressEntry(3.0)}
+
+    assert missing_progress_keys(["a.mp4", "b.mp4", "d.mp4"], entries) == ["gone/c.mp4"]
+
+
+def test_forgetting_removes_only_that_entry(tmp_path: Path) -> None:
+    """Forget removes one entry by hand: the user's other entries, other users' and ``updated`` stay as stored.
+
+    **Test steps:**
+
+    * forget one of a user's two entries, beside another user's entry under the same key
+    * verify only that entry went and ``updated`` is unchanged
+    """
+    path = make_tutorial(
+        tmp_path / "t",
+        [],
+        block={
+            "users": {
+                "admin": {"progress": {"a.mp4": {"position": 1.0}, "b.mp4": {"position": 2.0}}},
+                "bob": {"progress": {"a.mp4": {"position": 3.0}}},
+            }
+        },
+    )
+
+    assert forget_progress(path, "admin", "a.mp4") is True
+
+    assert users_of(path) == {
+        "admin": {"progress": {"b.mp4": {"position": 2.0}}},
+        "bob": {"progress": {"a.mp4": {"position": 3.0}}},
+    }
+    assert json.loads(path.read_text(encoding="utf-8"))["core"]["updated"] == UPDATED
+
+
+def test_forgetting_an_entry_that_is_not_there_says_so(tmp_path: Path) -> None:
+    """Forgetting a key with no entry changes nothing and answers ``False``.
+
+    **Test steps:**
+
+    * forget a key the user has no entry for
+    * verify the answer and that the other user's entry stays
+    """
+    path = make_tutorial(tmp_path / "t", [], block={"users": {"bob": {"progress": {"a.mp4": {"position": 3.0}}}}})
+
+    assert forget_progress(path, "admin", "a.mp4") is False
+
+    assert users_of(path) == {"bob": {"progress": {"a.mp4": {"position": 3.0}}}}
+
+
+def test_forgetting_removes_a_stored_key_that_is_not_a_content_key(tmp_path: Path) -> None:
+    """A key a hand edit wrote wrong names no file and can never be reattached; forgetting resolves no path, so it
+    is the one way such an entry leaves the record.
+
+    **Test steps:**
+
+    * hold an entry under ``../a.mp4``
+    * forget it
+    * verify it is gone
+    """
+    path = make_tutorial(tmp_path / "t", [], block={"users": {"admin": {"progress": {"../a.mp4": {"position": 1}}}}})
+
+    assert forget_progress(path, "admin", "../a.mp4") is True
+
+    assert users_of(path) == {"admin": {}}
 
 
 # endregion

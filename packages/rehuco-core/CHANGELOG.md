@@ -28,6 +28,13 @@ Changelogs are per package in this monorepo, matching the per-package release ta
   the stem. `content_path` resolves a key back, refusing one that could reach outside the resource.
 - `RehuDocument.user_field`, `set_user_field` and `remove_user_field` take the username, for a caller serving
   several users.
+- A watched file that is gone keeps its progress entry: `missing_progress_keys` names the entries whose file is not
+  on disk, and `forget_progress` removes one by hand — nothing removes one on its own.
+- A renamed video keeps its progress. `reattach_renamed_progress` moves a missing file's entry to a file under a new
+  name anywhere in the resource, a renamed folder included, when exactly one same-size candidate hashes equal to the
+  file's recorded `.checksum` hash, or, with no hash recorded and the size rung allowed, when exactly one candidate
+  has the same size and length. `plan_progress_renames` is the decision on its own. Progress entries record the
+  file's size for it.
 
 ### Changed
 

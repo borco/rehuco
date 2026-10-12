@@ -573,7 +573,7 @@ read against:
 "tutorial": {
   "videos": { "01 Basics/03 Brushes.mp4": { "duration": 640.0, "width": 1920, "height": 1080 } },
   "users": { "admin": { "viewed": false, "progress": {
-    "01 Basics/03 Brushes.mp4": { "position": 512.3, "duration": 640.0, "viewed": true }
+    "01 Basics/03 Brushes.mp4": { "position": 512.3, "duration": 640.0, "size": 183500800, "viewed": true }
   } } }
 }
 ```
@@ -600,15 +600,25 @@ read against:
   ([[borrowing#scheduled-archival]]), and the legacy habit was to delete videos as they were watched
   ([[field-schema#duration-size]]); erasing their progress would erase exactly the history worth keeping. The agent
   lists missing entries and offers to **forget** one by hand; nothing forgets one automatically.
-- **A renamed file takes its entry with it.** When a keyed file is missing and an unkeyed one has appeared beside it,
-  the strongest evidence available decides:
-  1. The missing file has a hash recorded in its `.checksum` ([[data-model#checksums]]) — the candidate is hashed,
-     and only an equal hash moves the entry. No setting is involved, and equal sizes are told apart here.
+- **A renamed file takes its entry with it.** When a keyed file is missing and an unkeyed one is on disk anywhere in
+  the resource — a renamed folder moves every file in it — the strongest evidence available decides, among the
+  candidates whose size equals the one the entry recorded:
+  1. The missing file has a hash recorded in its `.checksum` ([[data-model#checksums]]) — the candidates are hashed,
+     and only **exactly one** equal hash moves the entry; a candidate that cannot be read leaves it undecided. No
+     setting is involved, and equal sizes are told apart here.
   2. No usable hash — the record is absent, broken, or never covered that file — and **exactly one** candidate has the
-     same size (and the same duration, when both are known): the entry moves. This rung sits behind a setting, *match
-     renamed files by size when no checksum is recorded*, on by default, for a reader who will not trust size alone.
-  3. Anything else — two candidates, no candidate, the setting off — moves nothing; the entry stays missing for the
-     user to reattach or forget.
+     same size (and the same duration within a second, when both are known): the entry moves. This rung sits behind a
+     setting, *match renamed files by size when no checksum is recorded*, on by default, for a reader who will not
+     trust size alone.
+  3. Anything else — two candidates, no candidate, the setting off, an entry with no recorded size, one candidate
+     matched by two missing files — moves nothing; the entry stays missing for the user to reattach or forget.
+
+  Only the entry moves, as stored, and only the listing user's; `videos` is the Measure's to rebuild.
+- **Why a progress entry records the file's size.** Rename detection needs the missing file's size, and once the
+  file is gone nothing else holds it — `.checksum` records hashes, not sizes, and a Measure drops a deleted video
+  from `videos`. The player's write stats the file into its entry, keeping the old value when the file cannot be
+  read. The size also narrows which candidates are hashed: without it the hash rung would read every unwatched video
+  at each listing, in a tutorial whose watched files are routinely deleted.
 - **Totals are duration-weighted and derived, never stored.** A file counts its full duration once `viewed`, and its
   `position` otherwise; a folder and the resource sum their files recursively. Watching 90 of a folder's 100 minutes
   reads *90 min / 90% watched / 10 min left*. A `viewed` file counts its full length even while a rewatch has its

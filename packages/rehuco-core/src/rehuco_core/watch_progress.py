@@ -4,7 +4,9 @@ Qt-free and host-neutral: the agent binds it (#316), the node serves it to the w
 them records progress through :func:`record_progress`, the one write path. Two maps live in the tutorial block, both
 keyed by :func:`~rehuco_core.content_keys.content_key`: the shared ``videos`` lengths a Measure writes
 (:func:`set_videos`), and each user's ``users.<username>.progress`` (:class:`ProgressEntry`). Totals are derived,
-never stored (:func:`watch_totals`).
+never stored (:func:`watch_totals`), and so is a file being *missing* (:func:`missing_progress_keys`): its entry
+stays until :func:`forget_progress` removes it by hand, or follows the file when it was renamed
+(:mod:`rehuco_core.progress_renames`, #411).
 """
 
 import logging
@@ -14,7 +16,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from .constants import EXCLUDED_FILE_PATTERNS, VIDEO_EXTENSIONS
-from .content_keys import content_key, is_valid_content_key
+from .content_keys import content_key, content_path, is_valid_content_key
 from .plugins import DEFAULT_CURRENT_USERNAME, DEFAULT_PLUGIN_REGISTRY, TUTORIAL_PLUGIN, PluginRegistry
 from .record_merge import merge_write
 from .rehu_content_duration import DURATION_KEY, VideoFacts, content_video_files, finite_seconds
@@ -34,6 +36,10 @@ POSITION_KEY: Final = "position"
 
 VIEWED_KEY: Final = "viewed"
 """*Watched to the end at least once* -- a progress entry's flag, and the tutorial's own per-user flag."""
+
+SIZE_KEY: Final = "size"
+"""A progress entry's key holding the file's size in bytes when it was last played -- what tells its renamed self
+apart once the file is gone (#411)."""
 
 END_TOLERANCE_SECONDS: Final = 1.0
 """How close to its length a position counts as *the end*: a player stopping on the last frame reports a position a
@@ -55,6 +61,10 @@ class ProgressEntry:
     viewed: bool = False
     """Whether the file was watched to the end at least once."""
 
+    size: int | None = None
+    """The file's size in bytes when it was last played, or ``None`` when unknown -- the rename detection's
+    evidence once the file is gone (:func:`~rehuco_core.progress_renames.reattach_renamed_progress`)."""
+
     @classmethod
     def from_stored(cls, raw: dict[str, Any]) -> ProgressEntry:
         """Read one stored entry, a malformed value reading as its default.
@@ -62,20 +72,24 @@ class ProgressEntry:
         :param raw: the stored entry.
         :returns: the entry.
         """
+        size = raw.get(SIZE_KEY)
         return cls(
             finite_seconds(raw.get(POSITION_KEY), allow_zero=True) or 0.0,
             finite_seconds(raw.get(DURATION_KEY)),
             raw.get(VIEWED_KEY) is True,
+            size if isinstance(size, int) and not isinstance(size, bool) and size >= 0 else None,
         )
 
     def to_stored(self) -> dict[str, Any]:
-        """Shape this entry for the file, an unknown duration left out rather than written ``null``.
+        """Shape this entry for the file, an unknown duration or size left out rather than written ``null``.
 
         :returns: the stored entry.
         """
         stored: dict[str, Any] = {POSITION_KEY: self.position}
         if self.duration is not None:
             stored[DURATION_KEY] = self.duration
+        if self.size is not None:
+            stored[SIZE_KEY] = self.size
         stored[VIEWED_KEY] = self.viewed
         return stored
 
@@ -200,6 +214,7 @@ def record_progress(  # pylint: disable=too-many-arguments
     (the checkbox) is stored as given; otherwise the stored flag stands, and is set when ``rules`` say so and the
     position reached the end of the ``videos`` length, else of ``duration``. When the file's flag turns on and
     ``rules`` say so, the tutorial's is set if every video on disk and every missing file with an entry is viewed.
+    The file's size is read off disk into the entry, the stored one kept when the file cannot be read.
 
     :param path: the tutorial's record.
     :param username: whose progress.
@@ -244,7 +259,9 @@ def record_progress(  # pylint: disable=too-many-arguments
         else:
             now_viewed = was_viewed or (rules.mark_file_viewed_at_end and reached_end(position, length))
         kept_duration = duration if duration is not None else (old.duration if old is not None else None)
-        entry = ProgressEntry(float(position), kept_duration, now_viewed)
+        size = file_size(content_path(path, relative))
+        kept_size = size if size is not None else (old.size if old is not None else None)
+        entry = ProgressEntry(float(position), kept_duration, now_viewed, kept_size)
         set_progress_entry(document, username, relative, entry)
         written.append(entry)
         if now_viewed and not was_viewed and rules.mark_tutorial_viewed_on_last_file:
@@ -253,6 +270,69 @@ def record_progress(  # pylint: disable=too-many-arguments
 
     merge_write(path, mutate, username=current_username, plugins=plugins, touch_updated=False)
     return written[0]
+
+
+def forget_progress(
+    path: Path,
+    username: str,
+    relative: str,
+    *,
+    current_username: str = DEFAULT_CURRENT_USERNAME,
+    plugins: PluginRegistry = DEFAULT_PLUGIN_REGISTRY,
+) -> bool:
+    """Remove one of ``username``'s progress entries by hand -- the only way one is ever removed: a file that is
+    gone keeps its entry until the user forgets it ([[field-schema#watch-progress]], #411).
+
+    A :func:`~rehuco_core.record_merge.merge_write` like :func:`record_progress`, without stamping ``updated``.
+
+    :param path: the tutorial's record.
+    :param username: whose progress.
+    :param relative: the entry's key as stored. Whether the file is on disk is not asked, and the key is not held
+        to :func:`~rehuco_core.content_keys.is_valid_content_key`: forgetting resolves no path, and a key another
+        build or a hand edit wrote wrong is exactly one the user needs to be able to remove.
+    :param current_username: the identity the record is opened as (:func:`record_progress`'s).
+    :param plugins: the plugin registry to load with.
+    :returns: whether there was an entry to remove; when there was none, the record is written back unchanged.
+    :raises ValueError: the record is locked against saving.
+    :raises OSError: the record could not be read or written.
+    :raises RehuFormatError: the record is not readable.
+    """
+    removed: list[bool] = []
+
+    def mutate(document: RehuDocument) -> None:
+        """Remove the entry from the freshly read record.
+
+        :param document: the record as it is on disk now.
+        """
+        removed.append(relative in read_progress(document, username))
+        if removed[0]:
+            set_progress_entry(document, username, relative, None)
+
+    merge_write(path, mutate, username=current_username, plugins=plugins, touch_updated=False)
+    return removed[0]
+
+
+def missing_progress_keys(keys_on_disk: Iterable[str], entries: Mapping[str, ProgressEntry]) -> list[str]:
+    """The entries whose file is not on disk -- *missing*, derived when listing and never stored
+    ([[field-schema#watch-progress]], #411).
+
+    :param keys_on_disk: the content keys of the videos on disk now.
+    :param entries: the user's progress (:func:`read_progress`).
+    :returns: the missing keys, sorted.
+    """
+    return sorted(set(entries).difference(keys_on_disk))
+
+
+def file_size(path: Path) -> int | None:
+    """Read a file's size.
+
+    :param path: the file.
+    :returns: its size in bytes, or ``None`` when it cannot be read.
+    """
+    try:
+        return path.stat().st_size
+    except OSError:
+        return None
 
 
 def watch_totals(
