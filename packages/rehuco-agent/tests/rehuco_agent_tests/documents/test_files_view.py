@@ -15,6 +15,7 @@ kind is `test_rehu_file_kinds`' subject, and the rows themselves are `test_files
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Final
+from uuid import UUID
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices
@@ -36,9 +37,15 @@ from rehuco_core import (
     RehuDocument,
     Relocation,
 )
+from rehuco_core.access import KeyRelocation, LocalKey, NodeKey
 
-DIRECTORY: Final = Path("/fake/library/sculpting")
+LIBRARY: Final = Path.cwd() / "fake" / "library"
+"""The fake catalog folder; built from ``Path.cwd()`` so it is absolute on every platform, as a key needs."""
+DIRECTORY: Final = LIBRARY / "sculpting"
 INFO_PATH: Final = DIRECTORY / "info.rehu"
+NODE_KEY: Final = NodeKey("node", UUID(int=1), "sculpting")
+"""A folder on another node's root, spelled like this resource's own: a listing of this machine's folders reads
+nothing for it."""
 SUB: Final = DIRECTORY / "sub"
 
 TIMEOUT: Final = 5000
@@ -684,7 +691,7 @@ def test_the_document_moving_keeps_the_browsed_subfolder(
     view.activate(row_of(view, "sub"))
     settle(qtbot, view)
 
-    moved = Path("/fake/library/renamed") / "info.rehu"
+    moved = LIBRARY / "renamed" / "info.rehu"
     model.path = moved
     settle(qtbot, view)
 
@@ -985,7 +992,7 @@ def test_a_rename_of_the_folder_renames_the_rows_in_place(
     * rename the folder: the registry re-points the model, then the rename is announced
     * verify the subfolder under its new name is browsed, the row renamed and still selected
     """
-    renamed = Path("/fake/library/renamed")
+    renamed = LIBRARY / "renamed"
     back = Relocation(((renamed, DIRECTORY),))
     listing.side_effect = lambda _self, directory: DirectoryListing(
         directory, entries=TREE.get(back.relocate(directory), ())
@@ -1022,7 +1029,7 @@ def test_a_member_of_a_renamed_collection_keeps_its_rows_too(
     * re-point the model as the registry would, then announce the collection folder's rename
     * verify the rows carry the new paths, none was removed or inserted, and the selection survived
     """
-    collection, renamed = Path("/fake/library/series"), Path("/fake/library/saga")
+    collection, renamed = LIBRARY / "series", LIBRARY / "saga"
     member_entries = (DirectoryEntry("lesson01.mp4", FileKind.CONTENT, FileType.VIDEO),)
     listing.side_effect = lambda _self, directory: DirectoryListing(directory, entries=member_entries)
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, collection / "part1" / "info.rehu"))
@@ -1118,20 +1125,39 @@ def test_a_rename_elsewhere_reads_nothing(
     * verify no listing ran
     """
     del followed
-    events.announce_moved(Relocation(((Path("/fake/other/a"), Path("/fake/other/b")),)))
+    events.announce_moved(Relocation(((LIBRARY.parent / "other" / "a", LIBRARY.parent / "other" / "b"),)))
     qtbot.wait(10)
 
     assert listing.call_count == 1
 
 
+def test_a_rename_on_another_nodes_root_reads_nothing(
+    qtbot: QtBot, followed: FilesView, events: ResourceEvents, listing: Any
+) -> None:
+    """The listing is of this machine's folders, so a rename another node ran is nothing to it (#414).
+
+    **Test steps:**
+
+    * hand the browser a rename whose only pair is on another node's root
+    * verify no listing ran and the browsed folder stayed put
+    """
+    events.moved.emit(KeyRelocation(((NODE_KEY, NODE_KEY.with_name("renamed")),)))
+    qtbot.wait(10)
+
+    assert listing.call_count == 1
+    assert followed.directory == DIRECTORY
+
+
 @mark.parametrize(
     "case",
     [
-        (lambda events: events.announce_changed((INFO_PATH,)), 2),
-        (lambda events: events.announce_changed((SUB / "deeper.mp4",)), 2),
-        (lambda events: events.announce_changed((Path("/fake/library/other/info.rehu"),)), 1),
-        (lambda events: events.announce_folder_changed(DIRECTORY), 2),
-        (lambda events: events.announce_folder_changed(Path("/fake/library")), 1),
+        (lambda events: events.announce_changed((LocalKey(INFO_PATH),)), 2),
+        (lambda events: events.announce_changed((LocalKey(SUB / "deeper.mp4"),)), 2),
+        (lambda events: events.announce_changed((LocalKey(LIBRARY / "other" / "info.rehu"),)), 1),
+        (lambda events: events.announce_changed((NODE_KEY,)), 1),
+        (lambda events: events.announce_folder_changed(LocalKey(DIRECTORY)), 2),
+        (lambda events: events.announce_folder_changed(LocalKey(LIBRARY)), 1),
+        (lambda events: events.announce_folder_changed(NODE_KEY), 1),
     ],
 )
 def test_a_change_beneath_the_resources_folder_reads_it_again(
@@ -1142,7 +1168,7 @@ def test_a_change_beneath_the_resources_folder_reads_it_again(
     case: tuple[Callable[[ResourceEvents], None], int],
 ) -> None:
     """A save, a screenshot rearranged, a checksum run finishing -- anything at or beneath the resource's own
-    folder is read; anything outside it is not (#376).
+    folder is read; anything outside it is not (#376), nor anything on another node's root (#414).
 
     **Test steps:**
 
@@ -1170,7 +1196,7 @@ def test_a_change_while_hidden_only_marks_the_folder_stale(
     view = FilesView(model, resource_events=events)
     qtbot.addWidget(view)
 
-    events.announce_folder_changed(DIRECTORY)
+    events.announce_folder_changed(LocalKey(DIRECTORY))
 
     assert listing.call_count == 0
 
@@ -1210,7 +1236,7 @@ def test_a_detached_browser_follows_nothing(
     """
     followed.detach()
 
-    events.announce_folder_changed(DIRECTORY)
+    events.announce_folder_changed(LocalKey(DIRECTORY))
     qtbot.wait(10)
 
     assert listing.call_count == 1

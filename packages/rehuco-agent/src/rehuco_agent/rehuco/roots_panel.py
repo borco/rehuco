@@ -22,13 +22,13 @@ from rehuco_core import (
     FileType,
     RehucoFile,
     RehucoRoot,
-    Relocation,
     RenameCoordinator,
     RootFolderLister,
     RootStorage,
     TaskQueue,
     checksum_record_path,
 )
+from rehuco_core.access import KeyRelocation, LocalKey, ResourceKey
 
 from ..resource_events import ResourceEvents
 from ..tasks.job_end_watcher import JobEndWatcher
@@ -431,11 +431,13 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
             is_open and self.__roots_model.node_kind(current) in (RootsNodeKind.ROOT, RootsNodeKind.FOLDER)
         )
 
-    def __on_moved(self, relocation: Relocation) -> None:
-        """Move the rows a rename moved, wherever the view has them listed (#376).
+    def __on_moved(self, moved: KeyRelocation) -> None:
+        """Move the rows a rename moved, wherever the view has them listed (#376) -- this machine's folders, which
+        are all the view lists.
 
-        :param relocation: the rename's executed plan.
+        :param moved: the rename's executed plan.
         """
+        relocation = moved.to_local()
         if self.__catalog.file is not None and relocation.pairs:
             self.__roots_model.relocate(relocation)
 
@@ -593,7 +595,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         """
         record = checksum_record_path(resource)
         if self.__events is not None:
-            self.__events.announce_changed((record,))
+            self.__events.announce_changed((LocalKey(record),))
         else:
             self.__roots_model.relist_under(record.parent)
 
@@ -693,33 +695,34 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         current = self.__roots_ui.roots_view.currentIndex()
         pack = self.__opening.pack_of(current)
         selected = selected_record(self.__roots_model, current)
-        shown = None if selected is None else self.__catalog.resource_path(*selected)
-        if (pack is not None and pack.record in changed) or (shown is not None and shown in changed):
+        shown = None if selected is None else self.__catalog.resource_key(*selected)
+        if (pack is not None and pack.record in changed) or (isinstance(shown, LocalKey) and shown.path in changed):
             self.__preview.refresh()
             self.__update_enablement()
 
-    def __on_folder_changed(self, directory: Path) -> None:
+    def __on_folder_changed(self, directory: ResourceKey) -> None:
         """List a folder again that the app changed the contents of, if the Roots view has it loaded.
 
-        :param directory: the folder.
+        :param directory: the folder; one on a node's root is in no listing here.
         """
-        self.__roots_model.relist_folder(directory)
+        if isinstance(directory, LocalKey):
+            self.__roots_model.relist_folder(directory.path)
 
     def reselect(self) -> None:
         """Say again which record the current row stands for, for a listener that has just started to care (#457)."""
         self.record_selected.emit(selected_record(self.__roots_model, self.__roots_ui.roots_view.currentIndex()))
 
-    def __on_files_changed(self, paths: tuple[Path, ...]) -> None:
+    def __on_files_changed(self, keys: tuple[ResourceKey, ...]) -> None:
         """List again the folders whose checksum record the app rewrote, if the Roots view has them loaded (#457).
 
         A directory-scoped record covers its subfolders too, so every loaded folder at or under it is listed again;
         a file-scoped one only changes its own folder, which is the same call.
 
-        :param paths: the files the app wrote or replaced.
+        :param keys: the files the app wrote or replaced; one on a node's root is in no listing here.
         """
-        for path in paths:
-            if path.suffix.lower() == CHECKSUM_RECORD_SUFFIX:
-                self.__roots_model.relist_under(path.parent)
+        for key in keys:
+            if isinstance(key, LocalKey) and key.path.suffix.lower() == CHECKSUM_RECORD_SUFFIX:
+                self.__roots_model.relist_under(key.path.parent)
 
     def __on_filter_folder(self) -> None:
         """Filter the current browser to the resources under the current root or folder (#398)."""

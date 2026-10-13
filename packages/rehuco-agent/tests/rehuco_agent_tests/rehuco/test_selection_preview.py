@@ -11,6 +11,7 @@ from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.rehuco import selection_preview
 from rehuco_agent.rehuco.selection_preview import SelectionPreview
+from rehuco_core.access import LocalKey
 
 ROOT_ID: Final = uuid4()
 SETTLE_MS: Final = 20
@@ -18,20 +19,20 @@ SETTLE_MS: Final = 20
 WAIT_MS: Final = SETTLE_MS * 6
 
 
-def path_of(relative: str) -> Path:
-    """Where a test resource lives.
+def key_of(relative: str) -> LocalKey:
+    """What a test resource is reached by.
 
     :param relative: its path below the root.
-    :returns: the resolved path.
+    :returns: the key it resolves to.
     """
-    return Path("/fake/root") / relative
+    return LocalKey(Path.cwd() / "fake" / "root" / relative)
 
 
 @fixture(name="catalog")
 def fixture_catalog(mocker: MockerFixture) -> MagicMock:
     """A stand-in catalog resolving every key under one root, and no other."""
     catalog = mocker.MagicMock()
-    catalog.resource_path.side_effect = lambda root_id, relative: path_of(relative) if root_id == ROOT_ID else None
+    catalog.resource_key.side_effect = lambda root_id, relative: key_of(relative) if root_id == ROOT_ID else None
     return catalog
 
 
@@ -56,13 +57,13 @@ def test_a_selection_is_shown_once_it_has_settled(qtbot: QtBot, selection: Selec
 
     * select a resource and look at once
     * wait for the settle
-    * verify nothing was shown at first, and then the resolved path, once
+    * verify nothing was shown at first, and then the resolved key, once
     """
     selection.select((ROOT_ID, "a/info.rehu"))
 
     shown.assert_not_called()
     qtbot.waitUntil(lambda: shown.call_count == 1)
-    shown.assert_called_once_with(path_of("a/info.rehu"))
+    shown.assert_called_once_with(key_of("a/info.rehu"))
 
 
 def test_moving_through_rows_shows_only_the_one_it_rests_on(
@@ -82,7 +83,7 @@ def test_moving_through_rows_shows_only_the_one_it_rests_on(
 
     qtbot.wait(WAIT_MS)
 
-    shown.assert_called_once_with(path_of("c/info.rehu"))
+    shown.assert_called_once_with(key_of("c/info.rehu"))
 
 
 def test_selecting_nothing_calls_off_a_selection_still_waiting(
@@ -117,20 +118,20 @@ def test_a_resource_is_resolved_when_it_settles(
     * verify the catalog was asked once, after the selection, and nothing was shown
     """
     selection.select((ROOT_ID, "a/info.rehu"))
-    catalog.resource_path.assert_not_called()
-    catalog.resource_path.side_effect = None
-    catalog.resource_path.return_value = None
+    catalog.resource_key.assert_not_called()
+    catalog.resource_key.side_effect = None
+    catalog.resource_key.return_value = None
 
     qtbot.wait(WAIT_MS)
 
-    catalog.resource_path.assert_called_once_with(ROOT_ID, "a/info.rehu")
+    catalog.resource_key.assert_called_once_with(ROOT_ID, "a/info.rehu")
     shown.assert_not_called()
 
 
 def test_a_root_the_catalog_does_not_list_shows_nothing(
     qtbot: QtBot, selection: SelectionPreview, shown: MagicMock
 ) -> None:
-    """A key under a root the catalog does not know has no path, so there is nothing to show.
+    """A key under a root the catalog does not know has no key, so there is nothing to show.
 
     **Test steps:**
 

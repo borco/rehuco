@@ -18,6 +18,7 @@ from functools import partial
 from pathlib import Path
 from typing import Final
 from unittest.mock import MagicMock
+from uuid import UUID
 
 import pytest
 import shiboken6
@@ -28,7 +29,7 @@ from pytestqt.qtbot import QtBot
 from rehuco_agent.app_logging import shared_log_bridge
 from rehuco_agent.documents import document_registry
 from rehuco_agent.documents.rehu_document_image_scanner import RehuDocumentImageScanner
-from rehuco_agent.documents.rehu_document_model import RehuDocumentModel, path_label
+from rehuco_agent.documents.rehu_document_model import RehuDocumentModel, key_label
 from rehuco_agent.fields import FieldsTab, UnknownField
 from rehuco_agent.settings.screenshot_patterns_settings import shared_screenshot_patterns_settings
 from rehuco_core import (
@@ -49,8 +50,13 @@ from rehuco_core import (
     scan_unconverted_screenshots,
     visible_learning_paths,
 )
+from rehuco_core.access import KeyRelocation, LocalKey, NodeKey
 
 from rehuco_agent_tests.fields.field_testers import FieldTester as Field
+
+FAKE: Final = Path.cwd() / "fake"
+"""The folder every fake document lives in, never created; built from ``Path.cwd()`` so it is absolute on every
+platform, as a document's key needs."""
 
 
 def lister_of(scanner: RehuDocumentImageScanner) -> object:
@@ -101,7 +107,7 @@ def model(document: RehuDocument) -> RehuDocumentModel:
 # endregion
 
 
-ON_DISK_PATH: Final = Path("/fake/info.rehu")
+ON_DISK_PATH: Final = FAKE / "info.rehu"
 """Where the documents a revert reads back live; nothing is ever read from it."""
 
 
@@ -243,13 +249,13 @@ def test_model_over_a_load_failed_document_locks_and_stays_clean(mocker: MockerF
     * verify the model is locked ``MISSING``, bound to the path, and not dirty
     """
     mocker.patch.object(Path, "read_text", side_effect=FileNotFoundError("gone"))
-    document = RehuDocument.open_or_locked(Path("/fake/info.rehu"))
+    document = RehuDocument.open_or_locked(FAKE / "info.rehu")
 
     model = RehuDocumentModel(document)
 
     assert model.locked is True
     assert [reason.kind for reason in model.lock_reasons] == [LockReasonKind.MISSING]
-    assert model.path == Path("/fake/info.rehu")
+    assert model.path == FAKE / "info.rehu"
     assert model.dirty is False
 
 
@@ -1418,7 +1424,7 @@ def test_revert_is_the_fix_retry_loop_over_a_load_failure(mocker: MockerFixture)
     * make the file vanish, then revert -- verify no throw, model now locked ``MISSING``, not dirty
     * make the file read cleanly again, then revert -- verify the lock drops and fields seed
     """
-    path = Path("/fake/info.rehu")
+    path = FAKE / "info.rehu"
     mocker.patch.object(Path, "read_text", return_value=json.dumps({"core": {"type": "tutorial"}}))
     model = RehuDocumentModel(RehuDocument.load(path))
     assert model.locked is False
@@ -1559,14 +1565,14 @@ def test_convert_replaces_the_document_reseeds_and_unlocks(mocker: MockerFixture
     """
     tc_document = RehuDocument(
         {"type": "Tutorial", "sources": [{"title": "Old Title", "primary": True}]},
-        Path("/fake/info.tc"),
+        FAKE / "info.tc",
         legacy_tc=True,
     )
     model = RehuDocumentModel(tc_document)
     assert model.locked is True
 
     converted = RehuDocument(
-        {"type": "Tutorial", "sources": [{"title": "New Title", "primary": True}]}, Path("/fake/info.rehu")
+        {"type": "Tutorial", "sources": [{"title": "New Title", "primary": True}]}, FAKE / "info.rehu"
     )
     mocker.patch("rehuco_agent.documents.rehu_document_model.convert_tc", return_value=converted)
 
@@ -1588,10 +1594,10 @@ def test_convert_emits_reloaded(mocker: MockerFixture) -> None:
     * record ``reloaded`` emissions, then convert
     * verify it fired once
     """
-    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("/fake/info.tc"), legacy_tc=True))
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE / "info.tc", legacy_tc=True))
     mocker.patch(
         "rehuco_agent.documents.rehu_document_model.convert_tc",
-        return_value=RehuDocument({"type": "Tutorial"}, Path("/fake/info.rehu")),
+        return_value=RehuDocument({"type": "Tutorial"}, FAKE / "info.rehu"),
     )
     fired: list[None] = []
     model.reloaded.connect(lambda: fired.append(None))
@@ -1611,7 +1617,7 @@ def test_convert_failure_does_not_emit_reloaded(mocker: MockerFixture) -> None:
     * record ``reloaded`` emissions, then call convert and let the error propagate
     * verify nothing fired
     """
-    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("/fake/info.tc"), legacy_tc=True))
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE / "info.tc", legacy_tc=True))
     mocker.patch(
         "rehuco_agent.documents.rehu_document_model.convert_tc", side_effect=FileExistsError("already converted")
     )
@@ -1638,7 +1644,7 @@ def test_convert_passes_keep_backups_and_overwrite_through(mocker: MockerFixture
     * call ``model.convert`` with specific ``keep_backups``/``overwrite`` values
     * verify ``convert_tc`` was called with the document's path, those exact values, and ``alice``
     """
-    tc_path = Path("/fake/info.tc")
+    tc_path = FAKE / "info.tc"
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, tc_path, legacy_tc=True, username="alice"))
     mock_convert = mocker.patch(
         "rehuco_agent.documents.rehu_document_model.convert_tc",
@@ -1671,7 +1677,7 @@ def test_convert_prefers_an_explicit_deleter_over_the_configured_one(mocker: Moc
     * call ``model.convert`` with an explicit deleter
     * verify ``convert_tc`` received it, and ``configured_deleter`` was never asked
     """
-    tc_path = Path("/fake/info.tc")
+    tc_path = FAKE / "info.tc"
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, tc_path, legacy_tc=True))
     mock_convert = mocker.patch(
         "rehuco_agent.documents.rehu_document_model.convert_tc",
@@ -1732,7 +1738,7 @@ def test_convert_failure_leaves_the_model_completely_untouched(mocker: MockerFix
     * call ``model.convert()``
     * verify the exception propagates and the model still wraps the original document, still locked
     """
-    tc_document = RehuDocument({"type": "Tutorial"}, Path("/fake/info.tc"), legacy_tc=True)
+    tc_document = RehuDocument({"type": "Tutorial"}, FAKE / "info.tc", legacy_tc=True)
     model = RehuDocumentModel(tc_document)
     mocker.patch("rehuco_agent.documents.rehu_document_model.convert_tc", side_effect=FileExistsError("stale backup"))
 
@@ -1784,7 +1790,7 @@ def test_nothing_beside_an_unconverted_tc_is_singled_out(mocker: MockerFixture) 
     """
     names = ["info.tc", "cover.jpg", "sample-01.jpg", "sample-00.jpg"]
     mocker.patch.object(Path, "iterdir", return_value=[Path(name) for name in names])
-    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("/fake/info.tc"), legacy_tc=True))
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE / "info.tc", legacy_tc=True))
     assert isinstance(model.image_scanner, RehuDocumentImageScanner)
 
     screenshots = model.image_scanner.screenshots()
@@ -1833,7 +1839,7 @@ def test_a_closed_documents_model_stops_following_the_patterns() -> None:
     * verify nothing raised -- a slot firing into the deleted model raises ``RuntimeError``, which
       pytest-qt reports as an uncaught exception in a slot
     """
-    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("/fake/info.tc"), legacy_tc=True))
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE / "info.tc", legacy_tc=True))
     shiboken6.delete(model)
     assert not shiboken6.isValid(model)
 
@@ -1888,12 +1894,12 @@ def test_convert_reassigns_a_fresh_rehu_scanner(mocker: MockerFixture) -> None:
     * call ``model.convert()``
     * verify ``image_scanner`` is now a different ``RehuDocumentImageScanner`` over ``scan_rehu_screenshot_files``
     """
-    tc_document = RehuDocument({"type": "Tutorial"}, Path("/fake/info.tc"), legacy_tc=True)
+    tc_document = RehuDocument({"type": "Tutorial"}, FAKE / "info.tc", legacy_tc=True)
     model = RehuDocumentModel(tc_document)
     original_scanner = model.image_scanner
     mocker.patch(
         "rehuco_agent.documents.rehu_document_model.convert_tc",
-        return_value=RehuDocument({"type": "Tutorial"}, Path("/fake/info.rehu")),
+        return_value=RehuDocument({"type": "Tutorial"}, FAKE / "info.rehu"),
     )
 
     model.convert(keep_backups=True)
@@ -1969,7 +1975,7 @@ def test_a_file_with_duplicate_sources_opens_clean_and_saves_as_it_is(mocker: Mo
             {"format_version": CURRENT_FORMAT_VERSION, "core": {"type": "tutorial", "sources": sources}, "tutorial": {}}
         ),
     )
-    model = RehuDocumentModel(RehuDocument.load(Path("/fake/info.rehu")))
+    model = RehuDocumentModel(RehuDocument.load(FAKE / "info.rehu"))
     write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
 
     assert model.dirty is False
@@ -2027,9 +2033,9 @@ def test_path_passes_through_to_the_document() -> None:
     * build a model over a document carrying a path
     * verify ``model.path`` matches the document's path
     """
-    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("/fake/info.rehu")))
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE / "info.rehu"))
 
-    assert model.path == Path("/fake/info.rehu")
+    assert model.path == FAKE / "info.rehu"
 
 
 def test_label_is_empty_for_a_document_with_no_path() -> None:
@@ -2053,7 +2059,7 @@ def test_label_uses_the_parent_directory_name_for_info_rehu() -> None:
     * build a model over an ``info.rehu`` path
     * verify ``model.label`` is the parent directory's name plus a trailing slash
     """
-    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("/fake/sculpting/info.rehu")))
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE / "sculpting" / "info.rehu"))
 
     assert model.label == "sculpting/"
 
@@ -2066,36 +2072,38 @@ def test_label_uses_the_bare_filename_for_a_non_info_rehu() -> None:
     * build a model over a non-``info.rehu`` path
     * verify ``model.label`` is that file's bare name
     """
-    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("/fake/sculpting/sculpting.rehu")))
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE / "sculpting" / "sculpting.rehu"))
 
     assert model.label == "sculpting.rehu"
 
 
-def test_path_label_uses_the_parent_directory_name_for_info_rehu() -> None:
-    """`path_label` -- the shared rule `label` and the recents menu both use (#117) -- labels an
-    ``info.rehu`` path by its parent directory's name, trailing-slashed.
+def test_key_label_uses_the_parent_directory_name_for_info_rehu() -> None:
+    """`key_label` -- the shared rule `label` and the recents menu both use (#117) -- labels an
+    ``info.rehu`` record by its parent directory's name, trailing-slashed, whichever machine holds it (#414).
 
     **Test steps:**
 
-    * call ``path_label`` on an ``info.rehu`` path
-    * verify it returns the parent directory's name plus a trailing slash
+    * call ``key_label`` on a local and on a node key to an ``info.rehu``
+    * verify each returns the parent directory's name plus a trailing slash
     """
-    assert path_label(Path("/fake/sculpting/info.rehu")) == "sculpting/"
+    assert key_label(LocalKey(FAKE / "sculpting" / "info.rehu")) == "sculpting/"
+    assert key_label(NodeKey("node", UUID(int=1), "sculpting/info.rehu")) == "sculpting/"
 
 
-def test_path_label_uses_the_bare_filename_for_a_non_info_rehu() -> None:
-    """`path_label` labels a non-``info.rehu`` path by its own bare filename.
+def test_key_label_uses_the_bare_filename_for_a_non_info_rehu() -> None:
+    """`key_label` labels a non-``info.rehu`` record by its own bare filename, whichever machine holds it (#414).
 
     **Test steps:**
 
-    * call ``path_label`` on a non-``info.rehu`` path
-    * verify it returns that file's bare name
+    * call ``key_label`` on a local and on a node key to a non-``info.rehu`` record
+    * verify each returns that file's bare name
     """
-    assert path_label(Path("/fake/sculpting/sculpting.rehu")) == "sculpting.rehu"
+    assert key_label(LocalKey(FAKE / "sculpting" / "sculpting.rehu")) == "sculpting.rehu"
+    assert key_label(NodeKey("node", UUID(int=1), "sculpting/sculpting.rehu")) == "sculpting.rehu"
 
 
-def test_path_label_names_the_directory_for_a_legacy_info_tc() -> None:
-    """`path_label` labels an ``info.tc`` by its folder too -- tc4 wrote one per resource directory (#250).
+def test_key_label_names_the_directory_for_a_legacy_info_tc() -> None:
+    """`key_label` labels an ``info.tc`` by its folder too -- tc4 wrote one per resource directory (#250).
 
     Keying on ``info.rehu`` alone gave a catalog opened before conversion a tab strip reading ``info.tc``
     all the way across, with nothing to tell five documents apart -- which is the failure the label rule
@@ -2103,11 +2111,11 @@ def test_path_label_names_the_directory_for_a_legacy_info_tc() -> None:
 
     **Test steps:**
 
-    * call ``path_label`` on an ``info.tc`` path and on a named ``.tc``
+    * call ``key_label`` on an ``info.tc`` key and on a named ``.tc``
     * verify the first names its folder and the second its own file
     """
-    assert path_label(Path("/fake/sculpting/info.tc")) == "sculpting/"
-    assert path_label(Path("/fake/sculpting/sculpting.tc")) == "sculpting.tc"
+    assert key_label(LocalKey(FAKE / "sculpting" / "info.tc")) == "sculpting/"
+    assert key_label(LocalKey(FAKE / "sculpting" / "sculpting.tc")) == "sculpting.tc"
 
 
 def test_bind_resolves_the_current_value_and_a_stable_changed_signal(model: RehuDocumentModel) -> None:
@@ -2541,7 +2549,7 @@ def test_create_new_with_a_path_is_dirty_and_bound() -> None:
       dirty-editable document about to be written -- strictly distinct from a load failure's
       empty-locked stub bound to the same kind of path, [[data-model#write-integrity]])
     """
-    path = Path("/fake/sculpting/info.rehu")
+    path = FAKE / "sculpting" / "info.rehu"
 
     model = RehuDocumentModel.create_new(path)
 
@@ -2560,7 +2568,7 @@ def test_create_new_starts_not_saved_on_disk() -> None:
     * call ``RehuDocumentModel.create_new`` with a path and without one
     * verify both report ``saved_on_disk`` False
     """
-    assert RehuDocumentModel.create_new(Path("/fake/sculpting/info.rehu")).saved_on_disk is False
+    assert RehuDocumentModel.create_new(FAKE / "sculpting" / "info.rehu").saved_on_disk is False
     assert RehuDocumentModel.create_new().saved_on_disk is False
 
 
@@ -2586,7 +2594,7 @@ def test_saving_marks_saved_on_disk(mocker: MockerFixture) -> None:
     * call ``model.save()``
     * verify ``saved_on_disk`` flips to True
     """
-    model = RehuDocumentModel.create_new(Path("/fake/sculpting/info.rehu"))
+    model = RehuDocumentModel.create_new(FAKE / "sculpting" / "info.rehu")
     mocker.patch.object(model.document, "save")
     assert model.saved_on_disk is False
 
@@ -2602,9 +2610,9 @@ def test_a_save_announces_the_record_it_wrote(mocker: MockerFixture) -> None:
     **Test steps:**
 
     * build a not-yet-saved model, patching the document's atomic save, and save it
-    * verify ``files_changed`` carried the record's path
+    * verify ``files_changed`` carried the record's key
     """
-    path = Path("/fake/sculpting/info.rehu")
+    path = FAKE / "sculpting" / "info.rehu"
     model = RehuDocumentModel.create_new(path)
     mocker.patch.object(model.document, "save")
     written: list[object] = []
@@ -2612,7 +2620,7 @@ def test_a_save_announces_the_record_it_wrote(mocker: MockerFixture) -> None:
 
     model.save()
 
-    assert written == [(path,)]
+    assert written == [(LocalKey(path),)]
 
 
 def test_the_first_save_takes_the_checksums_the_new_record_covers(mocker: MockerFixture) -> None:
@@ -2626,11 +2634,11 @@ def test_the_first_save_takes_the_checksums_the_new_record_covers(mocker: Mocker
     * verify the move was asked for that record, through that coordinator, and ``files_changed`` carried the
       record and both checksum files
     """
-    path = Path("/fake/sculpting/foo.rehu")
+    path = FAKE / "sculpting" / "foo.rehu"
     coordinator = RenameCoordinator()
     model = RehuDocumentModel.create_new(path, rename_coordinator=coordinator)
     mocker.patch.object(model.document, "save")
-    source = Path("/fake/sculpting/info.checksum")
+    source = FAKE / "sculpting" / "info.checksum"
     take = mocker.patch(
         "rehuco_agent.documents.rehu_document_model.take_enclosing_claims",
         return_value=TakenClaims(source, {"foo.zip": CoveringRecord(path, "foo.zip")}, pruned=True),
@@ -2643,7 +2651,7 @@ def test_the_first_save_takes_the_checksums_the_new_record_covers(mocker: Mocker
     take.assert_called_once()
     assert take.call_args.args == (path,)
     assert take.call_args.kwargs["coordinator"] is coordinator
-    assert written == [(path, Path("/fake/sculpting/foo.checksum"), source)]
+    assert written == [(LocalKey(path), LocalKey(FAKE / "sculpting" / "foo.checksum"), LocalKey(source))]
 
 
 def test_only_the_first_save_takes_checksums(mocker: MockerFixture) -> None:
@@ -2654,7 +2662,7 @@ def test_only_the_first_save_takes_checksums(mocker: MockerFixture) -> None:
     * build a not-yet-saved model with the move mocked to find nothing, and save it twice
     * verify the move was asked for once, and the second save announced only the record
     """
-    path = Path("/fake/sculpting/foo.rehu")
+    path = FAKE / "sculpting" / "foo.rehu"
     model = RehuDocumentModel.create_new(path)
     mocker.patch.object(model.document, "save")
     take = mocker.patch("rehuco_agent.documents.rehu_document_model.take_enclosing_claims", return_value=None)
@@ -2665,7 +2673,7 @@ def test_only_the_first_save_takes_checksums(mocker: MockerFixture) -> None:
     model.save()
 
     take.assert_called_once()
-    assert written == [(path,), (path,)]
+    assert written == [(LocalKey(path),), (LocalKey(path),)]
 
 
 def test_a_convert_announces_the_new_record_and_the_tc_it_replaced(mocker: MockerFixture) -> None:
@@ -2677,17 +2685,17 @@ def test_a_convert_announces_the_new_record_and_the_tc_it_replaced(mocker: Mocke
     * convert a legacy model with ``convert_tc`` mocked
     * verify ``files_changed`` carried the ``.rehu`` then the ``.tc``
     """
-    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("/fake/info.tc"), legacy_tc=True))
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE / "info.tc", legacy_tc=True))
     mocker.patch(
         "rehuco_agent.documents.rehu_document_model.convert_tc",
-        return_value=RehuDocument({"type": "Tutorial"}, Path("/fake/info.rehu")),
+        return_value=RehuDocument({"type": "Tutorial"}, FAKE / "info.rehu"),
     )
     written: list[object] = []
     model.files_changed.connect(written.append)
 
     model.convert(keep_backups=True)
 
-    assert written == [(Path("/fake/info.rehu"), Path("/fake/info.tc"))]
+    assert written == [(LocalKey(FAKE / "info.rehu"), LocalKey(FAKE / "info.tc"))]
 
 
 def test_a_relocation_moving_the_record_re_points_the_document_once() -> None:
@@ -2697,20 +2705,21 @@ def test_a_relocation_moving_the_record_re_points_the_document_once() -> None:
     **Test steps:**
 
     * edit a model, then relocate it by a rename of its folder, twice
-    * verify the path, location and document moved once, the second call reported no change, and the edit
+    * verify the key, path, location and document moved once, the second call reported no change, and the edit
       is still unsaved
     """
-    path = Path("/fake/sculpting/info.rehu")
+    path = FAKE / "sculpting" / "info.rehu"
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, path))
     model.title = "Edited"
     renamed = path.parent.with_name("modelling")
-    relocation = Relocation(((path.parent, renamed),))
+    relocation = KeyRelocation.from_local(Relocation(((path.parent, renamed),)))
     paths: list[object] = []
     model.path_changed.connect(paths.append)  # type: ignore[attr-defined]
 
     assert model.relocate(relocation) is True
     assert model.relocate(relocation) is False
 
+    assert model.key == LocalKey(renamed / "info.rehu")
     assert paths == [renamed / "info.rehu"]
     assert model.location == (renamed / "info.rehu").as_posix()
     assert model.document.path == renamed / "info.rehu"
@@ -2727,12 +2736,59 @@ def test_a_relocation_elsewhere_leaves_the_document_alone(model: RehuDocumentMod
     * relocate a located document by an unrelated rename, and the path-less fixture by any rename
     * verify neither moved
     """
-    path = Path("/fake/sculpting/info.rehu")
+    path = FAKE / "sculpting" / "info.rehu"
     located = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, path))
 
-    assert located.relocate(Relocation(((Path("/fake/other"), Path("/fake/else")),))) is False
+    assert located.relocate(KeyRelocation.from_local(Relocation(((FAKE / "other", FAKE / "else"),)))) is False
     assert located.path == path
-    assert model.relocate(Relocation(((Path("/fake"), Path("/else")),))) is False
+    assert model.relocate(KeyRelocation.from_local(Relocation(((FAKE, FAKE.with_name("else")),)))) is False
+
+
+def test_only_a_local_record_follows_a_relocation(model: RehuDocumentModel) -> None:
+    """A record on another node's root follows that node's change journal, not a rename this machine announces;
+    and a local record carried onto a node's root is not a file this machine can re-point to (#414).
+
+    **Test steps:**
+
+    * key the path-less fixture to a node's record, and relocate it by a rename of that record's folder
+    * relocate a located document by a rename whose destination is on a node's root
+    * verify neither moved
+    """
+    node_key = NodeKey("node", UUID(int=1), "sculpting/info.rehu")
+    model.key = node_key
+
+    assert model.relocate(KeyRelocation(((node_key.parent, node_key.parent.with_name("renamed")),))) is False
+    assert model.key == node_key
+
+    path = FAKE / "sculpting" / "info.rehu"
+    located = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, path))
+
+    assert located.relocate(KeyRelocation(((LocalKey(path.parent), node_key.parent),))) is False
+    assert located.key == LocalKey(path)
+    assert located.path == path
+
+
+def test_the_key_follows_the_path_and_is_set_first() -> None:
+    """A document is keyed by its file on this machine, none when it has none, and a `path_changed` listener
+    already reads the new key -- the registry re-keys on it (#414).
+
+    **Test steps:**
+
+    * build a path-less model and a located one, and verify their keys
+    * listen to ``path_changed`` reading the key, and relocate the located one
+    * verify the listener read the new key
+    """
+    assert RehuDocumentModel(RehuDocument({"type": "Tutorial"})).key is None
+    path = FAKE / "sculpting" / "info.rehu"
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, path))
+    assert model.key == LocalKey(path)
+    renamed = path.parent.with_name("modelling")
+    keys_seen: list[object] = []
+    model.path_changed.connect(lambda _path: keys_seen.append(model.key))  # type: ignore[attr-defined]
+
+    model.relocate(KeyRelocation.from_local(Relocation(((path.parent, renamed),))))
+
+    assert keys_seen == [LocalKey(renamed / "info.rehu")]
 
 
 @mark.parametrize("announce", ["files", "folder"])
@@ -2742,18 +2798,18 @@ def test_a_collaborators_write_is_announced_through_the_model(model: RehuDocumen
     **Test steps:**
 
     * announce a write, or a folder change
-    * verify the matching signal carried it
+    * verify the matching signal carried it, as a key
     """
     heard: list[object] = []
     model.files_changed.connect(heard.append)
     model.folder_changed.connect(heard.append)
 
     if announce == "files":
-        model.announce_files_changed([Path("/fake/info.checksum")])
+        model.announce_files_changed([FAKE / "info.checksum"])
     else:
-        model.announce_folder_changed(Path("/fake"))
+        model.announce_folder_changed(FAKE)
 
-    assert heard == [(Path("/fake/info.checksum"),) if announce == "files" else Path("/fake")]
+    assert heard == [(LocalKey(FAKE / "info.checksum"),) if announce == "files" else LocalKey(FAKE)]
 
 
 def test_create_new_files_per_user_state_under_the_given_username() -> None:
@@ -2765,7 +2821,7 @@ def test_create_new_files_per_user_state_under_the_given_username() -> None:
     * call ``RehuDocumentModel.create_new`` with a username
     * verify the wrapped document carries it (its per-user accessors key the ``users`` map by it)
     """
-    model = RehuDocumentModel.create_new(Path("/fake/sculpting/info.rehu"), username="alice")
+    model = RehuDocumentModel.create_new(FAKE / "sculpting" / "info.rehu", username="alice")
 
     assert model.document.username == "alice"
 
@@ -2798,7 +2854,7 @@ def test_create_pending_is_empty_clean_and_bound_without_an_identity() -> None:
     * call ``RehuDocumentModel.create_pending`` for a path
     * verify pending, path-bound, empty data, clean, and unlocked
     """
-    path = Path("/fake/sculpting/info.rehu")
+    path = FAKE / "sculpting" / "info.rehu"
 
     model = RehuDocumentModel.create_pending(path)
 
@@ -2826,7 +2882,7 @@ def test_load_pending_reads_the_file_and_clears_pending(mocker: MockerFixture) -
         "read_text",
         return_value=json.dumps({"type": "Tutorial", "sources": [{"title": "Foo", "primary": True}]}),
     )
-    model = RehuDocumentModel.create_pending(Path("/fake/sculpting/info.rehu"))
+    model = RehuDocumentModel.create_pending(FAKE / "sculpting" / "info.rehu")
     pending_at_reload: list[bool] = []
     model.reloaded.connect(lambda: pending_at_reload.append(model.pending))
 
@@ -2851,7 +2907,7 @@ def test_load_pending_is_a_no_op_once_loaded(mocker: MockerFixture) -> None:
         "read_text",
         return_value=json.dumps({"type": "Tutorial", "sources": [{"title": "Foo", "primary": True}]}),
     )
-    model = RehuDocumentModel.create_pending(Path("/fake/sculpting/info.rehu"))
+    model = RehuDocumentModel.create_pending(FAKE / "sculpting" / "info.rehu")
     model.load_pending()
     model.title = "Edited"
     reload = mocker.patch.object(model.document, "reload")
@@ -3195,7 +3251,7 @@ def test_a_freshly_loaded_older_clean_document_is_upgradable(mocker: MockerFixtu
     * verify the model reports ``upgradable``
     """
     mocker.patch.object(Path, "read_text", return_value=json.dumps({"format_version": 1, "type": "Tutorial"}))
-    document = RehuDocument.load(Path("/fake/info.rehu"))
+    document = RehuDocument.load(FAKE / "info.rehu")
 
     model = RehuDocumentModel(document)
 
@@ -3214,7 +3270,7 @@ def test_a_document_at_the_current_format_version_is_not_upgradable(mocker: Mock
     mocker.patch.object(
         Path, "read_text", return_value=json.dumps({"format_version": CURRENT_FORMAT_VERSION, "type": "Tutorial"})
     )
-    document = RehuDocument.load(Path("/fake/info.rehu"))
+    document = RehuDocument.load(FAKE / "info.rehu")
 
     model = RehuDocumentModel(document)
 
@@ -3241,7 +3297,7 @@ def test_a_freshly_loaded_document_with_a_stale_block_is_upgradable(mocker: Mock
             {"format_version": CURRENT_FORMAT_VERSION, "core": {"type": "tutorial"}, "tutorial": {}}
         ),
     )
-    document = RehuDocument.load(Path("/fake/info.rehu"))
+    document = RehuDocument.load(FAKE / "info.rehu")
 
     model = RehuDocumentModel(document)
 
@@ -3268,7 +3324,7 @@ def test_a_document_current_at_both_layers_is_not_upgradable(mocker: MockerFixtu
             }
         ),
     )
-    document = RehuDocument.load(Path("/fake/info.rehu"))
+    document = RehuDocument.load(FAKE / "info.rehu")
 
     model = RehuDocumentModel(document)
 
@@ -3292,7 +3348,7 @@ def test_saving_a_block_only_upgradable_document_clears_the_offer(mocker: Mocker
             {"format_version": CURRENT_FORMAT_VERSION, "core": {"type": "tutorial"}, "tutorial": {}}
         ),
     )
-    document = RehuDocument.load(Path("/fake/info.rehu"))
+    document = RehuDocument.load(FAKE / "info.rehu")
     model = RehuDocumentModel(document)
     assert model.upgradable is True
 
@@ -3323,7 +3379,7 @@ def test_a_legacy_tc_document_is_never_upgradable() -> None:
     * build a model over a legacy ``.tc``-backed document
     * verify ``upgradable`` is ``False``
     """
-    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("/fake/info.tc"), legacy_tc=True))
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE / "info.tc", legacy_tc=True))
 
     assert model.upgradable is False
 
@@ -3339,7 +3395,7 @@ def test_an_older_dirty_document_is_not_upgradable(mocker: MockerFixture) -> Non
     * verify ``upgradable`` drops to ``False`` immediately (live, off ``dirty_changed``)
     """
     mocker.patch.object(Path, "read_text", return_value=json.dumps({"format_version": 1, "type": "Tutorial"}))
-    document = RehuDocument.load(Path("/fake/info.rehu"))
+    document = RehuDocument.load(FAKE / "info.rehu")
     model = RehuDocumentModel(document)
     assert model.upgradable is True
 
@@ -3364,7 +3420,7 @@ def test_an_older_locked_document_is_not_upgradable(mocker: MockerFixture) -> No
         "read_text",
         return_value=json.dumps({"format_version": 1, "type": "Tutorial", "authors": 42}),
     )
-    document = RehuDocument.load(Path("/fake/info.rehu"))
+    document = RehuDocument.load(FAKE / "info.rehu")
 
     model = RehuDocumentModel(document)
 
@@ -3384,7 +3440,7 @@ def test_saving_an_upgradable_document_clears_the_offer(mocker: MockerFixture) -
     """
     mocker.patch.object(Path, "read_text", return_value=json.dumps({"format_version": 1, "type": "Tutorial"}))
     mocker.patch("rehuco_core.rehu_document.atomic_write_text")
-    document = RehuDocument.load(Path("/fake/info.rehu"))
+    document = RehuDocument.load(FAKE / "info.rehu")
     model = RehuDocumentModel(document)
     assert model.upgradable is True
     assert model.dirty is False
@@ -3410,7 +3466,7 @@ def test_revert_recomputes_upgradable_from_the_reloaded_version(mocker: MockerFi
     * call ``model.revert()``
     * verify ``upgradable`` dropped to ``False``
     """
-    path = Path("/fake/info.rehu")
+    path = FAKE / "info.rehu"
     mocker.patch.object(Path, "read_text", return_value=json.dumps({"format_version": 1, "type": "Tutorial"}))
     model = RehuDocumentModel(RehuDocument.load(path))
     assert model.upgradable is True
@@ -3628,7 +3684,7 @@ def test_reverting_a_type_switch_rebuilds_the_composition_without_re_switching(m
     * record ``active_block_changed``, then revert
     * verify the type reseeds back to tutorial, the composition change fired once, and the model is clean
     """
-    path = Path("/fake/info.rehu")
+    path = FAKE / "info.rehu"
     mocker.patch.object(
         Path,
         "read_text",
@@ -3660,7 +3716,7 @@ def test_revert_always_rebuilds_the_composition(mocker: MockerFixture) -> None:
     * record ``active_block_changed``, then revert
     * verify the type is unchanged, the rebuild fired once, and the model is clean
     """
-    path = Path("/fake/info.rehu")
+    path = FAKE / "info.rehu"
     mocker.patch.object(
         Path,
         "read_text",
@@ -3696,7 +3752,7 @@ def test_reverting_a_type_round_trip_restores_a_foreign_blocks_carry_or_drop(moc
     * verify the active type is unchanged, the composition change fired, and the block's fate is
       carried-again (not dropped)
     """
-    path = Path("/fake/info.rehu")
+    path = FAKE / "info.rehu"
     mocker.patch.object(
         Path,
         "read_text",

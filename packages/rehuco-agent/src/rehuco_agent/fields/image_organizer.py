@@ -66,8 +66,8 @@ class ImageOrganizer(Protocol):
             one. An explicit slot (a scrape result's own numbering) may already be occupied, in which
             case the file already there is backed up first, never overwritten.
         :returns: the new file's path.
-        :raises OSError: the write failed, or was refused -- including the refusal a path-less
-            document or a legacy ``.tc`` raises, the same one :meth:`reorder` and :meth:`convert` do.
+        :raises OSError: the write failed, or was refused -- including the refusal a document with no
+            local path or a legacy ``.tc`` raises, the same one :meth:`reorder` and :meth:`convert` do.
         :raises ValueError: ``slot`` is ``None`` and the numbered set is already full.
         """
         ...  # pylint: disable=unnecessary-ellipsis  # a long signature is what makes an inline pyright-ignore too long

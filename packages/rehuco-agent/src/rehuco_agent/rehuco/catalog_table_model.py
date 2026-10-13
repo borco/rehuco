@@ -21,9 +21,6 @@ from rehuco_core import (
 LIST_SEPARATOR: Final = ", "
 """Joins a record's authors, tags or levels into one cell, in the order the record lists them."""
 
-PATH_ROLE: Final = Qt.ItemDataRole.UserRole
-"""The role answering a row's absolute path -- what a double-click opens."""
-
 LEGACY_FORMAT: Final = "tc"
 """What the Format column holds for a legacy ``.tc``: a format of its own, not "version 0"."""
 
@@ -32,8 +29,8 @@ UNKNOWN_FORMAT: Final = "?"
 the cache learned to store it -- so it is never mistaken for a ``.tc``."""
 
 type RowKey = tuple[UUID, str]
-"""A resource as a browser names it to others: its root's id and its root-relative path (#379). Release 0.4.0 re-keys
-the one place that resolves it, not every consumer."""
+"""A resource as a browser names it to others: its root's id and its root-relative path (#379), which
+:meth:`~rehuco_agent.rehuco.root_catalog.RootCatalog.resource_key` alone turns into what it is reached by (#414)."""
 
 
 class CatalogColumn(IntEnum):
@@ -262,7 +259,6 @@ class CatalogTableModel(QAbstractTableModel):  # pylint: disable=too-many-instan
         """The rows in the cache's own order -- what an unsorted view shows."""
         self.__rows: list[CatalogRow] = []
         self.__by_id: dict[int, CatalogRow] = {}
-        self.__root_paths: dict[UUID, Path] = {}
         self.__root_positions: dict[UUID, int] = {}
         self.__sort_column = -1
         self.__sort_order = Qt.SortOrder.AscendingOrder
@@ -287,18 +283,16 @@ class CatalogTableModel(QAbstractTableModel):  # pylint: disable=too-many-instan
                 self.__account(held[row], 1, tally)
         return tally.totals()
 
-    def set_rows(self, rows: Sequence[CatalogRow], root_paths: Mapping[UUID, Path]) -> None:
+    def set_rows(self, rows: Sequence[CatalogRow], root_ids: Iterable[UUID]) -> None:
         """Replace every row, in the sort the view last asked for.
 
         :param rows: the rows, in the cache's order.
-        :param root_paths: each root's folder by id, in the roots' order -- which is what turns a record's
-            root-relative path into an absolute one, and places a row inserted later where the cache would.
+        :param root_ids: the roots' ids, in the roots' order -- which places a row inserted later where the cache would.
         """
         self.beginResetModel()
         self.__source = list(rows)
         self.__by_id = {entry.resource_id: entry for entry in self.__source}
-        self.__root_paths = dict(root_paths)
-        self.__root_positions = {root_id: position for position, root_id in enumerate(root_paths)}
+        self.__root_positions = {root_id: position for position, root_id in enumerate(root_ids)}
         self.__tally = _Tally()
         for entry in self.__source:
             self.__account(entry, 1, self.__tally)
@@ -341,18 +335,6 @@ class CatalogTableModel(QAbstractTableModel):  # pylint: disable=too-many-instan
         if not 0 <= row < len(self.__rows):
             return ()
         return tuple(self.__rows[row].record.authors)
-
-    def absolute_path(self, row: int) -> Path | None:
-        """Where a row's record lives on disk.
-
-        :param row: the row.
-        :returns: the record's absolute path, or ``None`` when ``row`` is out of range or its root is gone.
-        """
-        if not 0 <= row < len(self.__rows):
-            return None
-        entry = self.__rows[row]
-        root = self.__root_paths.get(entry.root_id)
-        return None if root is None else root / entry.record.path
 
     # region Sorting
 
@@ -514,8 +496,6 @@ class CatalogTableModel(QAbstractTableModel):  # pylint: disable=too-many-instan
             return None
         entry = self.__rows[index.row()]
         column = CatalogColumn(index.column())
-        if role == PATH_ROLE:
-            return self.absolute_path(index.row())
         if role == Qt.ItemDataRole.DisplayRole:
             value = COLUMNS[column].value(entry)
             return None if value == "" else value

@@ -11,6 +11,7 @@ reaching for `QLabel` children that no longer exist.
 """
 
 from pathlib import Path
+from typing import Final
 
 from PySide6.QtCore import QEvent, QPointF, Qt
 from PySide6.QtGui import QColor, QEnterEvent, QImage, QPainter
@@ -34,16 +35,30 @@ from rehuco_agent.documents.rehu_document_menu_entry import (
     MAX_WIDTH,
     RehuDocumentMenuEntry,
 )
+from rehuco_core.access import LocalKey
 
 ELLIPSIS = "\N{HORIZONTAL ELLIPSIS}"
 """The character `QFontMetrics.elidedText` appends when it trims text to fit."""
+
+HOME: Final = Path(Path.cwd().anchor) / "home" / "ada"
+"""A fake home folder, rooted at the working directory's anchor so it is absolute on every platform (a local key needs
+that) yet short enough not to elide; never created on disk."""
 
 
 def make_entry(
     qtbot: QtBot, title: str, path: Path | None, *, checked: bool = False, dirty: bool = False
 ) -> RehuDocumentMenuEntry:
-    """Build a `RehuDocumentMenuEntry` sized to its cap, registered with qtbot for teardown."""
-    entry = RehuDocumentMenuEntry(title, path, checked=checked, dirty=dirty)
+    """Build a `RehuDocumentMenuEntry` over the local key of ``path``, sized to its cap, registered with qtbot for
+    teardown.
+
+    :param qtbot: the Qt test helper.
+    :param title: the entry's title.
+    :param path: the document's absolute path, or ``None`` for a document with no location.
+    :param checked: draw the checkmark.
+    :param dirty: draw the dirty marker.
+    :returns: the entry.
+    """
+    entry = RehuDocumentMenuEntry(title, None if path is None else LocalKey(path), checked=checked, dirty=dirty)
     qtbot.addWidget(entry)
     entry.resize(MAX_WIDTH, entry.sizeHint().height())
     return entry
@@ -57,7 +72,7 @@ def test_shows_the_title_and_the_path(qtbot: QtBot) -> None:
     * build an entry over a short title and path (short enough that neither elides)
     * verify it draws the title and ``str(path)``
     """
-    path = Path("/home/ada/tutorials/my.rehu")
+    path = HOME / "tutorials" / "my.rehu"
     entry = make_entry(qtbot, "My Tutorial", path)
 
     assert entry.displayed_title() == "My Tutorial"
@@ -87,7 +102,7 @@ def test_a_long_title_is_right_elided(qtbot: QtBot) -> None:
     * verify the drawn title is trimmed and ends with the ellipsis
     """
     long_title = "A very long tutorial title " * 40
-    entry = make_entry(qtbot, long_title, Path("/home/ada/my.rehu"))
+    entry = make_entry(qtbot, long_title, HOME / "my.rehu")
 
     assert entry.displayed_title() != long_title
     assert entry.displayed_title().endswith(ELLIPSIS)
@@ -101,7 +116,7 @@ def test_a_long_path_is_right_elided(qtbot: QtBot) -> None:
     * build an entry over a deeply nested path
     * verify the drawn path is trimmed and ends with the ellipsis
     """
-    long_path = Path("/home/ada/" + "nested/" * 60 + "my.rehu")
+    long_path = HOME.joinpath(*["nested"] * 60, "my.rehu")
     entry = make_entry(qtbot, "My Tutorial", long_path)
 
     assert entry.displayed_path() != str(long_path)
@@ -117,7 +132,7 @@ def test_caps_the_width_it_asks_for_to_keep_the_menu_bounded(qtbot: QtBot) -> No
     * build an entry over a very long title
     * verify its preferred width is the cap, and that it is free to be stretched past it
     """
-    entry = make_entry(qtbot, "A very long tutorial title " * 40, Path("/home/ada/my.rehu"))
+    entry = make_entry(qtbot, "A very long tutorial title " * 40, HOME / "my.rehu")
 
     assert entry.sizeHint().width() == MAX_WIDTH
     assert entry.maximumWidth() > MAX_WIDTH  # a hard cap would leave it short of a wider menu's edge
@@ -133,13 +148,13 @@ def test_a_stretched_entry_fills_its_row_and_uses_the_extra_width(qtbot: QtBot) 
     * build one entry left at its cap and an identical one in a much wider menu
     * verify the stretched widget fills the row, and shows more of its path than the capped one
     """
-    long_path = Path("/home/ada/" + "nested/" * 60 + "my.rehu")
+    long_path = HOME.joinpath(*["nested"] * 60, "my.rehu")
     at_the_cap = make_entry(qtbot, "My Tutorial", long_path)
 
     menu = QMenu()
     qtbot.addWidget(menu)
     action = QWidgetAction(menu)
-    stretched = RehuDocumentMenuEntry("My Tutorial", long_path, menu)
+    stretched = RehuDocumentMenuEntry("My Tutorial", LocalKey(long_path), menu)
     action.setDefaultWidget(stretched)
     menu.addAction(action)
     wide = MAX_WIDTH + 200
@@ -160,8 +175,8 @@ def test_the_path_line_is_set_in_a_smaller_font_than_the_title(qtbot: QtBot) -> 
     * build an entry whose title and path are the same string
     * verify the entry is tall enough for two lines but shorter than two title-sized ones
     """
-    same = "identical"
-    entry = make_entry(qtbot, same, Path(same))
+    same = HOME / "identical"
+    entry = make_entry(qtbot, str(same), same)
 
     # the second line is scaled down, so two lines cost less than twice the first line's height
     two_title_lines = 2 * entry.fontMetrics().height()
@@ -179,8 +194,8 @@ def test_the_dirty_marker_goes_in_the_icon_column_not_into_the_title(qtbot: QtBo
     * build a dirty entry and a clean one
     * verify ``dirty`` reports the difference while both draw the same, unprefixed title
     """
-    dirty = make_entry(qtbot, "My Tutorial", Path("/home/ada/my.rehu"), dirty=True)
-    clean = make_entry(qtbot, "My Tutorial", Path("/home/ada/my.rehu"))
+    dirty = make_entry(qtbot, "My Tutorial", HOME / "my.rehu", dirty=True)
+    clean = make_entry(qtbot, "My Tutorial", HOME / "my.rehu")
 
     assert dirty.dirty
     assert not clean.dirty
@@ -261,8 +276,8 @@ def test_the_dirty_marker_is_actually_drawn(qtbot: QtBot) -> None:
     * verify the dirty row carried an icon and the clean row did not
     * where the marker's glyph renders at all, verify the two paintings differ
     """
-    dirty = make_entry(qtbot, "My Tutorial", Path("/home/ada/my.rehu"), dirty=True)
-    clean = make_entry(qtbot, "My Tutorial", Path("/home/ada/my.rehu"))
+    dirty = make_entry(qtbot, "My Tutorial", HOME / "my.rehu", dirty=True)
+    clean = make_entry(qtbot, "My Tutorial", HOME / "my.rehu")
     dirty_style, clean_style = IconRecordingStyle(), IconRecordingStyle()
     dirty.setStyle(dirty_style)
     clean.setStyle(clean_style)
@@ -285,8 +300,8 @@ def test_the_checkmark_is_actually_drawn(qtbot: QtBot) -> None:
     * paint a checked entry and an unchecked one that are otherwise identical
     * verify the two paintings differ
     """
-    checked = make_entry(qtbot, "My Tutorial", Path("/home/ada/my.rehu"), checked=True)
-    unchecked = make_entry(qtbot, "My Tutorial", Path("/home/ada/my.rehu"))
+    checked = make_entry(qtbot, "My Tutorial", HOME / "my.rehu", checked=True)
+    unchecked = make_entry(qtbot, "My Tutorial", HOME / "my.rehu")
 
     assert checked.grab().toImage() != unchecked.grab().toImage()
 
@@ -300,8 +315,8 @@ def test_checked_is_drawn_by_the_style_not_written_into_the_title(qtbot: QtBot) 
     * build a checked entry and an unchecked one
     * verify ``checked`` reports the difference while the drawn title is identical
     """
-    checked = make_entry(qtbot, "My Tutorial", Path("/home/ada/my.rehu"), checked=True)
-    unchecked = make_entry(qtbot, "My Tutorial", Path("/home/ada/my.rehu"))
+    checked = make_entry(qtbot, "My Tutorial", HOME / "my.rehu", checked=True)
+    unchecked = make_entry(qtbot, "My Tutorial", HOME / "my.rehu")
 
     assert checked.checked
     assert not unchecked.checked
@@ -321,7 +336,7 @@ def test_hovering_repaints_the_row_as_highlighted(qtbot: QtBot) -> None:
     menu = QMenu()
     qtbot.addWidget(menu)
     action = QWidgetAction(menu)
-    entry = RehuDocumentMenuEntry("My Tutorial", Path("/home/ada/my.rehu"), menu)
+    entry = RehuDocumentMenuEntry("My Tutorial", LocalKey(HOME / "my.rehu"), menu)
     action.setDefaultWidget(entry)
     menu.addAction(action)
     entry.resize(MAX_WIDTH, entry.sizeHint().height())
@@ -358,7 +373,7 @@ def test_the_highlighted_row_keeps_its_text_legible_under_every_style(style_name
     if style is None:  # a style Qt did not build on this platform
         skip(f"{style_name} unavailable")
 
-    entry = make_entry(qtbot, "My Tutorial", Path("/home/ada/my.rehu"))
+    entry = make_entry(qtbot, "My Tutorial", HOME / "my.rehu")
     entry.setStyle(style)
     inside = QPointF(entry.rect().center())
     QApplication.sendEvent(entry, QEnterEvent(inside, inside, inside))
@@ -395,7 +410,7 @@ def make_menu(qtbot: QtBot, style: QStyle, *, native_icon: bool) -> tuple[QMenu,
     if native_icon:
         native.setIcon(menu.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon))
     entries = [
-        RehuDocumentMenuEntry("My Tutorial", Path("/home/ada/my.rehu"), menu, checked=checked, dirty=dirty)
+        RehuDocumentMenuEntry("My Tutorial", LocalKey(HOME / "my.rehu"), menu, checked=checked, dirty=dirty)
         for checked, dirty in ((True, False), (False, True), (True, True), (False, False))
     ]
     for entry in entries:

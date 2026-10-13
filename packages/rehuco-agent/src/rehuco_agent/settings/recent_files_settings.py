@@ -75,6 +75,9 @@ class RecentFilesSettings:
         give up -- 1.3 s measured for an unknown host, with the window not yet built. See
         :mod:`borco_core.path_presence` for what is measured and how the remembered paths are checked instead.
 
+        **An entry that is no absolute path is dropped**: every recorded one was resolved, so such an entry is a
+        corrupted store, and a key cannot name it ([[nodes#access-seam]], #414).
+
         :param settings: the ``QSettings`` to read from.
         """
         settings.beginGroup(self.group)
@@ -82,7 +85,8 @@ class RecentFilesSettings:
         for index in range(settings.beginReadArray(PATHS_KEY)):
             settings.setArrayIndex(index)
             path = Path(str(settings.value(PATH_KEY, "")))
-            self.paths[path] = None  # pylint: disable=unsupported-assignment-operation
+            if path.is_absolute() and ".." not in path.parts:
+                self.paths[path] = None  # pylint: disable=unsupported-assignment-operation
         settings.endArray()
         settings.endGroup()
 

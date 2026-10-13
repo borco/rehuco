@@ -6,7 +6,7 @@ on disk -- the parent folder's name for an ``info.rehu``, the file's stem for a 
 (:attr:`~rehuco_agent.documents.rehu_document_model.RehuDocumentModel.current_name`) -- put into the
 chosen engine's URL template
 (:mod:`rehuco_agent.settings.web_search_settings`). The action only reads, so a locked document keeps it
-enabled; it is disabled while the query is empty (a document with no path yet), and its tooltip names the
+enabled; it is disabled while the query is empty (a document with no location), and its tooltip names the
 query it would search for.
 """
 

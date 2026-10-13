@@ -2,7 +2,6 @@
 
 from collections.abc import Iterator
 from itertools import count
-from pathlib import Path
 from typing import Any, Final
 from uuid import UUID, uuid4
 
@@ -13,7 +12,6 @@ from rehuco_agent.rehuco.catalog_table_model import (
     COLUMNS,
     DEFAULT_HIDDEN,
     LEGACY_FORMAT,
-    PATH_ROLE,
     UNKNOWN_FORMAT,
     CatalogColumn,
     CatalogTableModel,
@@ -22,7 +20,6 @@ from rehuco_agent.rehuco.catalog_table_model import (
 from rehuco_core import CatalogRecord, CatalogRow, RecordKind
 
 ROOT_ID: Final = uuid4()
-ROOT: Final = Path("/fake/tutorials")
 
 ids: Iterator[int] = count(10_000)
 """Every row a test builds has an id of its own, as the cache's rows do."""
@@ -47,7 +44,7 @@ def rehu(path: str, **fields: Any) -> CatalogRecord:
 def model_of(*rows: CatalogRow) -> CatalogTableModel:
     """A model holding ``rows``, in the order given -- the cache's order."""
     model = CatalogTableModel()
-    model.set_rows(list(rows), {ROOT_ID: ROOT})
+    model.set_rows(list(rows), [ROOT_ID])
     return model
 
 
@@ -219,35 +216,18 @@ def test_an_unreadable_record_says_why_on_hover(model: CatalogTableModel) -> Non
     assert model.index(0, 0).data(Qt.ItemDataRole.ToolTipRole) is None
 
 
-def test_a_row_answers_its_absolute_path_and_its_key(model: CatalogTableModel) -> None:
-    """The root's folder and the root-relative path make the file a double-click opens; the root's id and the
-    relative path are how the row is named to others.
+def test_a_row_answers_its_key(model: CatalogTableModel) -> None:
+    """The root's id and the relative path are how the row is named to others -- what a double-click opens, once
+    the catalog resolves it (#414).
 
     **Test steps:**
 
-    * read the path role, ``absolute_path`` and ``row_key``
-    * verify each
+    * read ``row_key`` of a row and of rows out of range
+    * verify the row's is its root's id and relative path, and the others ``None``
     """
-    assert model.index(0, 0).data(PATH_ROLE) == ROOT / "python/info.rehu"
-    assert model.absolute_path(0) == ROOT / "python/info.rehu"
     assert model.row_key(0) == (ROOT_ID, "python/info.rehu")
     assert model.row_key(2) is None
-
-
-def test_a_row_whose_root_is_unknown_has_no_path() -> None:
-    """Nothing is invented for a root the model was not told about.
-
-    **Test steps:**
-
-    * set a row under a root the model was not told about
-    * verify its path, and an out-of-range row's, is ``None``
-    """
-    model = CatalogTableModel()
-    model.set_rows([row(rehu("a/info.rehu"), uuid4())], {ROOT_ID: ROOT})
-
-    assert model.absolute_path(0) is None
-    assert model.absolute_path(5) is None
-    assert model.absolute_path(-1) is None
+    assert model.row_key(-1) is None
 
 
 def test_setting_rows_resets_the_model(model: CatalogTableModel) -> None:
@@ -258,7 +238,7 @@ def test_setting_rows_resets_the_model(model: CatalogTableModel) -> None:
     * replace the rows with none
     * verify the table is empty
     """
-    model.set_rows([], {})
+    model.set_rows([], [])
 
     assert model.rowCount() == 0
     assert model.index(0, 0).data() is None
@@ -269,11 +249,11 @@ def test_an_invalid_index_answers_nothing(model: CatalogTableModel) -> None:
 
     **Test steps:**
 
-    * read the display and path roles of an invalid index
+    * read the display and user roles of an invalid index
     * verify both are ``None``
     """
     assert model.data(QModelIndex()) is None
-    assert model.data(QModelIndex(), PATH_ROLE) is None
+    assert model.data(QModelIndex(), Qt.ItemDataRole.UserRole) is None
 
 
 def test_a_child_index_has_no_rows(model: CatalogTableModel) -> None:
@@ -350,7 +330,7 @@ def test_a_table_with_no_reference_image_rows_has_no_image_total() -> None:
     )
     assert (model.totals.has_images, model.totals.unmeasured_images) == (False, 0)
 
-    model.set_rows([row(rehu("e.rehu", type="reference_images", current_count=0))], {})
+    model.set_rows([row(rehu("e.rehu", type="reference_images", current_count=0))], [])
     assert (model.totals.has_images, model.totals.images, model.totals.unmeasured_images) == (True, 0, 0)
 
 
@@ -436,7 +416,7 @@ def test_new_rows_arrive_in_the_sort_already_chosen() -> None:
     model = titled("a")
     model.sort(CatalogColumn.TITLE, Qt.SortOrder.DescendingOrder)
 
-    model.set_rows([row(rehu(f"{title}/info.rehu", title=title)) for title in ("b", "c", "a")], {ROOT_ID: ROOT})
+    model.set_rows([row(rehu(f"{title}/info.rehu", title=title)) for title in ("b", "c", "a")], [ROOT_ID])
 
     assert shown_titles(model) == ["c", "b", "a"]
 

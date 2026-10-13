@@ -196,7 +196,7 @@ class SizeMeasurementEdit(QWidget):
 
     computed = SimpleProperty[int | None](None)
     """What the last measurement found, or ``None`` when none has run (or none was possible -- a document
-    with no path yet). Mirrored into every row. Widget state only: it is never written to the document."""
+    with no local path). Mirrored into every row. Widget state only: it is never written to the document."""
 
     busy = SimpleProperty(False)
     """Whether a measurement is in flight. Set the moment ``Compute`` is pressed and cleared by
@@ -265,7 +265,8 @@ class SizeMeasurementEdit(QWidget):
         widget is destroyed, so a scan still running when the form is rebuilt (a type switch, a revert)
         reports into nothing rather than into a deleted editor.
 
-        :param value: what was measured, or ``None`` when nothing could be -- a document with no path yet,
+        :param value: what was measured, or ``None`` when nothing could be -- a document with no local path,
+
             or a scan that failed. ``None`` leaves **every** row with an empty readout and nothing to copy,
             rather than half a state.
         """

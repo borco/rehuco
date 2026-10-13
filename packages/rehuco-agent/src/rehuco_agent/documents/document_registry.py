@@ -7,7 +7,8 @@ from typing import Final, cast
 
 from borco_core.logging import LogScope
 from PySide6.QtCore import QObject
-from rehuco_core import RehuDocument, RehuFormatError, Relocation, RenameCoordinator, load_tc
+from rehuco_core import RehuDocument, RehuFormatError, RenameCoordinator, load_tc
+from rehuco_core.access import KeyRelocation, LocalKey, NodeUnreachable, ResourceKey
 
 from ..resource_events import ResourceEvents
 from ..settings.identity_settings import shared_identity_settings
@@ -17,7 +18,7 @@ LOG: Final = logging.getLogger(__name__)
 
 
 class DocumentRegistry(QObject):
-    """Owns every open :class:`RehuDocumentModel`, one per path, and hands the same one to every holder.
+    """Owns every open :class:`RehuDocumentModel`, one per key, and hands the same one to every holder.
 
     A resource shown in two places -- a Documents dock and the Documents preview (#39, #381), say -- is **one**
     view-model, so an unsaved edit in either shows in the other ([[plugins#view-model]], #375). Each
@@ -26,8 +27,9 @@ class DocumentRegistry(QObject):
     belongs to that last release (:meth:`release_discards_edits`): closing one of several views of a dirty
     document loses nothing.
 
-    Keys follow the model: a :meth:`~RehuDocumentModel.convert` or a completed rename moves the model's
-    entry to its new path, so a later :meth:`find` of the new path reaches the same model.
+    Models are held by :attr:`~RehuDocumentModel.key` ([[nodes#access-seam]]), whichever machine holds the record.
+    Keys follow the model: a :meth:`~RehuDocumentModel.convert` or a completed rename moves the model's entry to its
+    new key, so a later :meth:`find` of the new key reaches the same model.
 
     **Every held model hears every rename** ([[mounts-and-storage#out-of-band]], #376): each announced
     relocation is handed to every model (:meth:`~RehuDocumentModel.relocate`), so a record nested under a
@@ -39,7 +41,7 @@ class DocumentRegistry(QObject):
     :param rename_coordinator: handed to every model this registry builds, so a rename from the location
         editor stands the running jobs aside instead of being refused while they finish (#241) -- the
         app's one coordinator, see ``DocumentsDock``.
-    :param resource_events: the app's file announcements; ``None`` builds a private one, for a registry with
+    :param resource_events: the app's change announcements; ``None`` builds a private one, for a registry with
         no window around it.
     """
 
@@ -51,28 +53,28 @@ class DocumentRegistry(QObject):
     ) -> None:
         super().__init__(parent)
         self.__rename_coordinator: Final = rename_coordinator
-        self.__events: Final = resource_events if resource_events is not None else ResourceEvents(self)
+        self.__events: Final = resource_events if resource_events is not None else ResourceEvents(parent=self)
         self.__events.moved.connect(self.__on_moved)
-        self.__models: Final[dict[Path, RehuDocumentModel]] = {}
+        self.__models: Final[dict[ResourceKey, RehuDocumentModel]] = {}
         self.__holders: Final[dict[RehuDocumentModel, int]] = {}
-        self.__paths: Final[dict[RehuDocumentModel, Path | None]] = {}
+        self.__keys: Final[dict[RehuDocumentModel, ResourceKey | None]] = {}
         """Each held model's key as last recorded -- kept because
-        :attr:`~RehuDocumentModel.path_changed` carries only the *new* path, and rekeying needs the old
+        :attr:`~RehuDocumentModel.key_changed` carries only the *new* key, and rekeying needs the old
         one to drop."""
 
     @property
     def resource_events(self) -> ResourceEvents:
-        """The file announcements this registry relocates its models from and relays their writes to -- what
+        """The change announcements this registry relocates its models from and relays their writes to -- what
         every view of an acquired model listens to as well."""
         return self.__events
 
-    def find(self, path: Path) -> RehuDocumentModel | None:
-        """The model held for ``path``, or ``None`` when nobody holds one.
+    def find(self, key: ResourceKey) -> RehuDocumentModel | None:
+        """The model held for ``key``, or ``None`` when nobody holds one.
 
-        :param path: the absolute path to look up, as the caller resolved it.
+        :param key: the record's key, as the caller resolved it.
         :returns: the held model, if any.
         """
-        return self.__models.get(path)
+        return self.__models.get(key)
 
     def models(self) -> list[RehuDocumentModel]:
         """Every held model, in no particular order.
@@ -81,8 +83,8 @@ class DocumentRegistry(QObject):
         """
         return list(self.__holders)
 
-    def acquire(self, path: Path, *, new: bool = False, lazy: bool = False) -> RehuDocumentModel:
-        """Hold the model for ``path``: the one already held, or one built for it now.
+    def acquire(self, key: ResourceKey, *, new: bool = False, lazy: bool = False) -> RehuDocumentModel:
+        """Hold the model for ``key``: the one already held, or one built for it now.
 
         A model already held is returned as it is -- ``new`` changes nothing then, and a real (not
         ``lazy``) acquisition of another holder's still-unread placeholder reads it
@@ -92,37 +94,40 @@ class DocumentRegistry(QObject):
         is missing, unparseable or refused becomes an **empty, locked** model bound to the path, whose lock
         reason names the failure.
 
-        :param path: absolute filesystem path of a ``.rehu`` to load, or to create when ``new``; a ``.tc``
-            loads through :func:`rehuco_core.load_tc` instead ([[acquisition-tooling#tc-to-rehu]]), locked
-            and read-only.
-        :param new: start an empty, already-dirty document bound to ``path``
+        :param key: the key of a ``.rehu`` to load, or to create when ``new``; a ``.tc`` loads through
+            :func:`rehuco_core.load_tc` instead ([[acquisition-tooling#tc-to-rehu]]), locked and read-only.
+        :param new: start an empty, already-dirty document bound to ``key``
             (:meth:`RehuDocumentModel.create_new`) instead of reading it -- nothing is written until a save.
         :param lazy: build an unread placeholder (:meth:`RehuDocumentModel.create_pending`, session
             restore, #66) that its holder reads later. Never honored for ``new`` (nothing to defer) or a
             ``.tc`` (:meth:`RehuDocument.reload`, what the deferred read runs through, re-reads only a
             ``.rehu``).
         :returns: the held model; :attr:`~RehuDocumentModel.pending` tells whether it is still unread.
+        :raises NodeUnreachable: for a node's record, read through the access seam once records move there (#416).
         """
-        model = self.__models.get(path)
+        model = self.__models.get(key)
         if model is not None:
             self.__holders[model] += 1  # pylint: disable=unsupported-assignment-operation
             if not lazy:
                 model.load_pending()
             return model
 
+        if not isinstance(key, LocalKey):
+            raise NodeUnreachable(key)
+        path = key.path
         model = self.__build(path, new=new, lazy=lazy and not new and path.suffix.lower() != ".tc")
         model.setParent(self)
-        self.__models[path] = model  # pylint: disable=unsupported-assignment-operation
+        self.__models[key] = model  # pylint: disable=unsupported-assignment-operation
         self.__holders[model] = 1  # pylint: disable=unsupported-assignment-operation
-        self.__paths[model] = path  # pylint: disable=unsupported-assignment-operation
-        model.path_changed.connect(self.__on_path_changed)  # type: ignore[attr-defined]
+        self.__keys[model] = key  # pylint: disable=unsupported-assignment-operation
+        model.key_changed.connect(self.__on_key_changed)  # type: ignore[attr-defined]
         model.files_changed.connect(self.__events.announce_changed)
         model.folder_changed.connect(self.__events.announce_folder_changed)
         model.reloaded.connect(self.__on_reloaded)
         if not new and not model.pending:
             # opening is the access verify-on-access hears of (#487); a focus of a model already held is not one, and
             # an unread placeholder is announced by the read that loads it (its reload), never before (#66)
-            self.__events.announce_accessed((path,))
+            self.__events.announce_accessed((key,))
         return model
 
     def release(self, model: RehuDocumentModel) -> None:
@@ -139,8 +144,8 @@ class DocumentRegistry(QObject):
             self.__holders[model] = holders  # pylint: disable=unsupported-assignment-operation
             return
         del self.__holders[model]  # pylint: disable=unsupported-delete-operation
-        self.__unmap(model, self.__paths.pop(model))
-        model.path_changed.disconnect(self.__on_path_changed)  # type: ignore[attr-defined]
+        self.__unmap(model, self.__keys.pop(model))
+        model.key_changed.disconnect(self.__on_key_changed)  # type: ignore[attr-defined]
         model.files_changed.disconnect(self.__events.announce_changed)
         model.folder_changed.disconnect(self.__events.announce_folder_changed)
         model.reloaded.disconnect(self.__on_reloaded)
@@ -161,57 +166,57 @@ class DocumentRegistry(QObject):
         what it loaded, and follows or flags a difference (:meth:`RehuDocumentModel.note_file_signature`); a path
         nobody holds is ignored.
 
-        :param signatures: each file's path, with its modification time in nanoseconds and its size.
+        :param signatures: each file's path on this machine, with its modification time in nanoseconds and its size.
         """
         for path, (mtime_ns, size) in signatures.items():
-            model = self.__models.get(path)
+            model = self.__models.get(LocalKey(path))
             if model is not None:
                 model.note_file_signature(mtime_ns, size)
 
     def __on_reloaded(self) -> None:
-        """Announce the file a held model just read again as accessed, so the catalog cache is checked against it: a
+        """Announce the record a held model just read again as accessed, so the catalog cache is checked against it: a
         revert is the one way an out-of-band edit reaches a document that stays open (#487)."""
-        path = cast(RehuDocumentModel, self.sender()).path
-        if path is not None:
-            self.__events.announce_accessed((path,))
+        key = cast(RehuDocumentModel, self.sender()).key
+        if key is not None:
+            self.__events.announce_accessed((key,))
 
-    def __on_path_changed(self, path: Path | None) -> None:
-        """Move the sending model's key to its new ``path``.
+    def __on_key_changed(self, key: ResourceKey | None) -> None:
+        """Move the sending model's entry to its new ``key``.
 
-        A path another held model already has is left to that model -- two models of one file are a
+        A key another held model already has is left to that model -- two models of one record are a
         conflict this registry can't resolve, only report; the moved model stays held, just unfindable.
 
-        :param path: the model's new path.
+        :param key: the model's new key.
         """
         # only a held model is connected here: acquire connects it and the last release disconnects it
         model = cast(RehuDocumentModel, self.sender())
-        self.__unmap(model, self.__paths[model])
-        self.__paths[model] = path  # pylint: disable=unsupported-assignment-operation
-        if path is None:
+        self.__unmap(model, self.__keys[model])
+        self.__keys[model] = key  # pylint: disable=unsupported-assignment-operation
+        if key is None:
             return
-        other = self.__models.get(path)
+        other = self.__models.get(key)
         if other is not None:
-            LOG.warning("%s is already open as another document; not tracking a second one under it", path)
+            LOG.warning("%s is already open as another document; not tracking a second one under it", key)
             return
-        self.__models[path] = model  # pylint: disable=unsupported-assignment-operation
+        self.__models[key] = model  # pylint: disable=unsupported-assignment-operation
 
-    def __on_moved(self, relocation: Relocation) -> None:
-        """Hand a landed rename to every held model; each adopts its own new path, if the rename moved it, and
-        re-keys here through :meth:`__on_path_changed`.
+    def __on_moved(self, relocation: KeyRelocation) -> None:
+        """Hand a landed rename to every held model; each adopts its own new key, if the rename moved it, and
+        re-keys here through :meth:`__on_key_changed`.
 
         :param relocation: the rename's executed plan.
         """
         for model in list(self.__holders):
             model.relocate(relocation)
 
-    def __unmap(self, model: RehuDocumentModel, path: Path | None) -> None:
-        """Drop ``path``'s key when it maps to ``model`` (and not to another model holding it).
+    def __unmap(self, model: RehuDocumentModel, key: ResourceKey | None) -> None:
+        """Drop ``key``'s entry when it maps to ``model`` (and not to another model holding it).
 
         :param model: the model losing its key.
-        :param path: the key it was recorded under, if any.
+        :param key: the key it was recorded under, if any.
         """
-        if path is not None and self.__models.get(path) is model:
-            del self.__models[path]  # pylint: disable=unsupported-delete-operation
+        if key is not None and self.__models.get(key) is model:
+            del self.__models[key]  # pylint: disable=unsupported-delete-operation
 
     def __build(self, path: Path, *, new: bool, lazy: bool) -> RehuDocumentModel:
         """Build the model for ``path`` -- see :meth:`acquire` for ``new`` and ``lazy``.

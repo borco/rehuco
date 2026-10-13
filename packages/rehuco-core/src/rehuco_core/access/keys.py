@@ -14,6 +14,7 @@ case-sensitive node keeps apart. The worst an unfolded spelling does is show one
 
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+from typing import override
 from uuid import UUID
 
 from ..relocation import Relocation
@@ -36,6 +37,11 @@ class LocalKey:
     def __post_init__(self) -> None:
         if not self.path.is_absolute() or ".." in self.path.parts:
             raise ValueError(f"A local key needs an absolute path with no '..', not {self.path}")
+
+    @override
+    def __str__(self) -> str:
+        """:returns: the path, as spelled -- what a tooltip shows and a saved layout names a dock by."""
+        return str(self.path)
 
     @property
     def name(self) -> str:
@@ -109,6 +115,11 @@ class NodeKey:
         posix = PurePosixPath(self.relative)
         if posix.is_absolute() or ".." in posix.parts or str(posix) != self.relative or self.relative == ".":
             raise ValueError(f"A node key needs a plain path under its root, not {self.relative!r}")
+
+    @override
+    def __str__(self) -> str:
+        """:returns: ``node/root/relative`` -- unique and stable, as a saved layout's dock name must be."""
+        return f"{self.node_id}/{self.root_id}/{self.relative}"
 
     @property
     def name(self) -> str:

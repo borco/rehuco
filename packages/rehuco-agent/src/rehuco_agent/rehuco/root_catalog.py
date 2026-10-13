@@ -26,7 +26,6 @@ from rehuco_core import (
     RehucoFile,
     RehucoFileError,
     RehucoRoot,
-    Relocation,
     RemoveCatalogRootJob,
     RenameCoordinator,
     ScanCatalogRootJob,
@@ -35,6 +34,7 @@ from rehuco_core import (
     check_records,
     rehudb_path,
 )
+from rehuco_core.access import KeyRelocation, LocalKey, ResourceKey
 
 from ..resource_events import ResourceEvents
 from ..settings.persistent_settings import cache_folder
@@ -329,18 +329,26 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         """Where each root of the open file is, by id; empty while none is open."""
         return {} if self.__file is None else {root.root_id: root.path for root in self.__file.roots}
 
-    def resource_path(self, root_id: UUID, relative: str) -> Path | None:
-        """Where a resource is: the **one place** a ``(root_id, relative)`` key becomes a document's path (#381).
+    def resource_key(self, root_id: UUID, relative: str) -> ResourceKey | None:
+        """What a resource is reached by: the **one place** a catalog row's ``(root_id, relative)`` becomes a
+        document's key (#381, #414).
 
-        Both the browsers' rows and the Roots view name a resource this way, and the preview is shown through here
-        -- so a node-served resource (0.4.0) is a change to this method, not to every view.
+        Both the browsers' rows and the Roots view name a resource this way, and the preview and the browsers' opens
+        go through here -- so a node-served resource (#421) is a change to this method, not to every view.
 
         :param root_id: the root the resource is under.
         :param relative: its path below the root, ``/``-separated, as the cache keeps it.
-        :returns: the path, or ``None`` when the root is not one the open file lists.
+        :returns: the key, or ``None`` when the root is not one the open file lists -- or its folder is no absolute
+            path, which only a hand-edited ``.rehuco`` produces and nothing here can reach.
         """
         root = self.root_paths().get(root_id)
-        return None if root is None else root / relative
+        if root is None:
+            return None
+        try:
+            return LocalKey(root / relative)
+        except ValueError:
+            LOG.warning("The root %s of %s is not an absolute path; its resources cannot be reached", root, self.__file)
+            return None
 
     def resource_type(self, record: Path) -> str | None:
         """The type the cache holds for a record, as an indexed lookup -- nothing is read from disk (#456).
@@ -698,27 +706,31 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         if serial == self.__latest_stat and signatures:
             self.files_seen.emit(signatures)
 
-    def __on_accessed(self, paths: tuple[Path, ...]) -> None:
-        """Verify the records the app is opening (#487).
+    def __on_accessed(self, keys: tuple[ResourceKey, ...]) -> None:
+        """Verify the records the app is opening (#487) -- those on this machine: a node's records are its own
+        cache's.
 
-        :param paths: the records.
+        :param keys: the records.
         """
-        self.verify_records(paths, key=paths)
+        paths = tuple(key.path for key in keys if isinstance(key, LocalKey))
+        if paths:
+            self.verify_records(paths, key=paths)
 
     # endregion
 
     # region the app's own file changes
 
-    def __on_moved(self, relocation: Relocation) -> None:
+    def __on_moved(self, moved_keys: KeyRelocation) -> None:
         """Rebase the rows a rename moved, reading no record, and announce them (#376, #379).
 
         A scan still running under a renamed folder already reads on under the new name (its tracked
         locations were rewritten by the coordinator), so its rows land under the paths this rebased the old
-        ones to.
+        ones to. Only this machine's renames concern the cache: a node's roots are that node's to cache.
 
-        :param relocation: the rename's executed plan.
+        :param moved_keys: the rename's executed plan.
         """
         cache = self.__cache
+        relocation = moved_keys.to_local()
         if cache is None or not relocation.pairs:
             return
         try:
@@ -731,16 +743,19 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         if moved:
             self.rows_changed.emit(affected)
 
-    def __on_files_changed(self, paths: tuple[Path, ...]) -> None:
+    def __on_files_changed(self, keys: tuple[ResourceKey, ...]) -> None:
         """Read each record the app wrote back into its row, and announce what changed (#376, #379).
 
-        A path that is not a record, or not under a root, is passed over by the updater itself.
+        A path that is not a record, or not under a root, is passed over by the updater itself; a node's file is
+        that node's cache's.
 
-        :param paths: the files written or replaced.
+        :param keys: the files written or replaced.
         """
         cache = self.__cache
-        if cache is None:
+        paths = tuple(key.path for key in keys if isinstance(key, LocalKey))
+        if cache is None or not paths:
             return
+
         updater = CatalogRecordUpdater(cache, coordinator=self.__rename_coordinator)
         changed = False
         affected: set[int] = set()

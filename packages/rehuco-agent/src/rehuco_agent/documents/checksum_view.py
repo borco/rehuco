@@ -66,8 +66,9 @@ UNREADABLE_RECORD_SUMMARY: Final = "The checksum record could not be read: {erro
 The content files are still listed underneath it -- they were enumerated, and what could be read is
 worth showing -- but every status is empty, which is honest: this build knows nothing about them."""
 
-NO_PATH_SUMMARY: Final = "This document has not been saved yet, so it has no files to check."
-"""What the summary line says for a never-saved document -- there is nothing on disk to enumerate."""
+NO_PATH_SUMMARY: Final = "This document is not a file on this machine, so there are no files to check here."
+"""What the summary line says for a document with no local path -- nothing on this machine to enumerate; checksums
+reach a node's records through the access seam later (#426)."""
 
 
 # the members are this surface's parts -- the model, the proxy, the selection, the loader, the two

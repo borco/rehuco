@@ -19,6 +19,7 @@ from rehuco_agent.main_window import (
     REHUCO_DOCK_OBJECT_NAME,
     MainWindow,
 )
+from rehuco_core.access import LocalKey
 
 from .rehuco.test_catalog_docks import (  # noqa: F401  # pylint: disable=unused-import
     OTHER_PATH,
@@ -167,8 +168,8 @@ def test_the_preview_moving_on_keeps_a_floating_window_holding_the_documents_doc
     docks = float_over(window, DOCUMENTS_DOCK_OBJECT_NAME, LOG_DOCK_OBJECT_NAME)
     documents = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     registry = window._MainWindow__document_registry  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    second = Path("second_missing.rehu").resolve()
-    documents.show_in_preview(Path("first_missing.rehu").resolve())
+    second = LocalKey(Path("second_missing.rehu").resolve())
+    documents.show_in_preview(LocalKey(Path("first_missing.rehu").resolve()))
     settle()
     held = registry.acquire(second)
 

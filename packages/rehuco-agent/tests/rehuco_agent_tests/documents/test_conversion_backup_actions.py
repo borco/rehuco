@@ -23,7 +23,7 @@ from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.settings.deletion_settings import DeletionKind, shared_deletion_settings
 from rehuco_core import ConversionBackups, Deleter, NoTrashBinError, RehuDocument
 
-DIRECTORY: Final = Path("/fake/library/sculpting")
+DIRECTORY: Final = Path.cwd() / "fake" / "library" / "sculpting"
 INFO_PATH: Final = DIRECTORY / "info.rehu"
 LEGACY_PATH: Final = DIRECTORY / "info.tc"
 

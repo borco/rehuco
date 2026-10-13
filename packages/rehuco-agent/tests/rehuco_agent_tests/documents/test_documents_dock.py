@@ -17,6 +17,7 @@ import logging
 from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
 from typing import Any, Final
+from uuid import UUID
 
 import PySide6QtAds as QtAds
 from borco_pyside.logging import LogEntry
@@ -24,7 +25,7 @@ from borco_pyside.qtads import tab_label
 from PySide6.QtCore import QObject
 from PySide6.QtTest import QSignalSpy
 from PySide6.QtWidgets import QDialog, QMessageBox, QWidget
-from pytest import LogCaptureFixture, fixture
+from pytest import LogCaptureFixture, fixture, raises
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.app_logging import shared_log_bridge
@@ -51,6 +52,7 @@ from rehuco_core import (
     RenameCoordinator,
     TaskQueue,
 )
+from rehuco_core.access import AccessRouter, LocalAccess, LocalKey, NodeKey, NodeUnreachable
 
 from rehuco_agent_tests.qt_connections import flush_deferred_deletes, receivers
 
@@ -59,11 +61,19 @@ FAKE_PATH: Final = Path.cwd() / "fake" / "tutorials" / "sculpting" / "info.rehu"
 platform (unlike a hardcoded ``/fake/...``, which isn't absolute on Windows without a drive)."""
 FAKE_LABEL: Final = f"{FAKE_PATH.parent.name}/"
 """``FAKE_PATH``'s expected dock-title label: an ``info.rehu``'s parent directory name, trailing-slashed."""
+FAKE_KEY: Final = LocalKey(FAKE_PATH)
+FAKE_TC_KEY: Final = LocalKey(FAKE_PATH.with_suffix(".tc"))
+"""``FAKE_PATH``'s legacy ``.tc`` sibling ([[acquisition-tooling#tc-to-rehu]])."""
 OTHER_PATH: Final = Path.cwd() / "fake" / "tutorials" / "painting" / "info.rehu"
+OTHER_KEY: Final = LocalKey(OTHER_PATH)
 THIRD_PATH: Final = Path.cwd() / "fake" / "tutorials" / "drawing" / "info.rehu"
+THIRD_KEY: Final = LocalKey(THIRD_PATH)
 FAKE_ARCHIVE_PATH: Final = Path.cwd() / "fake" / "tutorials" / "sculpting.zip"
 """An archive whose ``.rehu`` companion (#43) is ``FAKE_ARCHIVE_PATH.with_suffix(".rehu")``."""
+FAKE_ARCHIVE_KEY: Final = LocalKey(FAKE_ARCHIVE_PATH)
 FAKE_ARCHIVE_INFO_PATH: Final = FAKE_ARCHIVE_PATH.with_suffix(".rehu")
+NODE_KEY: Final = NodeKey("NODE-1", UUID(int=1), "tutorials/remote/info.rehu")
+"""A record under another node's root -- which nothing here can read yet (#416)."""
 
 TIMEOUT: Final = 5.0
 """How long a test waits for the worker before calling it a failure, in seconds (#240) -- a deadlock
@@ -152,7 +162,7 @@ def test_opening_a_path_adds_one_dock(mocker: MockerFixture, qtbot: QtBot) -> No
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
-    dock.open_document(FAKE_PATH)
+    dock.open_document(FAKE_KEY)
 
     assert len(dock._DocumentsDock__document_docks) == 1  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
@@ -169,8 +179,8 @@ def test_reopening_the_same_path_focuses_the_existing_dock(mocker: MockerFixture
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
-    first = dock.open_document(FAKE_PATH)
-    second = dock.open_document(FAKE_PATH)
+    first = dock.open_document(FAKE_KEY)
+    second = dock.open_document(FAKE_KEY)
 
     assert first is second
     assert len(dock._DocumentsDock__document_docks) == 1  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
@@ -188,8 +198,8 @@ def test_opening_a_different_path_adds_a_second_dock(mocker: MockerFixture, qtbo
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
-    first = dock.open_document(FAKE_PATH)
-    second = dock.open_document(OTHER_PATH)
+    first = dock.open_document(FAKE_KEY)
+    second = dock.open_document(OTHER_KEY)
 
     assert first is not second
     assert len(dock._DocumentsDock__document_docks) == 2  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
@@ -214,8 +224,8 @@ def test_a_stylesheet_host_leaves_every_nested_manager_unstyled(mocker: MockerFi
     dock = DocumentsDock(stylesheet_host=host)
     qtbot.addWidget(dock)
 
-    dock.open_document(FAKE_PATH)
-    dock.open_document(OTHER_PATH)
+    dock.open_document(FAKE_KEY)
+    dock.open_document(OTHER_KEY)
 
     assert [m.styleSheet() for m in managers_of(dock)] == ["", "", ""]
     assert '[tracked_focus="true"]' in host.styleSheet()
@@ -236,7 +246,7 @@ def test_without_a_stylesheet_host_every_manager_styles_itself(mocker: MockerFix
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
-    dock.open_document(FAKE_PATH)
+    dock.open_document(FAKE_KEY)
 
     assert all('[tracked_focus="true"]' in m.styleSheet() for m in managers_of(dock))
 
@@ -259,7 +269,7 @@ def test_dock_title_reflects_the_dirty_flag(mocker: MockerFixture, qtbot: QtBot)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
-    widget = dock.open_document(FAKE_PATH)
+    widget = dock.open_document(FAKE_KEY)
     assert widget is not None
     cdock = dock_for(dock, widget)
     assert cdock.windowTitle() == FAKE_LABEL
@@ -287,7 +297,7 @@ def test_dock_title_gains_a_lock_marker_that_takes_precedence_over_dirty(mocker:
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
-    widget = dock.open_document(FAKE_PATH)
+    widget = dock.open_document(FAKE_KEY)
     assert widget is not None
     cdock = dock_for(dock, widget)
     assert cdock.windowTitle() == f"{LOCKED_DOCK_MARKER}{FAKE_LABEL}"
@@ -308,7 +318,7 @@ def test_dock_tab_tooltip_always_shows_the_full_path(mocker: MockerFixture, qtbo
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
-    widget = dock.open_document(FAKE_PATH)
+    widget = dock.open_document(FAKE_KEY)
     assert widget is not None
     cdock = dock_for(dock, widget)
 
@@ -329,7 +339,7 @@ def test_dock_title_and_tooltip_update_after_a_rename(mocker: MockerFixture, qtb
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
-    widget = dock.open_document(FAKE_PATH)
+    widget = dock.open_document(FAKE_KEY)
     assert widget is not None
     cdock = dock_for(dock, widget)
     renamed = FAKE_PATH.parent.with_name("new_name") / "info.rehu"
@@ -354,7 +364,7 @@ def test_document_focus_changed_emits_the_widget_when_opening_a_document(mocker:
     dock = DocumentsDock()
     qtbot.addWidget(dock)
     with qtbot.waitSignal(dock.document_focus_changed, timeout=1000) as blocker:
-        widget = dock.open_document(FAKE_PATH)
+        widget = dock.open_document(FAKE_KEY)
 
     assert blocker.args == [widget]
 
@@ -372,7 +382,7 @@ def test_document_focus_changed_emits_none_when_the_last_dock_closes(mocker: Moc
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    widget = dock.open_document(FAKE_PATH)
+    widget = dock.open_document(FAKE_KEY)
     assert widget is not None
     cdock = dock_for(dock, widget)
 
@@ -396,7 +406,7 @@ def test_status_message_relays_from_a_document_widget(mocker: MockerFixture, qtb
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    widget = dock.open_document(FAKE_PATH)
+    widget = dock.open_document(FAKE_KEY)
 
     relayed: list[str] = []
     dock.status_message.connect(relayed.append)
@@ -418,7 +428,7 @@ def test_a_filter_link_relays_from_a_document_widget(mocker: MockerFixture, qtbo
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    widget = dock.open_document(FAKE_PATH)
+    widget = dock.open_document(FAKE_KEY)
 
     relayed: list[str] = []
     dock.filter_requested.connect(relayed.append)
@@ -441,7 +451,7 @@ def test_an_open_request_relays_from_a_document_widget(mocker: MockerFixture, qt
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    widget = dock.open_document(FAKE_PATH)
+    widget = dock.open_document(FAKE_KEY)
     neighbour = FAKE_PATH.parent / "other.rehu"
 
     relayed: list[object] = []
@@ -465,7 +475,7 @@ def test_closing_a_dock_removes_it(mocker: MockerFixture, qtbot: QtBot) -> None:
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
-    widget = dock.open_document(FAKE_PATH)
+    widget = dock.open_document(FAKE_KEY)
     cdock = dock_for(dock, widget)
 
     cdock.requestCloseDockWidget()
@@ -488,7 +498,7 @@ def test_closing_a_dock_stops_it_listening_to_the_task_queue(mocker: MockerFixtu
     queue = TaskQueue()
     dock = DocumentsDock(task_queue=queue)
     qtbot.addWidget(dock)
-    widget = dock.open_document(FAKE_PATH)
+    widget = dock.open_document(FAKE_KEY)
     cdock = dock_for(dock, widget)
     try:
         assert len(listeners_of(queue)) == 1
@@ -517,7 +527,7 @@ def test_closing_a_dock_destroys_its_model(mocker: MockerFixture, qtbot: QtBot) 
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    widget = dock.open_document(FAKE_PATH)
+    widget = dock.open_document(FAKE_KEY)
     assert widget is not None
     model = widget.model
     cdock = dock_for(dock, widget)
@@ -545,7 +555,7 @@ def test_a_signal_on_a_closed_documents_model_does_not_touch_the_area(mocker: Mo
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    widget = dock.open_document(FAKE_PATH)
+    widget = dock.open_document(FAKE_KEY)
     assert widget is not None
     model = widget.model
     cdock = dock_for(dock, widget)
@@ -568,17 +578,17 @@ def test_opening_a_path_another_holder_holds_shows_its_model(mocker: MockerFixtu
     """
     load_document(mocker)
     registry = DocumentRegistry()
-    held = registry.acquire(FAKE_PATH)
+    held = registry.acquire(FAKE_KEY)
     dock = DocumentsDock(registry=registry)
     qtbot.addWidget(dock)
 
-    widget = dock.open_document(FAKE_PATH)
+    widget = dock.open_document(FAKE_KEY)
 
     assert widget.model is held
 
     dock_for(dock, widget).requestCloseDockWidget()
 
-    assert registry.find(FAKE_PATH) is held
+    assert registry.find(FAKE_KEY) is held
 
 
 def test_closing_a_dirty_document_another_holder_shows_does_not_prompt(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -595,8 +605,8 @@ def test_closing_a_dirty_document_another_holder_shows_does_not_prompt(mocker: M
     registry = DocumentRegistry()
     dock = DocumentsDock(registry=registry)
     qtbot.addWidget(dock)
-    widget = dock.open_document(FAKE_PATH)
-    model = registry.acquire(FAKE_PATH)
+    widget = dock.open_document(FAKE_KEY)
+    model = registry.acquire(FAKE_KEY)
     model.dirty = True
     warning = mocker.patch.object(QMessageBox, "warning")
 
@@ -604,7 +614,7 @@ def test_closing_a_dirty_document_another_holder_shows_does_not_prompt(mocker: M
 
     warning.assert_not_called()
     assert not dock.open_document_widgets()
-    assert registry.find(FAKE_PATH) is model
+    assert registry.find(FAKE_KEY) is model
     assert model.dirty
 
 
@@ -621,8 +631,8 @@ def test_close_all_leaves_a_shared_dirty_document_out_of_the_batch_dialog(mocker
     registry = DocumentRegistry()
     dock = DocumentsDock(registry=registry)
     qtbot.addWidget(dock)
-    dock.open_document(FAKE_PATH)
-    registry.acquire(FAKE_PATH).dirty = True
+    dock.open_document(FAKE_KEY)
+    registry.acquire(FAKE_KEY).dirty = True
     dialog_class = mocker.patch(UNSAVED_CHANGES_DIALOG)
 
     dock.close_all()
@@ -637,19 +647,19 @@ def test_a_closed_document_still_held_elsewhere_reports_no_more_moves(mocker: Mo
     **Test steps:**
 
     * open the fake path, take a second hold on its model, and close the dock
-    * move the model, spying on ``document_path_changed``
+    * move the model, spying on ``document_key_changed``
     * verify nothing was reported
     """
     load_document(mocker)
     registry = DocumentRegistry()
     dock = DocumentsDock(registry=registry)
     qtbot.addWidget(dock)
-    widget = dock.open_document(FAKE_PATH)
-    model = registry.acquire(FAKE_PATH)
+    widget = dock.open_document(FAKE_KEY)
+    model = registry.acquire(FAKE_KEY)
     dock_for(dock, widget).requestCloseDockWidget()
-    spy = QSignalSpy(dock.document_path_changed)
+    spy = QSignalSpy(dock.document_key_changed)
 
-    model.path = OTHER_PATH
+    model.key = OTHER_KEY
 
     assert spy.count() == 0
 
@@ -667,7 +677,7 @@ def test_closing_a_dirty_dock_prompts_and_discards_on_discard(mocker: MockerFixt
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    widget = dock.open_document(FAKE_PATH)
+    widget = dock.open_document(FAKE_KEY)
     assert widget is not None
     widget.model.title = "Changed"
     cdock = dock_for(dock, widget)
@@ -694,7 +704,7 @@ def test_closing_a_dirty_dock_saves_on_save(mocker: MockerFixture, qtbot: QtBot)
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    widget = dock.open_document(FAKE_PATH)
+    widget = dock.open_document(FAKE_KEY)
     assert widget is not None
     widget.model.title = "Changed"
     cdock = dock_for(dock, widget)
@@ -720,7 +730,7 @@ def test_closing_a_dirty_dock_cancel_leaves_it_open(mocker: MockerFixture, qtbot
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    widget = dock.open_document(FAKE_PATH)
+    widget = dock.open_document(FAKE_KEY)
     assert widget is not None
     widget.model.title = "Changed"
     cdock = dock_for(dock, widget)
@@ -749,7 +759,7 @@ def test_closing_a_dirty_dock_whose_save_fails_leaves_it_open(mocker: MockerFixt
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    widget = dock.open_document(FAKE_PATH)
+    widget = dock.open_document(FAKE_KEY)
     assert widget is not None
     widget.model.title = "Changed"
     cdock = dock_for(dock, widget)
@@ -777,7 +787,7 @@ def test_close_prompt_names_the_document_by_its_label(mocker: MockerFixture, qtb
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    widget = dock.open_document(FAKE_PATH)
+    widget = dock.open_document(FAKE_KEY)
     assert widget is not None
     widget.model.title = "Changed"
     cdock = dock_for(dock, widget)
@@ -803,7 +813,7 @@ def test_closing_a_clean_dock_does_not_prompt(mocker: MockerFixture, qtbot: QtBo
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    widget = dock.open_document(FAKE_PATH)
+    widget = dock.open_document(FAKE_KEY)
     assert widget is not None
     cdock = dock_for(dock, widget)
     warning = mocker.patch.object(QMessageBox, "warning")
@@ -827,8 +837,8 @@ def test_close_all_closes_every_clean_dock_without_a_dialog(mocker: MockerFixtur
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    dock.open_document(FAKE_PATH)
-    dock.open_document(OTHER_PATH)
+    dock.open_document(FAKE_KEY)
+    dock.open_document(OTHER_KEY)
     dialog_class = mocker.patch(UNSAVED_CHANGES_DIALOG)
 
     dock.close_all()
@@ -856,9 +866,9 @@ def test_close_all_closes_clean_docks_first_then_shows_one_batch_dialog_for_the_
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    first = dock.open_document(FAKE_PATH)
-    second = dock.open_document(OTHER_PATH)
-    third = dock.open_document(THIRD_PATH)
+    first = dock.open_document(FAKE_KEY)
+    second = dock.open_document(OTHER_KEY)
+    third = dock.open_document(THIRD_KEY)
     assert first is not None and second is not None and third is not None
     first.model.title = "Changed"
     third.model.title = "Changed"
@@ -889,9 +899,9 @@ def test_close_all_saves_checked_documents_then_closes_every_open_document(mocke
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    first = dock.open_document(FAKE_PATH)
-    second = dock.open_document(OTHER_PATH)
-    third = dock.open_document(THIRD_PATH)
+    first = dock.open_document(FAKE_KEY)
+    second = dock.open_document(OTHER_KEY)
+    third = dock.open_document(THIRD_KEY)
     assert first is not None and second is not None and third is not None
     first.model.title = "Changed"
     third.model.title = "Changed"
@@ -926,8 +936,8 @@ def test_close_all_keeps_every_document_open_when_a_selected_save_fails(mocker: 
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    first = dock.open_document(FAKE_PATH)
-    second = dock.open_document(OTHER_PATH)
+    first = dock.open_document(FAKE_KEY)
+    second = dock.open_document(OTHER_KEY)
     assert first is not None and second is not None
     first.model.title = "Changed"
     second.model.title = "Changed"
@@ -958,10 +968,10 @@ def test_close_missing_closes_only_missing_docks(mocker: MockerFixture, qtbot: Q
     mocker.patch.object(Path, "read_text", side_effect=FileNotFoundError("no such file"))
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    missing_widget = dock.open_document(FAKE_PATH)
+    missing_widget = dock.open_document(FAKE_KEY)
 
     mocker.patch.object(Path, "read_text", return_value="{not valid json")
-    invalid_widget = dock.open_document(OTHER_PATH)
+    invalid_widget = dock.open_document(OTHER_KEY)
     assert missing_widget is not None and invalid_widget is not None
     warning = mocker.patch.object(QMessageBox, "warning")
 
@@ -984,7 +994,7 @@ def test_close_missing_is_a_no_op_when_nothing_is_missing(mocker: MockerFixture,
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    widget = dock.open_document(FAKE_PATH)
+    widget = dock.open_document(FAKE_KEY)
     assert widget is not None
 
     dock.close_missing()
@@ -1008,7 +1018,7 @@ def test_has_missing_documents_reflects_whether_any_open_dock_is_missing(mocker:
     assert dock.has_missing_documents() is False
 
     mocker.patch.object(Path, "read_text", side_effect=FileNotFoundError("no such file"))
-    dock.open_document(FAKE_PATH)
+    dock.open_document(FAKE_KEY)
 
     assert dock.has_missing_documents() is True
 
@@ -1061,7 +1071,7 @@ def test_open_document_tracks_a_dock_with_no_area(mocker: MockerFixture, qtbot: 
     registry = dock._DocumentsDock__registry  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     mocker.patch.object(registry, "find", return_value=fake_widget.model)
 
-    result = dock.open_document(FAKE_PATH)
+    result = dock.open_document(FAKE_KEY)
 
     assert result is fake_widget
     assert dock.focused_document_path() == FAKE_PATH
@@ -1079,9 +1089,9 @@ def test_closing_a_non_current_dock_leaves_the_current_dock_unchanged(mocker: Mo
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    first_widget = dock.open_document(FAKE_PATH)
+    first_widget = dock.open_document(FAKE_KEY)
     first_cdock = dock_for(dock, first_widget)
-    dock.open_document(OTHER_PATH)
+    dock.open_document(OTHER_KEY)
     assert dock.focused_document_path() == OTHER_PATH
 
     first_cdock.requestCloseDockWidget()
@@ -1102,8 +1112,8 @@ def test_close_focused_document_closes_the_current_clean_dock(mocker: MockerFixt
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    first_widget = dock.open_document(FAKE_PATH)
-    dock.open_document(OTHER_PATH)
+    first_widget = dock.open_document(FAKE_KEY)
+    dock.open_document(OTHER_KEY)
     assert dock.focused_document_path() == OTHER_PATH
 
     dock.close_focused_document()
@@ -1127,7 +1137,7 @@ def test_close_focused_document_prompts_for_a_dirty_current_dock(mocker: MockerF
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    widget = dock.open_document(FAKE_PATH)
+    widget = dock.open_document(FAKE_KEY)
     assert widget is not None
     widget.model.title = "Changed"
     warning = mocker.patch.object(QMessageBox, "warning", return_value=QMessageBox.StandardButton.Cancel)
@@ -1173,7 +1183,7 @@ def test_opening_a_missing_file_opens_an_empty_locked_dock(mocker: MockerFixture
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
-    widget = dock.open_document(FAKE_PATH)
+    widget = dock.open_document(FAKE_KEY)
 
     assert widget is not None
     assert widget.model.locked is True
@@ -1195,7 +1205,7 @@ def test_focused_document_path_reports_the_focused_documents_path(mocker: Mocker
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    widget = dock.open_document(FAKE_PATH)
+    widget = dock.open_document(FAKE_KEY)
     assert widget is not None
 
     assert dock.focused_document_path() == FAKE_PATH
@@ -1228,7 +1238,7 @@ def test_focused_document_widget_reports_the_focused_documents_widget(mocker: Mo
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    widget = dock.open_document(FAKE_PATH)
+    widget = dock.open_document(FAKE_KEY)
 
     assert dock.focused_document_widget() is widget
 
@@ -1349,7 +1359,7 @@ def test_double_clicking_an_ordinary_docks_title_does_nothing(mocker: MockerFixt
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    widget = dock.open_document(FAKE_PATH)
+    widget = dock.open_document(FAKE_KEY)
     cdock = dock_for(dock, widget)
     spy = QSignalSpy(dock.preview_promoted)
 
@@ -1376,7 +1386,7 @@ def test_opening_an_invalid_rehu_opens_an_empty_locked_dock(mocker: MockerFixtur
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
-    widget = dock.open_document(FAKE_PATH)
+    widget = dock.open_document(FAKE_KEY)
 
     assert widget is not None
     assert widget.model.locked is True
@@ -1405,8 +1415,8 @@ def test_restore_state_retracks_current_tab_after_area_recreation(mocker: Mocker
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    widget1 = dock.open_document(FAKE_PATH)
-    widget2 = dock.open_document(OTHER_PATH)
+    widget1 = dock.open_document(FAKE_KEY)
+    widget2 = dock.open_document(OTHER_KEY)
     assert widget1 is not None and widget2 is not None
     state = dock.save_state()
 
@@ -1435,8 +1445,8 @@ def test_restore_state_returns_false_for_no_layout_and_keeps_the_documents_where
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    first = dock_for(dock, dock.open_document(FAKE_PATH))
-    second = dock_for(dock, dock.open_document(OTHER_PATH))
+    first = dock_for(dock, dock.open_document(FAKE_KEY))
+    second = dock_for(dock, dock.open_document(OTHER_KEY))
     manager = dock._DocumentsDock__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     manager.addDockWidget(QtAds.RightDockWidgetArea, second)
 
@@ -1461,14 +1471,14 @@ def test_restore_state_puts_documents_back_and_leaves_an_unnamed_one_where_it_is
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    first = dock_for(dock, dock.open_document(FAKE_PATH))
-    second = dock_for(dock, dock.open_document(OTHER_PATH))
+    first = dock_for(dock, dock.open_document(FAKE_KEY))
+    second = dock_for(dock, dock.open_document(OTHER_KEY))
     manager = dock._DocumentsDock__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     manager.addDockWidget(QtAds.RightDockWidgetArea, second)
     layout = dock.save_state()
     manager.addDockWidget(QtAds.CenterDockWidgetArea, second, first.dockAreaWidget())
     assert first.dockAreaWidget() is second.dockAreaWidget()
-    third = dock_for(dock, dock.open_document(THIRD_PATH))
+    third = dock_for(dock, dock.open_document(THIRD_KEY))
 
     assert dock.restore_state(layout) is True
 
@@ -1491,7 +1501,7 @@ def test_dock_object_name_is_the_document_path_regardless_of_id(mocker: MockerFi
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
-    widget = dock.open_document(FAKE_PATH)
+    widget = dock.open_document(FAKE_KEY)
 
     assert widget is not None
     assert dock_for(dock, widget).objectName() == str(FAKE_PATH)
@@ -1509,7 +1519,7 @@ def test_dock_object_name_falls_back_to_the_path_without_an_id(mocker: MockerFix
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
-    widget = dock.open_document(FAKE_PATH)
+    widget = dock.open_document(FAKE_KEY)
 
     assert widget is not None
     assert dock_for(dock, widget).objectName() == str(FAKE_PATH)
@@ -1517,7 +1527,7 @@ def test_dock_object_name_falls_back_to_the_path_without_an_id(mocker: MockerFix
 
 def test_dock_object_name_resyncs_across_a_tc_to_rehu_conversion(mocker: MockerFixture, qtbot: QtBot) -> None:
     """A live ``.tc`` -> ``.rehu`` conversion ([[acquisition-tooling#tc-to-rehu]]) resyncs the
-    already-open dock's object name to the converted path, via :attr:`RehuDocumentModel.path_changed`
+    already-open dock's object name to the converted path, via :attr:`RehuDocumentModel.key_changed`
     -- not by the identifier being transition-immune by construction.
 
     **Test steps:**
@@ -1529,10 +1539,9 @@ def test_dock_object_name_resyncs_across_a_tc_to_rehu_conversion(mocker: MockerF
     mocker.patch.object(Path, "read_text", return_value=TC_TUTORIAL)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    tc_path = FAKE_PATH.with_suffix(".tc")
-    widget = dock.open_document(tc_path)
+    widget = dock.open_document(FAKE_TC_KEY)
     assert widget is not None
-    assert dock_for(dock, widget).objectName() == str(tc_path)
+    assert dock_for(dock, widget).objectName() == str(FAKE_TC_KEY.path)
 
     load_document(mocker)
     rehu_document = RehuDocument.load(FAKE_PATH)
@@ -1542,23 +1551,22 @@ def test_dock_object_name_resyncs_across_a_tc_to_rehu_conversion(mocker: MockerF
     assert dock_for(dock, widget).objectName() == str(FAKE_PATH)
 
 
-def test_a_tc_to_rehu_conversion_raises_document_path_changed(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A live ``.tc`` -> ``.rehu`` conversion raises :attr:`DocumentsDock.document_path_changed` with
-    the path moved from and to (#295), the seam ``MainWindow`` uses to keep ``Open recents`` current.
+def test_a_tc_to_rehu_conversion_raises_document_key_changed(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A live ``.tc`` -> ``.rehu`` conversion raises :attr:`DocumentsDock.document_key_changed` with
+    the key moved from and to (#295), the seam ``MainWindow`` uses to keep ``Open recents`` current.
 
     **Test steps:**
 
-    * open a ``.tc`` document and connect a spy to ``document_path_changed``
+    * open a ``.tc`` document and connect a spy to ``document_key_changed``
     * convert it in place
-    * verify the spy fired once with the ``.tc`` path as old and the ``.rehu`` path as new
+    * verify the spy fired once with the ``.tc`` key as old and the ``.rehu`` key as new
     """
     mocker.patch.object(Path, "read_text", return_value=TC_TUTORIAL)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    tc_path = FAKE_PATH.with_suffix(".tc")
-    widget = dock.open_document(tc_path)
+    widget = dock.open_document(FAKE_TC_KEY)
     assert widget is not None
-    spy = QSignalSpy(dock.document_path_changed)
+    spy = QSignalSpy(dock.document_key_changed)
 
     load_document(mocker)
     rehu_document = RehuDocument.load(FAKE_PATH)
@@ -1566,36 +1574,36 @@ def test_a_tc_to_rehu_conversion_raises_document_path_changed(mocker: MockerFixt
     widget.model.convert(keep_backups=False)
 
     assert spy.count() == 1
-    assert spy.at(0) == [tc_path, FAKE_PATH]
+    assert spy.at(0) == [FAKE_TC_KEY, FAKE_KEY]
 
 
-def test_a_document_losing_its_path_keeps_the_last_known_one_for_the_next_move(
+def test_a_document_losing_its_key_keeps_the_last_known_one_for_the_next_move(
     mocker: MockerFixture, qtbot: QtBot
 ) -> None:
-    """A path change to ``None`` is relayed as such, but does not become the remembered old path: the
-    next real path reports the last path the document actually had as what it moved from (#295).
+    """A key change to ``None`` is relayed as such, but does not become the remembered old key: the
+    next real key reports the last key the document actually had as what it moved from (#295).
 
     **Test steps:**
 
-    * open a document and connect a spy to ``document_path_changed``
-    * set its model's path to ``None``, then to a new path
-    * verify the first emission moved from the open path to ``None``, and the second from that same
-      open path -- not from ``None`` -- to the new one
+    * open a document and connect a spy to ``document_key_changed``
+    * set its model's key to ``None``, then to a new key
+    * verify the first emission moved from the open key to ``None``, and the second from that same
+      open key -- not from ``None`` -- to the new one
     """
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    widget = dock.open_document(FAKE_PATH)
+    widget = dock.open_document(FAKE_KEY)
     assert widget is not None
-    spy = QSignalSpy(dock.document_path_changed)
-    moved_to = FAKE_PATH.with_name("moved.rehu")
+    spy = QSignalSpy(dock.document_key_changed)
+    moved_to = FAKE_KEY.with_name("moved.rehu")
 
-    widget.model.path = None
-    widget.model.path = moved_to
+    widget.model.key = None
+    widget.model.key = moved_to
 
     assert spy.count() == 2
-    assert spy.at(0) == [FAKE_PATH, None]
-    assert spy.at(1) == [FAKE_PATH, moved_to]
+    assert spy.at(0) == [FAKE_KEY, None]
+    assert spy.at(1) == [FAKE_KEY, moved_to]
 
 
 def test_closing_a_moved_document_takes_its_dock_out_of_the_registry(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -1613,8 +1621,8 @@ def test_closing_a_moved_document_takes_its_dock_out_of_the_registry(mocker: Moc
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    widget = dock.open_document(FAKE_PATH)
-    widget.model.path = FAKE_PATH.with_name("moved.rehu")
+    widget = dock.open_document(FAKE_KEY)
+    widget.model.key = FAKE_KEY.with_name("moved.rehu")
 
     dock.close_focused_document()
 
@@ -1635,7 +1643,7 @@ def test_open_folder_with_existing_info_rehu_opens_it(mocker: MockerFixture, qtb
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
-    widget = dock.open_folder(FAKE_PATH.parent)
+    widget = dock.open_folder(FAKE_KEY.parent)
 
     assert widget is not None
     assert widget.model.path == FAKE_PATH
@@ -1660,7 +1668,7 @@ def test_open_folder_with_a_corrupted_info_rehu_opens_an_empty_locked_dock(mocke
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
-    widget = dock.open_folder(FAKE_PATH.parent)
+    widget = dock.open_folder(FAKE_KEY.parent)
 
     assert widget is not None
     assert [reason.kind for reason in widget.model.lock_reasons] == [LockReasonKind.INVALID_FILE]
@@ -1682,7 +1690,7 @@ def test_open_folder_without_info_rehu_starts_a_new_dirty_document(qtbot: QtBot)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
-    widget = dock.open_folder(FAKE_PATH.parent)
+    widget = dock.open_folder(FAKE_KEY.parent)
 
     assert widget is not None
     assert widget.model.path == FAKE_PATH
@@ -1701,8 +1709,8 @@ def test_open_folder_reopening_the_new_unsaved_document_focuses_it(qtbot: QtBot)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
-    first = dock.open_folder(FAKE_PATH.parent)
-    second = dock.open_folder(FAKE_PATH.parent)
+    first = dock.open_folder(FAKE_KEY.parent)
+    second = dock.open_folder(FAKE_KEY.parent)
 
     assert first is second
     assert len(dock._DocumentsDock__document_docks) == 1  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
@@ -1722,7 +1730,7 @@ def test_open_archive_with_existing_rehu_companion_opens_it(mocker: MockerFixtur
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
-    widget = dock.open_archive(FAKE_ARCHIVE_PATH)
+    widget = dock.open_archive(FAKE_ARCHIVE_KEY)
 
     assert widget is not None
     assert widget.model.path == FAKE_ARCHIVE_INFO_PATH
@@ -1749,7 +1757,7 @@ def test_open_archive_with_a_corrupted_rehu_companion_opens_an_empty_locked_dock
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
-    widget = dock.open_archive(FAKE_ARCHIVE_PATH)
+    widget = dock.open_archive(FAKE_ARCHIVE_KEY)
 
     assert widget is not None
     assert [reason.kind for reason in widget.model.lock_reasons] == [LockReasonKind.INVALID_FILE]
@@ -1771,7 +1779,7 @@ def test_open_archive_without_a_rehu_companion_starts_a_new_dirty_document(qtbot
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
-    widget = dock.open_archive(FAKE_ARCHIVE_PATH)
+    widget = dock.open_archive(FAKE_ARCHIVE_KEY)
 
     assert widget is not None
     assert widget.model.path == FAKE_ARCHIVE_INFO_PATH
@@ -1790,8 +1798,8 @@ def test_open_archive_reopening_the_new_unsaved_document_focuses_it(qtbot: QtBot
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
-    first = dock.open_archive(FAKE_ARCHIVE_PATH)
-    second = dock.open_archive(FAKE_ARCHIVE_PATH)
+    first = dock.open_archive(FAKE_ARCHIVE_KEY)
+    second = dock.open_archive(FAKE_ARCHIVE_KEY)
 
     assert first is second
     assert len(dock._DocumentsDock__document_docks) == 1  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
@@ -1828,7 +1836,7 @@ def test_open_folder_falls_back_to_a_tc_companion_when_info_rehu_is_missing(
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
-    widget = dock.open_folder(FAKE_PATH.parent)
+    widget = dock.open_folder(FAKE_KEY.parent)
 
     assert widget is not None
     assert widget.model.path == FAKE_PATH.with_suffix(".tc")
@@ -1852,7 +1860,7 @@ def test_open_archive_falls_back_to_a_tc_companion_when_rehu_is_missing(mocker: 
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
-    widget = dock.open_archive(FAKE_ARCHIVE_PATH)
+    widget = dock.open_archive(FAKE_ARCHIVE_KEY)
 
     assert widget is not None
     assert widget.model.path == FAKE_ARCHIVE_INFO_PATH.with_suffix(".tc")
@@ -1874,7 +1882,7 @@ def test_open_document_with_a_tc_path_loads_it_as_legacy(mocker: MockerFixture, 
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
-    widget = dock.open_document(FAKE_PATH.with_suffix(".tc"))
+    widget = dock.open_document(FAKE_TC_KEY)
 
     assert widget is not None
     assert widget.model.locked is True
@@ -1902,7 +1910,7 @@ def test_open_folder_with_a_corrupted_tc_fallback_opens_an_empty_locked_dock(
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
-    widget = dock.open_folder(FAKE_PATH.parent)
+    widget = dock.open_folder(FAKE_KEY.parent)
 
     assert widget is not None
     assert [reason.kind for reason in widget.model.lock_reasons] == [LockReasonKind.INVALID_FILE]
@@ -1942,7 +1950,7 @@ def test_open_document_threads_the_current_username(mocker: MockerFixture, qtbot
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
-    widget = dock.open_document(FAKE_PATH)
+    widget = dock.open_document(FAKE_KEY)
 
     assert widget.model.document.username == "alice"
 
@@ -1963,7 +1971,7 @@ def test_open_document_with_a_tc_path_threads_the_unknown_username(mocker: Mocke
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
-    widget = dock.open_document(FAKE_PATH.with_suffix(".tc"))
+    widget = dock.open_document(FAKE_TC_KEY)
 
     assert widget.model.document.username == "strangers"
     assert list(widget.model.document.data["tutorial"]["users"]) == ["strangers"]
@@ -1985,7 +1993,7 @@ def test_a_failed_rehu_open_threads_the_current_username_into_the_locked_stub(
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
-    widget = dock.open_document(FAKE_PATH)
+    widget = dock.open_document(FAKE_KEY)
 
     assert widget.model.locked is True
     assert widget.model.document.username == "alice"
@@ -2007,7 +2015,7 @@ def test_a_failed_tc_open_threads_the_unknown_username_into_the_locked_stub(
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
-    widget = dock.open_document(FAKE_PATH.with_suffix(".tc"))
+    widget = dock.open_document(FAKE_TC_KEY)
 
     assert widget.model.locked is True
     assert widget.model.document.username == "strangers"
@@ -2027,7 +2035,7 @@ def test_a_new_document_threads_the_current_username(mocker: MockerFixture, qtbo
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
-    widget = dock.open_folder(FAKE_PATH.parent)
+    widget = dock.open_folder(FAKE_KEY.parent)
 
     assert widget.model.dirty is True
     assert widget.model.document.username == "alice"
@@ -2105,7 +2113,7 @@ def test_reading_a_document_is_logged_under_its_own_scope(
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
-    dock.open_document(FAKE_PATH)
+    dock.open_document(FAKE_KEY)
     qtbot.wait(10)
 
     messages = read_sink.messages_at(logging.INFO)
@@ -2132,7 +2140,7 @@ def test_a_failed_read_is_logged_as_an_error_carrying_the_reason(
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
-    dock.open_document(FAKE_PATH)
+    dock.open_document(FAKE_KEY)
     qtbot.wait(10)
 
     errors = read_sink.messages_at(logging.ERROR)
@@ -2152,7 +2160,7 @@ def test_a_successful_read_logs_no_error(mocker: MockerFixture, qtbot: QtBot, re
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
-    dock.open_document(FAKE_PATH)
+    dock.open_document(FAKE_KEY)
     qtbot.wait(10)
 
     assert read_sink.messages_at(logging.ERROR) == []
@@ -2173,7 +2181,7 @@ def test_reading_an_untyped_document_says_so_rather_than_naming_nothing(
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
-    dock.open_document(FAKE_PATH)
+    dock.open_document(FAKE_KEY)
     qtbot.wait(10)
 
     assert any("untyped" in message for message in read_sink.messages_at(logging.INFO))
@@ -2203,7 +2211,7 @@ def test_an_opened_document_renames_through_the_docks_coordinator(mocker: Mocker
     dock = DocumentsDock(registry=DocumentRegistry(rename_coordinator=coordinator))
     qtbot.addWidget(dock)
 
-    widget = dock.open_document(FAKE_PATH)
+    widget = dock.open_document(FAKE_KEY)
     assert widget.model.rename_location("new_name") is True
 
     through.assert_called_once_with(FAKE_PATH, "new_name")
@@ -2229,7 +2237,7 @@ def test_a_new_document_renames_through_the_docks_coordinator(mocker: MockerFixt
     dock = DocumentsDock(registry=DocumentRegistry(rename_coordinator=coordinator))
     qtbot.addWidget(dock)
 
-    widget = dock.open_folder(FAKE_PATH.parent)
+    widget = dock.open_folder(FAKE_KEY.parent)
     mocker.patch.object(widget.model, "save")
     assert widget.model.rename_location("new_name") is True
 
@@ -2256,12 +2264,12 @@ def test_a_freshly_opened_document_adopts_the_saved_default_layout(mocker: Mocke
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
-    first = dock.open_document(FAKE_PATH)
+    first = dock.open_document(FAKE_KEY)
     first_on_disk = first.sub_docks._DocumentSubDocks__on_disk_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
     first_on_disk.toggleView(True)
     shared_default_layout_settings().states[TUTORIAL_PLUGIN.key] = first.save_layout_state()  # pylint: disable=unsupported-assignment-operation
 
-    second = dock.open_document(OTHER_PATH)
+    second = dock.open_document(OTHER_KEY)
 
     second_on_disk = second.sub_docks._DocumentSubDocks__on_disk_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert second_on_disk.toggleViewAction().isChecked() is True
@@ -2282,13 +2290,13 @@ def test_a_session_restored_layout_wins_over_the_saved_default(mocker: MockerFix
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
-    first = dock.open_document(FAKE_PATH)
+    first = dock.open_document(FAKE_KEY)
     own_state = first.save_state()
     first_on_disk = first.sub_docks._DocumentSubDocks__on_disk_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
     first_on_disk.toggleView(True)
     shared_default_layout_settings().states[TUTORIAL_PLUGIN.key] = first.save_layout_state()  # pylint: disable=unsupported-assignment-operation
 
-    second = dock.open_document(OTHER_PATH, state=own_state)
+    second = dock.open_document(OTHER_KEY, state=own_state)
 
     second_on_disk = second.sub_docks._DocumentSubDocks__on_disk_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert second_on_disk.toggleViewAction().isChecked() is False
@@ -2308,12 +2316,12 @@ def test_an_unusable_session_layout_falls_through_to_the_saved_default(mocker: M
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
-    first = dock.open_document(FAKE_PATH)
+    first = dock.open_document(FAKE_KEY)
     first_on_disk = first.sub_docks._DocumentSubDocks__on_disk_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
     first_on_disk.toggleView(True)
     shared_default_layout_settings().states[TUTORIAL_PLUGIN.key] = first.save_layout_state()  # pylint: disable=unsupported-assignment-operation
 
-    second = dock.open_document(OTHER_PATH, state=b"not a layout blob")
+    second = dock.open_document(OTHER_KEY, state=b"not a layout blob")
 
     second_on_disk = second.sub_docks._DocumentSubDocks__on_disk_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert second_on_disk.toggleViewAction().isChecked() is True
@@ -2334,7 +2342,7 @@ def test_a_freshly_opened_document_keeps_its_own_layout_with_no_saved_default(
     qtbot.addWidget(dock)
     assert not shared_default_layout_settings().states
 
-    widget = dock.open_document(FAKE_PATH)
+    widget = dock.open_document(FAKE_KEY)
 
     on_disk = widget.sub_docks._DocumentSubDocks__on_disk_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert on_disk.toggleViewAction().isChecked() is False
@@ -2360,7 +2368,7 @@ def test_a_lazily_restored_reference_pack_gets_its_own_layout_once_it_loads(
     load_document(mocker, pack)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    first = dock.open_document(FAKE_PATH)
+    first = dock.open_document(FAKE_KEY)
     shared_default_layout_settings().states[REFERENCE_IMAGES_PLUGIN.key] = first.save_layout_state()  # pylint: disable=unsupported-assignment-operation
     content_images = first.sub_docks._DocumentSubDocks__content_images_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert content_images is not None
@@ -2746,7 +2754,7 @@ def test_a_document_tab_carries_no_pin_button(mocker: MockerFixture, auto_hide_f
     qtbot.addWidget(dock)
     manager = dock._DocumentsDock__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
-    dock.open_document(FAKE_PATH)
+    dock.open_document(FAKE_KEY)
 
     qtbot.waitUntil(
         lambda: (
@@ -2785,8 +2793,8 @@ def test_a_document_tab_carries_a_maximize_button_and_a_capture_reads_it_undone(
     dock.show()
     manager = dock._DocumentsDock__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     handler = dock._DocumentsDock__maximize_handler  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    first = dock.open_document(FAKE_PATH)
-    second = dock.open_document(OTHER_PATH)
+    first = dock.open_document(FAKE_KEY)
+    second = dock.open_document(OTHER_KEY)
     first_dock = next(d for d, w in dock._DocumentsDock__document_docks.items() if w is first)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     second_dock = next(d for d, w in dock._DocumentsDock__document_docks.items() if w is second)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     manager.addDockWidget(QtAds.RightDockWidgetArea, second_dock)
@@ -2819,7 +2827,7 @@ REFERENCE_PACK: Final = {
     "type": "ReferenceImages",
     "sources": [{"title": "Pack", "primary": True}],
 }
-CARVING_PATH: Final = Path.cwd() / "fake" / "tutorials" / "carving" / "info.rehu"
+CARVING_KEY: Final = LocalKey(Path.cwd() / "fake" / "tutorials" / "carving" / "info.rehu")
 
 
 def load_documents(mocker: MockerFixture, documents: dict[Path, dict[str, Any]]) -> None:
@@ -2881,19 +2889,19 @@ def test_showing_documents_in_turn_loads_each_into_the_same_dock(mocker: MockerF
     dock = DocumentsDock(registry=registry)
     qtbot.addWidget(dock)
 
-    first = dock.show_in_preview(FAKE_PATH)
+    first = dock.show_in_preview(FAKE_KEY)
     model = first.model
-    second = dock.show_in_preview(OTHER_PATH)
-    third = dock.show_in_preview(THIRD_PATH)
+    second = dock.show_in_preview(OTHER_KEY)
+    third = dock.show_in_preview(THIRD_KEY)
 
     assert first is second is third
     assert third.model is model
     assert dock.open_document_widgets() == [third]
     assert model.path == THIRD_PATH
     assert preview_of(dock).objectName() == "Preview-1"
-    assert registry.find(THIRD_PATH) is model
-    assert registry.find(FAKE_PATH) is None
-    assert registry.find(OTHER_PATH) is None
+    assert registry.find(THIRD_KEY) is model
+    assert registry.find(FAKE_KEY) is None
+    assert registry.find(OTHER_KEY) is None
     assert registry.models() == [model]
 
 
@@ -2903,17 +2911,17 @@ def test_a_switch_is_not_reported_as_a_move(mocker: MockerFixture, qtbot: QtBot)
 
     **Test steps:**
 
-    * show a document in the preview, spying on ``document_path_changed``
+    * show a document in the preview, spying on ``document_key_changed``
     * show another
     * verify nothing was reported
     """
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    dock.show_in_preview(FAKE_PATH)
-    spy = QSignalSpy(dock.document_path_changed)
+    dock.show_in_preview(FAKE_KEY)
+    spy = QSignalSpy(dock.document_key_changed)
 
-    dock.show_in_preview(OTHER_PATH)
+    dock.show_in_preview(OTHER_KEY)
 
     assert spy.count() == 0
 
@@ -2935,8 +2943,8 @@ def test_switching_documents_accumulates_nothing(mocker: MockerFixture, qtbot: Q
     registry = DocumentRegistry()
     dock = DocumentsDock(registry=registry)
     qtbot.addWidget(dock)
-    paths = (FAKE_PATH, OTHER_PATH, THIRD_PATH)
-    models = [registry.acquire(path) for path in paths]
+    keys = (FAKE_KEY, OTHER_KEY, THIRD_KEY)
+    models = [registry.acquire(key) for key in keys]
     held = [receivers(model) for model in models]
     image_settings = shared_image_viewer_settings()
 
@@ -2949,10 +2957,10 @@ def test_switching_documents_accumulates_nothing(mocker: MockerFixture, qtbot: Q
             receivers(image_settings),
         )
 
-    widget = dock.show_in_preview(FAKE_PATH)
+    widget = dock.show_in_preview(FAKE_KEY)
     before = counts(widget)
-    for path in (*paths[1:], *paths, FAKE_PATH):
-        dock.show_in_preview(path)
+    for key in (*keys[1:], *keys, FAKE_KEY):
+        dock.show_in_preview(key)
 
     assert counts(widget) == before
     assert before[2] == 1
@@ -2972,15 +2980,15 @@ def test_showing_an_open_document_focuses_it_and_leaves_the_preview(mocker: Mock
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    opened = dock.open_document(FAKE_PATH)
-    preview = dock.show_in_preview(OTHER_PATH)
+    opened = dock.open_document(FAKE_KEY)
+    preview = dock.show_in_preview(OTHER_KEY)
     model = preview.model
 
-    assert dock.show_in_preview(FAKE_PATH) is opened
+    assert dock.show_in_preview(FAKE_KEY) is opened
     assert dock.focused_document_widget() is opened
     assert preview.model is model
 
-    assert dock.show_in_preview(OTHER_PATH) is preview
+    assert dock.show_in_preview(OTHER_KEY) is preview
     assert preview.model is model
     assert len(dock.open_document_widgets()) == 2
 
@@ -2998,10 +3006,10 @@ def test_a_switch_of_the_current_preview_tells_the_window(mocker: MockerFixture,
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    widget = dock.show_in_preview(FAKE_PATH)
+    widget = dock.show_in_preview(FAKE_KEY)
     spy = QSignalSpy(dock.document_focus_changed)
 
-    dock.show_in_preview(OTHER_PATH)
+    dock.show_in_preview(OTHER_KEY)
 
     assert spy.count() == 1
     assert spy.at(0)[0] is widget
@@ -3019,14 +3027,14 @@ def test_a_preview_is_marked_in_italic_and_named_apart(mocker: MockerFixture, qt
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    widget = dock.show_in_preview(FAKE_PATH)
+    widget = dock.show_in_preview(FAKE_KEY)
     preview = preview_of(dock)
 
     assert tab_label(preview).font().italic()
     assert preview.windowTitle() == FAKE_LABEL
     assert preview.objectName() == "Preview-1"
 
-    widget.model.path = THIRD_PATH
+    widget.model.key = THIRD_KEY
 
     assert preview.objectName() == "Preview-1"
 
@@ -3039,26 +3047,26 @@ def test_double_clicking_the_preview_title_promotes_it(mocker: MockerFixture, qt
 
     * show a document in the preview, spying on ``preview_promoted``
     * double-click the preview's title
-    * verify the promotion was announced with its path, and the dock is named by it, no longer in italic
+    * verify the promotion was announced with its key, and the dock is named by it, no longer in italic
     * show another document: verify a second dock, named ``Preview-2``
     """
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    widget = dock.show_in_preview(FAKE_PATH)
+    widget = dock.show_in_preview(FAKE_KEY)
     promoted = preview_of(dock)
     spy = QSignalSpy(dock.preview_promoted)
 
     tab_label(promoted).doubleClicked.emit()
 
     assert spy.count() == 1
-    assert spy.at(0)[0] == FAKE_PATH
+    assert spy.at(0)[0] == FAKE_KEY
     assert not promoted.is_preview
-    assert promoted.objectName() == str(FAKE_PATH)
+    assert promoted.objectName() == str(FAKE_KEY)
     assert not tab_label(promoted).font().italic()
     assert dock.preview_document_widget() is None
 
-    other = dock.show_in_preview(OTHER_PATH)
+    other = dock.show_in_preview(OTHER_KEY)
 
     assert other is not widget
     assert widget.model.path == FAKE_PATH
@@ -3079,12 +3087,12 @@ def test_a_dirty_preview_is_promoted_rather_than_replaced(mocker: MockerFixture,
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    edited = dock.show_in_preview(FAKE_PATH)
+    edited = dock.show_in_preview(FAKE_KEY)
     edited.model.title = "Changed"
     warning = mocker.patch.object(QMessageBox, "warning")
     spy = QSignalSpy(dock.preview_promoted)
 
-    other = dock.show_in_preview(OTHER_PATH)
+    other = dock.show_in_preview(OTHER_KEY)
 
     warning.assert_not_called()
     assert spy.count() == 1
@@ -3107,12 +3115,12 @@ def test_a_preview_edited_then_saved_is_replaced(mocker: MockerFixture, qtbot: Q
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    widget = dock.show_in_preview(FAKE_PATH)
+    widget = dock.show_in_preview(FAKE_KEY)
     widget.model.title = "Changed"
     widget.model.dirty = False
     spy = QSignalSpy(dock.preview_promoted)
 
-    assert dock.show_in_preview(OTHER_PATH) is widget
+    assert dock.show_in_preview(OTHER_KEY) is widget
 
     assert spy.count() == 0
     assert widget.model.path == OTHER_PATH
@@ -3131,7 +3139,7 @@ def test_a_promoted_preview_closes_as_any_dock_does(mocker: MockerFixture, qtbot
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    widget = dock.show_in_preview(FAKE_PATH)
+    widget = dock.show_in_preview(FAKE_KEY)
     promoted = preview_of(dock)
     tab_label(promoted).doubleClicked.emit()
     widget.model.title = "Changed"
@@ -3155,12 +3163,12 @@ def test_closing_the_preview_lets_the_next_show_make_another(mocker: MockerFixtu
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    dock.show_in_preview(FAKE_PATH)
+    dock.show_in_preview(FAKE_KEY)
 
     preview_of(dock).requestCloseDockWidget()
 
     assert dock.preview_document_widget() is None
-    dock.show_in_preview(OTHER_PATH)
+    dock.show_in_preview(OTHER_KEY)
     assert preview_of(dock).objectName() == "Preview-2"
 
 
@@ -3176,13 +3184,13 @@ def test_the_preview_remembers_each_types_layout(mocker: MockerFixture, qtbot: Q
     load_documents(mocker, {OTHER_PATH: REFERENCE_PACK})
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    widget = dock.show_in_preview(FAKE_PATH)
+    widget = dock.show_in_preview(FAKE_KEY)
     show_on_disk(widget)
 
-    dock.show_in_preview(OTHER_PATH)
+    dock.show_in_preview(OTHER_KEY)
     assert not on_disk_shown(widget)
 
-    dock.show_in_preview(THIRD_PATH)
+    dock.show_in_preview(THIRD_KEY)
     assert on_disk_shown(widget)
     assert set(shared_default_layout_settings_in(PREVIEW_LAYOUT_GROUP).states) == {
         TUTORIAL_PLUGIN.key,
@@ -3202,11 +3210,11 @@ def test_a_type_with_no_preview_layout_opens_with_its_default(mocker: MockerFixt
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    opened = dock.open_document(THIRD_PATH)
+    opened = dock.open_document(THIRD_KEY)
     show_on_disk(opened)
     shared_default_layout_settings().states[TUTORIAL_PLUGIN.key] = opened.save_layout_state()  # pylint: disable=unsupported-assignment-operation
 
-    assert on_disk_shown(dock.show_in_preview(FAKE_PATH))
+    assert on_disk_shown(dock.show_in_preview(FAKE_KEY))
 
 
 def test_the_preview_layouts_outlive_the_run(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -3221,7 +3229,7 @@ def test_the_preview_layouts_outlive_the_run(mocker: MockerFixture, qtbot: QtBot
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    show_on_disk(dock.show_in_preview(FAKE_PATH))
+    show_on_disk(dock.show_in_preview(FAKE_KEY))
     save = mocker.spy(DefaultLayoutSettings, "save")
 
     dock.save_preview_layouts()
@@ -3234,7 +3242,7 @@ def test_the_preview_layouts_outlive_the_run(mocker: MockerFixture, qtbot: QtBot
     shared_default_layout_settings_in.cache_clear()
     later = DocumentsDock()
     qtbot.addWidget(later)
-    assert on_disk_shown(later.show_in_preview(OTHER_PATH))
+    assert on_disk_shown(later.show_in_preview(OTHER_KEY))
 
 
 def test_the_layout_button_in_a_preview_saves_the_default_layout(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -3248,7 +3256,7 @@ def test_the_layout_button_in_a_preview_saves_the_default_layout(mocker: MockerF
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    widget = dock.show_in_preview(FAKE_PATH)
+    widget = dock.show_in_preview(FAKE_KEY)
     show_on_disk(widget)
 
     widget.sub_docks._DocumentSubDocks__save_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
@@ -3270,8 +3278,8 @@ def test_an_applied_default_becomes_the_preview_layout(mocker: MockerFixture, qt
     load_documents(mocker, {OTHER_PATH: REFERENCE_PACK})
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    widget = dock.show_in_preview(FAKE_PATH)
-    opened = dock.open_document(CARVING_PATH)
+    widget = dock.show_in_preview(FAKE_KEY)
+    opened = dock.open_document(CARVING_KEY)
     show_on_disk(opened)
     defaults = shared_default_layout_settings()
     defaults.states[TUTORIAL_PLUGIN.key] = opened.save_layout_state()  # pylint: disable=unsupported-assignment-operation
@@ -3279,8 +3287,8 @@ def test_an_applied_default_becomes_the_preview_layout(mocker: MockerFixture, qt
     widget.sub_docks.apply_default_layout()
     defaults.states.clear()
 
-    dock.show_in_preview(OTHER_PATH)
-    dock.show_in_preview(THIRD_PATH)
+    dock.show_in_preview(OTHER_KEY)
+    dock.show_in_preview(THIRD_KEY)
     assert on_disk_shown(widget)
 
 
@@ -3300,8 +3308,8 @@ def test_a_preview_logs_how_long_it_held_the_window(
     qtbot.addWidget(dock)
     caplog.set_level(logging.DEBUG, logger="rehuco_agent.documents.documents_dock")
 
-    dock.show_in_preview(FAKE_PATH)
-    dock.show_in_preview(OTHER_PATH)
+    dock.show_in_preview(FAKE_KEY)
+    dock.show_in_preview(OTHER_KEY)
 
     lines = [record.getMessage() for record in caplog.records if "review of" in record.getMessage()]
     assert lines[0].startswith(f"New preview of {FAKE_PATH}: total ")
@@ -3322,11 +3330,11 @@ def test_showing_what_the_preview_shows_does_not_take_the_focus(mocker: MockerFi
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    opened = dock.open_document(FAKE_PATH)
-    preview = dock.show_in_preview(OTHER_PATH)
+    opened = dock.open_document(FAKE_KEY)
+    preview = dock.show_in_preview(OTHER_KEY)
     dock.focus_document(opened)
 
-    assert dock.show_in_preview(OTHER_PATH) is preview
+    assert dock.show_in_preview(OTHER_KEY) is preview
 
     assert dock.focused_document_widget() is opened
 
@@ -3344,11 +3352,11 @@ def test_the_resource_the_preview_shows_renamed_is_still_the_one_it_shows(mocker
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    widget = dock.show_in_preview(FAKE_PATH)
+    widget = dock.show_in_preview(FAKE_KEY)
     model = widget.model
-    model.path = THIRD_PATH
+    model.key = THIRD_KEY
 
-    assert dock.show_in_preview(THIRD_PATH) is widget
+    assert dock.show_in_preview(THIRD_KEY) is widget
 
     assert widget.model is model
     assert dock.open_document_widgets() == [widget]
@@ -3369,15 +3377,15 @@ def test_opening_what_the_preview_shows_promotes_it_instead_of_opening_it_twice(
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    previewed = dock.show_in_preview(FAKE_PATH)
+    previewed = dock.show_in_preview(FAKE_KEY)
     spy = QSignalSpy(dock.preview_promoted)
 
-    assert dock.open_document(FAKE_PATH) is previewed
+    assert dock.open_document(FAKE_KEY) is previewed
 
     assert dock.preview_document_widget() is None
     assert dock.open_document_widgets() == [previewed]
     assert spy.count() == 0
-    assert dock.show_in_preview(OTHER_PATH) is not previewed
+    assert dock.show_in_preview(OTHER_KEY) is not previewed
 
 
 def test_opening_the_new_document_a_missing_preview_stood_for_promotes_it_too(
@@ -3393,9 +3401,9 @@ def test_opening_the_new_document_a_missing_preview_stood_for_promotes_it_too(
     mocker.patch.object(Path, "read_text", side_effect=FileNotFoundError)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    previewed = dock.show_in_preview(FAKE_PATH)
+    previewed = dock.show_in_preview(FAKE_KEY)
 
-    assert dock.open_folder(FAKE_PATH.parent) is previewed
+    assert dock.open_folder(FAKE_KEY.parent) is previewed
 
     assert dock.preview_document_widget() is None
 
@@ -3456,7 +3464,7 @@ def test_restore_late_adds_an_unread_dock_without_taking_the_focus(mocker: Mocke
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    first = dock.open_document(FAKE_PATH)
+    first = dock.open_document(FAKE_KEY)
 
     dock.restore_late(OTHER_PATH, DocumentSessionSettings.Item(open=True))
 
@@ -3496,7 +3504,7 @@ def test_restore_late_reuses_a_dock_the_user_already_opened(mocker: MockerFixtur
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    dock.open_document(FAKE_PATH)
+    dock.open_document(FAKE_KEY)
 
     dock.restore_late(FAKE_PATH, DocumentSessionSettings.Item(open=True))
 
@@ -3520,3 +3528,102 @@ def test_restore_late_into_an_empty_area_just_adds_the_dock(mocker: MockerFixtur
     widgets = dock.open_document_widgets()
     assert [widget.model.path for widget in widgets] == [FAKE_PATH]
     assert widgets[0].model.pending is True
+
+
+# region records named by key (#414)
+
+
+def test_a_restored_sessions_paths_become_keys_through_the_area_router(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A remembered session names its documents by path; the area turns each into a key through the router it was
+    given, for a session restored at start-up and one restored late alike.
+
+    **Test steps:**
+
+    * build the area over a router whose ``key_for_path`` is spied on
+    * restore a session holding one path, then restore another path late
+    * verify the router was asked for each path's key, and both documents have docks
+    """
+    mocker.patch.object(Path, "read_text", return_value="")
+    access = AccessRouter(LocalAccess())
+    key_for_path = mocker.spy(access, "key_for_path")
+    dock = DocumentsDock(access=access)
+    qtbot.addWidget(dock)
+    session = DocumentSessionSettings()
+    session.items[FAKE_PATH] = DocumentSessionSettings.Item(open=True)  # pylint: disable=unsupported-assignment-operation
+
+    dock.restore_session(session)
+    dock.restore_late(OTHER_PATH, DocumentSessionSettings.Item(open=True))
+
+    assert [call.args for call in key_for_path.call_args_list] == [(FAKE_PATH,), (OTHER_PATH,)]
+    assert {widget.model.path for widget in dock.open_document_widgets()} == {FAKE_PATH, OTHER_PATH}
+
+
+def test_a_node_folder_or_archive_is_refused_before_anything_is_held(qtbot: QtBot) -> None:
+    """Whether a node's ``info.rehu`` or archive companion exists is its node's to answer (#416); until it can be
+    asked, the open is refused and no dock is made.
+
+    **Test steps:**
+
+    * open a node folder, and a node archive
+    * verify each raises ``NodeUnreachable``, and nothing was opened
+    """
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    with raises(NodeUnreachable):
+        dock.open_folder(NODE_KEY.parent)
+    with raises(NodeUnreachable):
+        dock.open_archive(NODE_KEY.with_name("remote.zip"))
+
+    assert not dock.open_document_widgets()
+
+
+def test_previewing_a_node_record_in_place_of_another_is_refused(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The preview loads the next record in place only when it can read it: a node's record nobody holds is refused
+    (#416), and the preview keeps what it showed.
+
+    **Test steps:**
+
+    * show a document in the preview, then a node's record
+    * verify ``NodeUnreachable`` is raised and the preview still shows the first document
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.show_in_preview(FAKE_KEY)
+
+    with raises(NodeUnreachable):
+        dock.show_in_preview(NODE_KEY)
+
+    assert dock.preview_document_widget() is widget
+    assert widget.model.key == FAKE_KEY
+
+
+def test_a_docks_name_and_tooltip_are_its_documents_key(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A dock is named, and its tab explained, by its document's key's text -- a node's record by its node, root and
+    relative path; a document with no key at all is ``untitled``, with no tooltip.
+
+    **Test steps:**
+
+    * open a document, then move its model to a node key
+    * verify the dock's object name and tab tooltip are the node key's text
+    * take the model's key away, and verify the name ``untitled`` and an empty tooltip
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.open_document(FAKE_KEY)
+    cdock = dock_for(dock, widget)
+
+    widget.model.key = NODE_KEY
+
+    assert cdock.objectName() == str(NODE_KEY) == f"NODE-1/{UUID(int=1)}/tutorials/remote/info.rehu"
+    assert cdock.tabWidget().toolTip() == str(NODE_KEY)
+
+    widget.model.key = None
+
+    assert cdock.objectName() == "untitled"
+    assert cdock.tabWidget().toolTip() == ""
+
+
+# endregion

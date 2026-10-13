@@ -4,9 +4,10 @@ Local only for now: a :class:`~rehuco_core.access.NodeKey` has nowhere to go unt
 (#420, #421), and a local root a node owns is not yet sent to that node (#453).
 """
 
+from pathlib import Path
 from typing import Final
 
-from .keys import NodeKey, ResourceKey
+from .keys import LocalKey, NodeKey, ResourceKey
 from .resource_access import ResourceAccess
 
 
@@ -34,6 +35,19 @@ class AccessRouter:
     def local(self) -> ResourceAccess:
         """The implementation for resources this machine reaches itself -- whose change feed the agent adapts."""
         return self.__local
+
+    def key_for_path(self, path: Path) -> ResourceKey:
+        """The key a path entering the app is reached by -- a dialog's pick, a double-clicked file, a recent.
+
+        A path says where the bytes are, not who owns them: a root a node owns is reached through that node even on
+        this machine ([[nodes#two-roles]]), so this is the one place a path becomes a key. Every path is a
+        :class:`~rehuco_core.access.LocalKey` until the folder's ownership claim is read here (#453).
+
+        :param path: an absolute path, spelled as the caller spells it.
+        :returns: its key.
+        :raises ValueError: when ``path`` is relative or has a ``..`` component.
+        """
+        return LocalKey(path)
 
     def for_key(self, key: ResourceKey) -> ResourceAccess:
         """The implementation ``key`` is reached through.

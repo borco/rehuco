@@ -137,8 +137,8 @@ from rehuco_core import (
 from rehuco_agent_tests.qt_waits import wait_destroyed
 from rehuco_agent_tests.screenshot_pictures import decodable_screenshots
 
-TC_PATH: Final = Path("/fake/info.tc")
-TARGET_PATH: Final = Path("/fake/info.rehu")
+TC_PATH: Final = Path.cwd() / "fake" / "info.tc"
+TARGET_PATH: Final = Path.cwd() / "fake" / "info.rehu"
 SCREENSHOTS: Final = [Path("/fake/info00.jpg"), Path("/fake/info01.jpg"), Path("/fake/info02.jpg")]
 
 CONFIRM_DELETE: Final = "rehuco_agent.documents.document_sub_docks.confirm_delete"
@@ -239,7 +239,7 @@ def older_model(mocker: MockerFixture) -> RehuDocumentModel:
             {"format_version": 1, "type": "Tutorial", "sources": [{"title": "Foo", "primary": True}]}
         ),
     )
-    return RehuDocumentModel(RehuDocument.load(Path("/fake/info.rehu")))
+    return RehuDocumentModel(RehuDocument.load(TARGET_PATH))
 
 
 @fixture
@@ -3068,7 +3068,7 @@ def test_switching_type_then_reverting_does_not_fire_into_deleted_widgets(qtbot:
             "core": {"type": "tutorial", "sources": [{"title": "Foo", "primary": True}]},
             "tutorial": {"rating": 4, "mystery": 1},
         },
-        Path("/fake/info.rehu"),
+        TARGET_PATH,
     )
     model = RehuDocumentModel(document)
     # build the widget before any read_text mock, so the description view's first markdown load isn't
@@ -3116,7 +3116,7 @@ def test_reverting_a_type_switch_drops_the_stale_inactive_block_row(qtbot: QtBot
     """
     document = RehuDocument(
         {"core": {"type": "tutorial", "sources": [{"title": "Foo", "primary": True}]}, "tutorial": {"rating": 4}},
-        Path("/fake/info.rehu"),
+        TARGET_PATH,
     )
     model = RehuDocumentModel(document)
     widget = DocumentWidget(model)  # built before any read_text mock, so the markdown view loads normally
@@ -5053,7 +5053,7 @@ def test_a_viewer_the_document_opens_copies_out_under_the_document_id(qtbot: QtB
     * build a widget over a new document, which has an id, and open a folder viewer from the Files sub-dock
     * verify the viewer offers Copy and a drag, and what it stages is named by the id
     """
-    document = RehuDocument.new(Path("/fake/library/sculpting/info.rehu"))
+    document = RehuDocument.new(Path.cwd() / "fake" / "library" / "sculpting" / "info.rehu")
     widget = DocumentWidget(RehuDocumentModel(document))
     qtbot.addWidget(widget)
     view = files_dock(widget).widget()
@@ -5292,7 +5292,7 @@ def test_a_resource_type_change_on_a_still_pending_placeholder_builds_no_type_do
     * change its resource type while still pending
     * verify no Content Images dock was built and the widget is still awaiting its real type
     """
-    pending = RehuDocumentModel.create_pending(Path("/fake/pack/info.rehu"))
+    pending = RehuDocumentModel.create_pending(Path.cwd() / "fake" / "pack" / "info.rehu")
     widget = DocumentWidget(pending)
     qtbot.addWidget(widget)
 
@@ -5471,7 +5471,7 @@ def test_a_pending_type_less_document_keeps_its_stored_layout(
     stored = new_widget.save_state()
     mocker.patch.object(Path, "read_text", return_value=json.dumps({"sources": []}))
 
-    pending = RehuDocumentModel.create_pending(Path("/fake/new/info.rehu"))
+    pending = RehuDocumentModel.create_pending(Path.cwd() / "fake" / "new" / "info.rehu")
     widget = DocumentWidget(pending)
     qtbot.addWidget(widget)
     widget.adopt_layout(stored)
@@ -5480,7 +5480,7 @@ def test_a_pending_type_less_document_keeps_its_stored_layout(
     assert open_field_tabs(widget) == [VIEWER_MAIN_TAB]
     assert on_disk_dock(widget).toggleViewAction().isChecked() is True
 
-    garbled = RehuDocumentModel.create_pending(Path("/fake/other/info.rehu"))
+    garbled = RehuDocumentModel.create_pending(Path.cwd() / "fake" / "other" / "info.rehu")
     garbled_widget = DocumentWidget(garbled)
     qtbot.addWidget(garbled_widget)
     garbled_widget.adopt_layout(b"not a layout blob")
@@ -5512,7 +5512,7 @@ def test_a_pending_documents_stored_layout_lands_on_the_docks_its_first_read_bui
     stored = pack.save_state()
 
     mocker.patch.object(Path, "read_text", return_value=json.dumps({"type": "ReferenceImages", "sources": []}))
-    pending = RehuDocumentModel.create_pending(Path("/fake/pack/info.rehu"))
+    pending = RehuDocumentModel.create_pending(Path.cwd() / "fake" / "pack" / "info.rehu")
     widget = DocumentWidget(pending)
     qtbot.addWidget(widget)
     widget.adopt_layout(stored)
@@ -5595,7 +5595,7 @@ def test_a_pending_document_with_an_unusable_stored_layout_gets_its_types_curren
     shared_default_layout_settings().states[REFERENCE_IMAGES_PLUGIN.key] = pack.save_layout_state()  # pylint: disable=unsupported-assignment-operation
 
     mocker.patch.object(Path, "read_text", return_value=json.dumps({"type": "ReferenceImages", "sources": []}))
-    pending = RehuDocumentModel.create_pending(Path("/fake/pack/info.rehu"))
+    pending = RehuDocumentModel.create_pending(Path.cwd() / "fake" / "pack" / "info.rehu")
     widget = DocumentWidget(pending)
     qtbot.addWidget(widget)
     widget.adopt_layout(b"not a layout blob")
@@ -6044,7 +6044,7 @@ def test_the_viewer_names_a_screenshot_relative_to_the_document(
     assert isinstance(viewer, ImageLightbox)
     assert viewer.source.describe(viewer.current_index).path_text == str(SCREENSHOTS[0])
 
-    model.path = TARGET_PATH
+    model.path = SCREENSHOTS[0].with_name(TARGET_PATH.name)
     activate_screenshot(widget, SCREENSHOTS[1])
     second = next(other for other in widget.findChildren(ImageLightbox) if other is not viewer)
     assert second.source.describe(second.current_index).path_text == "info01.jpg"
@@ -6612,7 +6612,7 @@ def test_a_selection_drop_on_the_images_dock_is_scraped_as_a_page(
     submit.assert_not_called()
 
 
-DROP_TARGET_PATH: Final = Path("/fake/drop-target/info.rehu")
+DROP_TARGET_PATH: Final = Path.cwd() / "fake" / "drop-target" / "info.rehu"
 """The resource the end-to-end drop tests write screenshots beside (:func:`screenshots_on_disk`)."""
 
 DROPPED_FILE: Final = Path("/fake/downloads/dropped.jpg")

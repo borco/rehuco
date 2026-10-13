@@ -1,4 +1,4 @@
-"""Tests for DocumentRegistry: one shared view-model per open path, refcounted (#375)."""
+"""Tests for DocumentRegistry: one shared view-model per open key, refcounted (#375)."""
 
 import json
 import logging
@@ -6,6 +6,7 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Final
+from uuid import UUID
 
 from PySide6.QtWidgets import QLabel, QLineEdit
 from pytest import LogCaptureFixture, raises
@@ -16,13 +17,17 @@ from rehuco_agent.documents.document_widget import DocumentWidget
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.resource_events import ResourceEvents
 from rehuco_core import Relocation, RenameCoordinator
+from rehuco_core.access import LocalKey, NodeKey, NodeUnreachable
 
 from rehuco_agent_tests.qt_waits import wait_destroyed
 
 FAKE_PATH: Final = Path.cwd() / "fake" / "tutorials" / "sculpting" / "info.rehu"
 """Built from ``Path.cwd()`` so it is absolute on every platform."""
+FAKE_KEY: Final = LocalKey(FAKE_PATH)
 OTHER_PATH: Final = Path.cwd() / "fake" / "tutorials" / "painting" / "info.rehu"
-TC_PATH: Final = Path.cwd() / "fake" / "tutorials" / "legacy" / "info.tc"
+OTHER_KEY: Final = LocalKey(OTHER_PATH)
+TC_KEY: Final = LocalKey(Path.cwd() / "fake" / "tutorials" / "legacy" / "info.tc")
+NODE_KEY: Final = NodeKey("NODE-1", UUID(int=1), "tutorials/remote/info.rehu")
 
 TUTORIAL: Final = {
     "format_version": 1,
@@ -39,44 +44,63 @@ def load_document(mocker: MockerFixture) -> None:
     mocker.patch.object(Path, "read_text", return_value=json.dumps(TUTORIAL))
 
 
-def test_two_acquisitions_of_one_path_share_one_model(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """Acquiring an already-held path hands back the same model, not a second read of the file.
+def test_two_acquisitions_of_one_key_share_one_model(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Acquiring an already-held key hands back the same model, not a second read of the file.
 
     **Test steps:**
 
-    * acquire the fake path twice
-    * verify both holders got the same model, and it is the one found under the path
+    * acquire the fake key twice
+    * verify both holders got the same model, and it is the one found under the key
     """
     del qtbot  # only needed so a QApplication exists
     load_document(mocker)
     registry = DocumentRegistry()
 
-    first = registry.acquire(FAKE_PATH)
-    second = registry.acquire(FAKE_PATH)
+    first = registry.acquire(FAKE_KEY)
+    second = registry.acquire(FAKE_KEY)
 
     assert first is second
-    assert registry.find(FAKE_PATH) is first
+    assert registry.find(FAKE_KEY) is first
     assert registry.models() == [first]
 
 
-def test_distinct_paths_get_distinct_models(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """Two paths are two documents.
+def test_distinct_keys_get_distinct_models(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Two keys are two documents.
 
     **Test steps:**
 
-    * acquire two distinct paths
-    * verify two models are held, each found under its own path
+    * acquire two distinct keys
+    * verify two models are held, each found under its own key
     """
     del qtbot
     load_document(mocker)
     registry = DocumentRegistry()
 
-    first = registry.acquire(FAKE_PATH)
-    second = registry.acquire(OTHER_PATH)
+    first = registry.acquire(FAKE_KEY)
+    second = registry.acquire(OTHER_KEY)
 
     assert first is not second
-    assert registry.find(FAKE_PATH) is first
-    assert registry.find(OTHER_PATH) is second
+    assert registry.find(FAKE_KEY) is first
+    assert registry.find(OTHER_KEY) is second
+
+
+def test_acquiring_a_node_record_nobody_holds_is_refused(qtbot: QtBot) -> None:
+    """A node's record is read through the access seam once records move there (#416); until then it cannot be
+    built here, and nothing is held for it.
+
+    **Test steps:**
+
+    * acquire a node key nobody holds
+    * verify ``NodeUnreachable`` is raised and the registry holds nothing
+    """
+    del qtbot
+    registry = DocumentRegistry()
+
+    with raises(NodeUnreachable):
+        registry.acquire(NODE_KEY)
+
+    assert registry.find(NODE_KEY) is None
+    assert not registry.models()
 
 
 def test_an_edit_through_one_holders_view_shows_in_the_others(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -84,15 +108,15 @@ def test_an_edit_through_one_holders_view_shows_in_the_others(mocker: MockerFixt
 
     **Test steps:**
 
-    * acquire the fake path twice and build a document widget over each hold
+    * acquire the fake key twice and build a document widget over each hold
     * type a new title into the first widget's editor
     * verify the second widget's viewer shows it, and the shared model is dirty
     """
     load_document(mocker)
     registry = DocumentRegistry()
-    first = DocumentWidget(registry.acquire(FAKE_PATH))
+    first = DocumentWidget(registry.acquire(FAKE_KEY))
     qtbot.addWidget(first)
-    second = DocumentWidget(registry.acquire(FAKE_PATH))
+    second = DocumentWidget(registry.acquire(FAKE_KEY))
     qtbot.addWidget(second)
     editors = first.sub_docks._DocumentSubDocks__editor_docks  # type: ignore[attr-defined]  # pylint: disable=protected-access
     title_edit = next(
@@ -112,15 +136,15 @@ def test_the_model_outlives_every_release_but_the_last(mocker: MockerFixture, qt
 
     **Test steps:**
 
-    * acquire the fake path twice, then release once
+    * acquire the fake key twice, then release once
     * verify the model is still held and findable, and not destroyed by the event loop running
     * release again, waiting for the model to be destroyed
-    * verify the path is no longer held
+    * verify the key is no longer held
     """
     load_document(mocker)
     registry = DocumentRegistry()
-    model = registry.acquire(FAKE_PATH)
-    registry.acquire(FAKE_PATH)
+    model = registry.acquire(FAKE_KEY)
+    registry.acquire(FAKE_KEY)
     destroyed: list[bool] = []
     model.destroyed.connect(lambda: destroyed.append(True))
 
@@ -128,12 +152,12 @@ def test_the_model_outlives_every_release_but_the_last(mocker: MockerFixture, qt
     qtbot.wait(1)  # let any (wrongly) deferred delete run
 
     assert not destroyed
-    assert registry.find(FAKE_PATH) is model
+    assert registry.find(FAKE_KEY) is model
 
     with wait_destroyed(qtbot, model):
         registry.release(model)
 
-    assert registry.find(FAKE_PATH) is None
+    assert registry.find(FAKE_KEY) is None
     assert not registry.models()
 
 
@@ -142,15 +166,15 @@ def test_only_the_last_release_of_a_dirty_model_discards_edits(mocker: MockerFix
 
     **Test steps:**
 
-    * acquire the fake path twice and dirty the model
+    * acquire the fake key twice and dirty the model
     * verify releasing would not discard edits while another holder remains
     * release once, then verify the remaining release would
     """
     del qtbot
     load_document(mocker)
     registry = DocumentRegistry()
-    model = registry.acquire(FAKE_PATH)
-    registry.acquire(FAKE_PATH)
+    model = registry.acquire(FAKE_KEY)
+    registry.acquire(FAKE_KEY)
     model.dirty = True
 
     assert not registry.release_discards_edits(model)
@@ -165,69 +189,69 @@ def test_releasing_a_clean_model_never_discards_edits(mocker: MockerFixture, qtb
 
     **Test steps:**
 
-    * acquire the fake path once, leaving it clean
+    * acquire the fake key once, leaving it clean
     * verify releasing would discard nothing
     """
     del qtbot
     load_document(mocker)
     registry = DocumentRegistry()
-    model = registry.acquire(FAKE_PATH)
+    model = registry.acquire(FAKE_KEY)
 
     assert not registry.release_discards_edits(model)
 
 
-def test_a_path_change_moves_the_models_key(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A renamed or converted document is found under its new path, and no longer under the old one.
+def test_a_key_change_moves_the_models_entry(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A renamed or converted document is found under its new key, and no longer under the old one.
 
     **Test steps:**
 
-    * acquire the fake path, then move the model to the other path
-    * verify the old path finds nothing and the new one finds the model
-    * verify acquiring the new path hands back the same model
+    * acquire the fake key, then move the model to the other key
+    * verify the old key finds nothing and the new one finds the model
+    * verify acquiring the new key hands back the same model
     """
     del qtbot
     load_document(mocker)
     registry = DocumentRegistry()
-    model = registry.acquire(FAKE_PATH)
+    model = registry.acquire(FAKE_KEY)
 
-    model.path = OTHER_PATH
+    model.key = OTHER_KEY
 
-    assert registry.find(FAKE_PATH) is None
-    assert registry.find(OTHER_PATH) is model
-    assert registry.acquire(OTHER_PATH) is model
+    assert registry.find(FAKE_KEY) is None
+    assert registry.find(OTHER_KEY) is model
+    assert registry.acquire(OTHER_KEY) is model
 
 
-def test_a_path_change_onto_another_held_path_keeps_that_ones_key(
+def test_a_key_change_onto_another_held_key_keeps_that_ones_entry(
     mocker: MockerFixture, qtbot: QtBot, caplog: LogCaptureFixture
 ) -> None:
-    """A model moving onto a path another held model has leaves that one findable, and says so.
+    """A model moving onto a key another held model has leaves that one findable, and says so.
 
     **Test steps:**
 
-    * acquire both paths, then move the first model onto the second's path
-    * verify the second path still finds the second model, the first path finds nothing
+    * acquire both keys, then move the first model onto the second's key
+    * verify the second key still finds the second model, the first key finds nothing
     * verify a warning names the clash
     """
     del qtbot
     load_document(mocker)
     registry = DocumentRegistry()
-    first = registry.acquire(FAKE_PATH)
-    second = registry.acquire(OTHER_PATH)
+    first = registry.acquire(FAKE_KEY)
+    second = registry.acquire(OTHER_KEY)
 
     with caplog.at_level(logging.WARNING):
-        first.path = OTHER_PATH
+        first.key = OTHER_KEY
 
-    assert registry.find(OTHER_PATH) is second
-    assert registry.find(FAKE_PATH) is None
-    assert any(str(OTHER_PATH) in record.getMessage() for record in caplog.records)
+    assert registry.find(OTHER_KEY) is second
+    assert registry.find(FAKE_KEY) is None
+    assert any(str(OTHER_KEY) in record.getMessage() for record in caplog.records)
 
 
 def test_a_lazy_acquisition_is_an_unread_placeholder(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A lazy acquisition reads nothing (#66), and a later real one of the same path reads it.
+    """A lazy acquisition reads nothing (#66), and a later real one of the same key reads it.
 
     **Test steps:**
 
-    * acquire the fake path lazily
+    * acquire the fake key lazily
     * verify the model is pending and the file was not read
     * acquire it again, not lazily
     * verify the same model is now loaded
@@ -236,12 +260,12 @@ def test_a_lazy_acquisition_is_an_unread_placeholder(mocker: MockerFixture, qtbo
     read_text = mocker.patch.object(Path, "read_text", return_value=json.dumps(TUTORIAL))
     registry = DocumentRegistry()
 
-    model = registry.acquire(FAKE_PATH, lazy=True)
+    model = registry.acquire(FAKE_KEY, lazy=True)
 
     assert model.pending
     read_text.assert_not_called()
 
-    assert registry.acquire(FAKE_PATH) is model
+    assert registry.acquire(FAKE_KEY) is model
     assert not model.pending
     assert model.title == "Foo"
 
@@ -251,16 +275,16 @@ def test_a_second_lazy_acquisition_leaves_the_placeholder_unread(mocker: MockerF
 
     **Test steps:**
 
-    * acquire the fake path lazily, twice
+    * acquire the fake key lazily, twice
     * verify both holds share the one model, still pending, with the file never read
     """
     del qtbot
     read_text = mocker.patch.object(Path, "read_text", return_value=json.dumps(TUTORIAL))
     registry = DocumentRegistry()
 
-    model = registry.acquire(FAKE_PATH, lazy=True)
+    model = registry.acquire(FAKE_KEY, lazy=True)
 
-    assert registry.acquire(FAKE_PATH, lazy=True) is model
+    assert registry.acquire(FAKE_KEY, lazy=True) is model
     assert model.pending
     read_text.assert_not_called()
 
@@ -278,8 +302,8 @@ def test_a_lazy_acquisition_of_a_tc_or_a_new_document_is_not_deferred(mocker: Mo
     mocker.patch.object(Path, "read_text", return_value="type: Tutorial\ntitle: Legacy\n")
     registry = DocumentRegistry()
 
-    assert not registry.acquire(TC_PATH, lazy=True).pending
-    assert not registry.acquire(FAKE_PATH, new=True, lazy=True).pending
+    assert not registry.acquire(TC_KEY, lazy=True).pending
+    assert not registry.acquire(FAKE_KEY, new=True, lazy=True).pending
 
 
 def test_a_new_acquisition_starts_dirty(qtbot: QtBot) -> None:
@@ -287,13 +311,13 @@ def test_a_new_acquisition_starts_dirty(qtbot: QtBot) -> None:
 
     **Test steps:**
 
-    * acquire the fake path as a new document
+    * acquire the fake key as a new document
     * verify it is dirty and not locked
     """
     del qtbot
     registry = DocumentRegistry()
 
-    model = registry.acquire(FAKE_PATH, new=True)
+    model = registry.acquire(FAKE_KEY, new=True)
 
     assert model.dirty
     assert not model.locked
@@ -304,12 +328,12 @@ def test_releasing_a_model_nobody_holds_raises(mocker: MockerFixture, qtbot: QtB
 
     **Test steps:**
 
-    * acquire and fully release the fake path
+    * acquire and fully release the fake key
     * verify releasing it once more raises ``KeyError``
     """
     load_document(mocker)
     registry = DocumentRegistry()
-    model = registry.acquire(FAKE_PATH)
+    model = registry.acquire(FAKE_KEY)
     with wait_destroyed(qtbot, model):
         registry.release(model)
 
@@ -324,26 +348,26 @@ LIBRARY: Final = Path.cwd() / "fake" / "library"
 
 def test_a_member_follows_its_collection_folders_rename(mocker: MockerFixture, qtbot: QtBot) -> None:
     """A directory-scoped collection renamed while a member nested in it is open: the member's record moves
-    with the folder, and the registry finds it under its new path.
+    with the folder, and the registry finds it under its new key.
 
     **Test steps:**
 
     * hold a member's ``info.rehu`` nested under a collection folder
     * announce the collection folder's rename
-    * verify the member's path moved and it is found under the new one only
+    * verify the member's path moved and it is found under the new key only
     """
     del qtbot
     load_document(mocker)
     registry = DocumentRegistry()
     member = LIBRARY / "series" / "part1" / "info.rehu"
-    model = registry.acquire(member)
+    model = registry.acquire(LocalKey(member))
 
     registry.resource_events.announce_moved(Relocation(((LIBRARY / "series", LIBRARY / "saga"),)))
 
     moved = LIBRARY / "saga" / "part1" / "info.rehu"
     assert model.path == moved
-    assert registry.find(moved) is model
-    assert registry.find(member) is None
+    assert registry.find(LocalKey(moved)) is model
+    assert registry.find(LocalKey(member)) is None
 
 
 def test_a_file_scoped_record_follows_its_own_rename(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -357,7 +381,7 @@ def test_a_file_scoped_record_follows_its_own_rename(mocker: MockerFixture, qtbo
     del qtbot
     load_document(mocker)
     registry = DocumentRegistry()
-    model = registry.acquire(LIBRARY / "foo.rehu")
+    model = registry.acquire(LocalKey(LIBRARY / "foo.rehu"))
 
     registry.resource_events.announce_moved(
         Relocation(
@@ -371,7 +395,7 @@ def test_a_file_scoped_record_follows_its_own_rename(mocker: MockerFixture, qtbo
     )
 
     assert model.path == LIBRARY / "bar.rehu"
-    assert registry.find(LIBRARY / "bar.rehu") is model
+    assert registry.find(LocalKey(LIBRARY / "bar.rehu")) is model
 
 
 def test_a_folder_rename_carries_its_file_scoped_record_and_a_sibling_rename_does_not_touch_the_folders(
@@ -389,8 +413,8 @@ def test_a_folder_rename_carries_its_file_scoped_record_and_a_sibling_rename_doe
     del qtbot
     load_document(mocker)
     registry = DocumentRegistry()
-    info = registry.acquire(LIBRARY / "pack" / "info.rehu")
-    standalone = registry.acquire(LIBRARY / "pack" / "bar.rehu")
+    info = registry.acquire(LocalKey(LIBRARY / "pack" / "info.rehu"))
+    standalone = registry.acquire(LocalKey(LIBRARY / "pack" / "bar.rehu"))
     kit = LIBRARY / "kit"
 
     registry.resource_events.announce_moved(Relocation(((LIBRARY / "pack", kit),)))
@@ -407,17 +431,17 @@ def test_a_folder_rename_carries_its_file_scoped_record_and_a_sibling_rename_doe
 
 @contextmanager
 def stays_put(model: RehuDocumentModel) -> Generator[None]:
-    """Fail if ``model``'s path changes inside the block.
+    """Fail if ``model``'s key changes inside the block.
 
     :param model: the model that must stay put.
     :yields: nothing; the block runs the announcement.
     """
     moves: list[object] = []
-    model.path_changed.connect(moves.append)  # type: ignore[attr-defined]
+    model.key_changed.connect(moves.append)  # type: ignore[attr-defined]
     try:
         yield
     finally:
-        model.path_changed.disconnect(moves.append)  # type: ignore[attr-defined]
+        model.key_changed.disconnect(moves.append)  # type: ignore[attr-defined]
     assert not moves
 
 
@@ -427,21 +451,21 @@ def test_a_held_models_writes_are_announced_until_its_last_release(mocker: Mocke
     **Test steps:**
 
     * hold a model and have it announce a write and a folder change
-    * verify both were announced app-wide
+    * verify both were announced app-wide, as keys
     * release it, and verify a later announcement is not relayed
     """
     load_document(mocker)
     events = ResourceEvents()
     registry = DocumentRegistry(resource_events=events)
-    model = registry.acquire(FAKE_PATH)
+    model = registry.acquire(FAKE_KEY)
 
     with qtbot.waitSignal(events.changed) as changed:
         model.announce_files_changed((FAKE_PATH,))
     with qtbot.waitSignal(events.folder_changed) as folder:
         model.announce_folder_changed(FAKE_PATH.parent)
 
-    assert changed.args == [(FAKE_PATH,)]
-    assert folder.args == [FAKE_PATH.parent]
+    assert changed.args == [(FAKE_KEY,)]
+    assert folder.args == [FAKE_KEY.parent]
 
     registry.release(model)
     with qtbot.assertNotEmitted(events.changed):
@@ -456,7 +480,7 @@ def test_the_renaming_document_adopts_its_rename_exactly_once(mocker: MockerFixt
 
     * hold a model in a registry whose events hear a coordinator, with the rename on disk mocked
     * rename it from its location editor
-    * verify ``path_changed`` and ``image_scanner_changed`` fired once each, and the registry re-keyed it
+    * verify ``key_changed`` and ``image_scanner_changed`` fired once each, and the registry re-keyed it
     """
     del qtbot
     load_document(mocker)
@@ -469,17 +493,17 @@ def test_the_renaming_document_adopts_its_rename_exactly_once(mocker: MockerFixt
     events = ResourceEvents()
     coordinator.add_rename_listener(events.announce_moved)
     registry = DocumentRegistry(rename_coordinator=coordinator, resource_events=events)
-    model = registry.acquire(FAKE_PATH)
-    paths: list[object] = []
+    model = registry.acquire(FAKE_KEY)
+    keys: list[object] = []
     scanners: list[object] = []
-    model.path_changed.connect(paths.append)  # type: ignore[attr-defined]
+    model.key_changed.connect(keys.append)  # type: ignore[attr-defined]
     model.image_scanner_changed.connect(scanners.append)  # type: ignore[attr-defined]
 
     assert model.rename_location("modelling")
 
-    assert paths == [renamed]
+    assert keys == [LocalKey(renamed)]
     assert len(scanners) == 1
-    assert registry.find(renamed) is model
+    assert registry.find(LocalKey(renamed)) is model
 
 
 # endregion
@@ -491,8 +515,8 @@ def test_an_open_is_announced_as_an_access_once_and_a_new_document_never(mocker:
 
     **Test steps:**
 
-    * acquire one path twice, and start a new document at another
-    * verify the one path was announced once, and the new one never
+    * acquire one key twice, and start a new document at another
+    * verify the one key was announced once, and the new one never
     """
     del qtbot
     load_document(mocker)
@@ -501,11 +525,11 @@ def test_an_open_is_announced_as_an_access_once_and_a_new_document_never(mocker:
     events.accessed.connect(heard.append)
     registry = DocumentRegistry(resource_events=events)
 
-    registry.acquire(FAKE_PATH)
-    registry.acquire(FAKE_PATH)
-    registry.acquire(OTHER_PATH, new=True)
+    registry.acquire(FAKE_KEY)
+    registry.acquire(FAKE_KEY)
+    registry.acquire(OTHER_KEY, new=True)
 
-    assert heard == [(FAKE_PATH,)]
+    assert heard == [(FAKE_KEY,)]
 
 
 def test_a_reload_is_announced_as_an_access(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -513,8 +537,8 @@ def test_a_reload_is_announced_as_an_access(mocker: MockerFixture, qtbot: QtBot)
 
     **Test steps:**
 
-    * acquire a path, then revert its model
-    * verify the path was announced again
+    * acquire a key, then revert its model
+    * verify the key was announced again
     """
     del qtbot
     load_document(mocker)
@@ -522,25 +546,26 @@ def test_a_reload_is_announced_as_an_access(mocker: MockerFixture, qtbot: QtBot)
     heard: list[object] = []
     events.accessed.connect(heard.append)
     registry = DocumentRegistry(resource_events=events)
-    model = registry.acquire(FAKE_PATH)
+    model = registry.acquire(FAKE_KEY)
 
     model.revert()
 
-    assert heard == [(FAKE_PATH,), (FAKE_PATH,)]
+    assert heard == [(FAKE_KEY,), (FAKE_KEY,)]
 
 
 def test_what_the_disk_shows_reaches_the_model_of_that_path_only(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A file's time and size go to the model that stands for it; a path nobody holds is passed over (#487).
+    """A file's time and size go to the model held under that path's key; a path nobody holds is passed over
+    (#487).
 
     **Test steps:**
 
-    * hold one path, and report it and a path nobody holds
+    * hold one key, and report its path and a path nobody holds
     * verify the held model alone heard, with what was reported
     """
     del qtbot
     load_document(mocker)
     registry = DocumentRegistry()
-    model = registry.acquire(FAKE_PATH)
+    model = registry.acquire(FAKE_KEY)
     noted = mocker.patch.object(model, "note_file_signature")
 
     registry.note_file_signatures({FAKE_PATH: (7, 3), OTHER_PATH: (8, 4)})
@@ -548,13 +573,13 @@ def test_what_the_disk_shows_reaches_the_model_of_that_path_only(mocker: MockerF
     noted.assert_called_once_with(7, 3)
 
 
-def test_a_reload_of_a_document_with_no_path_is_not_announced(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A model whose path is gone has nothing for the catalog to check (#487).
+def test_a_reload_of_a_document_with_no_key_is_not_announced(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A model whose key is gone has nothing for the catalog to check (#487), and is findable under no key.
 
     **Test steps:**
 
-    * acquire a path, take the model's path away, and revert it
-    * verify nothing more was announced
+    * acquire a key, take the model's key away, and revert it
+    * verify the old key finds nothing, and nothing more was announced
     """
     del qtbot
     load_document(mocker)
@@ -562,10 +587,11 @@ def test_a_reload_of_a_document_with_no_path_is_not_announced(mocker: MockerFixt
     heard: list[object] = []
     events.accessed.connect(heard.append)
     registry = DocumentRegistry(resource_events=events)
-    model = registry.acquire(FAKE_PATH)
-    model.path = None
+    model = registry.acquire(FAKE_KEY)
+    model.key = None
     heard.clear()
 
     model.reloaded.emit()
 
+    assert registry.find(FAKE_KEY) is None
     assert not heard

@@ -1,8 +1,7 @@
 """A table browser: the Root Catalog's rows as a table under a filter line and over a status line, one of several per
 catalog (#396, #398)."""
 
-from collections.abc import Iterable, Mapping, Sequence
-from pathlib import Path
+from collections.abc import Iterable, Sequence
 from typing import Final
 from uuid import UUID, uuid4
 
@@ -66,8 +65,8 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
     """
 
     row_activated: Signal = Signal(object)
-    """Emitted with a resource's absolute :class:`~pathlib.Path` when its row is double-clicked. Typed as plain
-    ``object`` for the reason ``BrowsersDock.open_requested`` is."""
+    """Emitted with a resource's :data:`~rehuco_agent.rehuco.catalog_table_model.RowKey` when its row is
+    double-clicked. Typed as plain ``object`` for the reason ``BrowsersDock.open_requested`` is."""
 
     query_changed: Signal = Signal(object)
     """Emitted with the new :class:`~rehuco_core.CatalogQuery` once the filter line's text has settled on one that
@@ -205,13 +204,13 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
         """The status line under the table: what it shows and, after that, what is selected."""
         return self.__status_line
 
-    def set_rows(self, rows: Sequence[CatalogRow], root_paths: Mapping[UUID, Path]) -> None:
+    def set_rows(self, rows: Sequence[CatalogRow], root_ids: Iterable[UUID]) -> None:
         """Show ``rows``, in the sort this browser last asked for.
 
         :param rows: the rows :attr:`query` matches.
-        :param root_paths: each root's folder, by id, for the rows' absolute paths.
+        :param root_ids: the roots' ids, in the roots' order.
         """
-        self.__model.set_rows(rows, root_paths)
+        self.__model.set_rows(rows, root_ids)
 
     def update_rows(self, affected: Iterable[int], fresh: Sequence[CatalogRow]) -> None:
         """Bring the rows a rename, a write or a deletion touched up to date, in place.
@@ -367,13 +366,13 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
         self.set_token("authors", None if clear else name)
 
     def __on_double_clicked(self, index: QModelIndex) -> None:
-        """Ask for the double-clicked resource to be opened, by its absolute path.
+        """Ask for the double-clicked resource to be opened, by its row key.
 
         :param index: the activated cell.
         """
-        path = self.__model.absolute_path(index.row())
-        if path is not None:
-            self.row_activated.emit(path)
+        key = self.__model.row_key(index.row())
+        if key is not None:
+            self.row_activated.emit(key)
 
     def __update_status(self) -> None:
         """Say what the table shows now, and after it what is selected (#462): the rows, their sizes and, where it

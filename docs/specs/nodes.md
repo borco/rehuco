@@ -211,6 +211,12 @@ as a file does not type-check. A `LocalKey` compares as its `Path` does — `os.
 uses: case folded on Windows, kept on POSIX; a `NodeKey` compares its path **as spelled** — the owning node hands out
 its own canonical spelling, and folding by this machine's rule would merge two files a case-sensitive node keeps apart.
 
+**A key's kind follows ownership, not where the bytes are.** A root a node owns is reached through that node even on
+this machine ([[nodes#two-roles]]), so a path entering the agent — a dialog's pick, a double-clicked file, a recent, a
+remembered session — becomes a key in one place, `AccessRouter.key_for_path`, which reads the root's claim
+([[multiplicity#instances]], #453); a catalog row becomes one in `RootCatalog.resource_key`. Inside the agent,
+documents and the change announcements are named by keys (#414).
+
 **Operations, not bytes.** The interface is built from small groups — records (load, save, `record_progress`, legacy
 conversion), a resource's file listing, screenshots (scan, read, reorder, convert, acquire, remove), content images
 (enumerate, read one member, a playback source), jobs, mutations (rename, delete), and the catalog (roots, query,

@@ -4,7 +4,6 @@ remembering (#396, #398, #379)."""
 from collections.abc import Iterator
 from dataclasses import replace
 from itertools import count
-from pathlib import Path
 from uuid import uuid4
 
 from PySide6.QtCore import QCoreApplication, QEvent, QItemSelectionModel, QModelIndex, QPoint, Qt
@@ -22,7 +21,6 @@ from rehuco_core import CatalogField, CatalogQuery, CatalogRecord, CatalogRow, R
 from shiboken6 import invalidate
 
 ROOT_ID = uuid4()
-ROOT_PATH = Path("/fake/root")
 
 ids: Iterator[int] = count(10_000)
 """Every row :func:`row` builds has an id of its own, as the cache's rows do -- far above any a test gives."""
@@ -86,15 +84,15 @@ def test_a_browser_built_from_a_state_takes_its_id_name_and_filter(qtbot: QtBot)
     assert (browser.browser_id, browser.name, browser.filter_text) == (state.browser_id, "Python", 'type:"tutorial"')
 
 
-def test_a_model_with_no_row_has_no_path(browser: TableBrowser) -> None:
+def test_a_model_with_no_row_has_no_key(browser: TableBrowser) -> None:
     """Nothing is opened for a row the model does not hold.
 
     **Test steps:**
 
-    * ask the empty model for row 0's path
+    * ask the empty model for row 0's key
     * verify there is none
     """
-    assert browser.model.absolute_path(0) is None
+    assert browser.model.row_key(0) is None
 
 
 def test_the_status_line_says_no_resources_when_the_table_is_empty(browser: TableBrowser) -> None:
@@ -116,10 +114,10 @@ def test_the_status_line_counts_the_rows_and_adds_up_their_sizes(browser: TableB
     * show one 1.5 KiB row and then a second of 2 KiB
     * verify ``1 resource / 1.5K`` and then ``2 resources / 3.5K``
     """
-    browser.set_rows([row("a/info.rehu", 1536)], {ROOT_ID: ROOT_PATH})
+    browser.set_rows([row("a/info.rehu", 1536)], [ROOT_ID])
     assert browser.status_line.full_text == "1 resource / 1.5K"
 
-    browser.set_rows([row("a/info.rehu", 1536), row("b/info.rehu", 2048)], {ROOT_ID: ROOT_PATH})
+    browser.set_rows([row("a/info.rehu", 1536), row("b/info.rehu", 2048)], [ROOT_ID])
     assert browser.status_line.full_text == "2 resources / 3.5K"
 
 
@@ -139,23 +137,23 @@ def test_the_status_line_says_when_a_total_is_partial(browser: TableBrowser) -> 
     unmeasured = CatalogRecord("d.rehu", RecordKind.REHU, type="reference_images", current_size=512)
     packs = [CatalogRow(1, ROOT_ID, "root", entry, 0.0) for entry in (pack, unmeasured)]
 
-    browser.set_rows([sized, unsized, *packs], {ROOT_ID: ROOT_PATH})
+    browser.set_rows([sized, unsized, *packs], [ROOT_ID])
     assert browser.status_line.full_text == "4 resources / 1 legacy .tc / 2.5K / 1 image (1 unmeasured)"
 
-    browser.set_rows([sized, packs[0]], {ROOT_ID: ROOT_PATH})
+    browser.set_rows([sized, packs[0]], [ROOT_ID])
     assert browser.status_line.full_text == "2 resources / 2.0K / 1 image"
 
     empty = CatalogRecord("e.rehu", RecordKind.REHU, type="reference_images", current_size=0, current_count=0)
-    browser.set_rows([CatalogRow(1, ROOT_ID, "root", empty, 0.0)], {ROOT_ID: ROOT_PATH})
+    browser.set_rows([CatalogRow(1, ROOT_ID, "root", empty, 0.0)], [ROOT_ID])
     assert browser.status_line.full_text == "1 resource / 0B / 0 images"
 
     many = CatalogRecord("f.rehu", RecordKind.REHU, type="reference_images", current_size=0, current_count=18400)
-    browser.set_rows([CatalogRow(1, ROOT_ID, "root", many, 0.0)], {ROOT_ID: ROOT_PATH})
+    browser.set_rows([CatalogRow(1, ROOT_ID, "root", many, 0.0)], [ROOT_ID])
     assert browser.status_line.full_text == "1 resource / 0B / 18,400 images"
 
     legacy = CatalogRecord("g.tc", RecordKind.TC, type="reference_images")
     rows = [CatalogRow(1, ROOT_ID, "root", legacy, 0.0)] * 1188 + [row("h/info.rehu", 0)] * 52
-    browser.set_rows(rows, {ROOT_ID: ROOT_PATH})
+    browser.set_rows(rows, [ROOT_ID])
     assert browser.status_line.full_text == "1,240 resources / 1,188 legacy .tc / 0B"
 
 
@@ -170,21 +168,21 @@ def test_a_browser_starts_unsorted(browser: TableBrowser) -> None:
     assert browser.view.horizontalHeader().sortIndicatorSection() == -1
 
 
-def test_a_double_click_on_a_row_announces_its_path_and_on_nothing_announces_nothing(
+def test_a_double_click_on_a_row_announces_its_key_and_on_nothing_announces_nothing(
     qtbot: QtBot, browser: TableBrowser
 ) -> None:
-    """Activating a row asks for its resource to be opened, by absolute path.
+    """Activating a row asks for its resource to be opened, by its root's id and relative path (#414).
 
     **Test steps:**
 
     * show a row and double-click it, then double-click no row
-    * verify the first announces the row's absolute path and the second nothing
+    * verify the first announces the row's key and the second nothing
     """
-    browser.set_rows([row("python/info.rehu", 10)], {ROOT_ID: ROOT_PATH})
+    browser.set_rows([row("python/info.rehu", 10)], [ROOT_ID])
 
     with qtbot.waitSignal(browser.row_activated) as activated:
         browser.view.doubleClicked.emit(browser.model.index(0, 0))
-    assert activated.args == [ROOT_PATH / "python/info.rehu"]
+    assert activated.args == [(ROOT_ID, "python/info.rehu")]
 
     with qtbot.assertNotEmitted(browser.row_activated):
         browser.view.doubleClicked.emit(QModelIndex())
@@ -211,7 +209,7 @@ def test_the_state_carries_the_header_and_restores_it_with_its_sort(qtbot: QtBot
         CatalogColumn.TITLE,
         Qt.SortOrder.DescendingOrder,
     )
-    restored.set_rows([row("a", 1, "Alpha"), row("b", 1, "Beta")], {ROOT_ID: ROOT_PATH})
+    restored.set_rows([row("a", 1, "Alpha"), row("b", 1, "Beta")], [ROOT_ID])
     assert restored.model.index(0, CatalogColumn.TITLE).data() == "Beta"
 
 
@@ -239,7 +237,7 @@ def test_a_size_reads_short_while_the_cell_keeps_its_bytes(browser: TableBrowser
     * show a row of 1,024 bytes
     * verify the cell holds the number and the size and duration columns' delegates word it
     """
-    browser.set_rows([row("a/info.rehu", 1024)], {ROOT_ID: ROOT_PATH})
+    browser.set_rows([row("a/info.rehu", 1024)], [ROOT_ID])
     index = browser.model.index(0, CatalogColumn.SIZE)
     view = browser.view
     locale = view.locale()
@@ -449,7 +447,7 @@ def test_the_status_line_adds_the_selection_after_the_totals(browser: TableBrows
         CatalogRow(1, ROOT_ID, "root", legacy, 0.0),
         CatalogRow(2, ROOT_ID, "root", pack, 0.0),
     ]
-    browser.set_rows(rows, {ROOT_ID: ROOT_PATH})
+    browser.set_rows(rows, [ROOT_ID])
     totals = "3 resources / 1 legacy .tc / 3.0K / 120 images"
     assert browser.status_line.full_text == totals
 
@@ -476,9 +474,7 @@ def test_the_selection_part_names_the_rows_it_leaves_out(browser: TableBrowser) 
     """
     measured = CatalogRecord("a.rehu", RecordKind.REHU, type="reference_images", current_size=1024, current_count=1)
     unmeasured = CatalogRecord("b.rehu", RecordKind.REHU, type="reference_images")
-    browser.set_rows(
-        [CatalogRow(1, ROOT_ID, "root", entry, 0.0) for entry in (measured, unmeasured)], {ROOT_ID: ROOT_PATH}
-    )
+    browser.set_rows([CatalogRow(1, ROOT_ID, "root", entry, 0.0) for entry in (measured, unmeasured)], [ROOT_ID])
 
     select(browser, 1)
     assert browser.status_line.full_text.endswith("— 1 selected / 0B (1 unmeasured) / 0 images (1 unmeasured)")
@@ -493,9 +489,7 @@ def test_a_selected_row_changed_in_place_updates_the_line_without_a_reset(browse
     * verify the selection's size, rename it (it moves) and verify it is still counted, then remove the other and
       verify its count
     """
-    browser.set_rows(
-        [row("a/info.rehu", 1024, resource_id=1), row("b/info.rehu", 1024, resource_id=2)], {ROOT_ID: ROOT_PATH}
-    )
+    browser.set_rows([row("a/info.rehu", 1024, resource_id=1), row("b/info.rehu", 1024, resource_id=2)], [ROOT_ID])
     select(browser, 0, 1)
 
     browser.update_rows({1}, [row("a/info.rehu", 3072, resource_id=1)])
@@ -534,7 +528,7 @@ def test_exactly_one_selected_row_is_the_current_resource(qtbot: QtBot, browser:
     * show two rows, then select one, both, and none
     * verify the resource announced each time, and the property agreeing
     """
-    browser.set_rows([row("a/info.rehu", 1), row("b/info.rehu", 1)], {ROOT_ID: ROOT_PATH})
+    browser.set_rows([row("a/info.rehu", 1), row("b/info.rehu", 1)], [ROOT_ID])
 
     with qtbot.waitSignal(browser.current_changed) as changed:
         select(browser, 0)
@@ -562,7 +556,7 @@ def test_the_current_resource_follows_its_row_renamed_and_removed_in_place(qtbot
     * remove it in place
     * verify no resource is current
     """
-    browser.set_rows([row("a/info.rehu", 1, resource_id=7), row("b/info.rehu", 1, resource_id=8)], {ROOT_ID: ROOT_PATH})
+    browser.set_rows([row("a/info.rehu", 1, resource_id=7), row("b/info.rehu", 1, resource_id=8)], [ROOT_ID])
     select(browser, 0)
 
     with qtbot.assertNotEmitted(browser.model.modelReset), qtbot.waitSignal(browser.current_changed) as changed:
@@ -583,7 +577,7 @@ def test_an_update_in_place_keeps_the_status_line_current(browser: TableBrowser)
     * show one row, then update it with a new size and insert another
     * verify the status line counts both and adds the new sizes
     """
-    browser.set_rows([row("a/info.rehu", 1024, resource_id=1)], {ROOT_ID: ROOT_PATH})
+    browser.set_rows([row("a/info.rehu", 1024, resource_id=1)], [ROOT_ID])
 
     browser.update_rows({1, 2}, [row("a/info.rehu", 2048, resource_id=1), row("b/info.rehu", 1024, resource_id=2)])
 
@@ -747,7 +741,7 @@ def test_a_row_out_of_range_has_no_authors(browser: TableBrowser) -> None:
     * verify none, and the row's own authors in range
     """
     assert browser.model.authors_of(0) == ()
-    browser.set_rows([authored_row("a.rehu", "Ann")], {ROOT_ID: ROOT_PATH})
+    browser.set_rows([authored_row("a.rehu", "Ann")], [ROOT_ID])
 
     assert browser.model.authors_of(1) == ()
     assert browser.model.authors_of(0) == ("Ann",)
@@ -764,7 +758,7 @@ def test_an_authors_cell_offers_one_entry_per_author_in_the_records_order(
     * right-click its Authors cell
     * verify one entry per author, in order
     """
-    browser.set_rows([authored_row("a.rehu", "Doe, Jane", "Bob")], {ROOT_ID: ROOT_PATH})
+    browser.set_rows([authored_row("a.rehu", "Doe, Jane", "Bob")], [ROOT_ID])
 
     actions = right_click(browser, CatalogColumn.AUTHORS, monkeypatch)
 
@@ -784,7 +778,7 @@ def test_choosing_an_author_sets_that_field_only_and_keeps_the_rest_of_the_line(
     * verify the line and the query
     """
     name = 'Jane "J" Doe'
-    browser.set_rows([authored_row("a.rehu", name)], {ROOT_ID: ROOT_PATH})
+    browser.set_rows([authored_row("a.rehu", name)], [ROOT_ID])
     browser.set_filter_text("intro tags:python authors:Old")
 
     actions = right_click(browser, CatalogColumn.AUTHORS, monkeypatch)
@@ -806,7 +800,7 @@ def test_an_author_already_on_the_line_is_offered_to_be_cleared(
     * verify that author reads as a clear and the other as a filter, then trigger the clear
     * verify the line keeps only the free text
     """
-    browser.set_rows([authored_row("a.rehu", "Ann", "Bob")], {ROOT_ID: ROOT_PATH})
+    browser.set_rows([authored_row("a.rehu", "Ann", "Bob")], [ROOT_ID])
     browser.set_filter_text("intro authors:ann")
 
     actions = right_click(browser, CatalogColumn.AUTHORS, monkeypatch)
@@ -827,7 +821,7 @@ def test_no_menu_opens_on_a_row_without_authors_or_on_another_column(
     * right-click the authorless Authors cell, the authored row's Title cell and empty space
     * verify no menu opened, and the line stays empty
     """
-    browser.set_rows([authored_row("a.rehu", "Ann"), row("b.rehu", 1)], {ROOT_ID: ROOT_PATH})
+    browser.set_rows([authored_row("a.rehu", "Ann"), row("b.rehu", 1)], [ROOT_ID])
     # the second row sorts as the cache gave it, so it is the authorless one
 
     assert not right_click(browser, CatalogColumn.AUTHORS, monkeypatch, 1)
@@ -847,7 +841,7 @@ def test_a_menu_whose_exec_fails_is_not_left_behind(
     * flush deferred deletes
     * verify the failure surfaced and no menu is left under the browser
     """
-    browser.set_rows([authored_row("a.rehu", "Ann")], {ROOT_ID: ROOT_PATH})
+    browser.set_rows([authored_row("a.rehu", "Ann")], [ROOT_ID])
 
     class FailingMenu(QMenu):
         """A real menu whose ``exec`` raises."""

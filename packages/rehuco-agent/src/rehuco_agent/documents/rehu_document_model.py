@@ -25,17 +25,17 @@ from rehuco_core import (
     Deleter,
     LockReason,
     RehuDocument,
-    Relocation,
     RenameCoordinator,
     checksum_record_path,
     convert_tc,
-    is_directory_scoped,
+    is_directory_scoped_name,
     rehu_rename_conflict,
     rename_rehu_resource,
     scan_rehu_screenshot_files,
     scan_unconverted_screenshots,
     take_enclosing_claims,
 )
+from rehuco_core.access import KeyRelocation, LocalKey, ResourceKey
 
 from ..fields.field import Field, FieldBinding
 from ..fields.unknown_field import UnknownField
@@ -146,26 +146,26 @@ PRIMARY_SOURCE_FIELD_NAMES: Final = ("title", "publisher", "url")
 re-read after it so the list never lags its own top row."""
 
 UNTITLED_LABEL: Final = "Untitled"
-"""Stand-in display label for a document with no path yet -- :attr:`RehuDocumentModel.label` is empty
+"""Stand-in display label for a document with no location -- :attr:`RehuDocumentModel.label` is empty
 for one, and every dialog that names a document falls back to this, so the wording lives in one place."""
 
 
-def path_label(path: Path) -> str:
-    """The scope-aware display label for ``path`` ([[data-model#resource-scoping]]): the parent
+def key_label(key: ResourceKey) -> str:
+    """The scope-aware display label for the record at ``key`` ([[data-model#resource-scoping]]): the parent
     directory's name, trailing-slashed, for a directory-scoped record; the bare filename otherwise.
     Shared by :attr:`RehuDocumentModel.label` and the recents menu (#117), so the rule lives in exactly
     one place.
 
-    Which records those are is :func:`~rehuco_core.is_directory_scoped`'s answer rather than a name
+    Which records those are is :func:`~rehuco_core.is_directory_scoped_name`'s answer rather than a name
     matched here, so a legacy ``info.tc`` -- one per resource directory, which is what tc4 wrote -- names
     its folder like the ``info.rehu`` that replaces it (#250). Keying on ``info.rehu`` alone gave a
     catalog opened before conversion a tab strip reading ``info.tc`` all the way across, which is the one
     failure this label exists to prevent.
 
-    :param path: the file path to derive a label for.
+    :param key: the record's key.
     :returns: the label.
     """
-    return f"{path.parent.name}/" if is_directory_scoped(path) else path.name
+    return f"{key.parent.name}/" if is_directory_scoped_name(key.name) else key.name
 
 
 class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attributes,too-many-public-methods
@@ -225,21 +225,26 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     so ``DocumentSubDocks`` rebuilds its dock contents on it. Plain seeding does not raise it."""
 
     files_changed = Signal(object)
-    """Fires with a tuple of the :class:`~pathlib.Path` objects of files this document wrote or replaced --
+    """Fires with a tuple of the keys of files this document wrote or replaced --
     its record on every :meth:`save`, the new ``.rehu`` and the ``.tc`` it replaced on a :meth:`convert`, and
     whatever a collaborator announces through :meth:`announce_files_changed`. The per-document half of the
     app's file announcements: whoever holds the model relays it app-wide
     (:class:`~rehuco_agent.resource_events.ResourceEvents`, #376)."""
 
     folder_changed = Signal(object)
-    """Fires with the :class:`~pathlib.Path` of a folder whose listing this document's work changed, through
+    """Fires with the key of a folder whose listing this document's work changed, through
     :meth:`announce_folder_changed` -- relayed the same way as :attr:`files_changed`."""
 
+    key = SimpleProperty[ResourceKey | None](None)
+    """Where the document is reached ([[nodes#access-seam]]): what the registry, the docks and every holder that
+    follows a rename know it by, whichever machine holds the record. ``None`` only for a document with no location
+    at all. Reassigned with :attr:`path`, and **before** it, so a `path_changed` listener already reads the new key."""
+
     path = SimpleProperty[Path | None](None)
-    """The document's current file path, mirroring :attr:`document`'s own path -- reassigned whenever
-    it changes (construction, :meth:`revert`, :meth:`convert`, and a completed :meth:`rename_location`),
-    so a consumer that needs to react to the document's identity changing (e.g. `DocumentsDock`
-    resyncing a dock's persisted identity) can bind to `path_changed` instead of polling it."""
+    """The record's file on this machine, mirroring :attr:`document`'s own path -- reassigned whenever
+    it changes (construction, :meth:`revert`, :meth:`convert`, and a completed :meth:`rename_location`).
+    What the features still reading files directly gate on: ``None`` is a document that is not a file this
+    machine reads, whose identity is :attr:`key`."""
 
     location = SimpleProperty("")
     """The document's file location, seeded from :attr:`path` ([[field-schema#field-mapping]]'s derived
@@ -641,12 +646,12 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         """This document's display label: the parent directory's name, trailing-slashed, for a
         directory-scoped record ([[data-model#resource-scoping]]), the bare filename otherwise.
 
-        :returns: the label, or an empty string when the document has no path yet.
+        :returns: the label, or an empty string when the document has no location.
         """
-        path = self.path
-        if path is None:
+        key = self.key
+        if key is None:
             return ""
-        return path_label(path)
+        return key_label(key)
 
     @property
     def current_name(self) -> str:
@@ -654,16 +659,16 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         ([[field-schema#field-mapping]]): the **parent directory** name for a directory-scoped record
         ([[data-model#resource-scoping]]), the file **stem** (no extension) otherwise, since a
         standalone ``foo.rehu`` renames its whole ``foo.*`` sibling set. Empty when the document has no
-        path yet.
+        location.
 
-        Reads :func:`~rehuco_core.is_directory_scoped` rather than matching a name, so this and the
+        Reads :func:`~rehuco_core.is_directory_scoped_name` rather than matching a name, so this and the
         rename plan that would execute the suggestion (:class:`~rehuco_core.RehuRenamer`) cannot
         disagree about which entry the name belongs to (#250).
         """
-        path = self.path
-        if path is None:
+        key = self.key
+        if key is None:
             return ""
-        return path.parent.name if is_directory_scoped(path) else path.stem
+        return key.parent.name if is_directory_scoped_name(key.name) else key.stem
 
     def save(self) -> None:
         """Atomically save the document ([[data-model#write-integrity]]) and clear the dirty flag.
@@ -687,7 +692,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.dirty = False
         self.__stamp_disk()
         if self.path is not None:
-            self.files_changed.emit((self.path, *changed))
+            self.files_changed.emit(tuple(LocalKey(path) for path in (self.path, *changed)))
         # the file now exists on disk, so there is finally something to revert to: mark saved_on_disk so
         # DocumentSubDocks re-enables Revert (#147). Set once and never unset -- a later out-of-band
         # deletion still leaves this a document that *was* saved, whose revert is the fix-retry loop.
@@ -786,7 +791,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         whenever the file's structure is what the form already shows. Like any open, it reads under the identity
         set now, which an identity-setting change made since the document was opened has moved.
 
-        :raises ValueError: if the document has no path (was never loaded from or saved to a file).
+        :raises ValueError: if the document has no local path (it is no file this machine reads).
         """
         path = self.path
         if path is None:
@@ -894,7 +899,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         :param overwrite: whether an already-converted ``.rehu`` at the target path may be replaced.
         :param deleter: how a discarded backup is actually removed; ``None`` leaves that choice to
             `~rehuco_agent.recycle_bin_deleter.configured_deleter` (#301).
-        :raises ValueError: this document isn't :attr:`~RehuDocument.legacy_tc`, or has no path.
+        :raises ValueError: this document isn't :attr:`~RehuDocument.legacy_tc`, or has no local path.
         :raises OSError: propagated from :func:`rehuco_core.convert_tc` (``FileExistsError`` for an
             unconfirmed overwrite or a stale backup; any other ``OSError`` from the underlying file
             operations) -- this model's ``document``/``locked``/``dirty`` are left untouched. Not
@@ -930,7 +935,9 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.__recompute_upgradable()
         self.__log_document_state()
         # the new record first: the catalog reads it into the `.tc`'s row before finding the `.tc` gone
-        self.files_changed.emit(tuple(path for path in (self.__document.path, legacy_path) if path is not None))
+        self.files_changed.emit(
+            tuple(LocalKey(path) for path in (self.__document.path, legacy_path) if path is not None)
+        )
 
     def note_file_signature(self, mtime_ns: int, size: int) -> None:
         """Hear that the file on disk has this modification time and size, and follow it if it is not what this model
@@ -966,7 +973,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
         :param paths: the files' absolute paths.
         """
-        self.files_changed.emit(tuple(paths))
+        self.files_changed.emit(tuple(LocalKey(path) for path in paths))
 
     def announce_folder_changed(self, directory: Path) -> None:
         """Say that this document's work changed ``directory``'s listing -- for a collaborator that renames,
@@ -977,9 +984,9 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         # what the scanner last read of the folder is out of date now -- before anyone is told to read it again.
         # Installed at construction and only ever replaced, never cleared
         cast(RehuDocumentImageScanner, self.image_scanner).forget()
-        self.folder_changed.emit(directory)
+        self.folder_changed.emit(LocalKey(directory))
 
-    def relocate(self, relocation: Relocation) -> bool:
+    def relocate(self, relocation: KeyRelocation) -> bool:
         """Follow a rename that moved this document's record ([[mounts-and-storage#out-of-band]], #376).
 
         The holder's half of a rename announced app-wide: whoever holds this model hands it every rename's
@@ -992,13 +999,17 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         it before :meth:`rename_location` has adopted the result, and whichever comes second finds the path
         already there and does nothing.
 
+        Only a record this machine renames itself follows here; one on a node's root follows its node's change
+        journal once remote records arrive (#421, #434).
+
         :param relocation: the rename's executed plan.
-        :returns: whether this document's path changed.
+        :returns: whether this document's location changed.
         """
-        path = self.path
-        if path is None:
+        key = self.key
+        if not isinstance(key, LocalKey):
             return False
-        return self.__adopt_path(relocation.relocate(path))
+        moved = relocation.relocate(key)
+        return isinstance(moved, LocalKey) and self.__adopt_path(moved.path)
 
     def bind[T](self, field: Field[T], name: str | None = None) -> FieldBinding[T]:
         """Resolve one of a field's names into its current binding on this model
@@ -1300,6 +1311,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             scanner is installed, so it is rendered once and against the right folder (#381).
         """
         with self.__seeding_guard():
+            self.key = None if self.__document.path is None else LocalKey(self.__document.path)
             self.path = self.__document.path
             self.location = self.__document.path.as_posix() if self.__document.path is not None else ""
             self.resource_type = self.__document.type
@@ -1401,7 +1413,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         :returns: whether the rename succeeded; a failure's reason is left in :attr:`rename_error`.
         """
         path = self.path
-        if path is None:  # pragma: no cover -- rename_location refuses a path-less document before this
+        if path is None:  # pragma: no cover -- rename_location refuses a document with no local path before this
             return False
         current_name = self.current_name
         try:
@@ -1434,6 +1446,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         if new_path == self.path:
             return False
         self.__document.rebind_path(new_path)
+        self.key = LocalKey(new_path)
         self.path = new_path
         self.location = new_path.as_posix()
         self.image_scanner = self.__make_image_scanner()

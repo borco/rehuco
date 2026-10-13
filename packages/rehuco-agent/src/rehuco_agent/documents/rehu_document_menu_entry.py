@@ -1,6 +1,5 @@
 """A two-line menu entry for a `.rehu` document: its title above its dimmed, right-elided path."""
 
-from pathlib import Path
 from typing import ClassVar, Final, override
 
 from borco_pyside.theming import perceived_brightness
@@ -19,6 +18,7 @@ from PySide6.QtGui import (
     QPixmap,
 )
 from PySide6.QtWidgets import QMenu, QStyle, QStyleOptionMenuItem, QWidget, QWidgetAction
+from rehuco_core.access import ResourceKey
 
 from .document_dock import DIRTY_DOCK_MARKER
 
@@ -83,7 +83,8 @@ class RehuDocumentMenuEntry(QWidget):
 
     :param title: the document's display title (`RehuDocumentModel.label`, or the same
         `info.rehu`-aware derivation for a not-currently-open path).
-    :param path: the document's full path, or ``None`` for a not-yet-saved document.
+    :param key: the document's key, drawn as its full path for a file here, or ``None`` for a document with no
+        location.
     :param parent: optional Qt parent.
     :param checked: draw the style's own checkmark -- the `File` menu's open list (#79)
         sets this for the currently focused document. Its `Open recents` list has no
@@ -99,7 +100,7 @@ class RehuDocumentMenuEntry(QWidget):
     def __init__(
         self,
         title: str,
-        path: Path | None,
+        key: ResourceKey | None,
         parent: QWidget | None = None,
         *,
         checked: bool = False,
@@ -110,7 +111,8 @@ class RehuDocumentMenuEntry(QWidget):
         self.__checked: Final = checked
         self.__dirty: Final = dirty
         self.__title: Final = title
-        self.__path: Final = str(path) if path is not None else ""
+        self.__path: Final = str(key) if key is not None else ""
+
         self.__hovered = False
 
     def __path_font(self) -> QFont:
@@ -338,7 +340,7 @@ class RehuDocumentMenuEntry(QWidget):
         )
 
     def displayed_path(self) -> str:
-        """The path exactly as drawn, right-elided to fit -- empty for a not-yet-saved document."""
+        """The key's text exactly as drawn, right-elided to fit -- empty for a document with no location."""
         return QFontMetrics(self.__path_font()).elidedText(
             self.__path, Qt.TextElideMode.ElideRight, self.__available_text_width()
         )

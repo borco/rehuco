@@ -198,7 +198,7 @@ class OnDiskView(MonospaceTextView):
 
     def __read_on_disk(self) -> str:
         """The document's file as it sits on disk, or :data:`NOT_ON_DISK_PLACEHOLDER` when there is no
-        readable file (no path yet, or a path that doesn't exist -- a never-saved document).
+        readable file (no local path, or one that doesn't exist -- a never-saved document).
 
         :returns: the verbatim file text, or the placeholder.
         """

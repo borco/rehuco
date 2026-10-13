@@ -41,7 +41,7 @@ class OpenLinkLine(QWidget):
     """Plain text that middle-elides to fit, then an ``(open)`` link that stays whole: the text is an
     `ElidedLabel` taking the spare width, the link a separate label that is never elided or pushed out.
 
-    The link is hidden while :meth:`set_openable` is ``False`` -- a document with no path yet has nothing
+    The link is hidden while :meth:`set_openable` is ``False`` -- a document with no local path has nothing
     to reveal. Clicking it emits :attr:`open_requested`; this widget reveals nothing itself, its owner
     decides what "open" means.
 

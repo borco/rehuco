@@ -23,8 +23,8 @@ from rehuco_agent.documents.source_views import (
 )
 from rehuco_core import CURRENT_FORMAT_VERSION, RehuDocument
 
-REHU_PATH: Final = Path("/fake/info.rehu")
-TC_PATH: Final = Path("/fake/info.tc")
+REHU_PATH: Final = Path.cwd() / "fake" / "info.rehu"
+TC_PATH: Final = Path.cwd() / "fake" / "info.tc"
 
 
 # region fixtures
