@@ -237,3 +237,32 @@ def test_a_local_ancestor_spelled_in_another_case_still_contains_on_windows() ->
 
 
 # endregion
+
+
+# region text
+
+
+def test_a_local_key_reads_as_its_path() -> None:
+    """A local key's text is its path as spelled -- what a dock was named by before keys, so saved layouts still match.
+
+    **Test steps:**
+
+    * read a local key as text
+    """
+    path = LIBRARY / "Pack" / "info.rehu"
+
+    assert str(LocalKey(path)) == str(path)
+
+
+def test_a_node_key_reads_as_node_root_and_relative() -> None:
+    """A node key's text names its node, its root and its path, so two roots' same-named files differ.
+
+    **Test steps:**
+
+    * read node keys on two roots as text
+    """
+    assert str(NodeKey(NODE, ROOT, "pack/info.rehu")) == f"{NODE}/{ROOT}/pack/info.rehu"
+    assert str(NodeKey(NODE, ROOT, "pack")) != str(NodeKey(NODE, OTHER_ROOT, "pack"))
+
+
+# endregion

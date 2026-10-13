@@ -27,6 +27,7 @@ from ..filter_urls import filter_url_token
 from ..glyphs import TAB_CLOSE_GLYPH
 from ..settings.catalog_state_store import BrowserState, CatalogState, CatalogStateStore
 from .browser_presets import DEFAULT_PRESET, BrowserPreset, browser_presets
+from .catalog_table_model import RowKey
 from .root_catalog import RootCatalog
 from .table_browser import TableBrowser
 
@@ -59,8 +60,9 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
     """
 
     open_requested: Signal = Signal(object)
-    """Emitted with a resource's absolute :class:`~pathlib.Path` when its row is double-clicked. Typed as
-    plain ``object`` for the reason ``DocumentsDock.open_requested`` is."""
+    """Emitted with the key of a resource whose row is double-clicked, as the catalog resolves it
+    (:meth:`~rehuco_agent.rehuco.root_catalog.RootCatalog.resource_key`). Typed as plain ``object`` for the reason
+    ``DocumentsDock.open_requested`` is."""
 
     resource_selected: Signal = Signal(object)
     """Emitted with the ``(root_id, relative)`` key of the **current** browser's one selected row, or ``None`` when
@@ -260,9 +262,9 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
         except sqlite3.Error as error:
             LOG.error("Could not read the cache of %s: %s", self.__catalog.rehuco_path, error)
             return
-        root_paths = self.__catalog.root_paths()
+        root_ids = list(self.__catalog.root_paths())
         for browser in self.__browsers.values():
-            browser.set_rows(matching[browser.query], root_paths)
+            browser.set_rows(matching[browser.query], root_ids)
 
     def __fill(self, browser: TableBrowser) -> None:
         """Read one browser's rows again: a browser added after the others were read, or one whose filter changed.
@@ -276,7 +278,7 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
         except sqlite3.Error as error:
             LOG.error("Could not read the cache of %s: %s", self.__catalog.rehuco_path, error)
             return
-        browser.set_rows(rows, self.__catalog.root_paths())
+        browser.set_rows(rows, list(self.__catalog.root_paths()))
 
     def __update_in_place(self, affected: set[int]) -> None:
         """Show what a change did to ``affected`` rows in every browser, each row changed, moved, inserted or removed
@@ -388,7 +390,8 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # which browser it is
         self.__browsers[dock] = browser  # pylint: disable=unsupported-assignment-operation
         self.__place(dock, beside)
-        browser.row_activated.connect(self.open_requested)
+        browser.row_activated.connect(self.__on_row_activated)
+
         browser.query_changed.connect(lambda: self.__fill(browser))
         browser.current_changed.connect(lambda key: self.__on_current_changed(browser, key))
         dock.closeRequested.connect(lambda: self.__close_browser(dock))
@@ -402,6 +405,15 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """
         if browser is self.current_browser:
             self.resource_selected.emit(key)
+
+    def __on_row_activated(self, row: object) -> None:
+        """Ask for a double-clicked row's resource to be opened, by the key the catalog resolves it to.
+
+        :param row: the row's ``(root_id, relative)``, as the object-typed relay carried it.
+        """
+        key = self.__catalog.resource_key(*cast(RowKey, row))
+        if key is not None:
+            self.open_requested.emit(key)
 
     def __place(self, dock: QtAds.CDockWidget, beside: QtAds.CDockWidget | None = None) -> None:
         """Add a browser's sub-dock to the manager: into the tab strip of ``beside``, else of the first browser that

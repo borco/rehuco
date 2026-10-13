@@ -68,7 +68,7 @@ class UnsavedChangesDialog(QDialog):
 
         self.__list_model: Final = QStandardItemModel(self)
         for model in models:
-            label = str(model.path) if model.path else UNTITLED_LABEL
+            label = str(model.key) if model.key is not None else UNTITLED_LABEL
             item = QStandardItem(label)
             item.setEditable(False)
             item.setCheckable(True)

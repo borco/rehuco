@@ -18,11 +18,12 @@ from rehuco_agent.documents.document_command_router import DocumentCommandRouter
 from rehuco_agent.documents.document_widget import DocumentWidget
 from rehuco_agent.documents.documents_dock import DocumentsDock
 from rehuco_agent.documents.files_view import FilesView
+from rehuco_core.access import LocalKey
 
 from rehuco_agent_tests.qt_waits import wait_destroyed
 
-FIRST_PATH: Final = Path.cwd() / "fake" / "tutorials" / "sculpting" / "info.rehu"
-SECOND_PATH: Final = Path.cwd() / "fake" / "tutorials" / "painting" / "info.rehu"
+FIRST_KEY: Final = LocalKey(Path.cwd() / "fake" / "tutorials" / "sculpting" / "info.rehu")
+SECOND_KEY: Final = LocalKey(Path.cwd() / "fake" / "tutorials" / "painting" / "info.rehu")
 TUTORIAL: Final = {
     "format_version": 1,
     "type": "Tutorial",
@@ -93,14 +94,14 @@ def saved_widgets(saved: MagicMock) -> list[object]:
     return [call.args[0] for call in saved.call_args_list]
 
 
-def open_dirty(host: Host, path: Path) -> DocumentWidget:
+def open_dirty(host: Host, key: LocalKey) -> DocumentWidget:
     """Open a document and edit it, so its Save is enabled -- a clean document's is not.
 
     :param host: the host to open it in.
-    :param path: the path to open.
+    :param key: the record to open.
     :returns: the document's widget, now focused.
     """
-    document = host.documents.open_document(path)
+    document = host.documents.open_document(key)
     document.model.title = "Changed"
     return document
 
@@ -142,8 +143,8 @@ def test_routed_app_wide_the_router_alone_carries_the_key(host: Host) -> None:
     * open two documents, route Save app-wide
     * verify the router's action holds the Save keys app-wide and neither document's action holds any
     """
-    first = host.documents.open_document(FIRST_PATH)
-    second = host.documents.open_document(SECOND_PATH)
+    first = host.documents.open_document(FIRST_KEY)
+    second = host.documents.open_document(SECOND_KEY)
 
     route_app_wide(SAVE_DOCUMENT.id)
 
@@ -162,8 +163,8 @@ def test_the_router_saves_the_focused_document_only(host: Host, saved: MagicMock
     * trigger the router, verify the second saved
     * focus the first, trigger again, verify the first saved
     """
-    first = open_dirty(host, FIRST_PATH)
-    second = open_dirty(host, SECOND_PATH)
+    first = open_dirty(host, FIRST_KEY)
+    second = open_dirty(host, SECOND_KEY)
     route_app_wide(SAVE_DOCUMENT.id)
 
     host.router.action(SAVE_DOCUMENT.id).trigger()
@@ -188,8 +189,8 @@ def test_the_key_pressed_outside_every_document_saves_the_focused_one(
     qtbot.waitExposed(host)
     host.activateWindow()
     qtbot.waitUntil(lambda: QApplication.activeWindow() is host)
-    open_dirty(host, FIRST_PATH)
-    second = open_dirty(host, SECOND_PATH)
+    open_dirty(host, FIRST_KEY)
+    second = open_dirty(host, SECOND_KEY)
     route_app_wide(SAVE_DOCUMENT.id)
     host.outside.setFocus()
 
@@ -209,8 +210,8 @@ def test_switched_back_each_document_carries_the_key_and_the_router_none(host: H
     * open two documents, route Save app-wide, then reset the keymap
     * verify each document's action holds the key in its own subtree and the router holds none
     """
-    first = host.documents.open_document(FIRST_PATH)
-    second = host.documents.open_document(SECOND_PATH)
+    first = host.documents.open_document(FIRST_KEY)
+    second = host.documents.open_document(SECOND_KEY)
     route_app_wide(SAVE_DOCUMENT.id)
     keymap = shared_command_registry().keymap
     keymap.reset(SAVE_DOCUMENT.id)
@@ -238,7 +239,7 @@ def test_with_no_document_focused_the_router_is_disabled(host: Host, saved: Magi
     assert not host.router.action(SAVE_DOCUMENT.id).isEnabled()
     assert not host.router.route(SAVE_DOCUMENT.id)
 
-    host.documents.open_document(FIRST_PATH)
+    host.documents.open_document(FIRST_KEY)
     assert host.router.action(SAVE_DOCUMENT.id).isEnabled()
 
     host.documents.close_focused_document()
@@ -254,8 +255,8 @@ def test_a_disabled_instance_is_not_triggered(host: Host, saved: MagicMock) -> N
     * open two edited documents, disable the focused one's Save, route Save app-wide
     * verify routing fires nothing -- not even the other document's enabled Save
     """
-    first = open_dirty(host, FIRST_PATH)
-    second = open_dirty(host, SECOND_PATH)
+    first = open_dirty(host, FIRST_KEY)
+    second = open_dirty(host, SECOND_KEY)
     assert first.save_action.isEnabled()
     second.save_action.setEnabled(False)
     route_app_wide(SAVE_DOCUMENT.id)
@@ -273,8 +274,8 @@ def test_closing_a_routed_document_leaves_no_dangling_binding(host: Host, qtbot:
     * close the focused (clean, second) one -- no prompt -- and let it be deleted
     * verify only the first's action is still bound, and routing saves the first
     """
-    first = open_dirty(host, FIRST_PATH)
-    second = host.documents.open_document(SECOND_PATH)
+    first = open_dirty(host, FIRST_KEY)
+    second = host.documents.open_document(SECOND_KEY)
     route_app_wide(SAVE_DOCUMENT.id)
 
     with wait_destroyed(qtbot, second):
@@ -294,8 +295,8 @@ def test_a_routed_refresh_reaches_the_files_view_two_managers_down(host: Host) -
     * count each document's Files view refreshes, trigger the router
     * verify only the focused document's view refreshed
     """
-    first = host.documents.open_document(FIRST_PATH)
-    second = host.documents.open_document(SECOND_PATH)
+    first = host.documents.open_document(FIRST_KEY)
+    second = host.documents.open_document(SECOND_KEY)
     route_app_wide(REFRESH_FILES.id)
     fired: dict[object, int] = {first: 0, second: 0}
     for document in (first, second):
@@ -317,7 +318,7 @@ def test_a_routed_refresh_skips_a_closed_files_view(host: Host) -> None:
     * route the files refresh app-wide, trigger the router
     * verify nothing fired
     """
-    document = host.documents.open_document(FIRST_PATH)
+    document = host.documents.open_document(FIRST_KEY)
     view = files_dock_of(document).widget()
     assert isinstance(view, FilesView)
     route_app_wide(REFRESH_FILES.id)

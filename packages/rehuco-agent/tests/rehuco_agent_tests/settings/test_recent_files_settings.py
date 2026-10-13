@@ -11,7 +11,12 @@ from typing import Any, Final
 from unittest.mock import patch
 
 from pytest import fixture
-from rehuco_agent.settings.recent_files_settings import MAXIMUM_RECENT_FILES, RecentFilesSettings
+from rehuco_agent.settings.recent_files_settings import (
+    MAXIMUM_RECENT_FILES,
+    PATH_KEY,
+    PATHS_KEY,
+    RecentFilesSettings,
+)
 
 FIRST: Final = Path.cwd() / "fake" / "first.rehu"
 SECOND: Final = Path.cwd() / "fake" / "second.rehu"
@@ -228,6 +233,29 @@ def test_load_clears_prior_paths(settings: FakeSettings) -> None:
     restored.load(settings)  # type: ignore[arg-type]
 
     assert restored.newest_first() == [FIRST.resolve()]
+
+
+def test_load_drops_an_entry_that_is_no_absolute_path(settings: FakeSettings) -> None:
+    """A corrupted store -- an empty value, a relative path, one climbing with ``..`` -- costs only that entry: every
+    recorded path was resolved, and a key cannot name such a one (#414).
+
+    **Test steps:**
+
+    * write an array holding a good path, an empty value, a relative path and a ``..`` one
+    * load, and verify only the good path is kept
+    """
+    recent = RecentFilesSettings()
+    settings.beginGroup(recent.group)
+    settings.beginWriteArray(PATHS_KEY)
+    for index, value in enumerate((str(FIRST), "", "relative/second.rehu", str(FIRST.parent / ".." / "third.rehu"))):
+        settings.setArrayIndex(index)
+        settings.setValue(PATH_KEY, value)
+    settings.endArray()
+    settings.endGroup()
+
+    recent.load(settings)  # type: ignore[arg-type]
+
+    assert recent.newest_first() == [FIRST.resolve()]
 
 
 def test_load_defaults_to_empty_when_nothing_was_saved(settings: FakeSettings) -> None:

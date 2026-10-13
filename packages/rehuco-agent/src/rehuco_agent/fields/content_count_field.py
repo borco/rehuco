@@ -38,7 +38,7 @@ class ContentCountField(Field[int | None]):
     :param name: the field's identifier on its model.
     :param label: display label; derived from ``name`` when omitted.
     :param measure: counts the resource's content images afresh, returning ``None`` when there is nothing
-        to measure (a document with no path yet). **Called on a worker thread**, so it must touch no
+        to measure (a document with no local path). **Called on a worker thread**, so it must touch no
         widget and no ``QObject``. Called on every ``Compute``, never on construction.
     :param switched: fires when the document shows another record, which drops a measurement in flight and
         clears the readout (#470); ``None`` for a document that never does.

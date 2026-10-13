@@ -30,8 +30,8 @@ from rehuco_core import TUTORIAL_PLUGIN, RehuDocument
 
 from rehuco_agent_tests.qt_connections import flush_deferred_deletes, receivers
 
-DOCUMENT_PATH: Final = Path("/fake/info.rehu")
-SCREENSHOT: Final = Path("/fake/info00.jpg")
+DOCUMENT_PATH: Final = Path.cwd() / "fake" / "info.rehu"
+SCREENSHOT: Final = Path.cwd() / "fake" / "info00.jpg"
 
 OWN_NAMESPACE: Final = "rehuco_layout"
 """A layout namespace other than the Documents dock's, as the Root Catalog dock will name one (#381)."""
@@ -196,11 +196,10 @@ def test_another_record_loaded_in_place_lets_go_of_what_the_last_one_showed(
     viewer = sub_docks._DocumentSubDocks__image_viewer  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert viewer is not None
 
-    other = RehuDocument(
-        {"type": "Tutorial", "sources": [{"title": "Bar", "primary": True}]}, Path("/fake/b/info.rehu")
-    )
+    other_path = Path.cwd() / "fake" / "b" / "info.rehu"
+    other = RehuDocument({"type": "Tutorial", "sources": [{"title": "Bar", "primary": True}]}, other_path)
     mocker.patch("rehuco_agent.documents.rehu_document_model.load_or_locked", return_value=other)
-    model.load(Path("/fake/b/info.rehu"))
+    model.load(other_path)
 
     clear.assert_called_once()
     assert viewer.isHidden()

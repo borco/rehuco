@@ -30,6 +30,20 @@ class KeyRelocation:
         """
         return cls(tuple((LocalKey(source), LocalKey(destination)) for source, destination in relocation.pairs))
 
+    def to_local(self) -> Relocation:
+        """The pairs this machine renamed itself, for a holder that keeps only local paths -- the ``.rehudb`` cache, the
+        Roots view's tree. A pair on another node's root concerns no such holder, so it is left out.
+
+        :returns: the :class:`~rehuco_core.access.LocalKey` pairs, as paths.
+        """
+        return Relocation(
+            tuple(
+                (source.path, destination.path)
+                for source, destination in self.pairs
+                if isinstance(source, LocalKey) and isinstance(destination, LocalKey)
+            )
+        )
+
     def relocate(self, candidate: ResourceKey) -> ResourceKey:
         """Where ``candidate`` ended up once the rename ran, or ``candidate`` itself if it did not move.
 

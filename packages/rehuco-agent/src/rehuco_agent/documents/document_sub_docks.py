@@ -189,7 +189,7 @@ class UrlDropFilter(QObject):
 
     :param actions: where a recognized drop is submitted.
     :param model: the document, read for :attr:`~.RehuDocumentModel.locked` and
-        :attr:`~.RehuDocumentModel.path` -- a locked document, or one with no path yet, refuses the
+        :attr:`~.RehuDocumentModel.path` -- a locked document, or one with no local path, refuses the
         drop outright rather than queuing a scrape with nowhere to land.
     """
 
@@ -269,7 +269,7 @@ class ImageDropFilter(QObject):
 
     :param image_downloads: where a recognized drop is written or submitted.
     :param model: the document, read for :attr:`~.RehuDocumentModel.locked` and
-        :attr:`~.RehuDocumentModel.path` -- a locked document, or one with no path yet, refuses the
+        :attr:`~.RehuDocumentModel.path` -- a locked document, or one with no local path, refuses the
         drop outright.
     """
 
@@ -1740,7 +1740,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
     def __record_folder(self) -> Path | None:
         """The folder this document's record sits in -- what an image file taken out is named relative to (#395).
 
-        :returns: the folder; ``None`` while the document has no path.
+        :returns: the folder; ``None`` while the document has no local path.
         """
         path = self.__model.path
         return path.parent if path is not None else None
@@ -2449,8 +2449,8 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         when the document is busiest.
 
         The rows already shown stay: they are this resource's own history, and the resource was renamed
-        rather than replaced. A never-saved document starts with no path and so attaches nothing at all
-        -- its first save is what gives it a scope to be the log of.
+        rather than replaced. A document with no local path attaches nothing at all -- the save that gives
+        it one is what gives it a scope to be the log of.
 
         :param path: the model's new path, or ``None``.
         """

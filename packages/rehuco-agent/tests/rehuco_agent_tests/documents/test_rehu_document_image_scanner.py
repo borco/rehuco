@@ -18,7 +18,10 @@ from rehuco_agent.fields.image_scanner import AfterConversion
 from rehuco_agent.settings.markdown_rendering_settings import shared_markdown_rendering_settings
 from rehuco_core import RehuDocument
 
-FAKE_PATH: Final = Path("/fake/info.rehu")
+FAKE_DIRECTORY: Final = Path.cwd() / "fake"
+"""The fake resource folder, never created; built from ``Path.cwd()`` so it is absolute on every platform, as a
+document's key needs."""
+FAKE_PATH: Final = FAKE_DIRECTORY / "info.rehu"
 
 
 def no_screenshots(_directory: Path, _stem: str) -> list[Path]:
@@ -60,12 +63,12 @@ def test_files_delegates_to_the_lister_with_directory_and_stem(mocker: MockerFix
     * call ``files()``
     * verify the lister was called with ``(/fake, "info")`` and its list came straight back
     """
-    listed = [Path("/fake/info00.jpg"), Path("/fake/info01.png")]
+    listed = [FAKE_DIRECTORY / "info00.jpg", FAKE_DIRECTORY / "info01.png"]
     lister = mocker.Mock(return_value=listed)
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE_PATH))
 
     assert RehuDocumentImageScanner(model, lister, no_screenshots).files() == listed
-    lister.assert_called_once_with(Path("/fake"), "info")
+    lister.assert_called_once_with(FAKE_DIRECTORY, "info")
 
 
 def test_files_is_empty_without_a_path(mocker: MockerFixture) -> None:
@@ -93,8 +96,8 @@ def test_screenshots_keeps_the_two_kinds_apart(mocker: MockerFixture) -> None:
     * read ``screenshots()``
     * verify each half came from its own lister, and that ``files()`` is the two in that order
     """
-    numbered = [Path("/fake/info00.jpg")]
-    unconverted = [Path("/fake/cover.jpg")]
+    numbered = [FAKE_DIRECTORY / "info00.jpg"]
+    unconverted = [FAKE_DIRECTORY / "cover.jpg"]
     lister = mocker.Mock(return_value=numbered)
     unconverted_lister = mocker.Mock(return_value=unconverted)
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE_PATH))
@@ -105,7 +108,7 @@ def test_screenshots_keeps_the_two_kinds_apart(mocker: MockerFixture) -> None:
     assert screenshots.numbered == tuple(numbered)
     assert screenshots.unconverted == tuple(unconverted)
     assert scanner.files() == [*numbered, *unconverted]
-    unconverted_lister.assert_called_with(Path("/fake"), "info")
+    unconverted_lister.assert_called_with(FAKE_DIRECTORY, "info")
 
 
 def test_an_image_both_listers_report_is_numbered_once(mocker: MockerFixture) -> None:
@@ -120,15 +123,15 @@ def test_an_image_both_listers_report_is_numbered_once(mocker: MockerFixture) ->
     * read ``screenshots()``
     * verify the shared file is numbered only, and the other is the whole un-converted half
     """
-    shared = Path("/fake/cover.jpg")
+    shared = FAKE_DIRECTORY / "cover.jpg"
     lister = mocker.Mock(return_value=[shared])
-    unconverted_lister = mocker.Mock(return_value=[shared, Path("/fake/sample-01.png")])
+    unconverted_lister = mocker.Mock(return_value=[shared, FAKE_DIRECTORY / "sample-01.png"])
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE_PATH))
 
     screenshots = RehuDocumentImageScanner(model, lister, unconverted_lister).screenshots()
 
     assert screenshots.numbered == (shared,)
-    assert screenshots.unconverted == (Path("/fake/sample-01.png"),)
+    assert screenshots.unconverted == (FAKE_DIRECTORY / "sample-01.png",)
 
 
 def test_screenshots_reports_a_shared_directory(mocker: MockerFixture) -> None:
@@ -216,12 +219,12 @@ def test_after_conversion_delegates_to_the_lister_on_a_legacy_tc(mocker: MockerF
     """
     outcomes = {"cover.jpg": AfterConversion("info00.jpg")}
     after_conversion_lister = mocker.Mock(return_value=outcomes)
-    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("/fake/info.tc"), legacy_tc=True))
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE_DIRECTORY / "info.tc", legacy_tc=True))
 
     result = RehuDocumentImageScanner(model, no_screenshots, no_screenshots, after_conversion_lister).after_conversion()
 
     assert result == outcomes
-    after_conversion_lister.assert_called_once_with(Path("/fake"), "info")
+    after_conversion_lister.assert_called_once_with(FAKE_DIRECTORY, "info")
 
 
 def test_after_conversion_is_none_on_a_rehu(mocker: MockerFixture) -> None:
@@ -252,7 +255,7 @@ def test_after_conversion_is_none_without_an_after_conversion_lister() -> None:
     * call ``after_conversion()``
     * verify it is ``None``
     """
-    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("/fake/info.tc"), legacy_tc=True))
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE_DIRECTORY / "info.tc", legacy_tc=True))
 
     assert RehuDocumentImageScanner(model, no_screenshots, no_screenshots).after_conversion() is None
 
@@ -294,7 +297,7 @@ def test_get_markdown_viewer_image_resolves_a_bare_filename(mocker: MockerFixtur
     result = RehuDocumentImageScanner(model, no_screenshots, no_screenshots).get_markdown_viewer_image("cover.jpg")
 
     assert result is image
-    constructor.assert_called_once_with(str(Path("/fake/cover.jpg")))
+    constructor.assert_called_once_with(str(FAKE_DIRECTORY / "cover.jpg"))
     image.setDevicePixelRatio.assert_called_once_with(1.0)
 
 
@@ -472,7 +475,7 @@ def test_get_markdown_viewer_image_resolves_an_extension_less_reference(mocker: 
     * verify ``QImage`` was constructed with the ``.png`` candidate, and that image is returned
     """
     image, _, constructor = mock_decoded_image(mocker, width=100)
-    png_path = Path("/fake/info00.png")
+    png_path = FAKE_DIRECTORY / "info00.png"
     mocker.patch.object(Path, "exists", autospec=True, side_effect=lambda self: self == png_path)
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE_PATH))
 
@@ -493,8 +496,8 @@ def test_get_markdown_viewer_image_tries_extensions_in_order(mocker: MockerFixtu
     * verify ``QImage`` was constructed with the ``.jpg`` candidate -- earlier in ``IMAGE_EXTENSIONS``
     """
     image, _, constructor = mock_decoded_image(mocker, width=100)
-    jpg_path = Path("/fake/info00.jpg")
-    png_path = Path("/fake/info00.png")
+    jpg_path = FAKE_DIRECTORY / "info00.jpg"
+    png_path = FAKE_DIRECTORY / "info00.png"
     mocker.patch.object(Path, "exists", autospec=True, side_effect=lambda self: self in (jpg_path, png_path))
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE_PATH))
 

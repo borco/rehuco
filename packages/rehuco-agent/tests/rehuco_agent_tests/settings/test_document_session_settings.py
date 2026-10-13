@@ -311,11 +311,22 @@ def test_a_file_entry_that_is_not_a_document_is_skipped(state_files: MemoryState
 
     **Test steps:**
 
-    * seed a file whose items hold a good entry, a non-object, and an entry with no path
+    * seed a file whose items hold a good entry, a non-object, an entry with no path, a relative path and one climbing
+      with ``..`` -- neither of which a key can name (#414)
     * verify only the good one is loaded
     """
     state_files.files[document_session_path()] = json.dumps(
-        {"version": 1, "items": [{"path": FIRST.as_posix(), "open": True}, 7, {"open": True}, {"path": ""}]}
+        {
+            "version": 1,
+            "items": [
+                {"path": FIRST.as_posix(), "open": True},
+                7,
+                {"open": True},
+                {"path": ""},
+                {"path": "relative/info.rehu", "open": True},
+                {"path": (FIRST.parent / ".." / "info.rehu").as_posix(), "open": True},
+            ],
+        }
     )
 
     session = DocumentSessionSettings()

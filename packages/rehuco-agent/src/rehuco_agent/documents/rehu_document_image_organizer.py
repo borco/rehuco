@@ -64,7 +64,7 @@ class RehuDocumentImageOrganizer:
         :returns: ``{old filename: new filename}`` -- one entry, so the curated-out list follows the
             rename the same way it follows a reorder's.
         :raises OSError: the rename failed, or was refused -- including the refusal :meth:`__location`
-            raises for a path-less document or a legacy ``.tc``, which reaches this one first and says
+            raises for a document with no local path or a legacy ``.tc``, which reaches this one first and says
             the same thing `~rehuco_core.convert_screenshot` would.
         :raises LookupError: ``path`` matches no configured pattern; see the protocol.
         :raises ValueError: the numbered set is full.
@@ -84,7 +84,7 @@ class RehuDocumentImageOrganizer:
         :param slot: the ``<stem>NN`` slot to write into; ``None`` takes the next free one.
         :returns: the new file's path.
         :raises OSError: the write failed, or was refused -- including the refusal :meth:`__location`
-            raises for a path-less document or a legacy ``.tc``.
+            raises for a document with no local path or a legacy ``.tc``.
         :raises ValueError: ``slot`` is ``None`` and the numbered set is already full.
         """
         directory, stem = self.__location()
@@ -125,11 +125,11 @@ class RehuDocumentImageOrganizer:
         Refusal is an exception rather than a sentinel: an empty rename map already means "nothing
         needed renaming", so answering a refusal the same way would read as success -- the model would
         move its rows while the directory stayed put. Both refusals sit behind a first lock (a
-        ``.tc``'s editor is disabled, a path-less document lists no screenshots), so raising here is
+        ``.tc``'s editor is disabled, a document with no local path lists no screenshots), so raising here is
         the second lock actually locking.
 
         :returns: the directory and filename stem.
-        :raises PermissionError: a document with no path yet, or a legacy ``.tc`` (see the class
+        :raises PermissionError: a document with no local path, or a legacy ``.tc`` (see the class
             docstring) -- an :class:`OSError`, so the editor's ordinary failure handling
             (log, reseed from disk) covers it.
         """

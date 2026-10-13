@@ -47,6 +47,7 @@ from PySide6.QtCore import QModelIndex, QPersistentModelIndex, Qt, QUrl, Signal
 from PySide6.QtGui import QAction, QDesktopServices, QShowEvent
 from PySide6.QtWidgets import QHeaderView, QToolBar, QToolButton, QWidget
 from rehuco_core import IMAGE_EXTENSIONS, FileKind, Relocation
+from rehuco_core.access import KeyRelocation, LocalKey, ResourceKey
 
 from ..commands import REFRESH_FILES, shared_command_registry
 from ..resource_events import ResourceEvents
@@ -85,8 +86,9 @@ line for that whole time is indistinguishable from an empty folder."""
 UNREACHABLE_SUMMARY: Final = "This folder is not reachable right now."
 """What the summary line says instead of drawing an empty table over an away mount (#245)."""
 
-NO_PATH_SUMMARY: Final = "This document has not been saved yet, so it has no folder to show."
-"""What the summary line says for a never-saved document -- there is nowhere to list."""
+NO_PATH_SUMMARY: Final = "This document is not a file on this machine, so there is no folder to show here."
+"""What the summary line says for a document with no local path -- nowhere on this machine to list; a node's
+listing comes through the access seam later (#423)."""
 
 UNREADABLE_RECORD_SUMMARY: Final = "The checksum record could not be read: {error}"
 """What the summary line says for a ``.checksum`` this build cannot parse.
@@ -280,7 +282,7 @@ class FilesView(QWidget):
         """Offer Home and Up exactly while there is somewhere to go.
 
         One method for the pair because they take the **same** condition: both lead back towards the
-        resource's own folder, so at the root -- and for a never-saved document, which has no folder to
+        resource's own folder, so at the root -- and for a document with no local path, which has no folder to
         go home to at all -- neither has anything to do. Called from :meth:`__go_to` alone, so the
         answer is the target's and never a landed read's.
 
@@ -385,15 +387,17 @@ class FilesView(QWidget):
         self.__shown = FilesView.__relocated(moved, self.__shown)
         self.__go_to(moved.relocate(directory))
 
-    def __on_moved(self, relocation: Relocation) -> None:
+    def __on_moved(self, moved: KeyRelocation) -> None:
         """Follow a rename the app made: rename the rows it moved and the folder browsed, then read again.
 
         Only a rename touching this resource's folder is anything to this view; one elsewhere in the
         catalog is not read for. The rows are renamed before the read goes out so the read lands on rows
-        already under their new paths, and the reader's selection with them.
+        already under their new paths, and the reader's selection with them. The listing is of this machine's
+        folders until it goes through the access seam (#423), so only this machine's renames are followed.
 
-        :param relocation: the rename's executed plan.
+        :param moved: the rename's executed plan.
         """
+        relocation = moved.to_local()
         root = self.__root
         if root is None or not relocation.touches(root):
             return
@@ -413,20 +417,20 @@ class FilesView(QWidget):
         """
         return None if path is None else relocation.relocate(path)
 
-    def __on_files_changed(self, paths: tuple[Path, ...]) -> None:
+    def __on_files_changed(self, keys: tuple[ResourceKey, ...]) -> None:
         """Read again when the app wrote a file beneath this resource's folder.
 
-        :param paths: the files written or replaced.
+        :param keys: the files written or replaced.
         """
-        if any(self.__beneath_root(path) for path in paths):
+        if any(isinstance(key, LocalKey) and self.__beneath_root(key.path) for key in keys):
             self.refresh()
 
-    def __on_folder_changed(self, directory: Path) -> None:
+    def __on_folder_changed(self, directory: ResourceKey) -> None:
         """Read again when the app changed a folder's listing beneath this resource's folder.
 
         :param directory: the folder whose listing changed.
         """
-        if self.__beneath_root(directory):
+        if isinstance(directory, LocalKey) and self.__beneath_root(directory.path):
             self.refresh()
 
     def __beneath_root(self, path: Path) -> bool:
@@ -538,7 +542,7 @@ class FilesView(QWidget):
         ui.main_layout.insertWidget(0, toolbar)
 
     def __on_reveal_triggered(self) -> None:
-        """Show the browsed folder in the system's file browser -- a no-op for a path-less document,
+        """Show the browsed folder in the system's file browser -- a no-op for a document with no local path,
         where the action is disabled anyway."""
         if self.__directory is not None:  # pragma: no cover  (a disabled action's trigger() is a no-op)
             reveal_in_file_browser(self.__directory)
@@ -561,12 +565,12 @@ class FilesView(QWidget):
 
     @property
     def reveal_action(self) -> QAction:
-        """Shows the browsed folder in the system's file browser. Disabled for a path-less document."""
+        """Shows the browsed folder in the system's file browser. Disabled for a document with no local path."""
         return self.__ui.reveal_action
 
     @property
     def directory(self) -> Path | None:
-        """The folder currently browsed, or ``None`` for a document with no path yet."""
+        """The folder currently browsed, or ``None`` for a document with no local path."""
         return self.__directory
 
     @property

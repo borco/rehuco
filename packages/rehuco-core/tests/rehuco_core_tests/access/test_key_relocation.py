@@ -173,3 +173,32 @@ def test_an_empty_relocation_touches_nothing() -> None:
 
 
 # endregion
+
+
+# region to_local
+
+
+def test_to_local_keeps_the_local_pairs_as_paths() -> None:
+    """A holder of local paths -- the cache, the Roots tree -- gets this machine's renames back as a path relocation.
+
+    **Test steps:**
+
+    * turn a local relocation back
+    """
+    assert FOLDER_RENAME.to_local() == Relocation(((LIBRARY / "pack", LIBRARY / "kit"),))
+
+
+def test_to_local_leaves_out_a_node_s_pairs() -> None:
+    """A rename on another node's root concerns no local holder.
+
+    **Test steps:**
+
+    * turn a node relocation, and a mixed one, back
+    """
+    mixed = KeyRelocation((*NODE_RENAME.pairs, *FOLDER_RENAME.pairs))
+
+    assert NODE_RENAME.to_local() == Relocation()
+    assert mixed.to_local() == FOLDER_RENAME.to_local()
+
+
+# endregion

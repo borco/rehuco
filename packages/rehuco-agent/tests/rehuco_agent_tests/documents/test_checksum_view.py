@@ -28,7 +28,7 @@ from rehuco_agent.documents.files_rows import FileChecksumState
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_core import ChecksumReport, RehuDocument, TaskQueue
 
-DIRECTORY: Final = Path("/fake/library/sculpting")
+DIRECTORY: Final = Path.cwd() / "fake" / "library" / "sculpting"
 INFO_PATH: Final = DIRECTORY / "info.rehu"
 
 VIDEO: Final = "lesson1.mp4"

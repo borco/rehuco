@@ -60,7 +60,7 @@ from rehuco_core import (
     RenameCoordinator,
 )
 
-PACK_PATH = Path("/library/anatomy-pack.rehu")
+PACK_PATH = Path.cwd() / "library" / "anatomy-pack.rehu"
 """Stand-in path for a saved, file-scoped reference-images resource -- never touched on disk: the
 enumeration that would read it is mocked wherever it matters."""
 

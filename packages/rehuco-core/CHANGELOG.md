@@ -11,12 +11,14 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ### Added
 
-- `rehuco_core.access`, the first types of the resource access seam; nothing uses them yet. A `ResourceKey` is a
-  `LocalKey(path)` or a `NodeKey(node_id, root_id, relative)`, both with path arithmetic (`name`, `stem`, `parent`,
-  `with_name`, `joinpath`, `is_at_or_beneath`); a `LocalKey` folds case as the filesystem does, a `NodeKey` compares
-  as spelled. `KeyRelocation` is `Relocation` over keys (`KeyRelocation.from_local`). `ChangeFeed` announces `Moved`,
-  `Changed`, `FolderChanged` and `Invalidated` without Qt. `AccessRouter.for_key` hands a local key to `LocalAccess`
-  and raises `NodeUnreachable` for a node key.
+- `rehuco_core.access`, the first types of the resource access seam, which the agent now names its open documents and
+  file announcements by. A `ResourceKey` is a `LocalKey(path)` or a `NodeKey(node_id, root_id, relative)`, both with
+  path arithmetic (`name`, `stem`, `parent`, `with_name`, `joinpath`, `is_at_or_beneath`); a `LocalKey` folds case as
+  the filesystem does, a `NodeKey` compares as spelled, and `str()` of either is a stable name for it.
+  `KeyRelocation` is `Relocation` over keys (`KeyRelocation.from_local`, and `to_local` for the local pairs).
+  `ChangeFeed` announces `Moved`, `Changed`, `FolderChanged` and `Invalidated` without Qt. `AccessRouter.key_for_path`
+  turns a path into its key, and `AccessRouter.for_key` hands a local key to `LocalAccess` and raises
+  `NodeUnreachable` for a node key.
 - `app_folders()` answers where the agent and the node keep their files without Qt: one `borco/rehuco` folder on
   Windows (`%LOCALAPPDATA%`) and macOS, the XDG config / data / cache split on Linux. `default_username()` is the OS
   login name, or `admin` when the platform has none.

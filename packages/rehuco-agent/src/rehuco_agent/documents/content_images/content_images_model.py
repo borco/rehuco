@@ -284,7 +284,7 @@ class ContentImagesModel(QAbstractListModel):  # pylint: disable=too-many-instan
     ) -> None:
         """Re-enumerate ``path``'s content images on the pool, replacing the entries when it lands.
 
-        :param path: the ``.rehu`` file, or ``None`` for a document with no path yet -- empties the
+        :param path: the ``.rehu`` file, or ``None`` for a document with no local path -- empties the
             model.
         :param extensions: the recognized image extensions.
         :param excluded_patterns: the junk globs the content walk leaves out (#226), the user's -- the

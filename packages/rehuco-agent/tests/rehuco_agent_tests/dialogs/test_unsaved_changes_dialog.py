@@ -10,8 +10,9 @@ from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.dialogs.unsaved_changes_dialog import UnsavedChangesDialog
 from rehuco_agent.settings.unsaved_changes_dialog_settings import UnsavedChangesDialogSettings
+from rehuco_core.access import LocalKey
 
-PATH: Final = Path.cwd() / "fake" / "info.rehu"
+KEY: Final = LocalKey(Path.cwd() / "fake" / "info.rehu")
 
 
 @fixture(autouse=True)
@@ -27,14 +28,14 @@ def mock_persistent_settings(mocker: MockerFixture) -> Any:
     return mocker.patch("rehuco_agent.dialogs.unsaved_changes_dialog.persistent_settings", return_value=settings)
 
 
-def make_model(mocker: MockerFixture, path: Path | None) -> Any:
-    """Build a stand-in dirty document model with the given ``path``.
+def make_model(mocker: MockerFixture, key: LocalKey | None) -> Any:
+    """Build a stand-in dirty document model with the given ``key``.
 
     :param mocker: pytest-mock fixture.
-    :param path: the model's reported path, or ``None`` for an untitled document.
-    :returns: a mock exposing just the ``path`` attribute the dialog reads.
+    :param key: the model's reported key, or ``None`` for an untitled document.
+    :returns: a mock exposing just the ``key`` attribute the dialog reads.
     """
-    return mocker.MagicMock(path=path)
+    return mocker.MagicMock(key=key)
 
 
 def test_lists_every_model_checked_by_default(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -46,13 +47,13 @@ def test_lists_every_model_checked_by_default(mocker: MockerFixture, qtbot: QtBo
     * verify both appear in the list model, each checked
     * verify both are reported selected before any interaction
     """
-    first, second = make_model(mocker, PATH), make_model(mocker, None)
+    first, second = make_model(mocker, KEY), make_model(mocker, None)
     dialog = UnsavedChangesDialog([first, second])
     qtbot.addWidget(dialog)
 
     list_model = dialog._UnsavedChangesDialog__list_model  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     assert list_model.rowCount() == 2
-    assert list_model.item(0).text() == str(PATH)
+    assert list_model.item(0).text() == str(KEY)
     assert list_model.item(1).text() == "Untitled"
     assert list_model.item(0).checkState() == Qt.CheckState.Checked
     assert list_model.item(1).checkState() == Qt.CheckState.Checked
@@ -69,7 +70,7 @@ def test_unchecking_a_model_excludes_it_from_selection(mocker: MockerFixture, qt
     * uncheck the first one's checkbox
     * verify only the second remains selected
     """
-    first, second = make_model(mocker, PATH), make_model(mocker, None)
+    first, second = make_model(mocker, KEY), make_model(mocker, None)
     dialog = UnsavedChangesDialog([first, second])
     qtbot.addWidget(dialog)
 
@@ -87,7 +88,7 @@ def test_save_button_is_relabeled_save_selected(mocker: MockerFixture, qtbot: Qt
     * build the dialog
     * verify the button box's Save-role button text
     """
-    dialog = UnsavedChangesDialog([make_model(mocker, PATH)])
+    dialog = UnsavedChangesDialog([make_model(mocker, KEY)])
     qtbot.addWidget(dialog)
 
     button_box = dialog._UnsavedChangesDialog__ui.button_box  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
@@ -103,7 +104,7 @@ def test_discard_all_accepts_and_selects_nothing_regardless_of_checkboxes(mocker
     * click the Discard All button
     * verify the dialog was accepted and no models are selected
     """
-    dialog = UnsavedChangesDialog([make_model(mocker, PATH)])
+    dialog = UnsavedChangesDialog([make_model(mocker, KEY)])
     qtbot.addWidget(dialog)
     button_box = dialog._UnsavedChangesDialog__ui.button_box  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     discard_all = next(b for b in button_box.buttons() if b.text() == "Discard All")
@@ -123,7 +124,7 @@ def test_clicking_anywhere_in_a_row_toggles_its_checkbox(mocker: MockerFixture, 
     * dispatch a mouse-release editor event for that row through the view's delegate
     * verify the checkbox is now unchecked
     """
-    dialog = UnsavedChangesDialog([make_model(mocker, PATH)])
+    dialog = UnsavedChangesDialog([make_model(mocker, KEY)])
     qtbot.addWidget(dialog)
     view = dialog._UnsavedChangesDialog__ui.documents_list_view  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     list_model = dialog._UnsavedChangesDialog__list_model  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
@@ -145,7 +146,7 @@ def test_other_editor_events_fall_through_to_the_base_delegate(mocker: MockerFix
     * dispatch a mouse-move editor event (not a release) for that row
     * verify the checkbox is unchanged
     """
-    dialog = UnsavedChangesDialog([make_model(mocker, PATH)])
+    dialog = UnsavedChangesDialog([make_model(mocker, KEY)])
     qtbot.addWidget(dialog)
     view = dialog._UnsavedChangesDialog__ui.documents_list_view  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     list_model = dialog._UnsavedChangesDialog__list_model  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
@@ -175,7 +176,7 @@ def test_restores_geometry_when_previously_saved(mocker: MockerFixture, qtbot: Q
     mocker.patch.object(UnsavedChangesDialogSettings, "load", fake_load)
     restore_geometry = mocker.patch.object(UnsavedChangesDialog, "restoreGeometry")
 
-    dialog = UnsavedChangesDialog([make_model(mocker, PATH)])
+    dialog = UnsavedChangesDialog([make_model(mocker, KEY)])
     qtbot.addWidget(dialog)
 
     restore_geometry.assert_called_once_with(QByteArray(b"geometry-bytes"))
@@ -192,7 +193,7 @@ def test_skips_restoring_geometry_when_nothing_was_saved(mocker: MockerFixture, 
     """
     restore_geometry = mocker.patch.object(UnsavedChangesDialog, "restoreGeometry")
 
-    dialog = UnsavedChangesDialog([make_model(mocker, PATH)])
+    dialog = UnsavedChangesDialog([make_model(mocker, KEY)])
     qtbot.addWidget(dialog)
 
     restore_geometry.assert_not_called()
@@ -207,7 +208,7 @@ def test_done_saves_the_geometry_on_every_exit_path(mocker: MockerFixture, qtbot
     * call ``done`` (as Cancel/Escape/close all do)
     * verify ``UnsavedChangesDialogSettings.save`` was called with those bytes recorded on the instance
     """
-    dialog = UnsavedChangesDialog([make_model(mocker, PATH)])
+    dialog = UnsavedChangesDialog([make_model(mocker, KEY)])
     qtbot.addWidget(dialog)
     mocker.patch.object(dialog, "saveGeometry", return_value=QByteArray(b"new-geometry"))
     save = mocker.patch.object(UnsavedChangesDialogSettings, "save")

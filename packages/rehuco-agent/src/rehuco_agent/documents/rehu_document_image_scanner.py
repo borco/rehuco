@@ -51,7 +51,7 @@ def markdown_viewer_image(record: Path | None, name: str, device_pixel_ratio: fl
     swaps a `.png` into a slot a `.jpg` used to hold still resolves without the description needing an edit of its
     own.
 
-    :param record: the record the description belongs to; ``None`` when it has no path yet, which resolves nothing.
+    :param record: the record the description belongs to; ``None`` when it has no local path, which resolves nothing.
     :param name: a bare filename, an extension-less slot name, or a ``file://`` URL naming it.
     :param device_pixel_ratio: the screen's device-pixel-ratio to tag the image for.
     :returns: the (possibly scaled) image, or ``None`` if unresolvable or undecodable.
@@ -147,7 +147,7 @@ class RehuDocumentImageScanner:
         which is a worse failure than the set difference costs.
 
         :returns: the set; see :class:`~rehuco_agent.fields.image_scanner.ScreenshotSet`. Empty when
-            the document has no path yet or is still pending.
+            the document has no local path or is still pending.
         """
         path = self.__model.path
         if path is None or self.__model.pending:
@@ -177,7 +177,7 @@ class RehuDocumentImageScanner:
         """What each pattern-matched image is once this resource is converted (#293).
 
         ``None`` off anything that is not a legacy ``.tc`` with a real path to scan and an
-        ``after_conversion`` lister to ask -- a ``.rehu`` has nothing left to convert, a path-less or
+        ``after_conversion`` lister to ask -- a ``.rehu`` has nothing left to convert, a local-path-less or
         :attr:`~RehuDocumentModel.pending` document has no directory to read -- which is what the
         images dock's *After conversion* column reads as "hide me". Read fresh from the lister on every
         call rather than cached here, the same as :meth:`screenshots` -- the caller (`ImageSelector`)

@@ -130,7 +130,8 @@ class DocumentSessionSettings:
         state_file.write_state_file(path, SESSION_VERSION, values)
 
     def __read(self, values: dict[str, Any]) -> None:
-        """Take the session from a file's values, skipping an entry that is not one.
+        """Take the session from a file's values, skipping an entry that is not one -- a document named by anything but
+        an absolute path included, since every saved one was, and a key cannot name another ([[nodes#access-seam]]).
 
         :param values: what :func:`~.state_file.read_state_file` returned.
         """
@@ -142,7 +143,10 @@ class DocumentSessionSettings:
         for entry in entries if isinstance(entries, list) else []:
             if not isinstance(entry, dict) or not isinstance(entry.get("path"), str) or not entry["path"]:
                 continue
-            self.items[Path(entry["path"])] = DocumentSessionSettings.Item(
+            path = Path(entry["path"])
+            if not path.is_absolute() or ".." in path.parts:
+                continue
+            self.items[path] = DocumentSessionSettings.Item(
                 open=entry.get("open") is True,
                 state=state_file.decode_bytes(entry.get("state")),
             )

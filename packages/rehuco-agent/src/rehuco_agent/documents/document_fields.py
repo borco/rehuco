@@ -395,7 +395,7 @@ def build_document_form(
         Compute is counting waits one central-directory read rather than running into the open archive
         (#355).
 
-        :returns: the count, or ``None`` when the document has no path yet -- there is nothing on disk to
+        :returns: the count, or ``None`` when the document has no local path -- there is nothing on disk to
             count, which is not the same as counting zero.
         """
         path = model.path
@@ -417,7 +417,7 @@ def build_document_form(
         it touches nothing but plain Python state and the filesystem.
 
         :returns: the total size in bytes, or ``None`` when there is nothing to measure -- a document
-            with no path yet, or a resource part of which will not read (#245). Neither is a ``0``, and
+            with no local path, or a resource part of which will not read (#245). Neither is a ``0``, and
             the second is deliberately not a smaller number either: core refuses a partial sum rather
             than reporting it, because an offline branch and a resource that shed those files would
             otherwise be the same answer.
@@ -445,7 +445,7 @@ def build_document_form(
         it touches nothing but plain Python state, the filesystem, and the probe.
 
         :returns: the total in whole seconds, or ``None`` when there is nothing to measure -- a document
-            with no path yet, a probe backend that cannot run here at all, or a resource part of which
+            with no local path, a probe backend that cannot run here at all, or a resource part of which
             will not read (#245). Neither of the last two is a ``0``: core raises rather than totalling
             one, because a misconfigured backend, an offline branch and a tutorial holding no video
             would otherwise be the same answer.

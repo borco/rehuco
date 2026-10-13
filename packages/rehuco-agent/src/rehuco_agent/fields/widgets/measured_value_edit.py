@@ -96,7 +96,7 @@ class MeasuredValueEdit(QWidget):  # pylint: disable=too-many-instance-attribute
 
     computed = SimpleProperty[int | None](None)
     """What the last measurement found, or ``None`` when none has run (or none was possible -- a document
-    with no path yet). Widget state only: it is never written to the document, so setting it leaves
+    with no local path). Widget state only: it is never written to the document, so setting it leaves
     :attr:`value`, and the document's dirty flag, alone."""
 
     busy = SimpleProperty(False)

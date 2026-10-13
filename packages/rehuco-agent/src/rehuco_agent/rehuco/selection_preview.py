@@ -2,10 +2,10 @@
 (#381)."""
 
 from collections.abc import Callable
-from pathlib import Path
 from typing import Final, cast
 
 from PySide6.QtCore import QObject, QTimer
+from rehuco_core.access import ResourceKey
 
 from .catalog_table_model import RowKey
 from .root_catalog import RootCatalog
@@ -22,18 +22,20 @@ class SelectionPreview(QObject):
     behind it has been handled.
 
     A selection is a ``(root_id, relative)`` key -- what a browser row and the Roots view both name a resource by --
-    and :meth:`RootCatalog.resource_path` is the one place it becomes a path, read when the selection **settles**
+    and :meth:`RootCatalog.resource_key` is the one place it becomes a key, read when the selection **settles**
     rather than when it is made, so a root removed in between shows nothing. Selecting nothing -- no row, several, a
     node with no record, a table a scan has just reset -- shows nothing and calls off a selection still waiting: the
     preview stays as it is.
 
     :param catalog: the open catalog, which resolves a key.
-    :param show: shows the document at a path in the preview; what happens when the preview is already showing it is
+    :param show: shows the document at a key in the preview; what happens when the preview is already showing it is
         its own to decide.
     :param parent: optional Qt parent.
     """
 
-    def __init__(self, catalog: RootCatalog, show: Callable[[Path], None], parent: QObject | None = None) -> None:
+    def __init__(
+        self, catalog: RootCatalog, show: Callable[[ResourceKey], None], parent: QObject | None = None
+    ) -> None:
         super().__init__(parent)
         self.__catalog: Final = catalog
         self.__show: Final = show
@@ -60,6 +62,6 @@ class SelectionPreview(QObject):
         # the timer only runs while a key is waiting: select(None) stops it
         key = cast(RowKey, self.__pending)
         self.__pending = None
-        path = self.__catalog.resource_path(*key)
-        if path is not None:
-            self.__show(path)
+        resource = self.__catalog.resource_key(*key)
+        if resource is not None:
+            self.__show(resource)

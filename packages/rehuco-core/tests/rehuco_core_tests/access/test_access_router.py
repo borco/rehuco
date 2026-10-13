@@ -83,3 +83,22 @@ def test_local_access_refuses_to_answer_for_a_node_key() -> None:
     """
     with raises(TypeError):
         LocalAccess().capabilities(NODE_KEY)
+
+
+def test_a_path_entering_the_app_becomes_a_local_key() -> None:
+    """Until a root's claim is read (#453), every path is reached by this machine itself, spelled as it was given.
+
+    **Test steps:**
+
+    * turn an absolute path into a key
+    * check a relative one is refused, as a local key refuses it
+    """
+    router = AccessRouter(LocalAccess())
+    path = Path("/fake/library/Pack/info.rehu").absolute()
+
+    key = router.key_for_path(path)
+
+    assert key == LocalKey(path)
+    assert isinstance(key, LocalKey) and str(key.path) == str(path)
+    with raises(ValueError):
+        router.key_for_path(Path("relative/info.rehu"))

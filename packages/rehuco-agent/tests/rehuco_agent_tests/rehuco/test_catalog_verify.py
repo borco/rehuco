@@ -11,6 +11,7 @@ from pathlib import Path
 from sqlite3 import OperationalError
 from typing import Any
 from unittest.mock import MagicMock
+from uuid import uuid4
 
 from PySide6.QtCore import QThreadPool
 from PySide6.QtWidgets import QLabel
@@ -21,6 +22,7 @@ from rehuco_agent.rehuco.root_folder_loader import RootFolderLoader
 from rehuco_agent.rehuco.roots_panel import FRESH_LISTING_SECONDS
 from rehuco_agent.resource_events import ResourceEvents
 from rehuco_core import CatalogRecordReader, RecordsChecked, RehuDocument
+from rehuco_core.access import LocalKey, NodeKey
 
 from .test_catalog_docks import (  # noqa: F401  # pylint: disable=unused-import
     REHUCO_PATH,
@@ -193,10 +195,35 @@ def test_an_opened_record_is_verified_through_the_app_announcements(
     reads = reads_of(mocker)
     docks.catalog.open_rehuco(REHUCO_PATH)
     try:
-        events.announce_accessed((record,))
+        events.announce_accessed((LocalKey(record),))
 
         qtbot.waitUntil(lambda: docks.catalog.resource_type(record) is not None, timeout=WAIT_TIMEOUT_MS)
         reads.assert_called_once()
+    finally:
+        docks.detach()
+
+
+@mark.usefixtures("served")
+def test_a_record_opened_on_a_node_is_not_verified_here(
+    qtbot: QtBot, queue: Any, database: Any, mocker: MockerFixture
+) -> None:
+    """A node's records are its own cache's: opening only those asks this catalog to verify nothing (#414).
+
+    **Test steps:**
+
+    * a catalog listening to the app's announcements
+    * announce a node's record as accessed
+    * verify no verify was asked for
+    """
+    del database  # the cache's, in memory
+    events = ResourceEvents()
+    docks = build_docks(qtbot, queue, events)
+    docks.catalog.open_rehuco(REHUCO_PATH)
+    verify = mocker.spy(docks.catalog, "verify_records")
+    try:
+        events.announce_accessed((NodeKey("node-a", uuid4(), "alpha/info.rehu"),))
+
+        verify.assert_not_called()
     finally:
         docks.detach()
 

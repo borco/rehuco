@@ -63,7 +63,7 @@ class SizePairField(Field[int | None]):
     :param label: display label for that first size; derived from ``name`` when omitted.
     :param partner_name: the second bound size's identifier, or ``None`` for a lone row.
     :param measure: sums the resource's content on disk, returning ``None`` when there is nothing to
-        measure (a document with no path yet). **Called on a worker thread**, so it must touch no widget
+        measure (a document with no local path). **Called on a worker thread**, so it must touch no widget
         and no ``QObject``. Called once per ``Compute``, never on construction.
     :param switched: fires when the document shows another record, which drops a measurement in flight and
         clears the readout (#470); ``None`` for a document that never does.

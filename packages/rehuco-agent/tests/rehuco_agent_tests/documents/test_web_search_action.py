@@ -13,9 +13,10 @@ from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.documents.web_search_action import EMPTY_TOOLTIP, WebSearchAction
 from rehuco_agent.settings.web_search_settings import DEFAULT_ENGINES, SearchEngine, WebSearchSettings
 from rehuco_core import RehuDocument, TaskQueue
+from rehuco_core.access import LocalKey
 
 SLUG = "SomePublisher - SomeTitle - SomeAuthor (300+) [2025]"
-LIBRARY = Path("/library")
+LIBRARY = Path.cwd() / "library"
 DOCUMENT = {"type": "Tutorial", "sources": [{"title": "Unrelated Title", "primary": True}]}
 QUERY = "SomePublisher SomeTitle SomeAuthor 300+ 2025"
 
@@ -37,6 +38,16 @@ def fixture_search(qapp: QApplication, model: RehuDocumentModel, settings: WebSe
     """The action over :data:`SLUG`; a `QAction` needs the application to exist."""
     del qapp
     return WebSearchAction(model, settings)
+
+
+def relocate(model: RehuDocumentModel, path: Path) -> None:
+    """Move ``model`` to ``path`` the way the model itself does: the key first, then the path.
+
+    :param model: the document model.
+    :param path: the new absolute record path.
+    """
+    model.key = LocalKey(path)
+    model.path = path
 
 
 def search_action_of(widget: DocumentWidget) -> tuple[QToolBar, QAction]:
@@ -105,7 +116,7 @@ def test_a_file_scoped_document_searches_its_stem() -> None:
 
     **Test steps:**
 
-    * build the action over ``/library/Books/My (Great) Pack.rehu``
+    * build the action over ``library/Books/My (Great) Pack.rehu``
     * verify the query is the stem's words
     """
     model = RehuDocumentModel(RehuDocument(DOCUMENT, LIBRARY / "Books" / "My (Great) Pack.rehu"))
@@ -121,17 +132,17 @@ def test_a_document_without_a_location_disables_the_action_until_it_gets_one(
     **Test steps:**
 
     * build the action over a path-less document with a title and verify it is disabled
-    * give it a path and verify the tooltip follows
+    * give it a key and a path (key first, as the model does) and verify the tooltip follows
     * give it a punctuation-only folder name and verify it is disabled again
     """
     model = RehuDocumentModel(RehuDocument(DOCUMENT))
     pathless = WebSearchAction(model, WebSearchSettings())
     assert not pathless.action.isEnabled()
     assert pathless.action.toolTip() == EMPTY_TOOLTIP
-    model.path = LIBRARY / "New (Slug)" / "info.rehu"
+    relocate(model, LIBRARY / "New (Slug)" / "info.rehu")
     assert pathless.action.isEnabled()
     assert pathless.action.toolTip() == "Search the web for: New Slug"
-    model.path = LIBRARY / " - () " / "info.rehu"
+    relocate(model, LIBRARY / " - () " / "info.rehu")
     assert not pathless.action.isEnabled()
     assert search.action.isEnabled()
 

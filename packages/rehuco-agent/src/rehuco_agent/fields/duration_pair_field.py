@@ -71,7 +71,7 @@ class DurationPairField(Field[int | None]):
     :param label: display label for that first duration; derived from ``name`` when omitted.
     :param partner_name: the second bound duration's identifier, or ``None`` for a lone row.
     :param measure: sums how long the resource's videos run, returning ``None`` when there is nothing to
-        measure -- a document with no path yet, or a probe backend that cannot run here at all. **Called
+        measure -- a document with no local path, or a probe backend that cannot run here at all. **Called
         on a worker thread**, so it must touch no widget and no ``QObject``. Called once per ``Compute``,
         never on construction.
     :param switched: fires when the document shows another record, which drops a measurement in flight and

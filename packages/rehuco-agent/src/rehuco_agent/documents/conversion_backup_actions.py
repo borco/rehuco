@@ -244,7 +244,7 @@ class ConversionBackupActions(QObject):
         and gets the inventory narrowed in the same breath rather than checking a flag and then reaching
         for a value that could still be absent.
 
-        :returns: the inventory, or ``None`` when this document has no path, was never converted, or has
+        :returns: the inventory, or ``None`` when this document has no local path, was never converted, or has
             had its backups discarded.
         """
         backups = self.__backups

@@ -395,7 +395,7 @@ class ScreenshotListModel(QAbstractTableModel):
 
         Held by the model rather than by the widget above it, because rearranging the rows *is*
         renaming the files -- the two happen inside one transaction, so they cannot be owned in two
-        places. ``None`` leaves the list read-only: a document with no path yet, or a legacy ``.tc``.
+        places. ``None`` leaves the list read-only: a document with no local path, or a legacy ``.tc``.
 
         :param organizer: the organizer to use, or ``None`` for a set nothing can rearrange.
         """
@@ -959,7 +959,7 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes,
 
     image_organizer = SimpleProperty[ImageOrganizer | None](None)
     """What rearranges the screenshots on disk; ``None`` leaves this a read-only curation list, with
-    the move and delete buttons disabled (a document with no path yet)."""
+    the move and delete buttons disabled (a document with no local path)."""
 
     read_only = SimpleProperty[bool](False)
     """Whether this is a **view** of the resource's images rather than an editor of them (#292): the
@@ -1488,7 +1488,7 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes,
         The model is where both live, because rearranging the rows *is* renaming the files, and
         because a read-only list is one whose check boxes stop being checkable too (#292) -- this
         widget only mirrors the one answer they add up to into its buttons. They are disabled rather
-        than hidden: a document with no path yet gets one the moment it is saved, a locked one drops
+        than hidden: a document with no local path gets one the moment it is saved to one, a locked one drops
         its lock the moment it is converted, and a list whose buttons come and go reads as a
         different editor each time.
         """
