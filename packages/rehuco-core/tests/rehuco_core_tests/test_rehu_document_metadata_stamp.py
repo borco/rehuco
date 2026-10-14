@@ -131,3 +131,54 @@ def test_a_reload_rebases_the_metadata_baseline(tmp_path: Path, freezer: FrozenD
     document.save()
 
     assert stored_updated(path) == UPDATED
+
+
+def test_a_save_told_it_is_an_edit_stamps_updated_and_one_told_not_stamps_nothing(
+    tmp_path: Path, freezer: FrozenDateTimeFactory
+) -> None:
+    """``edited`` overrides the baseline comparison: a caller that knows what the file holds now -- a read-merge-write
+    -- decides whether the write changes the record as stored.
+
+    **Test steps:**
+
+    * load a record and save it unchanged later, told it is an edit
+    * edit its description and save it later still, told it is not
+    * verify the first save stamped its time and the second left that stamp
+    """
+    path = tmp_path / "info.rehu"
+    write_record(path)
+    document = RehuDocument.load(path, username="admin")
+
+    freezer.move_to(LATER)
+    document.save(edited=True)
+    assert stored_updated(path) == LATER
+
+    freezer.move_to("2026-12-12T12:00:00Z")
+    document.data["core"]["description"] = "edited"
+    document.save(edited=False)
+    assert stored_updated(path) == LATER
+
+
+def test_the_payload_to_write_leaves_out_an_abandoned_block(tmp_path: Path) -> None:
+    """What a save writes is the data without the blocks claimed and abandoned this session, which the data itself
+    still holds -- the payload a caller compares with a file.
+
+    **Test steps:**
+
+    * load a tutorial with a foreign ``reference_images`` block
+    * verify the payload to write holds the block, then switch to its type and back
+    * verify the data still holds it and the payload to write does not
+    """
+    path = tmp_path / "info.rehu"
+    write_record(path)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["reference_images"] = {"format_version": 1, "image_count": 12}
+    path.write_text(json.dumps(data), encoding="utf-8")
+    document = RehuDocument.load(path, username="admin")
+    assert "reference_images" in document.payload_to_write()
+
+    document.set_active_type("reference_images")
+    document.set_active_type("tutorial")
+
+    assert "reference_images" in document.data
+    assert "reference_images" not in document.payload_to_write()

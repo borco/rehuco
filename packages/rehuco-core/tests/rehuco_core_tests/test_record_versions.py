@@ -719,6 +719,59 @@ def test_put_paths_creates_missing_containers_as_objects() -> None:
     assert data["core"]["extra"] == {"a": 2}
 
 
+def test_put_paths_stamps_a_block_it_creates_with_the_files_version() -> None:
+    """A plugin block created to hold a value takes its ``format_version`` from the stamps' payload when that has one,
+    so a resolved conflict never writes an unstamped block; a container below a block, or a block the stamps lack,
+    gets none.
+
+    **Test steps:**
+
+    * put a per-user value under a missing block the stamps hold at version 3, and one under a block they lack
+    * verify the first block is stamped 3 and the second is not stamped
+    """
+    data = payload()
+    stamps = {"first": {"format_version": 3, "users": {}}}
+
+    put_paths(
+        data,
+        {("first", "users", USERNAME, "rating"): 2, ("second", "users", USERNAME, "rating"): 1},
+        stamps=stamps,
+    )
+
+    assert data["first"] == {"format_version": 3, "users": {USERNAME: {"rating": 2}}}
+    assert data["second"] == {"users": {USERNAME: {"rating": 1}}}
+
+
+def test_put_paths_prunes_what_a_per_user_removal_leaves_empty() -> None:
+    """Removing a per-user field takes the scope and the ``users`` map it leaves empty with it, as a merge does --
+    never the block, and never a container that still holds something; a metadata removal prunes nothing.
+
+    **Test steps:**
+
+    * remove the only progress entry of one user, whose scope holds nothing else
+    * remove a rating from a scope that keeps another field
+    * remove the only key of a metadata object
+    * verify the first user's scope and the emptied ``users`` map are gone, the second scope kept, the metadata object
+      kept empty
+    """
+    data = payload({USERNAME: {"progress": {"a.mp4": 3}}})
+    data["other"] = {"format_version": 1, "users": {USERNAME: {"rating": 2, "todo": True}}}
+    data["core"]["extra"] = {"a": 1}
+
+    put_paths(
+        data,
+        {
+            ("tutorial", "users", USERNAME, "progress", "a.mp4"): ABSENT,
+            ("other", "users", USERNAME, "rating"): ABSENT,
+            ("core", "extra", "a"): ABSENT,
+        },
+    )
+
+    assert data["tutorial"] == {"format_version": 2}
+    assert data["other"]["users"] == {USERNAME: {"todo": True}}
+    assert data["core"]["extra"] == {}
+
+
 def test_put_paths_skips_what_it_cannot_place() -> None:
     """A list item the payload lacks is skipped, and removing from a container that is not there creates nothing.
 

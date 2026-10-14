@@ -8,8 +8,9 @@ metadata alone, and the per-user fields are merged one by one:
 - :class:`RecordVersion` -- what a record was when it was read: a hash of its metadata, of its text, and of each
   per-user field. Opaque to its holders, who only hand it back.
 - :func:`merge_users` -- a three-way merge of the ``users`` maps, field by field, against that version.
-- :func:`metadata_differences` and :func:`put_paths` -- what two readings of the metadata disagree on, and the
-  values a person keeps, for a conflict they resolve.
+- :func:`record_differences` -- what two readings of a record disagree on: the metadata
+  (:func:`metadata_differences`) and the writer's own per-user fields (:func:`user_differences`); :func:`put_paths`
+  puts the values a person keeps, and :func:`same_details` tells a save that changes nothing about the resource.
 
 Pure functions of parsed payloads: nothing here reads a file.
 """
@@ -40,7 +41,7 @@ class Absent(Enum):
 
 
 ABSENT: Final = Absent.ABSENT
-"""A field one reading of the metadata does not have (:class:`MetadataDifference`)."""
+"""A value one reading of a record does not have (:class:`MetadataDifference`)."""
 
 STAMPED_PATHS: Final = frozenset({(CORE_BLOCK_KEY, "updated")})
 """Metadata a save stamps itself, so a person resolving a conflict has nothing to choose there
@@ -67,7 +68,7 @@ class RecordVersion:
 
 @dataclass(frozen=True, slots=True)
 class MetadataDifference:
-    """One metadata value two readings of a record disagree on.
+    """One value two readings of a record disagree on: a detail, or a per-user field (:func:`record_differences`).
 
     :param path: where it sits.
     :param base: its value when the record was opened, or :data:`ABSENT`.
@@ -401,28 +402,52 @@ def collect_differences(base: Any, mine: Any, theirs: Any, path: FieldPath, foun
         found.append(MetadataDifference(path, base, mine, theirs))
 
 
-def put_paths(data: dict[str, Any], values: Mapping[FieldPath, Any]) -> None:
+def put_paths(
+    data: dict[str, Any], values: Mapping[FieldPath, Any], *, stamps: Mapping[str, Any] | None = None
+) -> None:
     """Set each path to its value in ``data``, in place -- removed where the value is :data:`ABSENT`.
 
-    How a person's choices in a conflict become one payload: start from the edited one and put the value kept for
-    each detail -- the file's, or one typed in. A path whose container ``data`` lacks is created as an object; a list
-    item ``data`` lacks is skipped -- :func:`metadata_differences` names one only where both sides hold it.
+    How a person's choices in a conflict become one payload: start from the edited one and put the value kept for each
+    row -- the original, the document's own or the file's. A path whose container ``data`` lacks is created as an
+    object -- a plugin block with the version stamp ``stamps`` has for it; a list item ``data`` lacks is skipped:
+    :func:`record_differences` names one only where both sides hold it. A per-user field removed takes with it the
+    containers inside the block's ``users`` map it leaves empty, as :func:`merge_users` does.
 
     :param data: the payload changed.
-    :param values: the value of each path (:func:`metadata_differences`).
+    :param values: the value of each path (:func:`record_differences`).
+    :param stamps: a payload whose blocks' ``format_version`` a block created here takes -- the file's.
     """
     for path, value in values.items():
         container: Any = data
-        for key in path[:-1]:
+        for depth, key in enumerate(path[:-1]):
             child = path_value(container, (key,))
             if not isinstance(child, (dict, list)):
                 if value is ABSENT or not isinstance(container, dict):
                     break
                 child = {}
+                if depth == 0:
+                    stamp = path_value(stamps, (key, FORMAT_VERSION_KEY)) if stamps is not None else ABSENT
+                    if stamp is not ABSENT:
+                        child[FORMAT_VERSION_KEY] = stamp
                 container[key] = child
             container = child
         else:
             put_value(container, path[-1], value)
+            if value is ABSENT and len(path) > 2 and path[1] == USERS_KEY:
+                prune_users(data, path)
+
+
+def prune_users(data: dict[str, Any], path: FieldPath) -> None:
+    """Remove the objects a per-user field's removal left empty, from its own up to the block's ``users`` map.
+
+    :param data: the payload.
+    :param path: the removed field's path, under a block's ``users`` map.
+    """
+    for depth in range(len(path) - 1, 1, -1):
+        container = path_value(data, path[:depth])
+        if not isinstance(container, dict) or container:
+            return
+        put_value(path_value(data, path[: depth - 1]), path[depth - 1], ABSENT)
 
 
 def put_value(container: Any, key: str | int, value: Any) -> None:

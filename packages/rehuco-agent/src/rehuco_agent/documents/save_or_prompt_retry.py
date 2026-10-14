@@ -1,5 +1,5 @@
 """Save a document, surfacing an I/O failure as a retry/cancel dialog rather than a bare traceback (#146), and a
-conflict as a side-by-side choice (#416)."""
+conflict as a choice between the original, this document's and the file's values (#416)."""
 
 from collections.abc import Callable
 from functools import partial
@@ -29,9 +29,9 @@ def save_or_prompt_retry(parent: QWidget, model: RehuDocumentModel) -> bool:
     guards the convert actions.
 
     A save refused because the record's details changed on disk since it was read (:class:`~rehuco_core.RecordConflict`)
-    opens :class:`~rehuco_agent.dialogs.record_conflict_dialog.RecordConflictDialog`: the two side by side, saved with
-    the value kept for each detail, or the edits discarded -- either leaves nothing unsaved, so the gated action goes
-    on -- or cancelled, which aborts it like a cancelled retry.
+    opens :class:`~rehuco_agent.dialogs.record_conflict_dialog.RecordConflictDialog`: every value the two disagree on,
+    saved with the value kept for each row, or the edits discarded -- either leaves nothing unsaved, so the gated
+    action goes on -- or cancelled, which aborts it like a cancelled retry.
 
     A save-blocking lock raises ``ValueError`` from :meth:`~rehuco_core.RehuDocument.save`, but editing is disabled
     while a document is locked, so a lock never reaches a save call site here ([[data-model#write-integrity]]).
@@ -73,13 +73,29 @@ def ask_about_conflict(
 ) -> tuple[ConflictResolution, dict[FieldPath, Any]]:
     """Show the conflict dialog for ``model`` and say what was chosen.
 
+    The rows compare what the save would write (:meth:`~rehuco_core.RehuDocument.payload_to_write`): a block this
+    document claimed and abandoned this session is left out of every side, since the save drops it whatever is picked
+    -- the file's changes to it go with it, as they would on a save with no conflict.
+
     :param parent: the widget to parent the dialog to.
     :param model: the document whose save was refused.
     :param conflict: the refusal, carrying the file as it is now.
     :returns: the choice, and the value kept for each row.
     """
+    document = model.document
+    mine = document.payload_to_write()
+    dropped = document.data.keys() - mine.keys()
+
+    def without_dropped(data: dict[str, Any]) -> dict[str, Any]:
+        """A payload without the blocks the save drops.
+
+        :param data: the payload.
+        :returns: its other keys.
+        """
+        return {key: value for key, value in data.items() if key not in dropped}
+
     differences = record_differences(
-        model.base_data(), model.document.data, conflict.theirs.data, model.document.username
+        without_dropped(model.base_data()), mine, without_dropped(conflict.theirs.data), document.username
     )
     dialog = RecordConflictDialog(model.label or UNTITLED_LABEL, differences, parent)
     try:

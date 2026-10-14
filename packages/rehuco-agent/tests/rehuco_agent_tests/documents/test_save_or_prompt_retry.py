@@ -341,6 +341,42 @@ def test_asking_about_a_conflict_lists_the_own_per_user_fields_and_not_another_u
 
 
 @mark.usefixtures("real_path_stat")
+def test_asking_about_a_conflict_leaves_out_a_block_the_save_drops(
+    mocker: MockerFixture, parent: QWidget, tmp_path: Path
+) -> None:
+    """A block this document claimed and abandoned is dropped by the save whatever is picked, so its values are no rows:
+    the file's change to it goes with it, as it would on a save with no conflict.
+
+    **Test steps:**
+
+    * open a tutorial holding a foreign ``reference_images`` block, retitle it, switch to that type and back
+    * meanwhile retitle the file and change the block's image count
+    * save, and ask about the refusal with the dialog answered Save
+    * verify the only pick is the title
+    """
+    path = tmp_path / "info.rehu"
+    write_record(path, "Old")
+    edit_on_disk(path, lambda document: document.data.update(reference_images={"format_version": 1, "image_count": 1}))
+
+    def theirs(document: RehuDocument) -> None:
+        document.title = "Theirs"
+        document.data.update(reference_images={"format_version": 1, "image_count": 2})
+
+    model = opened(path, ChangeFeed())
+    model.title = "Mine"
+    model.document.set_active_type("reference_images")
+    model.document.set_active_type("tutorial")
+    edit_on_disk(path, theirs)
+    with raises(RecordConflict) as refused:
+        model.save()
+    press_in_dialog(mocker, "save_button")
+
+    _, picks = ask_about_conflict(parent, model, refused.value)
+
+    assert picks == {TITLE_PATH: "Mine"}
+
+
+@mark.usefixtures("real_path_stat")
 @mark.parametrize(
     ("name", "resolution"),
     [("discard_button", ConflictResolution.DISCARD), ("cancel_button", ConflictResolution.CANCEL)],

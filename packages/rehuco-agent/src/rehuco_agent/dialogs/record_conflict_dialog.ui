@@ -32,7 +32,7 @@
      <item>
       <widget class="QPushButton" name="all_mine_button">
        <property name="toolTip">
-        <string>Keep your value for every detail.</string>
+        <string>Keep your value in every row.</string>
        </property>
        <property name="text">
         <string>All Mine</string>
@@ -45,7 +45,7 @@
      <item>
       <widget class="QPushButton" name="all_on_disk_button">
        <property name="toolTip">
-        <string>Keep the file's value for every detail.</string>
+        <string>Keep the file's value in every row.</string>
        </property>
        <property name="text">
         <string>All On Disk</string>
@@ -109,7 +109,7 @@
      <item>
       <widget class="QPushButton" name="save_button">
        <property name="toolTip">
-        <string>Save, keeping the chosen value of each detail.</string>
+        <string>Save, keeping the chosen value in each row.</string>
        </property>
        <property name="text">
         <string>Save</string>

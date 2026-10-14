@@ -787,7 +787,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             raise ValueError("no conflict to resolve")
         if self.__version is not None:
             merge_users(self.__document.data, conflict.theirs.data, self.__version, self.__document.username)
-        put_paths(self.__document.data, values)
+        put_paths(self.__document.data, values, stamps=conflict.theirs.data)
         self.__version = conflict.version
         self.__seed_from_document(description=False)
         with self.__seeding_guard():

@@ -517,6 +517,61 @@ def test_a_save_whose_details_are_the_files_stamps_nothing_when_the_file_has_no_
     assert stored["core"]["updated"] == UPDATED
 
 
+def test_restoring_the_original_over_the_files_edit_stamps_updated(
+    tmp_path: Path, freezer: FrozenDateTimeFactory
+) -> None:
+    """Writing back the value the document was opened with, over another writer's edit, changes the record as stored:
+    it is an edit, stamped with the save's time -- never the older ``updated`` the document was read with, which the
+    document's own baseline would leave in place since its details never moved.
+
+    **Test steps:**
+
+    * load a record; meanwhile, another writer changes its description and its ``updated``
+    * save the unchanged document against the file's version, as a conflict resolved with the original is
+    * verify the file holds the original description and the save's time as ``updated``
+    """
+    path = tmp_path / "info.rehu"
+    key = write_record(path, tutorial_data())
+    records = LocalRecords(ChangeFeed())
+    loaded = load(records, key)
+    write_meanwhile(path, description="theirs", updated=THEIRS_UPDATED)
+    theirs = load(records, key)
+
+    freezer.move_to(SAVED_AT)
+    records.save(key, loaded.document, theirs.version, username=USERNAME, overwrite=False)
+
+    stored = on_disk(path)
+    assert stored["core"]["description"] == "original"
+    assert stored["core"]["updated"] == SAVED_AT
+
+
+def test_a_save_dropping_an_abandoned_block_stamps_updated(tmp_path: Path, freezer: FrozenDateTimeFactory) -> None:
+    """A block claimed and abandoned this session is dropped by the save -- a change to the record -- although the
+    document's data still holds it: what the save writes is compared with the file, so ``updated`` is stamped.
+
+    **Test steps:**
+
+    * write a tutorial with a foreign ``reference_images`` block, and load it
+    * switch to ``reference_images`` and back, and save against the loaded version later
+    * verify the block is gone from the file and ``updated`` is the save's time
+    """
+    path = tmp_path / "info.rehu"
+    data = tutorial_data()
+    data["reference_images"] = {"format_version": 1, "image_count": 12}
+    key = write_record(path, data)
+    records = LocalRecords(ChangeFeed())
+    loaded = load(records, key)
+    loaded.document.set_active_type("reference_images")
+    loaded.document.set_active_type("tutorial")
+
+    freezer.move_to(SAVED_AT)
+    records.save(key, loaded.document, loaded.version, username=USERNAME, overwrite=False)
+
+    stored = on_disk(path)
+    assert "reference_images" not in stored
+    assert stored["core"]["updated"] == SAVED_AT
+
+
 def test_the_version_after_a_save_matches_a_fresh_load_when_a_block_was_dropped(tmp_path: Path) -> None:
     """The saved version is read back from the file, not derived from the document: a block claimed then
     abandoned is still in the document's data but not in the file, and the next save checks the file.

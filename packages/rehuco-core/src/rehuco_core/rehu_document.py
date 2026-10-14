@@ -434,7 +434,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         data: dict[str, Any] = {CORE_BLOCK_KEY: {"id": str(uuid4())}}
         return cls(data, Path(path) if path is not None else None, plugins=plugins, username=username)
 
-    def save(self, path: Path | str | None = None, *, touch_updated: bool = True) -> None:
+    def save(self, path: Path | str | None = None, *, touch_updated: bool = True, edited: bool | None = None) -> None:
         """Atomically write the document back to disk as pretty-printed JSON, in canonical key order.
 
         Every rule about the file's *content* was already applied to ``__data`` at construction, and
@@ -472,6 +472,9 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
           writing. A save that rewrites an *unchanged* record -- the #89 Upgrade restamp (the baseline
           already carries the migrated layout), a save-as copy -- leaves it alone: writing is not
           editing, and "record last edited" must not decay into "record last written".
+        - **``edited`` overrides the baseline comparison** (#416): a caller that knows what the file holds now --
+          a read-merge-write -- decides whether this write changes the resource *as stored*, which the in-memory
+          baseline cannot tell once another writer moved the file on.
         - **``touch_updated=False`` stamps neither timestamp** (#410): a per-user write such as watch
           progress describes one person's viewing, not the resource, so it must not move ``updated``
           ([[field-schema#watch-progress]]); and it goes through
@@ -492,6 +495,8 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         :param path: destination; defaults to the path the document was loaded from.
         :param touch_updated: whether a changed save stamps ``updated`` (and a first write ``created``);
             ``False`` for per-user writes. Defaults to ``True``.
+        :param edited: whether this save changes the record, deciding the ``updated`` stamp (with ``touch_updated``);
+            ``None``, the default, compares the metadata with the load/last-save baseline.
         :raises ValueError: if no path is given and the document has no loaded path, or if a
             save-blocking lock is in force (:data:`SAVE_BLOCKING_LOCK_KINDS`) -- an ``INVALID_FIELD``
             document (whose coerced defaults would overwrite the malformed-but-recoverable original) or
@@ -523,7 +528,8 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
             # ([[data-model#schema-version]]).
             self.created = self.__utc_now_timestamp()
         text = self.serialize()
-        if touch_updated and self.__metadata_text() != self.__saved_metadata:
+        changed = edited if edited is not None else self.__metadata_text() != self.__saved_metadata
+        if touch_updated and changed:
             # the record's content changed since load/last save, so this save is an *edit* landing on
             # disk: stamp `updated` with the save's own time ([[field-schema#record-timestamps]], #142).
             # An unchanged save -- an upgrade restamp or a save-as copy -- skips this branch: writing is
@@ -558,14 +564,15 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
 
         :returns: the document's canonical on-disk text, trailing newline included.
         """
-        return (
-            json.dumps(
-                ordered_for_file(self.__data, self.active_block_key, self.__dropped_block_keys()),
-                indent=2,
-                ensure_ascii=False,
-            )
-            + "\n"
-        )
+        return json.dumps(self.payload_to_write(), indent=2, ensure_ascii=False) + "\n"
+
+    def payload_to_write(self) -> dict[str, Any]:
+        """The payload a save would write: :attr:`data` in file order, without the blocks the persistence invariant
+        drops ([[plugins#plugin-blocks]]) -- what to compare with a file, where :attr:`data` still holds them.
+
+        :returns: the payload, sharing its values with :attr:`data`.
+        """
+        return ordered_for_file(self.__data, self.active_block_key, self.__dropped_block_keys())
 
     def __metadata_text(self) -> str:
         """The metadata of what a save would write, as one canonical text: the blocks a save keeps, without their
@@ -573,7 +580,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
 
         :returns: the text :attr:`__saved_metadata` is compared with.
         """
-        return metadata_text(ordered_for_file(self.__data, self.active_block_key, self.__dropped_block_keys()))
+        return metadata_text(self.payload_to_write())
 
     def __dropped_block_keys(self) -> list[str]:
         """The block keys the persistence invariant **drops** on the next save ([[plugins#plugin-blocks]]).

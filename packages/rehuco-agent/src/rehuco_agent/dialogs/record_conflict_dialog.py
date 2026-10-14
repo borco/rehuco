@@ -1,4 +1,5 @@
-"""A save refused as a conflict, shown side by side to choose from ([[nodes#access-seam]], #416)."""
+"""A save refused as a conflict: every value in question with its original, this document's and the file's, to choose
+from ([[nodes#access-seam]], #416)."""
 
 from collections.abc import Sequence
 from enum import StrEnum
@@ -26,10 +27,10 @@ VALUE_WIDTH: Final = 280
 
 
 def field_label(path: FieldPath) -> str:
-    """How a detail is named in the grid: its keys joined by dots, a list item by its index, as in
+    """How a value is named in the grid: its keys joined by dots, a list item by its index, as in
     ``core.sources[0].title``.
 
-    :param path: where the detail sits.
+    :param path: where the value sits.
     :returns: its name.
     """
     return "".join(f"[{key}]" if isinstance(key, int) else f".{key}" for key in path).lstrip(".")
@@ -39,7 +40,7 @@ class ConflictResolution(StrEnum):
     """What the person chose to do with a refused save."""
 
     SAVE = "save"
-    """Save, keeping the chosen side of each detail."""
+    """Save, keeping the chosen value of each row."""
 
     DISCARD = "discard"
     """Discard this document's edits and load the file as it is now."""

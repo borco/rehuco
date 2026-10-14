@@ -388,15 +388,16 @@ or mapped from a `.tc` that has no `.rehu` yet, has never been written until the
 there is never overwritten (import seeds it from the `.tc`'s mtime), and a `.rehu` that simply carries
 none keeps none: stamping on a later re-save would claim the record was created at that moment.
 
-`updated` refreshes when a **save actually changes the record**: `save()` compares the canonical
-serialization of its **metadata** — everything but the plugin blocks' per-user `users` maps — against the
-load/last-save baseline and stamps the save's own UTC time only when they differ. A per-user change (a
-rating, a progress entry, another user's state merged in, [[nodes#access-seam]]) describes one person, not
-the resource, and never moves it. A save that rewrites an *unchanged* record — a format-upgrade restamp, a save-as copy —
-leaves it alone: writing is not editing, and "record last edited" must not decay into "record last
-written". Nor does a save whose details come out as the file's own — a conflict resolved the file's way, keeping only
-per-user changes: it takes the file's `updated` ([[nodes#access-seam]]). They are shared record state (a synced edit carries its refreshed `updated` with it), and
-relate to the `resource_version` / timestamp markers used for staleness detection and sync
+`updated` refreshes when a **save actually changes the record**: the save compares the canonical serialization of
+its **metadata** — everything but the plugin blocks' per-user `users` maps — with the file it replaces, and stamps
+the save's own UTC time only when they differ ([[nodes#access-seam]]); with no file to compare, as on a first write,
+it compares with the load/last-save baseline. A per-user change (a rating, a progress entry, another user's state
+merged in) describes one person, not the resource, and never moves it. A save that rewrites an *unchanged* record —
+a format-upgrade restamp, a save-as copy, a conflict resolved the file's way that keeps only per-user changes —
+leaves it alone, or takes the file's own `updated`: writing is not editing, and "record last edited" must not decay
+into "record last written". A save whose details differ from the file's is an edit, even one restoring the values
+the record was opened with. They are shared record state (a synced edit carries its refreshed `updated` with it),
+and relate to the `resource_version` / timestamp markers used for staleness detection and sync
 ([[data-model#scan-and-staleness]]).
 
 Once the `versions` list lands in the schema ([[sync#overview]] — v1 carries no versions yet), both become

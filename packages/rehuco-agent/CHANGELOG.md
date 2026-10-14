@@ -12,6 +12,15 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 ### Changed
 
+- **Saving no longer overwrites what changed on disk since you opened the document.** Another user's rating, or
+  progress written by a player while you edit, is merged into your save and shown at once. When the record's
+  details were changed elsewhere, the save stops and lists every value the two versions disagree on -- the details
+  and your own per-user fields -- with its original value, yours and the file's, the ones that changed in bold. Pick
+  one per row (or *All Mine* / *All On Disk*) and **Save**, or **Discard My Edits** to load the file as it is. Save
+  stays disabled while every pick is the file's own value, since that would change nothing. A notice on the document
+  says its save was refused until you resolve it.
+- **A rating or other per-user change no longer moves a record's *updated* date**, and neither does a resolved
+  conflict that keeps the file's details.
 - **The agent keeps its files in one `borco/rehuco` folder, shared with the node.** On Windows that is
   `%LOCALAPPDATA%\borco\rehuco` (it was Roaming, plus a cache folder elsewhere), on macOS `~/Library/Application
   Support/borco/rehuco`, and on Linux `borco/rehuco` under `$XDG_CONFIG_HOME`, `$XDG_DATA_HOME` and `$XDG_CACHE_HOME`.
