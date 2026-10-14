@@ -58,6 +58,10 @@ FAKE: Final = Path.cwd() / "fake"
 """The folder every fake document lives in, never created; built from ``Path.cwd()`` so it is absolute on every
 platform, as a document's key needs."""
 
+TUTORIALS: Final = Path(Path.cwd().anchor) / "tutorials"
+"""The folder the rename and location tests' documents live in, never created; rooted at the working directory's
+anchor so it is absolute on every platform (a local key needs that) and keeps the short names the tests read by."""
+
 
 def lister_of(scanner: RehuDocumentImageScanner) -> object:
     """The screenshot lister a `RehuDocumentImageScanner` delegates :meth:`~RehuDocumentImageScanner.files` to.
@@ -282,10 +286,10 @@ def test_model_seeds_location_from_the_document_path() -> None:
     * construct a model over a document loaded with an explicit path
     * verify ``model.location`` mirrors it
     """
-    document = RehuDocument({"type": "Tutorial"}, Path("C:/tutorials/foo/info.rehu"))
+    document = RehuDocument({"type": "Tutorial"}, TUTORIALS / "foo" / "info.rehu")
     model = RehuDocumentModel(document)
 
-    assert model.location == "C:/tutorials/foo/info.rehu"
+    assert model.location == (TUTORIALS / "foo" / "info.rehu").as_posix()
 
 
 def test_model_seeds_location_empty_when_the_document_has_no_path(model: RehuDocumentModel) -> None:
@@ -310,7 +314,7 @@ def test_setting_location_does_not_write_through_or_dirty(model: RehuDocumentMod
     * set ``model.location`` to a new value
     * verify the document's path is unchanged and the model stays clean
     """
-    model.location = "C:/tutorials/bar/info.rehu"
+    model.location = (TUTORIALS / "bar" / "info.rehu").as_posix()
 
     assert document.path is None
     assert model.dirty is False
@@ -327,16 +331,16 @@ def test_rename_location_adopts_the_new_path_on_success(mocker: MockerFixture) -
     * verify it returned ``True``, the core rename got the old path and the new name, and path /
       location / current_name / the document's own path all moved to the new location
     """
-    document = RehuDocument({"type": "Tutorial"}, Path("C:/tutorials/old_folder/info.rehu"))
+    document = RehuDocument({"type": "Tutorial"}, TUTORIALS / "old_folder" / "info.rehu")
     model = RehuDocumentModel(document)
-    renamed = Path("C:/tutorials/new_name/info.rehu")
+    renamed = TUTORIALS / "new_name" / "info.rehu"
     rename = mocker.patch("rehuco_agent.documents.rehu_document_model.rename_rehu_resource", return_value=renamed)
 
     assert model.rename_location("new_name") is True
 
-    rename.assert_called_once_with(Path("C:/tutorials/old_folder/info.rehu"), "new_name")
+    rename.assert_called_once_with(TUTORIALS / "old_folder" / "info.rehu", "new_name")
     assert model.path == renamed
-    assert model.location == "C:/tutorials/new_name/info.rehu"
+    assert model.location == (TUTORIALS / "new_name" / "info.rehu").as_posix()
     assert model.current_name == "new_name"
     assert document.path == renamed
     assert model.dirty is False
@@ -353,13 +357,13 @@ def test_rename_location_reinstalls_the_image_scanner_on_success(mocker: MockerF
     * connect to ``image_scanner_changed`` and rename
     * verify the signal fired and the scanner object was replaced, still over the `.rehu` lister
     """
-    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("C:/tutorials/old_file.rehu")))
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, TUTORIALS / "old_file.rehu"))
     original = model.image_scanner
     received: list[object] = []
     model.image_scanner_changed.connect(received.append)  # type: ignore[attr-defined]
     mocker.patch(
         "rehuco_agent.documents.rehu_document_model.rename_rehu_resource",
-        return_value=Path("C:/tutorials/new_name.rehu"),
+        return_value=TUTORIALS / "new_name.rehu",
     )
 
     model.rename_location("new_name")
@@ -381,7 +385,7 @@ def test_rescan_images_reinstalls_the_image_scanner() -> None:
     * connect to ``image_scanner_changed`` and call ``rescan_images``
     * verify the signal fired once and the scanner object was replaced, still over the `.rehu` lister
     """
-    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("C:/tutorials/info.rehu")))
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, TUTORIALS / "info.rehu"))
     original = model.image_scanner
     received: list[object] = []
     model.image_scanner_changed.connect(received.append)  # type: ignore[attr-defined]
@@ -405,7 +409,7 @@ def test_rename_location_logs_the_attempt_before_the_move_runs(
     * make the core rename fail, capturing the log around it
     * verify the "Attempting" info record precedes the error record
     """
-    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("C:/tutorials/old_file.rehu")))
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, TUTORIALS / "old_file.rehu"))
     mocker.patch("rehuco_agent.documents.rehu_document_model.rename_rehu_resource", side_effect=OSError("boom"))
 
     with caplog.at_level(logging.INFO):
@@ -426,7 +430,7 @@ def test_rename_location_reports_a_failed_move_without_touching_the_document(moc
     * verify it returned ``False``, path/location are unchanged, and ``rename_error`` names both names
       and the OS reason
     """
-    path = Path("C:/tutorials/old_file.rehu")
+    path = TUTORIALS / "old_file.rehu"
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, path))
     mocker.patch(
         "rehuco_agent.documents.rehu_document_model.rename_rehu_resource",
@@ -436,7 +440,7 @@ def test_rename_location_reports_a_failed_move_without_touching_the_document(moc
     assert model.rename_location("new_name") is False
 
     assert model.path == path
-    assert model.location == "C:/tutorials/old_file.rehu"
+    assert model.location == (TUTORIALS / "old_file.rehu").as_posix()
     assert model.rename_error == 'Could not rename "old_file" to "new_name": Permission denied.'
 
 
@@ -450,7 +454,7 @@ def test_rename_location_says_who_holds_a_refused_resource(mocker: MockerFixture
     * call ``rename_location``
     * verify the report was asked about the resource and that failure, and its sentence ends the banner
     """
-    path = Path("C:/tutorials/old_file.rehu")
+    path = TUTORIALS / "old_file.rehu"
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, path))
     refusal = PermissionError(13, "The process cannot access the file because it is being used by another process")
     mocker.patch("rehuco_agent.documents.rehu_document_model.rename_rehu_resource", side_effect=refusal)
@@ -478,7 +482,7 @@ def test_rename_location_reports_a_refused_name(mocker: MockerFixture) -> None:
     * call ``rename_location``
     * verify ``False`` came back and ``rename_error`` carries the refusal
     """
-    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("C:/tutorials/old_file.rehu")))
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, TUTORIALS / "old_file.rehu"))
     mocker.patch(
         "rehuco_agent.documents.rehu_document_model.rename_rehu_resource",
         side_effect=ValueError("'..' is not a plain file or folder name."),
@@ -497,10 +501,10 @@ def test_rename_location_clears_a_previous_error_when_a_retry_succeeds(mocker: M
     * fail one rename, then succeed the next
     * verify ``rename_error`` is set after the first and empty after the second
     """
-    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("C:/tutorials/old_file.rehu")))
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, TUTORIALS / "old_file.rehu"))
     rename = mocker.patch(
         "rehuco_agent.documents.rehu_document_model.rename_rehu_resource",
-        side_effect=[FileExistsError('"taken.rehu" already exists.'), Path("C:/tutorials/free.rehu")],
+        side_effect=[FileExistsError('"taken.rehu" already exists.'), TUTORIALS / "free.rehu"],
     )
 
     model.rename_location("taken")
@@ -543,11 +547,11 @@ def test_rename_location_renames_a_never_saved_document(mocker: MockerFixture) -
     * call ``rename_location``
     * verify it saved first, then renamed, and adopted the new path
     """
-    model = RehuDocumentModel.create_new(Path("C:/tutorials/My Tutorial/info.rehu"))
+    model = RehuDocumentModel.create_new(TUTORIALS / "My Tutorial" / "info.rehu")
     assert model.dirty is True
     assert model.saved_on_disk is False
     save = mocker.patch.object(model, "save")
-    renamed = Path("C:/tutorials/Renamed/info.rehu")
+    renamed = TUTORIALS / "Renamed" / "info.rehu"
     mocker.patch("rehuco_agent.documents.rehu_document_model.rename_rehu_resource", return_value=renamed)
 
     assert model.rename_location("Renamed") is True
@@ -567,13 +571,13 @@ def test_rename_location_saves_first_when_dirty(mocker: MockerFixture) -> None:
     * call ``rename_location``
     * verify ``save`` was called
     """
-    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("C:/tutorials/old_file.rehu")))
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, TUTORIALS / "old_file.rehu"))
     model.title = "New Title"
     assert model.dirty is True
     save = mocker.patch.object(model, "save")
     mocker.patch(
         "rehuco_agent.documents.rehu_document_model.rename_rehu_resource",
-        return_value=Path("C:/tutorials/new_name.rehu"),
+        return_value=TUTORIALS / "new_name.rehu",
     )
 
     model.rename_location("new_name")
@@ -594,7 +598,7 @@ def test_rename_location_aborts_when_the_pre_move_save_fails(mocker: MockerFixtu
     * verify ``False`` came back, ``rename_error`` names the save, the model is still dirty, and no
       rename was attempted
     """
-    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("C:/tutorials/old_file.rehu")))
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, TUTORIALS / "old_file.rehu"))
     model.title = "New Title"
     mocker.patch.object(model, "save", side_effect=OSError(5, "offline mount"))
     rename = mocker.patch("rehuco_agent.documents.rehu_document_model.rename_rehu_resource")
@@ -617,7 +621,7 @@ def test_rename_location_aborts_when_the_pre_move_save_is_refused_by_a_lock(mock
     * call ``rename_location``
     * verify ``False`` came back, ``rename_error`` carries the refusal, and no rename was attempted
     """
-    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("C:/tutorials/old_file.rehu")))
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, TUTORIALS / "old_file.rehu"))
     model.title = "New Title"
     mocker.patch.object(model, "save", side_effect=ValueError("Refusing to save a locked document (missing)."))
     rename = mocker.patch("rehuco_agent.documents.rehu_document_model.rename_rehu_resource")
@@ -638,7 +642,7 @@ def test_rename_location_reports_a_resource_whose_file_has_gone_missing(mocker: 
     * call ``rename_location``
     * verify ``False`` came back and ``rename_error`` says the file is gone
     """
-    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("C:/tutorials/old_file.rehu")))
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, TUTORIALS / "old_file.rehu"))
     mocker.patch(
         "rehuco_agent.documents.rehu_document_model.rename_rehu_resource",
         side_effect=FileNotFoundError('"old_file.rehu" is no longer on disk.'),
@@ -658,7 +662,7 @@ def test_revert_clears_a_standing_rename_error(mocker: MockerFixture) -> None:
     * fail a rename so ``rename_error`` is set, then mock ``document.reload`` and revert
     * verify ``rename_error`` is empty again
     """
-    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("C:/tutorials/old_file.rehu")))
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, TUTORIALS / "old_file.rehu"))
     mocker.patch("rehuco_agent.documents.rehu_document_model.rename_rehu_resource", side_effect=OSError("boom"))
     model.rename_location("new_name")
     assert model.rename_error != ""
@@ -678,12 +682,12 @@ def test_rename_location_does_not_save_when_clean(mocker: MockerFixture) -> None
     * call ``rename_location``
     * verify ``save`` was not called
     """
-    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("C:/tutorials/old_file.rehu")))
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, TUTORIALS / "old_file.rehu"))
     assert model.dirty is False
     save = mocker.patch.object(model, "save")
     mocker.patch(
         "rehuco_agent.documents.rehu_document_model.rename_rehu_resource",
-        return_value=Path("C:/tutorials/new_name.rehu"),
+        return_value=TUTORIALS / "new_name.rehu",
     )
 
     model.rename_location("new_name")
@@ -702,15 +706,15 @@ def test_rename_location_goes_through_the_coordinator_when_there_is_one(mocker: 
     * verify the coordinator was asked, the bare core function was not, and the new path was adopted
     """
     coordinator = RenameCoordinator()
-    renamed = Path("C:/tutorials/new_name/info.rehu")
+    renamed = TUTORIALS / "new_name" / "info.rehu"
     through = mocker.patch.object(coordinator, "rename", return_value=renamed)
     direct = mocker.patch("rehuco_agent.documents.rehu_document_model.rename_rehu_resource")
-    document = RehuDocument({"type": "Tutorial"}, Path("C:/tutorials/old_folder/info.rehu"))
+    document = RehuDocument({"type": "Tutorial"}, TUTORIALS / "old_folder" / "info.rehu")
     model = RehuDocumentModel(document, rename_coordinator=coordinator)
 
     assert model.rename_location("new_name") is True
 
-    through.assert_called_once_with(Path("C:/tutorials/old_folder/info.rehu"), "new_name")
+    through.assert_called_once_with(TUTORIALS / "old_folder" / "info.rehu", "new_name")
     direct.assert_not_called()
     assert model.path == renamed
 
@@ -730,7 +734,7 @@ def test_a_rename_readers_will_not_release_fails_through_the_banner(mocker: Mock
     """
     coordinator = RenameCoordinator()
     mocker.patch.object(coordinator, "rename", side_effect=RenameYieldTimeout("A task is still reading these files."))
-    path = Path("C:/tutorials/old_folder/info.rehu")
+    path = TUTORIALS / "old_folder" / "info.rehu"
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, path), rename_coordinator=coordinator)
 
     assert model.rename_location("new_name") is False
@@ -751,23 +755,23 @@ def test_rename_location_goes_straight_to_disk_without_a_coordinator(mocker: Moc
     * rename
     * verify the core function did the work
     """
-    renamed = Path("C:/tutorials/new_name/info.rehu")
+    renamed = TUTORIALS / "new_name" / "info.rehu"
     direct = mocker.patch("rehuco_agent.documents.rehu_document_model.rename_rehu_resource", return_value=renamed)
-    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("C:/tutorials/old_folder/info.rehu")))
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, TUTORIALS / "old_folder" / "info.rehu"))
 
     assert model.rename_location("new_name") is True
 
-    direct.assert_called_once_with(Path("C:/tutorials/old_folder/info.rehu"), "new_name")
+    direct.assert_called_once_with(TUTORIALS / "old_folder" / "info.rehu", "new_name")
     assert model.path == renamed
 
 
 @mark.parametrize(
     ("path", "expected"),
     [
-        param("C:/tutorials/some_folder/info.rehu", "some_folder", id="info.rehu-uses-parent-dir"),
-        param("C:/tutorials/my_tutorial.rehu", "my_tutorial", id="standalone-uses-file-stem"),
-        param("C:/tutorials/some_folder/info.tc", "some_folder", id="info.tc-uses-parent-dir"),
-        param("C:/tutorials/my_tutorial.tc", "my_tutorial", id="standalone-tc-uses-file-stem"),
+        param("some_folder/info.rehu", "some_folder", id="info.rehu-uses-parent-dir"),
+        param("my_tutorial.rehu", "my_tutorial", id="standalone-uses-file-stem"),
+        param("some_folder/info.tc", "some_folder", id="info.tc-uses-parent-dir"),
+        param("my_tutorial.tc", "my_tutorial", id="standalone-tc-uses-file-stem"),
     ],
 )
 def test_current_name_is_the_rename_target(path: str, expected: str) -> None:
@@ -781,7 +785,7 @@ def test_current_name_is_the_rename_target(path: str, expected: str) -> None:
     * build a model over a document at ``path``
     * verify ``current_name`` is the expected rename-target name
     """
-    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path(path)))
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, TUTORIALS / path))
 
     assert model.current_name == expected
 
@@ -1480,14 +1484,14 @@ def test_revert_reseeds_location_from_the_document_path(mocker: MockerFixture) -
     * have the file read back unchanged (the path stays)
     * call ``model.revert()`` and verify ``location`` snaps back to the document's path
     """
-    document = RehuDocument({"type": "Tutorial"}, Path("C:/tutorials/foo/info.rehu"))
+    document = RehuDocument({"type": "Tutorial"}, TUTORIALS / "foo" / "info.rehu")
     model = RehuDocumentModel(document)
-    model.location = "C:/edited/elsewhere"
+    model.location = (TUTORIALS.parent / "edited" / "elsewhere").as_posix()
     reloads_as(mocker, document)
 
     model.revert()
 
-    assert model.location == "C:/tutorials/foo/info.rehu"
+    assert model.location == (TUTORIALS / "foo" / "info.rehu").as_posix()
 
 
 def test_revert_does_not_write_back_to_a_sourceless_document(mocker: MockerFixture) -> None:
