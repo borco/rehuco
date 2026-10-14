@@ -394,7 +394,8 @@ load/last-save baseline and stamps the save's own UTC time only when they differ
 rating, a progress entry, another user's state merged in, [[nodes#access-seam]]) describes one person, not
 the resource, and never moves it. A save that rewrites an *unchanged* record — a format-upgrade restamp, a save-as copy —
 leaves it alone: writing is not editing, and "record last edited" must not decay into "record last
-written". They are shared record state (a synced edit carries its refreshed `updated` with it), and
+written". Nor does a save whose details come out as the file's own — a conflict resolved the file's way, keeping only
+per-user changes: it takes the file's `updated` ([[nodes#access-seam]]). They are shared record state (a synced edit carries its refreshed `updated` with it), and
 relate to the `resource_version` / timestamp markers used for staleness detection and sync
 ([[data-model#scan-and-staleness]]).
 

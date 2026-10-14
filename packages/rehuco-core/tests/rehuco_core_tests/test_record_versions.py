@@ -13,13 +13,16 @@ from rehuco_core import (
     metadata_differences,
     metadata_of,
     put_paths,
+    record_differences,
     record_version,
+    user_differences,
 )
 from rehuco_core.record_versions import (
     metadata_hash,
     metadata_text,
     path_value,
     put_value,
+    same_details,
     user_field_hashes,
     users_maps,
     value_hash,
@@ -512,6 +515,159 @@ def test_the_updated_stamp_and_per_user_fields_never_appear() -> None:
     theirs["rated"] = {"format_version": 1, "users": {"bob": {"rating": 1}}}
 
     assert not metadata_differences(base, mine, theirs)
+
+
+# endregion
+
+
+# region user_differences, record_differences, same_details
+def users_path(scope: str, key: str, block: str = "tutorial") -> tuple[str, ...]:
+    """Where a per-user field sits, as a difference names it.
+
+    :param scope: the scope (a username, or ``public``).
+    :param key: the field.
+    :param block: the block holding the ``users`` map.
+    :returns: its path.
+    """
+    return (block, "users", scope, key)
+
+
+def test_user_differences_list_the_callers_own_and_public_fields_with_their_base_values() -> None:
+    """The per-user fields the caller may write -- its own and ``public`` -- are rows to choose, each with its value
+    when opened, own scope first; another user's and ``unknown``'s are always the file's and never appear, however
+    they differ.
+
+    **Test steps:**
+
+    * the caller changes its rating and the public one; the file changes the caller's ``viewed``, adds a public
+      ``viewed``, changes ``bob`` and ``unknown`` and adds ``carol``
+    * verify the rows: the caller's rating and ``viewed``, then the public rating and ``viewed``, with base values
+    * verify which side changed each
+    """
+    base = merge_matrix_base()
+    mine = copy.deepcopy(base)
+    mine["tutorial"]["users"][USERNAME]["rating"] = 5
+    mine["tutorial"]["users"]["public"]["rating"] = 4
+    theirs = copy.deepcopy(base)
+    theirs["tutorial"]["users"][USERNAME]["viewed"] = False
+    theirs["tutorial"]["users"]["public"]["viewed"] = True
+    theirs["tutorial"]["users"]["bob"]["rating"] = 9
+    theirs["tutorial"]["users"]["unknown"]["todo"] = False
+    theirs["tutorial"]["users"]["carol"] = {"rating": 1}
+
+    differences = user_differences(base, mine, theirs, USERNAME)
+
+    assert differences == [
+        MetadataDifference(users_path(USERNAME, "rating"), 1, 5, 1),
+        MetadataDifference(users_path(USERNAME, "viewed"), True, True, False),
+        MetadataDifference(users_path("public", "rating"), 3, 4, 3),
+        MetadataDifference(users_path("public", "viewed"), ABSENT, ABSENT, True),
+    ]
+    assert [(row.mine_changed, row.theirs_changed) for row in differences] == [
+        (True, False),
+        (False, True),
+        (True, False),
+        (False, True),
+    ]
+
+
+def test_a_scope_one_side_lacks_compares_as_empty_so_each_field_is_its_own_row() -> None:
+    """A scope the caller created, or one the file dropped, is not one row for the whole map: it reads as an empty
+    one, so each of its fields is a row -- with no base where the scope was not there when opened.
+
+    **Test steps:**
+
+    * the base has no scope for the caller and a public one; the caller adds its own scope with two fields; the file
+      drops the public scope
+    * verify one row per field of the caller's new scope, and one per field of the dropped public one
+    """
+    base = payload({"public": {"rating": 3}})
+    mine = payload({USERNAME: {"rating": 5, "todo": True}, "public": {"rating": 3}})
+    theirs = payload({})
+
+    assert user_differences(base, mine, theirs, USERNAME) == [
+        MetadataDifference(users_path(USERNAME, "rating"), ABSENT, 5, ABSENT),
+        MetadataDifference(users_path(USERNAME, "todo"), ABSENT, True, ABSENT),
+        MetadataDifference(users_path("public", "rating"), 3, 3, ABSENT),
+    ]
+
+
+def test_a_block_one_side_lacks_compares_as_empty_with_the_files_only_blocks_last() -> None:
+    """A block -- or a ``users`` map -- only one side has reads as empty on the other; the edited document's blocks
+    come first, then the ones only the file has.
+
+    **Test steps:**
+
+    * the caller has a ``kept`` block with its rating that the file lacks; the file has an ``extra`` block with the
+      caller's rating, which the caller lacks; neither has a ``users`` map in the tutorial block
+    * verify one row for each, the caller's block first, none for the tutorial block
+    """
+    base = payload()
+    mine = payload()
+    mine["kept"] = {"format_version": 1, "users": {USERNAME: {"rating": 1}}}
+    theirs = payload()
+    theirs["extra"] = {"format_version": 1, "users": {USERNAME: {"rating": 2}}}
+
+    assert user_differences(base, mine, theirs, USERNAME) == [
+        MetadataDifference(users_path(USERNAME, "rating", "kept"), ABSENT, 1, ABSENT),
+        MetadataDifference(users_path(USERNAME, "rating", "extra"), ABSENT, ABSENT, 2),
+    ]
+
+
+def test_equal_per_user_fields_are_no_difference() -> None:
+    """Two sides holding the same per-user fields -- whatever the base was -- have nothing to choose.
+
+    **Test steps:**
+
+    * the caller and the file both changed the caller's rating to the same value
+    * verify no rows
+    """
+    base = payload({USERNAME: {"rating": 1}})
+    both = payload({USERNAME: {"rating": 4}})
+
+    assert not user_differences(base, both, copy.deepcopy(both), USERNAME)
+
+
+def test_record_differences_are_the_metadata_rows_then_the_per_user_ones() -> None:
+    """The dialog's rows: every detail first, then the caller's own and public per-user fields -- another user's
+    never.
+
+    **Test steps:**
+
+    * the caller changes the description and its rating; the file changes the description, the public rating and
+      ``bob``'s
+    * verify the description row, then the caller's rating, then the public rating
+    """
+    base = payload({USERNAME: {"rating": 1}, "public": {"rating": 2}, "bob": {"rating": 3}}, description="one")
+    mine = payload({USERNAME: {"rating": 5}, "public": {"rating": 2}, "bob": {"rating": 3}}, description="two")
+    theirs = payload({USERNAME: {"rating": 1}, "public": {"rating": 4}, "bob": {"rating": 6}}, description="three")
+
+    assert record_differences(base, mine, theirs, USERNAME) == [
+        MetadataDifference(("core", "description"), "one", "two", "three"),
+        MetadataDifference(users_path(USERNAME, "rating"), 1, 5, 1),
+        MetadataDifference(users_path("public", "rating"), 2, 2, 4),
+    ]
+
+
+def test_same_details_ignores_the_stamp_and_per_user_fields_but_not_a_detail() -> None:
+    """Two payloads carry the same details when only what a save stamps and the per-user fields differ -- a block
+    holding nothing but a ``users`` map included; any metadata value differing makes them not the same.
+
+    **Test steps:**
+
+    * compare payloads differing in ``updated``, the ratings, and a users-only block one of them has
+    * compare payloads differing in the description, and in a field only one of them has
+    * verify the first are the same details and the others are not
+    """
+    rated = payload({USERNAME: {"rating": 1}}, description="one")
+    restamped = payload({"bob": {"rating": 2}}, description="one")
+    restamped["core"]["updated"] = "2026-05-05T00:00:00Z"
+    restamped["rated"] = {"format_version": 1, "users": {"bob": {"rating": 1}}}
+
+    assert same_details(rated, restamped)
+    assert same_details(restamped, rated)
+    assert not same_details(payload(description="one"), payload(description="two"))
+    assert not same_details(payload(description="one"), payload())
 
 
 # endregion

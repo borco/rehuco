@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Final, override
 
 from ..record_merge import record_lock
-from ..record_versions import RecordVersion, merge_users, record_version
+from ..record_versions import RecordVersion, merge_users, record_version, same_details
 from ..rehu_document import RehuDocument, RehuFormatError
 from ..rehu_screenshot_ordering import Deleter
 from ..tc_conversion import convert_tc
@@ -65,14 +65,16 @@ class LocalRecords(RecordOps):
         """Save a record as a read-merge-write: refused on a metadata edit made on disk since ``base``, the per-user
         fields merged field by field.
 
+        A save whose details come out as the file's -- every conflicting one resolved the file's way -- writes only
+        per-user fields, so it takes the file's ``updated`` and stamps none ([[field-schema#record-timestamps]]).
+        A file that is no longer a readable record -- broken out of band since it was read -- is written over, as
+        it was before the seam: there is nothing left in it to merge or to conflict with, and the write restores it.
+
         :param key: the record.
         :param document: what to write; the file's per-user fields are merged into it, in place.
         :param base: the version ``document`` was read at, or ``None`` to write it as it is.
         :param username: whose per-user fields ``document`` carries.
         :param overwrite: write over a metadata edit made on disk since ``base``.
-        A file that is no longer a readable record -- broken out of band since it was read -- is written over, as
-        it was before the seam: there is nothing left in it to merge or to conflict with, and the write restores it.
-
         :returns: the record as saved.
         :raises RecordConflict: the metadata on disk changed since ``base``, and ``overwrite`` is not set.
         :raises OSError: the file could not be read or written.
@@ -85,13 +87,20 @@ class LocalRecords(RecordOps):
             raise ValueError(f"Refusing to save over a legacy record: {path}")
         with record_lock(path):
             users_merged = False
+            touch_updated = True
             theirs = None if base is None else self.__read_existing(path, document.username)
             if base is not None and theirs is not None and theirs[1].file_hash != base.file_hash:
                 theirs_document, theirs_version = theirs
                 if theirs_version.metadata_hash != base.metadata_hash and not overwrite:
                     raise RecordConflict(theirs_document, theirs_version)
                 users_merged = merge_users(document.data, theirs_document.data, base, username)
-            document.save(path)
+            # checked whether or not the file moved since the read: a conflict resolved the file's way is saved
+            # against the conflict's own version, so the file reads as unchanged
+            if theirs is not None and same_details(document.data, theirs[0].data):
+                if theirs[0].updated:
+                    document.updated = theirs[0].updated
+                touch_updated = False
+            document.save(path, touch_updated=touch_updated)
             # read back rather than derived from the document: a save leaves out the blocks it drops, and the next
             # save's check reads the file
             _, version = self.__read(path, document.username)

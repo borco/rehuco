@@ -191,6 +191,16 @@ def users_maps(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
     }
 
 
+def same_details(mine: dict[str, Any], theirs: dict[str, Any]) -> bool:
+    """Whether two payloads carry the same metadata, but for what a save stamps (:data:`STAMPED_PATHS`).
+
+    :param mine: one payload.
+    :param theirs: the other.
+    :returns: whether writing ``mine`` over ``theirs`` changes nothing about the resource.
+    """
+    return not metadata_differences(theirs, mine, theirs)
+
+
 def merge_users(mine: dict[str, Any], theirs: dict[str, Any], base: RecordVersion, username: str) -> bool:
     """Merge the file's per-user fields into an edited payload, field by field, in place ([[nodes#access-seam]]).
 
@@ -319,6 +329,50 @@ def metadata_differences(
     """
     found: list[MetadataDifference] = []
     collect_differences(metadata_of(base), metadata_of(mine), metadata_of(theirs), (), found)
+    return found
+
+
+def record_differences(
+    base: dict[str, Any], mine: dict[str, Any], theirs: dict[str, Any], username: str
+) -> list[MetadataDifference]:
+    """Every value an edited document and the file on disk disagree on that its writer chooses between: the metadata
+    (:func:`metadata_differences`), then the per-user fields of the scopes it may write (:func:`user_differences`).
+
+    :param base: the payload when the record was opened.
+    :param mine: the edited payload.
+    :param theirs: the payload on disk now.
+    :param username: whose per-user fields ``mine`` carries.
+    :returns: the differences, the metadata's first.
+    """
+    return metadata_differences(base, mine, theirs) + user_differences(base, mine, theirs, username)
+
+
+def user_differences(
+    base: dict[str, Any], mine: dict[str, Any], theirs: dict[str, Any], username: str
+) -> list[MetadataDifference]:
+    """Every per-user field an edited document and the file on disk disagree on, in the scopes its writer may change:
+    ``username``'s own and ``public``. Another user's fields, and ``unknown``'s, are always the file's
+    (:func:`merge_users`), so there is nothing to choose there and they never appear.
+
+    A scope one side lacks compares as an empty one, so each of its fields is a row of its own.
+
+    :param base: the payload when the record was opened.
+    :param mine: the edited payload.
+    :param theirs: the payload on disk now.
+    :param username: whose fields ``mine`` carries.
+    :returns: the differences, block by block, the user's own scope before ``public``.
+    """
+    known, own, their = users_maps(base), users_maps(mine), users_maps(theirs)
+    found: list[MetadataDifference] = []
+    for block in [*own, *(block for block in their if block not in own)]:
+        for scope in (username, PUBLIC_USERNAME):
+            collect_differences(
+                known.get(block, {}).get(scope, {}),
+                own.get(block, {}).get(scope, {}),
+                their.get(block, {}).get(scope, {}),
+                (block, USERS_KEY, scope),
+                found,
+            )
     return found
 
 

@@ -236,10 +236,12 @@ progress. Reading one image or archive member is a single call returning bytes.
 - A save carries the `RecordVersion` it was edited from: a hash of the **non-user part**, of the file, and of each
   per-user field as read, which is what tells a field the caller changed from one it merely still holds. A block
   holding nothing but its `users` map is not metadata. So a progress write every few seconds never fails a metadata
-  save; only a newer metadata edit does, and that is reported as a conflict instead of silently overwritten. The agent
-  shows a conflict side by side, each detail with its value when opened, the caller's and the file's, and saves the
-  picks merged, saves over the other change, or reverts. Over the network the same check is an HTTP precondition,
-  answered `409` on conflict.
+  save; only a newer metadata edit does, and that is reported as a conflict instead of silently overwritten. Only a
+  refused save shows anything: the agent lists every value the two disagree on — the details, and the per-user fields
+  of the caller's own scope and `public` — each with its original value, the caller's and the file's as three radios,
+  a value that differs from the original in bold, started on the side that changed. It saves the picks, or discards
+  the caller's edits; Save is disabled while every pick is the file's value, since that save would write the file
+  back as it is. Over the network the same check is an HTTP precondition, answered `409` on conflict.
 - `record_progress` needs no version: it replaces one user's progress entry and nothing else
   ([[field-schema#watch-progress]]).
 - Metadata edits go only to the node that owns the resource — the single writer of [[sync#overview]]. The username of

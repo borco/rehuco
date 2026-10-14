@@ -6,7 +6,7 @@ from functools import partial
 from typing import Any, Final
 
 from PySide6.QtWidgets import QMessageBox, QWidget
-from rehuco_core import FieldPath, RecordConflict, metadata_differences
+from rehuco_core import FieldPath, RecordConflict, record_differences
 
 from ..dialogs.record_conflict_dialog import ConflictResolution, RecordConflictDialog
 from .rehu_document_model import UNTITLED_LABEL, RehuDocumentModel
@@ -76,9 +76,11 @@ def ask_about_conflict(
     :param parent: the widget to parent the dialog to.
     :param model: the document whose save was refused.
     :param conflict: the refusal, carrying the file as it is now.
-    :returns: the choice, and the value kept for each detail not kept as the document has it.
+    :returns: the choice, and the value kept for each row.
     """
-    differences = metadata_differences(model.base_metadata(), model.document.data, conflict.theirs.data)
+    differences = record_differences(
+        model.base_data(), model.document.data, conflict.theirs.data, model.document.username
+    )
     dialog = RecordConflictDialog(model.label or UNTITLED_LABEL, differences, parent)
     try:
         dialog.exec()

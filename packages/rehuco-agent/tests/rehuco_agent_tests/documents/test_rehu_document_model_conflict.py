@@ -9,6 +9,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Final
 
+from freezegun.api import FrozenDateTimeFactory
 from pytest import fixture, mark, raises
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
@@ -18,8 +19,7 @@ from rehuco_core import (
     DEFAULT_UNKNOWN_USERNAME,
     RecordConflict,
     RehuDocument,
-    metadata_differences,
-    metadata_of,
+    record_differences,
 )
 from rehuco_core.access import AccessRouter, Changed, ChangeEvent, ChangeFeed, LocalAccess, LocalKey
 
@@ -31,6 +31,8 @@ TYPE: Final = "tutorial"
 TITLE_PATH: Final = ("core", "sources", 0, "title")
 URL_PATH: Final = ("core", "sources", 0, "url")
 DESCRIPTION_PATH: Final = ("core", "description")
+RATING_PATH: Final = (TYPE, "users", DEFAULT_CURRENT_USERNAME, "rating")
+"""The current user's rating, as a conflict row names it."""
 
 PROGRESS: Final = {"part1.mp4": {"position": 42.0}}
 """A progress entry, as a player writes one."""
@@ -335,7 +337,9 @@ def test_resolving_with_the_files_values_saves_them_and_removes_what_the_file_re
     edit_on_disk(path, theirs)
     with raises(RecordConflict) as refused:
         model.save()
-    differences = metadata_differences(model.base_metadata(), model.document.data, refused.value.theirs.data)
+    differences = record_differences(
+        model.base_data(), model.document.data, refused.value.theirs.data, DEFAULT_CURRENT_USERNAME
+    )
     values: dict[Any, Any] = {difference.path: difference.theirs for difference in differences}
     assert values == {TITLE_PATH: "Theirs", URL_PATH: ABSENT, DESCRIPTION_PATH: "Their notes"}
 
@@ -345,6 +349,125 @@ def test_resolving_with_the_files_values_saves_them_and_removes_what_the_file_re
     assert (on_file.title, on_file.url, on_file.description) == ("Theirs", "", "Their notes")
     assert (model.title, model.url, model.description) == ("Theirs", "", "Their notes")
     assert model.conflict is None
+    assert not model.dirty
+
+
+def test_resolving_writes_a_per_user_field_kept_as_mine_over_the_files(tmp_path: Path, feed: ChangeFeed) -> None:
+    """A per-user field the file changed and this document did not would take the file's value in the merge alone;
+    kept as *Mine* in the dialog, the document's value is the one saved.
+
+    **Test steps:**
+
+    * open a record rated 1 and edit its title, then retitle the file and rate it 3 there
+    * save, and list the rows: the title and the rating, the rating changed on disk only
+    * resolve keeping this document's title and its rating of 1
+    * verify the file and the model hold this document's title and the rating of 1
+    """
+    path = tmp_path / "info.rehu"
+    write_record(path, "Old", rating=1)
+
+    def theirs(document: RehuDocument) -> None:
+        document.title = "Theirs"
+        document.set_user_field(DEFAULT_CURRENT_USERNAME, "rating", 3)
+
+    model = opened(path, feed)
+    model.title = "Mine"
+    edit_on_disk(path, theirs)
+    with raises(RecordConflict) as refused:
+        model.save()
+    differences = record_differences(
+        model.base_data(), model.document.data, refused.value.theirs.data, DEFAULT_CURRENT_USERNAME
+    )
+    assert [(row.path, row.mine_changed, row.theirs_changed) for row in differences] == [
+        (TITLE_PATH, True, True),
+        (RATING_PATH, False, True),
+    ]
+
+    model.resolve_conflict({difference.path: difference.mine for difference in differences})
+
+    on_file = stored(path)
+    assert (on_file.title, on_file.user_field(DEFAULT_CURRENT_USERNAME, "rating")) == ("Mine", 1)
+    assert (model.title, model.rating) == ("Mine", 1)
+    assert model.conflict is None
+
+
+def test_resolving_with_the_files_details_keeps_the_files_updated(
+    tmp_path: Path, feed: ChangeFeed, freezer: FrozenDateTimeFactory
+) -> None:
+    """Keeping every detail the file's way and only a per-user field of this document's writes nothing about the
+    resource, so the file's ``updated`` stands -- although the resolving save is made against the conflict's own
+    version, which makes the file read as unchanged.
+
+    **Test steps:**
+
+    * at day 1, open a record rated 1, retitle it and rate it 5
+    * at day 2, retitle the file and rate it 3 there; the save is refused
+    * at day 3, resolve with the file's title and this document's rating
+    * verify the file holds the file's title, the rating of 5, and day 2's ``updated``
+    """
+    path = tmp_path / "info.rehu"
+    freezer.move_to("2026-01-01T00:00:00Z")
+    write_record(path, "Old", rating=1)
+    model = opened(path, feed)
+    model.title = "Mine"
+    model.rating = 5
+
+    def theirs(document: RehuDocument) -> None:
+        document.title = "Theirs"
+        document.set_user_field(DEFAULT_CURRENT_USERNAME, "rating", 3)
+
+    freezer.move_to("2026-02-02T00:00:00Z")
+    edit_on_disk(path, theirs)
+    with raises(RecordConflict):
+        model.save()
+
+    freezer.move_to("2026-03-03T00:00:00Z")
+    model.resolve_conflict({TITLE_PATH: "Theirs", RATING_PATH: 5})
+
+    on_file = stored(path)
+    assert (on_file.title, on_file.user_field(DEFAULT_CURRENT_USERNAME, "rating")) == ("Theirs", 5)
+    assert on_file.updated == "2026-02-02T00:00:00Z"
+
+
+def test_resolving_writes_the_original_values_kept(tmp_path: Path, feed: ChangeFeed) -> None:
+    """A row kept as *Original* puts back the value as opened -- neither side's -- and an original the record did not
+    have removes the detail and the per-user field.
+
+    **Test steps:**
+
+    * open a record rated 1, with no description; edit its title, description and rating
+    * meanwhile give the file another title, description and rating
+    * save, and resolve keeping every row's original value
+    * verify the file and the model hold the old title, no description and the old rating
+    """
+    path = tmp_path / "info.rehu"
+    write_record(path, "Old", rating=1)
+
+    def theirs(document: RehuDocument) -> None:
+        document.title = "Theirs"
+        document.description = "Their notes"
+        document.set_user_field(DEFAULT_CURRENT_USERNAME, "rating", 3)
+
+    model = opened(path, feed)
+    model.title = "Mine"
+    model.description = "My notes"
+    model.rating = 5
+    edit_on_disk(path, theirs)
+    with raises(RecordConflict) as refused:
+        model.save()
+    differences = record_differences(
+        model.base_data(), model.document.data, refused.value.theirs.data, DEFAULT_CURRENT_USERNAME
+    )
+    originals: dict[Any, Any] = {difference.path: difference.base for difference in differences}
+    assert originals == {TITLE_PATH: "Old", DESCRIPTION_PATH: ABSENT, RATING_PATH: 1}
+
+    model.resolve_conflict(originals)
+
+    on_file = stored(path)
+    assert (on_file.title, on_file.description) == ("Old", "")
+    assert "description" not in on_file.core
+    assert on_file.user_field(DEFAULT_CURRENT_USERNAME, "rating") == 1
+    assert (model.title, model.description, model.rating) == ("Old", "", 1)
     assert not model.dirty
 
 
@@ -452,47 +575,54 @@ def test_a_revert_drops_the_conflict(tmp_path: Path, feed: ChangeFeed) -> None:
 # endregion
 
 
-# region base_metadata, stored_text, signature
-def test_the_base_metadata_is_the_record_as_read_without_its_per_user_fields(tmp_path: Path, feed: ChangeFeed) -> None:
-    """The *when opened* column of the dialog: what was read, not what is being edited, and a copy a caller can
-    change freely.
+# region base_data, stored_text, signature
+def test_the_base_data_is_the_record_as_read_with_its_per_user_fields(tmp_path: Path, feed: ChangeFeed) -> None:
+    """The *Original* column of the dialog: what was read, per-user fields included, not what is being edited -- and
+    a copy a caller can change freely.
 
     **Test steps:**
 
-    * open a rated record and edit its title
-    * verify the base metadata is the file's metadata, with the old title and no rating
+    * open a rated record, edit its title and rating
+    * verify the base data is the file's payload, with the old title and the old rating
     * change the returned copy, and verify a second call is unaffected
     """
     path = tmp_path / "info.rehu"
     write_record(path, "Old", rating=4)
     model = opened(path, feed)
     model.title = "Mine"
+    model.rating = 1
 
-    base = model.base_metadata()
+    base = model.base_data()
 
-    assert base == metadata_of(stored(path).data)
+    assert base == stored(path).data
     assert base["core"]["sources"][0]["title"] == "Old"
-    assert TYPE not in base
+    assert base[TYPE]["users"][DEFAULT_CURRENT_USERNAME]["rating"] == 4
     base["core"]["sources"][0]["title"] = "Scribbled"
-    assert model.base_metadata()["core"]["sources"][0]["title"] == "Old"
+    base[TYPE]["users"][DEFAULT_CURRENT_USERNAME]["rating"] = 9
+    again = model.base_data()
+    assert again["core"]["sources"][0]["title"] == "Old"
+    assert again[TYPE]["users"][DEFAULT_CURRENT_USERNAME]["rating"] == 4
 
 
-def test_the_base_metadata_follows_a_save(tmp_path: Path, feed: ChangeFeed) -> None:
+def test_the_base_data_follows_a_save(tmp_path: Path, feed: ChangeFeed) -> None:
     """After a save the file holds the edits, so they are what the next conflict compares against.
 
     **Test steps:**
 
-    * open a record, edit its title and save it
-    * verify the base metadata now holds the saved title
+    * open a rated record, edit its title and rating and save it
+    * verify the base data now holds the saved title and rating
     """
     path = tmp_path / "info.rehu"
-    write_record(path, "Old")
+    write_record(path, "Old", rating=4)
     model = opened(path, feed)
     model.title = "Mine"
+    model.rating = 2
 
     model.save()
 
-    assert model.base_metadata()["core"]["sources"][0]["title"] == "Mine"
+    base = model.base_data()
+    assert base["core"]["sources"][0]["title"] == "Mine"
+    assert base[TYPE]["users"][DEFAULT_CURRENT_USERNAME]["rating"] == 2
 
 
 def test_the_stored_text_is_the_file_not_the_edited_document(tmp_path: Path, feed: ChangeFeed) -> None:

@@ -40,6 +40,12 @@ UNKNOWN: Final = "ghost"
 UPDATED: Final = "2026-01-01T00:00:00Z"
 """The ``updated`` stamp every record here is written with."""
 
+THEIRS_UPDATED: Final = "2026-05-05T05:05:05Z"
+"""The ``updated`` another writer leaves on disk."""
+
+SAVED_AT: Final = "2026-10-12T10:00:00Z"
+"""When a save under test happens, and so what it stamps."""
+
 NODE_KEY: Final = NodeKey("node-device-id", UUID("00000000-0000-0000-0000-000000000001"), "pack")
 
 
@@ -421,6 +427,94 @@ def test_overwrite_writes_over_a_metadata_edit_and_still_merges_per_user_fields(
     assert stored["core"]["description"] == "mine"
     assert stored["tutorial"]["users"] == {"bob": {"rating": 2}}
     assert saved.users_merged is True
+
+
+def test_a_save_whose_details_are_the_files_keeps_the_files_updated(
+    tmp_path: Path, freezer: FrozenDateTimeFactory
+) -> None:
+    """A save whose details come out as the file's -- the other writer's edit made here too -- writes only per-user
+    fields: it takes the file's ``updated`` rather than stamping one, though the details moved since the read.
+
+    **Test steps:**
+
+    * load a record; meanwhile, another writer changes its description and its ``updated``
+    * make the same description edit here, rate it, and save later with ``overwrite``
+    * verify the file holds the description and the rating, and the file's ``updated`` -- on the document too
+    """
+    path = tmp_path / "info.rehu"
+    key = write_record(path, tutorial_data())
+    records = LocalRecords(ChangeFeed())
+    loaded = load(records, key)
+    write_meanwhile(path, description="theirs", updated=THEIRS_UPDATED)
+
+    freezer.move_to(SAVED_AT)
+    loaded.document.data["core"]["description"] = "theirs"
+    loaded.document.set_active_user_field("rating", 5)
+    records.save(key, loaded.document, loaded.version, username=USERNAME, overwrite=True)
+
+    stored = on_disk(path)
+    assert stored["core"]["description"] == "theirs"
+    assert stored["tutorial"]["users"] == {USERNAME: {"rating": 5}}
+    assert stored["core"]["updated"] == THEIRS_UPDATED
+    assert loaded.document.updated == THEIRS_UPDATED
+
+
+def test_a_save_whose_details_differ_from_the_files_stamps_updated(
+    tmp_path: Path, freezer: FrozenDateTimeFactory
+) -> None:
+    """Writing details the file does not hold is an edit landing on disk: ``updated`` is stamped with the save's time,
+    neither the file's nor the one read.
+
+    **Test steps:**
+
+    * load a record; meanwhile, another writer changes its description and its ``updated``
+    * change the description here to another value, and save later with ``overwrite``
+    * verify the file holds this description and the save's time as ``updated``
+    """
+    path = tmp_path / "info.rehu"
+    key = write_record(path, tutorial_data())
+    records = LocalRecords(ChangeFeed())
+    loaded = load(records, key)
+    write_meanwhile(path, description="theirs", updated=THEIRS_UPDATED)
+
+    freezer.move_to(SAVED_AT)
+    loaded.document.data["core"]["description"] = "mine"
+    records.save(key, loaded.document, loaded.version, username=USERNAME, overwrite=True)
+
+    stored = on_disk(path)
+    assert stored["core"]["description"] == "mine"
+    assert stored["core"]["updated"] == SAVED_AT
+
+
+def test_a_save_whose_details_are_the_files_stamps_nothing_when_the_file_has_no_updated(
+    tmp_path: Path, freezer: FrozenDateTimeFactory
+) -> None:
+    """A file with no ``updated`` has none to take: the document's own is written as it is, not stamped -- the save
+    still changes no detail.
+
+    **Test steps:**
+
+    * load a record; meanwhile, another writer changes its description and drops its ``updated``
+    * make the same description edit here, and save later with ``overwrite``
+    * verify the file holds the description and the ``updated`` read, not the save's time
+    """
+    path = tmp_path / "info.rehu"
+    key = write_record(path, tutorial_data())
+    records = LocalRecords(ChangeFeed())
+    loaded = load(records, key)
+    other = RehuDocument.load(path, username="bob")
+    other.data["core"]["description"] = "theirs"
+    del other.data["core"]["updated"]
+    other.save(touch_updated=False)
+    assert "updated" not in on_disk(path)["core"]
+
+    freezer.move_to(SAVED_AT)
+    loaded.document.data["core"]["description"] = "theirs"
+    records.save(key, loaded.document, loaded.version, username=USERNAME, overwrite=True)
+
+    stored = on_disk(path)
+    assert stored["core"]["description"] == "theirs"
+    assert stored["core"]["updated"] == UPDATED
 
 
 def test_the_version_after_a_save_matches_a_fresh_load_when_a_block_was_dropped(tmp_path: Path) -> None:

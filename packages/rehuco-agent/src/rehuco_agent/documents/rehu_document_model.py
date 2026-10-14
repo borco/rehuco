@@ -6,6 +6,7 @@
 # module-length cap is lifted here rather than fragmenting the seam.
 # pylint: disable=too-many-lines
 
+import copy
 import logging
 from collections.abc import Generator, Mapping, Sequence
 from contextlib import contextmanager
@@ -32,7 +33,6 @@ from rehuco_core import (
     checksum_record_path,
     is_directory_scoped_name,
     merge_users,
-    metadata_of,
     put_paths,
     rehu_rename_conflict,
     rename_rehu_resource,
@@ -494,8 +494,8 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.__access: Final = access if access is not None else AccessRouter(LocalAccess())
         self.__version = version
         """What the document was read or last saved at; see the class's ``version``."""
-        self.__base_metadata = metadata_of(document.data)
-        """The document's metadata as read or last saved, for showing what a conflict changed on each side."""
+        self.__base_data = copy.deepcopy(document.data)
+        """The document as read or last saved, for showing what a conflict changed on each side."""
         self.__rename_coordinator: Final = rename_coordinator
         self.__pending = pending
         """See :attr:`pending`; set only by :meth:`create_pending`, cleared at the file seam that
@@ -751,7 +751,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             if first_save and self.path is not None:
                 changed = self.__take_enclosing_claims(self.path)
         self.__version = saved.version
-        self.__base_metadata = metadata_of(self.__document.data)
+        self.__base_data = copy.deepcopy(self.__document.data)
         self.__disk_signature = saved.signature
         if saved.users_merged:
             self.__seed_from_document(description=False)
@@ -772,11 +772,12 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         """Save the document with the values the user kept in :attr:`conflict` (#416).
 
         The per-user fields are merged first, against what the document was read at, so the file's ones survive; then
-        each detail is set to the value kept for it, and the result saved against the file as it is now -- refused
-        again only if it changed once more meanwhile.
+        every row of the conflict is set to the side kept for it -- a row kept as *Mine* too, since the merge may have
+        taken the file's value of a per-user field this document did not change -- and the result saved against the
+        file as it is now, refused again only if it changed once more meanwhile.
 
-        :param values: the value kept for each detail not kept as this document has it -- the file's or one typed in,
-            :data:`~rehuco_core.ABSENT` to remove it -- by its :func:`~rehuco_core.metadata_differences` path.
+        :param values: the value kept for each row (:func:`~rehuco_core.record_differences`), by its path;
+            :data:`~rehuco_core.ABSENT` removes it.
         :raises ValueError: there is no conflict to resolve.
         :raises RecordConflict: the file changed again since the conflict was found.
         :raises OSError: the file could not be read or written.
@@ -794,12 +795,13 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.dirty = True
         self.save()
 
-    def base_metadata(self) -> dict[str, Any]:
-        """The document's metadata as this model read or last saved it -- the *when opened* side of a conflict.
+    def base_data(self) -> dict[str, Any]:
+        """The document as this model read or last saved it, per-user fields included -- the *Original* side of a
+        conflict.
 
-        :returns: a copy of it (:func:`~rehuco_core.metadata_of`).
+        :returns: a copy of it.
         """
-        return metadata_of(self.__base_metadata)
+        return copy.deepcopy(self.__base_data)
 
     def stored_text(self) -> str:
         """The record's text as the file holds it -- not what a save would write.
@@ -989,7 +991,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         """
         self.__document = record.document
         self.__version = record.version
-        self.__base_metadata = metadata_of(record.document.data)
+        self.__base_data = copy.deepcopy(record.document.data)
         self.__disk_signature = record.signature
         self.conflict = None
         self.changed_on_disk = False
