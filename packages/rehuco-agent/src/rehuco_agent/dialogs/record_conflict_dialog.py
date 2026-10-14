@@ -1,4 +1,5 @@
-"""A save refused as a conflict, shown side by side to choose from ([[nodes#access-seam]], #416)."""
+"""A save refused as a conflict: every value in question with its original, this document's and the file's, to choose
+from ([[nodes#access-seam]], #416)."""
 
 from collections.abc import Sequence
 from enum import StrEnum
@@ -16,15 +17,20 @@ ABSENT_TEXT: Final = "(none)"
 HEADERS: Final = ("Field", "Original", "Mine", "On Disk")
 """The grid's column titles."""
 
+NOTHING_TO_SAVE_TIP: Final = (
+    "Nothing to save: every row keeps the value the file already holds. Discard My Edits loads the file as it is."
+)
+"""Save's tooltip while it would write nothing the file does not already hold."""
+
 VALUE_WIDTH: Final = 280
 """How wide a value is shown, in pixels, before it is elided; its tooltip has all of it."""
 
 
 def field_label(path: FieldPath) -> str:
-    """How a detail is named in the grid: its keys joined by dots, a list item by its index, as in
+    """How a value is named in the grid: its keys joined by dots, a list item by its index, as in
     ``core.sources[0].title``.
 
-    :param path: where the detail sits.
+    :param path: where the value sits.
     :returns: its name.
     """
     return "".join(f"[{key}]" if isinstance(key, int) else f".{key}" for key in path).lstrip(".")
@@ -34,7 +40,7 @@ class ConflictResolution(StrEnum):
     """What the person chose to do with a refused save."""
 
     SAVE = "save"
-    """Save, keeping the chosen side of each detail."""
+    """Save, keeping the chosen value of each row."""
 
     DISCARD = "discard"
     """Discard this document's edits and load the file as it is now."""
@@ -43,78 +49,97 @@ class ConflictResolution(StrEnum):
     """Do nothing; the edits stay unsaved."""
 
 
-class ConflictRow:
-    """One detail's row: its value when opened, on each side, and which side is kept.
+class ConflictSide(StrEnum):
+    """Which of a row's three values is kept."""
 
-    :param difference: the detail.
+    ORIGINAL = "original"
+    """The value when the record was opened."""
+
+    MINE = "mine"
+    """The edited document's value."""
+
+    THEIRS = "theirs"
+    """The file's value now."""
+
+
+class ConflictRow:
+    """One row: a value as it was opened, as edited, and on disk now -- each a radio of one group -- and which is kept.
+
+    A value that differs from the original is in bold, so what each side changed reads at a glance; a value both sides
+    changed is bold twice over. The row starts on the side that changed: *On Disk* when only the file did, *Mine*
+    otherwise.
+
+    :param difference: the value.
     :param dialog: the dialog the row's radio group belongs to.
     """
 
     def __init__(self, difference: MetadataDifference, dialog: QWidget) -> None:
         self.difference: Final = difference
         self.field: Final = QLabel(field_label(difference.path))
-        if difference.mine_changed and difference.theirs_changed:
-            font = self.field.font()
-            font.setBold(True)
-            self.field.setFont(font)
-            self.field.setToolTip("Changed both here and on disk.")
-        self.original: Final = QLabel()
-        self.mine: Final = QRadioButton()
-        self.theirs: Final = QRadioButton()
-        for widget, value in (
-            (self.original, difference.base),
-            (self.mine, difference.mine),
-            (self.theirs, difference.theirs),
-        ):
-            self.__show(widget, value)
+        self.original: Final = self.__radio(difference.base, changed=False)
+        self.mine: Final = self.__radio(difference.mine, changed=difference.mine_changed)
+        self.theirs: Final = self.__radio(difference.theirs, changed=difference.theirs_changed)
         self.group: Final = QButtonGroup(dialog)
-        self.group.addButton(self.mine)
-        self.group.addButton(self.theirs)
-        self.keep_theirs(difference.theirs_changed and not difference.mine_changed)
+        for radio in (self.original, self.mine, self.theirs):
+            self.group.addButton(radio)
+        self.keep(
+            ConflictSide.THEIRS if difference.theirs_changed and not difference.mine_changed else ConflictSide.MINE
+        )
 
-    def keep_theirs(self, theirs: bool) -> None:
-        """Pick which side's value is kept.
+    def keep(self, side: ConflictSide) -> None:
+        """Pick which value is kept.
 
-        :param theirs: keep the file's value; the edited document's otherwise.
+        :param side: the value's side.
         """
-        (self.theirs if theirs else self.mine).setChecked(True)
+        {ConflictSide.ORIGINAL: self.original, ConflictSide.MINE: self.mine, ConflictSide.THEIRS: self.theirs}[
+            side
+        ].setChecked(True)
 
     @property
-    def keeps_theirs(self) -> bool:
-        """Whether the file's value is kept."""
-        return self.theirs.isChecked()
+    def kept(self) -> Any:
+        """The value kept, or :data:`~rehuco_core.ABSENT` for one to remove."""
+        if self.original.isChecked():
+            return self.difference.base
+        return self.difference.theirs if self.theirs.isChecked() else self.difference.mine
 
     @staticmethod
-    def __show(widget: QLabel | QRadioButton, value: Any) -> None:
-        """Show a value on a label or a radio button, elided, all of it in the tooltip.
+    def __radio(value: Any, *, changed: bool) -> QRadioButton:
+        """A radio button keeping a value, elided, all of it in the tooltip.
 
-        :param widget: where.
-        :param value: the value, or :data:`~rehuco_core.ABSENT`.
+        :param value: the value, or :data:`~rehuco_core.ABSENT`, shown in italics.
+        :param changed: whether it differs from the original, shown in bold.
+        :returns: the button.
         """
         if value is ABSENT:
             text = ABSENT_TEXT
         else:
             text = value if isinstance(value, str) else canonical_json(value)
+        radio = QRadioButton()
+        font = radio.font()
+        font.setItalic(value is ABSENT)
+        font.setBold(changed)
+        radio.setFont(font)
         flat = " ".join(text.split())
-        widget.setText(widget.fontMetrics().elidedText(flat, Qt.TextElideMode.ElideRight, VALUE_WIDTH))
-        widget.setToolTip(text)
-        if value is ABSENT:
-            font = widget.font()
-            font.setItalic(True)
-            widget.setFont(font)
+        radio.setText(radio.fontMetrics().elidedText(flat, Qt.TextElideMode.ElideRight, VALUE_WIDTH))
+        radio.setToolTip(text)
+        return radio
 
 
 class RecordConflictDialog(QDialog):
-    """Every detail an edited document and its file on disk disagree on, with its original value, and which side to
-    keep for each -- a merge tool for one record.
+    """Every value an edited document and its file on disk disagree on -- its details and its own per-user fields
+    (:func:`~rehuco_core.record_differences`) -- with the original value, and which side to keep for each: a merge
+    tool for one record.
 
-    A row starts on the side that changed since the document was opened, so a detail edited on one side only is
-    already merged; a detail edited on both starts on *Mine* and its name is in bold. **All Mine** and **All On Disk**
-    pick a side for every row. **Save** saves the picks, **Discard My Edits** loads the file as it is, **Cancel**
-    leaves the edits unsaved.
+    Each row keeps one of its three values (:class:`ConflictRow`): *Original*, *Mine* or *On Disk*, a value that
+    differs from the original in bold. A row starts on the side that changed, so a value edited on one side only is
+    already merged. **All Mine** and **All On Disk** pick a side for every row. **Save** saves the picks, **Discard My
+    Edits** loads the file as it is, **Cancel** leaves the edits unsaved.
+
+    **Save is disabled while every row keeps the file's value** -- an empty dialog included: such a save would write
+    the file back as it is, which is what Discard My Edits does.
 
     :param label: the document's name, for the message.
-    :param differences: what the two disagree on (:func:`~rehuco_core.metadata_differences`).
+    :param differences: what the two disagree on (:func:`~rehuco_core.record_differences`).
     :param parent: optional Qt parent.
     """
 
@@ -124,21 +149,25 @@ class RecordConflictDialog(QDialog):
         self.__ui: Final = Ui_RecordConflictDialog()
         self.__ui.setupUi(self)
         if differences:
-            message = f'"{label}" was changed on disk since you opened it. Pick the value to keep for each detail.'
+            message = f'"{label}" was changed on disk since you opened it. Pick the value to keep for each row.'
         else:
             message = (
-                f'"{label}" was changed on disk since you opened it, but both now carry the same details: '
-                "<i>Save</i> keeps them, with your own per-user changes."
+                f'"{label}" was changed on disk since you opened it, and both now hold the same values: there is '
+                "nothing of yours to save. <i>Discard My Edits</i> loads the file as it is."
             )
         self.__ui.message_label.setText(message)
         self.__rows: Final = [ConflictRow(difference, self) for difference in differences]
         self.__fill()
-        self.__ui.all_mine_button.clicked.connect(lambda: self.__keep_all(theirs=False))
-        self.__ui.all_on_disk_button.clicked.connect(lambda: self.__keep_all(theirs=True))
+        self.__ui.all_mine_button.clicked.connect(lambda: self.__keep_all(ConflictSide.MINE))
+        self.__ui.all_on_disk_button.clicked.connect(lambda: self.__keep_all(ConflictSide.THEIRS))
         self.__ui.all_mine_button.setEnabled(bool(self.__rows))
         self.__ui.all_on_disk_button.setEnabled(bool(self.__rows))
         self.__ui.save_button.clicked.connect(lambda: self.__choose(ConflictResolution.SAVE))
         self.__ui.discard_button.clicked.connect(lambda: self.__choose(ConflictResolution.DISCARD))
+        self.__save_tip: Final = self.__ui.save_button.toolTip()
+        for row in self.__rows:
+            row.group.buttonToggled.connect(lambda _button, _checked: self.__update_save())
+        self.__update_save()
 
     @property
     def resolution(self) -> ConflictResolution:
@@ -146,12 +175,12 @@ class RecordConflictDialog(QDialog):
         return self.__resolution
 
     def chosen(self) -> dict[FieldPath, Any]:
-        """The file's value for every detail it is kept for.
+        """The value kept for every row, whichever side it comes from.
 
-        :returns: each value by its path -- :data:`~rehuco_core.ABSENT` to remove the detail -- for
+        :returns: each value by its path -- :data:`~rehuco_core.ABSENT` to remove it -- for
             ``RehuDocumentModel.resolve_conflict``.
         """
-        return {row.difference.path: row.difference.theirs for row in self.__rows if row.keeps_theirs}
+        return {row.difference.path: row.kept for row in self.__rows}
 
     def __fill(self) -> None:
         """Lay out the column titles and one row per difference."""
@@ -164,13 +193,21 @@ class RecordConflictDialog(QDialog):
         grid.setColumnStretch(len(HEADERS) - 1, 1)
         grid.setRowStretch(len(self.__rows) + 1, 1)
 
-    def __keep_all(self, *, theirs: bool) -> None:
-        """Keep one side's value for every detail.
+    def __keep_all(self, side: ConflictSide) -> None:
+        """Keep one side's value for every row.
 
-        :param theirs: keep the file's values; the edited document's otherwise.
+        :param side: the side.
         """
         for row in self.__rows:
-            row.keep_theirs(theirs)
+            row.keep(side)
+
+    def __update_save(self) -> None:
+        """Enable Save only while a row keeps a value other than the file's: otherwise it would write the file back as
+        it is -- which keeping *Original* where the file still holds the original does too."""
+        useful = any(row.kept != row.difference.theirs for row in self.__rows)
+        button = self.__ui.save_button
+        button.setEnabled(useful)
+        button.setToolTip(self.__save_tip if useful else NOTHING_TO_SAVE_TIP)
 
     def __choose(self, resolution: ConflictResolution) -> None:
         """Close the dialog with ``resolution``.

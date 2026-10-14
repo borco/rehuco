@@ -4,23 +4,29 @@ conflict (#416)."""
 from pathlib import Path
 from typing import Any, Final
 
-from PySide6.QtWidgets import QMessageBox, QPushButton, QWidget
-from pytest import fixture, mark
+from PySide6.QtWidgets import QButtonGroup, QMessageBox, QPushButton, QWidget
+from pytest import fixture, mark, raises
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.dialogs.record_conflict_dialog import ConflictResolution, RecordConflictDialog
 from rehuco_agent.documents import save_or_prompt_retry as module
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.documents.save_or_prompt_retry import ask_about_conflict, save_or_prompt_retry
-from rehuco_core import RecordConflict, RecordVersion, RehuDocument
+from rehuco_core import DEFAULT_CURRENT_USERNAME, RecordConflict, RecordVersion, RehuDocument
 from rehuco_core.access import ChangeFeed
 
-from .test_rehu_document_model_conflict import in_conflict, write_record
+from .test_rehu_document_model_conflict import RATING_PATH, edit_on_disk, in_conflict, opened, write_record
 
 TITLE_PATH: Final = ("core", "sources", 0, "title")
 
 KEEP_THEIRS: Final = {TITLE_PATH: "Theirs"}
 """What a person keeping the file's title answers."""
+
+KEEP_ORIGINAL: Final = {TITLE_PATH: "Old"}
+"""What a person keeping the title as opened answers."""
+
+ORIGINAL_RADIO: Final = "original radio"
+"""Not a button's name: :func:`press_in_dialog` clicks the first row's Original radio for it."""
 
 
 @fixture
@@ -245,7 +251,7 @@ def press_in_dialog(mocker: MockerFixture, *names: str) -> list[RecordConflictDi
     """Make the conflict dialog's ``exec`` press these buttons, by ``.ui`` name, instead of waiting for a person.
 
     :param mocker: pytest-mock fixture.
-    :param names: the buttons to press, in turn.
+    :param names: the buttons to press, in turn -- :data:`ORIGINAL_RADIO` for the first row's Original radio.
     :returns: every dialog shown, filled in as each is executed.
     """
     shown: list[RecordConflictDialog] = []
@@ -258,6 +264,9 @@ def press_in_dialog(mocker: MockerFixture, *names: str) -> list[RecordConflictDi
         """
         shown.append(dialog)
         for name in names:
+            if name == ORIGINAL_RADIO:
+                dialog.findChildren(QButtonGroup)[0].buttons()[0].click()
+                continue
             found = dialog.findChild(QPushButton, name)
             assert isinstance(found, QPushButton)
             found.click()
@@ -277,21 +286,94 @@ def test_asking_about_a_conflict_shows_the_two_sides_and_disposes_of_the_dialog(
     **Test steps:**
 
     * bring a real model into conflict over its title
-    * ask about it, with the dialog answered All On Disk then Save
-    * verify the answer is Save with the file's title, the dialog was parented to the window, and it is destroyed
+    * ask about it, with the dialog answered All On Disk, then the title's Original radio, then Save
+    * verify the answer is Save with the title as opened, the dialog was parented to the window, and it is destroyed
     """
     model, conflict = refused_title(tmp_path)
-    shown = press_in_dialog(mocker, "all_on_disk_button", "save_button")
+    shown = press_in_dialog(mocker, "all_on_disk_button", ORIGINAL_RADIO, "save_button")
     destroyed: list[bool] = []
 
     answer = ask_about_conflict(parent, model, conflict)
 
-    assert answer == (ConflictResolution.SAVE, KEEP_THEIRS)
+    assert answer == (ConflictResolution.SAVE, KEEP_ORIGINAL)
     assert len(shown) == 1
     dialog = shown[0]
     assert dialog.parent() is parent
     dialog.destroyed.connect(lambda: destroyed.append(True))
     qtbot.waitUntil(lambda: bool(destroyed))
+
+
+@mark.usefixtures("real_path_stat")
+def test_asking_about_a_conflict_lists_the_own_per_user_fields_and_not_another_users(
+    mocker: MockerFixture, parent: QWidget, tmp_path: Path
+) -> None:
+    """The dialog is built from the whole record: this user's rating, changed on both sides, is a row to choose; the
+    rating another user gave meanwhile is always the file's, so it is not.
+
+    **Test steps:**
+
+    * open a record rated 1, retitle it and rate it 5
+    * meanwhile retitle the file, rate it 3 for this user and 4 for ``bob``
+    * save, and ask about the refusal with the dialog answered Save
+    * verify the picks are this document's title and rating, and name no field of ``bob``'s
+    """
+    path = tmp_path / "info.rehu"
+    write_record(path, "Old", rating=1)
+
+    def theirs(document: RehuDocument) -> None:
+        document.title = "Theirs"
+        document.set_user_field(DEFAULT_CURRENT_USERNAME, "rating", 3)
+        document.set_user_field("bob", "rating", 4)
+
+    model = opened(path, ChangeFeed())
+    model.title = "Mine"
+    model.rating = 5
+    edit_on_disk(path, theirs)
+    with raises(RecordConflict) as refused:
+        model.save()
+    press_in_dialog(mocker, "save_button")
+
+    resolution, picks = ask_about_conflict(parent, model, refused.value)
+
+    assert resolution is ConflictResolution.SAVE
+    assert picks == {TITLE_PATH: "Mine", RATING_PATH: 5}
+    assert not [key for key in picks if "bob" in key]
+
+
+@mark.usefixtures("real_path_stat")
+def test_asking_about_a_conflict_leaves_out_a_block_the_save_drops(
+    mocker: MockerFixture, parent: QWidget, tmp_path: Path
+) -> None:
+    """A block this document claimed and abandoned is dropped by the save whatever is picked, so its values are no rows:
+    the file's change to it goes with it, as it would on a save with no conflict.
+
+    **Test steps:**
+
+    * open a tutorial holding a foreign ``reference_images`` block, retitle it, switch to that type and back
+    * meanwhile retitle the file and change the block's image count
+    * save, and ask about the refusal with the dialog answered Save
+    * verify the only pick is the title
+    """
+    path = tmp_path / "info.rehu"
+    write_record(path, "Old")
+    edit_on_disk(path, lambda document: document.data.update(reference_images={"format_version": 1, "image_count": 1}))
+
+    def theirs(document: RehuDocument) -> None:
+        document.title = "Theirs"
+        document.data.update(reference_images={"format_version": 1, "image_count": 2})
+
+    model = opened(path, ChangeFeed())
+    model.title = "Mine"
+    model.document.set_active_type("reference_images")
+    model.document.set_active_type("tutorial")
+    edit_on_disk(path, theirs)
+    with raises(RecordConflict) as refused:
+        model.save()
+    press_in_dialog(mocker, "save_button")
+
+    _, picks = ask_about_conflict(parent, model, refused.value)
+
+    assert picks == {TITLE_PATH: "Mine"}
 
 
 @mark.usefixtures("real_path_stat")
@@ -317,25 +399,53 @@ def test_asking_about_a_conflict_answers_no_picks_unless_saving(
 
 
 @mark.usefixtures("real_path_stat")
-def test_a_conflict_kept_as_on_disk_saves_the_files_title(
+def test_a_conflict_kept_all_on_disk_cannot_be_saved_and_discarding_takes_the_files_title(
     mocker: MockerFixture, parent: QWidget, tmp_path: Path
 ) -> None:
-    """End to end through a real model and file: the person keeps the file's side, and that is what is saved.
+    """End to end through a real model and file: keeping the file's side everywhere leaves nothing to save -- Save is
+    disabled, and a press does nothing -- so Discard My Edits is how the file's title is taken.
 
     **Test steps:**
 
     * bring a real model into conflict over its title, and clear the conflict so a save is asked afresh
-    * save through ``save_or_prompt_retry``, with the dialog answered All On Disk then Save
-    * verify it returned ``True``, the file and the model hold the file's title, and the model is clean
+    * save through ``save_or_prompt_retry``, with the dialog answered All On Disk, then Save, then Discard My Edits
+    * verify Save was disabled, it returned ``True``, the file and the model hold the file's title, and the model is
+      clean
     """
     model, _ = refused_title(tmp_path)
     model.conflict = None
-    press_in_dialog(mocker, "all_on_disk_button", "save_button")
+    shown = press_in_dialog(mocker, "all_on_disk_button", "save_button", "discard_button")
 
     assert save_or_prompt_retry(parent, model) is True
 
+    save = shown[0].findChild(QPushButton, "save_button")
+    assert isinstance(save, QPushButton)
+    assert not save.isEnabled()
+    assert shown[0].resolution is ConflictResolution.DISCARD
     assert RehuDocument.load(tmp_path / "info.rehu").title == "Theirs"
     assert (model.title, model.dirty, model.conflict) == ("Theirs", False, None)
+
+
+@mark.usefixtures("real_path_stat")
+def test_a_conflict_kept_as_original_saves_the_title_as_opened(
+    mocker: MockerFixture, parent: QWidget, tmp_path: Path
+) -> None:
+    """End to end through a real model and file: the person keeps neither edit, and the title as opened is saved.
+
+    **Test steps:**
+
+    * bring a real model into conflict over its title, and clear the conflict so a save is asked afresh
+    * save through ``save_or_prompt_retry``, with the dialog answered with the title's Original radio, then Save
+    * verify it returned ``True``, the file and the model hold the original title, and the model is clean
+    """
+    model, _ = refused_title(tmp_path)
+    model.conflict = None
+    press_in_dialog(mocker, ORIGINAL_RADIO, "save_button")
+
+    assert save_or_prompt_retry(parent, model) is True
+
+    assert RehuDocument.load(tmp_path / "info.rehu").title == "Old"
+    assert (model.title, model.dirty, model.conflict) == ("Old", False, None)
 
 
 # endregion

@@ -19,6 +19,15 @@ Changelogs are per package in this monorepo, matching the per-package release ta
   `ChangeFeed` announces `Moved`, `Changed`, `FolderChanged` and `Invalidated` without Qt. `AccessRouter.key_for_path`
   turns a path into its key, and `AccessRouter.for_key` hands a local key to `LocalAccess` and raises
   `NodeUnreachable` for a node key.
+- Records through the access seam: `LocalAccess.records` (`LocalRecords`) loads a record, saves it, reads its text
+  as stored and converts a legacy `.tc`. A file that cannot be read loads as a locked stub rather than raising. A
+  save is a read-merge-write against the `RecordVersion` the document was read at -- a hash of its metadata (every
+  block's `users` map left out), of the file, and of each per-user field. A metadata edit made on disk since the read
+  refuses the save as a `RecordConflict` carrying the file as it is now; the per-user fields merge field by field
+  (`merge_users`), a field the caller changed being the caller's and every other one the file's, in the caller's own
+  scope and `public` only. `record_differences` lists what an edited document and the file disagree on -- the
+  metadata and the caller's own per-user fields, each with its original value -- and `put_paths` puts the values
+  kept. A legacy `.tc` is never saved over.
 - `app_folders()` answers where the agent and the node keep their files without Qt: one `borco/rehuco` folder on
   Windows (`%LOCALAPPDATA%`) and macOS, the XDG config / data / cache split on Linux. `default_username()` is the OS
   login name, or `admin` when the platform has none.
@@ -52,6 +61,12 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 - Writing `None` to a per-user field (`set_active_user_field`, `set_user_field`) removes the key instead of storing
   a JSON `null`.
 - The ffprobe probe asks for JSON output, to read the frame size along with the duration.
+- `updated` moves only when a save changes the record's metadata: a per-user change -- a rating, a progress entry,
+  another user's fields merged in -- no longer stamps it. Saved through `LocalRecords`, the change is judged against
+  the file the save replaces, so a save whose details are the file's keeps the file's `updated`.
+  `RehuDocument.save(edited=...)` takes that decision from its caller, and `payload_to_write()` is what a save writes.
+- `RehuDocument.load` decodes the file as UTF-8 text and hands it back with `load_with_text`, so a record's version
+  describes the very text it was read from.
 
 ## [0.3.0] - 2026-10-12
 

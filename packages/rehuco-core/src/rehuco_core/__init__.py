@@ -152,7 +152,9 @@ from .record_versions import (
     metadata_differences,
     metadata_of,
     put_paths,
+    record_differences,
     record_version,
+    user_differences,
 )
 from .rehu_catalog import (
     CatalogCheckpoint,
@@ -411,7 +413,9 @@ __all__ = [
     "metadata_differences",
     "metadata_of",
     "put_paths",
+    "record_differences",
     "record_version",
+    "user_differences",
     "with_titled_index",
     "titled_index",
     "TITLE_KEY",

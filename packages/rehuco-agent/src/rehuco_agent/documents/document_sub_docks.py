@@ -137,7 +137,7 @@ header and summary readable rather than being squeezed to a sliver."""
 CHANGED_ON_DISK_MESSAGE: Final = (
     "This file was changed outside the app while you have unsaved edits here. "
     "<i>Revert</i> loads the file as it is now and discards them; <i>Save</i> keeps both when the other change "
-    "touched only per-user fields, and otherwise shows the two side by side to choose from."
+    "touched only per-user fields, and otherwise lists what differs for you to choose from."
 )
 """The notice for a document whose file changed on disk under unsaved edits (#487, #416)."""
 
