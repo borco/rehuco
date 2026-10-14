@@ -26,14 +26,15 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QAction, QDesktopServices, QFont, QFontMetrics, QImage, QImageReader, QPalette, QPixmap
 from PySide6.QtWidgets import QComboBox, QFrame, QLabel, QLineEdit, QSizePolicy, QToolButton, QWidget
 from rehuco_core import (
+    DEFAULT_CURRENT_USERNAME,
+    DEFAULT_UNKNOWN_USERNAME,
     ArchiveFacts,
     FileType,
     RehucoRoot,
-    RehuDocument,
     RenameCoordinator,
-    load_tc,
     read_archive_facts,
 )
+from rehuco_core.access import AccessRouter, LocalAccess
 
 from ..documents.files_rows import CHECKSUM_STATE_ICONS
 from ..fields.widgets.image_export import PressDragFilter
@@ -166,6 +167,9 @@ class RootsPreview(QWidget):
         shows none for a folder.
     :param pack_for: asked for an archive row, to say whether it is a reference pack; ``None`` says nothing of it.
     :param parent: optional Qt parent.
+    :param drag_image: starts the drag of the picture shown; ``None`` drags nothing.
+    :param access: what a record is read through ([[nodes#access-seam]], #416); this machine's own files when not
+        given.
     """
 
     image_ready = Signal(int, QImage, QSize)
@@ -188,8 +192,10 @@ class RootsPreview(QWidget):
         pack_for: PackForRow | None = None,
         parent: QWidget | None = None,
         drag_image: DragImage | None = None,
+        access: AccessRouter | None = None,
     ) -> None:
         super().__init__(parent)
+        self.__access: Final = access if access is not None else AccessRouter(LocalAccess())
         self.__ui: Final = Ui_RootsPreview()
         self.__ui.setupUi(self)
         self.setMinimumWidth(MINIMUM_WIDTH)
@@ -729,27 +735,27 @@ class RootsPreview(QWidget):
     def __read_record(self, serial: int, path: Path) -> None:
         """Read one record, on a pool thread, and hand its URL and description back.
 
-        A record that cannot be read answers nothing, and the reason is logged.
+        A record that cannot be read answers nothing, and the access logs the reason.
 
         :param serial: the request's serial.
         :param path: the record file.
         """
         with self.__holding():
-            try:
-                # before the read: a change landing between the two is then seen as a change, never missed
-                stat = path.stat()
-                document = load_tc(path) if path.suffix.lower() == ".tc" else RehuDocument.load(path)
-                url, description = document.url.strip(), document.description
-            except (OSError, ValueError) as error:  # a RehuFormatError is a ValueError
-                LOG.warning("Could not read %s for the details pane: %s", path, error)
-                return
+            key = self.__access.key_for_path(path)
+            # the identities only decide whose per-user fields are read, and the pane shows none
+            record = self.__access.for_key(key).records.load(
+                key, username=DEFAULT_CURRENT_USERNAME, unknown_username=DEFAULT_UNKNOWN_USERNAME
+            )
+        if record.document.load_failed:
+            # the access logged why
+            return
+        url, description = record.document.url.strip(), record.document.description
         try:
-            signature = (stat.st_mtime_ns, stat.st_size)
-            self.record_ready.emit(serial, url, description if description.strip() else "", signature)
+            self.record_ready.emit(serial, url, description if description.strip() else "", record.signature)
         except RuntimeError:  # the preview was destroyed while the read was out
             pass
 
-    def __on_record(self, serial: int, url: str, description: str, signature: tuple[int, int]) -> None:
+    def __on_record(self, serial: int, url: str, description: str, signature: tuple[int, int] | None) -> None:
         """Show what a record says, unless the row it was for is no longer the one shown.
 
         :param serial: the request's serial.

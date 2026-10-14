@@ -49,6 +49,7 @@ from .plugins import (
     USERS_KEY,
     PluginRegistry,
 )
+from .record_versions import metadata_text
 from .rehu_format import CORE_BLOCK_KEY, FORMAT_VERSION_KEY, RESERVED_KEYS
 from .rehu_locks import (
     OPTIONAL_INT_BLOCK_KEYS,
@@ -207,14 +208,15 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         moment a save *writes* the block again (resurrected by switching back to its type), so a later
         re-abandonment is a fresh discard event with a fresh record. Reset by :meth:`reload` alongside
         :attr:`__claimed_keys` -- a reverted document begins a clean session, discard log included."""
-        self.__saved_serialization = self.serialize()
-        """The canonical text (:meth:`serialize`) of this document as of construction, the last
+        self.__saved_metadata = self.__metadata_text()
+        """The canonical metadata text (:meth:`__metadata_text`) of this document as of construction, the last
         successful :meth:`save`, or :meth:`reload` -- the baseline :meth:`save` compares against to
         decide whether a save actually *changes* the record and so must refresh ``updated``
-        ([[field-schema#record-timestamps]], #142). Captured after migration and normalization, which is
-        what keeps a pure layout upgrade (load old file, save) reading as *unchanged*: the baseline
-        already carries the migrated layout. Not ``Final``: every successful save and every reload
-        rebinds it."""
+        ([[field-schema#record-timestamps]], #142). Metadata only (#416): a per-user field describes one person,
+        not the resource, and a save merges other writers' ones in, so neither may move ``updated``. Captured
+        after migration and normalization, which is what keeps a pure layout upgrade (load old file, save) reading
+        as *unchanged*: the baseline already carries the migrated layout. Not ``Final``: every successful save and
+        every reload rebinds it."""
 
     def __check_reserved_keys(self, data: dict[str, Any]) -> None:
         """Refuse a payload that misuses a reserved key ([[data-model#rehu-format]]); run twice, once
@@ -284,6 +286,25 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         :raises RehuFormatError: if the file cannot be parsed, its top-level JSON value is not an object,
             or it trips a sanity cap.
         """
+        return cls.load_with_text(path, plugins=plugins, username=username)[0]
+
+    @classmethod
+    def load_with_text(
+        cls,
+        path: Path | str,
+        *,
+        plugins: PluginRegistry = DEFAULT_PLUGIN_REGISTRY,
+        username: str = DEFAULT_CURRENT_USERNAME,
+    ) -> tuple[RehuDocument, str]:
+        """:meth:`load`, also handing back the text the document was parsed from -- so what is derived from the
+        file's content (a :class:`~rehuco_core.RecordVersion`, #416) describes this very read.
+
+        :param path: path to the ``.rehu`` file.
+        :param plugins: the plugins installed here; see :class:`RehuDocument`.
+        :param username: the active identity; see :class:`RehuDocument`.
+        :returns: the document and the file's text.
+        :raises RehuFormatError: as :meth:`load`.
+        """
         path = Path(path)
         oversized = oversized_file_reason(path.stat().st_size)
         if oversized is not None:
@@ -309,7 +330,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
             LOG.warning("%s: has a 'core' block but no usable format_version -- reading it as unversioned", path)
         # read the file's own stamp before constructing: the migrator restamps the payload to the current
         # version on the way in, so this is the last moment the *file*'s version is visible
-        return cls(
+        document = cls(
             data,
             path,
             plugins=plugins,
@@ -317,6 +338,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
             on_disk_format_version=cls.__coerced_version(data),
             on_disk_active_block_format_version=cls.__raw_active_block_version(data, plugins),
         )
+        return document, text
 
     @classmethod
     def open_or_locked(
@@ -444,8 +466,9 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
           there would claim the record was created the moment someone happened to re-save it.
 
         - **``updated`` refreshes on a changed save** ([[field-schema#record-timestamps]], #142): when
-          the canonical text differs from the load/last-save baseline (:attr:`__saved_serialization`),
-          the record was actually edited, and ``updated`` is stamped with the save's own UTC time before
+          the canonical metadata differs from the load/last-save baseline (:attr:`__saved_metadata`) --
+          per-user fields left out (#416) -- the record was actually edited, and ``updated`` is stamped with the
+          save's own UTC time before
           writing. A save that rewrites an *unchanged* record -- the #89 Upgrade restamp (the baseline
           already carries the migrated layout), a save-as copy -- leaves it alone: writing is not
           editing, and "record last edited" must not decay into "record last written".
@@ -500,7 +523,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
             # ([[data-model#schema-version]]).
             self.created = self.__utc_now_timestamp()
         text = self.serialize()
-        if touch_updated and text != self.__saved_serialization:
+        if touch_updated and self.__metadata_text() != self.__saved_metadata:
             # the record's content changed since load/last save, so this save is an *edit* landing on
             # disk: stamp `updated` with the save's own time ([[field-schema#record-timestamps]], #142).
             # An unchanged save -- an upgrade restamp or a save-as copy -- skips this branch: writing is
@@ -510,7 +533,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
             self.updated = self.__utc_now_timestamp()
             text = self.serialize()
         atomic_write_text(target, text)
-        self.__saved_serialization = text
+        self.__saved_metadata = self.__metadata_text()
         self.__path = target
         self.__log_discarded_blocks(target)
         # a file now exists, at whatever version was just written -- assigned only after the write, so a
@@ -543,6 +566,14 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
             )
             + "\n"
         )
+
+    def __metadata_text(self) -> str:
+        """The metadata of what a save would write, as one canonical text: the blocks a save keeps, without their
+        per-user fields (:func:`~rehuco_core.record_versions.metadata_text`).
+
+        :returns: the text :attr:`__saved_metadata` is compared with.
+        """
+        return metadata_text(ordered_for_file(self.__data, self.active_block_key, self.__dropped_block_keys()))
 
     def __dropped_block_keys(self) -> list[str]:
         """The block keys the persistence invariant **drops** on the next save ([[plugins#plugin-blocks]]).
@@ -653,7 +684,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         self.__load_failure = fresh.lock_reasons[0] if fresh.load_failed else None
         # the freshly-read file is, by definition, unchanged: rebase the `updated` bump's baseline on it
         # (#142), so a save right after a revert reads as the no-op it is
-        self.__saved_serialization = self.serialize()
+        self.__saved_metadata = self.__metadata_text()
 
     def rebind_path(self, path: Path | str) -> None:
         """Re-point this document at ``path`` after its file moved on disk underneath it -- a completed
@@ -661,7 +692,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
 
         Nothing is read and nothing is written: the bytes are the same bytes, only their location
         changed. That is what makes this deliberately *not* a :meth:`reload` -- the save baseline
-        (:attr:`__saved_serialization`), the on-disk version stamps, this session's block claims, and any
+        (:attr:`__saved_metadata`), the on-disk version stamps, this session's block claims, and any
         load-failure verdict all still describe this very file, so re-deriving them would only risk
         replacing correct state with a re-read of the same content. A later :meth:`save` or
         :meth:`reload` simply targets the new location.

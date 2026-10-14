@@ -1,8 +1,10 @@
 """Tests for what the Roots view's details pane shows of a record: its URL and its description (#458)."""
 
 import logging
+from dataclasses import replace
 from pathlib import Path
-from typing import Final
+from typing import Any, Final
+from uuid import uuid4
 
 from borco_pyside.widgets import ElidedLabel
 from PySide6.QtCore import QModelIndex, QUrl
@@ -12,11 +14,13 @@ from pytest import LogCaptureFixture, fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.rehuco.record_images import RecordImages
-from rehuco_agent.rehuco.roots_preview import MINIMUM_WIDTH
+from rehuco_agent.rehuco.roots_folder_model import NodeListing, RootsFolderModel
+from rehuco_agent.rehuco.roots_preview import MINIMUM_WIDTH, RootsPreview
 from rehuco_agent.rehuco.scrolling_markdown_view import ScrollingMarkdownView
 from rehuco_agent.settings.image_viewer_settings import shared_image_viewer_settings
 from rehuco_agent.settings.markdown_rendering_settings import shared_markdown_rendering_settings
-from rehuco_core import RehuDocument
+from rehuco_core import RehucoRoot, RehuDocument, RenameCoordinator, RootFolderLister, RootStorage
+from rehuco_core.access import AccessRouter, LoadedRecord, LocalAccess, LocalKey, ResourceKey
 
 from .test_roots_preview import WAIT_TIMEOUT_MS, Shown
 
@@ -396,3 +400,57 @@ def test_a_record_changed_on_disk_since_the_pane_read_it_is_read_again(
         lambda: (shown.preview.record_texts or ("", ""))[1] == "Rewritten outside the app, at more length.",
         timeout=WAIT_TIMEOUT_MS,
     )
+
+
+def test_a_record_is_read_through_the_access_given_and_one_without_a_signature_is_not_followed(
+    qtbot: QtBot, mocker: MockerFixture, tmp_path: Path
+) -> None:
+    """The pane reads a record through the access seam it was handed (#416); a record whose file could not be
+    stat'ed has nothing to compare a report with, so a report reads nothing again.
+
+    **Test steps:**
+
+    * build a preview over a library, with an access whose record reads are recorded and answer no signature
+    * show a record
+    * verify it was read once, through that access, and its description shown
+    * report the file as it is now
+    * verify nothing was read again and the pane still shows the description
+    """
+    library = tmp_path / "lib"
+    library.mkdir()
+    path = library / "text_only.rehu"
+    write_record(path, description="Just words.")
+    access = AccessRouter(LocalAccess())
+    read = access.local.records.load
+    reads: list[ResourceKey] = []
+
+    def unsigned(key: ResourceKey, **identities: Any) -> LoadedRecord:
+        """Read ``key`` as the access does, but as if its file could not be stat'ed.
+
+        :param key: the record.
+        :param identities: the read's usernames.
+        :returns: the record, with no signature.
+        """
+        reads.append(key)
+        return replace(read(key, **identities), signature=None)
+
+    mocker.patch.object(access.local.records, "load", side_effect=unsigned)
+    root = RehucoRoot(uuid4(), library, "lib", RootStorage.LOCAL)
+    model = RootsFolderModel()
+    model.set_roots([root], RootFolderLister([root]))
+    preview = RootsPreview(model, RenameCoordinator(), None, lambda _: path, None, access=access)
+    qtbot.addWidget(preview)
+    root_index = model.index(0, 0)
+    qtbot.waitUntil(lambda: model.listing_state(root_index) is NodeListing.LISTED, timeout=WAIT_TIMEOUT_MS)
+
+    preview.show_index(model.index(0, 0, root_index))
+    qtbot.waitUntil(lambda: preview.record_texts is not None, timeout=WAIT_TIMEOUT_MS)
+
+    assert reads == [LocalKey(path)]
+    assert (preview.record_texts or ("", ""))[1] == "Just words."
+
+    now = path.stat()
+    preview.follow_files({path: (now.st_mtime_ns, now.st_size + 1)})
+
+    assert reads == [LocalKey(path)]
+    assert (preview.record_texts or ("", ""))[1] == "Just words."

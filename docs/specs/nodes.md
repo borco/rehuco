@@ -190,6 +190,7 @@ matches Qt's `QLocalServer`/single-application approach.)
 
 - [#409: docs: access seam, owning-node rule, views, node hosting and instances](https://github.com/borco/rehuco/issues/409)
 - [#413: refactor(core): resource keys, key relocation, an access router and a change feed](https://github.com/borco/rehuco/issues/413)
+- [#416: refactor: records through the access seam — load, save with a version check, revert, convert](https://github.com/borco/rehuco/issues/416)
 
 Some roots are reachable only through the node that owns them — a disk on another box, or a share only that box
 mounts. To make their resources behave like local ones — browsed, viewed, played and edited from the agent — every
@@ -227,13 +228,18 @@ progress. Reading one image or archive member is a single call returning bytes.
 
 **Saving is a read-merge-write with a version check.**
 
-- Every save re-reads the file under a per-file lock, takes the caller's resource metadata, keeps the file's current
-  per-user maps, merges the caller's own user's fields, and writes atomically. On a node-owned root only the node
+- Every save re-reads the file under a per-file lock, takes the caller's resource metadata, merges the per-user maps
+  **field by field**, and writes atomically. A per-user field the caller changed since it read the file is the
+  caller's; every other one is the file's. The caller may change fields only in its own scope and the reserved
+  `public` one, so another user's state, and `unknown`'s, is always the file's. On a node-owned root only the node
   saves, so the lock serializes that node's own writers ([[data-model#write-integrity]]).
-- A save carries the `RecordVersion` it was edited from. The version covers the **non-user part only**, so a progress
-  write every few seconds never fails a metadata save; only a newer metadata edit does, and that is reported as a
-  conflict (Reload / Overwrite) instead of silently overwritten. Over the network the same check is an HTTP
-  precondition, answered `409` on conflict.
+- A save carries the `RecordVersion` it was edited from: a hash of the **non-user part**, of the file, and of each
+  per-user field as read, which is what tells a field the caller changed from one it merely still holds. A block
+  holding nothing but its `users` map is not metadata. So a progress write every few seconds never fails a metadata
+  save; only a newer metadata edit does, and that is reported as a conflict instead of silently overwritten. The agent
+  shows a conflict side by side, each detail with its value when opened, the caller's and the file's, and saves the
+  picks merged, saves over the other change, or reverts. Over the network the same check is an HTTP precondition,
+  answered `409` on conflict.
 - `record_progress` needs no version: it replaces one user's progress entry and nothing else
   ([[field-schema#watch-progress]]).
 - Metadata edits go only to the node that owns the resource — the single writer of [[sync#overview]]. The username of

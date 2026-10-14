@@ -136,9 +136,16 @@ header and summary readable rather than being squeezed to a sliver."""
 
 CHANGED_ON_DISK_MESSAGE: Final = (
     "This file was changed outside the app while you have unsaved edits here. "
-    "<i>Revert</i> loads the file as it is now and discards them; <i>Save</i> overwrites the change."
+    "<i>Revert</i> loads the file as it is now and discards them; <i>Save</i> keeps both when the other change "
+    "touched only per-user fields, and otherwise shows the two side by side to choose from."
 )
-"""The notice for a document whose file changed on disk under unsaved edits (#487)."""
+"""The notice for a document whose file changed on disk under unsaved edits (#487, #416)."""
+
+CONFLICT_MESSAGE: Final = (
+    "This file's details were changed elsewhere since you opened it, so it was not saved. "
+    "<i>Save</i> again to compare the two and choose; <i>Revert</i> loads the file as it is now."
+)
+"""The notice for a document whose last save was refused as a conflict (#416)."""
 
 UPGRADE_MESSAGE: Final = "This document uses an older format — click the <i>Upgrade</i> button to bring it up to date."
 """The upgrade offer's inline banner message (#89, [[data-model#schema-version]]); names the toolbar
@@ -782,6 +789,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         self.__connect(model.lock_reasons_changed, self.__on_lock_reasons_changed)  # type: ignore[attr-defined]
         self.__connect(model.upgradable_changed, self.__on_upgradable_changed)  # type: ignore[attr-defined]
         self.__connect(model.changed_on_disk_changed, self.__on_upgradable_changed)  # type: ignore[attr-defined]
+        self.__connect(model.conflict_changed, self.__on_upgradable_changed)  # type: ignore[attr-defined]
         self.__connect(model.rename_error_changed, self.__on_rename_error_changed)  # type: ignore[attr-defined]
         self.__connect(model.active_block_changed, self.__rebuild_field_docks)
         self.__connect(model.path_changed, self.__on_path_changed)  # type: ignore[attr-defined]
@@ -1548,15 +1556,19 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         unsafe, while this describes an action that already went wrong
         (`MessageBannerSeverity`) and left the document as it was.
 
-        :returns: one row per :attr:`~RehuDocumentModel.lock_reasons` entry, in the same order, then an
-            upgrade row when :attr:`~RehuDocumentModel.upgradable` is set, then a rename row when
+        :returns: one row per :attr:`~RehuDocumentModel.lock_reasons` entry, in the same order, then a refused-save
+            row while :attr:`~RehuDocumentModel.conflict` stands (#416), or else a changed-on-disk row while
+            :attr:`~RehuDocumentModel.changed_on_disk` is set (#487), then an upgrade row when
+            :attr:`~RehuDocumentModel.upgradable` is set, then a rename row when
             :attr:`~RehuDocumentModel.rename_error` is non-empty, then the checksum and conversion-backup
             rows, then whatever `.ScrapeActions.notice` says about the current or last dropped scrape
             (#272), then whatever `.ImageDownloads.notice` says about an image acquisition in flight or
             its last failure (#73).
         """
         rows = [MessageBannerRow(MessageBannerSeverity.WARNING, reason.message) for reason in self.__model.lock_reasons]
-        if self.__model.changed_on_disk:
+        if self.__model.conflict is not None:
+            rows.append(MessageBannerRow(MessageBannerSeverity.WARNING, CONFLICT_MESSAGE))
+        elif self.__model.changed_on_disk:
             rows.append(MessageBannerRow(MessageBannerSeverity.WARNING, CHANGED_ON_DISK_MESSAGE))
         if self.__model.upgradable:
             rows.append(MessageBannerRow(MessageBannerSeverity.INFO, UPGRADE_MESSAGE))

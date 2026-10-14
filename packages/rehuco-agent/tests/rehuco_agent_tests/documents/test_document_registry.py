@@ -1,4 +1,5 @@
-"""Tests for DocumentRegistry: one shared view-model per open key, refcounted (#375)."""
+"""Tests for DocumentRegistry: one shared view-model per open key, refcounted (#375), read and saved through the
+access seam (#416)."""
 
 import json
 import logging
@@ -9,17 +10,29 @@ from typing import Final
 from uuid import UUID
 
 from PySide6.QtWidgets import QLabel, QLineEdit
-from pytest import LogCaptureFixture, raises
+from pytest import LogCaptureFixture, mark, raises
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.documents.document_registry import DocumentRegistry
+from rehuco_agent.documents.document_registry import DocumentRegistry, load_record
 from rehuco_agent.documents.document_widget import DocumentWidget
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.resource_events import ResourceEvents
-from rehuco_core import Relocation, RenameCoordinator
-from rehuco_core.access import LocalKey, NodeKey, NodeUnreachable
+from rehuco_agent.settings.identity_settings import shared_identity_settings
+from rehuco_core import RecordConflict, Relocation, RenameCoordinator
+from rehuco_core.access import (
+    AccessRouter,
+    Changed,
+    ChangeEvent,
+    ChangeFeed,
+    LocalAccess,
+    LocalKey,
+    NodeKey,
+    NodeUnreachable,
+)
 
 from rehuco_agent_tests.qt_waits import wait_destroyed
+
+from .test_rehu_document_model_conflict import edit_on_disk, retitle, write_record
 
 FAKE_PATH: Final = Path.cwd() / "fake" / "tutorials" / "sculpting" / "info.rehu"
 """Built from ``Path.cwd()`` so it is absolute on every platform."""
@@ -595,3 +608,176 @@ def test_a_reload_of_a_document_with_no_key_is_not_announced(mocker: MockerFixtu
 
     assert registry.find(FAKE_KEY) is None
     assert not heard
+
+
+# region the access seam (#416)
+@mark.usefixtures("real_path_stat")
+def test_a_given_access_reads_and_saves_every_model(qtbot: QtBot, tmp_path: Path) -> None:
+    """Every model the registry builds -- opened, new, or an unread placeholder -- goes through the access it was
+    handed, whose feed then announces each save.
+
+    **Test steps:**
+
+    * build a registry over an access with a feed of the test's own
+    * open a record, start a new document, and take a lazy placeholder and read it; edit and save each
+    * verify the feed heard each record's key, in turn
+    """
+    del qtbot
+    feed = ChangeFeed()
+    heard: list[ChangeEvent] = []
+    feed.add_listener(heard.append)
+    registry = DocumentRegistry(access=AccessRouter(LocalAccess(feed)))
+    opened, placeholder = tmp_path / "a" / "info.rehu", tmp_path / "c" / "info.rehu"
+    new = tmp_path / "b" / "info.rehu"
+    for path in (opened, new, placeholder):
+        path.parent.mkdir()
+    write_record(opened, "Opened")
+    write_record(placeholder, "Placeholder")
+    models = [
+        registry.acquire(LocalKey(opened)),
+        registry.acquire(LocalKey(new), new=True),
+        registry.acquire(LocalKey(placeholder), lazy=True),
+    ]
+    models[2].load_pending()
+
+    for model in models:
+        model.title = "Saved"
+        model.save()
+
+    assert heard == [Changed((LocalKey(path),)) for path in (opened, new, placeholder)]
+
+
+@mark.usefixtures("real_path_stat")
+def test_the_default_access_announces_a_save_app_wide(qtbot: QtBot, tmp_path: Path) -> None:
+    """With no access given, the registry's own announces on the app's events, so every view hears a save.
+
+    **Test steps:**
+
+    * build a registry over the app's events only, and open a real record
+    * edit and save it
+    * verify the events announced the record's key as changed
+    """
+    path = tmp_path / "info.rehu"
+    write_record(path, "Old")
+    events = ResourceEvents()
+    registry = DocumentRegistry(resource_events=events)
+    model = registry.acquire(LocalKey(path))
+    model.title = "Mine"
+
+    with qtbot.waitSignal(events.changed) as changed:
+        model.save()
+
+    assert changed.args == [(LocalKey(path),)]
+
+
+@mark.usefixtures("real_path_stat")
+def test_a_placeholder_read_later_still_refuses_a_save_over_a_change_on_disk(qtbot: QtBot, tmp_path: Path) -> None:
+    """A deferred read takes the version too: what it read is what a save is checked against.
+
+    **Test steps:**
+
+    * take a lazy placeholder of a real record and read it, then edit its title and retitle the file
+    * verify a save is refused as a conflict
+    """
+    del qtbot
+    path = tmp_path / "info.rehu"
+    write_record(path, "Old")
+    registry = DocumentRegistry()
+    model = registry.acquire(LocalKey(path), lazy=True)
+    model.load_pending()
+    model.title = "Mine"
+    edit_on_disk(path, retitle("Theirs"))
+
+    with raises(RecordConflict):
+        model.save()
+
+
+@mark.usefixtures("real_path_stat")
+def test_a_record_is_read_with_its_version_and_signature_and_logged(
+    caplog: LogCaptureFixture, tmp_path: Path, qtbot: QtBot
+) -> None:
+    """``load_record`` hands a model all it needs to save safely later: the document, what it was read at, and the
+    file's signature; the read is logged with the record's type.
+
+    **Test steps:**
+
+    * read a real record through local access
+    * verify the document, a version, and the file's signature, under the current identity
+    * verify the read was logged
+    """
+    del qtbot
+    path = tmp_path / "info.rehu"
+    write_record(path, "Old")
+    stat = path.stat()
+
+    with caplog.at_level(logging.INFO):
+        record = load_record(AccessRouter(LocalAccess()), LocalKey(path))
+
+    assert record.document.title == "Old"
+    assert record.document.username == shared_identity_settings().current_username
+    assert record.version is not None
+    assert record.signature == (stat.st_mtime_ns, stat.st_size)
+    assert f"Read {LocalKey(path)} as tutorial" in caplog.messages
+
+
+@mark.usefixtures("real_path_stat")
+def test_a_record_that_cannot_be_read_is_a_locked_stub_and_no_read_is_logged(
+    caplog: LogCaptureFixture, tmp_path: Path, qtbot: QtBot
+) -> None:
+    """A missing file opens as a locked stub with nothing to save against, and is not logged as read.
+
+    **Test steps:**
+
+    * read a record whose file does not exist
+    * verify a locked stub with no version and no signature
+    * verify no read was logged
+    """
+    del qtbot
+    path = tmp_path / "info.rehu"
+
+    with caplog.at_level(logging.INFO):
+        record = load_record(AccessRouter(LocalAccess()), LocalKey(path))
+
+    assert record.document.load_failed
+    assert record.lock_reasons
+    assert (record.version, record.signature) == (None, None)
+    assert not [message for message in caplog.messages if message.startswith("Read ")]
+
+
+@mark.usefixtures("real_path_stat")
+def test_a_legacy_record_files_its_flags_under_the_unknown_user(tmp_path: Path, qtbot: QtBot) -> None:
+    """A ``.tc``'s per-user flags were not set by this install's identity, so they are read as the unknown user's,
+    and it is never saved over.
+
+    **Test steps:**
+
+    * write a legacy ``.tc`` carrying a rating, and read it through ``load_record``
+    * verify the rating is filed under the unknown user, and there is no version
+    """
+    del qtbot
+    path = tmp_path / "info.tc"
+    path.write_text("type: Tutorial\ntitle: Legacy\nrating: 4\n", encoding="utf-8")
+
+    record = load_record(AccessRouter(LocalAccess()), LocalKey(path))
+
+    unknown = shared_identity_settings().unknown_username
+    assert record.document.title == "Legacy"
+    assert record.document.user_field(unknown, "rating") == 4
+    assert record.version is None
+
+
+def test_a_node_record_is_not_read(qtbot: QtBot) -> None:
+    """No implementation reaches a node yet: the read says so rather than returning a stub.
+
+    **Test steps:**
+
+    * read a node key through ``load_record``
+    * verify ``NodeUnreachable`` is raised
+    """
+    del qtbot
+
+    with raises(NodeUnreachable):
+        load_record(AccessRouter(LocalAccess()), NODE_KEY)
+
+
+# endregion

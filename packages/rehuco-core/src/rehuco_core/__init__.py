@@ -10,19 +10,24 @@ from .access import (
     ChangeFeed,
     ContentOps,
     FileOps,
+    FileSignature,
     FolderChanged,
     Invalidated,
     JobOps,
     KeyRelocation,
+    LoadedRecord,
     LocalAccess,
     LocalKey,
+    LocalRecords,
     Moved,
     MutationOps,
     NodeKey,
     NodeUnreachable,
+    RecordConflict,
     RecordOps,
     ResourceAccess,
     ResourceKey,
+    SavedRecord,
     ScreenshotOps,
 )
 from .app_folders import APP_FOLDER_NAME, ORGANIZATION_FOLDER_NAME, AppFolders, app_folders
@@ -137,6 +142,18 @@ from .plugins import (
 )
 from .progress_renames import MissingFile, RenameCandidate, plan_progress_renames, reattach_renamed_progress
 from .record_merge import merge_write
+from .record_versions import (
+    ABSENT,
+    FieldPath,
+    MetadataDifference,
+    RecordVersion,
+    canonical_json,
+    merge_users,
+    metadata_differences,
+    metadata_of,
+    put_paths,
+    record_version,
+)
 from .rehu_catalog import (
     CatalogCheckpoint,
     CatalogDirectory,
@@ -380,6 +397,21 @@ __version__ = "0.3.0"
 # plain `sorted()` order -- uppercase names, then `__version__`, then the lowercase ones -- so a new
 # export has exactly one correct place and no convention to remember (`borco_core.__init__` is the same)
 __all__ = [
+    "ABSENT",
+    "FieldPath",
+    "FileSignature",
+    "LoadedRecord",
+    "LocalRecords",
+    "MetadataDifference",
+    "RecordConflict",
+    "RecordVersion",
+    "SavedRecord",
+    "canonical_json",
+    "merge_users",
+    "metadata_differences",
+    "metadata_of",
+    "put_paths",
+    "record_version",
     "with_titled_index",
     "titled_index",
     "TITLE_KEY",

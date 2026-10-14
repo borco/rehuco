@@ -7,8 +7,16 @@ from typing import Final, cast
 
 from borco_core.logging import LogScope
 from PySide6.QtCore import QObject
-from rehuco_core import RehuDocument, RehuFormatError, RenameCoordinator, load_tc
-from rehuco_core.access import KeyRelocation, LocalKey, NodeUnreachable, ResourceKey
+from rehuco_core import RenameCoordinator
+from rehuco_core.access import (
+    AccessRouter,
+    KeyRelocation,
+    LoadedRecord,
+    LocalAccess,
+    LocalKey,
+    NodeUnreachable,
+    ResourceKey,
+)
 
 from ..resource_events import ResourceEvents
 from ..settings.identity_settings import shared_identity_settings
@@ -43,6 +51,9 @@ class DocumentRegistry(QObject):
         app's one coordinator, see ``DocumentsDock``.
     :param resource_events: the app's change announcements; ``None`` builds a private one, for a registry with
         no window around it.
+    :param access: what every model's record is read and saved through ([[nodes#access-seam]], #416); its local
+        change feed must be the one ``resource_events`` adapts, so a save is announced app-wide. ``None`` builds one
+        over this machine's files announcing on ``resource_events``.
     """
 
     def __init__(
@@ -50,10 +61,12 @@ class DocumentRegistry(QObject):
         parent: QObject | None = None,
         rename_coordinator: RenameCoordinator | None = None,
         resource_events: ResourceEvents | None = None,
+        access: AccessRouter | None = None,
     ) -> None:
         super().__init__(parent)
         self.__rename_coordinator: Final = rename_coordinator
         self.__events: Final = resource_events if resource_events is not None else ResourceEvents(parent=self)
+        self.__access: Final = access if access is not None else AccessRouter(LocalAccess(self.__events.changes))
         self.__events.moved.connect(self.__on_moved)
         self.__models: Final[dict[ResourceKey, RehuDocumentModel]] = {}
         self.__holders: Final[dict[RehuDocumentModel, int]] = {}
@@ -103,7 +116,8 @@ class DocumentRegistry(QObject):
             ``.tc`` (:meth:`RehuDocument.reload`, what the deferred read runs through, re-reads only a
             ``.rehu``).
         :returns: the held model; :attr:`~RehuDocumentModel.pending` tells whether it is still unread.
-        :raises NodeUnreachable: for a node's record, read through the access seam once records move there (#416).
+        :raises NodeUnreachable: for a node's record, until a remote implementation reaches one (#421); a new
+            document and an unread placeholder are bound to a local path meanwhile.
         """
         model = self.__models.get(key)
         if model is not None:
@@ -114,8 +128,7 @@ class DocumentRegistry(QObject):
 
         if not isinstance(key, LocalKey):
             raise NodeUnreachable(key)
-        path = key.path
-        model = self.__build(path, new=new, lazy=lazy and not new and path.suffix.lower() != ".tc")
+        model = self.__build(key, new=new, lazy=lazy and not new and key.path.suffix.lower() != ".tc")
         model.setParent(self)
         self.__models[key] = model  # pylint: disable=unsupported-assignment-operation
         self.__holders[model] = 1  # pylint: disable=unsupported-assignment-operation
@@ -218,64 +231,65 @@ class DocumentRegistry(QObject):
         if key is not None and self.__models.get(key) is model:
             del self.__models[key]  # pylint: disable=unsupported-delete-operation
 
-    def __build(self, path: Path, *, new: bool, lazy: bool) -> RehuDocumentModel:
-        """Build the model for ``path`` -- see :meth:`acquire` for ``new`` and ``lazy``.
+    def __build(self, key: LocalKey, *, new: bool, lazy: bool) -> RehuDocumentModel:
+        """Build the model for ``key`` -- see :meth:`acquire` for ``new`` and ``lazy``.
 
-        :param path: the document's path.
+        :param key: the document's key.
         :param new: start a new, dirty document.
         :param lazy: start an unread placeholder (already narrowed by :meth:`acquire`).
         :returns: the new, parentless model.
         """
         if new:
             return RehuDocumentModel.create_new(
-                path,
+                key.path,
                 username=shared_identity_settings().current_username,
+                access=self.__access,
                 rename_coordinator=self.__rename_coordinator,
             )
         if lazy:
             return RehuDocumentModel.create_pending(
-                path,
+                key.path,
                 username=shared_identity_settings().current_username,
+                access=self.__access,
                 rename_coordinator=self.__rename_coordinator,
             )
-        return RehuDocumentModel(load_or_locked(path), rename_coordinator=self.__rename_coordinator)
+        record = load_record(self.__access, key)
+        return RehuDocumentModel(
+            record.document,
+            access=self.__access,
+            version=record.version,
+            signature=record.signature,
+            rename_coordinator=self.__rename_coordinator,
+        )
 
 
-def load_or_locked(path: Path) -> RehuDocument:
-    """Load ``path``, or an empty locked stub bound to it when the file cannot be read -- the one way a
-    document is read from a file, whether a holder is opening it or a model is loading it again (#381).
+def load_record(access: AccessRouter, key: ResourceKey) -> LoadedRecord:
+    """Read ``key``, or an empty locked stub standing in for it when it cannot be read -- the one way a record is
+    read for a model, whether a holder is opening it or a model is loading it again (#381, #416).
 
-    Routes a ``.tc`` through :func:`rehuco_core.load_tc` and everything else through
-    :meth:`RehuDocument.load`, but funnels *both* loaders' failures through the one seam that draws
-    the missing-vs-unparseable line (:meth:`RehuDocument.locked_stub_for_error`) -- so the holder gets
-    a locked, never-savable stub instead of an exception ([[data-model#write-integrity]]). Each branch
-    is handed the identity that matches its provenance
-    (:func:`~rehuco_agent.settings.identity_settings.shared_identity_settings`, #109), read here at
-    each read -- the document keeps it until it is read again, so a later identity-setting change
-    reaches a document opened afterwards, or one reverted or loaded in place afterwards, which reads its
-    file through here like any open (#381). A ``.tc`` import files its per-user state under the
-    **unknown** user, since a flag carried in from the file was not set by this install's identity; a
-    ``.rehu`` (whose per-user writes this UI makes) is opened under the **current** user. A locked stub
-    adopts whichever name its branch would have used, so a hand-fix-and-revert retries under the same
-    identity the open was asked for.
+    The record is read through ``access`` ([[nodes#access-seam]]), which routes a ``.tc`` to its own loader and draws
+    the missing-vs-unparseable line once, so the holder gets a locked, never-savable stub instead of an exception
+    ([[data-model#write-integrity]]). Each kind is handed the identity that matches its provenance
+    (:func:`~rehuco_agent.settings.identity_settings.shared_identity_settings`, #109), read here at each read -- the
+    document keeps it until it is read again, so a later identity-setting change reaches a document opened
+    afterwards, or one reverted or loaded in place afterwards (#381). A ``.tc`` import files its per-user state under
+    the **unknown** user, since a flag carried in from the file was not set by this install's identity; a ``.rehu``
+    (whose per-user writes this UI makes) is opened under the **current** user.
 
-    **The read is logged, under this resource's own scope** (#200): this is the one funnel both
-    loaders and both failure kinds pass through, so it is the one place that can say *"this file was
-    read"* or *"this file could not be"* once rather than per branch. The failure is an **error**, not
-    a warning: it is not the shape of the document that is in question, it is that there is no
-    document -- the stub stands in for one.
+    **The read is logged, under this resource's own scope** (#200); a failed read is logged by the access, as an
+    error: there is no document -- the stub stands in for one.
 
-    :param path: the file to load (a ``.rehu``, or a legacy ``.tc``).
-    :returns: the loaded document, or a locked stub bound to ``path``.
+    :param access: what the record is reached through.
+    :param key: the record (a ``.rehu``, or a legacy ``.tc``).
+    :returns: the record, or a locked stub standing in for it.
+    :raises NodeUnreachable: for a node's record no implementation reaches yet.
     """
     settings = shared_identity_settings()
-    is_tc = path.suffix.lower() == ".tc"
-    username = settings.unknown_username if is_tc else settings.current_username
+    path = key.path if isinstance(key, LocalKey) else None
     with LogScope.open(path):
-        try:
-            document = load_tc(path, username=username) if is_tc else RehuDocument.load(path, username=username)
-        except (OSError, RehuFormatError) as error:
-            LOG.error("Could not read %s: %s", path, error)
-            return RehuDocument.locked_stub_for_error(path, error, username=username)
-        LOG.info("Read %s as %s", path, document.type or "an untyped resource")
-        return document
+        record = access.for_key(key).records.load(
+            key, username=settings.current_username, unknown_username=settings.unknown_username
+        )
+        if not record.document.load_failed:
+            LOG.info("Read %s as %s", key, record.document.type or "an untyped resource")
+        return record

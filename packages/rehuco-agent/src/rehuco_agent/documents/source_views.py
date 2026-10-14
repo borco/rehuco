@@ -202,10 +202,9 @@ class OnDiskView(MonospaceTextView):
 
         :returns: the verbatim file text, or the placeholder.
         """
-        path = self.__model.path
-        if path is None:
+        if self.__model.key is None:
             return NOT_ON_DISK_PLACEHOLDER
         try:
-            return path.read_text(encoding="utf-8")
+            return self.__model.stored_text()
         except OSError:
             return NOT_ON_DISK_PLACEHOLDER

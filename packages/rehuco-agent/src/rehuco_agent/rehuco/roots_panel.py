@@ -28,7 +28,7 @@ from rehuco_core import (
     TaskQueue,
     checksum_record_path,
 )
-from rehuco_core.access import KeyRelocation, LocalKey, ResourceKey
+from rehuco_core.access import AccessRouter, KeyRelocation, LocalKey, ResourceKey
 
 from ..resource_events import ResourceEvents
 from ..tasks.job_end_watcher import JobEndWatcher
@@ -89,6 +89,8 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         rename ([[mounts-and-storage#out-of-band]]).
     :param resource_events: the app's file announcements (#376): a rename moves the rows it moved, and a folder the
         app changed is listed again. ``None`` leaves the view to F5.
+    :param access: what a record shown in the details pane is read through ([[nodes#access-seam]]); this machine's
+        own files when not given.
     """
 
     open_requested: Signal = Signal(object)
@@ -120,6 +122,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         *,
         rename_coordinator: RenameCoordinator = DEFAULT_RENAME_COORDINATOR,
         resource_events: ResourceEvents | None = None,
+        access: AccessRouter | None = None,
     ) -> None:
         super().__init__(parent)
         self.__catalog: Final = catalog
@@ -166,6 +169,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
             self.__rows.folder_record,
             self.__opening.pack_of,
             drag_image=self.__opening.drag_image,
+            access=access,
         )
         splitter = self.__roots_ui.roots_splitter
         splitter.addWidget(self.__preview)

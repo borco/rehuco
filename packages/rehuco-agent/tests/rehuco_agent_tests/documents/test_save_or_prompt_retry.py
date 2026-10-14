@@ -1,10 +1,26 @@
-"""Tests for ``save_or_prompt_retry``: the one seam every save call site funnels an I/O failure through (#146)."""
+"""Tests for ``save_or_prompt_retry``: the one seam every save call site funnels an I/O failure through (#146), and a
+conflict (#416)."""
 
-from PySide6.QtWidgets import QMessageBox, QWidget
-from pytest import fixture
+from pathlib import Path
+from typing import Any, Final
+
+from PySide6.QtWidgets import QMessageBox, QPushButton, QWidget
+from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.documents.save_or_prompt_retry import save_or_prompt_retry
+from rehuco_agent.dialogs.record_conflict_dialog import ConflictResolution, RecordConflictDialog
+from rehuco_agent.documents import save_or_prompt_retry as module
+from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
+from rehuco_agent.documents.save_or_prompt_retry import ask_about_conflict, save_or_prompt_retry
+from rehuco_core import RecordConflict, RecordVersion, RehuDocument
+from rehuco_core.access import ChangeFeed
+
+from .test_rehu_document_model_conflict import in_conflict, write_record
+
+TITLE_PATH: Final = ("core", "sources", 0, "title")
+
+KEEP_THEIRS: Final = {TITLE_PATH: "Theirs"}
+"""What a person keeping the file's title answers."""
 
 
 @fixture
@@ -84,3 +100,242 @@ def test_falls_back_to_untitled_when_the_model_has_no_label(mocker: MockerFixtur
     save_or_prompt_retry(parent, model)
 
     assert "Untitled" in critical.call_args.args[2]
+
+
+# region conflicts
+def refusal(tmp_path: Path) -> RecordConflict:
+    """A conflict naming a file's title as ``Theirs``, for a stand-in model to raise.
+
+    :param tmp_path: where the conflicting document is bound.
+    :returns: the conflict.
+    """
+    theirs = RehuDocument.new(tmp_path / "info.rehu")
+    theirs.title = "Theirs"
+    return RecordConflict(theirs, RecordVersion("metadata", "file", ()))
+
+
+def answer_conflicts(mocker: MockerFixture, *answers: tuple[ConflictResolution, dict[Any, Any]]) -> Any:
+    """Replace the conflict dialog with these answers, one per conflict.
+
+    :param mocker: pytest-mock fixture.
+    :param answers: what each dialog shown answers, in turn.
+    :returns: the stand-in, to check how it was asked.
+    """
+    return mocker.patch.object(module, "ask_about_conflict", side_effect=list(answers))
+
+
+def test_a_conflict_resolved_with_save_saves_the_picks(mocker: MockerFixture, parent: QWidget, tmp_path: Path) -> None:
+    """Save in the conflict dialog puts the picks and saves; the gated action goes on.
+
+    **Test steps:**
+
+    * stand in a model whose save is refused as a conflict, and answer the dialog with Save and a pick
+    * call ``save_or_prompt_retry``
+    * verify the dialog was asked about that conflict, the picks were resolved, and it returned ``True``
+    """
+    conflict = refusal(tmp_path)
+    model = mocker.MagicMock(label="doc.rehu")
+    model.save.side_effect = conflict
+    ask = answer_conflicts(mocker, (ConflictResolution.SAVE, KEEP_THEIRS))
+
+    assert save_or_prompt_retry(parent, model) is True
+
+    ask.assert_called_once_with(parent, model, conflict)
+    model.resolve_conflict.assert_called_once_with(KEEP_THEIRS)
+    model.revert.assert_not_called()
+
+
+def test_a_conflict_resolved_by_discarding_reverts(mocker: MockerFixture, parent: QWidget, tmp_path: Path) -> None:
+    """Discard My Edits loads the file as it is: nothing is left unsaved, so the gated action goes on.
+
+    **Test steps:**
+
+    * stand in a model whose save is refused as a conflict, and answer the dialog with Discard
+    * call ``save_or_prompt_retry``
+    * verify the model was reverted, nothing resolved, and it returned ``True``
+    """
+    model = mocker.MagicMock(label="doc.rehu")
+    model.save.side_effect = refusal(tmp_path)
+    answer_conflicts(mocker, (ConflictResolution.DISCARD, {}))
+
+    assert save_or_prompt_retry(parent, model) is True
+
+    model.revert.assert_called_once_with()
+    model.resolve_conflict.assert_not_called()
+
+
+def test_a_cancelled_conflict_aborts(mocker: MockerFixture, parent: QWidget, tmp_path: Path) -> None:
+    """Cancel leaves the edits unsaved, so whatever the save was gating must not go on.
+
+    **Test steps:**
+
+    * stand in a model whose save is refused as a conflict, and answer the dialog with Cancel
+    * call ``save_or_prompt_retry``
+    * verify it returned ``False``, with nothing resolved or reverted
+    """
+    model = mocker.MagicMock(label="doc.rehu")
+    model.save.side_effect = refusal(tmp_path)
+    answer_conflicts(mocker, (ConflictResolution.CANCEL, {}))
+
+    assert save_or_prompt_retry(parent, model) is False
+
+    model.resolve_conflict.assert_not_called()
+    model.revert.assert_not_called()
+
+
+def test_a_resolution_refused_again_asks_again(mocker: MockerFixture, parent: QWidget, tmp_path: Path) -> None:
+    """The file can change once more while the dialog is open: the newer conflict is shown, and its picks saved.
+
+    **Test steps:**
+
+    * stand in a model whose save is refused, and whose first resolution is refused too
+    * answer both dialogs with Save, each with its own picks
+    * verify the dialog was asked twice, each set of picks resolved in turn, and it returned ``True``
+    """
+    first, second = refusal(tmp_path), refusal(tmp_path)
+    model = mocker.MagicMock(label="doc.rehu")
+    model.save.side_effect = first
+    model.resolve_conflict.side_effect = [second, None]
+    again: dict[Any, Any] = {TITLE_PATH: "Theirs again"}
+    ask = answer_conflicts(mocker, (ConflictResolution.SAVE, KEEP_THEIRS), (ConflictResolution.SAVE, again))
+
+    assert save_or_prompt_retry(parent, model) is True
+
+    assert [call.args[2] for call in ask.call_args_list] == [first, second]
+    assert [call.args for call in model.resolve_conflict.call_args_list] == [(KEEP_THEIRS,), (again,)]
+    model.save.assert_called_once_with()
+
+
+def test_a_resolution_that_fails_to_write_is_retried_as_a_resolution(
+    mocker: MockerFixture, parent: QWidget, tmp_path: Path
+) -> None:
+    """Retry after an I/O failure repeats what failed -- the resolution with its picks, not a plain save that would
+    only be refused again.
+
+    **Test steps:**
+
+    * stand in a model whose save is refused, and whose first resolution fails with ``OSError``
+    * answer the dialog with Save, and the failure with Retry
+    * verify the picks were resolved twice, the plain save attempted once, and it returned ``True``
+    """
+    model = mocker.MagicMock(label="doc.rehu")
+    model.save.side_effect = refusal(tmp_path)
+    model.resolve_conflict.side_effect = [OSError("offline mount"), None]
+    answer_conflicts(mocker, (ConflictResolution.SAVE, KEEP_THEIRS))
+    mocker.patch.object(QMessageBox, "critical", return_value=QMessageBox.StandardButton.Retry)
+
+    assert save_or_prompt_retry(parent, model) is True
+
+    assert model.resolve_conflict.call_count == 2
+    model.save.assert_called_once_with()
+
+
+def refused_title(tmp_path: Path) -> tuple[RehuDocumentModel, RecordConflict]:
+    """A real model whose save was refused: its title edited to ``Mine`` while the file's became ``Theirs``.
+
+    :param tmp_path: where the record is written.
+    :returns: the model, and its refusal.
+    """
+    path = tmp_path / "info.rehu"
+    write_record(path, "Old")
+    return in_conflict(path, ChangeFeed(), "Mine", "Theirs")
+
+
+def press_in_dialog(mocker: MockerFixture, *names: str) -> list[RecordConflictDialog]:
+    """Make the conflict dialog's ``exec`` press these buttons, by ``.ui`` name, instead of waiting for a person.
+
+    :param mocker: pytest-mock fixture.
+    :param names: the buttons to press, in turn.
+    :returns: every dialog shown, filled in as each is executed.
+    """
+    shown: list[RecordConflictDialog] = []
+
+    def execute(dialog: RecordConflictDialog) -> int:
+        """Press the buttons on ``dialog``.
+
+        :param dialog: the dialog shown.
+        :returns: its result.
+        """
+        shown.append(dialog)
+        for name in names:
+            found = dialog.findChild(QPushButton, name)
+            assert isinstance(found, QPushButton)
+            found.click()
+        return dialog.result()
+
+    mocker.patch.object(RecordConflictDialog, "exec", new=execute)
+    return shown
+
+
+@mark.usefixtures("real_path_stat")
+def test_asking_about_a_conflict_shows_the_two_sides_and_disposes_of_the_dialog(
+    mocker: MockerFixture, parent: QWidget, qtbot: QtBot, tmp_path: Path
+) -> None:
+    """The dialog compares the record as opened, as edited and as on disk; its picks are returned, and the dialog is
+    deleted once answered rather than kept parented to the window.
+
+    **Test steps:**
+
+    * bring a real model into conflict over its title
+    * ask about it, with the dialog answered All On Disk then Save
+    * verify the answer is Save with the file's title, the dialog was parented to the window, and it is destroyed
+    """
+    model, conflict = refused_title(tmp_path)
+    shown = press_in_dialog(mocker, "all_on_disk_button", "save_button")
+    destroyed: list[bool] = []
+
+    answer = ask_about_conflict(parent, model, conflict)
+
+    assert answer == (ConflictResolution.SAVE, KEEP_THEIRS)
+    assert len(shown) == 1
+    dialog = shown[0]
+    assert dialog.parent() is parent
+    dialog.destroyed.connect(lambda: destroyed.append(True))
+    qtbot.waitUntil(lambda: bool(destroyed))
+
+
+@mark.usefixtures("real_path_stat")
+@mark.parametrize(
+    ("name", "resolution"),
+    [("discard_button", ConflictResolution.DISCARD), ("cancel_button", ConflictResolution.CANCEL)],
+)
+def test_asking_about_a_conflict_answers_no_picks_unless_saving(
+    mocker: MockerFixture, parent: QWidget, tmp_path: Path, name: str, resolution: ConflictResolution
+) -> None:
+    """Only a Save carries picks: a discard or a cancel has nothing to put, whatever the rows say.
+
+    **Test steps:**
+
+    * bring a real model into conflict over its title
+    * ask about it, with the dialog answered All On Disk then Discard, or Cancel
+    * verify the answer is that resolution, with no picks
+    """
+    model, conflict = refused_title(tmp_path)
+    press_in_dialog(mocker, "all_on_disk_button", name)
+
+    assert ask_about_conflict(parent, model, conflict) == (resolution, {})
+
+
+@mark.usefixtures("real_path_stat")
+def test_a_conflict_kept_as_on_disk_saves_the_files_title(
+    mocker: MockerFixture, parent: QWidget, tmp_path: Path
+) -> None:
+    """End to end through a real model and file: the person keeps the file's side, and that is what is saved.
+
+    **Test steps:**
+
+    * bring a real model into conflict over its title, and clear the conflict so a save is asked afresh
+    * save through ``save_or_prompt_retry``, with the dialog answered All On Disk then Save
+    * verify it returned ``True``, the file and the model hold the file's title, and the model is clean
+    """
+    model, _ = refused_title(tmp_path)
+    model.conflict = None
+    press_in_dialog(mocker, "all_on_disk_button", "save_button")
+
+    assert save_or_prompt_retry(parent, model) is True
+
+    assert RehuDocument.load(tmp_path / "info.rehu").title == "Theirs"
+    assert (model.title, model.dirty, model.conflict) == ("Theirs", False, None)
+
+
+# endregion

@@ -21,7 +21,7 @@ from rehuco_agent.scraping.scraper_executor import ScraperExecutor
 from rehuco_agent.scraping.sites.artstation import ArtStation
 from rehuco_agent.scraping.url_drop import UrlDrop
 from rehuco_core import LockReason, LockReasonKind, RehuDocument
-from rehuco_core.access import LocalKey
+from rehuco_core.access import LoadedRecord, LocalKey
 
 PATH: Final = Path.cwd() / "fake" / "library" / "sculpting" / "info.rehu"
 URL: Final = "https://example.com/page"
@@ -530,7 +530,10 @@ def test_another_record_loaded_in_place_says_nothing_of_the_last_one_s_scrapes(
 
     def load(name: str) -> None:
         other = RehuDocument({"type": "Tutorial", "title": name}, PATH.with_name(f"{name}.rehu"))
-        mocker.patch("rehuco_agent.documents.rehu_document_model.load_or_locked", return_value=other)
+        mocker.patch(
+            "rehuco_agent.documents.rehu_document_model.load_record",
+            return_value=LoadedRecord(other, None, tuple(other.lock_reasons), None),
+        )
         doc_model.load(PATH.with_name(f"{name}.rehu"))
 
     doc_actions.submit(drop())
