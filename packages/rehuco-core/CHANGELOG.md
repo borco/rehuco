@@ -20,7 +20,7 @@ Changelogs are per package in this monorepo, matching the per-package release ta
   turns a path into its key, and `AccessRouter.for_key` hands a local key to `LocalAccess` and raises
   `NodeUnreachable` for a node key.
 - Records through the access seam: `LocalAccess.records` (`LocalRecords`) loads a record, saves it, reads its text
-  as stored and converts a legacy `.tc`. `load` never raises: a file that cannot be read loads as a locked stub. A
+  as stored and converts a legacy `.tc`. A file that cannot be read loads as a locked stub rather than raising. A
   save is a read-merge-write against the `RecordVersion` the document was read at -- a hash of its metadata (every
   block's `users` map left out), of the file, and of each per-user field. A metadata edit made on disk since the read
   refuses the save as a `RecordConflict` carrying the file as it is now; the per-user fields merge field by field

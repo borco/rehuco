@@ -1,4 +1,5 @@
-"""Tests for the conflict dialog: a save refused because the record changed on disk, shown side by side (#416)."""
+"""Tests for the conflict dialog: a save refused because the record changed on disk, every value in question with
+its original, this document's and the file's to choose from (#416)."""
 
 from typing import Any, Final
 
@@ -36,7 +37,8 @@ ADDED_ON_BOTH: Final = MetadataDifference(LANGUAGE_PATH, ABSENT, "en", "fr")
 
 DIFFERENCES: Final = (THEIRS_ONLY, MINE_ONLY, BOTH, REMOVED_ON_DISK)
 
-SAVE_TIP: Final = "Save, keeping the chosen value of each detail."
+# Save's own tooltip, as the dialog's .ui sets it
+SAVE_TIP: Final = "Save, keeping the chosen value in each row."
 """Save's own tooltip, from the ``.ui``, while it has something to save."""
 
 
