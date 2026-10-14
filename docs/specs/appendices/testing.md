@@ -306,8 +306,9 @@ macOS/Linux uic couldn't resolve a `.ui`'s `.qrc` to its package and emitted a b
 [[[appendices.testing#suite-fixtures]]]
 
 - **A real folder is pytest's `tmp_path`, nothing hand-rolled** (#475); never mock `Path.mkdir`. A `/fake/…` path is
-  a real `C:\fake` on Windows. Real records under `tmp_path` give real cache rows (verify-on-access, #487); no
-  `resource_type` mock.
+  a real `C:\fake` on Windows, and a `C:/x` literal is absolute only there — a key needs an absolute path, so root a
+  fake one at `Path(Path.cwd().anchor)` (#414's tests passed on Windows and failed on macOS and Linux). Real records
+  under `tmp_path` give real cache rows (verify-on-access, #487); no `resource_type` mock.
 - **The agent suite's `Path.stat` answers a missing file with a `Mock`** (#458): `touch()` first, or use
   `real_path_stat` (#395). The session's settings, data and cache folders are temporary (`isolate_app_folders`, #412).
 - **The `served` fixture patches `Path.read_text` for every file** (#469): re-patch it to serve `.rehuco` only
