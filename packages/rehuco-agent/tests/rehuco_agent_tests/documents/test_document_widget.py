@@ -134,6 +134,7 @@ from rehuco_core import (
     plan_screenshot_renumbering,
 )
 
+from rehuco_agent_tests.documents.test_rehu_document_model import converts_to
 from rehuco_agent_tests.qt_waits import wait_destroyed
 from rehuco_agent_tests.screenshot_pictures import decodable_screenshots
 
@@ -1134,18 +1135,19 @@ def test_not_yet_saved_document_starts_with_revert_disabled(new_widget: Document
     assert new_widget.save_action.isEnabled() is True
 
 
-def test_saving_a_not_yet_saved_document_enables_revert(
-    mocker: MockerFixture, new_widget: DocumentWidget, new_model: RehuDocumentModel
-) -> None:
+@mark.usefixtures("real_path_stat")
+def test_saving_a_not_yet_saved_document_enables_revert(qtbot: QtBot, tmp_path: Path) -> None:
     """The first save creates the file on disk, so Revert becomes meaningful and re-enables (#147).
 
     **Test steps:**
 
-    * build a widget over a not-yet-saved model, patching the document's atomic save
+    * build a widget over a not-yet-saved model bound to a path under ``tmp_path``
     * call ``model.save()``
     * verify Revert is now enabled (and behaves as today from here on)
     """
-    mocker.patch.object(new_model.document, "save")
+    new_model = RehuDocumentModel.create_new(tmp_path / "info.rehu")
+    new_widget = DocumentWidget(new_model)
+    qtbot.addWidget(new_widget)
     assert new_widget.revert_action.isEnabled() is False
 
     new_model.save()
@@ -1433,13 +1435,13 @@ def test_successful_convert_flips_the_toolbar_back_to_save_revert(
 
     **Test steps:**
 
-    * mock ``convert_tc`` (the underlying core call ``model.convert`` delegates to) to return a
+    * mock the records' ``convert`` (the access call ``model.convert`` delegates to) to return a
       fresh, unlocked document
     * trigger a convert action for real
     * verify save/revert are visible again and both convert actions are hidden
     """
     converted = RehuDocument({"type": "Tutorial", "sources": [{"title": "Foo", "primary": True}]}, TARGET_PATH)
-    mocker.patch("rehuco_agent.documents.rehu_document_model.convert_tc", return_value=converted)
+    converts_to(mocker, converted)
     keep_backups = legacy_widget.sub_docks._DocumentSubDocks__convert_keep_backups_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     keep_backups.trigger()
@@ -2210,12 +2212,12 @@ def test_a_successful_convert_clears_the_banner(
 
     **Test steps:**
 
-    * mock the underlying core convert call (``convert_tc``) to return a fresh, unlocked document
+    * mock the access's convert call (the records' ``convert``) to return a fresh, unlocked document
     * trigger the toolbar's keep-backups convert action for real
     * verify the model unlocked and the banner shows no rows
     """
     converted = RehuDocument({"type": "Tutorial", "sources": [{"title": "Foo", "primary": True}]}, TARGET_PATH)
-    mocker.patch("rehuco_agent.documents.rehu_document_model.convert_tc", return_value=converted)
+    converts_to(mocker, converted)
     keep_backups = legacy_widget.sub_docks._DocumentSubDocks__convert_keep_backups_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     keep_backups.trigger()
@@ -4807,7 +4809,7 @@ def test_converting_in_place_hands_the_images_dock_back(mocker: MockerFixture, q
     widget, model = legacy_over_images(mocker, qtbot)
     selector = image_selector(widget)
     converted = RehuDocument({"type": "Tutorial", "sources": [{"title": "Foo", "primary": True}]}, TARGET_PATH)
-    mocker.patch("rehuco_agent.documents.rehu_document_model.convert_tc", return_value=converted)
+    converts_to(mocker, converted)
     mocker.patch("rehuco_agent.documents.rehu_document_model.scan_rehu_screenshot_files", return_value=SCREENSHOTS)
     mocker.patch("rehuco_agent.documents.rehu_document_model.scan_unconverted_screenshots", return_value=[])
     keep_backups = widget.sub_docks._DocumentSubDocks__convert_keep_backups_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
@@ -4890,7 +4892,7 @@ def test_converting_in_place_removes_the_after_conversion_column(mocker: MockerF
     selector = image_selector(widget)
     assert after_conversion_column(selector)[0]
     converted = RehuDocument({"type": "Tutorial", "sources": [{"title": "Foo", "primary": True}]}, TARGET_PATH)
-    mocker.patch("rehuco_agent.documents.rehu_document_model.convert_tc", return_value=converted)
+    converts_to(mocker, converted)
     keep_backups = widget.sub_docks._DocumentSubDocks__convert_keep_backups_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     keep_backups.trigger()

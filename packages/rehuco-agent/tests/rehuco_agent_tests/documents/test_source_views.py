@@ -12,7 +12,7 @@ from typing import Final
 
 from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import QLabel
-from pytest import fixture
+from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
@@ -326,7 +326,8 @@ def test_on_disk_shows_the_original_tc_file(qtbot: QtBot, mocker: MockerFixture)
     assert label(view, OnDiskView.LABEL_NAME).text() == tc_text
 
 
-def test_on_disk_rereads_the_file_after_a_save(qtbot: QtBot, mocker: MockerFixture) -> None:
+@mark.usefixtures("real_path_stat")
+def test_on_disk_rereads_the_file_after_a_save(qtbot: QtBot, tmp_path: Path) -> None:
     """Saving re-reads the file, so the view picks up the newly-written bytes (#111).
 
     Save is the seam that changes the on-disk bytes: before, the file holds the old text; after, it
@@ -334,18 +335,21 @@ def test_on_disk_rereads_the_file_after_a_save(qtbot: QtBot, mocker: MockerFixtu
 
     **Test steps:**
 
-    * build a dirty model bound to a path; ``read_text`` returns an "old" then a "new" text
-    * verify the view first shows the old text, then the new text after a save
+    * write an "old" text to a file under ``tmp_path``, and build a dirty model bound to it
+    * verify the view first shows the old text, then the file's newly-written text after a save
     """
-    read = mocker.patch.object(Path, "read_text", return_value="old on disk\n")
-    mocker.patch("rehuco_core.rehu_document.atomic_write_text")
-    model = RehuDocumentModel.create_new(REHU_PATH)  # starts dirty, bound to a path
+    path = tmp_path / "info.rehu"
+    old = "old on disk\n"
+    path.write_text(old, encoding="utf-8")
+    model = RehuDocumentModel.create_new(path)  # starts dirty, bound to a path
     view = shown_on_disk(qtbot, model)
-    read.return_value = "new on disk\n"
+    assert label(view, OnDiskView.LABEL_NAME).text() == old
 
     model.save()
 
-    assert label(view, OnDiskView.LABEL_NAME).text() == "new on disk\n"
+    written = path.read_text(encoding="utf-8")
+    assert written != old
+    assert label(view, OnDiskView.LABEL_NAME).text() == written
 
 
 def test_on_disk_rereads_after_a_revert(qtbot: QtBot, mocker: MockerFixture) -> None:

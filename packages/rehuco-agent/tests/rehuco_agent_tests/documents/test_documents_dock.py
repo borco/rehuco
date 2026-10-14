@@ -54,6 +54,7 @@ from rehuco_core import (
 )
 from rehuco_core.access import AccessRouter, LocalAccess, LocalKey, NodeKey, NodeUnreachable
 
+from rehuco_agent_tests.documents.test_rehu_document_model import converts_to
 from rehuco_agent_tests.qt_connections import flush_deferred_deletes, receivers
 
 FAKE_PATH: Final = Path.cwd() / "fake" / "tutorials" / "sculpting" / "info.rehu"
@@ -1545,7 +1546,7 @@ def test_dock_object_name_resyncs_across_a_tc_to_rehu_conversion(mocker: MockerF
 
     load_document(mocker)
     rehu_document = RehuDocument.load(FAKE_PATH)
-    mocker.patch("rehuco_agent.documents.rehu_document_model.convert_tc", return_value=rehu_document)
+    converts_to(mocker, rehu_document)
     widget.model.convert(keep_backups=False)
 
     assert dock_for(dock, widget).objectName() == str(FAKE_PATH)
@@ -1570,7 +1571,7 @@ def test_a_tc_to_rehu_conversion_raises_document_key_changed(mocker: MockerFixtu
 
     load_document(mocker)
     rehu_document = RehuDocument.load(FAKE_PATH)
-    mocker.patch("rehuco_agent.documents.rehu_document_model.convert_tc", return_value=rehu_document)
+    converts_to(mocker, rehu_document)
     widget.model.convert(keep_backups=False)
 
     assert spy.count() == 1

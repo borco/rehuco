@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>RecordConflictDialog</class>
+ <widget class="QDialog" name="RecordConflictDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>960</width>
+    <height>400</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Changed on Disk</string>
+  </property>
+  <layout class="QVBoxLayout" name="vertical_layout">
+   <item>
+    <layout class="QHBoxLayout" name="message_layout">
+     <item>
+      <widget class="QLabel" name="message_label">
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
+         <horstretch>1</horstretch>
+         <verstretch>0</verstretch>
+        </sizepolicy>
+       </property>
+       <property name="wordWrap">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="all_mine_button">
+       <property name="toolTip">
+        <string>Keep your value for every detail.</string>
+       </property>
+       <property name="text">
+        <string>All Mine</string>
+       </property>
+       <property name="autoDefault">
+        <bool>false</bool>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="all_on_disk_button">
+       <property name="toolTip">
+        <string>Keep the file's value for every detail.</string>
+       </property>
+       <property name="text">
+        <string>All On Disk</string>
+       </property>
+       <property name="autoDefault">
+        <bool>false</bool>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QScrollArea" name="rows_area">
+     <property name="widgetResizable">
+      <bool>true</bool>
+     </property>
+     <widget class="QWidget" name="rows_widget">
+      <layout class="QGridLayout" name="rows_layout">
+       <property name="horizontalSpacing">
+        <number>12</number>
+       </property>
+      </layout>
+     </widget>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="buttons_layout">
+     <item>
+      <widget class="QPushButton" name="discard_button">
+       <property name="toolTip">
+        <string>Throw your edits away and load the file as it is on disk now.</string>
+       </property>
+       <property name="text">
+        <string>Discard My Edits</string>
+       </property>
+       <property name="autoDefault">
+        <bool>false</bool>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="buttons_spacer">
+       <property name="orientation">
+        <enum>Qt::Orientation::Horizontal</enum>
+       </property>
+      </spacer>
+     </item>
+     <item>
+      <widget class="QPushButton" name="cancel_button">
+       <property name="toolTip">
+        <string>Leave your edits unsaved.</string>
+       </property>
+       <property name="text">
+        <string>Cancel</string>
+       </property>
+       <property name="autoDefault">
+        <bool>false</bool>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="save_button">
+       <property name="toolTip">
+        <string>Save, keeping the chosen value of each detail.</string>
+       </property>
+       <property name="text">
+        <string>Save</string>
+       </property>
+       <property name="default">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections>
+  <connection>
+   <sender>cancel_button</sender>
+   <signal>clicked()</signal>
+   <receiver>RecordConflictDialog</receiver>
+   <slot>reject()</slot>
+  </connection>
+ </connections>
+</ui>

@@ -21,14 +21,6 @@ from rehuco_agent_tests.resource_io_sites import compare_with_allowed, scan_fold
 AGENT_DIR: Final = Path(rehuco_agent.__file__).parent
 
 TO_MIGRATE: Final = {
-    # RecordOps (#416)
-    "documents/document_registry.py::load_or_locked::rehuco_core.RehuDocument.load": 1,
-    "documents/document_registry.py::load_or_locked::rehuco_core.load_tc": 1,
-    "documents/rehu_document_model.py::RehuDocumentModel.__stamp_disk::.stat": 1,
-    "documents/source_views.py::OnDiskView.__read_on_disk::.read_text": 1,
-    "rehuco/roots_preview.py::RootsPreview.__read_record::.stat": 1,
-    "rehuco/roots_preview.py::RootsPreview.__read_record::rehuco_core.RehuDocument.load": 1,
-    "rehuco/roots_preview.py::RootsPreview.__read_record::rehuco_core.load_tc": 1,
     # CatalogOps (#417)
     "rehuco/add_root_dialog.py::AddRootDialog.__browse::.is_dir": 1,
     "rehuco/root_catalog.py::RootCatalog.__run_stat::.stat": 1,
@@ -117,7 +109,6 @@ TO_MIGRATE: Final = {
     "documents/document_sub_docks.py::DocumentSubDocks.__on_convert_triggered::.exists": 1,
     "documents/document_sub_docks.py::DocumentSubDocks.__on_convert_triggered::rehuco_core.originals_to_back_up": 1,
     "documents/documents_dock.py::DocumentsDock.__open_companion::.exists": 2,
-    "documents/rehu_document_model.py::RehuDocumentModel.convert::rehuco_core.convert_tc": 1,
     "rehuco/roots_management.py::companion_found::.exists": 1,
 }
 """Direct accesses to a resource's files, and calls into rehuco-core that make them for the agent, each waiting for the

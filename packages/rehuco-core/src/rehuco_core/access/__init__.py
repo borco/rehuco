@@ -7,7 +7,10 @@ Built from #413 on, one operation group per issue. The package is split by what 
 - :mod:`~rehuco_core.access.key_relocation` -- where keys went once a rename ran.
 - :mod:`~rehuco_core.access.change_feed` -- what changed, announced without Qt.
 - :mod:`~rehuco_core.access.resource_access` -- the interface itself, its operation groups and capabilities.
-- :mod:`~rehuco_core.access.local_access` -- the implementation over this machine's filesystem.
+- :mod:`~rehuco_core.access.record_ops` -- what the records group answers: a record as read and as saved, a
+  conflict.
+- :mod:`~rehuco_core.access.local_access` -- the implementation over this machine's filesystem, with
+  :mod:`~rehuco_core.access.local_records` its records.
 - :mod:`~rehuco_core.access.access_router` -- which implementation a key goes to.
 
 Nothing here imports Qt.
@@ -18,6 +21,8 @@ from .change_feed import Changed, ChangeEvent, ChangeFeed, FolderChanged, Invali
 from .key_relocation import KeyRelocation
 from .keys import LocalKey, NodeKey, ResourceKey
 from .local_access import LOCAL_CAPABILITIES, LocalAccess
+from .local_records import LocalRecords
+from .record_ops import FileSignature, LoadedRecord, RecordConflict, SavedRecord
 from .resource_access import (
     Capability,
     CatalogOps,
@@ -31,6 +36,7 @@ from .resource_access import (
 )
 
 __all__ = [
+    "FileSignature",
     "LOCAL_CAPABILITIES",
     "AccessRouter",
     "Capability",
@@ -44,14 +50,18 @@ __all__ = [
     "Invalidated",
     "JobOps",
     "KeyRelocation",
+    "LoadedRecord",
     "LocalAccess",
     "LocalKey",
+    "LocalRecords",
     "Moved",
     "MutationOps",
     "NodeKey",
     "NodeUnreachable",
+    "RecordConflict",
     "RecordOps",
     "ResourceAccess",
     "ResourceKey",
+    "SavedRecord",
     "ScreenshotOps",
 ]

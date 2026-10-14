@@ -4,6 +4,7 @@ from typing import Final, override
 
 from .change_feed import ChangeFeed
 from .keys import LocalKey, ResourceKey
+from .local_records import LocalRecords
 from .resource_access import Capability, ResourceAccess
 
 LOCAL_CAPABILITIES: Final = frozenset(Capability)
@@ -19,12 +20,19 @@ class LocalAccess(ResourceAccess):
 
     def __init__(self, changes: ChangeFeed | None = None) -> None:
         self.__changes: Final = changes if changes is not None else ChangeFeed()
+        self.__records: Final = LocalRecords(self.__changes)
 
     @property
     @override
     def changes(self) -> ChangeFeed:
         """Where this implementation announces every change it makes."""
         return self.__changes
+
+    @property
+    @override
+    def records(self) -> LocalRecords:
+        """Records on this machine's filesystem."""
+        return self.__records
 
     @override
     def capabilities(self, key: ResourceKey) -> frozenset[Capability]:

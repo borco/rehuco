@@ -10,6 +10,7 @@ from rehuco_agent.documents.content_images import content_images_model
 from rehuco_agent.documents.document_sub_docks import CHANGED_ON_DISK_MESSAGE
 from rehuco_agent.documents.document_widget import DocumentWidget
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
+from rehuco_core.access import LocalKey
 
 from .test_document_widget import (  # noqa: F401  # pylint: disable=unused-import
     WAIT_TIMEOUT_MS,
@@ -63,6 +64,8 @@ def test_a_reload_reads_the_content_images_again(
     enumeration = mocker.patch.object(content_images_model, "enumerate_content_images", return_value=[])
     path = tmp_path / "info.rehu"
     refimages_model.document.save(path)
+    # keyed first, as a rename re-points a model: a revert reads the record its key names (#416)
+    refimages_model.key = LocalKey(path)
     refimages_model.path = path
     content_images_dock(refimages_widget).toggleView(True)
     qtbot.waitUntil(lambda: content_images_view(refimages_widget).layout_table is not None)

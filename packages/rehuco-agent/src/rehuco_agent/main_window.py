@@ -380,7 +380,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # one view-model per open document whoever shows it (#375): every holder acquires through this,
         # so a resource open in two places is one model, edited live in both
         self.__document_registry: Final = DocumentRegistry(
-            self, rename_coordinator=self.__rename_coordinator, resource_events=self.__resource_events
+            self,
+            rename_coordinator=self.__rename_coordinator,
+            resource_events=self.__resource_events,
+            access=self.__access,
         )
         self.__documents_dock: Final = DocumentsDock(
             self,
@@ -412,6 +415,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             self,
             rename_coordinator=self.__rename_coordinator,
             resource_events=self.__resource_events,
+            access=self.__access,
         )
         # whatever a verify or a scan's end sees on disk reaches the open documents, each comparing it with what it
         # loaded -- not with the cache, which an earlier look may already have brought up to date (#487); a scan says

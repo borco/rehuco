@@ -27,6 +27,7 @@ from rehuco_agent.settings.default_layout_settings import (
     shared_default_layout_settings_in,
 )
 from rehuco_core import TUTORIAL_PLUGIN, RehuDocument
+from rehuco_core.access import LoadedRecord
 
 from rehuco_agent_tests.qt_connections import flush_deferred_deletes, receivers
 
@@ -198,7 +199,10 @@ def test_another_record_loaded_in_place_lets_go_of_what_the_last_one_showed(
 
     other_path = Path.cwd() / "fake" / "b" / "info.rehu"
     other = RehuDocument({"type": "Tutorial", "sources": [{"title": "Bar", "primary": True}]}, other_path)
-    mocker.patch("rehuco_agent.documents.rehu_document_model.load_or_locked", return_value=other)
+    mocker.patch(
+        "rehuco_agent.documents.rehu_document_model.load_record",
+        return_value=LoadedRecord(other, None, tuple(other.lock_reasons), None),
+    )
     model.load(other_path)
 
     clear.assert_called_once()

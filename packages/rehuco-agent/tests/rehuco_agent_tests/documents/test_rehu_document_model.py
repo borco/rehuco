@@ -46,11 +46,24 @@ from rehuco_core import (
     RenameYieldTimeout,
     TakenClaims,
     current_block_version,
+    load_tc,
     scan_rehu_screenshot_files,
     scan_unconverted_screenshots,
     visible_learning_paths,
 )
-from rehuco_core.access import KeyRelocation, LocalKey, NodeKey
+from rehuco_core.access import (
+    AccessRouter,
+    Changed,
+    ChangeEvent,
+    ChangeFeed,
+    KeyRelocation,
+    LoadedRecord,
+    LocalAccess,
+    LocalKey,
+    LocalRecords,
+    NodeKey,
+    ResourceKey,
+)
 
 from rehuco_agent_tests.fields.field_testers import FieldTester as Field
 
@@ -125,12 +138,37 @@ def reloads_as(mocker: MockerFixture, document: RehuDocument, change: Callable[[
     :returns: the stand-in reader, to assert on what was read.
     """
 
-    def read(_path: Path) -> RehuDocument:
+    def read(_access: AccessRouter, _key: ResourceKey) -> LoadedRecord:
         if change is not None:
             change()
-        return document
+        return LoadedRecord(document, None, tuple(document.lock_reasons), None)
 
-    return mocker.patch("rehuco_agent.documents.rehu_document_model.load_or_locked", side_effect=read)
+    return mocker.patch("rehuco_agent.documents.rehu_document_model.load_record", side_effect=read)
+
+
+def converts_to(mocker: MockerFixture, document: RehuDocument) -> MagicMock:
+    """Have the next conversion of a ``.tc`` hand back ``document`` as the new record, touching no file -- the
+    records' own conversion is where a test stands in for the disk (#416).
+
+    :param mocker: pytest-mock fixture.
+    :param document: the converted record.
+    :returns: the stand-in conversion, to assert on what it was asked.
+    """
+    return mocker.patch.object(
+        LocalRecords, "convert", return_value=LoadedRecord(document, None, tuple(document.lock_reasons), None)
+    )
+
+
+def listening_access() -> tuple[AccessRouter, list[ChangeEvent]]:
+    """An access over this machine's files announcing on a feed this test hears -- where a save or a conversion is
+    announced since #416, rather than on the model's own ``files_changed``.
+
+    :returns: the access, and the list every event on its change feed is appended to.
+    """
+    feed = ChangeFeed()
+    heard: list[ChangeEvent] = []
+    feed.add_listener(heard.append)
+    return AccessRouter(LocalAccess(feed)), heard
 
 
 @fixture(name="on_disk")
@@ -1308,26 +1346,27 @@ def test_setting_title_on_sourceless_document_creates_primary() -> None:
     assert document.title == "Fresh"
 
 
-def test_save_writes_document_and_clears_dirty(
-    mocker: MockerFixture, model: RehuDocumentModel, document: RehuDocument
-) -> None:
-    """save() calls the document's atomic save and clears the dirty flag.
+@mark.usefixtures("real_path_stat")
+def test_save_writes_document_and_clears_dirty(tmp_path: Path, document: RehuDocument) -> None:
+    """save() writes the document to its file and clears the dirty flag.
 
     **Test steps:**
 
+    * build a model over the sample document, saved to a file under ``tmp_path``
     * dirty the model with an edit
-    * patch ``document.save``
     * call ``model.save()``
-    * verify the document was saved and the model is clean again
+    * verify the file holds the edit and the model is clean again
     """
-    save = mocker.patch.object(document, "save")
+    path = tmp_path / "info.rehu"
+    document.save(path)
+    model = RehuDocumentModel(RehuDocument.load(path))
 
     model.title = "New Title"
     assert model.dirty is True
 
     model.save()
 
-    save.assert_called_once_with()
+    assert RehuDocument.load(path).title == "New Title"
     assert model.dirty is False
 
 
@@ -1375,7 +1414,8 @@ def test_revert_reseeds_from_a_reloaded_document_and_clears_dirty(mocker: Mocker
 
     model.revert()
 
-    read.assert_called_once_with(ON_DISK_PATH)
+    read.assert_called_once()
+    assert read.call_args.args[1] == LocalKey(ON_DISK_PATH)
     assert model.title == "Reloaded Title"
     assert model.publisher == "Reloaded Publisher"
     assert model.url == "https://reloaded.example"
@@ -1557,13 +1597,13 @@ def test_revert_without_a_path_propagates(model: RehuDocumentModel, document: Re
 
 
 def test_convert_replaces_the_document_reseeds_and_unlocks(mocker: MockerFixture) -> None:
-    """convert() adopts ``convert_tc``'s result as the wrapped document, reseeds every field, clears
+    """convert() adopts the records' ``convert`` result as the wrapped document, reseeds every field, clears
     dirty, and drops locked to ``False``.
 
     **Test steps:**
 
     * build a model over a legacy ``.tc``-backed document
-    * mock ``convert_tc`` to return a fresh, unlocked document with a different title
+    * mock the records' ``convert`` to return a fresh, unlocked document with a different title
     * call ``model.convert(keep_backups=True)``
     * verify the model now reflects the fresh document, and is unlocked and clean
     """
@@ -1578,7 +1618,7 @@ def test_convert_replaces_the_document_reseeds_and_unlocks(mocker: MockerFixture
     converted = RehuDocument(
         {"type": "Tutorial", "sources": [{"title": "New Title", "primary": True}]}, FAKE / "info.rehu"
     )
-    mocker.patch("rehuco_agent.documents.rehu_document_model.convert_tc", return_value=converted)
+    converts_to(mocker, converted)
 
     model.convert(keep_backups=True)
 
@@ -1594,15 +1634,12 @@ def test_convert_emits_reloaded(mocker: MockerFixture) -> None:
 
     **Test steps:**
 
-    * build a model over a legacy ``.tc``-backed document, with ``convert_tc`` mocked to a fresh document
+    * build a model over a legacy ``.tc``-backed document, with the records' ``convert`` mocked to a fresh document
     * record ``reloaded`` emissions, then convert
     * verify it fired once
     """
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE / "info.tc", legacy_tc=True))
-    mocker.patch(
-        "rehuco_agent.documents.rehu_document_model.convert_tc",
-        return_value=RehuDocument({"type": "Tutorial"}, FAKE / "info.rehu"),
-    )
+    converts_to(mocker, RehuDocument({"type": "Tutorial"}, FAKE / "info.rehu"))
     fired: list[None] = []
     model.reloaded.connect(lambda: fired.append(None))
 
@@ -1612,19 +1649,17 @@ def test_convert_emits_reloaded(mocker: MockerFixture) -> None:
 
 
 def test_convert_failure_does_not_emit_reloaded(mocker: MockerFixture) -> None:
-    """A ``convert_tc`` that raises leaves the file seam uncrossed, so no ``reloaded`` fires and a
+    """A records ``convert`` that raises leaves the file seam uncrossed, so no ``reloaded`` fires and a
     consumer never re-reads for a conversion that didn't happen (#174).
 
     **Test steps:**
 
-    * build a model over a legacy ``.tc``-backed document, with ``convert_tc`` raising ``FileExistsError``
+    * build a model over a legacy ``.tc``-backed document, with the records' ``convert`` raising ``FileExistsError``
     * record ``reloaded`` emissions, then call convert and let the error propagate
     * verify nothing fired
     """
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE / "info.tc", legacy_tc=True))
-    mocker.patch(
-        "rehuco_agent.documents.rehu_document_model.convert_tc", side_effect=FileExistsError("already converted")
-    )
+    mocker.patch.object(LocalRecords, "convert", side_effect=FileExistsError("already converted"))
     fired: list[None] = []
     model.reloaded.connect(lambda: fired.append(None))
 
@@ -1635,7 +1670,7 @@ def test_convert_failure_does_not_emit_reloaded(mocker: MockerFixture) -> None:
 
 
 def test_convert_passes_keep_backups_and_overwrite_through(mocker: MockerFixture) -> None:
-    """convert() forwards this document's path, keyword arguments, and username to ``convert_tc``.
+    """convert() forwards this document's path, keyword arguments, and username to the records' ``convert``.
 
     The username is the wrapped document's **own** -- the identity it was opened with (#99), so
     the conversion files the imported per-user flags under the same owner
@@ -1644,23 +1679,20 @@ def test_convert_passes_keep_backups_and_overwrite_through(mocker: MockerFixture
     **Test steps:**
 
     * build a model over a legacy ``.tc``-backed document at a known path, opened as ``alice``
-    * mock ``convert_tc``
+    * mock the records' ``convert``
     * call ``model.convert`` with specific ``keep_backups``/``overwrite`` values
-    * verify ``convert_tc`` was called with the document's path, those exact values, and ``alice``
+    * verify the records' ``convert`` was called with the document's key, those exact values, and ``alice``
     """
     tc_path = FAKE / "info.tc"
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, tc_path, legacy_tc=True, username="alice"))
-    mock_convert = mocker.patch(
-        "rehuco_agent.documents.rehu_document_model.convert_tc",
-        return_value=RehuDocument({"type": "Tutorial"}, tc_path.with_suffix(".rehu")),
-    )
+    mock_convert = converts_to(mocker, RehuDocument({"type": "Tutorial"}, tc_path.with_suffix(".rehu")))
     deleter = mocker.Mock()
     mocker.patch("rehuco_agent.documents.rehu_document_model.configured_deleter", return_value=deleter)
 
     model.convert(keep_backups=False, overwrite=True)
 
     mock_convert.assert_called_once_with(
-        tc_path,
+        LocalKey(tc_path),
         keep_backups=False,
         overwrite=True,
         username="alice",
@@ -1677,16 +1709,13 @@ def test_convert_prefers_an_explicit_deleter_over_the_configured_one(mocker: Moc
     **Test steps:**
 
     * build a model over a legacy ``.tc``-backed document
-    * mock ``convert_tc`` and ``configured_deleter``
+    * mock the records' ``convert`` and ``configured_deleter``
     * call ``model.convert`` with an explicit deleter
-    * verify ``convert_tc`` received it, and ``configured_deleter`` was never asked
+    * verify the records' ``convert`` received it, and ``configured_deleter`` was never asked
     """
     tc_path = FAKE / "info.tc"
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, tc_path, legacy_tc=True))
-    mock_convert = mocker.patch(
-        "rehuco_agent.documents.rehu_document_model.convert_tc",
-        return_value=RehuDocument({"type": "Tutorial"}, tc_path.with_suffix(".rehu")),
-    )
+    mock_convert = converts_to(mocker, RehuDocument({"type": "Tutorial"}, tc_path.with_suffix(".rehu")))
     configured = mocker.patch("rehuco_agent.documents.rehu_document_model.configured_deleter")
     explicit_deleter = mocker.Mock()
 
@@ -1701,11 +1730,11 @@ def test_convert_raises_for_a_non_legacy_document(mocker: MockerFixture, model: 
 
     **Test steps:**
 
-    * mock ``convert_tc``
+    * mock the records' ``convert``
     * call ``model.convert()`` on the sample (non-legacy) model
-    * verify ``ValueError`` and that ``convert_tc`` was never called
+    * verify ``ValueError`` and that the records' ``convert`` was never called
     """
-    mock_convert = mocker.patch("rehuco_agent.documents.rehu_document_model.convert_tc")
+    mock_convert = mocker.patch.object(LocalRecords, "convert")
 
     with raises(ValueError, match="legacy .tc"):
         model.convert(keep_backups=True)
@@ -1723,7 +1752,7 @@ def test_convert_without_a_path_raises(mocker: MockerFixture) -> None:
     * verify ``ValueError``
     """
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, legacy_tc=True))
-    mock_convert = mocker.patch("rehuco_agent.documents.rehu_document_model.convert_tc")
+    mock_convert = mocker.patch.object(LocalRecords, "convert")
 
     with raises(ValueError, match="no path to convert"):
         model.convert(keep_backups=True)
@@ -1732,19 +1761,19 @@ def test_convert_without_a_path_raises(mocker: MockerFixture) -> None:
 
 
 def test_convert_failure_leaves_the_model_completely_untouched(mocker: MockerFixture) -> None:
-    """A failure from ``convert_tc`` propagates and leaves ``document``/``locked``/``dirty`` exactly
+    """A failure from the records' ``convert`` propagates and leaves ``document``/``locked``/``dirty`` exactly
     as they were before the call.
 
     **Test steps:**
 
     * build a model over a legacy ``.tc``-backed document
-    * mock ``convert_tc`` to raise ``FileExistsError``
+    * mock the records' ``convert`` to raise ``FileExistsError``
     * call ``model.convert()``
     * verify the exception propagates and the model still wraps the original document, still locked
     """
     tc_document = RehuDocument({"type": "Tutorial"}, FAKE / "info.tc", legacy_tc=True)
     model = RehuDocumentModel(tc_document)
-    mocker.patch("rehuco_agent.documents.rehu_document_model.convert_tc", side_effect=FileExistsError("stale backup"))
+    mocker.patch.object(LocalRecords, "convert", side_effect=FileExistsError("stale backup"))
 
     with raises(FileExistsError):
         model.convert(keep_backups=True)
@@ -1894,17 +1923,14 @@ def test_convert_reassigns_a_fresh_rehu_scanner(mocker: MockerFixture) -> None:
     **Test steps:**
 
     * build a model over a legacy ``.tc``-backed document and record its original scanner
-    * mock ``convert_tc`` to return a fresh, unlocked document
+    * mock the records' ``convert`` to return a fresh, unlocked document
     * call ``model.convert()``
     * verify ``image_scanner`` is now a different ``RehuDocumentImageScanner`` over ``scan_rehu_screenshot_files``
     """
     tc_document = RehuDocument({"type": "Tutorial"}, FAKE / "info.tc", legacy_tc=True)
     model = RehuDocumentModel(tc_document)
     original_scanner = model.image_scanner
-    mocker.patch(
-        "rehuco_agent.documents.rehu_document_model.convert_tc",
-        return_value=RehuDocument({"type": "Tutorial"}, FAKE / "info.rehu"),
-    )
+    converts_to(mocker, RehuDocument({"type": "Tutorial"}, FAKE / "info.rehu"))
 
     model.convert(keep_backups=True)
 
@@ -2588,18 +2614,18 @@ def test_a_loaded_document_is_saved_on_disk(document: RehuDocument) -> None:
     assert RehuDocumentModel(document).saved_on_disk is True
 
 
-def test_saving_marks_saved_on_disk(mocker: MockerFixture) -> None:
+@mark.usefixtures("real_path_stat")
+def test_saving_marks_saved_on_disk(tmp_path: Path) -> None:
     """The first :meth:`~RehuDocumentModel.save` marks the model ``saved_on_disk`` -- the file now
     exists on disk, so Revert has something to revert to (#147).
 
     **Test steps:**
 
-    * build a not-yet-saved model bound to a path, patching the document's atomic save
+    * build a not-yet-saved model bound to a path under ``tmp_path``
     * call ``model.save()``
     * verify ``saved_on_disk`` flips to True
     """
-    model = RehuDocumentModel.create_new(FAKE / "sculpting" / "info.rehu")
-    mocker.patch.object(model.document, "save")
+    model = RehuDocumentModel.create_new(tmp_path / "info.rehu")
     assert model.saved_on_disk is False
 
     model.save()
@@ -2607,42 +2633,47 @@ def test_saving_marks_saved_on_disk(mocker: MockerFixture) -> None:
     assert model.saved_on_disk is True
 
 
-def test_a_save_announces_the_record_it_wrote(mocker: MockerFixture) -> None:
+@mark.usefixtures("real_path_stat")
+def test_a_save_announces_the_record_it_wrote(tmp_path: Path) -> None:
     """Every save says what it wrote, so every listing of the folder and the catalog follow it (#376) -- the
-    first save of a new document included.
+    first save of a new document included. The access announces it on its change feed (#416), so the model does
+    not say it a second time.
 
     **Test steps:**
 
-    * build a not-yet-saved model, patching the document's atomic save, and save it
-    * verify ``files_changed`` carried the record's key
+    * build a not-yet-saved model under ``tmp_path`` over an access whose feed is heard, and save it
+    * verify the feed carried the record's key, and ``files_changed`` nothing
     """
-    path = FAKE / "sculpting" / "info.rehu"
-    model = RehuDocumentModel.create_new(path)
-    mocker.patch.object(model.document, "save")
+    path = tmp_path / "info.rehu"
+    access, heard = listening_access()
+    model = RehuDocumentModel.create_new(path, access=access)
     written: list[object] = []
     model.files_changed.connect(written.append)
 
     model.save()
 
-    assert written == [(LocalKey(path),)]
+    assert heard == [Changed((LocalKey(path),))]
+    assert not written
 
 
-def test_the_first_save_takes_the_checksums_the_new_record_covers(mocker: MockerFixture) -> None:
+@mark.usefixtures("real_path_stat")
+def test_the_first_save_takes_the_checksums_the_new_record_covers(mocker: MockerFixture, tmp_path: Path) -> None:
     """A new record's first save moves its files' entries out of the enclosing record at once (#467), and says
     both checksum files changed so the views reading them follow.
 
     **Test steps:**
 
-    * build a not-yet-saved ``foo.rehu`` model through a coordinator, with the move mocked to report one
+    * build a not-yet-saved ``foo.rehu`` model under ``tmp_path`` through a coordinator, over an access whose feed
+      is heard, with the move mocked to report one
     * save it
-    * verify the move was asked for that record, through that coordinator, and ``files_changed`` carried the
-      record and both checksum files
+    * verify the move was asked for that record, through that coordinator, the feed carried the record and
+      ``files_changed`` both checksum files
     """
-    path = FAKE / "sculpting" / "foo.rehu"
+    path = tmp_path / "foo.rehu"
     coordinator = RenameCoordinator()
-    model = RehuDocumentModel.create_new(path, rename_coordinator=coordinator)
-    mocker.patch.object(model.document, "save")
-    source = FAKE / "sculpting" / "info.checksum"
+    access, heard = listening_access()
+    model = RehuDocumentModel.create_new(path, access=access, rename_coordinator=coordinator)
+    source = tmp_path / "info.checksum"
     take = mocker.patch(
         "rehuco_agent.documents.rehu_document_model.take_enclosing_claims",
         return_value=TakenClaims(source, {"foo.zip": CoveringRecord(path, "foo.zip")}, pruned=True),
@@ -2655,20 +2686,23 @@ def test_the_first_save_takes_the_checksums_the_new_record_covers(mocker: Mocker
     take.assert_called_once()
     assert take.call_args.args == (path,)
     assert take.call_args.kwargs["coordinator"] is coordinator
-    assert written == [(LocalKey(path), LocalKey(FAKE / "sculpting" / "foo.checksum"), LocalKey(source))]
+    assert heard == [Changed((LocalKey(path),))]
+    assert written == [(LocalKey(tmp_path / "foo.checksum"), LocalKey(source))]
 
 
-def test_only_the_first_save_takes_checksums(mocker: MockerFixture) -> None:
+@mark.usefixtures("real_path_stat")
+def test_only_the_first_save_takes_checksums(mocker: MockerFixture, tmp_path: Path) -> None:
     """A record already on disk took what it covers when it was created; a later save moves nothing (#467).
 
     **Test steps:**
 
-    * build a not-yet-saved model with the move mocked to find nothing, and save it twice
-    * verify the move was asked for once, and the second save announced only the record
+    * build a not-yet-saved model under ``tmp_path`` over an access whose feed is heard, with the move mocked to
+      find nothing, and save it twice
+    * verify the move was asked for once, and each save announced only the record
     """
-    path = FAKE / "sculpting" / "foo.rehu"
-    model = RehuDocumentModel.create_new(path)
-    mocker.patch.object(model.document, "save")
+    path = tmp_path / "foo.rehu"
+    access, heard = listening_access()
+    model = RehuDocumentModel.create_new(path, access=access)
     take = mocker.patch("rehuco_agent.documents.rehu_document_model.take_enclosing_claims", return_value=None)
     written: list[object] = []
     model.files_changed.connect(written.append)
@@ -2677,29 +2711,33 @@ def test_only_the_first_save_takes_checksums(mocker: MockerFixture) -> None:
     model.save()
 
     take.assert_called_once()
-    assert written == [(LocalKey(path),), (LocalKey(path),)]
+    assert heard == [Changed((LocalKey(path),)), Changed((LocalKey(path),))]
+    assert not written
 
 
-def test_a_convert_announces_the_new_record_and_the_tc_it_replaced(mocker: MockerFixture) -> None:
+@mark.usefixtures("real_path_stat")
+def test_a_convert_announces_the_new_record_and_the_tc_it_replaced(mocker: MockerFixture, tmp_path: Path) -> None:
     """A conversion writes a ``.rehu`` and retires the ``.tc``: the new record first, so the catalog reads it
-    into the ``.tc``'s row before finding the ``.tc`` gone (#376).
+    into the ``.tc``'s row before finding the ``.tc`` gone (#376). The access announces both on its change feed
+    (#416), so the model does not say them a second time.
 
     **Test steps:**
 
-    * convert a legacy model with ``convert_tc`` mocked
-    * verify ``files_changed`` carried the ``.rehu`` then the ``.tc``
+    * write a legacy ``.tc`` under ``tmp_path`` and build a model over it through an access whose feed is heard
+    * convert it
+    * verify the feed carried the ``.rehu`` then the ``.tc``, and ``files_changed`` nothing
     """
-    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE / "info.tc", legacy_tc=True))
-    mocker.patch(
-        "rehuco_agent.documents.rehu_document_model.convert_tc",
-        return_value=RehuDocument({"type": "Tutorial"}, FAKE / "info.rehu"),
-    )
+    tc_path = tmp_path / "info.tc"
+    tc_path.write_text("type: Tutorial\n", encoding="utf-8")
+    access, heard = listening_access()
+    model = RehuDocumentModel(load_tc(tc_path), access=access)
     written: list[object] = []
     model.files_changed.connect(written.append)
 
-    model.convert(keep_backups=True)
+    model.convert(keep_backups=True, deleter=mocker.Mock())
 
-    assert written == [(LocalKey(FAKE / "info.rehu"), LocalKey(FAKE / "info.tc"))]
+    assert heard == [Changed((LocalKey(tmp_path / "info.rehu"), LocalKey(tc_path)))]
+    assert not written
 
 
 def test_a_relocation_moving_the_record_re_points_the_document_once() -> None:
@@ -3933,25 +3971,26 @@ def saved_document() -> RehuDocument:
     return RehuDocument({"type": "Tutorial", "sources": [{"title": "Foo", "primary": True}]}, LOGGED_PATH)
 
 
+@mark.usefixtures("real_path_stat")
 def test_saving_logs_under_this_documents_own_scope(
-    mocker: MockerFixture, saved_document: RehuDocument, scoped_sink: Callable[..., RecordingSink], qtbot: QtBot
+    tmp_path: Path, scoped_sink: Callable[..., RecordingSink], qtbot: QtBot
 ) -> None:
     """A save is logged, and placed under the resource it saved (#200).
 
     **Test steps:**
 
-    * patch the document's own save, and attach a sink for its path
+    * build a model over a document bound to a file under ``tmp_path``, and attach a sink for its path
     * save through the model
     * verify the save was recorded under that scope
     """
-    mocker.patch.object(saved_document, "save")
-    model = RehuDocumentModel(saved_document)
-    sink = scoped_sink(LOGGED_PATH)
+    path = tmp_path / "info.rehu"
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial", "sources": [{"title": "Foo", "primary": True}]}, path))
+    sink = scoped_sink(path)
 
     model.save()
     qtbot.wait(10)
 
-    assert any(str(LOGGED_PATH) in message for message in sink.messages_at(logging.INFO))
+    assert any(str(path) in message for message in sink.messages_at(logging.INFO))
 
 
 def test_reverting_logs_under_this_documents_own_scope(

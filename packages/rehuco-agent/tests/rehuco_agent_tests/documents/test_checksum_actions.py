@@ -37,7 +37,7 @@ from rehuco_core import (
     TaskJobBase,
     TaskQueue,
 )
-from rehuco_core.access import LocalKey
+from rehuco_core.access import LoadedRecord, LocalKey
 
 DIRECTORY: Final = Path.cwd() / "fake" / "library" / "sculpting"
 INFO_PATH: Final = DIRECTORY / "info.rehu"
@@ -286,7 +286,8 @@ def test_a_document_with_no_path_at_all_is_offered_neither(queue: TaskQueue) -> 
     assert queue.jobs() == ()
 
 
-def test_a_document_not_yet_saved_is_offered_neither(mocker: MockerFixture, queue: TaskQueue) -> None:
+@pytest.mark.usefixtures("real_path_stat")
+def test_a_document_not_yet_saved_is_offered_neither(tmp_path: Path, queue: TaskQueue) -> None:
     """A brand-new document has a path but nothing on disk yet to hash (#360).
 
     *Create missing checksum on verify* is set because it is what made Verify offerable over a
@@ -295,14 +296,13 @@ def test_a_document_not_yet_saved_is_offered_neither(mocker: MockerFixture, queu
 
     **Test steps:**
 
-    * build the actions over a document bound to a path it has never saved to
+    * build the actions over a document bound to a path under ``tmp_path`` it has never saved to, with no
+      checksum record beside it
     * check both actions are disabled, and that triggering one anyway queues nothing
     * save the document, and check the actions become offered
     """
-    mocker.patch.object(Path, "exists", autospec=True, side_effect=lambda self: self != RECORD_PATH)
-    mocker.patch("rehuco_core.rehu_document.RehuDocument.save")
     shared_checksum_settings().create_missing_on_verify = True
-    model = RehuDocumentModel.create_new(INFO_PATH)
+    model = RehuDocumentModel.create_new(tmp_path / "info.rehu")
     actions = ChecksumActions(model, queue)
 
     assert not actions.generate_action.isEnabled()
@@ -628,7 +628,10 @@ def load_another_record(mocker: MockerFixture, model: RehuDocumentModel) -> None
     :param model: the model.
     """
     other = RehuDocument({"type": "Tutorial", "sources": [{"title": "Modelling", "primary": True}]}, OTHER_INFO_PATH)
-    mocker.patch("rehuco_agent.documents.rehu_document_model.load_or_locked", return_value=other)
+    mocker.patch(
+        "rehuco_agent.documents.rehu_document_model.load_record",
+        return_value=LoadedRecord(other, None, tuple(other.lock_reasons), None),
+    )
     model.load(OTHER_INFO_PATH)
 
 

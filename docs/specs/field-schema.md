@@ -389,8 +389,10 @@ there is never overwritten (import seeds it from the `.tc`'s mtime), and a `.reh
 none keeps none: stamping on a later re-save would claim the record was created at that moment.
 
 `updated` refreshes when a **save actually changes the record**: `save()` compares the canonical
-serialization against the load/last-save baseline and stamps the save's own UTC time only when they
-differ. A save that rewrites an *unchanged* record — a format-upgrade restamp, a save-as copy —
+serialization of its **metadata** — everything but the plugin blocks' per-user `users` maps — against the
+load/last-save baseline and stamps the save's own UTC time only when they differ. A per-user change (a
+rating, a progress entry, another user's state merged in, [[nodes#access-seam]]) describes one person, not
+the resource, and never moves it. A save that rewrites an *unchanged* record — a format-upgrade restamp, a save-as copy —
 leaves it alone: writing is not editing, and "record last edited" must not decay into "record last
 written". They are shared record state (a synced edit carries its refreshed `updated` with it), and
 relate to the `resource_version` / timestamp markers used for staleness detection and sync
