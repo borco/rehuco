@@ -4,6 +4,7 @@
 both, over one cache, and requires the same rows in the same order: neither can drift from the other unnoticed.
 """
 
+import gc
 import random
 from collections.abc import Generator
 from dataclasses import dataclass, replace
@@ -203,6 +204,60 @@ def test_matches_tests_one_key(catalog: Catalog) -> None:
 
     assert CatalogMatcher(CatalogQuery(terms=(word,))).matches(key)
     assert not CatalogMatcher(CatalogQuery(terms=("no such words",))).matches(key)
+
+
+# region What the collector tracks (#500)
+
+
+TRACKED_OVERHEAD: Final = 8
+"""The tracked objects a snapshot makes besides its keys -- itself and its few containers -- with room to spare."""
+
+
+def test_a_reads_rows_of_a_root_share_one_root_id(catalog: Catalog) -> None:
+    """A read parses each root's id once, so its rows share one ``UUID`` rather than each tracking its own.
+
+    **Test steps:**
+
+    * read every row of the cache
+    * verify each root's rows hold one and the same ``UUID`` object, equal to the root's id
+    """
+    with CatalogCache.open(catalog.path) as cache:
+        rows = cache.rows()
+
+    for root_id in catalog.root_ids:
+        held = {id(row.root_id) for row in rows if row.root_id == root_id}
+        assert len(held) == 1
+
+
+def test_a_snapshot_adds_one_tracked_object_per_row(catalog: Catalog) -> None:
+    """Keying a read adds a key per row and nothing more the collector walks: no pairs, and names it never tracks.
+
+    **Test steps:**
+
+    * with the collector off, count the objects it tracks before and after building a snapshot over read rows
+    * verify the build added one per row, give or take the snapshot's own few, and a key's names are untracked
+    """
+    rows = catalog.snapshot.rows
+    was_on = gc.isenabled()
+    gc.collect()
+    gc.disable()
+    try:
+        before = len(gc.get_objects())
+        snapshot = CatalogSnapshot.build(rows, catalog.root_ids)
+        added = len(gc.get_objects()) - before
+    finally:
+        if was_on:
+            gc.enable()
+
+    assert len(rows) <= added <= len(rows) + TRACKED_OVERHEAD
+    named = next(row for row in snapshot.rows if row.record.authors)
+    key = CatalogSearchKey.of(named)
+    assert key.row is named
+    assert key.authors
+    assert not any(gc.is_tracked(names) for names in (key.authors, key.tags, key.publishers))
+
+
+# endregion
 
 
 def test_a_snapshot_tells_its_rows_their_count_and_its_roots(catalog: Catalog) -> None:
