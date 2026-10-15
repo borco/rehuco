@@ -61,6 +61,7 @@ from rehuco_core import (
     CatalogCache,
     CatalogField,
     CatalogRecord,
+    CatalogSnapshot,
     GenerateChecksumsJob,
     JobControl,
     RecordKind,
@@ -309,6 +310,11 @@ def wait_for_jobs(qtbot: QtBot, queue: TaskQueue) -> None:
     qtbot.waitUntil(
         lambda: all(status.state in FINISHED_JOB_STATES for status in queue.jobs()), timeout=WAIT_TIMEOUT_MS
     )
+
+
+def wait_for_rows(qtbot: QtBot, dock: CatalogDocks) -> None:
+    """Wait until the browsers' rows are read and shown -- the loader reads them on the pool (#455)."""
+    qtbot.waitUntil(lambda: not dock.browsers.loading, timeout=WAIT_TIMEOUT_MS)
 
 
 def select_root(dock: CatalogDocks, row: int) -> None:
@@ -632,12 +638,13 @@ def test_the_table_is_read_once_when_the_last_scan_ends(
 
     **Test steps:**
 
-    * spy on the catalog model's ``set_rows``, open and scan a two-root catalog
+    * open a two-root catalog and wait for its rows, then spy on ``set_rows`` and scan
     * wait for both jobs to end
-    * verify the rows were set once for the open and once more for the scan
+    * verify the rows were set once for the scan
     """
     scan_finding(mocker, {TUTORIALS: (tutorial_record(),)})
     dock.catalog.open_rehuco(REHUCO_PATH)
+    wait_for_rows(qtbot, dock)
     set_rows = mocker.spy(TableBrowser, "set_rows")
 
     dock.roots.scan_action.trigger()
@@ -645,6 +652,7 @@ def test_the_table_is_read_once_when_the_last_scan_ends(
     qtbot.waitUntil(lambda: first_browser(dock).model.rowCount() == 1, timeout=WAIT_TIMEOUT_MS)
     wait_for_jobs(qtbot, queue)
     qtbot.wait(50)
+    wait_for_rows(qtbot, dock)
     assert set_rows.call_count == 1
 
 
@@ -680,22 +688,25 @@ def test_opening_another_catalog_forgets_the_old_ones_scans(
 
     **Test steps:**
 
-    * hold the queue, open and scan, then open a file with another rehuco id
+    * hold the queue, open and scan, then open a file with another rehuco id and wait for its rows
     * release the queue and let the scan end
-    * verify the table stays empty
+    * verify the table was filled once, for the second file, and stays empty
     """
     scan_finding(mocker, {TUTORIALS: (tutorial_record(),)})
     dock.catalog.open_rehuco(REHUCO_PATH)
     dock.roots.scan_action.trigger()
+    wait_for_rows(qtbot, dock)
     set_rows = mocker.spy(TableBrowser, "set_rows")
     mocker.patch.object(Path, "read_text", return_value=json.dumps({**HOME, "id": str(uuid4())}))
     assert dock.catalog.open_rehuco(OTHER_PATH)
+    wait_for_rows(qtbot, dock)
     assert set_rows.call_count == 1
 
     held.let_finish()
     wait_for_jobs(qtbot, queue)
 
     qtbot.wait(50)
+    wait_for_rows(qtbot, dock)
     assert set_rows.call_count == 1
     assert first_browser(dock).model.rowCount() == 0
 
@@ -946,26 +957,31 @@ def test_removing_a_root_saves_the_file_and_queues_the_removal(
 
 
 @mark.usefixtures("served", "saves")
-def test_a_removed_roots_rows_leave_the_table_at_once(
-    mocker: MockerFixture, qtbot: QtBot, dock: CatalogDocks, queue: TaskQueue
+def test_a_removed_roots_rows_leave_the_table_before_its_removal_runs(
+    mocker: MockerFixture, qtbot: QtBot, dock: CatalogDocks, queue: TaskQueue, database: MemoryDatabase
 ) -> None:
     """The rows stay in the cache until the removal job has run, but are not shown meanwhile.
 
     **Test steps:**
 
-    * scan a record in, then remove its root
-    * verify the table is empty before the removal job has run
+    * scan a record in, hold the queue, then remove its root
+    * verify the table empties while the cache still holds the row
     """
     scan_finding(mocker, {TUTORIALS: (tutorial_record(),)})
     dock.catalog.open_rehuco(REHUCO_PATH)
     dock.roots.scan_action.trigger()
     qtbot.waitUntil(lambda: first_browser(dock).model.rowCount() == 1, timeout=WAIT_TIMEOUT_MS)
     wait_for_jobs(qtbot, queue)
+    gate = GateJob()
+    queue.enqueue(gate)
+    assert gate.entered.wait(WAIT_TIMEOUT_MS / 1000), "the gate job never reached the worker"
     select_root(dock, 0)
 
     dock.roots.remove_root_action.trigger()
 
-    assert first_browser(dock).model.rowCount() == 0
+    qtbot.waitUntil(lambda: first_browser(dock).model.rowCount() == 0, timeout=WAIT_TIMEOUT_MS)
+    assert database.scalar("SELECT COUNT(*) FROM resources") == 1
+    gate.let_finish()
     wait_for_jobs(qtbot, queue)
 
 
@@ -1812,26 +1828,28 @@ def test_a_cache_whose_roots_cannot_be_reconciled_does_not_open(mocker: MockerFi
 
 @mark.usefixtures("served", "saves")
 def test_a_cache_that_cannot_be_read_keeps_what_is_shown(
-    mocker: MockerFixture, dock: CatalogDocks, caplog: LogCaptureFixture
+    mocker: MockerFixture, qtbot: QtBot, dock: CatalogDocks, caplog: LogCaptureFixture
 ) -> None:
     """A failed read is logged and the browsers are left as they were -- the next scan rebuilds the cache. The Roots
     view reads the file, not the cache, so it still shows the edit (#461).
 
     **Test steps:**
 
-    * open a catalog, then make ``rows`` raise and spy on the browsers
-    * add a root through the picker, which re-reads
+    * open a catalog and wait for its rows, then make ``rows`` raise and spy on the browsers
+    * add a root through the picker, which re-reads, and wait for the read
     * verify an error was logged, no browser was refilled, and the Roots view lists the new root
     """
     dock.catalog.open_rehuco(REHUCO_PATH)
+    wait_for_rows(qtbot, dock)
     mocker.patch.object(CatalogCache, "rows", side_effect=sqlite3.OperationalError("locked"))
     set_rows = mocker.spy(TableBrowser, "set_rows")
     answer_add_root(mocker, dock, "/fake/refs")
 
     with caplog.at_level(logging.ERROR):
         dock.roots.add_root_action.trigger()
+        wait_for_rows(qtbot, dock)
 
-    assert "Could not read the cache" in caplog.text
+    assert "Could not read the catalog's rows" in caplog.text
     set_rows.assert_not_called()
     assert shown_labels(dock) == ["tutorials", "packs", "refs"]
 
@@ -1895,28 +1913,6 @@ def test_the_browser_slots_do_nothing_with_nothing_to_act_on(
     assert not dock.browsers.browsers
     ask.assert_not_called()
     assert stray.model.rowCount() == 0
-
-
-@mark.usefixtures("served")
-def test_a_new_browser_whose_rows_cannot_be_read_is_still_added(
-    mocker: MockerFixture, dock: CatalogDocks, caplog: LogCaptureFixture
-) -> None:
-    """A failed read is logged and the new browser starts empty -- the next scan rebuilds the cache.
-
-    **Test steps:**
-
-    * open a catalog, make ``rows`` raise and trigger New Table Browser
-    * verify an error was logged and the browser exists, with no rows
-    """
-    dock.catalog.open_rehuco(REHUCO_PATH)
-    mocker.patch.object(CatalogCache, "rows", side_effect=sqlite3.OperationalError("locked"))
-
-    with caplog.at_level(logging.ERROR):
-        dock.browsers.new_browser_action.trigger()
-
-    assert "Could not read the cache" in caplog.text
-    _, added = dock.browsers.browsers
-    assert added.model.rowCount() == 0
 
 
 @mark.parametrize(("accepted", "expected"), [(True, "Typed"), (False, None)])
@@ -2015,6 +2011,7 @@ def test_a_tracked_job_cleared_from_the_queue_reads_the_table_again(
     dock.catalog.open_rehuco(REHUCO_PATH)
     dock.roots.scan_action.trigger()
     serials = [status.serial for status in queue.jobs()[1:]]
+    wait_for_rows(qtbot, dock)
     set_rows = mocker.spy(TableBrowser, "set_rows")
 
     dock.catalog.jobs_reordered(serials)
@@ -2056,6 +2053,7 @@ def fixture_followed(
     dock.roots.scan_action.trigger()
     qtbot.waitUntil(lambda: first_browser(dock).model.rowCount() == 1, timeout=WAIT_TIMEOUT_MS)
     wait_for_jobs(qtbot, queue)
+    wait_for_rows(qtbot, dock)
     yield dock, events
     dock.detach()
 
@@ -2065,17 +2063,18 @@ def shown_path(dock: CatalogDocks) -> str:
     return first_browser(dock).model.index(0, CatalogColumn.PATH).data()
 
 
-def test_a_rename_rebases_its_row_without_a_scan(followed: tuple[CatalogDocks, ResourceEvents]) -> None:
-    """A renamed folder's record keeps its row, under the new path, with nothing read.
+def test_a_rename_rebases_its_row_without_a_scan(qtbot: QtBot, followed: tuple[CatalogDocks, ResourceEvents]) -> None:
+    """A renamed folder's record keeps its row, under the new path, with no record read.
 
     **Test steps:**
 
-    * announce the rename of the scanned tutorial's folder
+    * announce the rename of the scanned tutorial's folder, and wait for its row to be read back
     * verify the row now shows the new path
     """
     dock, events = followed
 
     events.announce_moved(Relocation(((TUTORIALS / "python", TUTORIALS / "py"),)))
+    wait_for_rows(qtbot, dock)
 
     assert shown_path(dock) == "tutorials/py/info.rehu"
 
@@ -2101,14 +2100,14 @@ def test_a_rename_elsewhere_reads_the_cache_not_again(
 
 
 def test_a_written_record_is_read_back_into_its_row(
-    mocker: MockerFixture, followed: tuple[CatalogDocks, ResourceEvents]
+    mocker: MockerFixture, qtbot: QtBot, followed: tuple[CatalogDocks, ResourceEvents]
 ) -> None:
     """A save is reflected in the table at once, the record read back through the updater; a file that is not a
     record is passed over.
 
     **Test steps:**
 
-    * make the record read as retitled, and announce it and a screenshot as written
+    * make the record read as retitled, announce it and a screenshot as written, and wait for the row
     * verify the row shows the new title
     """
     dock, events = followed
@@ -2123,6 +2122,7 @@ def test_a_written_record_is_read_back_into_its_row(
     events.announce_changed(
         (LocalKey(TUTORIALS / "python" / "info.rehu"), LocalKey(TUTORIALS / "python" / "info00.jpg"))
     )
+    wait_for_rows(qtbot, dock)
 
     assert first_browser(dock).model.index(0, CatalogColumn.TITLE).data() == "Python 3"
 
@@ -2187,7 +2187,7 @@ def test_a_written_record_changes_its_row_without_a_reset(
 
     **Test steps:**
 
-    * make the record read as retitled, and announce it written
+    * make the record read as retitled, announce it written, and wait for the row
     * verify no reset and the new title
     """
     dock, events = followed
@@ -2200,6 +2200,7 @@ def test_a_written_record_changes_its_row_without_a_reset(
 
     with qtbot.assertNotEmitted(model.modelReset):
         events.announce_changed((LocalKey(TUTORIALS / "python" / "info.rehu"),))
+        wait_for_rows(qtbot, dock)
 
     assert model.index(0, CatalogColumn.TITLE).data() == "Python 3"
 
@@ -2232,7 +2233,7 @@ def test_a_rename_out_of_a_folder_filter_removes_the_row(
 
     **Test steps:**
 
-    * filter the browser to the tutorial's folder, then rename that folder
+    * filter the browser to the tutorial's folder, then rename that folder and wait for the row
     * verify the row was removed without a reset
     """
     dock, events = followed
@@ -2242,25 +2243,29 @@ def test_a_rename_out_of_a_folder_filter_removes_the_row(
 
     with qtbot.assertNotEmitted(browser.model.modelReset):
         events.announce_moved(Relocation(((TUTORIALS / "python", TUTORIALS / "py"),)))
+        wait_for_rows(qtbot, dock)
 
     assert browser.model.rowCount() == 0
 
 
-def test_browsers_filtering_alike_share_one_read_of_the_touched_rows(
-    mocker: MockerFixture, followed: tuple[CatalogDocks, ResourceEvents]
+def test_every_browser_shares_one_read_of_the_touched_rows(
+    mocker: MockerFixture, qtbot: QtBot, followed: tuple[CatalogDocks, ResourceEvents]
 ) -> None:
-    """Two browsers with one query are updated from one read of the rows a rename touched.
+    """Browsers are updated from one read of the rows a rename touched, whatever each filters by (#455).
 
     **Test steps:**
 
-    * add a second browser, then announce the tutorial's folder renamed
+    * add a second browser filtering by a word in the path, then announce the tutorial's folder renamed
     * verify both show the new path, read once
     """
     dock, events = followed
     dock.browsers.new_browser_action.trigger()
+    _, second = dock.browsers.browsers
+    second.set_filter_text("info")
     rows = mocker.spy(CatalogCache, "rows")
 
     events.announce_moved(Relocation(((TUTORIALS / "python", TUTORIALS / "py"),)))
+    wait_for_rows(qtbot, dock)
 
     assert {browser.model.index(0, CatalogColumn.PATH).data() for browser in dock.browsers.browsers} == {
         "tutorials/py/info.rehu"
@@ -2268,8 +2273,55 @@ def test_browsers_filtering_alike_share_one_read_of_the_touched_rows(
     assert rows.call_count == 1
 
 
+def test_a_keystroke_during_a_refresh_filters_the_old_rows_then_the_new(
+    mocker: MockerFixture, qtbot: QtBot, followed: tuple[CatalogDocks, ResourceEvents]
+) -> None:
+    """The filter line never waits for a read: it filters the rows shown, and the read's rows once they land (#455).
+
+    **Test steps:**
+
+    * hold the rows a read builds on the pool, and scan a second tutorial in
+    * once the read is out, filter by a word both tutorials' paths hold
+    * verify the one row shown before the read; let the read through
+    * verify both rows, the filter kept
+    """
+    dock, _ = followed
+    browser = first_browser(dock)
+    gate = threading.Event()
+    build = CatalogSnapshot.build
+
+    def held_build(rows: Any, root_ids: Any) -> CatalogSnapshot:
+        """Build the snapshot, held at the gate when on the pool.
+
+        :param rows: the rows read.
+        :param root_ids: the roots' ids.
+        :returns: the snapshot.
+        """
+        if threading.current_thread() is not threading.main_thread():
+            assert gate.wait(GATE_TIMEOUT), "the gate was never opened"
+        return build(rows, root_ids)
+
+    mocker.patch.object(CatalogSnapshot, "build", side_effect=held_build)
+    second = CatalogRecord("python 2/info.rehu", RecordKind.REHU, title="Python 2", type="tutorial")
+    scan_finding(mocker, {TUTORIALS: (tutorial_record(), second)})
+    try:
+        dock.roots.scan_action.trigger()
+        qtbot.waitUntil(lambda: dock.browsers.loading, timeout=WAIT_TIMEOUT_MS)
+
+        browser.set_filter_text("python")
+        assert [browser.model.index(row, CatalogColumn.PATH).data() for row in range(browser.model.rowCount())] == [
+            "tutorials/python/info.rehu"
+        ]
+    finally:
+        gate.set()
+    wait_for_rows(qtbot, dock)
+
+    assert browser.filter_text == "python"
+    assert browser.model.rowCount() == 2
+
+
 def test_a_failed_read_of_the_touched_rows_is_logged_and_the_table_kept(
-    mocker: MockerFixture, followed: tuple[CatalogDocks, ResourceEvents], caplog: LogCaptureFixture
+    mocker: MockerFixture, qtbot: QtBot, followed: tuple[CatalogDocks, ResourceEvents], caplog: LogCaptureFixture
 ) -> None:
     """The rename is in the cache; a failure to read its rows back leaves the table as it was, logged.
 
@@ -2280,9 +2332,10 @@ def test_a_failed_read_of_the_touched_rows_is_logged_and_the_table_kept(
     """
     dock, events = followed
     mocker.patch.object(CatalogCache, "rows", side_effect=sqlite3.OperationalError("locked"))
-    caplog.set_level(logging.ERROR, logger="rehuco_agent.rehuco.rehuco_dock")
+    caplog.set_level(logging.ERROR, logger="rehuco_agent.rehuco.catalog_rows_loader")
 
     events.announce_moved(Relocation(((TUTORIALS / "python", TUTORIALS / "py"),)))
+    wait_for_rows(qtbot, dock)
 
     assert "locked" in caplog.text
     assert shown_path(dock) == "tutorials/python/info.rehu"
