@@ -4,7 +4,6 @@
 
 import itertools
 import logging
-import sqlite3
 import threading
 from collections.abc import Hashable, Iterable, Sequence
 from pathlib import Path
@@ -16,9 +15,7 @@ from PySide6.QtCore import QObject, Qt, QThreadPool, Signal
 from rehuco_core import (
     DEFAULT_RENAME_COORDINATOR,
     FINISHED_JOB_STATES,
-    CatalogCache,
     CatalogQuery,
-    CatalogRecordUpdater,
     CatalogRow,
     JobStatus,
     RecordCheck,
@@ -34,7 +31,16 @@ from rehuco_core import (
     check_records,
     rehudb_path,
 )
-from rehuco_core.access import KeyRelocation, LocalKey, ResourceKey
+from rehuco_core.access import (
+    AccessRouter,
+    CatalogSession,
+    CatalogUnreadable,
+    KeyRelocation,
+    LocalAccess,
+    LocalKey,
+    NodeUnreachable,
+    ResourceKey,
+)
 
 from ..resource_events import ResourceEvents
 from ..settings.persistent_settings import cache_folder
@@ -53,10 +59,12 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
     reconciles the cache's roots to the file's, so the two cannot disagree for longer than it takes to save; what
     is *found* under a root only ever arrives from a scan.
 
-    **A scan is a queue job per root**, never run here: each opens its own connection on the worker, and this
-    reads through its own on the GUI thread (SQLite's one connection per thread, [[data-model#cache-schema]]).
-    This is a queue listener only to learn when one of its own jobs has finished, and then says the catalog
-    :attr:`refreshed` -- the same marshalling the checksum actions use ([[appendices.task-queue#observation]]).
+    **The cache itself is the access seam's** (#417, [[nodes#access-seam]]): this holds no connection, and reads
+    and keeps the cache current through :class:`~rehuco_core.LocalCatalog`, which opens one per call on whichever
+    thread asks (SQLite's one connection per thread, [[data-model#cache-schema]]). **A scan is a queue job per
+    root**, never run here: each opens its own on the worker. This is a queue listener only to learn when one of its
+    own jobs has finished, and then says the catalog :attr:`refreshed` -- the same marshalling the checksum actions
+    use ([[appendices.task-queue#observation]]).
 
     **A file newer than this build opens read-only**: its :attr:`~rehuco_core.RehucoFile.lock_reason` says why,
     and no edit of the roots is made. Scanning stays on, since it writes only the disposable cache.
@@ -67,9 +75,12 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         rename ([[mounts-and-storage#out-of-band]]).
     :param resource_events: the app's file announcements (#376), which keep the cache current between scans
         without reading anything a rename moved: a rename rebases the rows it moved
-        (:meth:`~rehuco_core.CatalogCache.apply_relocation`), and a record the app wrote is read back into its
-        row (:class:`~rehuco_core.CatalogRecordUpdater`). Either way only the rows it touched are announced, by
+        (:meth:`~rehuco_core.LocalCatalog.follow`), and a record the app wrote is read back into its row
+        (:meth:`~rehuco_core.LocalCatalog.refresh`). Either way only the rows it touched are announced, by
         :attr:`rows_changed`. ``None`` leaves the cache to the scans alone.
+    :param access: the access seam (#417): the open file's cache is attached to its local
+        :attr:`~rehuco_core.LocalAccess.catalog`, and every read of the cache and every change to it goes through
+        there. The window's own, when given; a router over a new local access otherwise.
     """
 
     rehuco_path_changed: Signal = Signal(object)
@@ -110,7 +121,7 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         """Carries a verify-on-access answer from the pool to the GUI thread, and nothing else."""
 
         answered = Signal(int, object, object, object)
-        """``(serial, key, cache, findings)``: one check's answer, judged on the GUI thread."""
+        """``(serial, key, cache path, findings)``: one check's answer, judged on the GUI thread."""
 
         statted = Signal(int, object)
         """``(serial, signatures)``: what :meth:`RootCatalog.read_signatures` found, judged on the GUI thread."""
@@ -122,14 +133,18 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         *,
         rename_coordinator: RenameCoordinator = DEFAULT_RENAME_COORDINATOR,
         resource_events: ResourceEvents | None = None,
+        access: AccessRouter | None = None,
     ) -> None:
         super().__init__(parent)
         self.__queue: Final = queue
+        self.__access: Final = (
+            access if access is not None else AccessRouter(LocalAccess(coordinator=rename_coordinator))
+        )
+        self.__catalog: Final = self.__access.local.catalog
         self.__rename_coordinator: Final = rename_coordinator
         self.__events: Final = resource_events
         self.__listening_to_events = resource_events is not None
         self.__file: RehucoFile | None = None
-        self.__cache: CatalogCache | None = None
         self.__load_error = ""
         self.__save_error = ""
 
@@ -194,15 +209,14 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         file = RehucoFile.new()
         # the cache first: a file written and then reported as not created would be a stray on disk that
         # the next New prompts to overwrite
-        cache = self.__open_cache(file, path)
-        if cache is None:
+        session = self.__open_cache(file)
+        if session is None:
             return False
         try:
             file.save(path)
         except (OSError, ValueError) as error:
-            cache.close()
             return self.__fail(f"Could not create {path}: {error}")
-        return self.__adopt(file, cache)
+        return self.__adopt(file, session)
 
     def open_rehuco(self, path: Path) -> bool:
         """Open the ``.rehuco`` at ``path``, replacing the open one, and bring its cache in line with it.
@@ -215,8 +229,8 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
             file = RehucoFile.load(path)
         except (OSError, RehucoFileError) as error:
             return self.__fail(f"Could not open {path}: {error}")
-        cache = self.__open_cache(file, path)
-        return cache is not None and self.__adopt(file, cache)
+        session = self.__open_cache(file)
+        return session is not None and self.__adopt(file, session)
 
     def close_rehuco(self) -> None:
         """Close the open ``.rehuco`` and its cache. A no-op when none is open."""
@@ -250,41 +264,34 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         self.__load_error = message
         return False
 
-    def __open_cache(self, file: RehucoFile, path: Path) -> CatalogCache | None:
-        """Open ``file``'s cache, named by its rehuco id, and bring its roots in line with the file's.
+    def __open_cache(self, file: RehucoFile) -> CatalogSession | None:
+        """Open ``file``'s cache, named by its rehuco id, and bring its roots in line with the file's -- without
+        making it current, so a file that then fails to open leaves the current one as it was.
 
         :param file: the file whose cache to open.
-        :param path: where ``file`` lives or is about to be written, for the error message.
-        :returns: the open cache, or ``None`` with :attr:`load_error` saying why.
+        :returns: what the catalog is to read, or ``None`` with :attr:`load_error` saying why.
         """
         try:
-            cache = CatalogCache.open(rehudb_path(cache_folder(), file.rehuco_id))
-        except (OSError, sqlite3.Error) as error:
-            self.__fail(f"Could not open the cache of {path}: {error}")
+            return self.__catalog.prepare(rehudb_path(cache_folder(), file.rehuco_id), file.roots)
+        except CatalogUnreadable as error:
+            self.__fail(str(error))
             return None
-        try:
-            cache.reconcile_roots(file.roots)
-        except sqlite3.Error as error:
-            cache.close()
-            self.__fail(f"Could not read the cache of {path}: {error}")
-            return None
-        return cache
 
-    def __adopt(self, file: RehucoFile, cache: CatalogCache) -> bool:
-        """Make ``file`` and its open ``cache`` the current ones, releasing the previous pair.
+    def __adopt(self, file: RehucoFile, session: CatalogSession) -> bool:
+        """Make ``file`` and its cache's ``session`` the current ones, releasing the previous pair.
 
         The jobs still tracked are kept when the new file is the same catalog -- the same rehuco id, so the
         same cache -- which is what re-opening the open file from the recents is: its running scans still
         end in the cache now shown, and the rows must still be read again when they do.
 
         :param file: the file to show.
-        :param cache: its cache, open and reconciled.
+        :param session: its cache, reconciled.
         :returns: ``True``, for the callers that return this.
         """
         same_catalog = self.__file is not None and self.__file.rehuco_id == file.rehuco_id
         self.__release_session(keep_jobs=same_catalog)
         self.__file = file
-        self.__cache = cache
+        self.__catalog.attach(session)
         self.opened.emit(file)
         self.refreshed.emit()
         self.rehuco_path_changed.emit(file.path)
@@ -298,9 +305,7 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         """
         if self.__file is not None:
             self.closing.emit(self.__file)
-        if self.__cache is not None:
-            self.__cache.close()
-        self.__cache = None
+        self.__catalog.detach()
         self.__file = None
         if not keep_jobs:
             with self.__lock:
@@ -313,17 +318,16 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
     def rows(self, query: CatalogQuery, ids: set[int] | None = None) -> list[CatalogRow]:
         """The rows ``query`` matches under the roots the file lists.
 
+        The access seam's calls block, so the agent makes them from workers; this one is still made on the GUI thread,
+        until the browsers' loader (#455) moves it.
+
         :param query: a browser's query.
         :param ids: only these rows, for an update in place; every matching row when ``None``.
         :returns: the rows, in the cache's order; none while no catalog is open. A root removed from the file
             keeps its rows until its removal job has run, and they are not returned.
-        :raises sqlite3.Error: when the cache cannot be read.
+        :raises CatalogUnreadable: when the cache cannot be read.
         """
-        file, cache = self.__file, self.__cache
-        if file is None or cache is None:
-            return []
-        wanted = {root.root_id for root in file.roots}
-        return [row for row in cache.rows(query, ids=ids) if row.root_id in wanted]
+        return self.__catalog.query(query, ids=ids)
 
     def root_paths(self) -> dict[UUID, Path]:
         """Where each root of the open file is, by id; empty while none is open."""
@@ -357,15 +361,8 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         :returns: the type as the record spells it; ``None`` when the record is outside every root, or the cache has
             no row for it yet (it is read by the next scan) or cannot be read.
         """
-        cache = self.__cache
-        if cache is None:
-            return None
-        try:
-            location = cache.locate(record)
-            return None if location is None else cache.resource_type(location.root.root_id, location.relative)
-        except sqlite3.Error as error:
-            LOG.error("Could not read the type of %s from the cache: %s", record, error)
-            return None
+        row = self.__row(record)
+        return None if row is None else row.record.type
 
     def resource_uuid(self, record: Path) -> str | None:
         """The id the cache holds for a record, as an indexed lookup -- nothing is read from disk (#395).
@@ -374,14 +371,18 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         :returns: the id, ``""`` for a legacy record; ``None`` when the record is outside every root, or the cache has
             no row for it yet or cannot be read.
         """
-        cache = self.__cache
-        if cache is None:
-            return None
+        row = self.__row(record)
+        return None if row is None else row.record.uuid
+
+    def __row(self, record: Path) -> CatalogRow | None:
+        """The cache's row for a record -- an indexed lookup, on the GUI thread until #455.
+
+        :param record: the ``.rehu`` or ``.tc``, by its absolute path.
+        :returns: its row, or ``None``.
+        """
         try:
-            location = cache.locate(record)
-            return None if location is None else cache.resource_uuid(location.root.root_id, location.relative)
-        except sqlite3.Error as error:
-            LOG.error("Could not read the id of %s from the cache: %s", record, error)
+            return self.__catalog.row(self.__access.key_for_path(record))
+        except ValueError:  # a relative path is no record of any root
             return None
 
     def resource_count(self, root: RehucoRoot) -> int:
@@ -390,13 +391,7 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         :param root: one of the open file's roots.
         :returns: the count.
         """
-        if self.__cache is None:
-            return 0
-        try:
-            return self.__cache.resource_count(root.root_id)
-        except sqlite3.Error as error:
-            LOG.error("Could not count the cached entries of %s: %s", root.label, error)
-            return 0
+        return self.__catalog.count(root.root_id)
 
     # endregion
 
@@ -412,8 +407,8 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         :returns: whether it was saved; ``False`` with :attr:`save_error` saying why.
         """
         saved = self.__save_file()
-        if saved:
-            self.__reconcile_cache()
+        # a failed save reads the file back, so the cache follows what is on disk either way
+        self.__reconcile_cache()
         if self.__file is not None:
             self.refreshed.emit()
         return saved
@@ -424,13 +419,14 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         :param row: the root's place in the file.
         :returns: whether it was saved; ``False`` with :attr:`save_error` saying why.
         """
-        file, cache = self.__file, self.__cache
-        if file is None or cache is None or file.lock_reason is not None:
+        file, cache_path = self.__file, self.__catalog.cache_path
+        if file is None or cache_path is None or file.lock_reason is not None:
             return False
         removed = file.remove_root(row)
         saved = self.__save_file()
         if saved:
-            self.__enqueue(RemoveCatalogRootJob(cache.path, removed.root_id, root_label=removed.label), removed.path)
+            self.__catalog.hide(removed.root_id)
+            self.__enqueue(RemoveCatalogRootJob(cache_path, removed.root_id, root_label=removed.label), removed.path)
         if self.__file is not None:
             self.refreshed.emit()
         return saved
@@ -468,14 +464,10 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
             self.close_rehuco()
 
     def __reconcile_cache(self) -> None:
-        """Bring the cache's roots in line with the file's after an edit; a failure is logged, since the next
-        scan rebuilds the cache anyway."""
-        if self.__file is None or self.__cache is None:  # pragma: no cover  (only called with a file open)
-            return
-        try:
-            self.__cache.reconcile_roots(self.__file.roots)
-        except sqlite3.Error as error:
-            LOG.error("Could not update the cache of %s: %s", self.__file.path, error)
+        """Bring the cache's roots in line with the file's after an edit, and show those roots; a failure is
+        logged, since the next scan rebuilds the cache anyway."""
+        if self.__file is not None:
+            self.__catalog.reconcile(self.__file.roots)
 
     # endregion
 
@@ -484,13 +476,13 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
     def scan(self) -> None:
         """Enqueue one scan job per root, skipping a root whose scan is already waiting."""
         file = self.__file
-        cache = self.__cache
-        if file is None or cache is None:
+        cache_path = self.__catalog.cache_path
+        if file is None or cache_path is None:
             return
         for root in file.roots:
             self.__enqueue(
                 ScanCatalogRootJob(
-                    cache.path, root.root_id, root.path, root_label=root.label, coordinator=self.__rename_coordinator
+                    cache_path, root.root_id, root.path, root_label=root.label, coordinator=self.__rename_coordinator
                 ),
                 root.path,
             )
@@ -595,27 +587,29 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         :param paths: records' absolute paths; those that are no record, or under no root, are passed over.
         :param key: what the call is about -- a listed folder, an opened record -- for superseding.
         """
-        cache = self.__cache
-        if cache is None:
+        cache_path = self.__catalog.cache_path
+        if cache_path is None:
             return
-        try:
-            checks = CatalogRecordUpdater(cache, coordinator=self.__rename_coordinator).plan(paths)
-        except sqlite3.Error as error:
-            LOG.error("Could not read the cache of %s to verify records: %s", self.rehuco_path, error)
-            return
+        keys: list[ResourceKey] = []
+        for path in paths:
+            try:
+                keys.append(self.__access.key_for_path(path))
+            except ValueError:  # a relative path is no record of any root
+                continue
+        checks = self.__catalog.plan_verify(keys)
         if not checks:
             return
         serial = next(self.__verify_serials)
         with self.__lock:
             self.__latest_verify[key] = serial  # pylint: disable=unsupported-assignment-operation
-        QThreadPool.globalInstance().start(lambda: self.__run_verify(serial, key, cache, checks))
+        QThreadPool.globalInstance().start(lambda: self.__run_verify(serial, key, cache_path, checks))
 
-    def __run_verify(self, serial: int, key: Hashable, cache: CatalogCache, checks: list[RecordCheck]) -> None:
-        """Compare the records with the disk, on a pool thread, and answer; never touches ``cache`` itself.
+    def __run_verify(self, serial: int, key: Hashable, cache_path: Path, checks: list[RecordCheck]) -> None:
+        """Compare the records with the disk, on a pool thread, and answer; never touches the cache.
 
         :param serial: the call's serial.
         :param key: what the call is about.
-        :param cache: only handed back, to tell the answer which cache it was planned against.
+        :param cache_path: only handed back, to tell the answer which cache it was planned against.
         :param checks: what to compare.
         """
         with self.__lock:
@@ -627,17 +621,19 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
             LOG.exception("Could not verify %d records against the disk.", len(checks))
             checked = RecordsChecked([], {})
         try:
-            self.__verifier.answered.emit(serial, key, cache, checked)
+            self.__verifier.answered.emit(serial, key, cache_path, checked)
         except RuntimeError:  # the catalog was destroyed while the check was out
             pass
 
-    def __on_verified(self, serial: int, key: Hashable, cache: CatalogCache, checked: RecordsChecked) -> None:
+    def __on_verified(self, serial: int, key: Hashable, cache_path: Path, checked: RecordsChecked) -> None:
         """Say what the disk showed, and write what the cache did not know into it -- unless the check was superseded,
-        or the cache is not this one any more (GUI thread).
+        or the cache is not this one any more (GUI thread). The same ``.rehuco`` closed and opened again is the same
+        cache, so an answer planned before the close is still written: the updater drops any finding its row moved
+        past meanwhile.
 
         :param serial: the call's serial.
         :param key: what the call is about.
-        :param cache: the cache the check was planned against.
+        :param cache_path: the cache the check was planned against.
         :param checked: what the disk said.
         """
         with self.__lock:
@@ -647,16 +643,9 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         if checked.seen:
             self.files_seen.emit(checked.seen)
         findings = checked.findings
-        if cache is not self.__cache or not findings:
+        if cache_path != self.__catalog.cache_path or not findings:
             return
-        paths = [finding.check.path for finding in findings]
-        try:
-            affected = cache.resource_ids(paths)
-            changed = CatalogRecordUpdater(cache, coordinator=self.__rename_coordinator).apply(findings)
-            affected |= cache.resource_ids(paths)
-        except (OSError, sqlite3.Error) as error:
-            LOG.error("Could not update the cache of %s: %s", self.rehuco_path, error)
-            return
+        affected, changed = self.__catalog.apply_verify(findings)
         if changed:
             self.rows_changed.emit(affected)
             self.records_verified.emit(changed)
@@ -684,12 +673,13 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         signatures: dict[Path, tuple[int, int]] = {}
         try:
             for path in paths:
-                with self.__rename_coordinator.holding():
-                    try:
-                        stat = path.stat()
-                    except OSError:
-                        continue
-                signatures[path] = (stat.st_mtime_ns, stat.st_size)
+                try:
+                    key = self.__access.key_for_path(path)
+                    signature = self.__access.for_key(key).records.signature(key)
+                except ValueError, NodeUnreachable:  # a relative path, or a node that cannot be reached
+                    continue
+                if signature is not None:
+                    signatures[path] = signature
         except Exception:  # pylint: disable=broad-exception-caught  # the pool swallows what escapes: no answer would come
             LOG.exception("Could not read the state of %d files.", len(paths))
         try:
@@ -729,18 +719,9 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
 
         :param moved_keys: the rename's executed plan.
         """
-        cache = self.__cache
-        relocation = moved_keys.to_local()
-        if cache is None or not relocation.pairs:
-            return
-        try:
-            # the rows moving, and any stale one at a destination the rebase drops; they keep their ids
-            affected = cache.resource_ids([path for pair in relocation.pairs for path in pair])
-            moved = cache.apply_relocation(relocation.pairs)
-        except sqlite3.Error as error:
-            LOG.error("Could not follow a rename in the cache of %s: %s", self.rehuco_path, error)
-            return
-        if moved:
+        # the rows moving, and any stale one at a destination the rebase drops; they keep their ids
+        affected = self.__catalog.follow(moved_keys)
+        if affected:
             self.rows_changed.emit(affected)
 
     def __on_files_changed(self, keys: tuple[ResourceKey, ...]) -> None:
@@ -751,23 +732,8 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
 
         :param keys: the files written or replaced.
         """
-        cache = self.__cache
-        paths = tuple(key.path for key in keys if isinstance(key, LocalKey))
-        if cache is None or not paths:
-            return
-
-        updater = CatalogRecordUpdater(cache, coordinator=self.__rename_coordinator)
-        changed = False
-        affected: set[int] = set()
-        try:
-            # asked before, for a row the write removes; and after, for a row it adds or a converted .tc's it took over
-            affected = cache.resource_ids(paths)
-            for path in paths:
-                changed = updater.upsert(path) or changed
-            affected |= cache.resource_ids(paths)
-        except (OSError, sqlite3.Error) as error:
-            LOG.error("Could not update the cache of %s: %s", self.rehuco_path, error)
-        if changed:
+        affected = self.__catalog.refresh(keys)
+        if affected:
             self.rows_changed.emit(affected)
 
     # endregion

@@ -372,7 +372,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__rename_coordinator: Final = DEFAULT_RENAME_COORDINATOR
         # how every resource is reached ([[nodes#access-seam]]): this machine's own files today, and every path that
         # enters the app becomes a key through it; its change feed is what the app-wide announcements adapt
-        self.__access: Final = AccessRouter(LocalAccess())
+        self.__access: Final = AccessRouter(LocalAccess(coordinator=self.__rename_coordinator))
         self.__resource_events: Final = ResourceEvents(self.__access.local.changes, self)
         self.__resource_events.moved.connect(self.__on_resources_moved)
         self.__rename_coordinator.add_rename_listener(self.__resource_events.announce_moved)
@@ -408,6 +408,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             self,
             rename_coordinator=self.__rename_coordinator,
             resource_events=self.__resource_events,
+            access=self.__access,
         )
         self.__roots_panel: Final = RootsPanel(
             self.__root_catalog,

@@ -191,6 +191,7 @@ matches Qt's `QLocalServer`/single-application approach.)
 - [#409: docs: access seam, owning-node rule, views, node hosting and instances](https://github.com/borco/rehuco/issues/409)
 - [#413: refactor(core): resource keys, key relocation, an access router and a change feed](https://github.com/borco/rehuco/issues/413)
 - [#416: refactor: records through the access seam — load, save with a version check, revert, convert](https://github.com/borco/rehuco/issues/416)
+- [#417: refactor: the Root Catalog through the access seam — roots, queries, rows](https://github.com/borco/rehuco/issues/417)
 
 Some roots are reachable only through the node that owns them — a disk on another box, or a share only that box
 mounts. To make their resources behave like local ones — browsed, viewed, played and edited from the agent — every
@@ -225,6 +226,15 @@ row) — plus **capabilities** (a local path, reveal, the Recycle Bin, legacy co
 by, and a Qt-free **change feed**. There is no generic `open`: heavy work — checksums, measuring, scans, copies — is a
 **job** that runs on the node that owns the files, in that node's own task queue, and the agent only shows its
 progress. Reading one image or archive member is a single call returning bytes.
+
+**The catalog group reads; its owner keeps it current.** `CatalogOps` answers what a client asks of a catalog —
+`roots()`, `query(CatalogQuery)`, `row(key)`, and `count(root)` for Remove Root's question. The two listings raise
+`CatalogUnreadable` where a local cache would raise `sqlite3.Error`, so no caller catches a driver's exception; a
+row or a count that cannot be read answers nothing, logged. How
+a cache is opened, reconciled to the `.rehuco`'s roots and followed through renames and saves is the local
+implementation's own (`LocalCatalog`): a node does it to its cache, and a client of that node never does. Each
+local call opens the cache for its own duration on the calling thread, so any worker may call it. Scans and
+removing a root's rows are jobs (#427), not part of this group.
 
 **Saving is a read-merge-write with a version check.**
 

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Final
 
 from .keys import LocalKey, NodeKey, ResourceKey
+from .local_access import LocalAccess
 from .resource_access import ResourceAccess
 
 
@@ -28,12 +29,13 @@ class AccessRouter:
     :param local: the implementation for resources this machine reaches itself.
     """
 
-    def __init__(self, local: ResourceAccess) -> None:
+    def __init__(self, local: LocalAccess) -> None:
         self.__local: Final = local
 
     @property
-    def local(self) -> ResourceAccess:
-        """The implementation for resources this machine reaches itself -- whose change feed the agent adapts."""
+    def local(self) -> LocalAccess:
+        """The implementation for resources this machine reaches itself -- whose change feed the agent adapts, and
+        whose catalog it attaches the open ``.rehuco``'s cache to."""
         return self.__local
 
     def key_for_path(self, path: Path) -> ResourceKey:

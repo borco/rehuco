@@ -2,8 +2,10 @@
 
 from typing import Final, override
 
+from ..rename_coordination import DEFAULT_RENAME_COORDINATOR, RenameCoordinator
 from .change_feed import ChangeFeed
 from .keys import LocalKey, ResourceKey
+from .local_catalog import LocalCatalog
 from .local_records import LocalRecords
 from .resource_access import Capability, ResourceAccess
 
@@ -16,11 +18,15 @@ class LocalAccess(ResourceAccess):
     """The :class:`~rehuco_core.access.ResourceAccess` over :class:`~rehuco_core.access.LocalKey` objects.
 
     :param changes: where every change it makes is announced; a new feed when not given.
+    :param coordinator: the rename barrier its reads of files go through.
     """
 
-    def __init__(self, changes: ChangeFeed | None = None) -> None:
+    def __init__(
+        self, changes: ChangeFeed | None = None, *, coordinator: RenameCoordinator = DEFAULT_RENAME_COORDINATOR
+    ) -> None:
         self.__changes: Final = changes if changes is not None else ChangeFeed()
-        self.__records: Final = LocalRecords(self.__changes)
+        self.__records: Final = LocalRecords(self.__changes, coordinator)
+        self.__catalog: Final = LocalCatalog(coordinator)
 
     @property
     @override
@@ -33,6 +39,12 @@ class LocalAccess(ResourceAccess):
     def records(self) -> LocalRecords:
         """Records on this machine's filesystem."""
         return self.__records
+
+    @property
+    @override
+    def catalog(self) -> LocalCatalog:
+        """The Root Catalog read from this machine's cache."""
+        return self.__catalog
 
     @override
     def capabilities(self, key: ResourceKey) -> frozenset[Capability]:

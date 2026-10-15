@@ -21,9 +21,6 @@ from rehuco_agent_tests.resource_io_sites import compare_with_allowed, scan_fold
 AGENT_DIR: Final = Path(rehuco_agent.__file__).parent
 
 TO_MIGRATE: Final = {
-    # CatalogOps (#417)
-    "rehuco/add_root_dialog.py::AddRootDialog.__browse::.is_dir": 1,
-    "rehuco/root_catalog.py::RootCatalog.__run_stat::.stat": 1,
     # Catalog scans as jobs (#427)
     "rehuco/root_catalog.py::RootCatalog.remove_root::rehuco_core.RemoveCatalogRootJob": 1,
     "rehuco/root_catalog.py::RootCatalog.scan::rehuco_core.ScanCatalogRootJob": 1,

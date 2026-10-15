@@ -28,6 +28,13 @@ Changelogs are per package in this monorepo, matching the per-package release ta
   scope and `public` only. `record_differences` lists what an edited document and the file disagree on -- the
   metadata and the caller's own per-user fields, each with its original value -- and `put_paths` puts the values
   kept. A legacy `.tc` is never saved over.
+- The Root Catalog through the access seam: `LocalAccess.catalog` (`LocalCatalog`) answers `roots()`,
+  `query(CatalogQuery)`, `row(key)` and `count(root_id)` over a `.rehudb`, each call opening the cache on its own
+  thread, and raises `CatalogUnreadable` for a cache it cannot read. `LocalCatalog` also keeps the cache current:
+  `prepare` and `attach` for the open `.rehuco`, `reconcile` and `hide` for an edit of its roots, `follow` for a
+  rename, `refresh` for records the app wrote, and `plan_verify` / `apply_verify` for verify-on-access.
+  `RecordOps.signature(key)` answers a record's modification time and size under the rename hold, and
+  `LocalAccess` takes the `RenameCoordinator` that stat and the catalog's record re-reads go through.
 - `app_folders()` answers where the agent and the node keep their files without Qt: one `borco/rehuco` folder on
   Windows (`%LOCALAPPDATA%`) and macOS, the XDG config / data / cache split on Linux. `default_username()` is the OS
   login name, or `admin` when the platform has none.
@@ -76,8 +83,9 @@ Changelogs are per package in this monorepo, matching the per-package release ta
   `plan` reads the rows' signatures, `check_records` (any thread, never the cache) compares them with the files and
   reads what changed, and `apply` writes the findings back, dropping one whose row a save or a scan rewrote, or whose
   record a rename moved, in the meantime. What `check_records` returns, `RecordsChecked`, also gives every record's
-  modification time and size as it saw them, changed or not, for whatever shows a record to compare with what it read. `CatalogCache.locate` takes the roots when the caller has them, so planning
-  many records asks the database once.
+  modification time and size as it saw them, changed or not, for whatever shows a record to compare with what it
+  read. `CatalogCache.locate` takes the roots when the caller has them, so planning many records asks the database
+  once.
 - `staged_name` names an image taken out of a resource `rehu-<origin>__<path segments joined by __>`, safe on Windows
   and macOS and capped at 200 UTF-8 bytes without shortening an id or the basename's extension; `parse_staged_name`
   reads the origin and the path back as `StagedImageName`, whose `uuid` tells an id from a location. `staging_origin`
@@ -89,8 +97,9 @@ Changelogs are per package in this monorepo, matching the per-package release ta
   methods are slow (bzip2, LZMA) or beyond `zipfile` (deflate64, encryption). `list_archive_images` lists one
   archive's content images in pack order, the listing the content-image scanner now shares. `CatalogCache.resource_type`
   is an indexed lookup of a record's type by root and relative path.
-- `RootFolderLister` also reads the checksum record that covers a listed file -- a same-stem `foo.checksum`, the folder's
-  `info.checksum`, or the one a caller names above it (`covering=`) -- and returns, as `DirectoryListing.covered`, what
+- `RootFolderLister` also reads the checksum record that covers a listed file -- a same-stem `foo.checksum`, the
+  folder's `info.checksum`, or the one a caller names above it (`covering=`) -- and returns, as
+  `DirectoryListing.covered`, what
   each covered file's entry says (`CoveredFile`), under the same hold as the listing. `DirectoryClassifier.reclassify`
   names an already-read listing for another record without a second `scandir`.
 - A task-queue job that satisfies `ReportingTaskJob` says what it found in one line: `JobOutcome(summary, clean)`, kept
@@ -109,8 +118,9 @@ Changelogs are per package in this monorepo, matching the per-package release ta
   modification time and content hash. It also holds the type-specific fields: a tutorial's three durations and
   its levels, and a reference pack's claimed and measured image counts. `catalog_type_fields` names the ones a
   type contributes, and a scan fills only those. Each row also records its file's format version: a `.rehu`'s
-  own `format_version` (`0` when unstamped), none for a legacy `.tc` or a record that could not be read. The schema is versioned through `PRAGMA user_version` and upgraded
-  forward only. A cache newer than the build, or a file that is not a database, is discarded and rebuilt.
+  own `format_version` (`0` when unstamped), none for a legacy `.tc` or a record that could not be read. The
+  schema is versioned through `PRAGMA user_version` and upgraded forward only. A cache newer than the build, or a
+  file that is not a database, is discarded and rebuilt.
   Reconciling against a `.rehuco` keeps a relabeled or re-pointed root's rows. Removing a root deletes its
   rows and frees their space. Rows can be read whole or narrowed by free text and `folder`, `authors`,
   `tags`, `publishers` and `type` tokens, each token driven from an index rather than a scan: a value token
@@ -127,9 +137,10 @@ Changelogs are per package in this monorepo, matching the per-package release ta
   row count. It still lists every folder, so a record nested inside a tutorial is found like any other.
 - Single-record cache updates between scans. `CatalogRecordUpdater.upsert` re-reads one record after a save or a
   conversion, and a converted `.rehu` takes over its `.tc`'s row. `CatalogRecordUpdater.verify` re-reads a record
-  whose file no longer matches its row. `CatalogCache.remove` drops a deleted record's row. `CatalogCache.apply_relocation`
-  applies a rename's executed plan (`RehuRenamer.executed`) without reading anything: a renamed folder rebases every
-  row beneath it, a file-scoped rename only its own. A record missing under an offline root keeps its row.
+  whose file no longer matches its row. `CatalogCache.remove` drops a deleted record's row.
+  `CatalogCache.apply_relocation` applies a rename's executed plan (`RehuRenamer.executed`) without reading anything:
+  a renamed folder rebases every row beneath it, a file-scoped rename only its own. A record missing under an offline
+  root keeps its row.
   `CatalogCache.resource_ids` names the rows at or beneath some paths, and `CatalogCache.rows(query, ids=...)`
   reads just those rows through a query, so a view can follow a change without reading everything again.
 - `CatalogScanner.walk()` yields one listing at a time. Given a coordinator, it lists each directory under

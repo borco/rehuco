@@ -309,9 +309,9 @@ def test_the_catalog_says_a_records_type_from_its_cache_row(
     assert dock.catalog.resource_type(TUTORIALS / "other" / "info.rehu") is None
     assert dock.catalog.resource_type(Path("/elsewhere/info.rehu")) is None
 
-    mocker.patch.object(CatalogCache, "resource_type", side_effect=sqlite3.OperationalError("locked"))
+    mocker.patch.object(CatalogCache, "rows", side_effect=sqlite3.OperationalError("locked"))
     assert dock.catalog.resource_type(record) is None
-    assert "Could not read the type of" in caplog.text
+    assert "Could not read the row of" in caplog.text
 
 
 @mark.usefixtures("served")
@@ -340,9 +340,9 @@ def test_the_catalog_says_a_records_id_from_its_cache_row(
     assert dock.catalog.resource_uuid(TUTORIALS / "other" / "info.rehu") is None
     assert dock.catalog.resource_uuid(Path("/elsewhere/info.rehu")) is None
 
-    mocker.patch.object(CatalogCache, "resource_uuid", side_effect=sqlite3.OperationalError("locked"))
+    mocker.patch.object(CatalogCache, "rows", side_effect=sqlite3.OperationalError("locked"))
     assert dock.catalog.resource_uuid(record) is None
-    assert "Could not read the id of" in caplog.text
+    assert "Could not read the row of" in caplog.text
 
 
 @mark.usefixtures("served")

@@ -8,6 +8,7 @@ from ..record_merge import record_lock
 from ..record_versions import RecordVersion, merge_users, record_version, same_details
 from ..rehu_document import RehuDocument, RehuFormatError
 from ..rehu_screenshot_ordering import Deleter
+from ..rename_coordination import DEFAULT_RENAME_COORDINATOR, RenameCoordinator
 from ..tc_conversion import convert_tc
 from ..tc_document import load_tc
 from ..tc_screenshots import ScreenshotNamePattern
@@ -29,10 +30,12 @@ class LocalRecords(RecordOps):
     progress write takes too, so the two never interleave.
 
     :param changes: where every write is announced.
+    :param coordinator: the rename barrier :meth:`signature` looks under, so it never blocks a rename.
     """
 
-    def __init__(self, changes: ChangeFeed) -> None:
+    def __init__(self, changes: ChangeFeed, coordinator: RenameCoordinator = DEFAULT_RENAME_COORDINATOR) -> None:
         self.__changes: Final = changes
+        self.__coordinator: Final = coordinator
 
     @override
     def load(self, key: ResourceKey, *, username: str, unknown_username: str) -> LoadedRecord:
@@ -162,6 +165,18 @@ class LocalRecords(RecordOps):
         target_key = LocalKey(target)
         self.__changes.publish(Changed((target_key, key)))
         return self.load(target_key, username=username, unknown_username=username)
+
+    @override
+    def signature(self, key: ResourceKey) -> FileSignature | None:
+        """A record's modification time and size now, looked at under the rename hold.
+
+        :param key: the record.
+        :returns: its signature; ``None`` when it cannot be stat'ed.
+        :raises TypeError: for a key this machine does not reach.
+        """
+        path = self.__path(key)
+        with self.__coordinator.holding():
+            return self.__signature(path)
 
     @staticmethod
     def __path(key: ResourceKey) -> Path:

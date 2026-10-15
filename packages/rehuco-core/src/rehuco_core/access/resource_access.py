@@ -6,16 +6,19 @@ is built from small **operation groups**, each declared here and filled by the i
 nothing. Every call blocks -- a remote one is a network round trip -- so the agent makes them only from workers.
 """
 
+from collections.abc import Collection
 from enum import StrEnum
 from typing import Protocol
+from uuid import UUID
 
 from ..record_versions import RecordVersion
 from ..rehu_document import RehuDocument
 from ..rehu_screenshot_ordering import Deleter
+from ..rehudb import CatalogQuery, CatalogRoot, CatalogRow
 from ..tc_screenshots import ScreenshotNamePattern
 from .change_feed import ChangeFeed
 from .keys import ResourceKey
-from .record_ops import LoadedRecord, SavedRecord
+from .record_ops import FileSignature, LoadedRecord, SavedRecord
 
 
 class Capability(StrEnum):
@@ -109,9 +112,54 @@ class RecordOps(Protocol):
         :raises OSError: the conversion failed, and was undone.
         """
 
+    def signature(self, key: ResourceKey) -> FileSignature | None:  # pyright: ignore[reportReturnType]
+        """A record's modification time and size now, which a later look is compared with to see a change made
+        outside the app ([[mounts-and-storage#out-of-band]]).
 
-class CatalogOps(Protocol):  # pylint: disable=too-few-public-methods
-    """The Root Catalog: roots, query, one row (#417)."""
+        :param key: the record.
+        :returns: its signature; ``None`` when it cannot be reached.
+        :raises TypeError: for a key this implementation does not reach.
+        """
+
+
+class CatalogOps(Protocol):
+    """The Root Catalog: its roots, a query over its rows, one row, a root's size (#417). What a client reads of a
+    catalog, local or another node's; scanning it belongs to the jobs (#427)."""
+
+    def roots(self) -> tuple[CatalogRoot, ...]:  # pyright: ignore[reportReturnType]
+        """The roots of the catalog, in its order.
+
+        :returns: the roots, with whether they were reachable at the last scan and when it ran.
+        :raises CatalogUnreadable: when the catalog cannot be read.
+        """
+
+    def query(
+        self,
+        query: CatalogQuery,
+        *,
+        ids: Collection[int] | None = None,
+    ) -> list[CatalogRow]:  # pyright: ignore[reportReturnType]
+        """The rows a browser's query matches.
+
+        :param query: what to match.
+        :param ids: only these rows, for an update in place; every matching row when ``None``.
+        :returns: the rows, in root order and then by path.
+        :raises CatalogUnreadable: when the catalog cannot be read.
+        """
+
+    def row(self, key: ResourceKey) -> CatalogRow | None:  # pyright: ignore[reportReturnType]
+        """One resource's row, as an indexed lookup -- nothing is read from the resource.
+
+        :param key: the record.
+        :returns: its row; ``None`` when the catalog has none for it, or cannot be read.
+        """
+
+    def count(self, root_id: UUID) -> int:  # pyright: ignore[reportReturnType]
+        """How many resources the catalog lists under a root -- what removing it would drop.
+
+        :param root_id: the root.
+        :returns: the count; ``0`` when it cannot be read.
+        """
 
 
 class FileOps(Protocol):  # pylint: disable=too-few-public-methods
@@ -143,7 +191,11 @@ class ResourceAccess(Protocol):
 
     @property
     def records(self) -> RecordOps:  # pyright: ignore[reportReturnType]
-        """Records: load, save, the text as stored, legacy conversion."""
+        """Records: load, save, the text as stored, legacy conversion, the file's signature."""
+
+    @property
+    def catalog(self) -> CatalogOps:  # pyright: ignore[reportReturnType]
+        """The Root Catalog: roots, query, one row, a root's size."""
 
     def capabilities(self, key: ResourceKey) -> frozenset[Capability]:  # pyright: ignore[reportReturnType]
         """What can be done for ``key`` beyond the operation groups.

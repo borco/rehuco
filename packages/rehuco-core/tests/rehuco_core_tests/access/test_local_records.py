@@ -6,6 +6,7 @@ import json
 import logging
 from pathlib import Path
 from typing import Any, Final
+from unittest.mock import MagicMock
 from uuid import UUID
 
 import pytest
@@ -741,6 +742,34 @@ def test_a_node_key_is_out_of_local_reach(tmp_path: Path) -> None:
             screenshot_name_patterns=SCREENSHOT_NAME_PATTERNS,
             deleter=DEFAULT_DELETER,
         )
+
+
+# endregion
+
+
+# region The signature
+
+
+def test_a_records_signature_is_its_time_and_size_looked_at_under_the_rename_hold(tmp_path: Path) -> None:
+    """What a later look is compared with: the file's modification time and size, each read inside the rename
+    coordinator's hold so it never blocks a rename; nothing for a file that is gone (#417).
+
+    **Test steps:**
+
+    * build records over a coordinator that notes each hold, and write a record
+    * verify its signature is its stat's time and size, a missing file answers nothing, each look took the hold once,
+      and a node's key is out of reach
+    """
+    coordinator = MagicMock()
+    records = LocalRecords(ChangeFeed(), coordinator)
+    key = write_record(tmp_path / "info.rehu", tutorial_data())
+    stat = key.path.stat()
+
+    assert records.signature(key) == (stat.st_mtime_ns, stat.st_size)
+    assert records.signature(LocalKey(tmp_path / "gone.rehu")) is None
+    assert coordinator.holding.call_count == 2
+    with pytest.raises(TypeError):
+        records.signature(NODE_KEY)
 
 
 # endregion
