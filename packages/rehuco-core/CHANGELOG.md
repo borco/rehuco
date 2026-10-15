@@ -28,6 +28,13 @@ Changelogs are per package in this monorepo, matching the per-package release ta
   scope and `public` only. `record_differences` lists what an edited document and the file disagree on -- the
   metadata and the caller's own per-user fields, each with its original value -- and `put_paths` puts the values
   kept. A legacy `.tc` is never saved over.
+- The Root Catalog through the access seam: `LocalAccess.catalog` (`LocalCatalog`) answers `roots()`,
+  `query(CatalogQuery)`, `row(key)` and `count(root_id)` over a `.rehudb`, each call opening the cache on its own
+  thread, and raises `CatalogUnreadable` for a cache it cannot read. `LocalCatalog` also keeps the cache current:
+  `prepare` and `attach` for the open `.rehuco`, `reconcile` and `hide` for an edit of its roots, `follow` for a
+  rename, `refresh` for records the app wrote, and `plan_verify` / `apply_verify` for verify-on-access.
+  `RecordOps.signature(key)` answers a record's modification time and size under the rename hold, and
+  `LocalAccess` takes the `RenameCoordinator` that stat and the catalog's record re-reads go through.
 - `app_folders()` answers where the agent and the node keep their files without Qt: one `borco/rehuco` folder on
   Windows (`%LOCALAPPDATA%`) and macOS, the XDG config / data / cache split on Linux. `default_username()` is the OS
   login name, or `admin` when the platform has none.
@@ -109,8 +116,9 @@ Changelogs are per package in this monorepo, matching the per-package release ta
   modification time and content hash. It also holds the type-specific fields: a tutorial's three durations and
   its levels, and a reference pack's claimed and measured image counts. `catalog_type_fields` names the ones a
   type contributes, and a scan fills only those. Each row also records its file's format version: a `.rehu`'s
-  own `format_version` (`0` when unstamped), none for a legacy `.tc` or a record that could not be read. The schema is versioned through `PRAGMA user_version` and upgraded
-  forward only. A cache newer than the build, or a file that is not a database, is discarded and rebuilt.
+  own `format_version` (`0` when unstamped), none for a legacy `.tc` or a record that could not be read. The
+  schema is versioned through `PRAGMA user_version` and upgraded forward only. A cache newer than the build, or a
+  file that is not a database, is discarded and rebuilt.
   Reconciling against a `.rehuco` keeps a relabeled or re-pointed root's rows. Removing a root deletes its
   rows and frees their space. Rows can be read whole or narrowed by free text and `folder`, `authors`,
   `tags`, `publishers` and `type` tokens, each token driven from an index rather than a scan: a value token
