@@ -10,10 +10,15 @@ can drift.
 row's searchable text into a :class:`CatalogSearchKey`, and :meth:`CatalogSnapshot.patched` brings a snapshot up to
 date after a few rows changed. Both are meant for a worker; :meth:`CatalogSnapshot.select` is meant for the GUI
 thread, per keystroke.
+
+**A key adds one object the cyclic collector tracks, and no more** (#500): it holds its row, so nothing pairs the
+two, and its names are tuples of strings, which Python never tracks. A read's rows are walked by the collector's first
+pass once it is back on (:meth:`~rehuco_agent.rehuco.catalog_rows_loader.CatalogRowsLoader.collector_paused`), holding
+the GIL, so every tracked object a row makes is a stall on the GUI thread.
 """
 
 import string
-from collections.abc import Collection, Iterable, KeysView, Sequence
+from collections.abc import Collection, Iterable, KeysView
 from dataclasses import dataclass
 from operator import attrgetter
 from typing import Final
@@ -30,26 +35,29 @@ ASCII_LOWER: Final = str.maketrans(string.ascii_uppercase, string.ascii_lowercas
 # one field per thing a query compares, so a match reads each without a lookup
 @dataclass(frozen=True, slots=True)
 class CatalogSearchKey:  # pylint: disable=too-many-instance-attributes
-    """One row's text as a query compares it, folded once.
+    """One row's text as a query compares it, folded once, with the row it was folded from.
 
+    :param row: the row.
     :param title: the title, folded (:func:`borco_core.fold`) and then ASCII-lowered, as ``LIKE`` compares it.
     :param path: the root-relative path, the same way.
     :param type: the type, ASCII-lowered, as ``NOCASE`` compares it.
     :param label: the root's label, the same way.
     :param path_key: the path as the filesystem compares it (:func:`~rehuco_core.catalog_path_key`).
-    :param authors: every author, folded.
+    :param authors: every author, folded -- a tuple, not a set: the collector tracks every set, never a tuple of
+        strings, and a record names a few.
     :param tags: every tag, folded.
     :param publishers: every publisher, folded.
     """
 
+    row: CatalogRow
     title: str
     path: str
     type: str
     label: str
     path_key: str
-    authors: frozenset[str]
-    tags: frozenset[str]
-    publishers: frozenset[str]
+    authors: tuple[str, ...]
+    tags: tuple[str, ...]
+    publishers: tuple[str, ...]
 
     @classmethod
     def of(cls, row: CatalogRow) -> CatalogSearchKey:
@@ -60,14 +68,15 @@ class CatalogSearchKey:  # pylint: disable=too-many-instance-attributes
         """
         record = row.record
         return cls(
+            row,
             fold(record.title).translate(ASCII_LOWER),
             fold(record.path).translate(ASCII_LOWER),
             record.type.translate(ASCII_LOWER),
             row.root_label.translate(ASCII_LOWER),
             catalog_path_key(record.path),
-            frozenset(fold(name) for name in record.authors),
-            frozenset(fold(name) for name in record.tags),
-            frozenset(fold(name) for name in record.publishers),
+            tuple(fold(name) for name in record.authors),
+            tuple(fold(name) for name in record.tags),
+            tuple(fold(name) for name in record.publishers),
         )
 
 
@@ -104,24 +113,24 @@ class CatalogMatcher:
         :param key: the row's key.
         :returns: whether it does.
         """
-        return bool(self.pick([(True, key)]))
+        return bool(self.pick((key,)))
 
-    def pick[T](self, entries: Iterable[tuple[T, CatalogSearchKey]]) -> list[T]:
-        """What of ``entries`` the query matches, in their order.
+    def pick(self, keys: Iterable[CatalogSearchKey]) -> list[CatalogRow]:
+        """The rows of ``keys`` the query matches, in their order.
 
-        :param entries: each item with its row's key.
-        :returns: the matching items.
+        :param keys: the rows' keys.
+        :returns: the matching rows.
         """
-        picked = list(entries)
+        picked = list(keys)
         for term in self.__terms:
-            picked = [entry for entry in picked if term in entry[1].title or term in entry[1].path]
+            picked = [key for key in picked if term in key.title or term in key.path]
         for value in self.__types:
-            picked = [entry for entry in picked if entry[1].type == value]
+            picked = [key for key in picked if key.type == value]
         for names, value in self.__values:
-            picked = [entry for entry in picked if value in names(entry[1])]
+            picked = [key for key in picked if value in names(key)]
         for ranges in self.__folders:
-            picked = [entry for entry in picked if self.__in_folder(entry[1], ranges)]
-        return [item for item, _key in picked]
+            picked = [key for key in picked if self.__in_folder(key, ranges)]
+        return [key.row for key in picked]
 
     @staticmethod
     def __folder_ranges(value: str) -> tuple[tuple[str, str | None], ...]:
@@ -159,14 +168,13 @@ class CatalogSnapshot:
     Never changed once built: a change makes a new snapshot (:meth:`patched`), so a worker can build the next one while
     the GUI thread still selects from this one.
 
-    :param rows: the rows, in the cache's order.
-    :param keys: each row's key, in the same order.
+    :param keys: every row's key, in the cache's order.
     :param root_ids: the roots' ids in the roots' order, which places a row a patch adds where the cache would.
     """
 
-    def __init__(self, rows: Sequence[CatalogRow], keys: Sequence[CatalogSearchKey], root_ids: Iterable[UUID]) -> None:
-        self.__rows: Final = tuple(rows)
-        self.__entries: Final = tuple(zip(self.__rows, keys, strict=True))
+    def __init__(self, keys: Iterable[CatalogSearchKey], root_ids: Iterable[UUID]) -> None:
+        self.__keys: Final = tuple(keys)
+        self.__rows: Final = tuple(key.row for key in self.__keys)
         self.__root_ids: Final = tuple(root_ids)
         self.__positions: Final = {row.resource_id: position for position, row in enumerate(self.__rows)}
 
@@ -178,8 +186,7 @@ class CatalogSnapshot:
         :param root_ids: the roots' ids, in the roots' order.
         :returns: the snapshot.
         """
-        listed = tuple(rows)
-        return cls(listed, [CatalogSearchKey.of(row) for row in listed], root_ids)
+        return cls((CatalogSearchKey.of(row) for row in rows), root_ids)
 
     @property
     def rows(self) -> tuple[CatalogRow, ...]:
@@ -209,9 +216,9 @@ class CatalogSnapshot:
         """
         matcher = CatalogMatcher(query)
         if ids is None:
-            return matcher.pick(self.__entries)
+            return matcher.pick(self.__keys)
         positions = sorted(self.__positions[resource_id] for resource_id in ids if resource_id in self.__positions)
-        return matcher.pick(self.__entries[position] for position in positions)
+        return matcher.pick(self.__keys[position] for position in positions)
 
     def patched(self, affected: Collection[int], fresh: Iterable[CatalogRow]) -> CatalogSnapshot:
         """This snapshot after a change touched ``affected`` rows -- meant for a worker, since it copies every row.
@@ -223,9 +230,9 @@ class CatalogSnapshot:
         """
         changed = {row.resource_id: row for row in fresh}
         gone = set(affected) | changed.keys()
-        kept = [entry for entry in self.__entries if entry[0].resource_id not in gone]
-        kept += [(row, CatalogSearchKey.of(row)) for row in changed.values()]
+        kept = [key for key in self.__keys if key.row.resource_id not in gone]
+        kept += [CatalogSearchKey.of(row) for row in changed.values()]
         positions = {root_id: position for position, root_id in enumerate(self.__root_ids)}
         # mostly sorted already, which the sort runs through in near-linear time
-        kept.sort(key=lambda pair: (positions.get(pair[0].root_id, len(positions)), pair[1].path_key))
-        return CatalogSnapshot([row for row, _key in kept], [key for _row, key in kept], self.__root_ids)
+        kept.sort(key=lambda key: (positions.get(key.row.root_id, len(positions)), key.path_key))
+        return CatalogSnapshot(kept, self.__root_ids)
