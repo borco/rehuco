@@ -19,13 +19,14 @@ from borco_pyside.theming import ActionIconThemeHandler
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QInputDialog, QMainWindow, QMenu, QWidget
-from rehuco_core import CatalogField, CatalogQuery, CatalogRow, CatalogUnreadable, RehucoFile
+from rehuco_core import CatalogField, CatalogQuery, CatalogRow, RehucoFile
 
 from ..dock_maximize import attach_maximize_handler
 from ..filter_urls import filter_url_token
 from ..glyphs import TAB_CLOSE_GLYPH
 from ..settings.catalog_state_store import BrowserState, CatalogState, CatalogStateStore
 from .browser_presets import DEFAULT_PRESET, BrowserPreset, browser_presets
+from .catalog_rows_loader import CatalogRowsLoad, CatalogRowsLoader
 from .catalog_table_model import RowKey
 from .root_catalog import RootCatalog
 from .table_browser import TableBrowser
@@ -50,6 +51,13 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
     catalog opens a file and written when it lets one go (:attr:`~.root_catalog.RootCatalog.closing`).
     ``rehuco-core`` and the ``.rehuco`` know nothing of them. A catalog with none saved opens with one default
     browser.
+
+    **The rows are read off the GUI thread and filtered in memory** (#455): a
+    :class:`~.catalog_rows_loader.CatalogRowsLoader` reads every row when the catalog
+    :attr:`~.root_catalog.RootCatalog.refreshed` and the few a change touched when it says which
+    (:attr:`~.root_catalog.RootCatalog.rows_changed`), and each browser picks what its query matches from the one
+    snapshot -- at once when its filter changes, and when a read lands. Until one lands, every browser keeps the rows
+    it shows.
 
     :param catalog: the open catalog, whose rows every browser reads.
     :param parent: optional Qt parent.
@@ -83,6 +91,8 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
         self.__browsers: Final[dict[QtAds.CDockWidget, TableBrowser]] = {}
         """Every browser's dock, in the order the browsers were added."""
+        self.__loader: Final = CatalogRowsLoader(catalog.rows, self)
+        self.__loader.loaded.connect(self.__on_loaded)
 
         self.__dock_manager: Final = QtAds.CDockManager(self)
         self.__focus_tracker: Final = QtAdsFocusTracker(
@@ -132,6 +142,11 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
     def browsers(self) -> tuple[TableBrowser, ...]:
         """Every browser, in the order they were added."""
         return tuple(self.__browsers.values())
+
+    @property
+    def loading(self) -> bool:
+        """Whether a read of the rows is out, its answer not shown yet."""
+        return self.__loader.busy
 
     def open_browsers(self) -> tuple[TableBrowser, ...]:
         """Every browser whose sub-dock is open, in the order they were added -- the set the Browsers menu lists."""
@@ -246,57 +261,43 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
     # region reading the rows
 
     def __refresh(self) -> None:
-        """Read every browser's rows again -- one read per distinct query, browsers filtering alike sharing it.
-
-        A read failure keeps what is on screen: the cache is disposable and the next scan rebuilds it, so a log
-        line is the proportionate answer.
-        """
-        if self.__catalog.file is None:
-            return
-        matching: dict[CatalogQuery, list[CatalogRow]] = {}
-        try:
-            for browser in self.__browsers.values():
-                if browser.query not in matching:
-                    matching[browser.query] = self.__catalog.rows(browser.query)
-        except CatalogUnreadable as error:
-            LOG.error("Could not read the cache of %s: %s", self.__catalog.rehuco_path, error)
-            return
-        root_ids = list(self.__catalog.root_paths())
-        for browser in self.__browsers.values():
-            browser.set_rows(matching[browser.query], root_ids)
-
-    def __fill(self, browser: TableBrowser) -> None:
-        """Read one browser's rows again: a browser added after the others were read, or one whose filter changed.
-
-        :param browser: the browser.
-        """
-        if self.__catalog.file is None:
-            return
-        try:
-            rows = self.__catalog.rows(browser.query)
-        except CatalogUnreadable as error:
-            LOG.error("Could not read the cache of %s: %s", self.__catalog.rehuco_path, error)
-            return
-        browser.set_rows(rows, list(self.__catalog.root_paths()))
+        """Read every row again, on the loader."""
+        if self.__catalog.file is not None:
+            self.__loader.refresh(list(self.__catalog.root_paths()))
 
     def __update_in_place(self, affected: set[int]) -> None:
-        """Show what a change did to ``affected`` rows in every browser, each row changed, moved, inserted or removed
-        where it stands -- one read of just those rows per distinct query, never a reset (#379).
+        """Read again the rows a change touched, on the loader.
 
         :param affected: the ids of every row the change may have touched.
         """
-        if self.__catalog.file is None:  # pragma: no cover  (only announced with a file open)
-            return
-        fresh: dict[CatalogQuery, list[CatalogRow]] = {}
-        try:
-            for browser in self.__browsers.values():
-                if browser.query not in fresh:
-                    fresh[browser.query] = self.__catalog.rows(browser.query, ids=affected)
-        except CatalogUnreadable as error:
-            LOG.error("Could not read the cache of %s: %s", self.__catalog.rehuco_path, error)
-            return
+        if self.__catalog.file is not None:  # pragma: no branch  (only announced with a file open)
+            self.__loader.update(affected)
+
+    def __on_loaded(self, load: CatalogRowsLoad) -> None:
+        """Show what a read brought in every browser: all its rows anew after a read of every row; after a read of a
+        few, those rows changed, moved, inserted or removed where they stand -- never a reset (#379).
+
+        :param load: the read's answer.
+        """
+        snapshot, affected = load.snapshot, load.affected
+        # one pick per distinct query, browsers filtering alike sharing it
+        matching: dict[CatalogQuery, list[CatalogRow]] = {}
         for browser in self.__browsers.values():
-            browser.update_rows(affected, fresh[browser.query])
+            if browser.query not in matching:
+                matching[browser.query] = snapshot.select(browser.query, affected)
+            if affected is None:
+                browser.set_rows(matching[browser.query], snapshot.root_ids, catalog=snapshot.ids)
+            else:
+                browser.update_rows(affected, matching[browser.query])
+
+    def __fill(self, browser: TableBrowser) -> None:
+        """Show one browser the rows its query picks from the last read: after that read, or for a browser added
+        since or whose filter changed.
+
+        :param browser: the browser.
+        """
+        snapshot = self.__loader.snapshot
+        browser.set_rows(snapshot.select(browser.query), snapshot.root_ids)
 
     # endregion
 
@@ -339,6 +340,7 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
         :param file: the catalog being let go.
         """
         self.__remember_catalog(file)
+        self.__loader.cancel()
         for dock in list(self.__browsers):
             self.__remove_browser(dock)
         self.__update_enablement()
