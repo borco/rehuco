@@ -27,6 +27,10 @@ released becomes the body of the GitHub Release, so each entry is written to be 
   The files are not moved for you: copy the old `borco/rehuco-agent` folder, `rehuco-agent.ini` and the old cache
   folder's `.rehudb` files across, or let the app start afresh. `--settings-dir DIR` now puts everything directly in
   `DIR`, and `--info` also prints the data folder.
+- **The table browsers no longer freeze the window while they read the catalog.** The rows are read in the
+  background when a catalog opens, a scan ends or a record is saved or renamed, and each browser keeps showing its
+  rows until the new ones arrive. Typing in a filter line filters the rows already read, so it answers at once even
+  on a large catalog, and a browser sorted by a column stays quick too.
 
 ### Added
 

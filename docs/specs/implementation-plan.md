@@ -152,7 +152,8 @@ through to view or edit any resource.
   per-browser state kept by the agent (#396); renaming a browser (#397); the filter line (#398); type-specific cache
   columns (#399); the New Table Browser presets (#400).
 - public docs (#382) — written once it ran, and `how-it-works.md` describes the roots, scan, browsers and preview as
-  they are. What remains is filed: the image browser (#403) and the table browser's rows off the GUI thread (#455).
+  they are; the table browser's rows are read off the GUI thread and filtered in memory (#455). What remains is
+  filed: the image browser (#403).
 
 **Status:** the tracer bullet and the thickening above run. Open a `.rehuco`, scan, filter, and click through to
 view or edit any resource, with the cache following the app's own saves and renames; a change made outside the app
