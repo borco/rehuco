@@ -250,6 +250,52 @@ def test_the_files_open_documents_stand_for_are_read_on_the_pool_and_announced(
     assert seen.args == [{record: (stat.st_mtime_ns, stat.st_size)}]
 
 
+@mark.usefixtures("real_path_stat")
+def test_a_relative_path_among_the_files_asked_about_is_passed_over(
+    qtbot: QtBot, dock: CatalogDocks, folders: Path
+) -> None:
+    """A path that is not absolute is no key the access seam reaches: it is left out, and the others are still read
+    (#417).
+
+    **Test steps:**
+
+    * ask for a relative path and a record that is there
+    * verify one announcement, of the record alone, with its time and size
+    """
+    record = folders / "alpha" / "info.rehu"
+    write_pack_record(record)
+    stat = record.stat()
+
+    with qtbot.waitSignal(dock.catalog.files_seen, timeout=WAIT_TIMEOUT_MS) as seen:
+        dock.catalog.read_signatures([Path("alpha") / "info.rehu", record])
+
+    assert seen.args == [{record: (stat.st_mtime_ns, stat.st_size)}]
+
+
+@mark.usefixtures("served")
+def test_a_relative_path_among_the_records_to_verify_is_passed_over(
+    qtbot: QtBot, dock: CatalogDocks, folders: Path
+) -> None:
+    """A relative path is no record of any root: a verify passes it over and still checks the others (#417).
+
+    **Test steps:**
+
+    * write a record the cache has no row for, and open the catalog
+    * verify a relative path and that record together
+    * verify the record's new row is announced once
+    """
+    record = folders / "alpha" / "info.rehu"
+    write_pack_record(record)
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    rows = MagicMock()
+    dock.catalog.rows_changed.connect(rows)
+
+    dock.catalog.verify_records([Path("alpha") / "info.rehu", record], key="probe")
+    settle(qtbot)
+
+    rows.assert_called_once()
+
+
 # region What goes wrong between the GUI thread and the pool (#487)
 
 
