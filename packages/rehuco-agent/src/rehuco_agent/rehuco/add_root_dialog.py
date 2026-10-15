@@ -54,8 +54,7 @@ class AddRootDialog(QDialog):
 
     def __browse(self) -> None:
         """Pick the folder with the system's folder dialog, starting where the typed one is."""
-        start = self.folder if Path(self.folder).is_dir() else ""
-        chosen = QFileDialog.getExistingDirectory(self, "Add Root", start)
+        chosen = QFileDialog.getExistingDirectory(self, "Add Root", self.folder)
         if chosen:
             self.folder = chosen
 

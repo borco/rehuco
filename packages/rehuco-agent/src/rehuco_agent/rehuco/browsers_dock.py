@@ -3,7 +3,6 @@
 """
 
 import logging
-import sqlite3
 from typing import Final, cast
 
 import PySide6QtAds as QtAds
@@ -20,7 +19,7 @@ from borco_pyside.theming import ActionIconThemeHandler
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QInputDialog, QMainWindow, QMenu, QWidget
-from rehuco_core import CatalogField, CatalogQuery, CatalogRow, RehucoFile
+from rehuco_core import CatalogField, CatalogQuery, CatalogRow, CatalogUnreadable, RehucoFile
 
 from ..dock_maximize import attach_maximize_handler
 from ..filter_urls import filter_url_token
@@ -259,7 +258,7 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
             for browser in self.__browsers.values():
                 if browser.query not in matching:
                     matching[browser.query] = self.__catalog.rows(browser.query)
-        except sqlite3.Error as error:
+        except CatalogUnreadable as error:
             LOG.error("Could not read the cache of %s: %s", self.__catalog.rehuco_path, error)
             return
         root_ids = list(self.__catalog.root_paths())
@@ -275,7 +274,7 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
             return
         try:
             rows = self.__catalog.rows(browser.query)
-        except sqlite3.Error as error:
+        except CatalogUnreadable as error:
             LOG.error("Could not read the cache of %s: %s", self.__catalog.rehuco_path, error)
             return
         browser.set_rows(rows, list(self.__catalog.root_paths()))
@@ -293,7 +292,7 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
             for browser in self.__browsers.values():
                 if browser.query not in fresh:
                     fresh[browser.query] = self.__catalog.rows(browser.query, ids=affected)
-        except sqlite3.Error as error:
+        except CatalogUnreadable as error:
             LOG.error("Could not read the cache of %s: %s", self.__catalog.rehuco_path, error)
             return
         for browser in self.__browsers.values():

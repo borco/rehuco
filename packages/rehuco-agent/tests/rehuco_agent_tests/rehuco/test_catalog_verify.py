@@ -276,7 +276,7 @@ def test_a_cache_that_cannot_be_read_verifies_nothing_and_says_so(
     * verify the error is logged and nothing is announced
     """
     dock.catalog.open_rehuco(REHUCO_PATH)
-    mocker.patch("rehuco_agent.rehuco.root_catalog.CatalogRecordUpdater.plan", side_effect=OperationalError("locked"))
+    mocker.patch("rehuco_core.access.local_catalog.CatalogRecordUpdater.plan", side_effect=OperationalError("locked"))
     seen = MagicMock()
     dock.catalog.files_seen.connect(seen)
 
@@ -328,7 +328,7 @@ def test_a_check_superseded_before_it_starts_does_nothing(dock: CatalogDocks, mo
     check = mocker.patch("rehuco_agent.rehuco.root_catalog.check_records")
     seam(dock, "latest_verify")["probe"] = 2
 
-    seam(dock, "run_verify")(1, "probe", seam(dock, "cache"), [])
+    seam(dock, "run_verify")(1, "probe", seam(dock, "catalog").cache_path, [])
 
     check.assert_not_called()
 
@@ -349,7 +349,7 @@ def test_an_answer_superseded_while_it_was_out_is_dropped_on_the_gui_thread(dock
     seam(dock, "latest_verify")["probe"] = 2
     stale = RecordsChecked([], {folders / "alpha" / "info.rehu": (1, 1)})
 
-    seam(dock, "on_verified")(1, "probe", seam(dock, "cache"), stale)
+    seam(dock, "on_verified")(1, "probe", seam(dock, "catalog").cache_path, stale)
 
     seen.assert_not_called()
     assert dict(seam(dock, "latest_verify")) == {"probe": 2}
@@ -371,7 +371,7 @@ def test_an_answer_for_a_catalog_that_is_gone_is_dropped_quietly(dock: CatalogDo
     dead.statted.emit.side_effect = RuntimeError("Internal C++ object already deleted")
     mocker.patch.object(dock.catalog, "_RootCatalog__verifier", dead)
 
-    seam(dock, "run_verify")(1, "probe", seam(dock, "cache"), [])
+    seam(dock, "run_verify")(1, "probe", seam(dock, "catalog").cache_path, [])
     seam(dock, "run_stat")(1, [])
 
     dead.answered.emit.assert_called_once()
@@ -432,7 +432,7 @@ def test_a_write_back_that_fails_is_logged_and_announces_no_row(
     * verify a record the cache has no row for, with the write-back failing
     * verify the failure is logged and no row change is announced
     """
-    mocker.patch("rehuco_agent.rehuco.root_catalog.CatalogRecordUpdater.apply", side_effect=OperationalError("locked"))
+    mocker.patch("rehuco_core.access.local_catalog.CatalogRecordUpdater.apply", side_effect=OperationalError("locked"))
 
     with caplog.at_level(logging.ERROR):
         rows, verified = verify_a_new_record(qtbot, dock, folders)
@@ -453,7 +453,7 @@ def test_a_write_back_that_changes_nothing_announces_no_row(
     * verify a record the cache has no row for, with a write-back that changes nothing
     * verify no row change is announced
     """
-    mocker.patch("rehuco_agent.rehuco.root_catalog.CatalogRecordUpdater.apply", return_value=set())
+    mocker.patch("rehuco_core.access.local_catalog.CatalogRecordUpdater.apply", return_value=set())
 
     rows, verified = verify_a_new_record(qtbot, dock, folders)
 

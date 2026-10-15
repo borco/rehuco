@@ -480,7 +480,7 @@ def test_a_new_rehuco_whose_cache_cannot_open_is_never_written(
     * create a catalog
     * verify it failed, nothing was written, and the reason names the cache
     """
-    mocker.patch("rehuco_agent.rehuco.root_catalog.CatalogCache.open", side_effect=sqlite3.OperationalError("locked"))
+    mocker.patch("rehuco_core.access.local_catalog.CatalogCache.open", side_effect=sqlite3.OperationalError("locked"))
 
     assert not dock.catalog.new_rehuco(OTHER_PATH)
 
@@ -3906,7 +3906,7 @@ def test_a_catalog_counts_nothing_with_no_cache_and_logs_a_cache_it_cannot_read(
     with caplog.at_level(logging.ERROR):
         assert dock.catalog.resource_count(root) == 0
 
-    assert "Could not count the cached entries of tutorials" in caplog.text
+    assert f"Could not count the cached entries of the root {root.root_id}" in caplog.text
 
 
 def test_removing_a_root_with_no_catalog_open_does_nothing_and_a_save_that_closes_the_file_is_not_announced(
