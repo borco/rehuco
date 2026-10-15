@@ -7,7 +7,6 @@ that is no network drive, and its success path -- which needs a mapped drive thi
 """
 
 import os
-import string
 from typing import Any, Final
 
 import pytest
@@ -19,21 +18,12 @@ pytest.importorskip("msvcrt")  # a Windows-only module stands in for "is this Wi
 from borco_core.platforms.windows import drives  # noqa: E402  # pylint: disable=wrong-import-position
 from pytest_mock import MockerFixture  # noqa: E402  # pylint: disable=wrong-import-position
 
+from borco_core_tests.drive_letters import unused_drive  # noqa: E402  # pylint: disable=wrong-import-position
+
 MODULE: Final = "borco_core.platforms.windows.drives"
 """Where the ``mpr`` call is patched."""
 
 SHARE: Final = "\\\\nas\\share"
-
-
-def unused_drive() -> str:
-    """A drive letter with its colon that nothing on this machine is mounted at.
-
-    :returns: for example ``"Z:"``.
-    """
-    free = next((letter for letter in reversed(string.ascii_uppercase) if not os.path.exists(f"{letter}:\\")), None)
-    if free is None:
-        pytest.skip("every drive letter is in use")
-    return f"{free}:"
 
 
 @mark.windows

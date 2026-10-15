@@ -18,6 +18,7 @@ from borco_core.platforms.linux.mount_table import Mount
 from pytest import mark
 from pytest_mock import MockerFixture
 
+from .drive_letters import unused_drive
 from .path_presence_support import MODULE, TIMEOUT, Probe, UnansweringServer, local, network
 
 FILE: Final = Path("/fake/pack/file.rehu")
@@ -346,14 +347,10 @@ def test_windows_a_letter_nothing_is_mapped_to_is_removable() -> None:
 
     **Test steps:**
 
-    * classify a path on the first drive letter nothing is mounted at
+    * classify a path on a drive letter nothing is mounted or mapped at (a disconnected NAS mapping is, #501)
     * verify it is removable
     """
-    letter = next((c for c in "ZYXWVUTSRQPONMLKJIHGFED" if not Path(f"{c}:\\").exists()), None)
-    if letter is None:
-        pytest.skip("every drive letter is in use")
-
-    assert device_of(Path(f"{letter}:\\file.rehu")).kind is StorageKind.REMOVABLE
+    assert device_of(Path(f"{unused_drive()}\\file.rehu")).kind is StorageKind.REMOVABLE
 
 
 # --- _exists / _volume_present / _reachable ----------------------------------------------------------------------
