@@ -35,6 +35,10 @@ Changelogs are per package in this monorepo, matching the per-package release ta
   rename, `refresh` for records the app wrote, and `plan_verify` / `apply_verify` for verify-on-access.
   `RecordOps.signature(key)` answers a record's modification time and size under the rename hold, and
   `LocalAccess` takes the `RenameCoordinator` that stat and the catalog's record re-reads go through.
+- `CatalogSnapshot` holds a catalog's rows in memory and filters them there: `build` keys every row once,
+  `select(query, ids)` picks what a `CatalogQuery` matches -- exactly the rows `CatalogCache.rows` reads, in its
+  order -- and `patched` brings it up to date after a change. `CatalogMatcher` is the query compiled, and
+  `CatalogSearchKey` one row's folded text.
 - `app_folders()` answers where the agent and the node keep their files without Qt: one `borco/rehuco` folder on
   Windows (`%LOCALAPPDATA%`) and macOS, the XDG config / data / cache split on Linux. `default_username()` is the OS
   login name, or `admin` when the platform has none.

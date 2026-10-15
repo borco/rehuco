@@ -831,9 +831,9 @@ The cache is the stdlib `sqlite3` module in rehuco-core, Qt-free, one connection
   transaction, and no moved record is re-read; a directory-scoped rename rebases every nested record, a file-scoped
   one only its own.
 - **A browser follows a change by id, not by re-reading** (#379). Before and after a rename or a write, the agent asks
-  which rows are at or beneath the paths it touched (`resource_ids`), then reads just those through each browser's
-  query (`rows(query, ids=...)`) — a row that no longer matches, or is gone, is one the read leaves out — and the
-  browser changes, moves, inserts or removes each in place.
+  which rows are at or beneath the paths it touched (`resource_ids`), then reads just those, once, on a worker
+  (`rows(ids=...)`, #455), and each browser picks from them what its query matches — a row that no longer matches,
+  or is gone, is one the pick leaves out — and changes, moves, inserts or removes each in place.
 - **Scanning never blocks a rename.** Each directory read, and each record read, is one chunk under the rename
   coordinator's hold, closed before the next ([[mounts-and-storage#out-of-band]]). The directories still to visit
   and the records already read are tracked locations, so a folder renamed mid-scan is scanned under its new name.

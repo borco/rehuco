@@ -1,7 +1,7 @@
 """A table browser: the Root Catalog's rows as a table under a filter line and over a status line, one of several per
 catalog (#396, #398)."""
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Collection, Iterable, Sequence
 from typing import Final
 from uuid import UUID, uuid4
 
@@ -204,13 +204,17 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
         """The status line under the table: what it shows and, after that, what is selected."""
         return self.__status_line
 
-    def set_rows(self, rows: Sequence[CatalogRow], root_ids: Iterable[UUID]) -> None:
+    def set_rows(
+        self, rows: Sequence[CatalogRow], root_ids: Iterable[UUID], *, catalog: Collection[int] | None = None
+    ) -> None:
         """Show ``rows``, in the sort this browser last asked for.
 
         :param rows: the rows :attr:`query` matches.
         :param root_ids: the roots' ids, in the roots' order.
+        :param catalog: the ids of every row the catalog holds now, after a read of them all; ``None`` for a filter
+            over the same rows (:meth:`CatalogTableModel.set_rows`).
         """
-        self.__model.set_rows(rows, root_ids)
+        self.__model.set_rows(rows, root_ids, catalog=catalog)
 
     def update_rows(self, affected: Iterable[int], fresh: Sequence[CatalogRow]) -> None:
         """Bring the rows a rename, a write or a deletion touched up to date, in place.

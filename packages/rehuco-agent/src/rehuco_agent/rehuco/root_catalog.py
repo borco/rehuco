@@ -318,8 +318,9 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
     def rows(self, query: CatalogQuery, ids: set[int] | None = None) -> list[CatalogRow]:
         """The rows ``query`` matches under the roots the file lists.
 
-        The access seam's calls block, so the agent makes them from workers; this one is still made on the GUI thread,
-        until the browsers' loader (#455) moves it.
+        The access seam's calls block, so the agent makes them from workers: the browsers' loader calls this on the
+        pool (:class:`~.catalog_rows_loader.CatalogRowsLoader`, #455), which is safe because it touches nothing here
+        but the seam, which any thread may call.
 
         :param query: a browser's query.
         :param ids: only these rows, for an update in place; every matching row when ``None``.

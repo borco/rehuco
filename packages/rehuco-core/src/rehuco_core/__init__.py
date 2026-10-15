@@ -35,6 +35,7 @@ from .access import (
 )
 from .app_folders import APP_FOLDER_NAME, ORGANIZATION_FOLDER_NAME, AppFolders, app_folders
 from .archive_facts import ArchiveFacts, read_archive_facts
+from .catalog_snapshot import CatalogMatcher, CatalogSearchKey, CatalogSnapshot
 from .checksum_algorithms import (
     CHECKSUM_ALGORITHMS,
     CHECKSUM_READ_CHUNK_SIZE,
@@ -460,6 +461,7 @@ __all__ = [
     "CatalogEnumeration",
     "CatalogField",
     "CatalogLocation",
+    "CatalogMatcher",
     "CatalogOps",
     "CatalogQuery",
     "CatalogRecord",
@@ -474,7 +476,9 @@ __all__ = [
     "CatalogRootScan",
     "CatalogRow",
     "CatalogScanner",
+    "CatalogSearchKey",
     "CatalogSession",
+    "CatalogSnapshot",
     "CatalogUnreadable",
     "ChangeEvent",
     "ChangeFeed",

@@ -146,7 +146,8 @@ and the file's format version, with the URL and a tutorial's or a reference pack
 header away — and double-clicking a row opens that resource in Documents. A rename, save or deletion made in the app
 changes just its row, in place. Each table has a **filter line**: free text, every word of which must be found
 (`"quoted words"` as one phrase, case and accents ignored), and `field:value` tokens (`folder`, `authors`, `tags`,
-`publishers`, `type`) narrow the rows, read from the cache again as the text settles. Clicking an
+`publishers`, `type`) narrow the rows as the text settles. The rows are read from the cache in the background,
+once when it opens, a scan ends or a record changes, and a filter picks from the rows already read. Clicking an
 author's name in a document sets that author on it. The Browsers panel keeps any number of tables, each with its own
 columns, filter and name: `Browsers` > `New Table Browser` starts one from a preset (the plain columns, or one type's
 extra columns), and a browser can be renamed, cloned and deleted. They are kept by the app, not in the `.rehuco`.

@@ -1,12 +1,14 @@
 """Tests for a table browser's model (#377, #379)."""
 
 from collections.abc import Iterator
+from dataclasses import replace
 from itertools import count
 from typing import Any, Final
 from uuid import UUID, uuid4
 
 from PySide6.QtCore import QModelIndex, QPersistentModelIndex, Qt
 from pytest import fixture, mark
+from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.rehuco.catalog_table_model import (
     COLUMNS,
@@ -16,6 +18,7 @@ from rehuco_agent.rehuco.catalog_table_model import (
     CatalogColumn,
     CatalogTableModel,
     CatalogTotals,
+    title_of,
 )
 from rehuco_core import CatalogRecord, CatalogRow, RecordKind
 
@@ -680,6 +683,162 @@ def test_a_rename_respells_the_row_and_its_key(three: CatalogTableModel) -> None
 
     assert three.row_key(1) == (ROOT_ID, "b2/info.rehu")
     assert cell(three, 1, CatalogColumn.PATH) == "tutorials/b2/info.rehu"
+
+
+# endregion
+
+
+# region Sort keys (#455)
+
+
+def counted_titles(mocker: MockerFixture) -> list[CatalogRow]:
+    """Make the Title column record every row it is asked the value of.
+
+    :param mocker: pytest-mock fixture.
+    :returns: the rows asked about, in the order asked.
+    """
+    asked: list[CatalogRow] = []
+
+    def value(entry: CatalogRow) -> str:
+        """The title, noted.
+
+        :param entry: the row.
+        :returns: its title.
+        """
+        asked.append(entry)
+        return title_of(entry)
+
+    mocker.patch.dict(COLUMNS, {CatalogColumn.TITLE: replace(COLUMNS[CatalogColumn.TITLE], value=value)})
+    return asked
+
+
+def test_a_new_filter_re_sorts_by_keys_already_known(mocker: MockerFixture) -> None:
+    """The rows a filter picks are the ones the last read built, so their keys are not worked out again; a row read
+    again unchanged keeps its key, and a changed one gets a new one.
+
+    **Test steps:**
+
+    * sort three titles, then set two of them again, and all three again with one read anew unchanged
+    * verify no key was worked out again
+    * set them again with one retitled
+    * verify only that one's key was worked out, and it sorts by its new title
+    """
+    asked = counted_titles(mocker)
+    alpha, beta, gamma = (row(rehu(f"{title}/info.rehu", title=title)) for title in ("alpha", "beta", "gamma"))
+    model = model_of(beta, alpha, gamma)
+    model.sort(CatalogColumn.TITLE)
+    asked.clear()
+
+    model.set_rows([gamma, alpha], [ROOT_ID])
+    model.set_rows([beta, alpha, replace(gamma, scanned_at=1.0)], [ROOT_ID])
+    assert not asked
+    assert shown_titles(model) == ["alpha", "beta", "gamma"]
+
+    asked.clear()
+    zulu = replace(alpha, record=replace(alpha.record, title="zulu"))
+    model.set_rows([beta, zulu, gamma], [ROOT_ID])
+
+    assert {entry.record.title for entry in asked} == {"zulu"}
+    assert shown_titles(model) == ["beta", "gamma", "zulu"]
+
+
+def test_a_full_load_drops_the_keys_of_rows_the_catalog_lost_and_keeps_the_filtered_out(
+    mocker: MockerFixture,
+) -> None:
+    """A load naming the catalog's rows forgets the keys of rows no longer in it, and no other: a row merely filtered
+    out keeps its key, and so does one a removal in place took.
+
+    **Test steps:**
+
+    * sort three titles, then load one of them naming two as the catalog's
+    * load all three again
+    * verify only the row the catalog had lost got its key worked out again
+    * remove a row in place, then load it again
+    * verify its key was worked out again
+    """
+    asked = counted_titles(mocker)
+    alpha, beta, gamma = (row(rehu(f"{title}/info.rehu", title=title)) for title in ("alpha", "beta", "gamma"))
+    model = model_of(alpha, beta, gamma)
+    model.sort(CatalogColumn.TITLE)
+    asked.clear()
+
+    model.set_rows([alpha], [ROOT_ID], catalog={alpha.resource_id, beta.resource_id})
+    model.set_rows([alpha, beta, gamma], [ROOT_ID])
+    assert [entry.record.title for entry in asked] == ["gamma"]
+
+    asked.clear()
+    model.update_rows({beta.resource_id}, [])
+    model.set_rows([alpha, beta, gamma], [ROOT_ID])
+    assert [entry.record.title for entry in asked] == ["beta"]
+
+
+def test_another_sorted_column_works_its_keys_out_again(mocker: MockerFixture) -> None:
+    """Turning the order round keeps the keys; sorting by another column and back works them out anew.
+
+    **Test steps:**
+
+    * sort by title, then by title descending
+    * verify no key was worked out again
+    * sort by path, then by title again
+    * verify every title key was worked out again
+    """
+    asked = counted_titles(mocker)
+    model = titled("beta", "alpha")
+    model.sort(CatalogColumn.TITLE)
+    asked.clear()
+
+    model.sort(CatalogColumn.TITLE, Qt.SortOrder.DescendingOrder)
+    assert not asked
+    model.sort(CatalogColumn.PATH)
+    model.sort(CatalogColumn.TITLE)
+
+    assert sorted(entry.record.title for entry in asked) == ["alpha", "beta"]
+
+
+def test_equal_keys_keep_the_caches_order_either_way_round() -> None:
+    """Rows that sort alike stay in the cache's order, ascending and descending -- by the sort's stability.
+
+    **Test steps:**
+
+    * sort two rows titled alike around a third, ascending then descending
+    * verify the alike pair keeps the cache's order both times
+    """
+    model = model_of(
+        row(rehu("one/info.rehu", title="same")),
+        row(rehu("two/info.rehu", title="zed")),
+        row(rehu("three/info.rehu", title="same")),
+    )
+
+    model.sort(CatalogColumn.TITLE)
+    assert [model.row_key(position) for position in range(3)] == [
+        (ROOT_ID, "one/info.rehu"),
+        (ROOT_ID, "three/info.rehu"),
+        (ROOT_ID, "two/info.rehu"),
+    ]
+    model.sort(CatalogColumn.TITLE, Qt.SortOrder.DescendingOrder)
+    assert [model.row_key(position) for position in range(3)] == [
+        (ROOT_ID, "two/info.rehu"),
+        (ROOT_ID, "one/info.rehu"),
+        (ROOT_ID, "three/info.rehu"),
+    ]
+
+
+def test_a_row_changed_in_a_descending_sort_moves_where_it_belongs(qtbot: QtBot, three: CatalogTableModel) -> None:
+    """In a descending sort, a retitled row moves and a new one is inserted where the reversed order puts them.
+
+    **Test steps:**
+
+    * sort descending, retitle ``alpha`` ``zulu`` and add ``delta``
+    * verify the order after each, without a reset
+    """
+    three.sort(CatalogColumn.TITLE, Qt.SortOrder.DescendingOrder)
+
+    with qtbot.assertNotEmitted(three.modelReset):
+        three.update_rows({1}, [row(rehu("alpha/info.rehu", title="zulu", current_size=10), resource_id=1)])
+        assert shown_titles(three) == ["zulu", "gamma", "beta"]
+        three.update_rows({4}, [row(rehu("delta/info.rehu", title="delta", current_size=10), resource_id=4)])
+
+    assert shown_titles(three) == ["zulu", "gamma", "delta", "beta"]
 
 
 # endregion
