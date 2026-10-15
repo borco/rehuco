@@ -83,8 +83,9 @@ Changelogs are per package in this monorepo, matching the per-package release ta
   `plan` reads the rows' signatures, `check_records` (any thread, never the cache) compares them with the files and
   reads what changed, and `apply` writes the findings back, dropping one whose row a save or a scan rewrote, or whose
   record a rename moved, in the meantime. What `check_records` returns, `RecordsChecked`, also gives every record's
-  modification time and size as it saw them, changed or not, for whatever shows a record to compare with what it read. `CatalogCache.locate` takes the roots when the caller has them, so planning
-  many records asks the database once.
+  modification time and size as it saw them, changed or not, for whatever shows a record to compare with what it
+  read. `CatalogCache.locate` takes the roots when the caller has them, so planning many records asks the database
+  once.
 - `staged_name` names an image taken out of a resource `rehu-<origin>__<path segments joined by __>`, safe on Windows
   and macOS and capped at 200 UTF-8 bytes without shortening an id or the basename's extension; `parse_staged_name`
   reads the origin and the path back as `StagedImageName`, whose `uuid` tells an id from a location. `staging_origin`
@@ -96,8 +97,9 @@ Changelogs are per package in this monorepo, matching the per-package release ta
   methods are slow (bzip2, LZMA) or beyond `zipfile` (deflate64, encryption). `list_archive_images` lists one
   archive's content images in pack order, the listing the content-image scanner now shares. `CatalogCache.resource_type`
   is an indexed lookup of a record's type by root and relative path.
-- `RootFolderLister` also reads the checksum record that covers a listed file -- a same-stem `foo.checksum`, the folder's
-  `info.checksum`, or the one a caller names above it (`covering=`) -- and returns, as `DirectoryListing.covered`, what
+- `RootFolderLister` also reads the checksum record that covers a listed file -- a same-stem `foo.checksum`, the
+  folder's `info.checksum`, or the one a caller names above it (`covering=`) -- and returns, as
+  `DirectoryListing.covered`, what
   each covered file's entry says (`CoveredFile`), under the same hold as the listing. `DirectoryClassifier.reclassify`
   names an already-read listing for another record without a second `scandir`.
 - A task-queue job that satisfies `ReportingTaskJob` says what it found in one line: `JobOutcome(summary, clean)`, kept
@@ -135,9 +137,10 @@ Changelogs are per package in this monorepo, matching the per-package release ta
   row count. It still lists every folder, so a record nested inside a tutorial is found like any other.
 - Single-record cache updates between scans. `CatalogRecordUpdater.upsert` re-reads one record after a save or a
   conversion, and a converted `.rehu` takes over its `.tc`'s row. `CatalogRecordUpdater.verify` re-reads a record
-  whose file no longer matches its row. `CatalogCache.remove` drops a deleted record's row. `CatalogCache.apply_relocation`
-  applies a rename's executed plan (`RehuRenamer.executed`) without reading anything: a renamed folder rebases every
-  row beneath it, a file-scoped rename only its own. A record missing under an offline root keeps its row.
+  whose file no longer matches its row. `CatalogCache.remove` drops a deleted record's row.
+  `CatalogCache.apply_relocation` applies a rename's executed plan (`RehuRenamer.executed`) without reading anything:
+  a renamed folder rebases every row beneath it, a file-scoped rename only its own. A record missing under an offline
+  root keeps its row.
   `CatalogCache.resource_ids` names the rows at or beneath some paths, and `CatalogCache.rows(query, ids=...)`
   reads just those rows through a query, so a view can follow a change without reading everything again.
 - `CatalogScanner.walk()` yields one listing at a time. Given a coordinator, it lists each directory under
