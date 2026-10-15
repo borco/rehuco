@@ -38,7 +38,8 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 - `CatalogSnapshot` holds a catalog's rows in memory and filters them there: `build` keys every row once,
   `select(query, ids)` picks what a `CatalogQuery` matches -- exactly the rows `CatalogCache.rows` reads, in its
   order -- and `patched` brings it up to date after a change. `CatalogMatcher` is the query compiled, and
-  `CatalogSearchKey` one row's folded text.
+  `CatalogSearchKey` one row's folded text, holding its row. `CatalogCache.rows` shares one `UUID` per root among a
+  read's rows.
 - `app_folders()` answers where the agent and the node keep their files without Qt: one `borco/rehuco` folder on
   Windows (`%LOCALAPPDATA%`) and macOS, the XDG config / data / cache split on Linux. `default_username()` is the OS
   login name, or `admin` when the platform has none.

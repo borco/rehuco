@@ -56,9 +56,9 @@ class CatalogRowsLoader(QObject):
 
     **The collector is paused while a read builds its rows** (:meth:`collector_paused`): the cyclic collector, run
     over and over as the new rows pile up, frees none of them but walks them all holding the GIL. Measured at 100k rows,
-    a read of a few rows, which copies every row, went from 421 ms to 131 ms with the GUI thread never held up past
-    18 ms; a read of every row still holds it up once, for the collector's first pass over the rows it built (212 ms,
-    against several of 50-180 ms unpaused).
+    a read of a few rows, which copies every row, went from 421 ms to 75 ms with the GUI thread never held up past
+    15 ms; a read of every row still holds it up once, for the collector's first pass over the rows it built -- 77 ms,
+    since a row makes three tracked objects (#500), against several stalls of 50-180 ms unpaused.
 
     **The answer is judged on the GUI thread** ([[appendices.code-conventions#worker-threads]]): each read carries a
     generation, and :meth:`cancel` moves it on, so a read still out when the catalog closed delivers nothing. The emit

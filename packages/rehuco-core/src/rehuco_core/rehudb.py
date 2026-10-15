@@ -44,7 +44,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from types import TracebackType
-from typing import Final, Self
+from typing import Any, Final, Self
 from uuid import UUID
 
 from borco_core import fold
@@ -767,18 +767,39 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
             parameters,
         )
         rows: list[CatalogRow] = []
+        # one UUID per root, shared by its rows: a reader keeping every row (#455) has the collector track each (#500)
+        root_uuids: dict[str, UUID] = {}
         for resource_id, root_id, root_label, scanned_at, *fields in cursor:
-            columns_read = dict(zip(RESOURCE_COLUMNS, fields, strict=True))
-            columns_read["kind"] = RecordKind(columns_read["kind"])
-            columns_read["level"] = self.__level_read(columns_read["level"])
-            record = CatalogRecord(
-                **columns_read,
-                authors=values["authors"].get(resource_id, ()),
-                tags=values["tags"].get(resource_id, ()),
-                publishers=values["publishers"].get(resource_id, ()),
+            root_uuid = root_uuids.get(root_id)
+            if root_uuid is None:
+                root_uuid = root_uuids[root_id] = UUID(root_id)
+            rows.append(
+                CatalogRow(
+                    resource_id, root_uuid, root_label, self.__record_read(resource_id, fields, values), scanned_at
+                )
             )
-            rows.append(CatalogRow(resource_id, UUID(root_id), root_label, record, scanned_at))
         return rows
+
+    @classmethod
+    def __record_read(
+        cls, resource_id: int, fields: Sequence[object], values: dict[str, dict[int, tuple[str, ...]]]
+    ) -> CatalogRecord:
+        """One row's record, from its :data:`RESOURCE_COLUMNS` and the value tables' names.
+
+        :param resource_id: the row's id.
+        :param fields: its columns, in :data:`RESOURCE_COLUMNS` order.
+        :param values: each value table's names, by resource id (:meth:`__values`).
+        :returns: the record.
+        """
+        columns_read: dict[str, Any] = dict(zip(RESOURCE_COLUMNS, fields, strict=True))
+        columns_read["kind"] = RecordKind(columns_read["kind"])
+        columns_read["level"] = cls.__level_read(columns_read["level"])
+        return CatalogRecord(
+            **columns_read,
+            authors=values["authors"].get(resource_id, ()),
+            tags=values["tags"].get(resource_id, ()),
+            publishers=values["publishers"].get(resource_id, ()),
+        )
 
     # endregion
 
