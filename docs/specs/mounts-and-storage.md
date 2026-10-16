@@ -32,7 +32,8 @@ and is refused with the reason, not guessed at. There is no cross-machine rename
 [[[mounts-and-storage#rehuco-scope]]]
 
 A **`.rehuco`** file names the folder roots to catalog, and is **shareable across machines**: it may sit on the share
-and be opened from every box, or be copied around. It declares:
+and be opened from every box, or be copied around. **By default it is a local file** — *New* proposes the app folder
+and *Open* starts there; putting one on the share is the user's choice, and nothing else changes. It declares:
 
 - the **roots**, each with a stable **id** the cache keys its rows on, a **label** (defaulting to the folder's name,
   made unique with a suffix on a clash; what the browser shows and what a folder filter addresses,
