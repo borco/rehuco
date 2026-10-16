@@ -49,6 +49,13 @@ released becomes the body of the GitHub Release, so each entry is written to be 
   own window instead of handing its files to an agent already running elsewhere. The window title shows the folder's
   name, and `--info` prints where the settings and cache are.
 
+### Fixed
+
+- **Closing the main window with a floated Settings (or Browsers) window on screen no longer leaves rehuco
+  running with no window and no tray icon** (#507). An accepted close now quits the app explicitly, as a Quit from
+  the tray already did; Qt's own last-window quit never came, because a floating dock window is a top-level window
+  of its own and its close is one QtAds only hides.
+
 ## [0.3.0] - 2026-10-12
 
 ### Added

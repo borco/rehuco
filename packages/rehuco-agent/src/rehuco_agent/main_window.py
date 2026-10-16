@@ -1781,9 +1781,9 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         steps below (window state, session, recents, theme) while the window closes anyway -- once the
         guard has passed, they always run.
 
-        A close accepted while the tray icon exists ends with an **explicit** application quit --
-        see the comment on that block for why Qt's own last-window-closed quit cannot be relied on
-        for a window that is hidden to tray.
+        An accepted close always ends with an **explicit** application quit -- see the comment on that
+        block for why Qt's own last-window-closed quit cannot be relied on, with a window hidden to tray
+        (#205) or a floating dock window still on screen (#507).
 
         :param event: the close event to accept or ignore.
         """
@@ -1837,17 +1837,20 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__theme_settings.mode = self.__theme_model.mode
         self.__theme_settings.save(persistent_settings())
         if self.__tray_icon is not None:
-            # An explicit quit, not left to Qt's last-window-closed machinery: a window hidden to
-            # tray is no longer a *visible* primary window, so closing it never fires that quit --
-            # Quit from the tray menu while hidden would run this whole teardown and then leave
-            # ``exec()`` running forever, the unquittable-app trap #205 names arriving through the
-            # other door (confirmed empirically offscreen). The icon is taken down first so it
-            # never outlives the window it controls.
+            # the icon is taken down first so it never outlives the window it controls
             self.__tray_icon.hide()
             self.__tray_icon.deleteLater()
             self.__tray_icon = None
-            if (app := QApplication.instance()) is not None:  # pragma: no branch  (always exists here)
-                app.quit()
+        # An explicit quit, never left to Qt's last-window-closed machinery, which fails to come in two ways. A
+        # window hidden to tray is no longer a *visible* primary window, so closing it never fires that quit:
+        # Quit from the tray menu while hidden would run this whole teardown and then leave ``exec()`` running
+        # forever (#205, confirmed empirically offscreen). And a floating dock window -- a torn-out Settings, a
+        # Browsers window -- is a top-level window of its own with no transient parent, so while one is on screen
+        # this window is not the last one either; closing it afterwards is a close QtAds ignores (it hides
+        # instead), and the process lives on with nothing on screen (#507, measured on the real display). Nothing
+        # is freed here: quit() only ends the event loop once this event has been handled
+        if (app := QApplication.instance()) is not None:  # pragma: no branch  (always exists here)
+            app.quit()
         super().closeEvent(event)
 
     def __restore_session_if_enabled(self) -> None:
