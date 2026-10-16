@@ -215,5 +215,16 @@ strictly serial ([[appendices.task-queue]]).
 **Hash delegation, an optimisation only.** A node advertises the root ids it reaches on *local* disk. Content checksums
 — the heavy `.checksum` runs over videos and archives, and the destination-side verify of a copy — may be handed to such
 a node, which runs them on its own queue and writes the `.checksum` record beside the resource as any client would; the
-agent learns of it through the notifier. The small `.rehu` hash a save compares is never delegated. With the TS-230 as
-NAS-only, the gain exists for roots on a PC's own disks, not for the NAS itself.
+agent learns of it through the notifier. The small `.rehu` hash a save compares is never delegated.
+
+**What a node may do is the admin's call, per node.** A node's config carries a permission set — serve pages and
+media, hash, verify copies, hold a borrow store — that it advertises with its reachable roots; hashing is off until
+someone has looked at the numbers. The Nodes view offers a **Benchmark** action that hashes a fixed sample from a root
+the node reaches and reports MB/s, the CPU load during the run and the time a typical pack would take; the node stores
+the result with its date and shows it in its row. Delegation considers only nodes that allow the job kind, prefers the
+best stored benchmark, and always falls back to the agent itself. A slow node is a scheduling matter, not a speed one:
+its queue runs hashing at low priority, inside a time window, and pauses it while the node serves a video, so a
+checksum sweep every few months is acceptable on a box that would be hopeless for daily hashing. One such box is the
+TS-230 itself: a Debian container on it runs the node beside the data with plain inotify seeing every SMB writer, on
+four slow cores; a headless node like that is given the user's `.rehuco` path and its machine name as config, since
+no agent shares an app folder with it.

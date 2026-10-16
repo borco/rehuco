@@ -122,6 +122,9 @@ design was dropped on 2026-10-16 (#509, [[appendices.post-mortem#architecture]])
   on the household's LAN; decided with the iPad playback spike (#419, [[discovery-trust-access#node-identity-pairing]]).
 - **The lock's TTL and jitter** — 2 minutes and a few tens of milliseconds to start ([[sync#lock-file]]); tuned once
   two agents run on the share daily.
+- **Which node runs a job** — permissions are per node and the Benchmark result is stored ([[nodes#node-status]]);
+  how delegation weighs a stored benchmark against a root being local to the node, how old a benchmark may be, and
+  what a headless node's config holds beyond the `.rehuco` path and machine name, are decided with the web node tracer.
 - **Renamed machines and the `.rehuco` mappings** — the wizard's *this is the same machine as X* is specified, not
   built ([[mounts-and-storage#rehuco-scope]]).
 - **The macOS own-session and Linux legs of the notifier and lock spikes** (#502, #503) — deferred until a mobile
