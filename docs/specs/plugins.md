@@ -16,8 +16,8 @@ reference images, and Daz3D, but the architecture doesn't assume these are exhau
 
 | Core (same for every resource type) | Plugin-owned (varies per type) |
 | --- | --- |
-| UUID, instance tracking, checksums, swarm sync | Schema extension — custom fields beyond the common set ([[data-model#rehu-format]]) |
-| Tasks/job queue, node communication, REST plumbing | Viewer layout and behavior |
+| UUID, checksums, the save path and its locks | Schema extension — custom fields beyond the common set ([[data-model#rehu-format]]) |
+| Tasks/job queue, the file notifier, the node's web plumbing | Viewer layout and behavior |
 | Permissions/access grants | Editor layout and behavior |
 | Dedup detection mechanics | Web rendering and interaction |
 | `.rehuco` parsing and plugin loading | Custom actions with their own side effects (e.g. Daz3D install/uninstall) |
@@ -467,9 +467,8 @@ active this session."** Making a block active "claims" it; claiming-then-abandon
 it.
 
 **Safety net:** because making a block active arms its deletion-on-abandon (a user might switch to a type merely to
-preview it), a save that drops a previously-foreign claimed block records the discard in the activity log
-([[sync#overview]]) — "reference_images block discarded on date X" — so the *fact* of the drop is traceable even though the
-values are gone, consistent with the document's "never silently lose reasoning" principle. The editor **visually
+preview it), a save that drops a previously-foreign claimed block records the discard in the log — "reference_images
+block discarded on date X" — so the *fact* of the drop is traceable even though the values are gone, consistent with the document's "never silently lose reasoning" principle. The editor **visually
 distinguishes** "former-identity, will drop on save" from "foreign, will carry" blocks (one of the four provenance
 flags it labels, [[plugins#fallback-editor]]).
 
@@ -888,7 +887,7 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
 
 Viewer/editor similar in shape to the tutorial plugin (no "follow" mode), with type-specific features. The
 four bullets below are the summary; the full treatment — the three data layers and their homes, the scan
-sidecar, user-configurable models, what a node needs, and swarm dispatch — is [[reference-images]]:
+sidecar, user-configurable models, what a node needs, and scan dispatch — is [[reference-images]]:
 
 - **Tagging at two granularities**: archive-level and per-image. Per-image tags are stored as app-managed mutable
   metadata alongside `.rehu`/screenshots (not inside the immutable, checksummed zip), keyed to images by index/filename
@@ -983,7 +982,7 @@ its browser/editor contributed by its plugin ([[plugins#browsers]]). All three a
   descends past every record, whatever its type, [[data-model#scan-and-staleness]]). Every other grouping entity lives
   in the **configured creation directory** declared in `.rehuco` ([[mounts-and-storage#rehuco-scope]]). *Discovery* of
   existing entity documents needs no declared locations at all — it is type-based: the scanner finds them wherever
-  they sit in any scanned root, so a swarm arriving with its own authors is just documents in its roots.
+  they sit in any scanned root, so a share arriving with its own authors is just documents in its roots.
 
 ## §13.10 Shared capability worth extracting
 

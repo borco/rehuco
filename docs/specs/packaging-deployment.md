@@ -43,7 +43,7 @@ rehuco/                   # monorepo root
     borco-pyside/         # generic, non-rehuco PySide widgets/utilities — temporary guest, moving out
     rehuco-agent/         # desktop GUI: depends on rehuco-core + PySide6/scintilla/ads
     rehuco-core/          # shared library: .rehu model, plugin identity, migrations — PUBLISHABLE
-    rehuco-node/          # headless service: depends on rehuco-core + FastAPI/uvicorn/zeroconf
+    rehuco-node/          # the local node: rehuco-core + borco-core; FastAPI/zeroconf once the web pages come
   pyproject.toml          # virtual workspace root: [tool.uv.workspace] only, no [project]
   uv.lock                 # single lockfile
 ```
@@ -89,16 +89,17 @@ package and of the old standalone PySide utility library. The first piece to lan
 
 [[[packaging-deployment#ts230-as-nas]]]
 
-The QNAP TS-230 is used as a **NAS**, not as a compute host. It serves its storage over the existing Samba (SMB) share.
-`rehuco-node` runs on capable hardware (Mac mini, always-on Linux box) and accesses TS-230 content via that SMB mount —
-treating it as a local path. No node needs to run on the TS-230 itself, and the glibc constraint
-([[packaging-deployment#glibc-canary]]) plays no role in deployment.
-
-This is already an option the architecture anticipated ([[mounts-and-storage#rehuco-scope]]): the box owning the disks
-doesn't need to run its own node if another always-on machine covers the serving role via a mount. Choosing it as the
-default simplifies deployment significantly. Because the always-on node keeps running while the TS-230 may be powered
-off for long stretches, the node must tolerate the mount being offline without blocking — see
+The QNAP TS-230 is used as a **NAS**, not as a compute host. It serves its storage over the existing Samba (SMB) share,
+and that share is the system of record ([[architecture-design#why-distributed]]): every machine's agent and node reach
+the content through their own mount, treating it as a local path. Nothing of rehuco's runs on the TS-230, and the glibc
+constraint ([[packaging-deployment#glibc-canary]]) plays no role in deployment. Because agents keep running while the
+TS-230 is powered off for long stretches, every mount is treated as possibly offline — see
 [[mounts-and-storage#offline-mounts]].
+
+**What Samba gives the design, measured on the TS-230 (#502, #503):** SMB2 `CHANGE_NOTIFY` backed by inotify on the
+server (`kernel change notify = yes`, the default), which is how every machine learns of another's writes
+([[mounts-and-storage#out-of-band]]); and a server-side atomic exclusive create, which is the lock file
+([[sync#lock-file]]).
 
 **Atomic-save invariant over SMB ([[data-model#write-integrity]]):** an SMB `rename` is a server-side operation — the
 server executes it locally; no data crosses the network. The temp file must be written into the same directory as the
@@ -619,18 +620,19 @@ goes follows each platform's own convention:
   dragged or copied out, named by where they came from ([[reference-images#modes]]). They outlive the drop and a later
   paste, and the agent deletes the ones unused for seven days when it starts.
 - **Not everything in it is disposable.** Caches can be deleted and rebuilt; the retention store of a removable root,
-  per-user state not yet synced, and `.rehusw` ([[data-model#local-file-trio]]) cannot. Deleting the folder wholesale
-  loses them.
+  the saved task queue with its pending saves ([[sync#pending-saves]]), and the node's sessions and `.borrow`
+  snapshots ([[data-model#local-file-trio]]) cannot. Deleting the folder wholesale loses them.
 - **Borrowed copies never go here** ([[borrowing#agent-ui]]): one borrow can be many gigabytes, so each node's borrow
   folder is the user's choice.
-- **One folder assumes the agent and node run as the same OS user** — the launch-on-login case of
-  [[nodes#two-roles]]. A node installed as a system service runs under its own account, and so has its own folder.
+- **One folder, because the agent and the node run as the same OS user** ([[nodes#two-roles]]): the node is the
+  agent's child and reads the same `.rehuco` and settings. A system service would run under its own account with a
+  folder of its own, which is one of the costs that kept it out for now ([[nodes#overview]]).
 - **The move from the earlier location is manual.** Before #412 the agent's files sat in a `borco/rehuco-agent` folder
   beside its `.ini` (#361) — Roaming on Windows, `~/.config` on Linux — and its caches in `borco/rehuco-agent` under
   the platform's cache location. They are moved once, by hand — or deleted and let the app recreate them — and no
   migration code is written for it.
-- **The agent's files sit loose in these folders**, with no subfolder of their own; a node instance keeps its files in
-  `nodes/<name>/` ([[multiplicity#instances]]).
+- **The agent's files sit loose in these folders**, with no subfolder of their own; the node keeps its heartbeat, its
+  log and later its sessions under `node/` ([[multiplicity#instances]]).
 - **A run can be pointed at a folder of its own** (#494): `rehuco-agent --settings-dir DIR`, or
   `REHUCO_AGENT_SETTINGS_DIR` (the flag wins). Everything above then lives in `DIR` instead —
   settings, durable state and caches alike, the layout of Windows and macOS — and the run has its own single instance ([[nodes#single-instance]]). It keeps a development build off the installed one's

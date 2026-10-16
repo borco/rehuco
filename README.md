@@ -123,7 +123,7 @@ share, and the agent's System Integration settings page turns it on or off and s
 | `.rehu` | Per-resource sidecar (JSON). Source of truth. | implemented |
 | `.rehuco` | The folders a catalog covers, each with a label and a storage kind. | implemented |
 | `.rehudb` | SQLite catalog cache. Derived; rebuildable. | implemented |
-| `.rehusw` | Swarm state: membership, users + salted hashes, access rules. Durable. | reserved, not written |
+| `.rehuser` | One user's state for one resource, beside its `.rehu`: progress, ratings, notes. | designed, not written |
 
 `.tc`, the format of the [tutcatalog](#history) predecessors, is read for conversion only — rehuco
 never writes it.

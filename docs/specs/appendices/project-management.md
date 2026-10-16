@@ -55,7 +55,7 @@ independent facts rather than one overloaded field.
 | `cache db` | CacheDB | Cached database. |
 | `tutorials` | WatchTutorial | Tutorial playback, watch progress, follow mode — desktop and web. |
 | `borrowing` | Borrowing | Offline borrow. |
-| `swarm` | Swarm | Full multi-node. |
+| `node` | Node | The node: web UI, long jobs, discovery, OTP login, the borrow store. |
 | `daz3d` | Daz3D | daz3d-personal-database migration. |
 | `web scrapping` | WebScrapping | Browser drops and site scrapers feeding the editor. |
 | `reference images` | RefImages | Image tagging, search, practice. |
@@ -98,8 +98,8 @@ How to choose:
   the change is a contained edit plus tests. No design decision remains.
 - **`opus`** — reasoning-dense work where the thinking *is* the task: subtle invariants, race
   conditions, descriptor/metaclass machinery, and the cores listed in
-  [[implementation-plan#model-strategy]] (sync engine, plugin block save invariant, registry
-  resolution & serve-after-resync, cross-filesystem safe move).
+  [[implementation-plan#model-strategy]] (the save path with its lock and compare, the plugin block save
+  invariant, the cross-filesystem verified copy and move).
 - **`fable`** — the top-tier model, reserved for work that has defeated or would likely defeat
   `opus`: cross-cutting audits, architecture-level analysis, or issues reopened after an `opus`
   attempt missed the mark. Expensive; use sparingly and deliberately.

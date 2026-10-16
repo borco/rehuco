@@ -105,8 +105,8 @@ and the Windows-only dev-launcher targets
 ## Model strategy
 
 Default `opusplan` (Opus plans, Sonnet executes). Manually `/model opus` for the reasoning-dense cores listed in
-[[implementation-plan#model-strategy]]: sync engine, plugin block save invariant, registry resolution &
-serve-after-resync, cross-filesystem safe move.
+[[implementation-plan#model-strategy]]: the save path (lock file, compare-and-swap, per-field merge, apply-payload
+jobs), the plugin block save invariant, the cross-filesystem verified copy and move.
 
 ## Commit and branch policy
 
