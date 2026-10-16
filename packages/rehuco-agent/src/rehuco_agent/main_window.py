@@ -85,6 +85,8 @@ from .documents.save_or_prompt_retry import save_or_prompt_retry
 from .fields.type_field import type_label
 from .glyphs import TAB_CLOSE_GLYPH
 from .main_window_ui import Ui_MainWindow
+from .node_host import NodeHost
+from .node_status_indicator import NodeStatusIndicator
 from .recycle_bin_deleter import configured_deleter
 from .rehuco import BrowsersDock, RootCatalog, RootsPanel
 from .rehuco.catalog_table_model import RowKey
@@ -100,6 +102,7 @@ from .settings.identity_settings import shared_identity_settings
 from .settings.image_viewer_settings import shared_image_viewer_settings
 from .settings.logs_settings import shared_logs_settings
 from .settings.main_window_settings import TOOLBARS_STATE_VERSION, MainWindowSettings
+from .settings.node_settings import shared_node_settings
 from .settings.persistent_settings import persistent_settings
 from .settings.recent_files_settings import RecentFilesSettings
 from .settings.rehuco_settings import RehucoSettings
@@ -310,6 +313,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         floating_show_guard = QtAdsFloatingShowGuard()
         shared_tray_settings().enabled_changed.connect(self.__on_tray_enabled_changed)  # type: ignore[attr-defined]
         self.__on_tray_enabled_changed(shared_tray_settings().enabled)
+        # the local node (#506): started on a timer once the event loop runs, so the window and the first
+        # document never wait for it; stopped first thing in closeEvent once the guards have passed
+        self.__node_host: Final = NodeHost(shared_node_settings(), parent=self)
+        self.__node_host.start_later()
 
         self.__dock_manager: Final = QtAds.CDockManager(self)
         # this manager is every nested tracker's stylesheet host, and their sheet zeroes the close
@@ -1196,19 +1203,21 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             # pylint: disable-next=import-outside-toplevel
             from .settings.ui.registry_page import RegistryPage
 
-            self.__settings_dialog.add_page(system_integration_title, RegistryPage(ARCHIVE_EXTENSIONS))
+            self.__settings_dialog.add_page(
+                system_integration_title, RegistryPage(ARCHIVE_EXTENSIONS, self.__node_host)
+            )
 
         if sys.platform == "linux":
             # pylint: disable-next=import-outside-toplevel
             from .settings.ui.desktop_integration_page import DesktopIntegrationPage
 
-            self.__settings_dialog.add_page(system_integration_title, DesktopIntegrationPage())
+            self.__settings_dialog.add_page(system_integration_title, DesktopIntegrationPage(self.__node_host))
 
         if sys.platform == "darwin":
             # pylint: disable-next=import-outside-toplevel
             from .settings.ui.system_integration_page import SystemIntegrationPage
 
-            self.__settings_dialog.add_page(system_integration_title, SystemIntegrationPage())
+            self.__settings_dialog.add_page(system_integration_title, SystemIntegrationPage(self.__node_host))
 
         self.__settings_dialog.add_page("Tasks", TasksPage())
         self.__settings_dialog.add_page("Videos", VideosPage())
@@ -1265,6 +1274,9 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__task_queue_status_indicator = TaskQueueStatusIndicator(self.__task_queue_widget.model)
         self.__task_queue_status_indicator.clicked.connect(lambda: self.__task_queue_dock.toggleView(True))
         self.statusBar().addPermanentWidget(self.__task_queue_status_indicator)
+        # the local node's word, rightmost (#506): "Local Node: Running", or "Local Node: Stopped" greyed out
+        self.__node_status_indicator = NodeStatusIndicator(self.__node_host)
+        self.statusBar().addPermanentWidget(self.__node_status_indicator)
 
         # image_previews_toggle_action/image_previews_action follow the same primary/companion split
         # as the two pairs above, but neither wraps a dock: both are declared in main_window.ui, and
@@ -1769,9 +1781,9 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         steps below (window state, session, recents, theme) while the window closes anyway -- once the
         guard has passed, they always run.
 
-        A close accepted while the tray icon exists ends with an **explicit** application quit --
-        see the comment on that block for why Qt's own last-window-closed quit cannot be relied on
-        for a window that is hidden to tray.
+        An accepted close always ends with an **explicit** application quit -- see the comment on that
+        block for why Qt's own last-window-closed quit cannot be relied on, with a window hidden to tray
+        (#205) or a floating dock window still on screen (#507).
 
         :param event: the close event to accept or ignore.
         """
@@ -1790,6 +1802,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         if not self.__confirm_task_queue_loss():
             event.ignore()
             return
+
+        # the node goes first, and fast: a node still starting is killed outright, a running one gets a short grace
+        # (#506), so quitting never waits on it
+        self.__node_host.stop()
 
         # the guards have passed, so the window is going: no answer from the presence scan may reach it from here on.
         # A call still blocked on a switched-off server is left where it is -- its thread is a daemon, and the process
@@ -1821,17 +1837,20 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__theme_settings.mode = self.__theme_model.mode
         self.__theme_settings.save(persistent_settings())
         if self.__tray_icon is not None:
-            # An explicit quit, not left to Qt's last-window-closed machinery: a window hidden to
-            # tray is no longer a *visible* primary window, so closing it never fires that quit --
-            # Quit from the tray menu while hidden would run this whole teardown and then leave
-            # ``exec()`` running forever, the unquittable-app trap #205 names arriving through the
-            # other door (confirmed empirically offscreen). The icon is taken down first so it
-            # never outlives the window it controls.
+            # the icon is taken down first so it never outlives the window it controls
             self.__tray_icon.hide()
             self.__tray_icon.deleteLater()
             self.__tray_icon = None
-            if (app := QApplication.instance()) is not None:  # pragma: no branch  (always exists here)
-                app.quit()
+        # An explicit quit, never left to Qt's last-window-closed machinery, which fails to come in two ways. A
+        # window hidden to tray is no longer a *visible* primary window, so closing it never fires that quit:
+        # Quit from the tray menu while hidden would run this whole teardown and then leave ``exec()`` running
+        # forever (#205, confirmed empirically offscreen). And a floating dock window -- a torn-out Settings, a
+        # Browsers window -- is a top-level window of its own with no transient parent, so while one is on screen
+        # this window is not the last one either; closing it afterwards is a close QtAds ignores (it hides
+        # instead), and the process lives on with nothing on screen (#507, measured on the real display). Nothing
+        # is freed here: quit() only ends the event loop once this event has been handled
+        if (app := QApplication.instance()) is not None:  # pragma: no branch  (always exists here)
+            app.quit()
         super().closeEvent(event)
 
     def __restore_session_if_enabled(self) -> None:

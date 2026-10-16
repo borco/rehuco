@@ -87,9 +87,9 @@ What's left of the editor is small: a page image picker (a scraping helper, not 
 
 What's left of the catalog is filed in the [implementation plan](docs/specs/implementation-plan.md).
 
-Past that the design reaches further — playback with progress tracking, a headless node with a
-REST API, sync and offline borrowing between machines, multi-user access rules, a browser interface,
-Daz3D library migration. None of it is implemented, none of it is scheduled, and some of it may never
+Past that the design reaches further — playback with progress tracking, web pages and long jobs served
+by the node, offline borrowing between machines, multi-user access, a browser interface, Daz3D library
+migration. None of it is implemented, none of it is scheduled, and some of it may never
 be: it is what the architecture is shaped to allow, and each piece has to earn its place when its
 turn comes. The [design specs](docs/specs/README.md) explore that territory in depth — as intent, not
 as a description of the current build.
@@ -106,14 +106,15 @@ rehuco/                       # uv virtual-workspace root (no [project] table)
 │   ├── borco-pyside/         # generic PySide widgets/utilities — temporary guest, moving out
 │   ├── rehuco-core/          # shared models, .rehu I/O, .rehuco and .rehudb cache, legacy .tc reading
 │   ├── rehuco-agent/         # PySide6 desktop GUI — the viewer/editor and catalog browser
-│   └── rehuco-node/          # a reserved name; no service written yet
+│   └── rehuco-node/          # the local node: a process the agent runs beside itself
 ├── docs/specs/               # design specs (see the document map)
 └── tools/                    # repo tooling (mkdocs hooks, slug checker)
 ```
 
-`rehuco-agent` is the desktop GUI and the only runnable program here; `rehuco-core` is the library it
-reads and writes files with. `rehuco-node` holds a name and a version constant against the day a
-headless service is written — nothing imports it, and nothing depends on it existing.
+`rehuco-agent` is the desktop GUI; `rehuco-core` is the library it reads and writes files with.
+`rehuco-node` is the local node: a process the agent starts a few seconds after its window is up, as
+the same user, and stops when it quits — today it keeps a heartbeat file and a log in the folder the two
+share, and the agent's System Integration settings page turns it on or off and shows whether it runs.
 
 ## File formats
 
@@ -122,7 +123,7 @@ headless service is written — nothing imports it, and nothing depends on it ex
 | `.rehu` | Per-resource sidecar (JSON). Source of truth. | implemented |
 | `.rehuco` | The folders a catalog covers, each with a label and a storage kind. | implemented |
 | `.rehudb` | SQLite catalog cache. Derived; rebuildable. | implemented |
-| `.rehusw` | Swarm state: membership, users + salted hashes, access rules. Durable. | reserved, not written |
+| `.rehuser` | One user's state for one resource, beside its `.rehu`: progress, ratings, notes. | designed, not written |
 
 `.tc`, the format of the [tutcatalog](#history) predecessors, is read for conversion only — rehuco
 never writes it.

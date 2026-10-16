@@ -76,9 +76,9 @@ What's left of the editor is small: a page image picker (a scraping helper, not 
 
 What's left of the catalog is filed in the [implementation plan](specs/implementation-plan.md).
 
-Past that the design reaches further — playback with progress tracking, a headless node with a
-REST API, sync and offline borrowing between machines, multi-user access rules, a browser interface,
-Daz3D library migration. None of it is implemented, none of it is scheduled, and some of it may never
+Past that the design reaches further — playback with progress tracking, web pages and long jobs served
+by the node, offline borrowing between machines, multi-user access, a browser interface, Daz3D library
+migration. None of it is implemented, none of it is scheduled, and some of it may never
 be: it is what the architecture is shaped to allow, and each piece has to earn its place when its turn
 comes. The [design specs](specs/README.md) explore that territory in depth — as intent, not as a
 description of the current build.
@@ -95,7 +95,7 @@ names are taken and the release plumbing is exercised, not because they are read
 | --- | --- | --- | --- | --- |
 | [rehuco-agent](https://pypi.org/project/rehuco-agent/) | PySide6 desktop GUI | [![PyPI](https://img.shields.io/pypi/v/rehuco-agent)](https://pypi.org/project/rehuco-agent/) | [![Downloads](https://static.pepy.tech/badge/rehuco-agent)](https://pepy.tech/project/rehuco-agent) | [![Python](https://img.shields.io/pypi/pyversions/rehuco-agent)](https://pypi.org/project/rehuco-agent/) |
 | [rehuco-core](https://pypi.org/project/rehuco-core/) | Shared library: models, `.rehu` I/O, `.rehuco` and `.rehudb` cache, legacy `.tc` reading | [![PyPI](https://img.shields.io/pypi/v/rehuco-core)](https://pypi.org/project/rehuco-core/) | [![Downloads](https://static.pepy.tech/badge/rehuco-core)](https://pepy.tech/project/rehuco-core) | [![Python](https://img.shields.io/pypi/pyversions/rehuco-core)](https://pypi.org/project/rehuco-core/) |
-| [rehuco-node](https://pypi.org/project/rehuco-node/) | A reserved name; no service written yet | [![PyPI](https://img.shields.io/pypi/v/rehuco-node)](https://pypi.org/project/rehuco-node/) | [![Downloads](https://static.pepy.tech/badge/rehuco-node)](https://pepy.tech/project/rehuco-node) | [![Python](https://img.shields.io/pypi/pyversions/rehuco-node)](https://pypi.org/project/rehuco-node/) |
+| [rehuco-node](https://pypi.org/project/rehuco-node/) | The local node: a heartbeat process the agent runs beside itself | [![PyPI](https://img.shields.io/pypi/v/rehuco-node)](https://pypi.org/project/rehuco-node/) | [![Downloads](https://static.pepy.tech/badge/rehuco-node)](https://pepy.tech/project/rehuco-node) | [![Python](https://img.shields.io/pypi/pyversions/rehuco-node)](https://pypi.org/project/rehuco-node/) |
 
 ## Generic libraries (temporarily hosted)
 

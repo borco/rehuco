@@ -6,278 +6,233 @@
 
 [[[mounts-and-storage#the-problem]]]
 
-A machine running the Qt app (or a node) may have network shares from *other* boxes mounted locally — e.g. the Mac mini
-has the QNAP's share mounted. The same physical files can then be reachable two ways at once: directly via the mount,
-and via the QNAP's own node over REST. Naively, this risks the same resource appearing as two separate catalog entries.
+One share, many machines, many paths. The same folder on the NAS is `U:\Tutorials` on the Windows PC,
+`/System/Volumes/Data/mount/DATA/Tutorials` on the Mac mini and `/mnt/nas/Tutorials` on a Linux box; a folder on one
+PC's own disk is reachable from the others only once that PC shares it, under yet another path. The catalog must know
+that these are one place, keep each machine's cache current when another machine changes a file there, and open the
+same `.rehuco` on every one of them.
 
-## §9.2 Resolved by UUID, not by path-guessing
+## §9.2 Identity is the UUID, not the path
 
 [[[mounts-and-storage#uuid-not-paths]]]
 
-Path-based inference (trying to guess that a given mount root corresponds to a given node's share) is fragile — mount
-points are named arbitrarily and have no necessary relation to a node's internal paths. Instead: **a resource discovered
-via a mount and the same resource reported by a node are recognized as identical purely because their `.rehu` UUIDs
-match.** Once matched, the catalog holds one logical entry with multiple known **access routes** (mount path, node REST
-endpoint, or both), and can prefer whichever route is fastest for a given operation (typically: local mount > delegating
-to a node over the network).
+A resource reached by two paths — two machines' mounts of one share, a backup on a shelf, a borrowed copy — is
+recognized as one resource because its `.rehu` **UUID** matches, never by guessing that one path corresponds to
+another ([[instances-and-dedup#uuid-is-lineage]]). A key is a location, not an identity ([[nodes#access-seam]]).
 
-This same model generalizes cleanly: **more than one node can serve the same resource**, if more than one box happens to
-have the owning box's share mounted. This isn't a conflict — it's just additional access routes for the same UUID. If
-the originally-owning box goes down but another node still has it mounted, that node can keep serving the resource live;
-the read-only cached fallback ([[instances-and-dedup#failure-model]]) only applies when **no** live route remains at
-all.
+**A rename is a filesystem operation on the machine that issues it.** Within one process a job holds a
+`ResourceLocation` rather than a path, and the rename rewrites it ([#241](https://github.com/borco/rehuco/issues/241));
+the other views follow through the notifier's `Moved` event. Another machine learns of the rename the same way every
+change travels: the SMB server reports it, that machine's notifier announces it, its cache follows
+([[mounts-and-storage#out-of-band]]). A request that still names the old path arrives at a file that is no longer there
+and is refused with the reason, not guessed at. There is no cross-machine rename request and so nothing to coalesce.
 
-**A rename should be addressed by UUID too, once one can cross machines** ([#241](https://github.com/borco/rehuco/issues/241)).
-Within one process this is settled: a job holds a `ResourceLocation` rather than a path, and the rename rewrites it. Across
-machines the same question returns as *which resource did the requester mean*, and the answer must be the UUID. A request
-naming a path is stale the moment somebody else renames: it arrives at a `.rehu` that is no longer there, and is correctly
-refused rather than guessed at. A request naming the UUID resolves to the resource under whatever it is called now, so two
-people renaming the same thing produces two renames in order — both honoured, both reported truthfully — instead of one
-silently discarding the other.
-
-**Coalescing them is the wrong repair.** Collapsing "rename to `bar`" and "rename to `baz`" into just `baz` reports success
-for a name it did not produce, and throws away an update whose loss the version vector exists to *detect*
-([[sync#overview]]). Ordering by identity is what removes the need to choose.
-
-Not a concern for a single owner today — writes to a managed resource route through its primary node
-([[data-model#write-integrity]]), and two nodes claiming primary for one storage is a flagged misconfiguration
-([[mounts-and-storage#folder-add]]) — so this is recorded as the shape the swarm-era rename takes, not as a gap in the
-current one.
-
-## §9.3 `.rehuco`: explicit, local, declared scope
+## §9.3 `.rehuco`: the user's roots, mapped per machine
 
 [[[mounts-and-storage#rehuco-scope]]]
 
-Rather than relying purely on empirical UUID-matching to discover the mount-to-node relationship (which only
-self-corrects after both sides have independently reported the same UUID at least once), the system uses a **`.rehuco`
-file, local to each machine**, that explicitly declares:
+A **`.rehuco`** file names the folder roots to catalog, and is **shareable across machines**: it may sit on the share
+and be opened from every box, or be copied around. **By default it is a local file** — *New* proposes the app folder
+and *Open* starts there; putting one on the share is the user's choice, and nothing else changes. It declares:
 
-- which folder roots this machine/app should scan or track
-- for mounted roots, which node administers that content and how to reach it
-- which plugins ([[plugins#overview]]) should be loaded for this machine
+- the **roots**, each with a stable **id** the cache keys its rows on, a **label** (defaulting to the folder's name,
+  made unique with a suffix on a clash; what the browser shows and what a folder filter addresses,
+  `folder="<label>/<relative path>"`, [[plugins#browsers]]), a machine-independent **location**, and a **mappings**
+  table (below);
+- which plugins ([[plugins#overview]]) to load;
 - the default **creation directory** for new grouping-entity documents (authors, cross-cutting collections, public
   learning paths — [[plugins#grouping-entities]]); *discovery* of existing entity documents needs no declared
-  locations — it is type-based, so the scanner finds them wherever they sit in any scanned root
+  locations — it is type-based, so the scanner finds them wherever they sit in any scanned root.
 
-`.rehuco` is **per-machine, not swarm-wide** — mounts inherently differ machine to machine (different mount points,
-different machines even having a given share mounted at all), so a shared/central `.rehuco` wouldn't reflect any single
-machine's reality. This also removes any cold-start ambiguity: the mount-to-node relationship is known immediately at
-startup, not discovered after the fact.
+**A root's identity is its location; what differs per machine is its mapping.** The location is the same on every box:
+for a share, the server and share path (`//nas/data/Tutorials`), read from this machine's mount table when the root is
+added (`WNetGetConnection` on Windows, the mount table on macOS and Linux); for a folder on one machine's own disk, that
+machine's name and path (`//ryzen-5600/d/Downloads/FOO`). The mappings table says where each machine finds it, and
+carries what is a fact about that machine rather than about the root:
 
-**Per `.rehuco`, not per machine singleton.** A machine may keep several `.rehuco` files — each a set of roots
-browsed together — and the agent opens one at a time ([[data-model#local-file-trio]], #371). Each root carries a
-**label**, defaulting to its folder's name and made unique with a suffix on a clash; the label is what the browser
-shows and what a folder filter addresses (`folder="<label>/<relative path>"`, [[plugins#browsers]]), and changing it
-touches nothing on disk. Removing a root from a `.rehuco` asks first, states that its files stay where they are, and
-drops only the root's cached entries ([[data-model#cache-schema]]). A root also carries a stable **id**, which
-the cache keys its rows on, so relabeling, reordering or re-pointing it orphans nothing; and a **storage**, which
-the user chooses and can change at any time — a local folder, a network share, a removable drive (a USB stick or
-disk) or a CD or DVD. Nothing detects it: it says what the folder lives on, so the Roots view can tell a share that
-is away from a folder that is gone, and a removable drive or a disc counts as removable for the cache
-([[mounts-and-storage#durable-retention]]).
+```json
+{
+  "id": "…",
+  "label": "Tutorials",
+  "location": "//nas/data/Tutorials",
+  "mappings": {
+    "ryzen-5600": { "path": "U:\\Tutorials", "storage": "network" },
+    "macmini":    { "path": "/System/Volumes/Data/mount/DATA/Tutorials", "storage": "network" }
+  }
+}
+```
 
-**A root is a local folder or a reference into a node** (#409). An entry either names a folder on this machine, or
-points at a root another node serves — or at a folder under one — by node, root and relative path
-([[nodes#access-seam]]). So a `.rehuco` the agent opens is a **view**: one can show everything the swarm exposes, another
-only `mini2 / Tutorials / Blender`, and views own nothing, so any number of them may point into the same root. There is
-no swarm mode to switch: out of a swarm, node references have no node to resolve and show as unavailable — kept, not
-removed — while local folders work as always. Who reaches a local folder follows the owner rule: through the node in
-the agent's swarm that owns it, otherwise directly ([[multiplicity#instances]]). A node serves a `.rehuco` too — its
-instance config names it — and every root in it is a local folder that node owns.
+- **The storage kind is detected, not declared** — local disk, network share, removable drive or disc — from the drive
+  type on Windows and the mount table elsewhere, per mapping; the notifier picks its backend from it
+  ([[mounts-and-storage#out-of-band]]) and retention takes its default from it
+  ([[mounts-and-storage#durable-retention]]). There is no user override: the system marks them.
+- **Opening the file on a machine with no mapping resolves what it can and asks for the rest.** A share root whose
+  server and share this machine mounts gets its path proposed from the mount table; the rest are listed in a wizard with
+  Browse and Skip per row. A skipped root stays **visible but disabled** — not scanned, not browsed, not served by the
+  node — with a *Map…* action in the Roots view for later, once the share is mounted or the folder shared. A root a
+  machine cannot reach by nature (another box's local disk, not shared) sits there the same way.
+- **Each machine writes only its own mapping**, so two machines saving the same `.rehuco` never fight over content; the
+  save goes through the same lock and compare as a `.rehu` ([[sync#overview]]). A copied `.rehuco` carries every
+  machine's mapping along.
+- **Renamed machines**: the wizard offers *this is the same machine as X* rather than silently orphaning a mapping.
+- Today's `.rehuco` (format 2) holds plain paths and a user-declared storage; the version bump migrates each root to a
+  location computed on the machine that opens it plus that machine's mapping, through the file's own migration chain
+  (#371).
 
-**Do not put swarm-identical data in `.rehuco`.** Users, hashes, and access rules are swarm-wide and must be identical
-on every node; they belong with the propagated swarm registry ([[discovery-trust-access#user-auth]],
-[[discovery-trust-access#access-control]]), *not* in this per-machine file. The dividing line: `.rehuco` holds what is
-legitimately *different* per box (mounts, ownership flags, retention opt-ins, auth-trusted flag, plugins); the
-propagated registry holds what must be *the same* everywhere (membership, users, access rules).
+**Per `.rehuco`, not per machine singleton.** A machine may keep several `.rehuco` files — each a set of roots browsed
+together — and the agent opens one at a time ([[data-model#local-file-trio]], #371). Removing a root asks first, states
+that its files stay where they are, and drops only the root's cached entries ([[data-model#cache-schema]]).
 
-## §9.4 Nodes can also serve mounted (not locally-owned) content
+**Roots do not overlap** within one file ([[multiplicity#instances]]), and no root has an owner.
+
+## §9.4 The node serves what its machine reaches
 
 [[[mounts-and-storage#nodes-serve-mounted]]]
 
-The same mounting capability applies to nodes, not just the Qt app — a node can serve a resource it only has access to
-via a mount from another box, using the same `.rehuco`-declared relationship.
+The node has no roots of its own ([[nodes#two-roles]]): it reads the user's `.rehuco` from the shared app folder and
+serves every root this machine has a working mapping for — a local disk, a mounted share — plus its borrow store. A root
+mapped but offline shows as offline on the web pages as it does in the agent; an unmapped one is not served.
 
-## §9.5 Out-of-band changes: notification, verify-on-access, and scan — not disk-watching
+## §9.5 The file notifier: one change source, and the catch-alls behind it
 
 [[[mounts-and-storage#out-of-band]]]
 
-Ordinary agent edits to a managed `.rehu` route through the owning node ([[data-model#write-integrity]],
-[[nodes#local-vs-swarm]]), so the node sees them by construction. What this section covers is the **out-of-band change**
-— a write the owning node didn't make: an agent in local-file mode with no route to the node ([[nodes#local-vs-swarm]]),
-files dropped in by other tools, a bulk copy landing in a watched root. The node must learn of these without a
-continuously-running filesystem watcher (an unwanted resource cost, especially on weak hardware). Three complementary
-discovery paths, ordered by immediacy:
+Every view in the app — the cache and its browsers, the Roots view, the Files dock, open documents — learns that
+something on disk changed from **one source**, the `FileNotifier` in rehuco-core, publishing on the `ChangeFeed`
+([[nodes#access-seam]]). Nothing announces its own writes to the others any more: a save, a rename, a screenshot
+written, a checksum record, a change made by another machine or by hand reach the views by the same path, as what the
+disk says happened. The notifier runs per root, with a backend chosen by the mapping's storage kind, measured in #502:
 
-1. **Explicit notification (fast path).** Whoever made the change and knows — via `.rehuco` — which node administers the
-   path sends a lightweight **"re-read this specific resource"** notification, keyed by UUID/path. If the node is
-   unreachable at that moment, the notification is queued as a retryable task ([[architecture-design#components]])
-   rather than lost — it is not the sender's job to keep retrying by hand. A burst of rapid edits to the same resource
-   is debounced into a single outgoing notification, consistent with the coalescing rule in [[sync#overview]].
-2. **Verify-on-access (lazy path).** The node's cache stores each `.rehu`'s stat signature and content hash at last read
-   ([[data-model#scan-and-staleness]]); opening, browsing to, or serving the resource re-checks it, so an out-of-band
-   edit is reintegrated the moment anyone touches the resource again — no notification and no scan needed.
-3. **Incremental scan (catch-all).** Changes nobody announced and nobody has touched surface at the next version-aware
-   incremental scan ([[data-model#scan-and-staleness]]).
+| Root on | Backend | Measured |
+| --- | --- | --- |
+| A local disk or removable drive | **Native events** (`watchdog`: ReadDirectoryChangesW, FSEvents, inotify), recursive | Ordinary on all three OSes |
+| An SMB share | **Our own SMB session**: `smbprotocol` opens the root on a session of its own and waits on `CHANGE_NOTIFY` with the tree flag; the server answers from its inotify watches, so every writer on every client is seen. Data still flows through the OS mount; this session carries notifications only. | Complete against the TS-230, mini2 and esprimo: create, write, rename (an old-name/new-name pair), atomic replace, delete, ~5 ms after a local write, ~100 ms after another machine's; a 2000-file burst delivered in full. Needs the share's credentials: the Windows logon serves as is; on macOS and Linux the agent asks once and keeps them in the OS keychain. |
+| A share without credentials, anything else, any backend that failed | **Polling** of the cache's known records by stat signature, on a timer | The floor, never the design: a stat per record over the LAN is 1–3 ms, so 10k records sweep in 10–30 s at a few minutes' interval. |
 
-On any of the three, the node re-reads just that file, updates its cache, and propagates the change onward through the
-swarm as for any other metadata update, with the version-vector comparison deciding fast-forward vs. concurrent
-([[data-model#write-integrity]]).
+The OS client's own watcher on a share is **not** a backend: on Windows it works (ReadDirectoryChangesW is forwarded
+to the server) but drops events under load with no overflow signal; on macOS FSEvents over SMB produced four nameless
+"folder modified" events for a 500-file burst; on Linux `inotify` on `cifs` sees only this machine's writes.
 
-**Inside one agent, the explicit notification is an in-process event** (#376). Whatever the agent does to files
-itself — a resource rename, a save, a `.tc` conversion, a screenshot moved or deleted, a checksum run finishing — is
-announced app-wide, and every view of those files (the cache, the browser, the roots column view, the files
-sub-dock, open documents) updates **in place**, with no rescan and no model reset. **A move is announced as the
-rename's executed plan**, the `(source, destination)` pairs actually renamed, not as one old/new pair: each holder
-applies the rule *a path at or beneath a renamed source lands at the same offset beneath its destination* to
-everything it holds. That one rule covers every scoping case ([[data-model#resource-scoping]]) — a directory-scoped
-resource (a collection's folder included) carries every record nested under it, a file-scoped `foo.rehu` carries its
-`foo.*` siblings, screenshots and sidecars, and a file-scoped record inside a renamed folder moves with the folder.
-Changes made outside the app reach the views by the same three paths as above, plus an explicit refresh (`F5`) in
-each browsing view; there is still no watcher.
+Rules:
+
+- **Events are debounced and coalesced** into the feed's `Changed`, `FolderChanged` and `Moved`; a rename's pair becomes
+  one `Moved` with the executed plan — the `(source, destination)` pairs — and each holder applies *a path at or
+  beneath a renamed source lands at the same offset beneath its destination* to everything it holds, which covers every
+  scoping case ([[data-model#resource-scoping]]).
+- **A notify-buffer overflow publishes `RootStale`** for that root, and every holder re-reads it as `F5` does.
+- **The notifier runs on a daemon thread and survives the mount dropping** ([[mounts-and-storage#offline-mounts]]); a
+  share that went away is re-subscribed when it is back.
+- **Verify-on-access and the incremental scan stay as the catch-alls.** The cache stores each `.rehu`'s stat signature
+  and content hash ([[data-model#scan-and-staleness]]); opening, browsing to or serving a resource re-checks it, and the
+  version-aware incremental scan finds what no event and no visit did. A polled root relies on them.
 
 **Browsing never blocks a rename.** A directory-scoped rename on NTFS fails while any handle is open beneath the
 directory, so no browsing view or scan holds one between reads: every directory listing is one chunk under the rename
 coordinator's hold, closed before the next, and yields when a rename asks (#241, #372, #378).
 
-## §9.6 Node handoff during active viewing
+## §9.6 Progress follows the user, not a node
 
 [[[mounts-and-storage#node-handoff]]]
 
-A user may start watching a tutorial via the node on their PC, then switch to the node on the TS-230 (e.g. because
-they're shutting the PC down), and later reconnect the PC — expecting playback progress to follow seamlessly throughout.
-This requires no new mechanism beyond [[sync#overview]]'s per-user state sync, but does require a **higher push
-frequency during active playback**: progress should be written to the authoritative record every few seconds (or on
-pause/seek/stop), not only at session end, so that switching the serving node — or reconnecting one used earlier —
-reflects state that's only seconds stale rather than a full session behind. A node taking over playback reads current
-state before resuming, the same read any node would perform on session start.
+A user may watch a tutorial in the agent, carry on from the tablet through a node, and come back. There is no handoff
+between nodes to design: progress is written **every few seconds** (and on pause, seek and stop) into the user's
+sidecar on the share ([[field-schema#watch-progress]], [[data-model#single-file]]), and every player reads it from
+there before resuming — the agent directly, the web page through its node — so whoever picks it up is at most seconds
+behind.
 
-## §9.7 Example deployment: multiple machines mounting one share
+## §9.7 Example deployment: several machines on one share
 
 [[[mounts-and-storage#example-deploy]]]
 
-The same share can legitimately be mounted by several machines at once (e.g. the PC, the main desktop, the Mac mini, and
-a low-power always-on Linux box could all mount the QNAP's export) — this is an ordinary network-share capability, not
-something the architecture needs to specially support. What it means in practice is that **"who serves a resource"
-doesn't need a single designated answer**; per [[mounts-and-storage#uuid-not-paths]], any subset of machines with access
-can each run a node for it simultaneously, with no conflict. This makes per-machine role assignment a matter of matching
-each box's power/compute profile to a job, rather than picking one "correct" server:
-
-- A weak-but-already-always-on box (e.g. one already running other always-on services, with idle CPU/RAM to spare) is
-  well-suited to **light, always-available serving** — answering catalog queries, serving cached metadata/thumbnails,
-  proxying file reads — but should be explicitly excluded from CPU-heavy tasks (checksumming, scanning, dedup matching),
-  which belong on whichever machine is being actively used at the time and has real headroom.
-- The box that actually owns the disks (e.g. the QNAP) doesn't strictly need to run its own node at all if another
-  always-on machine adequately covers the serving role via a mount — though running one anyway adds redundancy if its
-  power/compute cost is acceptable.
-- This role assignment is a deployment/configuration choice (expressed via `.rehuco` and task-dispatch tagging,
-  [[data-model#checksums]]), not an architectural constraint — different households, or the same household at different
-  times, could assign roles differently without any design change.
+The PC, the Mac mini and a Linux box all mount the TS-230's share; each runs its agent over its own `.rehudb` and, while
+its user is logged in, its node. **"Who serves a resource" needs no answer**: every machine reaches the files itself,
+and the node a tablet talks to is the one its user chose ([[nodes#node-actions]]). The machine that travels takes its
+borrowed copies along and serves them from its own node with everything at home switched off
+([[borrowing#vacation-topology]]). The TS-230 runs nothing of rehuco's ([[packaging-deployment#ts230-as-nas]]).
 
 **One thing several machines on one share cannot do: yield to each other's renames**
 ([#241](https://github.com/borco/rehuco/issues/241)). Within one process a rename asks the jobs reading beneath it to
-close their handles, and they do so at the next chunk boundary — measured at ~7 ms. That request does not cross a machine
-boundary. A rename issued on box A while box B is reading the same directory over SMB can still be refused by the server,
-because B's handle is open and nobody asked B to let go.
+close their handles, and they do so at the next chunk boundary — measured at ~7 ms. That request does not cross a
+machine boundary: a directory rename issued on box A while box B reads inside it over SMB can be refused by the server,
+for the one chunk in which B's handle is open. File-level operations are fine regardless — readers open sharing every
+right including delete, so renaming or replacing *the file being read* succeeds from any machine, with one caveat
+measured in #503: the macOS client keeps a closed file's handle for a while, so a replace from another machine right
+after a Mac read may need a retry. The rename reports the refusal and offers to retry; there is no coordinator across
+machines and none planned.
 
-**Mitigated rather than solved, and worth being precise about which half is which.** File-level operations are fine
-regardless: readers open sharing every right including delete, so renaming or deleting *the file being read* succeeds from
-any machine. What remains exposed is renaming a **directory** while another host reads inside it, and only for the window
-in which a handle is actually held — one chunk, not one job. So the failure is a transient refusal the user can retry, not
-a resource locked for the length of a sweep, which is the outcome that mattered.
-
-Closing the gap properly is swarm-era and belongs with the UUID-addressed rename ([[mounts-and-storage#uuid-not-paths]]):
-once a rename is a request to the resource's primary node rather than a filesystem call from wherever the user happens to
-be standing, it is that node's coordinator that stands its own readers aside, and the cross-host case stops being one.
-
-## §9.8 Configurable durable retention of remote/offline metadata
+## §9.8 Configurable durable retention of offline-media metadata
 
 [[[mounts-and-storage#durable-retention]]]
 
 - [#405: docs: spec root caching, borrowing UI, and per-file watch progress](https://github.com/borco/rehuco/issues/405)
 
-`.rehuco` can opt in, per root, to keeping a **durable local copy of that root's metadata** — so a root whose medium
-sits in a drawer, or whose node or share is switched off (the library shelf, [[borrowing#library-shelf]]), stays
-browsable. The UI calls this **caching a root**; the spec keeps *retention*, because everywhere else here a cache is
-disposable and this copy is not (below). Rationale and rules:
+`.rehuco` can opt in, per root and per machine (it is in the mapping), to keeping a **durable local copy of that root's
+metadata** — so a root whose medium sits in a drawer, or whose share is switched off (the library shelf,
+[[borrowing#library-shelf]]), stays browsable. The UI calls this **caching a root**; the spec keeps *retention*,
+because everywhere else here a cache is disposable and this copy is not (below).
 
-- **Why**: offline media are painful to rescan one-by-one, and a powered-off node's content would otherwise drop out of
+- **Why**: offline media are painful to rescan one-by-one, and a switched-off NAS's content would otherwise drop out of
   the catalog. Retaining their metadata locally keeps them browsable while disconnected, and — because the retained
   copies are ordinary local files — keeps them present across a full cache rebuild
   ([[architecture-design#why-distributed]]).
-- **Chosen per root, when the root is added to the `.rehuco`**, with a default by kind — nothing else needs configuring
-  to browse an offline root later:
+- **A default by the detected storage kind**, nothing else to configure:
 
   | Root | Retention |
   | --- | --- |
   | Removable (USB stick, external drive, CD/DVD) | **Forced on** — removable by definition, so it must stay browsable without its medium |
-  | Network (a share, another node's content) | **On by default**; the user may turn it off for a source known to stay online, where retaining only buys speed |
+  | Network share | **On by default**; the user may turn it off for a share known to stay online, where retaining only buys speed |
   | Local disk | Off — the disk is always there to read |
 
   It is per root, not per resource: keeping one resource *whole* on this machine is a borrow
   ([[borrowing#another-instance-role]]), not retention.
-- **What is retained is enough to browse, never to watch.** Per resource: the `.rehu` itself (the raw document, not
-  only the fields the browser shows), its screenshots copied as they are (no re-encoding — they are small JPEGs at
-  this scale), and its **file structure**: every file's relative path and size, plus each video's duration and
-  resolution. That is what lets the browser, the Description View and the Files dock show an offline resource,
-  read-only. No content file is copied; watching a resource whose source is offline needs a borrow.
-- **Durable, not disposable.** A removable root cannot be rescanned while its medium is absent, so its retained copy
-  is the only one there is. The store therefore sits beside `.rehudb` ([[data-model#local-file-trio]]), never inside
-  it: a cache rebuild must not wipe it. The scan writes both — durations and file structure for *every* root into
-  `.rehudb`, which the browser's folder totals need ([[field-schema#watch-progress]]), and the same data for a retained
-  root into the store as well.
-- **Per-user state for a source that can never be written** — a CD/DVD, a read-only share — is tracked on the
-  retained copy, which stays writable for per-user data only ([[field-schema#watch-progress]]). The resource metadata in
-  it is still a read-only stand-in (below).
-- **It's configurable** because every retained copy is, by definition, a copy that can go stale relative to its true
-  owner. The cost of the convenience is more staleness surfaces; the mitigation is cheap version-marker staleness
-  detection ([[data-model#scan-and-staleness]]), not frequent rebuilds.
-- **Retained copies are read-only stand-ins.** They reflect the v1 rule ([[sync#overview]]): you can browse them offline
-  and attach your own per-user notes, but you cannot edit the *resource metadata* of a retained copy until its real
-  owner is reachable. (For genuinely write-once sources like sealed CD/DVD, the metadata is never editable on the source
-  at all; edits live on a separate mutable instance, [[instances-and-dedup#uuid-is-lineage]].)
-- **Staleness is resolved by version comparison, not blind overwrite.** When a retained source becomes reachable,
-  compare the stored `resource_version`/timestamp against the live one; re-pull only if it moved.
+- **What is retained is enough to browse, never to watch.** Per resource: the `.rehu` itself, the user's own sidecar,
+  its screenshots copied as they are, and its **file structure**: every file's relative path and size, plus each
+  video's duration and resolution. That is what lets the browser, the Description View and the Files dock show an
+  offline resource, read-only. No content file is copied; watching a resource whose source is offline needs a borrow.
+- **Durable, not disposable.** A removable root cannot be rescanned while its medium is absent, so its retained copy is
+  the only one there is. The store therefore sits beside `.rehudb` ([[data-model#local-file-trio]]), never inside it: a
+  cache rebuild must not wipe it.
+- **Per-user state for a source that can never be written** — a CD/DVD, a read-only share — is tracked on the retained
+  copy, which stays writable for per-user data only ([[field-schema#watch-progress]]).
+- **Retained copies are read-only stand-ins** for the details ([[offline-editing#overview]]); a per-user edit made
+  against one is a queued save ([[sync#apply-payload]]).
+- **Staleness is resolved by comparison, not blind overwrite.** When a retained source is reachable again, the notifier
+  and verify-on-access re-pull only what moved ([[data-model#scan-and-staleness]]).
 
 ## §9.9 Tolerating offline mounts without blocking
 
 [[[mounts-and-storage#offline-mounts]]]
 
-A node may run continuously (e.g. the always-on Linux node) while the boxes whose shares it mounts — the TS-230 in
-particular, but any source box — are powered off or unreachable for long stretches. A configured mount is therefore
-frequently **present in `.rehuco` but currently dead**, and the node must keep serving everything else without stalling
-on it.
+An agent and its node run while the boxes whose shares they mount — the TS-230 in particular — are powered off or
+unreachable for long stretches. A mapped root is therefore frequently **present in `.rehuco` but currently dead**, and
+everything else must keep working without stalling on it.
 
 The hazard is concrete: on a dead SMB/NFS mount, ordinary filesystem calls (`stat`, `open`, directory listing) **block
-for the mount's timeout** — tens of seconds, or indefinitely with a hard mount — so a node that naively touches a
-mounted path while serving a request would wedge that request, and potentially a whole worker, on storage that simply
-isn't there.
+for the mount's timeout** — tens of seconds, or indefinitely with a hard mount — so code that naively touches a mounted
+path wedges whatever thread it is on.
 
 Rules:
 
 - **Treat every mounted root as possibly-offline.** Reachability is runtime state, not config; never assume a mount is
-  live just because it is declared.
+  live because it is declared.
 - **Probe reachability cheaply and out-of-band.** Check liveness with a single bounded-timeout operation (a `stat` of
-  the mount root or its fingerprint file, [[mounts-and-storage#fingerprint-map]]) run in the task queue
-  ([[architecture-design#components]]), not on the request-serving path. Cache the up/down result and **back off**
-  before re-probing, so a dead mount is consulted rarely and a flapping one doesn't cause churn.
-- **All mount I/O is timeout-wrapped and off the hot path.** File reads through a mount run in worker threads with their
-  own deadlines, so one dead mount can never block request handling or another mount's traffic.
-- **Offline ⇒ serve last-known, read-only.** When a mount is offline, the node falls back to retained metadata
-  ([[mounts-and-storage#durable-retention]]) and reports status `offline, showing last-known`, exactly as it does when
-  no live route remains ([[mounts-and-storage#uuid-not-paths]]) — it does not hang waiting for the mount to return.
-- **Recovery is a version-marker re-pull, not a rescan.** When a probe succeeds again, reconcile via the
-  [[mounts-and-storage#durable-retention]] version comparison (re-pull only what moved); the mount coming back does not
-  force a full rescan.
+  the mount root) on a worker, not on the GUI thread or a request path. Cache the up/down result and **back off**
+  before re-probing, so a dead mount is consulted rarely and a flapping one causes no churn.
+- **All mount I/O is timeout-wrapped and off the hot path.** File reads through a mount run on workers with their own
+  deadlines, so one dead mount never blocks the window, a request, or another mount's traffic.
+- **Offline ⇒ show last-known, read-only.** The browser shows the cached rows, the Roots view the retained structure
+  ([[mounts-and-storage#durable-retention]]), with status `offline, showing last-known`; a save for a record there waits
+  in the queue ([[sync#apply-payload]]).
+- **Recovery is the notifier's, not a rescan's.** When a probe succeeds again the share's notification session is
+  re-opened and verify-on-access catches up on what was touched meanwhile; the mount coming back forces no full rescan.
 
-**The agent applies the same rules to what it remembers (#464).** At start, the recent files, the recent root
-catalogs and the session's open documents are each judged *present*, *gone* or *offline*
-(`borco_core.path_presence`). A fixed local drive is checked at once — it answers, so a missing file is gone. A
-share, a removable drive or a disc is classified without touching it (the drive letter's type, the mount table), its
-server is asked with a 0.3 s connection attempt rather than a `stat` (measured: a `stat` under a switched-off SMB host
-blocks **21 s**, the connection attempt 0.3 s), and only a server that answered is `stat`-ed. All of it runs on
-daemon threads, so neither the start nor the quit waits for a dead mount. *Gone* is forgotten; *offline* is kept, shown
-disabled, and asked again next run.
+**The agent applies the same rules to what it remembers (#464).** At start, the recent files, the recent root catalogs
+and the session's open documents are each judged *present*, *gone* or *offline* (`borco_core.path_presence`). A fixed
+local drive is checked at once — it answers, so a missing file is gone. A share, a removable drive or a disc is
+classified without touching it (the drive letter's type, the mount table), its server is asked with a 0.3 s connection
+attempt rather than a `stat` (measured: a `stat` under a switched-off SMB host blocks **21 s**, the connection attempt
+0.3 s), and only a server that answered is `stat`-ed. All of it runs on daemon threads, so neither the start nor the
+quit waits for a dead mount. *Gone* is forgotten; *offline* is kept, shown disabled, and asked again next run.
 
 *Limitation, accepted:* a session document kept open because its share was off is matched against what the user opens
 by hand by its **resolved** path, while the session stores the path as it was opened. A path whose resolved form
@@ -285,102 +240,62 @@ changed between runs — a mapped drive now reached through its UNC path, a fold
 matched, so a document the user opened and then closed by that other spelling comes back open at the next start.
 
 Deployment note: mount the shares **soft / with short timeouts** so failed syscalls return an error quickly rather than
-hanging. Hard mounts defeat this discipline and should be avoided for swarm storage.
+hanging. Hard mounts defeat this discipline.
 
-## §9.10 Self-mapping via fingerprint files
+## §9.10 Fingerprint files
 
 [[[mounts-and-storage#fingerprint-map]]]
 
-UUID-matching ([[mounts-and-storage#uuid-not-paths]]) resolves overlaps *per resource, reactively*. Fingerprinting
-resolves the **topology of shared storage proactively** — it discovers that nodeA's `foo/1` + `foo/2` and nodeB's
-mounted `foo/` are the same underlying storage, and how their paths map, without waiting to observe per-resource UUID
-collisions. Mechanism:
+Retired. Fingerprint files dropped into roots let nodes discover that two of them served one storage and how the paths
+mapped. The `.rehuco`'s explicit **location** per root ([[mounts-and-storage#rehuco-scope]]), resolved through each
+machine's mount table, answers the same question without writing anything into the user's folders.
 
-1. Each node drops a **content-unique fingerprint file** (containing a UUID identifying that node-root) into each
-   top-level root it is **primary** for ([[mounts-and-storage#folder-add]]) — never into remote/mounted roots, which it
-   doesn't own and which may be read-only.
-2. All nodes do a fast, shallow scan looking for *other nodes'* fingerprint files, across **all** their roots — primary
-   and mounted alike.
-3. If nodeB finds nodeA's fingerprint inside what nodeB calls `foo/`, then nodeB's `foo/` and nodeA's root are the same
-   storage, and the **relative paths reveal the mapping** (nodeA's `foo/1` = nodeB's `foo/1` under the shared root).
-   This reconstructs cross-node path-mapping automatically, including asymmetric cases (A maps two subdirs separately; B
-   mounts the parent whole).
-
-Requirements: the fingerprint file must be content-unique per node-root (UUID inside), and the scan must handle
-**multiple fingerprints in one tree** (B's `foo/` may contain A's *and* C's fingerprints if three boxes share it). This
-same map is what detects the double-primary misconfiguration ([[mounts-and-storage#folder-add]]): if two nodes both
-claim primary for storage the fingerprints prove is shared, the swarm flags it.
-
-## §9.11 Folder-add: declaring primary/local vs. remote/mounted ownership
+## §9.11 Adding a root
 
 [[[mounts-and-storage#folder-add]]]
 
-When the admin adds a folder root to a node (via that node's `.rehuco`, edited through the node per
-[[nodes#two-roles]]), it must be tagged as one of:
+Retired as a primary/remote declaration; there is no owner to declare ([[multiplicity#instances]]). Adding a root is:
+pick the folder, detect its storage kind and its location from this machine's mount table, refuse it if it overlaps a
+root already listed, write this machine's mapping ([[mounts-and-storage#rehuco-scope]]).
 
-- **Primary/local** — this node owns the files and is the authoritative metadata writer ([[sync#overview]]).
-- **Remote/mounted** — this node serves files it reaches via a mount but does *not* own them; some other node is
-  primary.
-
-This flag is the concrete source of truth for [[sync#overview]]'s single-writer guarantee. **Hard constraint: exactly
-one node may be primary for any given storage.** Two nodes both marking the same (fingerprint-proven shared) storage as
-primary is a misconfiguration that breaks the single-writer guarantee; the self-mapping function
-([[mounts-and-storage#fingerprint-map]]) is what detects and flags this.
-
-## §9.12 Node benchmarking and grading
+## §9.12 Measuring a machine's throughput
 
 [[[mounts-and-storage#node-benchmark]]]
 
-An explicit, user-triggered task ([[architecture-design#components]]) that produces per-node performance grades to feed
-the dispatch decisions in [[data-model#checksums]]/[[mounts-and-storage#example-deploy]] (currently described only
-qualitatively as "the fast box" / "the weak box"):
+Retired as a grading scheme that fed a dispatcher. The one decision it would have driven — where a checksum run
+executes — is settled by locality instead: a node that reaches the root's disk locally may be handed the job
+([[nodes#node-status]]). What remains is the checksum **algorithm** benchmark in rehuco-core's tests, which chose the
+hash ([[data-model#checksums]]).
 
-- Create a large test file, generate its checksum, then **clear the OS disk cache and re-checksum to measure cold-read
-  speed** (not warm-cache speed).
-- Assemble per-node numbers (cold read throughput, checksum throughput, etc.) into a **grade** the dispatcher uses as a
-  score.
-
-Caveat to record: dropping disk caches is disruptive and **platform-specific** (mechanism differs across
-Linux/macOS/QNAP and may need privileges). The benchmark must therefore be occasional and explicit, never automatic, and
-must **degrade gracefully** where cold-cache measurement isn't permitted (fall back to warm-cache numbers, flagged as
-such).
-
-## §9.13 Self-determined fastest/safest move/rename
+## §9.13 Verified copies and moves
 
 [[[mounts-and-storage#safe-move-rename]]]
 
 > [!NOTE]
 > **Implement the cross-filesystem move with Opus, not the auto-switched Sonnet.** The copy → verify-checksum-on-target
-> → delete-source-only-if-verified sequence (and keeping the source's instance-registry entry until verification passes)
-> is data-loss-sensitive: a wrong ordering or a skipped verification can delete the only good copy. Override to
-> `/model opus` for the cross-FS path.
+> → delete-source-only-if-verified sequence is data-loss-sensitive: a wrong ordering or a skipped verification can
+> delete the only good copy. Override to `/model opus` for the cross-FS path.
 
 The system chooses *how* to perform a move/rename rather than assuming:
 
-- A rename/move **within one filesystem** is a near-instant metadata operation — but only when performed by something
-  with **direct local access to that filesystem**. The fingerprint map ([[mounts-and-storage#fingerprint-map]])
-  identifies which node is local to the files' storage; the move is **delegated to that node**, which does the instant
-  in-place rename.
-- The same rename issued **over SMB from a remote mount** may not be recognized as in-place and can silently degrade
-  into copy-then-delete (slow, briefly doubles disk use). The design routes *around* needing to predict Samba's
-  behavior: same-FS moves are delegated to a local node; anything else is treated as a cross-filesystem move.
-- **Cross-filesystem moves are checksum-gated (hard rule):** copy → generate/verify checksum on the *target* (preferably
-  by the node local to the target FS) → delete the source **only if verification passes**. The source retains its
-  instance-registry entry ([[instances-and-dedup#instance-registry]]) until target verification succeeds, so an
-  interrupted move is always recoverable and never loses data.
+- A rename/move **within one filesystem** is a near-instant metadata operation, including over SMB, where the rename is
+  server-side ([[packaging-deployment#ts230-as-nas]]).
+- **Cross-filesystem moves are checksum-gated (hard rule):** verify the source against its checksum record → copy →
+  verify the checksum on the *target* → delete the source **only if verification passes**. An interrupted move leaves
+  the source untouched and the partial target resumable, so it never loses data.
+- **The copy is resumable.** A verified copy that stops — the NAS switched off, the laptop closed — picks up from the
+  bytes already on the target rather than starting over; this is what rsync would have bought, and the one thing it
+  would have ([[appendices.post-mortem#architecture]]).
 
-**One verified copy, three uses** (#339, #409). The checksum-gated sequence is built as a reusable **verified copy** —
-the source verified against its checksum record, the bytes copied, the copy verified on the target — and the moves
-and borrows are made from it:
+**One verified copy, three uses** (#339). The sequence is built as a reusable **verified copy**, and the moves and
+borrows are made from it:
 
 | Operation | Built as |
 | --- | --- |
 | Move to another filesystem | verified copy, then delete the source only if the target verified (#339) |
-| Borrow onto a node | verified copy, no delete; the copy becomes a borrowed instance ([[borrowing#another-instance-role]]) |
-| Move to a root on **another node** | verified copy between nodes, then delete the source only if the target verified |
+| Borrow onto a machine | verified copy into that machine's node's borrow store, no delete ([[borrowing#another-instance-role]]) |
+| Return | verified copy back of what changed (the sidecars, possibly the record), then the copy is removed |
 
-**Between nodes**, the source verifies on the node that owns it, the bytes go node to node (never through the agent),
-and the copy verifies on the target node; both nodes' instance-registry entries stay until that verification passes,
-so an interrupted transfer is recoverable from either side. A different node is always the copy path — a rename
-cannot cross machines. The job records each end as a root and a root-relative path ([[nodes#access-seam]]), never an
-absolute path, so it survives restarts and runs on the nodes that own the files.
+The bytes travel over the mounts, read by the machine doing the copy; a node with local access to one end may run the
+verify there ([[nodes#node-status]]). The job records each end as a root and a root-relative path, never an absolute
+path, so it survives restarts and a machine's remapping.

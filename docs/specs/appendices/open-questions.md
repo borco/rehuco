@@ -12,79 +12,69 @@ Flagging gaps so they're a deliberate choice rather than an oversight.
 
 [[[appendices.open-questions#resolved-or-scoped]]]
 
-- **Metadata-conflict during offline editing** — previously an unacknowledged contradiction between [[sync#overview]]
-  ("single writer, no conflict") and [[offline-editing#overview]] ("cache stays editable offline"). Resolved for v1 by
-  making resource metadata online-only-editable ([[sync#overview]]); only per-user state is offline-editable. The hard
-  multi-writer-metadata merge is a future hook, not v1 work.
-- **Instance-registry / offline-instance persistence** — the rebuild-from-scratch model was imprecise. Now bounded
-  ([[architecture-design#why-distributed]]): retained metadata copies ([[mounts-and-storage#durable-retention]]) survive
-  rebuild by rescan; transient instances re-register on reconnect; borrows persist via the user meta block
-  ([[borrowing#recording-borrows]]).
+Many of the entries below were first resolved *inside the swarm design* and resolved again, differently, when that
+design was dropped on 2026-10-16 (#509, [[appendices.post-mortem#architecture]]). Each names what settles it today.
+
+- **Metadata-conflict during offline editing** — resolved twice. First by making metadata online-only-editable under
+  a single writer; now there is no single writer and no sync engine: a save takes the record's lock, compares the file
+  with the version the edit was based on, and shows a conflict rather than losing an edit ([[sync#overview]]). Details
+  are still editable only while the file is reachable; per-user edits made offline wait as queued saves
+  ([[offline-editing#overview]]).
+- **Known copies / offline-instance persistence** — the rebuild-from-scratch model was imprecise, then bounded
+  ([[architecture-design#why-distributed]]): retained metadata copies ([[mounts-and-storage#durable-retention]])
+  survive rebuild by rescan; a borrow is recorded beside its copy in a `.borrow` file ([[borrowing#recording-borrows]]).
+  The instance registry that was to track the rest is gone ([[instances-and-dedup#instance-registry]]).
 - **Per-image metadata location** — clarified ([[data-model#image-meanings]]): app-managed mutable metadata alongside
   `.rehu`, never inside the immutable checksummed zip. Now given a concrete shape ([[reference-images#layers]]):
   machine-derived output in a scan sidecar beside the `.rehu`, an admin-authored default inline in the block,
-  per-user overrides in the block's `users` map; keyed by the zip's own central-directory identity with XXH3 as
-  the durable key ([[reference-images#image-identity]]). What a node needs for scanning versus serving, and how
-  scans are dispatched in a swarm, are [[reference-images#node-requirements]] and [[reference-images#dispatch]].
-- **Scanning strategy** — incremental, version-aware reconciliation is now the normal mode; full rescan demoted to
-  recovery ([[data-model#scan-and-staleness]]).
-- **Node identity scheme** — replaced the pairing-secret design with Syncthing-style cert-hash device IDs
-  ([[discovery-trust-access#node-identity-pairing]]), where identity *is* the key and the introducer model
-  ([[discovery-trust-access#membership-model]]) matches the existing hub-and-spoke choice.
-- **App/filesystem coupling** — first resolved by making the Qt app always a node client; revised by #409: every
-  root a node owns goes through that node (on this machine too), a root no node owns is reached directly, and local
-  versus remote lives in one access seam instead of every caller ([[nodes#two-roles]], [[nodes#access-seam]]).
-- **Cross-node storage topology** — was reactive per-resource UUID matching only; now also proactive via fingerprint
-  self-mapping ([[mounts-and-storage#fingerprint-map]]), which additionally guards the single-primary rule
-  ([[mounts-and-storage#folder-add]]).
-- **Deletion / tombstone propagation** — resolved ([[sync#overview]]): deletion is an ordinary logged action whose
-  tombstone is its position in the version vector, so offline nodes apply it on reconnect and rescans don't resurrect.
-  Delete-vs-concurrent-edit surfaces in the verdict queue ([[instances-and-dedup#duplicate-review]]) rather than
-  silently applying. Borrow-vs-delete/archive has an explicit resolution ([[borrowing#borrow-vs-delete]]).
-- **Clock skew / ordering** — resolved ([[sync#overview]]): ordering is by per-node-counter version vector,
-  clock-independent; wall-clock timestamps are no longer load-bearing. History is the `versions` list — indexed, dated,
-  hashed, commented entries; append-only, shrinkable only by logged compaction ([[sync#overview]]).
-- **Per-user authentication** — resolved ([[discovery-trust-access#user-auth]]): salted Argon2id hashes propagated to
-  every node (since any node can serve a login), passwords never stored/transmitted; thin tablet logs in via session
-  against its serving node.
-- **Visitors / cross-swarm sharing** — resolved ([[discovery-trust-access#cross-swarm-sharing]]): visitors never join as
-  nodes (guest account or stripped export/import instead); no cross-swarm federation.
-- **Access control model** — resolved ([[discovery-trust-access#access-control]]): rules are swarm-wide propagated
-  config (not per-machine `.rehuco`), enforced server-side at the serving node, with tag-grants evaluated dynamically.
-  Remaining work is the concrete rule grammar/schema, not the model.
-- **Local file layout** — resolved ([[data-model#local-file-trio]]): `.rehuco` (per-machine config), `.rehudb`
-  (disposable cache), `.rehusw` (durable, propagated swarm info).
-- **Startup consistency for access rules** — resolved ([[discovery-trust-access#serve-after-resync]]):
-  serve-after-resync, stated as "catch up to the most-current reachable source, else serve last-known," with a `.rehusw`
-  version marker making "more current" decidable. Resync source resolved by [[discovery-trust-access#registry-home]].
-- **Registry home** — resolved ([[discovery-trust-access#registry-home]]): preferred authority (always-on box) when
-  reachable, else chatter for highest version, else last-known; single node is the degenerate case. Single-writer admin
-  config + version markers means no consensus protocol needed.
-- **Single-node / bootstrap operation** — resolved ([[multiplicity#single-node-base]]): the lone node is the base case —
-  its own registry authority, serves immediately without waiting for peers; create-swarm and single-node-forever are the
-  same path.
-- **Node vs. agent split** — resolved ([[nodes#two-roles]]): node = headless service (runs everywhere incl. QNAP); agent
-  = desktop GUI (tray + viewer/editor + catalog), through the owning node for node-owned roots, GUI machines only.
-  A service node outlives the agent; a
-  node the agent hosts (a setting, #409) stops with it. "Admin" is a logged-in user's privilege, not a separate build.
+  per-user overrides in the user's sidecar; keyed by the zip's own central-directory identity with XXH3 as the
+  durable key ([[reference-images#image-identity]]). What a node needs for scanning versus serving, and how scans
+  are dispatched, are [[reference-images#node-requirements]] and [[reference-images#dispatch]].
+- **Scanning strategy** — incremental, version-aware reconciliation is the normal mode, the file notifier reports
+  changes as they happen, and full rescan is demoted to recovery ([[data-model#scan-and-staleness]],
+  [[mounts-and-storage#out-of-band]]). The earlier "no disk watcher" policy is reversed.
+- **Node identity, pairing, membership, registry home, serve-after-resync** — all retired with the swarm: nodes do not
+  talk to each other ([[discovery-trust-access]]).
+- **App/filesystem coupling** — resolved twice: first the agent as a node client, then #409's local-first agent with
+  an access seam for node-owned roots, and now the agent reads and writes every file itself over its mounts; the seam's
+  remote half is torn down and its local classes stay ([[nodes#access-seam]]).
+- **Cross-machine storage topology** — a root's machine-independent location and per-machine mappings in the
+  `.rehuco`, resolved through each machine's mount table ([[mounts-and-storage#rehuco-scope]]); fingerprint files and
+  the primary/remote flag are retired.
+- **Deletion / tombstone propagation** — a deleted record is a filesystem fact the notifier reports; there are no
+  tombstones ([[sync#compare-and-swap]]). Borrow-vs-delete/archive has an explicit resolution on return
+  ([[borrowing#borrow-vs-delete]]).
+- **Clock skew / ordering** — moot: nothing orders events across machines; the save compares content hashes, never
+  times ([[sync#compare-and-swap]]).
+- **Per-user authentication** — a one-time password issued by the node's CLI for a username, exchanged for a per-device
+  session; no password store, nothing propagated; the agent itself needs no login
+  ([[discovery-trust-access#user-auth]]).
+- **Visitors / sharing** — a guest is an ordinary web user; sharing content is a copy stripped of sidecars, locks and
+  borrow records ([[discovery-trust-access#cross-swarm-sharing]]).
+- **Access control model** — rules are the node's own, enforced at the node for what it serves, with tag-grants
+  evaluated dynamically ([[discovery-trust-access#access-control]]). Remaining work is the concrete representation.
+- **Local file layout** — `.rehuco` (shareable, per-machine mappings), `.rehudb` (disposable cache, per machine), the
+  retention store (durable); no `.rehusw` ([[data-model#local-file-trio]]). Per-user state is a sidecar beside the
+  record ([[data-model#single-file]]).
+- **Single-machine / bootstrap operation** — an agent with the share mounted and no node is a complete rehuco
+  ([[multiplicity#single-node-base]]); nothing waits for peers.
+- **Node vs. agent split** — the node is the agent's child, running as the agent's user, with no roots of its own; it
+  serves the user's reachable roots and its borrow store, and stops with the agent ([[nodes#two-roles]]). A system
+  service was measured and set aside ([[nodes#overview]]).
 - **App readiness / responsiveness** — resolved ([[nodes#readiness-per-op]]): per-operation readiness, not one global
-  gate; local-file and cached operations never block on swarm sync; all swarm chatter is async background (task queue)
-  surfaced as status.
-- **Local-file vs. swarm mode / no-node viewing** — resolved ([[nodes#local-vs-swarm]]): the single-file viewer needs no
-  node or login (viewing a local file isn't access-controlled); swarm mode enriches when a node/session is present.
+  gate; local-file and cached operations never block; the share is waited for in the task queue.
+- **Local-file vs. catalog mode / no-node viewing** — resolved ([[nodes#local-vs-swarm]]): the single-file viewer
+  needs no catalog, no node and no login; the catalog enriches when open.
 - **Single-instance & file association** — resolved ([[nodes#single-instance]]): bind-or-forward single-instance, one
-  main agent hosts both scopes, forwarded opens never block on login, stale-socket reclaim, socket scoped
-  per-user-and-swarm.
-- **Login persistence** — resolved ([[discovery-trust-access#user-auth]]): agent caches a session token (not the
-  password) in the OS secure store; revocation reaches the agent when the token fails.
-- **`.rehu` write integrity** — resolved ([[data-model#write-integrity]]): universal atomic temp-then-rename; managed
-  files route through the owning node whenever a route exists (single writer), with routeless direct writes tolerated as
-  out-of-band changes reintegrated via notification / verify-on-access / scan ([[mounts-and-storage#out-of-band]],
-  [[data-model#scan-and-staleness]]); unmanaged files written directly by the agent; import is the explicit
-  unmanaged→managed hand-off.
+  main agent hosts both scopes, stale-socket reclaim, socket scoped per OS user and per settings folder; an accepted
+  close always quits explicitly (#507).
+- **Login persistence** — a per-device session the node remembers ([[discovery-trust-access#user-auth]]); revocation
+  is the CLI's.
+- **`.rehu` write integrity** — resolved ([[data-model#write-integrity]]): universal atomic temp-then-rename, the
+  exclusive-create lock file, compare-and-swap on content hash; every writer equal, saves as jobs
+  ([[sync#apply-payload]]).
 - **`.rehu` schema format versioning** — resolved ([[data-model#schema-version]]): per-file format-version field; newer
-  reader upgrades older files, older reader preserves unknown fields rather than dropping them; import is an upgrade
-  point.
+  reader upgrades older files, older reader preserves unknown fields rather than dropping them.
 - **Plugin block model** — resolved ([[plugins#plugin-blocks]]/[[plugins#fallback-editor]]): plugin fields in separate
   keyed, independently-versioned blocks; exactly one live block per `type` (installed-ness doesn't promote inert
   blocks); save-persistence invariant (live type, or never-claimed foreign payload) with claim-then-abandon dropping on
@@ -97,17 +87,16 @@ Flagging gaps so they're a deliberate choice rather than an oversight.
   from TutCatalog4.
 - **Acquisition & migration tooling** — specced ([[acquisition-tooling#overview]]): three drops (HTML→Markdown,
   image→screenshot, URL→fields), user-overridable site-scraper Protocols with a deferred local-LLM fallback
-  ([[acquisition-tooling#url-extract]]), `.tc`→`.rehu` migration (landed, LocalEdit8/9). The drops and scrapers are
-  the **WebScrapping** milestone family ([[acquisition-tooling#deferral]]).
+  ([[acquisition-tooling#url-extract]]), `.tc`→`.rehu` migration (landed). The drops and scrapers are the
+  **WebScrapping** family ([[acquisition-tooling#deferral]]).
 - **Code organization, packaging & deployment** — resolved ([[packaging-deployment#overview]]): monorepo with uv
   workspaces (single `.venv` fixes the venv-confusion and makes cross-package refactors atomic); three published
-  packages (`rehuco-core`, `rehuco-node`, `rehuco-agent`) mapping onto the shared-lib/node/agent split;
-  `uv tool install` for node and agent; the TS-230 serves as a NAS over SMB while the node runs on capable hardware
-  ([[packaging-deployment#ts230-as-nas]]), so the glibc constraint is moot (canary findings kept in
-  [[packaging-deployment#glibc-canary]] for reference); platform markers keep GUI deps out of the node.
+  packages (`rehuco-core`, `rehuco-node`, `rehuco-agent`); the TS-230 serves as a NAS over SMB and is the system of
+  record ([[packaging-deployment#ts230-as-nas]]), so the glibc constraint is moot (canary findings kept in
+  [[packaging-deployment#glibc-canary]] for reference).
 - **Offline revocation limitation** — acknowledged as a deliberate accepted boundary
-  ([[discovery-trust-access#serve-after-resync]]): revocation can't reach an already-held local copy that never
-  reconnects; trusting household members who kept a copy is an explicit non-goal. Revocation does apply on reconnect.
+  ([[discovery-trust-access#serve-after-resync]]): a borrowed copy in hand cannot be revoked; an admin returns it for
+  everyone the next time its machine is reachable.
 - **Desktop distribution, file association & app identity** — analyzed
   ([[packaging-deployment#app-identity]]/[[packaging-deployment#auto-update]]): the agent is dual-channel (`uv tool` for
   the author's own machines/devs; a native installer for wider reach); file association is OS-specific with macOS as the
@@ -118,13 +107,6 @@ Flagging gaps so they're a deliberate choice rather than an oversight.
   Linux ships no package — `uv tool install` plus the desktop entry the app writes (#209) — with Flatpak, Snap and
   AppImage each ruled out on a verified ground, and Linux association turning out to be the app's own job rather than
   Briefcase's ([[appendices.briefcase-packaging#linux-backends]]).
-- **File-association + app-identity mechanics** — now **proven on current versions** by the Pre-work spikes: macOS (#13)
-  — a Briefcase `.app` registers the extension (UTI + `CFBundleDocumentTypes`) and double-clicks arrive as
-  `QFileOpenEvent` into the single instance ([[nodes#single-instance]]); Windows (#1) — an HKCU ProgID default handler
-  plus an in-process launcher's AUMID give double-click-open and correct taskbar pin/running. The Briefcase how-to and
-  per-OS hurdles are captured in [[appendices.briefcase-packaging#overview]] (and
-  [[appendices.windows-dev-launcher#overview]] for the Windows dev launcher). Only code-signing/notarization remains
-  open below.
 
 ## 2. Still open
 
@@ -132,17 +114,19 @@ Flagging gaps so they're a deliberate choice rather than an oversight.
 
 - **Full `.rehu` schema** — field ownership (common vs. plugin) is settled ([[data-model#rehu-format]],
   [[plugins#core-vs-plugin]]); the complete field list/types per plugin is being designed separately. Archival is a tag
-  ([[borrowing#scheduled-archival]]), not a schema state. The schema must now also carry the version vector and the
-  `versions` history list ([[sync#overview]]) and the user/auth records ([[discovery-trust-access#user-auth]]).
-- **Access-rule grammar/schema** — the *model* is settled ([[discovery-trust-access#access-control]]: swarm-propagated,
-  server-enforced, full/per-resource/dynamic-tag grants). What's not yet specified is the concrete representation: how a
-  grant is written, how per-resource and tag-grants combine (additive? can a deny override an allow?), and where exactly
-  it sits in the propagated registry.
-- **Session-token portability across nodes** — the user list propagates so any node can verify a *login*
-  ([[discovery-trust-access#user-auth]]), but the session token the agent caches is issued by one serving node, while
-  the agent is expected to connect to any node ([[requirements#overview]]) and playback hands off between nodes
-  ([[mounts-and-storage#node-handoff]]). Per-node sessions (re-login on switch) vs. a swarm-shared token-signing key
-  propagated in `.rehusw` — not decided.
+  ([[borrowing#scheduled-archival]]), not a schema state. The per-user sidecar's first version and the one-time
+  migration of the `users` maps into it are decided in shape, not yet in fields ([[data-model#single-file]]).
+- **Access-rule representation** — the model is settled ([[discovery-trust-access#access-control]]: per node,
+  server-enforced, full/per-resource/dynamic-tag grants); how a grant is written and how grants combine is not.
+- **Browser TLS trust for the node's web pages** — a self-signed certificate the tablet is taught once, or plain HTTP
+  on the household's LAN; decided with the iPad playback spike (#419, [[discovery-trust-access#node-identity-pairing]]).
+- **The lock's TTL and jitter** — 2 minutes and a few tens of milliseconds to start ([[sync#lock-file]]); tuned once
+  two agents run on the share daily.
+- **Renamed machines and the `.rehuco` mappings** — the wizard's *this is the same machine as X* is specified, not
+  built ([[mounts-and-storage#rehuco-scope]]).
+- **The macOS own-session and Linux legs of the notifier and lock spikes** (#502, #503) — deferred until a mobile
+  macOS or Linux box is in daily use; the design states what they would confirm (stored credentials, polling until
+  given) and the Windows and macOS-client measurements already cover the primitives.
 - **Remote (off-LAN) access** — *deliberately out of scope, not a gap.* The whole trust/discovery model
   ([[discovery-trust-access]]) is
   LAN-local by design. The app provides no remote-access mechanism and will not put a personal media catalog on the
@@ -155,24 +139,9 @@ Flagging gaps so they're a deliberate choice rather than an oversight.
   MKV-heavy) and rejects self-signed certificates unless a profile/CA is installed and trusted per device; video serving
   also needs HTTP Range support for seeking. Lossless remux (`ffmpeg -c copy` where the codec is already H.264),
   transcode, HLS, or plain HTTP on the trusted LAN — undecided; slated as a pre-B spike (implementation plan).
-- **Instance-registry replication detail** — the *home* is resolved ([[discovery-trust-access#registry-home]]: it lives
-  with the preferred authority / propagates like the rest of the registry). What's not yet detailed is the concrete
-  shape of the instance registry's own propagation and how transient instances (active checkouts) register/expire within
-  it — the location question is settled, the replication mechanics aren't fully drawn.
-- **One primary instance per UUID** — [[mounts-and-storage#folder-add]]'s exactly-one-primary rule is per *storage* and
-  fingerprint-guarded ([[mounts-and-storage#fingerprint-map]]); it cannot see two same-UUID *copies* on different
-  storage both sitting under primary roots (e.g. a backup HDD attached and added as a primary/local root). Needs an
-  instance-registry-level invariant ([[instances-and-dedup#instance-registry]]): a UUID scanned under a primary root
-  that already has a live primary elsewhere is flagged for a role decision (default `backup`), never silently
-  double-primary.
-- **Export/import mechanics** — the rules are decided (keep UUID, scrub vector/log/per-user-state/instance entries,
-  [[discovery-trust-access#cross-swarm-sharing]]); the concrete on-disk export format and the import-side UUID-collision
-  handling aren't designed.
-- **Block-level transfer for re-copies** — noted (Syncthing's chunk-hash-and-transfer-only-diffs approach) as worth
-  borrowing *narrowly* for refreshing a backup/move where a prior version exists at the destination; no help for
-  first-time copies. Not designed; lower priority.
-- **Admin identity permanence** — flagged in [[discovery-trust-access#admin-portability]], not resolved (distinct from
-  registry home, which is decided).
+- **Export/import mechanics** — the rules are decided (keep UUID, strip sidecars, `.lock` and `.borrow`,
+  [[discovery-trust-access#cross-swarm-sharing]]); the concrete export shape and the import-side UUID-collision handling
+  aren't designed.
 - **Online-only and mixed local/online resources** — needs schema representation; not detailed.
 - **Udemy integration** — registered courses are hard to track. A Udemy page scraper is a built-in of
   [[acquisition-tooling#scraper-registry]]; an account-side import of *what the user owns* is not discussed.
@@ -209,7 +178,7 @@ Flagging gaps so they're a deliberate choice rather than an oversight.
 - **Concrete technology stack** — PySide6 (+ `pyside6-scintilla`, `pyqtads` for docking — chosen over KDDockWidgets on
   licensing grounds, [[packaging-deployment#licensing-policy]] — selective QQuickWidget use for QML surfaces), SQLite +
   SQLAlchemy for the cache, FastAPI + HTMX + Pico CSS for the web UI, zeroconf for discovery, `uv` for environment
-  management — strong candidates. The QNAP's old glibc (2.23) is no longer a deployment constraint — the TS-230 serves
+  management — strong candidates; no node-to-node protocol exists to choose for. The QNAP's old glibc (2.23) is no longer a deployment constraint — the TS-230 serves
   as a NAS over SMB and the node runs on capable hardware ([[packaging-deployment#ts230-as-nas]]); the 2026-06-30 canary
   confirmed all planned node dependencies (pydantic-core, cryptography, etc.) install and import on glibc 2.23 anyway
   ([[packaging-deployment#glibc-canary]]), keeping direct QNAP deployment viable if ever reconsidered. Stack not yet

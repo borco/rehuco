@@ -180,8 +180,9 @@ must be **reserved** — unlike `unknown`, which is a configurable setting — s
 name would silently become the publishing scope, the same way `RESERVED_KEYS` protects `core` from a
 plugin claiming it ([[data-model#rehu-format]]).
 
-**Private is not secret.** A private path is one that is *not propagated as swarm state and not shown in
-another user's viewer* — it is not hidden from anyone with the file. The `users` map is a **convention,
+**Private is not secret.** A private path is one that is *not shown in another user's viewer* — it is not hidden
+from anyone with the file, and a sidecar's permissions are the share's ([[data-model#single-file]]). The `users` map is
+a **convention,
 not a boundary**: any process that can read the document reads all of it, and two of the app's own docks
 already print it verbatim ([[field-schema#source-inspection-docks]]). What each surface shows is a presentation
 rule, applied consistently:
@@ -215,12 +216,14 @@ the earlier live-inline-for-now deferral):
   per-user data under `unknown` **verbatim**, preserved untouched on round-trip; reassigning or dropping it is
   deferred to the username mass-rename job (#108; the earlier per-identity reassign/clear primitives #106 / #107 were
   closed not-planned).
-- **Keyed by username, not a minted user-UUID — considered and rejected:** pre-swarm, files move between machines by
-  manual copy, and per-machine UUIDs could never merge state the same human owns, while equal usernames merge by
-  construction. The cost — renaming a user rewrites files — is a rare, catalog-cache-era task-queue job (mass
+- **Keyed by username, not a minted user-UUID — considered and rejected:** files move between machines by manual
+  copy and over the share, and per-machine UUIDs could never merge state the same human owns, while equal usernames
+  merge by construction — and name the user's sidecar ([[data-model#single-file]]). The cost — renaming a user
+  rewrites files — is a rare, catalog-cache-era task-queue job (mass
   rename), cheap once the cache knows every file naming the user.
-- **The future user model adopts it unchanged:** swarm users ([[discovery-trust-access#user-auth]]) take over the
-  username; per-user `progress` and Daz3D's per-user/per-box `installed` land in the same map.
+- **The web login adopts it unchanged:** a node's web user ([[discovery-trust-access#user-auth]]) is a username, and
+  what the watch page writes lands in that name's sidecar; per-user `progress` and Daz3D's per-user/per-box
+  `installed` land there too.
 
 ### §17.2.3 Sources (multi title / publisher / URL)
 
@@ -504,8 +507,8 @@ against an alternative source is done at decision time against `original_size`; 
 size is never stored.
 
 `current_*` describes **this physical copy**, not a person — distinct from the future per-user
-`progress` ([[data-model#rehu-format]]). The delete-to-track-progress method does not generalize to the swarm, where
-remaining-on-disk (per-node) and watch-progress (per-user) become two different things; the
+`progress` ([[data-model#rehu-format]]). The delete-to-track-progress method does not generalize to a shared
+library, where remaining-on-disk (per copy) and watch-progress (per user) are two different things; the
 schema keeps room for a separate `progress` so recording "watched" never again requires
 deleting files.
 
@@ -633,10 +636,11 @@ read against:
   - **The file was never measured.** `videos` is filled by the duration Measure, an explicit action, so most tutorials
     start without it. The player learns the length the moment it opens the file; without its own copy, a video just
     watched in an unmeasured tutorial could show no percentage until someone measured it.
-  - **`videos` cannot be written where progress is.** A progress write touches `users.<me>.progress` only — per-user
-    state, which [[sync#overview]] lets any node write: on a borrowed copy, while the source is offline, on the retained
-    copy of a source that can never be written. `videos` is shared resource metadata, written by its owning node and
-    only while the resource is online. Recording the length into `videos` from the player would fail in exactly the
+  - **`videos` cannot be written where progress is.** A progress write touches the user's own state only — the
+    sidecar, [[data-model#single-file]] — which is written wherever the user watches: on a borrowed copy, while the
+    source is offline (as a queued save, [[sync#apply-payload]]), on the retained copy of a source that can never be
+    written. `videos` is shared resource metadata in the record, written under its lock and only while the file is
+    reachable. Recording the length into `videos` from the player would fail in exactly the
     places watching happens away from the source.
   - **A missing file's length outlives the file.** A Measure that rebuilds `videos` from disk drops a deleted video;
     its progress entry still carries the length, so the folder totals above keep counting it.

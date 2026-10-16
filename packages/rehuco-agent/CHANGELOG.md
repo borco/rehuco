@@ -10,6 +10,15 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 ## [Unreleased]
 
+### Added
+
+- **The local node runs beside the agent** (#506). A few seconds after the window is up, the agent starts
+  `rehuco-node` as the same user and keeps it running for as long as it runs itself, in the tray included; quitting
+  stops it at once, and a node still starting is killed rather than waited for, so opening a file never pays for it.
+  *Settings* > *System Integration* gains a **Local node** block on every platform: *Run the local node while rehuco
+  is running* (on by default, applied live) and a line saying whether it runs and under which pid. The status
+  bar's right end says *Local Node: Running*, or *Local Node: Stopped* greyed out.
+
 ### Changed
 
 - **Saving no longer overwrites what changed on disk since you opened the document.** Another user's rating, or
@@ -39,6 +48,13 @@ released becomes the body of the GitHub Release, so each entry is written to be 
   the scraper persona and the catalog cache all go under `DIR`, and the run is an instance of its own -- it opens its
   own window instead of handing its files to an agent already running elsewhere. The window title shows the folder's
   name, and `--info` prints where the settings and cache are.
+
+### Fixed
+
+- **Closing the main window with a floated Settings (or Browsers) window on screen no longer leaves rehuco
+  running with no window and no tray icon** (#507). An accepted close now quits the app explicitly, as a Quit from
+  the tray already did; Qt's own last-window quit never came, because a floating dock window is a top-level window
+  of its own and its close is one QtAds only hides.
 
 ## [0.3.0] - 2026-10-12
 

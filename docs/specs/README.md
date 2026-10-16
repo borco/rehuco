@@ -26,14 +26,14 @@ picking a next file to read: **core data/protocol** (§4–§7) → **storage/id
 | — | `how-it-works` | **Start here:** the system as it exists today, in one closed page | [how-it-works.md](how-it-works.md) |
 | 1–3 | `architecture-design` | Problem statement · why distributed · components | [architecture-design.md](architecture-design.md) |
 | 4 | `data-model` | Data Model | [data-model.md](data-model.md) |
-| 5 | `nodes` | Node Communication | [nodes.md](nodes.md) |
-| 6 | `discovery-trust-access` | Discovery, Swarm Identity, and Trust | [discovery-trust-access.md](discovery-trust-access.md) |
-| 7 | `sync` | Sync & Conflict Resolution | [sync.md](sync.md) |
-| 8 | `multiplicity` | Multiplicity: Swarms and Nodes per Machine | [multiplicity.md](multiplicity.md) |
+| 5 | `nodes` | The Node | [nodes.md](nodes.md) |
+| 6 | `discovery-trust-access` | Discovery, Login and Access | [discovery-trust-access.md](discovery-trust-access.md) |
+| 7 | `sync` | Saves, Locks and Conflicts | [sync.md](sync.md) |
+| 8 | `multiplicity` | Multiplicity: Machines, Users and Nodes | [multiplicity.md](multiplicity.md) |
 | 9 | `mounts-and-storage` | Mounts, `.rehuco`, and Cross-Box Visibility | [mounts-and-storage.md](mounts-and-storage.md) |
-| 10 | `instances-and-dedup` | Identity, Instance Tracking, and Deduplication | [instances-and-dedup.md](instances-and-dedup.md) |
+| 10 | `instances-and-dedup` | Identity, Known Copies, and Deduplication | [instances-and-dedup.md](instances-and-dedup.md) |
 | 11 | `borrowing` | Borrowing, Library-Shelf Storage, and Scheduled Archival | [borrowing.md](borrowing.md) |
-| 12 | `offline-editing` | Offline Editing Without a Deliberate Checkout | [offline-editing.md](offline-editing.md) |
+| 12 | `offline-editing` | Offline Editing Without a Deliberate Borrow | [offline-editing.md](offline-editing.md) |
 | 13 | `plugins` | Plugins | [plugins.md](plugins.md) |
 | 14 | `requirements` | Functional Requirements Carried Into the Architecture | [requirements.md](requirements.md) |
 | 15 | `acquisition-tooling` | Acquisition and Migration Tooling | [acquisition-tooling.md](acquisition-tooling.md) |

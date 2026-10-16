@@ -1,8 +1,8 @@
-"""rehuco-node: the reserved name for a future headless rehuco node.
+"""rehuco-node: the local node, a process the agent runs beside itself for as long as it runs (#506).
 
-Nothing is implemented here. The package exists so the name on PyPI is held and the release
-plumbing is exercised alongside the others; a node -- a REST service answering for the resources
-one machine owns ([[nodes#local-vs-swarm]]) -- is intended, unscheduled, and may never be written.
+Today the node keeps a heartbeat file and a log under the folder it shares with the agent, and stops when the
+agent does. The agent's System Integration page turns it on and off and shows whether it runs. What the node will
+serve on top of that lifecycle is design, not code ([[nodes]]).
 """
 
 __version__ = "0.0.1"

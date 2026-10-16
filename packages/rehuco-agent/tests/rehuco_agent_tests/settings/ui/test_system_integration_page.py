@@ -7,6 +7,7 @@ from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.settings import tray_settings
+from rehuco_agent.settings.node_settings import shared_node_settings
 from rehuco_agent.settings.tray_settings import shared_tray_settings
 from rehuco_agent.settings.ui import tray_block
 from rehuco_agent.settings.ui.system_integration_page import SystemIntegrationPage
@@ -226,3 +227,49 @@ def test_unavailable_label_shown_when_no_tray_is_available(qtbot: QtBot, mocker:
 
     ui = page._SystemIntegrationPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert ui.unavailable_label.isHidden() is False
+
+
+def test_the_node_checkbox_is_staged_and_saved_like_the_tray_one(qtbot: QtBot) -> None:
+    """The Local node block (#506) is the page's second staged control: unticking it dirties the page, Save
+    pushes it into the shared `NodeSettings`, and Defaults brings the factory value (on) back.
+
+    **Test steps:**
+
+    * build the page; verify the node box is checked (on by default) and the page clean
+    * untick it; verify dirty; save; verify the shared setting is off and the page clean
+    * seed defaults; verify the box is checked again and the page dirty
+    """
+    page = SystemIntegrationPage()
+    qtbot.addWidget(page)
+    ui = page._SystemIntegrationPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert ui.node_enabled_check_box.isChecked() is True
+    assert page.is_dirty() is False
+
+    ui.node_enabled_check_box.setChecked(False)
+    assert page.is_dirty() is True
+    page.save_changes()
+    assert shared_node_settings().enabled is False
+    assert page.is_dirty() is False
+
+    page.seed_defaults()
+    assert ui.node_enabled_check_box.isChecked() is True
+    assert page.is_dirty() is True
+
+
+def test_drop_changes_reverts_the_node_checkbox_too(qtbot: QtBot) -> None:
+    """``drop_changes`` puts the node box back to the saved value along with the tray one.
+
+    **Test steps:**
+
+    * build the page, untick the node box, drop
+    * verify the box is checked again and the page clean
+    """
+    page = SystemIntegrationPage()
+    qtbot.addWidget(page)
+    ui = page._SystemIntegrationPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    ui.node_enabled_check_box.setChecked(False)
+    page.drop_changes()
+
+    assert ui.node_enabled_check_box.isChecked() is True
+    assert page.is_dirty() is False

@@ -328,37 +328,32 @@ can run them** — exactly as it serves tutorial browse and watch — provided i
 a mount, or a retained copy, [[mounts-and-storage#durable-retention]]) and, for full images, the archives
 themselves or a node that has them.
 
-## §18.10 Scan dispatch in a swarm
+## §18.10 Scan dispatch to a node
 
 [[[reference-images#dispatch]]]
 
-**Status: proposed.**
+**Status: proposed.** Revised with the 2026-10-16 redesign ([[nodes#node-status]]): there is no owning node and no
+grading; a scan runs in the agent, or on a node whose machine holds the archive on local disk, and whoever runs it
+writes the sidecar under the record's lock like any save ([[sync#overview]]).
 
-There are no designated scanner nodes as a hard role. Instead, **capabilities are advertised per node and
-work is dispatched by grade** — the mechanism [[mounts-and-storage#node-benchmark]] already defines for
-checksums, with one more dimension:
-
-- **`.rehuco` declares whether this node may scan** (it has the inference package; optionally a GPU). Per-machine
-  is the right scope ([[mounts-and-storage#rehuco-scope]]): "this box has a GPU" is a fact about a box. The
-  benchmark job additionally grades inference throughput, cold and warm.
-- **A scan is a claimable, resumable work unit** keyed on the resource UUID and the archive's tier-0 identity,
-  run as a persistable task-queue job ([[appendices.task-queue#home]]) on a **second queue** — the inference
-  lane, alongside the disk lane, exactly the "a second queue over a different resource, never a concurrency
-  count" rule of [[appendices.task-queue#serial]]. Claimable units are designed in from the first single-worker
-  version, because farming a backfill across two or three machines is the use case that justifies the
-  headless node, and retrofitting claimability is far worse than building it.
-- **Dispatch order for a resource whose primary node is P:**
-  1. **P itself**, if scan-capable — bytes local, write local, the single-node base case
-     ([[multiplicity#single-node-base]]).
-  2. **A scan-capable node that reaches the same storage through a mount** the fingerprint map proves
-     ([[mounts-and-storage#fingerprint-map]]): it reads the archive over the mount, computes, and **posts the
-     results to P**, which writes the sidecar.
-  3. **A scan-capable node with no route**: P **streams the archive** to it (REST, range requests), and the
-     results come back the same way. At LAN speeds 3 TB is a matter of hours against GPU-weeks of compute, so
-     streaming is a legitimate fallback rather than a hack — but it is the fallback, not the design.
-- **The write is always P's.** A remote scanner never touches the sidecar; the result post-back is a plain
-  REST job like a checksum report ([[nodes#overview]]), which keeps the exactly-one-primary rule of
-  [[mounts-and-storage#folder-add]] intact without a new exception.
+- **The node's machine says whether it may scan** (it has the inference package; optionally a GPU) — machine-local
+  configuration, never set from elsewhere ([[discovery-trust-access#remote-admin]]): "this box has a GPU" is a fact
+  about a box.
+- **A scan is a claimable, resumable work unit** keyed on the resource UUID and the archive's tier-0 identity, run as
+  a persistable task-queue job ([[appendices.task-queue#home]]) on a **second queue** — the inference lane, alongside
+  the disk lane, exactly the "a second queue over a different resource, never a concurrency count" rule of
+  [[appendices.task-queue#serial]]. Claimable units are designed in from the first single-worker version, because
+  farming a backfill across two or three machines is a use case worth keeping open, and retrofitting claimability is
+  far worse than building it.
+- **Dispatch order for a resource:**
+  1. **The agent's own machine**, if scan-capable and the archive is on a local disk or a fast mount.
+  2. **A node that advertises local-disk access to that root** ([[nodes#node-status]]): it reads the archive locally,
+     computes, and writes the sidecar beside the resource over its own mount; the agent learns of it through the
+     notifier ([[mounts-and-storage#out-of-band]]).
+  3. **A scan-capable node with no local access** reads the archive over the share like anyone else — at LAN speeds
+     3 TB is a matter of hours against GPU-weeks of compute, so the mount is a legitimate route rather than a hack.
+- **The write is a save.** Whoever writes the sidecar takes the record's lock and compares as any writer does; two
+  scanners never write one sidecar at once.
 - **Sequence collapsing is the largest cost lever.** A 72-frame turnaround needs the expensive tiers on a
   handful of keyframes; the rest inherit sequence-level fields, and only blur boxes are genuinely per-frame.
   360° detection therefore runs **early in tier 1**, before anything expensive, so the collapse is schedulable.

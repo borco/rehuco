@@ -1,4 +1,4 @@
-# §12. Offline Editing Without a Deliberate Checkout
+# §12. Offline Editing Without a Deliberate Borrow
 
 [[[offline-editing]]]
 
@@ -6,24 +6,24 @@
 
 [[[offline-editing#overview]]]
 
-Distinct from a deliberate vacation/USB checkout ([[sync#overview]]) or a deliberate borrow ([[borrowing]]): a
-resource's owning
-storage can become wholly unreachable (the whole box goes down, not just its node process) with **no prior checkout
-having been made**. In this case, the cached entry should remain **editable for per-user state** while disconnected.
+Distinct from a deliberate borrow ([[borrowing]]): a root's share can become unreachable — the NAS switched off, the
+machine away from home — with **no copy having been made**. The cached entries stay visible and browsable from the
+`.rehudb` ([[mounts-and-storage#offline-mounts]]), and what the user does with them while offline is the question here.
 
-**v1 scope (per [[sync#overview]]):** the writable-cache here is a *per-user-state-writable* cache, **not** a
-fully-writable one. While the resource is unreachable, the user can still edit their own notes/progress/bookmarks/borrow
-records, but **resource metadata and screenshots ([[data-model#image-meanings]]) are read-only** until the authoritative
-copy is reachable again. This deliberately narrows the earlier framing ("remain editable, including its images"): in v1,
-images-as-screenshots are part of resource metadata and are *not* offline-editable; only per-user state is. This is what
-makes [[sync#overview]]'s single-writer metadata guarantee hold without a merge tool.
+**Details are read-only until the file is reachable.** The `.rehu` on the share *is* the record; a cached copy of it
+is not something to edit, and an edit made to it apart from the file would be the two-divergent-copies problem the
+design declines to have ([[sync#overview]]). A document opened from an offline root locks with the reason
+([[data-model#lock-vocabulary]]) and opens for editing again when the share comes back.
 
-The per-user-state edits accumulate locally against the last-known base and reconcile using the same rules as any other
-case once the resource is reachable — generalized, per [[sync#overview]], to handle more than one independent edit
-source reconciling in sequence (e.g. two different boxes each editing their own per-user state while the source was
-down, reconciling one after the other once it returns — the second reconciliation merges against a state that already
-includes the first).
+**Per-user state is always editable, through the queue.** A rating, a note, a *viewed* flag, progress watched from a
+borrowed or local copy: each is a save job whose target is the user's sidecar on the share
+([[sync#apply-payload]]). While the share is unreachable the job waits, persisted with its payload, counted in Pending
+saves ([[sync#pending-saves]]); when the share is back it takes the lock, merges by field against whatever the user's
+other devices wrote meanwhile ([[sync#compare-and-swap]]), and lands. Two machines that both edited the same user's
+state while the NAS was off reconcile one after the other, each against the state the previous one left.
 
-If offline metadata editing is enabled in a future version ([[sync#overview]]'s future hook), *that* is when the
-merge/diff tool and the multi-writer metadata reconciliation become necessary — they are explicitly out of scope for v1
-precisely because v1 forbids the edits that would require them.
+**A borrowed copy needs none of this.** Its `.rehu` and sidecar are local to the machine that holds it; edits land at
+once, and *Return* is what carries them back ([[borrowing]]).
+
+What the earlier design called a future "merge/diff tool for offline metadata editing" is not planned: there is no
+offline metadata editing to merge.

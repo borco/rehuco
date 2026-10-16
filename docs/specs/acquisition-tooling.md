@@ -6,7 +6,7 @@
 
 [[[acquisition-tooling#overview]]]
 
-These features don't belong to the core data/swarm architecture, but they're what makes the catalog *populatable and
+These features don't belong to the core data architecture, but they're what makes the catalog *populatable and
 maintainable* at scale (thousands of tutorials), so they matter for day-to-day usability. All are productivity aids
 feeding the editor the user reviews — assistive, not unattended.
 

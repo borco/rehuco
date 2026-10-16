@@ -62,13 +62,37 @@ UUID minted once at creation time. This UUID identifies the **resource's lineage
 [[instances-and-dedup#uuid-is-lineage]] for why this is a
 many-to-one relationship (one UUID, potentially many physical instances) rather than "one UUID, one legitimate copy."
 
-## §4.3 Single file, not split metadata/state files
+## §4.3 One record file, and one sidecar per user
 
 [[[data-model#single-file]]]
 
-Considered splitting `.rehu` into separate metadata vs. per-user-state files to simplify conflict resolution, but
-rejected this: it breaks the "one self-sufficient file" property that makes the design work in the first place. Instead,
-conflict resolution is scoped to the relevant sub-block *within* the one file ([[sync#overview]]).
+The record is **one self-sufficient file**, `info.rehu`: everything the resource *is* — its sources, authors,
+description, screenshots, its type's fields — travels with the content in that one file, and nothing about the
+resource is anywhere else. An earlier version of this section rejected splitting per-user state out of it, to keep that
+property. The split is now made, for one reason that outweighs it: **per-user state is written every few seconds**
+(watch progress, [[field-schema#watch-progress]]), by several users from several machines, into a file on a share.
+Inside the record that is a conflict machine; beside it, in a file with one writer per user, it conflicts with nothing
+but that user's other device.
+
+- **`<stem>.user-<name>.rehuser`** holds one user's state for one record: ratings, favourites, *viewed* flags,
+  progress, bookmarks, notes, learning-path memberships — what the plugin blocks' `users` maps hold today
+  ([[field-schema#per-user-shared]]). `<name>` is the username, lower-cased, ASCII, filesystem-safe; Windows and macOS
+  compare names case-insensitively, so the fold is not optional. The extension matches the family: `.rehu`,
+  `.rehuco`, `.rehudb`, `.rehuser`.
+- **It has its own `format_version` and migration chain**, like the record and like a plugin block
+  ([[data-model#schema-version]]). Its first version is a JSON object of `block key → that user's fields`, the same
+  shape the `users` map held per block.
+- **The record's own `users` maps migrate out on save**, one time: a save of a record that still carries them writes
+  each user's map into that user's sidecar, through the same lock and merge as any sidecar save
+  ([[sync#overview]]), and the record without them. A record never saved again keeps its maps and is read as before.
+- **The conflict dialog reads both files**: a refused save lists the record's and the sidecar's disagreements in one
+  place, the same rows as today ([[nodes#access-seam]]).
+- **Scans, checksums, renames and the file browser know the sidecar** as they know the screenshots: it belongs to the
+  record's stem ([[data-model#resource-scoping]]), moves with a rename, is never checksummed as content, and is listed
+  as what it is.
+- **Private is not secret.** A sidecar's permissions are the share's; the split isolates writes, not readers.
+- **Read-only media** take no sidecar beside the record; that user's state goes on the retained copy
+  ([[mounts-and-storage#durable-retention]]).
 
 ## §4.4 Resource scoping: directory-scoped vs. file-scoped
 
@@ -638,13 +662,10 @@ shows an image its checksum does not cover:
   is what lifts that, and it ships off: it reaches the document's own Verify as well as the sweep, so turning it on
   makes every Verify a Generate for a resource that has no record — which is a decision, and is why it is a setting
   rather than a default.
-- **Execution location is a dispatch decision, not fixed.** A checksum job can run: (a) on the node that owns the files
-  (cheapest when the Qt app would otherwise have to pull bytes over the network just to hash them), (b) in the Qt app
-  directly against a locally/mount-accessible path (cheapest when that path is faster than going through a node's API,
-  or when no node is reachable at all — e.g. an offline checkout on a USB stick), or (c) via a locally mounted path that
-  happens to also be served by a node — see [[mounts-and-storage#nodes-serve-mounted]]. The general rule: **prefer
-  whichever route gives local-disk-speed access to the actual bytes**; fall back to delegating to the owning node
-  otherwise.
+- **Execution location is a dispatch decision, not fixed.** A checksum job runs in the agent against the path it has —
+  a local disk, a mount, a USB stick — or, as an optimisation, on a node whose machine holds the files on local disk,
+  which then writes the `.checksum` record beside the resource like any client ([[nodes#node-status]]). The general
+  rule: **prefer whichever route gives local-disk-speed access to the actual bytes**.
 
 ## §4.6 Two distinct meanings of "image"
 
@@ -709,9 +730,9 @@ Scanning is load-bearing ([[architecture-design#why-distributed]], [[mounts-and-
   signature (mtime/size) and a content hash captured at last read — distinct from the [[data-model#checksums]] content
   checksums, which deliberately exclude `.rehu`. Opening, browsing to, or serving a resource re-checks the stat
   signature against the cache (hashing only to confirm a suspected change, off the hot path); a mismatch means the file
-  changed out-of-band ([[mounts-and-storage#out-of-band]]), and it is reintegrated on the spot — re-read,
-  version-compared, propagated — instead of waiting for a scan. "Just reopen the file" is thus enough to bring an
-  out-of-band edit back into the swarm; the incremental scan remains the catch-all for files never touched again.
+  changed outside the app ([[mounts-and-storage#out-of-band]]), and it is reintegrated on the spot — re-read, its
+  row replaced — instead of waiting for a scan. "Just reopen the file" is thus enough to bring a change the
+  notifier missed into the cache; the incremental scan remains the catch-all for files never touched again.
 
 **The scan descends everywhere (#373; replaces tc4's stop-at-first-sidecar).** No record's type ends the walk. An
 earlier design note had a *tutorial* declare itself a **scan boundary**, so the scanner would skip its nested folders
@@ -727,41 +748,35 @@ existed only to give its progress bar a denominator. With parse-on-find, progres
 scan's totals (an estimate that is right when little changed, the common case under incremental scanning), and a
 first-ever scan shows a running count instead of a percentage.
 
-## §4.8 Per-node local file trio
+## §4.8 The catalog files on a machine
 
 [[[data-model#local-file-trio]]]
 
-Each node keeps three files of the same basename, sitting together, with sharply different roles and lifecycles:
+Each machine keeps, for every `.rehuco` it opens, files with sharply different roles and lifecycles:
 
 | File | Holds | Category | Lifecycle |
 | --- | --- | --- | --- |
-| `.rehuco` | Machine-local config, opened as a file: its own `id` (the **rehuco id**), labeled folder roots, mounts, primary/remote ownership flags ([[mounts-and-storage#folder-add]]), plugin list ([[plugins#overview]]), retention opt-ins ([[mounts-and-storage#durable-retention]]), auth-trusted flag | Local, legitimately *different* per box | Authored locally; never propagated |
-| `.rehudb` | The SQLite catalog cache of one `.rehuco`'s roots ([[data-model#cache-schema]]) | Derived cache | Rebuildable within the [[architecture-design#why-distributed]] boundary; disposable/regenerable |
-| `.rehusw` | Swarm info: membership, users + salted hashes, access rules | Swarm-identical, *propagated* | **Durable, not disposable** — updated by resync, never regenerated from scratch |
+| `.rehuco` | The user's roots, each with a machine-independent location and a per-machine mapping ([[mounts-and-storage#rehuco-scope]]); its own `id` (the **rehuco id**); the plugin list ([[plugins#overview]]); retention opt-ins per mapping ([[mounts-and-storage#durable-retention]]) | Shared: opened from any machine, each writing its own mapping | A document; saved under the lock like a record ([[sync#overview]]) |
+| `.rehudb` | The SQLite catalog cache of one `.rehuco`'s roots as this machine maps them ([[data-model#cache-schema]]) | Derived cache, per machine | Rebuildable within the [[architecture-design#why-distributed]] boundary; disposable |
+| the retention store | Retained metadata of cached roots ([[mounts-and-storage#durable-retention]]) | Durable, per machine | Never regenerated: for a removable root it is the only copy there is |
 
-`.rehusw` is the concrete on-disk home of the propagated registry that [[discovery-trust-access#membership-model]]–6.9
-refer to abstractly. Crucially it is **not** treated like `.rehudb`: a cache rebuild must not wipe it, because a node
-that is offline (and may rebuild its cache) must still remember the last-known users/access rules so it isn't blind
-until it can resync ([[discovery-trust-access#serve-after-resync]]). It is persisted state that gets *updated*, not
-regenerated. Because it carries the user list with salted password hashes ([[discovery-trust-access#user-auth]]), a node
-creates it owner-readable only (0600-equivalent).
+The `.rehusw` registry file of the earlier design — membership, users with salted hashes, access rules, propagated
+between nodes — is gone ([[discovery-trust-access#registry-home]]). What a node knows is in its own folder under the
+app folder ([[packaging-deployment#app-folders]]) and is nobody else's.
 
 **A `.rehuco` is a file the agent opens, and a machine may keep several** — one per set of roots a user wants to
-browse together — with **one open at a time** in the agent's Browsers dock ([[plugins#browsers]]) (#371). Its
-contents stay machine-local for the reasons in [[mounts-and-storage#rehuco-scope]]; what changes is only that the
-declaration is a document rather than a single fixed file. The word *collection* is deliberately not used for it:
-that is already a resource type ([[plugins#grouping-entities]]).
+browse together — with **one open at a time** in the agent's Browsers dock ([[plugins#browsers]]) (#371). The word
+*collection* is deliberately not used for it: that is already a resource type ([[plugins#grouping-entities]]).
 
-**The three files no longer sit together.** `.rehudb` lives in the user's **local cache directory**, named by the
-**rehuco id** rather than by the `.rehuco`'s path — so moving or renaming a `.rehuco` keeps its cache, and the cache
-is never on a network share, where SQLite's locking is unsafe (#372). `.rehusw` keeps its own durable home.
+**`.rehudb` lives in the user's local cache directory**, named by the **rehuco id** rather than by the `.rehuco`'s
+path — so moving or renaming a `.rehuco` keeps its cache, and the cache is never on a network share, where SQLite's
+locking is unsafe (#372).
 
 **Retention has a store of its own, beside `.rehudb` and never inside it** (#405). The retained metadata of a cached
-root ([[mounts-and-storage#durable-retention]]) is the only copy there is while a removable medium is absent, so it
-cannot share a file that a rebuild deletes. Its container and layout are left to its first implementation; what is
-fixed is that it is durable, lives in the app's own folder ([[packaging-deployment#app-folders]]), and holds per
-resource the raw `.rehu`, the screenshots as they are, and the file structure (relative paths, sizes, each video's
-duration and resolution).
+root is the only copy there is while a removable medium is absent, so it cannot share a file that a rebuild deletes.
+Its container and layout are left to its first implementation; what is fixed is that it is durable, lives in the app's
+own folder ([[packaging-deployment#app-folders]]), and holds per resource the raw `.rehu`, the user's sidecar, the
+screenshots as they are, and the file structure (relative paths, sizes, each video's duration and resolution).
 
 ### §4.8.1 The `.rehudb` cache schema
 
@@ -838,61 +853,47 @@ The cache is the stdlib `sqlite3` module in rehuco-core, Qt-free, one connection
   coordinator's hold, closed before the next ([[mounts-and-storage#out-of-band]]). The directories still to visit
   and the records already read are tracked locations, so a folder renamed mid-scan is scanned under its new name.
 
-## §4.9 Write integrity: atomic writes + single-writer-per-managed-file
+## §4.9 Write integrity: atomic writes, the lock file, and compare-and-swap
 
 [[[data-model#write-integrity]]]
 
 - [#93: feat: lock reasons — named lock causes; unparseable and missing files open locked, empty](https://github.com/borco/rehuco/issues/93)
 - [#94: feat: MessageBanner — inline document notices replace modal error boxes](https://github.com/borco/rehuco/issues/94)
 
-A `.rehu` is the source of truth, and several actors can want to write one (an agent edit, the owning node's metadata
-writes, sync reconciliation). Two writers touching one file at once would corrupt it. Two mechanisms compose to prevent
-this — and which applies depends on whether the file is **managed** (a node owns its storage,
-[[mounts-and-storage#folder-add]]) or **unmanaged** (a loose file no node watches — a fresh export being adjusted, a
-single file received from someone; note that local-file mode [[nodes#local-vs-swarm]] can open both kinds):
+A `.rehu` is the source of truth, and several actors can want to write one at once: two agents on two machines, a web
+user's progress through a node, a text editor. Two writers touching one file at once would corrupt it, and one writer
+overwriting what another just wrote would lose it silently. Three mechanisms compose to prevent both, and they hold
+with no node present, because anyone may mount the share ([[sync#overview]]):
 
 - **Atomic write is universal — every `.rehu` write, by anyone, is temp-then-rename.** Write to a temp file in the same
-  directory, fsync, then atomically rename over the original (POSIX same-FS rename; Windows `ReplaceFile`/`MoveFileEx`).
-  A reader never sees a half-written file, and a crash mid-write leaves either the complete old file or the complete new
-  file — never a torn one. This prevents *torn* files.
-- **Managed files: the owning node is the sole writer.** Every operation on a root a node owns — from an agent on any
-  machine, **including that node's own machine** and an agent that hosts the node itself, from sync reconciliation, or
-  from another node — goes *through that node*, which serializes all writes to the file ([[nodes#access-seam]],
-  #409). The agent writes directly only where no node in its current swarm owns the root, or the file is unmanaged
-  (below). (Consequently the [[mounts-and-storage#out-of-band]] "agent edits through a mount, then notifies the node
-  to re-read" path is **retired as the normal editing flow** — the agent asks the node to make the change rather than
-  writing the file the node also writes.) **When the owning node is not running** — stopped, crashed, still starting —
-  the agent does **not** fall back to writing the file: an edit is refused with the reason ("the node for this root
-  isn't running"), and a node the agent hosts can be restarted from there. Two writers never touch a managed file by
-  the app's own hand. An agent outside the owner's swarm opens the file read-only — the root's claim names its owner
-  ([[multiplicity#instances]]). What remains out-of-band is what happens outside the app — a text editor, a file
-  manager, another tool ([[nodes#local-vs-swarm]]) — detected and
-  reintegrated via [[mounts-and-storage#out-of-band]] (notification, verify-on-access, or scan) rather than
-  prevented. Atomic writes
-  bound the residual race to lose-one-never-corrupt, and reintegration is ordered by the **version vector**
-  ([[sync#overview]]), not a scalar counter: if the file's embedded vector still matches the node's last-read state, the
-  out-of-band edit is a clean fast-forward (the node integrates it and bumps its own component); if the node advanced
-  meanwhile, the two vectors are *incomparable* — detected as genuinely concurrent and sent through [[sync#overview]]'s
-  merge rules / verdict queue instead of silently colliding.
-- **Unmanaged files: the agent writes directly, atomically.** No node exists to route through (local-file mode,
-  [[nodes#local-vs-swarm]]), so the agent writes the file itself using the same temp-then-rename discipline. The
-  single-instance design ([[nodes#single-instance]]) already prevents two agent windows from contending; atomic write
-  makes even a pathological double-write lose-one-rather-than-corrupt.
+  directory, fsync, then atomically rename over the original (POSIX same-FS rename; Windows `ReplaceFile`/`MoveFileEx`;
+  over SMB the rename is server-side, [[packaging-deployment#ts230-as-nas]]). A reader never sees a half-written file,
+  and a crash mid-write leaves either the complete old file or the complete new file — never a torn one.
+- **The lock file serializes writers** ([[sync#lock-file]]): an exclusive-create `<record>.lock` beside the record, held
+  as a directory entry for the milliseconds of one save, never as an open handle, broken by age after a verify.
+- **Compare-and-swap keeps an edit from overwriting another** ([[sync#compare-and-swap]]): under the lock the save
+  re-reads the file and compares its content hash with the version the edit was based on; a changed per-user field
+  merges, a changed detail is a conflict the user resolves. The hash, never the modification time, since the Windows
+  SMB client caches that for seconds.
 
-**Import is the explicit unmanaged → managed hand-off.** A received export (unmanaged, stripped of swarm bookkeeping per
-[[discovery-trust-access#cross-swarm-sharing]]) is edited freely in local-file mode (agent writes directly). **Import**
-is the discrete act of a node taking ownership — assigning the file to a primary root and minting fresh swarm
-bookkeeping (new version vector, instance entry, [[instances-and-dedup#instance-registry]]). Before import, no node
-knows the file exists (agent is sole writer); after import, exactly one node owns it (node is sole writer). There is no
-window where both believe they own the write, because import is a deliberate, atomic transition. At import the node
-treats the file as untrusted outside input — validate it, upgrade its format if older ([[data-model#schema-version]]),
-mint new bookkeeping — rather than assuming it is well-formed just because it has a `.rehu` extension. The same
-defensive posture applies to *reading* any `.rehu` (a double-clicked file is untrusted input too,
-[[nodes#local-vs-swarm]]): parsing enforces sanity caps (`rehu_parse_limits`, #88) — total file size, entry
-counts and sizes (covering a future `versions` list the same as any other collection), JSON nesting depth
-— so a file exceeding them is refused at load, `RehuDocument.load` raising `RehuFormatError`. The normal
-open path (`RehuDocument.open_or_locked`) turns that refusal into a read-only view with a warning rather
-than a dialog, the same as any other unparseable file, instead of exhausting memory or wedging the app.
+**Every writer is equal.** There is no *managed* file with an owning node and no *unmanaged* one the agent writes
+differently: the agent, the node and a `.tc` conversion all take the same lock and make the same compare. A change made
+outside the app — a text editor, a file manager, another tool — is an ordinary change the notifier reports
+([[mounts-and-storage#out-of-band]]); the next save compares against it like any other. The single-instance design
+([[nodes#single-instance]]) keeps two windows of one agent from contending, and the lock keeps everything else apart.
+
+**Saves are jobs, and wait rather than fail** ([[sync#apply-payload]]): a save for a record whose share is offline sits
+in the task queue with its payload persisted, lands when the share is back, and is counted in Pending saves meanwhile.
+
+**Import is a plain copy with an upgrade.** A received resource (stripped of this household's sidecars,
+[[discovery-trust-access#cross-swarm-sharing]]) is a folder like any other once placed under a root; its first save
+upgrades its format if older ([[data-model#schema-version]]). The file is treated as untrusted outside input — validate
+it, upgrade it — rather than assumed well-formed because it has a `.rehu` extension. The same defensive posture applies
+to *reading* any `.rehu` (a double-clicked file is untrusted input too, [[nodes#local-vs-swarm]]): parsing enforces
+sanity caps (`rehu_parse_limits`, #88) — total file size, entry counts and sizes, JSON nesting depth — so a file
+exceeding them is refused at load, `RehuDocument.load` raising `RehuFormatError`. The normal open path
+(`RehuDocument.open_or_locked`) turns that refusal into a read-only view with a warning rather than a dialog, the same
+as any other unparseable file, instead of exhausting memory or wedging the app.
 
 **A malformed value gets one of three responses, and which one is not a matter of severity.** It follows from two
 questions: *is this field ours to interpret*, and *does the file still have a coherent reading*.
@@ -988,7 +989,7 @@ resurface years later — off a USB stick, a
 sealed DVD, a received export — every `.rehu` must carry its own **format-version field**. Rules:
 
 - **A newer agent/node reads an older file and upgrades it** to the current format on write (the upgrade is itself an
-  atomic write, [[data-model#write-integrity]], and for managed files happens through the owning node).
+  atomic write under the record's lock, [[data-model#write-integrity]]).
 - **An older agent/node encountering a newer file must fail safe, not lossy.** It must not silently drop fields it
   doesn't understand and write the file back — that would quietly delete data. It should refuse to write (read-only
   view), or preserve unknown fields verbatim on round-trip. The cheap robust default: **preserve unknown fields

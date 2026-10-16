@@ -12,7 +12,7 @@
 - [#202: feat: task queue dock — the visible queue, its context menu, and per-job controls](https://github.com/borco/rehuco/issues/202)
 
 How slow work gets off the interactive path: checksum runs, directory scans, copies, bulk conversions,
-and later a node's swarm chatter ([[nodes#readiness-per-op]]). The component itself is named in
+and every save ([[sync#apply-payload]], [[nodes#readiness-per-op]]). The component itself is named in
 [[architecture-design#components]]; this page covers the engine in `rehuco_core/tasks/`, the agent's
 queue file over it, and now the dock that shows both (§8) — and the decisions behind all three.
 
@@ -31,9 +31,8 @@ work rather than running it all at once."*
   five other specs is not generic infrastructure that happens to be useful here. `borco-core` acquired
   its guest status by being given rehuco's code early, and [[packaging-deployment#three-packages]] says
   plainly that nothing rehuco should assume the `borco-*` packages stay in this repo.
-- **The node runs jobs too.** [[architecture-design#components]] gives the node *"watches folder roots,
-  serves `.rehu` data over REST, participates in the swarm, **runs jobs**"* — headless, on machines with
-  no display. A Qt-based engine could never be one of its pieces, and
+- **The node runs jobs too.** [[architecture-design#components]] gives the node the long jobs and the web pages —
+  headless, a child of the agent with no display of its own ([[nodes#node-status]]). A Qt-based engine could never be one of its pieces, and
   [[packaging-deployment#three-packages]] rejected extras precisely so that "the node has no GUI
   dependencies" stays structural rather than carefully-maintained.
 - **It is what makes the engine testable.** Concurrency is the whole risk here; being able to test
@@ -194,8 +193,8 @@ so a read paused by the rename resumes at the new name instead of failing, which
 failed read is recorded as unreadable for good.
 
 **An idle app holds no handle under a resource** ([#355](https://github.com/borco/rehuco/issues/355)),
-because only an in-app rename can ask a reader to let go. Explorer, a second host on the same share, or a
-swarm node cannot. So the archive cache closes its handles a couple of seconds after the last read, and at
+because only an in-app rename can ask a reader to let go. Explorer, a second host on the same share, or the
+node cannot. So the archive cache closes its handles a couple of seconds after the last read, and at
 once when the dock is hidden. The same goes for the process's **working directory**, which is a handle
 too: Explorer starts the app inside the folder it opens. So the app leaves that directory at startup, and
 a rename steps out of any directory it is about to move. When a rename is still refused, the banner says

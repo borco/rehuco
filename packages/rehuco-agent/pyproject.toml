@@ -21,6 +21,8 @@ classifiers = [
 requires-python = ">=3.14"
 dependencies = [
     "rehuco-core>=0.3.0",
+    # the local node the agent runs beside itself (#506); a dependency so Briefcase bundles it
+    "rehuco-node",
     "borco-core>=0.3.0",
     "borco-pyside>=0.3.0",
     # Essentials, not the `PySide6` meta-package -- see the note in borco-pyside's pyproject.toml.
@@ -175,5 +177,6 @@ pre_uninstall_script = "installer/pre_uninstall.bat"
 
 [tool.uv.sources]
 rehuco-core = { workspace = true }
+rehuco-node = { workspace = true }
 borco-core = { workspace = true }
 borco-pyside = { workspace = true }

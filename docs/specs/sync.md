@@ -1,4 +1,4 @@
-# §7. Sync & Conflict Resolution
+# §7. Saves, Locks and Conflicts
 
 [[[sync]]]
 
@@ -7,111 +7,108 @@
 [[[sync#overview]]]
 
 > [!NOTE]
-> **Implement this with Opus, not the auto-switched Sonnet.** The version-vector ordering, the concurrent-edit merge
-> rules, the delete-vs-edit asymmetry, and the tombstone semantics are reasoning-dense — a subtle error here silently
-> loses or resurrects data. Override `opusplan` to `/model opus` while implementing [[sync#overview]] even though it's
-> "execution," and verify each merge case against the rules below.
+> **Implement the save path with Opus, not the auto-switched Sonnet.** The lock's stale rule, the compare-and-swap, the
+> per-field merge and the apply-payload job's coalescing are reasoning-dense — a subtle error here silently loses or
+> resurrects data. Override `opusplan` to `/model opus` while implementing this file, and verify each case against the
+> rules below and the measurements of #503.
 
-Two different kinds of data live in `.rehu`, with different natural owners:
+There is **no sync engine**. Until 2026-10-16 this file specified version vectors, an append-only activity log,
+tombstones and a verdict queue, all resting on one node being a resource's sole writer. With the files on a share that
+anyone may mount, nothing can be the sole writer, so convergence is settled where the files are: on the filesystem,
+with the primitives every SMB client honours.
 
-| Data | Examples | Owner | Conflict risk |
+Two different kinds of data live beside a resource, with different natural owners:
+
+| Data | Where | Writers | Conflict risk |
 | --- | --- | --- | --- |
-| Resource metadata | author, duration, description, screenshots | The node administering the files (per `.rehuco`, [[mounts-and-storage#rehuco-scope]]) | None — only one logical owner ever writes it; others hold cached, version-stamped copies |
-| Per-user state | view progress, notes, bookmarks, borrow records, deletion/archival actions (logged, [[sync#overview]]) | The user | Real, but narrow in scope |
+| Resource metadata | `info.rehu` | Anyone who edits the resource | Real but rare: two people editing the same record's details apart |
+| Per-user state | `info.user-<name>.rehuser` ([[data-model#single-file]]) | That user, from any of their devices | Only between one user's devices; merges by field |
 
-**Resource metadata** never has a multi-writer conflict, by design — there's exactly one owning node per resource. Other
-nodes/clients show a cached copy, marked offline/stale if no live access route remains
-([[instances-and-dedup#failure-model]]). This also covers offline
-media (external drives, USB sticks, CD/DVD): the cached entry persists and is marked offline rather than disappearing.
+**Metadata is edited only while the file is reachable.** A record whose share is offline shows its cached details
+read-only ([[offline-editing#overview]]); what remains writable offline is per-user state, through the queued jobs
+below. The two statements that were v1's hardest promise — a single writer, and offline edits that converge — are no
+longer needed: a save that cannot reach the file waits, and a save that finds the file changed is a conflict shown to
+the user.
 
-**v1 scope decision — metadata is editable only when the resource is online; per-user notes/state are always editable.**
-To keep the single-writer guarantee above *actually true* rather than contradicted by offline-editing features
-([[borrowing]], [[offline-editing#overview]]), the first implementation deliberately forbids editing **resource
-metadata** (including
-screenshots, [[data-model#image-meanings]]) while the authoritative copy is unreachable. (Editing the file itself in
-local-file mode is *not* "offline editing" in this sense — the `.rehu` on disk **is** the authoritative copy; what v1
-forbids is editing a *cached copy* of an unreachable resource. A direct local write to a managed file is the out-of-band
-case of [[data-model#write-integrity]]/[[mounts-and-storage#out-of-band]] and reintegrates via verify-on-access,
-[[data-model#scan-and-staleness]].) What remains editable offline is **per-user state** — notes, progress, bookmarks,
-borrow records — which is single-user and merges cleanly. This removes the hardest distributed problem (two divergent
-offline edits to shared metadata) from v1 entirely, with no loss of the actually-valuable offline capability (taking
-notes on vacation). See [[offline-editing#overview]] for how this narrows the writable-cache concept.
+## §7.1 The lock file
 
-**Future hook, not built in v1:** offline metadata editing *may* be enabled later, gated behind a merge/diff tool
-(text-diff for metadata fields, old/new side-by-side comparison for screenshots — both straightforward library work,
-deferred only because the UI doesn't pay off until offline metadata editing exists). To keep that path open cheaply,
-**metadata carries `resource_version` markers from day one even though v1 never has to act on a metadata conflict** — so
-a future merge tool has the version history it needs. Build the storage for future merge now (free); defer the merge UI
-(not free).
+[[[sync#lock-file]]]
 
-**Per-user state** can genuinely conflict, but in a bounded way — never general multi-node consensus. Ordering is
-determined by a **version vector**, not by wall-clock time:
+Every write to a record takes `<record>.lock` beside it, created with exclusive-create (`O_CREAT | O_EXCL`), which on
+SMB2 is a server-side atomic create and the one locking primitive Windows, macOS and Linux clients all honour; OS
+byte-range and `fcntl` locks are not that ([[appendices.post-mortem#architecture]]). Measured on the TS-230 (#503):
+two Windows processes and a Mac racing 1500 attempts each, every holder reading its own id back after the hold —
+1443 holds, **0 clobbered**.
 
-- **Version vector (ordering, never pruned).** Each resource carries a small per-node-counter vector —
-  `{nodeA: 5, nodeB: 3, …}`. A node bumps its own counter on each action it makes. "Newer" means "dominates
-  component-wise"; if neither of two vectors dominates, the change is genuinely **concurrent** and must be reconciled.
-  This is clock-independent (immune to the skew across Win/Linux/Mac/QNAP), and it is deliberately *lighter than git*
-  (no content-addressed DAG/merkle tree) and *far lighter than a crypto ledger* (no signing chain — tamper-evidence
-  isn't needed in a trusted household swarm). The vector is tiny (one integer per node that ever participated) and is
-  **never pruned** — dropping a node's counter would reintroduce ordering ambiguity and resurrection-style bugs.
-- **Version history (`versions`) — one list that is both the version record and the activity log.** Each resource
-  carries an append-only `versions` list; every entry is one meaningful event, `{ index, date, hash, log }`: `index` is
-  a monotonic per-resource counter (assigned by the owning node as it integrates the event); `date` is wall-clock,
-  display/context only (ordering never depends on it); `hash` is the content hash of the `.rehu` as written by that
-  event (the same hash verify-on-access compares, [[data-model#scan-and-staleness]]); `log` is the human-readable
-  comment — "archived by B (reason: low quality)", "resurrected from local copy by A" — modelled on a GitLab issue's
-  Activity feed. The commentary is **not a separate structure**: understanding a change means comparing two versions, so
-  the *what and why* lives on the version entry itself (the vector only says *that* something diverged). "This file is
-  at version 8, last touched June 3" reads straight off the list. `log` is optional per entry, but stripping comments is
-  no size defense — more entries can always be minted — so oversize protection is the read-time sanity caps of
-  [[data-model#write-integrity]], not field-stripping. The `index` is deliberately *not* the ordering mechanism — a flat
-  index cannot represent divergence (two concurrent editors would both mint an 8; that detection is the vector's job
-  above), and chaining hashes into a parent-linked DAG is exactly the git-shaped machinery this design avoids. An
-  out-of-band edit's entry receives its final index when the owning node reintegrates it
-  ([[data-model#write-integrity]]). There is **no silent pruning**: the only way history shrinks is **compaction as a
-  logged event** — a deliberate, never-automatic action that replaces an *interior* range with a single marker entry
-  (`{ indexes: 1–19, date, hash, log: "compacted 19 versions by X" }`) which keeps the count and explains the gap to any
-  uncompacted copy compared later. Compaction never touches the creation entry (index 0 — it anchors the derivable
-  `created` date, [[field-schema#record-timestamps]]) or the current state-defining entry (the newest
-  delete/archive/resurrect).
+- **The lock is the directory entry, never an open handle.** It is created, written (`user@host pid app time`) and
+  closed in one go; its content is read back, never kept open. The reason is measured: a lock *held open* by another
+  client survives its holder's exit by a minute or more on the macOS client's deferred close, a second delete of it is
+  denied meanwhile, and a Windows holder blocks every delete and replace outright.
+- **Held for milliseconds**: the re-read → compare → atomic-replace window of one save. Create and unlink cost about
+  4 ms from Windows and 13 ms from macOS over the LAN.
+- **Retried with jitter, never spun.** A busy answer may be stale — the Windows client's directory cache answered
+  "exists" 12–24 times per 1500 attempts for a lock that was already gone — and a hot contender starves the others
+  (one Mac won 1400 of 1500 against two Windows processes). A failed create backs off a random few tens of
+  milliseconds and tries again, for a bounded time, then the save waits in the queue and says so.
+- **Stale by age.** A lock older than the TTL (2 minutes to start) whose content names a time that far back is broken:
+  deleted, then **verified gone** — a name that lingers is treated as held and backed off from, not spun on. There is
+  no heartbeat on the lock, since that would mean reopening it.
+- **Excluded from scans, checksums and renames**, like the staged temp files. A rename refuses while a foreign lock sits
+  beside the record.
 
-Reconciliation rules over this model:
+**The lock narrows the window; the compare is the safety.** A client that ignores the lock file still cannot silently
+lose anyone's edit, because of the next section — it can only lose its own, which the conflict dock then shows.
 
-- **Newest action wins, by vector comparison.** If one side's vector dominates, it wins outright (the common case — e.g.
-  you edited a note on the laptop, nothing changed at home). If neither dominates (true concurrency), fall to
-  field-level merge below.
-- **Field-level merge for concurrent edits** (no user prompt needed): watched segments (union), bookmarks (union by
-  position), `viewed` flags, a file's and the tutorial's (logical OR — *watched to the end at least once*
-  is a fact that only becomes true), a file's resume `position` (the later action wins)
-  ([[field-schema#watch-progress]]). The one exception to the OR is **a `viewed` the user cleared by hand**: that is a
-  deliberate, logged action with its own vector position, so it dominates an older `true` instead of being resurrected
-  by it. Free-text notes (and edited screenshots, if offline metadata editing is ever
-  enabled, [[sync#overview]] future hook) are the fields that can genuinely collide; worst case, keep both and surface
-  for the user. Data is never silently lost.
-- **Deletion, archival, and resurrection are ordinary logged actions in this same model** — not a separate mechanism. A
-  deletion's "tombstone" is simply the delete event's position in the version vector: a node offline during the delete
-  sees, on reconnect, that the delete vector dominates its last-known state and applies it; a rescan that re-finds the
-  on-disk `.rehu` does *not* resurrect it, because the tombstone vector dominates the file's last-known edit vector.
-  This closes the resurrection bug without any special-casing.
-- **Asymmetric stakes for delete-vs-edit (the one nicety).** Edit-vs-edit losing the older edit is acceptable. But a
-  delete silently winning over a concurrent edit (losing someone's work), or an edit silently resurrecting something
-  deliberately deleted, are bad surprises — so a delete that is *concurrent with* an edit does not auto-apply; it
-  surfaces in the duplicate-review-style verdict queue ([[instances-and-dedup#duplicate-review]]) for a human decision.
-  Plain delete-vs-delete needs nothing (both agree).
-- This reconciliation is **not limited to a single two-party case** (home vs. one checkout). It generalizes to any
-  number of independent edit sources reconciling one after another — each event merges against whatever the current
-  state is at that moment ([[offline-editing#overview]]).
-- **Multiple edits during one continuous offline period are not a conflict among themselves** — they're sequential
-  against one evolving local state, coalesced into a single outgoing sync on reconnect
-  ([[mounts-and-storage#out-of-band]]).
-- **Active playback progress** is pushed frequently (periodically during playback, and on graceful stop), so switching
-  the serving node or reconnecting a previously-used one reflects state at most seconds stale, not a whole session
-  behind ([[mounts-and-storage#node-handoff]]).
-- **Hand-edited files are ordinary out-of-band changes.** A user can always open a `.rehu` in a text editor and change
-  anything — fields, old log entries, even the vector. Verify-on-access catches it like any out-of-band write
-  ([[data-model#write-integrity]]/[[mounts-and-storage#out-of-band]]); on reintegration the node takes the file's
-  *fields* as the user's intent but treats its own cached bookkeeping as authoritative for *history*: the change lands
-  as one new logged event, and a hand-mangled vector/log is repaired from the node's cache rather than trusted. (An
-  *unmanaged* file needs no such resolution — there is no swarm state to protect.) Old entries' hashes are historical
-  markers of the file as written at that event, not a verification chain — a later edit does not invalidate them;
-  [[sync#overview]] deliberately has no tamper-evidence in a trusted household.
+## §7.2 Compare-and-swap, and the per-field merge
+
+[[[sync#compare-and-swap]]]
+
+Under the lock, the save re-reads the file and compares its **content hash** with the `RecordVersion` the edit was
+based on ([[nodes#access-seam]]): never its modification time or size, which the Windows SMB client caches for about
+ten seconds. Then:
+
+- **Unchanged** → write the merged payload with an atomic replace ([[data-model#write-integrity]]), release.
+- **Changed in per-user fields only** → merge **field by field** and write. The rules, kept from the earlier design:
+  watched segments are a union; bookmarks a union by position; a video's and the tutorial's *viewed* flags a logical OR
+  (*watched to the end at least once* only becomes true), except a *viewed* the user cleared by hand, which is a
+  deliberate action and wins over an older true; a resume position takes the later action
+  ([[field-schema#watch-progress]]); free-text notes that genuinely collide keep both and say so. Data is never
+  silently lost.
+- **Changed in the details** → the save is a **conflict**: the job fails with its payload kept, and the conflict dialog
+  shows every value the two versions disagree on with its original, the user's and the file's, the user picks per row
+  and saves, or discards their edits ([[nodes#access-seam]]).
+
+**Deletion is a filesystem fact.** A record deleted on the share is gone for everyone: the notifier reports it, the
+cache drops the row, an open document locks with the reason ([[data-model#lock-vocabulary]]), a queued save for it
+fails and says the file is gone. There are no tombstones and nothing to resurrect; a record re-created at the same path
+is a new file with its own id.
+
+## §7.3 Saves are jobs: apply a payload to a record
+
+[[[sync#apply-payload]]]
+
+A save is not a call that blocks the window; it is a job on the task queue ([[appendices.task-queue]]), with the shape
+`(target key, base version, payload, merge policy)`:
+
+1. Take the lock ([[sync#lock-file]]); wait in the queue if the share is unreachable, saying so.
+2. Re-read, compare, merge ([[sync#compare-and-swap]]).
+3. Write atomically, release, let the notifier announce the change.
+
+- **One pending job per record**: a newer save for the same key replaces the pending payload rather than queueing
+  behind it.
+- **Persisted**: the payload is written with the queue's state, so a save made while the NAS was off survives quitting
+  and lands when the share is back.
+- **An interactive save is one such job.** Returning from a vacation is **N of them enqueued at once** — for every
+  borrowed resource, the user's sidecar and any details edited away are payloads whose base version is the version
+  borrowed ([[borrowing]]). Every clean one applies unattended; every conflicting one parks with its diff. The sidecar
+  makes the common case automatic: it has one writer per user, so it only ever conflicts with that user's other device.
+
+## §7.4 Pending saves
+
+[[[sync#pending-saves]]]
+
+The status bar counts the saves not yet landed, and the Tasks dock filters to them: waiting for the share, waiting for a
+lock, or **failed on a conflict** with its payload kept. *Inspect* on a failed one takes the lock again, re-reads, and
+opens the conflict dialog over the current file; *Discard* drops the payload. A document with a pending or failed save
+says so in its banner. Nothing is retried behind the user's back after a conflict: the file changed under them, and
+the decision is theirs.

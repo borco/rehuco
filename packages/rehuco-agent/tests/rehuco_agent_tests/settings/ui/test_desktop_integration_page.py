@@ -9,6 +9,7 @@ from typing import Any, Final
 
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
+from rehuco_agent.settings.node_settings import shared_node_settings
 from rehuco_agent.settings.tray_settings import shared_tray_settings
 from rehuco_agent.settings.ui import desktop_integration_page
 from rehuco_agent.settings.ui.settings_frame_filter import SettingsFrameFilter
@@ -306,3 +307,28 @@ def test_seed_defaults_stages_the_tray_off_over_a_saved_on(qtbot: QtBot, mocker:
     assert ui.enabled_check_box.isChecked() is False
     assert page.is_dirty() is True
     assert ui.status_label.text() == desktop_integration_page.NOT_CHECKED_STATUS
+
+
+def test_drop_and_defaults_reach_the_node_checkbox(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """On the Linux page too, Drop puts the node box back to the saved value and Defaults stages the factory
+    value, on, as a dirty edit against a saved off (#506).
+
+    **Test steps:**
+
+    * build the page; untick the node box and save, so the saved value is off
+    * tick it and drop; verify unticked and clean
+    * seed defaults; verify ticked and dirty
+    """
+    page, ui = build_page(qtbot, mocker)
+    ui.node_enabled_check_box.setChecked(False)
+    page.save_changes()
+    assert shared_node_settings().enabled is False
+
+    ui.node_enabled_check_box.setChecked(True)
+    page.drop_changes()
+    assert ui.node_enabled_check_box.isChecked() is False
+    assert page.is_dirty() is False
+
+    page.seed_defaults()
+    assert ui.node_enabled_check_box.isChecked() is True
+    assert page.is_dirty() is True

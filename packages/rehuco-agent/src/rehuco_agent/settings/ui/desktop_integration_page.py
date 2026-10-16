@@ -6,7 +6,9 @@ from typing import Final
 from PySide6.QtWidgets import QWidget
 
 from ... import linux_registration
+from ...node_host import NodeHost
 from .desktop_integration_page_ui import Ui_DesktopIntegrationPage
+from .node_block import NodeBlock
 from .tray_block import TrayBlock
 
 NOT_CHECKED_STATUS: Final = "Not checked yet."
@@ -35,10 +37,10 @@ class DesktopIntegrationPage(QWidget):
     ``--unregister`` use.
 
     Register/unregister take effect immediately when clicked, so nothing of theirs is ever staged.
-    The tray block below them (`TrayBlock`, #205) holds this page's one staged control, and is what
-    :meth:`is_dirty`/:meth:`save_changes`/:meth:`drop_changes` answer for. The same shape as the
-    Windows `RegistryPage`, and constructed under the matching ``sys.platform == "linux"`` branch in
-    `main_window.py`.
+    The tray block (`TrayBlock`, #205) and the local node block (`NodeBlock`, #506) below them hold
+    this page's staged controls, and are what :meth:`is_dirty`/:meth:`save_changes`/:meth:`drop_changes`
+    answer for. The same shape as the Windows `RegistryPage`, and constructed under the matching
+    ``sys.platform == "linux"`` branch in `main_window.py`.
 
     Unlike that page, this one reports four states rather than three:
     "registered, but launching a different location" is the **ordinary** case here, not an edge
@@ -51,10 +53,11 @@ class DesktopIntegrationPage(QWidget):
     each Linux desktop environment has its own mechanism for them
     ([[packaging-deployment#app-identity]]).
 
+    :param node_host: the main window's node host, for the node block's status line; ``None`` leaves it static.
     :param parent: optional Qt parent.
     """
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, node_host: NodeHost | None = None, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.__ui: Final = Ui_DesktopIntegrationPage()
         self.__ui.setupUi(self)
@@ -76,25 +79,29 @@ class DesktopIntegrationPage(QWidget):
         self.__ui.check_button.clicked.connect(self.__check)
 
         self.__tray: Final = TrayBlock(self.__ui.enabled_check_box, self.__ui.unavailable_label)
+        self.__node: Final = NodeBlock(self.__ui.node_enabled_check_box, self.__ui.node_status_label, node_host)
 
     def is_dirty(self) -> bool:
-        """Whether the staged tray checkbox differs from what's saved.
+        """Whether the staged tray or node checkbox differs from what's saved.
 
-        The registration controls above it never contribute: they act immediately when clicked, so
-        there is nothing of theirs to stage (#205 put the one staged control on this page)."""
-        return self.__tray.is_dirty()
+        The registration controls above them never contribute: they act immediately when clicked, so
+        there is nothing of theirs to stage (#205 put the first staged control on this page)."""
+        return self.__tray.is_dirty() or self.__node.is_dirty()
 
     def save_changes(self) -> None:
-        """Persist the staged tray choice -- register/unregister already took effect when clicked."""
+        """Persist the staged tray and node choices -- register/unregister already took effect when clicked."""
         self.__tray.save_changes()
+        self.__node.save_changes()
 
     def drop_changes(self) -> None:
-        """Discard the staged tray edit -- register/unregister already took effect when clicked."""
+        """Discard the staged tray and node edits -- register/unregister already took effect when clicked."""
         self.__tray.drop_changes()
+        self.__node.drop_changes()
 
     def seed_defaults(self) -> None:
-        """Stage the tray block's factory value -- registration is not a setting (#342)."""
+        """Stage both blocks' factory values -- registration is not a setting (#342)."""
         self.__tray.seed_defaults()
+        self.__node.seed_defaults()
 
     def __register(self) -> None:
         """Write the desktop entry, MIME type and icon, then reflect the result."""
