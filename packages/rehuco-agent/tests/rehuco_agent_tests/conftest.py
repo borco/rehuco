@@ -29,7 +29,10 @@ from PySide6.QtCore import QMimeData, qInstallMessageHandler
 from PySide6.QtGui import QGuiApplication
 from pytest import TempPathFactory, fixture
 from pytest_mock import MockerFixture
-from rehuco_agent import main_rc  # noqa: F401  # pylint: disable=unused-import  # registers :/icons/... resources
+from rehuco_agent import (  # pylint: disable=unused-import  # main_rc registers :/icons/... resources
+    main_rc,  # noqa: F401
+    node_host,
+)
 from rehuco_agent.app_logging import shared_log_bridge
 from rehuco_agent.commands import shared_command_registry
 from rehuco_agent.dialogs import conversion_backups_dialog
@@ -49,6 +52,7 @@ from rehuco_agent.settings import (
     location_templates_settings,
     logs_settings,
     markdown_rendering_settings,
+    node_settings,
     persistent_settings,
     reference_images_settings,
     root_catalog_settings,
@@ -72,6 +76,7 @@ from rehuco_agent.settings.location_replacements_settings import shared_location
 from rehuco_agent.settings.location_templates_settings import shared_location_templates_settings
 from rehuco_agent.settings.logs_settings import shared_logs_settings
 from rehuco_agent.settings.markdown_rendering_settings import shared_markdown_rendering_settings
+from rehuco_agent.settings.node_settings import shared_node_settings
 from rehuco_agent.settings.persistent_settings import set_settings_dir
 from rehuco_agent.settings.reference_images_settings import shared_reference_images_settings
 from rehuco_agent.settings.root_catalog_settings import shared_root_catalog_settings
@@ -82,6 +87,7 @@ from rehuco_agent.settings.tray_settings import shared_tray_settings
 from rehuco_agent.settings.ui import (
     checksums_page,
     location_templates_page,
+    node_block,
     screenshot_patterns_page,
     settings_dialog,
     shortcuts_page,
@@ -794,6 +800,25 @@ def isolate_shared_tray_settings(mocker: MockerFixture) -> Iterator[None]:
     mocker.patch.object(tray_block, "persistent_settings", return_value=fake)
     yield
     shared_tray_settings.cache_clear()
+
+
+@fixture(autouse=True)
+def isolate_shared_node_settings(mocker: MockerFixture) -> Iterator[None]:
+    """Isolate every test from the process-wide `NodeSettings` singleton, and keep every `MainWindow` from
+    starting a real node process (#506).
+
+    Same rationale as :func:`isolate_shared_tray_settings` for the settings. On top of it, `NodeHost.start_later`
+    is made a no-op: the window arms it at construction, and a test whose event loop runs past the delay would
+    otherwise spawn ``rehuco-agent --node`` as a real child of the test process. Tests of the host itself start
+    the node explicitly, with their own command.
+    """
+    shared_node_settings.cache_clear()
+    fake = FakeSettings()
+    mocker.patch.object(node_settings, "persistent_settings", return_value=fake)
+    mocker.patch.object(node_block, "persistent_settings", return_value=fake)
+    mocker.patch.object(node_host.NodeHost, "start_later")
+    yield
+    shared_node_settings.cache_clear()
 
 
 @fixture(autouse=True)

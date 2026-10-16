@@ -1,14 +1,14 @@
 [project]
 name = "rehuco-node"
 dynamic = ["version"]
-description = "Reserved name for a future rehuco headless node — no service implemented yet"
+description = "rehuco local node: a heartbeat process the rehuco-agent runs beside itself"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [
     { name = "Ioan Calin", email = "iborco@gmail.com" },
 ]
-keywords = ["rehuco", "resource-management", "rehu", "placeholder"]
+keywords = ["rehuco", "resource-management", "rehu", "node"]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
     "Intended Audience :: System Administrators",
@@ -19,13 +19,15 @@ classifiers = [
     "Topic :: Software Development :: Libraries",
 ]
 requires-python = ">=3.14"
-# nothing here until something imports it: the service's intended stack (FastAPI, uvicorn,
-# zeroconf, cryptography) belongs in this list the day the first endpoint is written, not while
-# the package is a name and a version constant -- an install that pulls a web server and an mDNS
-# stack for five lines of docstring advertises a service that does not exist
+# only what the heartbeat process imports; the web stack (FastAPI, uvicorn, zeroconf) joins this list the day
+# the first endpoint is written, not before
 dependencies = [
     "rehuco-core",
+    "borco-core",
 ]
+
+[project.scripts]
+rehuco-node = "rehuco_node.__main__:main"
 
 [project.urls]
 Homepage = "https://borco.github.io/rehuco/"
@@ -44,3 +46,4 @@ packages = ["src/rehuco_node"]
 
 [tool.uv.sources]
 rehuco-core = { workspace = true }
+borco-core = { workspace = true }

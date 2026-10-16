@@ -5,6 +5,7 @@ Windows-specific behavior (register/unregister, AUMID) lives in
 tests exercise the platform-agnostic and non-Windows paths, so they run on every OS.
 """
 
+import sys
 from pathlib import Path
 from typing import Final
 
@@ -337,3 +338,23 @@ def test_info_reports_where_the_settings_data_and_cache_are(
     assert f"settings: {tmp_path / f'{APPLICATION_NAME}.ini'}" in lines
     assert f"data: {tmp_path}" in lines
     assert f"cache: {tmp_path}" in lines
+
+
+def test_node_flag_runs_the_node_instead_of_the_agent(
+    mocker: MockerFixture, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``rehuco-agent --node ...`` hands the remaining arguments to the node's own main and returns its code (#506),
+    so the packaged exe hosts the node as itself.
+
+    **Test steps:**
+
+    * run ``main`` with ``--node --version``
+    * verify the node's version line was printed and the GUI never launched
+    """
+    mocker.patch.object(sys, "argv", ["rehuco-agent", "--node", "--version"])
+    run = mocker.patch("rehuco_agent.app.run")
+
+    assert main() == 0
+
+    assert capsys.readouterr().out.strip().startswith("version: ")
+    run.assert_not_called()

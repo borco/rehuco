@@ -1,7 +1,8 @@
 """CLI entry point: ``rehuco-agent [--version] [--info] [--register|--unregister] [--settings-dir DIR] [paths...]``
 (register/unregister: Windows and Linux); ``rehuco-agent --scrape URL [--scrapers-folder DIR]
 [--output PATH]`` and ``rehuco-agent --scrape-schema PATH`` run a scrape from the console, no GUI
-([[acquisition-tooling#scraper-registry]])."""
+([[acquisition-tooling#scraper-registry]]); ``rehuco-agent --node [--settings-dir DIR]`` runs the local node
+(#506)."""
 
 import argparse
 import ctypes
@@ -16,6 +17,10 @@ from rehuco_agent.archives import ARCHIVE_EXTENSIONS
 SETTINGS_DIR_ENVIRONMENT_VARIABLE: Final = "REHUCO_AGENT_SETTINGS_DIR"
 """Names a folder that replaces the platform's settings, data and cache locations for this run (#494); the
 ``--settings-dir`` flag wins over it."""
+
+NODE_FLAG: Final = "--node"
+"""Runs the local node (``rehuco_node``) in this process instead of the agent; every other argument is the
+node's (#506)."""
 
 REGISTRATION_PLATFORMS: Final = ("win32", "linux")
 """Platforms whose parser defines ``--register``/``--unregister``.
@@ -107,6 +112,21 @@ def print_settings_info() -> None:
     print(f"cache: {where.cache}")
 
 
+def run_node(arguments: list[str]) -> int:
+    """Run the local node's own ``main`` in this process instead of the agent (#506).
+
+    The packaged exe, the dev launcher and the console script all host the node as themselves this way, with no
+    second executable to ship. Decided before the agent's parser sees anything, since none of its flags apply.
+
+    :param arguments: the process's arguments after the program name, :data:`NODE_FLAG` included.
+    :returns: the node's exit code.
+    """
+    # pylint: disable-next=import-outside-toplevel
+    from rehuco_node.__main__ import main as node_main
+
+    return node_main([argument for argument in arguments if argument != NODE_FLAG])
+
+
 # pylint: disable-next=too-many-return-statements,too-many-branches,too-many-statements
 def main() -> int:
     """Print version/registration info, register/unregister this app as the ``.rehu`` handler, or
@@ -151,6 +171,9 @@ def main() -> int:
 
     :returns: process exit code.
     """
+    if NODE_FLAG in sys.argv[1:]:
+        return run_node(sys.argv[1:])
+
     exe_path = Path(sys.argv[0]).resolve()
 
     parser = argparse.ArgumentParser(prog="rehuco-agent")

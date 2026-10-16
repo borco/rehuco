@@ -179,7 +179,7 @@ template) on the Scrapers settings page.
 packages/
 ├── rehuco-core/     the .rehu document, the .rehuco file and .rehudb cache, migrations, .tc conversion, checksums, the task queue — no GUI
 ├── rehuco-agent/    the desktop app: the field toolkit, the panels, the settings
-├── rehuco-node/     a reserved name; nothing implemented
+├── rehuco-node/     the local node: a heartbeat process the agent runs beside itself — no GUI
 ├── borco-core/      generic non-GUI utilities, on their way out of this repo
 └── borco-pyside/    generic Qt widgets, likewise
 ```
@@ -204,9 +204,12 @@ length, which is exactly why this section is here:
 scan, which re-reads just the records whose modification time or size changed. The other recursive walks — the checksum
 sweep and the legacy import, over a folder you hand them — act as they go and remember nothing about what they found.
 
-**No network beyond fetching a page you drop.** No node, no REST API, no discovery, no sync between
-machines, no accounts or access rules, no web or tablet interface. `rehuco-node` is an empty package
-holding its name.
+**No network beyond fetching a page you drop.** The **local node** runs: the agent starts `rehuco-node` a few
+seconds after its window is up, as the same user, keeps it running for as long as it runs itself — in the tray
+included — and stops it when it quits; the node writes a heartbeat file and a log in the folder the two share,
+*Settings* > *System Integration* turns it on or off, and the status bar's right end says whether it runs. That is
+all it does: no REST
+API, no discovery, no sync between machines, no accounts or access rules, no web or tablet interface.
 
 **No playback and no progress tracking.** rehuco describes a tutorial; it does not play one.
 

@@ -12,6 +12,9 @@ winreg = pytest.importorskip("winreg")  # module doesn't exist off Windows -- sk
 from PySide6.QtCore import QUrl  # noqa: E402  # pylint: disable=wrong-import-position
 from pytest_mock import MockerFixture  # noqa: E402  # pylint: disable=wrong-import-position
 from pytestqt.qtbot import QtBot  # noqa: E402  # pylint: disable=wrong-import-position
+from rehuco_agent.settings.node_settings import (  # noqa: E402  # pylint: disable=wrong-import-position
+    shared_node_settings,
+)
 from rehuco_agent.settings.tray_settings import (  # noqa: E402  # pylint: disable=wrong-import-position
     shared_tray_settings,
 )
@@ -688,3 +691,27 @@ def test_frame_filter_discovers_the_crash_dumps_frame_and_its_text(qtbot: QtBot,
     frame_filter.apply("zzz", show_full_on_title_match=False)
     ui = page._RegistryPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert ui.crash_dumps_frame.isVisibleTo(page) is False
+
+
+@mark.windows
+def test_the_node_checkbox_dirties_the_page_and_saves_the_shared_setting(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The Local node block (#506) is staged beside the tray one on the Windows page: unticking it dirties the
+    page, and Save pushes it into the shared `NodeSettings`.
+
+    **Test steps:**
+
+    * build the page with registration unavailable; untick the node box; verify dirty
+    * save; verify the shared setting is off and the page clean
+    """
+    mocker.patch(f"{WINDOWS_REGISTRATION}.is_running_from_exe", return_value=False)
+    page = registry_page.RegistryPage((".zip",))
+    qtbot.addWidget(page)
+    ui = page._RegistryPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    ui.node_enabled_check_box.setChecked(False)
+    assert page.is_dirty() is True
+
+    page.save_changes()
+
+    assert shared_node_settings().enabled is False
+    assert page.is_dirty() is False

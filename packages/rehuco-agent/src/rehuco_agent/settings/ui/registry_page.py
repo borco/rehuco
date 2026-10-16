@@ -14,6 +14,8 @@ from PySide6.QtWidgets import QWidget
 
 from ... import crash_dumps, windows_registration
 from ...fields.path_field import REVEAL_HINT
+from ...node_host import NodeHost
+from .node_block import NodeBlock
 from .registry_page_ui import Ui_RegistryPage
 from .tray_block import TrayBlock
 
@@ -41,10 +43,11 @@ class RegistryPage(QWidget):
     place -- a thin GUI wrapper over `rehuco_agent.windows_registration` and `rehuco_agent.crash_dumps`.
 
     Register/unregister and Enable/Disable crash dumps all take effect immediately when clicked, so
-    nothing of theirs is ever staged. The tray block below them (`TrayBlock`, #205) holds this page's
-    one staged control, and is what :meth:`is_dirty`/:meth:`save_changes`/:meth:`drop_changes` answer
-    for -- the Linux `DesktopIntegrationPage` and the macOS `SystemIntegrationPage` carry the same
-    block under the same page title, so the tray setting is reachable on every platform.
+    nothing of theirs is ever staged. The tray block (`TrayBlock`, #205) and the local node block
+    (`NodeBlock`, #506) below them hold this page's staged controls, and are what
+    :meth:`is_dirty`/:meth:`save_changes`/:meth:`drop_changes` answer for -- the Linux
+    `DesktopIntegrationPage` and the macOS `SystemIntegrationPage` carry the same blocks under the same
+    page title, so both settings are reachable on every platform.
 
     Windows-only, like `rehuco_agent.windows_registration` itself -- only ever constructed inside
     an ``if sys.platform == "win32":`` branch (`main_window.py`).
@@ -56,10 +59,13 @@ class RegistryPage(QWidget):
 
     :param archive_extensions: archive file extensions (each including the leading dot) that get
         the "Create or Open Rehuco Info" shell verb -- ``rehuco_agent.main_window.ARCHIVE_EXTENSIONS``.
+    :param node_host: the main window's node host, for the node block's status line; ``None`` leaves it static.
     :param parent: optional Qt parent.
     """
 
-    def __init__(self, archive_extensions: Sequence[str], parent: QWidget | None = None) -> None:
+    def __init__(
+        self, archive_extensions: Sequence[str], node_host: NodeHost | None = None, parent: QWidget | None = None
+    ) -> None:
         super().__init__(parent)
         self.__ui: Final = Ui_RegistryPage()
         self.__ui.setupUi(self)
@@ -95,6 +101,7 @@ class RegistryPage(QWidget):
         self.__refresh_dumps_usage()
 
         self.__tray: Final = TrayBlock(self.__ui.enabled_check_box, self.__ui.unavailable_label)
+        self.__node: Final = NodeBlock(self.__ui.node_enabled_check_box, self.__ui.node_status_label, node_host)
 
     @override
     def showEvent(self, event: QShowEvent) -> None:  # noqa: N802  (Qt override)
@@ -105,23 +112,26 @@ class RegistryPage(QWidget):
         self.__refresh_dumps_usage()
 
     def is_dirty(self) -> bool:
-        """Whether the staged tray checkbox differs from what's saved.
+        """Whether the staged tray or node checkbox differs from what's saved.
 
-        The registration controls above it never contribute: they act immediately when clicked, so
-        there is nothing of theirs to stage (#205 put the one staged control on this page)."""
-        return self.__tray.is_dirty()
+        The registration controls above them never contribute: they act immediately when clicked, so
+        there is nothing of theirs to stage (#205 put the first staged control on this page)."""
+        return self.__tray.is_dirty() or self.__node.is_dirty()
 
     def save_changes(self) -> None:
-        """Persist the staged tray choice -- register/unregister already took effect when clicked."""
+        """Persist the staged tray and node choices -- register/unregister already took effect when clicked."""
         self.__tray.save_changes()
+        self.__node.save_changes()
 
     def drop_changes(self) -> None:
-        """Discard the staged tray edit -- register/unregister already took effect when clicked."""
+        """Discard the staged tray and node edits -- register/unregister already took effect when clicked."""
         self.__tray.drop_changes()
+        self.__node.drop_changes()
 
     def seed_defaults(self) -> None:
-        """Stage the tray block's factory value -- registration is not a setting (#342)."""
+        """Stage both blocks' factory values -- registration is not a setting (#342)."""
         self.__tray.seed_defaults()
+        self.__node.seed_defaults()
 
     def __register(self) -> None:
         """Register the file association and context menus, then reflect the result."""

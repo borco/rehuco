@@ -1411,6 +1411,7 @@ dependencies = [
     { name = "pyside6-scintilla" },
     { name = "python-dateutil" },
     { name = "rehuco-core" },
+    { name = "rehuco-node" },
     { name = "requests" },
     { name = "selenium" },
     { name = "unidecode" },
@@ -1434,6 +1435,7 @@ requires-dist = [
     { name = "pyside6-scintilla", specifier = ">=5.6.3.7" },
     { name = "python-dateutil", specifier = ">=2.9.0" },
     { name = "rehuco-core", editable = "packages/rehuco-core" },
+    { name = "rehuco-node", editable = "packages/rehuco-node" },
     { name = "requests", specifier = ">=2.32.0" },
     { name = "selenium", specifier = ">=4.30" },
     { name = "unidecode", specifier = ">=1.4.0" },
@@ -1463,11 +1465,15 @@ requires-dist = [
 name = "rehuco-node"
 source = { editable = "packages/rehuco-node" }
 dependencies = [
+    { name = "borco-core" },
     { name = "rehuco-core" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "rehuco-core", editable = "packages/rehuco-core" }]
+requires-dist = [
+    { name = "borco-core", editable = "packages/borco-core" },
+    { name = "rehuco-core", editable = "packages/rehuco-core" },
+]
 
 [[package]]
 name = "requests"

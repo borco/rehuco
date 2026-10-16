@@ -4,33 +4,37 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://github.com/borco/rehuco/blob/master/LICENSE)
 [![Python versions](https://img.shields.io/pypi/pyversions/rehuco-node)](https://pypi.org/project/rehuco-node/)
 
-*A reserved name for a future headless node in [rehuco](https://borco.github.io/rehuco/). Nothing is
-implemented yet — installing this package gets you a version constant.*
+*The local node of [rehuco](https://borco.github.io/rehuco/): a process the desktop app runs beside itself, as the
+same user, for as long as it runs.*
 
 [View on PyPI](https://pypi.org/project/rehuco-node/) · [View on GitHub](https://github.com/borco/rehuco)
 
-## Status
+## What it does today
 
-**Empty.** This package holds its name on PyPI and takes part in the release plumbing alongside the
-others in the monorepo. It contains no service, no endpoints, and no client — one module with a
-docstring and a `__version__`. There is nothing here to install for a reason.
+`rehuco-node [--settings-dir DIR]` runs until stopped. While it runs it writes a heartbeat file,
+`node/node.json` (its pid, version, start time and last beat), every two seconds, and a log,
+`node/rehuco-node.log`, both under the folder it shares with [rehuco-agent](https://pypi.org/project/rehuco-agent/)
+(`%LOCALAPPDATA%\borco\rehuco` on Windows, `~/Library/Application Support/borco/rehuco` on macOS, the XDG data folder
+on Linux). It stops on SIGINT or SIGTERM, and when its standard input reaches end of file: the agent starts it with a
+pipe and holds that pipe, so an agent that quits, or crashes, takes the node down with it.
 
-Today, rehuco is a desktop editor for `.rehu` sidecar files
-([rehuco-agent](https://pypi.org/project/rehuco-agent/)). It does not talk to anything over a network.
+The agent starts the node a few seconds after its window is up and stops it when it quits. *Settings* > *System
+Integration* has the switch and shows whether the node runs. `rehuco-agent --node` runs the same program, so the
+packaged app needs no second executable.
 
-## What it is intended to be
+## What it is meant to become
 
-A headless service that answers for the resources one machine owns, so that several machines can
-eventually share a catalog. That means a REST API, discovery on the local network, and sync — none of
-it written, none of it scheduled, and possibly none of it ever: whether it is needed at all is a
-question the desktop editor has to answer first.
-
-The [design specs](https://borco.github.io/rehuco/specs/nodes/) describe the intended shape in
-detail. They are a design, not a description of released software.
+The place where the web pages for a tablet, the long jobs such as checksum runs, and the store for borrowed copies
+live. The [design specs](https://borco.github.io/rehuco/specs/nodes/) describe that shape; they are a design, not a
+description of released software.
 
 ## Installation
 
-There is no reason to install this package yet. When there is, it will be documented here.
+```sh
+pip install rehuco-node
+```
+
+Installing rehuco-agent brings it along.
 
 ## License
 
