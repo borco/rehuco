@@ -178,8 +178,9 @@ design was dropped on 2026-10-16 (#509, [[appendices.post-mortem#architecture]])
 - **First build slice** — not yet chosen.
 - **Concrete technology stack** — PySide6 (+ `pyside6-scintilla`, `pyqtads` for docking — chosen over KDDockWidgets on
   licensing grounds, [[packaging-deployment#licensing-policy]] — selective QQuickWidget use for QML surfaces), SQLite +
-  SQLAlchemy for the cache, FastAPI + HTMX + Pico CSS for the web UI, zeroconf for discovery, `uv` for environment
-  management — strong candidates; no node-to-node protocol exists to choose for. The QNAP's old glibc (2.23) is no longer a deployment constraint — the TS-230 serves
+  SQLAlchemy for the cache, FastAPI + HTMX + Pico CSS for the web UI (spiked, #418, [[nodes#web-pages]]), zeroconf for
+  discovery, `uv` for environment management — strong candidates; no node-to-node protocol exists to choose for. The
+  QNAP's old glibc (2.23) is no longer a deployment constraint — the TS-230 serves
   as a NAS over SMB and the node runs on capable hardware ([[packaging-deployment#ts230-as-nas]]); the 2026-06-30 canary
   confirmed all planned node dependencies (pydantic-core, cryptography, etc.) install and import on glibc 2.23 anyway
   ([[packaging-deployment#glibc-canary]]), keeping direct QNAP deployment viable if ever reconsidered. Stack not yet
