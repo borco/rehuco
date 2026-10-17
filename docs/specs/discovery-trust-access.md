@@ -146,14 +146,58 @@ agent through its `.borrow` record, and an admin may return it for everyone the 
 
 [[[discovery-trust-access#remote-admin]]]
 
-- **The local node is one checkbox.** *Settings* > *System Integration* > *Run the local node while rehuco is
+- **The local node is two checkboxes.** *Settings* > *System Integration* > *Run the local node while rehuco is
   running*, on by default; the agent starts and stops it ([[nodes#two-roles]]). *Open local node* is always present.
+  Beneath it, *Allow network access*, off by default: the local node serves this machine, and the node a tablet uses
+  is more likely a headless one ([[nodes#node-status]]); ticking it is what opens the firewall
+  ([[discovery-trust-access#node-port-firewall]]).
 - **Another machine's node is configured on that machine**, by the agent running there. There is no remote
   configuration of nodes: anything that names a program or a script to run (the ffprobe path, the VLC path, scraper
   scripts), folder locations, the borrow store, the users and their rules are that machine's own, and configuring them
   from elsewhere would be remote code execution.
 - **Loopback until there is a login.** A node with no user issued listens on loopback only — the default on a fresh
-  install, so turning it on exposes nothing by surprise. Issuing the first OTP is what opens it to the LAN, and the OS
-  firewall asks then, as it should.
+  install, so turning it on exposes nothing by surprise. It opens to the LAN only with *Allow network access* ticked, a
+  user issued, and the firewall letting it in ([[discovery-trust-access#node-port-firewall]]).
 - **The borrow store lives where the node's machine says.** A folder of that machine's choosing, never the app's own
   folder ([[packaging-deployment#app-folders]]), since one borrow can be many gigabytes ([[borrowing#agent-ui]]).
+
+## §6.13 The node's port and the firewall
+
+[[[discovery-trust-access#node-port-firewall]]]
+
+- [#418: spike: a FastAPI + HTMX + Pico follow-mode page](https://github.com/borco/rehuco/issues/418)
+- [#515: feat(node): an HTTP skeleton over the mount — FastAPI app, mDNS advert, the agent's local token](https://github.com/borco/rehuco/issues/515)
+
+**The port is fixed and configurable, never picked.** A browser keys a bookmark, a home-screen web app, its
+`localStorage` and a certificate exception by scheme, host and port ([[nodes#web-pages]]), so a port that moved between
+runs would break each of them without a word. The node's port is a setting of the user's on that machine, with one
+default; a second user on the box sets another once ([[nodes#two-roles]]). A port in use is an error the node reports
+in its status, never a reason to move to a free one, which would leave the browsers and the firewall rule behind. The
+`.local` name keeps the URL stable across a changed address; the port is what the user keeps stable.
+
+**Opening the firewall takes the administrator once, and the agent asks for it itself.** Measured on Windows (#418):
+every way of adding an inbound rule, by program or by port, through `New-NetFirewallRule` or `netsh`, is refused
+without elevation. The prompt Windows shows when a program first listens is no better: it writes a rule for the program
+on every port, and a cancelled prompt leaves a *Block* rule behind that outranks any later *Allow*, with no further
+prompt. So the agent never lets that prompt appear, and the rule follows *Allow network access*
+([[discovery-trust-access#remote-admin]]), not the node:
+
+- **The rule wanted** is an enabled *Allow*, inbound, for the agent's own executable *and* the node's port over TCP, on
+  the Private profile, from the local subnet only. A *Block* for that executable on the same profile counts as missing,
+  since it would win. Reading the rules needs no elevation.
+- **Ticking *Allow network access* the first time adds it**: the agent's own prompt says what the node is for, the
+  port, and that only private networks and the local subnet are opened; accepting runs the one elevated step, the
+  system's UAC prompt, which writes the rule under one named group. A node with network access off never checks or
+  asks, so the default start of a fresh install opens nothing and shows no prompt.
+- **A start with network access on verifies it**, and a rule found missing — removed by hand, or never accepted —
+  brings the same prompt back. Declining leaves the node on loopback, serving this machine, its status saying it is
+  not reachable from the network. Loopback until a login still holds on top of this: the node opens to the LAN only
+  once a user is issued *and* the rule is in place.
+- **Three buttons beside the checkbox**: *Add rule* and *Remove rule*, each one elevated step, and *Verify rule*, which
+  needs none and says whether the rule is there, enabled and matching, and whether a *Block* overrides it. A port
+  change removes the old rule and asks for the new one; an uninstall removes the group.
+- **A Public network stays closed.** On a network Windows calls Public the Private rule does not apply, and the status
+  says so rather than widening the rule.
+
+The check and the prompt are Windows'. macOS's application firewall and Linux's `ufw` are off unless the user turned
+them on, and are theirs to manage.
