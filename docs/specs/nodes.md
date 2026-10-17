@@ -9,8 +9,9 @@
 The node is **what the share cannot do**. Reading, writing, copying and watching the files are the operating system's
 and the SMB server's job ([[architecture-design#why-distributed]]); the node adds, for the user whose agent runs it:
 
-- **Web pages** for a tablet or a browser: the tutorial list, a watch page that plays a video over HTTP with Range and
-  writes progress into the user's sidecar ([[field-schema#watch-progress]]), the image browser later.
+- **Web pages** for a tablet or a browser: the tutorial list, a watch page that plays a video over HTTP with Range,
+  converting it first when the browser cannot play it ([[nodes#web-playback]]), and writes progress into the user's
+  sidecar ([[field-schema#watch-progress]]), the image browser later.
 - **Long jobs** run where the agent would otherwise block: checksum runs, verified copies, and, as an optimisation only,
   content hashing for a root whose disk is local to the node's machine ([[nodes#node-status]]).
 - **The borrow store**: the folder borrowed copies live in, with their `.borrow` records ([[borrowing]]).
@@ -23,9 +24,10 @@ running as the agent's user, that writes a heartbeat file and a log under the fo
 ([[packaging-deployment#app-folders]]). *Settings* > *System Integration* turns it on and off and shows whether it runs;
 the status bar's right end says *Local Node: Running* or *Stopped*. Everything above lands on that lifecycle.
 
-**One HTTPS API for the web pages, when they come**: FastAPI, JSON bodies, plain HTTP Range for media. Spiked before
-any page is written (#418, #419). There is no node-to-node protocol: nodes do not talk to each other, and nothing of
-the catalog travels over it — an agent reads the files over its own mount.
+**One HTTPS API for the web pages, when they come**: FastAPI, JSON bodies, plain HTTP Range for media, a self-signed
+certificate. The stack is spiked before any page is written (#418); playback was (#419, [[nodes#web-playback]]). There
+is no node-to-node protocol: nodes do not talk to each other, and nothing of the catalog travels over it — an agent
+reads the files over its own mount.
 
 **No system service, for now.** A node that serves from the login screen would have to run as a system service under
 its own account on every OS; the Windows leg of #504 measured what that costs — a service sees none of the users'
@@ -218,13 +220,87 @@ a node, which runs them on its own queue and writes the `.checksum` record besid
 agent learns of it through the notifier. The small `.rehu` hash a save compares is never delegated.
 
 **What a node may do is the admin's call, per node.** A node's config carries a permission set — serve pages and
-media, hash, verify copies, hold a borrow store — that it advertises with its reachable roots; hashing is off until
-someone has looked at the numbers. The Nodes view offers a **Benchmark** action that hashes a fixed sample from a root
-the node reaches and reports MB/s, the CPU load during the run and the time a typical pack would take; the node stores
-the result with its date and shows it in its row. Delegation considers only nodes that allow the job kind, prefers the
-best stored benchmark, and always falls back to the agent itself. A slow node is a scheduling matter, not a speed one:
-its queue runs hashing at low priority, inside a time window, and pauses it while the node serves a video, so a
-checksum sweep every few months is acceptable on a box that would be hopeless for daily hashing. One such box is the
-TS-230 itself: a Debian container on it runs the node beside the data with plain inotify seeing every SMB writer, on
-four slow cores; a headless node like that is given the user's `.rehuco` path and its machine name as config, since
+media, transcode, hash, verify copies, hold a borrow store — that it advertises with its reachable roots; hashing is
+off until someone has looked at the numbers. The Nodes view offers a **Benchmark** action that hashes a fixed sample
+from a root the node reaches and reports MB/s, the CPU load during the run and the time a typical pack would take; the
+node stores the result with its date and shows it in its row. Delegation considers only nodes that allow the job kind,
+prefers the best stored benchmark, and always falls back to the agent itself. A slow node is a scheduling matter, not a
+speed one: its queue runs hashing at low priority, inside a time window, and pauses it while the node serves a video,
+so a checksum sweep every few months is acceptable on a box that would be hopeless for daily hashing. One such box is
+the TS-230 itself: a Debian container on it runs the node beside the data with plain inotify seeing every SMB writer,
+on four slow cores; a headless node like that is given the user's `.rehuco` path and its machine name as config, since
 no agent shares an app folder with it.
+
+## §5.8 Playing a video in a browser
+
+[[[nodes#web-playback]]]
+
+- [#419: spike: video playback and resume on the iPad over the LAN](https://github.com/borco/rehuco/issues/419)
+- [#433: feat(node): media with Range — `/media/<root_id>/<relative>` for `<video>`, VLC and the in-app player](https://github.com/borco/rehuco/issues/433)
+- [#441: feat(web): watch a tutorial in the browser — resume, progress, viewed](https://github.com/borco/rehuco/issues/441)
+
+Measured by the playback spike (#419) on an iPad mini 5 (A12, iPadOS 26.6.2) in Safari and Edge, which are the same
+WebKit as every iPadOS browser, and on Firefox for Windows. The agent's player is libvlc, which decodes far more than a
+browser; whether some files need converting there too is measured by its own spike (#315, #317).
+
+**A playable file needs nothing but Range.** Served as it is by Starlette's `FileResponse`, a file plays, seeks and
+resumes: Safari probes `bytes=0-1`, then keeps one open-ended range and opens a new one per seek, which lands in
+0.2–0.5 s on a 500 MB file. `timeupdate` fires every 250 ms. A position saved on `pagehide` and `visibilitychange`
+survives a reload, a tab switch and a locked screen, and both setting `currentTime` after `loadedmetadata` and a `#t=`
+fragment resume to the second. An MP4 whose index sits at the end of the file plays too.
+
+**What the iPad plays as a file:**
+
+| | Plays | Does not |
+| --- | --- | --- |
+| Container | MP4, MOV, WebM | MKV; MPEG-TS, which Safari plays only as HLS segments |
+| Video | H.264 progressive; HEVC tagged `hvc1`, 8- and 10-bit; VP8; VP9 to 4K | HEVC tagged `hev1`; interlaced H.264; AV1 on this chip (A17 Pro and M3 or later decode it) |
+| Audio in MP4 | AAC, stereo and 5.1; AC-3 | MP3 and MP2: the picture plays, silent |
+
+Firefox for Windows plays AV1 and MKV and no HEVC, the reverse. **What plays is the client's property, never the
+file's.**
+
+**The client says what it decodes.** The watch page asks `navigator.mediaCapabilities.decodingInfo()` with the file's
+MIME type and codec string, which the node reads with MediaInfo; on the iPad its answer matched every playback, AV1
+included. `canPlayType` without a codec string answers "maybe" to anything in an MP4 and is not used. A file the client
+calls unsupported is converted, and so is one that fails with `MEDIA_ERR_SRC_NOT_SUPPORTED` despite the answer.
+
+**Converted on demand, the opened file only.** Nothing is converted in advance or a tutorial at a time: when the watch
+page opens a file its client cannot play, the page shows *Preparing this video for this device* with the converter's
+progress, then plays the result, a finished MP4 with its index first, served with Range like any other file. No stream
+is converted live: HLS, or a transcode restarted at every seek, is not done.
+
+- **Remux** when only the wrapping is wrong: MKV or TS into MP4, `hev1` retagged `hvc1`, MP3, MP2 or broadcast
+  AAC-LATM audio re-encoded to AAC with the video copied. It reads the whole file, so its cost is the read: a 1 GB
+  tutorial over a gigabit share takes about 10 s.
+- **Transcode** when the codec is wrong: AV1, MPEG-2, interlaced H.264 (deinterlaced) into 8-bit H.264 with AAC.
+
+Real time multiples measured on the various machines (higher is faster; below 1 the video plays faster than it
+converts):
+
+| Machine | Remux | AV1 1080p 10-bit to H.264 | AV1 4K 10-bit to 1080p H.264 |
+| --- | --- | --- | --- |
+| PC, Ryzen 5 5600 + RTX 4070 | 41× | 2.4× CPU, 7.5× NVENC | 2.7× CPU, 6.2× NVENC |
+| mac mini, M1 | 50× | 2.6× CPU, 3.3× VideoToolbox | 4.1× CPU, 5.9× VideoToolbox |
+| mac mini (late 2014), i5-4308U | 20× | 0.63× | 1.1× |
+| Fujitsu Esprimo, GX-217GA | 5.6× | 0.13× | 0.21× |
+| QNAP TS-230, debian bookworm container, Cortex-A53 | 2.2× | 0.08× | 0.08× |
+
+The remux column copies an H.264 TS and re-encodes its audio; a pure copy ran at 10× even on the TS-230. **A node
+transcodes only when it is faster than real time**: the agent's own node on a desktop or laptop transcodes, a small
+headless node remuxes and answers that the file needs a stronger machine. Transcoding is one more kind in a node's
+permission set ([[nodes#node-status]]).
+
+**The conversion cache.** Converted files live in a folder of the node's own, beside the borrow store and apart from it:
+a borrow puts a copy away ([[borrowing]]), the cache adapts a format to a client. An entry is keyed by the original's
+path, size and modification time, so an edited original is never served stale; when a new conversion needs room, the
+least recently watched entry goes first. A settings page shows the cache's size, clears it and sets its limit (20 GB,
+say). Progress is stored against the original file, never the converted one: a remux keeps every timestamp and a
+transcode stays within a frame, so a position carries between the agent, the web and back.
+
+**HTTPS, with a certificate the node makes itself.** It must carry the `serverAuth` extended key usage and name the
+node's address in its subject alternative names: without `serverAuth`, Safari fails with a TLS error and offers only
+*Try again*. With it, Safari shows its warning once per device, and the video element honours the exception the user
+accepted: media loaded, seeked and resumed over HTTPS exactly as over HTTP. Plain HTTP played as well and was not
+chosen, since one-time passwords and session cookies would cross the LAN in clear
+([[discovery-trust-access#user-auth]]).

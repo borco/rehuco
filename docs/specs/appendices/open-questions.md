@@ -118,8 +118,11 @@ design was dropped on 2026-10-16 (#509, [[appendices.post-mortem#architecture]])
   migration of the `users` maps into it are decided in shape, not yet in fields ([[data-model#single-file]]).
 - **Access-rule representation** — the model is settled ([[discovery-trust-access#access-control]]: per node,
   server-enforced, full/per-resource/dynamic-tag grants); how a grant is written and how grants combine is not.
-- **Browser TLS trust for the node's web pages** — a self-signed certificate the tablet is taught once, or plain HTTP
-  on the household's LAN; decided with the iPad playback spike (#419, [[discovery-trust-access#node-identity-pairing]]).
+- **What converts a video for the web** — playback and the conversion rules are decided ([[nodes#web-playback]]); the
+  tool is not: an `ffmpeg` executable the user supplies, as the duration probe already accepts, or PyAV, whose wheel
+  bundles `libx264`, `libx265`, `libdav1d` and the NVENC, QSV and AMF encoders but puts GPL code inside the installers.
+  Also open: whether the certificate names the node's IP, its `.local` name or both, and how often Safari forgets an
+  accepted certificate.
 - **The lock's TTL and jitter** — 2 minutes and a few tens of milliseconds to start ([[sync#lock-file]]); tuned once
   two agents run on the share daily.
 - **Which node runs a job** — permissions are per node and the Benchmark result is stored ([[nodes#node-status]]);
@@ -137,11 +140,6 @@ design was dropped on 2026-10-16 (#509, [[appendices.post-mortem#architecture]])
   the home network** (WireGuard/Tailscale/etc.) — at which point they are "on the LAN" and everything works unchanged.
   This cleanly delegates remote-access security to mature purpose-built software instead of reinventing it in the app;
   the app stays simple and LAN-trusting, the VPN decides who may reach the network at all.
-- **Tablet video playback and browser TLS trust** — [[borrowing#vacation-topology]] assumes the iPad plays what a node
-  serves over HTTPS, but iOS Safari natively plays only H.264/HEVC in MP4/MOV containers (tutorial catalogs are
-  MKV-heavy) and rejects self-signed certificates unless a profile/CA is installed and trusted per device; video serving
-  also needs HTTP Range support for seeking. Lossless remux (`ffmpeg -c copy` where the codec is already H.264),
-  transcode, HLS, or plain HTTP on the trusted LAN — undecided; slated as a pre-B spike (implementation plan).
 - **Export/import mechanics** — the rules are decided (keep UUID, strip sidecars, `.lock` and `.borrow`,
   [[discovery-trust-access#cross-swarm-sharing]]); the concrete export shape and the import-side UUID-collision handling
   aren't designed.
