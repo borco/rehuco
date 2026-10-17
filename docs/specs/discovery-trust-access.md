@@ -45,9 +45,9 @@ prints — the `.local` name resolves on every platform that has Bonjour.
 [[[discovery-trust-access#node-identity-pairing]]]
 
 Retired. Pairing by device ID, mutual TLS between nodes and trust-on-first-use existed for a network of peers; there
-are no peers. What remains is the browser's trust in one node's HTTPS certificate when the web pages come, which is an
-open question ([[appendices.open-questions#still-open]]): a self-signed certificate the tablet is taught once, or plain
-HTTP on a LAN the household controls. The `NodeKey` the access seam carried for an owning node goes with the teardown
+are no peers. What remains is the browser's trust in one node's HTTPS certificate when the web pages come: a
+self-signed certificate the node makes itself, accepted once per device, which the iPad's video element honours
+([[nodes#web-playback]]). The `NodeKey` the access seam carried for an owning node goes with the teardown
 ([[nodes#access-seam]]).
 
 ## §6.5 Membership model
