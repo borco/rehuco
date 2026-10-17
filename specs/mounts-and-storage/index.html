@@ -1,0 +1,3169 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Distributed resource management system for tutorials and reference images">
+      
+      
+      
+        <link rel="canonical" href="https://borco.github.io/rehuco/specs/mounts-and-storage/">
+      
+      
+        <link rel="prev" href="../multiplicity/">
+      
+      
+        <link rel="next" href="../instances-and-dedup/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Mounts & Storage - rehuco</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+      <link rel="stylesheet" href="../../assets/mkdocs_puml/puml.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#9-mounts-rehuco-and-cross-box-visibility" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="rehuco" class="md-header__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            rehuco
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Mounts & Storage
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../how-it-works/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Design Specs
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../implementation-plan/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Implementation Plan
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../external-tools/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  External Tools
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../changelog/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Changelog
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../license/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  License
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="rehuco" class="md-nav__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    rehuco
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Specs
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design Specs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../how-it-works/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    How It Works
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../nodes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Node Communication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../discovery-trust-access/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Discovery & Trust
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sync/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sync & Conflicts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../multiplicity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multiplicity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mounts & Storage
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mounts & Storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#91-the-problem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §9.1 The problem
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#92-identity-is-the-uuid-not-the-path" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §9.2 Identity is the UUID, not the path
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#93-rehuco-the-users-roots-mapped-per-machine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §9.3 .rehuco: the user's roots, mapped per machine
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#94-the-node-serves-what-its-machine-reaches" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §9.4 The node serves what its machine reaches
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#95-the-file-notifier-one-change-source-and-the-catch-alls-behind-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §9.5 The file notifier: one change source, and the catch-alls behind it
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#96-progress-follows-the-user-not-a-node" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §9.6 Progress follows the user, not a node
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#97-example-deployment-several-machines-on-one-share" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §9.7 Example deployment: several machines on one share
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#98-configurable-durable-retention-of-offline-media-metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §9.8 Configurable durable retention of offline-media metadata
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#99-tolerating-offline-mounts-without-blocking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §9.9 Tolerating offline mounts without blocking
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#910-fingerprint-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §9.10 Fingerprint files
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#911-adding-a-root" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §9.11 Adding a root
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#912-measuring-a-machines-throughput" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §9.12 Measuring a machine's throughput
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#913-verified-copies-and-moves" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §9.13 Verified copies and moves
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../instances-and-dedup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Identity & Dedup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../borrowing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Borrowing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../offline-editing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Offline Editing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plugins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../requirements/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Requirements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../acquisition-tooling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acquisition Tooling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../packaging-deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Packaging & Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../field-schema/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Field Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference-images/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference Images
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_19" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../diagrams/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagrams
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2_19" id="__nav_2_19_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_19_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_19">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Diagrams
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../diagrams/activity-open-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Activity: Open a Path
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../diagrams/component-decomposition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Component: Containment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../diagrams/sequence-open-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sequence: Open a Path
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_20" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_20" id="__nav_2_20_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Appendices
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_20_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_20">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Appendices
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/briefcase-packaging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Briefcase Packaging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/code-conventions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Conventions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/continuous-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Continuous Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/logging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Logging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/open-questions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open Questions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/post-mortem/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Post-Mortem
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/project-management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/qt-ads/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QtAds
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/release-runbook/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Runbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/settings-pages/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Settings Pages
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/task-queue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Queue
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/theming_and_styling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Theming & Styling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/windows-dev-launcher/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Windows Dev Launcher
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_21" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../history/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    History
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2_21" id="__nav_2_21_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_21_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_21">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    History
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/ibocator/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ibocator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalog3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutcatalog 3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalogpy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalogpy2/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy2
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalogpy3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalog4/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog4
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalog5/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog5
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/resource-hub/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Resource Hub
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/daz3d-personal-database/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Daz3D Personal Database
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/pyside-ibo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    pyside-ibo (shared library)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../implementation-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Implementation Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../external-tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    External Tools
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../changelog/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Changelog
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/rehuco-agent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/rehuco-core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/rehuco-node/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-node
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/borco-core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    borco-core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/borco-pyside/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    borco-pyside
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../license/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    License
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#91-the-problem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §9.1 The problem
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#92-identity-is-the-uuid-not-the-path" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §9.2 Identity is the UUID, not the path
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#93-rehuco-the-users-roots-mapped-per-machine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §9.3 .rehuco: the user's roots, mapped per machine
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#94-the-node-serves-what-its-machine-reaches" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §9.4 The node serves what its machine reaches
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#95-the-file-notifier-one-change-source-and-the-catch-alls-behind-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §9.5 The file notifier: one change source, and the catch-alls behind it
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#96-progress-follows-the-user-not-a-node" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §9.6 Progress follows the user, not a node
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#97-example-deployment-several-machines-on-one-share" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §9.7 Example deployment: several machines on one share
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#98-configurable-durable-retention-of-offline-media-metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §9.8 Configurable durable retention of offline-media metadata
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#99-tolerating-offline-mounts-without-blocking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §9.9 Tolerating offline mounts without blocking
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#910-fingerprint-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §9.10 Fingerprint files
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#911-adding-a-root" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §9.11 Adding a root
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#912-measuring-a-machines-throughput" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §9.12 Measuring a machine's throughput
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#913-verified-copies-and-moves" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §9.13 Verified copies and moves
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="9-mounts-rehuco-and-cross-box-visibility">§9. Mounts, <code>.rehuco</code>, and Cross-Box Visibility</h1>
+<p><span class="slug-ref">[[[mounts-and-storage]]]</span></p>
+<h2 id="91-the-problem">§9.1 The problem</h2>
+<p><span class="slug-ref">[[[mounts-and-storage#the-problem]]]</span></p>
+<p>One share, many machines, many paths. The same folder on the NAS is <code>U:\Tutorials</code> on the Windows PC,
+<code>/System/Volumes/Data/mount/DATA/Tutorials</code> on the Mac mini and <code>/mnt/nas/Tutorials</code> on a Linux box; a folder on one
+PC's own disk is reachable from the others only once that PC shares it, under yet another path. The catalog must know
+that these are one place, keep each machine's cache current when another machine changes a file there, and open the
+same <code>.rehuco</code> on every one of them.</p>
+<h2 id="92-identity-is-the-uuid-not-the-path">§9.2 Identity is the UUID, not the path</h2>
+<p><span class="slug-ref">[[[mounts-and-storage#uuid-not-paths]]]</span></p>
+<p>A resource reached by two paths — two machines' mounts of one share, a backup on a shelf, a borrowed copy — is
+recognized as one resource because its <code>.rehu</code> <strong>UUID</strong> matches, never by guessing that one path corresponds to
+another (<span class="slug-ref">[[instances-and-dedup#uuid-is-lineage]]</span>). A key is a location, not an identity (<span class="slug-ref">[[nodes#access-seam]]</span>).</p>
+<p><strong>A rename is a filesystem operation on the machine that issues it.</strong> Within one process a job holds a
+<code>ResourceLocation</code> rather than a path, and the rename rewrites it (<a href="https://github.com/borco/rehuco/issues/241">#241</a>);
+the other views follow through the notifier's <code>Moved</code> event. Another machine learns of the rename the same way every
+change travels: the SMB server reports it, that machine's notifier announces it, its cache follows
+(<span class="slug-ref">[[mounts-and-storage#out-of-band]]</span>). A request that still names the old path arrives at a file that is no longer there
+and is refused with the reason, not guessed at. There is no cross-machine rename request and so nothing to coalesce.</p>
+<h2 id="93-rehuco-the-users-roots-mapped-per-machine">§9.3 <code>.rehuco</code>: the user's roots, mapped per machine</h2>
+<p><span class="slug-ref">[[[mounts-and-storage#rehuco-scope]]]</span></p>
+<p>A <strong><code>.rehuco</code></strong> file names the folder roots to catalog, and is <strong>shareable across machines</strong>: it may sit on the share
+and be opened from every box, or be copied around. <strong>By default it is a local file</strong> — <em>New</em> proposes the app folder
+and <em>Open</em> starts there; putting one on the share is the user's choice, and nothing else changes. It declares:</p>
+<ul>
+<li>the <strong>roots</strong>, each with a stable <strong>id</strong> the cache keys its rows on, a <strong>label</strong> (defaulting to the folder's name,
+  made unique with a suffix on a clash; what the browser shows and what a folder filter addresses,
+  <code>folder="&lt;label&gt;/&lt;relative path&gt;"</code>, <span class="slug-ref">[[plugins#browsers]]</span>), a machine-independent <strong>location</strong>, and a <strong>mappings</strong>
+  table (below);</li>
+<li>which plugins (<span class="slug-ref">[[plugins#overview]]</span>) to load;</li>
+<li>the default <strong>creation directory</strong> for new grouping-entity documents (authors, cross-cutting collections, public
+  learning paths — <span class="slug-ref">[[plugins#grouping-entities]]</span>); <em>discovery</em> of existing entity documents needs no declared
+  locations — it is type-based, so the scanner finds them wherever they sit in any scanned root.</li>
+</ul>
+<p><strong>A root's identity is its location; what differs per machine is its mapping.</strong> The location is the same on every box:
+for a share, the server and share path (<code>//nas/data/Tutorials</code>), read from this machine's mount table when the root is
+added (<code>WNetGetConnection</code> on Windows, the mount table on macOS and Linux); for a folder on one machine's own disk, that
+machine's name and path (<code>//ryzen-5600/d/Downloads/FOO</code>). The mappings table says where each machine finds it, and
+carries what is a fact about that machine rather than about the root:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;…&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;label&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Tutorials&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;location&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;//nas/data/Tutorials&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;mappings&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;ryzen-5600&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;U:\\Tutorials&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;storage&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;network&quot;</span><span class="w"> </span><span class="p">},</span>
+<span class="w">    </span><span class="nt">&quot;macmini&quot;</span><span class="p">:</span><span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/System/Volumes/Data/mount/DATA/Tutorials&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;storage&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;network&quot;</span><span class="w"> </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<ul>
+<li><strong>The storage kind is detected, not declared</strong> — local disk, network share, removable drive or disc — from the drive
+  type on Windows and the mount table elsewhere, per mapping; the notifier picks its backend from it
+  (<span class="slug-ref">[[mounts-and-storage#out-of-band]]</span>) and retention takes its default from it
+  (<span class="slug-ref">[[mounts-and-storage#durable-retention]]</span>). There is no user override: the system marks them.</li>
+<li><strong>Opening the file on a machine with no mapping resolves what it can and asks for the rest.</strong> A share root whose
+  server and share this machine mounts gets its path proposed from the mount table; the rest are listed in a wizard with
+  Browse and Skip per row. A skipped root stays <strong>visible but disabled</strong> — not scanned, not browsed, not served by the
+  node — with a <em>Map…</em> action in the Roots view for later, once the share is mounted or the folder shared. A root a
+  machine cannot reach by nature (another box's local disk, not shared) sits there the same way.</li>
+<li><strong>Each machine writes only its own mapping</strong>, so two machines saving the same <code>.rehuco</code> never fight over content; the
+  save goes through the same lock and compare as a <code>.rehu</code> (<span class="slug-ref">[[sync#overview]]</span>). A copied <code>.rehuco</code> carries every
+  machine's mapping along.</li>
+<li><strong>Renamed machines</strong>: the wizard offers <em>this is the same machine as X</em> rather than silently orphaning a mapping.</li>
+<li>Today's <code>.rehuco</code> (format 2) holds plain paths and a user-declared storage; the version bump migrates each root to a
+  location computed on the machine that opens it plus that machine's mapping, through the file's own migration chain
+  (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/371" title="GitHub Issue: borco/rehuco #371">#371</a>).</li>
+</ul>
+<p><strong>Per <code>.rehuco</code>, not per machine singleton.</strong> A machine may keep several <code>.rehuco</code> files — each a set of roots browsed
+together — and the agent opens one at a time (<span class="slug-ref">[[data-model#local-file-trio]]</span>, <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/371" title="GitHub Issue: borco/rehuco #371">#371</a>). Removing a root asks first, states
+that its files stay where they are, and drops only the root's cached entries (<span class="slug-ref">[[data-model#cache-schema]]</span>).</p>
+<p><strong>Roots do not overlap</strong> within one file (<span class="slug-ref">[[multiplicity#instances]]</span>), and no root has an owner.</p>
+<h2 id="94-the-node-serves-what-its-machine-reaches">§9.4 The node serves what its machine reaches</h2>
+<p><span class="slug-ref">[[[mounts-and-storage#nodes-serve-mounted]]]</span></p>
+<p>The node has no roots of its own (<span class="slug-ref">[[nodes#two-roles]]</span>): it reads the user's <code>.rehuco</code> from the shared app folder and
+serves every root this machine has a working mapping for — a local disk, a mounted share — plus its borrow store. A root
+mapped but offline shows as offline on the web pages as it does in the agent; an unmapped one is not served.</p>
+<h2 id="95-the-file-notifier-one-change-source-and-the-catch-alls-behind-it">§9.5 The file notifier: one change source, and the catch-alls behind it</h2>
+<p><span class="slug-ref">[[[mounts-and-storage#out-of-band]]]</span></p>
+<p>Every view in the app — the cache and its browsers, the Roots view, the Files dock, open documents — learns that
+something on disk changed from <strong>one source</strong>, the <code>FileNotifier</code> in rehuco-core, publishing on the <code>ChangeFeed</code>
+(<span class="slug-ref">[[nodes#access-seam]]</span>). Nothing announces its own writes to the others any more: a save, a rename, a screenshot
+written, a checksum record, a change made by another machine or by hand reach the views by the same path, as what the
+disk says happened. The notifier runs per root, with a backend chosen by the mapping's storage kind, measured in <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/502" title="GitHub Issue: borco/rehuco #502">#502</a>:</p>
+<table>
+<thead>
+<tr>
+<th>Root on</th>
+<th>Backend</th>
+<th>Measured</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A local disk or removable drive</td>
+<td><strong>Native events</strong> (<code>watchdog</code>: ReadDirectoryChangesW, FSEvents, inotify), recursive</td>
+<td>Ordinary on all three OSes</td>
+</tr>
+<tr>
+<td>An SMB share</td>
+<td><strong>Our own SMB session</strong>: <code>smbprotocol</code> opens the root on a session of its own and waits on <code>CHANGE_NOTIFY</code> with the tree flag; the server answers from its inotify watches, so every writer on every client is seen. Data still flows through the OS mount; this session carries notifications only.</td>
+<td>Complete against the TS-230, mini2 and esprimo: create, write, rename (an old-name/new-name pair), atomic replace, delete, ~5 ms after a local write, ~100 ms after another machine's; a 2000-file burst delivered in full. Needs the share's credentials: the Windows logon serves as is; on macOS and Linux the agent asks once and keeps them in the OS keychain.</td>
+</tr>
+<tr>
+<td>A share without credentials, anything else, any backend that failed</td>
+<td><strong>Polling</strong> of the cache's known records by stat signature, on a timer</td>
+<td>The floor, never the design: a stat per record over the LAN is 1–3 ms, so 10k records sweep in 10–30 s at a few minutes' interval.</td>
+</tr>
+</tbody>
+</table>
+<p>The OS client's own watcher on a share is <strong>not</strong> a backend: on Windows it works (ReadDirectoryChangesW is forwarded
+to the server) but drops events under load with no overflow signal; on macOS FSEvents over SMB produced four nameless
+"folder modified" events for a 500-file burst; on Linux <code>inotify</code> on <code>cifs</code> sees only this machine's writes.</p>
+<p>Rules:</p>
+<ul>
+<li><strong>Events are debounced and coalesced</strong> into the feed's <code>Changed</code>, <code>FolderChanged</code> and <code>Moved</code>; a rename's pair becomes
+  one <code>Moved</code> with the executed plan — the <code>(source, destination)</code> pairs — and each holder applies <em>a path at or
+  beneath a renamed source lands at the same offset beneath its destination</em> to everything it holds, which covers every
+  scoping case (<span class="slug-ref">[[data-model#resource-scoping]]</span>).</li>
+<li><strong>A notify-buffer overflow publishes <code>RootStale</code></strong> for that root, and every holder re-reads it as <code>F5</code> does.</li>
+<li><strong>The notifier runs on a daemon thread and survives the mount dropping</strong> (<span class="slug-ref">[[mounts-and-storage#offline-mounts]]</span>); a
+  share that went away is re-subscribed when it is back.</li>
+<li><strong>Verify-on-access and the incremental scan stay as the catch-alls.</strong> The cache stores each <code>.rehu</code>'s stat signature
+  and content hash (<span class="slug-ref">[[data-model#scan-and-staleness]]</span>); opening, browsing to or serving a resource re-checks it, and the
+  version-aware incremental scan finds what no event and no visit did. A polled root relies on them.</li>
+</ul>
+<p><strong>Browsing never blocks a rename.</strong> A directory-scoped rename on NTFS fails while any handle is open beneath the
+directory, so no browsing view or scan holds one between reads: every directory listing is one chunk under the rename
+coordinator's hold, closed before the next, and yields when a rename asks (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/241" title="GitHub Issue: borco/rehuco #241">#241</a>, <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/372" title="GitHub Issue: borco/rehuco #372">#372</a>, <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/378" title="GitHub Issue: borco/rehuco #378">#378</a>).</p>
+<h2 id="96-progress-follows-the-user-not-a-node">§9.6 Progress follows the user, not a node</h2>
+<p><span class="slug-ref">[[[mounts-and-storage#node-handoff]]]</span></p>
+<p>A user may watch a tutorial in the agent, carry on from the tablet through a node, and come back. There is no handoff
+between nodes to design: progress is written <strong>every few seconds</strong> (and on pause, seek and stop) into the user's
+sidecar on the share (<span class="slug-ref">[[field-schema#watch-progress]]</span>, <span class="slug-ref">[[data-model#single-file]]</span>), and every player reads it from
+there before resuming — the agent directly, the web page through its node — so whoever picks it up is at most seconds
+behind.</p>
+<h2 id="97-example-deployment-several-machines-on-one-share">§9.7 Example deployment: several machines on one share</h2>
+<p><span class="slug-ref">[[[mounts-and-storage#example-deploy]]]</span></p>
+<p>The PC, the Mac mini and a Linux box all mount the TS-230's share; each runs its agent over its own <code>.rehudb</code> and, while
+its user is logged in, its node. <strong>"Who serves a resource" needs no answer</strong>: every machine reaches the files itself,
+and the node a tablet talks to is the one its user chose (<span class="slug-ref">[[nodes#node-actions]]</span>). The machine that travels takes its
+borrowed copies along and serves them from its own node with everything at home switched off
+(<span class="slug-ref">[[borrowing#vacation-topology]]</span>). The TS-230 runs nothing of rehuco's (<span class="slug-ref">[[packaging-deployment#ts230-as-nas]]</span>).</p>
+<p><strong>One thing several machines on one share cannot do: yield to each other's renames</strong>
+(<a href="https://github.com/borco/rehuco/issues/241">#241</a>). Within one process a rename asks the jobs reading beneath it to
+close their handles, and they do so at the next chunk boundary — measured at ~7 ms. That request does not cross a
+machine boundary: a directory rename issued on box A while box B reads inside it over SMB can be refused by the server,
+for the one chunk in which B's handle is open. File-level operations are fine regardless — readers open sharing every
+right including delete, so renaming or replacing <em>the file being read</em> succeeds from any machine, with one caveat
+measured in <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/503" title="GitHub Issue: borco/rehuco #503">#503</a>: the macOS client keeps a closed file's handle for a while, so a replace from another machine right
+after a Mac read may need a retry. The rename reports the refusal and offers to retry; there is no coordinator across
+machines and none planned.</p>
+<h2 id="98-configurable-durable-retention-of-offline-media-metadata">§9.8 Configurable durable retention of offline-media metadata</h2>
+<p><span class="slug-ref">[[[mounts-and-storage#durable-retention]]]</span></p>
+<ul>
+<li><a href="https://github.com/borco/rehuco/issues/405">#405: docs: spec root caching, borrowing UI, and per-file watch progress</a></li>
+</ul>
+<p><code>.rehuco</code> can opt in, per root and per machine (it is in the mapping), to keeping a <strong>durable local copy of that root's
+metadata</strong> — so a root whose medium sits in a drawer, or whose share is switched off (the library shelf,
+<span class="slug-ref">[[borrowing#library-shelf]]</span>), stays browsable. The UI calls this <strong>caching a root</strong>; the spec keeps <em>retention</em>,
+because everywhere else here a cache is disposable and this copy is not (below).</p>
+<ul>
+<li><strong>Why</strong>: offline media are painful to rescan one-by-one, and a switched-off NAS's content would otherwise drop out of
+  the catalog. Retaining their metadata locally keeps them browsable while disconnected, and — because the retained
+  copies are ordinary local files — keeps them present across a full cache rebuild
+  (<span class="slug-ref">[[architecture-design#why-distributed]]</span>).</li>
+<li><strong>A default by the detected storage kind</strong>, nothing else to configure:</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Root</th>
+<th>Retention</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Removable (USB stick, external drive, CD/DVD)</td>
+<td><strong>Forced on</strong> — removable by definition, so it must stay browsable without its medium</td>
+</tr>
+<tr>
+<td>Network share</td>
+<td><strong>On by default</strong>; the user may turn it off for a share known to stay online, where retaining only buys speed</td>
+</tr>
+<tr>
+<td>Local disk</td>
+<td>Off — the disk is always there to read</td>
+</tr>
+</tbody>
+</table>
+<p>It is per root, not per resource: keeping one resource <em>whole</em> on this machine is a borrow
+  (<span class="slug-ref">[[borrowing#another-instance-role]]</span>), not retention.
+- <strong>What is retained is enough to browse, never to watch.</strong> Per resource: the <code>.rehu</code> itself, the user's own sidecar,
+  its screenshots copied as they are, and its <strong>file structure</strong>: every file's relative path and size, plus each
+  video's duration and resolution. That is what lets the browser, the Description View and the Files dock show an
+  offline resource, read-only. No content file is copied; watching a resource whose source is offline needs a borrow.
+- <strong>Durable, not disposable.</strong> A removable root cannot be rescanned while its medium is absent, so its retained copy is
+  the only one there is. The store therefore sits beside <code>.rehudb</code> (<span class="slug-ref">[[data-model#local-file-trio]]</span>), never inside it: a
+  cache rebuild must not wipe it.
+- <strong>Per-user state for a source that can never be written</strong> — a CD/DVD, a read-only share — is tracked on the retained
+  copy, which stays writable for per-user data only (<span class="slug-ref">[[field-schema#watch-progress]]</span>).
+- <strong>Retained copies are read-only stand-ins</strong> for the details (<span class="slug-ref">[[offline-editing#overview]]</span>); a per-user edit made
+  against one is a queued save (<span class="slug-ref">[[sync#apply-payload]]</span>).
+- <strong>Staleness is resolved by comparison, not blind overwrite.</strong> When a retained source is reachable again, the notifier
+  and verify-on-access re-pull only what moved (<span class="slug-ref">[[data-model#scan-and-staleness]]</span>).</p>
+<h2 id="99-tolerating-offline-mounts-without-blocking">§9.9 Tolerating offline mounts without blocking</h2>
+<p><span class="slug-ref">[[[mounts-and-storage#offline-mounts]]]</span></p>
+<p>An agent and its node run while the boxes whose shares they mount — the TS-230 in particular — are powered off or
+unreachable for long stretches. A mapped root is therefore frequently <strong>present in <code>.rehuco</code> but currently dead</strong>, and
+everything else must keep working without stalling on it.</p>
+<p>The hazard is concrete: on a dead SMB/NFS mount, ordinary filesystem calls (<code>stat</code>, <code>open</code>, directory listing) <strong>block
+for the mount's timeout</strong> — tens of seconds, or indefinitely with a hard mount — so code that naively touches a mounted
+path wedges whatever thread it is on.</p>
+<p>Rules:</p>
+<ul>
+<li><strong>Treat every mounted root as possibly-offline.</strong> Reachability is runtime state, not config; never assume a mount is
+  live because it is declared.</li>
+<li><strong>Probe reachability cheaply and out-of-band.</strong> Check liveness with a single bounded-timeout operation (a <code>stat</code> of
+  the mount root) on a worker, not on the GUI thread or a request path. Cache the up/down result and <strong>back off</strong>
+  before re-probing, so a dead mount is consulted rarely and a flapping one causes no churn.</li>
+<li><strong>All mount I/O is timeout-wrapped and off the hot path.</strong> File reads through a mount run on workers with their own
+  deadlines, so one dead mount never blocks the window, a request, or another mount's traffic.</li>
+<li><strong>Offline ⇒ show last-known, read-only.</strong> The browser shows the cached rows, the Roots view the retained structure
+  (<span class="slug-ref">[[mounts-and-storage#durable-retention]]</span>), with status <code>offline, showing last-known</code>; a save for a record there waits
+  in the queue (<span class="slug-ref">[[sync#apply-payload]]</span>).</li>
+<li><strong>Recovery is the notifier's, not a rescan's.</strong> When a probe succeeds again the share's notification session is
+  re-opened and verify-on-access catches up on what was touched meanwhile; the mount coming back forces no full rescan.</li>
+</ul>
+<p><strong>The agent applies the same rules to what it remembers (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/464" title="GitHub Issue: borco/rehuco #464">#464</a>).</strong> At start, the recent files, the recent root catalogs
+and the session's open documents are each judged <em>present</em>, <em>gone</em> or <em>offline</em> (<code>borco_core.path_presence</code>). A fixed
+local drive is checked at once — it answers, so a missing file is gone. A share, a removable drive or a disc is
+classified without touching it (the drive letter's type, the mount table), its server is asked with a 0.3 s connection
+attempt rather than a <code>stat</code> (measured: a <code>stat</code> under a switched-off SMB host blocks <strong>21 s</strong>, the connection attempt
+0.3 s), and only a server that answered is <code>stat</code>-ed. All of it runs on daemon threads, so neither the start nor the
+quit waits for a dead mount. <em>Gone</em> is forgotten; <em>offline</em> is kept, shown disabled, and asked again next run.</p>
+<p><em>Limitation, accepted:</em> a session document kept open because its share was off is matched against what the user opens
+by hand by its <strong>resolved</strong> path, while the session stores the path as it was opened. A path whose resolved form
+changed between runs — a mapped drive now reached through its UNC path, a folder moved behind a symlink — is not
+matched, so a document the user opened and then closed by that other spelling comes back open at the next start.</p>
+<p>Deployment note: mount the shares <strong>soft / with short timeouts</strong> so failed syscalls return an error quickly rather than
+hanging. Hard mounts defeat this discipline.</p>
+<h2 id="910-fingerprint-files">§9.10 Fingerprint files</h2>
+<p><span class="slug-ref">[[[mounts-and-storage#fingerprint-map]]]</span></p>
+<p>Retired. Fingerprint files dropped into roots let nodes discover that two of them served one storage and how the paths
+mapped. The <code>.rehuco</code>'s explicit <strong>location</strong> per root (<span class="slug-ref">[[mounts-and-storage#rehuco-scope]]</span>), resolved through each
+machine's mount table, answers the same question without writing anything into the user's folders.</p>
+<h2 id="911-adding-a-root">§9.11 Adding a root</h2>
+<p><span class="slug-ref">[[[mounts-and-storage#folder-add]]]</span></p>
+<p>Retired as a primary/remote declaration; there is no owner to declare (<span class="slug-ref">[[multiplicity#instances]]</span>). Adding a root is:
+pick the folder, detect its storage kind and its location from this machine's mount table, refuse it if it overlaps a
+root already listed, write this machine's mapping (<span class="slug-ref">[[mounts-and-storage#rehuco-scope]]</span>).</p>
+<h2 id="912-measuring-a-machines-throughput">§9.12 Measuring a machine's throughput</h2>
+<p><span class="slug-ref">[[[mounts-and-storage#node-benchmark]]]</span></p>
+<p>Retired as a grading scheme that fed a dispatcher. The one decision it would have driven — where a checksum run
+executes — is settled by locality instead: a node that reaches the root's disk locally may be handed the job
+(<span class="slug-ref">[[nodes#node-status]]</span>). What remains is the checksum <strong>algorithm</strong> benchmark in rehuco-core's tests, which chose the
+hash (<span class="slug-ref">[[data-model#checksums]]</span>).</p>
+<h2 id="913-verified-copies-and-moves">§9.13 Verified copies and moves</h2>
+<p><span class="slug-ref">[[[mounts-and-storage#safe-move-rename]]]</span></p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><strong>Implement the cross-filesystem move with Opus, not the auto-switched Sonnet.</strong> The copy → verify-checksum-on-target
+→ delete-source-only-if-verified sequence is data-loss-sensitive: a wrong ordering or a skipped verification can
+delete the only good copy. Override to <code>/model opus</code> for the cross-FS path.</p>
+</div>
+<p>The system chooses <em>how</em> to perform a move/rename rather than assuming:</p>
+<ul>
+<li>A rename/move <strong>within one filesystem</strong> is a near-instant metadata operation, including over SMB, where the rename is
+  server-side (<span class="slug-ref">[[packaging-deployment#ts230-as-nas]]</span>).</li>
+<li><strong>Cross-filesystem moves are checksum-gated (hard rule):</strong> verify the source against its checksum record → copy →
+  verify the checksum on the <em>target</em> → delete the source <strong>only if verification passes</strong>. An interrupted move leaves
+  the source untouched and the partial target resumable, so it never loses data.</li>
+<li><strong>The copy is resumable.</strong> A verified copy that stops — the NAS switched off, the laptop closed — picks up from the
+  bytes already on the target rather than starting over; this is what rsync would have bought, and the one thing it
+  would have (<span class="slug-ref">[[appendices.post-mortem#architecture]]</span>).</li>
+</ul>
+<p><strong>One verified copy, three uses</strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/339" title="GitHub Issue: borco/rehuco #339">#339</a>). The sequence is built as a reusable <strong>verified copy</strong>, and the moves and
+borrows are made from it:</p>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Built as</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Move to another filesystem</td>
+<td>verified copy, then delete the source only if the target verified (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/339" title="GitHub Issue: borco/rehuco #339">#339</a>)</td>
+</tr>
+<tr>
+<td>Borrow onto a machine</td>
+<td>verified copy into that machine's node's borrow store, no delete (<span class="slug-ref">[[borrowing#another-instance-role]]</span>)</td>
+</tr>
+<tr>
+<td>Return</td>
+<td>verified copy back of what changed (the sidecars, possibly the record), then the copy is removed</td>
+</tr>
+</tbody>
+</table>
+<p>The bytes travel over the mounts, read by the machine doing the copy; a node with local access to one end may run the
+verify there (<span class="slug-ref">[[nodes#node-status]]</span>). The job records each end as a root and a root-relative path, never an absolute
+path, so it survives restarts and a machine's remapping.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../multiplicity/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Multiplicity">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Multiplicity
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../instances-and-dedup/" class="md-footer__link md-footer__link--next" aria-label="Next: Identity &amp; Dedup">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Identity & Dedup
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.tracking", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "search.share", "content.code.copy", "content.code.annotate", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="../../javascripts/diagram-open.js"></script>
+      
+        <script src="../../assets/mkdocs_puml/puml.js"></script>
+      
+    
+  </body>
+</html>
