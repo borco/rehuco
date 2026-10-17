@@ -1,5 +1,5 @@
-"""Tests for DocumentRegistry: one shared view-model per open key, refcounted (#375), read and saved through the
-access seam (#416)."""
+"""Tests for DocumentRegistry: one shared view-model per open key, refcounted (#375), read and saved through
+its records (#416)."""
 
 import json
 import logging
@@ -7,7 +7,6 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Final
-from uuid import UUID
 
 from PySide6.QtWidgets import QLabel, QLineEdit
 from pytest import LogCaptureFixture, mark, raises
@@ -19,16 +18,7 @@ from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.resource_events import ResourceEvents
 from rehuco_agent.settings.identity_settings import shared_identity_settings
 from rehuco_core import RecordConflict, Relocation, RenameCoordinator
-from rehuco_core.access import (
-    AccessRouter,
-    Changed,
-    ChangeEvent,
-    ChangeFeed,
-    LocalAccess,
-    LocalKey,
-    NodeKey,
-    NodeUnreachable,
-)
+from rehuco_core.access import Changed, ChangeEvent, ChangeFeed, Records, ResourceKey
 
 from rehuco_agent_tests.qt_waits import wait_destroyed
 
@@ -36,11 +26,10 @@ from .test_rehu_document_model_conflict import edit_on_disk, retitle, write_reco
 
 FAKE_PATH: Final = Path.cwd() / "fake" / "tutorials" / "sculpting" / "info.rehu"
 """Built from ``Path.cwd()`` so it is absolute on every platform."""
-FAKE_KEY: Final = LocalKey(FAKE_PATH)
+FAKE_KEY: Final = ResourceKey(FAKE_PATH)
 OTHER_PATH: Final = Path.cwd() / "fake" / "tutorials" / "painting" / "info.rehu"
-OTHER_KEY: Final = LocalKey(OTHER_PATH)
-TC_KEY: Final = LocalKey(Path.cwd() / "fake" / "tutorials" / "legacy" / "info.tc")
-NODE_KEY: Final = NodeKey("NODE-1", UUID(int=1), "tutorials/remote/info.rehu")
+OTHER_KEY: Final = ResourceKey(OTHER_PATH)
+TC_KEY: Final = ResourceKey(Path.cwd() / "fake" / "tutorials" / "legacy" / "info.tc")
 
 TUTORIAL: Final = {
     "format_version": 1,
@@ -95,25 +84,6 @@ def test_distinct_keys_get_distinct_models(mocker: MockerFixture, qtbot: QtBot) 
     assert first is not second
     assert registry.find(FAKE_KEY) is first
     assert registry.find(OTHER_KEY) is second
-
-
-def test_acquiring_a_node_record_nobody_holds_is_refused(qtbot: QtBot) -> None:
-    """A node's record is read through the access seam once records move there (#416); until then it cannot be
-    built here, and nothing is held for it.
-
-    **Test steps:**
-
-    * acquire a node key nobody holds
-    * verify ``NodeUnreachable`` is raised and the registry holds nothing
-    """
-    del qtbot
-    registry = DocumentRegistry()
-
-    with raises(NodeUnreachable):
-        registry.acquire(NODE_KEY)
-
-    assert registry.find(NODE_KEY) is None
-    assert not registry.models()
 
 
 def test_an_edit_through_one_holders_view_shows_in_the_others(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -373,14 +343,14 @@ def test_a_member_follows_its_collection_folders_rename(mocker: MockerFixture, q
     load_document(mocker)
     registry = DocumentRegistry()
     member = LIBRARY / "series" / "part1" / "info.rehu"
-    model = registry.acquire(LocalKey(member))
+    model = registry.acquire(ResourceKey(member))
 
     registry.resource_events.announce_moved(Relocation(((LIBRARY / "series", LIBRARY / "saga"),)))
 
     moved = LIBRARY / "saga" / "part1" / "info.rehu"
     assert model.path == moved
-    assert registry.find(LocalKey(moved)) is model
-    assert registry.find(LocalKey(member)) is None
+    assert registry.find(ResourceKey(moved)) is model
+    assert registry.find(ResourceKey(member)) is None
 
 
 def test_a_file_scoped_record_follows_its_own_rename(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -394,7 +364,7 @@ def test_a_file_scoped_record_follows_its_own_rename(mocker: MockerFixture, qtbo
     del qtbot
     load_document(mocker)
     registry = DocumentRegistry()
-    model = registry.acquire(LocalKey(LIBRARY / "foo.rehu"))
+    model = registry.acquire(ResourceKey(LIBRARY / "foo.rehu"))
 
     registry.resource_events.announce_moved(
         Relocation(
@@ -408,7 +378,7 @@ def test_a_file_scoped_record_follows_its_own_rename(mocker: MockerFixture, qtbo
     )
 
     assert model.path == LIBRARY / "bar.rehu"
-    assert registry.find(LocalKey(LIBRARY / "bar.rehu")) is model
+    assert registry.find(ResourceKey(LIBRARY / "bar.rehu")) is model
 
 
 def test_a_folder_rename_carries_its_file_scoped_record_and_a_sibling_rename_does_not_touch_the_folders(
@@ -426,8 +396,8 @@ def test_a_folder_rename_carries_its_file_scoped_record_and_a_sibling_rename_doe
     del qtbot
     load_document(mocker)
     registry = DocumentRegistry()
-    info = registry.acquire(LocalKey(LIBRARY / "pack" / "info.rehu"))
-    standalone = registry.acquire(LocalKey(LIBRARY / "pack" / "bar.rehu"))
+    info = registry.acquire(ResourceKey(LIBRARY / "pack" / "info.rehu"))
+    standalone = registry.acquire(ResourceKey(LIBRARY / "pack" / "bar.rehu"))
     kit = LIBRARY / "kit"
 
     registry.resource_events.announce_moved(Relocation(((LIBRARY / "pack", kit),)))
@@ -514,9 +484,9 @@ def test_the_renaming_document_adopts_its_rename_exactly_once(mocker: MockerFixt
 
     assert model.rename_location("modelling")
 
-    assert keys == [LocalKey(renamed)]
+    assert keys == [ResourceKey(renamed)]
     assert len(scanners) == 1
-    assert registry.find(LocalKey(renamed)) is model
+    assert registry.find(ResourceKey(renamed)) is model
 
 
 # endregion
@@ -610,15 +580,15 @@ def test_a_reload_of_a_document_with_no_key_is_not_announced(mocker: MockerFixtu
     assert not heard
 
 
-# region the access seam (#416)
+# region the records (#416)
 @mark.usefixtures("real_path_stat")
-def test_a_given_access_reads_and_saves_every_model(qtbot: QtBot, tmp_path: Path) -> None:
-    """Every model the registry builds -- opened, new, or an unread placeholder -- goes through the access it was
+def test_given_records_read_and_save_every_model(qtbot: QtBot, tmp_path: Path) -> None:
+    """Every model the registry builds -- opened, new, or an unread placeholder -- goes through the records it was
     handed, whose feed then announces each save.
 
     **Test steps:**
 
-    * build a registry over an access with a feed of the test's own
+    * build a registry over records with a feed of the test's own
     * open a record, start a new document, and take a lazy placeholder and read it; edit and save each
     * verify the feed heard each record's key, in turn
     """
@@ -626,7 +596,7 @@ def test_a_given_access_reads_and_saves_every_model(qtbot: QtBot, tmp_path: Path
     feed = ChangeFeed()
     heard: list[ChangeEvent] = []
     feed.add_listener(heard.append)
-    registry = DocumentRegistry(access=AccessRouter(LocalAccess(feed)))
+    registry = DocumentRegistry(records=Records(feed))
     opened, placeholder = tmp_path / "a" / "info.rehu", tmp_path / "c" / "info.rehu"
     new = tmp_path / "b" / "info.rehu"
     for path in (opened, new, placeholder):
@@ -634,9 +604,9 @@ def test_a_given_access_reads_and_saves_every_model(qtbot: QtBot, tmp_path: Path
     write_record(opened, "Opened")
     write_record(placeholder, "Placeholder")
     models = [
-        registry.acquire(LocalKey(opened)),
-        registry.acquire(LocalKey(new), new=True),
-        registry.acquire(LocalKey(placeholder), lazy=True),
+        registry.acquire(ResourceKey(opened)),
+        registry.acquire(ResourceKey(new), new=True),
+        registry.acquire(ResourceKey(placeholder), lazy=True),
     ]
     models[2].load_pending()
 
@@ -644,12 +614,12 @@ def test_a_given_access_reads_and_saves_every_model(qtbot: QtBot, tmp_path: Path
         model.title = "Saved"
         model.save()
 
-    assert heard == [Changed((LocalKey(path),)) for path in (opened, new, placeholder)]
+    assert heard == [Changed((ResourceKey(path),)) for path in (opened, new, placeholder)]
 
 
 @mark.usefixtures("real_path_stat")
-def test_the_default_access_announces_a_save_app_wide(qtbot: QtBot, tmp_path: Path) -> None:
-    """With no access given, the registry's own announces on the app's events, so every view hears a save.
+def test_the_default_records_announce_a_save_app_wide(qtbot: QtBot, tmp_path: Path) -> None:
+    """With no records given, the registry's own announce on the app's events, so every view hears a save.
 
     **Test steps:**
 
@@ -661,13 +631,13 @@ def test_the_default_access_announces_a_save_app_wide(qtbot: QtBot, tmp_path: Pa
     write_record(path, "Old")
     events = ResourceEvents()
     registry = DocumentRegistry(resource_events=events)
-    model = registry.acquire(LocalKey(path))
+    model = registry.acquire(ResourceKey(path))
     model.title = "Mine"
 
     with qtbot.waitSignal(events.changed) as changed:
         model.save()
 
-    assert changed.args == [(LocalKey(path),)]
+    assert changed.args == [(ResourceKey(path),)]
 
 
 @mark.usefixtures("real_path_stat")
@@ -683,7 +653,7 @@ def test_a_placeholder_read_later_still_refuses_a_save_over_a_change_on_disk(qtb
     path = tmp_path / "info.rehu"
     write_record(path, "Old")
     registry = DocumentRegistry()
-    model = registry.acquire(LocalKey(path), lazy=True)
+    model = registry.acquire(ResourceKey(path), lazy=True)
     model.load_pending()
     model.title = "Mine"
     edit_on_disk(path, retitle("Theirs"))
@@ -701,7 +671,7 @@ def test_a_record_is_read_with_its_version_and_signature_and_logged(
 
     **Test steps:**
 
-    * read a real record through local access
+    * read a real record through records
     * verify the document, a version, and the file's signature, under the current identity
     * verify the read was logged
     """
@@ -711,13 +681,13 @@ def test_a_record_is_read_with_its_version_and_signature_and_logged(
     stat = path.stat()
 
     with caplog.at_level(logging.INFO):
-        record = load_record(AccessRouter(LocalAccess()), LocalKey(path))
+        record = load_record(Records(ChangeFeed()), ResourceKey(path))
 
     assert record.document.title == "Old"
     assert record.document.username == shared_identity_settings().current_username
     assert record.version is not None
     assert record.signature == (stat.st_mtime_ns, stat.st_size)
-    assert f"Read {LocalKey(path)} as tutorial" in caplog.messages
+    assert f"Read {ResourceKey(path)} as tutorial" in caplog.messages
 
 
 @mark.usefixtures("real_path_stat")
@@ -736,7 +706,7 @@ def test_a_record_that_cannot_be_read_is_a_locked_stub_and_no_read_is_logged(
     path = tmp_path / "info.rehu"
 
     with caplog.at_level(logging.INFO):
-        record = load_record(AccessRouter(LocalAccess()), LocalKey(path))
+        record = load_record(Records(ChangeFeed()), ResourceKey(path))
 
     assert record.document.load_failed
     assert record.lock_reasons
@@ -758,26 +728,12 @@ def test_a_legacy_record_files_its_flags_under_the_unknown_user(tmp_path: Path, 
     path = tmp_path / "info.tc"
     path.write_text("type: Tutorial\ntitle: Legacy\nrating: 4\n", encoding="utf-8")
 
-    record = load_record(AccessRouter(LocalAccess()), LocalKey(path))
+    record = load_record(Records(ChangeFeed()), ResourceKey(path))
 
     unknown = shared_identity_settings().unknown_username
     assert record.document.title == "Legacy"
     assert record.document.user_field(unknown, "rating") == 4
     assert record.version is None
-
-
-def test_a_node_record_is_not_read(qtbot: QtBot) -> None:
-    """No implementation reaches a node yet: the read says so rather than returning a stub.
-
-    **Test steps:**
-
-    * read a node key through ``load_record``
-    * verify ``NodeUnreachable`` is raised
-    """
-    del qtbot
-
-    with raises(NodeUnreachable):
-        load_record(AccessRouter(LocalAccess()), NODE_KEY)
 
 
 # endregion

@@ -11,30 +11,25 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ### Added
 
-- `rehuco_core.access`, the first types of the resource access seam, which the agent now names its open documents and
-  file announcements by. A `ResourceKey` is a `LocalKey(path)` or a `NodeKey(node_id, root_id, relative)`, both with
-  path arithmetic (`name`, `stem`, `parent`, `with_name`, `joinpath`, `is_at_or_beneath`); a `LocalKey` folds case as
-  the filesystem does, a `NodeKey` compares as spelled, and `str()` of either is a stable name for it.
-  `KeyRelocation` is `Relocation` over keys (`KeyRelocation.from_local`, and `to_local` for the local pairs).
-  `ChangeFeed` announces `Moved`, `Changed`, `FolderChanged` and `Invalidated` without Qt. `AccessRouter.key_for_path`
-  turns a path into its key, and `AccessRouter.for_key` hands a local key to `LocalAccess` and raises
-  `NodeUnreachable` for a node key.
-- Records through the access seam: `LocalAccess.records` (`LocalRecords`) loads a record, saves it, reads its text
-  as stored and converts a legacy `.tc`. A file that cannot be read loads as a locked stub rather than raising. A
-  save is a read-merge-write against the `RecordVersion` the document was read at -- a hash of its metadata (every
-  block's `users` map left out), of the file, and of each per-user field. A metadata edit made on disk since the read
-  refuses the save as a `RecordConflict` carrying the file as it is now; the per-user fields merge field by field
-  (`merge_users`), a field the caller changed being the caller's and every other one the file's, in the caller's own
-  scope and `public` only. `record_differences` lists what an edited document and the file disagree on -- the
-  metadata and the caller's own per-user fields, each with its original value -- and `put_paths` puts the values
-  kept. A legacy `.tc` is never saved over.
-- The Root Catalog through the access seam: `LocalAccess.catalog` (`LocalCatalog`) answers `roots()`,
-  `query(CatalogQuery)`, `row(key)` and `count(root_id)` over a `.rehudb`, each call opening the cache on its own
-  thread, and raises `CatalogUnreadable` for a cache it cannot read. `LocalCatalog` also keeps the cache current:
-  `prepare` and `attach` for the open `.rehuco`, `reconcile` and `hide` for an edit of its roots, `follow` for a
-  rename, `refresh` for records the app wrote, and `plan_verify` / `apply_verify` for verify-on-access.
-  `RecordOps.signature(key)` answers a record's modification time and size under the rename hold, and
-  `LocalAccess` takes the `RenameCoordinator` that stat and the catalog's record re-reads go through.
+- `rehuco_core.access`, the record and catalog operations, and the keys the agent names its open documents and file
+  announcements by. A `ResourceKey(path)` has path arithmetic (`name`, `stem`, `parent`, `with_name`, `joinpath`,
+  `is_at_or_beneath`), folds case as the filesystem does, and its `str()` is a stable name for it. `KeyRelocation` is
+  `Relocation` over keys (`KeyRelocation.from_local`, and `to_local` back to paths). `ChangeFeed` announces `Moved`,
+  `Changed`, `FolderChanged` and `RootStale` without Qt.
+- `Records` loads a record, saves it, reads its text as stored and converts a legacy `.tc`. A file that cannot be read
+  loads as a locked stub rather than raising. A save is a read-merge-write against the `RecordVersion` the document was
+  read at -- a hash of its metadata (every block's `users` map left out), of the file, and of each per-user field. A
+  metadata edit made on disk since the read refuses the save as a `RecordConflict` carrying the file as it is now; the
+  per-user fields merge field by field (`merge_users`), a field the caller changed being the caller's and every other
+  one the file's, in the caller's own scope and `public` only. `record_differences` lists what an edited document and
+  the file disagree on -- the metadata and the caller's own per-user fields, each with its original value -- and
+  `put_paths` puts the values kept. A legacy `.tc` is never saved over.
+- The Root Catalog: `Catalog` answers `roots()`, `query(CatalogQuery)`, `row(key)` and `count(root_id)` over a
+  `.rehudb`, each call opening the cache on its own thread, and raises `CatalogUnreadable` for a cache it cannot read.
+  `Catalog` also keeps the cache current: `prepare` and `attach` for the open `.rehuco`, `reconcile` and `hide` for
+  an edit of its roots, `follow` for a rename, `refresh` for records the app wrote, and `plan_verify` / `apply_verify`
+  for verify-on-access. `Records.signature(key)` answers a record's modification time and size under the rename
+  hold; both take the `RenameCoordinator` that stat and the catalog's record re-reads go through.
 - `CatalogSnapshot` holds a catalog's rows in memory and filters them there: `build` keys every row once,
   `select(query, ids)` picks what a `CatalogQuery` matches -- exactly the rows `CatalogCache.rows` reads, in its
   order -- and `patched` brings it up to date after a change. `CatalogMatcher` is the query compiled, and
@@ -74,7 +69,7 @@ Changelogs are per package in this monorepo, matching the per-package release ta
   a JSON `null`.
 - The ffprobe probe asks for JSON output, to read the frame size along with the duration.
 - `updated` moves only when a save changes the record's metadata: a per-user change -- a rating, a progress entry,
-  another user's fields merged in -- no longer stamps it. Saved through `LocalRecords`, the change is judged against
+  another user's fields merged in -- no longer stamps it. Saved through `Records`, the change is judged against
   the file the save replaces, so a save whose details are the file's keeps the file's `updated`.
   `RehuDocument.save(edited=...)` takes that decision from its caller, and `payload_to_write()` is what a save writes.
 - `RehuDocument.load` decodes the file as UTF-8 text and hands it back with `load_with_text`, so a record's version

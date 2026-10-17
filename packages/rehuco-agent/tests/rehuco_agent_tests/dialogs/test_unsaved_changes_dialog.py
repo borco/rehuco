@@ -10,9 +10,9 @@ from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.dialogs.unsaved_changes_dialog import UnsavedChangesDialog
 from rehuco_agent.settings.unsaved_changes_dialog_settings import UnsavedChangesDialogSettings
-from rehuco_core.access import LocalKey
+from rehuco_core.access import ResourceKey
 
-KEY: Final = LocalKey(Path.cwd() / "fake" / "info.rehu")
+KEY: Final = ResourceKey(Path.cwd() / "fake" / "info.rehu")
 
 
 @fixture(autouse=True)
@@ -28,7 +28,7 @@ def mock_persistent_settings(mocker: MockerFixture) -> Any:
     return mocker.patch("rehuco_agent.dialogs.unsaved_changes_dialog.persistent_settings", return_value=settings)
 
 
-def make_model(mocker: MockerFixture, key: LocalKey | None) -> Any:
+def make_model(mocker: MockerFixture, key: ResourceKey | None) -> Any:
     """Build a stand-in dirty document model with the given ``key``.
 
     :param mocker: pytest-mock fixture.

@@ -34,7 +34,7 @@ from rehuco_core import (
     RenameCoordinator,
     read_archive_facts,
 )
-from rehuco_core.access import AccessRouter, LocalAccess
+from rehuco_core.access import ChangeFeed, Records, ResourceKey
 
 from ..documents.files_rows import CHECKSUM_STATE_ICONS
 from ..fields.widgets.image_export import PressDragFilter
@@ -168,8 +168,8 @@ class RootsPreview(QWidget):
     :param pack_for: asked for an archive row, to say whether it is a reference pack; ``None`` says nothing of it.
     :param parent: optional Qt parent.
     :param drag_image: starts the drag of the picture shown; ``None`` drags nothing.
-    :param access: what a record is read through ([[nodes#access-seam]], #416); this machine's own files when not
-        given.
+    :param records: what a record is read through ([[nodes#access-seam]], #416); records announcing on a private feed
+        when not given.
     """
 
     image_ready = Signal(int, QImage, QSize)
@@ -192,10 +192,10 @@ class RootsPreview(QWidget):
         pack_for: PackForRow | None = None,
         parent: QWidget | None = None,
         drag_image: DragImage | None = None,
-        access: AccessRouter | None = None,
+        records: Records | None = None,
     ) -> None:
         super().__init__(parent)
-        self.__access: Final = access if access is not None else AccessRouter(LocalAccess())
+        self.__records: Final = records if records is not None else Records(ChangeFeed())
         self.__ui: Final = Ui_RootsPreview()
         self.__ui.setupUi(self)
         self.setMinimumWidth(MINIMUM_WIDTH)
@@ -735,19 +735,18 @@ class RootsPreview(QWidget):
     def __read_record(self, serial: int, path: Path) -> None:
         """Read one record, on a pool thread, and hand its URL and description back.
 
-        A record that cannot be read answers nothing, and the access logs the reason.
+        A record that cannot be read answers nothing, and ``records`` logs the reason.
 
         :param serial: the request's serial.
         :param path: the record file.
         """
         with self.__holding():
-            key = self.__access.key_for_path(path)
             # the identities only decide whose per-user fields are read, and the pane shows none
-            record = self.__access.for_key(key).records.load(
-                key, username=DEFAULT_CURRENT_USERNAME, unknown_username=DEFAULT_UNKNOWN_USERNAME
+            record = self.__records.load(
+                ResourceKey(path), username=DEFAULT_CURRENT_USERNAME, unknown_username=DEFAULT_UNKNOWN_USERNAME
             )
         if record.document.load_failed:
-            # the access logged why
+            # the records logged why
             return
         url, description = record.document.url.strip(), record.document.description
         try:

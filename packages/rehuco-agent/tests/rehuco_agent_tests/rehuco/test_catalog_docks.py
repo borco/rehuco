@@ -74,7 +74,7 @@ from rehuco_core import (
     TaskQueue,
     VerifyChecksumsJob,
 )
-from rehuco_core.access import KeyRelocation, LocalKey, Moved, NodeKey
+from rehuco_core.access import ResourceKey
 
 from rehuco_agent_tests.conftest import MemoryCatalogStateStore
 
@@ -486,7 +486,7 @@ def test_a_new_rehuco_whose_cache_cannot_open_is_never_written(
     * create a catalog
     * verify it failed, nothing was written, and the reason names the cache
     """
-    mocker.patch("rehuco_core.access.local_catalog.CatalogCache.open", side_effect=sqlite3.OperationalError("locked"))
+    mocker.patch("rehuco_core.access.catalog.CatalogCache.open", side_effect=sqlite3.OperationalError("locked"))
 
     assert not dock.catalog.new_rehuco(OTHER_PATH)
 
@@ -748,7 +748,7 @@ def test_a_double_click_opens_the_resource_by_its_key(
     **Test steps:**
 
     * scan one record in, then double-click its row
-    * verify the open request carried the local key of the root's folder joined to the record's path
+    * verify the open request carried the key of the root's folder joined to the record's path
     """
     del served
     scan_finding(mocker, {TUTORIALS: (tutorial_record(),)})
@@ -760,7 +760,7 @@ def test_a_double_click_opens_the_resource_by_its_key(
     with qtbot.waitSignal(dock.browsers.open_requested) as requested:
         first_browser(dock).view.doubleClicked.emit(first_browser(dock).model.index(0, 0))
 
-    assert requested.args == [LocalKey(TUTORIALS / "python/info.rehu")]
+    assert requested.args == [ResourceKey(TUTORIALS / "python/info.rehu")]
 
 
 def test_a_double_click_on_a_row_whose_root_is_gone_opens_nothing(
@@ -2120,38 +2120,11 @@ def test_a_written_record_is_read_back_into_its_row(
     )
 
     events.announce_changed(
-        (LocalKey(TUTORIALS / "python" / "info.rehu"), LocalKey(TUTORIALS / "python" / "info00.jpg"))
+        (ResourceKey(TUTORIALS / "python" / "info.rehu"), ResourceKey(TUTORIALS / "python" / "info00.jpg"))
     )
     wait_for_rows(qtbot, dock)
 
     assert first_browser(dock).model.index(0, CatalogColumn.TITLE).data() == "Python 3"
-
-
-def test_a_change_on_a_node_is_not_followed_here(
-    mocker: MockerFixture, followed: tuple[CatalogDocks, ResourceEvents]
-) -> None:
-    """A node's files and renames are that node's cache's: a change or a rename naming only node keys reads and
-    rebases nothing here (#414).
-
-    **Test steps:**
-
-    * spy on the cache's record lookup and relocation
-    * announce a node's record changed, and publish a rename of a node's folder
-    * verify the cache was neither asked nor rebased, and the row is as it was
-    """
-    dock, events = followed
-    locate = mocker.spy(CatalogCache, "locate")
-    relocation = mocker.spy(CatalogCache, "apply_relocation")
-    root_id = UUID(ROOT_IDS[0])
-
-    events.announce_changed((NodeKey("node-a", root_id, "python/info.rehu"),))
-    events.changes.publish(
-        Moved(KeyRelocation(((NodeKey("node-a", root_id, "python"), NodeKey("node-a", root_id, "py")),)))
-    )
-
-    locate.assert_not_called()
-    relocation.assert_not_called()
-    assert shown_path(dock) == "tutorials/python/info.rehu"
 
 
 def test_a_rename_moves_the_row_in_place_and_keeps_it_selected(
@@ -2199,7 +2172,7 @@ def test_a_written_record_changes_its_row_without_a_reset(
     )
 
     with qtbot.assertNotEmitted(model.modelReset):
-        events.announce_changed((LocalKey(TUTORIALS / "python" / "info.rehu"),))
+        events.announce_changed((ResourceKey(TUTORIALS / "python" / "info.rehu"),))
         wait_for_rows(qtbot, dock)
 
     assert model.index(0, CatalogColumn.TITLE).data() == "Python 3"
@@ -2221,7 +2194,7 @@ def test_a_deleted_record_leaves_the_table_in_place(
     mocker.patch.object(Path, "is_dir", autospec=True, return_value=True)
 
     with qtbot.assertNotEmitted(model.modelReset), qtbot.waitSignal(model.rowsRemoved):
-        events.announce_changed((LocalKey(TUTORIALS / "python" / "info.rehu"),))
+        events.announce_changed((ResourceKey(TUTORIALS / "python" / "info.rehu"),))
 
     assert model.rowCount() == 0
 
@@ -2357,7 +2330,7 @@ def test_a_cache_failure_while_following_is_logged(
     caplog.set_level(logging.ERROR, logger="rehuco_agent.rehuco.rehuco_dock")
 
     events.announce_moved(Relocation(((TUTORIALS / "python", TUTORIALS / "py"),)))
-    events.announce_changed((LocalKey(TUTORIALS / "python" / "info.rehu"),))
+    events.announce_changed((ResourceKey(TUTORIALS / "python" / "info.rehu"),))
 
     assert caplog.text.count("locked") == 2
 
@@ -2375,9 +2348,9 @@ def test_with_nothing_open_an_announcement_is_nothing(qtbot: QtBot, queue: TaskQ
     dock = build_docks(qtbot, queue, events)
 
     events.announce_moved(Relocation(((TUTORIALS, PACKS),)))
-    events.announce_changed((LocalKey(TUTORIALS / "info.rehu"),))
+    events.announce_changed((ResourceKey(TUTORIALS / "info.rehu"),))
     dock.detach()
-    events.announce_changed((LocalKey(TUTORIALS / "info.rehu"),))
+    events.announce_changed((ResourceKey(TUTORIALS / "info.rehu"),))
 
     assert not dock.browsers.browsers
 
@@ -3648,7 +3621,7 @@ def test_an_announced_folder_change_lists_a_loaded_folder_again(
     alpha = open_root_folder(qtbot, dock, "alpha")
     (folder / "alpha" / "added.txt").write_text("a", encoding="utf-8")
 
-    events.announce_folder_changed(LocalKey(folder / "alpha"))
+    events.announce_folder_changed(ResourceKey(folder / "alpha"))
 
     qtbot.waitUntil(
         lambda: (
@@ -3675,7 +3648,7 @@ def test_a_detached_dock_stops_following_folder_changes(
     dock, events, folder = listening
     dock.detach()
 
-    events.announce_folder_changed(LocalKey(folder / "alpha"))
+    events.announce_folder_changed(ResourceKey(folder / "alpha"))
     qtbot.wait(20)
 
     assert dock.catalog.rehuco_path is None
@@ -4039,14 +4012,14 @@ def test_a_resource_key_resolves_to_its_path_in_one_place(dock: CatalogDocks) ->
     **Test steps:**
 
     * resolve a key with nothing open, then with the catalog open: a listed root, and one the file lacks
-    * verify nothing, the local key of the root's folder joined to the relative path, and nothing
+    * verify nothing, the key of the root's folder joined to the relative path, and nothing
     """
     listed, unknown = UUID(ROOT_IDS[0]), uuid4()
     assert dock.catalog.resource_key(listed, "python/info.rehu") is None
 
     dock.catalog.open_rehuco(REHUCO_PATH)
 
-    assert dock.catalog.resource_key(listed, "python/info.rehu") == LocalKey(TUTORIALS / "python/info.rehu")
+    assert dock.catalog.resource_key(listed, "python/info.rehu") == ResourceKey(TUTORIALS / "python/info.rehu")
     assert dock.catalog.resource_key(unknown, "python/info.rehu") is None
 
 
@@ -4387,7 +4360,7 @@ def test_what_a_finished_verify_rewrote_is_announced_where_there_is_someone_to_h
     without.roots._RootsPanel__announce_rewritten(resource)  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     qtbot.waitUntil(lambda: bool(heard), timeout=WAIT_TIMEOUT_MS)
-    assert heard == [(LocalKey(pack / "info.checksum"),)]
+    assert heard == [(ResourceKey(pack / "info.checksum"),)]
     relist.assert_called_once_with(pack)
 
 
@@ -4400,8 +4373,8 @@ def test_a_rewritten_checksum_record_lists_its_folder_again_and_nothing_else_doe
 
     **Test steps:**
 
-    * announce a checksum record and a rehu being written, and a checksum record on a node
-    * verify the folder of the local record, and only that one, is listed again
+    * announce a checksum record and a rehu being written
+    * verify the folder of the checksum record, and only that one, is listed again
     """
     dock, events = followed
     relist = mocker.patch.object(dock.roots.roots_model, "relist_under")
@@ -4409,33 +4382,13 @@ def test_a_rewritten_checksum_record_lists_its_folder_again_and_nothing_else_doe
 
     events.announce_changed(
         (
-            LocalKey(pack / "other.rehu"),
-            NodeKey("node-a", UUID(ROOT_IDS[0]), "pack/info.checksum"),
-            LocalKey(pack / "INFO.CHECKSUM"),
+            ResourceKey(pack / "other.rehu"),
+            ResourceKey(pack / "INFO.CHECKSUM"),
         )
     )
 
     qtbot.waitUntil(lambda: relist.called, timeout=WAIT_TIMEOUT_MS)
     relist.assert_called_once_with(pack)
-
-
-@mark.usefixtures("served")
-def test_a_folder_changed_on_a_node_lists_nothing_again(
-    mocker: MockerFixture, followed: tuple[CatalogDocks, ResourceEvents]
-) -> None:
-    """A node's folders are in no listing of the Roots view, so a change to one lists nothing again (#414).
-
-    **Test steps:**
-
-    * announce a folder on a node changed
-    * verify no folder was listed again
-    """
-    dock, events = followed
-    relist = mocker.patch.object(dock.roots.roots_model, "relist_folder")
-
-    events.announce_folder_changed(NodeKey("node-a", UUID(ROOT_IDS[0]), "python"))
-
-    relist.assert_not_called()
 
 
 # endregion

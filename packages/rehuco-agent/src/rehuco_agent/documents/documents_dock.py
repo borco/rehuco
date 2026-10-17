@@ -19,7 +19,7 @@ from borco_pyside.qtads import (
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QMainWindow, QMessageBox, QWidget
 from rehuco_core import INFO_REHU_FILENAME, LockReasonKind, TaskQueue
-from rehuco_core.access import AccessRouter, LocalAccess, LocalKey, NodeUnreachable, ResourceKey
+from rehuco_core.access import ResourceKey
 
 from ..dock_maximize import attach_maximize_handler
 from ..glyphs import TAB_CLOSE_GLYPH
@@ -43,9 +43,9 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
     """A dock area holding one :class:`DocumentWidget` per open document, tabbed in the focused area.
 
     Reopening an already-open record focuses its existing dock rather than opening a second one
-    ([[nodes#single-instance]]). Records are named by :data:`~rehuco_core.access.ResourceKey`
-    ([[nodes#access-seam]]); the one path this area meets itself, a remembered session's, becomes a key through
-    :meth:`~rehuco_core.access.AccessRouter.key_for_path`. Each dock holds its document's view-model through the app's
+    ([[nodes#single-instance]]). Records are named by :class:`~rehuco_core.access.ResourceKey`
+    ([[nodes#access-seam]]); the one path this area meets itself, a remembered session's, becomes a key as it is
+    read. Each dock holds its document's view-model through the app's
     :class:`~rehuco_agent.documents.document_registry.DocumentRegistry` (#375), which is what finds an open
     record and what owns the model -- another holder of the same record shares it. Which dock is current --
     and the highlight/close-button styling that marks it, plus every signal needed to catch a tab switch
@@ -72,8 +72,6 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
     :param task_queue: the app-wide queue every document's slow work goes on (#204), handed on for the
         same reason: there is one queue, and a serial one, which is the whole point of running the
         checksum work through it. ``None`` opens documents that offer no such work.
-    :param access: what turns a remembered session's paths into keys -- the app's one router; ``None`` builds a
-        local one.
     """
 
     document_focus_changed: Signal = Signal(object)
@@ -124,11 +122,9 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         stylesheet_host: QWidget | None = None,
         registry: DocumentRegistry | None = None,
         task_queue: TaskQueue | None = None,
-        access: AccessRouter | None = None,
     ) -> None:
         super().__init__(parent)
         self.__stylesheet_host: Final = stylesheet_host
-        self.__access: Final = access if access is not None else AccessRouter(LocalAccess())
         self.__registry: Final = registry if registry is not None else DocumentRegistry(self)
         self.__task_queue: Final = task_queue
         self.__dock_manager: Final = QtAds.CDockManager(self)
@@ -187,7 +183,6 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
             meaningful for a document actually being opened; ignored when ``key`` is already open.
         :returns: the document's widget. A file that cannot be read opens as an empty **locked** dock
             standing in for it ([[data-model#write-integrity]]).
-        :raises NodeUnreachable: for a node's record not open already (#416).
         """
         return self.__activate(self.__find_dock_to_open(key) or self.__make_new_dock(key, state=state))
 
@@ -203,7 +198,6 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         :param folder: the directory to open.
         :returns: the document's widget (an empty **locked** dock when `info.rehu`/`info.tc` exists but
             could not be read, [[data-model#write-integrity]]).
-        :raises NodeUnreachable: for a node's folder (#416).
         """
         return self.__open_companion(folder.joinpath(INFO_REHU_FILENAME))
 
@@ -219,7 +213,6 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         :param archive: the archive file (e.g. ``foo.zip``).
         :returns: the document's widget (an empty **locked** dock when the companion ``.rehu``/``.tc``
             exists but could not be read, [[data-model#write-integrity]]).
-        :raises NodeUnreachable: for a node's archive (#416).
         """
         return self.__open_companion(archive.with_name(f"{archive.stem}.rehu"))
 
@@ -236,10 +229,7 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
             archive file).
         :returns: the document's widget (an empty **locked** dock when ``info`` or its ``.tc``
             sibling exists but could not be read, [[data-model#write-integrity]]).
-        :raises NodeUnreachable: for a node's record, whose existence its node answers (#416).
         """
-        if not isinstance(info, LocalKey):
-            raise NodeUnreachable(info)
         if info.path.exists():
             return self.open_document(info)
         tc = info.with_name(f"{info.stem}.tc")
@@ -262,7 +252,6 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
 
         :param key: a ``.rehu`` record (or a legacy ``.tc``), as for :meth:`open_document`.
         :returns: the document's widget.
-        :raises NodeUnreachable: for a node's record not open already (#416).
         """
         dock = self.__find_dock(key)
         preview = self.__preview
@@ -331,7 +320,7 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
             for path, item in session.items.items():
                 if not item.open or (only is not None and path not in only):
                     continue
-                key = self.__access.key_for_path(path)
+                key = ResourceKey(path)
                 # the remembered layout rides the open itself (#62): the dock applies exactly one
                 # layout per document -- this one, or the saved default only where this one fails to
                 # restore -- instead of adopting the default first and having this overwrite it later
@@ -359,7 +348,7 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
             another.
         """
         previous = self.__tracker.current_dock
-        key = self.__access.key_for_path(path)
+        key = ResourceKey(path)
         self.__restoring_session = True
         try:
             dock = self.__find_dock(key) or self.__make_new_dock(key, state=item.state, lazy=True)
@@ -381,11 +370,10 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         return list(self.__document_docks.values())
 
     def focused_document_path(self) -> Path | None:
-        """The path of the currently focused document, or ``None`` if none is focused or it is no file this machine
-        reads.
+        """The path of the currently focused document, or ``None`` if none is focused or it has no file yet.
 
         Used by the session-persistence save (``MainWindow``) to remember which document to
-        re-focus on restore -- a session that remembers paths, so a node's record is not in it.
+        re-focus on restore.
         """
         current = self.__tracker.current_dock
         if current is None:
@@ -581,7 +569,6 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
             preview layout rather than ``state``.
         :returns: the new dock (created for a successful load, a new document, a locked stub, or an
             as-yet-unread placeholder, alike).
-        :raises NodeUnreachable: for a node's record (#416).
         """
         # held through the registry, which owns the model and frees it at its last release (#375); the
         # dock owns its own title/identity upkeep, and the area only wires the seams that cross back to
@@ -646,15 +633,12 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         :param preview: the clean preview dock.
         :param key: the document to show, shown nowhere in this area yet.
         :returns: the preview's widget.
-        :raises NodeUnreachable: for a node's record nobody holds (#416).
         """
         started = time.perf_counter()
         self.__capture_preview_layout()
         widget = preview.document_widget
         layout_type: str | None = widget.sub_docks.layout_type
         if self.__registry.find(key) is None:
-            if not isinstance(key, LocalKey):
-                raise NodeUnreachable(key)
             # the preview's own model loads the next record into the widgets already built (#381): nothing is
             # torn down, and the form is rebuilt only for a record of another structure. The registry follows
             # the model's key as it follows a rename

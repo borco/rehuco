@@ -37,7 +37,7 @@ from rehuco_core import (
     TaskJobBase,
     TaskQueue,
 )
-from rehuco_core.access import LoadedRecord, LocalKey
+from rehuco_core.access import LoadedRecord, ResourceKey
 
 DIRECTORY: Final = Path.cwd() / "fake" / "library" / "sculpting"
 INFO_PATH: Final = DIRECTORY / "info.rehu"
@@ -544,7 +544,7 @@ def test_a_finished_run_announces_the_record_through_the_document(
     with qtbot.waitSignal(model.files_changed, timeout=TIMEOUT) as written:
         actions.verify_action.trigger()
 
-    assert written.args == [(LocalKey(RECORD_PATH),)]
+    assert written.args == [(ResourceKey(RECORD_PATH),)]
 
 
 def test_a_verify_with_mismatches_surfaces_them(qtbot: QtBot, mocker: MockerFixture, actions: ChecksumActions) -> None:
@@ -1037,7 +1037,7 @@ def test_forgetting_entries_says_the_record_changed(
     forget.assert_called_once_with(INFO_PATH, only=[VIDEO])
     assert dropped == (VIDEO,)
     assert fired == [1]
-    assert written == [(LocalKey(RECORD_PATH),)]
+    assert written == [(ResourceKey(RECORD_PATH),)]
 
 
 def test_forgetting_nothing_touches_neither_the_record_nor_the_view(

@@ -47,7 +47,7 @@ from PySide6.QtCore import QModelIndex, QPersistentModelIndex, Qt, QUrl, Signal
 from PySide6.QtGui import QAction, QDesktopServices, QShowEvent
 from PySide6.QtWidgets import QHeaderView, QToolBar, QToolButton, QWidget
 from rehuco_core import IMAGE_EXTENSIONS, FileKind, Relocation
-from rehuco_core.access import KeyRelocation, LocalKey, ResourceKey
+from rehuco_core.access import KeyRelocation, ResourceKey
 
 from ..commands import REFRESH_FILES, shared_command_registry
 from ..resource_events import ResourceEvents
@@ -87,8 +87,7 @@ UNREACHABLE_SUMMARY: Final = "This folder is not reachable right now."
 """What the summary line says instead of drawing an empty table over an away mount (#245)."""
 
 NO_PATH_SUMMARY: Final = "This document is not a file on this machine, so there is no folder to show here."
-"""What the summary line says for a document with no local path -- nowhere on this machine to list; a node's
-listing comes through the access seam later (#423)."""
+"""What the summary line says for a document with no file yet -- nowhere to list."""
 
 UNREADABLE_RECORD_SUMMARY: Final = "The checksum record could not be read: {error}"
 """What the summary line says for a ``.checksum`` this build cannot parse.
@@ -392,8 +391,7 @@ class FilesView(QWidget):
 
         Only a rename touching this resource's folder is anything to this view; one elsewhere in the
         catalog is not read for. The rows are renamed before the read goes out so the read lands on rows
-        already under their new paths, and the reader's selection with them. The listing is of this machine's
-        folders until it goes through the access seam (#423), so only this machine's renames are followed.
+        already under their new paths, and the reader's selection with them.
 
         :param moved: the rename's executed plan.
         """
@@ -422,7 +420,7 @@ class FilesView(QWidget):
 
         :param keys: the files written or replaced.
         """
-        if any(isinstance(key, LocalKey) and self.__beneath_root(key.path) for key in keys):
+        if any(self.__beneath_root(key.path) for key in keys):
             self.refresh()
 
     def __on_folder_changed(self, directory: ResourceKey) -> None:
@@ -430,7 +428,7 @@ class FilesView(QWidget):
 
         :param directory: the folder whose listing changed.
         """
-        if isinstance(directory, LocalKey) and self.__beneath_root(directory.path):
+        if self.__beneath_root(directory.path):
             self.refresh()
 
     def __beneath_root(self, path: Path) -> bool:

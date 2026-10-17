@@ -31,7 +31,7 @@ during one job -- the coordinator rewrites every tracked path through
 **Honest limit:** another machine renaming over a network share cannot ask our readers to yield, so a
 cross-host rename can still be refused. Mitigated rather than solved -- the window in which a handle is
 held is one chunk, and share-delete makes file-level operations succeed regardless. Coordinating across
-hosts is swarm-era, and belongs with the rename being addressed by resource UUID rather than by path
+hosts belongs with the rename being addressed by resource UUID rather than by path
 ([[mounts-and-storage#uuid-not-paths]]).
 """
 

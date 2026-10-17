@@ -1,4 +1,4 @@
-"""Tests for the local access's catalog group (#417): the Root Catalog read from a ``.rehudb``, and the upkeep that
+"""Tests for the Root Catalog (#417): the Root Catalog read from a ``.rehudb``, and the upkeep that
 keeps it current between scans.
 
 Every cache is a real file under ``tmp_path``; the rows a scan would find are written straight into it.
@@ -15,25 +15,21 @@ from pytest import LogCaptureFixture, raises
 from pytest_mock import MockerFixture
 from rehuco_core import (
     DEFAULT_RENAME_COORDINATOR,
-    AccessRouter,
+    Catalog,
     CatalogCache,
     CatalogQuery,
     CatalogRecord,
     CatalogUnreadable,
     KeyRelocation,
-    LocalAccess,
-    LocalCatalog,
-    LocalKey,
-    NodeKey,
     RecordKind,
     RehucoRoot,
     RehuDocument,
+    ResourceKey,
     check_records,
 )
 
 LIBRARY_ID: Final = UUID("00000000-0000-0000-0000-00000000000a")
 PACKS_ID: Final = UUID("00000000-0000-0000-0000-00000000000b")
-NODE_KEY: Final = NodeKey("node-device-id", LIBRARY_ID, "a/info.rehu")
 
 
 def record(path: str, **fields: Any) -> CatalogRecord:
@@ -57,7 +53,7 @@ def roots_under(tmp_path: Path) -> tuple[RehucoRoot, RehucoRoot]:
 
 def attached(
     tmp_path: Path, roots: tuple[RehucoRoot, ...], scans: dict[UUID, list[CatalogRecord]] | None = None
-) -> LocalCatalog:
+) -> Catalog:
     """A catalog attached to a new cache holding ``roots``, with what a scan of each found.
 
     :param tmp_path: pytest's temporary folder.
@@ -66,21 +62,21 @@ def attached(
     :returns: the catalog.
     """
     cache_path = tmp_path / "catalog.rehudb"
-    session = LocalCatalog.prepare(cache_path, roots)
+    session = Catalog.prepare(cache_path, roots)
     with CatalogCache.open(cache_path) as cache:
         for root_id, records in (scans or {}).items():
             cache.apply_root_scan(root_id, records)
-    catalog = LocalCatalog()
+    catalog = Catalog()
     catalog.attach(session)
     return catalog
 
 
-def paths_of(catalog: LocalCatalog) -> list[tuple[UUID, str]]:
+def paths_of(catalog: Catalog) -> list[tuple[UUID, str]]:
     """Every row the catalog lists, as ``(root id, relative path)``."""
     return [(row.root_id, row.record.path) for row in catalog.query(CatalogQuery())]
 
 
-def write_record(path: Path, title: str) -> LocalKey:
+def write_record(path: Path, title: str) -> ResourceKey:
     """Write a ``.rehu`` with a title.
 
     :param path: where it goes; its folders are created.
@@ -91,7 +87,7 @@ def write_record(path: Path, title: str) -> LocalKey:
     document = RehuDocument.new(path)
     document.title = title
     document.save()
-    return LocalKey(path)
+    return ResourceKey(path)
 
 
 # region Detached
@@ -106,8 +102,8 @@ def test_a_detached_catalog_answers_nothing_and_changes_nothing(tmp_path: Path) 
     * build a catalog and attach nothing
     * verify every read answers empty, and every upkeep answers nothing and attaches nothing
     """
-    catalog = LocalCatalog()
-    key = LocalKey(tmp_path / "library" / "info.rehu")
+    catalog = Catalog()
+    key = ResourceKey(tmp_path / "library" / "info.rehu")
     library, packs = roots_under(tmp_path)
 
     catalog.reconcile([library, packs])
@@ -140,7 +136,7 @@ def test_detaching_lets_the_cache_go(tmp_path: Path) -> None:
     catalog.detach()
     assert not paths_of(catalog)
 
-    catalog.attach(LocalCatalog.prepare(cache_path, roots))
+    catalog.attach(Catalog.prepare(cache_path, roots))
     assert paths_of(catalog) == [(LIBRARY_ID, "a/info.rehu")]
 
 
@@ -200,7 +196,7 @@ def test_a_hidden_root_is_out_of_the_view_until_its_rows_are_removed(tmp_path: P
 
     assert [root.root_id for root in catalog.roots()] == [PACKS_ID]
     assert paths_of(catalog) == [(PACKS_ID, "p/info.rehu")]
-    assert catalog.row(LocalKey(library.path / "a" / "info.rehu")) is None
+    assert catalog.row(ResourceKey(library.path / "a" / "info.rehu")) is None
     assert catalog.count(LIBRARY_ID) == 1
 
 
@@ -210,18 +206,17 @@ def test_a_row_is_found_by_its_key(tmp_path: Path) -> None:
     **Test steps:**
 
     * attach a cache with one row
-    * verify its key answers its row, and an unscanned record, a path under no root and a node's key answer nothing
+    * verify its key answers its row, and an unscanned record and a path under no root answer nothing
     """
     library, _ = roots = roots_under(tmp_path)
     catalog = attached(tmp_path, roots, {LIBRARY_ID: [record("a/info.rehu", type="tutorial", uuid="id-a")]})
 
-    row = catalog.row(LocalKey(library.path / "a" / "info.rehu"))
+    row = catalog.row(ResourceKey(library.path / "a" / "info.rehu"))
 
     assert row is not None
     assert (row.root_id, row.record.type, row.record.uuid) == (LIBRARY_ID, "tutorial", "id-a")
-    assert catalog.row(LocalKey(library.path / "b" / "info.rehu")) is None
-    assert catalog.row(LocalKey(tmp_path / "elsewhere" / "info.rehu")) is None
-    assert catalog.row(NODE_KEY) is None
+    assert catalog.row(ResourceKey(library.path / "b" / "info.rehu")) is None
+    assert catalog.row(ResourceKey(tmp_path / "elsewhere" / "info.rehu")) is None
 
 
 def test_where_roots_nest_a_record_is_the_innermost_roots(tmp_path: Path) -> None:
@@ -241,7 +236,7 @@ def test_where_roots_nest_a_record_is_the_innermost_roots(tmp_path: Path) -> Non
         (outer, inner),
         {LIBRARY_ID: [record("sub/x.rehu", title="outer")], PACKS_ID: [record("x.rehu", title="inner")]},
     )
-    key = LocalKey(inner.path / "x.rehu")
+    key = ResourceKey(inner.path / "x.rehu")
 
     row = catalog.row(key)
     assert row is not None
@@ -312,7 +307,7 @@ def test_a_cache_that_cannot_be_read_refuses_the_listings_and_answers_nothing_el
     with raises(CatalogUnreadable, match="Could not read the catalog .*locked"):
         catalog.query(CatalogQuery())
     with caplog.at_level(logging.ERROR):
-        assert catalog.row(LocalKey(library.path / "a" / "info.rehu")) is None
+        assert catalog.row(ResourceKey(library.path / "a" / "info.rehu")) is None
         assert catalog.count(LIBRARY_ID) == 0
 
     assert "Could not read the row of" in caplog.text
@@ -337,13 +332,13 @@ def test_preparing_a_cache_that_cannot_be_opened_or_reconciled_says_which(
     cache_path = tmp_path / "catalog.rehudb"
     opening = mocker.patch.object(CatalogCache, "open", side_effect=sqlite3.OperationalError("locked"))
     with raises(CatalogUnreadable, match="Could not open the cache of .*locked"):
-        LocalCatalog.prepare(cache_path, roots_under(tmp_path))
+        Catalog.prepare(cache_path, roots_under(tmp_path))
     mocker.stop(opening)
 
     mocker.patch.object(CatalogCache, "reconcile_roots", side_effect=sqlite3.OperationalError("busy"))
     close = mocker.spy(CatalogCache, "close")
     with raises(CatalogUnreadable, match="Could not read the cache of .*busy"):
-        LocalCatalog.prepare(cache_path, roots_under(tmp_path))
+        Catalog.prepare(cache_path, roots_under(tmp_path))
     close.assert_called_once()
 
 
@@ -400,25 +395,24 @@ def test_a_reconcile_that_fails_is_logged_and_the_view_still_follows_the_file(
 
 
 def test_a_rename_rebases_its_rows_and_says_which(tmp_path: Path) -> None:
-    """``follow`` moves the rows a rename moved, reading nothing, and answers their ids; a node's rename is that node's.
+    """``follow`` moves the rows a rename moved, reading nothing, and answers their ids.
 
     **Test steps:**
 
     * attach a cache with a row under a folder, and follow that folder's rename
-    * verify the row moved with its id kept and was answered; a node's rename and a rename of nothing answer nothing
+    * verify the row moved with its id kept and was answered; a rename of nothing answers nothing
     """
     library, _ = roots = roots_under(tmp_path)
     catalog = attached(tmp_path, roots, {LIBRARY_ID: [record("a/info.rehu")]})
     (before,) = catalog.query(CatalogQuery())
 
-    affected = catalog.follow(KeyRelocation(((LocalKey(library.path / "a"), LocalKey(library.path / "b")),)))
+    affected = catalog.follow(KeyRelocation(((ResourceKey(library.path / "a"), ResourceKey(library.path / "b")),)))
 
     assert affected == {before.resource_id}
     assert [(row.resource_id, row.record.path) for row in catalog.query(CatalogQuery())] == [
         (before.resource_id, "b/info.rehu")
     ]
-    assert catalog.follow(KeyRelocation(((NODE_KEY, NODE_KEY.with_name("moved.rehu")),))) == set()
-    assert catalog.follow(KeyRelocation(((LocalKey(library.path / "x"), LocalKey(library.path / "y")),))) == set()
+    assert catalog.follow(KeyRelocation(((ResourceKey(library.path / "x"), ResourceKey(library.path / "y")),))) == set()
 
 
 def test_a_record_the_app_wrote_is_read_back_into_its_row(tmp_path: Path) -> None:
@@ -429,7 +423,7 @@ def test_a_record_the_app_wrote_is_read_back_into_its_row(tmp_path: Path) -> Non
 
     * attach an empty cache, write a record under a root, and refresh it
     * verify its row is listed with its title and was answered
-    * verify a record under no root, and a node's key, answer nothing
+    * verify a record under no root answers nothing
     """
     library, _ = roots = roots_under(tmp_path)
     catalog = attached(tmp_path, roots)
@@ -441,7 +435,6 @@ def test_a_record_the_app_wrote_is_read_back_into_its_row(tmp_path: Path) -> Non
     assert affected == {row.resource_id}
     assert (row.record.path, row.record.title) == ("a/info.rehu", "Fresh")
     assert catalog.refresh([write_record(tmp_path / "elsewhere" / "info.rehu", "Stray")]) == set()
-    assert catalog.refresh([NODE_KEY]) == set()
 
 
 def test_verify_on_access_plans_from_the_cache_and_applies_what_the_disk_showed(tmp_path: Path) -> None:
@@ -450,14 +443,14 @@ def test_verify_on_access_plans_from_the_cache_and_applies_what_the_disk_showed(
     **Test steps:**
 
     * attach an empty cache, and write a record it has no row for
-    * plan a verify of it and of a node's key, check the plan against the disk, and apply the findings
+    * plan a verify of it, check the plan against the disk, and apply the findings
     * verify one check was planned, and its row is now listed and answered as changed
     """
     library, _ = roots = roots_under(tmp_path)
     catalog = attached(tmp_path, roots)
     key = write_record(library.path / "a" / "info.rehu", "Checked")
 
-    checks = catalog.plan_verify([key, NODE_KEY])
+    checks = catalog.plan_verify([key])
     affected, changed = catalog.apply_verify(check_records(checks, DEFAULT_RENAME_COORDINATOR).findings)
 
     (row,) = catalog.query(CatalogQuery())
@@ -484,10 +477,13 @@ def test_upkeep_that_cannot_reach_the_cache_is_logged_and_answers_nothing(
     findings = check_records(catalog.plan_verify([key]), DEFAULT_RENAME_COORDINATOR).findings
     locked = sqlite3.OperationalError("locked")
     mocker.patch.object(CatalogCache, "resource_ids", side_effect=locked)
-    mocker.patch("rehuco_core.access.local_catalog.CatalogRecordUpdater.plan", side_effect=locked)
+    mocker.patch("rehuco_core.access.catalog.CatalogRecordUpdater.plan", side_effect=locked)
 
     with caplog.at_level(logging.ERROR):
-        assert catalog.follow(KeyRelocation(((LocalKey(library.path / "a"), LocalKey(library.path / "c")),))) == set()
+        assert (
+            catalog.follow(KeyRelocation(((ResourceKey(library.path / "a"), ResourceKey(library.path / "c")),)))
+            == set()
+        )
         assert catalog.refresh([key]) == set()
         assert not catalog.plan_verify([key])
         assert catalog.apply_verify(findings) == (set(), set())
@@ -498,19 +494,3 @@ def test_upkeep_that_cannot_reach_the_cache_is_logged_and_answers_nothing(
 
 
 # endregion
-
-
-def test_the_local_access_holds_one_catalog_which_the_router_reaches() -> None:
-    """``catalog`` is one :class:`LocalCatalog` for the access's life, and what the router's local access answers.
-
-    **Test steps:**
-
-    * build a router over a local access
-    * verify its catalog is a local catalog, the same object each time, reached through the router too
-    """
-    access = LocalAccess()
-    router = AccessRouter(access)
-
-    assert isinstance(access.catalog, LocalCatalog)
-    assert access.catalog is access.catalog
-    assert router.local.catalog is access.catalog

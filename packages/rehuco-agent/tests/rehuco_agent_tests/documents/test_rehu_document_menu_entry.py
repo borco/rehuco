@@ -35,20 +35,20 @@ from rehuco_agent.documents.rehu_document_menu_entry import (
     MAX_WIDTH,
     RehuDocumentMenuEntry,
 )
-from rehuco_core.access import LocalKey
+from rehuco_core.access import ResourceKey
 
 ELLIPSIS = "\N{HORIZONTAL ELLIPSIS}"
 """The character `QFontMetrics.elidedText` appends when it trims text to fit."""
 
 HOME: Final = Path(Path.cwd().anchor) / "home" / "ada"
-"""A fake home folder, rooted at the working directory's anchor so it is absolute on every platform (a local key needs
-that) yet short enough not to elide; never created on disk."""
+"""A fake home folder, rooted at the working directory's anchor so it is absolute on every platform (a resource key
+needs that) yet short enough not to elide; never created on disk."""
 
 
 def make_entry(
     qtbot: QtBot, title: str, path: Path | None, *, checked: bool = False, dirty: bool = False
 ) -> RehuDocumentMenuEntry:
-    """Build a `RehuDocumentMenuEntry` over the local key of ``path``, sized to its cap, registered with qtbot for
+    """Build a `RehuDocumentMenuEntry` over the key of ``path``, sized to its cap, registered with qtbot for
     teardown.
 
     :param qtbot: the Qt test helper.
@@ -58,7 +58,7 @@ def make_entry(
     :param dirty: draw the dirty marker.
     :returns: the entry.
     """
-    entry = RehuDocumentMenuEntry(title, None if path is None else LocalKey(path), checked=checked, dirty=dirty)
+    entry = RehuDocumentMenuEntry(title, None if path is None else ResourceKey(path), checked=checked, dirty=dirty)
     qtbot.addWidget(entry)
     entry.resize(MAX_WIDTH, entry.sizeHint().height())
     return entry
@@ -154,7 +154,7 @@ def test_a_stretched_entry_fills_its_row_and_uses_the_extra_width(qtbot: QtBot) 
     menu = QMenu()
     qtbot.addWidget(menu)
     action = QWidgetAction(menu)
-    stretched = RehuDocumentMenuEntry("My Tutorial", LocalKey(long_path), menu)
+    stretched = RehuDocumentMenuEntry("My Tutorial", ResourceKey(long_path), menu)
     action.setDefaultWidget(stretched)
     menu.addAction(action)
     wide = MAX_WIDTH + 200
@@ -336,7 +336,7 @@ def test_hovering_repaints_the_row_as_highlighted(qtbot: QtBot) -> None:
     menu = QMenu()
     qtbot.addWidget(menu)
     action = QWidgetAction(menu)
-    entry = RehuDocumentMenuEntry("My Tutorial", LocalKey(HOME / "my.rehu"), menu)
+    entry = RehuDocumentMenuEntry("My Tutorial", ResourceKey(HOME / "my.rehu"), menu)
     action.setDefaultWidget(entry)
     menu.addAction(action)
     entry.resize(MAX_WIDTH, entry.sizeHint().height())
@@ -410,7 +410,7 @@ def make_menu(qtbot: QtBot, style: QStyle, *, native_icon: bool) -> tuple[QMenu,
     if native_icon:
         native.setIcon(menu.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon))
     entries = [
-        RehuDocumentMenuEntry("My Tutorial", LocalKey(HOME / "my.rehu"), menu, checked=checked, dirty=dirty)
+        RehuDocumentMenuEntry("My Tutorial", ResourceKey(HOME / "my.rehu"), menu, checked=checked, dirty=dirty)
         for checked, dirty in ((True, False), (False, True), (True, True), (False, False))
     ]
     for entry in entries:

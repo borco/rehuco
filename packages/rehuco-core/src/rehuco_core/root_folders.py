@@ -1,9 +1,7 @@
 """Listing one folder under a ``.rehuco``'s root, by ``(root id, relative path)`` (#378).
 
 The Roots view reads every folder through :meth:`RootFolderLister.list`, and nothing else in it touches the
-disk. That one function is the seam Release 0.4.0 swaps for the access seam's file listing
-([[nodes#access-seam]]), so a root another node serves browses the same way: the question is asked by root id
-and relative path, never by an absolute path the caller built.
+disk. The question is asked by root id and relative path, never by an absolute path the caller built.
 
 **It also reads the checksum record that covers a listed file** (#457): the same small JSON read the Files dock makes,
 once per record per listed folder, inside the same hold, so the Roots view can say what each file's record last found
@@ -42,7 +40,7 @@ as they would be to a stranger, which is all the Roots view reads (whether an en
 :class:`~rehuco_core.rehu_file_kinds.FileType`)."""
 
 
-# one method is the whole of it -- list a folder -- and it is the seam the access seam replaces
+# one method is the whole of it -- list a folder
 # pylint: disable-next=too-few-public-methods
 class RootFolderLister:
     """Lists one folder of one root, under the rename coordinator's hold.

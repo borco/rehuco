@@ -2,8 +2,8 @@
 
 **A declaration, not a platform branch scattered through every job.** Whether a reader has to let go of
 its handle before a directory can be renamed is a property of the *storage*, not of the work: Windows
-local storage says yes, POSIX says no, and a future backend that is not a filesystem at all -- a node's
-REST API ([[architecture-design#components]]), a FUSE mount -- says no for a third reason again. Asking
+local storage says yes, POSIX says no, and a future backend that is not a filesystem at all -- a FUSE mount --
+says no for a third reason again. Asking
 here means a job never contains ``if sys.platform``, and means adding a backend is answering this
 question rather than finding every place that assumed an answer.
 

@@ -11,7 +11,7 @@ from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.rehuco import selection_preview
 from rehuco_agent.rehuco.selection_preview import SelectionPreview
-from rehuco_core.access import LocalKey
+from rehuco_core.access import ResourceKey
 
 ROOT_ID: Final = uuid4()
 SETTLE_MS: Final = 20
@@ -19,13 +19,13 @@ SETTLE_MS: Final = 20
 WAIT_MS: Final = SETTLE_MS * 6
 
 
-def key_of(relative: str) -> LocalKey:
+def key_of(relative: str) -> ResourceKey:
     """What a test resource is reached by.
 
     :param relative: its path below the root.
     :returns: the key it resolves to.
     """
-    return LocalKey(Path.cwd() / "fake" / "root" / relative)
+    return ResourceKey(Path.cwd() / "fake" / "root" / relative)
 
 
 @fixture(name="catalog")

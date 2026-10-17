@@ -10,7 +10,7 @@ from pytest import mark
 from rehuco_agent.documents.document_registry import load_record
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_core import RehuDocument
-from rehuco_core.access import AccessRouter, LocalAccess, LocalKey
+from rehuco_core.access import ChangeFeed, Records, ResourceKey
 
 pytestmark = mark.usefixtures("real_path_stat")
 
@@ -33,14 +33,14 @@ def on_disk(path: Path) -> tuple[int, int]:
 
 
 def opened(path: Path) -> RehuDocumentModel:
-    """The model an open builds: the record read through the access, with what it was read at.
+    """The model an open builds: the record read through the records, with what it was read at.
 
     :param path: the record.
     :returns: the model.
     """
-    access = AccessRouter(LocalAccess())
-    record = load_record(access, LocalKey(path))
-    return RehuDocumentModel(record.document, access=access, version=record.version, signature=record.signature)
+    records = Records(ChangeFeed())
+    record = load_record(records, ResourceKey(path))
+    return RehuDocumentModel(record.document, records=records, version=record.version, signature=record.signature)
 
 
 def test_an_opened_document_that_is_clean_reloads_a_file_changed_outside_the_app(tmp_path: Path) -> None:

@@ -37,7 +37,7 @@ from PySide6.QtWidgets import (
     QToolBar,
     QWidget,
 )
-from pytest import MonkeyPatch, fixture, mark, raises
+from pytest import MonkeyPatch, fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent import main_window
@@ -109,7 +109,7 @@ from rehuco_core import (
     TaskJobBase,
     TaskQueue,
 )
-from rehuco_core.access import AccessRouter, Changed, LocalKey, NodeKey, NodeUnreachable
+from rehuco_core.access import Catalog, Changed, Records, ResourceKey
 
 from rehuco_agent_tests.conftest import MemoryStateFiles
 
@@ -987,7 +987,7 @@ def test_open_file_resolves_and_delegates_to_the_documents_dock(mocker: MockerFi
 
     window.open_file("a.rehu")
 
-    open_document.assert_called_once_with(LocalKey(Path("a.rehu").resolve()))
+    open_document.assert_called_once_with(ResourceKey(Path("a.rehu").resolve()))
 
 
 def test_an_open_request_from_a_documents_files_dock_takes_the_ordinary_open_route(
@@ -1011,7 +1011,7 @@ def test_an_open_request_from_a_documents_files_dock_takes_the_ordinary_open_rou
 
     documents_dock.open_requested.emit(neighbour)
 
-    open_document.assert_called_once_with(LocalKey(neighbour))
+    open_document.assert_called_once_with(ResourceKey(neighbour))
 
 
 def test_an_open_request_carrying_anything_else_opens_nothing(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -1049,7 +1049,7 @@ def test_open_folder_resolves_and_delegates_to_the_documents_dock(mocker: Mocker
 
     window.open_folder("a_folder")
 
-    open_folder.assert_called_once_with(LocalKey(Path("a_folder").resolve()))
+    open_folder.assert_called_once_with(ResourceKey(Path("a_folder").resolve()))
 
 
 def test_open_archive_resolves_and_delegates_to_the_documents_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -1067,7 +1067,7 @@ def test_open_archive_resolves_and_delegates_to_the_documents_dock(mocker: Mocke
 
     window.open_archive("a.zip")
 
-    open_archive.assert_called_once_with(LocalKey(Path("a.zip").resolve()))
+    open_archive.assert_called_once_with(ResourceKey(Path("a.zip").resolve()))
 
 
 def test_open_path_dispatches_a_file_path_to_open_file(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -1180,32 +1180,6 @@ def test_open_file_does_not_record_a_failed_open(mocker: MockerFixture, qtbot: Q
 
     window.open_file("missing.rehu")
 
-    recent_files = window._MainWindow__recent_files  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    assert recent_files.newest_first() == []
-
-
-def test_an_open_reaching_a_nodes_record_is_not_recorded_into_recents(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """``Open recents`` keeps paths, so a path whose key turns out to be a node's -- a record another node owns -- is
-    not recorded, even when it loaded: the path names no file this machine reads.
-
-    **Test steps:**
-
-    * have the window's access router key the path as a node's, and the dock return a genuinely-loaded widget
-    * call ``open_file``
-    * verify the dock was handed the node key and ``Open recents`` stays empty
-    """
-    widget = mocker.MagicMock()
-    widget.model.document.load_failed = False
-    open_document = mocker.patch("rehuco_agent.main_window.DocumentsDock.open_document", return_value=widget)
-    window = MainWindow()
-    qtbot.addWidget(window)
-    node_key = NodeKey("node", uuid4(), "a.rehu")
-    access = window._MainWindow__access  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    mocker.patch.object(access, "key_for_path", return_value=node_key)
-
-    window.open_file("a.rehu")
-
-    open_document.assert_called_once_with(node_key)
     recent_files = window._MainWindow__recent_files  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     assert recent_files.newest_first() == []
 
@@ -1754,7 +1728,7 @@ def test_a_document_path_change_replaces_its_recents_entry_in_place(qtbot: QtBot
     recent_files.record(newer)
 
     window._MainWindow__documents_dock.document_key_changed.emit(  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-        LocalKey(older), LocalKey(moved_to)
+        ResourceKey(older), ResourceKey(moved_to)
     )
 
     assert recent_files.newest_first() == [newer, moved_to]
@@ -1778,7 +1752,7 @@ def test_a_directory_scoped_rename_replaces_the_folder_recorded_in_recents(qtbot
     recent_files.record(old_folder)
 
     window._MainWindow__documents_dock.document_key_changed.emit(  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-        LocalKey(old_folder / INFO_REHU_FILENAME), LocalKey(new_folder / INFO_REHU_FILENAME)
+        ResourceKey(old_folder / INFO_REHU_FILENAME), ResourceKey(new_folder / INFO_REHU_FILENAME)
     )
 
     assert recent_files.newest_first() == [new_folder]
@@ -1802,7 +1776,7 @@ def test_a_file_scoped_rename_replaces_the_archive_recorded_in_recents(qtbot: Qt
     recent_files.record(old_archive)
 
     window._MainWindow__documents_dock.document_key_changed.emit(  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-        LocalKey(Path("foo.rehu").resolve()), LocalKey(Path("bar.rehu").resolve())
+        ResourceKey(Path("foo.rehu").resolve()), ResourceKey(Path("bar.rehu").resolve())
     )
 
     assert recent_files.newest_first() == [Path("bar.zip").resolve()]
@@ -1828,7 +1802,7 @@ def test_a_rename_corrects_every_recents_entry_the_same_resource_holds(qtbot: Qt
     recent_files.record(Path("foo.zip").resolve())
 
     window._MainWindow__documents_dock.document_key_changed.emit(  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-        LocalKey(Path("foo.rehu").resolve()), LocalKey(Path("bar.rehu").resolve())
+        ResourceKey(Path("foo.rehu").resolve()), ResourceKey(Path("bar.rehu").resolve())
     )
 
     assert recent_files.newest_first() == [Path("bar.zip").resolve(), unrelated, Path("bar.rehu").resolve()]
@@ -1852,32 +1826,8 @@ def test_a_document_gaining_its_first_path_leaves_recents_alone(qtbot: QtBot) ->
     recent_files.record(recorded)
     documents_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
-    documents_dock.document_key_changed.emit(None, LocalKey(Path("first.rehu").resolve()))
-    documents_dock.document_key_changed.emit(LocalKey(recorded), None)
-
-    assert recent_files.newest_first() == [recorded]
-
-
-def test_a_move_to_or_from_a_nodes_record_leaves_recents_alone(qtbot: QtBot) -> None:
-    """``Open recents`` keeps paths, so a move with a node's key on either side is not followed there: a path cannot
-    stand for a record another node owns, and swapping a local entry for one would record a path that is no file here.
-
-    **Test steps:**
-
-    * record one path
-    * raise ``document_key_changed`` from its key to a node key, then from a node key to its key
-    * verify the recorded path is still the only entry
-    """
-    window = MainWindow()
-    qtbot.addWidget(window)
-    recorded = Path("recorded.rehu").resolve()
-    node_key = NodeKey("node", uuid4(), "recorded.rehu")
-    recent_files = window._MainWindow__recent_files  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    recent_files.record(recorded)
-    documents_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-
-    documents_dock.document_key_changed.emit(LocalKey(recorded), node_key)
-    documents_dock.document_key_changed.emit(node_key, LocalKey(Path("elsewhere.rehu").resolve()))
+    documents_dock.document_key_changed.emit(None, ResourceKey(Path("first.rehu").resolve()))
+    documents_dock.document_key_changed.emit(ResourceKey(recorded), None)
 
     assert recent_files.newest_first() == [recorded]
 
@@ -1896,8 +1846,8 @@ def test_a_focused_documents_path_change_updates_the_window_title(mocker: Mocker
     qtbot.addWidget(window)
     base_title = window.windowTitle()
     documents_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    old_key = LocalKey(Path("old_name/info.rehu").resolve())
-    new_key = LocalKey(Path("new_name/info.rehu").resolve())
+    old_key = ResourceKey(Path("old_name/info.rehu").resolve())
+    new_key = ResourceKey(Path("new_name/info.rehu").resolve())
     focused_widget = mocker.MagicMock(model=mocker.MagicMock(label="new_name/", key=new_key))
     mocker.patch.object(documents_dock, "focused_document_widget", return_value=focused_widget)
 
@@ -1920,12 +1870,14 @@ def test_an_unfocused_documents_path_change_leaves_the_window_title_alone(mocker
     qtbot.addWidget(window)
     base_title = window.windowTitle()
     documents_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    focused_key = LocalKey(Path("focused/info.rehu").resolve())
+    focused_key = ResourceKey(Path("focused/info.rehu").resolve())
     focused_widget = mocker.MagicMock(model=mocker.MagicMock(label="focused/", key=focused_key))
     mocker.patch.object(documents_dock, "focused_document_widget", return_value=focused_widget)
     window._MainWindow__on_document_focus_changed(focused_widget)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
-    documents_dock.document_key_changed.emit(LocalKey(Path("old.rehu").resolve()), LocalKey(Path("new.rehu").resolve()))
+    documents_dock.document_key_changed.emit(
+        ResourceKey(Path("old.rehu").resolve()), ResourceKey(Path("new.rehu").resolve())
+    )
 
     assert window.windowTitle() == f"focused/ - {base_title}"
 
@@ -3209,12 +3161,12 @@ def test_a_promoted_preview_that_failed_to_load_stays_out_of_recents(mocker: Moc
 
 
 def test_a_promotion_carrying_anything_else_records_nothing(qtbot: QtBot) -> None:
-    """The promotion relay is object-typed; anything but a local key is ignored -- a string or a bare path, which no
-    in-tree emitter sends, and a node's key, which ``Open recents`` cannot keep as a path.
+    """The promotion relay is object-typed; anything but a key is ignored -- a string or a bare path, which no in-tree
+    emitter sends, and ``None``, which a document with no location sends.
 
     **Test steps:**
 
-    * emit ``preview_promoted`` with a string, a path and a node key
+    * emit ``preview_promoted`` with a string, a path and ``None``
     * verify ``Open recents`` stays empty
     """
     window = MainWindow()
@@ -3223,7 +3175,7 @@ def test_a_promotion_carrying_anything_else_records_nothing(qtbot: QtBot) -> Non
 
     docs_dock.preview_promoted.emit("a.rehu")
     docs_dock.preview_promoted.emit(Path("a.rehu").resolve())
-    docs_dock.preview_promoted.emit(NodeKey("node", uuid4(), "a.rehu"))
+    docs_dock.preview_promoted.emit(None)
 
     recent_files = window._MainWindow__recent_files  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     assert recent_files.newest_first() == []
@@ -3294,7 +3246,7 @@ def selecting_window(mocker: MockerFixture, monkeypatch: MonkeyPatch, qtbot: QtB
     qtbot.addWidget(window)
     catalog = window._MainWindow__root_catalog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     mocker.patch.object(
-        catalog, "resource_key", side_effect=lambda _root_id, relative: LocalKey(SELECTED_ROOT / relative)
+        catalog, "resource_key", side_effect=lambda _root_id, relative: ResourceKey(SELECTED_ROOT / relative)
     )
     return window
 
@@ -3582,46 +3534,19 @@ def test_a_selected_local_resource_is_previewed_by_the_key_its_resolved_path_has
 
     **Test steps:**
 
-    * spy on the window's access router, with the Documents dock's preview mocked
-    * show a local key's selection in the preview
-    * verify the router was asked for the resolved path's key and the preview got that key
+    * mock the Documents dock's preview
+    * show a key's selection in the preview
+    * verify the preview got the resolved path's key
     """
     window = MainWindow()
     qtbot.addWidget(window)
-    access = window._MainWindow__access  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    key_for_path = mocker.spy(access, "key_for_path")
     docs_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     show_in_preview = mocker.patch.object(docs_dock, "show_in_preview")
     selected = Path.cwd() / "fake" / "selected.rehu"
 
-    window._MainWindow__show_selection_in_preview(LocalKey(selected))  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    window._MainWindow__show_selection_in_preview(ResourceKey(selected))  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
-    key_for_path.assert_called_once_with(selected.resolve())
-    show_in_preview.assert_called_once_with(LocalKey(selected.resolve()))
-
-
-def test_a_selected_node_resource_is_previewed_by_its_own_key(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A node's key has no local path to resolve, so a selection of one reaches the preview as it came -- the Documents
-    dock is what answers that it cannot be shown yet.
-
-    **Test steps:**
-
-    * spy on the window's access router, with the Documents dock's preview mocked
-    * show a node key's selection in the preview
-    * verify the router was not asked and the preview got the very key
-    """
-    window = MainWindow()
-    qtbot.addWidget(window)
-    access = window._MainWindow__access  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    key_for_path = mocker.spy(access, "key_for_path")
-    docs_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    show_in_preview = mocker.patch.object(docs_dock, "show_in_preview")
-    node_key = NodeKey("node", uuid4(), "a/info.rehu")
-
-    window._MainWindow__show_selection_in_preview(node_key)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-
-    key_for_path.assert_not_called()
-    show_in_preview.assert_called_once_with(node_key)
+    show_in_preview.assert_called_once_with(ResourceKey(selected.resolve()))
 
 
 # endregion
@@ -5634,47 +5559,50 @@ def test_a_closed_window_hears_no_more_renames(mocker: MockerFixture, qtbot: QtB
 
 
 def test_a_closed_window_stops_adapting_the_change_feed(qtbot: QtBot) -> None:
-    """The local change feed belongs to the access router, not the window's announcements, so closing detaches them
-    from it -- a change published afterwards must not call into announcements about to be deleted.
+    """The change feed outlives the window's announcements, so closing detaches them from it -- a change published
+    afterwards must not call into announcements about to be deleted.
 
     **Test steps:**
 
     * construct a real ``MainWindow``, then close it
-    * publish a change on the local feed the window's announcements adapted
+    * publish a change on the feed the window's announcements adapted
     * verify the announcements did not relay it
     """
     window = MainWindow()
     qtbot.addWidget(window)
-    access = window._MainWindow__access  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     events = window._MainWindow__resource_events  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    feed = events.changes
     window.close()
 
     with qtbot.assertNotEmitted(events.changed):
-        access.local.changes.publish(Changed((LocalKey(Path.cwd() / "fake" / "changed.rehu"),)))
+        feed.publish(Changed((ResourceKey(Path.cwd() / "fake" / "changed.rehu"),)))
 
 
-def test_the_window_reaches_resources_through_one_access_router(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """The Documents dock turns the session's paths into keys, so it is handed the window's own router -- one way
-    every path that enters the app becomes a key -- and the window's announcements adapt that router's local feed.
+def test_the_window_reads_and_writes_through_one_records_and_one_catalog(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Every holder of records and of the catalog cache is handed the window's own, and the window's announcements
+    adapt the feed those records write on, so a save anywhere is heard app-wide.
 
     **Test steps:**
 
-    * spy on ``DocumentsDock`` construction and construct a real ``MainWindow``
-    * verify the dock got the window's ``AccessRouter`` as ``access``
-    * publish a change on its local feed and verify the window's announcements relay it
+    * spy on the registry's, the Root Catalog's and the Roots panel's construction, and construct a real ``MainWindow``
+    * verify the registry and the panel got the window's ``Records``, and the Root Catalog its ``Catalog``
+    * verify the records write on the feed the window's announcements adapt
     """
-    dock_class = mocker.spy(main_window, "DocumentsDock")
+    registry_class = mocker.spy(main_window, "DocumentRegistry")
+    catalog_class = mocker.spy(main_window, "RootCatalog")
+    panel_class = mocker.spy(main_window, "RootsPanel")
     window = MainWindow()
     qtbot.addWidget(window)
-    access = window._MainWindow__access  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    records = window._MainWindow__records  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    catalog = window._MainWindow__catalog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     events = window._MainWindow__resource_events  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    key = LocalKey(Path.cwd() / "fake" / "changed.rehu")
 
-    assert isinstance(access, AccessRouter)
-    assert dock_class.call_args.kwargs["access"] is access
-    with qtbot.waitSignal(events.changed) as changed:
-        access.local.changes.publish(Changed((key,)))
-    assert changed.args == [(key,)]
+    assert isinstance(records, Records)
+    assert isinstance(catalog, Catalog)
+    assert registry_class.call_args.kwargs["records"] is records
+    assert catalog_class.call_args.kwargs["catalog"] is catalog
+    assert panel_class.call_args.kwargs["records"] is records
+    assert records._Records__changes is events.changes  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
 
 def test_registers_the_tasks_page(qtbot: QtBot) -> None:
@@ -7421,7 +7349,7 @@ def test_a_resource_double_clicked_in_the_rehuco_dock_opens_through_open_path(
     **Test steps:**
 
     * spy on ``open_path``
-    * emit the dock's ``open_requested`` with a local key
+    * emit the dock's ``open_requested`` with a key
     * verify ``open_path`` got its path
     """
     window = MainWindow()
@@ -7429,29 +7357,9 @@ def test_a_resource_double_clicked_in_the_rehuco_dock_opens_through_open_path(
     open_path = mocker.patch.object(MainWindow, "open_path")
     path = Path.cwd() / "fake" / "tutorials" / "info.rehu"
 
-    window._MainWindow__browsers_dock.open_requested.emit(LocalKey(path))  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    window._MainWindow__browsers_dock.open_requested.emit(ResourceKey(path))  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
     open_path.assert_called_once_with(path)
-
-
-def test_a_nodes_resource_double_clicked_in_the_rehuco_dock_is_unreachable(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A browser row another node owns has no path for the ordinary route, and no node is reached yet (#421): the open
-    says so instead of opening something else.
-
-    **Test steps:**
-
-    * spy on ``open_path``
-    * open a node key the way the browser's request does
-    * verify it raised ``NodeUnreachable`` and ``open_path`` was not called
-    """
-    window = MainWindow()
-    qtbot.addWidget(window)
-    open_path = mocker.patch.object(MainWindow, "open_path")
-
-    with raises(NodeUnreachable):
-        window._MainWindow__open_key(NodeKey("node", uuid4(), "tutorials/info.rehu"))  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-
-    open_path.assert_not_called()
 
 
 def test_the_rehuco_docks_associated_rehu_requests_open_or_start_the_resource(

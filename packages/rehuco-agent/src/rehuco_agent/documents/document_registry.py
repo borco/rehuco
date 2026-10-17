@@ -8,15 +8,7 @@ from typing import Final, cast
 from borco_core.logging import LogScope
 from PySide6.QtCore import QObject
 from rehuco_core import RenameCoordinator
-from rehuco_core.access import (
-    AccessRouter,
-    KeyRelocation,
-    LoadedRecord,
-    LocalAccess,
-    LocalKey,
-    NodeUnreachable,
-    ResourceKey,
-)
+from rehuco_core.access import KeyRelocation, LoadedRecord, Records, ResourceKey
 
 from ..resource_events import ResourceEvents
 from ..settings.identity_settings import shared_identity_settings
@@ -35,9 +27,9 @@ class DocumentRegistry(QObject):
     belongs to that last release (:meth:`release_discards_edits`): closing one of several views of a dirty
     document loses nothing.
 
-    Models are held by :attr:`~RehuDocumentModel.key` ([[nodes#access-seam]]), whichever machine holds the record.
-    Keys follow the model: a :meth:`~RehuDocumentModel.convert` or a completed rename moves the model's entry to its
-    new key, so a later :meth:`find` of the new key reaches the same model.
+    Models are held by :attr:`~RehuDocumentModel.key` ([[nodes#access-seam]]). Keys follow the model: a
+    :meth:`~RehuDocumentModel.convert` or a completed rename moves the model's entry to its new key, so a later
+    :meth:`find` of the new key reaches the same model.
 
     **Every held model hears every rename** ([[mounts-and-storage#out-of-band]], #376): each announced
     relocation is handed to every model (:meth:`~RehuDocumentModel.relocate`), so a record nested under a
@@ -51,9 +43,9 @@ class DocumentRegistry(QObject):
         app's one coordinator, see ``DocumentsDock``.
     :param resource_events: the app's change announcements; ``None`` builds a private one, for a registry with
         no window around it.
-    :param access: what every model's record is read and saved through ([[nodes#access-seam]], #416); its local
-        change feed must be the one ``resource_events`` adapts, so a save is announced app-wide. ``None`` builds one
-        over this machine's files announcing on ``resource_events``.
+    :param records: what every model's record is read and saved through ([[nodes#access-seam]], #416); its change
+        feed must be the one ``resource_events`` adapts, so a save is announced app-wide. ``None`` builds one
+        announcing on ``resource_events``.
     """
 
     def __init__(
@@ -61,12 +53,12 @@ class DocumentRegistry(QObject):
         parent: QObject | None = None,
         rename_coordinator: RenameCoordinator | None = None,
         resource_events: ResourceEvents | None = None,
-        access: AccessRouter | None = None,
+        records: Records | None = None,
     ) -> None:
         super().__init__(parent)
         self.__rename_coordinator: Final = rename_coordinator
         self.__events: Final = resource_events if resource_events is not None else ResourceEvents(parent=self)
-        self.__access: Final = access if access is not None else AccessRouter(LocalAccess(self.__events.changes))
+        self.__records: Final = records if records is not None else Records(self.__events.changes)
         self.__events.moved.connect(self.__on_moved)
         self.__models: Final[dict[ResourceKey, RehuDocumentModel]] = {}
         self.__holders: Final[dict[RehuDocumentModel, int]] = {}
@@ -116,8 +108,6 @@ class DocumentRegistry(QObject):
             ``.tc`` (:meth:`RehuDocument.reload`, what the deferred read runs through, re-reads only a
             ``.rehu``).
         :returns: the held model; :attr:`~RehuDocumentModel.pending` tells whether it is still unread.
-        :raises NodeUnreachable: for a node's record, until a remote implementation reaches one (#421); a new
-            document and an unread placeholder are bound to a local path meanwhile.
         """
         model = self.__models.get(key)
         if model is not None:
@@ -126,8 +116,6 @@ class DocumentRegistry(QObject):
                 model.load_pending()
             return model
 
-        if not isinstance(key, LocalKey):
-            raise NodeUnreachable(key)
         model = self.__build(key, new=new, lazy=lazy and not new and key.path.suffix.lower() != ".tc")
         model.setParent(self)
         self.__models[key] = model  # pylint: disable=unsupported-assignment-operation
@@ -182,7 +170,7 @@ class DocumentRegistry(QObject):
         :param signatures: each file's path on this machine, with its modification time in nanoseconds and its size.
         """
         for path, (mtime_ns, size) in signatures.items():
-            model = self.__models.get(LocalKey(path))
+            model = self.__models.get(ResourceKey(path))
             if model is not None:
                 model.note_file_signature(mtime_ns, size)
 
@@ -231,7 +219,7 @@ class DocumentRegistry(QObject):
         if key is not None and self.__models.get(key) is model:
             del self.__models[key]  # pylint: disable=unsupported-delete-operation
 
-    def __build(self, key: LocalKey, *, new: bool, lazy: bool) -> RehuDocumentModel:
+    def __build(self, key: ResourceKey, *, new: bool, lazy: bool) -> RehuDocumentModel:
         """Build the model for ``key`` -- see :meth:`acquire` for ``new`` and ``lazy``.
 
         :param key: the document's key.
@@ -243,31 +231,31 @@ class DocumentRegistry(QObject):
             return RehuDocumentModel.create_new(
                 key.path,
                 username=shared_identity_settings().current_username,
-                access=self.__access,
+                records=self.__records,
                 rename_coordinator=self.__rename_coordinator,
             )
         if lazy:
             return RehuDocumentModel.create_pending(
                 key.path,
                 username=shared_identity_settings().current_username,
-                access=self.__access,
+                records=self.__records,
                 rename_coordinator=self.__rename_coordinator,
             )
-        record = load_record(self.__access, key)
+        record = load_record(self.__records, key)
         return RehuDocumentModel(
             record.document,
-            access=self.__access,
+            records=self.__records,
             version=record.version,
             signature=record.signature,
             rename_coordinator=self.__rename_coordinator,
         )
 
 
-def load_record(access: AccessRouter, key: ResourceKey) -> LoadedRecord:
+def load_record(records: Records, key: ResourceKey) -> LoadedRecord:
     """Read ``key``, or an empty locked stub standing in for it when it cannot be read -- the one way a record is
     read for a model, whether a holder is opening it or a model is loading it again (#381, #416).
 
-    The record is read through ``access`` ([[nodes#access-seam]]), which routes a ``.tc`` to its own loader and draws
+    The record is read through ``records`` ([[nodes#access-seam]]), which routes a ``.tc`` to its own loader and draws
     the missing-vs-unparseable line once, so the holder gets a locked, never-savable stub instead of an exception
     ([[data-model#write-integrity]]). Each kind is handed the identity that matches its provenance
     (:func:`~rehuco_agent.settings.identity_settings.shared_identity_settings`, #109), read here at each read -- the
@@ -276,20 +264,16 @@ def load_record(access: AccessRouter, key: ResourceKey) -> LoadedRecord:
     the **unknown** user, since a flag carried in from the file was not set by this install's identity; a ``.rehu``
     (whose per-user writes this UI makes) is opened under the **current** user.
 
-    **The read is logged, under this resource's own scope** (#200); a failed read is logged by the access, as an
+    **The read is logged, under this resource's own scope** (#200); a failed read is logged by ``records``, as an
     error: there is no document -- the stub stands in for one.
 
-    :param access: what the record is reached through.
+    :param records: what the record is read through.
     :param key: the record (a ``.rehu``, or a legacy ``.tc``).
     :returns: the record, or a locked stub standing in for it.
-    :raises NodeUnreachable: for a node's record no implementation reaches yet.
     """
     settings = shared_identity_settings()
-    path = key.path if isinstance(key, LocalKey) else None
-    with LogScope.open(path):
-        record = access.for_key(key).records.load(
-            key, username=settings.current_username, unknown_username=settings.unknown_username
-        )
+    with LogScope.open(key.path):
+        record = records.load(key, username=settings.current_username, unknown_username=settings.unknown_username)
         if not record.document.load_failed:
             LOG.info("Read %s as %s", key, record.document.type or "an untyped resource")
         return record

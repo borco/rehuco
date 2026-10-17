@@ -21,7 +21,7 @@ from rehuco_agent.scraping.scraper_executor import ScraperExecutor
 from rehuco_agent.scraping.sites.artstation import ArtStation
 from rehuco_agent.scraping.url_drop import UrlDrop
 from rehuco_core import LockReason, LockReasonKind, RehuDocument
-from rehuco_core.access import LoadedRecord, LocalKey
+from rehuco_core.access import LoadedRecord, ResourceKey
 
 PATH: Final = Path.cwd() / "fake" / "library" / "sculpting" / "info.rehu"
 URL: Final = "https://example.com/page"
@@ -138,7 +138,7 @@ def document(resource_type: str = "Tutorial") -> RehuDocument:
 def model(resource_type: str = "Tutorial") -> RehuDocumentModel:
     """A view-model over a fresh document at :data:`PATH`."""
     result = RehuDocumentModel(document(resource_type))
-    result.key = LocalKey(PATH)
+    result.key = ResourceKey(PATH)
     result.path = PATH
     return result
 
@@ -147,7 +147,7 @@ def sourceless_model(resource_type: str = "Tutorial") -> RehuDocumentModel:
     """A view-model over a fresh document with no source at all, at :data:`PATH` -- the case a first
     scrape lands on."""
     result = RehuDocumentModel(RehuDocument({"type": resource_type}))
-    result.key = LocalKey(PATH)
+    result.key = ResourceKey(PATH)
     result.path = PATH
     return result
 

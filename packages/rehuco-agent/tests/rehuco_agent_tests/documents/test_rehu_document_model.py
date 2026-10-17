@@ -18,7 +18,6 @@ from functools import partial
 from pathlib import Path
 from typing import Final
 from unittest.mock import MagicMock
-from uuid import UUID
 
 import pytest
 import shiboken6
@@ -52,16 +51,12 @@ from rehuco_core import (
     visible_learning_paths,
 )
 from rehuco_core.access import (
-    AccessRouter,
     Changed,
     ChangeEvent,
     ChangeFeed,
     KeyRelocation,
     LoadedRecord,
-    LocalAccess,
-    LocalKey,
-    LocalRecords,
-    NodeKey,
+    Records,
     ResourceKey,
 )
 
@@ -73,7 +68,7 @@ platform, as a document's key needs."""
 
 TUTORIALS: Final = Path(Path.cwd().anchor) / "tutorials"
 """The folder the rename and location tests' documents live in, never created; rooted at the working directory's
-anchor so it is absolute on every platform (a local key needs that) and keeps the short names the tests read by."""
+anchor so it is absolute on every platform (a resource key needs that) and keeps the short names the tests read by."""
 
 
 def lister_of(scanner: RehuDocumentImageScanner) -> object:
@@ -138,7 +133,7 @@ def reloads_as(mocker: MockerFixture, document: RehuDocument, change: Callable[[
     :returns: the stand-in reader, to assert on what was read.
     """
 
-    def read(_access: AccessRouter, _key: ResourceKey) -> LoadedRecord:
+    def read(_records: Records, _key: ResourceKey) -> LoadedRecord:
         if change is not None:
             change()
         return LoadedRecord(document, None, tuple(document.lock_reasons), None)
@@ -155,20 +150,20 @@ def converts_to(mocker: MockerFixture, document: RehuDocument) -> MagicMock:
     :returns: the stand-in conversion, to assert on what it was asked.
     """
     return mocker.patch.object(
-        LocalRecords, "convert", return_value=LoadedRecord(document, None, tuple(document.lock_reasons), None)
+        Records, "convert", return_value=LoadedRecord(document, None, tuple(document.lock_reasons), None)
     )
 
 
-def listening_access() -> tuple[AccessRouter, list[ChangeEvent]]:
-    """An access over this machine's files announcing on a feed this test hears -- where a save or a conversion is
-    announced since #416, rather than on the model's own ``files_changed``.
+def listening_records() -> tuple[Records, list[ChangeEvent]]:
+    """Records announcing on a feed this test hears -- where a save or a conversion is announced since #416, rather
+    than on the model's own ``files_changed``.
 
-    :returns: the access, and the list every event on its change feed is appended to.
+    :returns: the records, and the list every event on their change feed is appended to.
     """
     feed = ChangeFeed()
     heard: list[ChangeEvent] = []
     feed.add_listener(heard.append)
-    return AccessRouter(LocalAccess(feed)), heard
+    return Records(feed), heard
 
 
 @fixture(name="on_disk")
@@ -1415,7 +1410,7 @@ def test_revert_reseeds_from_a_reloaded_document_and_clears_dirty(mocker: Mocker
     model.revert()
 
     read.assert_called_once()
-    assert read.call_args.args[1] == LocalKey(ON_DISK_PATH)
+    assert read.call_args.args[1] == ResourceKey(ON_DISK_PATH)
     assert model.title == "Reloaded Title"
     assert model.publisher == "Reloaded Publisher"
     assert model.url == "https://reloaded.example"
@@ -1659,7 +1654,7 @@ def test_convert_failure_does_not_emit_reloaded(mocker: MockerFixture) -> None:
     * verify nothing fired
     """
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE / "info.tc", legacy_tc=True))
-    mocker.patch.object(LocalRecords, "convert", side_effect=FileExistsError("already converted"))
+    mocker.patch.object(Records, "convert", side_effect=FileExistsError("already converted"))
     fired: list[None] = []
     model.reloaded.connect(lambda: fired.append(None))
 
@@ -1692,7 +1687,7 @@ def test_convert_passes_keep_backups_and_overwrite_through(mocker: MockerFixture
     model.convert(keep_backups=False, overwrite=True)
 
     mock_convert.assert_called_once_with(
-        LocalKey(tc_path),
+        ResourceKey(tc_path),
         keep_backups=False,
         overwrite=True,
         username="alice",
@@ -1734,7 +1729,7 @@ def test_convert_raises_for_a_non_legacy_document(mocker: MockerFixture, model: 
     * call ``model.convert()`` on the sample (non-legacy) model
     * verify ``ValueError`` and that the records' ``convert`` was never called
     """
-    mock_convert = mocker.patch.object(LocalRecords, "convert")
+    mock_convert = mocker.patch.object(Records, "convert")
 
     with raises(ValueError, match="legacy .tc"):
         model.convert(keep_backups=True)
@@ -1752,7 +1747,7 @@ def test_convert_without_a_path_raises(mocker: MockerFixture) -> None:
     * verify ``ValueError``
     """
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, legacy_tc=True))
-    mock_convert = mocker.patch.object(LocalRecords, "convert")
+    mock_convert = mocker.patch.object(Records, "convert")
 
     with raises(ValueError, match="no path to convert"):
         model.convert(keep_backups=True)
@@ -1773,7 +1768,7 @@ def test_convert_failure_leaves_the_model_completely_untouched(mocker: MockerFix
     """
     tc_document = RehuDocument({"type": "Tutorial"}, FAKE / "info.tc", legacy_tc=True)
     model = RehuDocumentModel(tc_document)
-    mocker.patch.object(LocalRecords, "convert", side_effect=FileExistsError("stale backup"))
+    mocker.patch.object(Records, "convert", side_effect=FileExistsError("stale backup"))
 
     with raises(FileExistsError):
         model.convert(keep_backups=True)
@@ -2109,27 +2104,25 @@ def test_label_uses_the_bare_filename_for_a_non_info_rehu() -> None:
 
 def test_key_label_uses_the_parent_directory_name_for_info_rehu() -> None:
     """`key_label` -- the shared rule `label` and the recents menu both use (#117) -- labels an
-    ``info.rehu`` record by its parent directory's name, trailing-slashed, whichever machine holds it (#414).
+    ``info.rehu`` record by its parent directory's name, trailing-slashed (#414).
 
     **Test steps:**
 
-    * call ``key_label`` on a local and on a node key to an ``info.rehu``
-    * verify each returns the parent directory's name plus a trailing slash
+    * call ``key_label`` on a key to an ``info.rehu``
+    * verify it returns the parent directory's name plus a trailing slash
     """
-    assert key_label(LocalKey(FAKE / "sculpting" / "info.rehu")) == "sculpting/"
-    assert key_label(NodeKey("node", UUID(int=1), "sculpting/info.rehu")) == "sculpting/"
+    assert key_label(ResourceKey(FAKE / "sculpting" / "info.rehu")) == "sculpting/"
 
 
 def test_key_label_uses_the_bare_filename_for_a_non_info_rehu() -> None:
-    """`key_label` labels a non-``info.rehu`` record by its own bare filename, whichever machine holds it (#414).
+    """`key_label` labels a non-``info.rehu`` record by its own bare filename (#414).
 
     **Test steps:**
 
-    * call ``key_label`` on a local and on a node key to a non-``info.rehu`` record
-    * verify each returns that file's bare name
+    * call ``key_label`` on a key to a non-``info.rehu`` record
+    * verify it returns that file's bare name
     """
-    assert key_label(LocalKey(FAKE / "sculpting" / "sculpting.rehu")) == "sculpting.rehu"
-    assert key_label(NodeKey("node", UUID(int=1), "sculpting/sculpting.rehu")) == "sculpting.rehu"
+    assert key_label(ResourceKey(FAKE / "sculpting" / "sculpting.rehu")) == "sculpting.rehu"
 
 
 def test_key_label_names_the_directory_for_a_legacy_info_tc() -> None:
@@ -2144,8 +2137,8 @@ def test_key_label_names_the_directory_for_a_legacy_info_tc() -> None:
     * call ``key_label`` on an ``info.tc`` key and on a named ``.tc``
     * verify the first names its folder and the second its own file
     """
-    assert key_label(LocalKey(FAKE / "sculpting" / "info.tc")) == "sculpting/"
-    assert key_label(LocalKey(FAKE / "sculpting" / "sculpting.tc")) == "sculpting.tc"
+    assert key_label(ResourceKey(FAKE / "sculpting" / "info.tc")) == "sculpting/"
+    assert key_label(ResourceKey(FAKE / "sculpting" / "sculpting.tc")) == "sculpting.tc"
 
 
 def test_bind_resolves_the_current_value_and_a_stable_changed_signal(model: RehuDocumentModel) -> None:
@@ -2636,23 +2629,23 @@ def test_saving_marks_saved_on_disk(tmp_path: Path) -> None:
 @mark.usefixtures("real_path_stat")
 def test_a_save_announces_the_record_it_wrote(tmp_path: Path) -> None:
     """Every save says what it wrote, so every listing of the folder and the catalog follow it (#376) -- the
-    first save of a new document included. The access announces it on its change feed (#416), so the model does
+    first save of a new document included. The records announce it on their change feed (#416), so the model does
     not say it a second time.
 
     **Test steps:**
 
-    * build a not-yet-saved model under ``tmp_path`` over an access whose feed is heard, and save it
+    * build a not-yet-saved model under ``tmp_path`` over records whose feed is heard, and save it
     * verify the feed carried the record's key, and ``files_changed`` nothing
     """
     path = tmp_path / "info.rehu"
-    access, heard = listening_access()
-    model = RehuDocumentModel.create_new(path, access=access)
+    records, heard = listening_records()
+    model = RehuDocumentModel.create_new(path, records=records)
     written: list[object] = []
     model.files_changed.connect(written.append)
 
     model.save()
 
-    assert heard == [Changed((LocalKey(path),))]
+    assert heard == [Changed((ResourceKey(path),))]
     assert not written
 
 
@@ -2663,7 +2656,7 @@ def test_the_first_save_takes_the_checksums_the_new_record_covers(mocker: Mocker
 
     **Test steps:**
 
-    * build a not-yet-saved ``foo.rehu`` model under ``tmp_path`` through a coordinator, over an access whose feed
+    * build a not-yet-saved ``foo.rehu`` model under ``tmp_path`` through a coordinator, over records whose feed
       is heard, with the move mocked to report one
     * save it
     * verify the move was asked for that record, through that coordinator, the feed carried the record and
@@ -2671,8 +2664,8 @@ def test_the_first_save_takes_the_checksums_the_new_record_covers(mocker: Mocker
     """
     path = tmp_path / "foo.rehu"
     coordinator = RenameCoordinator()
-    access, heard = listening_access()
-    model = RehuDocumentModel.create_new(path, access=access, rename_coordinator=coordinator)
+    records, heard = listening_records()
+    model = RehuDocumentModel.create_new(path, records=records, rename_coordinator=coordinator)
     source = tmp_path / "info.checksum"
     take = mocker.patch(
         "rehuco_agent.documents.rehu_document_model.take_enclosing_claims",
@@ -2686,8 +2679,8 @@ def test_the_first_save_takes_the_checksums_the_new_record_covers(mocker: Mocker
     take.assert_called_once()
     assert take.call_args.args == (path,)
     assert take.call_args.kwargs["coordinator"] is coordinator
-    assert heard == [Changed((LocalKey(path),))]
-    assert written == [(LocalKey(tmp_path / "foo.checksum"), LocalKey(source))]
+    assert heard == [Changed((ResourceKey(path),))]
+    assert written == [(ResourceKey(tmp_path / "foo.checksum"), ResourceKey(source))]
 
 
 @mark.usefixtures("real_path_stat")
@@ -2696,13 +2689,13 @@ def test_only_the_first_save_takes_checksums(mocker: MockerFixture, tmp_path: Pa
 
     **Test steps:**
 
-    * build a not-yet-saved model under ``tmp_path`` over an access whose feed is heard, with the move mocked to
+    * build a not-yet-saved model under ``tmp_path`` over records whose feed is heard, with the move mocked to
       find nothing, and save it twice
     * verify the move was asked for once, and each save announced only the record
     """
     path = tmp_path / "foo.rehu"
-    access, heard = listening_access()
-    model = RehuDocumentModel.create_new(path, access=access)
+    records, heard = listening_records()
+    model = RehuDocumentModel.create_new(path, records=records)
     take = mocker.patch("rehuco_agent.documents.rehu_document_model.take_enclosing_claims", return_value=None)
     written: list[object] = []
     model.files_changed.connect(written.append)
@@ -2711,32 +2704,32 @@ def test_only_the_first_save_takes_checksums(mocker: MockerFixture, tmp_path: Pa
     model.save()
 
     take.assert_called_once()
-    assert heard == [Changed((LocalKey(path),)), Changed((LocalKey(path),))]
+    assert heard == [Changed((ResourceKey(path),)), Changed((ResourceKey(path),))]
     assert not written
 
 
 @mark.usefixtures("real_path_stat")
 def test_a_convert_announces_the_new_record_and_the_tc_it_replaced(mocker: MockerFixture, tmp_path: Path) -> None:
     """A conversion writes a ``.rehu`` and retires the ``.tc``: the new record first, so the catalog reads it
-    into the ``.tc``'s row before finding the ``.tc`` gone (#376). The access announces both on its change feed
+    into the ``.tc``'s row before finding the ``.tc`` gone (#376). The records announce both on their change feed
     (#416), so the model does not say them a second time.
 
     **Test steps:**
 
-    * write a legacy ``.tc`` under ``tmp_path`` and build a model over it through an access whose feed is heard
+    * write a legacy ``.tc`` under ``tmp_path`` and build a model over it through records whose feed is heard
     * convert it
     * verify the feed carried the ``.rehu`` then the ``.tc``, and ``files_changed`` nothing
     """
     tc_path = tmp_path / "info.tc"
     tc_path.write_text("type: Tutorial\n", encoding="utf-8")
-    access, heard = listening_access()
-    model = RehuDocumentModel(load_tc(tc_path), access=access)
+    records, heard = listening_records()
+    model = RehuDocumentModel(load_tc(tc_path), records=records)
     written: list[object] = []
     model.files_changed.connect(written.append)
 
     model.convert(keep_backups=True, deleter=mocker.Mock())
 
-    assert heard == [Changed((LocalKey(tmp_path / "info.rehu"), LocalKey(tc_path)))]
+    assert heard == [Changed((ResourceKey(tmp_path / "info.rehu"), ResourceKey(tc_path)))]
     assert not written
 
 
@@ -2761,7 +2754,7 @@ def test_a_relocation_moving_the_record_re_points_the_document_once() -> None:
     assert model.relocate(relocation) is True
     assert model.relocate(relocation) is False
 
-    assert model.key == LocalKey(renamed / "info.rehu")
+    assert model.key == ResourceKey(renamed / "info.rehu")
     assert paths == [renamed / "info.rehu"]
     assert model.location == (renamed / "info.rehu").as_posix()
     assert model.document.path == renamed / "info.rehu"
@@ -2786,28 +2779,16 @@ def test_a_relocation_elsewhere_leaves_the_document_alone(model: RehuDocumentMod
     assert model.relocate(KeyRelocation.from_local(Relocation(((FAKE, FAKE.with_name("else")),)))) is False
 
 
-def test_only_a_local_record_follows_a_relocation(model: RehuDocumentModel) -> None:
-    """A record on another node's root follows that node's change journal, not a rename this machine announces;
-    and a local record carried onto a node's root is not a file this machine can re-point to (#414).
+def test_a_document_with_no_location_follows_no_relocation(model: RehuDocumentModel) -> None:
+    """A document with no file yet has nothing a rename could move (#414).
 
     **Test steps:**
 
-    * key the path-less fixture to a node's record, and relocate it by a rename of that record's folder
-    * relocate a located document by a rename whose destination is on a node's root
-    * verify neither moved
+    * relocate the path-less fixture by a rename of a folder
+    * verify it did not move and still has no key
     """
-    node_key = NodeKey("node", UUID(int=1), "sculpting/info.rehu")
-    model.key = node_key
-
-    assert model.relocate(KeyRelocation(((node_key.parent, node_key.parent.with_name("renamed")),))) is False
-    assert model.key == node_key
-
-    path = FAKE / "sculpting" / "info.rehu"
-    located = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, path))
-
-    assert located.relocate(KeyRelocation(((LocalKey(path.parent), node_key.parent),))) is False
-    assert located.key == LocalKey(path)
-    assert located.path == path
+    assert model.relocate(KeyRelocation.from_local(Relocation(((FAKE, FAKE.with_name("else")),)))) is False
+    assert model.key is None
 
 
 def test_the_key_follows_the_path_and_is_set_first() -> None:
@@ -2823,14 +2804,14 @@ def test_the_key_follows_the_path_and_is_set_first() -> None:
     assert RehuDocumentModel(RehuDocument({"type": "Tutorial"})).key is None
     path = FAKE / "sculpting" / "info.rehu"
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, path))
-    assert model.key == LocalKey(path)
+    assert model.key == ResourceKey(path)
     renamed = path.parent.with_name("modelling")
     keys_seen: list[object] = []
     model.path_changed.connect(lambda _path: keys_seen.append(model.key))  # type: ignore[attr-defined]
 
     model.relocate(KeyRelocation.from_local(Relocation(((path.parent, renamed),))))
 
-    assert keys_seen == [LocalKey(renamed / "info.rehu")]
+    assert keys_seen == [ResourceKey(renamed / "info.rehu")]
 
 
 @mark.parametrize("announce", ["files", "folder"])
@@ -2851,7 +2832,7 @@ def test_a_collaborators_write_is_announced_through_the_model(model: RehuDocumen
     else:
         model.announce_folder_changed(FAKE)
 
-    assert heard == [(LocalKey(FAKE / "info.checksum"),) if announce == "files" else LocalKey(FAKE)]
+    assert heard == [(ResourceKey(FAKE / "info.checksum"),) if announce == "files" else ResourceKey(FAKE)]
 
 
 def test_create_new_files_per_user_state_under_the_given_username() -> None:

@@ -1,8 +1,8 @@
-"""What changed under the resources an access implementation serves, announced without Qt (#413).
+"""What changed under the resources the app reaches, announced without Qt (#413).
 
-The Qt-free form of the agent's ``ResourceEvents`` ([[nodes#access-seam]]): a local implementation publishes every
-change it makes here, the agent adapts the feed to Qt signals, and a node will serve the same events as its change
-journal. Each event says *what* changed, never what to do about it -- every holder applies its own rule.
+The Qt-free form of the agent's ``ResourceEvents`` ([[nodes#access-seam]]): :class:`~rehuco_core.access.Records`
+publishes every write it makes here, and the agent adapts the feed to Qt signals. Each event says *what* changed, never
+what to do about it -- every holder applies its own rule.
 """
 
 import logging
@@ -50,9 +50,9 @@ class FolderChanged:
 
 
 @dataclass(frozen=True, slots=True)
-class Invalidated:
-    """Nothing held about a root can be trusted any more -- a change journal with a gap, or a refresh -- so every holder
-    reads it again.
+class RootStale:
+    """Nothing held about a root can be trusted any more -- its watch may have missed changes -- so every holder reads
+    it again. The file notifier is its first publisher (#511).
 
     :param root_id: the root's ``.rehuco`` id.
     """
@@ -60,7 +60,7 @@ class Invalidated:
     root_id: UUID
 
 
-type ChangeEvent = Moved | Changed | FolderChanged | Invalidated
+type ChangeEvent = Moved | Changed | FolderChanged | RootStale
 """One announcement on a :class:`ChangeFeed`."""
 
 

@@ -1,7 +1,7 @@
 """Sanity caps for parsing an untrusted ``.rehu``/``.tc`` payload ([[data-model#write-integrity]], #88).
 
-A ``.rehu`` is genuinely hostile-reachable -- double-click / file association, swarm sync, a received
-export -- so a well-formed-looking file must not be able to exhaust memory or wedge the app before its
+A ``.rehu`` is genuinely hostile-reachable -- double-click / file association, a shared folder, a
+received export -- so a well-formed-looking file must not be able to exhaust memory or wedge the app before its
 content is even read. Three checks, run in the order that is cheapest first:
 
 - :func:`oversized_file_reason` -- a byte cap against ``stat()``, checked **before** the file is read

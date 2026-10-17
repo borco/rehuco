@@ -1,4 +1,4 @@
-"""Tests for a document model saving through the access seam (#416): a read-merge-write that merges per-user fields
+"""Tests for a document model saving through its records (#416): a read-merge-write that merges per-user fields
 written meanwhile, and refuses a save over details changed on disk as a conflict the person resolves.
 
 Real records under ``tmp_path``: one model opens a record the way a holder does, and a second reading of the same file
@@ -21,7 +21,7 @@ from rehuco_core import (
     RehuDocument,
     record_differences,
 )
-from rehuco_core.access import AccessRouter, Changed, ChangeEvent, ChangeFeed, LocalAccess, LocalKey
+from rehuco_core.access import Changed, ChangeEvent, ChangeFeed, Records, ResourceKey
 
 pytestmark = mark.usefixtures("real_path_stat")
 
@@ -122,24 +122,24 @@ def fixture_feed() -> ChangeFeed:
 
 
 def opened(path: Path, feed: ChangeFeed) -> RehuDocumentModel:
-    """The model a holder builds for ``path``, read and saved through local access announcing on ``feed``.
+    """The model a holder builds for ``path``, read and saved through records announcing on ``feed``.
 
     :param path: the record.
-    :param feed: where the access announces its writes.
+    :param feed: where the records announce their writes.
     :returns: the model.
     """
-    access = AccessRouter(LocalAccess(feed))
-    record = access.local.records.load(
-        LocalKey(path), username=DEFAULT_CURRENT_USERNAME, unknown_username=DEFAULT_UNKNOWN_USERNAME
+    records = Records(feed)
+    record = records.load(
+        ResourceKey(path), username=DEFAULT_CURRENT_USERNAME, unknown_username=DEFAULT_UNKNOWN_USERNAME
     )
-    return RehuDocumentModel(record.document, access=access, version=record.version, signature=record.signature)
+    return RehuDocumentModel(record.document, records=records, version=record.version, signature=record.signature)
 
 
 def in_conflict(path: Path, feed: ChangeFeed, mine: str, theirs: str) -> tuple[RehuDocumentModel, RecordConflict]:
     """A model whose save was refused: its title edited to ``mine`` while the file's became ``theirs``.
 
     :param path: a record already written.
-    :param feed: where the access announces its writes.
+    :param feed: where the records announce their writes.
     :param mine: the model's title.
     :param theirs: the file's title.
     :returns: the model, and the refusal it raised.
@@ -153,12 +153,12 @@ def in_conflict(path: Path, feed: ChangeFeed, mine: str, theirs: str) -> tuple[R
 
 
 # region save
-def test_a_save_writes_through_the_access_and_is_announced_on_its_feed(tmp_path: Path, feed: ChangeFeed) -> None:
-    """The record goes through the seam, which announces it; the model no longer announces its own record itself.
+def test_a_save_writes_through_the_records_and_is_announced_on_their_feed(tmp_path: Path, feed: ChangeFeed) -> None:
+    """The record goes through the records, which announce it; the model no longer announces its own record itself.
 
     **Test steps:**
 
-    * open a record through an access whose feed is heard, and edit its title
+    * open a record through records whose feed is heard, and edit its title
     * save it
     * verify the file holds the title, the feed heard the record's key, the model is clean and named no file changed
     """
@@ -174,7 +174,7 @@ def test_a_save_writes_through_the_access_and_is_announced_on_its_feed(tmp_path:
     model.save()
 
     assert stored(path).title == "Mine"
-    assert heard == [Changed((LocalKey(path),))]
+    assert heard == [Changed((ResourceKey(path),))]
     assert not model.dirty
     assert not files
 
@@ -538,11 +538,11 @@ def test_resolving_on_a_model_not_read_from_its_file_puts_the_values_over_the_fi
     """
     path = tmp_path / "info.rehu"
     write_record(path, "Old")
-    access = AccessRouter(LocalAccess(feed))
-    record = access.local.records.load(
-        LocalKey(path), username=DEFAULT_CURRENT_USERNAME, unknown_username=DEFAULT_UNKNOWN_USERNAME
+    records = Records(feed)
+    record = records.load(
+        ResourceKey(path), username=DEFAULT_CURRENT_USERNAME, unknown_username=DEFAULT_UNKNOWN_USERNAME
     )
-    model = RehuDocumentModel(RehuDocument.load(path), access=access)
+    model = RehuDocumentModel(RehuDocument.load(path), records=records)
     model.title = "Mine"
     assert record.version is not None
     model.conflict = RecordConflict(record.document, record.version)
@@ -626,7 +626,7 @@ def test_the_base_data_follows_a_save(tmp_path: Path, feed: ChangeFeed) -> None:
 
 
 def test_the_stored_text_is_the_file_not_the_edited_document(tmp_path: Path, feed: ChangeFeed) -> None:
-    """The On Disk view shows the file through the seam; an unsaved edit is not in it.
+    """The On Disk view shows the file through the records; an unsaved edit is not in it.
 
     **Test steps:**
 
@@ -661,7 +661,7 @@ def test_a_document_with_no_location_has_no_stored_text(qtbot: QtBot) -> None:
 
 
 def test_the_record_signature_is_what_a_reported_file_is_compared_with(tmp_path: Path, feed: ChangeFeed) -> None:
-    """The signature the access took when reading is the model's own: reporting the file unchanged reloads nothing,
+    """The signature the records took when reading is the model's own: reporting the file unchanged reloads nothing,
     reporting it changed does.
 
     **Test steps:**
@@ -720,7 +720,7 @@ def test_a_model_with_no_signature_compares_nothing(tmp_path: Path, feed: Change
     """
     path = tmp_path / "info.rehu"
     write_record(path, "Old")
-    model = RehuDocumentModel(RehuDocument.load(path), access=AccessRouter(LocalAccess(feed)))
+    model = RehuDocumentModel(RehuDocument.load(path), records=Records(feed))
     model.title = "Mine"
 
     model.note_file_signature(1, 2)
@@ -757,9 +757,9 @@ def test_a_rename_whose_save_is_refused_as_a_conflict_moves_nothing(tmp_path: Pa
     assert isinstance(model.conflict, RecordConflict)
 
 
-# region reads through the seam
+# region reads through the records
 def test_another_record_loaded_in_place_is_saved_against_what_was_read(tmp_path: Path, feed: ChangeFeed) -> None:
-    """A preview moving on to the next record reads it through the access, version and all, so an edit made to it
+    """A preview moving on to the next record reads it through the records, version and all, so an edit made to it
     is checked like any other.
 
     **Test steps:**
@@ -783,15 +783,15 @@ def test_another_record_loaded_in_place_is_saved_against_what_was_read(tmp_path:
     assert refused.value.theirs.title == "Theirs"
 
 
-def test_a_conversion_goes_through_the_access_and_is_saved_against_the_new_record(
+def test_a_conversion_goes_through_the_records_and_is_saved_against_the_new_record(
     tmp_path: Path, feed: ChangeFeed
 ) -> None:
-    """Converting a legacy record is announced by the access -- the new record first, then the ``.tc`` it replaced --
+    """Converting a legacy record is announced by the records -- the new record first, then the ``.tc`` it replaced --
     and the new record is read with its version, so a later save over a change on disk is refused.
 
     **Test steps:**
 
-    * open a legacy ``.tc`` through an access whose feed is heard, and convert it
+    * open a legacy ``.tc`` through records whose feed is heard, and convert it
     * verify the feed heard the new record and the ``.tc``, and the model stands for the new record
     * edit its title and retitle the new file outside the app
     * verify a save is refused as a conflict
@@ -805,7 +805,7 @@ def test_a_conversion_goes_through_the_access_and_is_saved_against_the_new_recor
     model.convert(keep_backups=True)
 
     converted = tmp_path / "info.rehu"
-    assert heard == [Changed((LocalKey(converted), LocalKey(legacy)))]
+    assert heard == [Changed((ResourceKey(converted), ResourceKey(legacy)))]
     assert model.path == converted
     model.title = "Mine"
     edit_on_disk(converted, retitle("Theirs"))

@@ -32,13 +32,12 @@ from rehuco_core import (
     rehudb_path,
 )
 from rehuco_core.access import (
-    AccessRouter,
+    Catalog,
     CatalogSession,
     CatalogUnreadable,
+    ChangeFeed,
     KeyRelocation,
-    LocalAccess,
-    LocalKey,
-    NodeUnreachable,
+    Records,
     ResourceKey,
 )
 
@@ -59,10 +58,10 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
     reconciles the cache's roots to the file's, so the two cannot disagree for longer than it takes to save; what
     is *found* under a root only ever arrives from a scan.
 
-    **The cache itself is the access seam's** (#417, [[nodes#access-seam]]): this holds no connection, and reads
-    and keeps the cache current through :class:`~rehuco_core.LocalCatalog`, which opens one per call on whichever
-    thread asks (SQLite's one connection per thread, [[data-model#cache-schema]]). **A scan is a queue job per
-    root**, never run here: each opens its own on the worker. This is a queue listener only to learn when one of its
+    **The cache itself is the catalog's** (#417, [[nodes#access-seam]]): this holds no connection, and reads and keeps
+    the cache current through :class:`~rehuco_core.Catalog`, which opens one per call on whichever thread asks
+    (SQLite's one connection per thread, [[data-model#cache-schema]]). **A scan is a queue job per root**, never run
+    here: each opens its own on the worker. This is a queue listener only to learn when one of its
     own jobs has finished, and then says the catalog :attr:`refreshed` -- the same marshalling the checksum actions
     use ([[appendices.task-queue#observation]]).
 
@@ -75,12 +74,11 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         rename ([[mounts-and-storage#out-of-band]]).
     :param resource_events: the app's file announcements (#376), which keep the cache current between scans
         without reading anything a rename moved: a rename rebases the rows it moved
-        (:meth:`~rehuco_core.LocalCatalog.follow`), and a record the app wrote is read back into its row
-        (:meth:`~rehuco_core.LocalCatalog.refresh`). Either way only the rows it touched are announced, by
+        (:meth:`~rehuco_core.Catalog.follow`), and a record the app wrote is read back into its row
+        (:meth:`~rehuco_core.Catalog.refresh`). Either way only the rows it touched are announced, by
         :attr:`rows_changed`. ``None`` leaves the cache to the scans alone.
-    :param access: the access seam (#417): the open file's cache is attached to its local
-        :attr:`~rehuco_core.LocalAccess.catalog`, and every read of the cache and every change to it goes through
-        there. The window's own, when given; a router over a new local access otherwise.
+    :param catalog: what the open file's cache is attached to (#417); every read of the cache and every change to it
+        goes through there. The window's own, when given; a new one otherwise.
     """
 
     rehuco_path_changed: Signal = Signal(object)
@@ -133,14 +131,13 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         *,
         rename_coordinator: RenameCoordinator = DEFAULT_RENAME_COORDINATOR,
         resource_events: ResourceEvents | None = None,
-        access: AccessRouter | None = None,
+        catalog: Catalog | None = None,
     ) -> None:
         super().__init__(parent)
         self.__queue: Final = queue
-        self.__access: Final = (
-            access if access is not None else AccessRouter(LocalAccess(coordinator=rename_coordinator))
-        )
-        self.__catalog: Final = self.__access.local.catalog
+        self.__catalog: Final = catalog if catalog is not None else Catalog(rename_coordinator)
+        # only stats records, under the rename hold, and so writes nothing to announce
+        self.__records: Final = Records(ChangeFeed(), rename_coordinator)
         self.__rename_coordinator: Final = rename_coordinator
         self.__events: Final = resource_events
         self.__listening_to_events = resource_events is not None
@@ -318,9 +315,9 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
     def rows(self, query: CatalogQuery, ids: set[int] | None = None) -> list[CatalogRow]:
         """The rows ``query`` matches under the roots the file lists.
 
-        The access seam's calls block, so the agent makes them from workers: the browsers' loader calls this on the
+        The catalog's calls block, so the agent makes them from workers: the browsers' loader calls this on the
         pool (:class:`~.catalog_rows_loader.CatalogRowsLoader`, #455), which is safe because it touches nothing here
-        but the seam, which any thread may call.
+        but the catalog, which any thread may call.
 
         :param query: a browser's query.
         :param ids: only these rows, for an update in place; every matching row when ``None``.
@@ -339,7 +336,7 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         document's key (#381, #414).
 
         Both the browsers' rows and the Roots view name a resource this way, and the preview and the browsers' opens
-        go through here -- so a node-served resource (#421) is a change to this method, not to every view.
+        go through here.
 
         :param root_id: the root the resource is under.
         :param relative: its path below the root, ``/``-separated, as the cache keeps it.
@@ -350,7 +347,7 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         if root is None:
             return None
         try:
-            return LocalKey(root / relative)
+            return ResourceKey(root / relative)
         except ValueError:
             LOG.warning("The root %s of %s is not an absolute path; its resources cannot be reached", root, self.__file)
             return None
@@ -382,7 +379,7 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         :returns: its row, or ``None``.
         """
         try:
-            return self.__catalog.row(self.__access.key_for_path(record))
+            return self.__catalog.row(ResourceKey(record))
         except ValueError:  # a relative path is no record of any root
             return None
 
@@ -594,7 +591,7 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         keys: list[ResourceKey] = []
         for path in paths:
             try:
-                keys.append(self.__access.key_for_path(path))
+                keys.append(ResourceKey(path))
             except ValueError:  # a relative path is no record of any root
                 continue
         checks = self.__catalog.plan_verify(keys)
@@ -675,9 +672,8 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         try:
             for path in paths:
                 try:
-                    key = self.__access.key_for_path(path)
-                    signature = self.__access.for_key(key).records.signature(key)
-                except ValueError, NodeUnreachable:  # a relative path, or a node that cannot be reached
+                    signature = self.__records.signature(ResourceKey(path))
+                except ValueError:  # a relative path is no record of any root
                     continue
                 if signature is not None:
                     signatures[path] = signature
@@ -698,14 +694,12 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
             self.files_seen.emit(signatures)
 
     def __on_accessed(self, keys: tuple[ResourceKey, ...]) -> None:
-        """Verify the records the app is opening (#487) -- those on this machine: a node's records are its own
-        cache's.
+        """Verify the records the app is opening (#487).
 
         :param keys: the records.
         """
-        paths = tuple(key.path for key in keys if isinstance(key, LocalKey))
-        if paths:
-            self.verify_records(paths, key=paths)
+        paths = tuple(key.path for key in keys)
+        self.verify_records(paths, key=paths)
 
     # endregion
 
@@ -716,7 +710,7 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
 
         A scan still running under a renamed folder already reads on under the new name (its tracked
         locations were rewritten by the coordinator), so its rows land under the paths this rebased the old
-        ones to. Only this machine's renames concern the cache: a node's roots are that node's to cache.
+        ones to.
 
         :param moved_keys: the rename's executed plan.
         """
@@ -728,8 +722,7 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
     def __on_files_changed(self, keys: tuple[ResourceKey, ...]) -> None:
         """Read each record the app wrote back into its row, and announce what changed (#376, #379).
 
-        A path that is not a record, or not under a root, is passed over by the updater itself; a node's file is
-        that node's cache's.
+        A path that is not a record, or not under a root, is passed over by the updater itself.
 
         :param keys: the files written or replaced.
         """

@@ -40,16 +40,7 @@ from rehuco_core import (
     scan_unconverted_screenshots,
     take_enclosing_claims,
 )
-from rehuco_core.access import (
-    AccessRouter,
-    FileSignature,
-    KeyRelocation,
-    LoadedRecord,
-    LocalAccess,
-    LocalKey,
-    RecordOps,
-    ResourceKey,
-)
+from rehuco_core.access import ChangeFeed, FileSignature, KeyRelocation, LoadedRecord, Records, ResourceKey
 
 from ..fields.field import Field, FieldBinding
 from ..fields.unknown_field import UnknownField
@@ -63,20 +54,20 @@ from .tc_conversion_outcomes import scan_after_conversion
 LOG: Final = logging.getLogger(__name__)
 
 
-def load_record(access: AccessRouter, key: ResourceKey) -> LoadedRecord:
+def load_record(records: Records, key: ResourceKey) -> LoadedRecord:
     """Read ``key`` the way a holder opens it (#381, #416): see
     :func:`~rehuco_agent.documents.document_registry.load_record`, which this defers to.
 
     Looked up when called, not when this module loads: the registry builds models of this class, so its module
     imports this one.
 
-    :param access: what the record is reached through.
+    :param records: what the record is read through.
     :param key: the record.
     :returns: the record, or a locked stub standing in for it.
     """
     from .document_registry import load_record as read  # pylint: disable=import-outside-toplevel,cyclic-import
 
-    return read(access, key)
+    return read(records, key)
 
 
 # The three groups below are **coercion** groups: they say how a plugin-block value is read and written
@@ -201,8 +192,8 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
     :param document: the document to wrap.
     :param parent: optional Qt parent.
-    :param access: what the record is read and saved through ([[nodes#access-seam]], #416); this machine's own
-        files when not given.
+    :param records: what the record is read and saved through ([[nodes#access-seam]], #416); records announcing on a
+        private feed when not given.
     :param version: what ``document`` was read at, which a save is checked and merged against
         (:class:`~rehuco_core.RecordVersion`); ``None`` for a document not read from its file, whose first save
         writes it as it is.
@@ -259,7 +250,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
     key = SimpleProperty[ResourceKey | None](None)
     """Where the document is reached ([[nodes#access-seam]]): what the registry, the docks and every holder that
-    follows a rename know it by, whichever machine holds the record. ``None`` only for a document with no location
+    follows a rename know it by. ``None`` only for a document with no location
     at all. Reassigned with :attr:`path`, and **before** it, so a `path_changed` listener already reads the new key."""
 
     path = SimpleProperty[Path | None](None)
@@ -483,7 +474,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         document: RehuDocument,
         parent: QObject | None = None,
         *,
-        access: AccessRouter | None = None,
+        records: Records | None = None,
         version: RecordVersion | None = None,
         signature: FileSignature | None = None,
         rename_coordinator: RenameCoordinator | None = None,
@@ -491,7 +482,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     ) -> None:
         super().__init__(parent)
         self.__document = document
-        self.__access: Final = access if access is not None else AccessRouter(LocalAccess())
+        self.__records: Final = records if records is not None else Records(ChangeFeed())
         self.__version = version
         """What the document was read or last saved at; see the class's ``version``."""
         self.__base_data = copy.deepcopy(document.data)
@@ -554,7 +545,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         parent: QObject | None = None,
         *,
         username: str = DEFAULT_CURRENT_USERNAME,
-        access: AccessRouter | None = None,
+        records: Records | None = None,
         rename_coordinator: RenameCoordinator | None = None,
     ) -> RehuDocumentModel:
         """Start a new, empty document, optionally already bound to a save path.
@@ -568,7 +559,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         :param username: the identity the new document's per-user writes are filed under
             ([[field-schema#per-user-shared]], #99) -- the caller (e.g. `DocumentsDock`) passes the
             **current**-user identity setting; core's :data:`~rehuco_core.DEFAULT_CURRENT_USERNAME` otherwise.
-        :param access: forwarded to the constructor; see the class docstring.
+        :param records: forwarded to the constructor; see the class docstring.
         :param rename_coordinator: forwarded to the constructor; see its own docstring (#241).
         :returns: the new model, wrapping a fresh in-memory `RehuDocument` that already carries its own
             ``id`` (:meth:`~rehuco_core.RehuDocument.new`, [[data-model#stable-identity]]). Starts **not**
@@ -576,7 +567,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             the first :meth:`save` (#147).
         """
         model = cls(
-            RehuDocument.new(path, username=username), parent, access=access, rename_coordinator=rename_coordinator
+            RehuDocument.new(path, username=username), parent, records=records, rename_coordinator=rename_coordinator
         )
         model.saved_on_disk = False
         if path is not None:
@@ -590,7 +581,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         parent: QObject | None = None,
         *,
         username: str = DEFAULT_CURRENT_USERNAME,
-        access: AccessRouter | None = None,
+        records: Records | None = None,
         rename_coordinator: RenameCoordinator | None = None,
     ) -> RehuDocumentModel:
         """Start a **pending** stand-in for an existing file that has deliberately not been read yet --
@@ -608,14 +599,14 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         :param parent: optional Qt parent.
         :param username: the identity the eventual read files per-user state under
             ([[field-schema#per-user-shared]], #99) -- same seam as :meth:`create_new`.
-        :param access: forwarded to the constructor; see the class docstring.
+        :param records: forwarded to the constructor; see the class docstring.
         :param rename_coordinator: forwarded to the constructor; see its own docstring (#241).
         :returns: the pending model; empty, clean, and unlocked until :meth:`load_pending` runs.
         """
         return cls(
             RehuDocument({}, path, username=username),
             parent,
-            access=access,
+            records=records,
             rename_coordinator=rename_coordinator,
             pending=True,
         )
@@ -658,7 +649,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         """
         if self.__pending:
             # a placeholder is always bound to the path it stands in for (create_pending)
-            self.__load(load_record(self.__access, cast(ResourceKey, self.key)), rebuild=True)
+            self.__load(load_record(self.__records, cast(ResourceKey, self.key)), rebuild=True)
 
     @property
     def document(self) -> RehuDocument:
@@ -740,7 +731,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         changed: tuple[Path, ...] = ()
         with LogScope.open(self.path):
             try:
-                saved = self.__records(key).save(
+                saved = self.__records.save(
                     key, self.__document, self.__version, username=self.__document.username, overwrite=False
                 )
             except RecordConflict as conflict:
@@ -759,7 +750,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.conflict = None
         self.changed_on_disk = False
         if changed:
-            self.files_changed.emit(tuple(LocalKey(path) for path in changed))
+            self.files_changed.emit(tuple(ResourceKey(path) for path in changed))
         # the file now exists on disk, so there is finally something to revert to: mark saved_on_disk so
         # DocumentSubDocks re-enables Revert (#147). Set once and never unset -- a later out-of-band
         # deletion still leaves this a document that *was* saved, whose revert is the fix-retry loop.
@@ -812,15 +803,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         key = self.key
         if key is None:
             raise FileNotFoundError("this document has no file yet")
-        return self.__records(key).stored_text(key)
-
-    def __records(self, key: ResourceKey) -> RecordOps:
-        """The records operations ``key`` is reached through.
-
-        :param key: the record.
-        :returns: its operations.
-        """
-        return self.__access.for_key(key).records
+        return self.__records.stored_text(key)
 
     def __take_enclosing_claims(self, path: Path) -> tuple[Path, ...]:
         """Move the checksums a new record covers out of the enclosing record's ``.checksum`` (#467).
@@ -917,7 +900,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         path, key = self.path, self.key
         if path is None or key is None:
             raise ValueError("no path to revert from -- document was not loaded from or saved to a file")
-        self.__load(load_record(self.__access, key), rebuild=False)
+        self.__load(load_record(self.__records, key), rebuild=False)
         with LogScope.open(path):
             LOG.info("Reverted %s to what is on disk", path)
 
@@ -933,7 +916,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
         :param path: the file to show.
         """
-        self.__load(load_record(self.__access, self.__access.key_for_path(path)), rebuild=False)
+        self.__load(load_record(self.__records, ResourceKey(path)), rebuild=False)
 
     def __load(self, record: LoadedRecord, *, rebuild: bool) -> None:
         """Adopt ``record`` and reseed every field from it, as a fresh open would leave the model.
@@ -1014,7 +997,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         """Convert this locked, legacy ``.tc``-backed document into a real ``.rehu`` in place
         ([[acquisition-tooling#tc-to-rehu]]).
 
-        Delegates the file-system work to the records' :meth:`~rehuco_core.access.RecordOps.convert`, which announces
+        Delegates the file-system work to the records' :meth:`~rehuco_core.access.Records.convert`, which announces
         the new ``.rehu`` and the ``.tc`` it replaced, then adopts its result as
         this model's document -- reseeding every field and recomputing :attr:`locked` (which drops to
         ``False``, since the result is never :attr:`~RehuDocument.legacy_tc`) -- so the same dock keeps
@@ -1048,7 +1031,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         legacy_path = self.path
         with LogScope.open(legacy_path):
             LOG.info("Converting %s, %s", legacy_path, "keeping backups" if keep_backups else "discarding originals")
-            record = self.__records(key).convert(
+            record = self.__records.convert(
                 key,
                 keep_backups=keep_backups,
                 overwrite=overwrite,
@@ -1093,7 +1076,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
         :param paths: the files' absolute paths.
         """
-        self.files_changed.emit(tuple(LocalKey(path) for path in paths))
+        self.files_changed.emit(tuple(ResourceKey(path) for path in paths))
 
     def announce_folder_changed(self, directory: Path) -> None:
         """Say that this document's work changed ``directory``'s listing -- for a collaborator that renames,
@@ -1104,7 +1087,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         # what the scanner last read of the folder is out of date now -- before anyone is told to read it again.
         # Installed at construction and only ever replaced, never cleared
         cast(RehuDocumentImageScanner, self.image_scanner).forget()
-        self.folder_changed.emit(LocalKey(directory))
+        self.folder_changed.emit(ResourceKey(directory))
 
     def relocate(self, relocation: KeyRelocation) -> bool:
         """Follow a rename that moved this document's record ([[mounts-and-storage#out-of-band]], #376).
@@ -1119,17 +1102,13 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         it before :meth:`rename_location` has adopted the result, and whichever comes second finds the path
         already there and does nothing.
 
-        Only a record this machine renames itself follows here; one on a node's root follows its node's change
-        journal once remote records arrive (#421, #434).
-
         :param relocation: the rename's executed plan.
         :returns: whether this document's location changed.
         """
         key = self.key
-        if not isinstance(key, LocalKey):
+        if key is None:
             return False
-        moved = relocation.relocate(key)
-        return isinstance(moved, LocalKey) and self.__adopt_path(moved.path)
+        return self.__adopt_path(relocation.relocate(key).path)
 
     def bind[T](self, field: Field[T], name: str | None = None) -> FieldBinding[T]:
         """Resolve one of a field's names into its current binding on this model
@@ -1431,7 +1410,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             scanner is installed, so it is rendered once and against the right folder (#381).
         """
         with self.__seeding_guard():
-            self.key = None if self.__document.path is None else LocalKey(self.__document.path)
+            self.key = None if self.__document.path is None else ResourceKey(self.__document.path)
             self.path = self.__document.path
             self.location = self.__document.path.as_posix() if self.__document.path is not None else ""
             self.resource_type = self.__document.type
@@ -1566,7 +1545,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         if new_path == self.path:
             return False
         self.__document.rebind_path(new_path)
-        self.key = LocalKey(new_path)
+        self.key = ResourceKey(new_path)
         self.path = new_path
         self.location = new_path.as_posix()
         self.image_scanner = self.__make_image_scanner()

@@ -13,7 +13,7 @@ from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.documents.web_search_action import EMPTY_TOOLTIP, WebSearchAction
 from rehuco_agent.settings.web_search_settings import DEFAULT_ENGINES, SearchEngine, WebSearchSettings
 from rehuco_core import RehuDocument, TaskQueue
-from rehuco_core.access import LocalKey
+from rehuco_core.access import ResourceKey
 
 SLUG = "SomePublisher - SomeTitle - SomeAuthor (300+) [2025]"
 LIBRARY = Path.cwd() / "library"
@@ -46,7 +46,7 @@ def relocate(model: RehuDocumentModel, path: Path) -> None:
     :param model: the document model.
     :param path: the new absolute record path.
     """
-    model.key = LocalKey(path)
+    model.key = ResourceKey(path)
     model.path = path
 
 
