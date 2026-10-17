@@ -168,12 +168,12 @@ elsewhere produces no conflict.
 **Done:** the tracer bullet — the node as a heartbeat process the agent hosts, the Local node block and the status bar
 indicator (#506).
 
-Then, in order: the in-app player and external VLC (#315–#319) over watch progress in core (#410, #411); the FastAPI +
-HTMX + Pico spike (#418); the web node — login by OTP (#422 rewritten), the tutorial list and the watch page writing the
-user's sidecar (#440, #441), media with Range (#433), the conversion cache that remuxes or transcodes the file a browser
-cannot play ([[nodes#web-playback]], measured by the iPad playback spike, #419), *Open local node* and the remote
-serving node (#437 rewritten); the Nodes view with jobs by user, CPU and memory (#435 rewritten); the system-service
-opt-in only if ever wanted (#439, the recipe on #504).
+Then, in order: the in-app player and external VLC (#315–#319) over watch progress in core (#410, #411); the web node —
+login by OTP (#422 rewritten), the tutorial list and the watch page writing the user's sidecar (#440, #441, on the stack
+the FastAPI + HTMX + Pico spike proved, #418, [[nodes#web-pages]]), media with Range (#433), the conversion cache that
+remuxes or transcodes the file a browser cannot play ([[nodes#web-playback]], measured by the iPad playback
+spike, #419), *Open local node* and the remote serving node (#437 rewritten); the Nodes view with jobs by user, CPU
+and memory (#435 rewritten); the system-service opt-in only if ever wanted (#439, the recipe on #504).
 
 **Exit criteria:** watch 10 minutes in the agent, 15 on the tablet through a node, and resume in the agent at 25.
 
@@ -220,8 +220,6 @@ interleave; 360° identification and practice mode are deliberately last.
 
 ## Sequencing gates still open
 
-- **Before the node's web pages (#418):** a short FastAPI/HTMX/Pico **spike**, since it's a new stack — answer
-  "can the watch page be built the way it's needed", keep the lesson, discard the toy.
 - **Before the apply-payload job:** the lock and compare in the save path, which it wraps ([[sync#overview]]).
 - **Before Borrowing:** the resumable verified copy (#339) and the apply-payload job, which Return is a batch of.
 

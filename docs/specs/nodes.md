@@ -25,9 +25,9 @@ running as the agent's user, that writes a heartbeat file and a log under the fo
 the status bar's right end says *Local Node: Running* or *Stopped*. Everything above lands on that lifecycle.
 
 **One HTTPS API for the web pages, when they come**: FastAPI, JSON bodies, plain HTTP Range for media, a self-signed
-certificate. The stack is spiked before any page is written (#418); playback was (#419, [[nodes#web-playback]]). There
-is no node-to-node protocol: nodes do not talk to each other, and nothing of the catalog travels over it — an agent
-reads the files over its own mount.
+certificate; the pages are server-rendered with HTMX and Pico ([[nodes#web-pages]]). Both the stack (#418) and playback
+(#419, [[nodes#web-playback]]) were spiked before any page was written. There is no node-to-node protocol: nodes do not
+talk to each other, and nothing of the catalog travels over it — an agent reads the files over its own mount.
 
 **No system service, for now.** A node that serves from the login screen would have to run as a system service under
 its own account on every OS; the Windows leg of #504 measured what that costs — a service sees none of the users'
@@ -304,3 +304,70 @@ node's address in its subject alternative names: without `serverAuth`, Safari fa
 accepted: media loaded, seeked and resumed over HTTPS exactly as over HTTP. Plain HTTP played as well and was not
 chosen, since one-time passwords and session cookies would cross the LAN in clear
 ([[discovery-trust-access#user-auth]]).
+
+## §5.9 The web pages: FastAPI, HTMX and Pico
+
+[[[nodes#web-pages]]]
+
+- [#418: spike: a FastAPI + HTMX + Pico follow-mode page](https://github.com/borco/rehuco/issues/418)
+- [#440: feat(web): login page and the tutorial list served by a node](https://github.com/borco/rehuco/issues/440)
+- [#441: feat(web): watch a tutorial in the browser — resume, progress, viewed](https://github.com/borco/rehuco/issues/441)
+
+The follow-mode spike (#418) built the pages the node needs as a throwaway: a tutorial's file list with per-file
+progress, a watch page whose player posts its position every few seconds, and both following a position another
+device writes. Driven by script in Edge for Windows and by hand on the iPad in Safari, Edge and Firefox, on FastAPI
+0.143 (Starlette 1.8), Jinja2 3.1 and uvicorn 0.54 on Python 3.14, with htmx 2.0.4 and Pico CSS 2.0.6. **The stack
+builds the pages as needed**, with a few lines of plain script where a media element or a page leaving is concerned.
+
+**The pages are server-rendered fragments.** Each page is a Jinja2 template; a part that refreshes is a partial the page
+includes and an endpoint renders alone, one template for both. A posted value is form-encoded, htmx's default, so the
+node depends on `python-multipart` beside `jinja2`. htmx (51 KB) and Pico (82 KB) are served by the node from its own
+package, never from a CDN: the machine that travels serves its borrowed tutorials with no internet
+([[borrowing#vacation-topology]]).
+
+**Following another device is polling.** The list polls its rows every 3 s and swaps them whole; a position the agent
+wrote showed within 3 s. A paused watch page polls every 4 s and, when another device has moved this file's position,
+offers *Watched on agent-pc up to 1:10* with a *Jump there* button: it showed 1.8 s after the write. A playing page
+does not poll, and never jumps by itself. A device is told apart by an id the browser keeps in `localStorage`.
+
+**The player posts through htmx, the page's exit through a beacon.** htmx listens to media events on the `<video>`
+itself: `hx-trigger="every 5s [!this.paused], pause, seeked, ended"` posted every 5 s while playing and once per pause
+and seek, and a pause landing while a tick is in flight queues rather than drops, htmx's default. Two traps: a trigger
+filter runs with `this` as the element, but a `js:` value in `hx-vals` runs with `this` as `window` and no event, so it
+reads the player by id; and the trigger's name reaches the request only through an `htmx:configRequest` listener.
+htmx's request is cancelled when the page goes, so `pagehide` and a hidden `visibilitychange` post with
+`navigator.sendBeacon` instead, about ten lines of script; both arrived on navigating away. The resume is the
+`#t=<position>` fragment ([[nodes#web-playback]]), whose seek posts the resumed position once on load.
+
+**A page writes only a position it moved.** A page left paused at 0:50 while the agent went on to 1:10 would, on
+leaving, post 0:50 and send the agent back: the exit beacon and a pause post only when this page played or seeked
+since its own last write, and jumping to another device's position is such a seek. The watch page (#441) keeps this
+rule.
+
+**Pico needs one rule of the page's own.** The list, its table and `<progress>` bars, the nav, the banner and its
+button, and the dark scheme from `prefers-color-scheme` came out right at phone width with no CSS; `<video>` does not
+shrink to its container, so the page sets `video { width: 100%; height: auto }`: without it a 1280-pixel video ran off
+a portrait window.
+
+**Fullscreen is the page's, where the browser allows it, and a fill everywhere.** A browser's own fullscreen is its
+player's, whose X stops the video in Safari, Edge and Firefox on the iPad alike. The page offers two buttons over the
+player instead:
+
+- *Full screen* asks the Fullscreen API for a wrapper around the video, never the video itself, and shows only where
+  `fullscreenEnabled` says it may. Safari and Edge then hide their tabs and keep the page's *Exit full screen*, which
+  leaves without a pause; Firefox hands the video to its own player regardless, so there it ends at the X.
+- *Fill page* only adds a class: the wrapper fixed over the whole window on black, `object-fit: contain`. It keeps the
+  inline controls and the page's *Exit fill* in all three browsers, follows a rotation, and enters and leaves with no
+  pause, but leaves the browser's tabs in place.
+
+Added to the home screen as a web app (a manifest with `display: standalone`), the page opens with no tabs or address
+bar, and the Fullscreen API is not offered: *Fill page* is the only button, and fills everything below the status bar,
+which stays.
+
+**The iPad cannot be told from a Mac, or simulated.** Its Safari sends a Mac user agent, and Edge a Mac one with
+`EdgiOS` in it, so the node never decides by user agent; what a client plays it asks the client
+([[nodes#web-playback]]). Playwright's WebKit for Windows plays no video (`MEDIA_ERR_SRC_NOT_SUPPORTED` on the spike's
+H.264, though `canPlayType` says *probably*), so a page is checked on the iPad itself.
+
+**One thing later pages decide.** `js:` values and trigger filters are compiled with `Function`, so a content security
+policy without `unsafe-eval` needs them moved into a listener.
