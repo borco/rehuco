@@ -881,6 +881,101 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
 - **Web**: search/browse tutorials the user has access to; follow a tutorial from the browser, with the same
   progress/notes/bookmarks behavior as the desktop "follow" mode.
 
+### The in-app player: libvlc or Qt Multimedia
+
+[[[plugins#in-app-player]]]
+
+- [#315: spike: libvlc surface inside a QtAds dock — float/re-dock survival and keyboard ownership](https://github.com/borco/rehuco/issues/315)
+- [#317: feat: in-app video player dock — libvlc surface, transport bar, keyboard, folder playlist, resume](https://github.com/borco/rehuco/issues/317)
+- [#318: feat: Videos settings — player choice (in-app / external VLC), VLC path, SHIFT+double-click override](https://github.com/borco/rehuco/issues/318)
+- [#521: feat: Tools settings page — optional external tools (ffprobe, VLC, ffmpeg): detect, browse, version gates, install instructions](https://github.com/borco/rehuco/issues/521)
+
+Two players can fill Follow's dock: **libvlc** from the user's own VLC, set up through the Tools page (#521), or
+**Qt Multimedia**, whose FFmpeg backend ships inside PySide6. The spike (#315) measured both on Windows 11 at 125 %
+scaling — VLC 3.0.23 with `python-vlc` 3.0.21203, PySide6 and `PySide6-Addons` 6.11.1 — in a dock inside a nested
+dock manager, as a document's sub-docks are; macOS and Linux are the open half. **The dock is Qt Multimedia** (#317):
+nothing to install, every signal on the GUI thread, and its two gaps explained in the dock rather than shown black or
+combed, with *Open in VLC* offered for them. VLC stays the external player, launched as its own process (#319), so the
+agent loads nothing of VLC and needs no `python-vlc`.
+
+| | libvlc | Qt Multimedia |
+| --- | --- | --- |
+| Comes from | the user's VLC; its GPL plugins are never shipped | 20 MB bundled: Qt's multimedia modules and LGPL FFmpeg DLLs |
+| Dock moves | the picture survives every one | the picture survives every one |
+| Keyboard | Qt's, with libvlc's mouse input off | Qt's |
+| Player events | libvlc's thread, plus some on the GUI thread | the GUI thread |
+| `stop()` | 80–115 ms, joining libvlc's thread | returns at once |
+| The codec matrix below | every file | every file, AV1 only with hardware |
+| AV1 without an AV1 decoder in the GPU | decoded in software | sound and no picture, with no error |
+| Interlaced video | deinterlaced by default | shown combed |
+| Not installed | the dock says in-app playback needs VLC | cannot happen |
+
+**The codec matrix** is every file the iPad refuses ([[nodes#web-playback]]), cut from one 1080p60 tutorial with
+`imageio-ffmpeg`. Both players decoded, showed, played the sound of and seeked in each:
+
+| Container | Video | Audio |
+| --- | --- | --- |
+| MKV | H.264; HEVC 10-bit; AV1 10-bit | AAC; MP3 |
+| MPEG-TS | H.264, progressive and interlaced; HEVC | MP2; AAC |
+| MP4 | HEVC tagged `hev1`, 8- and 10-bit; AV1 10-bit; interlaced H.264 | MP3; MP2 |
+
+With libvlc the agent converts nothing; with Qt Multimedia, AV1 on a machine with no AV1 hardware and interlaced video
+are the gaps.
+
+**A native window survives every dock move, in both.** libvlc's surface is a plain `QWidget` with `WA_NativeWindow`
+and `WA_DontCreateNativeAncestors`, handed over once with `set_hwnd(int(winId()))` before `play()`; a `QVideoWidget`
+holds a native window of its own. Floating, re-docking, tabbing behind another dock and back, pinning to a side bar
+and sliding it out, unpinning, resizing and minimizing all kept the picture with no call at all: Qt re-parents the same
+window rather than recreating it, so its id never changes. Calling `set_hwnd` again, or stopping and replaying, is
+never needed. Playback runs on behind a tab.
+
+**The keyboard stays Qt's.** With libvlc, Win32 focus stays on Qt's top-level window, never on libvlc's child: a real
+click on the picture gives the surface Qt focus, and the arrows, Space, F and Ctrl+Right reach the surface's and then
+the dock's `keyPressEvent`, whether `video_set_key_input` is on or off. `video_set_mouse_input` must be off: with it on,
+libvlc's window takes the click and Qt never sees it. Both are turned off, so the dock's keys are the only ones. A
+`QVideoWidget` takes no focus; the same keys reach the dock.
+
+**libvlc's events cross to the GUI thread through a queued signal, never a blocking one.** `MediaPlayerTimeChanged`,
+`MediaPlayerLengthChanged` and `MediaPlayerEndReached` arrive on libvlc's input thread, a new one per `play()`, except
+that `set_time()` and `stop()` raise a time change synchronously on the thread that calls them, the GUI thread. A
+`QObject` re-emitting each as a signal on the default connection is safe: 160 `stop()` calls under a stream of time
+changes took 80–115 ms each and never hung. With `BlockingQueuedConnection` the first `stop()` deadlocked in three
+runs of five, since `stop()` joins the input thread while that thread waits on the GUI thread. `QMediaPlayer`'s
+`positionChanged` and `mediaStatusChanged` arrive on the GUI thread already, and its `stop()` does not wait.
+
+**Qt's FFmpeg build decodes AV1 only in hardware, and fails silently without it.** The dev PC's GPU decodes AV1, so
+both AV1 clips played; with hardware decoding switched off (`QT_FFMPEG_DECODING_HW_DEVICE_TYPES=,`) they played sound
+and advanced with **no frame at all**, and `errorOccurred` never fired. Every other clip decoded in software.
+`QMediaFormat.supportedVideoCodecs(Decode)` lists no AV1 even where hardware plays it, so it cannot predict this. On
+an M1 or M2 Mac, an iPad-class chip, an Nvidia GPU before the RTX 30 series or Intel graphics before the 11th
+generation, an AV1 tutorial would show a black dock unless the player reads the codec from the file and says why.
+
+**libvlc deinterlaces by default; Qt Multimedia does not.** Measured on a moving test pattern whose two fields come
+from different instants, as a mean second vertical difference over the shown frame: 3.3 under Qt against 1.4 for the
+same pattern progressive, with the combing plain on every moving edge, and 0.8 under libvlc, which shows the fields
+at their own rate.
+
+**`python-vlc` is unsafe to import blind**, should libvlc ever be loaded in-process again. `import vlc` resolves
+libvlc at import time. With no VLC found it falls back to `.\libvlc.dll` in the working directory and raises
+`FileNotFoundError`, having tried to load a DLL from wherever the process stands; a `PYTHON_VLC_LIB_PATH` or
+`PYTHON_VLC_MODULE_PATH` that does not resolve makes it call `sys.exit(1)`. `vlc.Instance()` answers `None` to an
+unknown option rather than raising, and a file that does not exist ends in `Ended`, not `Error`. A libvlc found by the
+Tools page (#521) would be probed in a child process and passed by full path in `PYTHON_VLC_LIB_PATH`.
+
+**Qt's FFmpeg can be replaced by a user's, of the same major version.** Qt 6.11.1 ships FFmpeg 7.1.3 as five DLLs
+(`avcodec-61`, `avformat-61`, `avutil-59`, `swresample-5`, `swscale-8`), and its FFmpeg plugin binds them by name.
+Loaded by full path from another folder before Qt Multimedia is imported — `avutil`, `swresample`, `swscale`,
+`avcodec`, `avformat`, in that order — they are the ones the plugin uses, and Qt's own copies are never loaded. So a
+user's shared FFmpeg 7.1 build, found through the Tools page (#521), can stand in for the bundled one; a build with a
+different major version (FFmpeg 8's `avcodec-62`) cannot, until a PySide6 release built against it.
+
+**Qt Multimedia costs a second wheel, pruned to 20 MB.** The agent depends on `PySide6-Essentials`; Qt Multimedia is
+in `PySide6-Addons`, a 437 MB wheel. Playback needs 20.5 MB of it: `QtMultimedia` and `QtMultimediaWidgets` (module
+and DLL each), `plugins/multimedia/ffmpegmediaplugin.dll` and FFmpeg's five DLLs, `avcodec` alone 13 MB. A PySide6
+folder holding Essentials and only those files played the whole codec matrix. The build keeps that list and removes
+every other file the Addons wheel's `RECORD` names, so a module a later Addons release adds is never shipped;
+Briefcase's own `cleanup_paths` can only name what to remove, which would let it in.
+
 ## §13.7 Reference images plugin
 
 [[[plugins#refimages-plugin]]]

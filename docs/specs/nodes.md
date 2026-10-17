@@ -240,8 +240,8 @@ no agent shares an app folder with it.
 - [#441: feat(web): watch a tutorial in the browser — resume, progress, viewed](https://github.com/borco/rehuco/issues/441)
 
 Measured by the playback spike (#419) on an iPad mini 5 (A12, iPadOS 26.6.2) in Safari and Edge, which are the same
-WebKit as every iPadOS browser, and on Firefox for Windows. The agent's player is libvlc, which decodes far more than a
-browser; whether some files need converting there too is measured by its own spike (#315, #317).
+WebKit as every iPadOS browser, and on Firefox for Windows. The agent's in-app player plays every file below that the
+iPad refuses; what each candidate player still cannot is in [[plugins#in-app-player]].
 
 **A playable file needs nothing but Range.** Served as it is by Starlette's `FileResponse`, a file plays, seeks and
 resumes: Safari probes `bytes=0-1`, then keeps one open-ended range and opens a new one per seek, which lands in
