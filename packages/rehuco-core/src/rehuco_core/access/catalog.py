@@ -1,11 +1,12 @@
-"""The Root Catalog on this machine: the local :class:`~rehuco_core.access.CatalogOps` over a ``.rehudb`` (#417)."""
+"""The Root Catalog on this machine, over a ``.rehudb`` (#417): its roots, a query over its rows, one row, a root's
+size, and the upkeep that keeps it current between scans."""
 
 import logging
 import sqlite3
 from collections.abc import Collection, Iterable, Sequence
 from dataclasses import replace
 from pathlib import Path
-from typing import Final, override
+from typing import Final
 from uuid import UUID
 
 from ..rehuco_file import RehucoRoot
@@ -14,13 +15,12 @@ from ..rehudb_updates import CatalogRecordUpdater, RecordCheck, RecordFinding
 from ..rename_coordination import DEFAULT_RENAME_COORDINATOR, RenameCoordinator
 from .catalog_ops import CatalogSession, CatalogUnreadable
 from .key_relocation import KeyRelocation
-from .keys import LocalKey, ResourceKey
-from .resource_access import CatalogOps
+from .keys import ResourceKey
 
 LOG: Final = logging.getLogger(__name__)
 
 
-class LocalCatalog(CatalogOps):
+class Catalog:
     """The catalog read from a cache file on this machine.
 
     **Every call opens the cache for its own duration, on the calling thread**: a connection is one thread's
@@ -42,9 +42,8 @@ class LocalCatalog(CatalogOps):
         self.__coordinator: Final = coordinator
         self.__session: CatalogSession | None = None
 
-    # region the operation group
+    # region reading the catalog
 
-    @override
     def roots(self) -> tuple[CatalogRoot, ...]:
         """The view's roots, in the ``.rehuco``'s order.
 
@@ -60,7 +59,6 @@ class LocalCatalog(CatalogOps):
         except (OSError, sqlite3.Error) as error:
             raise CatalogUnreadable(f"Could not read the roots of {session.cache_path}: {error}") from error
 
-    @override
     def query(self, query: CatalogQuery, *, ids: Collection[int] | None = None) -> list[CatalogRow]:
         """The rows ``query`` matches under the view's roots.
 
@@ -79,16 +77,15 @@ class LocalCatalog(CatalogOps):
         except (OSError, sqlite3.Error) as error:
             raise CatalogUnreadable(f"Could not read the catalog {session.cache_path}: {error}") from error
 
-    @override
     def row(self, key: ResourceKey) -> CatalogRow | None:
         """One resource's row, as an indexed lookup -- nothing is read from disk (#456, #395).
 
         :param key: the record, a ``.rehu`` or a legacy ``.tc``.
         :returns: its row; ``None`` for a key outside every root of the view, a record the cache has no row for yet
-            (the next scan reads it), a node's key, or a cache that cannot be read -- the last logged.
+            (the next scan reads it), or a cache that cannot be read -- the last logged.
         """
         session = self.__session
-        if session is None or not isinstance(key, LocalKey):
+        if session is None:
             return None
         try:
             with CatalogCache.open(session.cache_path) as cache:
@@ -104,7 +101,6 @@ class LocalCatalog(CatalogOps):
             return None
         return next((row for row in rows if row.root_id == location.root.root_id), None)
 
-    @override
     def count(self, root_id: UUID) -> int:
         """How many resources the cache lists under a root -- what removing it would drop.
 
@@ -196,8 +192,6 @@ class LocalCatalog(CatalogOps):
     def follow(self, relocation: KeyRelocation) -> set[int]:
         """Rebase the rows a rename moved, reading no record (#376, #379).
 
-        Only this machine's pairs concern the cache: a node's roots are that node's to cache.
-
         :param relocation: the rename's executed plan.
         :returns: the ids of the rows it may have touched -- those moving, and any stale one at a destination the
             rebase drops; empty when nothing moved.
@@ -218,13 +212,12 @@ class LocalCatalog(CatalogOps):
     def refresh(self, keys: Iterable[ResourceKey]) -> set[int]:
         """Read each record the app wrote back into its row (#376, #379).
 
-        A key that is no record, or is under no root, is passed over by the updater itself; a node's is that node's
-        cache's.
+        A key that is no record, or is under no root, is passed over by the updater itself.
 
         :param keys: the files written or replaced.
         :returns: the ids of the rows it may have touched; empty when nothing changed.
         """
-        paths = tuple(key.path for key in keys if isinstance(key, LocalKey))
+        paths = tuple(key.path for key in keys)
         session = self.__session
         if session is None or not paths:
             return set()
@@ -246,10 +239,10 @@ class LocalCatalog(CatalogOps):
     def plan_verify(self, keys: Iterable[ResourceKey]) -> list[RecordCheck]:
         """What verify-on-access is to compare with the disk, read from the cache alone (#487).
 
-        :param keys: the records; a node's, and any that is no record or is under no root, are passed over.
+        :param keys: the records; any that is no record or is under no root is passed over.
         :returns: one check per record; none when the cache cannot be read -- logged.
         """
-        paths = [key.path for key in keys if isinstance(key, LocalKey)]
+        paths = [key.path for key in keys]
         session = self.__session
         if session is None or not paths:
             return []

@@ -1,74 +1,42 @@
-"""The resource access seam: every operation on a resource's files, local or on another node ([[nodes#access-seam]]).
+"""Every operation on a resource's files: records and the Root Catalog, over this machine's filesystem and its mounts
+([[nodes#access-seam]]).
 
-Built from #413 on, one operation group per issue. The package is split by what a reader is here for:
+The package is split by what a reader is here for:
 
-- :mod:`~rehuco_core.access.keys` -- what a resource is reached by: :class:`LocalKey`, :class:`NodeKey`, and the
-  path arithmetic both share.
+- :mod:`~rehuco_core.access.keys` -- what a resource is reached by: :class:`ResourceKey` and its path arithmetic.
 - :mod:`~rehuco_core.access.key_relocation` -- where keys went once a rename ran.
 - :mod:`~rehuco_core.access.change_feed` -- what changed, announced without Qt.
-- :mod:`~rehuco_core.access.resource_access` -- the interface itself, its operation groups and capabilities.
-- :mod:`~rehuco_core.access.record_ops` -- what the records group answers: a record as read and as saved, a
-  conflict.
-- :mod:`~rehuco_core.access.catalog_ops` -- what the catalog group answers: a refusal to read, and the session a
-  local catalog reads through.
-- :mod:`~rehuco_core.access.local_access` -- the implementation over this machine's filesystem, with
-  :mod:`~rehuco_core.access.local_records` its records and :mod:`~rehuco_core.access.local_catalog` its catalog.
-- :mod:`~rehuco_core.access.access_router` -- which implementation a key goes to.
+- :mod:`~rehuco_core.access.records` -- records: load, save, the text as stored, legacy conversion; with
+  :mod:`~rehuco_core.access.record_ops` the values it answers: a record as read and as saved, a conflict.
+- :mod:`~rehuco_core.access.catalog` -- the Root Catalog: roots, query, one row, a root's size; with
+  :mod:`~rehuco_core.access.catalog_ops` a refusal to read, and the session it reads through.
 
 Nothing here imports Qt.
 """
 
-from .access_router import AccessRouter, NodeUnreachable
+from .catalog import Catalog
 from .catalog_ops import CatalogSession, CatalogUnreadable
-from .change_feed import Changed, ChangeEvent, ChangeFeed, FolderChanged, Invalidated, Moved
+from .change_feed import Changed, ChangeEvent, ChangeFeed, FolderChanged, Moved, RootStale
 from .key_relocation import KeyRelocation
-from .keys import LocalKey, NodeKey, ResourceKey
-from .local_access import LOCAL_CAPABILITIES, LocalAccess
-from .local_catalog import LocalCatalog
-from .local_records import LocalRecords
+from .keys import ResourceKey
 from .record_ops import FileSignature, LoadedRecord, RecordConflict, SavedRecord
-from .resource_access import (
-    Capability,
-    CatalogOps,
-    ContentOps,
-    FileOps,
-    JobOps,
-    MutationOps,
-    RecordOps,
-    ResourceAccess,
-    ScreenshotOps,
-)
+from .records import Records
 
 __all__ = [
     "FileSignature",
-    "LOCAL_CAPABILITIES",
-    "AccessRouter",
-    "Capability",
-    "CatalogOps",
     "CatalogSession",
     "CatalogUnreadable",
     "ChangeEvent",
     "ChangeFeed",
     "Changed",
-    "ContentOps",
-    "FileOps",
     "FolderChanged",
-    "Invalidated",
-    "JobOps",
     "KeyRelocation",
     "LoadedRecord",
-    "LocalAccess",
-    "LocalCatalog",
-    "LocalKey",
-    "LocalRecords",
-    "Moved",
-    "MutationOps",
-    "NodeKey",
-    "NodeUnreachable",
-    "RecordConflict",
-    "RecordOps",
-    "ResourceAccess",
+    "Catalog",
     "ResourceKey",
+    "Records",
+    "Moved",
+    "RecordConflict",
+    "RootStale",
     "SavedRecord",
-    "ScreenshotOps",
 ]

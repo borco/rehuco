@@ -11,7 +11,6 @@ from pathlib import Path
 from sqlite3 import OperationalError
 from typing import Any
 from unittest.mock import MagicMock
-from uuid import uuid4
 
 from PySide6.QtCore import QThreadPool
 from PySide6.QtWidgets import QLabel
@@ -22,7 +21,7 @@ from rehuco_agent.rehuco.root_folder_loader import RootFolderLoader
 from rehuco_agent.rehuco.roots_panel import FRESH_LISTING_SECONDS
 from rehuco_agent.resource_events import ResourceEvents
 from rehuco_core import CatalogRecordReader, RecordsChecked, RehuDocument
-from rehuco_core.access import LocalKey, NodeKey
+from rehuco_core.access import ResourceKey
 
 from .test_catalog_docks import (  # noqa: F401  # pylint: disable=unused-import
     REHUCO_PATH,
@@ -195,35 +194,10 @@ def test_an_opened_record_is_verified_through_the_app_announcements(
     reads = reads_of(mocker)
     docks.catalog.open_rehuco(REHUCO_PATH)
     try:
-        events.announce_accessed((LocalKey(record),))
+        events.announce_accessed((ResourceKey(record),))
 
         qtbot.waitUntil(lambda: docks.catalog.resource_type(record) is not None, timeout=WAIT_TIMEOUT_MS)
         reads.assert_called_once()
-    finally:
-        docks.detach()
-
-
-@mark.usefixtures("served")
-def test_a_record_opened_on_a_node_is_not_verified_here(
-    qtbot: QtBot, queue: Any, database: Any, mocker: MockerFixture
-) -> None:
-    """A node's records are its own cache's: opening only those asks this catalog to verify nothing (#414).
-
-    **Test steps:**
-
-    * a catalog listening to the app's announcements
-    * announce a node's record as accessed
-    * verify no verify was asked for
-    """
-    del database  # the cache's, in memory
-    events = ResourceEvents()
-    docks = build_docks(qtbot, queue, events)
-    docks.catalog.open_rehuco(REHUCO_PATH)
-    verify = mocker.spy(docks.catalog, "verify_records")
-    try:
-        events.announce_accessed((NodeKey("node-a", uuid4(), "alpha/info.rehu"),))
-
-        verify.assert_not_called()
     finally:
         docks.detach()
 
@@ -254,7 +228,7 @@ def test_the_files_open_documents_stand_for_are_read_on_the_pool_and_announced(
 def test_a_relative_path_among_the_files_asked_about_is_passed_over(
     qtbot: QtBot, dock: CatalogDocks, folders: Path
 ) -> None:
-    """A path that is not absolute is no key the access seam reaches: it is left out, and the others are still read
+    """A path that is not absolute is no key a record is reached by: it is left out, and the others are still read
     (#417).
 
     **Test steps:**
@@ -322,7 +296,7 @@ def test_a_cache_that_cannot_be_read_verifies_nothing_and_says_so(
     * verify the error is logged and nothing is announced
     """
     dock.catalog.open_rehuco(REHUCO_PATH)
-    mocker.patch("rehuco_core.access.local_catalog.CatalogRecordUpdater.plan", side_effect=OperationalError("locked"))
+    mocker.patch("rehuco_core.access.catalog.CatalogRecordUpdater.plan", side_effect=OperationalError("locked"))
     seen = MagicMock()
     dock.catalog.files_seen.connect(seen)
 
@@ -478,7 +452,7 @@ def test_a_write_back_that_fails_is_logged_and_announces_no_row(
     * verify a record the cache has no row for, with the write-back failing
     * verify the failure is logged and no row change is announced
     """
-    mocker.patch("rehuco_core.access.local_catalog.CatalogRecordUpdater.apply", side_effect=OperationalError("locked"))
+    mocker.patch("rehuco_core.access.catalog.CatalogRecordUpdater.apply", side_effect=OperationalError("locked"))
 
     with caplog.at_level(logging.ERROR):
         rows, verified = verify_a_new_record(qtbot, dock, folders)
@@ -499,7 +473,7 @@ def test_a_write_back_that_changes_nothing_announces_no_row(
     * verify a record the cache has no row for, with a write-back that changes nothing
     * verify no row change is announced
     """
-    mocker.patch("rehuco_core.access.local_catalog.CatalogRecordUpdater.apply", return_value=set())
+    mocker.patch("rehuco_core.access.catalog.CatalogRecordUpdater.apply", return_value=set())
 
     rows, verified = verify_a_new_record(qtbot, dock, folders)
 

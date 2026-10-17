@@ -17,7 +17,6 @@ import logging
 from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
 from typing import Any, Final
-from uuid import UUID
 
 import PySide6QtAds as QtAds
 from borco_pyside.logging import LogEntry
@@ -25,7 +24,7 @@ from borco_pyside.qtads import tab_label
 from PySide6.QtCore import QObject
 from PySide6.QtTest import QSignalSpy
 from PySide6.QtWidgets import QDialog, QMessageBox, QWidget
-from pytest import LogCaptureFixture, fixture, raises
+from pytest import LogCaptureFixture, fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.app_logging import shared_log_bridge
@@ -52,7 +51,7 @@ from rehuco_core import (
     RenameCoordinator,
     TaskQueue,
 )
-from rehuco_core.access import AccessRouter, LocalAccess, LocalKey, NodeKey, NodeUnreachable
+from rehuco_core.access import ResourceKey
 
 from rehuco_agent_tests.documents.test_rehu_document_model import converts_to
 from rehuco_agent_tests.qt_connections import flush_deferred_deletes, receivers
@@ -62,19 +61,17 @@ FAKE_PATH: Final = Path.cwd() / "fake" / "tutorials" / "sculpting" / "info.rehu"
 platform (unlike a hardcoded ``/fake/...``, which isn't absolute on Windows without a drive)."""
 FAKE_LABEL: Final = f"{FAKE_PATH.parent.name}/"
 """``FAKE_PATH``'s expected dock-title label: an ``info.rehu``'s parent directory name, trailing-slashed."""
-FAKE_KEY: Final = LocalKey(FAKE_PATH)
-FAKE_TC_KEY: Final = LocalKey(FAKE_PATH.with_suffix(".tc"))
+FAKE_KEY: Final = ResourceKey(FAKE_PATH)
+FAKE_TC_KEY: Final = ResourceKey(FAKE_PATH.with_suffix(".tc"))
 """``FAKE_PATH``'s legacy ``.tc`` sibling ([[acquisition-tooling#tc-to-rehu]])."""
 OTHER_PATH: Final = Path.cwd() / "fake" / "tutorials" / "painting" / "info.rehu"
-OTHER_KEY: Final = LocalKey(OTHER_PATH)
+OTHER_KEY: Final = ResourceKey(OTHER_PATH)
 THIRD_PATH: Final = Path.cwd() / "fake" / "tutorials" / "drawing" / "info.rehu"
-THIRD_KEY: Final = LocalKey(THIRD_PATH)
+THIRD_KEY: Final = ResourceKey(THIRD_PATH)
 FAKE_ARCHIVE_PATH: Final = Path.cwd() / "fake" / "tutorials" / "sculpting.zip"
 """An archive whose ``.rehu`` companion (#43) is ``FAKE_ARCHIVE_PATH.with_suffix(".rehu")``."""
-FAKE_ARCHIVE_KEY: Final = LocalKey(FAKE_ARCHIVE_PATH)
+FAKE_ARCHIVE_KEY: Final = ResourceKey(FAKE_ARCHIVE_PATH)
 FAKE_ARCHIVE_INFO_PATH: Final = FAKE_ARCHIVE_PATH.with_suffix(".rehu")
-NODE_KEY: Final = NodeKey("NODE-1", UUID(int=1), "tutorials/remote/info.rehu")
-"""A record under another node's root -- which nothing here can read yet (#416)."""
 
 TIMEOUT: Final = 5.0
 """How long a test waits for the worker before calling it a failure, in seconds (#240) -- a deadlock
@@ -2828,7 +2825,7 @@ REFERENCE_PACK: Final = {
     "type": "ReferenceImages",
     "sources": [{"title": "Pack", "primary": True}],
 }
-CARVING_KEY: Final = LocalKey(Path.cwd() / "fake" / "tutorials" / "carving" / "info.rehu")
+CARVING_KEY: Final = ResourceKey(Path.cwd() / "fake" / "tutorials" / "carving" / "info.rehu")
 
 
 def load_documents(mocker: MockerFixture, documents: dict[Path, dict[str, Any]]) -> None:
@@ -3534,20 +3531,17 @@ def test_restore_late_into_an_empty_area_just_adds_the_dock(mocker: MockerFixtur
 # region records named by key (#414)
 
 
-def test_a_restored_sessions_paths_become_keys_through_the_area_router(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A remembered session names its documents by path; the area turns each into a key through the router it was
-    given, for a session restored at start-up and one restored late alike.
+def test_a_restored_sessions_paths_become_keys(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A remembered session names its documents by path; the area turns each into a key, for a session restored at
+    start-up and one restored late alike.
 
     **Test steps:**
 
-    * build the area over a router whose ``key_for_path`` is spied on
     * restore a session holding one path, then restore another path late
-    * verify the router was asked for each path's key, and both documents have docks
+    * verify both documents have docks, keyed by their paths
     """
     mocker.patch.object(Path, "read_text", return_value="")
-    access = AccessRouter(LocalAccess())
-    key_for_path = mocker.spy(access, "key_for_path")
-    dock = DocumentsDock(access=access)
+    dock = DocumentsDock()
     qtbot.addWidget(dock)
     session = DocumentSessionSettings()
     session.items[FAKE_PATH] = DocumentSessionSettings.Item(open=True)  # pylint: disable=unsupported-assignment-operation
@@ -3555,59 +3549,17 @@ def test_a_restored_sessions_paths_become_keys_through_the_area_router(mocker: M
     dock.restore_session(session)
     dock.restore_late(OTHER_PATH, DocumentSessionSettings.Item(open=True))
 
-    assert [call.args for call in key_for_path.call_args_list] == [(FAKE_PATH,), (OTHER_PATH,)]
-    assert {widget.model.path for widget in dock.open_document_widgets()} == {FAKE_PATH, OTHER_PATH}
-
-
-def test_a_node_folder_or_archive_is_refused_before_anything_is_held(qtbot: QtBot) -> None:
-    """Whether a node's ``info.rehu`` or archive companion exists is its node's to answer (#416); until it can be
-    asked, the open is refused and no dock is made.
-
-    **Test steps:**
-
-    * open a node folder, and a node archive
-    * verify each raises ``NodeUnreachable``, and nothing was opened
-    """
-    dock = DocumentsDock()
-    qtbot.addWidget(dock)
-
-    with raises(NodeUnreachable):
-        dock.open_folder(NODE_KEY.parent)
-    with raises(NodeUnreachable):
-        dock.open_archive(NODE_KEY.with_name("remote.zip"))
-
-    assert not dock.open_document_widgets()
-
-
-def test_previewing_a_node_record_in_place_of_another_is_refused(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """The preview loads the next record in place only when it can read it: a node's record nobody holds is refused
-    (#416), and the preview keeps what it showed.
-
-    **Test steps:**
-
-    * show a document in the preview, then a node's record
-    * verify ``NodeUnreachable`` is raised and the preview still shows the first document
-    """
-    load_document(mocker)
-    dock = DocumentsDock()
-    qtbot.addWidget(dock)
-    widget = dock.show_in_preview(FAKE_KEY)
-
-    with raises(NodeUnreachable):
-        dock.show_in_preview(NODE_KEY)
-
-    assert dock.preview_document_widget() is widget
-    assert widget.model.key == FAKE_KEY
+    assert {widget.model.key for widget in dock.open_document_widgets()} == {FAKE_KEY, OTHER_KEY}
 
 
 def test_a_docks_name_and_tooltip_are_its_documents_key(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A dock is named, and its tab explained, by its document's key's text -- a node's record by its node, root and
-    relative path; a document with no key at all is ``untitled``, with no tooltip.
+    """A dock is named, and its tab explained, by its document's key's text, following the key when it moves; a
+    document with no key at all is ``untitled``, with no tooltip.
 
     **Test steps:**
 
-    * open a document, then move its model to a node key
-    * verify the dock's object name and tab tooltip are the node key's text
+    * open a document, then move its model to another key
+    * verify the dock's object name and tab tooltip are the new key's text
     * take the model's key away, and verify the name ``untitled`` and an empty tooltip
     """
     load_document(mocker)
@@ -3616,10 +3568,10 @@ def test_a_docks_name_and_tooltip_are_its_documents_key(mocker: MockerFixture, q
     widget = dock.open_document(FAKE_KEY)
     cdock = dock_for(dock, widget)
 
-    widget.model.key = NODE_KEY
+    widget.model.key = OTHER_KEY
 
-    assert cdock.objectName() == str(NODE_KEY) == f"NODE-1/{UUID(int=1)}/tutorials/remote/info.rehu"
-    assert cdock.tabWidget().toolTip() == str(NODE_KEY)
+    assert cdock.objectName() == str(OTHER_KEY) == str(OTHER_PATH)
+    assert cdock.tabWidget().toolTip() == str(OTHER_KEY)
 
     widget.model.key = None
 

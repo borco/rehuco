@@ -50,7 +50,7 @@ from rehuco_core import (
     TaskQueue,
     is_directory_scoped,
 )
-from rehuco_core.access import AccessRouter, KeyRelocation, LocalAccess, LocalKey, NodeUnreachable, ResourceKey
+from rehuco_core.access import Catalog, ChangeFeed, KeyRelocation, Records, ResourceKey
 
 from .app_logging import LOG_VIEW_ICON_RESOURCE, build_log_widget, shared_log_bridge
 from .archives import ARCHIVE_EXTENSIONS
@@ -377,10 +377,12 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # the saved queue has no window to be handed anything, and a job reading through a coordinator
         # nobody renames through would hold a directory open against the rename it must stand aside for.
         self.__rename_coordinator: Final = DEFAULT_RENAME_COORDINATOR
-        # how every resource is reached ([[nodes#access-seam]]): this machine's own files today, and every path that
-        # enters the app becomes a key through it; its change feed is what the app-wide announcements adapt
-        self.__access: Final = AccessRouter(LocalAccess(coordinator=self.__rename_coordinator))
-        self.__resource_events: Final = ResourceEvents(self.__access.local.changes, self)
+        # how every record and the catalog cache are read and written ([[nodes#access-seam]]); every write is published
+        # on the one feed the app-wide announcements adapt
+        changes = ChangeFeed()
+        self.__records: Final = Records(changes, self.__rename_coordinator)
+        self.__catalog: Final = Catalog(self.__rename_coordinator)
+        self.__resource_events: Final = ResourceEvents(changes, self)
         self.__resource_events.moved.connect(self.__on_resources_moved)
         self.__rename_coordinator.add_rename_listener(self.__resource_events.announce_moved)
 
@@ -390,14 +392,13 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             self,
             rename_coordinator=self.__rename_coordinator,
             resource_events=self.__resource_events,
-            access=self.__access,
+            records=self.__records,
         )
         self.__documents_dock: Final = DocumentsDock(
             self,
             stylesheet_host=self.__dock_manager,
             registry=self.__document_registry,
             task_queue=self.__task_queue,
-            access=self.__access,
         )
         self.__documents_dock.document_focus_changed.connect(self.__on_document_focus_changed)
         self.__documents_dock.status_message.connect(self.__on_status_message)
@@ -415,7 +416,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             self,
             rename_coordinator=self.__rename_coordinator,
             resource_events=self.__resource_events,
-            access=self.__access,
+            catalog=self.__catalog,
         )
         self.__roots_panel: Final = RootsPanel(
             self.__root_catalog,
@@ -423,7 +424,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             self,
             rename_coordinator=self.__rename_coordinator,
             resource_events=self.__resource_events,
-            access=self.__access,
+            records=self.__records,
         )
         # whatever a verify or a scan's end sees on disk reaches the open documents, each comparing it with what it
         # loaded -- not with the cache, which an earlier look may already have brought up to date (#487); a scan says
@@ -1093,7 +1094,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             placeholder.setEnabled(False)
             return
         for path in paths:
-            key = LocalKey(path)
+            key = ResourceKey(path)
             action = QWidgetAction(menu)
             action.setDefaultWidget(RehuDocumentMenuEntry(key_label(key), key, menu))
             # a file on a share or a removable drive stays disabled until its device has answered, and for good
@@ -2061,8 +2062,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """
         self.__reveal_documents_dock()
         resolved = Path(path).resolve()
-        key = self.__access.key_for_path(resolved)
-        self.__opened(resolved, key, self.__documents_dock.open_document(key))
+        self.__opened(resolved, self.__documents_dock.open_document(ResourceKey(resolved)))
 
     def open_folder(self, path: Path | str) -> None:
         """Open the directory-scoped resource at ``path`` ([[data-model#resource-scoping]]), focusing
@@ -2078,8 +2078,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """
         self.__reveal_documents_dock()
         resolved = Path(path).resolve()
-        key = self.__access.key_for_path(resolved)
-        self.__opened(resolved, key, self.__documents_dock.open_folder(key))
+        self.__opened(resolved, self.__documents_dock.open_folder(ResourceKey(resolved)))
 
     def open_archive(self, path: Path | str) -> None:
         """Open the file-scoped resource for the archive at ``path`` ([[data-model#resource-scoping]]),
@@ -2096,34 +2095,27 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """
         self.__reveal_documents_dock()
         resolved = Path(path).resolve()
-        key = self.__access.key_for_path(resolved)
-        self.__opened(resolved, key, self.__documents_dock.open_archive(key))
+        self.__opened(resolved, self.__documents_dock.open_archive(ResourceKey(resolved)))
 
-    def __opened(self, path: Path, key: ResourceKey, widget: DocumentWidget) -> None:
+    def __opened(self, path: Path, widget: DocumentWidget) -> None:
         """Note an open the user asked for by a path: the remembered paths hear it was reached, and ``Open recents``
-        records the path -- only for a file this machine reads (a node's record waits for recents that keep keys), and
-        not for a load-failure stub (:attr:`~RehuDocument.load_failed`), which is no file you opened.
+        records the path -- not for a load-failure stub (:attr:`~RehuDocument.load_failed`), which is no file you
+        opened.
 
         :param path: the path the open was asked for, resolved -- a record, a folder or an archive.
-        :param key: what that path is reached by.
         :param widget: the document the open showed.
         """
         self.__reached(widget)
-        if isinstance(key, LocalKey) and not widget.model.document.load_failed:
+        if not widget.model.document.load_failed:
             self.__recent_files.record(path)
 
     def __open_key(self, key: object) -> None:
-        """Open a resource a browser row asked for, by the key the catalog resolved it to: a record this machine reads
-        goes through :meth:`open_path`, the ordinary route.
+        """Open a resource a browser row asked for, by the key the catalog resolved it to, through :meth:`open_path`,
+        the ordinary route.
 
         :param key: the record's key, as the object-typed relay carried it.
-        :raises NodeUnreachable: for a node's record, which is opened through its node once remote records arrive
-            (#421).
         """
-        resource = cast(ResourceKey, key)
-        if not isinstance(resource, LocalKey):
-            raise NodeUnreachable(resource)
-        self.open_path(resource.path)
+        self.open_path(cast(ResourceKey, key).path)
 
     def show_in_preview(self, path: Path | str) -> None:
         """Show the ``.rehu`` at ``path`` in the Documents dock's preview (#39), focusing it instead if it is
@@ -2136,7 +2128,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         :param path: filesystem path to a ``.rehu`` file.
         """
         self.__reveal_documents_dock()
-        self.__reached(self.__documents_dock.show_in_preview(self.__access.key_for_path(Path(path).resolve())))
+        self.__reached(self.__documents_dock.show_in_preview(ResourceKey(Path(path).resolve())))
 
     def __reached(self, widget: DocumentWidget) -> None:
         """Tell the remembered paths the user reached ``widget``'s record themselves (#464), so a document the session
@@ -2183,18 +2175,16 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """
         if self.__documents_dock_widget.isClosed():
             self.__reveal_documents_dock()
-        if isinstance(key, LocalKey):
-            # a root's folder as the catalog lists it may be spelled otherwise than the path an open resolves to
-            key = self.__access.key_for_path(key.path.resolve())
-        self.__documents_dock.show_in_preview(key)
+        # a root's folder as the catalog lists it may be spelled otherwise than the path an open resolves to
+        self.__documents_dock.show_in_preview(ResourceKey(key.path.resolve()))
 
     def __on_preview_promoted(self, key: object) -> None:
         """Record a promoted preview in ``Open recents`` (#39) -- it is a file the reader opened now -- unless
-        it could not be read, as :meth:`open_file` decides, or it is no file this machine reads.
+        it could not be read, as :meth:`open_file` decides, or it has no location.
 
-        :param key: the promoted document's key, as the object-typed relay carried it.
+        :param key: the promoted document's key, as the object-typed relay carried it; ``None`` for no location.
         """
-        if not isinstance(key, LocalKey):
+        if not isinstance(key, ResourceKey):
             return
         model = self.__document_registry.find(key)
         if model is not None and not model.document.load_failed:
@@ -2252,7 +2242,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         agree on casing by construction, and folding it would only risk matching a recorded entry
         that is a different file on a case-sensitive filesystem.
 
-        ``Open recents`` keeps paths, so only a move between two files this machine reads is followed there.
+        ``Open recents`` keeps paths, so a document gaining or losing its file is nothing to it.
 
         :param old_key: the key the document moved from.
         :param new_key: the key it moved to.
@@ -2260,7 +2250,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         focused = self.__documents_dock.focused_document_widget()
         if focused is not None and focused.model.key == new_key:
             self.__update_window_title(focused)
-        if not isinstance(old_key, LocalKey) or not isinstance(new_key, LocalKey):
+        if old_key is None or new_key is None:
             return
         old_path, new_path = old_key.path, new_key.path
 

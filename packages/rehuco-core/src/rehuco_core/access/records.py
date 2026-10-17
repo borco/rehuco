@@ -1,8 +1,9 @@
-"""Records on this machine's own filesystem (#416): the local :class:`~rehuco_core.access.RecordOps`."""
+"""Records, read and written through this machine's filesystem and its mounts (#416): load, save as a read-merge-write
+against a :class:`~rehuco_core.RecordVersion`, the text as stored, legacy conversion. Reverting is loading again."""
 
 import logging
 from pathlib import Path
-from typing import Final, override
+from typing import Final
 
 from ..record_merge import record_lock
 from ..record_versions import RecordVersion, merge_users, record_version, same_details
@@ -13,9 +14,8 @@ from ..tc_conversion import convert_tc
 from ..tc_document import load_tc
 from ..tc_screenshots import ScreenshotNamePattern
 from .change_feed import Changed, ChangeFeed
-from .keys import LocalKey, ResourceKey
+from .keys import ResourceKey
 from .record_ops import FileSignature, LoadedRecord, RecordConflict, SavedRecord
-from .resource_access import RecordOps
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ LEGACY_SUFFIX: Final = ".tc"
 """The suffix of a legacy record, read through :func:`~rehuco_core.load_tc`."""
 
 
-class LocalRecords(RecordOps):
+class Records:
     """Records reached through this machine's filesystem.
 
     Saves are serialized per file within this process by :func:`~rehuco_core.record_merge.record_lock` -- the lock a
@@ -37,17 +37,15 @@ class LocalRecords(RecordOps):
         self.__changes: Final = changes
         self.__coordinator: Final = coordinator
 
-    @override
     def load(self, key: ResourceKey, *, username: str, unknown_username: str) -> LoadedRecord:
         """Read a record, or an empty locked stub standing in for it when it cannot be read.
 
         :param key: a ``.rehu``, or a legacy ``.tc``.
-        :param username: the identity a ``.rehu`` is opened as.
-        :param unknown_username: the identity a ``.tc``'s per-user flags are filed under.
-        :returns: the record.
-        :raises TypeError: for a key this machine does not reach.
+        :param username: the identity a ``.rehu`` is opened as ([[field-schema#per-user-shared]]).
+        :param unknown_username: the identity a ``.tc``'s per-user flags are filed under, their owner being unknown.
+        :returns: the record; never raises for a file that cannot be read.
         """
-        path = self.__path(key)
+        path = key.path
         signature = self.__signature(path)
         if path.suffix.lower() == LEGACY_SUFFIX:
             try:
@@ -61,7 +59,6 @@ class LocalRecords(RecordOps):
             return self.__stub(path, error, username, signature)
         return LoadedRecord(document, version, tuple(document.lock_reasons), signature)
 
-    @override
     def save(
         self, key: ResourceKey, document: RehuDocument, base: RecordVersion | None, *, username: str, overwrite: bool
     ) -> SavedRecord:
@@ -72,12 +69,13 @@ class LocalRecords(RecordOps):
         -- every conflicting one resolved the file's way -- writes only per-user fields, so it takes the file's
         ``updated``; one whose details differ from the file's is an edit and stamps the save's time, even when it
         restores the values the document was opened with.
-        A file that is no longer a readable record -- broken out of band since it was read -- is written over, as
-        it was before the seam: there is nothing left in it to merge or to conflict with, and the write restores it.
+        A file that is no longer a readable record -- broken out of band since it was read -- is written over: there
+        is nothing left in it to merge or to conflict with, and the write restores it.
 
         :param key: the record.
         :param document: what to write; the file's per-user fields are merged into it, in place.
-        :param base: the version ``document`` was read at, or ``None`` to write it as it is.
+        :param base: the version ``document`` was read at, or ``None`` for a record never read from this file -- a
+            new one, or a save-as -- which is written as it is.
         :param username: whose per-user fields ``document`` carries.
         :param overwrite: write over a metadata edit made on disk since ``base``.
         :returns: the record as saved.
@@ -85,9 +83,8 @@ class LocalRecords(RecordOps):
         :raises OSError: the file could not be read or written.
         :raises ValueError: the document is locked against saving, or ``key`` is a legacy ``.tc``, which is never
             written -- it is converted ([[acquisition-tooling#tc-to-rehu]]).
-        :raises TypeError: for a key this machine does not reach.
         """
-        path = self.__path(key)
+        path = key.path
         if path.suffix.lower() == LEGACY_SUFFIX:
             raise ValueError(f"Refusing to save over a legacy record: {path}")
         with record_lock(path):
@@ -114,18 +111,15 @@ class LocalRecords(RecordOps):
         self.__changes.publish(Changed((key,)))
         return SavedRecord(version, signature, users_merged)
 
-    @override
     def stored_text(self, key: ResourceKey) -> str:
         """A record's text as stored.
 
         :param key: the record.
         :returns: its text.
         :raises OSError: it could not be read.
-        :raises TypeError: for a key this machine does not reach.
         """
-        return self.__path(key).read_text(encoding="utf-8")
+        return key.path.read_text(encoding="utf-8")
 
-    @override
     def convert(  # pylint: disable=too-many-arguments
         self,
         key: ResourceKey,
@@ -137,10 +131,11 @@ class LocalRecords(RecordOps):
         screenshot_name_patterns: tuple[ScreenshotNamePattern, ...],
         deleter: Deleter,
     ) -> LoadedRecord:
-        """Convert a legacy ``.tc`` into a ``.rehu`` beside it, and read the new record.
+        """Convert a legacy ``.tc`` into a ``.rehu`` beside it ([[acquisition-tooling#tc-to-rehu]]), and read the new
+        record.
 
         :param key: the ``.tc``.
-        :param keep_backups: keep the ``.orig`` backups.
+        :param keep_backups: keep the ``.orig`` backups rather than deleting them once the conversion is written.
         :param overwrite: replace a ``.rehu`` already there.
         :param username: the identity the imported per-user flags are filed under, and the new record opened as.
         :param excluded_patterns: filename globs the size walk leaves out.
@@ -149,9 +144,8 @@ class LocalRecords(RecordOps):
         :returns: the new record.
         :raises FileExistsError: the ``.rehu`` exists and ``overwrite`` is not set, or a backup is in the way.
         :raises OSError: the conversion failed, and was undone.
-        :raises TypeError: for a key this machine does not reach.
         """
-        tc_path = self.__path(key)
+        tc_path = key.path
         converted = convert_tc(
             tc_path,
             keep_backups=keep_backups,
@@ -162,33 +156,19 @@ class LocalRecords(RecordOps):
             deleter=deleter,
         )
         target = converted.path if converted.path is not None else tc_path.with_suffix(".rehu")
-        target_key = LocalKey(target)
+        target_key = ResourceKey(target)
         self.__changes.publish(Changed((target_key, key)))
         return self.load(target_key, username=username, unknown_username=username)
 
-    @override
     def signature(self, key: ResourceKey) -> FileSignature | None:
-        """A record's modification time and size now, looked at under the rename hold.
+        """A record's modification time and size now, looked at under the rename hold -- what a later look is compared
+        with to see a change made outside the app ([[mounts-and-storage#out-of-band]]).
 
         :param key: the record.
         :returns: its signature; ``None`` when it cannot be stat'ed.
-        :raises TypeError: for a key this machine does not reach.
         """
-        path = self.__path(key)
         with self.__coordinator.holding():
-            return self.__signature(path)
-
-    @staticmethod
-    def __path(key: ResourceKey) -> Path:
-        """The file a key names.
-
-        :param key: the key.
-        :returns: its path.
-        :raises TypeError: for a :class:`~rehuco_core.access.NodeKey`, which only its node's access answers.
-        """
-        if not isinstance(key, LocalKey):
-            raise TypeError(f"Local access cannot reach {key}")
-        return key.path
+            return self.__signature(key.path)
 
     @staticmethod
     def __read(path: Path, username: str) -> tuple[RehuDocument, RecordVersion]:

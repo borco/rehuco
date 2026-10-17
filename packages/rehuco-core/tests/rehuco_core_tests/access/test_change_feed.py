@@ -6,14 +6,14 @@ from typing import Final
 from uuid import UUID
 
 from pytest import LogCaptureFixture
-from rehuco_core import Changed, ChangeEvent, ChangeFeed, FolderChanged, Invalidated, KeyRelocation, LocalKey, Moved
+from rehuco_core import Changed, ChangeEvent, ChangeFeed, FolderChanged, KeyRelocation, Moved, ResourceKey, RootStale
 
-FOLDER: Final = LocalKey(Path("/fake/library").absolute())
+FOLDER: Final = ResourceKey(Path("/fake/library").absolute())
 EVENTS: Final[tuple[ChangeEvent, ...]] = (
     Moved(KeyRelocation()),
     Changed((FOLDER.joinpath("info.rehu"),)),
     FolderChanged(FOLDER),
-    Invalidated(UUID("00000000-0000-0000-0000-000000000001")),
+    RootStale(UUID("00000000-0000-0000-0000-000000000001")),
 )
 
 

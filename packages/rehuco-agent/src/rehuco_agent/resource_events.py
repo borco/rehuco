@@ -1,11 +1,11 @@
 """What changed under the resources the app reaches, announced app-wide as Qt signals
 ([[mounts-and-storage#out-of-band]], #376, #414).
 
-The Qt side of the access seam's change feed ([[nodes#access-seam]]): a rename, a save, a conversion, a screenshot
-moved or deleted, a checksum run finishing -- each is published on a :class:`~rehuco_core.access.ChangeFeed`, and every
-view of those resources updates **in place** from the signal this adapter turns it into, with no rescan and no model
-reset. Everything is named by :data:`~rehuco_core.access.ResourceKey`, so a holder follows a resource whichever machine
-holds it. Still no watcher: what changes outside the app reaches the views through a refresh or a scan, as before.
+The Qt side of the change feed ([[nodes#access-seam]]): a rename, a save, a conversion, a screenshot moved or deleted,
+a checksum run finishing -- each is published on a :class:`~rehuco_core.access.ChangeFeed`, and every view of those
+resources updates **in place** from the signal this adapter turns it into, with no rescan and no model reset.
+Everything is named by :class:`~rehuco_core.access.ResourceKey`. Still no watcher: what changes outside the app reaches
+the views through a refresh or a scan, as before.
 """
 
 from collections.abc import Sequence
@@ -18,10 +18,10 @@ from rehuco_core.access import (
     ChangeEvent,
     ChangeFeed,
     FolderChanged,
-    Invalidated,
     KeyRelocation,
     Moved,
     ResourceKey,
+    RootStale,
 )
 
 
@@ -52,7 +52,7 @@ class ResourceEvents(QObject):
     """Emitted with the key of a folder whose listing changed without saying which files: screenshots renumbered,
     deleted, converted or written."""
 
-    invalidated: Signal = Signal(object)
+    root_stale: Signal = Signal(object)
     """Emitted with the :class:`~uuid.UUID` of a root nothing held about can be trusted any more."""
 
     accessed: Signal = Signal(object)
@@ -66,7 +66,7 @@ class ResourceEvents(QObject):
         moved: Signal = Signal(object)
         changed: Signal = Signal(object)
         folder_changed: Signal = Signal(object)
-        invalidated: Signal = Signal(object)
+        root_stale: Signal = Signal(object)
         accessed: Signal = Signal(object)
 
     def __init__(self, changes: ChangeFeed | None = None, parent: QObject | None = None) -> None:
@@ -76,7 +76,7 @@ class ResourceEvents(QObject):
         self.__marshaller.moved.connect(self.moved)
         self.__marshaller.changed.connect(self.changed)
         self.__marshaller.folder_changed.connect(self.folder_changed)
-        self.__marshaller.invalidated.connect(self.invalidated)
+        self.__marshaller.root_stale.connect(self.root_stale)
         self.__marshaller.accessed.connect(self.accessed)
         self.__changes.add_listener(self.__on_change)
 
@@ -130,7 +130,7 @@ class ResourceEvents(QObject):
                 self.__marshaller.changed.emit(keys)
             case FolderChanged(key):
                 self.__marshaller.folder_changed.emit(key)
-            case Invalidated(root_id):
-                self.__marshaller.invalidated.emit(root_id)
+            case RootStale(root_id):
+                self.__marshaller.root_stale.emit(root_id)
             case _:
                 assert_never(event)

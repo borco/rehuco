@@ -148,7 +148,7 @@ Root caching (#449–#451) follows, unchanged by the redesign.
 **Goal:** two agents on one share, a web user writing progress through a node, and someone editing a file by hand are
 kept apart with no silent overwrite ([[sync#overview]]).
 
-**Tracer bullet:** the lock file and the compare-and-swap in `LocalRecords.save` (and `merge_write`), `.lock` excluded
+**Tracer bullet:** the lock file and the compare-and-swap in `Records.save` (and `merge_write`), `.lock` excluded
 from scans, checksums and renames, a two-process test on one folder.
 
 Then thicken: the apply-payload job on the task queue (#497 rewritten) with its persisted payload, coalescing, Pending

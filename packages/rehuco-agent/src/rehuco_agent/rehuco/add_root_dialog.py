@@ -12,9 +12,8 @@ from .root_storage import fill_root_storage_combo, selected_root_storage
 class AddRootDialog(QDialog):
     """Asks for a new root: its **storage** first, then the folder.
 
-    The storage is on top because it will decide what is asked below it: today every storage is a folder on a disk
-    this machine can see, so one folder picker serves all four, but a root served by another node will want a picker
-    over the swarm's roots instead (Release 0.4.0, [[nodes#access-seam]]).
+    The storage is on top because it may decide what is asked below it: every storage is a folder on a disk this
+    machine can see, so one folder picker serves all four.
 
     :param parent: optional Qt parent.
     """

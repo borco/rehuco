@@ -18,12 +18,12 @@ from rehuco_agent.documents.document_command_router import DocumentCommandRouter
 from rehuco_agent.documents.document_widget import DocumentWidget
 from rehuco_agent.documents.documents_dock import DocumentsDock
 from rehuco_agent.documents.files_view import FilesView
-from rehuco_core.access import LocalKey
+from rehuco_core.access import ResourceKey
 
 from rehuco_agent_tests.qt_waits import wait_destroyed
 
-FIRST_KEY: Final = LocalKey(Path.cwd() / "fake" / "tutorials" / "sculpting" / "info.rehu")
-SECOND_KEY: Final = LocalKey(Path.cwd() / "fake" / "tutorials" / "painting" / "info.rehu")
+FIRST_KEY: Final = ResourceKey(Path.cwd() / "fake" / "tutorials" / "sculpting" / "info.rehu")
+SECOND_KEY: Final = ResourceKey(Path.cwd() / "fake" / "tutorials" / "painting" / "info.rehu")
 TUTORIAL: Final = {
     "format_version": 1,
     "type": "Tutorial",
@@ -94,7 +94,7 @@ def saved_widgets(saved: MagicMock) -> list[object]:
     return [call.args[0] for call in saved.call_args_list]
 
 
-def open_dirty(host: Host, key: LocalKey) -> DocumentWidget:
+def open_dirty(host: Host, key: ResourceKey) -> DocumentWidget:
     """Open a document and edit it, so its Save is enabled -- a clean document's is not.
 
     :param host: the host to open it in.

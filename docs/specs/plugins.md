@@ -685,8 +685,7 @@ and its cache** — the catalog — and both docks read it and hear from it when
     opening it would open: a record itself, a folder's `info.rehu`, a file's same-name `.rehu`, the `.tc` of either when
     that is all there is. **A selection never creates a record**: where opening would offer *Create*, nothing is
     shown. `RootCatalog.resource_key` is the one place a row's `(root_id, relative)` becomes the `ResourceKey` it is
-    reached by ([[nodes#access-seam]], #414) -- for the preview and a browser's double-click alike -- so node-served
-    resources (#421) change that and nothing else.
+    reached by ([[nodes#access-seam]], #414) -- for the preview and a browser's double-click alike.
   - **Which view drives it.** The one the reader is in: the Browsers dock's current browser, or the Root Catalog
     dock, while it is the current outer dock. A selection that moves on its own in a dock the reader is not in does
     not move the preview.

@@ -128,8 +128,7 @@ class RootsFolderModel(QAbstractItemModel):
       storage is not local. An unreachable **local** root is struck through instead (``FontRole``): a local folder
       that will not list has been deleted, where a share or a drive is merely away.
 
-    Everything is read through the one :class:`~rehuco_core.RootFolderLister` the model was last handed, which is the
-    seam Release 0.4.0 swaps for the access seam's listing.
+    Everything is read through the one :class:`~rehuco_core.RootFolderLister` the model was last handed.
 
     :param parent: optional Qt parent.
     """

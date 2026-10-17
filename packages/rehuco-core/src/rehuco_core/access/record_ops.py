@@ -1,8 +1,5 @@
-"""What the records operation group answers: a record as read, as saved, and a save refused as a conflict (#416).
-
-The group itself, :class:`~rehuco_core.access.RecordOps`, is declared beside the other groups in
-:mod:`~rehuco_core.access.resource_access`; these are the values it hands back.
-"""
+"""What :class:`~rehuco_core.access.Records` answers: a record as read, as saved, and a save refused as a
+conflict (#416)."""
 
 from dataclasses import dataclass
 from typing import Final
@@ -50,7 +47,7 @@ class SavedRecord:
 
 class RecordConflict(Exception):
     """A save refused because the record's metadata changed on disk since the saved document was read
-    ([[nodes#access-seam]]); over the network, a ``409``.
+    ([[nodes#access-seam]]).
 
     :param theirs: the record as it is on disk now.
     :param version: its version, which a save that has taken it into account is made against.

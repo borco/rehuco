@@ -67,8 +67,7 @@ The content files are still listed underneath it -- they were enumerated, and wh
 worth showing -- but every status is empty, which is honest: this build knows nothing about them."""
 
 NO_PATH_SUMMARY: Final = "This document is not a file on this machine, so there are no files to check here."
-"""What the summary line says for a document with no local path -- nothing on this machine to enumerate; checksums
-reach a node's records through the access seam later (#426)."""
+"""What the summary line says for a document with no file yet -- nothing to enumerate."""
 
 
 # the members are this surface's parts -- the model, the proxy, the selection, the loader, the two

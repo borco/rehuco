@@ -28,7 +28,7 @@ from rehuco_core import (
     TaskQueue,
     checksum_record_path,
 )
-from rehuco_core.access import AccessRouter, KeyRelocation, LocalKey, ResourceKey
+from rehuco_core.access import KeyRelocation, Records, ResourceKey
 
 from ..resource_events import ResourceEvents
 from ..tasks.job_end_watcher import JobEndWatcher
@@ -89,8 +89,8 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         rename ([[mounts-and-storage#out-of-band]]).
     :param resource_events: the app's file announcements (#376): a rename moves the rows it moved, and a folder the
         app changed is listed again. ``None`` leaves the view to F5.
-    :param access: what a record shown in the details pane is read through ([[nodes#access-seam]]); this machine's
-        own files when not given.
+    :param records: what a record shown in the details pane is read through ([[nodes#access-seam]]); records
+        announcing on a private feed when not given.
     """
 
     open_requested: Signal = Signal(object)
@@ -122,7 +122,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         *,
         rename_coordinator: RenameCoordinator = DEFAULT_RENAME_COORDINATOR,
         resource_events: ResourceEvents | None = None,
-        access: AccessRouter | None = None,
+        records: Records | None = None,
     ) -> None:
         super().__init__(parent)
         self.__catalog: Final = catalog
@@ -169,7 +169,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
             self.__rows.folder_record,
             self.__opening.pack_of,
             drag_image=self.__opening.drag_image,
-            access=access,
+            records=records,
         )
         splitter = self.__roots_ui.roots_splitter
         splitter.addWidget(self.__preview)
@@ -599,7 +599,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         """
         record = checksum_record_path(resource)
         if self.__events is not None:
-            self.__events.announce_changed((LocalKey(record),))
+            self.__events.announce_changed((ResourceKey(record),))
         else:
             self.__roots_model.relist_under(record.parent)
 
@@ -700,17 +700,16 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         pack = self.__opening.pack_of(current)
         selected = selected_record(self.__roots_model, current)
         shown = None if selected is None else self.__catalog.resource_key(*selected)
-        if (pack is not None and pack.record in changed) or (isinstance(shown, LocalKey) and shown.path in changed):
+        if (pack is not None and pack.record in changed) or (shown is not None and shown.path in changed):
             self.__preview.refresh()
             self.__update_enablement()
 
     def __on_folder_changed(self, directory: ResourceKey) -> None:
         """List a folder again that the app changed the contents of, if the Roots view has it loaded.
 
-        :param directory: the folder; one on a node's root is in no listing here.
+        :param directory: the folder.
         """
-        if isinstance(directory, LocalKey):
-            self.__roots_model.relist_folder(directory.path)
+        self.__roots_model.relist_folder(directory.path)
 
     def reselect(self) -> None:
         """Say again which record the current row stands for, for a listener that has just started to care (#457)."""
@@ -722,10 +721,10 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         A directory-scoped record covers its subfolders too, so every loaded folder at or under it is listed again;
         a file-scoped one only changes its own folder, which is the same call.
 
-        :param keys: the files the app wrote or replaced; one on a node's root is in no listing here.
+        :param keys: the files the app wrote or replaced.
         """
         for key in keys:
-            if isinstance(key, LocalKey) and key.path.suffix.lower() == CHECKSUM_RECORD_SUFFIX:
+            if key.path.suffix.lower() == CHECKSUM_RECORD_SUFFIX:
                 self.__roots_model.relist_under(key.path.parent)
 
     def __on_filter_folder(self) -> None:

@@ -6,7 +6,7 @@ from typing import Final
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.main_window import MainWindow
-from rehuco_core.access import LocalKey
+from rehuco_core.access import ResourceKey
 
 from .test_main_window import (  # noqa: F401  # pylint: disable=unused-import
     mock_persistent_settings,
@@ -51,7 +51,7 @@ def test_what_the_catalog_saw_on_disk_reaches_the_open_documents(mocker: MockerF
     qtbot.addWidget(window)
     window.open_path(RECORD)
     registry = window._MainWindow__document_registry  # type: ignore[attr-defined]  # pylint: disable=protected-access
-    model = registry.find(LocalKey(RECORD))
+    model = registry.find(ResourceKey(RECORD))
     noted = mocker.patch.object(model, "note_file_signature")
     catalog = window._MainWindow__root_catalog  # type: ignore[attr-defined]  # pylint: disable=protected-access
 

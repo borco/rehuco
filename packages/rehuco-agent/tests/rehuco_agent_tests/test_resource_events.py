@@ -16,18 +16,17 @@ from rehuco_core.access import (
     ChangeEvent,
     ChangeFeed,
     FolderChanged,
-    Invalidated,
     KeyRelocation,
-    LocalKey,
     Moved,
-    NodeKey,
+    ResourceKey,
+    RootStale,
 )
 
 FOLDER: Final = Path.cwd() / "fake" / "library" / "pack"
 RELOCATION: Final = Relocation(((FOLDER, FOLDER.with_name("kit")),))
 MOVED_KEYS: Final = KeyRelocation.from_local(RELOCATION)
-RECORD: Final = LocalKey(FOLDER / "info.rehu")
-NODE_RECORD: Final = NodeKey("node-a", uuid4(), "pack/info.rehu")
+RECORD: Final = ResourceKey(FOLDER / "info.rehu")
+OTHER_RECORD: Final = ResourceKey(FOLDER.with_name("other") / "info.rehu")
 TIMEOUT: Final = 5000
 
 
@@ -49,9 +48,9 @@ def test_an_announcement_on_the_gui_thread_is_emitted_at_once(qtbot: QtBot) -> N
 
     events.announce_moved(RELOCATION)
     events.announce_changed([RECORD])
-    events.announce_folder_changed(LocalKey(FOLDER))
+    events.announce_folder_changed(ResourceKey(FOLDER))
 
-    assert heard == [MOVED_KEYS, (RECORD,), LocalKey(FOLDER)]
+    assert heard == [MOVED_KEYS, (RECORD,), ResourceKey(FOLDER)]
 
 
 def test_every_feed_event_reaches_its_signal(qtbot: QtBot) -> None:
@@ -70,18 +69,18 @@ def test_every_feed_event_reaches_its_signal(qtbot: QtBot) -> None:
     events.moved.connect(lambda value: heard.append(("moved", value)))
     events.changed.connect(lambda value: heard.append(("changed", value)))
     events.folder_changed.connect(lambda value: heard.append(("folder_changed", value)))
-    events.invalidated.connect(lambda value: heard.append(("invalidated", value)))
+    events.root_stale.connect(lambda value: heard.append(("root_stale", value)))
 
     feed.publish(Moved(MOVED_KEYS))
-    feed.publish(Changed((RECORD, NODE_RECORD)))
-    feed.publish(FolderChanged(NODE_RECORD.parent))
-    feed.publish(Invalidated(root_id))
+    feed.publish(Changed((RECORD, OTHER_RECORD)))
+    feed.publish(FolderChanged(OTHER_RECORD.parent))
+    feed.publish(RootStale(root_id))
 
     assert heard == [
         ("moved", MOVED_KEYS),
-        ("changed", (RECORD, NODE_RECORD)),
-        ("folder_changed", NODE_RECORD.parent),
-        ("invalidated", root_id),
+        ("changed", (RECORD, OTHER_RECORD)),
+        ("folder_changed", OTHER_RECORD.parent),
+        ("root_stale", root_id),
     ]
 
 
@@ -102,10 +101,10 @@ def test_the_announcements_are_published_on_the_feed(qtbot: QtBot) -> None:
 
     events.announce_moved(RELOCATION)
     events.announce_changed([RECORD])
-    events.announce_folder_changed(LocalKey(FOLDER))
+    events.announce_folder_changed(ResourceKey(FOLDER))
 
     assert events.changes is feed
-    assert published == [Moved(MOVED_KEYS), Changed((RECORD,)), FolderChanged(LocalKey(FOLDER))]
+    assert published == [Moved(MOVED_KEYS), Changed((RECORD,)), FolderChanged(ResourceKey(FOLDER))]
 
 
 def test_the_default_feed_is_a_private_one(qtbot: QtBot) -> None:
@@ -152,26 +151,26 @@ def test_an_announcement_off_the_gui_thread_arrives_on_it(qtbot: QtBot) -> None:
 
 
 def test_a_feed_event_published_off_the_gui_thread_arrives_on_it(qtbot: QtBot) -> None:
-    """An event published on the feed from another thread -- as a node's change journal would -- is queued onto
+    """An event published on the feed from another thread -- as the file notifier will (#511) -- is queued onto
     the GUI thread (#414).
 
     **Test steps:**
 
-    * publish an invalidation on the feed from a plain worker thread
+    * publish a stale root on the feed from a plain worker thread
     * verify the signal arrives, on the GUI thread
     """
     feed = ChangeFeed()
     events = ResourceEvents(feed)
     root_id = uuid4()
     threads: list[QThread] = []
-    events.invalidated.connect(lambda _root_id: threads.append(QThread.currentThread()))
+    events.root_stale.connect(lambda _root_id: threads.append(QThread.currentThread()))
 
-    with qtbot.waitSignal(events.invalidated, timeout=TIMEOUT) as invalidated:
-        worker = Thread(target=feed.publish, args=(Invalidated(root_id),))
+    with qtbot.waitSignal(events.root_stale, timeout=TIMEOUT) as stale:
+        worker = Thread(target=feed.publish, args=(RootStale(root_id),))
         worker.start()
         worker.join()
 
-    assert invalidated.args == [root_id]
+    assert stale.args == [root_id]
     assert threads == [events.thread()]
 
 
@@ -192,9 +191,9 @@ def test_an_access_is_announced_with_the_records_opened(qtbot: QtBot) -> None:
     events.accessed.connect(heard.append)
     events.changes.add_listener(published.append)
 
-    events.announce_accessed([RECORD, NODE_RECORD])
+    events.announce_accessed([RECORD, OTHER_RECORD])
 
-    assert heard == [(RECORD, NODE_RECORD)]
+    assert heard == [(RECORD, OTHER_RECORD)]
     assert not published
 
 
@@ -211,7 +210,7 @@ def test_an_event_of_no_known_kind_is_refused_loudly(qtbot: QtBot, caplog: LogCa
     feed = ChangeFeed()
     events = ResourceEvents(feed)
     heard: list[object] = []
-    for signal in (events.moved, events.changed, events.folder_changed, events.invalidated):
+    for signal in (events.moved, events.changed, events.folder_changed, events.root_stale):
         signal.connect(heard.append)
 
     with caplog.at_level(logging.ERROR):

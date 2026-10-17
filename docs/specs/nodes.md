@@ -146,16 +146,19 @@ matches Qt's `QLocalServer`/single-application approach.)
 - [#413: refactor(core): resource keys, key relocation, an access router and a change feed](https://github.com/borco/rehuco/issues/413)
 - [#416: refactor: records through the access seam — load, save with a version check, revert, convert](https://github.com/borco/rehuco/issues/416)
 - [#417: refactor: the Root Catalog through the access seam — roots, queries, rows, scans](https://github.com/borco/rehuco/issues/417)
+- [#510: refactor: tear down the remote access seam — NodeKey, AccessRouter, ResourceAccess, Capability, the empty op groups](https://github.com/borco/rehuco/issues/510)
 
 Every operation on a resource's files goes through a few **operation-level classes in rehuco-core**, Qt-free, that the
-agent and the node both use: `LocalRecords` (load, save, `record_progress`, legacy conversion), `LocalCatalog` (roots,
-query, row, count, follow a rename, refresh a record), and the `ChangeFeed` the notifier publishes on. They were built
-in #413–#417 as the local half of a *remote access seam* — a `ResourceAccess` protocol with a `NodeKey`, an
-`AccessRouter`, capability flags and five empty operation groups waiting for a remote implementation. The remote half
-is **not coming**: a node is one more client of the share, and reaches the files the same way. The scaffolding goes in a
-teardown (#509's follow-up), and what stays is this:
+agent and the node both use: `Records` (load, save, `record_progress`, legacy conversion), `Catalog` (roots, query,
+row, count, follow a rename, refresh a record), and the `ChangeFeed` the notifier publishes on. They were built, in
+issues #413–#417, as `LocalRecords` and `LocalCatalog`, the local half of a *remote access seam* — a `ResourceAccess`
+protocol with a `NodeKey`, an `AccessRouter`, capability flags and five empty operation groups waiting for a remote
+implementation. The remote half was **not coming**: a node is one more client of the share, and reaches the files the
+same way. #510 tore the scaffolding down and dropped the `Local` prefix it no longer contrasted with: the main window
+holds one `Records` and one `Catalog` directly, every key is a `ResourceKey`, and the feed's `Invalidated` became
+`RootStale`. What stayed is this:
 
-**Keys, not paths, where the cache speaks.** A resource is identified by a `LocalKey`: the absolute path, never
+**Keys, not paths, where the cache speaks.** A resource is identified by a `ResourceKey`: the absolute path, never
 resolved, which would touch the disk; compared as its `Path` does — `os.path.normcase`'s rule, case folded on Windows,
 kept on POSIX. The `.rehudb` cache stores resources as root plus root-relative path ([[data-model#cache-schema]]), and
 the node addresses what it serves the same way, so neither depends on a drive letter. A key is a **location**, not an
@@ -181,7 +184,7 @@ identity: recognizing one resource reached by two routes stays a UUID question (
 - With the per-user sidecar ([[data-model#single-file]]) the per-user half of this moves to a file that has one writer
   per user; the conflict dialog gains a second diff source and keeps its rows.
 
-**The catalog group reads; its owner keeps it current.** `LocalCatalog` answers what a client asks of a catalog —
+**The catalog reads; its owner keeps it current.** `Catalog` answers what a client asks of a catalog —
 `roots()`, `query(CatalogQuery)`, `row(key)`, and `count(root)` for Remove Root's question. The two listings raise
 `CatalogUnreadable` where a cache would raise `sqlite3.Error`, so no caller catches a driver's exception; a row or a
 count that cannot be read answers nothing, logged. How a cache is opened, reconciled to the `.rehuco`'s roots and

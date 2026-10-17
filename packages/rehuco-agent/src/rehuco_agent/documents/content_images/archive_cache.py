@@ -18,7 +18,7 @@ hold and at the same kind of tracked location an archive is, so a rename never m
 paused for one resumes at the new name.
 
 **And an idle cache holds nothing** (#355). Only an in-app rename can ask a handle to close; Explorer, a
-second host on the same share, or a future swarm node cannot. So handles are pooled across a burst of
+or another machine on the same share cannot. So handles are pooled across a burst of
 reads and closed once reads stop (:data:`IDLE_CLOSE_SECONDS`), on every platform, since a handle kept
 open on an SMB share blocks the server's other clients whatever the reader's own operating system.
 """

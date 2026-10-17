@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Self
 
 from ..relocation import Relocation
-from .keys import LocalKey, ResourceKey
+from .keys import ResourceKey
 
 
 @dataclass(frozen=True, slots=True)
@@ -12,9 +12,8 @@ class KeyRelocation:
     """The ``(source, destination)`` pairs one rename carried out, and the rule that reads them back.
 
     The same rule as :class:`~rehuco_core.Relocation` -- **a key at or beneath a renamed source lands at the same
-    offset beneath its destination**, the unmoved tail keeping the candidate's own spelling -- with each key kind
-    deciding what "beneath" means (:meth:`~rehuco_core.access.LocalKey.is_at_or_beneath`). An empty relocation moves
-    nothing.
+    offset beneath its destination**, the unmoved tail keeping the candidate's own spelling, "beneath" folded as the
+    filesystem folds it (:meth:`~rehuco_core.access.ResourceKey.is_at_or_beneath`). An empty relocation moves nothing.
 
     :param pairs: the executed renames, in the order they ran.
     """
@@ -26,23 +25,16 @@ class KeyRelocation:
         """The key form of a rename this machine ran.
 
         :param relocation: the rename's executed plan, over absolute paths.
-        :returns: the same pairs as :class:`~rehuco_core.access.LocalKey` objects.
+        :returns: the same pairs as :class:`~rehuco_core.access.ResourceKey` objects.
         """
-        return cls(tuple((LocalKey(source), LocalKey(destination)) for source, destination in relocation.pairs))
+        return cls(tuple((ResourceKey(source), ResourceKey(destination)) for source, destination in relocation.pairs))
 
     def to_local(self) -> Relocation:
-        """The pairs this machine renamed itself, for a holder that keeps only local paths -- the ``.rehudb`` cache, the
-        Roots view's tree. A pair on another node's root concerns no such holder, so it is left out.
+        """The pairs as paths, for a holder that keeps paths -- the ``.rehudb`` cache, the Roots view's tree.
 
-        :returns: the :class:`~rehuco_core.access.LocalKey` pairs, as paths.
+        :returns: the pairs, as paths.
         """
-        return Relocation(
-            tuple(
-                (source.path, destination.path)
-                for source, destination in self.pairs
-                if isinstance(source, LocalKey) and isinstance(destination, LocalKey)
-            )
-        )
+        return Relocation(tuple((source.path, destination.path) for source, destination in self.pairs))
 
     def relocate(self, candidate: ResourceKey) -> ResourceKey:
         """Where ``candidate`` ended up once the rename ran, or ``candidate`` itself if it did not move.

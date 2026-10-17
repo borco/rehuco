@@ -12,7 +12,7 @@ from rehuco_agent.documents.rehu_document_image_organizer import RehuDocumentIma
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.settings.deletion_settings import shared_deletion_settings
 from rehuco_core import DEFAULT_DELETER, RehuDocument
-from rehuco_core.access import LocalKey
+from rehuco_core.access import ResourceKey
 
 DIRECTORY: Final = Path.cwd() / "fake" / "tutorial"
 PATHS: Final = [DIRECTORY / "info00.jpg", DIRECTORY / "info01.png"]
@@ -359,7 +359,7 @@ def test_every_write_announces_the_folder(core: dict[str, MagicMock], operation:
 
     OPERATIONS[operation](RehuDocumentImageOrganizer(model))
 
-    assert heard == [LocalKey(DIRECTORY)]
+    assert heard == [ResourceKey(DIRECTORY)]
 
 
 @pytest.mark.parametrize("operation", OPERATIONS)
@@ -379,7 +379,7 @@ def test_a_failed_write_still_announces_the_folder(core: dict[str, MagicMock], o
     with pytest.raises(OSError, match="boom"):
         OPERATIONS[operation](RehuDocumentImageOrganizer(model))
 
-    assert heard == [LocalKey(DIRECTORY)]
+    assert heard == [ResourceKey(DIRECTORY)]
 
 
 @pytest.mark.parametrize("operation", OPERATIONS)

@@ -7,7 +7,7 @@ is the other way to write: re-read the file, apply one change to what is there n
 atomically -- so a progress write never clobbers a metadata edit and the other way round
 ([[field-schema#watch-progress]]).
 
-The access seam's saves (#416, :class:`~rehuco_core.access.LocalRecords`) take the same per-file lock,
+Record saves (#416, :class:`~rehuco_core.access.Records`) take the same per-file lock,
 :func:`record_lock`, and add a :class:`~rehuco_core.RecordVersion` over the non-user part and a field-by-field
 merge of the per-user maps (:func:`~rehuco_core.record_versions.merge_users`). The re-read and the write are
 serialized **within this process** only, which is what keeps the agent's player, its form and a node hosted by it
