@@ -49,7 +49,12 @@ def test_node_command_runs_the_launched_executable_with_node(mocker: MockerFixtu
     mocker.patch.object(sys, "argv", ["C:\\apps\\Rehuco.exe"])
     mocker.patch.object(node_host, "settings_dir", return_value=Path("C:/state"))
 
-    assert node_command() == [str(Path("C:\\apps\\Rehuco.exe").resolve()), "--node", "--settings-dir", "C:\\state"]
+    assert node_command() == [
+        str(Path("C:\\apps\\Rehuco.exe").resolve()),
+        "--node",
+        "--settings-dir",
+        str(Path("C:/state")),
+    ]
 
 
 def test_node_command_goes_through_the_interpreter_for_python_m(mocker: MockerFixture) -> None:
