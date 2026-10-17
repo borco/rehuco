@@ -190,7 +190,8 @@ design was dropped on 2026-10-16 (#509, [[appendices.post-mortem#architecture]])
   convention. This happens to compute the same base as Windows Explorer's own size column (base-1024 math, just
   `KB`/`MB`/`GB`-style labels instead of GNU's bare letters); revisit if a different convention (decimal/SI, IEC
   `KiB`/`MiB`/`GiB`, or matching Explorer's own labels) turns out to be wanted.
-- **Own the QtAds binding?** (estimated 2026-10-10) Forking Qt-Advanced-Docking-System and writing a shiboken binding
+- **Own the QtAds binding?** (estimated 2026-10-10; filed as #524, which #525's move to PySide6 6.12 needs unless a
+  6.12 `pyside6-qtads` appears first) Forking Qt-Advanced-Docking-System and writing a shiboken binding
   on the `pyside6-scintilla` template (scikit-build-core, `cibuildwheel` ×4, stubs) is ~8–14 h to parity; the
   workarounds then go one by one, `QtAdsPinGuard` (#491) and `QtAdsEmptyingGuard` (#493) among them. `pyside6_qtads` is
   obsolete, not a base. `QMainWindow` + `QDockWidget` instead is ~10–15 h and loses pinning. Not urgent until a QtAds

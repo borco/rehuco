@@ -967,7 +967,18 @@ Tools page (#521) would be probed in a child process and passed by full path in 
 Loaded by full path from another folder before Qt Multimedia is imported — `avutil`, `swresample`, `swscale`,
 `avcodec`, `avformat`, in that order — they are the ones the plugin uses, and Qt's own copies are never loaded. So a
 user's shared FFmpeg 7.1 build, found through the Tools page (#521), can stand in for the bundled one; a build with a
-different major version (FFmpeg 8's `avcodec-62`) cannot, until a PySide6 release built against it.
+different major version (FFmpeg 8's `avcodec-62`) cannot, until a PySide6 release built against it. **This closes the
+AV1 gap**: BtbN's `ffmpeg-n7.1.5-…-win64-lgpl-shared-7.1` carries `libdav1d` ahead of FFmpeg's own `av1` decoder,
+and with hardware decoding off it played both AV1 10-bit clips at their full 30 fps in software, where Qt's own build
+gave no frame at all (its `av1` decoder logging *Get current frame error* per frame, and Qt raising nothing). The
+build must be `shared` and for the machine's architecture (`win64`, not `winarm64`); a plain `lgpl` build holds only
+executables, which serve conversion and probing (#520, #522) and any recent version does.
+
+**The major moves with PySide6.** PySide6 6.12.0 bundles FFmpeg 9.0.1 (`avcodec-63`, `avformat-63`, `avutil-61`,
+`swresample-7`, `swscale-10`), still without software AV1; BtbN's `ffmpeg-n9.0-…-win64-lgpl-shared-9.0` swapped in the
+same way and played both AV1 clips at full rate. Its `PySide6-Addons` installs to 100 MB rather than 6.11.1's 437 MB,
+the playback keep list to 21.6 MB. So the FFmpeg the Tools page accepts for playback is whichever major the shipped
+PySide6 bundles, read from its own DLL names, never a version written into the code.
 
 **Qt Multimedia costs a second wheel, pruned to 20 MB.** The agent depends on `PySide6-Essentials`; Qt Multimedia is
 in `PySide6-Addons`, a 437 MB wheel. Playback needs 20.5 MB of it: `QtMultimedia` and `QtMultimediaWidgets` (module

@@ -144,6 +144,7 @@ nav:
           - Daz3D Personal Database: specs/history/daz3d-personal-database.md
           - pyside-ibo (shared library): specs/history/pyside-ibo.md
   - Implementation Plan: specs/implementation-plan.md
+  - External Tools: external-tools.md
   - Changelog:
       - Overview: changelog/index.md
       - rehuco-agent: changelog/rehuco-agent.md
