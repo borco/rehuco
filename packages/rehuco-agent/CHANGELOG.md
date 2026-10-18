@@ -18,6 +18,14 @@ released becomes the body of the GitHub Release, so each entry is written to be 
   *Settings* > *System Integration* gains a **Local node** block on every platform: *Run the local node while rehuco
   is running* (on by default, applied live) and a line saying whether it runs and under which pid. The status
   bar's right end says *Local Node: Running*, or *Local Node: Stopped* greyed out.
+- **The catalog follows the disk** (#511). Every root of the open catalog is watched: a folder on this machine's own
+  disks through the system's change events, a share on Windows through a session of rehuco's own with the server --
+  which hears every machine's writes -- and anything else by looking at its known records every two minutes. A
+  record saved, renamed or deleted -- in rehuco, on another machine, or in a text editor -- changes its table row, the
+  Roots view and an open document a moment later, with no scan: a document with no unsaved edits reloads, one with
+  edits says the file changed. A document opened from outside every root has its folder watched the same way. A root
+  that cannot be reached keeps its rows in the browsers, greyed, and double-clicking one says why in the status bar
+  instead of opening it; once it is back, it is scanned again.
 
 ### Changed
 
@@ -37,9 +45,9 @@ released becomes the body of the GitHub Release, so each entry is written to be 
   folder's `.rehudb` files across, or let the app start afresh. `--settings-dir DIR` now puts everything directly in
   `DIR`, and `--info` also prints the data folder.
 - **The table browsers no longer freeze the window while they read the catalog.** The rows are read in the
-  background when a catalog opens, a scan ends or a record is saved or renamed, and each browser keeps showing its
-  rows until the new ones arrive. Typing in a filter line filters the rows already read, so it answers at once even
-  on a large catalog, and a browser sorted by a column stays quick too.
+  background when a catalog opens, and then only the rows a scan or a change on disk touched, and each browser keeps
+  showing its rows until the new ones arrive. Typing in a filter line filters the rows already read, so it answers at
+  once even on a large catalog, and a browser sorted by a column stays quick too.
 
 ### Added
 

@@ -20,7 +20,7 @@ from rehuco_agent.rehuco.scrolling_markdown_view import ScrollingMarkdownView
 from rehuco_agent.settings.image_viewer_settings import shared_image_viewer_settings
 from rehuco_agent.settings.markdown_rendering_settings import shared_markdown_rendering_settings
 from rehuco_core import RehucoRoot, RehuDocument, RenameCoordinator, RootFolderLister, RootStorage
-from rehuco_core.access import ChangeFeed, LoadedRecord, Records, ResourceKey
+from rehuco_core.access import LoadedRecord, Records, ResourceKey
 
 from .test_roots_preview import WAIT_TIMEOUT_MS, Shown
 
@@ -375,52 +375,74 @@ def test_a_folder_shows_the_url_and_description_of_its_own_rehu(qtbot: QtBot, sh
     assert shown.preview.record_texts is None
 
 
-def test_a_record_changed_on_disk_since_the_pane_read_it_is_read_again(
-    qtbot: QtBot, shown: Shown, tmp_path: Path
-) -> None:
-    """The pane compares what the disk shows now with what it read, not with the cache (#487).
+def test_a_record_changed_on_disk_is_read_again(qtbot: QtBot, shown: Shown, tmp_path: Path) -> None:
+    """The pane reads its record again when the change feed names it, or a folder above it -- whoever wrote it; a
+    change elsewhere reads nothing (#487, #511).
 
     **Test steps:**
 
     * show a record, then rewrite it outside the app
-    * report the file as it was read: verify nothing is read again
-    * report it as it is now: verify the pane shows the new description
+    * report another file of its folder changed: verify nothing is read again
+    * report the record changed: verify the pane shows the new description
+    * rewrite it again and report its folder changed: verify the pane shows that description
     """
-    path = tmp_path / "lib" / "text_only.rehu"
+    library = tmp_path / "lib"
+    path = library / "text_only.rehu"
     show_record(qtbot, shown, "text_only.rehu")
-    read_at = path.stat()
     write_record(path, description="Rewritten outside the app, at more length.")
 
-    shown.preview.follow_files({path: (read_at.st_mtime_ns, read_at.st_size)})
+    shown.preview.follow_changes((ResourceKey(library / "neither.rehu"),))
+    qtbot.wait(50)
     assert (shown.preview.record_texts or ("", ""))[1] == "Just words."
 
-    now = path.stat()
-    shown.preview.follow_files({path: (now.st_mtime_ns, now.st_size)})
+    shown.preview.follow_changes((ResourceKey(path),))
     qtbot.waitUntil(
         lambda: (shown.preview.record_texts or ("", ""))[1] == "Rewritten outside the app, at more length.",
         timeout=WAIT_TIMEOUT_MS,
     )
 
+    write_record(path, description="Rewritten once more.")
+    shown.preview.follow_changes((ResourceKey(library),))
+    qtbot.waitUntil(
+        lambda: (shown.preview.record_texts or ("", ""))[1] == "Rewritten once more.", timeout=WAIT_TIMEOUT_MS
+    )
 
-def test_a_record_is_read_through_the_records_given_and_one_without_a_signature_is_not_followed(
-    qtbot: QtBot, mocker: MockerFixture, tmp_path: Path
+
+def test_a_pane_that_shows_no_record_follows_no_change(
+    qtbot: QtBot, mocker: MockerFixture, shown: Shown, tmp_path: Path
 ) -> None:
-    """The pane reads a record through the records it was handed (#416); a record whose file could not be
-    stat'ed has nothing to compare a report with, so a report reads nothing again.
+    """With no record shown there is nothing a change could make stale (#511).
+
+    **Test steps:**
+
+    * show a video, which no record describes, and spy on the pane's refresh
+    * report its folder changed
+    * verify the pane was not shown again
+    """
+    shown.preview.show_index(shown.row("clip.mp4"))
+    qtbot.wait(50)
+    refresh = mocker.patch.object(shown.preview, "refresh")
+
+    shown.preview.follow_changes((ResourceKey(tmp_path / "lib"),))
+
+    refresh.assert_not_called()
+
+
+def test_a_record_is_read_through_the_records_given(qtbot: QtBot, mocker: MockerFixture, tmp_path: Path) -> None:
+    """The pane reads a record through the records it was handed (#416), and shows what it says whether or not its
+    file could be stat'ed: what it read carries no signature to the pane any more (#511).
 
     **Test steps:**
 
     * build a preview over a library, with records whose reads are recorded and answer no signature
     * show a record
     * verify it was read once, through those records, and its description shown
-    * report the file as it is now
-    * verify nothing was read again and the pane still shows the description
     """
     library = tmp_path / "lib"
     library.mkdir()
     path = library / "text_only.rehu"
     write_record(path, description="Just words.")
-    records = Records(ChangeFeed())
+    records = Records()
     read = records.load
     reads: list[ResourceKey] = []
 
@@ -446,12 +468,6 @@ def test_a_record_is_read_through_the_records_given_and_one_without_a_signature_
 
     preview.show_index(model.index(0, 0, root_index))
     qtbot.waitUntil(lambda: preview.record_texts is not None, timeout=WAIT_TIMEOUT_MS)
-
-    assert reads == [ResourceKey(path)]
-    assert (preview.record_texts or ("", ""))[1] == "Just words."
-
-    now = path.stat()
-    preview.follow_files({path: (now.st_mtime_ns, now.st_size + 1)})
 
     assert reads == [ResourceKey(path)]
     assert (preview.record_texts or ("", ""))[1] == "Just words."

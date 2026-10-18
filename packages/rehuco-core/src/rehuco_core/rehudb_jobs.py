@@ -172,6 +172,7 @@ class ScanCatalogRootJob(CatalogRootJob):
         self.__coordinator: Final = coordinator if coordinator is not None else DEFAULT_RENAME_COORDINATOR
         self.__location = self.__coordinator.track(root) if root is not None else None
         self.__result: RootScanResult | None = None
+        self.__touched: frozenset[int] = frozenset()
         super().__init__(cache_path, root_id, root_label=root_label, label=label)
 
     # a property over TaskJobBase's plain attribute: the root can be renamed under a running scan
@@ -185,6 +186,12 @@ class ScanCatalogRootJob(CatalogRootJob):
         """What the last completed scan found, or ``None`` before one has finished."""
         return self.__result
 
+    @property
+    def touched_rows(self) -> frozenset[int]:
+        """The ids of the rows the last completed scan changed -- read again or removed (#511); none before one has
+        finished, or when the root could not be listed."""
+        return self.__touched
+
     def validate(self) -> str | None:
         """See :meth:`CatalogRootJob.validate` -- also requires a folder. Whether it is *there* is the scan's
         to find out: an offline root is an outcome, not a reason not to start."""
@@ -194,6 +201,7 @@ class ScanCatalogRootJob(CatalogRootJob):
         """Drop the last scan's result along with the stop request, so a retry reports its own run."""
         super().reset()
         self.__result = None
+        self.__touched = frozenset()
 
     def run(self, control: JobControl) -> None:
         """Scan the root, then apply what was found, or record that the root is offline.
@@ -215,11 +223,13 @@ class ScanCatalogRootJob(CatalogRootJob):
                 progress=lambda done: control.report(done, None if total is None else max(total, done)),
                 known=known,
             ).scan()
+            touched: set[int] = set()
             if result.applicable:
-                cache.apply_root_scan(root_id, result.records, unchanged=result.unchanged)
+                cache.apply_root_scan(root_id, result.records, unchanged=result.unchanged, touched=touched)
             else:
                 cache.mark_root_unreachable(root_id)
         self.__result = result
+        self.__touched = frozenset(touched)
         LOG.info(
             "%s: %s, %d records read (%d legacy, %d unreadable), %d unchanged, %d branches unreadable.",
             self.label,

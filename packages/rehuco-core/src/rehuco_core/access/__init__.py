@@ -16,7 +16,7 @@ Nothing here imports Qt.
 
 from .catalog import Catalog
 from .catalog_ops import CatalogSession, CatalogUnreadable
-from .change_feed import Changed, ChangeEvent, ChangeFeed, FolderChanged, Moved, RootStale
+from .change_feed import Changed, ChangeEvent, ChangeFeed, FolderChanged, Moved, RootReachable, RootStale
 from .key_relocation import KeyRelocation
 from .keys import ResourceKey
 from .record_ops import FileSignature, LoadedRecord, RecordConflict, SavedRecord
@@ -37,6 +37,7 @@ __all__ = [
     "Records",
     "Moved",
     "RecordConflict",
+    "RootReachable",
     "RootStale",
     "SavedRecord",
 ]

@@ -54,12 +54,15 @@ QUIET_LOGGERS: Final = {
     "selenium.webdriver.remote.remote_connection": logging.INFO,
     "urllib3.connectionpool": logging.INFO,
     "MARKDOWN": logging.INFO,
+    "smbprotocol": logging.ERROR,
+    "spnego": logging.WARNING,
 }
-"""Loggers whose DEBUG output is noise rather than a trail worth keeping: every WebDriver command and
-response -- including a whole page source -- the local HTTP calls behind them, and a "successfully
-loaded extension" line on every markdown render. Raised to INFO here rather than only filtered out of
-the file, so the same page source is never cached by the bridge for replay, printed to the console, or
-padding an in-app log dock either (#362)."""
+"""Loggers whose lower levels are noise rather than a trail worth keeping: every WebDriver command and response --
+including a whole page source -- the local HTTP calls behind them, a "successfully loaded extension" line on every
+markdown render, and the file notifier's SMB session -- a line per change-notify request, and a warning for every
+session closed (#511), whose failures the notifier logs itself. Raised here rather than only filtered out of the
+file, so the same page source is never cached by the bridge for replay, printed to the console, or padding an in-app
+log dock either (#362)."""
 
 REPEAT_REPORT_INTERVAL_S: Final = 60.0
 """How often, at most, a repeating identical exception is mentioned again -- as a count, never the

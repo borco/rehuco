@@ -115,7 +115,8 @@ def test_a_detached_catalog_answers_nothing_and_changes_nothing(tmp_path: Path) 
     assert catalog.row(key) is None
     assert catalog.count(LIBRARY_ID) == 0
     assert catalog.follow(KeyRelocation(((key, key.with_name("moved.rehu")),))) == set()
-    assert catalog.refresh([key]) == set()
+    assert not catalog.record_paths([key])
+    catalog.mark_reachable(LIBRARY_ID, False)
     assert not catalog.plan_verify([key])
     assert catalog.apply_verify([]) == (set(), set())
 
@@ -415,26 +416,64 @@ def test_a_rename_rebases_its_rows_and_says_which(tmp_path: Path) -> None:
     assert catalog.follow(KeyRelocation(((ResourceKey(library.path / "x"), ResourceKey(library.path / "y")),))) == set()
 
 
-def test_a_record_the_app_wrote_is_read_back_into_its_row(tmp_path: Path) -> None:
-    """``refresh`` reads a written record into the cache and answers the rows it touched; anything it cannot place
-    answers nothing.
+def test_the_records_at_or_beneath_a_key_are_read_from_the_cache(tmp_path: Path) -> None:
+    """``record_paths`` answers the records the cache holds at or beneath each key -- a record itself, everything under
+    a folder -- each once, as absolute paths; a key under no root adds nothing, and so does an empty request (#511).
 
     **Test steps:**
 
-    * attach an empty cache, write a record under a root, and refresh it
-    * verify its row is listed with its title and was answered
-    * verify a record under no root answers nothing
+    * attach a cache with rows in two folders of one root and one in the other root
+    * verify a folder key answers the records beneath it, a record key answers itself, and a key given twice, a key
+      under no root and no keys at all add nothing more
     """
-    library, _ = roots = roots_under(tmp_path)
-    catalog = attached(tmp_path, roots)
-    key = write_record(library.path / "a" / "info.rehu", "Fresh")
+    library, packs = roots = roots_under(tmp_path)
+    catalog = attached(
+        tmp_path,
+        roots,
+        {
+            LIBRARY_ID: [record("a/one.rehu"), record("a/deep/two.rehu"), record("b/three.rehu")],
+            PACKS_ID: [record("p.rehu")],
+        },
+    )
+    folder = ResourceKey(library.path / "a")
+    single = ResourceKey(packs.path / "p.rehu")
 
-    affected = catalog.refresh([key])
+    found = catalog.record_paths([folder, single, folder, ResourceKey(tmp_path / "elsewhere")])
 
-    (row,) = catalog.query(CatalogQuery())
-    assert affected == {row.resource_id}
-    assert (row.record.path, row.record.title) == ("a/info.rehu", "Fresh")
-    assert catalog.refresh([write_record(tmp_path / "elsewhere" / "info.rehu", "Stray")]) == set()
+    assert sorted(found) == sorted(
+        [library.path / "a" / "one.rehu", library.path / "a" / "deep" / "two.rehu", single.path]
+    )
+    assert len(found) == 3
+    assert not catalog.record_paths([])
+
+
+def test_a_roots_reachability_is_recorded_for_a_root_of_the_view_only(tmp_path: Path) -> None:
+    """``mark_reachable`` writes what the root's file notifier saw into its cache row, its rows untouched; a root the
+    view dropped is left alone (#511).
+
+    **Test steps:**
+
+    * attach a cache whose library has a row, and mark it unreachable, then reachable again
+    * verify the root's reachability follows each mark and its row is still listed
+    * hide the packs root, mark it unreachable, and verify its cache row is unchanged
+    """
+    roots = roots_under(tmp_path)
+    catalog = attached(tmp_path, roots, {LIBRARY_ID: [record("a/info.rehu")], PACKS_ID: []})
+
+    def reachable(root_id: UUID) -> bool | None:
+        """What the cache says of a root's reachability."""
+        with CatalogCache.open(tmp_path / "catalog.rehudb") as cache:
+            return next(root.reachable for root in cache.roots() if root.root_id == root_id)
+
+    catalog.mark_reachable(LIBRARY_ID, False)
+    assert reachable(LIBRARY_ID) is False
+    assert paths_of(catalog) == [(LIBRARY_ID, "a/info.rehu")]
+    catalog.mark_reachable(LIBRARY_ID, True)
+    assert reachable(LIBRARY_ID) is True
+
+    catalog.hide(PACKS_ID)
+    catalog.mark_reachable(PACKS_ID, False)
+    assert reachable(PACKS_ID) is True
 
 
 def test_verify_on_access_plans_from_the_cache_and_applies_what_the_disk_showed(tmp_path: Path) -> None:
@@ -469,7 +508,9 @@ def test_upkeep_that_cannot_reach_the_cache_is_logged_and_answers_nothing(
 
     * attach a cache with a row, and write a record it has none for; plan a verify of it while the cache works
     * make the cache's reads and the updater's plan and apply raise a database error
-    * verify a rename, a refresh, a plan and an apply each answer nothing, and each failure is logged
+    * make the cache's record paths and reachability writes raise too
+    * verify a rename, a record lookup, a reachability mark, a plan and an apply each answer nothing, and each
+      failure is logged
     """
     library, _ = roots = roots_under(tmp_path)
     catalog = attached(tmp_path, roots, {LIBRARY_ID: [record("a/info.rehu")]})
@@ -478,18 +519,22 @@ def test_upkeep_that_cannot_reach_the_cache_is_logged_and_answers_nothing(
     locked = sqlite3.OperationalError("locked")
     mocker.patch.object(CatalogCache, "resource_ids", side_effect=locked)
     mocker.patch("rehuco_core.access.catalog.CatalogRecordUpdater.plan", side_effect=locked)
+    mocker.patch.object(CatalogCache, "record_paths", side_effect=locked)
+    mocker.patch.object(CatalogCache, "mark_root_reachable", side_effect=locked)
 
     with caplog.at_level(logging.ERROR):
         assert (
             catalog.follow(KeyRelocation(((ResourceKey(library.path / "a"), ResourceKey(library.path / "c")),)))
             == set()
         )
-        assert catalog.refresh([key]) == set()
+        assert not catalog.record_paths([key])
+        catalog.mark_reachable(LIBRARY_ID, False)
         assert not catalog.plan_verify([key])
         assert catalog.apply_verify(findings) == (set(), set())
 
     assert "Could not follow a rename in the cache" in caplog.text
     assert "Could not update the cache" in caplog.text
+    assert f"Could not read the cache {catalog.cache_path}: locked" in caplog.text
     assert "Could not read the cache" in caplog.text and "to verify records" in caplog.text
 
 

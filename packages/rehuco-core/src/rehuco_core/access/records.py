@@ -13,7 +13,6 @@ from ..rename_coordination import DEFAULT_RENAME_COORDINATOR, RenameCoordinator
 from ..tc_conversion import convert_tc
 from ..tc_document import load_tc
 from ..tc_screenshots import ScreenshotNamePattern
-from .change_feed import Changed, ChangeFeed
 from .keys import ResourceKey
 from .record_ops import FileSignature, LoadedRecord, RecordConflict, SavedRecord
 
@@ -27,14 +26,13 @@ class Records:
     """Records reached through this machine's filesystem.
 
     Saves are serialized per file within this process by :func:`~rehuco_core.record_merge.record_lock` -- the lock a
-    progress write takes too, so the two never interleave.
+    progress write takes too, so the two never interleave. **A write is announced by no one here**: the file notifier
+    reports it like any other writer's ([[mounts-and-storage#out-of-band]], #511).
 
-    :param changes: where every write is announced.
     :param coordinator: the rename barrier :meth:`signature` looks under, so it never blocks a rename.
     """
 
-    def __init__(self, changes: ChangeFeed, coordinator: RenameCoordinator = DEFAULT_RENAME_COORDINATOR) -> None:
-        self.__changes: Final = changes
+    def __init__(self, coordinator: RenameCoordinator = DEFAULT_RENAME_COORDINATOR) -> None:
         self.__coordinator: Final = coordinator
 
     def load(self, key: ResourceKey, *, username: str, unknown_username: str) -> LoadedRecord:
@@ -108,7 +106,6 @@ class Records:
             # save's check reads the file
             _, version = self.__read(path, document.username)
             signature = self.__signature(path)
-        self.__changes.publish(Changed((key,)))
         return SavedRecord(version, signature, users_merged)
 
     def stored_text(self, key: ResourceKey) -> str:
@@ -157,7 +154,6 @@ class Records:
         )
         target = converted.path if converted.path is not None else tc_path.with_suffix(".rehu")
         target_key = ResourceKey(target)
-        self.__changes.publish(Changed((target_key, key)))
         return self.load(target_key, username=username, unknown_username=username)
 
     def signature(self, key: ResourceKey) -> FileSignature | None:

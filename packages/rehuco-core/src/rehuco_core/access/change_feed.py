@@ -1,7 +1,8 @@
 """What changed under the resources the app reaches, announced without Qt (#413).
 
-The Qt-free form of the agent's ``ResourceEvents`` ([[nodes#access-seam]]): :class:`~rehuco_core.access.Records`
-publishes every write it makes here, and the agent adapts the feed to Qt signals. Each event says *what* changed, never
+The Qt-free form of the agent's ``ResourceEvents`` ([[nodes#access-seam]]): the file notifiers
+(:mod:`rehuco_core.notify`, #511) publish here what the disk says changed -- whoever wrote it -- and the rename
+coordinator a rename this machine ran; the agent adapts the feed to Qt signals. Each event says *what* changed, never
 what to do about it -- every holder applies its own rule.
 """
 
@@ -30,10 +31,10 @@ class Moved:
 
 @dataclass(frozen=True, slots=True)
 class Changed:
-    """Files were written or replaced: a saved record, a converted one and what it replaced, a rewritten checksum
-    record.
+    """Files were written, replaced, created or deleted -- a saved record, a converted one and what it replaced, a
+    rewritten checksum record -- or a folder was deleted, which stands for whatever was beneath it.
 
-    :param keys: the files' keys.
+    :param keys: the files' or folders' keys.
     """
 
     keys: tuple[ResourceKey, ...]
@@ -60,7 +61,20 @@ class RootStale:
     root_id: UUID
 
 
-type ChangeEvent = Moved | Changed | FolderChanged | RootStale
+@dataclass(frozen=True, slots=True)
+class RootReachable:
+    """Whether a root's folder can be reached now: published by the file notifier when the folder goes away -- a
+    share whose server went off, a drive unplugged -- and when it is back, and once when it starts watching (#511).
+
+    :param root_id: the root's ``.rehuco`` id.
+    :param reachable: whether it can be reached.
+    """
+
+    root_id: UUID
+    reachable: bool
+
+
+type ChangeEvent = Moved | Changed | FolderChanged | RootStale | RootReachable
 """One announcement on a :class:`ChangeFeed`."""
 
 

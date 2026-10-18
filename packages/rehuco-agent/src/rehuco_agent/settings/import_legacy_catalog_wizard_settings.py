@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final, cast
 
+from borco_core import absolute_path
 from PySide6.QtCore import QByteArray, QSettings
 
 GROUP: Final = "import_legacy_catalog_wizard"
@@ -60,7 +61,7 @@ class ImportLegacyCatalogWizardSettings:
         self.recent_roots.clear()
         for index in range(settings.beginReadArray(ROOTS_KEY)):
             settings.setArrayIndex(index)
-            root = Path(str(settings.value(ROOT_KEY, ""))).resolve()
+            root = absolute_path(str(settings.value(ROOT_KEY, "")))
             self.recent_roots[root] = None  # pylint: disable=unsupported-assignment-operation
         settings.endArray()
         settings.endGroup()

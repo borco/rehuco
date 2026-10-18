@@ -2261,23 +2261,33 @@ def test_resync_sources_announces_a_job_whose_source_moved(queue: TaskQueue, lis
     The row a reader clicks has to name somewhere that exists; a rename mid-sweep would otherwise leave
     it pointing at a folder that is gone.
 
+    The worker is held by a job ahead of it, so the job waits in line and nothing but the re-read speaks of it: a job
+    the worker was free to run would report its own progress, under the old path, whenever the worker got to it.
+
     **Test steps:**
 
-    * enqueue a job over a movable source and check the row carries the original path
+    * hold the worker with a gated job, then enqueue a job over a movable source behind it
+    * check the row carries the original path
     * move the source and ask the queue to re-read
-    * check exactly one update arrived, carrying the new path
+    * check exactly one update arrived, carrying the new path; let the gated job go
     """
-    job = MovableSourceJob("scan", Path("/fake/library/old_folder/info.rehu"))
-    serial = queue.enqueue(job)
-    assert listener.enqueued[0][0].source == Path("/fake/library/old_folder/info.rehu")
-    listener.updated.clear()
+    gated = GatedJob()
+    queue.enqueue(gated)
+    try:
+        assert gated.entered.wait(TIMEOUT)
+        job = MovableSourceJob("scan", Path("/fake/library/old_folder/info.rehu"))
+        serial = queue.enqueue(job)
+        assert listener.enqueued[-1][0].source == Path("/fake/library/old_folder/info.rehu")
+        listener.updated.clear()
 
-    job.source = Path("/fake/library/new_name/info.rehu")
-    queue.resync_sources()
+        job.source = Path("/fake/library/new_name/info.rehu")
+        queue.resync_sources()
 
-    assert [(status.serial, status.source) for status in listener.updated] == [
-        (serial, Path("/fake/library/new_name/info.rehu"))
-    ]
+        assert [(status.serial, status.source) for status in listener.updated] == [
+            (serial, Path("/fake/library/new_name/info.rehu"))
+        ]
+    finally:
+        gated.release.set()
 
 
 def test_resync_sources_is_silent_when_nothing_moved(queue: TaskQueue, listener: RecordingListener) -> None:
@@ -2288,17 +2298,24 @@ def test_resync_sources_is_silent_when_nothing_moved(queue: TaskQueue, listener:
 
     **Test steps:**
 
+    * hold the worker with a gated job, so nothing behind it reports progress while the test listens
     * enqueue a job over a fixed source and a job about no resource at all
     * re-read sources without moving anything
-    * check no update arrived
+    * check no update arrived; let the gated job go
     """
-    queue.enqueue(MovableSourceJob("scan", Path("/fake/library/old_folder/info.rehu")))
-    queue.enqueue(RecordingJob("sourceless"))
-    listener.updated.clear()
+    gated = GatedJob()
+    queue.enqueue(gated)
+    try:
+        assert gated.entered.wait(TIMEOUT)
+        queue.enqueue(MovableSourceJob("scan", Path("/fake/library/old_folder/info.rehu")))
+        queue.enqueue(RecordingJob("sourceless"))
+        listener.updated.clear()
 
-    queue.resync_sources()
+        queue.resync_sources()
 
-    assert listener.updated == []
+        assert listener.updated == []
+    finally:
+        gated.release.set()
 
 
 def test_resync_sources_re_reads_finished_jobs_too(

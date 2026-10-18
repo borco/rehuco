@@ -38,7 +38,7 @@ import logging
 import os
 import sqlite3
 import time
-from collections.abc import Collection, Generator, Sequence
+from collections.abc import Collection, Generator, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import StrEnum
@@ -506,8 +506,17 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
 
         :param root_id: the root.
         """
+        self.mark_root_reachable(root_id, False)
+
+    def mark_root_reachable(self, root_id: UUID, reachable: bool) -> None:
+        """Record whether a root's folder can be reached -- what its file notifier last saw, or a scan (#511). Its rows
+        stay exactly as they were.
+
+        :param root_id: the root.
+        :param reachable: whether it can be reached.
+        """
         with self.__transaction() as connection:
-            connection.execute("UPDATE roots SET reachable = 0 WHERE id = ?", (str(root_id),))
+            connection.execute("UPDATE roots SET reachable = ? WHERE id = ?", (int(reachable), str(root_id)))
 
     def remove_root(self, root_id: UUID) -> None:
         """Delete a root and, by cascade, everything found under it; then hand the space back.
@@ -534,6 +543,7 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
         *,
         unchanged: Sequence[str] = (),
         scanned_at: float | None = None,
+        touched: set[int] | None = None,
     ) -> bool:
         """Replace a root's resources with what a scan of it found, in one transaction -- mark and sweep.
 
@@ -546,6 +556,9 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
             unchanged and did not read (#373): each keeps its row as it is -- its ``scanned_at`` included, which says
             when it was last *read* -- but for its spelling, which follows a case-only rename.
         :param scanned_at: when the scan ran; now, when omitted.
+        :param touched: when given, filled with the ids of the rows the scan changed -- every record it read, which an
+            incremental scan does only for one whose file changed, and every row it removed -- so a browser updates
+            just those (#511).
         :returns: whether it was applied -- ``False`` when the root was removed while the scan ran, which
             leaves nothing to apply to.
         """
@@ -555,7 +568,8 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
             if connection.execute("SELECT 1 FROM roots WHERE id = ?", (key,)).fetchone() is None:
                 LOG.info("The root %s was removed while it was scanned; the scan is dropped.", root_id)
                 return False
-            kept = {self.__upsert(connection, key, record, stamp) for record in records}
+            read = {self.__upsert(connection, key, record, stamp) for record in records}
+            kept = set(read)
             for path in unchanged:
                 row = connection.execute(
                     "UPDATE resources SET path = ?, folded_path = ? WHERE root_id = ? AND path_key = ? RETURNING id",
@@ -567,8 +581,11 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
                 resource_id
                 for (resource_id,) in connection.execute("SELECT id FROM resources WHERE root_id = ?", (key,))
             }
-            connection.executemany("DELETE FROM resources WHERE id = ?", [(gone,) for gone in existing - kept])
+            gone = existing - kept
+            connection.executemany("DELETE FROM resources WHERE id = ?", [(row,) for row in gone])
             connection.execute("UPDATE roots SET reachable = 1, scanned_at = ? WHERE id = ?", (stamp, key))
+            if touched is not None:
+                touched.update(read, gone)
             self.__prune_values(connection)
         return True
 
@@ -735,8 +752,25 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
         :param paths: absolute paths, of records or of folders; one under no root adds nothing.
         :returns: the rows' ids.
         """
+        return {resource_id for _, (resource_id, _) in self.__subtree_rows(paths)}
+
+    def record_paths(self, paths: Sequence[Path]) -> list[Path]:
+        """The records whose rows are at or beneath each of ``paths`` -- what a folder deleted or replaced outside the
+        app held, for the records to be checked against the disk (#511).
+
+        :param paths: absolute paths, of records or of folders; one under no root adds nothing.
+        :returns: the records' absolute paths, each once.
+        """
+        found = (root.path.joinpath(*relative.split("/")) for root, (_, relative) in self.__subtree_rows(paths))
+        return list(dict.fromkeys(found))
+
+    def __subtree_rows(self, paths: Sequence[Path]) -> Iterator[tuple[CatalogRoot, tuple[int, str]]]:
+        """Each row at or beneath each of ``paths``, under every root holding it, with that root.
+
+        :param paths: absolute paths, of records or of folders.
+        :yields: ``(root, (row id, root-relative path))``.
+        """
         roots = self.roots()
-        ids: set[int] = set()
         for path in paths:
             parts = self.__normalized_parts(path)
             for root in roots:
@@ -745,11 +779,11 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
                     continue
                 relative = "/".join(path.parts[depth:])
                 cursor = self.__connection.execute(
-                    f"SELECT id FROM resources WHERE root_id = ? AND {SUBTREE_CLAUSE}",  # nosec  # B608: fixed
+                    f"SELECT id, path FROM resources WHERE root_id = ? AND {SUBTREE_CLAUSE}",  # nosec  # B608: fixed
                     (str(root.root_id), *self.__subtree_keys(relative)),
                 )
-                ids.update(resource_id for (resource_id,) in cursor)
-        return ids
+                for row in cursor:
+                    yield root, row
 
     def rows(self, query: CatalogQuery | None = None, *, ids: Collection[int] | None = None) -> list[CatalogRow]:
         """The resources matching ``query``, in root order and then by path.

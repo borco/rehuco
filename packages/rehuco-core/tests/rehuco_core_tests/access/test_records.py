@@ -15,9 +15,6 @@ from rehuco_core import (
     DEFAULT_DELETER,
     EXCLUDED_FILE_PATTERNS,
     SCREENSHOT_NAME_PATTERNS,
-    Changed,
-    ChangeEvent,
-    ChangeFeed,
     LoadedRecord,
     LockReasonKind,
     RecordConflict,
@@ -80,17 +77,6 @@ def write_record(path: Path, data: dict[str, Any]) -> ResourceKey:
     return ResourceKey(path)
 
 
-def records_with_feed() -> tuple[Records, list[ChangeEvent]]:
-    """Records whose change feed is listened to.
-
-    :returns: the records, and the list every event they announce is appended to.
-    """
-    feed = ChangeFeed()
-    heard: list[ChangeEvent] = []
-    feed.add_listener(heard.append)
-    return Records(feed), heard
-
-
 def load(records: Records, key: ResourceKey) -> LoadedRecord:
     """Load a record as :data:`USERNAME`.
 
@@ -137,7 +123,7 @@ def test_a_rehu_loads_with_its_version_and_signature(tmp_path: Path) -> None:
     """
     path = tmp_path / "info.rehu"
     key = write_record(path, tutorial_data({USERNAME: {"rating": 3}}))
-    records, heard = records_with_feed()
+    records = Records()
 
     loaded = load(records, key)
 
@@ -147,7 +133,6 @@ def test_a_rehu_loads_with_its_version_and_signature(tmp_path: Path) -> None:
     assert loaded.version == record_version(loaded.document.data, path.read_text(encoding="utf-8"))
     assert loaded.signature == (stat.st_mtime_ns, stat.st_size)
     assert not loaded.lock_reasons
-    assert not heard
 
 
 def test_a_legacy_tc_loads_without_a_version_under_the_unknown_username(tmp_path: Path) -> None:
@@ -162,7 +147,7 @@ def test_a_legacy_tc_loads_without_a_version_under_the_unknown_username(tmp_path
     path = tmp_path / "info.tc"
     path.write_text(TC_YAML, encoding="utf-8")
 
-    loaded = load(Records(ChangeFeed()), ResourceKey(path))
+    loaded = load(Records(), ResourceKey(path))
 
     assert loaded.version is None
     assert loaded.document.username == UNKNOWN
@@ -184,7 +169,7 @@ def test_a_missing_record_loads_as_a_locked_stub(tmp_path: Path, caplog: LogCapt
     path = tmp_path / name
 
     with caplog.at_level(logging.ERROR):
-        loaded = load(Records(ChangeFeed()), ResourceKey(path))
+        loaded = load(Records(), ResourceKey(path))
 
     assert loaded.document.load_failed
     assert "core" not in loaded.document.data
@@ -206,7 +191,7 @@ def test_an_unparseable_record_loads_as_a_locked_stub_with_its_signature(tmp_pat
     path = tmp_path / "info.rehu"
     path.write_text("{not json", encoding="utf-8")
 
-    loaded = load(Records(ChangeFeed()), ResourceKey(path))
+    loaded = load(Records(), ResourceKey(path))
 
     assert loaded.document.load_failed
     assert [reason.kind for reason in loaded.lock_reasons] == [LockReasonKind.INVALID_FILE]
@@ -228,7 +213,7 @@ def test_an_older_format_record_loads_at_one_version_every_time(tmp_path: Path) 
         tmp_path / "info.rehu",
         {"format_version": 1, "type": "tutorial", "updated": UPDATED, "sources": [{"title": "T", "primary": True}]},
     )
-    records = Records(ChangeFeed())
+    records = Records()
 
     assert load(records, key).version == load(records, key).version
 
@@ -238,15 +223,15 @@ def test_an_older_format_record_loads_at_one_version_every_time(tmp_path: Path) 
 
 # region save
 def test_a_save_with_no_base_writes_the_document_as_it_is(tmp_path: Path) -> None:
-    """A record never read from this file -- a new one, a save-as -- is written as it is, over whatever is there,
-    and announced.
+    """A record never read from this file -- a new one, a save-as -- is written as it is, over whatever is there;
+    nobody is told here, the file notifier reports the write like any other writer's (#511).
 
     **Test steps:**
 
     * save a new document at a fresh path, then another over an existing file with other ratings
-    * verify each file holds its document, the versions match a fresh load, nothing was merged, both announced
+    * verify each file holds its document, the versions match a fresh load, nothing was merged
     """
-    records, heard = records_with_feed()
+    records = Records()
     new_key = ResourceKey(tmp_path / "new.rehu")
     existing = tmp_path / "existing.rehu"
     existing_key = write_record(existing, tutorial_data({"bob": {"rating": 1}}))
@@ -262,7 +247,6 @@ def test_a_save_with_no_base_writes_the_document_as_it_is(tmp_path: Path) -> Non
     assert created.users_merged is False
     assert replaced.users_merged is False
     assert "users" not in on_disk(existing)["tutorial"]
-    assert heard == [Changed((new_key,)), Changed((existing_key,))]
 
 
 def test_a_save_over_an_unchanged_file_writes_without_merging(tmp_path: Path) -> None:
@@ -276,7 +260,7 @@ def test_a_save_over_an_unchanged_file_writes_without_merging(tmp_path: Path) ->
     """
     path = tmp_path / "info.rehu"
     key = write_record(path, tutorial_data())
-    records = Records(ChangeFeed())
+    records = Records()
     loaded = load(records, key)
 
     loaded.document.data["core"]["description"] = "edited"
@@ -300,7 +284,7 @@ def test_a_save_merges_a_progress_entry_written_meanwhile(tmp_path: Path, freeze
     """
     path = tmp_path / "info.rehu"
     key = write_record(path, tutorial_data({USERNAME: {"rating": 1}}))
-    records = Records(ChangeFeed())
+    records = Records()
     loaded = load(records, key)
     write_meanwhile(path, {USERNAME: {"progress": {"a.mp4": 12}}, "bob": {"rating": 2}})
 
@@ -332,7 +316,7 @@ def test_the_first_per_user_field_written_meanwhile_into_a_bare_block_is_no_conf
     """
     path = tmp_path / "info.rehu"
     key = write_record(path, tutorial_data())
-    records = Records(ChangeFeed())
+    records = Records()
     loaded = load(records, key)
     write_meanwhile(path, {"bob": {"rating": 2}})
 
@@ -361,7 +345,7 @@ def test_per_user_fields_written_meanwhile_into_a_block_the_record_lacked_surviv
     data = tutorial_data()
     del data["tutorial"]
     key = write_record(path, data)
-    records = Records(ChangeFeed())
+    records = Records()
     loaded = load(records, key)
     write_meanwhile(path, {"bob": {"rating": 3}})
 
@@ -376,17 +360,17 @@ def test_per_user_fields_written_meanwhile_into_a_block_the_record_lacked_surviv
 
 def test_a_metadata_edit_made_meanwhile_is_a_conflict(tmp_path: Path) -> None:
     """A metadata edit on disk since the read refuses the save: the conflict carries the record as it is now and its
-    version, the file is untouched and nothing is announced.
+    version, and the file is untouched.
 
     **Test steps:**
 
     * load a record; meanwhile, another writer changes its description
     * change the loaded rating and save against the loaded version
-    * verify ``RecordConflict`` with the file's document and version, the file unchanged, the feed silent
+    * verify ``RecordConflict`` with the file's document and version, the file unchanged
     """
     path = tmp_path / "info.rehu"
     key = write_record(path, tutorial_data())
-    records, heard = records_with_feed()
+    records = Records()
     loaded = load(records, key)
     write_meanwhile(path, description="theirs")
     before = path.read_text(encoding="utf-8")
@@ -399,7 +383,6 @@ def test_a_metadata_edit_made_meanwhile_is_a_conflict(tmp_path: Path) -> None:
     assert raised.value.version == load(records, key).version
     assert str(path) in str(raised.value)
     assert path.read_text(encoding="utf-8") == before
-    assert not heard
 
 
 def test_overwrite_writes_over_a_metadata_edit_and_still_merges_per_user_fields(tmp_path: Path) -> None:
@@ -413,7 +396,7 @@ def test_overwrite_writes_over_a_metadata_edit_and_still_merges_per_user_fields(
     """
     path = tmp_path / "info.rehu"
     key = write_record(path, tutorial_data())
-    records = Records(ChangeFeed())
+    records = Records()
     loaded = load(records, key)
     write_meanwhile(path, {"bob": {"rating": 2}}, description="theirs")
 
@@ -440,7 +423,7 @@ def test_a_save_whose_details_are_the_files_keeps_the_files_updated(
     """
     path = tmp_path / "info.rehu"
     key = write_record(path, tutorial_data())
-    records = Records(ChangeFeed())
+    records = Records()
     loaded = load(records, key)
     write_meanwhile(path, description="theirs", updated=THEIRS_UPDATED)
 
@@ -470,7 +453,7 @@ def test_a_save_whose_details_differ_from_the_files_stamps_updated(
     """
     path = tmp_path / "info.rehu"
     key = write_record(path, tutorial_data())
-    records = Records(ChangeFeed())
+    records = Records()
     loaded = load(records, key)
     write_meanwhile(path, description="theirs", updated=THEIRS_UPDATED)
 
@@ -497,7 +480,7 @@ def test_a_save_whose_details_are_the_files_stamps_nothing_when_the_file_has_no_
     """
     path = tmp_path / "info.rehu"
     key = write_record(path, tutorial_data())
-    records = Records(ChangeFeed())
+    records = Records()
     loaded = load(records, key)
     other = RehuDocument.load(path, username="bob")
     other.data["core"]["description"] = "theirs"
@@ -529,7 +512,7 @@ def test_restoring_the_original_over_the_files_edit_stamps_updated(
     """
     path = tmp_path / "info.rehu"
     key = write_record(path, tutorial_data())
-    records = Records(ChangeFeed())
+    records = Records()
     loaded = load(records, key)
     write_meanwhile(path, description="theirs", updated=THEIRS_UPDATED)
     theirs = load(records, key)
@@ -556,7 +539,7 @@ def test_a_save_dropping_an_abandoned_block_stamps_updated(tmp_path: Path, freez
     data = tutorial_data()
     data["reference_images"] = {"format_version": 1, "image_count": 12}
     key = write_record(path, data)
-    records = Records(ChangeFeed())
+    records = Records()
     loaded = load(records, key)
     loaded.document.set_active_type("reference_images")
     loaded.document.set_active_type("tutorial")
@@ -584,7 +567,7 @@ def test_the_version_after_a_save_matches_a_fresh_load_when_a_block_was_dropped(
     data["core"]["type"] = "audiopack"
     data["audiopack"] = {"bitrate": 320}
     key = write_record(path, data)
-    records = Records(ChangeFeed())
+    records = Records()
     loaded = load(records, key)
 
     loaded.document.set_active_type("tutorial")
@@ -607,7 +590,7 @@ def test_a_save_after_the_file_vanished_writes_it_again(tmp_path: Path) -> None:
     """
     path = tmp_path / "info.rehu"
     key = write_record(path, tutorial_data())
-    records = Records(ChangeFeed())
+    records = Records()
     loaded = load(records, key)
     path.unlink()
 
@@ -629,7 +612,7 @@ def test_a_save_over_a_file_broken_meanwhile_restores_it_and_logs(tmp_path: Path
     """
     path = tmp_path / "info.rehu"
     key = write_record(path, tutorial_data())
-    records = Records(ChangeFeed())
+    records = Records()
     loaded = load(records, key)
     path.write_text("{not json", encoding="utf-8")
 
@@ -653,7 +636,7 @@ def test_a_legacy_record_is_never_saved_over(tmp_path: Path) -> None:
     """
     path = tmp_path / "info.tc"
     path.write_text(TC_YAML, encoding="utf-8")
-    records = Records(ChangeFeed())
+    records = Records()
     loaded = load(records, ResourceKey(path))
 
     with pytest.raises(ValueError, match="legacy record"):
@@ -678,22 +661,22 @@ def test_stored_text_is_the_file_as_it_is(tmp_path: Path) -> None:
     text = json.dumps(tutorial_data(), indent=7)
     path.write_text(text, encoding="utf-8")
 
-    assert Records(ChangeFeed()).stored_text(ResourceKey(path)) == text
+    assert Records().stored_text(ResourceKey(path)) == text
 
 
-def test_convert_writes_the_rehu_announces_both_keys_and_loads_it(tmp_path: Path) -> None:
-    """A legacy ``.tc`` becomes a ``.rehu`` beside it; the change names the new record and the old, and the new
-    record comes back loaded as the given identity, with a version.
+def test_convert_writes_the_rehu_and_loads_it(tmp_path: Path) -> None:
+    """A legacy ``.tc`` becomes a ``.rehu`` beside it, and the new record comes back loaded as the given identity, with
+    a version; the file notifier, not the conversion, reports both files changed (#511).
 
     **Test steps:**
 
     * write a ``.tc`` and convert it
-    * verify the loaded ``.rehu``, the ``.tc`` gone, and the announced change
+    * verify the loaded ``.rehu`` and the ``.tc`` gone
     """
     tc_path = tmp_path / "info.tc"
     tc_path.write_text(TC_YAML, encoding="utf-8")
     rehu_path = tmp_path / "info.rehu"
-    records, heard = records_with_feed()
+    records = Records()
 
     loaded = records.convert(
         ResourceKey(tc_path),
@@ -709,7 +692,6 @@ def test_convert_writes_the_rehu_announces_both_keys_and_loads_it(tmp_path: Path
     assert loaded.document.username == UNKNOWN
     assert loaded.version == load(records, ResourceKey(rehu_path)).version
     assert not tc_path.exists()
-    assert heard == [Changed((ResourceKey(rehu_path), ResourceKey(tc_path)))]
 
 
 # endregion
@@ -729,7 +711,7 @@ def test_a_records_signature_is_its_time_and_size_looked_at_under_the_rename_hol
       once
     """
     coordinator = MagicMock()
-    records = Records(ChangeFeed(), coordinator)
+    records = Records(coordinator)
     key = write_record(tmp_path / "info.rehu", tutorial_data())
     stat = key.path.stat()
 

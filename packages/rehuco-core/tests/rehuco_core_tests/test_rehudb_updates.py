@@ -11,7 +11,7 @@ from typing import Any, Final
 from unittest.mock import MagicMock
 from uuid import uuid4
 
-from pytest import fixture, mark
+from pytest import LogCaptureFixture, fixture, mark
 from pytest_mock import MockerFixture
 from rehuco_core import (
     CatalogCache,
@@ -21,6 +21,8 @@ from rehuco_core import (
     CatalogRoot,
     RecordKind,
     RecordSignature,
+    RehucoFile,
+    RehuDocument,
     RenameCoordinator,
     check_records,
 )
@@ -218,6 +220,31 @@ def test_a_check_reports_what_every_record_looks_like_changed_or_not(
     read.assert_not_called()
 
 
+def test_a_record_missing_under_an_offline_root_is_no_finding(
+    disk: Disk, cache: MagicMock, read: MagicMock, caplog: LogCaptureFixture
+) -> None:
+    """A check of a record that is missing while its root is not there either finds nothing: an offline root says
+    nothing about what is in it, so its row is kept.
+
+    **Test steps:**
+
+    * plan a check of a record; take the record and its root away
+    * check it
+    * verify no finding, nothing seen, nothing read, and the offline root logged
+    """
+    checker = updater(cache)
+    checks = checker.plan([RECORD])
+    disk.present = False
+    disk.root_online = False
+
+    with caplog.at_level("INFO", logger="rehuco_core.rehudb_updates"):
+        checked = check_records(checks, RenameCoordinator())
+
+    assert (checked.findings, checked.seen) == ([], {})
+    read.assert_not_called()
+    assert "is offline; the row of" in caplog.text
+
+
 def test_a_finding_the_cache_moved_past_while_it_was_out_is_dropped(
     disk: Disk, cache: MagicMock, read: MagicMock
 ) -> None:
@@ -268,6 +295,50 @@ def test_a_finding_the_cache_did_not_change_by_is_not_a_change(disk: Disk, cache
     cache.upsert_record.return_value = False
 
     assert checker.apply(checked.findings) == set()
+
+
+# endregion
+
+# region A conversion's findings (#511)
+
+
+def test_a_converted_record_keeps_its_rows_id_whatever_order_its_findings_come_in(tmp_path: Path) -> None:
+    """A conversion is reported as the ``.tc`` gone and the ``.rehu`` new, in whatever order the disk said so; every
+    record read is written before any row is removed, so the ``.rehu`` takes the ``.tc``'s row over -- its id kept, no
+    duplicate -- and the ``.tc``'s removal, finding its row moved on, is dropped.
+
+    **Test steps:**
+
+    * scan a real cache with a ``.tc`` row under a root on disk, beside another record's row
+    * replace the ``.tc`` with a ``.rehu`` on disk, as a conversion does
+    * plan, check and apply both paths, the ``.tc`` first
+    * verify the ``.rehu`` holds the ``.tc``'s row id, the other row is untouched, and only the ``.rehu`` changed
+    """
+    rehuco = RehucoFile.new()
+    rehuco.add_root(tmp_path / "root")
+    (root,) = rehuco.roots
+    folder = root.path / "Crochet"
+    folder.mkdir(parents=True)
+    tc_path = folder / "info.tc"
+    tc_path.write_text("title: Crochet\ntype: tutorial\n", encoding="utf-8")
+    with CatalogCache.open(tmp_path / "cache.rehudb") as cache:
+        cache.reconcile_roots(rehuco.roots)
+        cache.apply_root_scan(
+            root.root_id,
+            [CatalogRecord("Crochet/info.tc", RecordKind.TC), CatalogRecord("Other/info.tc", RecordKind.TC)],
+        )
+        before = {row.record.path: row.resource_id for row in cache.rows()}
+        tc_path.unlink()
+        RehuDocument.new(folder / "info.rehu").save()
+        checker = CatalogRecordUpdater(cache, coordinator=RenameCoordinator())
+
+        changed = checker.apply(
+            check_records(checker.plan([tc_path, folder / "info.rehu"]), RenameCoordinator()).findings
+        )
+
+        after = {row.record.path: row.resource_id for row in cache.rows()}
+    assert after == {"Crochet/info.rehu": before["Crochet/info.tc"], "Other/info.tc": before["Other/info.tc"]}
+    assert changed == {folder / "info.rehu"}
 
 
 # endregion

@@ -17,8 +17,8 @@ from rehuco_agent.documents.document_widget import DocumentWidget
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.resource_events import ResourceEvents
 from rehuco_agent.settings.identity_settings import shared_identity_settings
-from rehuco_core import RecordConflict, Relocation, RenameCoordinator
-from rehuco_core.access import Changed, ChangeEvent, ChangeFeed, Records, ResourceKey
+from rehuco_core import RecordConflict, RehuDocument, Relocation, RenameCoordinator
+from rehuco_core.access import ChangeFeed, Records, ResourceKey
 
 from rehuco_agent_tests.qt_waits import wait_destroyed
 
@@ -428,33 +428,6 @@ def stays_put(model: RehuDocumentModel) -> Generator[None]:
     assert not moves
 
 
-def test_a_held_models_writes_are_announced_until_its_last_release(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """What a held model says it wrote reaches the app-wide events; a released one is no longer relayed.
-
-    **Test steps:**
-
-    * hold a model and have it announce a write and a folder change
-    * verify both were announced app-wide, as keys
-    * release it, and verify a later announcement is not relayed
-    """
-    load_document(mocker)
-    events = ResourceEvents()
-    registry = DocumentRegistry(resource_events=events)
-    model = registry.acquire(FAKE_KEY)
-
-    with qtbot.waitSignal(events.changed) as changed:
-        model.announce_files_changed((FAKE_PATH,))
-    with qtbot.waitSignal(events.folder_changed) as folder:
-        model.announce_folder_changed(FAKE_PATH.parent)
-
-    assert changed.args == [(FAKE_KEY,)]
-    assert folder.args == [FAKE_KEY.parent]
-
-    registry.release(model)
-    with qtbot.assertNotEmitted(events.changed):
-        model.announce_files_changed((FAKE_PATH,))
-
-
 def test_the_renaming_document_adopts_its_rename_exactly_once(mocker: MockerFixture, qtbot: QtBot) -> None:
     """The coordinator's announcement reaches the renaming model through the registry before the rename call
     returns to it; between the two it moves, and each signal fires, exactly once.
@@ -536,26 +509,6 @@ def test_a_reload_is_announced_as_an_access(mocker: MockerFixture, qtbot: QtBot)
     assert heard == [(FAKE_KEY,), (FAKE_KEY,)]
 
 
-def test_what_the_disk_shows_reaches_the_model_of_that_path_only(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A file's time and size go to the model held under that path's key; a path nobody holds is passed over
-    (#487).
-
-    **Test steps:**
-
-    * hold one key, and report its path and a path nobody holds
-    * verify the held model alone heard, with what was reported
-    """
-    del qtbot
-    load_document(mocker)
-    registry = DocumentRegistry()
-    model = registry.acquire(FAKE_KEY)
-    noted = mocker.patch.object(model, "note_file_signature")
-
-    registry.note_file_signatures({FAKE_PATH: (7, 3), OTHER_PATH: (8, 4)})
-
-    noted.assert_called_once_with(7, 3)
-
-
 def test_a_reload_of_a_document_with_no_key_is_not_announced(mocker: MockerFixture, qtbot: QtBot) -> None:
     """A model whose key is gone has nothing for the catalog to check (#487), and is findable under no key.
 
@@ -582,21 +535,20 @@ def test_a_reload_of_a_document_with_no_key_is_not_announced(mocker: MockerFixtu
 
 # region the records (#416)
 @mark.usefixtures("real_path_stat")
-def test_given_records_read_and_save_every_model(qtbot: QtBot, tmp_path: Path) -> None:
+def test_given_records_read_and_save_every_model(mocker: MockerFixture, qtbot: QtBot, tmp_path: Path) -> None:
     """Every model the registry builds -- opened, new, or an unread placeholder -- goes through the records it was
-    handed, whose feed then announces each save.
+    handed.
 
     **Test steps:**
 
-    * build a registry over records with a feed of the test's own
+    * build a registry over records of the test's own, spying on their saves
     * open a record, start a new document, and take a lazy placeholder and read it; edit and save each
-    * verify the feed heard each record's key, in turn
+    * verify the records saved each record's key, in turn, and every file holds its new title
     """
     del qtbot
-    feed = ChangeFeed()
-    heard: list[ChangeEvent] = []
-    feed.add_listener(heard.append)
-    registry = DocumentRegistry(records=Records(feed))
+    records = Records()
+    saves = mocker.spy(records, "save")
+    registry = DocumentRegistry(records=records)
     opened, placeholder = tmp_path / "a" / "info.rehu", tmp_path / "c" / "info.rehu"
     new = tmp_path / "b" / "info.rehu"
     for path in (opened, new, placeholder):
@@ -614,30 +566,33 @@ def test_given_records_read_and_save_every_model(qtbot: QtBot, tmp_path: Path) -
         model.title = "Saved"
         model.save()
 
-    assert heard == [Changed((ResourceKey(path),)) for path in (opened, new, placeholder)]
+    assert [call.args[0] for call in saves.call_args_list] == [ResourceKey(path) for path in (opened, new, placeholder)]
+    assert all(RehuDocument.load(path).title == "Saved" for path in (opened, new, placeholder))
 
 
 @mark.usefixtures("real_path_stat")
-def test_the_default_records_announce_a_save_app_wide(qtbot: QtBot, tmp_path: Path) -> None:
-    """With no records given, the registry's own announce on the app's events, so every view hears a save.
+def test_the_default_records_save_and_announce_nothing(mocker: MockerFixture, qtbot: QtBot, tmp_path: Path) -> None:
+    """With no records given, the registry builds its own, which write the file and say nothing: the folder's file
+    notifier reports the save to every view (#511).
 
     **Test steps:**
 
     * build a registry over the app's events only, and open a real record
     * edit and save it
-    * verify the events announced the record's key as changed
+    * verify the file holds the edit and nothing was published on any change feed
     """
+    del qtbot
     path = tmp_path / "info.rehu"
     write_record(path, "Old")
-    events = ResourceEvents()
-    registry = DocumentRegistry(resource_events=events)
+    registry = DocumentRegistry(resource_events=ResourceEvents())
     model = registry.acquire(ResourceKey(path))
     model.title = "Mine"
+    published = mocker.spy(ChangeFeed, "publish")
 
-    with qtbot.waitSignal(events.changed) as changed:
-        model.save()
+    model.save()
 
-    assert changed.args == [(ResourceKey(path),)]
+    assert RehuDocument.load(path).title == "Mine"
+    published.assert_not_called()
 
 
 @mark.usefixtures("real_path_stat")
@@ -681,7 +636,7 @@ def test_a_record_is_read_with_its_version_and_signature_and_logged(
     stat = path.stat()
 
     with caplog.at_level(logging.INFO):
-        record = load_record(Records(ChangeFeed()), ResourceKey(path))
+        record = load_record(Records(), ResourceKey(path))
 
     assert record.document.title == "Old"
     assert record.document.username == shared_identity_settings().current_username
@@ -706,7 +661,7 @@ def test_a_record_that_cannot_be_read_is_a_locked_stub_and_no_read_is_logged(
     path = tmp_path / "info.rehu"
 
     with caplog.at_level(logging.INFO):
-        record = load_record(Records(ChangeFeed()), ResourceKey(path))
+        record = load_record(Records(), ResourceKey(path))
 
     assert record.document.load_failed
     assert record.lock_reasons
@@ -728,7 +683,7 @@ def test_a_legacy_record_files_its_flags_under_the_unknown_user(tmp_path: Path, 
     path = tmp_path / "info.tc"
     path.write_text("type: Tutorial\ntitle: Legacy\nrating: 4\n", encoding="utf-8")
 
-    record = load_record(Records(ChangeFeed()), ResourceKey(path))
+    record = load_record(Records(), ResourceKey(path))
 
     unknown = shared_identity_settings().unknown_username
     assert record.document.title == "Legacy"

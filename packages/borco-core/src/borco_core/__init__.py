@@ -1,5 +1,6 @@
 """borco-core: generic reusable classes with no GUI dependencies."""
 
+from .absolute_path import absolute_path
 from .atomic_write import atomic_write_bytes, atomic_write_text
 from .file_holder import FileHolder
 from .file_holders import file_holders
@@ -17,6 +18,7 @@ __all__ = [
     "StorageKind",
     "TextMatcher",
     "__version__",
+    "absolute_path",
     "atomic_write_bytes",
     "atomic_write_text",
     "device_of",

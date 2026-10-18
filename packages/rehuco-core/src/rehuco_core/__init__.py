@@ -15,6 +15,7 @@ from .access import (
     RecordConflict,
     Records,
     ResourceKey,
+    RootReachable,
     RootStale,
     SavedRecord,
 )
@@ -582,6 +583,7 @@ __all__ = [
     "RehucoFileError",
     "RehucoRoot",
     "RootFolderLister",
+    "RootReachable",
     "RootStale",
     "RootStorage",
     "Relocation",

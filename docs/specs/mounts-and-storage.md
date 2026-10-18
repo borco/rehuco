@@ -97,11 +97,16 @@ mapped but offline shows as offline on the web pages as it does in the agent; an
 
 [[[mounts-and-storage#out-of-band]]]
 
+- [#511: feat(core): FileNotifier — native events, an own SMB session for shares, polling as the floor](https://github.com/borco/rehuco/issues/511)
+
 Every view in the app — the cache and its browsers, the Roots view, the Files dock, open documents — learns that
 something on disk changed from **one source**, the `FileNotifier` in rehuco-core, publishing on the `ChangeFeed`
-([[nodes#access-seam]]). Nothing announces its own writes to the others any more: a save, a rename, a screenshot
-written, a checksum record, a change made by another machine or by hand reach the views by the same path, as what the
-disk says happened. The notifier runs per root, with a backend chosen by the mapping's storage kind, measured in #502:
+([[nodes#access-seam]]). Nothing announces its own writes to the others any more: a save, a screenshot written, a
+checksum record, a change made by another machine or by hand reach the views by the same path, as what the disk says
+happened. **One exception: a rename this machine runs** is published at once by the rename coordinator, with its exact
+plan, so no holder keeps the old path while the notifier catches up; the notifier's own report of it arrives after and
+finds nothing at its sources to move. The notifier runs per root, with a backend chosen by the mapping's storage kind,
+measured in #502:
 
 | Root on | Backend | Measured |
 | --- | --- | --- |
@@ -119,9 +124,22 @@ Rules:
   one `Moved` with the executed plan — the `(source, destination)` pairs — and each holder applies *a path at or
   beneath a renamed source lands at the same offset beneath its destination* to everything it holds, which covers every
   scoping case ([[data-model#resource-scoping]]).
-- **A notify-buffer overflow publishes `RootStale`** for that root, and every holder re-reads it as `F5` does.
-- **The notifier runs on a daemon thread and survives the mount dropping** ([[mounts-and-storage#offline-mounts]]); a
-  share that went away is re-subscribed when it is back.
+- **A notify-buffer overflow publishes `RootStale`** for that root, and every holder re-reads it as `F5` does — the
+  root is scanned again. On a local disk, too: ReadDirectoryChangesW reports an overflow as a successful read of zero
+  bytes, which `watchdog` passes over in silence, so the notifier reads that itself.
+- **The notifier runs on a daemon thread and survives the mount dropping** ([[mounts-and-storage#offline-mounts]]): a
+  backend that fails falls back to polling, which also says whether the root can be reached — published as
+  `RootReachable`, and written into the cache — and the backend is tried again every 30 s while it can; once it is back,
+  the root is `RootStale`, since a sweep finds only the records it knew. A root that cannot be reached keeps its rows in
+  the browsers, greyed and not opened; browsing what is retained of it is [[mounts-and-storage#durable-retention]]'s.
+- **The folder of a document opened from outside every root is watched too**, with the same backends: everything beneath
+  a directory-scoped record's folder, a file-scoped one's folder alone, a folder already covered by another's watch not
+  again.
+- **A watch never holds a rename up.** Measured on NTFS with a live watch: a folder beneath the watched one renames, and
+  so does the watched folder itself; only the watched folder's *parent* is refused, its handle being open beneath it. A
+  root's watch therefore stands in no rename the app makes — it renames nothing above a root — though a rename of the
+  folder holding a root, in Explorer, waits for the app to close. An open document's folder watch lets go for every
+  directory rename and watches again once it is over. Samba holds no such lock: a share's session never refuses one.
 - **Verify-on-access and the incremental scan stay as the catch-alls.** The cache stores each `.rehu`'s stat signature
   and content hash ([[data-model#scan-and-staleness]]); opening, browsing to or serving a resource re-checks it, and the
   version-aware incremental scan finds what no event and no visit did. A polled root relies on them.

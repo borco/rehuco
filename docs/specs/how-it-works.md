@@ -143,17 +143,25 @@ covers, in a **`.rehudb`** cache. The cache sits in the machine's local cache fo
 `.rehuco`'s own id, so moving the `.rehuco` keeps its cache; it is only ever a copy, rebuilt by scanning again.
 A table in the Browsers panel lists what the cache holds — authors, title, type, path, publisher, tags, release date, size, last update
 and the file's format version, with the URL and a tutorial's or a reference pack's own fields a right-click on the
-header away — and double-clicking a row opens that resource in Documents. A rename, save or deletion made in the app
-changes just its row, in place. Each table has a **filter line**: free text, every word of which must be found
-(`"quoted words"` as one phrase, case and accents ignored), and `field:value` tokens (`folder`, `authors`, `tags`,
-`publishers`, `type`) narrow the rows as the text settles. The rows are read from the cache in the background,
-once when it opens, a scan ends or a record changes, and a filter picks from the rows already read. Clicking an
+header away — and double-clicking a row opens that resource in Documents. Each table has a **filter line**: free
+text, every word of which must be found (`"quoted words"` as one phrase, case and accents ignored), and `field:value`
+tokens (`folder`, `authors`, `tags`, `publishers`, `type`) narrow the rows as the text settles. The rows are read from
+the cache in the background, every row when it opens and then only the rows a scan or a change touched, and a filter
+picks from the rows already read. Clicking an
 author's name in a document sets that author on it. The Browsers panel keeps any number of tables, each with its own
 columns, filter and name: `Browsers` > `New Table Browser` starts one from a preset (the plain columns, or one type's
 extra columns), and a browser can be renamed, cloned and deleted. They are kept by the app, not in the `.rehuco`.
 The Root Catalog panel lists the roots, which the `Root Catalog` menu adds and removes, as a column view: one column
 per open folder, with the details of the current row beside them — its checksum state where a checksum record covers
 it, and, for a `.rehu` or a folder holding one, its URL and rendered description.
+
+**Every root is watched while its catalog is open.** A folder on this machine's own disks is watched through the
+system's change events; a share, on Windows, through a session the app opens with the server itself, which reports
+every machine's writes; anything else is looked at every two minutes, record by record. A change on disk — a save, a
+rename, a deletion, made in the app, on another machine or in a text editor — reaches the table row and the Roots view a
+moment later, with no scan; an open document follows a save or a rename of its file: with no unsaved edits it reloads,
+with edits it says the file changed. The folder of a document opened from outside every root is watched the same
+way. A root that cannot be reached keeps its rows, greyed, and they do not open; it is watched again when it is back.
 
 Selecting a row in a table, or a record in the Roots view, shows that resource in a preview panel in Documents, without
 creating anything; a double-click on a table row opens it for real. `Root Catalog` > **Automatically preview the current rehu**, also
@@ -200,9 +208,10 @@ whole folder tree at once, and `Tools` > `Conversion Backups…` discards the ba
 Everything above is implemented. None of the following is, and the design documents discuss all of it at
 length, which is exactly why this section is here:
 
-**A cache that follows the disk.** A change made to a `.rehu` outside the app shows in a table only after the next
-scan, which re-reads just the records whose modification time or size changed. The other recursive walks — the checksum
-sweep and the legacy import, over a folder you hand them — act as they go and remember nothing about what they found.
+**Watching a share from macOS or Linux.** There a share is looked at every two minutes instead, which sees a known
+record change or go but finds a new one only at the next scan, which re-reads just the records whose modification time
+or size changed. The other recursive walks — the checksum sweep and the legacy import, over a folder you hand them — act
+as they go and remember nothing about what they found.
 
 **No network beyond fetching a page you drop.** The **local node** runs: the agent starts `rehuco-node` a few
 seconds after its window is up, as the same user, keeps it running for as long as it runs itself — in the tray

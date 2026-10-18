@@ -209,33 +209,6 @@ class Catalog:
             return set()
         return affected if moved else set()
 
-    def refresh(self, keys: Iterable[ResourceKey]) -> set[int]:
-        """Read each record the app wrote back into its row (#376, #379).
-
-        A key that is no record, or is under no root, is passed over by the updater itself.
-
-        :param keys: the files written or replaced.
-        :returns: the ids of the rows it may have touched; empty when nothing changed.
-        """
-        paths = tuple(key.path for key in keys)
-        session = self.__session
-        if session is None or not paths:
-            return set()
-        changed = False
-        affected: set[int] = set()
-        try:
-            with CatalogCache.open(session.cache_path) as cache:
-                updater = CatalogRecordUpdater(cache, coordinator=self.__coordinator)
-                # asked before, for a row the write removes; and after, for a row it adds or a converted .tc's it took
-                # over
-                affected = cache.resource_ids(paths)
-                for path in paths:
-                    changed = updater.upsert(path) or changed
-                affected |= cache.resource_ids(paths)
-        except (OSError, sqlite3.Error) as error:
-            LOG.error("Could not update the cache %s: %s", session.cache_path, error)
-        return affected if changed else set()
-
     def plan_verify(self, keys: Iterable[ResourceKey]) -> list[RecordCheck]:
         """What verify-on-access is to compare with the disk, read from the cache alone (#487).
 
@@ -273,5 +246,38 @@ class Catalog:
             LOG.error("Could not update the cache %s: %s", session.cache_path, error)
             return set(), set()
         return affected, changed
+
+    def record_paths(self, keys: Iterable[ResourceKey]) -> list[Path]:
+        """The records the cache holds at or beneath each key -- a changed record itself, or what a folder deleted or
+        replaced outside the app held -- for :meth:`plan_verify` to check (#511).
+
+        :param keys: files or folders; one under no root adds nothing.
+        :returns: the records' absolute paths, each once; none when the cache cannot be read -- logged.
+        """
+        paths = [key.path for key in keys]
+        session = self.__session
+        if session is None or not paths:
+            return []
+        try:
+            with CatalogCache.open(session.cache_path) as cache:
+                return cache.record_paths(paths)
+        except (OSError, sqlite3.Error) as error:
+            LOG.error("Could not read the cache %s: %s", session.cache_path, error)
+            return []
+
+    def mark_reachable(self, root_id: UUID, reachable: bool) -> None:
+        """Record whether a root's folder can be reached, as its file notifier says (#511); a failure is logged.
+
+        :param root_id: the root.
+        :param reachable: whether it can be reached.
+        """
+        session = self.__session
+        if session is None or root_id not in session.root_ids:
+            return
+        try:
+            with CatalogCache.open(session.cache_path) as cache:
+                cache.mark_root_reachable(root_id, reachable)
+        except (OSError, sqlite3.Error) as error:
+            LOG.error("Could not update the cache %s: %s", session.cache_path, error)
 
     # endregion

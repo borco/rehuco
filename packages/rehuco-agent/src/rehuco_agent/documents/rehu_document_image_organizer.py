@@ -5,9 +5,10 @@ the model and handing it to `rehuco_core.renumber_screenshots`. The concrete sid
 toolkit's `ImageOrganizer` protocol: the curation editor depends on that interface and stays unaware
 of the ``<stem>NN`` convention, exactly as it stays unaware of it when *listing*.
 
-**Every write is announced** through the model (:meth:`~RehuDocumentModel.announce_folder_changed`, #376), so
-every listing of the folder follows it -- a failed one too, since a renumbering that stopped part-way may
-already have moved some of the files.
+**Every write is reported by the folder's file notifier** (#511), so every listing of the folder follows it -- a
+failed one too, since a renumbering that stopped part-way may already have moved some of the files. What this
+document's own scanner remembers of the folder is dropped at once (:meth:`~RehuDocumentModel.forget_folder_listing`):
+the curation editor asks again in the same turn.
 """
 
 from collections.abc import Sequence
@@ -51,7 +52,7 @@ class RehuDocumentImageOrganizer:
         try:
             return renumber_screenshots(directory, stem, ordered)
         finally:
-            self.__model.announce_folder_changed(directory)
+            self.__model.forget_folder_listing()
 
     def convert(self, path: Path) -> dict[str, str]:
         """Rename ``path`` into this resource's numbered set, free slot or appended (#265, #270).
@@ -69,11 +70,11 @@ class RehuDocumentImageOrganizer:
         :raises LookupError: ``path`` matches no configured pattern; see the protocol.
         :raises ValueError: the numbered set is full.
         """
-        directory, stem = self.__location()
+        _, stem = self.__location()
         try:
             converted = convert_screenshot(path, stem, shared_screenshot_patterns_settings().screenshot_name_patterns)
         finally:
-            self.__model.announce_folder_changed(directory)
+            self.__model.forget_folder_listing()
         return {path.name: converted.name}
 
     def acquire(self, data: bytes, extension: str, slot: int | None = None) -> Path:
@@ -91,7 +92,7 @@ class RehuDocumentImageOrganizer:
         try:
             return save_screenshot(directory, stem, data, extension, slot)
         finally:
-            self.__model.announce_folder_changed(directory)
+            self.__model.forget_folder_listing()
 
     def remove(self, path: Path, remaining: Sequence[Path], deleter: Deleter | None = None) -> dict[str, str]:
         """Delete ``path`` and renumber ``remaining`` onto the slot it vacated.
@@ -114,7 +115,7 @@ class RehuDocumentImageOrganizer:
             delete_screenshot(path, deleter if deleter is not None else configured_deleter())
             return renumber_screenshots(directory, stem, remaining)
         finally:
-            self.__model.announce_folder_changed(directory)
+            self.__model.forget_folder_listing()
 
     def __location(self) -> tuple[Path, str]:
         """Where this resource's screenshots live and what they are named after.

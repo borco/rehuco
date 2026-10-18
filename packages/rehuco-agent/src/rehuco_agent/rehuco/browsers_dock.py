@@ -4,6 +4,7 @@
 
 import logging
 from typing import Final, cast
+from uuid import UUID
 
 import PySide6QtAds as QtAds
 from borco_pyside.qtads import (
@@ -29,6 +30,7 @@ from .browser_presets import DEFAULT_PRESET, BrowserPreset, browser_presets
 from .catalog_rows_loader import CatalogRowsLoad, CatalogRowsLoader
 from .catalog_table_model import RowKey
 from .root_catalog import RootCatalog
+from .root_storage import ROOT_STORAGE_OFFLINE_TOOLTIPS
 from .table_browser import TableBrowser
 
 LOG: Final = logging.getLogger(__name__)
@@ -36,6 +38,10 @@ LOG: Final = logging.getLogger(__name__)
 NEW_BROWSER_ICON: Final = ":/icons/browser_add.svg"
 RENAME_BROWSER_ICON: Final = ":/icons/browser_rename.svg"
 CLONE_BROWSER_ICON: Final = ":/icons/browser_clone.svg"
+
+IN_PLACE_LIMIT: Final = 2000
+"""The most rows a change may touch and still be read in place; past it, every row is read again. One parameter per
+row goes into the query, and a first scan of a big root touches every row it has."""
 
 
 class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
@@ -53,11 +59,14 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
     browser.
 
     **The rows are read off the GUI thread and filtered in memory** (#455): a
-    :class:`~.catalog_rows_loader.CatalogRowsLoader` reads every row when the catalog
-    :attr:`~.root_catalog.RootCatalog.refreshed` and the few a change touched when it says which
-    (:attr:`~.root_catalog.RootCatalog.rows_changed`), and each browser picks what its query matches from the one
-    snapshot -- at once when its filter changes, and when a read lands. Until one lands, every browser keeps the rows
-    it shows.
+    :class:`~.catalog_rows_loader.CatalogRowsLoader` reads every row when the catalog's roots changed
+    (:attr:`~.root_catalog.RootCatalog.roots_changed`) and the few a change touched when it says which
+    (:attr:`~.root_catalog.RootCatalog.rows_changed`) -- every row again when that is more than
+    :data:`IN_PLACE_LIMIT` -- and each browser picks what its query matches from the one snapshot -- at once when its
+    filter changes, and when a read lands. Until one lands, every browser keeps the rows it shows.
+
+    **A root that cannot be reached keeps its rows, greyed** (#511): each says why when hovered, and is not opened --
+    :attr:`open_refused` says why instead. Browsing what the cache retains of such a root is #452.
 
     :param catalog: the open catalog, whose rows every browser reads.
     :param parent: optional Qt parent.
@@ -70,6 +79,9 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
     """Emitted with the key of a resource whose row is double-clicked, as the catalog resolves it
     (:meth:`~rehuco_agent.rehuco.root_catalog.RootCatalog.resource_key`). Typed as plain ``object`` for the reason
     ``DocumentsDock.open_requested`` is."""
+
+    open_refused: Signal = Signal(str)
+    """Emitted with why a double-clicked row's resource was not opened: its root cannot be reached (#511)."""
 
     resource_selected: Signal = Signal(object)
     """Emitted with the ``(root_id, relative)`` key of the **current** browser's one selected row, or ``None`` when
@@ -93,6 +105,8 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """Every browser's dock, in the order the browsers were added."""
         self.__loader: Final = CatalogRowsLoader(catalog.rows, self)
         self.__loader.loaded.connect(self.__on_loaded)
+        self.__offline: dict[UUID, str] = {}
+        """Why each root that cannot be reached cannot, by its id."""
 
         self.__dock_manager: Final = QtAds.CDockManager(self)
         self.__focus_tracker: Final = QtAdsFocusTracker(
@@ -125,8 +139,9 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__focus_tracker.current_dock_changed.connect(self.__update_enablement)
         catalog.opened.connect(self.__open_browsers)
         catalog.closing.connect(self.__on_closing)
-        catalog.refreshed.connect(self.__refresh)
+        catalog.roots_changed.connect(self.__refresh)
         catalog.rows_changed.connect(self.__update_in_place)
+        catalog.root_reachable.connect(self.__on_root_reachable)
         catalog.rehuco_path_changed.connect(self.__update_enablement)
         self.__update_enablement()
 
@@ -261,17 +276,49 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
     # region reading the rows
 
     def __refresh(self) -> None:
-        """Read every row again, on the loader."""
+        """Read every row again, on the loader, and which roots cannot be reached."""
+        self.__set_offline(self.__catalog.unreachable_roots())
         if self.__catalog.file is not None:
             self.__loader.refresh(list(self.__catalog.root_paths()))
 
     def __update_in_place(self, affected: set[int]) -> None:
-        """Read again the rows a change touched, on the loader.
+        """Read again the rows a change touched, on the loader -- or every row, when it touched more than an update in
+        place is worth (:data:`IN_PLACE_LIMIT`): a first scan of a big root.
 
         :param affected: the ids of every row the change may have touched.
         """
-        if self.__catalog.file is not None:  # pragma: no branch  (only announced with a file open)
+        if self.__catalog.file is None:  # pragma: no cover  (only announced with a file open)
+            return
+        if len(affected) > IN_PLACE_LIMIT:
+            self.__loader.refresh(list(self.__catalog.root_paths()))
+        else:
             self.__loader.update(affected)
+
+    def __on_root_reachable(self, root_id: UUID, reachable: bool) -> None:
+        """Grey a root's rows, or draw them as usual again, as its notifier says (#511).
+
+        :param root_id: the root.
+        :param reachable: whether its folder can be reached.
+        """
+        offline = set(self.__offline)
+        if reachable:
+            offline.discard(root_id)
+        else:
+            offline.add(root_id)
+        self.__set_offline(frozenset(offline))
+
+    def __set_offline(self, root_ids: frozenset[UUID]) -> None:
+        """Remember which roots cannot be reached, with why, and grey their rows in every browser.
+
+        :param root_ids: the roots that cannot be reached.
+        """
+        file = self.__catalog.file
+        storages = {} if file is None else {root.root_id: root.storage for root in file.roots}
+        self.__offline = {
+            root_id: ROOT_STORAGE_OFFLINE_TOOLTIPS[storages[root_id]] for root_id in root_ids if root_id in storages
+        }
+        for browser in self.__browsers.values():
+            browser.model.set_offline_roots(self.__offline)
 
     def __on_loaded(self, load: CatalogRowsLoad) -> None:
         """Show what a read brought in every browser: all its rows anew after a read of every row; after a read of a
@@ -283,6 +330,7 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # one pick per distinct query, browsers filtering alike sharing it
         matching: dict[CatalogQuery, list[CatalogRow]] = {}
         for browser in self.__browsers.values():
+            browser.model.set_offline_roots(self.__offline)
             if browser.query not in matching:
                 matching[browser.query] = snapshot.select(browser.query, affected)
             if affected is None:
@@ -297,6 +345,7 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
         :param browser: the browser.
         """
         snapshot = self.__loader.snapshot
+        browser.model.set_offline_roots(self.__offline)
         browser.set_rows(snapshot.select(browser.query), snapshot.root_ids)
 
     # endregion
@@ -305,8 +354,8 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
     def __open_browsers(self, file: RehucoFile) -> None:
         """Build ``file``'s browsers as the catalog remembered them -- one default one if it remembered none --
-        and put every sub-dock back where it sat. Their rows are read when the catalog says it
-        :attr:`~.root_catalog.RootCatalog.refreshed`, right after.
+        and put every sub-dock back where it sat. Their rows are read when the catalog says its
+        :attr:`~.root_catalog.RootCatalog.roots_changed`, right after.
 
         The layout defines the browsers (#102): each sub-dock's entry carries its browser, which is built as the
         restore reaches it.
@@ -412,7 +461,12 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
         :param row: the row's ``(root_id, relative)``, as the object-typed relay carried it.
         """
-        key = self.__catalog.resource_key(*cast(RowKey, row))
+        root_id, relative = cast(RowKey, row)
+        reason = self.__offline.get(root_id)
+        if reason is not None:
+            self.open_refused.emit(reason)
+            return
+        key = self.__catalog.resource_key(root_id, relative)
         if key is not None:
             self.open_requested.emit(key)
 
