@@ -1,8 +1,9 @@
 """Tests for the ``.rehudb`` catalog cache -- schema, versioning, roots, rows and queries (#372).
 
-No file is ever created: :func:`sqlite3.connect` is patched to hand back shared-cache in-memory databases, one
-per name, and a second *keeper* connection to the same name is what a test inspects the database through --
-including after the cache under test has closed its own.
+No file is created but by the one test that needs WAL's snapshots, which a shared cache has not: elsewhere
+:func:`sqlite3.connect` is patched to hand back shared-cache in-memory databases, one per name, and a second *keeper*
+connection to the same name is what a test inspects the database through -- including after the cache under test has
+closed its own.
 """
 
 # pylint: disable=too-many-lines  # one cohesive module per subject, see [[appendices.code-conventions]]
@@ -1346,6 +1347,40 @@ def test_a_matching_row_still_carries_all_its_values(library: CatalogCache) -> N
     (row,) = library.rows(CatalogQuery(tokens=((CatalogField.TAGS, "rig"),)))
 
     assert row.record.tags == ("3d", "rig")
+
+
+def test_rows_read_while_a_scan_commits_show_the_catalog_as_it_was_before_the_scan(tmp_path: Path) -> None:
+    """The value tables and the rows are read in one snapshot (#528): a scan committing after the names were read but
+    before the rows were would show its new rows without their authors. A file under ``tmp_path``, since WAL's
+    snapshots are what is tested, and the in-memory shared cache locks tables instead.
+
+    **Test steps:**
+
+    * scan one record by one author
+    * read every row, a second scan adding a record by another author committing just as the rows are read
+    * verify that read shows the catalog before the second scan, and the next read the new record with its author
+    """
+    rehuco, first, _ = two_roots()
+    path = tmp_path / f"cache{REHUDB_SUFFIX}"
+    with CatalogCache.open(path) as reader, CatalogCache.open(path) as writer:
+        writer.reconcile_roots(rehuco.roots)
+        writer.apply_root_scan(first.root_id, [record("a.rehu", authors=("Ann",))])
+
+        def scan_as_the_rows_are_read(statement: str) -> None:
+            if "ORDER BY roots.position" in statement:
+                writer.apply_root_scan(
+                    first.root_id, [record("a.rehu", authors=("Ann",)), record("b.rehu", authors=("Bob",))]
+                )
+
+        reader.connection.set_trace_callback(scan_as_the_rows_are_read)
+        try:
+            during = reader.rows()
+        finally:
+            reader.connection.set_trace_callback(None)
+        after = reader.rows()
+
+    assert [(row.record.path, row.record.authors) for row in during] == [("a.rehu", ("Ann",))]
+    assert [(row.record.path, row.record.authors) for row in after] == [("a.rehu", ("Ann",)), ("b.rehu", ("Bob",))]
 
 
 # endregion
