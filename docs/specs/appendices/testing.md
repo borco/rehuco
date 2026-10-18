@@ -337,3 +337,111 @@ macOS/Linux uic couldn't resolve a `.ui`'s `.qrc` to its package and emitted a b
   invalid ones of the same length; blank the `PK\x01\x02` signature to leave the end record intact over a corrupt
   directory. Both packages keep a copy of `crafted_zips.py`.
 - **`make check-slugs` reads `[[x.y]]` in test code** (#485): `== [[widget.action]]`, a list of lists, trips it.
+
+## 12. Finding what only the cyclic collector frees
+
+[[[appendices.testing#cycle-diagnostic]]]
+
+- [#529: make qa hangs on Windows: GIL / Qt signal-slot mutex deadlocks](https://github.com/borco/rehuco/issues/529)
+
+A Python-owned `QObject` whose wrapper sits in a reference cycle is destroyed whenever the cyclic collector next runs,
+on whichever thread allocated — a pool thread included, where `~QObject` takes a signal-slot mutex and then waits for
+the GIL the GUI thread may hold (#529). `qtbot` does not prevent it: its teardown closes and `deleteLater()`s only the
+widgets registered with `addWidget`.
+
+To list what each test leaves for the collector, run the suites with this throwaway plugin. It switches automatic
+collection off for the whole run, so nothing is collected on a pool thread, and after each test's teardown runs one
+collection on the main thread with `DEBUG_SAVEALL`: everything found is kept alive (no PySide finalizer runs, so the
+segfault a blanket `gc.collect()` once caused cannot happen) and recorded against that test, one JSON line per test
+with garbage, a file per xdist worker.
+
+```python
+"""Throwaway pytest plugin: which tests leave Qt wrappers that only the cyclic collector would free (#529)."""
+
+import gc
+import json
+import os
+from collections import Counter
+from pathlib import Path
+
+import pytest
+from shiboken6 import Shiboken
+
+OUT = Path(os.environ["GC_CYCLES_OUT"])
+KEEP: list[object] = []
+
+
+def _write(entry: dict) -> None:
+    with (OUT / f"cycles-{os.getpid()}.jsonl").open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(entry) + "\n")
+
+
+def _type_name(obj: object) -> str:
+    kind = type(obj)
+    return f"{kind.__module__}.{kind.__qualname__}"
+
+
+def _live_and_python_owned(obj: object) -> bool:
+    try:
+        return Shiboken.isValid(obj) and Shiboken.ownedByPython(obj)
+    except TypeError:  # a mock with a Qt spec passes the isinstance check
+        return False
+
+
+def _collect(nodeid: str) -> None:
+    gc.disable()
+    gc.collect()
+    garbage = list(gc.garbage)
+    gc.garbage.clear()
+    KEEP.extend(garbage)  # never destroyed: no finalizer runs
+    wrappers = [obj for obj in garbage if isinstance(obj, Shiboken.Object)]
+    if wrappers:
+        others = Counter(_type_name(obj) for obj in garbage if not isinstance(obj, Shiboken.Object))
+        _write(
+            {
+                "test": nodeid,
+                "wrappers": dict(Counter(_type_name(obj) for obj in wrappers)),
+                # only these run a C++ destructor when collected
+                "live_owned": dict(Counter(_type_name(obj) for obj in wrappers if _live_and_python_owned(obj))),
+                "others": dict(others.most_common(8)),
+            }
+        )
+
+
+def pytest_sessionstart(session: pytest.Session) -> None:
+    del session
+    OUT.mkdir(parents=True, exist_ok=True)
+    gc.disable()
+    gc.set_debug(gc.DEBUG_SAVEALL)
+    _collect("<session start>")
+
+
+def pytest_runtest_setup(item: pytest.Item) -> None:
+    del item
+    gc.disable()  # a test may have switched it back on
+
+
+@pytest.hookimpl(hookwrapper=True, trylast=True)
+def pytest_runtest_teardown(item: pytest.Item, nextitem: pytest.Item | None):
+    del nextitem
+    yield
+    _collect(item.nodeid)
+```
+
+Save it as `gc_cycles.py` in a scratch folder (never in the repo), then from the repo root, in Git Bash:
+
+```bash
+GC_CYCLES_OUT=<scratch>/out PYTHONPATH=<scratch> uv run pytest packages/rehuco-agent/tests \
+    packages/borco-pyside/tests -n auto -p gc_cycles -p no:cacheprovider -q --timeout=600
+```
+
+About 16 minutes on the development machine; memory grows, since nothing found is ever freed. Reading the output:
+
+- **`live_owned` is what matters**: a wrapper whose C++ object is still alive and owned by Python. The rest are empty
+  shells or children their parent owns, harmless to collect.
+- **Of those, only `QObject` subclasses take a signal-slot mutex** when destroyed. Value types (`QPersistentModelIndex`,
+  `QPixmap`, `QColor`, `QKeySequence`, `QRect`) cannot deadlock this way.
+- **Fix at the source, plainly**: a `QObject` the app builds gets a parent (usually `self`); a fixture gives what it
+  builds a parent the test tears down, or deletes it explicitly (`deleteLater()`, then
+  `QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)`, as `make_action` does). Re-run until no
+  `QObject` is left under `live_owned`.
