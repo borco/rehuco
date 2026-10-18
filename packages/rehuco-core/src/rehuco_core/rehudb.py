@@ -794,24 +794,29 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
         :returns: the rows.
         """
         where, parameters = self.__where(query if query is not None else CatalogQuery(), ids)
-        values = {table: self.__values(table, join, where, parameters) for table, join in JOINS}
-        cursor = self.__connection.execute(
-            f"SELECT r.id, r.root_id, roots.label, r.scanned_at, {SELECTED_COLUMNS} "  # nosec  # B608: fixed names
-            f"FROM resources r JOIN roots ON roots.id = r.root_id WHERE {where} ORDER BY roots.position, r.path_key",
-            parameters,
-        )
-        rows: list[CatalogRow] = []
-        # one UUID per root, shared by its rows: a reader keeping every row (#455) has the collector track each (#500)
-        root_uuids: dict[str, UUID] = {}
-        for resource_id, root_id, root_label, scanned_at, *fields in cursor:
-            root_uuid = root_uuids.get(root_id)
-            if root_uuid is None:
-                root_uuid = root_uuids[root_id] = UUID(root_id)
-            rows.append(
-                CatalogRow(
-                    resource_id, root_uuid, root_label, self.__record_read(resource_id, fields, values), scanned_at
-                )
+        # the value tables and the rows read in one snapshot: a write committing between them would leave rows
+        # without their names (#528)
+        with self.__read():
+            values = {table: self.__values(table, join, where, parameters) for table, join in JOINS}
+            cursor = self.__connection.execute(
+                f"SELECT r.id, r.root_id, roots.label, r.scanned_at, {SELECTED_COLUMNS} "  # nosec  # B608: fixed names
+                f"FROM resources r JOIN roots ON roots.id = r.root_id WHERE {where} "
+                "ORDER BY roots.position, r.path_key",
+                parameters,
             )
+            rows: list[CatalogRow] = []
+            # one UUID per root, shared by its rows: a reader keeping every row (#455) has the collector track each
+            # (#500)
+            root_uuids: dict[str, UUID] = {}
+            for resource_id, root_id, root_label, scanned_at, *fields in cursor:
+                root_uuid = root_uuids.get(root_id)
+                if root_uuid is None:
+                    root_uuid = root_uuids[root_id] = UUID(root_id)
+                rows.append(
+                    CatalogRow(
+                        resource_id, root_uuid, root_label, self.__record_read(resource_id, fields, values), scanned_at
+                    )
+                )
         return rows
 
     @classmethod
@@ -838,6 +843,16 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
     # endregion
 
     # region Internals
+
+    @contextmanager
+    def __read(self) -> Generator[None]:
+        """One read transaction: every statement in it sees the snapshot its first one took, whatever another
+        connection commits meanwhile; ended on the way out, an exception's included."""
+        self.__connection.execute("BEGIN")
+        try:
+            yield
+        finally:
+            self.__connection.execute("COMMIT")
 
     @contextmanager
     def __transaction(self) -> Generator[sqlite3.Connection]:
