@@ -4,6 +4,7 @@ The scan and the cache are each tested on their own (`test_rehudb_scan`, `test_r
 and what is asserted is the job's part: which of them it calls with what, and how it writes itself down.
 """
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Final
 from unittest.mock import MagicMock
@@ -81,8 +82,15 @@ def scan_job() -> ScanCatalogRootJob:
 
 
 def test_a_scan_applies_what_it_found(mocker: MockerFixture, cache: MagicMock) -> None:
-    """A root that listed has its rows replaced -- the records read and the ones found unchanged -- and with no rows
-    to go by, the progress is a running count."""
+    """A root that listed has its rows replaced -- the records read and the ones found unchanged, the rows it touched
+    collected (#511) -- and with no rows to go by, the progress is a running count.
+
+    **Test steps:**
+
+    * make the scan find one record read and one unchanged, with no cached rows
+    * run the job
+    * verify the cache applied both with a set to collect touched rows, nothing was marked, and the progress counted
+    """
     cache.signatures.return_value = {}
     records = (CatalogRecord("info.rehu", RecordKind.REHU),)
     result = RootScanResult(ROOT, RootScanOutcome.SCANNED, records, unchanged=("same.rehu",))
@@ -92,11 +100,48 @@ def test_a_scan_applies_what_it_found(mocker: MockerFixture, cache: MagicMock) -
 
     job.run(control)
 
-    cache.apply_root_scan.assert_called_once_with(ROOT_ID, records, unchanged=("same.rehu",))
+    cache.apply_root_scan.assert_called_once_with(ROOT_ID, records, unchanged=("same.rehu",), touched=set())
     cache.mark_root_unreachable.assert_not_called()
     assert control.reports == [(0, None), (1, None)]
     assert job.result is result
     assert scan_class.call_args.kwargs["known"] == {}
+
+
+def touching(*ids: int) -> Callable[..., bool]:
+    """A stand-in for :meth:`~rehuco_core.CatalogCache.apply_root_scan` that reports ``ids`` as the rows it changed.
+
+    :param ids: the rows.
+    :returns: the stand-in.
+    """
+
+    def apply(*_: object, touched: set[int], **__: object) -> bool:
+        """Report the rows as touched, and answer applied."""
+        touched.update(ids)
+        return True
+
+    return apply
+
+
+def test_a_scan_keeps_the_rows_it_changed_until_reset(mocker: MockerFixture, cache: MagicMock) -> None:
+    """The ids the cache says a scan changed are the job's ``touched_rows`` once it ran, and a reset drops them with
+    the result, so a retry reports its own (#511).
+
+    **Test steps:**
+
+    * make the cache report two rows changed by the scan it applies, and run a scan
+    * verify ``touched_rows`` holds them, was empty before the run, and is empty again after a reset
+    """
+    cache.signatures.return_value = {}
+    cache.apply_root_scan.side_effect = touching(7, 9)
+    scan_returning(mocker, RootScanResult(ROOT, RootScanOutcome.SCANNED))
+    job = scan_job()
+    assert job.touched_rows == frozenset()
+
+    job.run(FakeControl())
+
+    assert job.touched_rows == frozenset({7, 9})
+    job.reset()
+    assert job.touched_rows == frozenset()
 
 
 def test_a_rescan_compares_against_the_cached_rows_and_reports_against_their_count(
@@ -125,13 +170,28 @@ def test_a_rescan_compares_against_the_cached_rows_and_reports_against_their_cou
 
 @mark.parametrize("outcome", [RootScanOutcome.OFFLINE, RootScanOutcome.WENT_OFFLINE])
 def test_an_offline_root_keeps_its_rows(mocker: MockerFixture, cache: MagicMock, outcome: RootScanOutcome) -> None:
-    """Nothing is applied; the root is marked, and the job still finishes."""
-    scan_returning(mocker, RootScanResult(ROOT, outcome))
+    """Nothing is applied; the root is marked, and the job still finishes, having touched no row -- not even the ones an
+    earlier run of it did (#511).
 
-    scan_job().run(FakeControl())
+    **Test steps:**
+
+    * run a scan that touches a row, then run the same job again over a root that is offline
+    * verify the second run applied nothing, marked the root unreachable, and left ``touched_rows`` empty
+    """
+    cache.signatures.return_value = {}
+    cache.apply_root_scan.side_effect = touching(3)
+    scan_class = scan_returning(mocker, RootScanResult(ROOT, RootScanOutcome.SCANNED))
+    job = scan_job()
+    job.run(FakeControl())
+    cache.apply_root_scan.reset_mock()
+    scan_class.return_value.scan.side_effect = None
+    scan_class.return_value.scan.return_value = RootScanResult(ROOT, outcome)
+
+    job.run(FakeControl())
 
     cache.apply_root_scan.assert_not_called()
     cache.mark_root_unreachable.assert_called_once_with(ROOT_ID)
+    assert job.touched_rows == frozenset()
 
 
 def test_a_scan_reads_through_its_coordinator_and_checkpoint(mocker: MockerFixture, cache: MagicMock) -> None:

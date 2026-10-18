@@ -12,9 +12,9 @@ kind is `test_rehu_file_kinds`' subject, and the rows themselves are `test_files
 # for test_rehu_document_model.py
 # pylint: disable=too-many-lines
 
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Final
+from uuid import UUID
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices
@@ -36,7 +36,7 @@ from rehuco_core import (
     RehuDocument,
     Relocation,
 )
-from rehuco_core.access import ResourceKey
+from rehuco_core.access import Changed, ChangeEvent, FolderChanged, ResourceKey, RootStale
 
 LIBRARY: Final = Path.cwd() / "fake" / "library"
 """The fake catalog folder; built from ``Path.cwd()`` so it is absolute on every platform, as a key needs."""
@@ -1130,11 +1130,12 @@ def test_a_rename_elsewhere_reads_nothing(
 @mark.parametrize(
     "case",
     [
-        (lambda events: events.announce_changed((ResourceKey(INFO_PATH),)), 2),
-        (lambda events: events.announce_changed((ResourceKey(SUB / "deeper.mp4"),)), 2),
-        (lambda events: events.announce_changed((ResourceKey(LIBRARY / "other" / "info.rehu"),)), 1),
-        (lambda events: events.announce_folder_changed(ResourceKey(DIRECTORY)), 2),
-        (lambda events: events.announce_folder_changed(ResourceKey(LIBRARY)), 1),
+        (Changed((ResourceKey(INFO_PATH),)), 2),
+        (Changed((ResourceKey(SUB / "deeper.mp4"),)), 2),
+        (Changed((ResourceKey(LIBRARY / "other" / "info.rehu"),)), 1),
+        (FolderChanged(ResourceKey(DIRECTORY)), 2),
+        (FolderChanged(ResourceKey(LIBRARY)), 1),
+        (RootStale(UUID(int=1)), 2),
     ],
 )
 def test_a_change_beneath_the_resources_folder_reads_it_again(
@@ -1142,18 +1143,19 @@ def test_a_change_beneath_the_resources_folder_reads_it_again(
     followed: FilesView,
     events: ResourceEvents,
     listing: Any,
-    case: tuple[Callable[[ResourceEvents], None], int],
+    case: tuple[ChangeEvent, int],
 ) -> None:
-    """A save, a screenshot rearranged, a checksum run finishing -- anything at or beneath the resource's own
-    folder is read; anything outside it is not (#376).
+    """A save, a screenshot rearranged, a checksum run finishing, an edit made elsewhere -- whatever the notifiers
+    report at or beneath the resource's own folder is read, and anything outside it is not (#376, #511); a root that
+    can no longer be trusted is read whatever it holds.
 
     **Test steps:**
 
-    * announce a change
+    * publish a change on the feed the browser follows
     * verify whether a second listing ran
     """
-    announce, reads = case
-    announce(events)
+    event, reads = case
+    events.changes.publish(event)
     settle(qtbot, followed)
     qtbot.wait(10)
 
@@ -1163,17 +1165,17 @@ def test_a_change_beneath_the_resources_folder_reads_it_again(
 def test_a_change_while_hidden_only_marks_the_folder_stale(
     qtbot: QtBot, model: RehuDocumentModel, events: ResourceEvents, listing: Any
 ) -> None:
-    """A hidden browser reads nothing for an announcement either, and catches up when shown.
+    """A hidden browser reads nothing for a change either, and catches up when shown.
 
     **Test steps:**
 
-    * announce a change to a hidden browser's folder, and verify nothing was listed
+    * publish a change to a hidden browser's folder, and verify nothing was listed
     * show it, and verify one listing ran
     """
     view = FilesView(model, resource_events=events)
     qtbot.addWidget(view)
 
-    events.announce_folder_changed(ResourceKey(DIRECTORY))
+    events.changes.publish(FolderChanged(ResourceKey(DIRECTORY)))
 
     assert listing.call_count == 0
 
@@ -1183,37 +1185,50 @@ def test_a_change_while_hidden_only_marks_the_folder_stale(
     assert listing.call_count == 1
 
 
-def test_without_events_the_documents_own_announcements_are_followed(
-    qtbot: QtBot, view: FilesView, model: RehuDocumentModel, listing: Any
+def test_without_events_a_private_feed_is_followed(
+    qtbot: QtBot, view: FilesView, events: ResourceEvents, listing: Any
 ) -> None:
-    """A browser outside the app's registry still follows what its own document says it wrote.
+    """A browser outside the app's registry follows a change feed of its own (#511), and nobody else's.
 
     **Test steps:**
 
-    * announce a folder change through the model and a save's write
+    * find the browser's own events, a child of it
+    * publish a folder change on another feed, and verify nothing was read
+    * publish a folder change and a stale root on its own feed
     * verify each read the folder again
     """
-    model.announce_folder_changed(DIRECTORY)
+    private = view.findChild(ResourceEvents)
+    assert isinstance(private, ResourceEvents)
+    assert private is not events
+
+    events.changes.publish(FolderChanged(ResourceKey(DIRECTORY)))
     settle(qtbot, view)
-    model.announce_files_changed((INFO_PATH,))
+    assert listing.call_count == 1
+
+    private.changes.publish(FolderChanged(ResourceKey(DIRECTORY)))
+    settle(qtbot, view)
+    private.changes.publish(RootStale(UUID(int=1)))
     settle(qtbot, view)
 
     assert listing.call_count == 3
 
 
+@mark.parametrize(
+    "event", [Changed((ResourceKey(INFO_PATH),)), FolderChanged(ResourceKey(DIRECTORY)), RootStale(UUID(int=1))]
+)
 def test_a_detached_browser_follows_nothing(
-    qtbot: QtBot, followed: FilesView, events: ResourceEvents, listing: Any
+    qtbot: QtBot, followed: FilesView, events: ResourceEvents, listing: Any, event: ChangeEvent
 ) -> None:
-    """Detached on its document's close, the browser stops hearing the app-wide announcements.
+    """Detached on its document's close, the browser stops hearing the app's change feed.
 
     **Test steps:**
 
-    * detach the browser and announce a change to its folder
+    * detach the browser and publish a change to its folder
     * verify nothing was listed
     """
     followed.detach()
 
-    events.announce_folder_changed(ResourceKey(DIRECTORY))
+    events.changes.publish(event)
     qtbot.wait(10)
 
     assert listing.call_count == 1
@@ -1226,14 +1241,13 @@ def test_a_detached_browser_no_longer_follows_its_document(
 
     **Test steps:**
 
-    * detach the browser, clear the document's path and announce a folder change through it
+    * detach the browser, then clear the document's path
     * verify the browsed folder is kept and nothing was listed
     """
     settle(qtbot, view)
     view.detach()
 
     model.path = None
-    model.announce_folder_changed(DIRECTORY)
     qtbot.wait(10)
 
     assert view.directory == DIRECTORY

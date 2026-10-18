@@ -30,7 +30,6 @@ from rehuco_core import (
     RecordVersion,
     RehuDocument,
     RenameCoordinator,
-    checksum_record_path,
     is_directory_scoped_name,
     merge_users,
     put_paths,
@@ -40,7 +39,7 @@ from rehuco_core import (
     scan_unconverted_screenshots,
     take_enclosing_claims,
 )
-from rehuco_core.access import ChangeFeed, FileSignature, KeyRelocation, LoadedRecord, Records, ResourceKey
+from rehuco_core.access import FileSignature, KeyRelocation, LoadedRecord, Records, ResourceKey
 
 from ..fields.field import Field, FieldBinding
 from ..fields.unknown_field import UnknownField
@@ -236,17 +235,6 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     :attr:`unknown_fields_changed` (a single fallback field dropped) because that stays within a
     composition the reactive rows can show/hide, whereas this adds, removes, and re-wires whole rows --
     so ``DocumentSubDocks`` rebuilds its dock contents on it. Plain seeding does not raise it."""
-
-    files_changed = Signal(object)
-    """Fires with a tuple of the keys of files this document wrote or replaced --
-    its record on every :meth:`save`, the new ``.rehu`` and the ``.tc`` it replaced on a :meth:`convert`, and
-    whatever a collaborator announces through :meth:`announce_files_changed`. The per-document half of the
-    app's file announcements: whoever holds the model relays it app-wide
-    (:class:`~rehuco_agent.resource_events.ResourceEvents`, #376)."""
-
-    folder_changed = Signal(object)
-    """Fires with the key of a folder whose listing this document's work changed, through
-    :meth:`announce_folder_changed` -- relayed the same way as :attr:`files_changed`."""
 
     key = SimpleProperty[ResourceKey | None](None)
     """Where the document is reached ([[nodes#access-seam]]): what the registry, the docks and every holder that
@@ -482,7 +470,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     ) -> None:
         super().__init__(parent)
         self.__document = document
-        self.__records: Final = records if records is not None else Records(ChangeFeed())
+        self.__records: Final = records if records is not None else Records()
         self.__version = version
         """What the document was read or last saved at; see the class's ``version``."""
         self.__base_data = copy.deepcopy(document.data)
@@ -728,7 +716,6 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         if key is None:
             raise ValueError("No path given and document was not loaded from a file.")
         first_save = not self.saved_on_disk
-        changed: tuple[Path, ...] = ()
         with LogScope.open(self.path):
             try:
                 saved = self.__records.save(
@@ -740,7 +727,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
                 raise
             LOG.info("Saved %s", self.path)
             if first_save and self.path is not None:
-                changed = self.__take_enclosing_claims(self.path)
+                self.__take_enclosing_claims(self.path)
         self.__version = saved.version
         self.__base_data = copy.deepcopy(self.__document.data)
         self.__disk_signature = saved.signature
@@ -749,8 +736,6 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.dirty = False
         self.conflict = None
         self.changed_on_disk = False
-        if changed:
-            self.files_changed.emit(tuple(ResourceKey(path) for path in changed))
         # the file now exists on disk, so there is finally something to revert to: mark saved_on_disk so
         # DocumentSubDocks re-enables Revert (#147). Set once and never unset -- a later out-of-band
         # deletion still leaves this a document that *was* saved, whose revert is the fix-retry loop.
@@ -805,20 +790,17 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             raise FileNotFoundError("this document has no file yet")
         return self.__records.stored_text(key)
 
-    def __take_enclosing_claims(self, path: Path) -> tuple[Path, ...]:
-        """Move the checksums a new record covers out of the enclosing record's ``.checksum`` (#467).
+    def __take_enclosing_claims(self, path: Path) -> None:
+        """Move the checksums a new record covers out of the enclosing record's ``.checksum`` (#467). The two files a
+        move rewrites reach every view through their folders' file notifiers (#511).
 
         :param path: the record just written for the first time.
-        :returns: the two ``.checksum`` files a move rewrote, for :attr:`files_changed`; empty when nothing moved.
         """
-        taken = take_enclosing_claims(
+        take_enclosing_claims(
             path,
             coordinator=self.__rename_coordinator,
             excluded_patterns=shared_excluded_files_settings().excluded_file_patterns,
         )
-        if taken is None:
-            return ()
-        return (checksum_record_path(path), taken.source)
 
     def rename_conflicts(self, new_name: str) -> bool:
         """Whether renaming to ``new_name`` would land on something already there
@@ -1070,24 +1052,14 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         else:
             self.revert()
 
-    def announce_files_changed(self, paths: Sequence[Path]) -> None:
-        """Say that this document's work wrote or replaced ``paths`` -- for a collaborator that writes files on
-        its behalf, such as a checksum run (:attr:`files_changed`).
+    def forget_folder_listing(self) -> None:
+        """Drop what the image scanner remembers of this document's folder, for a collaborator that has just renamed,
+        deleted or written files there -- the screenshot organizer -- and is about to ask again in the same turn.
 
-        :param paths: the files' absolute paths.
+        Nobody else is told: the folder's file notifier reports the writes to every view (#511).
         """
-        self.files_changed.emit(tuple(ResourceKey(path) for path in paths))
-
-    def announce_folder_changed(self, directory: Path) -> None:
-        """Say that this document's work changed ``directory``'s listing -- for a collaborator that renames,
-        deletes or writes files there, such as the screenshot organizer (:attr:`folder_changed`).
-
-        :param directory: the folder's absolute path.
-        """
-        # what the scanner last read of the folder is out of date now -- before anyone is told to read it again.
-        # Installed at construction and only ever replaced, never cleared
+        # installed at construction and only ever replaced, never cleared
         cast(RehuDocumentImageScanner, self.image_scanner).forget()
-        self.folder_changed.emit(ResourceKey(directory))
 
     def relocate(self, relocation: KeyRelocation) -> bool:
         """Follow a rename that moved this document's record ([[mounts-and-storage#out-of-band]], #376).

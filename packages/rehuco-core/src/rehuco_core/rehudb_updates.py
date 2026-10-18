@@ -181,11 +181,16 @@ class CatalogRecordUpdater:
         rename rebased the row, and the listing that follows it verifies again), or its row is no longer the one
         planned against -- a save or a scan wrote it meanwhile, from a newer read than this one.
 
+        **Every record read is written before any row is removed** (#511): a conversion reports its ``.tc`` gone and
+        its ``.rehu`` new together, and the ``.rehu`` takes the ``.tc``'s row over only while that row is there -- so
+        the row keeps its id, and a browser its selection; the ``.tc``'s removal then finds its row moved on, and is
+        dropped.
+
         :param findings: the findings.
         :returns: the paths whose rows changed.
         """
         changed: set[Path] = set()
-        for finding in findings:
+        for finding in sorted(findings, key=lambda finding: finding.record is None):
             check = finding.check
             root_id, relative = check.location.root.root_id, check.location.relative
             if check.tracked.path != check.path or self.__cache.signature(root_id, relative) != check.signature:

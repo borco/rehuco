@@ -10,7 +10,7 @@ from pytest import mark
 from rehuco_agent.documents.document_registry import load_record
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_core import RehuDocument
-from rehuco_core.access import ChangeFeed, Records, ResourceKey
+from rehuco_core.access import Records, ResourceKey
 
 pytestmark = mark.usefixtures("real_path_stat")
 
@@ -38,7 +38,7 @@ def opened(path: Path) -> RehuDocumentModel:
     :param path: the record.
     :returns: the model.
     """
-    records = Records(ChangeFeed())
+    records = Records()
     record = load_record(records, ResourceKey(path))
     return RehuDocumentModel(record.document, records=records, version=record.version, signature=record.signature)
 

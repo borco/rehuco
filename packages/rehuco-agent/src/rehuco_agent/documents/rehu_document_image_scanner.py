@@ -154,7 +154,7 @@ class RehuDocumentImageScanner:
             return ScreenshotSet()
         # the strip and the curation list each ask as a record is shown, in the same turn of the event loop: one
         # reading of the folder answers both (#381). Kept no longer than that turn, and forgotten at once when the
-        # document's own work changes the folder (`RehuDocumentModel.announce_folder_changed`)
+        # document's own work changes the folder (`RehuDocumentModel.forget_folder_listing`)
         if self.__listed is None:
             directory, stem = path.parent, path.stem
             numbered = self.__lister(directory, stem)

@@ -3,7 +3,7 @@ button for everything its context menu offers (#378), what a record says about i
 made of (#456)."""
 
 import logging
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager, nullcontext
 from datetime import UTC, datetime
 from pathlib import Path
@@ -34,7 +34,7 @@ from rehuco_core import (
     RenameCoordinator,
     read_archive_facts,
 )
-from rehuco_core.access import ChangeFeed, Records, ResourceKey
+from rehuco_core.access import Records, ResourceKey
 
 from ..documents.files_rows import CHECKSUM_STATE_ICONS
 from ..fields.widgets.image_export import PressDragFilter
@@ -176,9 +176,8 @@ class RootsPreview(QWidget):
     """``(serial, image, size)``: one thumbnail's answer -- null when the file could not be read -- and the picture's
     own size in pixels, which the thumbnail is smaller than."""
 
-    record_ready = Signal(int, str, str, object)
-    """``(serial, url, description, signature)``: what a record says, the description as Markdown -- either may be
-    empty -- and the ``(modification time in ns, size)`` of the file it was read from."""
+    record_ready = Signal(int, str, str)
+    """``(serial, url, description)``: what a record says, the description as Markdown -- either may be empty."""
 
     archive_ready = Signal(int, object)
     """``(serial, facts)``: what a zip's central directory says, or ``None`` when it could not be read."""
@@ -195,7 +194,7 @@ class RootsPreview(QWidget):
         records: Records | None = None,
     ) -> None:
         super().__init__(parent)
-        self.__records: Final = records if records is not None else Records(ChangeFeed())
+        self.__records: Final = records if records is not None else Records()
         self.__ui: Final = Ui_RootsPreview()
         self.__ui.setupUi(self)
         self.setMinimumWidth(MINIMUM_WIDTH)
@@ -212,8 +211,6 @@ class RootsPreview(QWidget):
         self.__url = ""
         self.__record: Path | None = None
         """The record the pane reads what it shows from, while it shows one."""
-        self.__record_signature: tuple[int, int] | None = None
-        """That record's modification time and size as it was read, once the read has landed."""
         self.__checksum_lines: tuple[str, str] | None = None
         self.__shown_root: UUID | None = None
         self.__images: Final = RecordImages()
@@ -370,7 +367,7 @@ class RootsPreview(QWidget):
         ui = self.__ui
         index = self.__shown()
         self.__serial += 1
-        self.__record = self.__record_signature = None
+        self.__record = None
         ui.image_label.set_image(None)
         self.__show_record("", "")
         ui.resolution_label.hide()
@@ -549,16 +546,13 @@ class RootsPreview(QWidget):
         ):
             self.refresh()
 
-    def follow_files(self, seen: Mapping[Path, tuple[int, int]]) -> None:
-        """Show the row again if the record it shows was changed on disk since it was read (#487).
+    def follow_changes(self, keys: tuple[ResourceKey, ...]) -> None:
+        """Show the row again when the record it shows changed on disk (#487, #511).
 
-        :param seen: files, each with the ``(modification time in ns, size)`` it has on disk now.
+        :param keys: the files or folders that changed.
         """
-        record, read_at = self.__record, self.__record_signature
-        if record is None or read_at is None:
-            return
-        now = seen.get(record)
-        if now is not None and now != read_at:
+        record = self.__record
+        if record is not None and any(ResourceKey(record).is_at_or_beneath(key) for key in keys):
             self.refresh()
 
     def forget_if_gone(self, *_args: object) -> None:
@@ -750,20 +744,18 @@ class RootsPreview(QWidget):
             return
         url, description = record.document.url.strip(), record.document.description
         try:
-            self.record_ready.emit(serial, url, description if description.strip() else "", record.signature)
+            self.record_ready.emit(serial, url, description if description.strip() else "")
         except RuntimeError:  # the preview was destroyed while the read was out
             pass
 
-    def __on_record(self, serial: int, url: str, description: str, signature: tuple[int, int] | None) -> None:
+    def __on_record(self, serial: int, url: str, description: str) -> None:
         """Show what a record says, unless the row it was for is no longer the one shown.
 
         :param serial: the request's serial.
         :param url: the record's URL.
         :param description: the record's description, as Markdown.
-        :param signature: the record file's modification time and size, as read.
         """
         if serial == self.__serial:
-            self.__record_signature = signature
             self.__show_record(url, description)
 
     def __show_record(self, url: str, description: str) -> None:

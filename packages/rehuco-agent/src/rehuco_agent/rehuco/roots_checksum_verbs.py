@@ -26,7 +26,6 @@ from ..documents.files_rows import FileChecksumState
 from ..settings.checksum_settings import shared_checksum_settings
 from ..settings.excluded_files_settings import shared_excluded_files_settings
 from ..tasks.already_queued import job_already_queued
-from ..tasks.job_end_watcher import JobEndWatcher
 from .rehuco_roots_panel_ui import Ui_RehucoRootsPanel
 from .roots_folder_model import RootsFolderModel
 from .roots_management import ManagingRecord, managing_record
@@ -40,34 +39,28 @@ class RootsChecksumVerbs:
     **A record that manages a row** (:func:`~rehuco_agent.rehuco.roots_management.managing_record`) gives it one bulk
     verb -- *Verify* when the record has its checksum file, *Generate* when it has none yet -- and a file with a stored
     result gets verbs for itself alone. A checksum file keeps its own two (*Verify old checksums*, *Verify checksums*).
-    Every run is a job on the queue, and the end of one announces the record it may have rewritten, so every view of it
-    follows.
+    Every run is a job on the queue; the record it rewrites reaches every view through the folder's file notifier
+    (#511).
 
     :param model: the Roots model.
     :param ui: the panel's actions.
     :param queue: the task queue the jobs go on.
     :param coordinator: what a job reads through, so it never blocks a rename.
-    :param watcher: tells when a queued job has ended.
-    :param announce: told the resource whose checksum record a finished job may have rewritten.
     :param acting: the row the actions act on.
     """
 
-    def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+    def __init__(
         self,
         model: RootsFolderModel,
         ui: Ui_RehucoRootsPanel,
         queue: TaskQueue,
         coordinator: RenameCoordinator,
-        watcher: JobEndWatcher,
-        announce: Callable[[Path], None],
         acting: Callable[[], QModelIndex],
     ) -> None:
         self.__model: Final = model
         self.__ui: Final = ui
         self.__queue: Final = queue
         self.__coordinator: Final = coordinator
-        self.__watcher: Final = watcher
-        self.__announce: Final = announce
         self.__acting: Final = acting
         ui.verify_checksums_action.triggered.connect(lambda: self.__on_verify_checksums(old=False))
         ui.verify_old_checksums_action.triggered.connect(lambda: self.__on_verify_checksums(old=True))
@@ -232,5 +225,4 @@ class RootsChecksumVerbs:
             LOG.info("%s is already in the task queue; it was not queued again.", job.label)
             return
         with LogScope.open(resource):
-            serial = self.__queue.enqueue(job)
-        self.__watcher.watch(serial, lambda: self.__announce(resource))
+            self.__queue.enqueue(job)

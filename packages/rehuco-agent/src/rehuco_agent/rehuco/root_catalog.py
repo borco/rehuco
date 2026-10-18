@@ -6,6 +6,7 @@ import itertools
 import logging
 import threading
 from collections.abc import Hashable, Iterable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 from uuid import UUID
@@ -35,11 +36,11 @@ from rehuco_core.access import (
     Catalog,
     CatalogSession,
     CatalogUnreadable,
-    ChangeFeed,
+    Changed,
     KeyRelocation,
-    Records,
     ResourceKey,
 )
+from rehuco_core.notify import RootNotifiers
 
 from ..resource_events import ResourceEvents
 from ..settings.persistent_settings import cache_folder
@@ -62,8 +63,12 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
     the cache current through :class:`~rehuco_core.Catalog`, which opens one per call on whichever thread asks
     (SQLite's one connection per thread, [[data-model#cache-schema]]). **A scan is a queue job per root**, never run
     here: each opens its own on the worker. This is a queue listener only to learn when one of its
-    own jobs has finished, and then says the catalog :attr:`refreshed` -- the same marshalling the checksum actions
-    use ([[appendices.task-queue#observation]]).
+    own jobs has finished, and then says which rows it changed (:attr:`rows_changed`) -- the same marshalling the
+    checksum actions use ([[appendices.task-queue#observation]]).
+
+    **What changes on disk arrives from the roots' file notifiers** ([[mounts-and-storage#out-of-band]], #511), which
+    this starts and stops with the roots: a file changed is checked against its row on the pool and its row brought in
+    line, a root gone stale is scanned again, a root's reachability is written into the cache.
 
     **A file newer than this build opens read-only**: its :attr:`~rehuco_core.RehucoFile.lock_reason` says why,
     and no edit of the roots is made. Scanning stays on, since it writes only the disposable cache.
@@ -72,42 +77,38 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
     :param parent: optional Qt parent.
     :param rename_coordinator: what a scan holds each directory and record read under, so it never blocks a
         rename ([[mounts-and-storage#out-of-band]]).
-    :param resource_events: the app's file announcements (#376), which keep the cache current between scans
-        without reading anything a rename moved: a rename rebases the rows it moved
-        (:meth:`~rehuco_core.Catalog.follow`), and a record the app wrote is read back into its row
-        (:meth:`~rehuco_core.Catalog.refresh`). Either way only the rows it touched are announced, by
-        :attr:`rows_changed`. ``None`` leaves the cache to the scans alone.
+    :param resource_events: the app's change feed (#376, #511), which keeps the cache current between scans: a rename
+        rebases the rows it moved without reading them (:meth:`~rehuco_core.Catalog.follow`), and a file changed is
+        checked against its row, which is read again only if the file moved on. Either way only the rows it touched
+        are announced, by :attr:`rows_changed`. ``None`` leaves the cache to the scans alone.
     :param catalog: what the open file's cache is attached to (#417); every read of the cache and every change to it
         goes through there. The window's own, when given; a new one otherwise.
+    :param notifiers: the open file's roots' file notifiers, kept in step with its roots; ``None`` watches nothing,
+        for a catalog with no window around it.
     """
 
     rehuco_path_changed: Signal = Signal(object)
     """Emitted with the open ``.rehuco``'s :class:`~pathlib.Path`, or ``None`` once none is open."""
 
     opened: Signal = Signal(object)
-    """Emitted with the :class:`~rehuco_core.RehucoFile` just made current, before :attr:`refreshed` says what it
+    """Emitted with the :class:`~rehuco_core.RehucoFile` just made current, before :attr:`roots_changed` says what it
     holds."""
 
     closing: Signal = Signal(object)
     """Emitted with the :class:`~rehuco_core.RehucoFile` about to be let go, while its cache is still open: what a
     dock remembers about a catalog, it remembers now."""
 
-    refreshed: Signal = Signal()
-    """The file or the cache changed as a whole -- an open, a close, an edit of the roots, the end of a scan:
-    whatever a dock shows of it is to be read again."""
+    roots_changed: Signal = Signal()
+    """Which roots are shown changed -- a file opened, created or closed, a root added, edited or removed: nothing on
+    disk moved, but the set of rows did as a whole, so whatever a dock shows of it is to be read again."""
 
     rows_changed: Signal = Signal(object)
-    """Emitted with the ``set`` of cache row ids a change may have touched; only those are to be read again
-    (#379)."""
+    """Emitted with the ``set`` of cache row ids a change may have touched -- a rename, a file changed, a scan's
+    end; only those are to be read again (#379, #511)."""
 
-    records_verified: Signal = Signal(object)
-    """Emitted with the ``set`` of record :class:`~pathlib.Path` objects whose rows a verify-on-access changed (#487),
-    after :attr:`rows_changed` has said which rows: what the cache says of them -- a type, a title -- is new."""
-
-    files_seen: Signal = Signal(object)
-    """Emitted with a ``dict`` of file :class:`~pathlib.Path` objects, each with the ``(modification time in ns, size)``
-    it has on disk now -- every record a verify looked at, changed or not, and every file :meth:`read_signatures` was
-    asked about (#487). Whatever shows one compares it with what it showed; the cache is not asked."""
+    root_reachable: Signal = Signal(object, bool)
+    """Emitted with a root's :class:`~uuid.UUID` and whether its folder can be reached, once the cache holds it
+    (#511)."""
 
     class Marshaller(QObject):
         """Carries "one of our jobs may have finished" across the thread boundary, and nothing else."""
@@ -121,10 +122,18 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         answered = Signal(int, object, object, object)
         """``(serial, key, cache path, findings)``: one check's answer, judged on the GUI thread."""
 
-        statted = Signal(int, object)
-        """``(serial, signatures)``: what :meth:`RootCatalog.read_signatures` found, judged on the GUI thread."""
+    @dataclass(frozen=True, slots=True)
+    class FromFeed:
+        """What a verify of files the change feed said changed is about -- the files themselves.
 
-    def __init__(
+        Its answer is not published back on the feed, as a verify for an access or a listing is: the feed has said it.
+
+        :param keys: the files.
+        """
+
+        keys: tuple[ResourceKey, ...]
+
+    def __init__(  # pylint: disable=too-many-arguments
         self,
         queue: TaskQueue,
         parent: QObject | None = None,
@@ -132,14 +141,14 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         rename_coordinator: RenameCoordinator = DEFAULT_RENAME_COORDINATOR,
         resource_events: ResourceEvents | None = None,
         catalog: Catalog | None = None,
+        notifiers: RootNotifiers | None = None,
     ) -> None:
         super().__init__(parent)
         self.__queue: Final = queue
         self.__catalog: Final = catalog if catalog is not None else Catalog(rename_coordinator)
-        # only stats records, under the rename hold, and so writes nothing to announce
-        self.__records: Final = Records(ChangeFeed(), rename_coordinator)
         self.__rename_coordinator: Final = rename_coordinator
         self.__events: Final = resource_events
+        self.__notifiers: Final = notifiers
         self.__listening_to_events = resource_events is not None
         self.__file: RehucoFile | None = None
         self.__load_error = ""
@@ -150,13 +159,13 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         """The jobs this catalog enqueued that have not been read back yet. Written under :attr:`__lock` from
         both the GUI thread and the worker's listener callbacks; the lock is never held while calling the
         queue, whose own lock the listener callbacks arrive under."""
+        self.__scans: Final[dict[int, ScanCatalogRootJob]] = {}
+        """The scans among them, by serial, so their end can say which rows they changed (GUI thread only)."""
 
         self.__marshaller: Final = RootCatalog.Marshaller(self)
         self.__marshaller.queue_changed.connect(self.__on_queue_changed, Qt.ConnectionType.QueuedConnection)
         self.__verifier: Final = RootCatalog.Verifier(self)
         self.__verifier.answered.connect(self.__on_verified, Qt.ConnectionType.QueuedConnection)
-        self.__verifier.statted.connect(self.__on_statted, Qt.ConnectionType.QueuedConnection)
-        self.__latest_stat = 0
         self.__verify_serials: Final = itertools.count(1)
         self.__latest_verify: Final[dict[Hashable, int]] = {}
         """The newest verify asked for per key, under :attr:`__lock`: an older one still queued does nothing, and an
@@ -166,6 +175,8 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
             resource_events.moved.connect(self.__on_moved)
             resource_events.changed.connect(self.__on_files_changed)
             resource_events.accessed.connect(self.__on_accessed)
+            resource_events.root_stale.connect(self.scan_root)
+            resource_events.root_reachable.connect(self.__on_root_reachable)
 
     # region the open file
 
@@ -234,7 +245,7 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         if self.__file is None:
             return
         self.__release_session()
-        self.refreshed.emit()
+        self.roots_changed.emit()
         self.rehuco_path_changed.emit(None)
 
     def detach(self) -> None:
@@ -249,6 +260,8 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
             self.__events.moved.disconnect(self.__on_moved)
             self.__events.changed.disconnect(self.__on_files_changed)
             self.__events.accessed.disconnect(self.__on_accessed)
+            self.__events.root_stale.disconnect(self.scan_root)
+            self.__events.root_reachable.disconnect(self.__on_root_reachable)
         self.__release_session()
 
     def __fail(self, message: str) -> bool:
@@ -289,8 +302,9 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         self.__release_session(keep_jobs=same_catalog)
         self.__file = file
         self.__catalog.attach(session)
+        self.__follow_roots()
         self.opened.emit(file)
-        self.refreshed.emit()
+        self.roots_changed.emit()
         self.rehuco_path_changed.emit(file.path)
         return True
 
@@ -302,11 +316,20 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         """
         if self.__file is not None:
             self.closing.emit(self.__file)
+        if self.__notifiers is not None:
+            self.__notifiers.stop()
         self.__catalog.detach()
         self.__file = None
         if not keep_jobs:
             with self.__lock:
                 self.__serials.clear()
+            self.__scans.clear()
+
+    def __follow_roots(self) -> None:
+        """Watch exactly the open file's roots."""
+        file, cache_path = self.__file, self.__catalog.cache_path
+        if self.__notifiers is not None and file is not None and cache_path is not None:
+            self.__notifiers.follow({root.root_id: root.path for root in file.roots}, cache_path)
 
     # endregion
 
@@ -326,6 +349,15 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         :raises CatalogUnreadable: when the cache cannot be read.
         """
         return self.__catalog.query(query, ids=ids)
+
+    def unreachable_roots(self) -> frozenset[UUID]:
+        """The roots of the open file whose folder could not be reached when last looked at -- by its notifier or a
+        scan (#511); none while no file is open, or when the cache cannot be read."""
+        try:
+            return frozenset(root.root_id for root in self.__catalog.roots() if root.reachable is False)
+        except CatalogUnreadable as error:
+            LOG.error("%s", error)
+            return frozenset()
 
     def root_paths(self) -> dict[UUID, Path]:
         """Where each root of the open file is, by id; empty while none is open."""
@@ -396,8 +428,8 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
     # region editing the roots
 
     def commit_roots(self) -> bool:
-        """Save an edit made to :attr:`file`'s roots, bring the cache's copy of them in line, and say the catalog
-        :attr:`refreshed`.
+        """Save an edit made to :attr:`file`'s roots, bring the cache's copy of them in line, watch them, and say the
+        :attr:`roots_changed`.
 
         On a failed save the in-memory edit is not what is on disk, so the file is read back -- or closed, when
         even that cannot be read -- and the edit is gone from the screen too.
@@ -408,7 +440,8 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         # a failed save reads the file back, so the cache follows what is on disk either way
         self.__reconcile_cache()
         if self.__file is not None:
-            self.refreshed.emit()
+            self.__follow_roots()
+            self.roots_changed.emit()
         return saved
 
     def remove_root(self, row: int) -> bool:
@@ -426,7 +459,8 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
             self.__catalog.hide(removed.root_id)
             self.__enqueue(RemoveCatalogRootJob(cache_path, removed.root_id, root_label=removed.label), removed.path)
         if self.__file is not None:
-            self.refreshed.emit()
+            self.__follow_roots()
+            self.roots_changed.emit()
         return saved
 
     def __save_file(self) -> bool:
@@ -474,16 +508,27 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
     def scan(self) -> None:
         """Enqueue one scan job per root, skipping a root whose scan is already waiting."""
         file = self.__file
+        if file is not None:
+            for root in file.roots:
+                self.scan_root(root.root_id)
+
+    def scan_root(self, root_id: UUID) -> None:
+        """Enqueue a scan of one root of the open file -- what a root whose notifier lost events gets (#511) --
+        unless its scan is already waiting.
+
+        :param root_id: the root; one the open file does not list is ignored.
+        """
+        file = self.__file
         cache_path = self.__catalog.cache_path
-        if file is None or cache_path is None:
+        root = None if file is None else next((root for root in file.roots if root.root_id == root_id), None)
+        if root is None or cache_path is None:
             return
-        for root in file.roots:
-            self.__enqueue(
-                ScanCatalogRootJob(
-                    cache_path, root.root_id, root.path, root_label=root.label, coordinator=self.__rename_coordinator
-                ),
-                root.path,
-            )
+        self.__enqueue(
+            ScanCatalogRootJob(
+                cache_path, root.root_id, root.path, root_label=root.label, coordinator=self.__rename_coordinator
+            ),
+            root.path,
+        )
 
     def __enqueue(self, job: TaskJob, scope: Path) -> None:
         """Put ``job`` on the queue inside ``scope``'s log scope, and remember its serial so its end can be
@@ -511,16 +556,17 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
             serial = self.__queue.enqueue(job)
         with self.__lock:
             self.__serials.add(serial)
+        if isinstance(job, ScanCatalogRootJob):
+            self.__scans[serial] = job  # pylint: disable=unsupported-assignment-operation
         # the job may have finished before its serial was remembered, in which case no callback is left
         # to say so: ask once now
         self.__marshaller.queue_changed.emit()
 
     def __on_queue_changed(self) -> None:
-        """Say the catalog :attr:`refreshed` once the **last** of its own jobs has ended (GUI thread).
+        """Say which rows the scans among its own jobs that ended changed (GUI thread): each changed only the records
+        it found moved on, or gone, so only those rows are read again -- in place, the selection kept.
 
-        Once for a whole Scan rather than once per root: each read is the whole cache and a reset of every
-        table, which drops the selection, so eight roots finishing one after another would be eight stalls
-        and eight lost selections for one picture that is only complete at the end.
+        A removal says nothing: its root's rows left every view when it was removed from the file.
         """
         with self.__lock:
             tracked = set(self.__serials)
@@ -533,9 +579,13 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
             return
         with self.__lock:
             self.__serials.difference_update(ended)
-            remaining = bool(self.__serials)
-        if not remaining and self.__file is not None:
-            self.refreshed.emit()
+        touched: set[int] = set()
+        for serial in ended:
+            scan = self.__scans.pop(serial, None)
+            if scan is not None:
+                touched |= scan.touched_rows
+        if touched and self.__file is not None:
+            self.rows_changed.emit(touched)
 
     # region TaskQueueListener -- called on the worker thread, under the queue's lock
 
@@ -638,60 +688,16 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
             if self.__latest_verify.get(key) != serial:
                 return
             del self.__latest_verify[key]  # pylint: disable=unsupported-delete-operation
-        if checked.seen:
-            self.files_seen.emit(checked.seen)
         findings = checked.findings
         if cache_path != self.__catalog.cache_path or not findings:
             return
         affected, changed = self.__catalog.apply_verify(findings)
-        if changed:
-            self.rows_changed.emit(affected)
-            self.records_verified.emit(changed)
-
-    def read_signatures(self, paths: Iterable[Path]) -> None:
-        """Read the modification time and size of files on the pool and announce them as :attr:`files_seen` --
-        what a scan's end asks of the files open documents stand for, which no row of the cache can say (#487).
-
-        A newer call supersedes an older one still out.
-
-        :param paths: the files' absolute paths.
-        """
-        wanted = list(paths)
-        if not wanted:
+        if not changed:
             return
-        self.__latest_stat = serial = next(self.__verify_serials)
-        QThreadPool.globalInstance().start(lambda: self.__run_stat(serial, wanted))
-
-    def __run_stat(self, serial: int, paths: list[Path]) -> None:
-        """Stat the files on a pool thread, each under the rename hold, and answer.
-
-        :param serial: the call's serial.
-        :param paths: the files.
-        """
-        signatures: dict[Path, tuple[int, int]] = {}
-        try:
-            for path in paths:
-                try:
-                    signature = self.__records.signature(ResourceKey(path))
-                except ValueError:  # a relative path is no record of any root
-                    continue
-                if signature is not None:
-                    signatures[path] = signature
-        except Exception:  # pylint: disable=broad-exception-caught  # the pool swallows what escapes: no answer would come
-            LOG.exception("Could not read the state of %d files.", len(paths))
-        try:
-            self.__verifier.statted.emit(serial, signatures)
-        except RuntimeError:  # the catalog was destroyed while the read was out
-            pass
-
-    def __on_statted(self, serial: int, signatures: dict[Path, tuple[int, int]]) -> None:
-        """Pass on what the pool read, unless a newer read was asked for (GUI thread).
-
-        :param serial: the call's serial.
-        :param signatures: the files' times and sizes.
-        """
-        if serial == self.__latest_stat and signatures:
-            self.files_seen.emit(signatures)
+        self.rows_changed.emit(affected)
+        if self.__events is not None and not isinstance(key, RootCatalog.FromFeed):
+            # a change no event reported, found by the catch-all: every other view hears of it the same way
+            self.__events.changes.publish(Changed(tuple(ResourceKey(path) for path in changed)))
 
     def __on_accessed(self, keys: tuple[ResourceKey, ...]) -> None:
         """Verify the records the app is opening (#487).
@@ -703,7 +709,7 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
 
     # endregion
 
-    # region the app's own file changes
+    # region what changed on disk
 
     def __on_moved(self, moved_keys: KeyRelocation) -> None:
         """Rebase the rows a rename moved, reading no record, and announce them (#376, #379).
@@ -720,14 +726,24 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
             self.rows_changed.emit(affected)
 
     def __on_files_changed(self, keys: tuple[ResourceKey, ...]) -> None:
-        """Read each record the app wrote back into its row, and announce what changed (#376, #379).
+        """Check each changed file against its row on the pool, and bring the rows in line (#376, #379, #511).
 
-        A path that is not a record, or not under a root, is passed over by the updater itself.
+        A folder deleted or replaced stands for every record the cache holds beneath it. A path that is not a record,
+        or not under a root, is passed over by the planner itself.
 
-        :param keys: the files written or replaced.
+        :param keys: the files or folders that changed.
         """
-        affected = self.__catalog.refresh(keys)
-        if affected:
-            self.rows_changed.emit(affected)
+        paths = dict.fromkeys(key.path for key in keys)
+        paths.update(dict.fromkeys(self.__catalog.record_paths(keys)))
+        self.verify_records(paths, key=RootCatalog.FromFeed(keys))
+
+    def __on_root_reachable(self, root_id: UUID, reachable: bool) -> None:
+        """Write what a root's notifier says of its folder into the cache (#511).
+
+        :param root_id: the root.
+        :param reachable: whether its folder can be reached.
+        """
+        self.__catalog.mark_reachable(root_id, reachable)
+        self.root_reachable.emit(root_id, reachable)
 
     # endregion

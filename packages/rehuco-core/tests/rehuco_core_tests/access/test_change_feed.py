@@ -1,4 +1,4 @@
-"""Tests for the Qt-free change feed (#413)."""
+"""Tests for the Qt-free change feed (#413, #511)."""
 
 import logging
 from pathlib import Path
@@ -6,7 +6,17 @@ from typing import Final
 from uuid import UUID
 
 from pytest import LogCaptureFixture
-from rehuco_core import Changed, ChangeEvent, ChangeFeed, FolderChanged, KeyRelocation, Moved, ResourceKey, RootStale
+from rehuco_core import (
+    Changed,
+    ChangeEvent,
+    ChangeFeed,
+    FolderChanged,
+    KeyRelocation,
+    Moved,
+    ResourceKey,
+    RootReachable,
+    RootStale,
+)
 
 FOLDER: Final = ResourceKey(Path("/fake/library").absolute())
 EVENTS: Final[tuple[ChangeEvent, ...]] = (
@@ -14,6 +24,7 @@ EVENTS: Final[tuple[ChangeEvent, ...]] = (
     Changed((FOLDER.joinpath("info.rehu"),)),
     FolderChanged(FOLDER),
     RootStale(UUID("00000000-0000-0000-0000-000000000001")),
+    RootReachable(UUID("00000000-0000-0000-0000-000000000001"), False),
 )
 
 

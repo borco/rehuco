@@ -26,12 +26,10 @@ from rehuco_core import (
     RootFolderLister,
     RootStorage,
     TaskQueue,
-    checksum_record_path,
 )
 from rehuco_core.access import KeyRelocation, Records, ResourceKey
 
 from ..resource_events import ResourceEvents
-from ..tasks.job_end_watcher import JobEndWatcher
 from .add_root_dialog import AddRootDialog
 from .rehuco_roots_panel_ui import Ui_RehucoRootsPanel
 from .root_catalog import RootCatalog
@@ -129,7 +127,6 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         self.__rename_coordinator: Final = rename_coordinator
         self.__events: Final = resource_events
         self.__listening_to_events = resource_events is not None
-        self.__watcher: Final = JobEndWatcher(queue, self)
 
         self.__roots_model: Final = RootsFolderModel(self)
         self.__target: QPersistentModelIndex | None = None
@@ -156,8 +153,6 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
             self.__roots_ui,
             queue,
             rename_coordinator,
-            self.__watcher,
-            self.__announce_rewritten,
             self.__acting_index,
         )
         self.__rows: Final = RootsRowActions(self.__roots_model, self.__roots_ui, self.__opening, self.__verbs, self)
@@ -207,16 +202,19 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
             resource_events.moved.connect(self.__on_moved)
             resource_events.folder_changed.connect(self.__on_folder_changed)
             resource_events.changed.connect(self.__on_files_changed)
+            resource_events.root_stale.connect(self.__relist_root)
+            resource_events.root_reachable.connect(self.__relist_root)
 
     def detach(self) -> None:
-        """Stop listening to the file announcements before the window goes. Safe to call again: the second time
-        there is nothing left to disconnect."""
+        """Stop listening to the change feed before the window goes. Safe to call again: the second time there is
+        nothing left to disconnect."""
         if self.__events is not None and self.__listening_to_events:
             self.__listening_to_events = False
             self.__events.moved.disconnect(self.__on_moved)
             self.__events.folder_changed.disconnect(self.__on_folder_changed)
             self.__events.changed.disconnect(self.__on_files_changed)
-        self.__watcher.detach()
+            self.__events.root_stale.disconnect(self.__relist_root)
+            self.__events.root_reachable.disconnect(self.__relist_root)
 
     # region the view and its actions
 
@@ -591,18 +589,6 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         """Show the current row in the system file manager: a folder opened, a file shown selected in its folder."""
         self.__run(self.__roots_ui.open_explorer_action, self.__acting_index())
 
-    def __announce_rewritten(self, resource: Path) -> None:
-        """Say the checksum record a finished run may have rewritten has changed, so every view of it follows -- the
-        rows here, an open document's Files and Checksums views, the catalog's row for the record (#457).
-
-        :param resource: the ``.rehu`` whose record was verified or generated.
-        """
-        record = checksum_record_path(resource)
-        if self.__events is not None:
-            self.__events.announce_changed((ResourceKey(record),))
-        else:
-            self.__roots_model.relist_under(record.parent)
-
     def __on_companion(self) -> None:
         """Ask for the rehu that describes the current folder or file: a folder's ``info.rehu``, a file's same-name
         ``.rehu``. The main window opens the one there is or starts a new, unsaved one, which is why opening and
@@ -675,11 +661,9 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
 
         :param catalog: the open catalog.
         """
-        catalog.refreshed.connect(self.__refresh)
+        catalog.roots_changed.connect(self.__refresh)
         catalog.rehuco_path_changed.connect(self.__update_enablement)
         self.__roots_model.records_listed.connect(self.__on_records_listed)
-        catalog.records_verified.connect(self.__on_records_verified)
-        catalog.files_seen.connect(self.__preview.follow_files)
 
     def __on_records_listed(self, folder: Path, records: tuple[Path, ...]) -> None:
         """Verify the records a listed folder bears on against the cache, off the GUI thread (#487).
@@ -689,23 +673,40 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         """
         self.__catalog.verify_records(records, key=folder)
 
-    def __on_records_verified(self, changed: set[Path]) -> None:
-        """Show the current row again when a verify changed the record its pack line comes from (#487).
+    def __follow_pack(self, keys: tuple[ResourceKey, ...]) -> None:
+        """Show the current row again when a change touched the record its pack line comes from, or the record it
+        stands for (#487, #511).
 
-        Only then: a verify landing elsewhere restarts nothing, as with :meth:`RootsPreview.follow`.
+        Only then: a change landing elsewhere restarts nothing, as with :meth:`RootsPreview.follow`.
 
-        :param changed: the records whose rows changed.
+        :param keys: the files or folders that changed.
         """
         current = self.__roots_ui.roots_view.currentIndex()
         pack = self.__opening.pack_of(current)
         selected = selected_record(self.__roots_model, current)
         shown = None if selected is None else self.__catalog.resource_key(*selected)
-        if (pack is not None and pack.record in changed) or (shown is not None and shown.path in changed):
+        records = [ResourceKey(pack.record)] if pack is not None and pack.record is not None else []
+        if shown is not None:
+            records.append(shown)
+        if any(record.is_at_or_beneath(key) for record in records for key in keys):
             self.__preview.refresh()
             self.__update_enablement()
 
+    def __relist_root(self, root_id: UUID, *_args: object) -> None:
+        """List a root's loaded folders again, as F5 does, when its notifier says nothing held about it can be trusted
+        or that it went away or came back (#511).
+
+        :param root_id: the root.
+        """
+        model = self.__roots_model
+        for row in range(model.rowCount()):
+            index = model.index(row, 0)
+            root = model.root_of(index)
+            if root is not None and root.root_id == root_id:
+                model.relist(index)
+
     def __on_folder_changed(self, directory: ResourceKey) -> None:
-        """List a folder again that the app changed the contents of, if the Roots view has it loaded.
+        """List a folder again whose listing changed, if the Roots view has it loaded.
 
         :param directory: the folder.
         """
@@ -716,16 +717,19 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         self.record_selected.emit(selected_record(self.__roots_model, self.__roots_ui.roots_view.currentIndex()))
 
     def __on_files_changed(self, keys: tuple[ResourceKey, ...]) -> None:
-        """List again the folders whose checksum record the app rewrote, if the Roots view has them loaded (#457).
+        """Follow files that changed: list again the folders whose checksum record was rewritten, if the Roots view has
+        them loaded (#457), and show the current row again if its record changed.
 
         A directory-scoped record covers its subfolders too, so every loaded folder at or under it is listed again;
         a file-scoped one only changes its own folder, which is the same call.
 
-        :param keys: the files the app wrote or replaced.
+        :param keys: the files or folders that changed.
         """
         for key in keys:
             if key.path.suffix.lower() == CHECKSUM_RECORD_SUFFIX:
                 self.__roots_model.relist_under(key.path.parent)
+        self.__preview.follow_changes(keys)
+        self.__follow_pack(keys)
 
     def __on_filter_folder(self) -> None:
         """Filter the current browser to the resources under the current root or folder (#398)."""

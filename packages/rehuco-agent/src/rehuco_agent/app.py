@@ -15,6 +15,7 @@ from PySide6.QtGui import QColor, QFileOpenEvent, QFontDatabase, QGuiApplication
 from PySide6.QtWidgets import QApplication  # isort: skip
 
 import PySide6QtAds as QtAds
+from borco_core import absolute_path
 from borco_pyside.core import ApplicationSingleton
 from borco_pyside.logging import setup_console_logging
 from borco_pyside.theming import read_resource_bytes, recolored_svg_icon
@@ -267,7 +268,7 @@ def run(argv: list[str]) -> int:
         # resolved here, in the launching process, rather than left to whichever process ends up opening
         # them: a relative path is only ever meaningful against *this* process's cwd, and once forwarded
         # to a running primary it would resolve against that primary's cwd instead (#297)
-        resolved_paths = [str(Path(path).resolve()) for path in argv[1:]]
+        resolved_paths = [str(absolute_path(path)) for path in argv[1:]]
         leave_launch_directory()
         # ``resolved_paths`` is passed explicitly rather than left to setup()'s own ``sys.argv[1:]``
         # default: the two are the same in production (``run(sys.argv)``), but this function's contract

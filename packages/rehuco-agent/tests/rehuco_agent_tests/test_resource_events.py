@@ -1,4 +1,4 @@
-"""Tests for the Qt adapter of the change feed: what changed under the resources the app reaches (#376, #414)."""
+"""Tests for the Qt adapter of the change feed: what changed under the resources the app reaches (#376, #414, #511)."""
 
 import logging
 from pathlib import Path
@@ -19,6 +19,7 @@ from rehuco_core.access import (
     KeyRelocation,
     Moved,
     ResourceKey,
+    RootReachable,
     RootStale,
 )
 
@@ -36,21 +37,19 @@ def test_an_announcement_on_the_gui_thread_is_emitted_at_once(qtbot: QtBot) -> N
 
     **Test steps:**
 
-    * announce each of the three kinds on the GUI thread, with no event loop turn
+    * announce a move and an access on the GUI thread, with no event loop turn
     * verify each was emitted synchronously with what was announced, the rename as keys
     """
     del qtbot
     events = ResourceEvents()
     heard: list[object] = []
     events.moved.connect(heard.append)
-    events.changed.connect(heard.append)
-    events.folder_changed.connect(heard.append)
+    events.accessed.connect(heard.append)
 
     events.announce_moved(RELOCATION)
-    events.announce_changed([RECORD])
-    events.announce_folder_changed(ResourceKey(FOLDER))
+    events.announce_accessed((RECORD,))
 
-    assert heard == [MOVED_KEYS, (RECORD,), ResourceKey(FOLDER)]
+    assert heard == [MOVED_KEYS, (RECORD,)]
 
 
 def test_every_feed_event_reaches_its_signal(qtbot: QtBot) -> None:
@@ -70,28 +69,34 @@ def test_every_feed_event_reaches_its_signal(qtbot: QtBot) -> None:
     events.changed.connect(lambda value: heard.append(("changed", value)))
     events.folder_changed.connect(lambda value: heard.append(("folder_changed", value)))
     events.root_stale.connect(lambda value: heard.append(("root_stale", value)))
+    events.root_reachable.connect(lambda value, reachable: heard.append(("root_reachable", (value, reachable))))
 
     feed.publish(Moved(MOVED_KEYS))
     feed.publish(Changed((RECORD, OTHER_RECORD)))
     feed.publish(FolderChanged(OTHER_RECORD.parent))
     feed.publish(RootStale(root_id))
+    feed.publish(RootReachable(root_id, False))
+    feed.publish(RootReachable(root_id, True))
 
     assert heard == [
         ("moved", MOVED_KEYS),
         ("changed", (RECORD, OTHER_RECORD)),
         ("folder_changed", OTHER_RECORD.parent),
         ("root_stale", root_id),
+        ("root_reachable", (root_id, False)),
+        ("root_reachable", (root_id, True)),
     ]
 
 
-def test_the_announcements_are_published_on_the_feed(qtbot: QtBot) -> None:
-    """An announcement goes through the feed, so another listener on it hears what the app did (#414).
+def test_a_move_is_published_on_the_feed_and_nothing_else_the_app_does_is(qtbot: QtBot) -> None:
+    """A rename this machine ran goes through the feed, so another listener on it hears it (#414); the app announces
+    no write of its own any more -- the notifiers report what the disk says (#511).
 
     **Test steps:**
 
     * listen on the feed the events were given
-    * announce a move, a change and a folder change
-    * verify the feed carried the three events, the move as keys
+    * announce a move and an access
+    * verify the feed carried the move alone, as keys
     """
     del qtbot
     feed = ChangeFeed()
@@ -100,11 +105,10 @@ def test_the_announcements_are_published_on_the_feed(qtbot: QtBot) -> None:
     events.changes.add_listener(published.append)
 
     events.announce_moved(RELOCATION)
-    events.announce_changed([RECORD])
-    events.announce_folder_changed(ResourceKey(FOLDER))
+    events.announce_accessed([RECORD])
 
     assert events.changes is feed
-    assert published == [Moved(MOVED_KEYS), Changed((RECORD,)), FolderChanged(ResourceKey(FOLDER))]
+    assert published == [Moved(MOVED_KEYS)]
 
 
 def test_the_default_feed_is_a_private_one(qtbot: QtBot) -> None:
@@ -114,7 +118,7 @@ def test_the_default_feed_is_a_private_one(qtbot: QtBot) -> None:
 
     * build two events with no feed
     * verify each has a feed, and not the same one
-    * verify a change announced on one is not heard on the other
+    * verify a change published on one's feed is not heard on the other
     """
     del qtbot
     first = ResourceEvents()
@@ -122,7 +126,7 @@ def test_the_default_feed_is_a_private_one(qtbot: QtBot) -> None:
     heard: list[object] = []
     second.changed.connect(heard.append)
 
-    first.announce_changed([RECORD])
+    first.changes.publish(Changed((RECORD,)))
 
     assert isinstance(first.changes, ChangeFeed)
     assert first.changes is not second.changes
@@ -174,6 +178,30 @@ def test_a_feed_event_published_off_the_gui_thread_arrives_on_it(qtbot: QtBot) -
     assert threads == [events.thread()]
 
 
+def test_a_reachability_published_off_the_gui_thread_arrives_on_it(qtbot: QtBot) -> None:
+    """A root gone out of reach, as its notifier publishes it from its own thread (#511), is queued onto the GUI thread
+    with the root and the flag.
+
+    **Test steps:**
+
+    * publish an unreachable root on the feed from a plain worker thread
+    * verify the signal arrives, on the GUI thread, with the root and ``False``
+    """
+    feed = ChangeFeed()
+    events = ResourceEvents(feed)
+    root_id = uuid4()
+    threads: list[QThread] = []
+    events.root_reachable.connect(lambda _root_id, _reachable: threads.append(QThread.currentThread()))
+
+    with qtbot.waitSignal(events.root_reachable, timeout=TIMEOUT) as reachable:
+        worker = Thread(target=feed.publish, args=(RootReachable(root_id, False),))
+        worker.start()
+        worker.join()
+
+    assert reachable.args == [root_id, False]
+    assert threads == [events.thread()]
+
+
 def test_an_access_is_announced_with_the_records_opened(qtbot: QtBot) -> None:
     """Opening a record is announced, for the catalog to verify it (#487): nothing was written, so the feed hears
     nothing.
@@ -212,6 +240,7 @@ def test_an_event_of_no_known_kind_is_refused_loudly(qtbot: QtBot, caplog: LogCa
     heard: list[object] = []
     for signal in (events.moved, events.changed, events.folder_changed, events.root_stale):
         signal.connect(heard.append)
+    events.root_reachable.connect(lambda root_id, reachable: heard.append((root_id, reachable)))
 
     with caplog.at_level(logging.ERROR):
         feed.publish(cast(ChangeEvent, object()))

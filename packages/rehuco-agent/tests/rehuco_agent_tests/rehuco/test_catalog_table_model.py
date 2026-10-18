@@ -7,6 +7,7 @@ from typing import Any, Final
 from uuid import UUID, uuid4
 
 from PySide6.QtCore import QModelIndex, QPersistentModelIndex, Qt
+from PySide6.QtGui import QGuiApplication, QPalette
 from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -839,6 +840,78 @@ def test_a_row_changed_in_a_descending_sort_moves_where_it_belongs(qtbot: QtBot,
         three.update_rows({4}, [row(rehu("delta/info.rehu", title="delta", current_size=10), resource_id=4)])
 
     assert shown_titles(three) == ["zulu", "gamma", "delta", "beta"]
+
+
+# endregion
+
+
+# region A root that cannot be reached (#511)
+
+OFFLINE_REASON: Final = "This network share is not connected."
+
+
+def test_an_offline_roots_rows_are_greyed_and_say_why_and_the_others_are_not(qtbot: QtBot) -> None:
+    """A row of a root that cannot be reached draws in the disabled text colour and says why when hovered, over every
+    cell's own tooltip; a row of another root draws and hovers as before.
+
+    **Test steps:**
+
+    * a model holding an unreadable row of one root and a row of another, then mark the first root offline
+    * verify one ``dataChanged`` over every cell, for the foreground and the tooltip
+    * verify the first row is greyed and says why, the reason is the root's, and the other row is as it was
+    """
+    other = uuid4()
+    model = CatalogTableModel()
+    model.set_rows(
+        [row(CatalogRecord("broken/info.rehu", RecordKind.REHU, error="Not JSON")), row(rehu("a/info.rehu"), other)],
+        [ROOT_ID, other],
+    )
+
+    with qtbot.waitSignal(model.dataChanged) as changed:
+        model.set_offline_roots({ROOT_ID: OFFLINE_REASON})
+
+    assert changed.args is not None
+    top_left, bottom_right, roles = changed.args
+    assert (top_left.row(), top_left.column()) == (0, 0)
+    assert (bottom_right.row(), bottom_right.column()) == (1, len(COLUMNS) - 1)
+    assert roles == [Qt.ItemDataRole.ForegroundRole, Qt.ItemDataRole.ToolTipRole]
+    disabled = QGuiApplication.palette().color(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text)
+    assert cell(model, 0, CatalogColumn.TITLE, Qt.ItemDataRole.ForegroundRole) == disabled
+    assert cell(model, 0, CatalogColumn.TITLE, Qt.ItemDataRole.ToolTipRole) == OFFLINE_REASON
+    assert cell(model, 1, CatalogColumn.TITLE, Qt.ItemDataRole.ForegroundRole) is None
+    assert cell(model, 1, CatalogColumn.TITLE, Qt.ItemDataRole.ToolTipRole) is None
+    assert model.offline_reason(ROOT_ID) == OFFLINE_REASON
+    assert model.offline_reason(other) is None
+
+
+def test_the_same_offline_roots_again_change_nothing(qtbot: QtBot, model: CatalogTableModel) -> None:
+    """Every read of the rows hands the browsers the offline roots again; the same set repaints nothing.
+
+    **Test steps:**
+
+    * mark a root offline, then hand the same set again
+    * verify the second call emits no ``dataChanged``
+    """
+    model.set_offline_roots({ROOT_ID: OFFLINE_REASON})
+
+    with qtbot.assertNotEmitted(model.dataChanged):
+        model.set_offline_roots({ROOT_ID: OFFLINE_REASON})
+
+
+def test_an_empty_model_takes_the_offline_roots_without_a_signal(qtbot: QtBot) -> None:
+    """A browser with no rows has nothing to repaint, but keeps the set for the rows a read brings.
+
+    **Test steps:**
+
+    * mark a root offline on an empty model
+    * verify no ``dataChanged``, and that the root's reason is kept
+    """
+    model = CatalogTableModel()
+
+    with qtbot.assertNotEmitted(model.dataChanged):
+        model.set_offline_roots({ROOT_ID: OFFLINE_REASON})
+
+    assert model.offline_reason(ROOT_ID) == OFFLINE_REASON
 
 
 # endregion

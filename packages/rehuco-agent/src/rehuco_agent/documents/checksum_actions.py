@@ -326,13 +326,9 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
         return dropped
 
     def __record_changed(self) -> None:
-        """Say the record changed: to this document's own surfaces through :attr:`record_changed`, and app-wide
-        through the model (#376), which is how every listing of the folder learns its checksum column moved."""
+        """Say the record changed, to this document's own surfaces through :attr:`record_changed`. Every listing of
+        the folder hears of it from the folder's file notifier (#511)."""
         self.record_changed.emit()
-        path = self.__model.path
-        # a run or a forget needs a path to have written a record at all, and nothing takes it away afterwards
-        if path is not None:  # pragma: no branch
-            self.__model.announce_files_changed((checksum_record_path(path),))
 
     def __enqueue(
         self,

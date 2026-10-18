@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Final, cast, override
 
 import PySide6QtAds as QtAds
+from borco_core import absolute_path
 from borco_core.logging import LogScope
 from borco_pyside.logging import LogWidget
 from borco_pyside.qtads import (
@@ -51,6 +52,7 @@ from rehuco_core import (
     is_directory_scoped,
 )
 from rehuco_core.access import Catalog, ChangeFeed, KeyRelocation, Records, ResourceKey
+from rehuco_core.notify import RootNotifiers
 
 from .app_logging import LOG_VIEW_ICON_RESOURCE, build_log_widget, shared_log_bridge
 from .archives import ARCHIVE_EXTENSIONS
@@ -377,10 +379,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # the saved queue has no window to be handed anything, and a job reading through a coordinator
         # nobody renames through would hold a directory open against the rename it must stand aside for.
         self.__rename_coordinator: Final = DEFAULT_RENAME_COORDINATOR
-        # how every record and the catalog cache are read and written ([[nodes#access-seam]]); every write is published
-        # on the one feed the app-wide announcements adapt
+        # how every record and the catalog cache are read and written ([[nodes#access-seam]]); what changes on disk is
+        # published on the one feed the app-wide announcements adapt, by the roots' file notifiers (#511)
         changes = ChangeFeed()
-        self.__records: Final = Records(changes, self.__rename_coordinator)
+        self.__records: Final = Records(self.__rename_coordinator)
         self.__catalog: Final = Catalog(self.__rename_coordinator)
         self.__resource_events: Final = ResourceEvents(changes, self)
         self.__resource_events.moved.connect(self.__on_resources_moved)
@@ -393,6 +395,9 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             rename_coordinator=self.__rename_coordinator,
             resource_events=self.__resource_events,
             records=self.__records,
+            # a document under no root has its folder watched; asked only once documents are held, after the
+            # catalog exists
+            roots=lambda: tuple(self.__root_catalog.root_paths().values()),
         )
         self.__documents_dock: Final = DocumentsDock(
             self,
@@ -417,7 +422,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             rename_coordinator=self.__rename_coordinator,
             resource_events=self.__resource_events,
             catalog=self.__catalog,
+            notifiers=RootNotifiers(changes, self.__rename_coordinator),
         )
+        # a root added or removed changes which documents are under no root
+        self.__root_catalog.roots_changed.connect(self.__document_registry.watch_loose_folders)
         self.__roots_panel: Final = RootsPanel(
             self.__root_catalog,
             self.__task_queue,
@@ -426,12 +434,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             resource_events=self.__resource_events,
             records=self.__records,
         )
-        # whatever a verify or a scan's end sees on disk reaches the open documents, each comparing it with what it
-        # loaded -- not with the cache, which an earlier look may already have brought up to date (#487); a scan says
-        # nothing of which records it read, so the open documents' files are looked at when it ends
-        self.__root_catalog.files_seen.connect(self.__document_registry.note_file_signatures)
-        self.__root_catalog.refreshed.connect(self.__check_open_documents)
         self.__browsers_dock: Final = BrowsersDock(self.__root_catalog, self, stylesheet_host=self.__dock_manager)
+        self.__browsers_dock.open_refused.connect(
+            lambda reason: self.statusBar().showMessage(reason, STATUS_MESSAGE_TIMEOUT_MS)
+        )
         # a resource double-clicked in a browser or opened from the Roots view opens through the ordinary route (#377)
         self.__browsers_dock.open_requested.connect(self.__open_key)
         self.__roots_panel.open_requested.connect(self.open_path)
@@ -898,7 +904,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         chosen, _ = QFileDialog.getSaveFileName(self, "New Root Catalog", "", REHUCO_FILE_FILTER)
         if not chosen:
             return
-        path = Path(chosen).resolve()
+        path = absolute_path(chosen)
         if path.suffix.lower() != REHUCO_SUFFIX:
             # the dialog asked about overwriting the name as typed; the name with the suffix is a different
             # file, which it has not asked about
@@ -953,7 +959,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         :param path: the ``.rehuco`` file.
         :returns: whether it was opened.
         """
-        resolved = Path(path).resolve()
+        resolved = absolute_path(path)
         if not self.__root_catalog.open_rehuco(resolved):
             return False
         self.__rehuco_opened(resolved)
@@ -1812,6 +1818,8 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # A call still blocked on a switched-off server is left where it is -- its thread is a daemon, and the process
         # does not wait for it (borco_core.path_presence, #464)
         self.__remembered.stop()
+        # nor from the open documents' folder notifiers; the roots' stop with the catalog, below (#511)
+        self.__document_registry.stop_watching()
 
         # the open catalog is remembered and detached before the queue is shut down, for the reason the Tasks
         # widget is detached first (__shutdown_task_queue): shutdown calls every listener still attached, and a
@@ -2018,13 +2026,6 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
         self.__session.save()
 
-    def __check_open_documents(self) -> None:
-        """Have the files the open documents stand for looked at, so one changed outside the app is followed or flagged
-        (#487)."""
-        self.__root_catalog.read_signatures(
-            path for model in self.__document_registry.models() if (path := model.path) is not None
-        )
-
     def open_path(self, path: Path | str) -> None:
         """Open ``path``, dispatching to :meth:`open_file`, :meth:`open_folder`, or
         :meth:`open_archive` by its kind.
@@ -2061,7 +2062,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         :param path: filesystem path to a ``.rehu`` file.
         """
         self.__reveal_documents_dock()
-        resolved = Path(path).resolve()
+        resolved = absolute_path(path)
         self.__opened(resolved, self.__documents_dock.open_document(ResourceKey(resolved)))
 
     def open_folder(self, path: Path | str) -> None:
@@ -2077,7 +2078,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         :param path: filesystem path to the directory.
         """
         self.__reveal_documents_dock()
-        resolved = Path(path).resolve()
+        resolved = absolute_path(path)
         self.__opened(resolved, self.__documents_dock.open_folder(ResourceKey(resolved)))
 
     def open_archive(self, path: Path | str) -> None:
@@ -2094,7 +2095,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         The Documents dock is shown and raised first, the same as :meth:`open_file` (#268).
         """
         self.__reveal_documents_dock()
-        resolved = Path(path).resolve()
+        resolved = absolute_path(path)
         self.__opened(resolved, self.__documents_dock.open_archive(ResourceKey(resolved)))
 
     def __opened(self, path: Path, widget: DocumentWidget) -> None:
@@ -2128,7 +2129,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         :param path: filesystem path to a ``.rehu`` file.
         """
         self.__reveal_documents_dock()
-        self.__reached(self.__documents_dock.show_in_preview(ResourceKey(Path(path).resolve())))
+        self.__reached(self.__documents_dock.show_in_preview(ResourceKey(absolute_path(path))))
 
     def __reached(self, widget: DocumentWidget) -> None:
         """Tell the remembered paths the user reached ``widget``'s record themselves (#464), so a document the session
@@ -2175,8 +2176,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """
         if self.__documents_dock_widget.isClosed():
             self.__reveal_documents_dock()
-        # a root's folder as the catalog lists it may be spelled otherwise than the path an open resolves to
-        self.__documents_dock.show_in_preview(ResourceKey(key.path.resolve()))
+        self.__documents_dock.show_in_preview(ResourceKey(absolute_path(key.path)))
 
     def __on_preview_promoted(self, key: object) -> None:
         """Record a promoted preview in ``Open recents`` (#39) -- it is a file the reader opened now -- unless

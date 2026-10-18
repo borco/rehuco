@@ -27,6 +27,14 @@ dependencies = [
     # lesson (unexamined payload rides along unnoticed) applied before rather than after the fact.
     "pymediainfo",
     "pyyaml",
+    # the file notifier's share backend ([[mounts-and-storage#out-of-band]], #502, #511): CHANGE_NOTIFY on a session
+    # of our own, which sees every writer on every client where the OS client's watcher drops events or is blind.
+    # MIT, ~0.4 MB; it brings pyspnego and, on Windows, sspilib (MIT, ~1.2 MB) for the logon's credentials, and
+    # cryptography (Apache-2.0 OR BSD-3-Clause, ~10 MB installed) for SMB signing.
+    "smbprotocol>=1.15",
+    # the file notifier's backend for local and removable disks: ReadDirectoryChangesW, FSEvents, inotify.
+    # Apache-2.0, ~0.4 MB.
+    "watchdog>=6",
     # the default checksum algorithm and the fastest measured -- 22.9 GB/s against CRC-32's 9.4
     # ([[data-model#checksums]], #203). BSD-2-Clause, ~50 KB of wheel.
     "xxhash",

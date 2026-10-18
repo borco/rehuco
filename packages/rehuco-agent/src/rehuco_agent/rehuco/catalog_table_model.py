@@ -9,6 +9,7 @@ from typing import Any, Final, cast, override
 from uuid import UUID
 
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, QPersistentModelIndex, Qt
+from PySide6.QtGui import QGuiApplication, QPalette
 from rehuco_core import (
     CatalogRow,
     RecordKind,
@@ -273,6 +274,8 @@ class CatalogTableModel(QAbstractTableModel):  # pylint: disable=too-many-instan
         the record and the root's label alone, so a read that found a row unchanged keeps its key."""
         self.__declares_count: dict[str, bool] = {}
         self.__tally = _Tally()
+        self.__offline: dict[UUID, str] = {}
+        """Why each root that cannot be reached cannot, by its id: its rows are greyed and say so (#511)."""
 
     @property
     def totals(self) -> CatalogTotals:
@@ -331,6 +334,29 @@ class CatalogTableModel(QAbstractTableModel):  # pylint: disable=too-many-instan
                 self.__remove(old)
             elif new is not None:
                 self.__insert(new)
+
+    def set_offline_roots(self, offline: Mapping[UUID, str]) -> None:
+        """Grey the rows of the roots that cannot be reached, each saying why when hovered (#511).
+
+        :param offline: why each such root cannot be reached, by its id; every other root's rows are drawn as usual.
+        """
+        if dict(offline) == self.__offline:
+            return
+        self.__offline = dict(offline)
+        if self.__rows:
+            self.dataChanged.emit(
+                self.index(0, 0),
+                self.index(len(self.__rows) - 1, len(COLUMNS) - 1),
+                [Qt.ItemDataRole.ForegroundRole, Qt.ItemDataRole.ToolTipRole],
+            )
+
+    def offline_reason(self, root_id: UUID) -> str | None:
+        """Why a root cannot be reached, or ``None`` when it can.
+
+        :param root_id: the root.
+        :returns: the reason, as its rows' tooltip says it.
+        """
+        return self.__offline.get(root_id)
 
     def row_key(self, row: int) -> RowKey | None:
         """Which resource a row is, as a browser names it to others.
@@ -541,8 +567,11 @@ class CatalogTableModel(QAbstractTableModel):  # pylint: disable=too-many-instan
         if role == Qt.ItemDataRole.DisplayRole:
             value = COLUMNS[column].value(entry)
             return None if value == "" else value
+        offline = self.__offline.get(entry.root_id)
         if role == Qt.ItemDataRole.ToolTipRole:
-            return self.__tooltip(entry, column)
+            return offline if offline is not None else self.__tooltip(entry, column)
+        if role == Qt.ItemDataRole.ForegroundRole and offline is not None:
+            return QGuiApplication.palette().color(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text)
         if role == Qt.ItemDataRole.TextAlignmentRole and COLUMNS[column].numeric:
             return Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         return None

@@ -1,9 +1,10 @@
 """One shared view-model per open document, whoever shows it ([[plugins#view-model]])."""
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Callable, Collection
 from pathlib import Path
 from typing import Final, cast
+from uuid import UUID
 
 from borco_core.logging import LogScope
 from PySide6.QtCore import QObject
@@ -12,6 +13,7 @@ from rehuco_core.access import KeyRelocation, LoadedRecord, Records, ResourceKey
 
 from ..resource_events import ResourceEvents
 from ..settings.identity_settings import shared_identity_settings
+from .held_files_watch import HeldFilesWatch
 from .rehu_document_model import RehuDocumentModel
 
 LOG: Final = logging.getLogger(__name__)
@@ -34,8 +36,13 @@ class DocumentRegistry(QObject):
     **Every held model hears every rename** ([[mounts-and-storage#out-of-band]], #376): each announced
     relocation is handed to every model (:meth:`~RehuDocumentModel.relocate`), so a record nested under a
     renamed collection folder, or a file-scoped record inside a renamed folder, follows the rename it did not
-    ask for. In the other direction, what a held model says it wrote (:attr:`~RehuDocumentModel.files_changed`,
-    :attr:`~RehuDocumentModel.folder_changed`) is announced app-wide through the same events.
+    ask for.
+
+    **Every held model hears what changed on disk** (#511): when the change feed says a model's file changed -- or its
+    root went stale -- the file's modification time and size are read off the GUI thread (:class:`HeldFilesWatch`) and
+    handed to the model (:meth:`~RehuDocumentModel.note_file_signature`), which reloads when clean and is flagged when
+    dirty. Its own save comes back the same way and changes nothing: the model already holds that signature. **A
+    document under no root** has its folder watched, given ``roots``.
 
     :param parent: optional Qt parent.
     :param rename_coordinator: handed to every model this registry builds, so a rename from the location
@@ -43,9 +50,10 @@ class DocumentRegistry(QObject):
         app's one coordinator, see ``DocumentsDock``.
     :param resource_events: the app's change announcements; ``None`` builds a private one, for a registry with
         no window around it.
-    :param records: what every model's record is read and saved through ([[nodes#access-seam]], #416); its change
-        feed must be the one ``resource_events`` adapts, so a save is announced app-wide. ``None`` builds one
-        announcing on ``resource_events``.
+    :param records: what every model's record is read and saved through ([[nodes#access-seam]], #416); ``None``
+        builds one.
+    :param roots: where the open ``.rehuco``'s roots are, asked whenever the held documents change -- their notifiers
+        watch what is under them; ``None`` watches nothing, for a registry with no window around it.
     """
 
     def __init__(
@@ -54,12 +62,18 @@ class DocumentRegistry(QObject):
         rename_coordinator: RenameCoordinator | None = None,
         resource_events: ResourceEvents | None = None,
         records: Records | None = None,
+        roots: Callable[[], Collection[Path]] | None = None,
     ) -> None:
         super().__init__(parent)
         self.__rename_coordinator: Final = rename_coordinator
         self.__events: Final = resource_events if resource_events is not None else ResourceEvents(parent=self)
-        self.__records: Final = records if records is not None else Records(self.__events.changes)
+        self.__records: Final = records if records is not None else Records()
+        self.__disk: Final = HeldFilesWatch(self.__events.changes, self.__records, rename_coordinator, roots, self)
+        self.__disk.statted.connect(self.__on_statted)
         self.__events.moved.connect(self.__on_moved)
+        self.__events.changed.connect(self.__on_files_changed)
+        self.__events.root_stale.connect(self.__on_root_stale)
+        self.__events.folder_changed.connect(self.__on_folder_changed)
         self.__models: Final[dict[ResourceKey, RehuDocumentModel]] = {}
         self.__holders: Final[dict[RehuDocumentModel, int]] = {}
         self.__keys: Final[dict[RehuDocumentModel, ResourceKey | None]] = {}
@@ -69,9 +83,19 @@ class DocumentRegistry(QObject):
 
     @property
     def resource_events(self) -> ResourceEvents:
-        """The change announcements this registry relocates its models from and relays their writes to -- what
-        every view of an acquired model listens to as well."""
+        """The change announcements this registry relocates and reloads its models from -- what every view of an
+        acquired model listens to as well."""
         return self.__events
+
+    def stop_watching(self) -> None:
+        """Stop watching the folders of the documents under no root, and every read still out, before the window goes:
+        nothing is delivered after."""
+        self.__disk.stop()
+
+    def watch_loose_folders(self) -> None:
+        """Watch exactly the folders of the held documents under no root -- after the held documents, their keys or
+        the roots changed."""
+        self.__disk.follow(tuple(self.__models))
 
     def find(self, key: ResourceKey) -> RehuDocumentModel | None:
         """The model held for ``key``, or ``None`` when nobody holds one.
@@ -122,13 +146,12 @@ class DocumentRegistry(QObject):
         self.__holders[model] = 1  # pylint: disable=unsupported-assignment-operation
         self.__keys[model] = key  # pylint: disable=unsupported-assignment-operation
         model.key_changed.connect(self.__on_key_changed)  # type: ignore[attr-defined]
-        model.files_changed.connect(self.__events.announce_changed)
-        model.folder_changed.connect(self.__events.announce_folder_changed)
         model.reloaded.connect(self.__on_reloaded)
         if not new and not model.pending:
             # opening is the access verify-on-access hears of (#487); a focus of a model already held is not one, and
             # an unread placeholder is announced by the read that loads it (its reload), never before (#66)
             self.__events.announce_accessed((key,))
+        self.watch_loose_folders()
         return model
 
     def release(self, model: RehuDocumentModel) -> None:
@@ -147,10 +170,9 @@ class DocumentRegistry(QObject):
         del self.__holders[model]  # pylint: disable=unsupported-delete-operation
         self.__unmap(model, self.__keys.pop(model))
         model.key_changed.disconnect(self.__on_key_changed)  # type: ignore[attr-defined]
-        model.files_changed.disconnect(self.__events.announce_changed)
-        model.folder_changed.disconnect(self.__events.announce_folder_changed)
         model.reloaded.disconnect(self.__on_reloaded)
         model.deleteLater()
+        self.watch_loose_folders()
 
     def release_discards_edits(self, model: RehuDocumentModel) -> bool:
         """Whether releasing ``model`` now would throw away unsaved edits -- it is dirty and this is its
@@ -162,12 +184,33 @@ class DocumentRegistry(QObject):
         """
         return model.dirty and self.__holders[model] == 1
 
-    def note_file_signatures(self, signatures: Mapping[Path, tuple[int, int]]) -> None:
-        """Tell the held models what the files they stand for look like on disk now (#487). Each model compares it with
-        what it loaded, and follows or flags a difference (:meth:`RehuDocumentModel.note_file_signature`); a path
-        nobody holds is ignored.
+    def __on_files_changed(self, keys: tuple[ResourceKey, ...]) -> None:
+        """Read again the files of the held models a change touched -- a file itself, or a folder above it.
 
-        :param signatures: each file's path on this machine, with its modification time in nanoseconds and its size.
+        :param keys: the files or folders that changed.
+        """
+        self.__disk.read(held for held in self.__models if any(held.is_at_or_beneath(key) for key in keys))
+
+    def __on_folder_changed(self, folder: ResourceKey) -> None:
+        """Read again the files of the held models in a folder whose listing changed -- which is also what a folder
+        watch that lost events says of its whole folder, having nothing better to say (#511).
+
+        :param folder: the folder.
+        """
+        self.__disk.read(held for held in self.__models if held.is_at_or_beneath(folder))
+
+    def __on_root_stale(self, root_id: UUID) -> None:
+        """Read again every held model's file: a root nothing can be trusted about may hold any of them.
+
+        :param root_id: the root.
+        """
+        del root_id  # a handful of open documents is cheaper to read than to sort by root
+        self.__disk.read(tuple(self.__models))
+
+    def __on_statted(self, signatures: dict[Path, tuple[int, int]]) -> None:
+        """Hand each held model what its file looks like now (GUI thread); a path nobody holds any more is ignored.
+
+        :param signatures: each file's modification time in nanoseconds and size.
         """
         for path, (mtime_ns, size) in signatures.items():
             model = self.__models.get(ResourceKey(path))
@@ -175,8 +218,8 @@ class DocumentRegistry(QObject):
                 model.note_file_signature(mtime_ns, size)
 
     def __on_reloaded(self) -> None:
-        """Announce the record a held model just read again as accessed, so the catalog cache is checked against it: a
-        revert is the one way an out-of-band edit reaches a document that stays open (#487)."""
+        """Announce the record a held model just read again as accessed, so the catalog cache is checked against it:
+        what a revert read -- after a change on disk, or by hand -- is what the record says now (#487)."""
         key = cast(RehuDocumentModel, self.sender()).key
         if key is not None:
             self.__events.announce_accessed((key,))
@@ -193,13 +236,12 @@ class DocumentRegistry(QObject):
         model = cast(RehuDocumentModel, self.sender())
         self.__unmap(model, self.__keys[model])
         self.__keys[model] = key  # pylint: disable=unsupported-assignment-operation
-        if key is None:
-            return
-        other = self.__models.get(key)
-        if other is not None:
+        if key is not None and self.__models.get(key) is not None:
             LOG.warning("%s is already open as another document; not tracking a second one under it", key)
-            return
-        self.__models[key] = model  # pylint: disable=unsupported-assignment-operation
+        elif key is not None:
+            self.__models[key] = model  # pylint: disable=unsupported-assignment-operation
+        # whatever the key became, the old one's folder may no longer need watching
+        self.watch_loose_folders()
 
     def __on_moved(self, relocation: KeyRelocation) -> None:
         """Hand a landed rename to every held model; each adopts its own new key, if the rename moved it, and

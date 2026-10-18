@@ -13,7 +13,6 @@ from rehuco_agent.documents import save_or_prompt_retry as module
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.documents.save_or_prompt_retry import ask_about_conflict, save_or_prompt_retry
 from rehuco_core import DEFAULT_CURRENT_USERNAME, RecordConflict, RecordVersion, RehuDocument
-from rehuco_core.access import ChangeFeed
 
 from .test_rehu_document_model_conflict import RATING_PATH, edit_on_disk, in_conflict, opened, write_record
 
@@ -244,7 +243,7 @@ def refused_title(tmp_path: Path) -> tuple[RehuDocumentModel, RecordConflict]:
     """
     path = tmp_path / "info.rehu"
     write_record(path, "Old")
-    return in_conflict(path, ChangeFeed(), "Mine", "Theirs")
+    return in_conflict(path, "Mine", "Theirs")
 
 
 def press_in_dialog(mocker: MockerFixture, *names: str) -> list[RecordConflictDialog]:
@@ -325,7 +324,7 @@ def test_asking_about_a_conflict_lists_the_own_per_user_fields_and_not_another_u
         document.set_user_field(DEFAULT_CURRENT_USERNAME, "rating", 3)
         document.set_user_field("bob", "rating", 4)
 
-    model = opened(path, ChangeFeed())
+    model = opened(path)
     model.title = "Mine"
     model.rating = 5
     edit_on_disk(path, theirs)
@@ -362,7 +361,7 @@ def test_asking_about_a_conflict_leaves_out_a_block_the_save_drops(
         document.title = "Theirs"
         document.data.update(reference_images={"format_version": 1, "image_count": 2})
 
-    model = opened(path, ChangeFeed())
+    model = opened(path)
     model.title = "Mine"
     model.document.set_active_type("reference_images")
     model.document.set_active_type("tutorial")

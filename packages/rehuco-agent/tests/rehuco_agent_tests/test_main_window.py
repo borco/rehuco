@@ -5579,18 +5579,20 @@ def test_a_closed_window_stops_adapting_the_change_feed(qtbot: QtBot) -> None:
 
 
 def test_the_window_reads_and_writes_through_one_records_and_one_catalog(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """Every holder of records and of the catalog cache is handed the window's own, and the window's announcements
-    adapt the feed those records write on, so a save anywhere is heard app-wide.
+    """Every holder of records and of the catalog cache is handed the window's own, and the roots' notifiers publish on
+    the feed the window's announcements adapt, so what changes on disk is heard app-wide (#511).
 
     **Test steps:**
 
-    * spy on the registry's, the Root Catalog's and the Roots panel's construction, and construct a real ``MainWindow``
+    * spy on the registry's, the Root Catalog's, the Roots panel's and the root notifiers' construction, and construct a
+      real ``MainWindow``
     * verify the registry and the panel got the window's ``Records``, and the Root Catalog its ``Catalog``
-    * verify the records write on the feed the window's announcements adapt
+    * verify the Root Catalog got the root notifiers, built on the feed the window's announcements adapt
     """
     registry_class = mocker.spy(main_window, "DocumentRegistry")
     catalog_class = mocker.spy(main_window, "RootCatalog")
     panel_class = mocker.spy(main_window, "RootsPanel")
+    notifiers_class = mocker.spy(main_window, "RootNotifiers")
     window = MainWindow()
     qtbot.addWidget(window)
     records = window._MainWindow__records  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
@@ -5602,7 +5604,8 @@ def test_the_window_reads_and_writes_through_one_records_and_one_catalog(mocker:
     assert registry_class.call_args.kwargs["records"] is records
     assert catalog_class.call_args.kwargs["catalog"] is catalog
     assert panel_class.call_args.kwargs["records"] is records
-    assert records._Records__changes is events.changes  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert catalog_class.call_args.kwargs["notifiers"] is notifiers_class.spy_return
+    assert notifiers_class.call_args.args[0] is events.changes
 
 
 def test_registers_the_tasks_page(qtbot: QtBot) -> None:
@@ -7605,7 +7608,7 @@ def open_catalog_stand_in(window: MainWindow) -> BrowsersDock:
     """
     catalog = window._MainWindow__root_catalog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     catalog._RootCatalog__file = RehucoFile.new()  # pylint: disable=protected-access
-    catalog.refreshed.emit()
+    catalog.roots_changed.emit()
     catalog.rehuco_path_changed.emit(None)
     return window._MainWindow__browsers_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
@@ -8679,8 +8682,8 @@ def test_a_document_open_when_its_file_is_deleted_locks_as_missing_and_stays_in_
     """The one case #464 leaves alone: a file that goes while its dock is open still shows an empty locked dock, and
     the session still records it as open (#464).
 
-    Nothing in the app re-reads a file that has gone on its own (``RootCatalog.read_signatures`` skips one that will
-    not stat), so the user's own revert is the read that finds it missing.
+    Nothing in the app re-reads a file that has gone on its own (the open documents' re-check skips one that will not
+    stat, #511), so the user's own revert is the read that finds it missing.
 
     **Test steps:**
 

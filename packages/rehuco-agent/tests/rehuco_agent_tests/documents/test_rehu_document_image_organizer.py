@@ -12,7 +12,6 @@ from rehuco_agent.documents.rehu_document_image_organizer import RehuDocumentIma
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.settings.deletion_settings import shared_deletion_settings
 from rehuco_core import DEFAULT_DELETER, RehuDocument
-from rehuco_core.access import ResourceKey
 
 DIRECTORY: Final = Path.cwd() / "fake" / "tutorial"
 PATHS: Final = [DIRECTORY / "info00.jpg", DIRECTORY / "info01.png"]
@@ -310,7 +309,7 @@ def test_a_document_with_no_path_yet_refuses_to_acquire(mocker: MockerFixture) -
     save_screenshot.assert_not_called()
 
 
-# region announcing what it wrote (#376)
+# region forgetting what it rewrote (#376, #511)
 
 OPERATIONS: Final[dict[str, Callable[[RehuDocumentImageOrganizer], object]]] = {
     "reorder": lambda organizer: organizer.reorder(PATHS),
@@ -344,62 +343,64 @@ def fixture_core(mocker: MockerFixture) -> dict[str, MagicMock]:
 
 
 @pytest.mark.parametrize("operation", OPERATIONS)
-def test_every_write_announces_the_folder(core: dict[str, MagicMock], operation: str) -> None:
-    """Every listing of the folder follows a rearrangement, through the document (#376).
+def test_every_write_forgets_the_folder_listing(
+    mocker: MockerFixture, core: dict[str, MagicMock], operation: str
+) -> None:
+    """Every rearrangement drops what the document's scanner remembers of the folder, which the curation editor reads
+    again in the same turn; every other listing hears of it from the folder's file notifier (#511).
 
     **Test steps:**
 
     * run the operation on a located document
-    * verify the document announced its folder once
+    * verify the document forgot its folder listing once
     """
     del core
     model = model_at(DIRECTORY / "info.rehu")
-    heard: list[object] = []
-    model.folder_changed.connect(heard.append)
+    forget = mocker.patch.object(model, "forget_folder_listing")
 
     OPERATIONS[operation](RehuDocumentImageOrganizer(model))
 
-    assert heard == [ResourceKey(DIRECTORY)]
+    forget.assert_called_once_with()
 
 
 @pytest.mark.parametrize("operation", OPERATIONS)
-def test_a_failed_write_still_announces_the_folder(core: dict[str, MagicMock], operation: str) -> None:
-    """A renumbering stopped part-way may already have moved files, so a failure is announced too.
+def test_a_failed_write_still_forgets_the_folder_listing(
+    mocker: MockerFixture, core: dict[str, MagicMock], operation: str
+) -> None:
+    """A renumbering stopped part-way may already have moved files, so a failure forgets the listing too.
 
     **Test steps:**
 
     * make the operation's core write fail, and run it
-    * verify it raised and the folder was still announced
+    * verify it raised and the folder listing was still forgotten
     """
     core[CORE[operation]].side_effect = OSError("boom")
     model = model_at(DIRECTORY / "info.rehu")
-    heard: list[object] = []
-    model.folder_changed.connect(heard.append)
+    forget = mocker.patch.object(model, "forget_folder_listing")
 
     with pytest.raises(OSError, match="boom"):
         OPERATIONS[operation](RehuDocumentImageOrganizer(model))
 
-    assert heard == [ResourceKey(DIRECTORY)]
+    forget.assert_called_once_with()
 
 
 @pytest.mark.parametrize("operation", OPERATIONS)
-def test_a_refused_write_announces_nothing(core: dict[str, MagicMock], operation: str) -> None:
-    """A refusal touched nothing, so there is nothing to announce.
+def test_a_refused_write_forgets_nothing(mocker: MockerFixture, core: dict[str, MagicMock], operation: str) -> None:
+    """A refusal touched nothing, so what the scanner remembers still holds.
 
     **Test steps:**
 
     * run the operation on a legacy ``.tc`` document
-    * verify it was refused and nothing was announced
+    * verify it was refused and the folder listing was not forgotten
     """
     del core
     model = model_at(DIRECTORY / "info.tc", legacy_tc=True)
-    heard: list[object] = []
-    model.folder_changed.connect(heard.append)
+    forget = mocker.patch.object(model, "forget_folder_listing")
 
     with pytest.raises(PermissionError):
         OPERATIONS[operation](RehuDocumentImageOrganizer(model))
 
-    assert not heard
+    forget.assert_not_called()
 
 
 # endregion

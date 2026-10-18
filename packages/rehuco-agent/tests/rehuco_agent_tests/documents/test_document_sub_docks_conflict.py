@@ -10,7 +10,6 @@ from rehuco_agent.documents.document_sub_docks import CHANGED_ON_DISK_MESSAGE, C
 from rehuco_agent.documents.document_widget import DocumentWidget
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_core import RecordConflict
-from rehuco_core.access import ChangeFeed
 
 from .test_rehu_document_model_conflict import edit_on_disk, opened, retitle, write_record
 
@@ -37,7 +36,7 @@ def refused(qtbot: QtBot, tmp_path: Path) -> tuple[DocumentWidget, RehuDocumentM
     """
     path = tmp_path / "info.rehu"
     write_record(path, "Old")
-    model = opened(path, ChangeFeed())
+    model = opened(path)
     widget = DocumentWidget(model)
     qtbot.addWidget(widget)
     model.title = "Mine"

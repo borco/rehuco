@@ -51,8 +51,6 @@ from rehuco_core import (
     visible_learning_paths,
 )
 from rehuco_core.access import (
-    Changed,
-    ChangeEvent,
     ChangeFeed,
     KeyRelocation,
     LoadedRecord,
@@ -154,16 +152,14 @@ def converts_to(mocker: MockerFixture, document: RehuDocument) -> MagicMock:
     )
 
 
-def listening_records() -> tuple[Records, list[ChangeEvent]]:
-    """Records announcing on a feed this test hears -- where a save or a conversion is announced since #416, rather
-    than on the model's own ``files_changed``.
+def publications(mocker: MockerFixture) -> MagicMock:
+    """A spy on every change feed's publishing -- since #511 nothing the app writes is announced by the app, the
+    folder's file notifier reports it.
 
-    :returns: the records, and the list every event on their change feed is appended to.
+    :param mocker: pytest-mock fixture.
+    :returns: the spy on :meth:`ChangeFeed.publish`.
     """
-    feed = ChangeFeed()
-    heard: list[ChangeEvent] = []
-    feed.add_listener(heard.append)
-    return Records(feed), heard
+    return mocker.spy(ChangeFeed, "publish")
 
 
 @fixture(name="on_disk")
@@ -2627,60 +2623,53 @@ def test_saving_marks_saved_on_disk(tmp_path: Path) -> None:
 
 
 @mark.usefixtures("real_path_stat")
-def test_a_save_announces_the_record_it_wrote(tmp_path: Path) -> None:
-    """Every save says what it wrote, so every listing of the folder and the catalog follow it (#376) -- the
-    first save of a new document included. The records announce it on their change feed (#416), so the model does
-    not say it a second time.
+def test_a_save_announces_nothing(mocker: MockerFixture, tmp_path: Path) -> None:
+    """A save -- the first one of a new document included -- says nothing itself: the folder's file notifier reports
+    the write to every listing of the folder and the catalog (#511).
 
     **Test steps:**
 
-    * build a not-yet-saved model under ``tmp_path`` over records whose feed is heard, and save it
-    * verify the feed carried the record's key, and ``files_changed`` nothing
+    * build a not-yet-saved model under ``tmp_path``, and save it
+    * verify the file is there and nothing was published on any change feed
     """
     path = tmp_path / "info.rehu"
-    records, heard = listening_records()
-    model = RehuDocumentModel.create_new(path, records=records)
-    written: list[object] = []
-    model.files_changed.connect(written.append)
+    model = RehuDocumentModel.create_new(path)
+    published = publications(mocker)
 
     model.save()
 
-    assert heard == [Changed((ResourceKey(path),))]
-    assert not written
+    assert path.is_file()
+    published.assert_not_called()
 
 
 @mark.usefixtures("real_path_stat")
 def test_the_first_save_takes_the_checksums_the_new_record_covers(mocker: MockerFixture, tmp_path: Path) -> None:
-    """A new record's first save moves its files' entries out of the enclosing record at once (#467), and says
-    both checksum files changed so the views reading them follow.
+    """A new record's first save moves its files' entries out of the enclosing record at once (#467); the two
+    checksum files it rewrote reach the views through their folders' file notifiers, so nothing is announced (#511).
 
     **Test steps:**
 
-    * build a not-yet-saved ``foo.rehu`` model under ``tmp_path`` through a coordinator, over records whose feed
-      is heard, with the move mocked to report one
+    * build a not-yet-saved ``foo.rehu`` model under ``tmp_path`` through a coordinator, with the move mocked to
+      report one
     * save it
-    * verify the move was asked for that record, through that coordinator, the feed carried the record and
-      ``files_changed`` both checksum files
+    * verify the move was asked for that record, through that coordinator, and nothing was published
     """
     path = tmp_path / "foo.rehu"
     coordinator = RenameCoordinator()
-    records, heard = listening_records()
-    model = RehuDocumentModel.create_new(path, records=records, rename_coordinator=coordinator)
+    model = RehuDocumentModel.create_new(path, rename_coordinator=coordinator)
     source = tmp_path / "info.checksum"
     take = mocker.patch(
         "rehuco_agent.documents.rehu_document_model.take_enclosing_claims",
         return_value=TakenClaims(source, {"foo.zip": CoveringRecord(path, "foo.zip")}, pruned=True),
     )
-    written: list[object] = []
-    model.files_changed.connect(written.append)
+    published = publications(mocker)
 
     model.save()
 
     take.assert_called_once()
     assert take.call_args.args == (path,)
     assert take.call_args.kwargs["coordinator"] is coordinator
-    assert heard == [Changed((ResourceKey(path),))]
-    assert written == [(ResourceKey(tmp_path / "foo.checksum"), ResourceKey(source))]
+    published.assert_not_called()
 
 
 @mark.usefixtures("real_path_stat")
@@ -2689,48 +2678,39 @@ def test_only_the_first_save_takes_checksums(mocker: MockerFixture, tmp_path: Pa
 
     **Test steps:**
 
-    * build a not-yet-saved model under ``tmp_path`` over records whose feed is heard, with the move mocked to
-      find nothing, and save it twice
-    * verify the move was asked for once, and each save announced only the record
+    * build a not-yet-saved model under ``tmp_path``, with the move mocked to find nothing, and save it twice
+    * verify the move was asked for once
     """
     path = tmp_path / "foo.rehu"
-    records, heard = listening_records()
-    model = RehuDocumentModel.create_new(path, records=records)
+    model = RehuDocumentModel.create_new(path)
     take = mocker.patch("rehuco_agent.documents.rehu_document_model.take_enclosing_claims", return_value=None)
-    written: list[object] = []
-    model.files_changed.connect(written.append)
 
     model.save()
     model.save()
 
     take.assert_called_once()
-    assert heard == [Changed((ResourceKey(path),)), Changed((ResourceKey(path),))]
-    assert not written
 
 
 @mark.usefixtures("real_path_stat")
-def test_a_convert_announces_the_new_record_and_the_tc_it_replaced(mocker: MockerFixture, tmp_path: Path) -> None:
-    """A conversion writes a ``.rehu`` and retires the ``.tc``: the new record first, so the catalog reads it
-    into the ``.tc``'s row before finding the ``.tc`` gone (#376). The records announce both on their change feed
-    (#416), so the model does not say them a second time.
+def test_a_convert_announces_nothing(mocker: MockerFixture, tmp_path: Path) -> None:
+    """A conversion writes a ``.rehu`` and retires the ``.tc`` without saying so: the folder's file notifier reports
+    both (#511).
 
     **Test steps:**
 
-    * write a legacy ``.tc`` under ``tmp_path`` and build a model over it through records whose feed is heard
+    * write a legacy ``.tc`` under ``tmp_path`` and build a model over it
     * convert it
-    * verify the feed carried the ``.rehu`` then the ``.tc``, and ``files_changed`` nothing
+    * verify the model stands for the new record and nothing was published on any change feed
     """
     tc_path = tmp_path / "info.tc"
     tc_path.write_text("type: Tutorial\n", encoding="utf-8")
-    records, heard = listening_records()
-    model = RehuDocumentModel(load_tc(tc_path), records=records)
-    written: list[object] = []
-    model.files_changed.connect(written.append)
+    model = RehuDocumentModel(load_tc(tc_path))
+    published = publications(mocker)
 
     model.convert(keep_backups=True, deleter=mocker.Mock())
 
-    assert heard == [Changed((ResourceKey(tmp_path / "info.rehu"), ResourceKey(tc_path)))]
-    assert not written
+    assert model.path == tmp_path / "info.rehu"
+    published.assert_not_called()
 
 
 def test_a_relocation_moving_the_record_re_points_the_document_once() -> None:
@@ -2814,25 +2794,28 @@ def test_the_key_follows_the_path_and_is_set_first() -> None:
     assert keys_seen == [ResourceKey(renamed / "info.rehu")]
 
 
-@mark.parametrize("announce", ["files", "folder"])
-def test_a_collaborators_write_is_announced_through_the_model(model: RehuDocumentModel, announce: str) -> None:
-    """The organizer and the checksum actions say what they wrote through the document that holds them.
+def test_forgetting_the_folder_listing_drops_what_the_scanner_remembers(
+    mocker: MockerFixture, model: RehuDocumentModel
+) -> None:
+    """The screenshot organizer, having just rewritten the folder, has the scanner forget it so the curation editor's
+    next ask reads it again; nobody else is told -- the folder's file notifier reports the writes (#511).
 
     **Test steps:**
 
-    * announce a write, or a folder change
-    * verify the matching signal carried it, as a key
+    * spy on the installed scanner's ``forget``, and on every change feed
+    * forget the folder listing
+    * verify the scanner forgot once, stayed installed, and nothing was published
     """
-    heard: list[object] = []
-    model.files_changed.connect(heard.append)
-    model.folder_changed.connect(heard.append)
+    scanner = model.image_scanner
+    assert isinstance(scanner, RehuDocumentImageScanner)
+    forget = mocker.spy(scanner, "forget")
+    published = publications(mocker)
 
-    if announce == "files":
-        model.announce_files_changed([FAKE / "info.checksum"])
-    else:
-        model.announce_folder_changed(FAKE)
+    model.forget_folder_listing()
 
-    assert heard == [(ResourceKey(FAKE / "info.checksum"),) if announce == "files" else ResourceKey(FAKE)]
+    forget.assert_called_once_with()
+    assert model.image_scanner is scanner
+    published.assert_not_called()
 
 
 def test_create_new_files_per_user_state_under_the_given_username() -> None:

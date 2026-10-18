@@ -131,9 +131,8 @@ class FilesView(QWidget):
     :param parent: optional Qt parent.
     :param verify: what the checksum record's row calls -- this document's *Verify All*, or ``None``
         where the document has no queue to put a run on, which also greys that row's activation.
-    :param resource_events: the app's file announcements to follow; ``None`` follows only this document's own
-        (:attr:`~RehuDocumentModel.files_changed`, :attr:`~RehuDocumentModel.folder_changed`), which a document
-        held by the registry announces through these events anyway.
+    :param resource_events: the app's change feed to follow (#511); a private one when not given, for a view with no
+        window around it.
     """
 
     record_activated: Signal = Signal(object)
@@ -161,7 +160,7 @@ class FilesView(QWidget):
         super().__init__(parent)
         self.__model: Final = model
         self.__verify: Final = verify
-        self.__events: Final = resource_events
+        self.__events: Final = resource_events if resource_events is not None else ResourceEvents(parent=self)
         self.__stale = True
         self.__directory: Path | None = None
         """The folder currently browsed, or ``None`` for a document with no folder yet."""
@@ -195,17 +194,14 @@ class FilesView(QWidget):
         self.__setup_toolbar()
         self.__ui.file_view.doubleClicked.connect(self.__on_double_clicked)
         model.path_changed.connect(self.__on_path_changed)  # type: ignore[attr-defined]
-        if resource_events is not None:
-            resource_events.moved.connect(self.__on_moved)
-            resource_events.changed.connect(self.__on_files_changed)
-            resource_events.folder_changed.connect(self.__on_folder_changed)
-        else:
-            model.files_changed.connect(self.__on_files_changed)
-            model.folder_changed.connect(self.__on_folder_changed)
+        self.__events.moved.connect(self.__on_moved)
+        self.__events.changed.connect(self.__on_files_changed)
+        self.__events.folder_changed.connect(self.__on_folder_changed)
+        self.__events.root_stale.connect(self.refresh)
         self.__reset_to_root()
 
     def detach(self) -> None:
-        """Stop following the app's file announcements and the document's own, before this view is destroyed.
+        """Stop following the app's change feed and the document's path, before this view is destroyed.
 
         The events outlive every document, and a connection to a bound method can outlive the widget it
         reads (#387), so the owner disconnects explicitly rather than trusting the destruction to. The model may
@@ -213,13 +209,10 @@ class FilesView(QWidget):
         so its connections go here as well.
         """
         self.__model.path_changed.disconnect(self.__on_path_changed)  # type: ignore[attr-defined]
-        if self.__events is not None:
-            self.__events.moved.disconnect(self.__on_moved)
-            self.__events.changed.disconnect(self.__on_files_changed)
-            self.__events.folder_changed.disconnect(self.__on_folder_changed)
-        else:
-            self.__model.files_changed.disconnect(self.__on_files_changed)
-            self.__model.folder_changed.disconnect(self.__on_folder_changed)
+        self.__events.moved.disconnect(self.__on_moved)
+        self.__events.changed.disconnect(self.__on_files_changed)
+        self.__events.folder_changed.disconnect(self.__on_folder_changed)
+        self.__events.root_stale.disconnect(self.refresh)
 
     # region Reading
 
@@ -416,15 +409,15 @@ class FilesView(QWidget):
         return None if path is None else relocation.relocate(path)
 
     def __on_files_changed(self, keys: tuple[ResourceKey, ...]) -> None:
-        """Read again when the app wrote a file beneath this resource's folder.
+        """Read again when a file beneath this resource's folder was written, created or deleted.
 
-        :param keys: the files written or replaced.
+        :param keys: the files that changed.
         """
         if any(self.__beneath_root(key.path) for key in keys):
             self.refresh()
 
     def __on_folder_changed(self, directory: ResourceKey) -> None:
-        """Read again when the app changed a folder's listing beneath this resource's folder.
+        """Read again when a folder's listing beneath this resource's folder changed.
 
         :param directory: the folder whose listing changed.
         """

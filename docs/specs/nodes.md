@@ -191,9 +191,10 @@ count that cannot be read answers nothing, logged. How a cache is opened, reconc
 followed through renames and saves is its own. Each call opens the cache for its own duration on the calling thread, so
 any worker may call it. Scans and removing a root's rows are jobs.
 
-**Changes come from the notifier.** The `ChangeFeed` carries `Moved`, `Changed`, `FolderChanged` and `RootStale`; the
-agent's `ResourceEvents` adapts it to Qt signals, marshalled to the GUI thread. The notifier publishes what the disk
-says ([[mounts-and-storage#out-of-band]]); a writer's own change reaches it the same way everyone else's does.
+**Changes come from the notifier.** The `ChangeFeed` carries `Moved`, `Changed`, `FolderChanged`, `RootStale` and
+`RootReachable`; the agent's `ResourceEvents` adapts it to Qt signals, marshalled to the GUI thread. The notifier
+publishes what the disk says ([[mounts-and-storage#out-of-band]]); a writer's own change reaches it the same way
+everyone else's does, but for a rename this machine runs, which the rename coordinator publishes at once.
 
 **Never on the GUI thread.** The classes block on storage, so the agent calls them only from workers.
 

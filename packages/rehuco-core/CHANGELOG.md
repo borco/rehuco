@@ -15,7 +15,8 @@ Changelogs are per package in this monorepo, matching the per-package release ta
   announcements by. A `ResourceKey(path)` has path arithmetic (`name`, `stem`, `parent`, `with_name`, `joinpath`,
   `is_at_or_beneath`), folds case as the filesystem does, and its `str()` is a stable name for it. `KeyRelocation` is
   `Relocation` over keys (`KeyRelocation.from_local`, and `to_local` back to paths). `ChangeFeed` announces `Moved`,
-  `Changed`, `FolderChanged` and `RootStale` without Qt.
+  `Changed`, `FolderChanged`, `RootStale` and `RootReachable` without Qt; `Records` writes and announces nothing, the
+  file notifier reporting its writes like anyone else's.
 - `Records` loads a record, saves it, reads its text as stored and converts a legacy `.tc`. A file that cannot be read
   loads as a locked stub rather than raising. A save is a read-merge-write against the `RecordVersion` the document was
   read at -- a hash of its metadata (every block's `users` map left out), of the file, and of each per-user field. A
@@ -27,8 +28,9 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 - The Root Catalog: `Catalog` answers `roots()`, `query(CatalogQuery)`, `row(key)` and `count(root_id)` over a
   `.rehudb`, each call opening the cache on its own thread, and raises `CatalogUnreadable` for a cache it cannot read.
   `Catalog` also keeps the cache current: `prepare` and `attach` for the open `.rehuco`, `reconcile` and `hide` for
-  an edit of its roots, `follow` for a rename, `refresh` for records the app wrote, and `plan_verify` / `apply_verify`
-  for verify-on-access. `Records.signature(key)` answers a record's modification time and size under the rename
+  an edit of its roots, `follow` for a rename, `record_paths` for the records at or beneath a changed folder,
+  `mark_reachable` for a root's folder going away or coming back, and `plan_verify` / `apply_verify` for
+  verify-on-access. `Records.signature(key)` answers a record's modification time and size under the rename
   hold; both take the `RenameCoordinator` that stat and the catalog's record re-reads go through.
 - `CatalogSnapshot` holds a catalog's rows in memory and filters them there: `build` keys every row once,
   `select(query, ids)` picks what a `CatalogQuery` matches -- exactly the rows `CatalogCache.rows` reads, in its
@@ -62,6 +64,17 @@ Changelogs are per package in this monorepo, matching the per-package release ta
   file's recorded `.checksum` hash, or, with no hash recorded and the size rung allowed, when exactly one candidate
   has the same size and length. `plan_progress_renames` is the decision on its own. Progress entries record the
   file's size for it.
+- `rehuco_core.notify`, the file notifier (#511): `FileNotifier` watches one `WatchedFolder` and publishes on a
+  `ChangeFeed` what changed in it, with the backend its storage allows -- `NativeWatch` (`watchdog`) on a local or
+  removable disk, `SmbWatch` (`CHANGE_NOTIFY` on an `smbprotocol` session of its own, the Windows logon as
+  credentials) on a share, and `PollingWatch` (the known files by stat signature, every two minutes) for anything
+  else and whenever a backend fails, which it retries while the folder can be reached. `ChangeCoalescer` turns the
+  backends' `RawChange` observations into debounced `Moved`, `Changed` and `FolderChanged` events -- an atomic save
+  as the file changed, a rename's halves as one move -- and a lost buffer into `RootStale`. `RootNotifiers` keeps one
+  notifier per root. New dependencies: `watchdog` and `smbprotocol`.
+- `CatalogCache.apply_root_scan(touched=)` fills a set with the rows a scan read or removed, and
+  `ScanCatalogRootJob.touched_rows` carries them out of the job; `CatalogCache.mark_root_reachable` records what a
+  root's notifier saw.
 
 ### Changed
 

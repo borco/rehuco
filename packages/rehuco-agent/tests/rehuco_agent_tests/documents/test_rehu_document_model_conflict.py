@@ -10,7 +10,8 @@ from pathlib import Path
 from typing import Any, Final
 
 from freezegun.api import FrozenDateTimeFactory
-from pytest import fixture, mark, raises
+from pytest import mark, raises
+from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_core import (
@@ -21,7 +22,7 @@ from rehuco_core import (
     RehuDocument,
     record_differences,
 )
-from rehuco_core.access import Changed, ChangeEvent, ChangeFeed, Records, ResourceKey
+from rehuco_core.access import ChangeFeed, Records, ResourceKey
 
 pytestmark = mark.usefixtures("real_path_stat")
 
@@ -112,39 +113,28 @@ def stored(path: Path) -> RehuDocument:
     return RehuDocument.load(path)
 
 
-@fixture(name="feed")
-def fixture_feed() -> ChangeFeed:
-    """A change feed of the test's own, so what a save announces can be heard.
-
-    :returns: the feed.
-    """
-    return ChangeFeed()
-
-
-def opened(path: Path, feed: ChangeFeed) -> RehuDocumentModel:
-    """The model a holder builds for ``path``, read and saved through records announcing on ``feed``.
+def opened(path: Path) -> RehuDocumentModel:
+    """The model a holder builds for ``path``, read and saved through records of its own.
 
     :param path: the record.
-    :param feed: where the records announce their writes.
     :returns: the model.
     """
-    records = Records(feed)
+    records = Records()
     record = records.load(
         ResourceKey(path), username=DEFAULT_CURRENT_USERNAME, unknown_username=DEFAULT_UNKNOWN_USERNAME
     )
     return RehuDocumentModel(record.document, records=records, version=record.version, signature=record.signature)
 
 
-def in_conflict(path: Path, feed: ChangeFeed, mine: str, theirs: str) -> tuple[RehuDocumentModel, RecordConflict]:
+def in_conflict(path: Path, mine: str, theirs: str) -> tuple[RehuDocumentModel, RecordConflict]:
     """A model whose save was refused: its title edited to ``mine`` while the file's became ``theirs``.
 
     :param path: a record already written.
-    :param feed: where the records announce their writes.
     :param mine: the model's title.
     :param theirs: the file's title.
     :returns: the model, and the refusal it raised.
     """
-    model = opened(path, feed)
+    model = opened(path)
     model.title = mine
     edit_on_disk(path, retitle(theirs))
     with raises(RecordConflict) as refused:
@@ -153,33 +143,30 @@ def in_conflict(path: Path, feed: ChangeFeed, mine: str, theirs: str) -> tuple[R
 
 
 # region save
-def test_a_save_writes_through_the_records_and_is_announced_on_their_feed(tmp_path: Path, feed: ChangeFeed) -> None:
-    """The record goes through the records, which announce it; the model no longer announces its own record itself.
+def test_a_save_writes_through_the_records_and_announces_nothing(tmp_path: Path, mocker: MockerFixture) -> None:
+    """The record goes through the records, and nobody announces it: the folder's file notifier reports the write to
+    every view (#511).
 
     **Test steps:**
 
-    * open a record through records whose feed is heard, and edit its title
+    * open a record, and edit its title
     * save it
-    * verify the file holds the title, the feed heard the record's key, the model is clean and named no file changed
+    * verify the file holds the title, the model is clean, and nothing was published on any change feed
     """
     path = tmp_path / "info.rehu"
     write_record(path, "Old")
-    model = opened(path, feed)
-    heard: list[ChangeEvent] = []
-    feed.add_listener(heard.append)
-    files: list[object] = []
-    model.files_changed.connect(files.append)  # type: ignore[attr-defined]
+    model = opened(path)
+    published = mocker.spy(ChangeFeed, "publish")
     model.title = "Mine"
 
     model.save()
 
     assert stored(path).title == "Mine"
-    assert heard == [Changed((ResourceKey(path),))]
     assert not model.dirty
-    assert not files
+    published.assert_not_called()
 
 
-def test_a_second_save_is_checked_against_the_first(tmp_path: Path, feed: ChangeFeed) -> None:
+def test_a_second_save_is_checked_against_the_first(tmp_path: Path) -> None:
     """A save moves what the next is checked against: saving twice in a row is never a conflict with oneself.
 
     **Test steps:**
@@ -189,7 +176,7 @@ def test_a_second_save_is_checked_against_the_first(tmp_path: Path, feed: Change
     """
     path = tmp_path / "info.rehu"
     write_record(path, "Old")
-    model = opened(path, feed)
+    model = opened(path)
     model.title = "First"
     model.save()
     model.title = "Second"
@@ -215,9 +202,7 @@ def test_a_document_with_no_location_is_not_saved(qtbot: QtBot) -> None:
         model.save()
 
 
-def test_a_save_over_details_changed_on_disk_is_refused_and_kept_as_the_conflict(
-    tmp_path: Path, feed: ChangeFeed, qtbot: QtBot
-) -> None:
+def test_a_save_over_details_changed_on_disk_is_refused_and_kept_as_the_conflict(tmp_path: Path, qtbot: QtBot) -> None:
     """Overwriting another writer's edit silently is the one thing a save must not do: it is refused, and the
     refusal is kept on the model for the banner and the dialog.
 
@@ -230,7 +215,7 @@ def test_a_save_over_details_changed_on_disk_is_refused_and_kept_as_the_conflict
     """
     path = tmp_path / "info.rehu"
     write_record(path, "Old")
-    model = opened(path, feed)
+    model = opened(path)
     model.title = "Mine"
     edit_on_disk(path, retitle("Theirs"))
 
@@ -243,7 +228,7 @@ def test_a_save_over_details_changed_on_disk_is_refused_and_kept_as_the_conflict
     assert model.dirty
 
 
-def test_a_rating_written_on_disk_meanwhile_is_merged_and_shown(tmp_path: Path, feed: ChangeFeed) -> None:
+def test_a_rating_written_on_disk_meanwhile_is_merged_and_shown(tmp_path: Path) -> None:
     """A per-user field written while the document was open is not someone else's metadata edit: the save merges
     it rather than refusing or overwriting, and the field shows the merged value at once.
 
@@ -255,7 +240,7 @@ def test_a_rating_written_on_disk_meanwhile_is_merged_and_shown(tmp_path: Path, 
     """
     path = tmp_path / "info.rehu"
     write_record(path, "Old", rating=1)
-    model = opened(path, feed)
+    model = opened(path)
     model.title = "Mine"
     edit_on_disk(path, rate(3))
 
@@ -267,7 +252,7 @@ def test_a_rating_written_on_disk_meanwhile_is_merged_and_shown(tmp_path: Path, 
     assert not model.dirty
 
 
-def test_a_save_clears_the_changed_on_disk_notice(tmp_path: Path, feed: ChangeFeed) -> None:
+def test_a_save_clears_the_changed_on_disk_notice(tmp_path: Path) -> None:
     """A file changed under unsaved edits raises the notice; a save that merged the change has nothing left to say.
 
     **Test steps:**
@@ -279,7 +264,7 @@ def test_a_save_clears_the_changed_on_disk_notice(tmp_path: Path, feed: ChangeFe
     """
     path = tmp_path / "info.rehu"
     write_record(path, "Old", rating=1)
-    model = opened(path, feed)
+    model = opened(path)
     model.title = "Mine"
     edit_on_disk(path, rate(5))
     model.note_file_signature(*on_disk(path))
@@ -295,7 +280,7 @@ def test_a_save_clears_the_changed_on_disk_notice(tmp_path: Path, feed: ChangeFe
 
 
 # region resolve_conflict
-def test_resolving_without_a_conflict_is_refused(tmp_path: Path, feed: ChangeFeed) -> None:
+def test_resolving_without_a_conflict_is_refused(tmp_path: Path) -> None:
     """There is nothing to resolve until a save was refused.
 
     **Test steps:**
@@ -305,15 +290,13 @@ def test_resolving_without_a_conflict_is_refused(tmp_path: Path, feed: ChangeFee
     """
     path = tmp_path / "info.rehu"
     write_record(path, "Old")
-    model = opened(path, feed)
+    model = opened(path)
 
     with raises(ValueError, match="no conflict"):
         model.resolve_conflict({})
 
 
-def test_resolving_with_the_files_values_saves_them_and_removes_what_the_file_removed(
-    tmp_path: Path, feed: ChangeFeed
-) -> None:
+def test_resolving_with_the_files_values_saves_them_and_removes_what_the_file_removed(tmp_path: Path) -> None:
     """The person's picks become the saved record: the file's title and description, and the file's removal of the
     URL -- an ``ABSENT`` value removes the detail rather than writing a placeholder.
 
@@ -332,7 +315,7 @@ def test_resolving_with_the_files_values_saves_them_and_removes_what_the_file_re
         document.description = "Their notes"
         del document.core["sources"][0]["url"]
 
-    model = opened(path, feed)
+    model = opened(path)
     model.title = "Mine"
     edit_on_disk(path, theirs)
     with raises(RecordConflict) as refused:
@@ -352,7 +335,7 @@ def test_resolving_with_the_files_values_saves_them_and_removes_what_the_file_re
     assert not model.dirty
 
 
-def test_resolving_writes_a_per_user_field_kept_as_mine_over_the_files(tmp_path: Path, feed: ChangeFeed) -> None:
+def test_resolving_writes_a_per_user_field_kept_as_mine_over_the_files(tmp_path: Path) -> None:
     """A per-user field the file changed and this document did not would take the file's value in the merge alone;
     kept as *Mine* in the dialog, the document's value is the one saved.
 
@@ -370,7 +353,7 @@ def test_resolving_writes_a_per_user_field_kept_as_mine_over_the_files(tmp_path:
         document.title = "Theirs"
         document.set_user_field(DEFAULT_CURRENT_USERNAME, "rating", 3)
 
-    model = opened(path, feed)
+    model = opened(path)
     model.title = "Mine"
     edit_on_disk(path, theirs)
     with raises(RecordConflict) as refused:
@@ -392,7 +375,7 @@ def test_resolving_writes_a_per_user_field_kept_as_mine_over_the_files(tmp_path:
 
 
 def test_resolving_with_the_files_details_keeps_the_files_updated(
-    tmp_path: Path, feed: ChangeFeed, freezer: FrozenDateTimeFactory
+    tmp_path: Path, freezer: FrozenDateTimeFactory
 ) -> None:
     """Keeping every detail the file's way and only a per-user field of this document's writes nothing about the
     resource, so the file's ``updated`` stands -- although the resolving save is made against the conflict's own
@@ -408,7 +391,7 @@ def test_resolving_with_the_files_details_keeps_the_files_updated(
     path = tmp_path / "info.rehu"
     freezer.move_to("2026-01-01T00:00:00Z")
     write_record(path, "Old", rating=1)
-    model = opened(path, feed)
+    model = opened(path)
     model.title = "Mine"
     model.rating = 5
 
@@ -429,7 +412,7 @@ def test_resolving_with_the_files_details_keeps_the_files_updated(
     assert on_file.updated == "2026-02-02T00:00:00Z"
 
 
-def test_resolving_writes_the_original_values_kept(tmp_path: Path, feed: ChangeFeed) -> None:
+def test_resolving_writes_the_original_values_kept(tmp_path: Path) -> None:
     """A row kept as *Original* puts back the value as opened -- neither side's -- and an original the record did not
     have removes the detail and the per-user field.
 
@@ -448,7 +431,7 @@ def test_resolving_writes_the_original_values_kept(tmp_path: Path, feed: ChangeF
         document.description = "Their notes"
         document.set_user_field(DEFAULT_CURRENT_USERNAME, "rating", 3)
 
-    model = opened(path, feed)
+    model = opened(path)
     model.title = "Mine"
     model.description = "My notes"
     model.rating = 5
@@ -471,7 +454,7 @@ def test_resolving_writes_the_original_values_kept(tmp_path: Path, feed: ChangeF
     assert not model.dirty
 
 
-def test_resolving_keeps_a_progress_entry_written_meanwhile(tmp_path: Path, feed: ChangeFeed) -> None:
+def test_resolving_keeps_a_progress_entry_written_meanwhile(tmp_path: Path) -> None:
     """A player's progress write landing with the other edit must survive the resolution: the per-user fields are
     merged against what the document was read at before the picks are put.
 
@@ -488,7 +471,7 @@ def test_resolving_keeps_a_progress_entry_written_meanwhile(tmp_path: Path, feed
         document.title = "Theirs"
         document.set_user_field(DEFAULT_CURRENT_USERNAME, "progress", PROGRESS)
 
-    model = opened(path, feed)
+    model = opened(path)
     model.title = "Mine"
     edit_on_disk(path, theirs)
     with raises(RecordConflict):
@@ -502,7 +485,7 @@ def test_resolving_keeps_a_progress_entry_written_meanwhile(tmp_path: Path, feed
     assert on_file.user_field(DEFAULT_CURRENT_USERNAME, "progress") == PROGRESS
 
 
-def test_resolving_a_conflict_raised_again_keeps_the_new_one(tmp_path: Path, feed: ChangeFeed) -> None:
+def test_resolving_a_conflict_raised_again_keeps_the_new_one(tmp_path: Path) -> None:
     """The file can change once more while the dialog is open: the resolution is then refused against that newer
     file, which becomes the conflict to resolve.
 
@@ -514,7 +497,7 @@ def test_resolving_a_conflict_raised_again_keeps_the_new_one(tmp_path: Path, fee
     """
     path = tmp_path / "info.rehu"
     write_record(path, "Old")
-    model, _ = in_conflict(path, feed, "Mine", "Theirs")
+    model, _ = in_conflict(path, "Mine", "Theirs")
     edit_on_disk(path, retitle("Theirs again"))
 
     with raises(RecordConflict) as again:
@@ -524,9 +507,7 @@ def test_resolving_a_conflict_raised_again_keeps_the_new_one(tmp_path: Path, fee
     assert model.conflict is again.value
 
 
-def test_resolving_on_a_model_not_read_from_its_file_puts_the_values_over_the_file(
-    tmp_path: Path, feed: ChangeFeed
-) -> None:
+def test_resolving_on_a_model_not_read_from_its_file_puts_the_values_over_the_file(tmp_path: Path) -> None:
     """A model with no version to merge per-user fields against still resolves: the picks are put and the result is
     saved against the file as the conflict found it.
 
@@ -538,7 +519,7 @@ def test_resolving_on_a_model_not_read_from_its_file_puts_the_values_over_the_fi
     """
     path = tmp_path / "info.rehu"
     write_record(path, "Old")
-    records = Records(feed)
+    records = Records()
     record = records.load(
         ResourceKey(path), username=DEFAULT_CURRENT_USERNAME, unknown_username=DEFAULT_UNKNOWN_USERNAME
     )
@@ -553,7 +534,7 @@ def test_resolving_on_a_model_not_read_from_its_file_puts_the_values_over_the_fi
     assert model.conflict is None
 
 
-def test_a_revert_drops_the_conflict(tmp_path: Path, feed: ChangeFeed) -> None:
+def test_a_revert_drops_the_conflict(tmp_path: Path) -> None:
     """Discarding the edits is the other way out of a conflict: the file is read as it is, and nothing is left to
     resolve.
 
@@ -565,7 +546,7 @@ def test_a_revert_drops_the_conflict(tmp_path: Path, feed: ChangeFeed) -> None:
     """
     path = tmp_path / "info.rehu"
     write_record(path, "Old")
-    model, _ = in_conflict(path, feed, "Mine", "Theirs")
+    model, _ = in_conflict(path, "Mine", "Theirs")
 
     model.revert()
 
@@ -576,7 +557,7 @@ def test_a_revert_drops_the_conflict(tmp_path: Path, feed: ChangeFeed) -> None:
 
 
 # region base_data, stored_text, signature
-def test_the_base_data_is_the_record_as_read_with_its_per_user_fields(tmp_path: Path, feed: ChangeFeed) -> None:
+def test_the_base_data_is_the_record_as_read_with_its_per_user_fields(tmp_path: Path) -> None:
     """The *Original* column of the dialog: what was read, per-user fields included, not what is being edited -- and
     a copy a caller can change freely.
 
@@ -588,7 +569,7 @@ def test_the_base_data_is_the_record_as_read_with_its_per_user_fields(tmp_path: 
     """
     path = tmp_path / "info.rehu"
     write_record(path, "Old", rating=4)
-    model = opened(path, feed)
+    model = opened(path)
     model.title = "Mine"
     model.rating = 1
 
@@ -604,7 +585,7 @@ def test_the_base_data_is_the_record_as_read_with_its_per_user_fields(tmp_path: 
     assert again[TYPE]["users"][DEFAULT_CURRENT_USERNAME]["rating"] == 4
 
 
-def test_the_base_data_follows_a_save(tmp_path: Path, feed: ChangeFeed) -> None:
+def test_the_base_data_follows_a_save(tmp_path: Path) -> None:
     """After a save the file holds the edits, so they are what the next conflict compares against.
 
     **Test steps:**
@@ -614,7 +595,7 @@ def test_the_base_data_follows_a_save(tmp_path: Path, feed: ChangeFeed) -> None:
     """
     path = tmp_path / "info.rehu"
     write_record(path, "Old", rating=4)
-    model = opened(path, feed)
+    model = opened(path)
     model.title = "Mine"
     model.rating = 2
 
@@ -625,7 +606,7 @@ def test_the_base_data_follows_a_save(tmp_path: Path, feed: ChangeFeed) -> None:
     assert base[TYPE]["users"][DEFAULT_CURRENT_USERNAME]["rating"] == 2
 
 
-def test_the_stored_text_is_the_file_not_the_edited_document(tmp_path: Path, feed: ChangeFeed) -> None:
+def test_the_stored_text_is_the_file_not_the_edited_document(tmp_path: Path) -> None:
     """The On Disk view shows the file through the records; an unsaved edit is not in it.
 
     **Test steps:**
@@ -635,7 +616,7 @@ def test_the_stored_text_is_the_file_not_the_edited_document(tmp_path: Path, fee
     """
     path = tmp_path / "info.rehu"
     write_record(path, "Old")
-    model = opened(path, feed)
+    model = opened(path)
     model.title = "Mine"
 
     text = model.stored_text()
@@ -660,7 +641,7 @@ def test_a_document_with_no_location_has_no_stored_text(qtbot: QtBot) -> None:
         model.stored_text()
 
 
-def test_the_record_signature_is_what_a_reported_file_is_compared_with(tmp_path: Path, feed: ChangeFeed) -> None:
+def test_the_record_signature_is_what_a_reported_file_is_compared_with(tmp_path: Path) -> None:
     """The signature the records took when reading is the model's own: reporting the file unchanged reloads nothing,
     reporting it changed does.
 
@@ -673,7 +654,7 @@ def test_the_record_signature_is_what_a_reported_file_is_compared_with(tmp_path:
     """
     path = tmp_path / "info.rehu"
     write_record(path, "Old")
-    model = opened(path, feed)
+    model = opened(path)
     reloads: list[object] = []
     model.reloaded.connect(lambda: reloads.append(None))
 
@@ -687,7 +668,7 @@ def test_the_record_signature_is_what_a_reported_file_is_compared_with(tmp_path:
     assert model.title == "Theirs, and longer"
 
 
-def test_a_save_takes_the_written_files_signature(tmp_path: Path, feed: ChangeFeed) -> None:
+def test_a_save_takes_the_written_files_signature(tmp_path: Path) -> None:
     """The model's own write is not a change on disk: reporting the saved file afterwards changes nothing.
 
     **Test steps:**
@@ -698,7 +679,7 @@ def test_a_save_takes_the_written_files_signature(tmp_path: Path, feed: ChangeFe
     """
     path = tmp_path / "info.rehu"
     write_record(path, "Old")
-    model = opened(path, feed)
+    model = opened(path)
     model.title = "A much longer title than before"
     model.save()
     model.title = "Unsaved"
@@ -709,7 +690,7 @@ def test_a_save_takes_the_written_files_signature(tmp_path: Path, feed: ChangeFe
     assert model.title == "Unsaved"
 
 
-def test_a_model_with_no_signature_compares_nothing(tmp_path: Path, feed: ChangeFeed) -> None:
+def test_a_model_with_no_signature_compares_nothing(tmp_path: Path) -> None:
     """A model built without the file's signature has nothing to compare a report with, and takes no action.
 
     **Test steps:**
@@ -720,7 +701,7 @@ def test_a_model_with_no_signature_compares_nothing(tmp_path: Path, feed: Change
     """
     path = tmp_path / "info.rehu"
     write_record(path, "Old")
-    model = RehuDocumentModel(RehuDocument.load(path), records=Records(feed))
+    model = RehuDocumentModel(RehuDocument.load(path), records=Records())
     model.title = "Mine"
 
     model.note_file_signature(1, 2)
@@ -731,7 +712,7 @@ def test_a_model_with_no_signature_compares_nothing(tmp_path: Path, feed: Change
 # endregion
 
 
-def test_a_rename_whose_save_is_refused_as_a_conflict_moves_nothing(tmp_path: Path, feed: ChangeFeed) -> None:
+def test_a_rename_whose_save_is_refused_as_a_conflict_moves_nothing(tmp_path: Path) -> None:
     """A rename saves a dirty document first; a refused save stops it, and the banner says why.
 
     **Test steps:**
@@ -744,7 +725,7 @@ def test_a_rename_whose_save_is_refused_as_a_conflict_moves_nothing(tmp_path: Pa
     path = tmp_path / "sculpting" / "info.rehu"
     path.parent.mkdir()
     write_record(path, "Old")
-    model = opened(path, feed)
+    model = opened(path)
     model.title = "Mine"
     edit_on_disk(path, retitle("Theirs"))
 
@@ -758,7 +739,7 @@ def test_a_rename_whose_save_is_refused_as_a_conflict_moves_nothing(tmp_path: Pa
 
 
 # region reads through the records
-def test_another_record_loaded_in_place_is_saved_against_what_was_read(tmp_path: Path, feed: ChangeFeed) -> None:
+def test_another_record_loaded_in_place_is_saved_against_what_was_read(tmp_path: Path) -> None:
     """A preview moving on to the next record reads it through the records, version and all, so an edit made to it
     is checked like any other.
 
@@ -771,7 +752,7 @@ def test_another_record_loaded_in_place_is_saved_against_what_was_read(tmp_path:
     first, second = tmp_path / "a.rehu", tmp_path / "b.rehu"
     write_record(first, "First")
     write_record(second, "Second")
-    model = opened(first, feed)
+    model = opened(first)
 
     model.load(second)
     model.title = "Mine"
@@ -784,28 +765,27 @@ def test_another_record_loaded_in_place_is_saved_against_what_was_read(tmp_path:
 
 
 def test_a_conversion_goes_through_the_records_and_is_saved_against_the_new_record(
-    tmp_path: Path, feed: ChangeFeed
+    tmp_path: Path, mocker: MockerFixture
 ) -> None:
-    """Converting a legacy record is announced by the records -- the new record first, then the ``.tc`` it replaced --
-    and the new record is read with its version, so a later save over a change on disk is refused.
+    """Converting a legacy record announces nothing -- the folder's file notifier reports both files (#511) -- and the
+    new record is read with its version, so a later save over a change on disk is refused.
 
     **Test steps:**
 
-    * open a legacy ``.tc`` through records whose feed is heard, and convert it
-    * verify the feed heard the new record and the ``.tc``, and the model stands for the new record
+    * open a legacy ``.tc``, and convert it
+    * verify nothing was published on any change feed, and the model stands for the new record
     * edit its title and retitle the new file outside the app
     * verify a save is refused as a conflict
     """
     legacy = tmp_path / "info.tc"
     legacy.write_text("type: Tutorial\ntitle: Legacy\n", encoding="utf-8")
-    model = opened(legacy, feed)
-    heard: list[ChangeEvent] = []
-    feed.add_listener(heard.append)
+    model = opened(legacy)
+    published = mocker.spy(ChangeFeed, "publish")
 
     model.convert(keep_backups=True)
 
     converted = tmp_path / "info.rehu"
-    assert heard == [Changed((ResourceKey(converted), ResourceKey(legacy)))]
+    published.assert_not_called()
     assert model.path == converted
     model.title = "Mine"
     edit_on_disk(converted, retitle("Theirs"))
