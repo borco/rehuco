@@ -27,13 +27,15 @@ class ImageDownloadJob:
     :param referrer: the page to send as the download's ``Referer``, or ``None`` when the site does
         not need one.
     :param slot: the ``<stem>NN`` slot this image is destined for, or ``None`` for the next free one.
+    :param parent: the Qt parent of the job's marshaller -- the caller connecting to the job, for the reason
+        `~.scrape_job.ScrapeJob` takes one (#529).
     """
 
-    def __init__(self, url: str, referrer: str | None, slot: int | None = None) -> None:
+    def __init__(self, url: str, referrer: str | None, slot: int | None = None, parent: QObject | None = None) -> None:
         self.__url: Final = url
         self.__referrer: Final = referrer
         self.__slot: Final = slot
-        self.__marshaller: Final = ImageDownloadJob.Marshaller()
+        self.__marshaller: Final = ImageDownloadJob.Marshaller(parent)
 
     class Marshaller(QObject):
         """Carries a finished download's result across the thread boundary, and nothing else.
@@ -41,7 +43,9 @@ class ImageDownloadJob:
         The same two-pairs-of-signals shape `~.scrape_job.ScrapeJob.Marshaller` uses, for the same
         reason: :attr:`downloaded`/:attr:`failure` fire on the worker thread and are relayed to
         :attr:`result_ready`/:attr:`failed`, always on the GUI thread, over an explicit
-        `Qt.ConnectionType.QueuedConnection`.
+        `Qt.ConnectionType.QueuedConnection` -- to a method of its own rather than to the signal's ``emit``,
+        so the queued call is posted to this object and goes with it. A child of the caller for as long as
+        the document is open, as `~.scrape_job.ScrapeJob.Marshaller` is, and for the same reason (#529).
         """
 
         downloaded = Signal(object)
@@ -56,10 +60,24 @@ class ImageDownloadJob:
         failed = Signal(object)
         """Fires with the exception, always on the GUI thread."""
 
-        def __init__(self) -> None:
-            super().__init__()
-            self.downloaded.connect(self.result_ready.emit, Qt.ConnectionType.QueuedConnection)
-            self.failure.connect(self.failed.emit, Qt.ConnectionType.QueuedConnection)
+        def __init__(self, parent: QObject | None) -> None:
+            super().__init__(parent)
+            self.downloaded.connect(self.__relay_result, Qt.ConnectionType.QueuedConnection)
+            self.failure.connect(self.__relay_failure, Qt.ConnectionType.QueuedConnection)
+
+        def __relay_result(self, result: object) -> None:
+            """Re-emit :attr:`result_ready`, on the GUI thread by construction of the connection above.
+
+            :param result: the `~.image_pipeline.AcquiredImage` :attr:`downloaded` carried.
+            """
+            self.result_ready.emit(result)
+
+        def __relay_failure(self, error: object) -> None:
+            """Re-emit :attr:`failed`, on the GUI thread by construction of the connection above.
+
+            :param error: the exception :attr:`failure` carried.
+            """
+            self.failed.emit(error)
 
     @property
     def slot(self) -> int | None:

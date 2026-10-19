@@ -23,6 +23,8 @@ from rehuco_core.access import (
     RootStale,
 )
 
+from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
+
 FOLDER: Final = Path.cwd() / "fake" / "library" / "pack"
 RELOCATION: Final = Relocation(((FOLDER, FOLDER.with_name("kit")),))
 MOVED_KEYS: Final = KeyRelocation.from_local(RELOCATION)
@@ -31,7 +33,9 @@ OTHER_RECORD: Final = ResourceKey(FOLDER.with_name("other") / "info.rehu")
 TIMEOUT: Final = 5000
 
 
-def test_an_announcement_on_the_gui_thread_is_emitted_at_once(qtbot: QtBot) -> None:
+def test_an_announcement_on_the_gui_thread_is_emitted_at_once(
+    qtbot: QtBot, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A rename on the GUI thread is heard before the announcing call returns, so every holder has followed it
     by the time the renaming code goes on.
 
@@ -41,7 +45,7 @@ def test_an_announcement_on_the_gui_thread_is_emitted_at_once(qtbot: QtBot) -> N
     * verify each was emitted synchronously with what was announced, the rename as keys
     """
     del qtbot
-    events = ResourceEvents()
+    events = delete_at_teardown(ResourceEvents())
     heard: list[object] = []
     events.moved.connect(heard.append)
     events.accessed.connect(heard.append)
@@ -52,7 +56,7 @@ def test_an_announcement_on_the_gui_thread_is_emitted_at_once(qtbot: QtBot) -> N
     assert heard == [MOVED_KEYS, (RECORD,)]
 
 
-def test_every_feed_event_reaches_its_signal(qtbot: QtBot) -> None:
+def test_every_feed_event_reaches_its_signal(qtbot: QtBot, delete_at_teardown: DeleteAtTeardown) -> None:
     """Whoever publishes on the feed -- not only the ``announce_*`` methods -- is heard on the matching signal (#414).
 
     **Test steps:**
@@ -62,7 +66,7 @@ def test_every_feed_event_reaches_its_signal(qtbot: QtBot) -> None:
     """
     del qtbot
     feed = ChangeFeed()
-    events = ResourceEvents(feed)
+    events = delete_at_teardown(ResourceEvents(feed))
     root_id = uuid4()
     heard: list[tuple[str, object]] = []
     events.moved.connect(lambda value: heard.append(("moved", value)))
@@ -88,7 +92,9 @@ def test_every_feed_event_reaches_its_signal(qtbot: QtBot) -> None:
     ]
 
 
-def test_a_move_is_published_on_the_feed_and_nothing_else_the_app_does_is(qtbot: QtBot) -> None:
+def test_a_move_is_published_on_the_feed_and_nothing_else_the_app_does_is(
+    qtbot: QtBot, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A rename this machine ran goes through the feed, so another listener on it hears it (#414); the app announces
     no write of its own any more -- the notifiers report what the disk says (#511).
 
@@ -100,7 +106,7 @@ def test_a_move_is_published_on_the_feed_and_nothing_else_the_app_does_is(qtbot:
     """
     del qtbot
     feed = ChangeFeed()
-    events = ResourceEvents(feed)
+    events = delete_at_teardown(ResourceEvents(feed))
     published: list[ChangeEvent] = []
     events.changes.add_listener(published.append)
 
@@ -111,7 +117,7 @@ def test_a_move_is_published_on_the_feed_and_nothing_else_the_app_does_is(qtbot:
     assert published == [Moved(MOVED_KEYS)]
 
 
-def test_the_default_feed_is_a_private_one(qtbot: QtBot) -> None:
+def test_the_default_feed_is_a_private_one(qtbot: QtBot, delete_at_teardown: DeleteAtTeardown) -> None:
     """Events built with no feed adapt one of their own, which no other events share.
 
     **Test steps:**
@@ -121,8 +127,8 @@ def test_the_default_feed_is_a_private_one(qtbot: QtBot) -> None:
     * verify a change published on one's feed is not heard on the other
     """
     del qtbot
-    first = ResourceEvents()
-    second = ResourceEvents()
+    first = delete_at_teardown(ResourceEvents())
+    second = delete_at_teardown(ResourceEvents())
     heard: list[object] = []
     second.changed.connect(heard.append)
 
@@ -133,7 +139,7 @@ def test_the_default_feed_is_a_private_one(qtbot: QtBot) -> None:
     assert not heard
 
 
-def test_an_announcement_off_the_gui_thread_arrives_on_it(qtbot: QtBot) -> None:
+def test_an_announcement_off_the_gui_thread_arrives_on_it(qtbot: QtBot, delete_at_teardown: DeleteAtTeardown) -> None:
     """A rename asked for on another thread still reaches the listeners on the GUI thread.
 
     **Test steps:**
@@ -141,7 +147,7 @@ def test_an_announcement_off_the_gui_thread_arrives_on_it(qtbot: QtBot) -> None:
     * announce a move from a plain worker thread
     * verify the signal arrives, on the GUI thread
     """
-    events = ResourceEvents()
+    events = delete_at_teardown(ResourceEvents())
     threads: list[QThread] = []
     events.moved.connect(lambda _relocation: threads.append(QThread.currentThread()))
 
@@ -154,7 +160,9 @@ def test_an_announcement_off_the_gui_thread_arrives_on_it(qtbot: QtBot) -> None:
     assert threads == [events.thread()]
 
 
-def test_a_feed_event_published_off_the_gui_thread_arrives_on_it(qtbot: QtBot) -> None:
+def test_a_feed_event_published_off_the_gui_thread_arrives_on_it(
+    qtbot: QtBot, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """An event published on the feed from another thread -- as the file notifier will (#511) -- is queued onto
     the GUI thread (#414).
 
@@ -164,7 +172,7 @@ def test_a_feed_event_published_off_the_gui_thread_arrives_on_it(qtbot: QtBot) -
     * verify the signal arrives, on the GUI thread
     """
     feed = ChangeFeed()
-    events = ResourceEvents(feed)
+    events = delete_at_teardown(ResourceEvents(feed))
     root_id = uuid4()
     threads: list[QThread] = []
     events.root_stale.connect(lambda _root_id: threads.append(QThread.currentThread()))
@@ -178,7 +186,9 @@ def test_a_feed_event_published_off_the_gui_thread_arrives_on_it(qtbot: QtBot) -
     assert threads == [events.thread()]
 
 
-def test_a_reachability_published_off_the_gui_thread_arrives_on_it(qtbot: QtBot) -> None:
+def test_a_reachability_published_off_the_gui_thread_arrives_on_it(
+    qtbot: QtBot, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A root gone out of reach, as its notifier publishes it from its own thread (#511), is queued onto the GUI thread
     with the root and the flag.
 
@@ -188,7 +198,7 @@ def test_a_reachability_published_off_the_gui_thread_arrives_on_it(qtbot: QtBot)
     * verify the signal arrives, on the GUI thread, with the root and ``False``
     """
     feed = ChangeFeed()
-    events = ResourceEvents(feed)
+    events = delete_at_teardown(ResourceEvents(feed))
     root_id = uuid4()
     threads: list[QThread] = []
     events.root_reachable.connect(lambda _root_id, _reachable: threads.append(QThread.currentThread()))
@@ -202,7 +212,7 @@ def test_a_reachability_published_off_the_gui_thread_arrives_on_it(qtbot: QtBot)
     assert threads == [events.thread()]
 
 
-def test_an_access_is_announced_with_the_records_opened(qtbot: QtBot) -> None:
+def test_an_access_is_announced_with_the_records_opened(qtbot: QtBot, delete_at_teardown: DeleteAtTeardown) -> None:
     """Opening a record is announced, for the catalog to verify it (#487): nothing was written, so the feed hears
     nothing.
 
@@ -213,7 +223,7 @@ def test_an_access_is_announced_with_the_records_opened(qtbot: QtBot) -> None:
     * verify nothing was published on the feed
     """
     del qtbot
-    events = ResourceEvents()
+    events = delete_at_teardown(ResourceEvents())
     heard: list[object] = []
     published: list[ChangeEvent] = []
     events.accessed.connect(heard.append)
@@ -225,7 +235,9 @@ def test_an_access_is_announced_with_the_records_opened(qtbot: QtBot) -> None:
     assert not published
 
 
-def test_an_event_of_no_known_kind_is_refused_loudly(qtbot: QtBot, caplog: LogCaptureFixture) -> None:
+def test_an_event_of_no_known_kind_is_refused_loudly(
+    qtbot: QtBot, caplog: LogCaptureFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """Something on the feed that is no change event is a programming error: it fails in the adapter, which the
     feed logs, and no signal is emitted.
 
@@ -236,7 +248,7 @@ def test_an_event_of_no_known_kind_is_refused_loudly(qtbot: QtBot, caplog: LogCa
     """
     del qtbot
     feed = ChangeFeed()
-    events = ResourceEvents(feed)
+    events = delete_at_teardown(ResourceEvents(feed))
     heard: list[object] = []
     for signal in (events.moved, events.changed, events.folder_changed, events.root_stale):
         signal.connect(heard.append)
@@ -249,7 +261,7 @@ def test_an_event_of_no_known_kind_is_refused_loudly(qtbot: QtBot, caplog: LogCa
     assert not heard
 
 
-def test_detached_events_hear_the_feed_no_more(qtbot: QtBot) -> None:
+def test_detached_events_hear_the_feed_no_more(qtbot: QtBot, delete_at_teardown: DeleteAtTeardown) -> None:
     """Once detached, events stop adapting the feed, which outlives them (#414).
 
     **Test steps:**
@@ -260,7 +272,7 @@ def test_detached_events_hear_the_feed_no_more(qtbot: QtBot) -> None:
     """
     del qtbot
     feed = ChangeFeed()
-    events = ResourceEvents(feed)
+    events = delete_at_teardown(ResourceEvents(feed))
     heard: list[object] = []
     events.changed.connect(heard.append)
 

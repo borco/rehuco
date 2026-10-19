@@ -2,6 +2,7 @@
 
 from typing import Final, Protocol, runtime_checkable
 
+from PySide6.QtCore import QObject
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
@@ -50,12 +51,15 @@ class TrayIcon(QSystemTrayIcon):
 
     :param window: the window this icon shows/hides and can quit.
     :param icon: the icon to show in the tray.
+    :param parent: the icon's Qt owner -- the window, which ``window`` names only as what it controls.
     """
 
-    def __init__(self, window: TrayWindow, icon: QIcon) -> None:
-        super().__init__(icon)
+    def __init__(self, window: TrayWindow, icon: QIcon, parent: QObject | None = None) -> None:
+        super().__init__(icon, parent)
         self.__window: Final = window
+        # a menu takes only a widget for a parent, which this is not, so it goes when the icon does
         self.__menu: Final = QMenu()
+        self.destroyed.connect(self.__menu.deleteLater)
         self.__toggle_action: Final = self.__menu.addAction(SHOW_ACTION_TEXT)
         self.__toggle_action.triggered.connect(self.__toggle_window)
         self.__menu.aboutToShow.connect(self.__resync_toggle_action_text)

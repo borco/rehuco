@@ -22,6 +22,8 @@ from rehuco_agent.settings.markdown_rendering_settings import shared_markdown_re
 from rehuco_core import RehucoRoot, RehuDocument, RenameCoordinator, RootFolderLister, RootStorage
 from rehuco_core.access import LoadedRecord, Records, ResourceKey
 
+from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
+
 from .test_roots_preview import WAIT_TIMEOUT_MS, Shown
 
 URL: Final = "https://example.com/tutorials/jet-ski"
@@ -428,7 +430,9 @@ def test_a_pane_that_shows_no_record_follows_no_change(
     refresh.assert_not_called()
 
 
-def test_a_record_is_read_through_the_records_given(qtbot: QtBot, mocker: MockerFixture, tmp_path: Path) -> None:
+def test_a_record_is_read_through_the_records_given(
+    qtbot: QtBot, mocker: MockerFixture, tmp_path: Path, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """The pane reads a record through the records it was handed (#416), and shows what it says whether or not its
     file could be stat'ed: what it read carries no signature to the pane any more (#511).
 
@@ -459,7 +463,7 @@ def test_a_record_is_read_through_the_records_given(qtbot: QtBot, mocker: Mocker
 
     mocker.patch.object(records, "load", side_effect=unsigned)
     root = RehucoRoot(uuid4(), library, "lib", RootStorage.LOCAL)
-    model = RootsFolderModel()
+    model = delete_at_teardown(RootsFolderModel())
     model.set_roots([root], RootFolderLister([root]))
     preview = RootsPreview(model, RenameCoordinator(), None, lambda _: path, None, records=records)
     qtbot.addWidget(preview)

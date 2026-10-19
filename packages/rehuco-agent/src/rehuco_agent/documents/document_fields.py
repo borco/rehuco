@@ -495,10 +495,14 @@ def build_document_form(
     # a measurement is about the record shown, so each also hears the model move to another one (#470)
     switched = model.switched
     runtime_kwargs: dict[str, dict[str, Any]] = {
-        CURRENT_COUNT_FIELD_NAME: {"measure": measure_content_images, "switched": switched}
+        CURRENT_COUNT_FIELD_NAME: {"measure": measure_content_images, "switched": switched, "owner": model}
     }
-    runtime_kwargs.update({name: {"measure": measure_size_on_disk, "switched": switched} for name in SIZE_FIELD_NAMES})
-    runtime_kwargs.update({name: {"measure": measure_duration, "switched": switched} for name in DURATION_FIELD_NAMES})
+    runtime_kwargs.update(
+        {name: {"measure": measure_size_on_disk, "switched": switched, "owner": model} for name in SIZE_FIELD_NAMES}
+    )
+    runtime_kwargs.update(
+        {name: {"measure": measure_duration, "switched": switched, "owner": model} for name in DURATION_FIELD_NAMES}
+    )
     # not a measurement, the same seam for the same reason: the learning-paths table has to know whose
     # rows are editable, where a new path's file-scoped slot comes from, and who inherits a deleted path
     # that still has subscribers -- none of which the toolkit could work out from a ``(type, name)`` pair.

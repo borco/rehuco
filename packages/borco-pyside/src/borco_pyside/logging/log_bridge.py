@@ -1,9 +1,10 @@
 """The seam between Python's logging and Qt: a handler that caches, batches, and routes."""
 
 from collections import deque
-from collections.abc import Hashable, Iterable, Sequence
+from collections.abc import Callable, Hashable, Iterable, Sequence
 from logging import Handler, LogRecord
 from typing import Final, override
+from weakref import WeakMethod
 
 from borco_core.logging import LogScope
 from PySide6.QtCore import QObject, Qt, Signal
@@ -74,9 +75,18 @@ class LogBridge(Handler):
         :class:`LogBridge`). Takes its thread affinity from whoever built the bridge, which is what
         makes the queued connection land on that thread.
 
+        **It is the receiver of its own queued signal**, calling the bridge through a weak reference (#529).
+        Connected straight to the bridge's method, the queued wake-up would be posted to the helper object
+        PySide keeps for a plain Python callable instead, which forgets the callable when this marshaller is
+        deleted but keeps the wake-up posted, and delivers it into a bridge already freed. Posted to this
+        object, it goes with it: Qt drops the events of an object it deletes. The weak reference keeps the
+        marshaller and the bridge out of a reference cycle.
+
         Nested and undocumented outside this class rather than name-mangled, only because a mangled
         class name is not a class name Qt or the linters will accept -- nothing outside
         :class:`LogBridge` has a reason to build one.
+
+        :param dispatch: the bridge's dispatch, held weakly.
         """
 
         batch_ready = Signal()
@@ -86,9 +96,20 @@ class LogBridge(Handler):
         the point of batching. Emitted once per batch rather than once per record -- a record arriving
         before the other thread wakes up joins the batch instead of scheduling another."""
 
+        def __init__(self, dispatch: Callable[[], None]) -> None:
+            super().__init__()
+            self.__dispatch: Final = WeakMethod(dispatch)
+            self.batch_ready.connect(self.__deliver, Qt.ConnectionType.QueuedConnection)
+
+        def __deliver(self) -> None:
+            """Run the bridge's dispatch, on this object's thread, unless the bridge is gone."""
+            dispatch = self.__dispatch()
+            if dispatch is not None:
+                dispatch()
+
     def __init__(self, *, limit: int = DEFAULT_LOG_LIMIT) -> None:
         super().__init__()
-        self.__marshaller = LogBridge.Marshaller()
+        self.__marshaller: LogBridge.Marshaller | None = LogBridge.Marshaller(self.__dispatch)
         self.__limit = max(1, limit)
         self.__entries: deque[LogEntry] = deque(maxlen=self.__limit)
         self.__next_serial = 0
@@ -96,7 +117,28 @@ class LogBridge(Handler):
         self.__sinks: list[LogRecordSink] = []
         self.__scoped_sinks: list[tuple[LogRecordSink, Hashable]] = []
         self.__batch_pending = False
-        self.__marshaller.batch_ready.connect(self.__dispatch, Qt.ConnectionType.QueuedConnection)
+
+    @override
+    def close(self) -> None:
+        """Close the handler and delete its marshaller, so a bridge taken down is gone with its `QObject` (#529).
+
+        The delete is handed to ``deleteLater``, on the thread the marshaller lives on. A wake-up posted before
+        the close may still run first, into sinks a caller has not detached; one posted to a marshaller already
+        deleted is dropped with it, so no wake-up ever reaches a bridge that has been freed. ``logging`` closes a
+        handler again in its own shutdown, by when PySide may have destroyed every `QObject` Python still owned
+        along with the application, so a marshaller already gone, or already deleted, is left be.
+        """
+        self.acquire()
+        try:
+            marshaller, self.__marshaller = self.__marshaller, None
+        finally:
+            self.release()
+        if marshaller is not None:
+            try:
+                marshaller.deleteLater()
+            except RuntimeError:  # already destroyed with the application, at exit
+                pass
+        super().close()
 
     # region cache
 
@@ -224,7 +266,7 @@ class LogBridge(Handler):
             return
         self.__next_serial += 1
         self.__entries.append(entry)
-        if not self.__batch_pending:
+        if not self.__batch_pending and self.__marshaller is not None:
             self.__batch_pending = True
             self.__marshaller.batch_ready.emit()
 

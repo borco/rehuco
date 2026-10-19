@@ -35,6 +35,27 @@ def test_menu_has_toggle_then_separator_then_quit(qtbot: QtBot, mocker: MockerFi
     assert actions[2].text() == QUIT_ACTION_TEXT
 
 
+def test_the_menu_goes_with_the_icon(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """The menu, which takes only a widget for a parent, is deleted when the icon is, rather than left to the cyclic
+    collector (#529).
+
+    **Test steps:**
+
+    * build a `TrayIcon` and delete it
+    * run the deferred deletes
+    * verify its menu was destroyed
+    """
+    tray_icon = TrayIcon(fake_window(mocker, visible=False), QIcon())  # type: ignore[arg-type]
+    menu = tray_icon.contextMenu()
+    assert menu is not None
+    destroyed: list[bool] = []
+    menu.destroyed.connect(lambda: destroyed.append(True))
+
+    tray_icon.deleteLater()
+
+    qtbot.waitUntil(lambda: destroyed == [True], timeout=1000)
+
+
 def test_toggle_action_text_reflects_hidden_window(mocker: MockerFixture) -> None:
     """The toggle action reads "Show" while the window is hidden, resynced right before the menu
     shows (#205).

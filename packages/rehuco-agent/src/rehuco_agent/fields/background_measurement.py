@@ -91,7 +91,10 @@ class BackgroundMeasurement(QObject):
             result = measure()
         except Exception:  # pylint: disable=broad-exception-caught
             result = None
-        self.measured.emit(serial, result)
+        try:
+            self.measured.emit(serial, result)
+        except RuntimeError:  # this runner was deleted while the measurement ran
+            pass
 
     @Slot(int, object)
     def __deliver(self, serial: int, result: int | None) -> None:
@@ -151,16 +154,20 @@ def measure_in_background(
     row: MeasureRow,
     measure: Callable[[], int | None],
     switched: SignalInstance | None = None,
+    owner: QObject | None = None,
 ) -> None:
     """Wire ``row``'s ``Compute`` to ``measure``, run off the GUI thread ([[plugins#field-toolkit]], #223).
 
     The runner is deliberately **not** parented to the row: a running measurement holds it through the
     callable it handed the thread pool, and a parented one would have its C++ half deleted under that
-    thread the moment a form rebuild (a type switch, a revert) took the row. Unparented, it is kept alive
-    by the connection made here for as long as the row lives, and by the pool's callable for as long as
-    the measurement runs, and is collected once both are done. Its result lands on a bound slot of the
-    row, which Qt drops on destruction -- so a measurement outliving its row reports into nothing rather
-    than into a deleted widget.
+    thread the moment a form rebuild (a type switch, a revert) took the row. Nor is it left unparented
+    (#529): the pool's callable would then hold the last reference once the row was gone, and the runner
+    would be destroyed on the worker thread, where destroying a `QObject` can deadlock against the GUI
+    thread. It is parented to ``owner`` instead -- the document, which outlives every form built over it --
+    so it is only ever deleted with the document, on the GUI thread; a document closed mid-measurement deletes
+    it under the worker, whose answer then goes nowhere. Its result lands on a bound slot of the row, which Qt
+    drops on destruction -- so a measurement outliving its row reports into nothing rather than into a deleted
+    widget.
 
     **A switch drops the answer and the reading** (#470): a document that loads another record in place
     keeps its form, so the row would otherwise show the last record's measurement, or take the answer of a
@@ -171,8 +178,9 @@ def measure_in_background(
     :param measure: the measurement, called on a worker thread on every ``Compute``.
     :param switched: fires when the record shown is another one; ``None`` for a row whose record never
         changes.
+    :param owner: the runner's Qt parent, outliving the row; ``None`` only in a test.
     """
-    measurement = BackgroundMeasurement()
+    measurement = BackgroundMeasurement(owner)
     measurement.finished.connect(row.show_measurement)
     row.compute_requested.connect(lambda: measurement.start(measure))
     if switched is not None:

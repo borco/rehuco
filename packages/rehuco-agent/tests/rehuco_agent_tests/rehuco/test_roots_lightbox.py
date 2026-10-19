@@ -270,6 +270,7 @@ class RecordingLoader(ThumbnailLoader):
         own_pool = QThreadPool()
         own_pool.setMaxThreadCount(2)
         super().__init__(parent, own_pool)
+        own_pool.setParent(self)  # deleted with the lightbox, never by the cyclic collector (#529)
         self.INSTANCES.append(self)
 
 

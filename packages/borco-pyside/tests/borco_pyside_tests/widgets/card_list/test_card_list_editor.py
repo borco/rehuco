@@ -230,6 +230,7 @@ def drop_event(
     :returns: the event and its mime data.
     """
     mime = QMimeData()
+    mime.setParent(editor)  # deleted with the editor qtbot deletes, never by the cyclic collector (#529)
     payload = f"{id(editor) if owner is None else owner}:{row}"
     mime.setData(CardListEditor.MIME_TYPE, QByteArray(payload.encode()))
     # QDropEvent takes a QPointF, its enter/move subclasses a QPoint

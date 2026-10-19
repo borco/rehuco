@@ -176,7 +176,7 @@ class ImageDownloads(QObject):  # pylint: disable=too-many-instance-attributes
         if path is None:
             return
         self.__begin_batch()
-        job = ImageDownloadJob(url, referrer, slot)
+        job = ImageDownloadJob(url, referrer, slot, self)
         self.__pending[job] = path  # pylint: disable=unsupported-assignment-operation
         job.result_ready.connect(lambda result: self.__on_result(job, path, result))
         job.failed.connect(lambda error: self.__on_failed(job, error))
@@ -203,7 +203,7 @@ class ImageDownloads(QObject):  # pylint: disable=too-many-instance-attributes
             return
         self.__begin_batch()
         page = Page(url=drop.url, final_url=drop.url, html=drop.fragment) if drop.fragment is not None else None
-        job = ScrapeJob(drop.url, self.__registry, page=page, fetcher=self.__fetcher)
+        job = ScrapeJob(drop.url, self.__registry, page=page, fetcher=self.__fetcher, parent=self)
         self.__pending_pages[job] = path  # pylint: disable=unsupported-assignment-operation
         job.result_ready.connect(lambda result: self.__on_page_result(job, path, result))
         job.failed.connect(lambda error: self.__on_page_failed(job, error))

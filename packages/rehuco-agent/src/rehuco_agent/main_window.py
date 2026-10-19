@@ -2426,7 +2426,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """
         if enabled and QSystemTrayIcon.isSystemTrayAvailable():
             if self.__tray_icon is None:
-                self.__tray_icon = TrayIcon(self, QIcon(TRAY_ICON_RESOURCE))
+                self.__tray_icon = TrayIcon(self, QIcon(TRAY_ICON_RESOURCE), self)
                 self.__tray_icon.show()
         elif self.__tray_icon is not None:
             self.__tray_icon.hide()

@@ -16,6 +16,8 @@ from rehuco_agent.tasks.task_queue_model import TaskQueueModel, state_text
 from rehuco_agent.tasks.task_queue_status_indicator import TaskQueueStatusIndicator
 from rehuco_core import PROGRESS_UNIT_RESOURCES, JobControl, JobState, TaskJobBase, TaskQueue
 
+from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
+
 TIMEOUT: Final = 5.0
 
 
@@ -61,9 +63,9 @@ def deliver(qtbot: QtBot) -> Callable[[], None]:
 
 
 @fixture
-def indicator(queue: TaskQueue, qtbot: QtBot) -> TaskQueueStatusIndicator:
+def indicator(queue: TaskQueue, qtbot: QtBot, delete_at_teardown: DeleteAtTeardown) -> TaskQueueStatusIndicator:
     """A `TaskQueueStatusIndicator` attached to a model over ``queue``."""
-    model = TaskQueueModel(queue)
+    model = delete_at_teardown(TaskQueueModel(queue))
     model.attach_to()
     built = TaskQueueStatusIndicator(model)
     qtbot.addWidget(built)

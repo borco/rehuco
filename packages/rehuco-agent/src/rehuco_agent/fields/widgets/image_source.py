@@ -121,6 +121,58 @@ resample -- so it is asked for roughly twice the target and the last halving is 
 which is what keeps edges in a thumbnail from pixelating."""
 
 
+FORMAT_HEAD_SIZE: Final = 12
+"""How many leading bytes :func:`image_format` reads -- WebP's ``RIFF....WEBP`` is the longest."""
+
+FORMAT_SIGNATURES: Final = (
+    (b"\xff\xd8\xff", b"jpeg"),
+    (b"\x89PNG\r\n\x1a\n", b"png"),
+    (b"GIF87a", b"gif"),
+    (b"GIF89a", b"gif"),
+    (b"BM", b"bmp"),
+    (b"II*\x00", b"tiff"),
+    (b"MM\x00*", b"tiff"),
+)
+"""Leading bytes and the Qt format name they announce, for :func:`image_format`. WebP is checked apart:
+its signature has the file's length in the middle."""
+
+
+def image_format(head: bytes) -> bytes | None:
+    """The Qt image format ``head`` announces, read off its leading bytes alone (#529).
+
+    :param head: the encoded image's first bytes -- :data:`FORMAT_HEAD_SIZE` are enough, more is fine.
+    :returns: the format name `QImageReader` takes, or ``None`` for bytes no recognized format starts with.
+    """
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return b"webp"
+    return next((name for signature, name in FORMAT_SIGNATURES if head.startswith(signature)), None)
+
+
+def format_reader(source: QIODevice | str, head: bytes) -> QImageReader | None:
+    """A reader over ``source`` told its format up front, which **probes no image plugin** (#529).
+
+    A reader left to find the format itself asks every plugin to look at the bytes, and the SVG
+    plugin's look builds a `QTextStream`, which connects a signal and so takes one of Qt's shared
+    signal-slot mutexes. PySide keeps the GIL held across the reader's getters, so on a worker that
+    is the GIL held while waiting for a mutex -- a deadlock against a GUI thread holding that mutex
+    while it waits for the GIL. Named, the format picks its handler before any probe, and with
+    detection off a wrong guess fails rather than falling back to probing.
+
+    :param source: what to read -- an open device, or a file's path. A device is not owned by the
+        reader, so the caller keeps it alive for as long as the reader is used.
+    :param head: the image's first bytes (:data:`FORMAT_HEAD_SIZE`).
+    :returns: the reader, transforming as the image's orientation says; ``None`` when ``head`` is no
+        format :func:`image_format` knows.
+    """
+    name = image_format(head)
+    if name is None:
+        return None
+    reader = QImageReader(source, name)
+    reader.setAutoDetectImageFormat(False)
+    reader.setAutoTransform(True)
+    return reader
+
+
 def decode_image(data: bytes, max_height: int | None) -> QImage:
     """Decode ``data`` with `QImageReader`, downscaled to ``max_height`` when one is asked for.
 
@@ -128,13 +180,17 @@ def decode_image(data: bytes, max_height: int | None) -> QImage:
     downscaled decode never materializes the full-size pixels. The reader is asked for
     :data:`DECODE_OVERSAMPLE` times the target, and the rest is a smooth scale of that.
 
+    Runs on pool threads, so the reader is a :func:`format_reader`.
+
     :param data: the encoded image bytes.
     :param max_height: the height to scale down to, or ``None`` for full size.
-    :returns: the image, or a null one when the bytes do not decode.
+    :returns: the image, or a null one when the bytes do not decode or are no format
+        :func:`image_format` knows.
     """
     buffer = reading_buffer(data)
-    reader = QImageReader(buffer)
-    reader.setAutoTransform(True)
+    reader = format_reader(buffer, data)
+    if reader is None:
+        return QImage()
     if max_height is None:
         return reader.read()
     # the cap is on the height *as shown*, while the scaled size is asked for in stored orientation
@@ -157,11 +213,12 @@ def image_size(data: bytes) -> QSize:
 
     :param data: the encoded bytes -- a leading slice is enough for every format whose header comes
         first, which is all of the recognized ones.
-    :returns: the size, or an invalid one when the header is not there.
+    :returns: the size, or an invalid one when the header is not there or is no format
+        :func:`image_format` knows.
     """
     buffer = reading_buffer(data)
-    reader = QImageReader(buffer)
-    return reader_image_size(reader)
+    reader = format_reader(buffer, data)
+    return reader_image_size(reader) if reader is not None else QSize()
 
 
 def image_size_at(path: Path) -> QSize:

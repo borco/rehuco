@@ -4,7 +4,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Final, override
 
-from PySide6.QtCore import QObject, QSize, Signal
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, QSize, Signal
 from PySide6.QtWidgets import (
     QGridLayout,
     QLabel,
@@ -862,3 +862,49 @@ def test_connect_image_export_hands_the_exporter_to_exportable_fields_only(mocke
     handed.assert_called_once_with(exporter)
     assert isinstance(images, ImageExportable)
     assert not isinstance(plain, ImageExportable)
+
+
+def drain_deletes() -> None:
+    """Run what was handed to ``deleteLater``, as the event loop would."""
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
+
+
+def test_deleting_a_form_deletes_the_fields_that_are_qobjects(qtbot: QtBot) -> None:
+    """A form handed to ``delete_later`` deletes each field that is a `QObject`, on the GUI thread, rather than leave
+    it to the cyclic collector on whichever thread allocates next (#529); a plain field is left to Python.
+
+    **Test steps:**
+
+    * build a form of a `QObject` field and a plain one
+    * delete it and run the deferred deletes
+    * verify the `QObject` field was destroyed
+    """
+    del qtbot
+    authors = AuthorsField("authors")
+    destroyed: list[bool] = []
+    authors.destroyed.connect(lambda: destroyed.append(True))
+    form = FieldsForm([authors, TextField("title")])
+
+    form.delete_later()
+    drain_deletes()
+
+    assert destroyed == [True]
+
+
+def test_deleting_a_form_whose_field_is_already_gone_raises_nothing(qtbot: QtBot) -> None:
+    """At exit PySide destroys every `QObject` Python owns with the application, which may be before the form's owner
+    deletes it; a field already gone is left be (#529).
+
+    **Test steps:**
+
+    * build a form of a `QObject` field, then destroy the field
+    * delete the form
+    * verify nothing was raised
+    """
+    del qtbot
+    authors = AuthorsField("authors")
+    form = FieldsForm([authors])
+    authors.deleteLater()
+    drain_deletes()
+
+    form.delete_later()

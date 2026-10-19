@@ -12,6 +12,7 @@ from rehuco_agent.documents.content_images import content_images_model as model_
 from rehuco_core import EXCLUDED_FILE_PATTERNS, ContentImageEntry, RenameCoordinator
 from shiboken6 import isValid
 
+from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
 from rehuco_agent_tests.documents.content_images.conftest import (
     OTHER_PACK,
     PACK,
@@ -316,7 +317,7 @@ def test_a_header_job_on_a_stopped_model_reads_nothing(
 
 
 def test_a_header_landing_after_its_model_is_gone_reaches_nobody(
-    content_model: ContentImagesModel, qtbot: QtBot, mocker: MockerFixture
+    content_model: ContentImagesModel, qtbot: QtBot, mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """A read already under way when the model goes finishes and reports through its own sender, into
     a connection Qt has severed: no crash, no traceback, nothing left on the pool.
@@ -328,7 +329,7 @@ def test_a_header_landing_after_its_model_is_gone_reaches_nobody(
     * delete the model and wait for its C++ side to go
     * release the gate and verify the pool drains
     """
-    pool = QThreadPool()
+    pool = delete_at_teardown(QThreadPool())
     mocker.patch.object(QThreadPool, "globalInstance", return_value=pool)
     gate = threading.Event()
     entered = threading.Event()

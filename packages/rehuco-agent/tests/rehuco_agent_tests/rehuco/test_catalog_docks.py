@@ -78,6 +78,7 @@ from rehuco_core.access import Changed, FolderChanged, ResourceKey
 from rehuco_core.notify import RootNotifiers
 
 from rehuco_agent_tests.conftest import MemoryCatalogStateStore
+from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
 
 REAL_READ_TEXT: Final = Path.read_text
 """The real :meth:`Path.read_text`, bound before a fixture patches it."""
@@ -255,6 +256,8 @@ def build_docks(
     """
     catalog = RootCatalog(queue, resource_events=events, notifiers=notifiers)
     roots = RootsPanel(catalog, queue, resource_events=events)
+    # the window owns the catalog in the app; here the panel qtbot deletes does, so the collector never has to (#529)
+    catalog.setParent(roots)
     browsers = BrowsersDock(catalog)
     roots.filter_requested.connect(browsers.set_filter_token)
     qtbot.addWidget(roots)
@@ -2062,8 +2065,14 @@ def test_a_tracked_job_cleared_from_the_queue_is_forgotten_and_reads_nothing(
 
 
 @fixture(name="followed")
+# pylint: disable-next=too-many-arguments,too-many-positional-arguments
 def fixture_followed(
-    qtbot: QtBot, mocker: MockerFixture, queue: TaskQueue, database: MemoryDatabase, served: Any
+    qtbot: QtBot,
+    mocker: MockerFixture,
+    queue: TaskQueue,
+    database: MemoryDatabase,
+    served: Any,
+    delete_at_teardown: DeleteAtTeardown,
 ) -> Generator[tuple[CatalogDocks, ResourceEvents]]:
     """A dock following the app's file announcements, its catalog open and one tutorial scanned in.
 
@@ -2072,10 +2081,11 @@ def fixture_followed(
     :param queue: the queue its scan runs on.
     :param database: the cache's database.
     :param served: the served ``.rehuco``.
+    :param delete_at_teardown: deletes the `ResourceEvents` when the test ends.
     :yields: the dock and the events it follows.
     """
     del database, served
-    events = ResourceEvents()
+    events = delete_at_teardown(ResourceEvents())
     dock = build_docks(qtbot, queue, events)
     scan_finding(mocker, {TUTORIALS: (tutorial_record(),)})
     dock.catalog.open_rehuco(REHUCO_PATH)
@@ -2368,7 +2378,9 @@ def test_a_cache_failure_while_following_is_logged(
     assert caplog.text.count("locked") == 2
 
 
-def test_with_nothing_open_an_announcement_is_nothing(qtbot: QtBot, queue: TaskQueue, database: MemoryDatabase) -> None:
+def test_with_nothing_open_an_announcement_is_nothing(
+    qtbot: QtBot, queue: TaskQueue, database: MemoryDatabase, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A dock with no catalog open has no cache to follow anything into.
 
     **Test steps:**
@@ -2377,7 +2389,7 @@ def test_with_nothing_open_an_announcement_is_nothing(qtbot: QtBot, queue: TaskQ
     * verify nothing failed and no browser appeared
     """
     del database
-    events = ResourceEvents()
+    events = delete_at_teardown(ResourceEvents())
     dock = build_docks(qtbot, queue, events)
 
     events.announce_moved(Relocation(((TUTORIALS, PACKS),)))
@@ -2388,7 +2400,9 @@ def test_with_nothing_open_an_announcement_is_nothing(qtbot: QtBot, queue: TaskQ
     assert not dock.browsers.browsers
 
 
-def test_detaching_twice_disconnects_once_and_says_nothing(qtbot: QtBot, queue: TaskQueue) -> None:
+def test_detaching_twice_disconnects_once_and_says_nothing(
+    qtbot: QtBot, queue: TaskQueue, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A window closed twice (the tray's hide, then a quit) detaches its catalog and Roots view twice; the second time
     there is nothing left to disconnect, and Qt must not warn about it (#475).
 
@@ -2397,7 +2411,7 @@ def test_detaching_twice_disconnects_once_and_says_nothing(qtbot: QtBot, queue: 
     * build the docks over real announcements and detach them twice, with warnings raised as errors
     * verify nothing was raised, and a later announcement still reaches nobody
     """
-    events = ResourceEvents()
+    events = delete_at_teardown(ResourceEvents())
     dock = build_docks(qtbot, queue, events)
 
     with warnings.catch_warnings():
@@ -3594,8 +3608,14 @@ def test_refresh_is_on_the_roots_title_bar_and_bound_to_f5(dock: CatalogDocks, s
 
 
 @fixture(name="listening")
+# pylint: disable-next=too-many-arguments,too-many-positional-arguments
 def fixture_listening(
-    qtbot: QtBot, queue: TaskQueue, database: MemoryDatabase, served: dict[str, Any], folders: Path
+    qtbot: QtBot,
+    queue: TaskQueue,
+    database: MemoryDatabase,
+    served: dict[str, Any],
+    folders: Path,
+    delete_at_teardown: DeleteAtTeardown,
 ) -> Generator[tuple[CatalogDocks, ResourceEvents, Path]]:
     """A dock over real folders that follows an announcer, with the catalog open.
 
@@ -3604,10 +3624,11 @@ def fixture_listening(
     :param database: the cache's database.
     :param served: the served ``.rehuco``.
     :param folders: the first root's folder.
+    :param delete_at_teardown: deletes the `ResourceEvents` when the test ends.
     :yields: the dock, its events and the first root's folder.
     """
     del database, served
-    events = ResourceEvents()
+    events = delete_at_teardown(ResourceEvents())
     dock = build_docks(qtbot, queue, events)
     dock.catalog.open_rehuco(REHUCO_PATH)
     yield dock, events, folders

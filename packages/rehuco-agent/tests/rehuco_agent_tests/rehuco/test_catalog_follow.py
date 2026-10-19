@@ -24,6 +24,8 @@ from rehuco_core import CatalogRecord, RecordKind, TaskQueue
 from rehuco_core.access import Catalog, CatalogUnreadable, ResourceKey, RootReachable, RootStale
 from rehuco_core.notify import RootNotifiers
 
+from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
+
 from .test_catalog_docks import (  # noqa: F401  # pylint: disable=unused-import
     OTHER_PATH,
     PACKS,
@@ -62,7 +64,11 @@ RECORD: Final = ResourceKey(TUTORIALS / "python" / "info.rehu")
 
 @fixture(name="watched")
 def fixture_watched(
-    qtbot: QtBot, queue: TaskQueue, database: MemoryDatabase, mocker: MockerFixture
+    qtbot: QtBot,
+    queue: TaskQueue,
+    database: MemoryDatabase,
+    mocker: MockerFixture,
+    delete_at_teardown: DeleteAtTeardown,
 ) -> Generator[tuple[CatalogDocks, ResourceEvents, MagicMock]]:
     """Docks following the app's events, whose catalog keeps a stand-in for the roots' notifiers in step with its
     roots.
@@ -71,11 +77,12 @@ def fixture_watched(
     :param queue: the queue its jobs run on.
     :param database: the cache's database.
     :param mocker: pytest-mock fixture.
+    :param delete_at_teardown: deletes the `ResourceEvents` when the test ends.
     :yields: the docks, with nothing open, their events and the notifiers' stand-in.
     """
     del database
     notifiers = MagicMock(spec=RootNotifiers)
-    events = ResourceEvents()
+    events = delete_at_teardown(ResourceEvents())
     docks = build_docks(qtbot, queue, events, notifiers)
     mocker.patch.object(docks.roots, "confirm_remove_root", return_value=True)
     yield docks, events, notifiers

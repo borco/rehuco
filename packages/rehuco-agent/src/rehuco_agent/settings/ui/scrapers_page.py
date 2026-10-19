@@ -249,7 +249,9 @@ class ScrapersPage(QWidget):
         :param finished: a bound method of this page to report the outcome to.
         """
         self.__set_persona_controls_enabled(False)
-        job = PersonaAction()
+        # parented, so the pool's callable is never the last to hold it: a job dropped there would be destroyed on the
+        # worker thread, where destroying a QObject can deadlock against this one (#529)
+        job = PersonaAction(self)
         job.finished.connect(finished)
         job.start(action)
 

@@ -4,7 +4,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any, Final
 
-from PySide6.QtCore import SignalInstance
+from PySide6.QtCore import QObject, SignalInstance
 from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QVBoxLayout, QWidget
 
 from .field import (
@@ -69,6 +69,24 @@ class FieldsForm:
         """
         for field in self.__fields:
             field.clear_external()
+
+    def delete_later(self) -> None:
+        """Delete every field that is a `QObject`, when control next returns to the event loop (#529).
+
+        Such a field connects its own signals to bound methods, so it sits in a reference cycle, and left to the
+        cyclic collector it would be destroyed on whichever thread allocated next -- a pool thread included,
+        where ``~QObject`` takes a signal-slot mutex and then waits for the GIL a GUI thread may hold. The owner
+        calls this once the widgets the fields built have been handed to ``deleteLater``, so those go first.
+
+        At exit PySide destroys every `QObject` Python still owns along with the application, which may be before
+        the owner asks, so a field already gone is left be.
+        """
+        for field in self.__fields:
+            if isinstance(field, QObject):
+                try:
+                    field.deleteLater()
+                except RuntimeError:  # already destroyed with the application, at exit
+                    pass
 
     def connect_status_messages(self, sink: SignalInstance) -> None:
         """Route every status-reporting field's ``status_message`` into ``sink`` ([[plugins#field-toolkit]]).

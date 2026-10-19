@@ -39,6 +39,8 @@ from rehuco_core import (
 )
 from rehuco_core.access import LoadedRecord
 
+from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
+
 DIRECTORY: Final = Path.cwd() / "fake" / "library" / "sculpting"
 INFO_PATH: Final = DIRECTORY / "info.rehu"
 RECORD_PATH: Final = DIRECTORY / "info.checksum"
@@ -198,17 +200,20 @@ def fixture_recorded(mocker: MockerFixture) -> None:
 
 
 @fixture(name="actions")
-def fixture_actions(qtbot: QtBot, model: RehuDocumentModel, queue: TaskQueue, recorded: None) -> ChecksumActions:
+def fixture_actions(
+    qtbot: QtBot, model: RehuDocumentModel, queue: TaskQueue, recorded: None, delete_at_teardown: DeleteAtTeardown
+) -> ChecksumActions:
     """The pair under test, over a resource that already has a record.
 
     :param qtbot: pytest-qt fixture, for waiting on signals.
     :param model: the document the actions are about.
     :param queue: the queue they enqueue into.
     :param recorded: the filesystem where the record exists.
+    :param delete_at_teardown: deletes the `ChecksumActions` when the test ends.
     :returns: the actions.
     """
     del qtbot, recorded
-    return ChecksumActions(model, queue)
+    return delete_at_teardown(ChecksumActions(model, queue))
 
 
 @fixture(name="wakes")
@@ -234,7 +239,7 @@ def fixture_wakes(actions: ChecksumActions) -> list[object]:
 
 
 def test_a_resource_with_no_record_is_offered_generate_and_not_verify(
-    mocker: MockerFixture, model: RehuDocumentModel, queue: TaskQueue
+    mocker: MockerFixture, model: RehuDocumentModel, queue: TaskQueue, delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """Verify has nothing to verify against until a record exists ([[data-model#checksums]]).
 
@@ -244,14 +249,14 @@ def test_a_resource_with_no_record_is_offered_generate_and_not_verify(
     * check Generate is offered and Verify is not
     """
     mocker.patch.object(Path, "exists", autospec=True, side_effect=lambda self: self != RECORD_PATH)
-    actions = ChecksumActions(model, queue)
+    actions = delete_at_teardown(ChecksumActions(model, queue))
 
     assert actions.generate_action.isEnabled()
     assert not actions.verify_action.isEnabled()
 
 
 def test_a_resource_with_no_record_is_offered_verify_once_a_verify_may_create_one(
-    mocker: MockerFixture, model: RehuDocumentModel, queue: TaskQueue
+    mocker: MockerFixture, model: RehuDocumentModel, queue: TaskQueue, delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """*Create missing checksum on verify* makes the record's absence the starting state (#242).
 
@@ -263,12 +268,14 @@ def test_a_resource_with_no_record_is_offered_verify_once_a_verify_may_create_on
     mocker.patch.object(Path, "exists", autospec=True, side_effect=lambda self: self != RECORD_PATH)
     shared_checksum_settings().create_missing_on_verify = True
 
-    actions = ChecksumActions(model, queue)
+    actions = delete_at_teardown(ChecksumActions(model, queue))
 
     assert actions.verify_action.isEnabled()
 
 
-def test_a_document_with_no_path_at_all_is_offered_neither(queue: TaskQueue) -> None:
+def test_a_document_with_no_path_at_all_is_offered_neither(
+    queue: TaskQueue, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A document bound to no path has nothing on disk to hash.
 
     **Test steps:**
@@ -276,7 +283,7 @@ def test_a_document_with_no_path_at_all_is_offered_neither(queue: TaskQueue) -> 
     * build the actions over a path-less document
     * check both actions are disabled, and that triggering one anyway queues nothing
     """
-    actions = ChecksumActions(RehuDocumentModel(RehuDocument({"type": "Tutorial"})), queue)
+    actions = delete_at_teardown(ChecksumActions(RehuDocumentModel(RehuDocument({"type": "Tutorial"})), queue))
 
     assert not actions.generate_action.isEnabled()
     assert not actions.verify_action.isEnabled()
@@ -287,7 +294,9 @@ def test_a_document_with_no_path_at_all_is_offered_neither(queue: TaskQueue) -> 
 
 
 @pytest.mark.usefixtures("real_path_stat")
-def test_a_document_not_yet_saved_is_offered_neither(tmp_path: Path, queue: TaskQueue) -> None:
+def test_a_document_not_yet_saved_is_offered_neither(
+    tmp_path: Path, queue: TaskQueue, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A brand-new document has a path but nothing on disk yet to hash (#360).
 
     *Create missing checksum on verify* is set because it is what made Verify offerable over a
@@ -303,7 +312,7 @@ def test_a_document_not_yet_saved_is_offered_neither(tmp_path: Path, queue: Task
     """
     shared_checksum_settings().create_missing_on_verify = True
     model = RehuDocumentModel.create_new(tmp_path / "info.rehu")
-    actions = ChecksumActions(model, queue)
+    actions = delete_at_teardown(ChecksumActions(model, queue))
 
     assert not actions.generate_action.isEnabled()
     assert not actions.verify_action.isEnabled()
@@ -319,7 +328,9 @@ def test_a_document_not_yet_saved_is_offered_neither(tmp_path: Path, queue: Task
     assert actions.verify_action.isEnabled()
 
 
-def test_a_pending_placeholder_stats_no_record_until_loaded(mocker: MockerFixture, queue: TaskQueue) -> None:
+def test_a_pending_placeholder_stats_no_record_until_loaded(
+    mocker: MockerFixture, queue: TaskQueue, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A session-restore placeholder takes not even the record's single ``stat`` (#66) -- it can block
     on an offline mount -- and the deferred load's ``reloaded`` re-offers the actions once the
     document is real.
@@ -332,7 +343,7 @@ def test_a_pending_placeholder_stats_no_record_until_loaded(mocker: MockerFixtur
     """
     exists = mocker.patch.object(Path, "exists", side_effect=AssertionError("a placeholder stat'd the disk"))
     model = RehuDocumentModel.create_pending(INFO_PATH)
-    actions = ChecksumActions(model, queue)
+    actions = delete_at_teardown(ChecksumActions(model, queue))
 
     assert not actions.generate_action.isEnabled()
     assert not actions.verify_action.isEnabled()
@@ -735,7 +746,11 @@ def test_a_run_that_was_stopped_part_way_says_nothing(
 
 
 def test_a_first_generate_turns_verify_on(
-    qtbot: QtBot, mocker: MockerFixture, model: RehuDocumentModel, queue: TaskQueue
+    qtbot: QtBot,
+    mocker: MockerFixture,
+    model: RehuDocumentModel,
+    queue: TaskQueue,
+    delete_at_teardown: DeleteAtTeardown,
 ) -> None:
     """Once a record exists, Verify becomes offerable without reopening the document.
 
@@ -746,7 +761,7 @@ def test_a_first_generate_turns_verify_on(
     """
     record_exists = False
     mocker.patch.object(Path, "exists", autospec=True, side_effect=lambda self: self != RECORD_PATH or record_exists)
-    actions = ChecksumActions(model, queue)
+    actions = delete_at_teardown(ChecksumActions(model, queue))
     assert not actions.verify_action.isEnabled()
 
     def generate(*_args: Any, **_kwargs: Any) -> ChecksumReport:
@@ -764,7 +779,7 @@ def test_a_first_generate_turns_verify_on(
 
 
 def test_a_resource_with_only_a_legacy_manifest_is_offered_verify(
-    mocker: MockerFixture, model: RehuDocumentModel, queue: TaskQueue
+    mocker: MockerFixture, model: RehuDocumentModel, queue: TaskQueue, delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """A ``.sfv`` beside the record is something to verify against, so Verify is not greyed out (#243).
 
@@ -776,11 +791,11 @@ def test_a_resource_with_only_a_legacy_manifest_is_offered_verify(
     mocker.patch.object(Path, "exists", autospec=True, side_effect=lambda self: self != RECORD_PATH)
     manifest = mocker.patch("rehuco_agent.documents.checksum_actions.legacy_manifest_for", return_value=Path("a.sfv"))
 
-    assert ChecksumActions(model, queue).verify_action.isEnabled()
+    assert delete_at_teardown(ChecksumActions(model, queue)).verify_action.isEnabled()
 
     manifest.return_value = None
 
-    assert not ChecksumActions(model, queue).verify_action.isEnabled()
+    assert not delete_at_teardown(ChecksumActions(model, queue)).verify_action.isEnabled()
 
 
 def test_a_reorder_or_a_removal_elsewhere_in_the_queue_says_nothing(actions: ChecksumActions) -> None:
@@ -799,7 +814,7 @@ def test_a_reorder_or_a_removal_elsewhere_in_the_queue_says_nothing(actions: Che
 
 
 def test_a_resource_whose_record_cannot_be_read_is_offered_generate(
-    mocker: MockerFixture, model: RehuDocumentModel, queue: TaskQueue
+    mocker: MockerFixture, model: RehuDocumentModel, queue: TaskQueue, delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """A mount that refuses the ``stat`` answers *no record*, which offers the safe half (#245).
 
@@ -810,7 +825,7 @@ def test_a_resource_whose_record_cannot_be_read_is_offered_generate(
     """
     mocker.patch.object(Path, "exists", autospec=True, side_effect=PermissionError("the mount is away"))
 
-    actions = ChecksumActions(model, queue)
+    actions = delete_at_teardown(ChecksumActions(model, queue))
 
     assert not actions.verify_action.isEnabled()
 
@@ -951,8 +966,14 @@ def test_verify_old_names_the_window_it_would_use(actions: ChecksumActions) -> N
     assert "90 days" in actions.verify_old_action.text()
 
 
+# pylint: disable-next=too-many-arguments,too-many-positional-arguments
 def test_verify_old_says_so_when_nothing_is_ever_fresh(
-    qtbot: QtBot, model: RehuDocumentModel, queue: TaskQueue, recorded: None, mocker: MockerFixture
+    qtbot: QtBot,
+    model: RehuDocumentModel,
+    queue: TaskQueue,
+    recorded: None,
+    mocker: MockerFixture,
+    delete_at_teardown: DeleteAtTeardown,
 ) -> None:
     """A window of zero days leaves nothing fresh, so *Verify Old* checks everything (#242, #244).
 
@@ -964,7 +985,7 @@ def test_verify_old_says_so_when_nothing_is_ever_fresh(
     del qtbot, recorded
     mocker.patch.object(shared_checksum_settings(), "stale_days", 0)
 
-    actions = ChecksumActions(model, queue)
+    actions = delete_at_teardown(ChecksumActions(model, queue))
 
     assert "0 days" in actions.verify_old_action.text()
     assert "nothing is ever fresh" in actions.verify_old_action.toolTip()
@@ -993,7 +1014,11 @@ def test_verify_old_runs_with_the_window_and_verify_all_without_it(
 
 
 def test_generate_is_offered_only_while_there_is_no_record(
-    qtbot: QtBot, model: RehuDocumentModel, queue: TaskQueue, mocker: MockerFixture
+    qtbot: QtBot,
+    model: RehuDocumentModel,
+    queue: TaskQueue,
+    mocker: MockerFixture,
+    delete_at_teardown: DeleteAtTeardown,
 ) -> None:
     """A blanket re-baseline is reachable only where there is no recorded hash to overwrite (#244).
 
@@ -1006,11 +1031,11 @@ def test_generate_is_offered_only_while_there_is_no_record(
     exists = mocker.patch.object(Path, "exists", autospec=True, side_effect=lambda self: self != RECORD_PATH)
     mocker.patch("rehuco_agent.documents.checksum_actions.legacy_manifest_for", return_value=None)
 
-    assert ChecksumActions(model, queue).generate_action.isVisible()
+    assert delete_at_teardown(ChecksumActions(model, queue)).generate_action.isVisible()
 
     exists.side_effect = lambda self: True
 
-    assert not ChecksumActions(model, queue).generate_action.isVisible()
+    assert not delete_at_teardown(ChecksumActions(model, queue)).generate_action.isVisible()
 
 
 def test_forgetting_entries_says_the_record_changed(

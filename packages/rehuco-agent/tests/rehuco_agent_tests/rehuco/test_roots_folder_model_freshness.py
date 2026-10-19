@@ -10,6 +10,8 @@ from pytestqt.qtbot import QtBot
 from rehuco_agent.rehuco.root_folder_loader import RootFolderLoader
 from rehuco_agent.rehuco.roots_folder_model import NodeListing
 
+from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
+
 from .test_roots_folder_model import (  # noqa: F401  # pylint: disable=unused-import
     child,
     library_fixture,
@@ -30,7 +32,7 @@ class Clock:  # pylint: disable=too-few-public-methods
 
 
 def test_a_listing_notes_when_it_landed_and_a_fresh_one_is_not_asked_again(
-    qtbot: QtBot, library: Path, mocker: MockerFixture
+    qtbot: QtBot, library: Path, mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """The freshness window is a time stamp compared at the next ask: no timer runs (#487).
 
@@ -43,7 +45,7 @@ def test_a_listing_notes_when_it_landed_and_a_fresh_one_is_not_asked_again(
     """
     clock = Clock()
     mocker.patch("rehuco_agent.rehuco.roots_folder_model.time.monotonic", clock)
-    model = make_model(qtbot, [make_root(library)])
+    model = make_model(delete_at_teardown, qtbot, [make_root(library)])
     root = model.index(0, 0)
     folder = child(model, root, "alpha")
     open_folder(qtbot, model, folder)
@@ -63,7 +65,7 @@ def test_a_listing_notes_when_it_landed_and_a_fresh_one_is_not_asked_again(
 
 
 def test_a_folder_whose_listing_is_still_out_is_not_asked_again_inside_the_window(
-    qtbot: QtBot, library: Path, mocker: MockerFixture
+    qtbot: QtBot, library: Path, mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """A listing in flight counts as fresh: asking again would only start a second read of the same folder (#487).
 
@@ -75,7 +77,7 @@ def test_a_folder_whose_listing_is_still_out_is_not_asked_again_inside_the_windo
     """
     clock = Clock()
     mocker.patch("rehuco_agent.rehuco.roots_folder_model.time.monotonic", clock)
-    model = make_model(qtbot, [make_root(library)])
+    model = make_model(delete_at_teardown, qtbot, [make_root(library)])
     root = model.index(0, 0)
     folder = child(model, root, "alpha")
     open_folder(qtbot, model, folder)
@@ -89,7 +91,9 @@ def test_a_folder_whose_listing_is_still_out_is_not_asked_again_inside_the_windo
     assert start.call_count == 1
 
 
-def test_an_unreachable_listing_is_noted_as_landed_too(qtbot: QtBot, tmp_path: Path, mocker: MockerFixture) -> None:
+def test_an_unreachable_listing_is_noted_as_landed_too(
+    qtbot: QtBot, tmp_path: Path, mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A folder that would not list is not asked again at once either: the answer was an answer (#487).
 
     **Test steps:**
@@ -97,7 +101,7 @@ def test_an_unreachable_listing_is_noted_as_landed_too(qtbot: QtBot, tmp_path: P
     * show a root whose folder is not there, and wait for its listing
     * ask again inside the window, and verify nothing is started
     """
-    model = make_model(qtbot, [make_root(tmp_path / "missing")])
+    model = make_model(delete_at_teardown, qtbot, [make_root(tmp_path / "missing")])
     root = model.index(0, 0)
     assert model.listing_state(root) is NodeListing.UNREACHABLE
     start = mocker.patch.object(RootFolderLoader, "start")

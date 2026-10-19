@@ -8,8 +8,8 @@ runner," not a failure.
 
 import os
 import sys
-from collections.abc import Iterator
-from typing import Final
+from collections.abc import Callable, Iterator
+from typing import Any, Final, TypeVar
 
 import pytest
 
@@ -47,6 +47,42 @@ def pytest_runtest_teardown() -> Iterator[None]:
     qt_core = sys.modules.get("PySide6.QtCore")
     if qt_core is not None and qt_core.QCoreApplication.instance() is not None:
         qt_core.QCoreApplication.sendPostedEvents(None, qt_core.QEvent.Type.DeferredDelete)
+
+
+QObjectT = TypeVar("QObjectT")
+"""Whatever `QObject` :func:`delete_at_teardown` is handed, handed back as itself -- unbound, since this module
+imports no Qt."""
+
+
+@pytest.fixture
+def delete_at_teardown() -> Iterator[Callable[[QObjectT], QObjectT]]:
+    """Hand a test a function that registers a `QObject` to be deleted when the test ends (#529).
+
+    For an object the app would parent and a test builds bare -- a catalog, a model, the file announcements --
+    the counterpart of ``qtbot.addWidget`` for a `QObject` that is not a widget. Left alone such an object, once in
+    a reference cycle, is destroyed by the cyclic collector on whichever thread allocates next, which can deadlock
+    against the GUI thread. The delete is handed to ``deleteLater``, which :func:`pytest_runtest_teardown` drains
+    once every teardown ran.
+
+    :returns: the function, which returns the object it was handed.
+    """
+    registered: list[Any] = []
+
+    def register(qobject: QObjectT) -> QObjectT:
+        """Delete ``qobject`` when the test ends.
+
+        :param qobject: the object.
+        :returns: ``qobject``.
+        """
+        registered.append(qobject)
+        return qobject
+
+    yield register
+    for qobject in registered:
+        try:
+            qobject.deleteLater()
+        except RuntimeError:  # the test deleted it itself, which is what some tests are about
+            pass
 
 
 def pytest_sessionfinish() -> None:

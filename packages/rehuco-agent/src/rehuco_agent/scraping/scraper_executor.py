@@ -29,8 +29,6 @@ class PoolJob(Protocol):
         """Do the work, on whatever thread the pool hands this to."""
 
 
-# one method is the design, not an omission -- see the docstring below
-# pylint: disable-next=too-few-public-methods
 class ScraperExecutor:
     """Runs each `PoolJob` (a `ScrapeJob`, or an `~.image_download_job.ImageDownloadJob`) on its own
     worker, independent of every other one and of the app-wide `rehuco_core.TaskQueue`'s single worker.
@@ -82,6 +80,16 @@ class ScraperExecutor:
         """
         context = copy_context()
         self.__pool.start(ScraperExecutor.Runnable(job, context))
+
+    def shutdown(self) -> None:
+        """Wait for every job still running, then delete the pool -- for whoever drops this executor (#529).
+
+        Only a test does: the app keeps the shared executor for the session. Dropped without this, the pool would
+        be left to the cyclic collector, which may run on one of the pool's own threads, and a pool destroyed
+        there waits for that very thread.
+        """
+        self.__pool.waitForDone()
+        self.__pool.deleteLater()
 
 
 @lru_cache(maxsize=1)

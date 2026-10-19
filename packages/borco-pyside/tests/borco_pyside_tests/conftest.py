@@ -41,6 +41,7 @@ def make_singleton(qtbot: QtBot) -> Iterator[Callable[..., ApplicationSingleton]
 
     for singleton in created:
         singleton.shutdown()
+        singleton.deleteLater()  # with its server, rather than by the cyclic collector on any thread (#529)
     # shutdown() schedules each QLocalServer and its accepted QLocalSockets for destruction via
     # deleteLater(). qtbot.wait() runs a nested event loop, but DeferredDelete events posted at a
     # different loop level are not reliably reaped there; on Linux's glib dispatcher they instead

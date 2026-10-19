@@ -109,6 +109,15 @@ docstring of `borco_core.path_presence` — read it there, where the code is.
   `QThread` destroyed while running aborts the process.
 - **A pool job never lets a reader's exception escape** (#480): the pool swallows it and no answer ever arrives.
   Catch broadly with a reasoned pragma, log it, and answer *unreadable*.
+- **A worker holds the GIL inside every Qt call PySide does not release it for, so it never makes one that can take a
+  signal-slot mutex** (#529). A `QImageReader` left to find its format asks every plugin to look at the bytes, and
+  the SVG plugin's look connects a signal, so a reader on a pool thread is a `format_reader`, told its format up front
+  with detection off.
+- **A `QObject` gets a parent, usually `self`, or an explicit delete** (#529). One held only in an attribute, once in
+  a reference cycle, is destroyed by the cyclic collector on whichever thread allocates next, and on a pool thread
+  `~QObject` takes a signal-slot mutex and then waits for the GIL the GUI thread may hold. With no natural parent,
+  the owner deletes it when done (`FieldsForm.delete_later`, `LogBridge.close`, `ScraperExecutor.shutdown`); a test
+  hands what it builds bare to the `delete_at_teardown` fixture.
 - **A daemon thread holds no Qt object and delivers nothing after `stop()`.** Its callback runs on its own thread and
   only emits a signal, which Qt queues to the GUI thread; the owner stops it first thing when the window closes.
 - First users: the task queue's worker ([[appendices.task-queue#teardown]], daemon for the same reason) and

@@ -135,7 +135,7 @@ class TaskQueueModel(QAbstractTableModel):
     def __init__(self, queue: TaskQueue, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self.__queue: Final = queue
-        self.__marshaller: Final = TaskQueueModel.Marshaller()
+        self.__marshaller: Final = TaskQueueModel.Marshaller(self)
         self.__marshaller.snapshot_due.connect(self.__resnapshot, Qt.ConnectionType.QueuedConnection)
         self.__pending = False
         self.__rows: list[JobStatus] = list(queue.jobs())

@@ -24,15 +24,20 @@ from rehuco_agent.rehuco.roots_item_delegate import (
 )
 from rehuco_core import RehucoRoot, RootFolderLister, RootStorage
 
+from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
+
 WAIT_TIMEOUT_MS: Final = 10_000
 
 
 @fixture(name="shown")
-def fixture_shown(qtbot: QtBot, tmp_path: Path) -> Generator[tuple[RootsColumnView, RootsFolderModel]]:
+def fixture_shown(
+    qtbot: QtBot, tmp_path: Path, delete_at_teardown: DeleteAtTeardown
+) -> Generator[tuple[RootsColumnView, RootsFolderModel]]:
     """A shown column view over a reachable root holding a folder and a file, and an unreachable network root.
 
     :param qtbot: pytest-qt fixture.
     :param tmp_path: pytest's temporary directory.
+    :param delete_at_teardown: deletes the `RootsFolderModel` when the test ends.
     :yields: the view and its model, with both roots listed.
     """
     (tmp_path / "lib" / "alpha").mkdir(parents=True)
@@ -41,7 +46,7 @@ def fixture_shown(qtbot: QtBot, tmp_path: Path) -> Generator[tuple[RootsColumnVi
         RehucoRoot(uuid4(), tmp_path / "lib", "lib", RootStorage.LOCAL),
         RehucoRoot(uuid4(), tmp_path / "away", "away", RootStorage.NETWORK),
     ]
-    model = RootsFolderModel()
+    model = delete_at_teardown(RootsFolderModel())
     view = RootsColumnView()
     view.setModel(model)
     qtbot.addWidget(view)

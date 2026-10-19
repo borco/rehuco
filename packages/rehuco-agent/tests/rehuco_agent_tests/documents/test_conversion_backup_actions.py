@@ -23,6 +23,8 @@ from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.settings.deletion_settings import DeletionKind, shared_deletion_settings
 from rehuco_core import ConversionBackups, Deleter, NoTrashBinError, RehuDocument
 
+from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
+
 DIRECTORY: Final = Path.cwd() / "fake" / "library" / "sculpting"
 INFO_PATH: Final = DIRECTORY / "info.rehu"
 LEGACY_PATH: Final = DIRECTORY / "info.tc"
@@ -92,16 +94,19 @@ def fixture_inventory(mocker: MockerFixture) -> Any:
 
 
 @fixture(name="actions")
-def fixture_actions(qtbot: QtBot, model: RehuDocumentModel, inventory: Any) -> ConversionBackupActions:
+def fixture_actions(
+    qtbot: QtBot, model: RehuDocumentModel, inventory: Any, delete_at_teardown: DeleteAtTeardown
+) -> ConversionBackupActions:
     """The action under test, over a converted resource that still has its backups.
 
     :param qtbot: pytest-qt fixture, for waiting on signals.
     :param model: the document the actions are about.
     :param inventory: the patched inventory seam.
+    :param delete_at_teardown: deletes the `ConversionBackupActions` when the test ends.
     :returns: the actions.
     """
     del qtbot, inventory
-    return ConversionBackupActions(model)
+    return delete_at_teardown(ConversionBackupActions(model))
 
 
 @fixture(name="answer_yes")
@@ -152,7 +157,7 @@ def test_the_action_is_offered_while_backups_are_retained(actions: ConversionBac
 
 
 def test_the_action_is_not_offered_without_backups(
-    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
+    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """A resource that was never converted, or whose backups have been discarded, offers nothing and
     says nothing -- rather than a control that would refuse.
@@ -165,14 +170,16 @@ def test_the_action_is_not_offered_without_backups(
     del qtbot
     mocker.patch(f"{ACTIONS_MODULE}.conversion_backups", return_value=make_backups(files=0))
 
-    actions = ConversionBackupActions(model)
+    actions = delete_at_teardown(ConversionBackupActions(model))
 
     assert actions.retained is False
     assert not actions.discard_action.isVisible()
     assert actions.notice == ""
 
 
-def test_a_pending_placeholder_takes_no_inventory_until_loaded(qtbot: QtBot, mocker: MockerFixture) -> None:
+def test_a_pending_placeholder_takes_no_inventory_until_loaded(
+    qtbot: QtBot, mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A session-restore placeholder's inventory is not taken (#66) -- it would read the whole
     ``.rehu`` for the timestamps, the very read the deferral exists to avoid -- and the deferred
     load's ``reloaded`` is what takes it, through the wiring the actions already have.
@@ -185,7 +192,7 @@ def test_a_pending_placeholder_takes_no_inventory_until_loaded(qtbot: QtBot, moc
     del qtbot
     inventory = mocker.patch(f"{ACTIONS_MODULE}.conversion_backups", return_value=make_backups())
     model = RehuDocumentModel.create_pending(INFO_PATH)
-    actions = ConversionBackupActions(model)
+    actions = delete_at_teardown(ConversionBackupActions(model))
 
     assert inventory.call_count == 0
     assert actions.retained is False
@@ -200,7 +207,9 @@ def test_a_pending_placeholder_takes_no_inventory_until_loaded(qtbot: QtBot, moc
     assert actions.retained is True
 
 
-def test_a_document_with_no_path_reads_nothing(qtbot: QtBot, mocker: MockerFixture, qapp: Any) -> None:
+def test_a_document_with_no_path_reads_nothing(
+    qtbot: QtBot, mocker: MockerFixture, qapp: Any, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A never-saved document has no directory to look in, so the inventory is never asked for at all.
 
     **Test steps:**
@@ -212,7 +221,7 @@ def test_a_document_with_no_path_reads_nothing(qtbot: QtBot, mocker: MockerFixtu
     inventory = mocker.patch(f"{ACTIONS_MODULE}.conversion_backups")
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}))
 
-    actions = ConversionBackupActions(model)
+    actions = delete_at_teardown(ConversionBackupActions(model))
 
     inventory.assert_not_called()
     assert actions.retained is False
@@ -451,7 +460,7 @@ def test_a_discard_that_fails_reports_the_reason(
 
 
 def test_discarding_a_resource_with_no_backups_does_nothing(
-    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture, answer_yes: Any
+    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture, answer_yes: Any, delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """The hidden action must not be reachable past its condition.
 
@@ -464,7 +473,7 @@ def test_discarding_a_resource_with_no_backups_does_nothing(
     mocker.patch(f"{ACTIONS_MODULE}.conversion_backups", return_value=make_backups(files=0))
     discard = mocker.patch(f"{ACTIONS_MODULE}.discard_conversion_backups")
 
-    ConversionBackupActions(model).discard()
+    delete_at_teardown(ConversionBackupActions(model)).discard()
 
     discard.assert_not_called()
     answer_yes.assert_not_called()

@@ -232,7 +232,7 @@ class ScrapeActions(QObject):  # pylint: disable=too-many-instance-attributes
         :param chain: the chain whose timer just fired -- always still pending, since ending a chain stops
             its timer first (`Chain.dispose`).
         """
-        job = ScrapeJob(chain.url, self.__registry, page=chain.page, fetcher=self.__fetcher)
+        job = ScrapeJob(chain.url, self.__registry, page=chain.page, fetcher=self.__fetcher, parent=self)
         chain.page = None
         chain.job = job
         chain.deadline = None

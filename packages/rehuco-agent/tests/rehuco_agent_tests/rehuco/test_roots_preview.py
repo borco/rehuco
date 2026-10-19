@@ -51,6 +51,7 @@ class Shown:
         self.model.set_roots([root], RootFolderLister([root]))
         self.preview = RootsPreview(self.model, RenameCoordinator(), actions_for, record_for, pack_for)
         qtbot.addWidget(self.preview)
+        self.model.setParent(self.preview)  # deleted with the preview qtbot deletes (#529)
         self.root = self.model.index(0, 0)
         qtbot.waitUntil(lambda: self.model.listing_state(self.root) is NodeListing.LISTED, timeout=WAIT_TIMEOUT_MS)
 
@@ -368,6 +369,30 @@ def test_an_unreadable_image_shows_no_picture(qtbot: QtBot, tmp_path: Path) -> N
     qtbot.wait(300)
 
     assert shown.text("name_label") == "broken.png"
+    assert shown.preview.image is None
+    assert not shown.preview.resolution
+
+
+def test_an_image_gone_before_its_read_shows_no_picture(qtbot: QtBot, tmp_path: Path) -> None:
+    """A file deleted between its listing and its thumbnail's read shows its details and no picture (#529).
+
+    **Test steps:**
+
+    * list a real ``.png``, then delete it
+    * show it
+    * verify the details are there and there is no picture or resolution
+    """
+    library = tmp_path / "lib"
+    library.mkdir()
+    (library / "gone.png").write_bytes(b"not read before it went")
+    shown = Shown(qtbot, library)
+    row = shown.row("gone.png")
+    (library / "gone.png").unlink()
+
+    shown.preview.show_index(row)
+    qtbot.wait(300)
+
+    assert shown.text("name_label") == "gone.png"
     assert shown.preview.image is None
     assert not shown.preview.resolution
 

@@ -53,6 +53,8 @@ from rehuco_core import (
     Relocation,
 )
 
+from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
+
 DIRECTORY: Final = Path("/fake/library/sculpting")
 INFO_PATH: Final = DIRECTORY / "info.rehu"
 
@@ -1028,7 +1030,9 @@ def test_an_invalid_index_answers_nothing(table: FilesTableModel) -> None:
 # region The loader
 
 
-def test_a_read_that_raises_still_reports_back(qtbot: QtBot, mocker: MockerFixture) -> None:
+def test_a_read_that_raises_still_reports_back(
+    qtbot: QtBot, mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """An exception escaping onto the pool is printed and swallowed there, and the ``loaded`` that never
     arrived would leave the dock saying *reading* for the rest of the document's life.
 
@@ -1039,7 +1043,7 @@ def test_a_read_that_raises_still_reports_back(qtbot: QtBot, mocker: MockerFixtu
     """
     reader = FilesRowsReader(INFO_PATH, (), WEEK)
     mocker.patch.object(FilesRowsReader, "read", side_effect=RuntimeError("boom"))
-    loader = FilesRowsLoader()
+    loader = delete_at_teardown(FilesRowsLoader())
 
     with qtbot.waitSignal(loader.loaded, timeout=5000) as reported:
         loader.start(reader, DIRECTORY)
@@ -1051,7 +1055,9 @@ def test_a_read_that_raises_still_reports_back(qtbot: QtBot, mocker: MockerFixtu
     assert "boom" in rows.record_error  # pylint: disable=no-member
 
 
-def test_a_superseded_read_is_dropped_rather_than_drawn(qtbot: QtBot, mocker: MockerFixture) -> None:
+def test_a_superseded_read_is_dropped_rather_than_drawn(
+    qtbot: QtBot, mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """Walking into a subfolder while the previous listing is still out is the ordinary case here, so an
     answer from an older read must not be drawn over the folder the reader has since moved to.
 
@@ -1073,7 +1079,7 @@ def test_a_superseded_read_is_dropped_rather_than_drawn(qtbot: QtBot, mocker: Mo
         return FilesRows(directory)
 
     mocker.patch.object(FilesRowsReader, "read", side_effect=read)
-    loader = FilesRowsLoader()
+    loader = delete_at_teardown(FilesRowsLoader())
     reported: list[Path] = []
     loader.loaded.connect(lambda rows: reported.append(rows.directory))
 
@@ -1086,7 +1092,9 @@ def test_a_superseded_read_is_dropped_rather_than_drawn(qtbot: QtBot, mocker: Mo
     assert reported == [DIRECTORY / "sub"]
 
 
-def test_a_listing_that_answers_after_its_dock_is_gone_reports_into_nothing(mocker: MockerFixture) -> None:
+def test_a_listing_that_answers_after_its_dock_is_gone_reports_into_nothing(
+    mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """The same failure `ChecksumRowsLoader` documents, for the browser's own read: the loader is
     parented to the dock, so closing a document takes its C++ half while a listing is still out on a
     share -- and the exception that emit would raise is printed and swallowed by the pool, which is the
@@ -1099,7 +1107,7 @@ def test_a_listing_that_answers_after_its_dock_is_gone_reports_into_nothing(mock
     """
     mocker.patch.object(FilesRowsReader, "read", return_value=FilesRows(DIRECTORY))
     dock = QObject()
-    loader = FilesRowsLoader(dock)
+    loader = delete_at_teardown(FilesRowsLoader(dock))
     delivered: list[FilesRows] = []
     # connected, because an emit with nobody listening never reaches the deleted C++ half at all --
     # which is exactly the case this guard is *not* about

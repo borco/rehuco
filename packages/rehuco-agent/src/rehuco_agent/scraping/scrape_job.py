@@ -115,9 +115,12 @@ class ScrapeJob:  # pylint: disable=too-many-instance-attributes
         ([[acquisition-tooling#browser-persona]]), in which case `~.browser_fetcher.BrowserPageFetcher`.
     :param settings: where the browser choice and the per-scraper **Use browser** picks come from;
         `None` reads the shared, process-wide settings, the shape every caller but a test wants.
+    :param parent: the Qt parent of the job's marshaller -- the caller connecting to the job, so the
+        marshaller goes with it on the GUI thread rather than in the cyclic collector, which the caller's
+        closures over the job would otherwise leave it to, on whatever thread collects next (#529).
     """
 
-    def __init__(
+    def __init__(  # pylint: disable=too-many-arguments
         self,
         url: str,
         registry: ScraperRegistry,
@@ -125,13 +128,15 @@ class ScrapeJob:  # pylint: disable=too-many-instance-attributes
         page: Page | None = None,
         fetcher: PageFetcher | None = None,
         settings: ScrapersSettings | None = None,
+        parent: QObject | None = None,
     ) -> None:
         self.__url: Final = url
         self.__registry: Final = registry
         self.__page: Final = page
         self.__forced_fetcher: Final = fetcher
         self.__settings: Final = settings if settings is not None else shared_scrapers_settings()
-        self.__marshaller: Final = ScrapeJob.Marshaller()
+        self.__parent: Final = parent
+        self.__marshaller: ScrapeJob.Marshaller | None = None
         self.__publisher: str | None = None
         self.__page_url: str | None = None
 
@@ -148,6 +153,10 @@ class ScrapeJob:  # pylint: disable=too-many-instance-attributes
         :attr:`result_ready`/:attr:`failed`/:attr:`refetch_requested` -- so those always fire on the GUI
         thread, whatever kind of object connects to them (a plain callable included, which
         `AutoConnection` would run on the worker thread instead).
+
+        A child of the caller, so it is never left to the cyclic collector (#529); it stays on the caller for as
+        long as the document is open, one per scrape. Deleting it once it has relayed corrupts the heap under
+        PySide 6.11 (a crash in a later ``~QObject``), with or without a parent, so it is not done.
         """
 
         scraped = Signal(object)
@@ -171,8 +180,8 @@ class ScrapeJob:  # pylint: disable=too-many-instance-attributes
         """Fires with the normalized `~.protocols.RefetchRequestedError`, always on the GUI thread. What
         `ScrapeJob.refetch_requested` exposes."""
 
-        def __init__(self) -> None:
-            super().__init__()
+        def __init__(self, parent: QObject | None) -> None:
+            super().__init__(parent)
             self.scraped.connect(self.__relay_result, Qt.ConnectionType.QueuedConnection)
             self.failure.connect(self.__relay_failure, Qt.ConnectionType.QueuedConnection)
             self.refetch.connect(self.__relay_refetch, Qt.ConnectionType.QueuedConnection)
@@ -208,7 +217,7 @@ class ScrapeJob:  # pylint: disable=too-many-instance-attributes
         result to an editor, and discarding it if the document has since closed or been renamed, is the
         caller's job.
         """
-        return self.__marshaller.result_ready
+        return self.__signals().result_ready
 
     @property
     def failed(self) -> SignalInstance:
@@ -219,7 +228,7 @@ class ScrapeJob:  # pylint: disable=too-many-instance-attributes
         the refusal beside an open document (e.g. a `MessageBanner` row) rather than read it only from
         the log.
         """
-        return self.__marshaller.failed
+        return self.__signals().failed
 
     @property
     def refetch_requested(self) -> SignalInstance:
@@ -228,7 +237,7 @@ class ScrapeJob:  # pylint: disable=too-many-instance-attributes
         already filled in. Scheduling the next attempt, and capping how many there are
         (:data:`MAX_REFETCHES`), is the caller's job: this job is one attempt and never waits.
         """
-        return self.__marshaller.refetch_requested
+        return self.__signals().refetch_requested
 
     @property
     def publisher(self) -> str | None:
@@ -260,16 +269,39 @@ class ScrapeJob:  # pylint: disable=too-many-instance-attributes
         it is logged as information and reaches :attr:`refetch_requested`.
         """
         try:
-            self.__marshaller.scraped.emit(self.scrape())
+            self.__deliver(lambda marshaller: marshaller.scraped, self.scrape())
         except RefetchRequestedError as request:
             LOG.info("%s; a re-fetch of %s was requested.", request.message, request.url)
-            self.__marshaller.refetch.emit(request)
+            self.__deliver(lambda marshaller: marshaller.refetch, request)
         except ScrapeError as error:
             LOG.warning(str(error))
-            self.__marshaller.failure.emit(error)
+            self.__deliver(lambda marshaller: marshaller.failure, error)
         except Exception as error:  # pylint: disable=broad-exception-caught
             LOG.exception("Scraping %s failed.", self.__url)
-            self.__marshaller.failure.emit(ScrapeError(f"Scraping {self.__url} failed: {error}"))
+            self.__deliver(lambda marshaller: marshaller.failure, ScrapeError(f"Scraping {self.__url} failed: {error}"))
+
+    def __signals(self) -> ScrapeJob.Marshaller:
+        """The job's marshaller, built the first time anyone asks for one of its signals.
+
+        Lazily, so a job that is only ever :meth:`scrape`-d -- the ``--scrape`` CLI -- builds no `QObject` at
+        all. The askers are the callers connecting before they submit, on the GUI thread, which is the thread
+        the marshaller must live on for its queued relays to land there.
+
+        :returns: the marshaller.
+        """
+        if self.__marshaller is None:
+            self.__marshaller = ScrapeJob.Marshaller(self.__parent)
+        return self.__marshaller
+
+    def __deliver(self, pick: Callable[[ScrapeJob.Marshaller], SignalInstance], payload: object) -> None:
+        """Send ``payload`` to the GUI thread through one of the marshaller's worker-side signals -- nothing
+        when nobody connected, since then no marshaller was built.
+
+        :param pick: which of the marshaller's signals to emit.
+        :param payload: what the signal carries.
+        """
+        if self.__marshaller is not None:
+            pick(self.__marshaller).emit(payload)
 
     def scrape(self) -> ScrapeResult:
         """Resolve, refuse or fetch, re-resolve a redirect, parse, validate -- the synchronous half of

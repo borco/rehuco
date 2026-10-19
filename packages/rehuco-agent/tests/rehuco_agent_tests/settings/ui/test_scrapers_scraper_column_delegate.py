@@ -16,6 +16,8 @@ from rehuco_agent.scraping.registry import ScraperRow
 from rehuco_agent.settings.ui.scrapers_scraper_column_delegate import ScrapersScraperColumnDelegate
 from rehuco_agent.settings.ui.scrapers_table_model import SCRAPER_COLUMN, ScrapersTableModel
 
+from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
+
 CELL = QRect(0, 0, 400, 24)
 
 LINKED_ROW = ScraperRow(
@@ -45,16 +47,17 @@ def fixture_delegate(qapp: object) -> ScrapersScraperColumnDelegate:
     return ScrapersScraperColumnDelegate()
 
 
-def index_for(row: ScraperRow) -> tuple[ScrapersTableModel, QModelIndex]:
+def index_for(delete_at_teardown: DeleteAtTeardown, row: ScraperRow) -> tuple[ScrapersTableModel, QModelIndex]:
     """A model and one index over its Scraper cell, for the delegate to paint.
 
     **Returns the model too**: a `QModelIndex` keeps only a raw pointer back to its source model, so a
     model built and discarded inside this function leaves the index pointing at a destroyed object.
 
+    :param delete_at_teardown: deletes the model when the test ends.
     :param row: the row to show.
     :returns: ``(model, index)``.
     """
-    model = ScrapersTableModel()
+    model = delete_at_teardown(ScrapersTableModel())
     model.set_rows((row,))
     return model, model.index(0, SCRAPER_COLUMN)
 
@@ -96,7 +99,7 @@ def release_at(point: QPointF) -> QMouseEvent:
 
 
 def test_a_non_link_row_is_left_to_the_base_delegate(
-    delegate: ScrapersScraperColumnDelegate, mocker: MockerFixture
+    delegate: ScrapersScraperColumnDelegate, mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """A row with no `site_url` -- a file that loaded no scraper -- is painted by the base delegate,
     not this one's own `QTextDocument` path (#278).
@@ -108,7 +111,7 @@ def test_a_non_link_row_is_left_to_the_base_delegate(
     """
     base_paint = mocker.patch.object(RowBandDelegate, "paint")
     image, painter = new_painter()  # pylint: disable=unused-variable
-    model, index = index_for(PLAIN_ROW)  # pylint: disable=unused-variable
+    model, index = index_for(delete_at_teardown, PLAIN_ROW)  # pylint: disable=unused-variable
 
     delegate.paint(painter, option_for(), index)
     painter.end()
@@ -116,7 +119,9 @@ def test_a_non_link_row_is_left_to_the_base_delegate(
     base_paint.assert_called_once()
 
 
-def test_a_selected_linked_cell_is_filled_with_the_highlight(delegate: ScrapersScraperColumnDelegate) -> None:
+def test_a_selected_linked_cell_is_filled_with_the_highlight(
+    delegate: ScrapersScraperColumnDelegate, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A link cell takes part in the row's selection band like every other cell (#383).
 
     **Test steps:**
@@ -130,7 +135,7 @@ def test_a_selected_linked_cell_is_filled_with_the_highlight(delegate: ScrapersS
     option.palette = palette
     option.state |= QStyle.StateFlag.State_Selected
     image, painter = new_painter()
-    model, index = index_for(LINKED_ROW)  # pylint: disable=unused-variable
+    model, index = index_for(delete_at_teardown, LINKED_ROW)  # pylint: disable=unused-variable
 
     delegate.paint(painter, option, index)
     painter.end()
@@ -140,7 +145,7 @@ def test_a_selected_linked_cell_is_filled_with_the_highlight(delegate: ScrapersS
 
 
 def test_a_linked_row_draws_something_and_never_reaches_the_base_delegate(
-    delegate: ScrapersScraperColumnDelegate, mocker: MockerFixture
+    delegate: ScrapersScraperColumnDelegate, mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """A row with a `site_url` is drawn by this delegate's own `QTextDocument` path -- some non-transparent
     pixel lands in the cell, and the base delegate is never reached (#278).
@@ -152,7 +157,7 @@ def test_a_linked_row_draws_something_and_never_reaches_the_base_delegate(
     """
     base_paint = mocker.patch.object(QStyledItemDelegate, "paint")
     image, painter = new_painter()
-    model, index = index_for(LINKED_ROW)  # pylint: disable=unused-variable
+    model, index = index_for(delete_at_teardown, LINKED_ROW)  # pylint: disable=unused-variable
 
     delegate.paint(painter, option_for(), index)
     painter.end()
@@ -165,7 +170,9 @@ def test_a_linked_row_draws_something_and_never_reaches_the_base_delegate(
     assert any(image.pixelColor(x, y).alpha() > 0 for x in range(CELL.width()) for y in range(CELL.height()))
 
 
-def test_link_at_finds_the_anchor_under_the_drawn_text(delegate: ScrapersScraperColumnDelegate) -> None:
+def test_link_at_finds_the_anchor_under_the_drawn_text(
+    delegate: ScrapersScraperColumnDelegate, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """`link_at` reports the row's `site_url` for a point actually over the drawn text (#278).
 
     **Test steps:**
@@ -174,14 +181,16 @@ def test_link_at_finds_the_anchor_under_the_drawn_text(delegate: ScrapersScraper
     * verify it reports the row's `site_url`
     """
     option = option_for()
-    model, index = index_for(LINKED_ROW)  # pylint: disable=unused-variable
+    model, index = index_for(delete_at_teardown, LINKED_ROW)  # pylint: disable=unused-variable
 
     link = delegate.link_at(option, index, QPointF(20, CELL.height() / 2))
 
     assert link == LINKED_ROW.site_url
 
 
-def test_link_at_finds_nothing_past_the_texts_end(delegate: ScrapersScraperColumnDelegate) -> None:
+def test_link_at_finds_nothing_past_the_texts_end(
+    delegate: ScrapersScraperColumnDelegate, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """`link_at` reports nothing for a point in the cell but past where the short label ends (#278).
 
     **Test steps:**
@@ -190,14 +199,16 @@ def test_link_at_finds_nothing_past_the_texts_end(delegate: ScrapersScraperColum
     * verify it reports no link
     """
     option = option_for()
-    model, index = index_for(LINKED_ROW)  # pylint: disable=unused-variable
+    model, index = index_for(delete_at_teardown, LINKED_ROW)  # pylint: disable=unused-variable
 
     link = delegate.link_at(option, index, QPointF(CELL.width() - 2, CELL.height() / 2))
 
     assert link == ""
 
 
-def test_link_at_finds_nothing_for_a_non_link_row(delegate: ScrapersScraperColumnDelegate) -> None:
+def test_link_at_finds_nothing_for_a_non_link_row(
+    delegate: ScrapersScraperColumnDelegate, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """`link_at` reports nothing at all for a row with no `site_url` (#278).
 
     **Test steps:**
@@ -206,14 +217,16 @@ def test_link_at_finds_nothing_for_a_non_link_row(delegate: ScrapersScraperColum
     * verify it reports no link
     """
     option = option_for()
-    model, index = index_for(PLAIN_ROW)  # pylint: disable=unused-variable
+    model, index = index_for(delete_at_teardown, PLAIN_ROW)  # pylint: disable=unused-variable
 
     link = delegate.link_at(option, index, QPointF(20, CELL.height() / 2))
 
     assert link == ""
 
 
-def test_a_release_over_the_link_emits_link_activated(delegate: ScrapersScraperColumnDelegate) -> None:
+def test_a_release_over_the_link_emits_link_activated(
+    delegate: ScrapersScraperColumnDelegate, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A release over the drawn link emits `link_activated` with the row's `site_url`, and reports the
     event handled (#278).
 
@@ -224,7 +237,7 @@ def test_a_release_over_the_link_emits_link_activated(delegate: ScrapersScraperC
     * verify it reports handled and the spy received the URL
     """
     option = option_for()
-    model, index = index_for(LINKED_ROW)
+    model, index = index_for(delete_at_teardown, LINKED_ROW)
     received: list[str] = []
     delegate.link_activated.connect(received.append)
     event = release_at(QPointF(20, CELL.height() / 2))
@@ -235,7 +248,9 @@ def test_a_release_over_the_link_emits_link_activated(delegate: ScrapersScraperC
     assert received == [LINKED_ROW.site_url]
 
 
-def test_a_release_past_the_link_does_nothing(delegate: ScrapersScraperColumnDelegate) -> None:
+def test_a_release_past_the_link_does_nothing(
+    delegate: ScrapersScraperColumnDelegate, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A release past where the link's text ends does not emit `link_activated` (#278).
 
     **Test steps:**
@@ -245,7 +260,7 @@ def test_a_release_past_the_link_does_nothing(delegate: ScrapersScraperColumnDel
     * verify it reports unhandled and the spy received nothing
     """
     option = option_for()
-    model, index = index_for(LINKED_ROW)
+    model, index = index_for(delete_at_teardown, LINKED_ROW)
     received: list[str] = []
     delegate.link_activated.connect(received.append)
     event = release_at(QPointF(CELL.width() - 2, CELL.height() / 2))
@@ -256,7 +271,9 @@ def test_a_release_past_the_link_does_nothing(delegate: ScrapersScraperColumnDel
     assert not received
 
 
-def test_the_link_is_drawn_in_the_palettes_link_color(delegate: ScrapersScraperColumnDelegate) -> None:
+def test_the_link_is_drawn_in_the_palettes_link_color(
+    delegate: ScrapersScraperColumnDelegate, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """The link is colored from the palette's own link role, not a hardcoded one -- consistent with
     `~borco_pyside.widgets.ElidedLabel`'s own rich-text links, and correct across a theme change (#278).
 
@@ -272,7 +289,7 @@ def test_the_link_is_drawn_in_the_palettes_link_color(delegate: ScrapersScraperC
     palette = QPalette()
     palette.setColor(QPalette.ColorRole.Link, Qt.GlobalColor.red)
     option.palette = palette
-    model, index = index_for(LINKED_ROW)  # pylint: disable=unused-variable
+    model, index = index_for(delete_at_teardown, LINKED_ROW)  # pylint: disable=unused-variable
     image, painter = new_painter()
 
     delegate.paint(painter, option, index)
@@ -283,7 +300,7 @@ def test_the_link_is_drawn_in_the_palettes_link_color(delegate: ScrapersScraperC
 
 
 def test_a_non_release_event_falls_through_to_the_base_delegate(
-    delegate: ScrapersScraperColumnDelegate, mocker: MockerFixture
+    delegate: ScrapersScraperColumnDelegate, mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """An event other than a mouse-button release -- e.g. a mouse move, hit while hovering a link cell
     -- is left to the base delegate's own `editorEvent`, not treated as a click (#278).
@@ -296,7 +313,7 @@ def test_a_non_release_event_falls_through_to_the_base_delegate(
     """
     base_event = mocker.patch.object(QStyledItemDelegate, "editorEvent", return_value=False)
     option = option_for()
-    model, index = index_for(LINKED_ROW)
+    model, index = index_for(delete_at_teardown, LINKED_ROW)
     event = QMouseEvent(
         QEvent.Type.MouseMove,
         QPointF(20, CELL.height() / 2),

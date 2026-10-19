@@ -23,7 +23,7 @@ from PySide6.QtCore import (
     QUrl,
     Signal,
 )
-from PySide6.QtGui import QAction, QDesktopServices, QFont, QFontMetrics, QImage, QImageReader, QPalette, QPixmap
+from PySide6.QtGui import QAction, QDesktopServices, QFont, QFontMetrics, QImage, QPalette, QPixmap
 from PySide6.QtWidgets import QComboBox, QFrame, QLabel, QLineEdit, QSizePolicy, QToolButton, QWidget
 from rehuco_core import (
     DEFAULT_CURRENT_USERNAME,
@@ -38,6 +38,7 @@ from rehuco_core.access import Records, ResourceKey
 
 from ..documents.files_rows import CHECKSUM_STATE_ICONS
 from ..fields.widgets.image_export import PressDragFilter
+from ..fields.widgets.image_source import FORMAT_HEAD_SIZE, format_reader
 from ..settings.image_viewer_settings import shared_image_viewer_settings
 from ..settings.markdown_rendering_settings import shared_markdown_rendering_settings
 from ..settings.reference_images_settings import shared_reference_images_settings
@@ -593,18 +594,33 @@ class RootsPreview(QWidget):
         :param path: the image file.
         """
         with self.__holding():
-            reader = QImageReader(str(path))
-            reader.setAutoTransform(True)
-            size = reader.size()
-            if size.isValid() and max(size.width(), size.height()) > THUMBNAIL_SIDE:
-                reader.setScaledSize(
-                    size.scaled(QSize(THUMBNAIL_SIDE, THUMBNAIL_SIDE), Qt.AspectRatioMode.KeepAspectRatio)
-                )
-            image = reader.read()
+            image, size = RootsPreview.__read_thumbnail(path)
         try:
             self.image_ready.emit(serial, image, size if size.isValid() else image.size())
         except RuntimeError:  # the preview was destroyed while the read was out
             pass
+
+    @staticmethod
+    def __read_thumbnail(path: Path) -> tuple[QImage, QSize]:
+        """Read the image at ``path``, scaled down to :data:`THUMBNAIL_SIDE`, with a reader told its format
+        up front -- on a pool thread a probing reader can deadlock (`format_reader`, #529).
+
+        :param path: the image file.
+        :returns: the thumbnail and the picture's own size; a null image and an invalid size when the file
+            cannot be read or is no format the reader is told.
+        """
+        try:
+            with path.open("rb") as stream:
+                head = stream.read(FORMAT_HEAD_SIZE)
+        except OSError:
+            return QImage(), QSize()
+        reader = format_reader(str(path), head)
+        if reader is None:
+            return QImage(), QSize()
+        size = reader.size()
+        if size.isValid() and max(size.width(), size.height()) > THUMBNAIL_SIDE:
+            reader.setScaledSize(size.scaled(QSize(THUMBNAIL_SIDE, THUMBNAIL_SIDE), Qt.AspectRatioMode.KeepAspectRatio))
+        return reader.read(), size
 
     def __on_image(self, serial: int, image: QImage, size: QSize) -> None:
         """Show a thumbnail and the picture's resolution, unless the row they were for is no longer the one shown.

@@ -23,6 +23,8 @@ from rehuco_agent.resource_events import ResourceEvents
 from rehuco_core import CatalogRecordReader, RecordsChecked, RehuDocument
 from rehuco_core.access import ResourceKey
 
+from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
+
 from .test_catalog_docks import (  # noqa: F401  # pylint: disable=unused-import
     REHUCO_PATH,
     WAIT_TIMEOUT_MS,
@@ -86,8 +88,9 @@ def pack_line(dock: CatalogDocks) -> str:
 
 
 @mark.usefixtures("served")
+# pylint: disable-next=too-many-arguments,too-many-positional-arguments
 def test_a_listed_folder_gives_a_record_with_no_row_its_row_and_the_pane_its_pack_line(
-    qtbot: QtBot, queue: Any, database: Any, folders: Path, mocker: MockerFixture
+    qtbot: QtBot, queue: Any, database: Any, folders: Path, mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """Listing a folder reads a record the cache has no row for, off the GUI thread; what it found is published on the
     change feed, and the pane follows it from there (#487, #511).
@@ -101,7 +104,7 @@ def test_a_listed_folder_gives_a_record_with_no_row_its_row_and_the_pane_its_pac
       the pane says it is a pack
     """
     del database  # the cache's, in memory
-    events = ResourceEvents()
+    events = delete_at_teardown(ResourceEvents())
     heard = MagicMock()
     events.changed.connect(heard)
     dock = build_docks(qtbot, queue, events)
@@ -187,8 +190,9 @@ def test_a_record_under_a_root_that_is_offline_is_not_read_and_keeps_its_row(
 
 
 @mark.usefixtures("served")
+# pylint: disable-next=too-many-arguments,too-many-positional-arguments
 def test_an_opened_record_is_verified_through_the_app_announcements(
-    qtbot: QtBot, queue: Any, database: Any, folders: Path, mocker: MockerFixture
+    qtbot: QtBot, queue: Any, database: Any, folders: Path, mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """Opening a record announces it, and the catalog verifies it -- the route every open takes (#487).
 
@@ -199,7 +203,7 @@ def test_an_opened_record_is_verified_through_the_app_announcements(
     * verify it was read, and its row exists
     """
     del database  # the cache's, in memory
-    events = ResourceEvents()
+    events = delete_at_teardown(ResourceEvents())
     docks = build_docks(qtbot, queue, events)
     record = folders / "alpha" / "info.rehu"
     write_pack_record(record)

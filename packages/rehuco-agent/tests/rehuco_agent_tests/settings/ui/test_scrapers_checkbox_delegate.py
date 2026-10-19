@@ -17,6 +17,8 @@ from rehuco_agent.scraping.registry import ScraperRow
 from rehuco_agent.settings.ui.scrapers_checkbox_delegate import ScrapersCheckboxDelegate
 from rehuco_agent.settings.ui.scrapers_table_model import USE_BROWSER_COLUMN, ScrapersTableModel
 
+from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
+
 CELL = QRect(0, 0, 400, 24)
 
 TICKED_ROW = ScraperRow(
@@ -43,14 +45,17 @@ def fixture_delegate(qapp: object) -> ScrapersCheckboxDelegate:
     return ScrapersCheckboxDelegate()
 
 
-def index_for(row: ScraperRow, *, checked: bool) -> tuple[ScrapersTableModel, QModelIndex]:
+def index_for(
+    delete_at_teardown: DeleteAtTeardown, row: ScraperRow, *, checked: bool
+) -> tuple[ScrapersTableModel, QModelIndex]:
     """A model, staged so ``row``'s checkbox reads ``checked``, and one index over its checkbox cell.
 
+    :param delete_at_teardown: deletes the model when the test ends.
     :param row: the row to show.
     :param checked: whether the model's staged **Use browser** set should include ``row``.
     :returns: ``(model, index)``.
     """
-    model = ScrapersTableModel()
+    model = delete_at_teardown(ScrapersTableModel())
     model.set_rows((row,))
     model.set_browser_scrapers(frozenset({row.key}) if checked and row.key is not None else frozenset())
     return model, model.index(0, USE_BROWSER_COLUMN)
@@ -105,7 +110,7 @@ def new_painter() -> tuple[QImage, QPainter]:
 
 
 def test_painting_draws_a_checkbox_primitive_at_the_centered_rect(
-    delegate: ScrapersCheckboxDelegate, mocker: MockerFixture
+    delegate: ScrapersCheckboxDelegate, mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """The checkbox is painted via `QStyle.drawPrimitive` at a rect centered in the cell -- not the
     base delegate's own left-anchored layout (#278).
@@ -116,7 +121,7 @@ def test_painting_draws_a_checkbox_primitive_at_the_centered_rect(
     * verify it was called once, at the centered rect, for the checkbox indicator
     """
     option = option_for()
-    model, index = index_for(TICKED_ROW, checked=True)  # pylint: disable=unused-variable
+    model, index = index_for(delete_at_teardown, TICKED_ROW, checked=True)  # pylint: disable=unused-variable
     image, painter = new_painter()  # pylint: disable=unused-variable
     # patched on the instance, not the class: the platform style is a native subclass whose own
     # `drawPrimitive` override does not route through a class-level patch of `QStyle`'s
@@ -131,7 +136,9 @@ def test_painting_draws_a_checkbox_primitive_at_the_centered_rect(
     assert style_option.rect == checkbox_rect(option)  # pylint: disable=no-member
 
 
-def test_a_click_inside_the_checkbox_rect_toggles_it(delegate: ScrapersCheckboxDelegate) -> None:
+def test_a_click_inside_the_checkbox_rect_toggles_it(
+    delegate: ScrapersCheckboxDelegate, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A release inside the centered checkbox rect toggles the staged state (#278).
 
     **Test steps:**
@@ -141,7 +148,7 @@ def test_a_click_inside_the_checkbox_rect_toggles_it(delegate: ScrapersCheckboxD
     * verify it reports handled and the model's checkbox flipped
     """
     option = option_for()
-    model, index = index_for(TICKED_ROW, checked=False)
+    model, index = index_for(delete_at_teardown, TICKED_ROW, checked=False)
     event = release_at(checkbox_rect(option).center())
 
     handled = delegate.editorEvent(event, model, option, index)
@@ -150,7 +157,9 @@ def test_a_click_inside_the_checkbox_rect_toggles_it(delegate: ScrapersCheckboxD
     assert model.data(index, Qt.ItemDataRole.CheckStateRole) == Qt.CheckState.Checked
 
 
-def test_a_click_outside_the_checkbox_rect_does_nothing(delegate: ScrapersCheckboxDelegate) -> None:
+def test_a_click_outside_the_checkbox_rect_does_nothing(
+    delegate: ScrapersCheckboxDelegate, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A release outside the centered rect -- e.g. elsewhere in the cell -- does not toggle it (#278).
 
     **Test steps:**
@@ -160,7 +169,7 @@ def test_a_click_outside_the_checkbox_rect_does_nothing(delegate: ScrapersCheckb
     * verify it reports unhandled and the model's checkbox is unchanged
     """
     option = option_for()
-    model, index = index_for(TICKED_ROW, checked=False)
+    model, index = index_for(delete_at_teardown, TICKED_ROW, checked=False)
     event = release_at(QPoint(CELL.width() - 1, CELL.height() - 1))
 
     handled = delegate.editorEvent(event, model, option, index)
@@ -169,7 +178,9 @@ def test_a_click_outside_the_checkbox_rect_does_nothing(delegate: ScrapersCheckb
     assert model.data(index, Qt.ItemDataRole.CheckStateRole) == Qt.CheckState.Unchecked
 
 
-def test_a_disabled_rows_checkbox_ignores_clicks(delegate: ScrapersCheckboxDelegate) -> None:
+def test_a_disabled_rows_checkbox_ignores_clicks(
+    delegate: ScrapersCheckboxDelegate, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """`needs_browser` forces a row's checkbox on and disabled -- a click inside it does nothing,
     falling through to the base delegate instead (#278).
 
@@ -190,7 +201,7 @@ def test_a_disabled_rows_checkbox_ignores_clicks(delegate: ScrapersCheckboxDeleg
         error=None,
     )
     option = option_for()
-    model, index = index_for(row, checked=False)
+    model, index = index_for(delete_at_teardown, row, checked=False)
     event = release_at(checkbox_rect(option).center())
 
     delegate.editorEvent(event, model, option, index)
@@ -199,7 +210,7 @@ def test_a_disabled_rows_checkbox_ignores_clicks(delegate: ScrapersCheckboxDeleg
 
 
 def test_painting_a_row_with_no_checkbox_state_draws_nothing(
-    delegate: ScrapersCheckboxDelegate, mocker: MockerFixture
+    delegate: ScrapersCheckboxDelegate, mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """A row carrying no checkbox at all -- a file that loaded no scraper, so its cell has no
     `Qt.ItemDataRole.CheckStateRole` -- is painted as nothing, not a stray checkbox (#278).
@@ -213,7 +224,7 @@ def test_painting_a_row_with_no_checkbox_state_draws_nothing(
         key=None, label="", publisher="", site_name="", site_url="", source="broken.py", needs_browser=False, error=None
     )
     option = option_for()
-    model, index = index_for(row, checked=False)  # pylint: disable=unused-variable
+    model, index = index_for(delete_at_teardown, row, checked=False)  # pylint: disable=unused-variable
     image, painter = new_painter()  # pylint: disable=unused-variable
     draw_primitive = mocker.patch.object(QApplication.style(), "drawPrimitive")
 
@@ -223,7 +234,9 @@ def test_painting_a_row_with_no_checkbox_state_draws_nothing(
     draw_primitive.assert_not_called()
 
 
-def test_an_unchecked_rows_checkbox_is_painted_off(delegate: ScrapersCheckboxDelegate, mocker: MockerFixture) -> None:
+def test_an_unchecked_rows_checkbox_is_painted_off(
+    delegate: ScrapersCheckboxDelegate, mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """An unticked, enabled row's checkbox is painted `State_Off`, not the `State_On` a ticked row
     gets (#278).
 
@@ -233,7 +246,7 @@ def test_an_unchecked_rows_checkbox_is_painted_off(delegate: ScrapersCheckboxDel
     * verify the style option it was handed carries `State_Off`, not `State_On`
     """
     option = option_for()
-    model, index = index_for(TICKED_ROW, checked=False)  # pylint: disable=unused-variable
+    model, index = index_for(delete_at_teardown, TICKED_ROW, checked=False)  # pylint: disable=unused-variable
     image, painter = new_painter()  # pylint: disable=unused-variable
     draw_primitive = mocker.patch.object(QApplication.style(), "drawPrimitive")
 
@@ -247,7 +260,7 @@ def test_an_unchecked_rows_checkbox_is_painted_off(delegate: ScrapersCheckboxDel
 
 
 def test_a_disabled_rows_checkbox_is_painted_without_the_enabled_flag(
-    delegate: ScrapersCheckboxDelegate, mocker: MockerFixture
+    delegate: ScrapersCheckboxDelegate, mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """A `needs_browser` row's forced-on checkbox is painted with `QStyle.StateFlag.State_Enabled`
     cleared, so the style draws it visibly disabled (#278).
@@ -268,7 +281,7 @@ def test_a_disabled_rows_checkbox_is_painted_without_the_enabled_flag(
         error=None,
     )
     option = option_for()
-    model, index = index_for(row, checked=False)  # pylint: disable=unused-variable
+    model, index = index_for(delete_at_teardown, row, checked=False)  # pylint: disable=unused-variable
     image, painter = new_painter()  # pylint: disable=unused-variable
     draw_primitive = mocker.patch.object(QApplication.style(), "drawPrimitive")
 
@@ -280,7 +293,9 @@ def test_a_disabled_rows_checkbox_is_painted_without_the_enabled_flag(
     assert QStyle.StateFlag.State_Enabled not in style_option.state  # pylint: disable=no-member
 
 
-def test_a_selected_cell_is_filled_with_the_highlight(delegate: ScrapersCheckboxDelegate) -> None:
+def test_a_selected_cell_is_filled_with_the_highlight(
+    delegate: ScrapersCheckboxDelegate, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """The cell takes part in the row's selection band, with the checkbox drawn over it (#383).
 
     **Test steps:**
@@ -293,7 +308,7 @@ def test_a_selected_cell_is_filled_with_the_highlight(delegate: ScrapersCheckbox
     option = option_for()
     option.palette = palette
     option.state |= QStyle.StateFlag.State_Selected
-    model, index = index_for(TICKED_ROW, checked=False)  # pylint: disable=unused-variable
+    model, index = index_for(delete_at_teardown, TICKED_ROW, checked=False)  # pylint: disable=unused-variable
     image, painter = new_painter()
 
     delegate.paint(painter, option, index)
