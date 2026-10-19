@@ -78,6 +78,9 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ### Changed
 
+- The file notifier recognises an atomic save by the temporary sibling's new name, `<name>.<random>.tmp` (the random
+  part being `tempfile.mkstemp`'s eight characters, so a user's own `a.b.tmp` is no save); the dotted name earlier
+  builds wrote is still recognised.
 - Writing `None` to a per-user field (`set_active_user_field`, `set_user_field`) removes the key instead of storing
   a JSON `null`.
 - The ffprobe probe asks for JSON output, to read the frame size along with the duration.

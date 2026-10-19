@@ -1,5 +1,7 @@
 """Tests for the crash-safe atomic-write helpers."""
 
+import stat
+import sys
 from pathlib import Path
 from typing import Final
 
@@ -8,7 +10,7 @@ from borco_core import atomic_write_bytes, atomic_write_text
 from pytest_mock import MockerFixture
 
 TARGET: Final = Path("/fake/out.bin")
-TEMP: Final = "/fake/.out.bin.XXXXXX.tmp"
+TEMP: Final = "/fake/out.bin.XXXXXX.tmp"
 FD: Final = 7
 
 
@@ -62,6 +64,40 @@ def test_atomic_write_bytes_writes_data(mocker: MockerFixture) -> None:
     atomic_write_bytes(TARGET, b"hello")
     handle.write.assert_called_once_with(b"hello")
     replace.assert_called_once_with(Path(TEMP), TARGET)
+
+
+def test_atomic_write_temp_sibling_has_no_leading_dot(mocker: MockerFixture) -> None:
+    """The temp sibling is ``<name>.<random>.tmp``: Samba hides a dot-file, and the rename would carry that flag to the
+    destination (#526).
+
+    **Test steps:**
+
+    * patch filesystem calls
+    * call ``atomic_write_bytes``
+    * verify ``mkstemp`` was asked for the destination's directory, the prefix ``out.bin.`` and the suffix ``.tmp``
+    """
+    patch_fs(mocker)
+    mkstemp = mocker.patch("borco_core.atomic_write.tempfile.mkstemp", return_value=(FD, TEMP))
+    atomic_write_bytes(TARGET, b"data")
+    mkstemp.assert_called_once_with(dir=TARGET.parent, prefix="out.bin.", suffix=".tmp")
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="file attributes are a Windows notion")
+def test_atomic_write_leaves_the_file_with_the_attributes_of_one_written_plainly(tmp_path: Path) -> None:
+    """A file written atomically is not hidden, whether it is new or replaces one.
+
+    **Test steps:**
+
+    * write a new file and replace it, each atomically
+    * verify neither is hidden, and the replaced one's attributes equal the new one's
+    """
+    target = tmp_path / "out.bin"
+    atomic_write_bytes(target, b"first")
+    first = target.stat().st_file_attributes  # pyright: ignore[reportAttributeAccessIssue]
+    atomic_write_bytes(target, b"second")
+    second = target.stat().st_file_attributes  # pyright: ignore[reportAttributeAccessIssue]
+    assert not first & stat.FILE_ATTRIBUTE_HIDDEN  # pyright: ignore[reportAttributeAccessIssue]
+    assert second == first
 
 
 def test_atomic_write_text_encodes_to_utf8(mocker: MockerFixture) -> None:
