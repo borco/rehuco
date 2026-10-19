@@ -133,6 +133,7 @@ markers = [
     "windows: marks tests that only run on Windows",
     "macos: marks tests that only run on macOS",
     "linux: marks tests that only run on Linux",
+    "broken_on(platform, reason): a test the named platform (windows, macos, linux) is known to fail -- a strict xfail there",
     "fails_offscreen: marks tests that fail when run offscreen (e.g. in CI)",
     "checksum_benchmark: marks tests that benchmark checksum performance (not correctness)",
 ]

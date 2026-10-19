@@ -105,7 +105,11 @@ def pytest_sessionfinish() -> None:
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
-    """Skip collected tests marked for a platform other than the one currently running.
+    """Skip collected tests marked for a platform other than the one currently running, and expect a
+    ``broken_on`` test to fail on the platform it names.
+
+    The expected failure is strict: once the platform stops breaking the test, it passes unexpectedly and
+    goes red, which is the cue to drop the marker rather than keep an exemption nothing needs.
 
     :param items: collected test items to filter in place.
     """
@@ -113,3 +117,8 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
         for marker_name, required_platform in PLATFORM_MARKERS.items():
             if item.get_closest_marker(marker_name) and sys.platform != required_platform:
                 item.add_marker(pytest.mark.skip(reason=f"{marker_name}-only test (running on {sys.platform})"))
+        for marker in item.iter_markers("broken_on"):
+            platform = marker.args[0]
+            if sys.platform == PLATFORM_MARKERS[platform]:
+                reason = f"broken on {platform}: {marker.kwargs['reason']}"
+                item.add_marker(pytest.mark.xfail(reason=reason, strict=True))

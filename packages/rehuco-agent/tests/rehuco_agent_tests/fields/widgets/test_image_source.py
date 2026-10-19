@@ -8,7 +8,7 @@ from typing import Final
 from PIL import Image
 from PySide6.QtCore import QBuffer, QIODevice, QSize, Qt
 from PySide6.QtGui import QImage, QImageReader, QImageWriter
-from pytest import mark
+from pytest import mark, param
 from pytest_mock import MockerFixture
 from rehuco_agent.fields.widgets.image_source import (
     FORMAT_HEAD_SIZE,
@@ -114,7 +114,20 @@ def pillow_bytes(pillow_format: str) -> bytes:
 
 @mark.parametrize(
     ("pillow_format", "qt_format"),
-    [("JPEG", b"jpeg"), ("PNG", b"png"), ("GIF", b"gif"), ("WEBP", b"webp"), ("BMP", b"bmp"), ("TIFF", b"tiff")],
+    [
+        ("JPEG", b"jpeg"),
+        ("PNG", b"png"),
+        ("GIF", b"gif"),
+        ("WEBP", b"webp"),
+        ("BMP", b"bmp"),
+        param(
+            "TIFF",
+            b"tiff",
+            marks=mark.broken_on(
+                "linux", reason="the PySide6 wheel's TIFF plugin links libtiff.so.5, which Ubuntu 24.04 no longer ships"
+            ),
+        ),
+    ],
 )
 def test_each_recognized_format_is_named_from_its_leading_bytes_and_decodes(
     pillow_format: str, qt_format: bytes
