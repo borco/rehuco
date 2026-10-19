@@ -32,8 +32,10 @@ LONGEST_WAIT_SECONDS: Final = 1.0
 POLL_SECONDS: Final = 0.5
 """How often the idle thread looks up to see whether it was stopped."""
 
-ATOMIC_WRITE_NAME: Final = re.compile(r"^\.(?P<target>.+)\.[^.]+\.tmp$")
-"""The temporary sibling :func:`~borco_core.atomic_write` writes before it replaces the file: ``.<name>.<random>.tmp``.
+ATOMIC_WRITE_NAME: Final = re.compile(r"^\.?(?P<target>.+)\.[a-z0-9_]{8}\.tmp$")
+"""The temporary sibling :func:`~borco_core.atomic_write` writes before it replaces the file: ``<name>.<random>.tmp``,
+the random part being the eight characters ``tempfile.mkstemp`` draws -- so a user's own ``a.b.tmp`` is no save. A
+leading dot is still accepted: the shape builds before #526 gave, whose leftovers a crash may have kept.
 """
 
 

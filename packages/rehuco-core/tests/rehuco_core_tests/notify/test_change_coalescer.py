@@ -106,7 +106,7 @@ def test_an_atomic_save_over_an_existing_file_is_that_file_changed_and_relists_n
     * coalesce the temporary sibling created and written, the file deleted, and the sibling renamed over it
     * verify the batch is the file changed, and nothing else
     """
-    temporary = ".info.rehu.k3j9.tmp"
+    temporary = "info.rehu.k3j9a0_z.tmp"
     batch = (
         change(CREATED, "a", temporary),
         change(MODIFIED, "a", temporary),
@@ -126,7 +126,7 @@ def test_a_first_atomic_save_is_the_file_changed_and_its_folder_relisted() -> No
     * coalesce a temporary sibling created and renamed onto a name that was free
     * verify the batch is the file changed, then its folder changed
     """
-    temporary = ".new.rehu.x1.tmp"
+    temporary = "new.rehu.x1b2c3d4.tmp"
     batch = (change(CREATED, "a", temporary), change(MOVED, "a", temporary, to=("a", "new.rehu")))
 
     assert events_of(*batch) == [Changed((key("a", "new.rehu"),)), FolderChanged(key("a"))]
@@ -141,7 +141,7 @@ def test_temporary_siblings_on_their_own_are_no_ones_business() -> None:
     * coalesce each kind of observation of temporary siblings only
     * verify the batch adds up to nothing
     """
-    first, second = ".info.rehu.a.tmp", ".info.rehu.b.tmp"
+    first, second = "info.rehu.aaaaaaaa.tmp", "info.rehu.bbbbbbbb.tmp"
     batch = (
         change(CREATED, first),
         change(MODIFIED, first),
@@ -150,6 +150,35 @@ def test_temporary_siblings_on_their_own_are_no_ones_business() -> None:
     )
 
     assert not events_of(*batch)
+
+
+def test_a_temporary_sibling_a_build_before_526_left_behind_is_still_one() -> None:
+    """Earlier builds named the temporary sibling with a leading dot; a crash may have kept one, and its removal is
+    no one's business either.
+
+    **Test steps:**
+
+    * coalesce the creation and deletion of ``.info.rehu.k3j9a0_z.tmp``
+    * verify the batch adds up to nothing
+    """
+    leftover = ".info.rehu.k3j9a0_z.tmp"
+
+    assert not events_of(change(CREATED, leftover), change(DELETED, leftover))
+
+
+def test_a_users_own_tmp_file_is_no_temporary_sibling() -> None:
+    """A file whose name only ends in ``.tmp`` is a file like any other: the random part is mkstemp's eight
+    characters.
+
+    **Test steps:**
+
+    * coalesce the creation of ``scratch.part1.tmp``
+    * verify the batch is that file changed, then its folder relisted
+    """
+    assert events_of(change(CREATED, "a", "scratch.part1.tmp")) == [
+        Changed((key("a", "scratch.part1.tmp"),)),
+        FolderChanged(key("a")),
+    ]
 
 
 def test_a_file_renamed_out_of_being_a_record_is_the_record_gone_and_a_file_created() -> None:

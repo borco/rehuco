@@ -24,7 +24,9 @@ def atomic_write_bytes(path: Path | str, data: bytes) -> None:
     """Write ``data`` to ``path`` atomically via a temp sibling and ``os.replace``.
 
     The temp file is created in the destination's own directory so the final rename
-    stays on one filesystem (a cross-device rename is not atomic). Before the replace,
+    stays on one filesystem (a cross-device rename is not atomic), named ``<name>.<random>.tmp``
+    -- never with a leading dot: Samba reports a dot-file as hidden, ``os.chmod`` on Windows
+    stores that flag for real, and the rename would carry it to the destination. Before the replace,
     the temp file's mode is set to match the existing destination (or umask-respecting
     defaults for a new file) so ``os.replace`` never narrows an existing file's
     permissions down to the temp file's owner-only mode; on POSIX its owner/group are
@@ -38,7 +40,7 @@ def atomic_write_bytes(path: Path | str, data: bytes) -> None:
     :raises OSError: if the temp file cannot be written or the replace fails.
     """
     path = Path(path)
-    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f"{path.name}.", suffix=".tmp")
     tmp_path = Path(tmp_name)
     try:
         with os.fdopen(fd, "wb") as handle:

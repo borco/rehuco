@@ -9,6 +9,12 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ## [Unreleased]
 
+### Fixed
+
+- `atomic_write_bytes` names its temporary sibling `<name>.<random>.tmp`, not `.<name>.<random>.tmp`. Samba reports a
+  dot-file as hidden and `os.chmod` on Windows stores that flag, so every save on a Samba share left the record hidden.
+  Records already hidden by earlier saves stay so: unhide them once on the share (`attrib -h` over the `.rehu` files).
+
 ## [0.3.0] - 2026-10-12
 
 ### Added
