@@ -97,8 +97,7 @@ class ScrapeActions(QObject):  # pylint: disable=too-many-instance-attributes
     class Chain:  # pylint: disable=too-many-instance-attributes,too-few-public-methods
         """One drop's attempts, from its first fetch to its outcome.
 
-        Nested for the same reason `~.scrape_job.ScrapeJob.Marshaller` is: nothing outside
-        `ScrapeActions` has a reason to build one.
+        Nested rather than module-level: nothing outside `ScrapeActions` has a reason to build one.
 
         :param owner: the Qt parent of the chain's timer and action.
         :param path: the document's path when the drop was submitted.
@@ -113,9 +112,8 @@ class ScrapeActions(QObject):  # pylint: disable=too-many-instance-attributes
             self.attempt = 1
             self.message = ""
             self.job: ScrapeJob | None = None
-            """The attempt in flight -- kept alive because `ScraperExecutor.submit` requires it (the
-            runnable is auto-deleted before the queued signal is delivered). `None` while the next attempt
-            is only scheduled."""
+            """The attempt in flight -- what an arriving outcome is matched by (`__chain_of`). `None` while
+            the next attempt is only scheduled."""
             self.deadline: float | None = None
             """When a waiting re-fetch launches, on the owner's clock; `None` while nothing is waiting."""
             self.timer: Final = QTimer(owner)
@@ -148,11 +146,15 @@ class ScrapeActions(QObject):  # pylint: disable=too-many-instance-attributes
         self.__choose_delay: Final = choose_delay if choose_delay is not None else random.uniform
         self.__clock: Final = clock if clock is not None else time.monotonic
         self.__chains: Final[list[ScrapeActions.Chain]] = []
-        """Drops not yet resolved. Membership is what every arriving signal is checked against, rather
-        than relying on dropping this object's own reference to a job: a job is kept alive by the very
-        signal connection its outcome would arrive through (a closure over ``job`` connected to ``job``'s
-        own signal), a reference cycle Python's cyclic collector does not promise to break before that
-        queued signal is delivered."""
+        """Drops not yet resolved. Every arriving outcome is matched against them by its job: one whose job is
+        no chain's any more -- cancelled, detached, ended -- is dropped."""
+
+        self.__relay: Final = ScrapeJob.Relay(self)
+        """Where every job this object runs reports, built once for its lifetime rather than one `QObject` per
+        job (#529)."""
+        self.__relay.result_ready.connect(self.__on_result)
+        self.__relay.failed.connect(self.__on_failed)
+        self.__relay.refetch_requested.connect(self.__on_refetch)
 
         self.__last_failure = ""
         self.__tick: Final = QTimer(self)
@@ -232,13 +234,10 @@ class ScrapeActions(QObject):  # pylint: disable=too-many-instance-attributes
         :param chain: the chain whose timer just fired -- always still pending, since ending a chain stops
             its timer first (`Chain.dispose`).
         """
-        job = ScrapeJob(chain.url, self.__registry, page=chain.page, fetcher=self.__fetcher, parent=self)
+        job = ScrapeJob(chain.url, self.__registry, page=chain.page, fetcher=self.__fetcher, relay=self.__relay)
         chain.page = None
         chain.job = job
         chain.deadline = None
-        job.result_ready.connect(lambda result: self.__on_result(chain, job, result))
-        job.failed.connect(lambda error: self.__on_failed(chain, job, error))
-        job.refetch_requested.connect(lambda request: self.__on_refetch(chain, job, request))
         self.__update_tick()
         self.changed.emit()
         with LogScope.open(chain.path):
@@ -252,24 +251,22 @@ class ScrapeActions(QObject):  # pylint: disable=too-many-instance-attributes
 
     # region Outcomes
 
-    def __is_current(self, chain: ScrapeActions.Chain, job: ScrapeJob) -> bool:
-        """Whether ``job`` is still the attempt ``chain`` is waiting on -- `False` once the chain was
-        cancelled, detached or ended.
+    def __chain_of(self, job: object) -> ScrapeActions.Chain | None:
+        """The chain still waiting on ``job`` -- `None` once its chain was cancelled, detached or ended.
 
-        :param chain: the chain the outcome belongs to.
-        :param job: the job the outcome came from.
-        :returns: whether the outcome should be acted on.
+        :param job: the job an outcome came from.
+        :returns: the chain the outcome should be acted on for, or `None` to drop it.
         """
-        return chain in self.__chains and chain.job is job
+        return next((chain for chain in self.__chains if chain.job is job), None)
 
-    def __on_result(self, chain: ScrapeActions.Chain, job: ScrapeJob, result: object) -> None:
+    def __on_result(self, job: object, result: object) -> None:
         """Apply a finished scrape's result, or discard it, on the GUI thread.
 
-        :param chain: the chain the result ends.
         :param job: the job that just resolved.
         :param result: the `ScrapeResult`.
         """
-        if not self.__is_current(chain, job):
+        chain = self.__chain_of(job)
+        if chain is None:
             return
         self.__end(chain)
         self.changed.emit()
@@ -287,31 +284,31 @@ class ScrapeActions(QObject):  # pylint: disable=too-many-instance-attributes
             # not a runtime check: result_ready's payload is always a ScrapeResult, by ScrapeJob's own
             # contract -- Signal(object) is what PySide6 requires for a payload's exact type to survive
             # the C++ boundary at all (Qt's meta-object system has no template signals), so this cast is
-            # purely for pyright, the same reason ScrapeJob.result_ready's own docstring states it.
-            self.__apply(job, cast(ScrapeResult, result))
+            # purely for pyright, the same reason ScrapeJob.Relay.result_ready's own docstring states it.
+            self.__apply(cast(ScrapeJob, job), cast(ScrapeResult, result))
 
-    def __on_failed(self, chain: ScrapeActions.Chain, job: ScrapeJob, error: object) -> None:
+    def __on_failed(self, job: object, error: object) -> None:
         """Record a scrape's refusal for the banner, on the GUI thread.
 
-        :param chain: the chain the failure ends.
         :param job: the job that just failed.
         :param error: the `ScrapeError`.
         """
-        if not self.__is_current(chain, job):
+        chain = self.__chain_of(job)
+        if chain is None:
             return
         self.__end(chain)
         if self.__model.path == chain.path:
             self.__last_failure = str(error)
         self.changed.emit()
 
-    def __on_refetch(self, chain: ScrapeActions.Chain, job: ScrapeJob, request: object) -> None:
+    def __on_refetch(self, job: object, request: object) -> None:
         """Schedule a chain's next attempt, or end it once its re-fetches are spent, on the GUI thread.
 
-        :param chain: the chain that asked.
         :param job: the job that asked.
         :param request: the normalized `~.protocols.RefetchRequestedError`.
         """
-        if not self.__is_current(chain, job):
+        chain = self.__chain_of(job)
+        if chain is None:
             return
         # not a runtime check: refetch_requested's payload is always a normalized RefetchRequestedError,
         # by ScrapeJob's own contract -- the same Signal(object) reason as __on_result's cast

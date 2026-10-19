@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
-from PySide6.QtCore import QObject
+from PySide6.QtCore import QCoreApplication, QEvent
 from pytest import LogCaptureFixture, mark, param, raises
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -92,14 +92,14 @@ def test_fragment_page_never_calls_the_fetcher(qtbot: QtBot, delete_at_teardown:
     registry = FakeRegistry({URL: scraper})
     fetcher = FakeFetcher()
     page = Page(url=URL, final_url=URL, html="<html></html>")
-    owner = delete_at_teardown(QObject())
-    job = ScrapeJob(URL, registry, page=page, fetcher=fetcher, parent=owner)  # type: ignore[arg-type]
+    relay = delete_at_teardown(ScrapeJob.Relay())
+    job = ScrapeJob(URL, registry, page=page, fetcher=fetcher, relay=relay)  # type: ignore[arg-type]
 
-    with qtbot.waitSignal(job.result_ready, timeout=1000) as blocker:
+    with qtbot.waitSignal(relay.result_ready, timeout=1000) as blocker:
         job.run()
 
     assert not fetcher.calls
-    assert blocker.args == [scraper.result]
+    assert blocker.args == [job, scraper.result]
 
 
 def test_result_ready_fires_once_on_success(qtbot: QtBot, delete_at_teardown: DeleteAtTeardown) -> None:
@@ -116,13 +116,13 @@ def test_result_ready_fires_once_on_success(qtbot: QtBot, delete_at_teardown: De
     registry = FakeRegistry({URL: scraper})
     page = Page(url=URL, final_url=URL, html="<html></html>")
     fetcher = FakeFetcher(page=page)
-    owner = delete_at_teardown(QObject())
-    job = ScrapeJob(URL, registry, fetcher=fetcher, parent=owner)  # type: ignore[arg-type]
+    relay = delete_at_teardown(ScrapeJob.Relay())
+    job = ScrapeJob(URL, registry, fetcher=fetcher, relay=relay)  # type: ignore[arg-type]
 
-    with qtbot.waitSignal(job.result_ready, timeout=1000) as blocker:
+    with qtbot.waitSignal(relay.result_ready, timeout=1000) as blocker:
         job.run()
 
-    assert blocker.args == [result]
+    assert blocker.args == [job, result]
 
 
 def test_no_matching_scraper_logs_and_emits_nothing(
@@ -138,10 +138,10 @@ def test_no_matching_scraper_logs_and_emits_nothing(
     """
     registry = FakeRegistry({})
     fetcher = FakeFetcher()
-    owner = delete_at_teardown(QObject())
-    job = ScrapeJob(URL, registry, fetcher=fetcher, parent=owner)  # type: ignore[arg-type]
+    relay = delete_at_teardown(ScrapeJob.Relay())
+    job = ScrapeJob(URL, registry, fetcher=fetcher, relay=relay)  # type: ignore[arg-type]
     received: list[object] = []
-    job.result_ready.connect(received.append)
+    relay.result_ready.connect(lambda _job, payload: received.append(payload))
 
     with caplog.at_level("WARNING"):
         job.run()
@@ -170,10 +170,10 @@ def test_an_unticked_scraper_is_fetched_over_http(
     http_fetcher = mocker.Mock(fetch=mocker.Mock(return_value=page))
     http_cls = mocker.patch("rehuco_agent.scraping.scrape_job.HttpPageFetcher", return_value=http_fetcher)
     browser_cls = mocker.patch("rehuco_agent.scraping.scrape_job.BrowserPageFetcher")
-    owner = delete_at_teardown(QObject())
-    job = ScrapeJob(URL, registry, settings=ScrapersSettings(), parent=owner)  # type: ignore[arg-type]
+    relay = delete_at_teardown(ScrapeJob.Relay())
+    job = ScrapeJob(URL, registry, settings=ScrapersSettings(), relay=relay)  # type: ignore[arg-type]
 
-    with qtbot.waitSignal(job.result_ready, timeout=1000):
+    with qtbot.waitSignal(relay.result_ready, timeout=1000):
         job.run()
 
     http_cls.assert_called_once_with()
@@ -200,10 +200,10 @@ def test_a_ticked_scraper_is_fetched_through_the_browser(
     browser_fetcher = mocker.Mock(fetch=mocker.Mock(return_value=page))
     browser_cls = mocker.patch("rehuco_agent.scraping.scrape_job.BrowserPageFetcher", return_value=browser_fetcher)
     http_cls = mocker.patch("rehuco_agent.scraping.scrape_job.HttpPageFetcher")
-    owner = delete_at_teardown(QObject())
-    job = ScrapeJob(URL, registry, settings=settings, parent=owner)  # type: ignore[arg-type]
+    relay = delete_at_teardown(ScrapeJob.Relay())
+    job = ScrapeJob(URL, registry, settings=settings, relay=relay)  # type: ignore[arg-type]
 
-    with qtbot.waitSignal(job.result_ready, timeout=1000):
+    with qtbot.waitSignal(relay.result_ready, timeout=1000):
         job.run()
 
     browser_cls.assert_called_once_with(settings)
@@ -228,10 +228,10 @@ def test_a_needs_browser_scraper_is_always_fetched_through_the_browser(
     page = Page(url=URL, final_url=URL, html="<html></html>")
     browser_fetcher = mocker.Mock(fetch=mocker.Mock(return_value=page))
     mocker.patch("rehuco_agent.scraping.scrape_job.BrowserPageFetcher", return_value=browser_fetcher)
-    owner = delete_at_teardown(QObject())
-    job = ScrapeJob(URL, registry, settings=ScrapersSettings(), parent=owner)  # type: ignore[arg-type]
+    relay = delete_at_teardown(ScrapeJob.Relay())
+    job = ScrapeJob(URL, registry, settings=ScrapersSettings(), relay=relay)  # type: ignore[arg-type]
 
-    with qtbot.waitSignal(job.result_ready, timeout=1000):
+    with qtbot.waitSignal(relay.result_ready, timeout=1000):
         job.run()
 
     browser_fetcher.fetch.assert_called_once_with(URL)
@@ -255,10 +255,10 @@ def test_a_forced_fetcher_overrides_dispatch(
     fetcher = FakeFetcher(page=page)
     http_cls = mocker.patch("rehuco_agent.scraping.scrape_job.HttpPageFetcher")
     browser_cls = mocker.patch("rehuco_agent.scraping.scrape_job.BrowserPageFetcher")
-    owner = delete_at_teardown(QObject())
-    job = ScrapeJob(URL, registry, fetcher=fetcher, parent=owner)  # type: ignore[arg-type]
+    relay = delete_at_teardown(ScrapeJob.Relay())
+    job = ScrapeJob(URL, registry, fetcher=fetcher, relay=relay)  # type: ignore[arg-type]
 
-    with qtbot.waitSignal(job.result_ready, timeout=1000):
+    with qtbot.waitSignal(relay.result_ready, timeout=1000):
         job.run()
 
     assert fetcher.calls == [URL]
@@ -280,10 +280,10 @@ def test_a_failed_fetch_is_caught_and_logged(
     scraper = FakeScraper()
     registry = FakeRegistry({URL: scraper})
     fetcher = FakeFetcher(error=RequestException("boom"))
-    owner = delete_at_teardown(QObject())
-    job = ScrapeJob(URL, registry, fetcher=fetcher, parent=owner)  # type: ignore[arg-type]
+    relay = delete_at_teardown(ScrapeJob.Relay())
+    job = ScrapeJob(URL, registry, fetcher=fetcher, relay=relay)  # type: ignore[arg-type]
     received: list[object] = []
-    job.result_ready.connect(received.append)
+    relay.result_ready.connect(lambda _job, payload: received.append(payload))
 
     with caplog.at_level("WARNING"):
         job.run()
@@ -313,10 +313,10 @@ def test_a_raising_scraper_is_caught_and_logged(
 
     registry = FakeRegistry({URL: RaisingScraper()})
     page = Page(url=URL, final_url=URL, html="<html></html>")
-    owner = delete_at_teardown(QObject())
-    job = ScrapeJob(URL, registry, fetcher=FakeFetcher(page=page), parent=owner)  # type: ignore[arg-type]
+    relay = delete_at_teardown(ScrapeJob.Relay())
+    job = ScrapeJob(URL, registry, fetcher=FakeFetcher(page=page), relay=relay)  # type: ignore[arg-type]
     received: list[object] = []
-    job.result_ready.connect(received.append)
+    relay.result_ready.connect(lambda _job, payload: received.append(payload))
 
     with caplog.at_level("ERROR"):
         job.run()
@@ -342,14 +342,14 @@ def test_a_redirect_is_re_resolved_on_the_final_url(qtbot: QtBot, delete_at_tear
     registry = FakeRegistry({URL: original_scraper, REDIRECTED_URL: redirected_scraper})
     page = Page(url=URL, final_url=REDIRECTED_URL, html="<html></html>")
     fetcher = FakeFetcher(page=page)
-    owner = delete_at_teardown(QObject())
-    job = ScrapeJob(URL, registry, fetcher=fetcher, parent=owner)  # type: ignore[arg-type]
+    relay = delete_at_teardown(ScrapeJob.Relay())
+    job = ScrapeJob(URL, registry, fetcher=fetcher, relay=relay)  # type: ignore[arg-type]
 
-    with qtbot.waitSignal(job.result_ready, timeout=1000) as blocker:
+    with qtbot.waitSignal(relay.result_ready, timeout=1000) as blocker:
         job.run()
 
     assert registry.calls == [URL, REDIRECTED_URL]
-    assert blocker.args == [redirected_result]
+    assert blocker.args == [job, redirected_result]
 
 
 def test_a_redirect_onto_a_browser_scraper_re_fetches_through_it(
@@ -375,15 +375,15 @@ def test_a_redirect_onto_a_browser_scraper_re_fetches_through_it(
     browser_fetcher = mocker.Mock(fetch=mocker.Mock(return_value=browser_page))
     mocker.patch("rehuco_agent.scraping.scrape_job.HttpPageFetcher", return_value=http_fetcher)
     mocker.patch("rehuco_agent.scraping.scrape_job.BrowserPageFetcher", return_value=browser_fetcher)
-    owner = delete_at_teardown(QObject())
-    job = ScrapeJob(URL, registry, settings=ScrapersSettings(), parent=owner)  # type: ignore[arg-type]
+    relay = delete_at_teardown(ScrapeJob.Relay())
+    job = ScrapeJob(URL, registry, settings=ScrapersSettings(), relay=relay)  # type: ignore[arg-type]
 
-    with qtbot.waitSignal(job.result_ready, timeout=1000) as blocker:
+    with qtbot.waitSignal(relay.result_ready, timeout=1000) as blocker:
         job.run()
 
     http_fetcher.fetch.assert_called_once_with(URL)
     browser_fetcher.fetch.assert_called_once_with(REDIRECTED_URL)
-    assert blocker.args == [redirected_result]
+    assert blocker.args == [job, redirected_result]
 
 
 def test_a_scraper_returning_a_mapping_yields_the_same_result_as_the_dataclass(
@@ -396,13 +396,13 @@ def test_a_scraper_returning_a_mapping_yields_the_same_result_as_the_dataclass(
     scraper = FakeScraper(result=mapping_result)
     registry = FakeRegistry({URL: scraper})
     page = Page(url=URL, final_url=URL, html="<html></html>")
-    owner = delete_at_teardown(QObject())
-    job = ScrapeJob(URL, registry, page=page, fetcher=FakeFetcher(), parent=owner)  # type: ignore[arg-type]
+    relay = delete_at_teardown(ScrapeJob.Relay())
+    job = ScrapeJob(URL, registry, page=page, fetcher=FakeFetcher(), relay=relay)  # type: ignore[arg-type]
 
-    with qtbot.waitSignal(job.result_ready, timeout=1000) as blocker:
+    with qtbot.waitSignal(relay.result_ready, timeout=1000) as blocker:
         job.run()
 
-    assert blocker.args == [dataclass_result]
+    assert blocker.args == [job, dataclass_result]
 
 
 def test_an_invalid_result_fails_only_that_scrape(
@@ -414,10 +414,10 @@ def test_an_invalid_result_fails_only_that_scrape(
     scraper = FakeScraper(label="Bad", result=bad_result)
     registry = FakeRegistry({URL: scraper})
     page = Page(url=URL, final_url=URL, html="<html></html>")
-    owner = delete_at_teardown(QObject())
-    job = ScrapeJob(URL, registry, page=page, fetcher=FakeFetcher(), parent=owner)  # type: ignore[arg-type]
+    relay = delete_at_teardown(ScrapeJob.Relay())
+    job = ScrapeJob(URL, registry, page=page, fetcher=FakeFetcher(), relay=relay)  # type: ignore[arg-type]
     received: list[object] = []
-    job.result_ready.connect(received.append)
+    relay.result_ready.connect(lambda _job, payload: received.append(payload))
 
     with caplog.at_level("WARNING"):
         job.run()
@@ -431,8 +431,8 @@ def test_an_invalid_result_fails_only_that_scrape(
 def test_scrape_raises_for_no_matching_scraper(delete_at_teardown: DeleteAtTeardown) -> None:
     """`scrape()` raises `ScrapeError` (the synchronous half `run()`/the CLI use) rather than returning
     `None`."""
-    owner = delete_at_teardown(QObject())
-    job = ScrapeJob(URL, FakeRegistry({}), fetcher=FakeFetcher(), parent=owner)  # type: ignore[arg-type]
+    relay = delete_at_teardown(ScrapeJob.Relay())
+    job = ScrapeJob(URL, FakeRegistry({}), fetcher=FakeFetcher(), relay=relay)  # type: ignore[arg-type]
 
     with raises(ScrapeError, match="No scraper matches example.com"):
         job.scrape()
@@ -456,8 +456,8 @@ def test_a_login_required_error_from_scrape_page_becomes_a_login_message(delete_
 
     registry = FakeRegistry({URL: LoginGatedScraper(label="Gated")})
     page = Page(url=URL, final_url=URL, html="<html></html>")
-    owner = delete_at_teardown(QObject())
-    job = ScrapeJob(URL, registry, page=page, parent=owner)  # type: ignore[arg-type]
+    relay = delete_at_teardown(ScrapeJob.Relay())
+    job = ScrapeJob(URL, registry, page=page, relay=relay)  # type: ignore[arg-type]
 
     with raises(LoginRequiredScrapeError, match="Gated needs a login.*example.com"):
         job.scrape()
@@ -474,8 +474,8 @@ def test_a_login_required_error_from_the_fetcher_becomes_a_login_message(delete_
     """
     registry = FakeRegistry({URL: FakeScraper(label="Gated")})
     fetcher = FakeFetcher(error=LoginRequiredError("401"))
-    owner = delete_at_teardown(QObject())
-    job = ScrapeJob(URL, registry, fetcher=fetcher, parent=owner)  # type: ignore[arg-type]
+    relay = delete_at_teardown(ScrapeJob.Relay())
+    job = ScrapeJob(URL, registry, fetcher=fetcher, relay=relay)  # type: ignore[arg-type]
 
     with raises(LoginRequiredScrapeError, match="Gated needs a login.*example.com"):
         job.scrape()
@@ -486,8 +486,8 @@ def test_scrape_raises_when_the_fetcher_raises_fetcherror(delete_at_teardown: De
     same as a `requests.RequestException` (#278)."""
     registry = FakeRegistry({URL: FakeScraper()})
     fetcher = FakeFetcher(error=FetchError("could not start the browser"))
-    owner = delete_at_teardown(QObject())
-    job = ScrapeJob(URL, registry, fetcher=fetcher, parent=owner)  # type: ignore[arg-type]
+    relay = delete_at_teardown(ScrapeJob.Relay())
+    job = ScrapeJob(URL, registry, fetcher=fetcher, relay=relay)  # type: ignore[arg-type]
 
     with raises(ScrapeError, match="Could not fetch"):
         job.scrape()
@@ -502,34 +502,51 @@ def test_scrape_raises_when_the_fetch_fails() -> None:
         job.scrape()
 
 
-def test_a_job_nobody_listens_to_runs_without_building_a_marshaller() -> None:
-    """A job no caller connected to -- the ``--scrape`` CLI only scrapes -- builds no `QObject` at all, so none is
-    left for the cyclic collector to destroy on a worker thread (#529); running it sends nothing.
+def test_a_job_whose_relay_went_with_its_document_reports_into_nothing(qtbot: QtBot) -> None:
+    """A document closed while a scrape runs takes the relay with it; the job then finishes into nothing, raising
+    nothing on the pool thread (#529) -- in the failure path too, where the emit sits inside an ``except``.
 
     **Test steps:**
 
-    * run a job over a page no scraper matches, connecting to none of its signals
-    * verify it raised nothing and built no marshaller
+    * build a job no scraper matches, over a relay, then delete the relay as a closing document would
+    * run the job
+    * verify nothing was raised
+    """
+    del qtbot  # an application, so the deferred delete below destroys the relay
+    relay = ScrapeJob.Relay()
+    job = ScrapeJob(URL, FakeRegistry({}), fetcher=FakeFetcher(), relay=relay)  # type: ignore[arg-type]
+    relay.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
+
+    job.run()
+
+
+def test_a_job_given_no_relay_runs_and_reports_nothing() -> None:
+    """A job given no relay -- the ``--scrape`` CLI only scrapes -- has nowhere to report, and running it raises
+    nothing for that (#529): a job owns no `QObject` of its own.
+
+    **Test steps:**
+
+    * run a job over a page no scraper matches, with no relay
+    * verify it raised nothing
     """
     job = ScrapeJob(URL, FakeRegistry({}), fetcher=FakeFetcher())  # type: ignore[arg-type]
 
     job.run()
 
-    assert job._ScrapeJob__marshaller is None  # type: ignore[attr-defined]  # pylint: disable=protected-access
-
 
 def test_no_matching_scraper_emits_failed_with_the_host(qtbot: QtBot, delete_at_teardown: DeleteAtTeardown) -> None:
     """`failed` fires on the GUI thread with a `NoScraperError` naming the host (#272)."""
     registry = FakeRegistry({})
-    owner = delete_at_teardown(QObject())
-    job = ScrapeJob(URL, registry, fetcher=FakeFetcher(), parent=owner)  # type: ignore[arg-type]
+    relay = delete_at_teardown(ScrapeJob.Relay())
+    job = ScrapeJob(URL, registry, fetcher=FakeFetcher(), relay=relay)  # type: ignore[arg-type]
 
-    with qtbot.waitSignal(job.failed, timeout=1000) as blocker:
+    with qtbot.waitSignal(relay.failed, timeout=1000) as blocker:
         job.run()
 
     assert blocker.args is not None
-    assert len(blocker.args) == 1
-    error = blocker.args[0]
+    assert len(blocker.args) == 2
+    error = blocker.args[1]
     assert isinstance(error, NoScraperError)
     # pylint-qt reads a subscript of the blocker's args as a signal once QtCore is imported (false positive)
     assert error.host == "example.com"  # pylint: disable=no-member
@@ -540,14 +557,14 @@ def test_a_failed_fetch_emits_failed(qtbot: QtBot, delete_at_teardown: DeleteAtT
     scraper = FakeScraper()
     registry = FakeRegistry({URL: scraper})
     fetcher = FakeFetcher(error=RequestException("boom"))
-    owner = delete_at_teardown(QObject())
-    job = ScrapeJob(URL, registry, fetcher=fetcher, parent=owner)  # type: ignore[arg-type]
+    relay = delete_at_teardown(ScrapeJob.Relay())
+    job = ScrapeJob(URL, registry, fetcher=fetcher, relay=relay)  # type: ignore[arg-type]
 
-    with qtbot.waitSignal(job.failed, timeout=1000) as blocker:
+    with qtbot.waitSignal(relay.failed, timeout=1000) as blocker:
         job.run()
 
     assert blocker.args is not None
-    assert "Could not fetch" in str(blocker.args[0])
+    assert "Could not fetch" in str(blocker.args[1])
 
 
 def test_an_invalid_result_emits_failed(qtbot: QtBot, delete_at_teardown: DeleteAtTeardown) -> None:
@@ -556,14 +573,14 @@ def test_an_invalid_result_emits_failed(qtbot: QtBot, delete_at_teardown: Delete
     scraper = FakeScraper(label="Bad", result=bad_result)
     registry = FakeRegistry({URL: scraper})
     page = Page(url=URL, final_url=URL, html="<html></html>")
-    owner = delete_at_teardown(QObject())
-    job = ScrapeJob(URL, registry, page=page, fetcher=FakeFetcher(), parent=owner)  # type: ignore[arg-type]
+    relay = delete_at_teardown(ScrapeJob.Relay())
+    job = ScrapeJob(URL, registry, page=page, fetcher=FakeFetcher(), relay=relay)  # type: ignore[arg-type]
 
-    with qtbot.waitSignal(job.failed, timeout=1000) as blocker:
+    with qtbot.waitSignal(relay.failed, timeout=1000) as blocker:
         job.run()
 
     assert blocker.args is not None
-    assert "Bad returned an invalid result" in str(blocker.args[0])
+    assert "Bad returned an invalid result" in str(blocker.args[1])
 
 
 def test_a_raising_scraper_emits_failed(qtbot: QtBot, delete_at_teardown: DeleteAtTeardown) -> None:
@@ -576,14 +593,14 @@ def test_a_raising_scraper_emits_failed(qtbot: QtBot, delete_at_teardown: Delete
 
     registry = FakeRegistry({URL: RaisingScraper()})
     page = Page(url=URL, final_url=URL, html="<html></html>")
-    owner = delete_at_teardown(QObject())
-    job = ScrapeJob(URL, registry, fetcher=FakeFetcher(page=page), parent=owner)  # type: ignore[arg-type]
+    relay = delete_at_teardown(ScrapeJob.Relay())
+    job = ScrapeJob(URL, registry, fetcher=FakeFetcher(page=page), relay=relay)  # type: ignore[arg-type]
 
-    with qtbot.waitSignal(job.failed, timeout=1000) as blocker:
+    with qtbot.waitSignal(relay.failed, timeout=1000) as blocker:
         job.run()
 
     assert blocker.args is not None
-    assert f"Scraping {URL} failed" in str(blocker.args[0])
+    assert f"Scraping {URL} failed" in str(blocker.args[1])
 
 
 def test_publisher_and_page_url_are_set_after_a_successful_scrape(
@@ -595,10 +612,10 @@ def test_publisher_and_page_url_are_set_after_a_successful_scrape(
     redirected_scraper = FakeScraper(label="Redirected", publisher="Redirected Co", result=redirected_result)
     registry = FakeRegistry({URL: original_scraper, REDIRECTED_URL: redirected_scraper})
     page = Page(url=URL, final_url=REDIRECTED_URL, html="<html></html>")
-    owner = delete_at_teardown(QObject())
-    job = ScrapeJob(URL, registry, fetcher=FakeFetcher(page=page), parent=owner)  # type: ignore[arg-type]
+    relay = delete_at_teardown(ScrapeJob.Relay())
+    job = ScrapeJob(URL, registry, fetcher=FakeFetcher(page=page), relay=relay)  # type: ignore[arg-type]
 
-    with qtbot.waitSignal(job.result_ready, timeout=1000):
+    with qtbot.waitSignal(relay.result_ready, timeout=1000):
         job.run()
 
     assert job.publisher == "Redirected Co"
@@ -620,14 +637,14 @@ def test_a_redirect_onto_an_unclaimed_host_keeps_the_original_scraper(
     original_result = ScrapeResult(fields={"title": "Original"}, description=None, images=())
     registry = FakeRegistry({URL: FakeScraper(label="Original", result=original_result)})
     page = Page(url=URL, final_url=REDIRECTED_URL, html="<html></html>")
-    owner = delete_at_teardown(QObject())
-    job = ScrapeJob(URL, registry, fetcher=FakeFetcher(page=page), parent=owner)  # type: ignore[arg-type]
+    relay = delete_at_teardown(ScrapeJob.Relay())
+    job = ScrapeJob(URL, registry, fetcher=FakeFetcher(page=page), relay=relay)  # type: ignore[arg-type]
 
-    with qtbot.waitSignal(job.result_ready, timeout=1000) as blocker:
+    with qtbot.waitSignal(relay.result_ready, timeout=1000) as blocker:
         job.run()
 
     assert registry.calls == [URL, REDIRECTED_URL]
-    assert blocker.args == [original_result]
+    assert blocker.args == [job, original_result]
 
 
 class RefetchingScraper(FakeScraper):
@@ -658,18 +675,18 @@ def test_a_refetch_request_emits_refetch_requested_with_its_url_range_and_messag
     request = RefetchRequestedError("Site answered 503", url=REDIRECTED_URL, delay=(1.0, 2.0))
     registry = FakeRegistry({URL: RefetchingScraper(request)})
     fetcher = FakeFetcher(page=Page(url=URL, final_url=URL, html="", status=503))
-    owner = delete_at_teardown(QObject())
-    job = ScrapeJob(URL, registry, fetcher=fetcher, parent=owner)  # type: ignore[arg-type]
+    relay = delete_at_teardown(ScrapeJob.Relay())
+    job = ScrapeJob(URL, registry, fetcher=fetcher, relay=relay)  # type: ignore[arg-type]
     others: list[object] = []
-    job.result_ready.connect(others.append)
-    job.failed.connect(others.append)
+    relay.result_ready.connect(lambda _job, payload: others.append(payload))
+    relay.failed.connect(lambda _job, payload: others.append(payload))
 
-    with qtbot.waitSignal(job.refetch_requested, timeout=1000) as blocker:
+    with qtbot.waitSignal(relay.refetch_requested, timeout=1000) as blocker:
         job.run()
     qtbot.wait(20)
 
     assert blocker.args is not None
-    emitted = blocker.args[0]
+    emitted = blocker.args[1]
     assert isinstance(emitted, RefetchRequestedError)
     # pylint-qt reads a subscript of the blocker's args as a signal once QtCore is imported (false positive)
     assert (emitted.url, emitted.delay, emitted.message) == (  # pylint: disable=no-member
@@ -687,8 +704,8 @@ def test_a_bare_refetch_request_is_filled_with_the_same_url_and_the_default_dela
     default pause (#368)."""
     registry = FakeRegistry({URL: RefetchingScraper(RefetchRequestedError("busy"))})
     fetcher = FakeFetcher(page=Page(url=URL, final_url=URL, html="", status=503))
-    owner = delete_at_teardown(QObject())
-    job = ScrapeJob(URL, registry, fetcher=fetcher, parent=owner)  # type: ignore[arg-type]
+    relay = delete_at_teardown(ScrapeJob.Relay())
+    job = ScrapeJob(URL, registry, fetcher=fetcher, relay=relay)  # type: ignore[arg-type]
 
     with raises(RefetchRequestedError) as caught:
         job.scrape()
@@ -701,8 +718,8 @@ def test_a_scraper_ignoring_an_error_status_fails_as_the_fetch_used_to(delete_at
     the fetcher itself used to raise, so a scraper unaware of statuses behaves exactly as before (#368)."""
     registry = FakeRegistry({URL: FakeScraper()})
     fetcher = FakeFetcher(page=Page(url=URL, final_url=URL, html="", status=503))
-    owner = delete_at_teardown(QObject())
-    job = ScrapeJob(URL, registry, fetcher=fetcher, parent=owner)  # type: ignore[arg-type]
+    relay = delete_at_teardown(ScrapeJob.Relay())
+    job = ScrapeJob(URL, registry, fetcher=fetcher, relay=relay)  # type: ignore[arg-type]
 
     with raises(ScrapeError, match=f"Could not fetch {URL}: HTTP 503"):
         job.scrape()
@@ -718,12 +735,12 @@ def test_a_page_after_a_503_is_scraped_normally(delete_at_teardown: DeleteAtTear
             Page(url=URL, final_url=URL, html="", status=200),
         ]
     )
-    owner = delete_at_teardown(QObject())
+    relay = delete_at_teardown(ScrapeJob.Relay())
     registry = FakeRegistry({URL: scraper})
 
     with raises(RefetchRequestedError):
-        ScrapeJob(URL, registry, fetcher=fetcher, parent=owner).scrape()  # type: ignore[arg-type]
-    result = ScrapeJob(URL, registry, fetcher=fetcher, parent=owner).scrape()  # type: ignore[arg-type]
+        ScrapeJob(URL, registry, fetcher=fetcher, relay=relay).scrape()  # type: ignore[arg-type]
+    result = ScrapeJob(URL, registry, fetcher=fetcher, relay=relay).scrape()  # type: ignore[arg-type]
 
     assert result == scraper.result
     assert fetcher.calls == [URL, URL]

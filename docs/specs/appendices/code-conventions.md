@@ -118,6 +118,10 @@ docstring of `borco_core.path_presence` — read it there, where the code is.
   `~QObject` takes a signal-slot mutex and then waits for the GIL the GUI thread may hold. With no natural parent,
   the owner deletes it when done (`FieldsForm.delete_later`, `LogBridge.close`, `ScraperExecutor.shutdown`); a test
   hands what it builds bare to the `delete_at_teardown` fixture.
+- **Work that runs again and again reports through one `QObject` its caller owns, never one per run** (#529): a
+  per-run child stays on its parent until the parent goes — a leak in an app that runs for days, on a node for
+  weeks — and deleting each after it relayed proved fragile. `ScrapeJob.Relay` carries every job's outcome with the
+  job as its first argument; a page reuses one `PersonaAction`; a measurement's runner is its row's child.
 - **A daemon thread holds no Qt object and delivers nothing after `stop()`.** Its callback runs on its own thread and
   only emits a signal, which Qt queues to the GUI thread; the owner stops it first thing when the window closes.
 - First users: the task queue's worker ([[appendices.task-queue#teardown]], daemon for the same reason) and

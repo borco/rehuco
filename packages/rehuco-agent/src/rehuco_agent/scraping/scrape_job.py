@@ -115,9 +115,8 @@ class ScrapeJob:  # pylint: disable=too-many-instance-attributes
         ([[acquisition-tooling#browser-persona]]), in which case `~.browser_fetcher.BrowserPageFetcher`.
     :param settings: where the browser choice and the per-scraper **Use browser** picks come from;
         `None` reads the shared, process-wide settings, the shape every caller but a test wants.
-    :param parent: the Qt parent of the job's marshaller -- the caller connecting to the job, so the
-        marshaller goes with it on the GUI thread rather than in the cyclic collector, which the caller's
-        closures over the job would otherwise leave it to, on whatever thread collects next (#529).
+    :param relay: where the outcome goes, on the GUI thread -- the caller's one :class:`Relay`; ``None`` for a job
+        that is only ever :meth:`scrape`-d (the ``--scrape`` CLI), which then reports nothing.
     """
 
     def __init__(  # pylint: disable=too-many-arguments
@@ -128,180 +127,154 @@ class ScrapeJob:  # pylint: disable=too-many-instance-attributes
         page: Page | None = None,
         fetcher: PageFetcher | None = None,
         settings: ScrapersSettings | None = None,
-        parent: QObject | None = None,
+        relay: ScrapeJob.Relay | None = None,
     ) -> None:
         self.__url: Final = url
         self.__registry: Final = registry
         self.__page: Final = page
         self.__forced_fetcher: Final = fetcher
         self.__settings: Final = settings if settings is not None else shared_scrapers_settings()
-        self.__parent: Final = parent
-        self.__marshaller: ScrapeJob.Marshaller | None = None
+        self.__relay: Final = relay
         self.__publisher: str | None = None
         self.__page_url: str | None = None
 
-    class Marshaller(QObject):
-        """Carries a finished scrape's result across the thread boundary, and nothing else.
+    class Relay(QObject):
+        """Carries finished scrapes' outcomes across the thread boundary, for every job one caller runs (#529).
 
-        Nested and undocumented outside this class for the same reason
-        `rehuco_agent.tasks.TaskQueueModel.Marshaller` is: a mangled class name is not one Qt or the
-        linters will accept, and nothing outside `ScrapeJob` has a reason to build one.
+        **One per caller, for the caller's lifetime**, built once and parented to it -- never one per job. A
+        `QObject` per job would either stay on its caller until the document closed, one per scrape -- a leak
+        in an app that runs for days -- or be deleted once it had relayed, which corrupts the heap under
+        PySide 6.11. A plain Python job owning no `QObject` is freed wherever its last reference goes.
 
         Three pairs of signals rather than three: :attr:`scraped`/:attr:`failure`/:attr:`refetch` fire on
         whichever thread the scrape ran on and are each connected, with an explicit
-        `Qt.ConnectionType.QueuedConnection`, to a relay that re-emits
+        `Qt.ConnectionType.QueuedConnection`, to a method of this object that re-emits
         :attr:`result_ready`/:attr:`failed`/:attr:`refetch_requested` -- so those always fire on the GUI
         thread, whatever kind of object connects to them (a plain callable included, which
-        `AutoConnection` would run on the worker thread instead).
+        `AutoConnection` would run on the worker thread instead). Every signal carries the job first, so a
+        caller with several in flight tells their outcomes apart.
 
-        A child of the caller, so it is never left to the cyclic collector (#529); it stays on the caller for as
-        long as the document is open, one per scrape. Deleting it once it has relayed corrupts the heap under
-        PySide 6.11 (a crash in a later ``~QObject``), with or without a parent, so it is not done.
+        :param parent: the caller.
         """
 
-        scraped = Signal(object)
-        """Fires with the `ScrapeResult`, on the worker thread. Not for callers outside `ScrapeJob`."""
+        scraped = Signal(object, object)
+        """Fires with the job and its `ScrapeResult`, on the worker thread. Not for callers outside `ScrapeJob`."""
 
-        failure = Signal(object)
-        """Fires with the `ScrapeError`, on the worker thread. Not for callers outside `ScrapeJob`."""
+        failure = Signal(object, object)
+        """Fires with the job and its `ScrapeError`, on the worker thread. Not for callers outside `ScrapeJob`."""
 
-        result_ready = Signal(object)
-        """Fires with the `ScrapeResult`, always on the GUI thread. What `ScrapeJob.result_ready`
-        exposes."""
+        refetch = Signal(object, object)
+        """Fires with the job and its normalized `~.protocols.RefetchRequestedError`, on the worker thread. Not
+        for callers outside `ScrapeJob`."""
 
-        failed = Signal(object)
-        """Fires with the `ScrapeError`, always on the GUI thread. What `ScrapeJob.failed` exposes."""
+        result_ready = Signal(object, object)
+        """Fires on the GUI thread with the job and its scraped `ScrapeResult`, exactly once per job, only on
+        success.
 
-        refetch = Signal(object)
-        """Fires with the normalized `~.protocols.RefetchRequestedError`, on the worker thread. Not for
-        callers outside `ScrapeJob`."""
+        Never fires when no scraper matched, when the fetch failed or landed on a login wall, or when the
+        scraper's own result failed the scrape-result schema -- each of those is logged instead
+        (:meth:`ScrapeJob.scrape` raises `ScrapeError` for all, :meth:`ScrapeJob.run` catches and logs it).
+        Applying the result to an editor, and discarding it if the document has since closed or been renamed,
+        is the caller's job."""
 
-        refetch_requested = Signal(object)
-        """Fires with the normalized `~.protocols.RefetchRequestedError`, always on the GUI thread. What
-        `ScrapeJob.refetch_requested` exposes."""
+        failed = Signal(object, object)
+        """Fires on the GUI thread with the job and its `ScrapeError`, exactly once per job, whenever neither
+        :attr:`result_ready` nor :attr:`refetch_requested` does -- no scraper matched, the fetch failed or
+        landed on a login wall, or the result failed the scrape-result schema. Fires alongside the same
+        `LOG.warning`/`LOG.exception` call :meth:`ScrapeJob.run` always made; this is what lets a caller show
+        the refusal beside an open document (e.g. a `MessageBanner` row) rather than read it only from the
+        log."""
 
-        def __init__(self, parent: QObject | None) -> None:
+        refetch_requested = Signal(object, object)
+        """Fires on the GUI thread with the job, exactly once, when its scraper asked for the page again
+        (`~.protocols.RefetchRequestedError`) -- carrying the request with its ``url`` and ``delay`` already
+        filled in. Scheduling the next attempt, and capping how many there are (:data:`MAX_REFETCHES`), is
+        the caller's job: a job is one attempt and never waits."""
+
+        def __init__(self, parent: QObject | None = None) -> None:
             super().__init__(parent)
             self.scraped.connect(self.__relay_result, Qt.ConnectionType.QueuedConnection)
             self.failure.connect(self.__relay_failure, Qt.ConnectionType.QueuedConnection)
             self.refetch.connect(self.__relay_refetch, Qt.ConnectionType.QueuedConnection)
 
-        def __relay_result(self, result: object) -> None:
+        def __relay_result(self, job: object, result: object) -> None:
             """Re-emit :attr:`result_ready`, on the GUI thread by construction of the connection above.
 
+            :param job: the job that scraped.
             :param result: the `ScrapeResult` :attr:`scraped` carried.
             """
-            self.result_ready.emit(result)
+            self.result_ready.emit(job, result)
 
-        def __relay_failure(self, error: object) -> None:
+        def __relay_failure(self, job: object, error: object) -> None:
             """Re-emit :attr:`failed`, on the GUI thread by construction of the connection above.
 
+            :param job: the job that failed.
             :param error: the `ScrapeError` :attr:`failure` carried.
             """
-            self.failed.emit(error)
+            self.failed.emit(job, error)
 
-        def __relay_refetch(self, request: object) -> None:
+        def __relay_refetch(self, job: object, request: object) -> None:
             """Re-emit :attr:`refetch_requested`, on the GUI thread by construction of the connection above.
 
+            :param job: the job that asked.
             :param request: the `~.protocols.RefetchRequestedError` :attr:`refetch` carried.
             """
-            self.refetch_requested.emit(request)
-
-    @property
-    def result_ready(self) -> SignalInstance:
-        """Fires on the GUI thread with the scraped `ScrapeResult`, exactly once, only on success.
-
-        Never fires when no scraper matched, when the fetch failed or landed on a login wall, or when
-        the scraper's own result failed the scrape-result schema -- each of those is logged instead
-        (:meth:`scrape` raises `ScrapeError` for all, :meth:`run` catches and logs it). Applying the
-        result to an editor, and discarding it if the document has since closed or been renamed, is the
-        caller's job.
-        """
-        return self.__signals().result_ready
-
-    @property
-    def failed(self) -> SignalInstance:
-        """Fires on the GUI thread with the `ScrapeError`, exactly once, whenever neither
-        :attr:`result_ready` nor :attr:`refetch_requested` does -- no scraper matched, the fetch failed
-        or landed on a login wall, or the result failed the scrape-result schema. Fires alongside the
-        same `LOG.warning`/`LOG.exception` call :meth:`run` always made; this is what lets a caller show
-        the refusal beside an open document (e.g. a `MessageBanner` row) rather than read it only from
-        the log.
-        """
-        return self.__signals().failed
-
-    @property
-    def refetch_requested(self) -> SignalInstance:
-        """Fires on the GUI thread, exactly once, when the scraper asked for the page again
-        (`~.protocols.RefetchRequestedError`) -- carrying the request with its ``url`` and ``delay``
-        already filled in. Scheduling the next attempt, and capping how many there are
-        (:data:`MAX_REFETCHES`), is the caller's job: this job is one attempt and never waits.
-        """
-        return self.__signals().refetch_requested
+            self.refetch_requested.emit(job, request)
 
     @property
     def publisher(self) -> str | None:
         """The publisher of the scraper that produced the result, after any redirect -- `None` until
-        :meth:`scrape` has resolved one. Read after :attr:`result_ready` fires; both are set before it
-        is emitted."""
+        :meth:`scrape` has resolved one. Read after the relay's ``result_ready`` fires; both are set before
+        it is emitted."""
         return self.__publisher
 
     @property
     def page_url(self) -> str | None:
         """The URL of the page actually read -- the dropped fragment's URL, or the fetch's
-        `~.results.Page.final_url` -- `None` until :meth:`scrape` has resolved one. Read after
-        :attr:`result_ready` fires; both are set before it is emitted."""
+        `~.results.Page.final_url` -- `None` until :meth:`scrape` has resolved one. Read after the relay's
+        ``result_ready`` fires; both are set before it is emitted."""
         return self.__page_url
 
     def run(self) -> None:
         """Do the work: resolve, fetch, parse, validate, emit.
 
-        Runs on whatever thread `ScraperExecutor` hands it to. Touches no widget directly -- the result
-        crosses back to the GUI thread through :attr:`result_ready`'s queued connection, and a refusal
-        through :attr:`failed`'s.
+        Runs on whatever thread `ScraperExecutor` hands it to. Touches no widget directly -- the outcome
+        crosses back to the GUI thread through the relay's queued connections.
 
         The blanket catch is the point rather than a shortcut, the same one `BackgroundMeasurement`
         makes: `matches` and `scrape_page` are user-written code, an exception escaping a pool thread
         is printed by the pool and reaches no log dock, and the document's log is the one place a
         broken script can be diagnosed from. A `ScrapeError` -- an expected refusal or a bad result --
         is logged as a warning rather than with a traceback; anything else still gets `LOG.exception`
-        and is wrapped as a `ScrapeError` before reaching :attr:`failed`. A re-fetch request is neither:
-        it is logged as information and reaches :attr:`refetch_requested`.
+        and is wrapped as a `ScrapeError` before reaching the relay's ``failed``. A re-fetch request is
+        neither: it is logged as information and reaches its ``refetch_requested``.
         """
         try:
-            self.__deliver(lambda marshaller: marshaller.scraped, self.scrape())
+            self.__deliver(lambda relay: relay.scraped, self.scrape())
         except RefetchRequestedError as request:
             LOG.info("%s; a re-fetch of %s was requested.", request.message, request.url)
-            self.__deliver(lambda marshaller: marshaller.refetch, request)
+            self.__deliver(lambda relay: relay.refetch, request)
         except ScrapeError as error:
             LOG.warning(str(error))
-            self.__deliver(lambda marshaller: marshaller.failure, error)
+            self.__deliver(lambda relay: relay.failure, error)
         except Exception as error:  # pylint: disable=broad-exception-caught
             LOG.exception("Scraping %s failed.", self.__url)
-            self.__deliver(lambda marshaller: marshaller.failure, ScrapeError(f"Scraping {self.__url} failed: {error}"))
+            self.__deliver(lambda relay: relay.failure, ScrapeError(f"Scraping {self.__url} failed: {error}"))
 
-    def __signals(self) -> ScrapeJob.Marshaller:
-        """The job's marshaller, built the first time anyone asks for one of its signals.
+    def __deliver(self, pick: Callable[[ScrapeJob.Relay], SignalInstance], payload: object) -> None:
+        """Send ``payload`` to the GUI thread through one of the relay's worker-side signals, with this job --
+        nothing for a job given no relay, and nothing for one whose relay went with its document while the job ran:
+        a document closed mid-scrape lets the attempt finish (`ScrapeActions.detach`), and its outcome is nobody's.
 
-        Lazily, so a job that is only ever :meth:`scrape`-d -- the ``--scrape`` CLI -- builds no `QObject` at
-        all. The askers are the callers connecting before they submit, on the GUI thread, which is the thread
-        the marshaller must live on for its queued relays to land there.
-
-        :returns: the marshaller.
+        :param pick: which of the relay's signals to emit.
+        :param payload: what the signal carries after the job.
         """
-        if self.__marshaller is None:
-            self.__marshaller = ScrapeJob.Marshaller(self.__parent)
-        return self.__marshaller
-
-    def __deliver(self, pick: Callable[[ScrapeJob.Marshaller], SignalInstance], payload: object) -> None:
-        """Send ``payload`` to the GUI thread through one of the marshaller's worker-side signals -- nothing
-        when nobody connected, since then no marshaller was built.
-
-        :param pick: which of the marshaller's signals to emit.
-        :param payload: what the signal carries.
-        """
-        if self.__marshaller is not None:
-            pick(self.__marshaller).emit(payload)
+        if self.__relay is None:
+            return
+        try:
+            pick(self.__relay).emit(self, payload)
+        except RuntimeError:  # the relay was deleted with its document while the scrape ran
+            pass
 
     def scrape(self) -> ScrapeResult:
         """Resolve, refuse or fetch, re-resolve a redirect, parse, validate -- the synchronous half of

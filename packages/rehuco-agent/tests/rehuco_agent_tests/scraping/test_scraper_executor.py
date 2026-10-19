@@ -6,7 +6,6 @@ from dataclasses import dataclass, field
 from logging import INFO, Handler, LogRecord, getLogger
 
 from borco_core.logging import LogScope
-from PySide6.QtCore import QObject
 from pytestqt.qtbot import QtBot
 from rehuco_agent.scraping.results import Page, ScrapeResult
 from rehuco_agent.scraping.scrape_job import ScrapeJob
@@ -82,23 +81,23 @@ def test_two_jobs_submitted_together_both_complete(qtbot: QtBot, delete_at_teard
         }
     )
     fetcher = FakeFetcher()
-    owner = delete_at_teardown(QObject())
-    job_a = ScrapeJob(URL_A, registry, fetcher=fetcher, parent=owner)  # type: ignore[arg-type]
-    job_b = ScrapeJob(URL_B, registry, fetcher=fetcher, parent=owner)  # type: ignore[arg-type]
+    relay = delete_at_teardown(ScrapeJob.Relay())
+    job_a = ScrapeJob(URL_A, registry, fetcher=fetcher, relay=relay)  # type: ignore[arg-type]
+    job_b = ScrapeJob(URL_B, registry, fetcher=fetcher, relay=relay)  # type: ignore[arg-type]
     received: list[object] = []
     delivering_threads: list[threading.Thread] = []
 
-    def receive(result: object) -> None:
+    def receive(job: object, result: object) -> None:
+        del job
         received.append(result)
         delivering_threads.append(threading.current_thread())
 
-    job_a.result_ready.connect(receive)
-    job_b.result_ready.connect(receive)
+    relay.result_ready.connect(receive)
     executor = ScraperExecutor()
 
-    with qtbot.waitSignal(job_a.result_ready, timeout=2000), qtbot.waitSignal(job_b.result_ready, timeout=2000):
-        executor.submit(job_a)
-        executor.submit(job_b)
+    executor.submit(job_a)
+    executor.submit(job_b)
+    qtbot.waitUntil(lambda: len(received) == 2, timeout=2000)
     executor.shutdown()
 
     ordered = sorted(received, key=lambda result: result.fields["title"])  # type: ignore[union-attr]
@@ -151,10 +150,10 @@ def test_a_job_submitted_inside_a_log_scope_logs_under_it(qtbot: QtBot, delete_a
     previous_level = logger.level
     logger.setLevel(INFO)
     try:
-        owner = delete_at_teardown(QObject())
-        job = ScrapeJob(URL_A, OneScraperRegistry(), fetcher=FakeFetcher(), parent=owner)  # type: ignore[arg-type]
+        relay = delete_at_teardown(ScrapeJob.Relay())
+        job = ScrapeJob(URL_A, OneScraperRegistry(), fetcher=FakeFetcher(), relay=relay)  # type: ignore[arg-type]
         executor = ScraperExecutor()
-        with qtbot.waitSignal(job.result_ready, timeout=2000):
+        with qtbot.waitSignal(relay.result_ready, timeout=2000):
             with LogScope.open(scope):
                 executor.submit(job)
         executor.shutdown()

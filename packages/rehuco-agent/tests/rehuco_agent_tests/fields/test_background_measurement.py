@@ -25,27 +25,30 @@ class FakeRow(QObject):
         self.shown.append(value)
 
 
-def test_the_runner_belongs_to_the_owner_and_not_to_the_row(qtbot: QtBot) -> None:
-    """The runner is parented to the owner -- the document, which outlives every form built over it -- so the pool's
-    callable is never the last to hold it, and it is never destroyed on a worker thread (#529).
+def test_the_runner_belongs_to_its_row_and_goes_with_it(qtbot: QtBot) -> None:
+    """The runner is the row's child: the pool's callable is never the last to hold it, so it is never destroyed on a
+    worker thread, and a form rebuild taking the row takes the runner too, rather than leaving one behind per row
+    until the document closes (#529).
 
     **Test steps:**
 
-    * wire a row to a measurement, with an owner
-    * verify the owner holds one runner, and the row none
+    * wire a row to a measurement
+    * verify the row holds one runner
     * press Compute and verify the answer reaches the row
+    * delete the row and verify the runner went with it
     """
-    owner = QObject()
     row = FakeRow()
 
-    measure_in_background(row, lambda: 7, owner=owner)  # type: ignore[arg-type]
+    measure_in_background(row, lambda: 7)  # type: ignore[arg-type]
 
-    assert len(owner.findChildren(BackgroundMeasurement)) == 1
-    assert not row.findChildren(BackgroundMeasurement)
+    runners = row.findChildren(BackgroundMeasurement)
+    assert len(runners) == 1
     row.compute_requested.emit()
     qtbot.waitUntil(lambda: row.shown == [7], timeout=2000)
-    owner.deleteLater()
+    destroyed: list[bool] = []
+    runners[0].destroyed.connect(lambda: destroyed.append(True))
     row.deleteLater()
+    qtbot.waitUntil(lambda: destroyed == [True], timeout=2000)
 
 
 def test_a_measurement_outliving_its_runner_reports_into_nothing(qtbot: QtBot, capfd: CaptureFixture[str]) -> None:

@@ -27,74 +27,68 @@ class ImageDownloadJob:
     :param referrer: the page to send as the download's ``Referer``, or ``None`` when the site does
         not need one.
     :param slot: the ``<stem>NN`` slot this image is destined for, or ``None`` for the next free one.
-    :param parent: the Qt parent of the job's marshaller -- the caller connecting to the job, for the reason
+    :param relay: where the outcome goes, on the GUI thread -- the caller's one :class:`Relay`, for the reason
         `~.scrape_job.ScrapeJob` takes one (#529).
     """
 
-    def __init__(self, url: str, referrer: str | None, slot: int | None = None, parent: QObject | None = None) -> None:
+    def __init__(
+        self, url: str, referrer: str | None, slot: int | None = None, *, relay: ImageDownloadJob.Relay
+    ) -> None:
         self.__url: Final = url
         self.__referrer: Final = referrer
         self.__slot: Final = slot
-        self.__marshaller: Final = ImageDownloadJob.Marshaller(parent)
+        self.__relay: Final = relay
 
-    class Marshaller(QObject):
-        """Carries a finished download's result across the thread boundary, and nothing else.
+    class Relay(QObject):
+        """Carries finished downloads' outcomes across the thread boundary, for every job one caller runs (#529).
 
-        The same two-pairs-of-signals shape `~.scrape_job.ScrapeJob.Marshaller` uses, for the same
-        reason: :attr:`downloaded`/:attr:`failure` fire on the worker thread and are relayed to
-        :attr:`result_ready`/:attr:`failed`, always on the GUI thread, over an explicit
-        `Qt.ConnectionType.QueuedConnection` -- to a method of its own rather than to the signal's ``emit``,
-        so the queued call is posted to this object and goes with it. A child of the caller for as long as
-        the document is open, as `~.scrape_job.ScrapeJob.Marshaller` is, and for the same reason (#529).
+        One per caller, for the caller's lifetime, for the reason `~.scrape_job.ScrapeJob.Relay` is, and the
+        same two-pairs-of-signals shape: :attr:`downloaded`/:attr:`failure` fire on the worker thread and
+        are relayed to :attr:`result_ready`/:attr:`failed`, always on the GUI thread, over an explicit
+        `Qt.ConnectionType.QueuedConnection` to a method of this object. Every signal carries the job first.
+
+        :param parent: the caller.
         """
 
-        downloaded = Signal(object)
-        """Fires with the `~.image_pipeline.AcquiredImage`, on the worker thread."""
+        downloaded = Signal(object, object)
+        """Fires with the job and its `~.image_pipeline.AcquiredImage`, on the worker thread."""
 
-        failure = Signal(object)
-        """Fires with the exception, on the worker thread."""
+        failure = Signal(object, object)
+        """Fires with the job and its exception, on the worker thread."""
 
-        result_ready = Signal(object)
-        """Fires with the `~.image_pipeline.AcquiredImage`, always on the GUI thread."""
+        result_ready = Signal(object, object)
+        """Fires on the GUI thread with the job and its `~.image_pipeline.AcquiredImage`, exactly once per job,
+        only on success."""
 
-        failed = Signal(object)
-        """Fires with the exception, always on the GUI thread."""
+        failed = Signal(object, object)
+        """Fires on the GUI thread with the job and its exception, exactly once per job, whenever
+        :attr:`result_ready` does not."""
 
-        def __init__(self, parent: QObject | None) -> None:
+        def __init__(self, parent: QObject | None = None) -> None:
             super().__init__(parent)
             self.downloaded.connect(self.__relay_result, Qt.ConnectionType.QueuedConnection)
             self.failure.connect(self.__relay_failure, Qt.ConnectionType.QueuedConnection)
 
-        def __relay_result(self, result: object) -> None:
+        def __relay_result(self, job: object, result: object) -> None:
             """Re-emit :attr:`result_ready`, on the GUI thread by construction of the connection above.
 
+            :param job: the job that downloaded.
             :param result: the `~.image_pipeline.AcquiredImage` :attr:`downloaded` carried.
             """
-            self.result_ready.emit(result)
+            self.result_ready.emit(job, result)
 
-        def __relay_failure(self, error: object) -> None:
+        def __relay_failure(self, job: object, error: object) -> None:
             """Re-emit :attr:`failed`, on the GUI thread by construction of the connection above.
 
+            :param job: the job that failed.
             :param error: the exception :attr:`failure` carried.
             """
-            self.failed.emit(error)
+            self.failed.emit(job, error)
 
     @property
     def slot(self) -> int | None:
         """The ``<stem>NN`` slot this download is destined for, or ``None`` for the next free one."""
         return self.__slot
-
-    @property
-    def result_ready(self) -> SignalInstance:
-        """Fires on the GUI thread with the `~.image_pipeline.AcquiredImage`, exactly once, only on
-        success."""
-        return self.__marshaller.result_ready
-
-    @property
-    def failed(self) -> SignalInstance:
-        """Fires on the GUI thread with the exception, exactly once, whenever :attr:`result_ready`
-        does not."""
-        return self.__marshaller.failed
 
     def run(self) -> None:
         """Do the work: fetch, emit -- the `~.scraper_executor.PoolJob` contract.
@@ -108,6 +102,18 @@ class ImageDownloadJob:
             result = acquire(self.__url, self.__referrer)
         except Exception as error:  # pylint: disable=broad-exception-caught
             LOG.warning("Could not download %s: %s", self.__url, error)
-            self.__marshaller.failure.emit(error)
+            self.__deliver(self.__relay.failure, error)
             return
-        self.__marshaller.downloaded.emit(result)
+        self.__deliver(self.__relay.downloaded, result)
+
+    def __deliver(self, signal: SignalInstance, payload: object) -> None:
+        """Send ``payload`` to the GUI thread through one of the relay's worker-side signals, with this job --
+        nothing for a job whose relay went with its document while the download ran, whose outcome is nobody's.
+
+        :param signal: which of the relay's signals to emit.
+        :param payload: what the signal carries after the job.
+        """
+        try:
+            signal.emit(self, payload)
+        except RuntimeError:  # the relay was deleted with its document while the download ran
+            pass

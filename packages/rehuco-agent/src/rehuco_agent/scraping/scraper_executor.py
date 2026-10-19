@@ -51,8 +51,7 @@ class ScraperExecutor:
 
         Nested rather than a module-level helper, the same reason `rehuco_agent.tasks.TaskQueueModel.Marshaller`
         is: nothing outside `ScraperExecutor` has a reason to build one. A plain object rather than a
-        lambda handed to `QThreadPool.start`, so it keeps a reference to ``job`` for as long as it runs
-        -- the job's own marshaller must outlive the emit its ``run`` makes at the end.
+        lambda handed to `QThreadPool.start`, so it keeps a reference to ``job`` for as long as it runs.
         """
 
         def __init__(self, job: PoolJob, context: Context) -> None:
@@ -73,10 +72,9 @@ class ScraperExecutor:
 
         :param job: the work to run. Nothing about one submission blocks another -- each runs as an
             independent `QRunnable`, and nothing on the app-wide `rehuco_core.TaskQueue` shares this
-            pool at all. **The caller keeps its reference to ``job`` until its own result signal has
-            fired**: the runnable is auto-deleted the moment ``run`` returns, which is before a queued
-            signal is delivered, so nothing on this side holds the job's marshaller alive past that
-            point.
+            pool at all. The runnable is auto-deleted the moment ``run`` returns; the job reaches the
+            GUI thread with its outcome, as the first argument of its relay's queued signal, so nothing
+            here needs to hold it past that point.
         """
         context = copy_context()
         self.__pool.start(ScraperExecutor.Runnable(job, context))

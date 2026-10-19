@@ -1,6 +1,7 @@
 """Scrapers settings page: the scripts folder, what loaded from it, and the browser persona (#269,
 [[acquisition-tooling#browser-persona]])."""
 
+import logging
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -20,6 +21,8 @@ from .scrapers_checkbox_delegate import ScrapersCheckboxDelegate
 from .scrapers_page_ui import Ui_ScrapersPage
 from .scrapers_scraper_column_delegate import ScrapersScraperColumnDelegate
 from .scrapers_table_model import SCRAPER_COLUMN, USE_BROWSER_COLUMN, ScrapersTableModel
+
+LOG: Final = logging.getLogger(__name__)
 
 REVEAL_HINT: Final = {"win32": "Show in Explorer", "darwin": "Reveal in Finder"}.get(
     sys.platform, "Show in file manager"
@@ -77,6 +80,12 @@ class ScrapersPage(QWidget):
         self.__ui.browser_combo.currentIndexChanged.connect(self.__update_persona_path_link)
         self.__ui.open_browser_button.clicked.connect(self.__on_open_browser_clicked)
         self.__ui.reset_persona_button.clicked.connect(self.__on_reset_persona_clicked)
+        # one for the page's lifetime, reused by every click rather than one QObject per click (#529); a bound
+        # method of this page, so its worker-thread finished is queued onto the GUI thread
+        self.__persona_action: Final = PersonaAction(self)
+        self.__persona_action.finished.connect(self.__on_persona_action_finished)
+        self.__persona_finished: Callable[[object], None] = lambda _error: None
+        self.__persona_running = False
         self.drop_changes()
 
     def is_dirty(self) -> bool:
@@ -229,31 +238,30 @@ class ScrapersPage(QWidget):
             QMessageBox.warning(self, "Reset persona", str(error))
 
     def __run_persona_action(self, action: Callable[[], None], finished: Callable[[object], None]) -> None:
-        """Run ``action`` on `~rehuco_agent.scraping.browser_fetcher.PersonaAction`'s pool thread,
-        disabling the controls it could race with meanwhile.
-
-        The `PersonaAction` is deliberately not kept in an instance attribute -- the same reasoning
-        `~rehuco_agent.fields.background_measurement.measure_in_background` gives for its own runner:
-        the ``finished`` connection made here keeps it alive for as long as this page does, and the
-        callable its `~.browser_fetcher.PersonaAction.start` hands the thread pool keeps it alive for
-        as long as ``action`` takes.
-
-        **``finished`` must be a bound method of this page, never a lambda.** `PersonaAction.finished`
-        fires on the worker thread; Qt's automatic queued-connection only marshals that onto the GUI
-        thread when it can see the receiver's own thread affinity, which it reads off a bound method's
-        `QObject`. A lambda has none, and the call would instead run *on the worker thread*, touching
-        these widgets from outside the GUI thread -- the same pitfall
-        `~rehuco_agent.scraping.scrape_job.ScrapeJob.Marshaller` documents for its own relay.
+        """Run ``action`` on the page's `~rehuco_agent.scraping.browser_fetcher.PersonaAction`, on its pool
+        thread, disabling the controls it could race with meanwhile -- so one action runs at a time, and
+        ``finished`` is the only one waiting. A site link in the table, which stays enabled, asks while one
+        runs and is refused: the one action's outcome would otherwise be reported as the other's.
 
         :param action: the persona call to make.
-        :param finished: a bound method of this page to report the outcome to.
+        :param finished: what to report the outcome to, on the GUI thread.
         """
+        if self.__persona_running:
+            LOG.info("A browser action is already running; try again once it has finished.")
+            return
+        self.__persona_running = True
         self.__set_persona_controls_enabled(False)
-        # parented, so the pool's callable is never the last to hold it: a job dropped there would be destroyed on the
-        # worker thread, where destroying a QObject can deadlock against this one (#529)
-        job = PersonaAction(self)
-        job.finished.connect(finished)
-        job.start(action)
+        self.__persona_finished = finished
+        self.__persona_action.start(action)
+
+    def __on_persona_action_finished(self, error: object) -> None:
+        """Hand the persona action's outcome to the report :meth:`__run_persona_action` was given last -- the one
+        action running, since its controls stay disabled until this.
+
+        :param error: `None` on success, or the failure's message.
+        """
+        self.__persona_running = False
+        self.__persona_finished(error)
 
     def __set_persona_controls_enabled(self, enabled: bool) -> None:
         """Enable or disable every control an in-flight persona action could race with.
