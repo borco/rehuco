@@ -1,6 +1,6 @@
 """Rehuco's own Linux XDG desktop-entry/MIME identity and registration (#209).
 
-The mirror image of `rehuco_agent.windows_registration`: shared by the CLI's
+The mirror image of `rehuco_agent.registration_windows`: shared by the CLI's
 ``--register``/``--unregister`` (``__main__.py``) and the settings dialog's Desktop Integration
 page, both driving the same identity constants through the same register/unregister/is_registered
 orchestration.

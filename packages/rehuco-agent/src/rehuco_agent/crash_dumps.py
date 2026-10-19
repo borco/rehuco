@@ -5,7 +5,7 @@ Windows writes a minidump for every native crash and then deletes it unless a pe
 Reporting\\LocalDumps``. That key lives under ``HKEY_LOCAL_MACHINE``, so writing or removing it needs
 elevation; reading it back to report the current status does not.
 
-Windows-only: imports ``winreg`` at module scope, like ``rehuco_agent.windows_registration`` --
+Windows-only: imports ``winreg`` at module scope, like ``rehuco_agent.registration_windows`` --
 only ever imported inside an ``if sys.platform == "win32":`` branch.
 """
 

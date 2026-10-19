@@ -41,8 +41,8 @@ numbered sibling of the document itself), not specific to either side of the con
 ARCHIVE_EXTENSIONS: Final = (".zip", ".cbz")
 """Archive file extensions to recognize, case-insensitively, as a reference-images resource's content
 ([[data-model#resource-scoping]]) -- a ``.cbz`` is the same zip container under another name, so it is
-registered and opened everywhere a ``.zip`` is: the shell verb and ``RegistryPage`` entry
-(:mod:`rehuco_agent.archives`, #43) and the content-image enumeration
+registered and opened everywhere a ``.zip`` is: the shell verb and the System Integration page's Windows
+registration entry (:mod:`rehuco_agent.archives`, #43) and the content-image enumeration
 (:mod:`rehuco_core.rehu_content_images`). One constant serves both uses deliberately."""
 
 CHECKSUM_RECORD_SUFFIX: Final = ".checksum"

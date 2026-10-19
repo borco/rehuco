@@ -35,7 +35,7 @@ def print_registration_info(exe_path: Path) -> None:
     Read-only counterpart of ``--register``/``--unregister``, for ``--info``. Windows has no
     equivalent of Linux's "registered, but to a different path" state -- ``is_registered`` only
     answers "is *this* path the one registered", so that is what gets printed. Linux instead reads
-    the installed desktop entry's own ``Exec=`` value (:func:`linux_registration.registered_command`)
+    the installed desktop entry's own ``Exec=`` value (:func:`registration_linux.registered_command`)
     independent of ``exe_path`` -- the AppImage the user is running right now may not be the one
     installed, which is the ordinary case there rather than an edge one
     ([[packaging-deployment#linux-format]]).
@@ -44,17 +44,17 @@ def print_registration_info(exe_path: Path) -> None:
     """
     if sys.platform == "win32":
         # pylint: disable-next=import-outside-toplevel
-        from rehuco_agent import windows_registration
+        from rehuco_agent import registration_windows
 
-        if windows_registration.is_registered(exe_path, ARCHIVE_EXTENSIONS):
+        if registration_windows.is_registered(exe_path, ARCHIVE_EXTENSIONS):
             print(f"registered: {exe_path}")
         else:
             print("not registered")
     elif sys.platform == "linux":
         # pylint: disable-next=import-outside-toplevel
-        from rehuco_agent import linux_registration
+        from rehuco_agent import registration_linux
 
-        command = linux_registration.registered_command()
+        command = registration_linux.registered_command()
         if command is None:
             print("not registered")
         else:
@@ -141,8 +141,8 @@ def main() -> int:
     ``--register``/``--unregister`` are defined only on the platforms that have something to
     register (:data:`REGISTRATION_PLATFORMS`), so ``rehuco-agent --register`` on macOS fails with
     argparse's own "unrecognized arguments" rather than a custom runtime message. Each platform's
-    flags drive its own module -- ``rehuco_agent.windows_registration`` (HKCU file association plus
-    the folder/archive shell verbs, #43) or ``rehuco_agent.linux_registration`` (the XDG desktop
+    flags drive its own module -- ``rehuco_agent.registration_windows`` (HKCU file association plus
+    the folder/archive shell verbs, #43) or ``rehuco_agent.registration_linux`` (the XDG desktop
     entry, MIME package and icon, #209) -- and both are the same modules the settings dialog's
     System Integration page uses, so the CLI and the GUI can never drift apart.
 
@@ -157,7 +157,7 @@ def main() -> int:
     ``packages/rehuco-agent/launcher``'s dev-only trampoline exe (which forwards argv here
     in-process, see launcher.c), as the ``uv tool install`` shim, or from inside an AppImage (where
     the path comes from ``$APPIMAGE`` rather than ``sys.argv[0]``, see
-    ``linux_registration.executable_path``). Both also refuse to run when that path isn't something
+    ``registration_linux.executable_path``). Both also refuse to run when that path isn't something
     the OS could launch -- ``python -m rehuco_agent`` makes argv[0] the ``__main__.py`` source path
     -- and while ``unregister`` doesn't actually need the path, treating both flags identically
     avoids a confusing "register refuses this but unregister silently accepts it" asymmetry.
@@ -254,10 +254,10 @@ def main() -> int:
     # defined them above), so every reference to them nests under one of the platform checks below.
     if sys.platform == "win32":
         # pylint: disable-next=import-outside-toplevel
-        from rehuco_agent import windows_registration
+        from rehuco_agent import registration_windows
 
         if args.register or args.unregister:
-            if not windows_registration.is_running_from_exe(exe_path):
+            if not registration_windows.is_running_from_exe(exe_path):
                 # sys.argv[0] is a .py source path, not an executable, when invoked via
                 # `python -m rehuco_agent` (or running __main__.py directly) rather than
                 # through a real console-script/exe entry point -- registering it would write
@@ -271,13 +271,13 @@ def main() -> int:
                 )
                 return 1
             if args.register:
-                windows_registration.register(exe_path, ARCHIVE_EXTENSIONS)
+                registration_windows.register(exe_path, ARCHIVE_EXTENSIONS)
             else:
-                windows_registration.unregister(ARCHIVE_EXTENSIONS)
+                registration_windows.unregister(ARCHIVE_EXTENSIONS)
             return 0
 
         if not queried:
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(windows_registration.AUMID)
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(registration_windows.AUMID)
 
     # A separate `if`, not an `elif`: with the win32 block above excluded from coverage off Windows,
     # an elif chain would take this branch out of the report along with it.
@@ -286,24 +286,24 @@ def main() -> int:
         from borco_pyside.logging import setup_console_logging
 
         # pylint: disable-next=import-outside-toplevel
-        from rehuco_agent import linux_registration
+        from rehuco_agent import registration_linux
 
         setup_console_logging()  # so register()/unregister()'s own LOG.info reaches the console
         if args.unregister:
-            blocker = linux_registration.unregistration_blocker()
+            blocker = registration_linux.unregistration_blocker()
             if blocker is not None:
                 print(blocker, file=sys.stderr)
                 return 1
-            linux_registration.unregister()
+            registration_linux.unregister()
         else:
             # not exe_path: inside an AppImage the launched file is $APPIMAGE, and sys.argv[0]
             # points into a temporary mount that is gone by the time anyone double-clicks the entry
-            target = linux_registration.executable_path()
-            blocker = linux_registration.registration_blocker(target)
+            target = registration_linux.executable_path()
+            blocker = registration_linux.registration_blocker(target)
             if blocker is not None:
                 print(blocker, file=sys.stderr)
                 return 1
-            linux_registration.register(target)
+            registration_linux.register(target)
         return 0
 
     if queried:

@@ -1,4 +1,4 @@
-"""The Tray block's wiring, shared by whichever System Integration page a platform builds (#205)."""
+"""The Tray block's wiring, for the System Integration page (#205)."""
 
 from typing import Final
 
@@ -9,19 +9,14 @@ from ..tray_settings import TraySettings, shared_tray_settings
 
 
 class TrayBlock:
-    """Binds one System Integration page's tray checkbox to the shared `TraySettings` (#205).
+    """Binds the System Integration page's tray checkbox to the shared `TraySettings` (#205).
 
-    **Not a widget.** The block itself is a plain ``QFrame`` declared in each page's own ``.ui``,
+    **Not a widget.** The block itself is a plain ``QFrame`` declared in the page's ``.ui``,
     because that is the only thing `SettingsFrameFilter` counts as a settings block: it takes the
     exact-``QFrame`` direct children of the page, deliberately excluding subclasses so a decorative
     rule is never mistaken for a group. A ``TrayBlock(QFrame)`` widget would therefore be invisible
-    to the filter, the group column and the dirty highlight alike -- so what is shared here is the
-    behaviour, while the markup is declared per page.
-
-    That markup is duplicated across the three pages that host it, the same deliberate copy
-    `DesktopIntegrationPage` already keeps of `RegistryPage`'s chrome. The **behaviour** is not:
-    it reads and writes persistent storage, which is where three copies would drift into a real
-    defect rather than a cosmetic one.
+    to the filter, the group column and the dirty highlight alike -- so the markup stays in the
+    ``.ui`` and what lives here is the behaviour, the half that reads and writes persistent storage.
 
     Staged in the checkbox until :meth:`save_changes` pushes it into the shared `TraySettings`
     instance -- firing its ``enabled_changed`` signal, which `MainWindow` follows to create or tear

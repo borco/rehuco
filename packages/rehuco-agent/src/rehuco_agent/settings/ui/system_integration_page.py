@@ -1,9 +1,10 @@
-"""System Integration settings page for platforms with nothing to register: the tray block (#205) and the
-local node block (#506)."""
+"""The System Integration settings page: the platform's frames, then the tray block (#205) and the local node
+block (#506)."""
 
+from collections.abc import Sequence
 from typing import Final
 
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QFrame, QWidget
 
 from ...node_host import NodeHost
 from .node_block import NodeBlock
@@ -12,23 +13,45 @@ from .tray_block import TrayBlock
 
 
 class SystemIntegrationPage(QWidget):
-    """The System Integration page on a platform that registers nothing -- macOS, where the ``.rehu``
-    association comes from the app bundle itself ([[packaging-deployment#app-identity]]) -- so the
-    tray block (#205) and the local node block (#506) are all there is to show.
+    """The one System Integration page, on every platform (#508).
 
-    Its Windows and Linux counterparts are `RegistryPage` and `DesktopIntegrationPage`: same title,
-    same two blocks, with their own registration controls above them. Constructed under the matching
-    ``sys.platform == "darwin"`` branch in `main_window.py`, so every platform has this page and both
-    settings can be reached from all three.
+    It declares the blocks every platform shares -- the tray block (#205), which decides what the window's
+    close button does, and the local node block (#506) -- and takes the platform's own blocks as frames to
+    insert ahead of them: `RegistrationFrameWindows` and `CrashDumpsFrameWindows` on Windows,
+    `RegistrationFrameLinux` on Linux, none on macOS, where the ``.rehu`` association comes from the app bundle
+    itself ([[packaging-deployment#app-identity]]). A platform block is one more frame, not a section squeezed
+    into another.
+
+    The frames must be in the page by the time the settings dialog registers it, because
+    `SettingsFrameFilter` takes its blocks from the page's direct ``QFrame`` children then; inserting them here
+    makes them the page's own children, so the filter, the dirty highlight and the per-frame Apply, Reset and
+    Defaults treat them like the page's own blocks.
+
+    The platform frames' controls act immediately when clicked, so nothing of theirs is ever staged: the tray
+    and node blocks hold this page's staged controls, and are what :meth:`is_dirty`, :meth:`save_changes`,
+    :meth:`drop_changes` and :meth:`seed_defaults` answer for.
 
     :param node_host: the main window's node host, for the node block's status line; ``None`` leaves it static.
+    :param platform_frames: the platform's blocks, inserted first in this order.
     :param parent: optional Qt parent.
     """
 
-    def __init__(self, node_host: NodeHost | None = None, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        node_host: NodeHost | None = None,
+        platform_frames: Sequence[QFrame] = (),
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
+        # children first: `SettingsFrameFilter.blocks()` lists the page's frames in child order, which is
+        # the order the group column shows them in, so a frame adopted after `setupUi` would be listed
+        # after the page's own although the layout puts it above them
+        for frame in platform_frames:
+            frame.setParent(self)
         self.__ui: Final = Ui_SystemIntegrationPage()
         self.__ui.setupUi(self)
+        for index, frame in enumerate(platform_frames):
+            self.__ui.main_layout.insertWidget(index, frame)
         self.__tray: Final = TrayBlock(self.__ui.enabled_check_box, self.__ui.unavailable_label)
         self.__node: Final = NodeBlock(self.__ui.node_enabled_check_box, self.__ui.node_status_label, node_host)
 

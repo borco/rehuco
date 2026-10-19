@@ -7,7 +7,7 @@ either granularity the dialog reads. What this catches is a seed that writes the
 fresh page (a stale constant, a field read from the loaded object instead of a fresh one) or one that
 raises; a seed that silently skips a widget passes here, and is what each page module's own
 ``test_seed_defaults_stages_the_factory_values_over_saved_ones`` -- which saves a non-default first -- is
-for. The three System Integration pages are covered in their own modules instead.
+for. The System Integration page and its platform frames are covered in their own modules.
 """
 
 from collections.abc import Callable

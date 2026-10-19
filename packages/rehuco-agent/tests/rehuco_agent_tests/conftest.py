@@ -818,7 +818,7 @@ def isolate_shared_tray_settings(mocker: MockerFixture) -> Iterator[None]:
     fake = FakeSettings()
     mocker.patch.object(tray_settings, "persistent_settings", return_value=fake)
     # the block's own import site too, unlike the other sections here: its Save is reachable from
-    # every System Integration page (one per platform, #205), so an unpatched one would write the
+    # the System Integration page (#205), so an unpatched one would write the
     # developer's real settings file from any test that applies a settings page
     mocker.patch.object(tray_block, "persistent_settings", return_value=fake)
     yield

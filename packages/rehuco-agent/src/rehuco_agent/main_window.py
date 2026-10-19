@@ -31,6 +31,7 @@ from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QIcon, QShowEvent
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
+    QFrame,
     QMainWindow,
     QMenu,
     QMessageBox,
@@ -128,6 +129,7 @@ from .settings.ui.screenshot_patterns_page import ScreenshotPatternsPage
 from .settings.ui.session_page import SessionPage
 from .settings.ui.settings_dialog import SettingsDialog
 from .settings.ui.shortcuts_page import ShortcutsPage
+from .settings.ui.system_integration_page import SystemIntegrationPage
 from .settings.ui.tasks_page import TasksPage
 from .settings.ui.videos_page import VideosPage
 from .tasks import TaskQueueStatusIndicator, TaskQueueStore, TaskQueueWidget, job_already_queued
@@ -1164,20 +1166,20 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         on the page, alongside the excluded-file-patterns editor (formerly the standalone "Excluded
         Files", #226) it shares that top-level subject with.
 
-        The "System Integration" page is per-platform, and **every** platform has one:
-        Windows gets the `RegistryPage` wrapping ``winreg``-backed HKCU registration (#47) and
-        HKLM-backed crash-dump retention (#363), Linux
-        the `DesktopIntegrationPage` wrapping the XDG desktop entry / MIME type / icon (#209), and
-        macOS the `SystemIntegrationPage` -- which registers nothing, since there the association
-        comes from the app bundle itself ([[packaging-deployment#app-identity]]). macOS gets a page
-        at all because the tray block (#205) lives on this one, and a setting that decides what the
+        The "System Integration" page is one `SystemIntegrationPage` on **every** platform (#508): the tray
+        block (#205) and the local node block (#506) every platform has, behind the platform's own frames.
+        Windows adds `RegistrationFrameWindows` (``winreg``-backed HKCU registration, #47) and
+        `CrashDumpsFrameWindows` (HKLM-backed crash-dump retention, #363), Linux adds
+        `RegistrationFrameLinux` (the XDG desktop entry / MIME type / icon, #209), and macOS adds nothing,
+        since there the association comes from the app bundle itself ([[packaging-deployment#app-identity]]).
+        macOS has the page at all because the tray block lives on it, and a setting that decides what the
         window's close button does must be reachable wherever there is a window.
 
-        All three are imported lazily, only here: the Windows one *must* be, mirroring the gate
-        ``rehuco_agent.windows_registration`` (and the ``borco_core.platforms.windows.*`` modules
-        it wraps) already requires, and the other two follow for symmetry. Separate ``if``s rather
+        The platform frames are imported lazily, only here: the Windows ones *must* be, mirroring the gate
+        ``rehuco_agent.registration_windows`` (and the ``borco_core.platforms.windows.*`` modules
+        it wraps) already requires, and the Linux one follows for symmetry. Separate ``if``s rather
         than an ``if``/``elif`` chain: coverage excludes the whole construct when its first guard
-        line is excluded off Windows, which would silently drop the other branches from the report
+        line is excluded off Windows, which would silently drop the other branch from the report
         there.
         """
         self.__settings_dialog.add_page("Checksums", ChecksumsPage())
@@ -1203,29 +1205,26 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__settings_dialog.add_page("Session", SessionPage())
         self.__settings_dialog.add_page("Shortcuts", ShortcutsPage(self.__command_registry))
 
-        # the three system-integration pages, one per platform: registered here, between Session and
-        # Tasks, because that is where the title all three share sorts
-        system_integration_title = "System Integration"
+        # the System Integration page, registered here, between Session and Tasks, where its title sorts; the
+        # platform's own blocks go in ahead of the ones every platform has
+        platform_frames: list[QFrame] = []
         if sys.platform == "win32":
             # pylint: disable-next=import-outside-toplevel
-            from .settings.ui.registry_page import RegistryPage
+            from .settings.ui.crash_dumps_frame_windows import CrashDumpsFrameWindows
 
-            self.__settings_dialog.add_page(
-                system_integration_title, RegistryPage(ARCHIVE_EXTENSIONS, self.__node_host)
-            )
+            # pylint: disable-next=import-outside-toplevel
+            from .settings.ui.registration_frame_windows import RegistrationFrameWindows
+
+            platform_frames.append(RegistrationFrameWindows(ARCHIVE_EXTENSIONS).frame)
+            platform_frames.append(CrashDumpsFrameWindows().frame)
 
         if sys.platform == "linux":
             # pylint: disable-next=import-outside-toplevel
-            from .settings.ui.desktop_integration_page import DesktopIntegrationPage
+            from .settings.ui.registration_frame_linux import RegistrationFrameLinux
 
-            self.__settings_dialog.add_page(system_integration_title, DesktopIntegrationPage(self.__node_host))
+            platform_frames.append(RegistrationFrameLinux().frame)
 
-        if sys.platform == "darwin":
-            # pylint: disable-next=import-outside-toplevel
-            from .settings.ui.system_integration_page import SystemIntegrationPage
-
-            self.__settings_dialog.add_page(system_integration_title, SystemIntegrationPage(self.__node_host))
-
+        self.__settings_dialog.add_page("System Integration", SystemIntegrationPage(self.__node_host, platform_frames))
         self.__settings_dialog.add_page("Tasks", TasksPage())
         self.__settings_dialog.add_page("Videos", VideosPage())
 

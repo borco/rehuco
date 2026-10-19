@@ -17,9 +17,11 @@ WINDOWS_ONLY_OMIT: Final = [
     "*/platforms/windows/*",
     # wholly-Windows modules that live outside a platforms/windows/ dir (they import from it at
     # module scope, so they can't even be collected off Windows) -- their tests self-skip via
-    # `pytest.importorskip("winreg")`, leaving no non-Windows exerciser to give them coverage.
-    "*/rehuco_agent/windows_registration.py",
-    "*/rehuco_agent/settings/ui/registry_page.py",
+    # `pytest.importorskip("winreg")`, leaving no non-Windows exerciser to give them coverage. The
+    # `_windows` suffix names such a module, wherever under `rehuco_agent` it sits (`**` for the
+    # directories between, since coverage's `*` stops at `/`): `registration_windows.py` and the
+    # System Integration page's Windows frames.
+    "*/rehuco_agent/**/*_windows.py",
     "*/rehuco_agent/crash_dumps.py",
 ]
 """Globs for wholly-Windows modules to omit from the report off Windows."""
