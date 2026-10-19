@@ -1,4 +1,4 @@
-"""Tests for windows_registration: rehuco's own identity + register/unregister/is_registered."""
+"""Tests for registration_windows: rehuco's own identity + register/unregister/is_registered."""
 
 from pathlib import Path
 from typing import Final
@@ -9,7 +9,7 @@ from pytest import mark
 winreg = pytest.importorskip("winreg")  # module doesn't exist off Windows -- skip the whole file there
 
 from pytest_mock import MockerFixture  # noqa: E402  # pylint: disable=wrong-import-position
-from rehuco_agent import windows_registration  # noqa: E402  # pylint: disable=wrong-import-position
+from rehuco_agent import registration_windows  # noqa: E402  # pylint: disable=wrong-import-position
 
 EXE_PATH: Final = Path(r"C:\fake\rehuco-agent.exe")
 ARCHIVE_EXTENSIONS: Final = (".zip",)
@@ -37,8 +37,8 @@ def test_is_running_from_exe_accepts_an_exe_path() -> None:
     * check a lowercase and an uppercase ``.exe`` path
     * verify both return ``True``
     """
-    assert windows_registration.is_running_from_exe(Path(r"C:\fake\app.exe"))
-    assert windows_registration.is_running_from_exe(Path(r"C:\fake\app.EXE"))
+    assert registration_windows.is_running_from_exe(Path(r"C:\fake\app.exe"))
+    assert registration_windows.is_running_from_exe(Path(r"C:\fake\app.EXE"))
 
 
 @mark.windows
@@ -50,7 +50,7 @@ def test_is_running_from_exe_rejects_a_py_source_path() -> None:
     * check a ``__main__.py`` path
     * verify it returns ``False``
     """
-    assert not windows_registration.is_running_from_exe(Path(r"C:\fake\rehuco_agent\__main__.py"))
+    assert not registration_windows.is_running_from_exe(Path(r"C:\fake\rehuco_agent\__main__.py"))
 
 
 @mark.windows
@@ -71,29 +71,29 @@ def test_register_registers_both_extensions_and_all_shell_verbs(mocker: MockerFi
     register_background = mocker.patch(f"{DIRECTORY_CONTEXT_MENU}.register_background")
     register_archive = mocker.patch(f"{FILE_EXTENSION_CONTEXT_MENU}.register")
 
-    windows_registration.register(EXE_PATH, ARCHIVE_EXTENSIONS)
+    registration_windows.register(EXE_PATH, ARCHIVE_EXTENSIONS)
 
     file_command, directory_command, icon = expected_commands_and_icon()
-    assert register.call_count == len(windows_registration.EXTENSIONS)
-    for extension in windows_registration.EXTENSIONS:
+    assert register.call_count == len(registration_windows.EXTENSIONS)
+    for extension in registration_windows.EXTENSIONS:
         register.assert_any_call(
-            windows_registration.PROGID,
+            registration_windows.PROGID,
             extension,
-            windows_registration.FRIENDLY_NAME,
+            registration_windows.FRIENDLY_NAME,
             file_command,
             icon,
-            windows_registration.AUMID,
+            registration_windows.AUMID,
         )
     register_folder.assert_called_once_with(
-        windows_registration.DIRECTORY_SUB_KEY, windows_registration.DIRECTORY_MENU_TEXT, directory_command, icon
+        registration_windows.DIRECTORY_SUB_KEY, registration_windows.DIRECTORY_MENU_TEXT, directory_command, icon
     )
     register_background.assert_called_once_with(
-        windows_registration.DIRECTORY_SUB_KEY, windows_registration.DIRECTORY_MENU_TEXT, directory_command, icon
+        registration_windows.DIRECTORY_SUB_KEY, registration_windows.DIRECTORY_MENU_TEXT, directory_command, icon
     )
     register_archive.assert_called_once_with(
         ARCHIVE_EXTENSIONS,
-        windows_registration.ARCHIVE_SUB_KEY,
-        windows_registration.ARCHIVE_MENU_TEXT,
+        registration_windows.ARCHIVE_SUB_KEY,
+        registration_windows.ARCHIVE_MENU_TEXT,
         directory_command,
         icon,
     )
@@ -116,14 +116,14 @@ def test_unregister_unregisters_both_extensions_and_all_shell_verbs(mocker: Mock
     unregister_background = mocker.patch(f"{DIRECTORY_CONTEXT_MENU}.unregister_background")
     unregister_archive = mocker.patch(f"{FILE_EXTENSION_CONTEXT_MENU}.unregister")
 
-    windows_registration.unregister(ARCHIVE_EXTENSIONS)
+    registration_windows.unregister(ARCHIVE_EXTENSIONS)
 
-    assert unregister.call_count == len(windows_registration.EXTENSIONS)
-    for extension in windows_registration.EXTENSIONS:
-        unregister.assert_any_call(windows_registration.PROGID, extension)
-    unregister_folder.assert_called_once_with(windows_registration.DIRECTORY_SUB_KEY)
-    unregister_background.assert_called_once_with(windows_registration.DIRECTORY_SUB_KEY)
-    unregister_archive.assert_called_once_with(ARCHIVE_EXTENSIONS, windows_registration.ARCHIVE_SUB_KEY)
+    assert unregister.call_count == len(registration_windows.EXTENSIONS)
+    for extension in registration_windows.EXTENSIONS:
+        unregister.assert_any_call(registration_windows.PROGID, extension)
+    unregister_folder.assert_called_once_with(registration_windows.DIRECTORY_SUB_KEY)
+    unregister_background.assert_called_once_with(registration_windows.DIRECTORY_SUB_KEY)
+    unregister_archive.assert_called_once_with(ARCHIVE_EXTENSIONS, registration_windows.ARCHIVE_SUB_KEY)
 
 
 @mark.windows
@@ -142,7 +142,7 @@ def test_is_registered_is_true_when_all_four_report_registered(mocker: MockerFix
     mocker.patch(f"{DIRECTORY_CONTEXT_MENU}.is_background_registered", return_value=True)
     mocker.patch(f"{FILE_EXTENSION_CONTEXT_MENU}.is_registered", return_value=True)
 
-    assert windows_registration.is_registered(EXE_PATH, ARCHIVE_EXTENSIONS)
+    assert registration_windows.is_registered(EXE_PATH, ARCHIVE_EXTENSIONS)
 
 
 @mark.windows
@@ -160,4 +160,4 @@ def test_is_registered_is_false_when_any_one_check_fails(mocker: MockerFixture) 
     mocker.patch(f"{DIRECTORY_CONTEXT_MENU}.is_background_registered", return_value=True)
     mocker.patch(f"{FILE_EXTENSION_CONTEXT_MENU}.is_registered", return_value=False)
 
-    assert not windows_registration.is_registered(EXE_PATH, ARCHIVE_EXTENSIONS)
+    assert not registration_windows.is_registered(EXE_PATH, ARCHIVE_EXTENSIONS)

@@ -30,8 +30,8 @@ from rehuco_core import prune_staged
 from . import main_rc  # noqa: F401  # pylint: disable=unused-import  # registers :/icons/... resources
 from .app_logging import shared_log_bridge
 from .fields.colors import ERROR_COLOR, INFO_COLOR, WARNING_COLOR
-from .linux_registration import DESKTOP_FILE_NAME
 from .main_window import MainWindow
+from .registration_linux import DESKTOP_FILE_NAME
 from .run_log import shared_run_log
 from .settings.persistent_settings import (
     STAGED_IMAGES_MAX_AGE,
@@ -237,7 +237,7 @@ def run(argv: list[str]) -> int:
     """Claim the single-instance role (or forward to the existing one) and start the event loop.
 
     Sets the desktop file name before the ``QApplication`` exists, because that is what ties this
-    process's windows to the ``.desktop`` entry `rehuco_agent.linux_registration` writes (#209):
+    process's windows to the ``.desktop`` entry `rehuco_agent.registration_linux` writes (#209):
     the Wayland ``app_id``, and ``StartupWMClass`` matching on X11. Without it the icon and the
     taskbar pin resolve to nothing in particular -- the Linux counterpart of the Windows AUMID set
     in ``__main__``. Deliberately unconditional rather than behind a ``sys.platform`` branch: Qt

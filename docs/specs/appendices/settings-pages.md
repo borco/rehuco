@@ -94,12 +94,12 @@ and Tasks docks get.
 "System Integration", "Tasks" (`TasksPage`, #202) and "Videos" (`VideosPage`, #225). "Images" nests three children: "Display" (`ImagesDisplayPage`), "Sidecar
 Extensions" (`ImagesFilesPage`) and "Sidecar Names" (`ScreenshotPatternsPage`, #53, #287).
 
-"System Integration" is one page on every platform with a different class behind each (`RegistryPage`
-on Windows, `DesktopIntegrationPage` on Linux, and `SystemIntegrationPage` on macOS, which registers
-nothing because the association comes from the app bundle) — all three sharing that one title, which is
-why all three registrations sit at the same point in the order. macOS has that page at all only because
-the tray block lives on it (#205): a setting deciding what the window's close button does has to be
-reachable wherever there is a window.
+"System Integration" is one page, `SystemIntegrationPage`, on every platform (#508). It declares the tray
+and local node blocks every platform has, and takes the platform's own blocks as frames inserted ahead of
+them: `RegistrationFrameWindows` and `CrashDumpsFrameWindows` on Windows, `RegistrationFrameLinux` on
+Linux, none on macOS, which registers nothing because the association comes from the app bundle. macOS
+has the page at all only because the tray block lives on it (#205): a setting deciding what the window's
+close button does has to be reachable wherever there is a window.
 
 **The order is the registration order**, not a rule the dialog applies: `add_page` appends, and
 `MainWindow.__register_settings_pages` makes its calls alphabetically — platform pages included, each
@@ -353,18 +353,28 @@ choice as it is typed: a scan under an unusable backend raises rather than measu
 ([[field-schema#duration-size]]), so an ffprobe path pointing at nothing has to be visible here rather
 than surfacing as a row that refuses to compute.
 
-The "System Integration" pages have no local settings dataclass of their own: Register/Unregister write
-straight to the OS when clicked (`rehuco_agent.windows_registration` on Windows), so the registration half
-leaves `save_changes()` nothing to do. What it does save is the tray checkbox, through `TrayBlock`
-(`settings/ui/tray_block.py`, #205) into the shared `TraySettings`.
+The "System Integration" page has no local settings dataclass of its own: Register/Unregister and the crash
+dump buttons write straight to the OS when clicked (`rehuco_agent.registration_windows` on Windows), so the
+platform frames leave `save_changes()` nothing to do. What it does save is the tray and local node
+checkboxes, through `TrayBlock` (`settings/ui/tray_block.py`, #205) and `NodeBlock` (#506) into their shared
+settings.
 
-`TrayBlock` is **not a widget**, which is the part worth knowing: the block itself is a plain `QFrame`
-declared in each of the three pages' own `.ui`, because `SettingsFrameFilter` counts only exact-`QFrame`
-direct children of the page as blocks and deliberately excludes subclasses
+`TrayBlock` and `NodeBlock` are **not widgets**, which is the part worth knowing: each block is a plain
+`QFrame` declared once in the page's `.ui`, because `SettingsFrameFilter` counts only exact-`QFrame` direct
+children of the page as blocks and deliberately excludes subclasses
 ([[appendices.settings-pages#category-groups]]) — a `TrayBlock(QFrame)` widget would have been invisible to
-the filter, the group column and the dirty highlight alike. So the markup is duplicated per page and only
-the behavior is shared, which is the half that reads and writes persistent storage and therefore the half
-where three copies would drift into a real defect rather than a cosmetic one.
+the filter, the group column and the dirty highlight alike. So the markup lives in the `.ui` and only the
+behavior is a class, which is the half that reads and writes persistent storage.
+
+**The platform frames follow the same rule** (#508). Each is a controller — `RegistrationFrameWindows`,
+`CrashDumpsFrameWindows`, `RegistrationFrameLinux` (`settings/ui/*_frame_<platform>.py`) — that is a `QObject`,
+not a `QFrame`: it builds a plain `QFrame` from its own `.ui` (whose root widget is that `QFrame`), hands it
+out as `frame`, and is parented to it so it lives as long as the page. `main_window.py` constructs the
+controllers under its `if sys.platform` blocks and gives their frames to `SystemIntegrationPage`, which adopts
+them *before* `setupUi` so they come first in the filter's block order as well as in the layout. One frame per
+block, so a platform's next block is one more controller and `.ui`, and the filter shows each on its own. A
+`_<platform>` suffix on a module name means the module is wholly that platform's, which is how
+`coverage_platform.py` omits the Windows ones elsewhere.
 
 ## 4. Dirty-state UI: badges, highlight, auto-apply (#77)
 
@@ -497,12 +507,12 @@ now folded into a group (`"Images"`) finds the group row it became.
   group uses the three-argument overload instead,
   `self.__settings_dialog.add_page("Its Group", "Its Title", ItsPage())` — "Images" is the one group in
   use today (#294). The *first* page registered is the initially-selected one.
-- A platform-gated page (like `RegistryPage` — "System Integration", Windows-only) is imported
-  lazily inside the `if sys.platform == "win32":` branch, and takes whatever app-level data it needs
-  (e.g. `ARCHIVE_EXTENSIONS`) as a constructor parameter rather than importing it back from
-  `main_window.py` — `main_window.py` already imports the page module (even if lazily) to construct
-  it, so a module-level import the other way round is a cyclic import (confirmed empirically the
-  first time `RegistryPage` tried it).
+- A platform-gated block (like `RegistrationFrameWindows` — "System Integration", Windows-only) is
+  imported lazily inside the `if sys.platform == "win32":` branch, and takes whatever app-level data it
+  needs (e.g. `ARCHIVE_EXTENSIONS`) as a constructor parameter rather than importing it back from
+  `main_window.py` — `main_window.py` already imports the module (even if lazily) to construct it, so a
+  module-level import the other way round is a cyclic import (confirmed empirically the first time the
+  Windows registration page tried it).
 - Group the page's controls into labeled top-level `QFrame`s in the `.ui` (a bold header `QLabel`
   plus the controls). That is *all* a page does for filtering — the dialog discovers the frames and
   gathers their searchable text by introspection (§Overview), so a page implements no `field_labels`
@@ -621,8 +631,8 @@ the shipped defaults (#281): a saved pattern change now has to move files into a
 document's screenshot set, so it applies this recipe too — the subscriber is `RehuDocumentModel`,
 which rebuilds its scanner in `__make_image_scanner` and announces it through `image_scanner_changed`,
 the seam the strip, the selector and the Markdown view already rebind on for a `.tc` → `.rehu`
-conversion. `RegistryPage`'s actions land directly on the OS, so there is no other part of the app
-that needs to be told a save happened.
+conversion. The System Integration page's platform frames act directly on the OS, so there is no
+other part of the app that needs to be told a save happened.
 
 **A setting that is also applied from outside the dialog** (#457): the `Root Catalog` menu's *Automatically
 preview the current rehu* writes the shared `RootCatalogSettings` the moment it is clicked, with no Apply behind it,

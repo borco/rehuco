@@ -19,7 +19,7 @@ from rehuco_agent.app import (
     leave_launch_directory,
     run,
 )
-from rehuco_agent.linux_registration import DESKTOP_FILE_NAME
+from rehuco_agent.registration_linux import DESKTOP_FILE_NAME
 from rehuco_agent.settings.persistent_settings import STAGED_IMAGES_MAX_AGE, set_settings_dir, staging_folder
 
 FAKE_PATH: Final = "/fake/tutorials/sculpting/info.rehu"
@@ -442,7 +442,7 @@ def test_run_declares_the_desktop_file_name(mocker: MockerFixture) -> None:
 
     * mock ``Application``/``ApplicationSingleton`` so no real Qt objects are involved
     * call ``run``
-    * verify Qt now reports the desktop file id `linux_registration` registers under
+    * verify Qt now reports the desktop file id `registration_linux` registers under
     """
     mocker.patch("rehuco_agent.app.Application")
     singleton_cls = mocker.patch("rehuco_agent.app.ApplicationSingleton")

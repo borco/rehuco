@@ -87,6 +87,8 @@ from rehuco_agent.settings.ui.location_templates_page import LocationTemplatesPa
 from rehuco_agent.settings.ui.logs_page import LogsPage
 from rehuco_agent.settings.ui.screenshot_patterns_page import ScreenshotPatternsPage
 from rehuco_agent.settings.ui.settings_dialog import PAGE_ROLE, TITLE_ROLE, SettingsDialog
+from rehuco_agent.settings.ui.settings_frame_filter import SettingsFrameFilter
+from rehuco_agent.settings.ui.system_integration_page import SystemIntegrationPage
 from rehuco_agent.settings.ui.tasks_page import TasksPage
 from rehuco_agent.settings.ui.videos_page import VideosPage
 from rehuco_agent.tasks import TaskQueueStatusIndicator, TaskQueueWidget
@@ -433,59 +435,75 @@ def test_settings_dock_toggle_action_is_added_to_the_action_bar(qtbot: QtBot) ->
     assert settings_dock.toggleViewAction() in ui.action_bar.actions()
 
 
+def system_integration_page(window: MainWindow) -> QWidget:
+    """The one System Integration page a window registered.
+
+    :param window: the main window.
+    :returns: the page widget, read back out of the scroll area the dialog shows it through (#229).
+    """
+    settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    stacked = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
+    pages = [area.widget() for area in stacked if isinstance(area, QScrollArea)]
+    found = [page for page in pages if isinstance(page, SystemIntegrationPage)]
+    assert len(found) == 1, "every platform registers exactly one System Integration page"
+    return found[0]
+
+
+def platform_frame_names(page: QWidget) -> list[str]:
+    """The object names of the page's direct frames, in the order the settings filter lists them.
+
+    :param page: the System Integration page.
+    :returns: one name per block.
+    """
+    return [frame.objectName() for frame in SettingsFrameFilter(page, "System Integration").blocks()]
+
+
 @mark.windows
-def test_registers_the_registry_page_on_windows(qtbot: QtBot) -> None:
-    """On Windows, the Registry settings page (#47) is registered into the settings dialog.
+def test_registers_the_windows_frames_on_windows(qtbot: QtBot) -> None:
+    """On Windows, the System Integration page (#47) leads with the registration and crash-dump frames (#363, #508).
 
     **Test steps:**
 
     * construct a real ``MainWindow``
-    * verify the settings dialog's page stack holds a ``RegistryPage``
+    * verify the System Integration page's blocks are the two Windows frames, then Tray and Local node
     """
-    from rehuco_agent.settings.ui.registry_page import RegistryPage  # pylint: disable=import-outside-toplevel
-
     window = MainWindow()
     qtbot.addWidget(window)
 
-    settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    # each page is shown through a scroll area of its own (#229), so read it back out of one
-    stacked = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
-    pages = [area.widget() for area in stacked if isinstance(area, QScrollArea)]
-    assert any(isinstance(page, RegistryPage) for page in pages)
+    assert platform_frame_names(system_integration_page(window)) == [
+        "RegistrationFrameWindows",
+        "CrashDumpsFrameWindows",
+        "tray_frame",
+        "node_frame",
+    ]
 
 
-def test_registers_the_desktop_integration_page_on_linux(qtbot: QtBot, mocker: MockerFixture) -> None:
-    """On Linux, the Desktop Integration settings page (#209) fills the same System Integration slot.
+def test_registers_the_linux_frame_on_linux(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """On Linux, the System Integration page leads with the desktop-entry frame (#209, #508).
 
-    Faked rather than skipped off Linux: the page and the `linux_registration` module behind it are
-    plain ``pathlib`` code, so they construct anywhere -- unlike the Windows page, which needs
-    ``winreg``.
+    Faked rather than skipped off Linux: the frame and the `registration_linux` module behind it are
+    plain ``pathlib`` code, so they construct anywhere -- unlike the Windows frames, which need ``winreg``.
 
     **Test steps:**
 
     * force ``sys.platform`` to Linux, then construct a real ``MainWindow``
-    * verify the settings dialog's page stack holds a ``DesktopIntegrationPage``
+    * verify the System Integration page's blocks are the Linux frame, then Tray and Local node
     """
-    from rehuco_agent.settings.ui.desktop_integration_page import (  # pylint: disable=import-outside-toplevel
-        DesktopIntegrationPage,
-    )
-
     mocker.patch("rehuco_agent.main_window.sys.platform", "linux")
     window = MainWindow()
     qtbot.addWidget(window)
 
-    settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    # each page is shown through a scroll area of its own (#229), so read it back out of one
-    stacked = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
-    pages = [area.widget() for area in stacked if isinstance(area, QScrollArea)]
-    assert any(isinstance(page, DesktopIntegrationPage) for page in pages)
+    assert platform_frame_names(system_integration_page(window)) == [
+        "RegistrationFrameLinux",
+        "tray_frame",
+        "node_frame",
+    ]
 
 
-def test_registers_no_system_integration_page_on_other_platforms(qtbot: QtBot, mocker: MockerFixture) -> None:
-    """Everywhere else the slot stays empty: neither page is registered rather than one standing in for
-    the other, since each is about a desktop the platform does not have.
+def test_registers_no_platform_frames_on_other_platforms(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """Everywhere else the page is still registered, with only the blocks every platform has: neither platform's
+    frames stand in for the other, since each is about a desktop the platform does not have (#508).
 
     Faked rather than skipped, like its Linux sibling above, so the assertion runs the same on every CI
     leg -- and it is the only test that builds the window on a platform that is neither, which is what
@@ -494,25 +512,13 @@ def test_registers_no_system_integration_page_on_other_platforms(qtbot: QtBot, m
     **Test steps:**
 
     * force ``sys.platform`` to macOS, then construct a real ``MainWindow``
-    * verify the settings dialog's page stack holds neither platform's page
+    * verify the System Integration page's blocks are Tray and Local node only
     """
-    from rehuco_agent.settings.ui.desktop_integration_page import (  # pylint: disable=import-outside-toplevel
-        DesktopIntegrationPage,
-    )
-
     mocker.patch("rehuco_agent.main_window.sys.platform", "darwin")
     window = MainWindow()
     qtbot.addWidget(window)
 
-    settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    # each page is shown through a scroll area of its own (#229), so read it back out of one
-    stacked = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
-    pages = [area.widget() for area in stacked if isinstance(area, QScrollArea)]
-    assert not any(isinstance(page, DesktopIntegrationPage) for page in pages)
-    # by name rather than by class: importing the Windows page pulls in `winreg`, which is the very
-    # thing this platform does not have
-    assert not any(type(page).__name__ == "RegistryPage" for page in pages)
+    assert platform_frame_names(system_integration_page(window)) == ["tray_frame", "node_frame"]
 
 
 def test_registers_the_identity_page(qtbot: QtBot) -> None:
@@ -2601,10 +2607,10 @@ def test_the_tray_setting_lives_on_the_system_integration_page(qtbot: QtBot) -> 
     own (#205) -- what the window's close button does is system integration, and the page exists on
     every platform, so the setting is reachable from all of them.
 
-    Asserted by title and by the checkbox's object name rather than by page class: which class fills
-    that slot is per-platform (`RegistryPage`, `DesktopIntegrationPage`, `SystemIntegrationPage`),
-    and what matters here is that whichever one this platform built carries the tray block. The title
-    is read off the tree row, since a page no longer carries one of its own (#277).
+    Asserted by title and by the checkbox's object name: the page is one class on every platform
+    (`SystemIntegrationPage`, #508), but its platform frames differ, and what matters here is that
+    whichever this platform built carries the tray block. The title is read off the tree row, since a
+    page no longer carries one of its own (#277).
 
     **Test steps:**
 
@@ -3614,7 +3620,7 @@ def test_raise_and_activate_forces_foreground_on_windows(mocker: MockerFixture, 
     Builds the window *before* faking ``sys.platform`` -- ``MainWindow.__init__`` has its own,
     unrelated ``sys.platform == "win32"`` check (``__register_settings_pages``, #47) that would
     otherwise also see the faked value and genuinely try to import the Windows-only
-    ``rehuco_agent.windows_registration`` (-> ``winreg``) on whatever OS actually runs this test,
+    ``rehuco_agent.registration_windows`` (-> ``winreg``) on whatever OS actually runs this test,
     crashing on macOS/Linux CI instead of being about ``raise_and_activate`` at all.
 
     **Test steps:**

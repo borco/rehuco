@@ -1,4 +1,4 @@
-"""The Local node block's wiring, shared by whichever System Integration page a platform builds (#506)."""
+"""The Local node block's wiring, for the System Integration page (#506)."""
 
 from typing import Final
 
@@ -22,12 +22,11 @@ NO_HOST_STATUS: Final = "The local node is managed by the main window."
 
 
 class NodeBlock:
-    """Binds one System Integration page's node checkbox and status line to the shared `NodeSettings` and the
+    """Binds the System Integration page's node checkbox and status line to the shared `NodeSettings` and the
     `NodeHost` the main window owns (#506).
 
-    **Not a widget**, for the reason `TrayBlock` gives: the block itself is a plain ``QFrame`` declared in each
-    page's own ``.ui``, so the markup is duplicated per page and the behaviour -- the half that reads and
-    writes storage -- is shared here.
+    **Not a widget**, for the reason `TrayBlock` gives: the block itself is a plain ``QFrame`` declared in the
+    page's ``.ui``, and what lives here is the behaviour -- the half that reads and writes storage.
 
     Staged in the checkbox until :meth:`save_changes` pushes it into the shared `NodeSettings`, whose
     ``enabled_changed`` the host follows to start or stop the node at once.

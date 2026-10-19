@@ -12,7 +12,7 @@ import pytest
 from pytest_mock import MockerFixture
 from rehuco_agent.__main__ import main
 
-MODULE: Final = "rehuco_agent.linux_registration"
+MODULE: Final = "rehuco_agent.registration_linux"
 
 FAKE_SHIM: Final = "/fake/home/.local/bin/rehuco-agent"
 FAKE_APPIMAGE: Final = Path("/fake/downloads/Rehuco-x86_64.AppImage")
@@ -42,7 +42,7 @@ def test_register_registers_the_launched_executable(monkeypatch: pytest.MonkeyPa
     register.assert_called_once_with(FAKE_APPIMAGE)
 
 
-def test_unregister_calls_linux_registration(monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture) -> None:
+def test_unregister_calls_registration_linux(monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture) -> None:
     """``--unregister`` removes the desktop entry, MIME package and icon.
 
     **Test steps:**
@@ -132,7 +132,7 @@ def test_register_refuses_and_explains_when_blocked(
 ) -> None:
     """A blocked registration (a sandbox, or a source checkout) exits non-zero and says why.
 
-    The message is `linux_registration`'s own, so the CLI and the settings page cannot drift apart
+    The message is `registration_linux`'s own, so the CLI and the settings page cannot drift apart
     on what they tell the user.
 
     **Test steps:**

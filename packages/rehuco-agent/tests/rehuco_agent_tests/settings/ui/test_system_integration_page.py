@@ -1,8 +1,9 @@
-"""Tests for SystemIntegrationPage: the macOS System Integration page -- tray only (#47, #205)."""
+"""Tests for SystemIntegrationPage: the one System Integration page -- the tray (#205) and local node (#506) blocks,
+behind the platform's own frames (#508)."""
 
 from typing import Any
 
-from PySide6.QtWidgets import QSystemTrayIcon
+from PySide6.QtWidgets import QFrame, QSystemTrayIcon
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -10,6 +11,7 @@ from rehuco_agent.settings import tray_settings
 from rehuco_agent.settings.node_settings import shared_node_settings
 from rehuco_agent.settings.tray_settings import shared_tray_settings
 from rehuco_agent.settings.ui import tray_block
+from rehuco_agent.settings.ui.settings_frame_filter import SettingsFrameFilter
 from rehuco_agent.settings.ui.system_integration_page import SystemIntegrationPage
 
 
@@ -273,3 +275,37 @@ def test_drop_changes_reverts_the_node_checkbox_too(qtbot: QtBot) -> None:
 
     assert ui.node_enabled_check_box.isChecked() is True
     assert page.is_dirty() is False
+
+
+def test_platform_frames_are_the_first_blocks_in_the_order_given(qtbot: QtBot) -> None:
+    """The platform's frames sit ahead of Tray and Local node, in the layout and in the filter's block order (#508).
+
+    **Test steps:**
+
+    * build the page around two plain frames
+    * verify the layout's first two items are those frames, in order
+    * verify a frame filter lists them first too, then Tray, then Local node
+    """
+    first, second = QFrame(), QFrame()
+    page = SystemIntegrationPage(None, [first, second])
+    qtbot.addWidget(page)
+    ui = page._SystemIntegrationPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    layout = ui.main_layout
+    assert [layout.itemAt(index).widget() for index in range(4)] == [first, second, ui.tray_frame, ui.node_frame]
+    assert SettingsFrameFilter(page, "System Integration").blocks() == [first, second, ui.tray_frame, ui.node_frame]
+
+
+def test_without_platform_frames_the_page_has_the_tray_and_node_blocks_only(qtbot: QtBot) -> None:
+    """A platform with nothing to register (macOS) gets exactly the two shared blocks (#508).
+
+    **Test steps:**
+
+    * build the page with no platform frames
+    * verify a frame filter finds the tray block and the node block, in that order
+    """
+    page = SystemIntegrationPage()
+    qtbot.addWidget(page)
+    ui = page._SystemIntegrationPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    assert SettingsFrameFilter(page, "System Integration").blocks() == [ui.tray_frame, ui.node_frame]

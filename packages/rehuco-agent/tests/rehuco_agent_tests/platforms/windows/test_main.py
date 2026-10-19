@@ -11,7 +11,7 @@ from pytest import mark  # noqa: E402  # pylint: disable=wrong-import-position
 from pytest_mock import MockerFixture  # noqa: E402  # pylint: disable=wrong-import-position
 from rehuco_agent.__main__ import main  # noqa: E402  # pylint: disable=wrong-import-position
 from rehuco_agent.archives import ARCHIVE_EXTENSIONS  # noqa: E402  # pylint: disable=wrong-import-position
-from rehuco_agent.windows_registration import (  # noqa: E402  # pylint: disable=wrong-import-position
+from rehuco_agent.registration_windows import (  # noqa: E402  # pylint: disable=wrong-import-position
     ARCHIVE_MENU_TEXT,
     ARCHIVE_SUB_KEY,
     AUMID,
@@ -195,11 +195,11 @@ def test_info_reports_registered_at_the_running_exe(
     **Test steps:**
 
     * set ``sys.argv`` so argv[0] is a fake ``.exe`` path, with ``--info``
-    * mock ``windows_registration.is_registered`` to report ``True``
+    * mock ``registration_windows.is_registered`` to report ``True``
     * verify ``main()`` returns ``0`` and printed the resolved exe path as registered
     """
     monkeypatch.setattr("sys.argv", [FAKE_EXE, "--info"])
-    mocker.patch("rehuco_agent.windows_registration.is_registered", return_value=True)
+    mocker.patch("rehuco_agent.registration_windows.is_registered", return_value=True)
 
     assert main() == 0
     assert str(Path(FAKE_EXE).resolve()) in capsys.readouterr().out
@@ -214,11 +214,11 @@ def test_info_reports_not_registered(
     **Test steps:**
 
     * set ``sys.argv`` to ``--info``
-    * mock ``windows_registration.is_registered`` to report ``False``
+    * mock ``registration_windows.is_registered`` to report ``False``
     * verify ``main()`` returns ``0`` and printed "not registered"
     """
     monkeypatch.setattr("sys.argv", [FAKE_EXE, "--info"])
-    mocker.patch("rehuco_agent.windows_registration.is_registered", return_value=False)
+    mocker.patch("rehuco_agent.registration_windows.is_registered", return_value=False)
 
     assert main() == 0
     assert "not registered" in capsys.readouterr().out
@@ -232,11 +232,11 @@ def test_version_and_info_skip_aumid_and_run(monkeypatch: pytest.MonkeyPatch, mo
     **Test steps:**
 
     * set ``sys.argv`` to ``--version --info``, no ``--register``/``--unregister``
-    * mock ``windows_registration.is_registered``, the AUMID call, and ``run``
+    * mock ``registration_windows.is_registered``, the AUMID call, and ``run``
     * verify ``main()`` returns ``0`` and neither the AUMID call nor ``run`` happened
     """
     monkeypatch.setattr("sys.argv", [FAKE_EXE, "--version", "--info"])
-    mocker.patch("rehuco_agent.windows_registration.is_registered", return_value=False)
+    mocker.patch("rehuco_agent.registration_windows.is_registered", return_value=False)
     set_aumid = mocker.patch("ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID")
     run = mocker.patch("rehuco_agent.app.run", return_value=0)
 

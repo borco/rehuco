@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>RegistrationFrameLinux</class>
+ <widget class="QFrame" name="RegistrationFrameLinux">
+  <property name="frameShape">
+   <enum>QFrame::Shape::StyledPanel</enum>
+  </property>
+  <property name="frameShadow">
+   <enum>QFrame::Shadow::Raised</enum>
+  </property>
+  <layout class="QVBoxLayout" name="frame_layout">
+   <item>
+    <widget class="QLabel" name="frame_label">
+     <property name="font">
+      <font>
+       <bold>true</bold>
+      </font>
+     </property>
+     <property name="text">
+      <string>Desktop Integration</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="status_label">
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="buttons_layout">
+     <item>
+      <widget class="QPushButton" name="register_button">
+       <property name="toolTip">
+        <string>Register the .rehu file association: the desktop entry, its MIME type and its icon</string>
+       </property>
+       <property name="text">
+        <string>Register</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="unregister_button">
+       <property name="toolTip">
+        <string>Remove the desktop entry, its MIME type and its icon</string>
+       </property>
+       <property name="text">
+        <string>Unregister</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="check_button">
+       <property name="toolTip">
+        <string>Verify the expected desktop entry, MIME type and icon are present</string>
+       </property>
+       <property name="text">
+        <string>Check registration</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
