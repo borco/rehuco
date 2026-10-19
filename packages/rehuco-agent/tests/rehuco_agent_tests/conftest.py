@@ -12,11 +12,12 @@ pytest-xdist, where each worker is its own process with its own subset of module
 a different 33 depending on how the scheduler happened to split the work (#262).
 """
 
+import inspect
 import json
 import logging
 import sys
 import threading
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any, Final
 from unittest.mock import patch
@@ -25,7 +26,7 @@ from uuid import UUID
 from borco_core.logging import SharedRotatingFileHandler
 from borco_pyside.logging import LogBridge
 from borco_pyside.shortcuts import CommandRegistry
-from PySide6.QtCore import QMimeData, qInstallMessageHandler
+from PySide6.QtCore import QMimeData, QObject, qInstallMessageHandler
 from PySide6.QtGui import QGuiApplication
 from pytest import TempPathFactory, fixture
 from pytest_mock import MockerFixture
@@ -40,7 +41,7 @@ from rehuco_agent.fields.widgets.markdown_view import render_markdown
 from rehuco_agent.rehuco import browsers_dock
 from rehuco_agent.run_log import shared_run_log
 from rehuco_agent.scraping.registry import shared_scraper_registry
-from rehuco_agent.scraping.scraper_executor import shared_scraper_executor
+from rehuco_agent.scraping.scraper_executor import ScraperExecutor, shared_scraper_executor
 from rehuco_agent.settings import (
     checksum_settings,
     deletion_settings,
@@ -196,6 +197,28 @@ REAL_PATH_STAT: Final = Path.stat
 """``Path.stat`` as the standard library has it, bound at import -- before :func:`default_path_stat_size` stands in."""
 
 
+def drop_shared(shared: Any, release: Callable[[Any], None] | None = None) -> None:
+    """Clear a process-wide ``lru_cache`` singleton, deleting the instance it held when that is a `QObject` (#529).
+
+    Most of these instances connect their own signals to bound methods, so dropped they would sit in a reference
+    cycle until the cyclic collector destroyed them -- on whichever thread allocates next, a pool thread included,
+    where destroying a `QObject` can deadlock against the GUI thread. The delete is handed to ``deleteLater``,
+    which the repository conftest drains after every test.
+
+    :param shared: the ``lru_cache``-wrapped getter. One keyed by arguments is only cleared: its instances cannot be
+        asked for without knowing the keys.
+    :param release: what lets go of an instance that is no `QObject` but owns one -- the scraper executor's
+        ``shutdown``, which waits for its pool's jobs before deleting the pool.
+    """
+    if shared.cache_info().currsize and not inspect.signature(shared).parameters:
+        instance = shared()
+        if release is not None:
+            release(instance)
+        elif isinstance(instance, QObject):
+            instance.deleteLater()
+    shared.cache_clear()
+
+
 @fixture(autouse=True)
 def reset_application_display_name() -> None:
     """Start every test with an empty display name -- an application naming nothing.
@@ -342,10 +365,10 @@ def isolate_shared_markdown_rendering_settings(mocker: MockerFixture) -> Iterato
     ``test_descriptions_page.py``) patches ``persistent_settings`` itself, which simply
     overrides this default for its own module.
     """
-    shared_markdown_rendering_settings.cache_clear()
+    drop_shared(shared_markdown_rendering_settings)
     mocker.patch.object(markdown_rendering_settings, "persistent_settings", return_value=FakeSettings())
     yield
-    shared_markdown_rendering_settings.cache_clear()
+    drop_shared(shared_markdown_rendering_settings)
 
 
 @fixture(autouse=True)
@@ -358,10 +381,10 @@ def isolate_shared_description_editor_settings(mocker: MockerFixture) -> Iterato
     of the session. Tests that specifically exercise these settings patch ``persistent_settings``
     themselves.
     """
-    shared_description_editor_settings.cache_clear()
+    drop_shared(shared_description_editor_settings)
     mocker.patch.object(description_editor_settings, "persistent_settings", return_value=FakeSettings())
     yield
-    shared_description_editor_settings.cache_clear()
+    drop_shared(shared_description_editor_settings)
 
 
 @fixture(autouse=True)
@@ -372,10 +395,10 @@ def isolate_shared_shortcuts_settings(mocker: MockerFixture) -> Iterator[None]:
     :func:`isolate_shared_command_registry`: the registry applies this keymap to every action it binds, so
     a keymap loaded from the developer's real settings would re-key the whole suite.
     """
-    shared_shortcuts_settings.cache_clear()
+    drop_shared(shared_shortcuts_settings)
     mocker.patch.object(shortcuts_settings, "persistent_settings", return_value=FakeSettings())
     yield
-    shared_shortcuts_settings.cache_clear()
+    drop_shared(shared_shortcuts_settings)
 
 
 @fixture(autouse=True)
@@ -388,10 +411,10 @@ def isolate_shared_command_registry(isolate_shared_shortcuts_settings: None) -> 
     :param isolate_shared_shortcuts_settings: the keymap the fresh registry is built from, isolated first.
     """
     del isolate_shared_shortcuts_settings
-    shared_command_registry.cache_clear()
+    drop_shared(shared_command_registry)
     CommandRegistry.uninstall()
     yield
-    shared_command_registry.cache_clear()
+    drop_shared(shared_command_registry)
     CommandRegistry.uninstall()
 
 
@@ -405,10 +428,10 @@ def isolate_shared_identity_settings(mocker: MockerFixture) -> Iterator[None]:
     developer's real on-disk settings for the rest of the session. Tests that specifically
     exercise the identity settings patch ``persistent_settings`` themselves.
     """
-    shared_identity_settings.cache_clear()
+    drop_shared(shared_identity_settings)
     mocker.patch.object(identity_settings, "persistent_settings", return_value=FakeSettings())
     yield
-    shared_identity_settings.cache_clear()
+    drop_shared(shared_identity_settings)
 
 
 @fixture(autouse=True)
@@ -423,10 +446,10 @@ def isolate_shared_image_viewer_settings(mocker: MockerFixture) -> Iterator[None
     Tests that specifically exercise the image-viewer settings patch ``persistent_settings``
     themselves.
     """
-    shared_image_viewer_settings.cache_clear()
+    drop_shared(shared_image_viewer_settings)
     mocker.patch.object(image_viewer_settings, "persistent_settings", return_value=FakeSettings())
     yield
-    shared_image_viewer_settings.cache_clear()
+    drop_shared(shared_image_viewer_settings)
 
 
 @fixture(autouse=True)
@@ -436,10 +459,10 @@ def isolate_shared_root_catalog_settings(mocker: MockerFixture) -> Iterator[None
     Same rationale as :func:`isolate_shared_image_viewer_settings`: a test that builds a `MainWindow` would otherwise
     pin an instance loaded from the developer's real on-disk settings, and a menu toggle would write back to it.
     """
-    shared_root_catalog_settings.cache_clear()
+    drop_shared(shared_root_catalog_settings)
     mocker.patch.object(root_catalog_settings, "persistent_settings", return_value=FakeSettings())
     yield
-    shared_root_catalog_settings.cache_clear()
+    drop_shared(shared_root_catalog_settings)
 
 
 @fixture(autouse=True)
@@ -454,10 +477,10 @@ def isolate_shared_reference_images_settings(mocker: MockerFixture) -> Iterator[
     Tests that specifically exercise the reference-images settings patch ``persistent_settings``
     themselves.
     """
-    shared_reference_images_settings.cache_clear()
+    drop_shared(shared_reference_images_settings)
     mocker.patch.object(reference_images_settings, "persistent_settings", return_value=FakeSettings())
     yield
-    shared_reference_images_settings.cache_clear()
+    drop_shared(shared_reference_images_settings)
 
 
 @fixture(autouse=True)
@@ -477,15 +500,15 @@ def isolate_shared_scrapers_settings(mocker: MockerFixture) -> Iterator[None]:
     Also patched where :func:`~rehuco_agent.settings.persistent_settings.config_folder` resolves it, which
     is what the scripts and persona folders -- and every other app-owned file -- are derived from (#361).
     """
-    shared_scrapers_settings.cache_clear()
-    shared_scraper_registry.cache_clear()
-    shared_scraper_executor.cache_clear()
+    drop_shared(shared_scrapers_settings)
+    drop_shared(shared_scraper_registry)
+    drop_shared(shared_scraper_executor, ScraperExecutor.shutdown)
     mocker.patch.object(scrapers_settings, "persistent_settings", return_value=FakeSettings())
     mocker.patch.object(persistent_settings, "persistent_settings", return_value=FakeSettings())
     yield
-    shared_scrapers_settings.cache_clear()
-    shared_scraper_registry.cache_clear()
-    shared_scraper_executor.cache_clear()
+    drop_shared(shared_scrapers_settings)
+    drop_shared(shared_scraper_registry)
+    drop_shared(shared_scraper_executor, ScraperExecutor.shutdown)
 
 
 @fixture(autouse=True)
@@ -500,10 +523,10 @@ def isolate_shared_deletion_settings(mocker: MockerFixture) -> Iterator[None]:
     Tests that specifically exercise the deletion settings patch ``persistent_settings``
     themselves.
     """
-    shared_deletion_settings.cache_clear()
+    drop_shared(shared_deletion_settings)
     mocker.patch.object(deletion_settings, "persistent_settings", return_value=FakeSettings())
     yield
-    shared_deletion_settings.cache_clear()
+    drop_shared(shared_deletion_settings)
 
 
 @fixture(autouse=True)
@@ -544,10 +567,10 @@ def isolate_shared_excluded_files_settings(mocker: MockerFixture) -> Iterator[No
     Tests that specifically exercise the excluded-files settings patch ``persistent_settings``
     themselves.
     """
-    shared_excluded_files_settings.cache_clear()
+    drop_shared(shared_excluded_files_settings)
     mocker.patch.object(excluded_files_settings, "persistent_settings", return_value=FakeSettings())
     yield
-    shared_excluded_files_settings.cache_clear()
+    drop_shared(shared_excluded_files_settings)
 
 
 @fixture(autouse=True)
@@ -566,12 +589,12 @@ def isolate_shared_screenshot_patterns_settings(mocker: MockerFixture) -> Iterat
     Tests that specifically exercise the screenshot-pattern settings patch ``persistent_settings``
     themselves.
     """
-    shared_screenshot_patterns_settings.cache_clear()
+    drop_shared(shared_screenshot_patterns_settings)
     fake = FakeSettings()
     mocker.patch.object(screenshot_patterns_settings, "persistent_settings", return_value=fake)
     mocker.patch.object(screenshot_patterns_page, "persistent_settings", return_value=fake)
     yield
-    shared_screenshot_patterns_settings.cache_clear()
+    drop_shared(shared_screenshot_patterns_settings)
 
 
 @fixture(autouse=True)
@@ -589,12 +612,12 @@ def isolate_shared_location_templates_settings(mocker: MockerFixture) -> Iterato
     Tests that specifically exercise the location-templates settings patch ``persistent_settings``
     themselves.
     """
-    shared_location_templates_settings.cache_clear()
+    drop_shared(shared_location_templates_settings)
     fake = FakeSettings()
     mocker.patch.object(location_templates_settings, "persistent_settings", return_value=fake)
     mocker.patch.object(location_templates_page, "persistent_settings", return_value=fake)
     yield
-    shared_location_templates_settings.cache_clear()
+    drop_shared(shared_location_templates_settings)
 
 
 @fixture(autouse=True)
@@ -609,10 +632,10 @@ def isolate_shared_location_replacements_settings(mocker: MockerFixture) -> Iter
     Tests that specifically exercise the location-replacements settings patch ``persistent_settings``
     themselves.
     """
-    shared_location_replacements_settings.cache_clear()
+    drop_shared(shared_location_replacements_settings)
     mocker.patch.object(location_replacements_settings, "persistent_settings", return_value=FakeSettings())
     yield
-    shared_location_replacements_settings.cache_clear()
+    drop_shared(shared_location_replacements_settings)
 
 
 @fixture(autouse=True)
@@ -625,10 +648,10 @@ def isolate_shared_web_search_settings(mocker: MockerFixture) -> Iterator[None]:
 
     Tests that specifically exercise the web search settings patch ``persistent_settings`` themselves.
     """
-    shared_web_search_settings.cache_clear()
+    drop_shared(shared_web_search_settings)
     mocker.patch.object(web_search_settings, "persistent_settings", return_value=FakeSettings())
     yield
-    shared_web_search_settings.cache_clear()
+    drop_shared(shared_web_search_settings)
 
 
 @fixture(autouse=True)
@@ -640,7 +663,7 @@ def isolate_shared_checksum_settings(mocker: MockerFixture) -> Iterator[None]:
     and -- through ``last_sweep_root`` -- writes back to storage. A test that reached the developer's
     real ``.ini`` would both read their catalog's settings and overwrite the folder they last swept.
     """
-    shared_checksum_settings.cache_clear()
+    drop_shared(shared_checksum_settings)
     fake = FakeSettings()
     mocker.patch.object(checksum_settings, "persistent_settings", return_value=fake)
     # `ChecksumsPage` reaches storage through its own import of `persistent_settings` rather than
@@ -651,7 +674,7 @@ def isolate_shared_checksum_settings(mocker: MockerFixture) -> Iterator[None]:
     # taking its own, so a Save made through the page is what the shared instance then reads.
     mocker.patch.object(checksums_page, "persistent_settings", return_value=fake)
     yield
-    shared_checksum_settings.cache_clear()
+    drop_shared(shared_checksum_settings)
 
 
 @fixture(autouse=True)
@@ -740,9 +763,9 @@ def isolate_shared_default_layout_settings() -> Iterator[None]:
     document would pin an instance loaded from the developer's real on-disk settings for the rest of
     the session. (The layouts are saved to a file, which :func:`isolate_state_files` keeps in memory.)
     """
-    shared_default_layout_settings_in.cache_clear()
+    drop_shared(shared_default_layout_settings_in)
     yield
-    shared_default_layout_settings_in.cache_clear()
+    drop_shared(shared_default_layout_settings_in)
 
 
 @fixture(autouse=True)
@@ -756,10 +779,10 @@ def isolate_shared_videos_settings(mocker: MockerFixture) -> Iterator[None]:
 
     Tests that specifically exercise the videos settings patch ``persistent_settings`` themselves.
     """
-    shared_videos_settings.cache_clear()
+    drop_shared(shared_videos_settings)
     mocker.patch.object(videos_settings, "persistent_settings", return_value=FakeSettings())
     yield
-    shared_videos_settings.cache_clear()
+    drop_shared(shared_videos_settings)
 
 
 @fixture(autouse=True)
@@ -773,10 +796,10 @@ def isolate_shared_logs_settings(mocker: MockerFixture) -> Iterator[None]:
 
     Tests that specifically exercise the log settings patch ``persistent_settings`` themselves.
     """
-    shared_logs_settings.cache_clear()
+    drop_shared(shared_logs_settings)
     mocker.patch.object(logs_settings, "persistent_settings", return_value=FakeSettings())
     yield
-    shared_logs_settings.cache_clear()
+    drop_shared(shared_logs_settings)
 
 
 @fixture(autouse=True)
@@ -791,7 +814,7 @@ def isolate_shared_tray_settings(mocker: MockerFixture) -> Iterator[None]:
 
     Tests that specifically exercise the tray settings patch ``persistent_settings`` themselves.
     """
-    shared_tray_settings.cache_clear()
+    drop_shared(shared_tray_settings)
     fake = FakeSettings()
     mocker.patch.object(tray_settings, "persistent_settings", return_value=fake)
     # the block's own import site too, unlike the other sections here: its Save is reachable from
@@ -799,7 +822,7 @@ def isolate_shared_tray_settings(mocker: MockerFixture) -> Iterator[None]:
     # developer's real settings file from any test that applies a settings page
     mocker.patch.object(tray_block, "persistent_settings", return_value=fake)
     yield
-    shared_tray_settings.cache_clear()
+    drop_shared(shared_tray_settings)
 
 
 @fixture(autouse=True)
@@ -812,13 +835,13 @@ def isolate_shared_node_settings(mocker: MockerFixture) -> Iterator[None]:
     otherwise spawn ``rehuco-agent --node`` as a real child of the test process. Tests of the host itself start
     the node explicitly, with their own command.
     """
-    shared_node_settings.cache_clear()
+    drop_shared(shared_node_settings)
     fake = FakeSettings()
     mocker.patch.object(node_settings, "persistent_settings", return_value=fake)
     mocker.patch.object(node_block, "persistent_settings", return_value=fake)
     mocker.patch.object(node_host.NodeHost, "start_later")
     yield
-    shared_node_settings.cache_clear()
+    drop_shared(shared_node_settings)
 
 
 @fixture(autouse=True)
@@ -836,13 +859,13 @@ def isolate_shared_log_bridge() -> Iterator[None]:
     reference alone would leave the handler attached and `logging`'s own module-level handler list
     holding it.
     """
-    shared_log_bridge.cache_clear()
+    drop_shared(shared_log_bridge)
     yield
     root = logging.getLogger()
     for handler in [handler for handler in root.handlers if isinstance(handler, LogBridge)]:
         root.removeHandler(handler)
         handler.close()
-    shared_log_bridge.cache_clear()
+    drop_shared(shared_log_bridge)
 
 
 @fixture(autouse=True)
@@ -854,7 +877,7 @@ def isolate_shared_run_log() -> Iterator[None]:
     Qt message handler, and attaches a `SharedRotatingFileHandler` pointed at the developer's real
     config folder -- all of that would otherwise survive into every later test in the session.
     """
-    shared_run_log.cache_clear()
+    drop_shared(shared_run_log)
     yield
     root = logging.getLogger()
     for handler in [handler for handler in root.handlers if isinstance(handler, SharedRotatingFileHandler)]:
@@ -864,7 +887,7 @@ def isolate_shared_run_log() -> Iterator[None]:
     threading.excepthook = threading.__excepthook__
     sys.unraisablehook = sys.__unraisablehook__
     qInstallMessageHandler(None)
-    shared_run_log.cache_clear()
+    drop_shared(shared_run_log)
 
 
 @fixture(autouse=True)

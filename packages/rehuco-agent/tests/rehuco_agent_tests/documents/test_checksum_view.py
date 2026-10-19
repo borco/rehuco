@@ -28,6 +28,8 @@ from rehuco_agent.documents.files_rows import FileChecksumState
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_core import ChecksumReport, RehuDocument, TaskQueue
 
+from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
+
 DIRECTORY: Final = Path.cwd() / "fake" / "library" / "sculpting"
 INFO_PATH: Final = DIRECTORY / "info.rehu"
 
@@ -96,17 +98,20 @@ def fixture_queue(qapp: Any) -> Any:
 
 
 @fixture(name="view")
-def fixture_view(qtbot: QtBot, model: RehuDocumentModel, queue: TaskQueue, rows: Any) -> ChecksumView:
+def fixture_view(
+    qtbot: QtBot, model: RehuDocumentModel, queue: TaskQueue, rows: Any, delete_at_teardown: DeleteAtTeardown
+) -> ChecksumView:
     """A built view whose first read has already landed.
 
     :param qtbot: pytest-qt fixture.
     :param model: the document.
     :param queue: the queue its actions enqueue onto.
     :param rows: the patched reader, so the fixture's first read is the arranged one.
+    :param delete_at_teardown: deletes the `ChecksumActions` when the test ends.
     :returns: the view.
     """
     del rows
-    actions = ChecksumActions(model, queue)
+    actions = delete_at_teardown(ChecksumActions(model, queue))
     view = ChecksumView(model, actions)
     qtbot.addWidget(view)
     # shown, because a hidden dock deliberately reads nothing (#111's discipline): every test here is
@@ -150,7 +155,9 @@ def test_the_table_lists_every_file_and_summarizes_them(view: ChecksumView) -> N
     assert view.summary == "3 files · 1 matched · 1 missing · 1 not recorded"
 
 
-def test_a_never_saved_document_says_so_and_reads_nothing(qtbot: QtBot, queue: TaskQueue, rows: Any) -> None:
+def test_a_never_saved_document_says_so_and_reads_nothing(
+    qtbot: QtBot, queue: TaskQueue, rows: Any, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """There is nothing on disk to enumerate, so nothing is enumerated (#244).
 
     **Test steps:**
@@ -159,7 +166,7 @@ def test_a_never_saved_document_says_so_and_reads_nothing(qtbot: QtBot, queue: T
     * check it says so and never called the reader
     """
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}))
-    view = ChecksumView(model, ChecksumActions(model, queue))
+    view = ChecksumView(model, delete_at_teardown(ChecksumActions(model, queue)))
     qtbot.addWidget(view)
     view.show()
 
@@ -403,7 +410,11 @@ def test_a_record_that_cannot_be_read_says_so_under_the_files(qtbot: QtBot, view
 
 
 def test_the_context_menu_offers_the_selection_entries_then_the_checking_pair(
-    qtbot: QtBot, model: RehuDocumentModel, queue: TaskQueue, mocker: MockerFixture
+    qtbot: QtBot,
+    model: RehuDocumentModel,
+    queue: TaskQueue,
+    mocker: MockerFixture,
+    delete_at_teardown: DeleteAtTeardown,
 ) -> None:
     """The three that act on a selection, a separator, then the two that check the resource (#244).
 
@@ -417,7 +428,7 @@ def test_the_context_menu_offers_the_selection_entries_then_the_checking_pair(
     * verify the entries and the separator, in order
     """
     menu = mocker.patch.object(view_module, "QMenu").return_value
-    actions = ChecksumActions(model, queue)
+    actions = delete_at_teardown(ChecksumActions(model, queue))
     view = ChecksumView(model, actions)
     qtbot.addWidget(view)
     view.show()
@@ -437,7 +448,7 @@ def test_the_context_menu_offers_the_selection_entries_then_the_checking_pair(
 
 
 def test_a_hidden_dock_walks_nothing_until_it_is_opened(
-    qtbot: QtBot, model: RehuDocumentModel, queue: TaskQueue, rows: Any
+    qtbot: QtBot, model: RehuDocumentModel, queue: TaskQueue, rows: Any, delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """This dock starts closed, and a read is a directory walk over a mount (#111's discipline, #244).
 
@@ -449,7 +460,7 @@ def test_a_hidden_dock_walks_nothing_until_it_is_opened(
     * build the view and leave it hidden, then ask it to refresh
     * check nothing was read; then show it and check the deferred read happened once
     """
-    view = ChecksumView(model, ChecksumActions(model, queue))
+    view = ChecksumView(model, delete_at_teardown(ChecksumActions(model, queue)))
     qtbot.addWidget(view)
 
     view.refresh()

@@ -10,6 +10,8 @@ from rehuco_agent.settings.ui.scrapers_scraper_column_delegate import ScrapersSc
 from rehuco_agent.settings.ui.scrapers_table_model import SCRAPER_COLUMN, SOURCE_COLUMN, ScrapersTableModel
 from rehuco_agent.settings.ui.scrapers_table_view import ScrapersTableView
 
+from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
+
 KEY = "rehuco_user_scrapers.foo.Foo"
 ROW = ScraperRow(
     key=KEY,
@@ -44,7 +46,7 @@ def move_to(view: ScrapersTableView, point: QPoint) -> None:
     view.mouseMoveEvent(event)
 
 
-def test_settings_value_reads_the_models_staged_set(qtbot: QtBot) -> None:
+def test_settings_value_reads_the_models_staged_set(qtbot: QtBot, delete_at_teardown: DeleteAtTeardown) -> None:
     """The view's value is exactly `ScrapersTableModel.browser_scrapers`.
 
     **Test steps:**
@@ -54,7 +56,7 @@ def test_settings_value_reads_the_models_staged_set(qtbot: QtBot) -> None:
     """
     view = ScrapersTableView()
     qtbot.addWidget(view)
-    model = ScrapersTableModel()
+    model = delete_at_teardown(ScrapersTableModel())
     model.set_rows((ROW,))
     model.set_browser_scrapers(frozenset({KEY}))
     view.setModel(model)
@@ -62,7 +64,7 @@ def test_settings_value_reads_the_models_staged_set(qtbot: QtBot) -> None:
     assert view.settings_value() == frozenset({KEY})
 
 
-def test_set_settings_value_writes_back_into_the_model(qtbot: QtBot) -> None:
+def test_set_settings_value_writes_back_into_the_model(qtbot: QtBot, delete_at_teardown: DeleteAtTeardown) -> None:
     """Writing a value back stages it on the model, the inverse of `settings_value` (#278).
 
     **Test steps:**
@@ -73,7 +75,7 @@ def test_set_settings_value_writes_back_into_the_model(qtbot: QtBot) -> None:
     """
     view = ScrapersTableView()
     qtbot.addWidget(view)
-    model = ScrapersTableModel()
+    model = delete_at_teardown(ScrapersTableModel())
     model.set_rows((ROW,))
     view.setModel(model)
 
@@ -195,7 +197,9 @@ def test_hovering_outside_the_scraper_column_shows_the_arrow_cursor(qtbot: QtBot
     assert view.viewport().cursor().shape() == Qt.CursorShape.ArrowCursor
 
 
-def test_hovering_with_no_delegate_on_the_scraper_column_shows_the_arrow_cursor(qtbot: QtBot) -> None:
+def test_hovering_with_no_delegate_on_the_scraper_column_shows_the_arrow_cursor(
+    qtbot: QtBot, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A view whose Scraper column was never given `ScrapersScraperColumnDelegate` -- as a bare
     `ScrapersTableView` never is, until `~.scrapers_page.ScrapersPage` wires one up -- never shows
     the pointing hand, since there is no delegate to ask where its link is (#278).
@@ -208,7 +212,7 @@ def test_hovering_with_no_delegate_on_the_scraper_column_shows_the_arrow_cursor(
     """
     view = ScrapersTableView()
     qtbot.addWidget(view)
-    model = ScrapersTableModel()
+    model = delete_at_teardown(ScrapersTableModel())
     model.set_rows((ROW,))
     view.setModel(model)
     view.setColumnWidth(SCRAPER_COLUMN, 200)

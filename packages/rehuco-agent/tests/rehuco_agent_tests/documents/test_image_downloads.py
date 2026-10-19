@@ -124,13 +124,15 @@ def downloads(
     fetcher: object = None,
 ) -> ImageDownloads:
     """`ImageDownloads` wired over test doubles, casting past their structural mismatch with the
-    concrete `ScraperRegistry`/`ScraperExecutor` types."""
+    concrete `ScraperRegistry`/`ScraperExecutor` types; a child of the document, as the app's is of its sub-docks, so
+    it goes with the document rather than by the cyclic collector (#529)."""
     return ImageDownloads(
         doc_model,
         organizer_double,
         registry=cast(ScraperRegistry, registry) if registry is not None else None,
         executor=cast(ScraperExecutor, executor) if executor is not None else SyncExecutor(),  # type: ignore[arg-type]
         fetcher=cast(PageFetcher, fetcher) if fetcher is not None else FakeFetcher(),
+        parent=doc_model,
     )
 
 

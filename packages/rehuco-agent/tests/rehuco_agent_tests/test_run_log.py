@@ -20,16 +20,19 @@ from pytest_mock import MockerFixture
 from rehuco_agent.run_log import QT_LOG_LEVELS, QUIET_LOGGERS, REPEAT_REPORT_INTERVAL_S, RunLog, shared_run_log
 from rehuco_agent.settings.logs_settings import BYTES_PER_MB, DEFAULT_FILE_BACKUPS, DEFAULT_FILE_SIZE_MB, LogsSettings
 
+from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
+
 FAKE_PATH: Path = Path("/fake/rehuco-agent.log")
 
 
-def build_run_log() -> RunLog:
+def build_run_log(delete_at_teardown: DeleteAtTeardown) -> RunLog:
     """A fresh `RunLog` over a settings object nobody else shares, and a path never touched on disk: the
     autouse :func:`patch_filesystem` stands in for every file the log reads or writes.
 
+    :param delete_at_teardown: deletes the settings when the test ends.
     :returns: the run log, not started.
     """
-    return RunLog(FAKE_PATH, LogsSettings())
+    return RunLog(FAKE_PATH, delete_at_teardown(LogsSettings()))
 
 
 @fixture(autouse=True)
@@ -57,7 +60,7 @@ def patch_filesystem(mocker: MockerFixture) -> None:
 # region construction and live limits
 
 
-def test_applies_the_settings_default_limits_on_construction() -> None:
+def test_applies_the_settings_default_limits_on_construction(delete_at_teardown: DeleteAtTeardown) -> None:
     """The handler's own ``maxBytes``/``backupCount`` are seeded from the shared settings as soon as
     the `RunLog` is built, before ``start`` ever runs.
 
@@ -66,13 +69,13 @@ def test_applies_the_settings_default_limits_on_construction() -> None:
     * build a run log
     * verify the handler's limits match the settings' defaults
     """
-    log = build_run_log()
+    log = build_run_log(delete_at_teardown)
 
     assert log.handler.maxBytes == DEFAULT_FILE_SIZE_MB * BYTES_PER_MB
     assert log.handler.backupCount == DEFAULT_FILE_BACKUPS
 
 
-def test_follows_a_live_settings_change() -> None:
+def test_follows_a_live_settings_change(delete_at_teardown: DeleteAtTeardown) -> None:
     """A size or backup count changed after construction reaches the handler at once -- the same
     "settable while running" the in-app log surfaces already offer.
 
@@ -82,7 +85,7 @@ def test_follows_a_live_settings_change() -> None:
     * change both settings
     * verify the handler picked up both
     """
-    settings = LogsSettings()
+    settings = delete_at_teardown(LogsSettings())
     log = RunLog(FAKE_PATH, settings)
 
     settings.file_size_mb = 5
@@ -98,7 +101,9 @@ def test_follows_a_live_settings_change() -> None:
 # region start()
 
 
-def test_start_attaches_the_handler_and_logs_a_banner(caplog: LogCaptureFixture) -> None:
+def test_start_attaches_the_handler_and_logs_a_banner(
+    caplog: LogCaptureFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """Starting attaches the handler to the root logger and records this run's banner: an id, this
     process's pid, and the argv it was launched with.
 
@@ -108,7 +113,7 @@ def test_start_attaches_the_handler_and_logs_a_banner(caplog: LogCaptureFixture)
     * verify the handler is now on the root logger
     * verify the banner names the argv
     """
-    log = build_run_log()
+    log = build_run_log(delete_at_teardown)
 
     with caplog.at_level(logging.INFO, logger="rehuco_agent.run_log"):
         log.start(["rehuco-agent", "a.rehu"])
@@ -118,7 +123,7 @@ def test_start_attaches_the_handler_and_logs_a_banner(caplog: LogCaptureFixture)
 
 
 def test_a_folder_that_cannot_be_created_leaves_the_run_console_only(
-    mocker: MockerFixture, caplog: LogCaptureFixture
+    mocker: MockerFixture, caplog: LogCaptureFixture, delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """A run whose log folder cannot be created still starts -- it just stays console-only, the same
     fail-safe #361 already gives a failed :func:`~rehuco_agent.settings.persistent_settings.config_folder`
@@ -131,7 +136,7 @@ def test_a_folder_that_cannot_be_created_leaves_the_run_console_only(
     * verify the handler was never attached, and a warning was logged instead of a banner
     """
     mocker.patch.object(Path, "mkdir", side_effect=OSError("no such device"))
-    log = build_run_log()
+    log = build_run_log(delete_at_teardown)
 
     with caplog.at_level(logging.WARNING, logger="rehuco_agent.run_log"):
         log.start(["rehuco-agent"])
@@ -140,7 +145,7 @@ def test_a_folder_that_cannot_be_created_leaves_the_run_console_only(
     assert any("will not be written" in record.message for record in caplog.records)
 
 
-def test_start_quiets_the_noisy_third_party_loggers() -> None:
+def test_start_quiets_the_noisy_third_party_loggers(delete_at_teardown: DeleteAtTeardown) -> None:
     """Selenium's WebDriver traffic (including whole page sources), the local HTTP calls behind it, and
     markdown's per-render extension notices are raised to INFO for every surface, not only the file --
     so the same page source is never cached by the bridge for replay, printed to the console, or
@@ -158,7 +163,7 @@ def test_start_quiets_the_noisy_third_party_loggers() -> None:
         logging.getLogger(name).setLevel(logging.DEBUG)
 
     try:
-        build_run_log().start(["rehuco-agent"])
+        build_run_log(delete_at_teardown).start(["rehuco-agent"])
         for name, level in QUIET_LOGGERS.items():
             assert logging.getLogger(name).level == level
     finally:
@@ -166,7 +171,7 @@ def test_start_quiets_the_noisy_third_party_loggers() -> None:
             logging.getLogger(name).setLevel(level)
 
 
-def test_the_format_includes_the_thread_name() -> None:
+def test_the_format_includes_the_thread_name(delete_at_teardown: DeleteAtTeardown) -> None:
     """A crash's own native stack dump shows every thread's frames but not which one mattered -- the
     thread name is what a Python-level record can add that the dump alone cannot (#362).
 
@@ -175,7 +180,7 @@ def test_the_format_includes_the_thread_name() -> None:
     * start, then format a record built on this (the calling) thread
     * verify the formatted line names it
     """
-    log = build_run_log()
+    log = build_run_log(delete_at_teardown)
     log.start(["rehuco-agent"])
     record = logging.LogRecord("test", logging.INFO, __file__, 1, "message", None, None)
     record.role = "?"  # type: ignore[attr-defined]  # ordinarily stamped by the handler's own filter
@@ -183,7 +188,9 @@ def test_the_format_includes_the_thread_name() -> None:
     assert threading.current_thread().name in log.handler.format(record)
 
 
-def test_log_exception_and_finish_are_quiet_when_the_folder_could_not_be_created(mocker: MockerFixture) -> None:
+def test_log_exception_and_finish_are_quiet_when_the_folder_could_not_be_created(
+    mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """Neither ``log_exception`` nor ``finish`` does anything for a run that never really started --
     there is nothing installed anywhere for them to reach.
 
@@ -195,7 +202,7 @@ def test_log_exception_and_finish_are_quiet_when_the_folder_could_not_be_created
     """
     mocker.patch.object(Path, "mkdir", side_effect=OSError)
     unlink = mocker.patch.object(Path, "unlink")
-    log = build_run_log()
+    log = build_run_log(delete_at_teardown)
     log.start(["rehuco-agent"])
 
     log.log_exception(ValueError("boom"), "somewhere")
@@ -211,7 +218,9 @@ def test_log_exception_and_finish_are_quiet_when_the_folder_could_not_be_created
 # region uncaught exceptions and Qt messages
 
 
-def test_excepthook_logs_critical_and_chains(mocker: MockerFixture, caplog: LogCaptureFixture) -> None:
+def test_excepthook_logs_critical_and_chains(
+    mocker: MockerFixture, caplog: LogCaptureFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """An uncaught exception -- including one PySide re-raises from a Qt slot -- is logged CRITICAL
     with its traceback, then handed to whatever hook was installed before this one.
 
@@ -224,7 +233,7 @@ def test_excepthook_logs_critical_and_chains(mocker: MockerFixture, caplog: LogC
     """
     previous = mocker.MagicMock()
     mocker.patch.object(sys, "excepthook", previous)
-    log = build_run_log()
+    log = build_run_log(delete_at_teardown)
     log.start(["rehuco-agent"])
     error = ValueError("boom")
 
@@ -235,7 +244,9 @@ def test_excepthook_logs_critical_and_chains(mocker: MockerFixture, caplog: LogC
     previous.assert_called_once_with(ValueError, error, None)
 
 
-def test_threading_excepthook_logs_and_chains(mocker: MockerFixture, caplog: LogCaptureFixture) -> None:
+def test_threading_excepthook_logs_and_chains(
+    mocker: MockerFixture, caplog: LogCaptureFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """Same for an exception uncaught on a background thread.
 
     **Test steps:**
@@ -246,7 +257,7 @@ def test_threading_excepthook_logs_and_chains(mocker: MockerFixture, caplog: Log
     """
     previous = mocker.MagicMock()
     mocker.patch.object(threading, "excepthook", previous)
-    log = build_run_log()
+    log = build_run_log(delete_at_teardown)
     log.start(["rehuco-agent"])
     args = threading.ExceptHookArgs((ValueError, ValueError("boom"), None, threading.current_thread()))
 
@@ -257,7 +268,9 @@ def test_threading_excepthook_logs_and_chains(mocker: MockerFixture, caplog: Log
     previous.assert_called_once_with(args)
 
 
-def test_threading_excepthook_with_no_exception_value_still_chains(mocker: MockerFixture) -> None:
+def test_threading_excepthook_with_no_exception_value_still_chains(
+    mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A hook args carrying no exception value (some interpreter shutdown paths) is chained without
     trying to log it.
 
@@ -268,7 +281,7 @@ def test_threading_excepthook_with_no_exception_value_still_chains(mocker: Mocke
     """
     previous = mocker.MagicMock()
     mocker.patch.object(threading, "excepthook", previous)
-    log = build_run_log()
+    log = build_run_log(delete_at_teardown)
     log.start(["rehuco-agent"])
     args = threading.ExceptHookArgs((SystemExit, None, None, None))
 
@@ -277,7 +290,9 @@ def test_threading_excepthook_with_no_exception_value_still_chains(mocker: Mocke
     previous.assert_called_once_with(args)
 
 
-def test_unraisablehook_logs_and_chains(mocker: MockerFixture, caplog: LogCaptureFixture) -> None:
+def test_unraisablehook_logs_and_chains(
+    mocker: MockerFixture, caplog: LogCaptureFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """Same for an exception that could not be raised anywhere (e.g. from ``__del__``).
 
     **Test steps:**
@@ -288,7 +303,7 @@ def test_unraisablehook_logs_and_chains(mocker: MockerFixture, caplog: LogCaptur
     """
     previous = mocker.MagicMock()
     mocker.patch.object(sys, "unraisablehook", previous)
-    log = build_run_log()
+    log = build_run_log(delete_at_teardown)
     log.start(["rehuco-agent"])
     args = SimpleNamespace(exc_type=ValueError, exc_value=ValueError("boom"), exc_traceback=None, object=None)
 
@@ -299,7 +314,9 @@ def test_unraisablehook_logs_and_chains(mocker: MockerFixture, caplog: LogCaptur
     previous.assert_called_once_with(args)
 
 
-def test_unraisablehook_with_no_exception_value_still_chains(mocker: MockerFixture) -> None:
+def test_unraisablehook_with_no_exception_value_still_chains(
+    mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """Same guard as the threading hook's: nothing to log, but the previous hook still runs.
 
     **Test steps:**
@@ -309,7 +326,7 @@ def test_unraisablehook_with_no_exception_value_still_chains(mocker: MockerFixtu
     """
     previous = mocker.MagicMock()
     mocker.patch.object(sys, "unraisablehook", previous)
-    log = build_run_log()
+    log = build_run_log(delete_at_teardown)
     log.start(["rehuco-agent"])
     args = SimpleNamespace(exc_type=None, exc_value=None, exc_traceback=None, object=None)
 
@@ -334,7 +351,9 @@ def test_qt_log_levels_cover_every_message_type() -> None:
     }
 
 
-def test_qt_message_handler_routes_a_plain_message(caplog: LogCaptureFixture) -> None:
+def test_qt_message_handler_routes_a_plain_message(
+    caplog: LogCaptureFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A message with no named category (Qt's own ``"default"``) is routed to the ``qt`` logger as-is.
 
     Reached through the name-mangled attribute, the same way ``test_logs_page.py`` reaches a page's
@@ -346,7 +365,7 @@ def test_qt_message_handler_routes_a_plain_message(caplog: LogCaptureFixture) ->
     * call the handler directly with a "default"-category context
     * verify the ``qt`` logger got the plain message at the mapped level
     """
-    log = build_run_log()
+    log = build_run_log(delete_at_teardown)
     context = SimpleNamespace(category="default")
 
     with caplog.at_level(logging.WARNING, logger="qt"):
@@ -358,7 +377,9 @@ def test_qt_message_handler_routes_a_plain_message(caplog: LogCaptureFixture) ->
     assert caplog.records[-1].levelno == logging.WARNING  # pylint: disable=no-member
 
 
-def test_qt_message_handler_prefixes_a_named_category(caplog: LogCaptureFixture) -> None:
+def test_qt_message_handler_prefixes_a_named_category(
+    caplog: LogCaptureFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A named category is kept, since it is the only clue as to which part of Qt logged the message.
 
     **Test steps:**
@@ -366,7 +387,7 @@ def test_qt_message_handler_prefixes_a_named_category(caplog: LogCaptureFixture)
     * call the handler with a named category
     * verify it prefixes the message
     """
-    log = build_run_log()
+    log = build_run_log(delete_at_teardown)
     context = SimpleNamespace(category="qt.qpa.xcb")
 
     with caplog.at_level(logging.INFO, logger="qt"):
@@ -375,7 +396,9 @@ def test_qt_message_handler_prefixes_a_named_category(caplog: LogCaptureFixture)
     assert caplog.records[-1].message == "[qt.qpa.xcb] boom"  # pylint: disable=no-member
 
 
-def test_a_fatal_qt_message_flushes_every_root_handler(mocker: MockerFixture) -> None:
+def test_a_fatal_qt_message_flushes_every_root_handler(
+    mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """`qFatal` aborts right after the handler returns, so every handler is flushed first or the
     record it just wrote may never reach disk.
 
@@ -385,7 +408,7 @@ def test_a_fatal_qt_message_flushes_every_root_handler(mocker: MockerFixture) ->
     * call the handler with a fatal message
     * verify every one of them was flushed
     """
-    log = build_run_log()
+    log = build_run_log(delete_at_teardown)
     handlers = [mocker.MagicMock(level=0), mocker.MagicMock(level=0)]
     mocker.patch.object(logging.getLogger(), "handlers", handlers)
     context = SimpleNamespace(category="default")
@@ -402,7 +425,9 @@ def test_a_fatal_qt_message_flushes_every_root_handler(mocker: MockerFixture) ->
 # region roles and the sentinel
 
 
-def test_become_forwarder_never_rotates_or_touches_the_sentinel(mocker: MockerFixture) -> None:
+def test_become_forwarder_never_rotates_or_touches_the_sentinel(
+    mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A forwarder is exactly what it started as: neither rotating nor holding the sentinel.
 
     **Test steps:**
@@ -411,7 +436,7 @@ def test_become_forwarder_never_rotates_or_touches_the_sentinel(mocker: MockerFi
     * verify the handler still does not rotate, and nothing was written
     """
     write = mocker.patch("rehuco_agent.run_log.atomic_write_text")
-    log = build_run_log()
+    log = build_run_log(delete_at_teardown)
     log.start(["rehuco-agent"])
 
     enable = mocker.patch("rehuco_agent.run_log.faulthandler.enable")
@@ -423,7 +448,9 @@ def test_become_forwarder_never_rotates_or_touches_the_sentinel(mocker: MockerFi
     enable.assert_not_called()
 
 
-def test_become_primary_starts_rotating_and_writes_the_sentinel(mocker: MockerFixture) -> None:
+def test_become_primary_starts_rotating_and_writes_the_sentinel(
+    mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """Becoming primary is what turns rotation on, and is when the sentinel naming this run is written.
 
     **Test steps:**
@@ -432,7 +459,7 @@ def test_become_primary_starts_rotating_and_writes_the_sentinel(mocker: MockerFi
     * verify the handler now rotates, and the sentinel was written under this run's own path
     """
     write = mocker.patch("rehuco_agent.run_log.atomic_write_text")
-    log = build_run_log()
+    log = build_run_log(delete_at_teardown)
     log.start(["rehuco-agent"])
 
     log.become_primary()
@@ -444,7 +471,9 @@ def test_become_primary_starts_rotating_and_writes_the_sentinel(mocker: MockerFi
     assert "pid=" in written_text
 
 
-def test_a_sentinel_write_failure_is_logged_not_raised(mocker: MockerFixture, caplog: LogCaptureFixture) -> None:
+def test_a_sentinel_write_failure_is_logged_not_raised(
+    mocker: MockerFixture, caplog: LogCaptureFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A sentinel that cannot be written is a warning, not a reason to refuse becoming primary.
 
     **Test steps:**
@@ -454,7 +483,7 @@ def test_a_sentinel_write_failure_is_logged_not_raised(mocker: MockerFixture, ca
     * verify nothing raised and a warning was logged
     """
     mocker.patch("rehuco_agent.run_log.atomic_write_text", side_effect=OSError)
-    log = build_run_log()
+    log = build_run_log(delete_at_teardown)
     log.start(["rehuco-agent"])
 
     with caplog.at_level(logging.WARNING, logger="rehuco_agent.run_log"):
@@ -463,7 +492,9 @@ def test_a_sentinel_write_failure_is_logged_not_raised(mocker: MockerFixture, ca
     assert any("sentinel" in record.message for record in caplog.records)
 
 
-def test_no_leftover_sentinel_stays_quiet(mocker: MockerFixture, caplog: LogCaptureFixture) -> None:
+def test_no_leftover_sentinel_stays_quiet(
+    mocker: MockerFixture, caplog: LogCaptureFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """The ordinary case -- the last run exited cleanly and removed its own sentinel -- says nothing.
 
     :func:`patch_filesystem` reads no sentinel: the read fails with ``FileNotFoundError``.
@@ -474,7 +505,7 @@ def test_no_leftover_sentinel_stays_quiet(mocker: MockerFixture, caplog: LogCapt
     * verify no "ended without exiting cleanly" warning was logged
     """
     mocker.patch("rehuco_agent.run_log.atomic_write_text")
-    log = build_run_log()
+    log = build_run_log(delete_at_teardown)
     log.start(["rehuco-agent"])
 
     with caplog.at_level(logging.WARNING, logger="rehuco_agent.run_log"):
@@ -483,7 +514,9 @@ def test_no_leftover_sentinel_stays_quiet(mocker: MockerFixture, caplog: LogCapt
     assert not any("ended without exiting cleanly" in record.message for record in caplog.records)
 
 
-def test_a_present_sentinel_warns_with_its_contents(mocker: MockerFixture, caplog: LogCaptureFixture) -> None:
+def test_a_present_sentinel_warns_with_its_contents(
+    mocker: MockerFixture, caplog: LogCaptureFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A sentinel still on disk at the next start names a run that never reached ``finish`` -- a
     native crash, End Task, or power loss.
 
@@ -495,7 +528,7 @@ def test_a_present_sentinel_warns_with_its_contents(mocker: MockerFixture, caplo
     """
     mocker.patch("rehuco_agent.run_log.atomic_write_text")
     mocker.patch.object(Path, "read_text", return_value="run=abc123 pid=999")
-    log = build_run_log()
+    log = build_run_log(delete_at_teardown)
     log.start(["rehuco-agent"])
 
     with caplog.at_level(logging.WARNING, logger="rehuco_agent.run_log"):
@@ -504,7 +537,9 @@ def test_a_present_sentinel_warns_with_its_contents(mocker: MockerFixture, caplo
     assert any("abc123" in record.message and "999" in record.message for record in caplog.records)
 
 
-def test_an_unreadable_sentinel_still_warns(mocker: MockerFixture, caplog: LogCaptureFixture) -> None:
+def test_an_unreadable_sentinel_still_warns(
+    mocker: MockerFixture, caplog: LogCaptureFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A sentinel that exists but cannot be read (permissions, a half-written file) is treated the
     same as a present one, rather than silently ignored.
 
@@ -516,7 +551,7 @@ def test_an_unreadable_sentinel_still_warns(mocker: MockerFixture, caplog: LogCa
     """
     mocker.patch("rehuco_agent.run_log.atomic_write_text")
     mocker.patch.object(Path, "read_text", side_effect=PermissionError)
-    log = build_run_log()
+    log = build_run_log(delete_at_teardown)
     log.start(["rehuco-agent"])
 
     with caplog.at_level(logging.WARNING, logger="rehuco_agent.run_log"):
@@ -525,7 +560,9 @@ def test_an_unreadable_sentinel_still_warns(mocker: MockerFixture, caplog: LogCa
     assert any("could not be read" in record.message for record in caplog.records)
 
 
-def test_become_primary_enables_faulthandler_on_the_sentinel_file(mocker: MockerFixture) -> None:
+def test_become_primary_enables_faulthandler_on_the_sentinel_file(
+    mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A native crash's own stack dump shows every thread's frames but never a line of Python, so
     `faulthandler` is what recovers that -- into the sentinel, appended after its own ``run=`` line, so
     the next start's leftover-sentinel warning carries the dump along with it (#362).
@@ -541,7 +578,7 @@ def test_become_primary_enables_faulthandler_on_the_sentinel_file(mocker: Mocker
     # call this test is about, not necessarily the only one Path.open sees
     open_mock = mocker.patch.object(Path, "open", return_value=fake_file)
     enable = mocker.patch("rehuco_agent.run_log.faulthandler.enable")
-    log = build_run_log()
+    log = build_run_log(delete_at_teardown)
     log.start(["rehuco-agent"])
 
     log.become_primary()
@@ -550,7 +587,9 @@ def test_become_primary_enables_faulthandler_on_the_sentinel_file(mocker: Mocker
     enable.assert_called_once_with(file=fake_file, all_threads=True)
 
 
-def test_a_sentinel_that_cannot_be_reopened_skips_faulthandler_quietly(mocker: MockerFixture) -> None:
+def test_a_sentinel_that_cannot_be_reopened_skips_faulthandler_quietly(
+    mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """Nothing more useful can be said than the write failure `__write_sentinel` already warned about.
 
     **Test steps:**
@@ -562,7 +601,7 @@ def test_a_sentinel_that_cannot_be_reopened_skips_faulthandler_quietly(mocker: M
     mocker.patch("rehuco_agent.run_log.atomic_write_text")
     mocker.patch.object(Path, "open", side_effect=OSError)
     enable = mocker.patch("rehuco_agent.run_log.faulthandler.enable")
-    log = build_run_log()
+    log = build_run_log(delete_at_teardown)
     log.start(["rehuco-agent"])
 
     log.become_primary()
@@ -570,7 +609,9 @@ def test_a_sentinel_that_cannot_be_reopened_skips_faulthandler_quietly(mocker: M
     enable.assert_not_called()
 
 
-def test_a_failed_sentinel_write_never_enables_faulthandler(mocker: MockerFixture) -> None:
+def test_a_failed_sentinel_write_never_enables_faulthandler(
+    mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """There is no sentinel to append the dump to when the write itself already failed.
 
     **Test steps:**
@@ -581,7 +622,7 @@ def test_a_failed_sentinel_write_never_enables_faulthandler(mocker: MockerFixtur
     """
     mocker.patch("rehuco_agent.run_log.atomic_write_text", side_effect=OSError)
     enable = mocker.patch("rehuco_agent.run_log.faulthandler.enable")
-    log = build_run_log()
+    log = build_run_log(delete_at_teardown)
     log.start(["rehuco-agent"])
 
     log.become_primary()
@@ -595,7 +636,7 @@ def test_a_failed_sentinel_write_never_enables_faulthandler(mocker: MockerFixtur
 # region finish()
 
 
-def test_finish_logs_the_exit_code(caplog: LogCaptureFixture) -> None:
+def test_finish_logs_the_exit_code(caplog: LogCaptureFixture, delete_at_teardown: DeleteAtTeardown) -> None:
     """The ordinary case: an exit code, said plainly.
 
     **Test steps:**
@@ -603,7 +644,7 @@ def test_finish_logs_the_exit_code(caplog: LogCaptureFixture) -> None:
     * start, then finish with a code
     * verify it was logged
     """
-    log = build_run_log()
+    log = build_run_log(delete_at_teardown)
     log.start(["rehuco-agent"])
 
     with caplog.at_level(logging.INFO, logger="rehuco_agent.run_log"):
@@ -612,7 +653,9 @@ def test_finish_logs_the_exit_code(caplog: LogCaptureFixture) -> None:
     assert any("exited with code 3" in record.message for record in caplog.records)
 
 
-def test_finish_with_no_code_says_an_exception_ended_it(caplog: LogCaptureFixture) -> None:
+def test_finish_with_no_code_says_an_exception_ended_it(
+    caplog: LogCaptureFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """No exit code means the run ended by an exception rather than returning one -- said as such,
     since ``log_exception`` has already recorded the exception itself.
 
@@ -621,7 +664,7 @@ def test_finish_with_no_code_says_an_exception_ended_it(caplog: LogCaptureFixtur
     * start, then finish with ``None``
     * verify it was logged that way
     """
-    log = build_run_log()
+    log = build_run_log(delete_at_teardown)
     log.start(["rehuco-agent"])
 
     with caplog.at_level(logging.INFO, logger="rehuco_agent.run_log"):
@@ -630,7 +673,9 @@ def test_finish_with_no_code_says_an_exception_ended_it(caplog: LogCaptureFixtur
     assert any("ended by an exception" in record.message for record in caplog.records)
 
 
-def test_finish_removes_the_sentinel_for_the_primary(mocker: MockerFixture) -> None:
+def test_finish_removes_the_sentinel_for_the_primary(
+    mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """Only the primary wrote the sentinel, so only the primary removes it on a clean exit.
 
     **Test steps:**
@@ -640,7 +685,7 @@ def test_finish_removes_the_sentinel_for_the_primary(mocker: MockerFixture) -> N
     """
     mocker.patch("rehuco_agent.run_log.atomic_write_text")
     unlink = mocker.patch.object(Path, "unlink")
-    log = build_run_log()
+    log = build_run_log(delete_at_teardown)
     log.start(["rehuco-agent"])
     log.become_primary()
 
@@ -649,7 +694,9 @@ def test_finish_removes_the_sentinel_for_the_primary(mocker: MockerFixture) -> N
     unlink.assert_called_once()
 
 
-def test_finish_does_not_touch_the_sentinel_for_a_forwarder(mocker: MockerFixture) -> None:
+def test_finish_does_not_touch_the_sentinel_for_a_forwarder(
+    mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A forwarder never held the sentinel, so it does not try to remove it either.
 
     **Test steps:**
@@ -658,7 +705,7 @@ def test_finish_does_not_touch_the_sentinel_for_a_forwarder(mocker: MockerFixtur
     * verify nothing was removed
     """
     unlink = mocker.patch.object(Path, "unlink")
-    log = build_run_log()
+    log = build_run_log(delete_at_teardown)
     log.start(["rehuco-agent"])
     log.become_forwarder()
 
@@ -667,7 +714,9 @@ def test_finish_does_not_touch_the_sentinel_for_a_forwarder(mocker: MockerFixtur
     unlink.assert_not_called()
 
 
-def test_finish_closes_the_fault_file_before_unlinking_the_sentinel(mocker: MockerFixture) -> None:
+def test_finish_closes_the_fault_file_before_unlinking_the_sentinel(
+    mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """The faulthandler file handle from :meth:`become_primary` is closed *before* the sentinel is
     removed -- an open handle would otherwise make that removal fail on Windows (#362).
 
@@ -685,7 +734,7 @@ def test_finish_closes_the_fault_file_before_unlinking_the_sentinel(mocker: Mock
     fake_file.close.side_effect = lambda: order.append("close")
     mocker.patch.object(Path, "open", return_value=fake_file)
     mocker.patch.object(Path, "unlink", side_effect=lambda *args, **kwargs: order.append("unlink"))
-    log = build_run_log()
+    log = build_run_log(delete_at_teardown)
     log.start(["rehuco-agent"])
     log.become_primary()
 
@@ -694,7 +743,9 @@ def test_finish_closes_the_fault_file_before_unlinking_the_sentinel(mocker: Mock
     assert order == ["close", "unlink"]
 
 
-def test_a_fault_file_that_fails_to_close_still_lets_the_sentinel_go(mocker: MockerFixture) -> None:
+def test_a_fault_file_that_fails_to_close_still_lets_the_sentinel_go(
+    mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A close that raises is swallowed: the handle is dropped either way, and the sentinel's removal
     -- the thing that actually says the run ended cleanly -- is not held hostage to it.
 
@@ -711,7 +762,7 @@ def test_a_fault_file_that_fails_to_close_still_lets_the_sentinel_go(mocker: Moc
     fake_file.close.side_effect = OSError("already gone")
     mocker.patch.object(Path, "open", return_value=fake_file)
     unlink = mocker.patch.object(Path, "unlink")
-    log = build_run_log()
+    log = build_run_log(delete_at_teardown)
     log.start(["rehuco-agent"])
     log.become_primary()
 
@@ -721,7 +772,7 @@ def test_a_fault_file_that_fails_to_close_still_lets_the_sentinel_go(mocker: Moc
 
 
 def test_an_already_missing_sentinel_is_not_an_error_on_finish(
-    mocker: MockerFixture, caplog: LogCaptureFixture
+    mocker: MockerFixture, caplog: LogCaptureFixture, delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """A sentinel already gone by ``finish`` (cleared by hand, or by the Logs page) is the outcome
     ``finish`` wanted anyway -- no warning.
@@ -734,7 +785,7 @@ def test_an_already_missing_sentinel_is_not_an_error_on_finish(
     """
     mocker.patch("rehuco_agent.run_log.atomic_write_text")
     mocker.patch.object(Path, "unlink", side_effect=FileNotFoundError)
-    log = build_run_log()
+    log = build_run_log(delete_at_teardown)
     log.start(["rehuco-agent"])
     log.become_primary()
 
@@ -744,7 +795,9 @@ def test_an_already_missing_sentinel_is_not_an_error_on_finish(
     assert not any(record.levelno >= logging.WARNING for record in caplog.records)
 
 
-def test_a_sentinel_removal_failure_is_logged_not_raised(mocker: MockerFixture, caplog: LogCaptureFixture) -> None:
+def test_a_sentinel_removal_failure_is_logged_not_raised(
+    mocker: MockerFixture, caplog: LogCaptureFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A sentinel that cannot be removed (in practice, vanishingly rare next to a missing one) is a
     warning, not a reason for ``finish`` to raise.
 
@@ -756,7 +809,7 @@ def test_a_sentinel_removal_failure_is_logged_not_raised(mocker: MockerFixture, 
     """
     mocker.patch("rehuco_agent.run_log.atomic_write_text")
     mocker.patch.object(Path, "unlink", side_effect=PermissionError)
-    log = build_run_log()
+    log = build_run_log(delete_at_teardown)
     log.start(["rehuco-agent"])
     log.become_primary()
 
@@ -772,7 +825,7 @@ def test_a_sentinel_removal_failure_is_logged_not_raised(mocker: MockerFixture, 
 # region log_exception()
 
 
-def test_log_exception_is_quiet_before_start(caplog: LogCaptureFixture) -> None:
+def test_log_exception_is_quiet_before_start(caplog: LogCaptureFixture, delete_at_teardown: DeleteAtTeardown) -> None:
     """Nothing is installed anywhere before ``start``, so there is nothing worth logging to yet.
 
     **Test steps:**
@@ -780,7 +833,7 @@ def test_log_exception_is_quiet_before_start(caplog: LogCaptureFixture) -> None:
     * log an exception without ever starting
     * verify nothing was logged
     """
-    log = build_run_log()
+    log = build_run_log(delete_at_teardown)
 
     with caplog.at_level(logging.CRITICAL):
         log.log_exception(ValueError("boom"), "somewhere")
@@ -788,7 +841,9 @@ def test_log_exception_is_quiet_before_start(caplog: LogCaptureFixture) -> None:
     assert caplog.records == []
 
 
-def test_log_exception_logs_once_per_distinct_error(caplog: LogCaptureFixture) -> None:
+def test_log_exception_logs_once_per_distinct_error(
+    caplog: LogCaptureFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """The same exception can reach here from more than one layer on its way out -- ``sys.excepthook``,
     then whatever wrapped ``main()``/``app.exec()`` and re-raised it -- and a reader should see it once.
 
@@ -797,7 +852,7 @@ def test_log_exception_logs_once_per_distinct_error(caplog: LogCaptureFixture) -
     * log the same exception object from two different places
     * verify only one record was written
     """
-    log = build_run_log()
+    log = build_run_log(delete_at_teardown)
     log.start(["rehuco-agent"])
     error = ValueError("boom")
 
@@ -809,7 +864,7 @@ def test_log_exception_logs_once_per_distinct_error(caplog: LogCaptureFixture) -
 
 
 def test_an_identical_exception_repeating_is_counted_not_rewritten(
-    mocker: MockerFixture, caplog: LogCaptureFixture
+    mocker: MockerFixture, caplog: LogCaptureFixture, delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """A slot raising the same exception on every repaint recurs several times a second; the file
     gets the traceback once, then a count at most once per interval -- never the traceback again.
@@ -822,7 +877,7 @@ def test_an_identical_exception_repeating_is_counted_not_rewritten(
     * verify one summary naming five repeats was written
     """
     clock = mocker.patch("rehuco_agent.run_log.time.monotonic", return_value=100.0)
-    log = build_run_log()
+    log = build_run_log(delete_at_teardown)
     log.start(["rehuco-agent"])
 
     def raise_it() -> None:
@@ -850,7 +905,9 @@ def test_an_identical_exception_repeating_is_counted_not_rewritten(
     assert "same every time" not in messages[1]
 
 
-def test_unreported_repeats_are_flushed_before_a_different_exception(caplog: LogCaptureFixture) -> None:
+def test_unreported_repeats_are_flushed_before_a_different_exception(
+    caplog: LogCaptureFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """The count is never lost: a different exception arriving first writes the pending count out
     ahead of itself.
 
@@ -859,7 +916,7 @@ def test_unreported_repeats_are_flushed_before_a_different_exception(caplog: Log
     * log one exception twice, then a different one
     * verify the middle record is the repeat count and the last is the new exception in full
     """
-    log = build_run_log()
+    log = build_run_log(delete_at_teardown)
     log.start(["rehuco-agent"])
 
     def caught(message: str) -> ValueError:
@@ -880,7 +937,9 @@ def test_unreported_repeats_are_flushed_before_a_different_exception(caplog: Log
     assert "second" in messages[2]
 
 
-def test_log_exception_logs_a_different_error_again(caplog: LogCaptureFixture) -> None:
+def test_log_exception_logs_a_different_error_again(
+    caplog: LogCaptureFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A genuinely different exception is not deduplicated against the last one.
 
     **Test steps:**
@@ -888,7 +947,7 @@ def test_log_exception_logs_a_different_error_again(caplog: LogCaptureFixture) -
     * log two distinct exceptions
     * verify both were recorded
     """
-    log = build_run_log()
+    log = build_run_log(delete_at_teardown)
     log.start(["rehuco-agent"])
 
     with caplog.at_level(logging.CRITICAL, logger="rehuco_agent.run_log"):
@@ -904,7 +963,9 @@ def test_log_exception_logs_a_different_error_again(caplog: LogCaptureFixture) -
 # region watch()
 
 
-def test_watch_logs_about_to_quit_and_commit_data_request(mocker: MockerFixture, caplog: LogCaptureFixture) -> None:
+def test_watch_logs_about_to_quit_and_commit_data_request(
+    mocker: MockerFixture, caplog: LogCaptureFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """Both of a `QGuiApplication`'s own shutdown signals are logged, wherever they land in the
     platform-specific wiring below.
 
@@ -915,7 +976,7 @@ def test_watch_logs_about_to_quit_and_commit_data_request(mocker: MockerFixture,
     * verify both were logged
     """
     mocker.patch.object(sys, "platform", "win32")  # skip the POSIX wiring; not what this test is about
-    log = build_run_log()
+    log = build_run_log(delete_at_teardown)
     log.start(["rehuco-agent"])
     app = mocker.MagicMock()
 
@@ -934,7 +995,7 @@ def test_watch_logs_about_to_quit_and_commit_data_request(mocker: MockerFixture,
     assert "commitDataRequest" in messages
 
 
-def test_watch_on_windows_wires_no_signal_handling(mocker: MockerFixture) -> None:
+def test_watch_on_windows_wires_no_signal_handling(mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown) -> None:
     """The GUI build gets no console signals on Windows, and ``TerminateProcess`` cannot be caught
     from inside the process it kills -- the sentinel covers that instead, so nothing is wired here.
 
@@ -945,7 +1006,7 @@ def test_watch_on_windows_wires_no_signal_handling(mocker: MockerFixture) -> Non
     """
     mocker.patch.object(sys, "platform", "win32")
     notifier_cls = mocker.patch("rehuco_agent.run_log.QSocketNotifier")
-    log = build_run_log()
+    log = build_run_log(delete_at_teardown)
     log.start(["rehuco-agent"])
 
     log.watch(mocker.MagicMock())
@@ -953,7 +1014,9 @@ def test_watch_on_windows_wires_no_signal_handling(mocker: MockerFixture) -> Non
     notifier_cls.assert_not_called()
 
 
-def test_watch_on_posix_wires_a_socket_notifier_that_exits_on_a_signal(mocker: MockerFixture) -> None:
+def test_watch_on_posix_wires_a_socket_notifier_that_exits_on_a_signal(
+    mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """POSIX: SIGTERM/SIGINT reach the event loop through a self-pipe and an orderly ``app.exit``.
 
     **Test steps:**
@@ -969,7 +1032,7 @@ def test_watch_on_posix_wires_a_socket_notifier_that_exits_on_a_signal(mocker: M
     reader.fileno.return_value = 7
     mocker.patch("rehuco_agent.run_log.socket.socketpair", return_value=(reader, writer))
     notifier_cls = mocker.patch("rehuco_agent.run_log.QSocketNotifier")
-    log = build_run_log()
+    log = build_run_log(delete_at_teardown)
     log.start(["rehuco-agent"])
     app = mocker.MagicMock()
 
@@ -994,7 +1057,9 @@ def test_watch_on_posix_wires_a_socket_notifier_that_exits_on_a_signal(mocker: M
     app.exit.assert_called_once_with(128 + signal.SIGTERM)
 
 
-def test_watch_on_posix_ignores_a_read_that_would_block(mocker: MockerFixture) -> None:
+def test_watch_on_posix_ignores_a_read_that_would_block(
+    mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A notifier can fire with nothing actually readable yet; that is not a signal to act on.
 
     **Test steps:**
@@ -1011,7 +1076,7 @@ def test_watch_on_posix_ignores_a_read_that_would_block(mocker: MockerFixture) -
     reader.recv.side_effect = BlockingIOError
     mocker.patch("rehuco_agent.run_log.socket.socketpair", return_value=(reader, writer))
     notifier_cls = mocker.patch("rehuco_agent.run_log.QSocketNotifier")
-    log = build_run_log()
+    log = build_run_log(delete_at_teardown)
     log.start(["rehuco-agent"])
     app = mocker.MagicMock()
 

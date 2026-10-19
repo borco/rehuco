@@ -18,6 +18,8 @@ from rehuco_agent.settings.ui.scrapers_table_model import (
     ScrapersTableModel,
 )
 
+from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
+
 SCRAPER_ROW = ScraperRow(
     key="rehuco_user_scrapers.art_scraper.ArtScraper",
     label="ArtStation",
@@ -64,16 +66,16 @@ BROKEN_ROW = ScraperRow(
 
 
 @fixture
-def model(qtbot: QtBot) -> ScrapersTableModel:
+def model(qtbot: QtBot, delete_at_teardown: DeleteAtTeardown) -> ScrapersTableModel:
     """A model holding one scraper, one browser-only scraper, one empty row, one broken row, and one
     scraper whose label and publisher are the same word."""
     del qtbot
-    built = ScrapersTableModel()
+    built = delete_at_teardown(ScrapersTableModel())
     built.set_rows((SCRAPER_ROW, NEEDS_BROWSER_ROW, EMPTY_ROW, BROKEN_ROW, SAME_LABEL_AND_PUBLISHER_ROW))
     return built
 
 
-def test_set_rows_resets_to_the_new_rows(qtbot: QtBot) -> None:
+def test_set_rows_resets_to_the_new_rows(qtbot: QtBot, delete_at_teardown: DeleteAtTeardown) -> None:
     """Replacing the rows is one model reset carrying the new count (#269).
 
     **Test steps:**
@@ -81,7 +83,7 @@ def test_set_rows_resets_to_the_new_rows(qtbot: QtBot) -> None:
     * build an empty model and verify it has no rows and the fixed column count
     * set four rows inside a reset and verify the count
     """
-    built = ScrapersTableModel()
+    built = delete_at_teardown(ScrapersTableModel())
     assert built.rowCount() == 0
     assert built.columnCount() == COLUMN_COUNT
 

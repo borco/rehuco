@@ -443,5 +443,9 @@ About 16 minutes on the development machine; memory grows, since nothing found i
   `QPixmap`, `QColor`, `QKeySequence`, `QRect`) cannot deadlock this way.
 - **Fix at the source, plainly**: a `QObject` the app builds gets a parent (usually `self`); a fixture gives what it
   builds a parent the test tears down, or deletes it explicitly (`deleteLater()`, then
-  `QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)`, as `make_action` does). Re-run until no
-  `QObject` is left under `live_owned`.
+  `QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)`, as `make_action` does). A test hands
+  what it builds bare to the `delete_at_teardown` fixture (the repository conftest). Re-run until no `QObject` with
+  connections is left under `live_owned`.
+- **Left on purpose** (#529): a `QObject` with no signal connections — a mocked `QDrag`'s recorded `QMimeData`, a
+  `QBuffer`, a `QCheckBox` — whose `~QObject` never takes a signal-slot mutex; and pytest-qt's own `QEventLoop`, built
+  inside `waitSignal`, which is a third party's.

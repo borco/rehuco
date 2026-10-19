@@ -110,9 +110,9 @@ class ImageDownloads(QObject):  # pylint: disable=too-many-instance-attributes
         self.__executor: Final = executor if executor is not None else shared_scraper_executor()
         self.__fetcher: Final = fetcher
         self.__pending: Final[dict[ImageDownloadJob, Path]] = {}
-        """Jobs submitted but not yet resolved, keyed to the path captured at submission -- kept alive
-        for the same reason `.ScrapeActions.__pending` is, and read back to decide whether the document
-        is still the one that asked."""
+        """Jobs submitted but not yet resolved, keyed to the path captured at submission -- what an arriving
+        outcome is matched against, and read back to decide whether the document is still the one that
+        asked."""
 
         self.__pending_pages: Final[dict[ScrapeJob, Path]] = {}
         """The page scrapes :meth:`submit_page` is waiting to hear back from, the same shape as
@@ -123,8 +123,17 @@ class ImageDownloads(QObject):  # pylint: disable=too-many-instance-attributes
         submitted from -- see :meth:`__begin_batch` for where a batch starts."""
 
         self.__detached = False
-        """Set by :meth:`detach`. Checked explicitly for the same reason `.ScrapeActions.__detached`
-        is: a job is kept alive by the very signal connection its result would arrive through."""
+        """Set by :meth:`detach`: an outcome landing afterwards is dropped."""
+
+        self.__downloads: Final = ImageDownloadJob.Relay(self)
+        """Where every download this object runs reports, built once for its lifetime rather than one
+        `QObject` per job (#529)."""
+        self.__downloads.result_ready.connect(self.__on_result)
+        self.__downloads.failed.connect(self.__on_failed)
+        self.__pages: Final = ScrapeJob.Relay(self)
+        """Where every page scrape :meth:`submit_page` runs reports, the same way."""
+        self.__pages.result_ready.connect(self.__on_page_result)
+        self.__pages.failed.connect(self.__on_page_failed)
 
     # region What the document shows
 
@@ -176,10 +185,8 @@ class ImageDownloads(QObject):  # pylint: disable=too-many-instance-attributes
         if path is None:
             return
         self.__begin_batch()
-        job = ImageDownloadJob(url, referrer, slot)
+        job = ImageDownloadJob(url, referrer, slot, relay=self.__downloads)
         self.__pending[job] = path  # pylint: disable=unsupported-assignment-operation
-        job.result_ready.connect(lambda result: self.__on_result(job, path, result))
-        job.failed.connect(lambda error: self.__on_failed(job, error))
         self.changed.emit()
         with LogScope.open(path):
             LOG.info("Downloading %s…", url)
@@ -203,10 +210,8 @@ class ImageDownloads(QObject):  # pylint: disable=too-many-instance-attributes
             return
         self.__begin_batch()
         page = Page(url=drop.url, final_url=drop.url, html=drop.fragment) if drop.fragment is not None else None
-        job = ScrapeJob(drop.url, self.__registry, page=page, fetcher=self.__fetcher)
+        job = ScrapeJob(drop.url, self.__registry, page=page, fetcher=self.__fetcher, relay=self.__pages)
         self.__pending_pages[job] = path  # pylint: disable=unsupported-assignment-operation
-        job.result_ready.connect(lambda result: self.__on_page_result(job, path, result))
-        job.failed.connect(lambda error: self.__on_page_failed(job, error))
         self.changed.emit()
         with LogScope.open(path):
             LOG.info("Reading %s for its images…", drop.url)
@@ -288,15 +293,14 @@ class ImageDownloads(QObject):  # pylint: disable=too-many-instance-attributes
             return False
         return True
 
-    def __on_result(self, job: ImageDownloadJob, submitted_path: Path, result: object) -> None:
+    def __on_result(self, job: ImageDownloadJob, result: object) -> None:
         """Write a finished download's bytes to disk, or discard them, on the GUI thread.
 
         :param job: the job that just resolved, dropped from :attr:`__pending` either way.
-        :param submitted_path: the document's path when ``job`` was submitted.
         :param result: the `~rehuco_agent.scraping.image_pipeline.AcquiredImage`.
         """
-        self.__pending.pop(job, None)
-        if self.__detached:
+        submitted_path = self.__pending.pop(job, None)
+        if self.__detached or submitted_path is None:
             return
         self.changed.emit()
         with LogScope.open(submitted_path):
@@ -341,7 +345,7 @@ class ImageDownloads(QObject):  # pylint: disable=too-many-instance-attributes
         self.__failures.append((submitted_path, str(error)))
         self.changed.emit()
 
-    def __on_page_result(self, job: ScrapeJob, submitted_path: Path, result: object) -> None:
+    def __on_page_result(self, job: ScrapeJob, result: object) -> None:
         """Submit one download per scraped image, discarding the page's fields and description, on the
         GUI thread.
 
@@ -349,11 +353,10 @@ class ImageDownloads(QObject):  # pylint: disable=too-many-instance-attributes
         there would be nothing to hand the images on to otherwise.
 
         :param job: the job that just resolved, dropped from :attr:`__pending_pages` either way.
-        :param submitted_path: the document's path when ``job`` was submitted.
         :param result: the `~rehuco_agent.scraping.results.ScrapeResult`.
         """
-        self.__pending_pages.pop(job, None)
-        if self.__detached:
+        submitted_path = self.__pending_pages.pop(job, None)
+        if self.__detached or submitted_path is None:
             return
         self.changed.emit()
         with LogScope.open(submitted_path):

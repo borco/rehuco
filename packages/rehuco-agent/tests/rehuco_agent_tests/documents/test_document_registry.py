@@ -20,6 +20,7 @@ from rehuco_agent.settings.identity_settings import shared_identity_settings
 from rehuco_core import RecordConflict, RehuDocument, Relocation, RenameCoordinator
 from rehuco_core.access import ChangeFeed, Records, ResourceKey
 
+from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
 from rehuco_agent_tests.qt_waits import wait_destroyed
 
 from .test_rehu_document_model_conflict import edit_on_disk, retitle, write_record
@@ -428,7 +429,9 @@ def stays_put(model: RehuDocumentModel) -> Generator[None]:
     assert not moves
 
 
-def test_the_renaming_document_adopts_its_rename_exactly_once(mocker: MockerFixture, qtbot: QtBot) -> None:
+def test_the_renaming_document_adopts_its_rename_exactly_once(
+    mocker: MockerFixture, qtbot: QtBot, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """The coordinator's announcement reaches the renaming model through the registry before the rename call
     returns to it; between the two it moves, and each signal fires, exactly once.
 
@@ -446,7 +449,7 @@ def test_the_renaming_document_adopts_its_rename_exactly_once(mocker: MockerFixt
     renamer.relocation = Relocation(((FAKE_PATH.parent, renamed.parent),))
     mocker.patch.object(RenameCoordinator, "_RenameCoordinator__step_out_of")
     coordinator = RenameCoordinator()
-    events = ResourceEvents()
+    events = delete_at_teardown(ResourceEvents())
     coordinator.add_rename_listener(events.announce_moved)
     registry = DocumentRegistry(rename_coordinator=coordinator, resource_events=events)
     model = registry.acquire(FAKE_KEY)
@@ -465,7 +468,9 @@ def test_the_renaming_document_adopts_its_rename_exactly_once(mocker: MockerFixt
 # endregion
 
 
-def test_an_open_is_announced_as_an_access_once_and_a_new_document_never(mocker: MockerFixture, qtbot: QtBot) -> None:
+def test_an_open_is_announced_as_an_access_once_and_a_new_document_never(
+    mocker: MockerFixture, qtbot: QtBot, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """Building a model for a file is an access the catalog verifies (#487); a second holder of it, or a document
     that is not on disk yet, is not.
 
@@ -476,7 +481,7 @@ def test_an_open_is_announced_as_an_access_once_and_a_new_document_never(mocker:
     """
     del qtbot
     load_document(mocker)
-    events = ResourceEvents()
+    events = delete_at_teardown(ResourceEvents())
     heard: list[object] = []
     events.accessed.connect(heard.append)
     registry = DocumentRegistry(resource_events=events)
@@ -488,7 +493,9 @@ def test_an_open_is_announced_as_an_access_once_and_a_new_document_never(mocker:
     assert heard == [(FAKE_KEY,)]
 
 
-def test_a_reload_is_announced_as_an_access(mocker: MockerFixture, qtbot: QtBot) -> None:
+def test_a_reload_is_announced_as_an_access(
+    mocker: MockerFixture, qtbot: QtBot, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A revert reads the file again -- the one way an edit made outside the app reaches a document left open (#487).
 
     **Test steps:**
@@ -498,7 +505,7 @@ def test_a_reload_is_announced_as_an_access(mocker: MockerFixture, qtbot: QtBot)
     """
     del qtbot
     load_document(mocker)
-    events = ResourceEvents()
+    events = delete_at_teardown(ResourceEvents())
     heard: list[object] = []
     events.accessed.connect(heard.append)
     registry = DocumentRegistry(resource_events=events)
@@ -509,7 +516,9 @@ def test_a_reload_is_announced_as_an_access(mocker: MockerFixture, qtbot: QtBot)
     assert heard == [(FAKE_KEY,), (FAKE_KEY,)]
 
 
-def test_a_reload_of_a_document_with_no_key_is_not_announced(mocker: MockerFixture, qtbot: QtBot) -> None:
+def test_a_reload_of_a_document_with_no_key_is_not_announced(
+    mocker: MockerFixture, qtbot: QtBot, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A model whose key is gone has nothing for the catalog to check (#487), and is findable under no key.
 
     **Test steps:**
@@ -519,7 +528,7 @@ def test_a_reload_of_a_document_with_no_key_is_not_announced(mocker: MockerFixtu
     """
     del qtbot
     load_document(mocker)
-    events = ResourceEvents()
+    events = delete_at_teardown(ResourceEvents())
     heard: list[object] = []
     events.accessed.connect(heard.append)
     registry = DocumentRegistry(resource_events=events)
@@ -571,7 +580,9 @@ def test_given_records_read_and_save_every_model(mocker: MockerFixture, qtbot: Q
 
 
 @mark.usefixtures("real_path_stat")
-def test_the_default_records_save_and_announce_nothing(mocker: MockerFixture, qtbot: QtBot, tmp_path: Path) -> None:
+def test_the_default_records_save_and_announce_nothing(
+    mocker: MockerFixture, qtbot: QtBot, tmp_path: Path, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """With no records given, the registry builds its own, which write the file and say nothing: the folder's file
     notifier reports the save to every view (#511).
 
@@ -584,7 +595,7 @@ def test_the_default_records_save_and_announce_nothing(mocker: MockerFixture, qt
     del qtbot
     path = tmp_path / "info.rehu"
     write_record(path, "Old")
-    registry = DocumentRegistry(resource_events=ResourceEvents())
+    registry = DocumentRegistry(resource_events=delete_at_teardown(ResourceEvents()))
     model = registry.acquire(ResourceKey(path))
     model.title = "Mine"
     published = mocker.spy(ChangeFeed, "publish")

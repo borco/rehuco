@@ -18,6 +18,7 @@ from rehuco_agent.rehuco.roots_checksum import RowChecksum
 from rehuco_agent.rehuco.roots_folder_model import NodeListing, RootsFolderModel
 from rehuco_core import Relocation
 
+from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
 from rehuco_agent_tests.rehuco.test_roots_folder_model import (
     WAIT_TIMEOUT_MS,
     Recorder,
@@ -96,7 +97,7 @@ def state_of(model: RootsFolderModel, index: QModelIndex) -> FileChecksumState |
 
 
 def test_a_covered_file_carries_what_its_record_found_and_the_rest_carry_nothing(
-    qtbot: QtBot, covered_library: Path
+    qtbot: QtBot, covered_library: Path, delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """The state is read where the folder is listed, and every file reads it from the record that covers it.
 
@@ -106,7 +107,7 @@ def test_a_covered_file_carries_what_its_record_found_and_the_rest_carry_nothing
     * verify each file's state, that a record and a screenshot carry none and are bookkeeping, and that a row's
       tooltip is the state's own words
     """
-    model = make_model(qtbot, [make_root(covered_library)])
+    model = make_model(delete_at_teardown, qtbot, [make_root(covered_library)])
     pack = child(model, model.index(0, 0), "pack")
     open_folder(qtbot, model, pack)
 
@@ -127,7 +128,9 @@ def test_a_covered_file_carries_what_its_record_found_and_the_rest_carry_nothing
     assert child(model, pack, "fresh.mp4").data(Qt.ItemDataRole.ToolTipRole) == "Checksum matched, checked recently."
 
 
-def test_a_folder_below_a_resource_is_read_from_the_record_above_it(qtbot: QtBot, covered_library: Path) -> None:
+def test_a_folder_below_a_resource_is_read_from_the_record_above_it(
+    qtbot: QtBot, covered_library: Path, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """The model names the record from the listings it already holds, so a subfolder costs no extra disk read.
 
     **Test steps:**
@@ -135,7 +138,7 @@ def test_a_folder_below_a_resource_is_read_from_the_record_above_it(qtbot: QtBot
     * open ``pack`` and then its ``sub``, and do the same under ``legacy`` (an ``info.tc``)
     * verify the files in each subfolder read their entry from ``info.checksum`` above
     """
-    model = make_model(qtbot, [make_root(covered_library)])
+    model = make_model(delete_at_teardown, qtbot, [make_root(covered_library)])
     root = model.index(0, 0)
     pack = child(model, root, "pack")
     open_folder(qtbot, model, pack)
@@ -150,7 +153,9 @@ def test_a_folder_below_a_resource_is_read_from_the_record_above_it(qtbot: QtBot
     assert state_of(model, child(model, legacy_sub, "z.mp4")) is FileChecksumState.OK
 
 
-def test_a_resource_with_no_checksum_file_covers_nothing_below_it(qtbot: QtBot, covered_library: Path) -> None:
+def test_a_resource_with_no_checksum_file_covers_nothing_below_it(
+    qtbot: QtBot, covered_library: Path, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """An ``info.rehu`` alone gives no file a state, and does not borrow one from a record further up.
 
     **Test steps:**
@@ -158,7 +163,7 @@ def test_a_resource_with_no_checksum_file_covers_nothing_below_it(qtbot: QtBot, 
     * open ``bare`` and its ``sub``
     * verify the file in ``sub`` has no state
     """
-    model = make_model(qtbot, [make_root(covered_library)])
+    model = make_model(delete_at_teardown, qtbot, [make_root(covered_library)])
     bare = child(model, model.index(0, 0), "bare")
     open_folder(qtbot, model, bare)
     sub = child(model, bare, "sub")
@@ -167,7 +172,9 @@ def test_a_resource_with_no_checksum_file_covers_nothing_below_it(qtbot: QtBot, 
     assert state_of(model, child(model, sub, "x.mp4")) is None
 
 
-def test_a_rewritten_record_changes_the_rows_in_place(qtbot: QtBot, covered_library: Path) -> None:
+def test_a_rewritten_record_changes_the_rows_in_place(
+    qtbot: QtBot, covered_library: Path, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A verify rewrites the record: listing every loaded folder under it again moves the states without a reset.
 
     **Test steps:**
@@ -176,7 +183,7 @@ def test_a_rewritten_record_changes_the_rows_in_place(qtbot: QtBot, covered_libr
     * list everything under ``pack`` again
     * verify both rows show their new state, and the model announced changes, not a reset
     """
-    model = make_model(qtbot, [make_root(covered_library)])
+    model = make_model(delete_at_teardown, qtbot, [make_root(covered_library)])
     pack = child(model, model.index(0, 0), "pack")
     open_folder(qtbot, model, pack)
     sub = child(model, pack, "sub")
@@ -200,7 +207,9 @@ def test_a_rewritten_record_changes_the_rows_in_place(qtbot: QtBot, covered_libr
     assert recorder.count("changed") >= 2
 
 
-def test_listing_under_a_folder_the_model_does_not_hold_does_nothing(qtbot: QtBot, covered_library: Path) -> None:
+def test_listing_under_a_folder_the_model_does_not_hold_does_nothing(
+    qtbot: QtBot, covered_library: Path, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A verify of a resource nobody has opened is not the Roots view's business.
 
     **Test steps:**
@@ -208,7 +217,7 @@ def test_listing_under_a_folder_the_model_does_not_hold_does_nothing(qtbot: QtBo
     * ask for everything under a folder no root holds
     * verify no row changed
     """
-    model = make_model(qtbot, [make_root(covered_library)])
+    model = make_model(delete_at_teardown, qtbot, [make_root(covered_library)])
     recorder = Recorder(model)
 
     model.relist_under(covered_library.parent / "elsewhere")
@@ -217,7 +226,7 @@ def test_listing_under_a_folder_the_model_does_not_hold_does_nothing(qtbot: QtBo
 
 
 def test_a_folder_being_listed_again_still_names_what_it_holds(
-    qtbot: QtBot, mocker: MockerFixture, covered_library: Path
+    qtbot: QtBot, mocker: MockerFixture, covered_library: Path, delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """The pane rebuilds its buttons from the names while a relist is out; "nothing" there would disable them for good.
 
@@ -226,7 +235,7 @@ def test_a_folder_being_listed_again_still_names_what_it_holds(
     * open ``pack``, hold every further listing back, list ``pack`` again and a root's other folder for the first time
     * verify the folder with rows still answers with them, and the one with none says it knows nothing
     """
-    model = make_model(qtbot, [make_root(covered_library)])
+    model = make_model(delete_at_teardown, qtbot, [make_root(covered_library)])
     root = model.index(0, 0)
     pack, bare = child(model, root, "pack"), child(model, root, "bare")
     open_folder(qtbot, model, pack)
@@ -246,7 +255,9 @@ def test_a_folder_being_listed_again_still_names_what_it_holds(
 # endregion
 
 
-def test_a_renamed_file_keeps_its_state(qtbot: QtBot, covered_library: Path) -> None:
+def test_a_renamed_file_keeps_its_state(
+    qtbot: QtBot, covered_library: Path, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A rename the app made moves the row in place and reads nothing: the state travels with it until the next listing.
 
     **Test steps:**
@@ -254,7 +265,7 @@ def test_a_renamed_file_keeps_its_state(qtbot: QtBot, covered_library: Path) -> 
     * open ``pack``, rename its mismatched file on disk and tell the model
     * verify the row under its new name still reads *not matching*, and nothing was reset
     """
-    model = make_model(qtbot, [make_root(covered_library)])
+    model = make_model(delete_at_teardown, qtbot, [make_root(covered_library)])
     pack = child(model, model.index(0, 0), "pack")
     open_folder(qtbot, model, pack)
     recorder = Recorder(model)

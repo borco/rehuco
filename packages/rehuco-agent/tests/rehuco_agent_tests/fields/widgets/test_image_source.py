@@ -8,14 +8,18 @@ from typing import Final
 from PIL import Image
 from PySide6.QtCore import QBuffer, QIODevice, QSize, Qt
 from PySide6.QtGui import QImage, QImageReader, QImageWriter
+from pytest import mark
 from pytest_mock import MockerFixture
 from rehuco_agent.fields.widgets.image_source import (
+    FORMAT_HEAD_SIZE,
     ImageDescription,
     ImageVisibility,
     PathImageSource,
     ScreenshotKey,
     ScreenshotRowsImageSource,
     decode_image,
+    format_reader,
+    image_format,
     image_size,
     image_size_at,
     reading_buffer,
@@ -95,6 +99,75 @@ def test_undecodable_bytes_decode_to_a_null_image_and_no_size() -> None:
     """
     assert decode_image(b"not an image", None).isNull()
     assert not image_size(b"not an image").isValid()
+
+
+def pillow_bytes(pillow_format: str) -> bytes:
+    """A small red picture encoded by Pillow, independent of the Qt readers under test.
+
+    :param pillow_format: Pillow's name for the format.
+    :returns: the encoded bytes.
+    """
+    stream = io.BytesIO()
+    Image.new("RGB", (8, 4), "red").save(stream, pillow_format)
+    return stream.getvalue()
+
+
+@mark.parametrize(
+    ("pillow_format", "qt_format"),
+    [("JPEG", b"jpeg"), ("PNG", b"png"), ("GIF", b"gif"), ("WEBP", b"webp"), ("BMP", b"bmp"), ("TIFF", b"tiff")],
+)
+def test_each_recognized_format_is_named_from_its_leading_bytes_and_decodes(
+    pillow_format: str, qt_format: bytes
+) -> None:
+    """Every format a worker decodes is named from its first bytes, and decodes with Qt's detection off (#529).
+
+    **Test steps:**
+
+    * encode a small picture in the format, with Pillow
+    * verify its leading bytes name the format Qt calls it
+    * verify it decodes at its size, and sizes off its header, through the reader told that format
+    """
+    data = pillow_bytes(pillow_format)
+
+    assert image_format(data[:FORMAT_HEAD_SIZE]) == qt_format
+    assert decode_image(data, None).size().toTuple() == (8, 4)
+    assert image_size(data).toTuple() == (8, 4)
+
+
+def test_a_reader_is_told_its_format_and_never_left_to_probe() -> None:
+    """The reader a worker gets names the format and has detection off, so no image plugin is asked to look at the
+    bytes while PySide holds the GIL (#529).
+
+    **Test steps:**
+
+    * build a reader over a PNG's bytes
+    * verify it carries the PNG format and does not detect one itself
+    """
+    data = png_bytes(4, 4)
+    buffer = reading_buffer(data)
+
+    reader = format_reader(buffer, data)
+
+    assert reader is not None
+    assert bytes(reader.format().data()) == b"png"
+    assert not reader.autoDetectImageFormat()
+
+
+def test_bytes_no_recognized_format_starts_with_are_not_read_at_all() -> None:
+    """An SVG -- which Qt could decode, but only by probing every plugin -- is no format a worker reads: no reader is
+    built, it decodes to nothing and has no size (#529).
+
+    **Test steps:**
+
+    * name, read, decode and size the bytes of a small SVG
+    * verify each answers nothing
+    """
+    data = b'<svg xmlns="http://www.w3.org/2000/svg" width="8" height="4"/>'
+
+    assert image_format(data) is None
+    assert format_reader(reading_buffer(data), data) is None
+    assert decode_image(data, None).isNull()
+    assert not image_size(data).isValid()
 
 
 def test_image_size_reads_the_header_off_a_leading_slice() -> None:

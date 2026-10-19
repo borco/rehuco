@@ -14,6 +14,7 @@ from borco_core.logging import LOG_SCOPE_ATTRIBUTE, LogScope
 from borco_pyside.logging.log_bridge import DEFAULT_LOG_LIMIT, LogBridge
 from borco_pyside.logging.log_entry import LogEntry
 from borco_pyside.logging.log_record_sink import LogRecordSink
+from PySide6.QtCore import QCoreApplication, QEvent
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -625,6 +626,7 @@ def test_the_cache_keeps_the_newest_entries_within_its_cap(log: logging.Logger) 
         bridge.add_sink(sink)
     finally:
         log.removeHandler(bridge)
+        bridge.close()
 
     assert sink.messages == ["second", "third"]
 
@@ -638,8 +640,12 @@ def test_a_cap_below_one_still_holds_one(bridge: LogBridge) -> None:
     * verify its limit is one
     """
     del bridge  # this test builds its own
+    built = LogBridge(limit=0)
 
-    assert LogBridge(limit=0).limit == 1
+    try:
+        assert built.limit == 1
+    finally:
+        built.close()
 
 
 def test_lowering_the_cap_trims_the_cache_at_once(bridge: LogBridge, log: logging.Logger) -> None:
@@ -721,7 +727,8 @@ def test_a_record_that_cannot_be_formatted_is_reported_not_raised(
     log.info("unformattable")
 
     handle_error.assert_called_once()
-    assert handle_error.call_args.args[0].getMessage() == "unformattable"
+    # pylint-qt reads a subscript of the call's args as a signal once QtCore is imported (false positive)
+    assert handle_error.call_args.args[0].getMessage() == "unformattable"  # pylint: disable=no-member
 
 
 def test_a_record_that_cannot_be_formatted_is_not_cached(
@@ -743,6 +750,106 @@ def test_a_record_that_cannot_be_formatted_is_not_cached(
     bridge.add_sink(sink)
 
     assert sink.messages == []
+
+
+# endregion
+
+
+# region closing
+
+
+def pending_bridge() -> tuple[LogBridge, RecordingSink]:
+    """A bridge of its own with a sink attached and one record logged, its wake-up still queued.
+
+    :returns: the bridge and its sink.
+    """
+    built = LogBridge()
+    sink = RecordingSink()
+    built.add_sink(sink)
+    built.emit(logging.makeLogRecord({"msg": "pending"}))
+    return built, sink
+
+
+def test_a_closed_bridge_takes_its_queued_wake_up_with_it(qtbot: QtBot, deliver: Callable[[], None]) -> None:
+    """Closing deletes the marshaller, and the wake-up still queued for it goes with it: nothing is dispatched into
+    the dropped bridge (#529). The crash the old wiring caused shows only across tests, run in order without xdist
+    -- the module's own serial run is the guard for that.
+
+    **Test steps:**
+
+    * log into a bridge of its own without letting the event loop turn, then close and drop it
+    * run only the deferred deletes, then let the event loop turn
+    * verify the sink was handed nothing
+    """
+    del qtbot
+    built, sink = pending_bridge()
+
+    built.close()
+    del built
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
+    deliver()
+
+    assert not sink.batches
+
+
+def test_a_bridge_dropped_unclosed_wakes_nobody(deliver: Callable[[], None]) -> None:
+    """The marshaller holds its bridge weakly, so a bridge dropped with a wake-up queued is simply gone, and the
+    wake-up reaches nothing (#529).
+
+    **Test steps:**
+
+    * log into a bridge of its own without letting the event loop turn, then drop it unclosed
+    * let the event loop turn
+    * verify the sink was handed nothing
+    """
+    built, sink = pending_bridge()
+    marshaller = built._LogBridge__marshaller  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    del built
+    deliver()
+
+    assert not sink.batches
+    marshaller.deleteLater()
+
+
+def test_closing_twice_and_logging_after_closing_change_nothing(deliver: Callable[[], None]) -> None:
+    """A closed bridge still caches what it is handed, but wakes no thread; ``logging`` closing it again in its own
+    shutdown deletes nothing twice (#529).
+
+    **Test steps:**
+
+    * close a bridge of its own twice, then log into it and let the event loop turn
+    * attach a sink
+    * verify the record was cached and handed over only on attaching
+    """
+    built = LogBridge()
+    sink = RecordingSink()
+
+    built.close()
+    built.close()
+    built.emit(logging.makeLogRecord({"msg": "after"}))
+    deliver()
+    built.add_sink(sink)
+
+    assert sink.messages == ["after"]
+
+
+def test_closing_after_the_application_destroyed_the_marshaller_raises_nothing(qtbot: QtBot) -> None:
+    """At exit ``logging`` closes the bridge after PySide destroyed the marshaller along with the application; that
+    close is no error (#529).
+
+    **Test steps:**
+
+    * destroy a bridge's marshaller from under it, as the application's teardown does
+    * close the bridge
+    * verify nothing was raised
+    """
+    del qtbot
+    built = LogBridge()
+    built._LogBridge__marshaller.deleteLater()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
+
+    built.close()
 
 
 # endregion

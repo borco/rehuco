@@ -15,6 +15,8 @@ from rehuco_agent.fields.widgets.thumbnail_loader import CACHE_LIMIT_KIB, Thumbn
 from rehuco_agent.fields.widgets.thumbnail_row import ThumbnailRow
 from shiboken6 import isValid
 
+from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
+
 IMAGE_HEIGHT: Final = 40
 IMAGE_WIDTH: Final = 80
 
@@ -108,11 +110,11 @@ def loader() -> ThumbnailLoader:
 
 
 @fixture
-def single_worker_loader() -> ThumbnailLoader:
+def single_worker_loader(delete_at_teardown: DeleteAtTeardown) -> ThumbnailLoader:
     """A loader on a pool of one thread, so the order requests are served in is observable: with
     several workers each takes the newest at the moment it looks, and the gate releases them together.
     """
-    pool = QThreadPool()
+    pool = delete_at_teardown(QThreadPool())
     pool.setMaxThreadCount(1)
     return ThumbnailLoader(pool=pool)
 
@@ -244,7 +246,9 @@ def test_retain_leaves_another_requesters_pending_decodes_alone(
     assert theirs.loaded == [0]
 
 
-def test_a_destroyed_loader_drains_its_queue_without_decoding(qtbot: QtBot) -> None:
+def test_a_destroyed_loader_drains_its_queue_without_decoding(
+    qtbot: QtBot, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """Once the loader is gone -- its document closed -- a worker finds nothing more to decode rather
     than emitting into a dead signal.
 
@@ -254,7 +258,7 @@ def test_a_destroyed_loader_drains_its_queue_without_decoding(qtbot: QtBot) -> N
       one at the gate, then delete the loader
     * release the gate and verify only the request the worker already held was decoded
     """
-    pool = QThreadPool()
+    pool = delete_at_teardown(QThreadPool())
     pool.setMaxThreadCount(1)
     loader = ThumbnailLoader(pool=pool)
     source = RecordingSource(2)

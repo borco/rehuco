@@ -198,10 +198,11 @@ class UrlDropFilter(QObject):
     :param model: the document, read for :attr:`~.RehuDocumentModel.locked` and
         :attr:`~.RehuDocumentModel.path` -- a locked document, or one with no local path, refuses the
         drop outright rather than queuing a scrape with nowhere to land.
+    :param parent: the owner; the filter goes with it.
     """
 
-    def __init__(self, actions: ScrapeActions, model: RehuDocumentModel) -> None:
-        super().__init__()
+    def __init__(self, actions: ScrapeActions, model: RehuDocumentModel, parent: QObject | None = None) -> None:
+        super().__init__(parent)
         self.__actions: Final = actions
         self.__model: Final = model
 
@@ -278,10 +279,13 @@ class ImageDropFilter(QObject):
     :param model: the document, read for :attr:`~.RehuDocumentModel.locked` and
         :attr:`~.RehuDocumentModel.path` -- a locked document, or one with no local path, refuses the
         drop outright.
+    :param parent: the owner; the filter goes with it.
     """
 
-    def __init__(self, image_downloads: ImageDownloads, model: RehuDocumentModel) -> None:
-        super().__init__()
+    def __init__(
+        self, image_downloads: ImageDownloads, model: RehuDocumentModel, parent: QObject | None = None
+    ) -> None:
+        super().__init__(parent)
         self.__image_downloads: Final = image_downloads
         self.__model: Final = model
         self.__own: frozenset[str] | None = None
@@ -655,8 +659,9 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         # (__rebuild_field_docks), and so does teardown. A lambda, not a bound method: Qt drops a connection
         # whose *receiver* is the object being destroyed, so a slot on self would never fire on its own
         # destruction -- and it must re-read self.__form, which a rebuild may have replaced. Recorded, so a
-        # teardown -- which clears the form itself -- leaves nothing behind on this object either (#39).
-        self.__connect(self.destroyed, lambda: self.__form.clear_external())  # pylint: disable=unnecessary-lambda
+        # teardown -- which clears the form itself -- leaves nothing behind on this object either (#39). Its fields
+        # are deleted then too, as a teardown deletes them, rather than left to the cyclic collector (#529).
+        self.__connect(self.destroyed, lambda: self.__release_form())  # pylint: disable=unnecessary-lambda
         # one dock per FieldsTab, in two areas: Main View leads the left one with the editor tabs behind
         # it, Description View holds the right one where the single Viewer dock sat before the split
         # (#299). The editors are built first so the left area exists for Main View to stack into, and
@@ -772,7 +777,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         self.__scrapes.changed.connect(self.__on_scrape_notice_changed)
         main_editor_dock: QtAds.CDockWidget = self.__editor_docks[EDITOR_MAIN_TAB]
         main_editor_dock.setAcceptDrops(True)  # pylint: disable=no-member
-        self.__url_drop_filter: Final = UrlDropFilter(self.__scrapes, model)
+        self.__url_drop_filter: Final = UrlDropFilter(self.__scrapes, model, self)
         main_editor_dock.installEventFilter(self.__url_drop_filter)  # pylint: disable=no-member
 
         # anything dropped directly on the images sub-dock ends as a screenshot too
@@ -780,7 +785,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         # synchronously, an image URL goes through the same ImageDownloads a scrape's images do
         images_dock: QtAds.CDockWidget = self.__editor_docks[EDITOR_IMAGES_TAB]
         images_dock.setAcceptDrops(True)  # pylint: disable=no-member
-        self.__image_drop_filter: Final = ImageDropFilter(self.__image_downloads, model)
+        self.__image_drop_filter: Final = ImageDropFilter(self.__image_downloads, model, self)
         images_dock.installEventFilter(self.__image_drop_filter)  # pylint: disable=no-member
 
         self.__set_editors_locked(model.locked)
@@ -999,6 +1004,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
             self.__dock_manager.removeDockWidget(dock)
             dock.deleteLater()
         self.__type_docks.clear()
+        self.__form.delete_later()
         for action in self.__host_actions:
             self.__host.widget.removeAction(action)
             action.deleteLater()
@@ -1009,6 +1015,12 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         self.__conversion_backups.deleteLater()
         self.__banner.set_rows([])
         self.deleteLater()
+
+    def __release_form(self) -> None:
+        """Sever the current form's long-lived-signal connections and delete its fields, as this object is destroyed
+        without a teardown -- with its host."""
+        self.__form.clear_external()
+        self.__form.delete_later()
 
     def toggle_action(self, tab: FieldsTab) -> QAction:
         """The visibility-toggle action for ``tab``'s dock -- whichever viewer or editor tab it is.
@@ -1391,7 +1403,8 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         # sever the outgoing form's long-lived-signal connections *before* its widgets are swapped out and
         # destroyed -- deterministically, while its fields are still alive -- so no stale lambda fires into
         # a deleted widget later (a subsequent revert/switch). Then replace the retained form.
-        self.__form.clear_external()
+        outgoing = self.__form
+        outgoing.clear_external()
         self.__form = build_document_form(
             self.__model, name_suggestions=self.__name_suggestions, image_organizer=self.__image_organizer
         )
@@ -1405,6 +1418,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         editor_min_heights = {EDITOR_IMAGES_TAB: IMAGES_DOCK_MIN_HEIGHT}
         self.__swap_dock_contents(self.__editor_docks, self.__form.make_editor(self.__model), editor_min_heights)
         self.__swap_dock_contents(self.__viewer_docks, self.__form.make_viewer(self.__model))
+        outgoing.delete_later()
         self.__set_editors_locked(self.__model.locked)
         rebuilt = self.__stateful_widgets()
         for name, state in saved_state.items():

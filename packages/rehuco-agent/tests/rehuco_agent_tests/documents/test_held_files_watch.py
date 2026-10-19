@@ -21,6 +21,8 @@ from rehuco_core import DEFAULT_RENAME_COORDINATOR, RehuDocument, RenameCoordina
 from rehuco_core.access import ChangeFeed, Records, ResourceKey
 from rehuco_core.notify import WatchedFolder
 
+from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
+
 PLACE: Final = Path.cwd() / "fake"
 """Built from ``Path.cwd()`` so it is absolute on every platform."""
 ROOT: Final = PLACE / "root"
@@ -150,7 +152,9 @@ def held_reads(mocker: MockerFixture, records: Records, release: threading.Event
 
 
 @mark.usefixtures("real_path_stat")
-def test_a_read_delivers_each_files_time_and_size_on_the_gui_thread(qtbot: QtBot, tmp_path: Path) -> None:
+def test_a_read_delivers_each_files_time_and_size_on_the_gui_thread(
+    qtbot: QtBot, tmp_path: Path, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """What the files look like is read off the GUI thread and arrives on it; a file that cannot be read is left out.
 
     **Test steps:**
@@ -161,7 +165,7 @@ def test_a_read_delivers_each_files_time_and_size_on_the_gui_thread(qtbot: QtBot
     """
     first, second, missing = tmp_path / "a" / "info.rehu", tmp_path / "b" / "foo.rehu", tmp_path / "c" / "info.rehu"
     expected = {first: written(first), second: written(second)}
-    watch = HeldFilesWatch(ChangeFeed(), Records(), None, None)
+    watch = delete_at_teardown(HeldFilesWatch(ChangeFeed(), Records(), None, None))
     threads: list[QThread] = []
     watch.statted.connect(lambda _signatures: threads.append(QThread.currentThread()))
 
@@ -174,7 +178,9 @@ def test_a_read_delivers_each_files_time_and_size_on_the_gui_thread(qtbot: QtBot
 
 
 @mark.usefixtures("real_path_stat")
-def test_a_read_finding_nothing_delivers_nothing(tmp_path: Path, qtbot: QtBot) -> None:
+def test_a_read_finding_nothing_delivers_nothing(
+    tmp_path: Path, qtbot: QtBot, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A read whose files are all gone has nothing to say.
 
     **Test steps:**
@@ -183,7 +189,7 @@ def test_a_read_finding_nothing_delivers_nothing(tmp_path: Path, qtbot: QtBot) -
     * verify nothing was delivered
     """
     del qtbot
-    watch = HeldFilesWatch(ChangeFeed(), Records(), None, None)
+    watch = delete_at_teardown(HeldFilesWatch(ChangeFeed(), Records(), None, None))
     heard = delivered_directly(watch)
 
     watch.read([key(tmp_path / "info.rehu")])
@@ -192,7 +198,9 @@ def test_a_read_finding_nothing_delivers_nothing(tmp_path: Path, qtbot: QtBot) -
     assert not heard
 
 
-def test_a_read_of_no_files_starts_no_thread(mocker: MockerFixture, qtbot: QtBot) -> None:
+def test_a_read_of_no_files_starts_no_thread(
+    mocker: MockerFixture, qtbot: QtBot, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """Nothing to read is no reason for a thread.
 
     **Test steps:**
@@ -203,12 +211,14 @@ def test_a_read_of_no_files_starts_no_thread(mocker: MockerFixture, qtbot: QtBot
     del qtbot
     started = mocker.spy(threading.Thread, "start")
 
-    HeldFilesWatch(ChangeFeed(), Records(), None, None).read(())
+    delete_at_teardown(HeldFilesWatch(ChangeFeed(), Records(), None, None)).read(())
 
     started.assert_not_called()
 
 
-def test_nothing_is_delivered_after_stop(mocker: MockerFixture, qtbot: QtBot, gate: threading.Event) -> None:
+def test_nothing_is_delivered_after_stop(
+    mocker: MockerFixture, qtbot: QtBot, gate: threading.Event, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A read still out when the watch stops delivers nothing, and no read starts after.
 
     **Test steps:**
@@ -220,7 +230,7 @@ def test_nothing_is_delivered_after_stop(mocker: MockerFixture, qtbot: QtBot, ga
     del qtbot
     records = Records()
     entered = held_reads(mocker, records, gate)
-    watch = HeldFilesWatch(ChangeFeed(), records, None, None)
+    watch = delete_at_teardown(HeldFilesWatch(ChangeFeed(), records, None, None))
     heard = delivered_directly(watch)
     watch.read([key(LOOSE / "info.rehu")])
     assert entered.wait(SETTLE_S)
@@ -236,7 +246,7 @@ def test_nothing_is_delivered_after_stop(mocker: MockerFixture, qtbot: QtBot, ga
 
 
 def test_a_watch_destroyed_while_a_read_is_out_drops_the_delivery(
-    mocker: MockerFixture, qtbot: QtBot, gate: threading.Event
+    mocker: MockerFixture, qtbot: QtBot, gate: threading.Event, delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """The reader outlives a watch destroyed with its window; its delivery then fails quietly, on the reader's thread.
 
@@ -249,7 +259,7 @@ def test_a_watch_destroyed_while_a_read_is_out_drops_the_delivery(
     del qtbot
     records = Records()
     entered = held_reads(mocker, records, gate)
-    watch = HeldFilesWatch(ChangeFeed(), records, None, None)
+    watch = delete_at_teardown(HeldFilesWatch(ChangeFeed(), records, None, None))
     statted = mocker.patch.object(watch, "statted")
     statted.emit.side_effect = RuntimeError("Internal C++ object (HeldFilesWatch) already deleted.")
     escaped = mocker.patch("threading.excepthook")
@@ -326,7 +336,9 @@ def test_a_folder_is_watched_once(
     assert len(notifiers.built) == len(expected)
 
 
-def test_a_folder_no_longer_wanted_is_let_go_and_one_still_wanted_is_kept(notifiers: MagicMock, qtbot: QtBot) -> None:
+def test_a_folder_no_longer_wanted_is_let_go_and_one_still_wanted_is_kept(
+    notifiers: MagicMock, qtbot: QtBot, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """Following again stops what is no longer wanted -- a document released, or a root now covering it -- and keeps
     the notifier of a folder still wanted rather than starting it again.
 
@@ -339,7 +351,7 @@ def test_a_folder_no_longer_wanted_is_let_go_and_one_still_wanted_is_kept(notifi
     """
     del qtbot
     roots = [ROOT]
-    watch = HeldFilesWatch(ChangeFeed(), Records(), None, lambda: roots)
+    watch = delete_at_teardown(HeldFilesWatch(ChangeFeed(), Records(), None, lambda: roots))
     first, second = key(LOOSE / "x" / "info.rehu"), key(LOOSE / "y" / "info.rehu")
     watch.follow([first, second])
 
@@ -356,7 +368,7 @@ def test_a_folder_no_longer_wanted_is_let_go_and_one_still_wanted_is_kept(notifi
 
 @mark.parametrize("coordinator", [None, RenameCoordinator()], ids=["default", "given"])
 def test_a_notifier_publishes_on_the_feed_and_answers_to_the_coordinator(
-    notifiers: MagicMock, qtbot: QtBot, coordinator: RenameCoordinator | None
+    notifiers: MagicMock, qtbot: QtBot, coordinator: RenameCoordinator | None, delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """Each notifier publishes on the app's feed, compares a sweep with the held documents, and answers to the rename
     coordinator given -- the app's default one when none is.
@@ -369,7 +381,7 @@ def test_a_notifier_publishes_on_the_feed_and_answers_to_the_coordinator(
     del qtbot
     feed = ChangeFeed()
     held = key(LOOSE / "x" / "info.rehu")
-    watch = HeldFilesWatch(feed, Records(), coordinator, lambda: ())
+    watch = delete_at_teardown(HeldFilesWatch(feed, Records(), coordinator, lambda: ()))
 
     watch.follow([held])
 
@@ -380,7 +392,9 @@ def test_a_notifier_publishes_on_the_feed_and_answers_to_the_coordinator(
     assert given_coordinator is (coordinator if coordinator is not None else DEFAULT_RENAME_COORDINATOR)
 
 
-def test_with_no_roots_nothing_is_watched(notifiers: MagicMock, qtbot: QtBot) -> None:
+def test_with_no_roots_nothing_is_watched(
+    notifiers: MagicMock, qtbot: QtBot, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A watch with no window around it watches nothing.
 
     **Test steps:**
@@ -389,7 +403,7 @@ def test_with_no_roots_nothing_is_watched(notifiers: MagicMock, qtbot: QtBot) ->
     * verify no notifier was built
     """
     del qtbot
-    HeldFilesWatch(ChangeFeed(), Records(), None, None).follow([key(LOOSE / "x" / "info.rehu")])
+    delete_at_teardown(HeldFilesWatch(ChangeFeed(), Records(), None, None)).follow([key(LOOSE / "x" / "info.rehu")])
 
     notifiers.assert_not_called()
 

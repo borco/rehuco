@@ -20,6 +20,8 @@ from pytestqt.qtbot import QtBot
 from rehuco_agent.rehuco.catalog_rows_loader import CatalogRowsLoad, CatalogRowsLoader
 from rehuco_core import CatalogQuery, CatalogRecord, CatalogRow, CatalogUnreadable, RecordKind
 
+from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
+
 ROOT_ID: Final = uuid4()
 
 GATE_TIMEOUT: Final = 120.0
@@ -108,16 +110,19 @@ def fixture_loads() -> list[CatalogRowsLoad]:
 
 
 @fixture(name="loader")
-def fixture_loader(qtbot: QtBot, reader: GatedReader, loads: list[CatalogRowsLoad]) -> CatalogRowsLoader:
+def fixture_loader(
+    qtbot: QtBot, reader: GatedReader, loads: list[CatalogRowsLoad], delete_at_teardown: DeleteAtTeardown
+) -> CatalogRowsLoader:
     """A loader over ``reader``, noting what it delivers.
 
     :param qtbot: pytest-qt fixture.
     :param reader: what it reads through.
     :param loads: where its answers go.
+    :param delete_at_teardown: deletes the `CatalogRowsLoader` when the test ends.
     :returns: the loader.
     """
     del qtbot
-    loader = CatalogRowsLoader(reader)
+    loader = delete_at_teardown(CatalogRowsLoader(reader))
     loader.loaded.connect(loads.append)
     return loader
 
@@ -297,7 +302,9 @@ def test_a_cancelled_read_delivers_nothing_and_leaves_no_thread_running(
     assert reader.calls == [None, None]
 
 
-def test_a_loader_destroyed_while_its_read_is_out_delivers_nothing(qtbot: QtBot, reader: GatedReader) -> None:
+def test_a_loader_destroyed_while_its_read_is_out_delivers_nothing(
+    qtbot: QtBot, reader: GatedReader, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A dock closed while its read is out takes the loader with it, and the read's answer goes nowhere, quietly.
 
     **Test steps:**
@@ -306,7 +313,7 @@ def test_a_loader_destroyed_while_its_read_is_out_delivers_nothing(qtbot: QtBot,
     * let the read through and wait for the pool
     * verify the read ran to its end and nothing raised
     """
-    loader = CatalogRowsLoader(reader)
+    loader = delete_at_teardown(CatalogRowsLoader(reader))
     reader.hold()
     loader.refresh([ROOT_ID])
     reader.wait_entered()

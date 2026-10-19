@@ -33,6 +33,8 @@ from rehuco_agent.documents.checksum_rows import (
 )
 from rehuco_agent.documents.files_rows import CHECKSUM_STATE_TOOLTIPS, UNTRUSTED_LOCATION_TOOLTIP, FileChecksumState
 
+from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
+
 
 # the listing fakes below are `test_excluded_files_settings`' and the core walks' near-verbatim --
 # kept as a separate copy rather than shared, this codebase's fake-filesystem convention
@@ -600,7 +602,9 @@ def test_rows_default_to_reachable_and_clean() -> None:
 # region The loader
 
 
-def test_a_read_that_raises_reports_rather_than_leaving_the_dock_waiting(qtbot: QtBot, mocker: MockerFixture) -> None:
+def test_a_read_that_raises_reports_rather_than_leaving_the_dock_waiting(
+    qtbot: QtBot, mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A ``loaded`` that never arrived would leave a busy state for the document's life (#244).
 
     **Test steps:**
@@ -611,7 +615,7 @@ def test_a_read_that_raises_reports_rather_than_leaving_the_dock_waiting(qtbot: 
     mocker.patch(
         "rehuco_agent.documents.checksum_rows.read_checksum_rows", side_effect=RuntimeError("the walk fell over")
     )
-    loader = ChecksumRowsLoader()
+    loader = delete_at_teardown(ChecksumRowsLoader())
     delivered: list[ChecksumRows] = []
     loader.loaded.connect(delivered.append)
 
@@ -621,7 +625,9 @@ def test_a_read_that_raises_reports_rather_than_leaving_the_dock_waiting(qtbot: 
     assert delivered[0].error == "the walk fell over"
 
 
-def test_a_superseded_read_is_dropped_rather_than_drawn(qtbot: QtBot, mocker: MockerFixture) -> None:
+def test_a_superseded_read_is_dropped_rather_than_drawn(
+    qtbot: QtBot, mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A rename can ask for a re-read while the first walk is still out (#244).
 
     **Test steps:**
@@ -644,7 +650,7 @@ def test_a_superseded_read_is_dropped_rather_than_drawn(qtbot: QtBot, mocker: Mo
         return answer
 
     mocker.patch("rehuco_agent.documents.checksum_rows.read_checksum_rows", side_effect=read)
-    loader = ChecksumRowsLoader()
+    loader = delete_at_teardown(ChecksumRowsLoader())
     delivered: list[ChecksumRows] = []
     loader.loaded.connect(delivered.append)
 
@@ -729,7 +735,9 @@ def test_a_flat_table_has_nothing_under_a_cell() -> None:
 # endregion
 
 
-def test_a_walk_that_answers_after_its_dock_is_gone_reports_into_nothing(mocker: MockerFixture) -> None:
+def test_a_walk_that_answers_after_its_dock_is_gone_reports_into_nothing(
+    mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A document closed mid-walk must not raise on the pool thread (#244).
 
     The loader is parented to the dock, so closing the document takes its C++ half while the walk is
@@ -743,7 +751,7 @@ def test_a_walk_that_answers_after_its_dock_is_gone_reports_into_nothing(mocker:
     """
     mocker.patch("rehuco_agent.documents.checksum_rows.read_checksum_rows", return_value=ChecksumRows())
     dock = QObject()
-    loader = ChecksumRowsLoader(dock)
+    loader = delete_at_teardown(ChecksumRowsLoader(dock))
     delivered: list[ChecksumRows] = []
     # connected, because an emit with nobody listening never reaches the deleted C++ half at all --
     # which is exactly the case this guard is *not* about

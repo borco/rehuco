@@ -1,5 +1,6 @@
 """Tests for `ScrapeActions` (#272): a dropped URL applied to the Main Editor as a reviewable edit."""
 
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final, cast
@@ -169,8 +170,9 @@ def build_actions(  # pylint: disable=too-many-arguments
 ) -> ScrapeActions:
     """Construct `ScrapeActions` over test doubles, casting past their structural mismatch with the
     concrete `ScraperRegistry`/`ScraperExecutor` types (`PageFetcher` alone is a real Protocol). Every
-    re-fetch waits ``delay`` seconds, whatever range it asked for."""
-    return ScrapeActions(
+    re-fetch waits ``delay`` seconds, whatever range it asked for; deleted when the test ends
+    (:func:`delete_built_actions`)."""
+    built = ScrapeActions(
         doc_model,
         image_downloads,
         registry=cast(ScraperRegistry, registry),
@@ -179,6 +181,26 @@ def build_actions(  # pylint: disable=too-many-arguments
         choose_delay=lambda *_: delay,
         clock=clock,
     )
+    BUILT_ACTIONS.append(built)
+    return built
+
+
+BUILT_ACTIONS: Final[list[ScrapeActions]] = []
+"""Every `ScrapeActions` :func:`build_actions` built in the running test, for :func:`delete_built_actions`."""
+
+
+@fixture(autouse=True)
+def delete_built_actions() -> Iterator[None]:
+    """Delete every `ScrapeActions` the test built, as the window's sub-docks would (#529).
+
+    Left to Python, the last references to one are the closures its own chains' timers and actions carry: deleting
+    an ended chain's timer releases them inside the timer's destruction, and the actions' wrapper then deletes the
+    actions -- and that timer a second time -- from inside it. In the app the actions are their sub-docks' child,
+    so their wrapper never deletes them.
+    """
+    yield
+    while BUILT_ACTIONS:
+        BUILT_ACTIONS.pop().deleteLater()
 
 
 def refetching_actions(  # pylint: disable=too-many-arguments
@@ -570,6 +592,37 @@ def test_a_no_match_gives_a_warning_row_naming_the_host(qtbot: QtBot, image_down
     assert len(doc_actions.notice) == 1
     assert doc_actions.notice[0].severity == MessageBannerSeverity.WARNING
     assert "example.com" in doc_actions.notice[0].text
+
+
+def test_resolved_drops_leave_no_qt_object_behind(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
+    """However many drops resolve, the actions keep the same Qt children: every job reports through the one relay
+    built with them, and each chain's timer and action go when it ends -- nothing accumulates on a document left
+    open for days (#529).
+
+    **Test steps:**
+
+    * resolve one drop and count the actions' Qt children
+    * resolve five more
+    * verify the count is the same
+    """
+    doc_actions = actions(model(), None, image_downloads)
+
+    def resolve_one() -> None:
+        with qtbot.waitSignal(doc_actions.changed, timeout=WAIT_TIMEOUT_MS):
+            doc_actions.submit(drop())
+        # the failure's warning, not the busy row: the chain has ended, so its timer and action are on their way
+        qtbot.waitUntil(
+            lambda: [row.severity for row in doc_actions.notice] == [MessageBannerSeverity.WARNING],
+            timeout=WAIT_TIMEOUT_MS,
+        )
+        qtbot.wait(10)  # an event loop turning runs the deferred deletes
+
+    resolve_one()
+    baseline = len(doc_actions.children())
+    for _ in range(5):
+        resolve_one()
+
+    assert len(doc_actions.children()) == baseline
 
 
 def test_a_fetch_failure_gives_a_warning_row(qtbot: QtBot, image_downloads: ImageDownloads) -> None:

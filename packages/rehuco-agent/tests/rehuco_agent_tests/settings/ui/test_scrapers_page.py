@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QMessageBox
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
+from rehuco_agent.scraping.browser_fetcher import PersonaAction
 from rehuco_agent.scraping.protocols import FetchError
 from rehuco_agent.scraping.registry import ScraperRow
 from rehuco_agent.settings import scrapers_settings
@@ -476,6 +477,70 @@ def test_open_the_browser_shows_a_warning_on_failure(qtbot: QtBot, mocker: Mocke
     qtbot.waitUntil(ui.open_browser_button.isEnabled)
 
     warning.assert_called_once()
+
+
+def test_every_persona_action_runs_on_the_pages_one_runner(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """The page builds one `PersonaAction` for its lifetime and reuses it, so clicks add no Qt object to it, and each
+    outcome still reaches the report its own click asked for (#529).
+
+    **Test steps:**
+
+    * build the page, stand in for the persona browser failing and for the message box
+    * press Open the browser three times, waiting for each to report back
+    * verify the page holds one `PersonaAction`, and a warning was shown for each press
+    """
+    page = ScrapersPage()
+    qtbot.addWidget(page)
+    ui = page_ui(page)
+    persona_browser = mocker.Mock()
+    persona_browser.open_for_login.side_effect = FetchError("no Firefox installed")
+    mocker.patch("rehuco_agent.settings.ui.scrapers_page.shared_persona_browser", return_value=persona_browser)
+    warning = mocker.patch("rehuco_agent.settings.ui.scrapers_page.QMessageBox.warning")
+
+    for _ in range(3):
+        ui.open_browser_button.click()
+        qtbot.waitUntil(ui.open_browser_button.isEnabled)
+
+    assert len(page.findChildren(PersonaAction)) == 1
+    assert warning.call_count == 3
+
+
+def test_a_site_link_while_a_persona_action_runs_is_refused(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """One persona action at a time: a Scraper-column link, which stays enabled, asked while Open the browser still
+    runs starts nothing, so the running action's outcome is reported where its own click asked (#529).
+
+    **Test steps:**
+
+    * build the page, stand in for a persona browser that waits until released, and for the message box
+    * press Open the browser, then activate a site link while it runs
+    * release the browser and wait for the button to re-enable
+    * verify the browser was opened once, and the running action's failure was reported as Open the browser's
+    """
+    page = ScrapersPage()
+    qtbot.addWidget(page)
+    ui = page_ui(page)
+    release = threading.Event()
+
+    def open_for_login(*_args: object) -> None:
+        release.wait(2)
+        raise FetchError("no Firefox installed")
+
+    persona_browser = mocker.Mock()
+    persona_browser.open_for_login.side_effect = open_for_login
+    mocker.patch("rehuco_agent.settings.ui.scrapers_page.shared_persona_browser", return_value=persona_browser)
+    warning = mocker.patch("rehuco_agent.settings.ui.scrapers_page.QMessageBox.warning")
+    delegate = ui.scrapers_table.itemDelegateForColumn(SCRAPER_COLUMN)
+    assert isinstance(delegate, ScrapersScraperColumnDelegate)
+
+    ui.open_browser_button.click()
+    qtbot.waitUntil(lambda: persona_browser.open_for_login.called)
+    delegate.link_activated.emit(TICKED_ROW.site_url)
+    release.set()
+    qtbot.waitUntil(ui.open_browser_button.isEnabled)
+
+    assert persona_browser.open_for_login.call_count == 1
+    warning.assert_called_once()
+    assert warning.call_args.args[1] == "Open the browser"
 
 
 def test_reset_persona_asks_for_confirmation_and_resets_on_yes(qtbot: QtBot, mocker: MockerFixture) -> None:

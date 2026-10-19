@@ -32,6 +32,8 @@ from rehuco_agent.rehuco.roots_grip import GRIP_TOOLTIP, GRIP_WIDTH, RootsGripFi
 from rehuco_agent.rehuco.roots_item_delegate import RootsItemDelegate
 from rehuco_core import RehucoRoot, RootFolderLister, RootStorage
 
+from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
+
 WAIT_TIMEOUT_MS: Final = 10_000
 
 ON_GRIP: Final = QPoint(GRIP_WIDTH // 2, 8)
@@ -39,18 +41,21 @@ OFF_GRIP: Final = QPoint(GRIP_WIDTH + 60, 8)
 
 
 @fixture(name="roots")
-def fixture_roots(qtbot: QtBot, tmp_path: Path) -> Generator[tuple[RootsColumnView, RootsFolderModel]]:
+def fixture_roots(
+    qtbot: QtBot, tmp_path: Path, delete_at_teardown: DeleteAtTeardown
+) -> Generator[tuple[RootsColumnView, RootsFolderModel]]:
     """A shown column view over three roots, the first with a folder in it, with reordering on.
 
     :param qtbot: pytest-qt fixture.
     :param tmp_path: pytest's temporary directory.
+    :param delete_at_teardown: deletes the `RootsFolderModel` when the test ends.
     :yields: the view and its model.
     """
     (tmp_path / "a" / "sub").mkdir(parents=True)
     (tmp_path / "b").mkdir()
     (tmp_path / "c").mkdir()
     roots = [RehucoRoot(uuid4(), tmp_path / name, name, RootStorage.LOCAL) for name in ("a", "b", "c")]
-    model = RootsFolderModel()
+    model = delete_at_teardown(RootsFolderModel())
     view = RootsColumnView()
     view.setModel(model)
     qtbot.addWidget(view)

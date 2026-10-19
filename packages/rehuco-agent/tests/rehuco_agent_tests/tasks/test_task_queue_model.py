@@ -37,6 +37,8 @@ from rehuco_core import (
     TaskQueue,
 )
 
+from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
+
 TIMEOUT: Final = 5.0
 
 
@@ -179,7 +181,7 @@ def deliver(qtbot: QtBot) -> Callable[[], None]:
 
 
 def test_a_burst_of_progress_reports_reaches_the_gui_as_one_snapshot(
-    queue: TaskQueue, deliver: Callable[[], None]
+    queue: TaskQueue, deliver: Callable[[], None], delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """Several ``job_updated`` calls in a row collapse into one re-snapshot.
 
@@ -189,7 +191,7 @@ def test_a_burst_of_progress_reports_reaches_the_gui_as_one_snapshot(
     * count how many times ``dataChanged``/``rowsInserted`` fired
     * verify the burst produced one wake, not one per report
     """
-    model = TaskQueueModel(queue)
+    model = delete_at_teardown(TaskQueueModel(queue))
     model.attach_to()
     inserts: list[int] = []
     model.rowsInserted.connect(lambda *_args: inserts.append(1))
@@ -203,7 +205,9 @@ def test_a_burst_of_progress_reports_reaches_the_gui_as_one_snapshot(
     assert len(inserts) == 1
 
 
-def test_a_change_on_the_gui_thread_still_arrives_queued(queue: TaskQueue, deliver: Callable[[], None]) -> None:
+def test_a_change_on_the_gui_thread_still_arrives_queued(
+    queue: TaskQueue, deliver: Callable[[], None], delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A control clicked on the GUI thread re-enters the listener synchronously, and the model must
     still wait for the queued dispatch rather than update within that same call.
 
@@ -213,7 +217,7 @@ def test_a_change_on_the_gui_thread_still_arrives_queued(queue: TaskQueue, deliv
     * verify the model has not gained a row yet, synchronously
     * let the dispatch run and verify the row is there
     """
-    model = TaskQueueModel(queue)
+    model = delete_at_teardown(TaskQueueModel(queue))
     model.attach_to()
 
     job = GatedJob("job")
@@ -227,7 +231,9 @@ def test_a_change_on_the_gui_thread_still_arrives_queued(queue: TaskQueue, deliv
     assert model.rowCount() == 1
 
 
-def test_a_worker_thread_update_is_delivered_on_the_gui_thread(queue: TaskQueue, deliver: Callable[[], None]) -> None:
+def test_a_worker_thread_update_is_delivered_on_the_gui_thread(
+    queue: TaskQueue, deliver: Callable[[], None], delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A job's own progress report, made on the worker thread, still reaches the model only via the
     queued dispatch on this thread.
 
@@ -237,7 +243,7 @@ def test_a_worker_thread_update_is_delivered_on_the_gui_thread(queue: TaskQueue,
     * let the dispatch run and verify the row reflects the report
     * release the job and verify it settles to done
     """
-    model = TaskQueueModel(queue)
+    model = delete_at_teardown(TaskQueueModel(queue))
     model.attach_to()
 
     job = GatedJob("job")
@@ -247,15 +253,17 @@ def test_a_worker_thread_update_is_delivered_on_the_gui_thread(queue: TaskQueue,
 
     assert model.rowCount() == 1
     status = model.status_at(0)
-    assert status.done == 1  # pylint: disable=no-member
-    assert status.total == 1  # pylint: disable=no-member
+    assert status.done == 1
+    assert status.total == 1
 
     job.let_finish()
     deliver()
-    assert model.status_at(0).state.value == "done"  # pylint: disable=no-member
+    assert model.status_at(0).state.value == "done"
 
 
-def test_the_snapshot_always_matches_queue_jobs(queue: TaskQueue, deliver: Callable[[], None]) -> None:
+def test_the_snapshot_always_matches_queue_jobs(
+    queue: TaskQueue, deliver: Callable[[], None], delete_at_teardown: DeleteAtTeardown
+) -> None:
     """After enqueuing several jobs and removing one, the model's rows equal ``queue.jobs()``.
 
     **Test steps:**
@@ -264,7 +272,7 @@ def test_the_snapshot_always_matches_queue_jobs(queue: TaskQueue, deliver: Calla
     * remove the middle one
     * verify the model's serials, in order, equal the queue's own
     """
-    model = TaskQueueModel(queue)
+    model = delete_at_teardown(TaskQueueModel(queue))
     model.attach_to()
 
     jobs = [GatedJob(f"job-{i}") for i in range(3)]
@@ -283,7 +291,9 @@ def test_the_snapshot_always_matches_queue_jobs(queue: TaskQueue, deliver: Calla
     assert model_serials == queue_serials
 
 
-def test_a_bulk_enqueue_is_one_insertion(queue: TaskQueue, deliver: Callable[[], None]) -> None:
+def test_a_bulk_enqueue_is_one_insertion(
+    queue: TaskQueue, deliver: Callable[[], None], delete_at_teardown: DeleteAtTeardown
+) -> None:
     """Enqueuing many jobs back to back, before the event loop turns, is one row insertion.
 
     **Test steps:**
@@ -293,7 +303,7 @@ def test_a_bulk_enqueue_is_one_insertion(queue: TaskQueue, deliver: Callable[[],
     * let the dispatch run once
     * verify exactly one ``rowsInserted`` signal fired, and all ten rows are present
     """
-    model = TaskQueueModel(queue)
+    model = delete_at_teardown(TaskQueueModel(queue))
     model.attach_to()
     inserts: list[int] = []
     model.rowsInserted.connect(lambda *_args: inserts.append(1))
@@ -309,7 +319,9 @@ def test_a_bulk_enqueue_is_one_insertion(queue: TaskQueue, deliver: Callable[[],
     assert model.rowCount() == 10
 
 
-def test_display_shows_label_and_state_columns(queue: TaskQueue, deliver: Callable[[], None]) -> None:
+def test_display_shows_label_and_state_columns(
+    queue: TaskQueue, deliver: Callable[[], None], delete_at_teardown: DeleteAtTeardown
+) -> None:
     """The label and state columns draw plain text; the progress column is left to the delegate.
 
     **Test steps:**
@@ -317,7 +329,7 @@ def test_display_shows_label_and_state_columns(queue: TaskQueue, deliver: Callab
     * attach a model and enqueue a blocked job
     * verify the label column's display text, and that the progress column has none
     """
-    model = TaskQueueModel(queue)
+    model = delete_at_teardown(TaskQueueModel(queue))
     model.attach_to()
 
     job = GatedJob("my job")
@@ -407,7 +419,7 @@ def test_the_resume_cost_is_read_off_the_one_bit_a_surface_may_ask_about() -> No
 # region the Qt model interface
 
 
-def test_an_invalid_index_answers_nothing(queue: TaskQueue) -> None:
+def test_an_invalid_index_answers_nothing(queue: TaskQueue, delete_at_teardown: DeleteAtTeardown) -> None:
     """Qt asks about the root index freely; it holds no row.
 
     **Test steps:**
@@ -415,12 +427,14 @@ def test_an_invalid_index_answers_nothing(queue: TaskQueue) -> None:
     * ask a model for data at an invalid index
     * verify it answers nothing
     """
-    model = TaskQueueModel(queue)
+    model = delete_at_teardown(TaskQueueModel(queue))
 
     assert model.data(QModelIndex()) is None
 
 
-def test_a_row_hands_out_its_whole_status_on_one_role(queue: TaskQueue, deliver: Callable[[], None]) -> None:
+def test_a_row_hands_out_its_whole_status_on_one_role(
+    queue: TaskQueue, deliver: Callable[[], None], delete_at_teardown: DeleteAtTeardown
+) -> None:
     """The status role carries the whole `JobStatus`, so a delegate reads one role instead of columns
     that exist only to be hidden.
 
@@ -429,7 +443,7 @@ def test_a_row_hands_out_its_whole_status_on_one_role(queue: TaskQueue, deliver:
     * enqueue a job and let the snapshot land
     * verify the status role answers the same object ``status_at`` does, on every column
     """
-    model = TaskQueueModel(queue)
+    model = delete_at_teardown(TaskQueueModel(queue))
     model.attach_to()
     job = GatedJob("job")
     job.let_finish()
@@ -440,7 +454,9 @@ def test_a_row_hands_out_its_whole_status_on_one_role(queue: TaskQueue, deliver:
         assert model.data(model.index(0, column), TaskQueueModel.Roles.STATUS) == model.status_at(0)
 
 
-def test_the_columns_draw_label_state_and_nothing_for_progress(queue: TaskQueue, deliver: Callable[[], None]) -> None:
+def test_the_columns_draw_label_state_and_nothing_for_progress(
+    queue: TaskQueue, deliver: Callable[[], None], delete_at_teardown: DeleteAtTeardown
+) -> None:
     """Label and state are text; the progress column is the delegate's, so it has none.
 
     **Test steps:**
@@ -448,7 +464,7 @@ def test_the_columns_draw_label_state_and_nothing_for_progress(queue: TaskQueue,
     * enqueue a finished job and let the snapshot land
     * verify each column's display text
     """
-    model = TaskQueueModel(queue)
+    model = delete_at_teardown(TaskQueueModel(queue))
     model.attach_to()
     job = GatedJob("my job")
     job.let_finish()
@@ -462,7 +478,7 @@ def test_the_columns_draw_label_state_and_nothing_for_progress(queue: TaskQueue,
 
 
 def test_a_row_answers_nothing_for_a_role_it_has_no_opinion_about(
-    queue: TaskQueue, deliver: Callable[[], None]
+    queue: TaskQueue, deliver: Callable[[], None], delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """Only the three roles this model actually fills are answered.
 
@@ -471,7 +487,7 @@ def test_a_row_answers_nothing_for_a_role_it_has_no_opinion_about(
     * enqueue a job and let the snapshot land
     * verify an unrelated role answers nothing
     """
-    model = TaskQueueModel(queue)
+    model = delete_at_teardown(TaskQueueModel(queue))
     model.attach_to()
     job = GatedJob("job")
     job.let_finish()
@@ -482,7 +498,7 @@ def test_a_row_answers_nothing_for_a_role_it_has_no_opinion_about(
 
 
 def test_a_rows_tooltip_names_the_resume_cost_and_that_it_will_not_be_saved(
-    queue: TaskQueue, deliver: Callable[[], None]
+    queue: TaskQueue, deliver: Callable[[], None], delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """A plain `TaskJob` is legal and simply is not saved -- the row says so rather than letting it
     vanish at quit.
@@ -492,7 +508,7 @@ def test_a_rows_tooltip_names_the_resume_cost_and_that_it_will_not_be_saved(
     * enqueue a non-persistable job that starts over on resume
     * verify its tooltip carries both facts
     """
-    model = TaskQueueModel(queue)
+    model = delete_at_teardown(TaskQueueModel(queue))
     model.attach_to()
     job = GatedJob("job")
     job.let_finish()
@@ -506,7 +522,7 @@ def test_a_rows_tooltip_names_the_resume_cost_and_that_it_will_not_be_saved(
 
 
 def test_a_persistable_rows_tooltip_does_not_warn_about_being_lost(
-    queue: TaskQueue, deliver: Callable[[], None]
+    queue: TaskQueue, deliver: Callable[[], None], delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """A job that will still be there tomorrow says nothing about being lost -- the warning is for the
     opt-out, not for every row.
@@ -516,7 +532,7 @@ def test_a_persistable_rows_tooltip_does_not_warn_about_being_lost(
     * enqueue a persistable job and let the snapshot land
     * verify its tooltip carries the resume cost but no not-saved warning
     """
-    model = TaskQueueModel(queue)
+    model = delete_at_teardown(TaskQueueModel(queue))
     model.attach_to()
     queue.enqueue(PersistableJob("saved"))
     wait_until_done(queue)
@@ -524,12 +540,14 @@ def test_a_persistable_rows_tooltip_does_not_warn_about_being_lost(
 
     tooltip = model.data(model.index(0, 0), Qt.ItemDataRole.ToolTipRole)
 
-    assert model.status_at(0).persistable  # pylint: disable=no-member
+    assert model.status_at(0).persistable
     assert NOT_SAVED_HINT not in tooltip
     assert STARTS_OVER_HINT in tooltip
 
 
-def test_a_failed_rows_tooltip_names_the_state_then_the_reason(queue: TaskQueue, deliver: Callable[[], None]) -> None:
+def test_a_failed_rows_tooltip_names_the_state_then_the_reason(
+    queue: TaskQueue, deliver: Callable[[], None], delete_at_teardown: DeleteAtTeardown
+) -> None:
     """The state column is icons now (#248), so the tooltip leads with the word that glyph stands for
     -- and the info column elides a failure reason, so the tooltip carries that in full after it.
 
@@ -538,7 +556,7 @@ def test_a_failed_rows_tooltip_names_the_state_then_the_reason(queue: TaskQueue,
     * run a job that raises, and let the snapshot land
     * verify the tooltip names the state first and the reason second
     """
-    model = TaskQueueModel(queue)
+    model = delete_at_teardown(TaskQueueModel(queue))
     model.attach_to()
     queue.enqueue(FailingJob("doomed"))
     wait_until_done(queue)
@@ -549,7 +567,9 @@ def test_a_failed_rows_tooltip_names_the_state_then_the_reason(queue: TaskQueue,
     assert tooltip.splitlines()[:2] == ["Failed", "ValueError: nope"]
 
 
-def test_a_finished_rows_tooltip_carries_what_the_run_found(queue: TaskQueue, deliver: Callable[[], None]) -> None:
+def test_a_finished_rows_tooltip_carries_what_the_run_found(
+    queue: TaskQueue, deliver: Callable[[], None], delete_at_teardown: DeleteAtTeardown
+) -> None:
     """The info column draws the summary, and the tooltip repeats it so it is whole when the cell elides it (#457).
 
     **Test steps:**
@@ -557,7 +577,7 @@ def test_a_finished_rows_tooltip_carries_what_the_run_found(queue: TaskQueue, de
     * run a job that reports what it found, and let the snapshot land
     * verify the tooltip names the state first and the summary second
     """
-    model = TaskQueueModel(queue)
+    model = delete_at_teardown(TaskQueueModel(queue))
     model.attach_to()
     queue.enqueue(ReportingJob("reported"))
     wait_until_done(queue)
@@ -568,7 +588,7 @@ def test_a_finished_rows_tooltip_carries_what_the_run_found(queue: TaskQueue, de
     assert tooltip.splitlines()[:2] == ["Done", "Checksums verified: 3 matched."]
 
 
-def test_the_headers_are_the_column_titles(queue: TaskQueue) -> None:
+def test_the_headers_are_the_column_titles(queue: TaskQueue, delete_at_teardown: DeleteAtTeardown) -> None:
     """The horizontal header names the three columns, and answers nothing else.
 
     **Test steps:**
@@ -576,7 +596,7 @@ def test_the_headers_are_the_column_titles(queue: TaskQueue) -> None:
     * ask for each horizontal header, an out-of-range one, a vertical one, and another role
     * verify only the three titles come back
     """
-    model = TaskQueueModel(queue)
+    model = delete_at_teardown(TaskQueueModel(queue))
     horizontal = Qt.Orientation.Horizontal
 
     assert [model.headerData(column, horizontal) for column in range(COLUMN_COUNT)] == list(COLUMN_TITLES)
@@ -585,7 +605,9 @@ def test_the_headers_are_the_column_titles(queue: TaskQueue) -> None:
     assert model.headerData(0, horizontal, Qt.ItemDataRole.ToolTipRole) is None
 
 
-def test_a_child_index_holds_no_rows_or_columns(queue: TaskQueue, deliver: Callable[[], None]) -> None:
+def test_a_child_index_holds_no_rows_or_columns(
+    queue: TaskQueue, deliver: Callable[[], None], delete_at_teardown: DeleteAtTeardown
+) -> None:
     """This is a flat table: only the root index has children.
 
     **Test steps:**
@@ -593,7 +615,7 @@ def test_a_child_index_holds_no_rows_or_columns(queue: TaskQueue, deliver: Calla
     * enqueue a job and let the snapshot land
     * verify a row's own index reports no rows and no columns beneath it
     """
-    model = TaskQueueModel(queue)
+    model = delete_at_teardown(TaskQueueModel(queue))
     model.attach_to()
     job = GatedJob("job")
     job.let_finish()
@@ -612,7 +634,9 @@ def test_a_child_index_holds_no_rows_or_columns(queue: TaskQueue, deliver: Calla
 # region reordering and removal
 
 
-def test_a_reorder_is_taken_as_a_whole_new_snapshot(queue: TaskQueue, deliver: Callable[[], None]) -> None:
+def test_a_reorder_is_taken_as_a_whole_new_snapshot(
+    queue: TaskQueue, deliver: Callable[[], None], delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A genuine reorder resets the model rather than animating rows, and lands on the engine's order.
 
     **Test steps:**
@@ -621,7 +645,7 @@ def test_a_reorder_is_taken_as_a_whole_new_snapshot(queue: TaskQueue, deliver: C
     * move the last to the front, and let the snapshot land
     * verify the model's order equals the queue's own, with that job right behind the gate
     """
-    model = TaskQueueModel(queue)
+    model = delete_at_teardown(TaskQueueModel(queue))
     model.attach_to()
     # A gate rather than the old enqueue-then-pause: pause is pause_job applied to the jobs there
     # are ([[appendices.task-queue#pause-concept]]), and the worker could start job-0 in the window
@@ -644,12 +668,14 @@ def test_a_reorder_is_taken_as_a_whole_new_snapshot(queue: TaskQueue, deliver: C
     assert [model.status_at(row).serial for row in range(model.rowCount())] == [
         status.serial for status in queue.jobs()
     ]
-    assert model.status_at(1).serial == last  # pylint: disable=no-member
+    assert model.status_at(1).serial == last
 
     gate.let_finish()
 
 
-def test_removing_every_job_empties_the_model(queue: TaskQueue, deliver: Callable[[], None]) -> None:
+def test_removing_every_job_empties_the_model(
+    queue: TaskQueue, deliver: Callable[[], None], delete_at_teardown: DeleteAtTeardown
+) -> None:
     """``jobs_removed`` wakes the model like any other change, and the rows go with the jobs.
 
     **Test steps:**
@@ -658,7 +684,7 @@ def test_removing_every_job_empties_the_model(queue: TaskQueue, deliver: Callabl
     * remove both, and let the snapshot land
     * verify the model is empty
     """
-    model = TaskQueueModel(queue)
+    model = delete_at_teardown(TaskQueueModel(queue))
     model.attach_to()
     for index in range(2):
         job = GatedJob(f"job-{index}")
@@ -672,7 +698,9 @@ def test_removing_every_job_empties_the_model(queue: TaskQueue, deliver: Callabl
     assert model.rowCount() == 0
 
 
-def test_a_detached_model_stops_following_the_queue(queue: TaskQueue, deliver: Callable[[], None]) -> None:
+def test_a_detached_model_stops_following_the_queue(
+    queue: TaskQueue, deliver: Callable[[], None], delete_at_teardown: DeleteAtTeardown
+) -> None:
     """Detaching is what keeps shutdown's own cancellations from reaching a torn-down view.
 
     **Test steps:**
@@ -681,7 +709,7 @@ def test_a_detached_model_stops_following_the_queue(queue: TaskQueue, deliver: C
     * enqueue a job and let the event loop turn
     * verify the model never grew a row
     """
-    model = TaskQueueModel(queue)
+    model = delete_at_teardown(TaskQueueModel(queue))
     model.attach_to()
     model.detach()
 
@@ -693,7 +721,9 @@ def test_a_detached_model_stops_following_the_queue(queue: TaskQueue, deliver: C
     assert model.rowCount() == 0
 
 
-def test_pausing_the_whole_queue_reaches_the_model(queue: TaskQueue, deliver: Callable[[], None]) -> None:
+def test_pausing_the_whole_queue_reaches_the_model(
+    queue: TaskQueue, deliver: Callable[[], None], delete_at_teardown: DeleteAtTeardown
+) -> None:
     """``queue_paused_changed`` is a change like any other -- the model re-snapshots on it.
 
     **Test steps:**
@@ -701,7 +731,7 @@ def test_pausing_the_whole_queue_reaches_the_model(queue: TaskQueue, deliver: Ca
     * enqueue a job, pause the whole queue, and let the snapshot land
     * verify the row reads as held, by state or by pending request
     """
-    model = TaskQueueModel(queue)
+    model = delete_at_teardown(TaskQueueModel(queue))
     model.attach_to()
     job = GatedJob("job")
     queue.enqueue(job)
@@ -711,7 +741,7 @@ def test_pausing_the_whole_queue_reaches_the_model(queue: TaskQueue, deliver: Ca
     deliver()
 
     status = model.status_at(0)
-    assert status.state is JobState.PAUSED or status.stop_requested is StopRequest.PAUSE  # pylint: disable=no-member
+    assert status.state is JobState.PAUSED or status.stop_requested is StopRequest.PAUSE
 
     # This module's `GatedJob` blocks outright rather than checkpointing, so it cannot act on the
     # cancel `queue.shutdown` sends -- the fixture waited out its whole TIMEOUT here, the single

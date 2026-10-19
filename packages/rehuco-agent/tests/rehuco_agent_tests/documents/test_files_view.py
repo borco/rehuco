@@ -38,6 +38,8 @@ from rehuco_core import (
 )
 from rehuco_core.access import Changed, ChangeEvent, FolderChanged, ResourceKey, RootStale
 
+from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
+
 LIBRARY: Final = Path.cwd() / "fake" / "library"
 """The fake catalog folder; built from ``Path.cwd()`` so it is absolute on every platform, as a key needs."""
 DIRECTORY: Final = LIBRARY / "sculpting"
@@ -853,12 +855,13 @@ def test_the_row_behind_every_index_is_reachable(view: FilesView) -> None:
 
 
 @fixture(name="events")
-def fixture_events() -> ResourceEvents:
+def fixture_events(delete_at_teardown: DeleteAtTeardown) -> ResourceEvents:
     """The app's file announcements, for a browser that follows them.
 
+    :param delete_at_teardown: deletes the `ResourceEvents` when the test ends.
     :returns: the events.
     """
-    return ResourceEvents()
+    return delete_at_teardown(ResourceEvents())
 
 
 @fixture(name="followed")

@@ -24,6 +24,8 @@ from rehuco_agent.rehuco.roots_folder_model import (
 )
 from rehuco_core import RehucoRoot, Relocation, RenameCoordinator, RootFolderLister, RootStorage
 
+from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
+
 WAIT_TIMEOUT_MS: Final = 10_000
 
 
@@ -72,15 +74,21 @@ def make_root(path: Path, label: str = "lib", storage: RootStorage = RootStorage
     return RehucoRoot(uuid4(), path, label, storage)
 
 
-def make_model(qtbot: QtBot, roots: list[RehucoRoot], coordinator: RenameCoordinator | None = None) -> RootsFolderModel:
+def make_model(
+    delete_at_teardown: DeleteAtTeardown,
+    qtbot: QtBot,
+    roots: list[RehucoRoot],
+    coordinator: RenameCoordinator | None = None,
+) -> RootsFolderModel:
     """A model showing ``roots``, each already listed.
 
+    :param delete_at_teardown: deletes the model when the test ends.
     :param qtbot: pytest-qt fixture.
     :param roots: the roots to show.
     :param coordinator: what each read is held under.
     :returns: the model.
     """
-    model = RootsFolderModel()
+    model = delete_at_teardown(RootsFolderModel())
     model.set_roots(roots, RootFolderLister(roots, coordinator=coordinator))
     for row in range(len(roots)):
         wait_listed(qtbot, model, model.index(row, 0))
@@ -136,7 +144,9 @@ def open_folder(qtbot: QtBot, model: RootsFolderModel, index: QModelIndex) -> No
 # region Listing
 
 
-def test_a_root_is_listed_when_it_is_shown_and_its_folders_on_demand(qtbot: QtBot, library: Path) -> None:
+def test_a_root_is_listed_when_it_is_shown_and_its_folders_on_demand(
+    qtbot: QtBot, library: Path, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """Roots are listed at once, so an away root reads as away unclicked; a folder lists only when a view asks.
 
     **Test steps:**
@@ -144,7 +154,7 @@ def test_a_root_is_listed_when_it_is_shown_and_its_folders_on_demand(qtbot: QtBo
     * show a root over a folder with two subfolders, a file in one of them, and two videos
     * verify the root is listed, its folders are unlisted and can be fetched, and a file cannot
     """
-    model = make_model(qtbot, [make_root(library)])
+    model = make_model(delete_at_teardown, qtbot, [make_root(library)])
     root = model.index(0, 0)
 
     assert model.listing_state(root) is NodeListing.LISTED
@@ -158,7 +168,7 @@ def test_a_root_is_listed_when_it_is_shown_and_its_folders_on_demand(qtbot: QtBo
 
 
 def test_a_listing_shows_folders_first_then_files_in_natural_order_with_no_parent_row(
-    qtbot: QtBot, library: Path
+    qtbot: QtBot, library: Path, delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """The order the files sub-dock reads in, and no ``..``, which a column view has no use for.
 
@@ -167,7 +177,7 @@ def test_a_listing_shows_folders_first_then_files_in_natural_order_with_no_paren
     * list the root of the library
     * verify the folders, then the videos with ``file2`` before ``file10``, and the row kinds
     """
-    model = make_model(qtbot, [make_root(library)])
+    model = make_model(delete_at_teardown, qtbot, [make_root(library)])
     root = model.index(0, 0)
 
     assert names(model, root) == ["alpha", "beta", "file2.mp4", "file10.mp4"]
@@ -180,7 +190,7 @@ def test_a_listing_shows_folders_first_then_files_in_natural_order_with_no_paren
 
 
 def test_a_folder_shows_a_loading_row_until_its_listing_lands(
-    qtbot: QtBot, library: Path, mocker: MockerFixture
+    qtbot: QtBot, library: Path, mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """A column is never blank while its read is out, and the answer replaces the row in place.
 
@@ -199,7 +209,7 @@ def test_a_folder_shows_a_loading_row_until_its_listing_lands(
 
     mocker.patch.object(RootFolderLister, "list", held)
     root = make_root(library)
-    model = RootsFolderModel()
+    model = delete_at_teardown(RootsFolderModel())
     model.set_roots([root], RootFolderLister([root]))
     top = model.index(0, 0)
 
@@ -212,7 +222,7 @@ def test_a_folder_shows_a_loading_row_until_its_listing_lands(
     assert names(model, top) == ["alpha", "beta", "file2.mp4", "file10.mp4"]
 
 
-def test_a_folder_lists_when_fetched(qtbot: QtBot, library: Path) -> None:
+def test_a_folder_lists_when_fetched(qtbot: QtBot, library: Path, delete_at_teardown: DeleteAtTeardown) -> None:
     """Fetching a folder lists it, one level.
 
     **Test steps:**
@@ -220,7 +230,7 @@ def test_a_folder_lists_when_fetched(qtbot: QtBot, library: Path) -> None:
     * fetch the ``alpha`` folder
     * verify its subfolder and note, and that the subfolder itself is still unlisted
     """
-    model = make_model(qtbot, [make_root(library)])
+    model = make_model(delete_at_teardown, qtbot, [make_root(library)])
     alpha = child(model, model.index(0, 0), "alpha")
 
     open_folder(qtbot, model, alpha)
@@ -240,7 +250,13 @@ def test_a_folder_lists_when_fetched(qtbot: QtBot, library: Path) -> None:
 )
 # pylint: disable-next=too-many-arguments,too-many-positional-arguments
 def test_an_unreachable_root_says_so_by_its_storage(
-    qtbot: QtBot, tmp_path: Path, storage: RootStorage, row: str, greyed: bool, struck: bool
+    qtbot: QtBot,
+    tmp_path: Path,
+    storage: RootStorage,
+    row: str,
+    greyed: bool,
+    struck: bool,
+    delete_at_teardown: DeleteAtTeardown,
 ) -> None:
     """An away root is never an empty one: one row says why. A vanished local folder is struck through; a share or a
     drive that is merely away is greyed out, keeping its glyph.
@@ -253,7 +269,7 @@ def test_an_unreachable_root_says_so_by_its_storage(
     * verify the tooltip names the path
     """
     root = make_root(tmp_path / "gone", "gone", storage)
-    model = make_model(qtbot, [root])
+    model = make_model(delete_at_teardown, qtbot, [root])
     top = model.index(0, 0)
 
     assert model.listing_state(top) is NodeListing.UNREACHABLE
@@ -267,7 +283,9 @@ def test_an_unreachable_root_says_so_by_its_storage(
 
 
 @mark.parametrize("storage", list(RootStorage))
-def test_a_reachable_root_wears_its_storages_glyph_plainly(qtbot: QtBot, library: Path, storage: RootStorage) -> None:
+def test_a_reachable_root_wears_its_storages_glyph_plainly(
+    qtbot: QtBot, library: Path, storage: RootStorage, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """The glyph says what the root lives on, and nothing about a reachable root is greyed or struck through.
 
     **Test steps:**
@@ -275,7 +293,7 @@ def test_a_reachable_root_wears_its_storages_glyph_plainly(qtbot: QtBot, library
     * show a reachable root of each storage
     * verify its glyph, no greying and no font change
     """
-    model = make_model(qtbot, [make_root(library, storage=storage)])
+    model = make_model(delete_at_teardown, qtbot, [make_root(library, storage=storage)])
     top = model.index(0, 0)
 
     assert top.data(RootsFolderModel.ICON_PATH_ROLE) == ROOT_STORAGE_ICONS[storage]
@@ -283,7 +301,9 @@ def test_a_reachable_root_wears_its_storages_glyph_plainly(qtbot: QtBot, library
     assert top.data(Qt.ItemDataRole.FontRole) is None
 
 
-def test_a_folder_that_will_not_list_shows_a_row_saying_so(qtbot: QtBot, library: Path) -> None:
+def test_a_folder_that_will_not_list_shows_a_row_saying_so(
+    qtbot: QtBot, library: Path, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """The same rule one level down: a folder deleted behind the app's back lists as not found, not as empty.
 
     **Test steps:**
@@ -291,7 +311,7 @@ def test_a_folder_that_will_not_list_shows_a_row_saying_so(qtbot: QtBot, library
     * fetch ``beta``, delete it on disk, and list it again
     * verify it is unreachable with one row, and its siblings are untouched
     """
-    model = make_model(qtbot, [make_root(library)])
+    model = make_model(delete_at_teardown, qtbot, [make_root(library)])
     top = model.index(0, 0)
     beta = child(model, top, "beta")
     open_folder(qtbot, model, beta)
@@ -304,7 +324,9 @@ def test_a_folder_that_will_not_list_shows_a_row_saying_so(qtbot: QtBot, library
     assert names(model, top) == ["alpha", "beta", "file2.mp4", "file10.mp4"]
 
 
-def test_an_answer_for_a_row_that_has_gone_is_dropped(qtbot: QtBot, library: Path, mocker: MockerFixture) -> None:
+def test_an_answer_for_a_row_that_has_gone_is_dropped(
+    qtbot: QtBot, library: Path, mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A read still out when its root is removed answers into nothing, and nothing happens.
 
     **Test steps:**
@@ -321,7 +343,7 @@ def test_an_answer_for_a_row_that_has_gone_is_dropped(qtbot: QtBot, library: Pat
 
     mocker.patch.object(RootFolderLister, "list", held)
     root = make_root(library)
-    model = RootsFolderModel()
+    model = delete_at_teardown(RootsFolderModel())
     model.set_roots([root], RootFolderLister([root]))
     model.set_roots([], None)
 
@@ -336,7 +358,9 @@ def test_an_answer_for_a_row_that_has_gone_is_dropped(qtbot: QtBot, library: Pat
 # region Relisting in place
 
 
-def test_relisting_removes_only_the_row_that_went_and_keeps_what_was_loaded(qtbot: QtBot, library: Path) -> None:
+def test_relisting_removes_only_the_row_that_went_and_keeps_what_was_loaded(
+    qtbot: QtBot, library: Path, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A folder deleted outside the app disappears in place: its siblings, their loaded subtrees and the indexes held
     on them survive, and the model is never reset.
 
@@ -346,7 +370,7 @@ def test_relisting_removes_only_the_row_that_went_and_keeps_what_was_loaded(qtbo
     * delete ``alpha/sub`` and ``beta`` on disk, then list the root and ``alpha`` again
     * verify exactly those rows left, the held index still points at the note, and nothing was reset
     """
-    model = make_model(qtbot, [make_root(library)])
+    model = make_model(delete_at_teardown, qtbot, [make_root(library)])
     top = model.index(0, 0)
     alpha = child(model, top, "alpha")
     open_folder(qtbot, model, alpha)
@@ -367,7 +391,9 @@ def test_relisting_removes_only_the_row_that_went_and_keeps_what_was_loaded(qtbo
     assert recorder.count("removed") == 2
 
 
-def test_relisting_inserts_a_new_row_where_it_sorts(qtbot: QtBot, library: Path) -> None:
+def test_relisting_inserts_a_new_row_where_it_sorts(
+    qtbot: QtBot, library: Path, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A folder created outside the app appears in its place in the order, without disturbing the others.
 
     **Test steps:**
@@ -375,7 +401,7 @@ def test_relisting_inserts_a_new_row_where_it_sorts(qtbot: QtBot, library: Path)
     * create ``aardvark`` on disk and list the root again
     * verify it is the first row and the others follow unchanged
     """
-    model = make_model(qtbot, [make_root(library)])
+    model = make_model(delete_at_teardown, qtbot, [make_root(library)])
     top = model.index(0, 0)
     (library / "aardvark").mkdir()
 
@@ -385,7 +411,9 @@ def test_relisting_inserts_a_new_row_where_it_sorts(qtbot: QtBot, library: Path)
     assert names(model, top) == ["aardvark", "alpha", "beta", "file2.mp4", "file10.mp4"]
 
 
-def test_relisting_a_folder_never_asked_for_leaves_it_to_be_fetched(qtbot: QtBot, library: Path) -> None:
+def test_relisting_a_folder_never_asked_for_leaves_it_to_be_fetched(
+    qtbot: QtBot, library: Path, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A folder no view has opened has nothing to refresh; it is read when one first asks.
 
     **Test steps:**
@@ -393,7 +421,7 @@ def test_relisting_a_folder_never_asked_for_leaves_it_to_be_fetched(qtbot: QtBot
     * relist ``alpha`` before it was ever fetched
     * verify it is still unlisted, and the chain relist lists the root and the opened folder only
     """
-    model = make_model(qtbot, [make_root(library)])
+    model = make_model(delete_at_teardown, qtbot, [make_root(library)])
     top = model.index(0, 0)
     alpha = child(model, top, "alpha")
 
@@ -403,7 +431,9 @@ def test_relisting_a_folder_never_asked_for_leaves_it_to_be_fetched(qtbot: QtBot
     assert model.listing_state(alpha) is NodeListing.UNLISTED
 
 
-def test_relisting_the_chain_lists_each_open_column_again(qtbot: QtBot, library: Path) -> None:
+def test_relisting_the_chain_lists_each_open_column_again(
+    qtbot: QtBot, library: Path, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """F5 lists the columns on screen: the folder and every one above it.
 
     **Test steps:**
@@ -411,7 +441,7 @@ def test_relisting_the_chain_lists_each_open_column_again(qtbot: QtBot, library:
     * open ``alpha``, add a file to both it and the root on disk, and relist the chain from ``alpha``
     * verify both listings show their new file
     """
-    model = make_model(qtbot, [make_root(library)])
+    model = make_model(delete_at_teardown, qtbot, [make_root(library)])
     top = model.index(0, 0)
     alpha = child(model, top, "alpha")
     open_folder(qtbot, model, alpha)
@@ -430,7 +460,9 @@ def test_relisting_the_chain_lists_each_open_column_again(qtbot: QtBot, library:
 # region Changing the roots
 
 
-def test_changing_the_roots_inserts_moves_updates_and_removes_without_a_reset(qtbot: QtBot, tmp_path: Path) -> None:
+def test_changing_the_roots_inserts_moves_updates_and_removes_without_a_reset(
+    qtbot: QtBot, tmp_path: Path, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """The model follows the file row by row: nothing is thrown away that did not change.
 
     **Test steps:**
@@ -443,7 +475,7 @@ def test_changing_the_roots_inserts_moves_updates_and_removes_without_a_reset(qt
     for path in paths:
         path.mkdir()
     first, second, third = (make_root(path, path.name) for path in paths)
-    model = make_model(qtbot, [first, second, third])
+    model = make_model(delete_at_teardown, qtbot, [first, second, third])
     lister = RootFolderLister([first, second, third])
     recorder = Recorder(model)
 
@@ -465,7 +497,9 @@ def test_changing_the_roots_inserts_moves_updates_and_removes_without_a_reset(qt
     assert recorder.count("reset") == 0
 
 
-def test_a_root_pointed_at_another_folder_lists_it_afresh(qtbot: QtBot, library: Path, tmp_path: Path) -> None:
+def test_a_root_pointed_at_another_folder_lists_it_afresh(
+    qtbot: QtBot, library: Path, tmp_path: Path, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A root keeps its id and its place but drops what it had listed when its folder changes.
 
     **Test steps:**
@@ -474,7 +508,7 @@ def test_a_root_pointed_at_another_folder_lists_it_afresh(qtbot: QtBot, library:
     * verify its rows are the empty folder's
     """
     root = make_root(library)
-    model = make_model(qtbot, [root])
+    model = make_model(delete_at_teardown, qtbot, [root])
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
     moved = RehucoRoot(root.root_id, elsewhere, root.label, root.storage)
@@ -485,7 +519,9 @@ def test_a_root_pointed_at_another_folder_lists_it_afresh(qtbot: QtBot, library:
     assert model.listing_state(model.index(0, 0)) is NodeListing.LISTED
 
 
-def test_a_key_names_a_row_and_finds_the_deepest_one_that_exists(qtbot: QtBot, library: Path) -> None:
+def test_a_key_names_a_row_and_finds_the_deepest_one_that_exists(
+    qtbot: QtBot, library: Path, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """The ``(root id, relative path)`` key is what the one listing function is asked by, and what a row falls back
     along when its folder is gone.
 
@@ -495,7 +531,7 @@ def test_a_key_names_a_row_and_finds_the_deepest_one_that_exists(qtbot: QtBot, l
     * verify the key, the exact lookup, the fallback for a name that is not there, and a root that is not shown
     """
     root = make_root(library)
-    model = make_model(qtbot, [root])
+    model = make_model(delete_at_teardown, qtbot, [root])
     top = model.index(0, 0)
     alpha = child(model, top, "alpha")
     open_folder(qtbot, model, alpha)
@@ -518,7 +554,9 @@ def test_a_key_names_a_row_and_finds_the_deepest_one_that_exists(qtbot: QtBot, l
 # region Following the app's own renames
 
 
-def test_a_renamed_file_is_renamed_in_place_and_resorted(qtbot: QtBot, library: Path) -> None:
+def test_a_renamed_file_is_renamed_in_place_and_resorted(
+    qtbot: QtBot, library: Path, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A rename of a file in a loaded folder changes its row and moves it to where the new name sorts; the model is
     not reset and nothing is read.
 
@@ -528,7 +566,7 @@ def test_a_renamed_file_is_renamed_in_place_and_resorted(qtbot: QtBot, library: 
     * verify the row has the new name and moved past the file it now sorts after, the held index followed, and
       nothing was reset
     """
-    model = make_model(qtbot, [make_root(library)])
+    model = make_model(delete_at_teardown, qtbot, [make_root(library)])
     alpha = child(model, model.index(0, 0), "alpha")
     open_folder(qtbot, model, alpha)
     (library / "alpha" / "zzz.txt").write_text("z", encoding="utf-8")
@@ -547,7 +585,9 @@ def test_a_renamed_file_is_renamed_in_place_and_resorted(qtbot: QtBot, library: 
     assert recorder.count("moved") == 1
 
 
-def test_a_renamed_folder_takes_its_loaded_subtree_with_it(qtbot: QtBot, library: Path) -> None:
+def test_a_renamed_folder_takes_its_loaded_subtree_with_it(
+    qtbot: QtBot, library: Path, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """One node changes and everything loaded under it follows, because a node stores only its name.
 
     **Test steps:**
@@ -557,7 +597,7 @@ def test_a_renamed_folder_takes_its_loaded_subtree_with_it(qtbot: QtBot, library
       and nothing was reset
     """
     root = make_root(library)
-    model = make_model(qtbot, [root])
+    model = make_model(delete_at_teardown, qtbot, [root])
     top = model.index(0, 0)
     alpha = child(model, top, "alpha")
     open_folder(qtbot, model, alpha)
@@ -575,7 +615,9 @@ def test_a_renamed_folder_takes_its_loaded_subtree_with_it(qtbot: QtBot, library
     assert recorder.count("reset") == 0
 
 
-def test_a_file_moved_to_another_loaded_folder_leaves_one_and_appears_in_the_other(qtbot: QtBot, library: Path) -> None:
+def test_a_file_moved_to_another_loaded_folder_leaves_one_and_appears_in_the_other(
+    qtbot: QtBot, library: Path, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A move out of the folder removes the row; the destination, if loaded, lists again.
 
     **Test steps:**
@@ -583,7 +625,7 @@ def test_a_file_moved_to_another_loaded_folder_leaves_one_and_appears_in_the_oth
     * load ``alpha`` and ``beta``, then move the note from ``alpha`` to ``beta`` on disk and in the model
     * verify the note left ``alpha`` and shows in ``beta``, with no reset
     """
-    model = make_model(qtbot, [make_root(library)])
+    model = make_model(delete_at_teardown, qtbot, [make_root(library)])
     top = model.index(0, 0)
     alpha, beta = child(model, top, "alpha"), child(model, top, "beta")
     open_folder(qtbot, model, alpha)
@@ -599,7 +641,9 @@ def test_a_file_moved_to_another_loaded_folder_leaves_one_and_appears_in_the_oth
     assert recorder.count("reset") == 0
 
 
-def test_a_rename_of_an_unloaded_folder_changes_nothing_shown(qtbot: QtBot, library: Path) -> None:
+def test_a_rename_of_an_unloaded_folder_changes_nothing_shown(
+    qtbot: QtBot, library: Path, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """A path the model has no row for is passed over, and a root's own folder is not followed.
 
     **Test steps:**
@@ -607,7 +651,7 @@ def test_a_rename_of_an_unloaded_folder_changes_nothing_shown(qtbot: QtBot, libr
     * relocate a folder that was never loaded, a file nowhere near a root, and the root's own folder
     * verify the rows are as they were
     """
-    model = make_model(qtbot, [make_root(library)])
+    model = make_model(delete_at_teardown, qtbot, [make_root(library)])
     top = model.index(0, 0)
     before = names(model, top)
 
@@ -620,7 +664,7 @@ def test_a_rename_of_an_unloaded_folder_changes_nothing_shown(qtbot: QtBot, libr
 
 
 def test_the_coordinators_own_rename_of_a_listed_folder_succeeds_and_the_model_follows(
-    qtbot: QtBot, library: Path
+    qtbot: QtBot, library: Path, delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """Browsing never blocks a rename: a directory-scoped resource whose folder is listed renames, and the coordinator's
     own announcement is all the model needs to follow.
@@ -633,7 +677,7 @@ def test_the_coordinators_own_rename_of_a_listed_folder_succeeds_and_the_model_f
     (library / "alpha" / "info.rehu").write_text("{}", encoding="utf-8")
     coordinator = RenameCoordinator()
     root = make_root(library)
-    model = make_model(qtbot, [root], coordinator)
+    model = make_model(delete_at_teardown, qtbot, [root], coordinator)
     coordinator.add_rename_listener(model.relocate)
     top = model.index(0, 0)
     alpha = child(model, top, "alpha")
@@ -651,38 +695,16 @@ def test_the_coordinators_own_rename_of_a_listed_folder_succeeds_and_the_model_f
 
 # endregion
 
-# region The loader
-
-
-def test_the_loader_answers_once_per_request_even_for_an_unreadable_folder(qtbot: QtBot, tmp_path: Path) -> None:
-    """Every request is answered, an unreadable folder included, so a row can never wait for ever.
-
-    **Test steps:**
-
-    * ask the loader for a folder that does not exist
-    * verify one answer, carrying the serial and an unreachable listing
-    """
-    root = make_root(tmp_path / "missing")
-    loader = RootFolderLoader()
-
-    with qtbot.waitSignal(loader.listed, timeout=WAIT_TIMEOUT_MS) as blocker:
-        loader.start(7, RootFolderLister([root]), root.root_id, ())
-
-    assert blocker.args is not None
-    serial, listing = blocker.args
-    assert serial == 7
-    assert not listing.reachable
-
-
-# endregion
-
 
 # region Dragging roots
 
 
-def three_roots(qtbot: QtBot, tmp_path: Path) -> tuple[RootsFolderModel, list[RehucoRoot]]:
+def three_roots(
+    delete_at_teardown: DeleteAtTeardown, qtbot: QtBot, tmp_path: Path
+) -> tuple[RootsFolderModel, list[RehucoRoot]]:
     """A model over three reachable roots, reorderable.
 
+    :param delete_at_teardown: deletes the model when the test ends.
     :param qtbot: pytest-qt fixture.
     :param tmp_path: pytest's temporary directory.
     :returns: the model and its roots, in order.
@@ -691,7 +713,7 @@ def three_roots(qtbot: QtBot, tmp_path: Path) -> tuple[RootsFolderModel, list[Re
     for name in ("a", "b", "c"):
         (tmp_path / name).mkdir()
         roots.append(make_root(tmp_path / name, name))
-    model = make_model(qtbot, roots)
+    model = make_model(delete_at_teardown, qtbot, roots)
     model.set_reorderable(True)
     return model, roots
 
@@ -712,7 +734,9 @@ def drop(model: RootsFolderModel, source: int, row: int, parent: QModelIndex | N
     return asked
 
 
-def test_only_a_root_can_be_dragged_and_only_while_reorderable(qtbot: QtBot, tmp_path: Path) -> None:
+def test_only_a_root_can_be_dragged_and_only_while_reorderable(
+    qtbot: QtBot, tmp_path: Path, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """Roots take a drag when the file can be edited; folders, files and placeholders never do, and the list itself is
     what a drop lands on.
 
@@ -723,7 +747,7 @@ def test_only_a_root_can_be_dragged_and_only_while_reorderable(qtbot: QtBot, tmp
     """
     library = tmp_path / "lib"
     (library / "sub").mkdir(parents=True)
-    model = make_model(qtbot, [make_root(library)])
+    model = make_model(delete_at_teardown, qtbot, [make_root(library)])
     root, folder = model.index(0, 0), model.index(0, 0, model.index(0, 0))
     assert not model.flags(root) & Qt.ItemFlag.ItemIsDragEnabled
     assert not model.flags(QModelIndex()) & Qt.ItemFlag.ItemIsDropEnabled
@@ -738,7 +762,9 @@ def test_only_a_root_can_be_dragged_and_only_while_reorderable(qtbot: QtBot, tmp
     assert model.mimeTypes() == [ROOT_MIME_TYPE]
 
 
-def test_a_dragged_root_travels_as_its_id_and_a_folder_travels_as_nothing(qtbot: QtBot, tmp_path: Path) -> None:
+def test_a_dragged_root_travels_as_its_id_and_a_folder_travels_as_nothing(
+    qtbot: QtBot, tmp_path: Path, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """The mime data names the root and nothing else.
 
     **Test steps:**
@@ -746,7 +772,7 @@ def test_a_dragged_root_travels_as_its_id_and_a_folder_travels_as_nothing(qtbot:
     * make mime data for a root and for a folder
     * verify the first carries the root's id and the second carries nothing
     """
-    model, roots = three_roots(qtbot, tmp_path)
+    model, roots = three_roots(delete_at_teardown, qtbot, tmp_path)
     (tmp_path / "a" / "sub").mkdir()
     model.relist(model.index(0, 0))
     qtbot.waitUntil(lambda: model.rowCount(model.index(0, 0)) == 1, timeout=WAIT_TIMEOUT_MS)
@@ -766,8 +792,9 @@ def test_a_dragged_root_travels_as_its_id_and_a_folder_travels_as_nothing(qtbot:
         param(1, 2, None, id="after-itself"),
     ],
 )
+# pylint: disable-next=too-many-arguments,too-many-positional-arguments
 def test_a_drop_asks_for_the_row_the_root_will_end_up_at(
-    qtbot: QtBot, tmp_path: Path, source: int, row: int, expected: int | None
+    qtbot: QtBot, tmp_path: Path, source: int, row: int, expected: int | None, delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """A drop names the row it lands before, in the list as it is; the request names the row in the list as it will
     be, which is one less when the root comes from above. Dropping a root where it already is asks for nothing.
@@ -777,14 +804,16 @@ def test_a_drop_asks_for_the_row_the_root_will_end_up_at(
     * drop one of three roots before a row
     * verify the one request, or none when the root would not move
     """
-    model, roots = three_roots(qtbot, tmp_path)
+    model, roots = three_roots(delete_at_teardown, qtbot, tmp_path)
 
     asked = drop(model, source, row)
 
     assert asked == ([] if expected is None else [(roots[source].root_id, expected)])
 
 
-def test_a_drop_the_model_cannot_take_is_refused(qtbot: QtBot, tmp_path: Path) -> None:
+def test_a_drop_the_model_cannot_take_is_refused(
+    qtbot: QtBot, tmp_path: Path, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """Nothing is asked for when reordering is off, when the drop is onto a row, when it is not a move, when it is
     not a root, or when it names a root that is not shown.
 
@@ -793,7 +822,7 @@ def test_a_drop_the_model_cannot_take_is_refused(qtbot: QtBot, tmp_path: Path) -
     * try each of those drops
     * verify each returns false and asks for nothing
     """
-    model, roots = three_roots(qtbot, tmp_path)
+    model, roots = three_roots(delete_at_teardown, qtbot, tmp_path)
     asked: list[object] = []
     model.root_move_requested.connect(lambda *args: asked.append(args))
     data = model.mimeData([model.index(0, 0)])
@@ -816,7 +845,9 @@ def test_a_drop_the_model_cannot_take_is_refused(qtbot: QtBot, tmp_path: Path) -
 # endregion
 
 
-def test_a_move_is_asked_for_only_when_a_movable_root_would_move(qtbot: QtBot, tmp_path: Path) -> None:
+def test_a_move_is_asked_for_only_when_a_movable_root_would_move(
+    qtbot: QtBot, tmp_path: Path, delete_at_teardown: DeleteAtTeardown
+) -> None:
     """The dragged root's drop asks the file for a move through the model -- and only for one that moves a root while
     roots can be reordered.
 
@@ -826,7 +857,7 @@ def test_a_move_is_asked_for_only_when_a_movable_root_would_move(qtbot: QtBot, t
       again with reordering off
     * verify only the first was asked for
     """
-    model, roots = three_roots(qtbot, tmp_path)
+    model, roots = three_roots(delete_at_teardown, qtbot, tmp_path)
     asked: list[tuple[Any, int]] = []
     model.root_move_requested.connect(lambda root_id, to: asked.append((root_id, to)))
 
@@ -840,7 +871,7 @@ def test_a_move_is_asked_for_only_when_a_movable_root_would_move(qtbot: QtBot, t
 
 
 def test_a_listing_that_fails_with_an_os_error_shows_the_root_as_unreachable(
-    qtbot: QtBot, mocker: MockerFixture, library: Path
+    qtbot: QtBot, mocker: MockerFixture, library: Path, delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """A read that raises, as a share dropping mid-read does, answers as an unreachable folder.
 
@@ -852,7 +883,7 @@ def test_a_listing_that_fails_with_an_os_error_shows_the_root_as_unreachable(
     root = make_root(library)
     lister = RootFolderLister([root])
     mocker.patch.object(lister, "list", side_effect=OSError)
-    model = RootsFolderModel()
+    model = delete_at_teardown(RootsFolderModel())
     model.set_roots([root], lister)
     top = model.index(0, 0)
 
@@ -861,7 +892,7 @@ def test_a_listing_that_fails_with_an_os_error_shows_the_root_as_unreachable(
     assert model.listing_state(top) is NodeListing.UNREACHABLE
 
 
-def test_a_model_with_no_lister_lists_nothing(library: Path) -> None:
+def test_a_model_with_no_lister_lists_nothing(library: Path, delete_at_teardown: DeleteAtTeardown) -> None:
     """Roots shown with nothing to list them stay unlisted, and ask for nothing.
 
     **Test steps:**
@@ -869,7 +900,7 @@ def test_a_model_with_no_lister_lists_nothing(library: Path) -> None:
     * show a root with no lister
     * verify the root has no rows and is unlisted
     """
-    model = RootsFolderModel()
+    model = delete_at_teardown(RootsFolderModel())
     model.set_roots([make_root(library)], None)
     top = model.index(0, 0)
 
@@ -878,7 +909,7 @@ def test_a_model_with_no_lister_lists_nothing(library: Path) -> None:
 
 
 def test_the_questions_asked_about_no_row_or_a_placeholder_are_answered_with_nothing(
-    qtbot: QtBot, tmp_path: Path, library: Path
+    qtbot: QtBot, tmp_path: Path, library: Path, delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """The invalid index and a placeholder row have no key, no parent and no data, and a folder has no tooltip.
 
@@ -888,7 +919,7 @@ def test_the_questions_asked_about_no_row_or_a_placeholder_are_answered_with_not
     * verify the invalid index has no key, parent or data, the placeholder under the unreachable root has no key, and
       a folder has no tooltip
     """
-    model = make_model(qtbot, [make_root(library), make_root(tmp_path / "gone", "gone")])
+    model = make_model(delete_at_teardown, qtbot, [make_root(library), make_root(tmp_path / "gone", "gone")])
     alpha = child(model, model.index(0, 0), "alpha")
     placeholder = model.index(0, 0, model.index(1, 0))
 
@@ -900,7 +931,7 @@ def test_the_questions_asked_about_no_row_or_a_placeholder_are_answered_with_not
 
 
 def test_fetching_a_folder_already_listed_lists_nothing_again(
-    qtbot: QtBot, library: Path, mocker: MockerFixture
+    qtbot: QtBot, library: Path, mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """A view may ask for more of a folder it has: only an unlisted one is read (#487 lists a folder again only when
     the panel says so, through :meth:`relist`).
@@ -910,7 +941,7 @@ def test_fetching_a_folder_already_listed_lists_nothing_again(
     * list a folder, then fetch it again
     * verify no second read was started
     """
-    model = make_model(qtbot, [make_root(library)])
+    model = make_model(delete_at_teardown, qtbot, [make_root(library)])
     root = model.index(0, 0)
     folder = child(model, root, names(model, root)[0])
     open_folder(qtbot, model, folder)

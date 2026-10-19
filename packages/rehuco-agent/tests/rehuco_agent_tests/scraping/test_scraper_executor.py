@@ -1,6 +1,7 @@
 """Tests for `ScraperExecutor` (#269)."""
 
 import threading
+import time
 from dataclasses import dataclass, field
 from logging import INFO, Handler, LogRecord, getLogger
 
@@ -9,6 +10,8 @@ from pytestqt.qtbot import QtBot
 from rehuco_agent.scraping.results import Page, ScrapeResult
 from rehuco_agent.scraping.scrape_job import ScrapeJob
 from rehuco_agent.scraping.scraper_executor import ScraperExecutor, shared_scraper_executor
+
+from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
 
 URL_A = "https://a.example.com/page"
 URL_B = "https://b.example.com/page"
@@ -55,7 +58,7 @@ class FakeFetcher:  # pylint: disable=missing-function-docstring,too-few-public-
         return Page(url=url, final_url=url, html="<html></html>")
 
 
-def test_two_jobs_submitted_together_both_complete(qtbot: QtBot) -> None:
+def test_two_jobs_submitted_together_both_complete(qtbot: QtBot, delete_at_teardown: DeleteAtTeardown) -> None:
     """Nothing about one scrape blocks another: two jobs submitted together both run and finish
     (#269) -- the concurrency this executor exists for.
 
@@ -71,33 +74,38 @@ def test_two_jobs_submitted_together_both_complete(qtbot: QtBot) -> None:
     barrier = threading.Barrier(2)
     result_a = ScrapeResult(fields={"title": "A"}, description=None, images=())
     result_b = ScrapeResult(fields={"title": "B"}, description=None, images=())
-    scraper_a = BlockingScraper(url=URL_A, arrived=barrier, result=result_a)
-    scraper_b = BlockingScraper(url=URL_B, arrived=barrier, result=result_b)
-    registry = TwoUrlRegistry({URL_A: scraper_a, URL_B: scraper_b})
+    registry = TwoUrlRegistry(
+        {
+            URL_A: BlockingScraper(url=URL_A, arrived=barrier, result=result_a),
+            URL_B: BlockingScraper(url=URL_B, arrived=barrier, result=result_b),
+        }
+    )
     fetcher = FakeFetcher()
-    job_a = ScrapeJob(URL_A, registry, fetcher=fetcher)  # type: ignore[arg-type]
-    job_b = ScrapeJob(URL_B, registry, fetcher=fetcher)  # type: ignore[arg-type]
+    relay = delete_at_teardown(ScrapeJob.Relay())
+    job_a = ScrapeJob(URL_A, registry, fetcher=fetcher, relay=relay)  # type: ignore[arg-type]
+    job_b = ScrapeJob(URL_B, registry, fetcher=fetcher, relay=relay)  # type: ignore[arg-type]
     received: list[object] = []
     delivering_threads: list[threading.Thread] = []
 
-    def receive(result: object) -> None:
+    def receive(job: object, result: object) -> None:
+        del job
         received.append(result)
         delivering_threads.append(threading.current_thread())
 
-    job_a.result_ready.connect(receive)
-    job_b.result_ready.connect(receive)
+    relay.result_ready.connect(receive)
     executor = ScraperExecutor()
 
-    with qtbot.waitSignal(job_a.result_ready, timeout=2000), qtbot.waitSignal(job_b.result_ready, timeout=2000):
-        executor.submit(job_a)
-        executor.submit(job_b)
+    executor.submit(job_a)
+    executor.submit(job_b)
+    qtbot.waitUntil(lambda: len(received) == 2, timeout=2000)
+    executor.shutdown()
 
     ordered = sorted(received, key=lambda result: result.fields["title"])  # type: ignore[union-attr]
     assert ordered == [result_a, result_b]
     assert delivering_threads == [threading.main_thread(), threading.main_thread()]
 
 
-def test_a_job_submitted_inside_a_log_scope_logs_under_it(qtbot: QtBot) -> None:
+def test_a_job_submitted_inside_a_log_scope_logs_under_it(qtbot: QtBot, delete_at_teardown: DeleteAtTeardown) -> None:
     """The log scope open at submission time is carried onto the worker thread -- without this, a
     scrape's own log records would land in the app-wide dock only, never the document's (#269).
 
@@ -142,11 +150,13 @@ def test_a_job_submitted_inside_a_log_scope_logs_under_it(qtbot: QtBot) -> None:
     previous_level = logger.level
     logger.setLevel(INFO)
     try:
-        job = ScrapeJob(URL_A, OneScraperRegistry(), fetcher=FakeFetcher())  # type: ignore[arg-type]
+        relay = delete_at_teardown(ScrapeJob.Relay())
+        job = ScrapeJob(URL_A, OneScraperRegistry(), fetcher=FakeFetcher(), relay=relay)  # type: ignore[arg-type]
         executor = ScraperExecutor()
-        with qtbot.waitSignal(job.result_ready, timeout=2000):
+        with qtbot.waitSignal(relay.result_ready, timeout=2000):
             with LogScope.open(scope):
                 executor.submit(job)
+        executor.shutdown()
     finally:
         logger.removeHandler(handler)
         logger.setLevel(previous_level)
@@ -164,3 +174,36 @@ def test_shared_scraper_executor_is_a_singleton() -> None:
     * verify both calls return the same object
     """
     assert shared_scraper_executor() is shared_scraper_executor()
+
+
+def test_shutting_down_waits_for_a_running_job_then_deletes_the_pool(qtbot: QtBot) -> None:
+    """``shutdown`` returns only once every job still running has finished, then deletes the pool on this thread, so
+    a dropped executor never leaves its pool to the cyclic collector -- which may run on one of the pool's own
+    threads, where a pool destroyed waits for that very thread (#529).
+
+    **Test steps:**
+
+    * submit a job that is still running when ``shutdown`` is called
+    * verify ``shutdown`` returned after the job finished
+    * run the deferred deletes and verify the pool was destroyed
+    """
+    started = threading.Event()
+    finished = threading.Event()
+
+    class SlowJob:  # pylint: disable=missing-class-docstring,too-few-public-methods
+        def run(self) -> None:  # pylint: disable=missing-function-docstring
+            started.set()
+            time.sleep(0.2)
+            finished.set()
+
+    executor = ScraperExecutor()
+    pool = executor._ScraperExecutor__pool  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    destroyed: list[bool] = []
+    pool.destroyed.connect(lambda: destroyed.append(True))
+    executor.submit(SlowJob())
+    assert started.wait(2)
+
+    executor.shutdown()
+
+    assert finished.is_set()
+    qtbot.waitUntil(lambda: destroyed == [True], timeout=2000)

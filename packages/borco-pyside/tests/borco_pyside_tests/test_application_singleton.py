@@ -346,6 +346,7 @@ def test_failed_rebind_restore_never_forwards_argv_to_a_foreign_primary(
     monkeypatch: pytest.MonkeyPatch,
     make_singleton: Factory,
     caplog: pytest.LogCaptureFixture,
+    delete_at_teardown: Callable[[QLocalServer], QLocalServer],
 ) -> None:
     """A restore that lands on someone else's primary delivers nothing and leaves it alone.
 
@@ -370,7 +371,7 @@ def test_failed_rebind_restore_never_forwards_argv_to_a_foreign_primary(
     assert previous_name is not None
 
     # QLocalServer imported here, not through the module, so the patch below leaves it real
-    foreign = QLocalServer()
+    foreign = delete_at_teardown(QLocalServer())
     release = singleton.shutdown
 
     def steal_previous_name() -> None:
