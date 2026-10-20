@@ -44,6 +44,7 @@ from .test_catalog_docks import (  # noqa: F401  # pylint: disable=unused-import
     fixture_followed,
     fixture_held,
     fixture_listening,
+    fixture_no_open_scan,
     fixture_queue,
     fixture_saves,
     fixture_served,
@@ -264,7 +265,7 @@ def test_a_scan_that_touched_nothing_says_nothing(
 # region A root gone stale is scanned again
 
 
-@mark.usefixtures("served")
+@mark.usefixtures("served", "no_open_scan")
 def test_a_stale_root_is_scanned_again_and_an_unknown_one_is_not(
     queue: TaskQueue, held: GateJob, watched: tuple[CatalogDocks, ResourceEvents, MagicMock]
 ) -> None:
@@ -613,7 +614,7 @@ def test_a_change_touching_more_rows_than_an_update_in_place_is_worth_reads_ever
 # region Detaching
 
 
-@mark.usefixtures("served")
+@mark.usefixtures("served", "no_open_scan")
 def test_a_detached_catalog_follows_no_root_any_more(
     mocker: MockerFixture, queue: TaskQueue, listening: tuple[CatalogDocks, ResourceEvents, Path]
 ) -> None:

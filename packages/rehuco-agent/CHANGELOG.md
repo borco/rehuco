@@ -63,6 +63,11 @@ released becomes the body of the GitHub Release, so each entry is written to be 
   running with no window and no tray icon** (#507). An accepted close now quits the app explicitly, as a Quit from
   the tray already did; Qt's own last-window quit never came, because a floating dock window is a top-level window
   of its own and its close is one QtAds only hides.
+- **Opening a `.rehuco` scans the roots its cache has never scanned** (#541). A catalog opened for the first time,
+  switched to, or opened again showed empty browsers until *Scan* was clicked. Now each root the cache holds no scan
+  of is scanned as the file opens; a root scanned before is left to its watcher and to verify-on-access, and one
+  that cannot be reached is scanned once it is back, as before. Opening the open file again while its scans run
+  queues nothing more.
 
 ## [0.3.0] - 2026-10-12
 
