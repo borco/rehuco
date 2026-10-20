@@ -1,6 +1,6 @@
 """Tests for dragging an image out of the Roots view -- a row of the column, or the picture in the details pane (#395).
 
-The docks, the in-memory cache and the real folders are :mod:`test_catalog_docks`' own fixtures, imported by name, as
+The docks, the mock catalog and the real folders are :mod:`test_catalog_docks`' own fixtures, imported by name, as
 :mod:`test_roots_lightbox_actions` does.
 """
 
@@ -25,7 +25,9 @@ from rehuco_agent_tests.fields.widgets.test_image_export_gestures import mouse
 from .test_catalog_docks import (  # noqa: F401  # pylint: disable=unused-import
     REHUCO_PATH,
     CatalogDocks,
-    fixture_database,
+    fixture_cache,
+    fixture_cached_rows,
+    fixture_catalog,
     fixture_dock,
     fixture_folders,
     fixture_no_open_scan,

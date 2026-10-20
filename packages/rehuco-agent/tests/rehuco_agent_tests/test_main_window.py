@@ -115,6 +115,10 @@ from rehuco_core.access import Catalog, Changed, Records, ResourceKey
 
 from rehuco_agent_tests.conftest import MemoryStateFiles
 
+pytestmark = mark.usefixtures("stub_settings_pages", "stub_sub_docks")
+"""Every window here is built over stub settings pages, and every document it opens over stub sub-docks (#545), but
+where a test asks for the real ones (``real_settings_pages``, ``real_sub_docks``)."""
+
 SWEEP_ROOT: Final = Path("/fake/library")
 """The folder a sweep test points the chooser at -- never read, since no sweep here does real work."""
 
@@ -460,6 +464,7 @@ def platform_frame_names(page: QWidget) -> list[str]:
 
 
 @mark.windows
+@mark.usefixtures("real_settings_pages")
 def test_registers_the_windows_frames_on_windows(qtbot: QtBot) -> None:
     """On Windows, the System Integration page (#47) leads with the registration and crash-dump frames (#363, #508).
 
@@ -479,6 +484,7 @@ def test_registers_the_windows_frames_on_windows(qtbot: QtBot) -> None:
     ]
 
 
+@mark.usefixtures("real_settings_pages")
 def test_registers_the_linux_frame_on_linux(qtbot: QtBot, mocker: MockerFixture) -> None:
     """On Linux, the System Integration page leads with the desktop-entry frame (#209, #508).
 
@@ -501,6 +507,7 @@ def test_registers_the_linux_frame_on_linux(qtbot: QtBot, mocker: MockerFixture)
     ]
 
 
+@mark.usefixtures("real_settings_pages")
 def test_registers_no_platform_frames_on_other_platforms(qtbot: QtBot, mocker: MockerFixture) -> None:
     """Everywhere else the page is still registered, with only the blocks every platform has: neither platform's
     frames stand in for the other, since each is about a desktop the platform does not have (#508).
@@ -521,6 +528,7 @@ def test_registers_no_platform_frames_on_other_platforms(qtbot: QtBot, mocker: M
     assert platform_frame_names(system_integration_page(window)) == ["tray_frame", "node_frame"]
 
 
+@mark.usefixtures("real_settings_pages")
 def test_registers_the_identity_page(qtbot: QtBot) -> None:
     """The Identity settings page (#99) is registered into the settings dialog, on every platform.
 
@@ -556,6 +564,7 @@ def test_the_window_installs_the_configured_deleter_for_discard_jobs(qtbot: QtBo
     assert isinstance(DEFAULT_DELETER_PROVIDER.resolve(), RecycleBinDeleter)
 
 
+@mark.usefixtures("real_settings_pages")
 def test_registers_the_files_page(qtbot: QtBot) -> None:
     """The Files page (#226, #291, #298) is registered into the settings dialog.
 
@@ -575,6 +584,7 @@ def test_registers_the_files_page(qtbot: QtBot) -> None:
     assert any(isinstance(page, FilesPage) for page in pages)
 
 
+@mark.usefixtures("real_settings_pages")
 def test_registers_the_videos_page(qtbot: QtBot) -> None:
     """The Videos page (#225) is registered into the settings dialog.
 
@@ -647,6 +657,7 @@ def test_the_category_tree_is_one_flat_alphabetical_list(qtbot: QtBot) -> None:
     assert location_child_titles == ["Collections", "Reference Images", "Tutorials"]
 
 
+@mark.usefixtures("real_settings_pages")
 def test_a_plugin_this_build_does_not_ship_still_gets_its_own_locations_page(
     mocker: MockerFixture, qtbot: QtBot
 ) -> None:
@@ -681,6 +692,7 @@ def test_a_plugin_this_build_does_not_ship_still_gets_its_own_locations_page(
     assert any(isinstance(page, LocationTemplatesPage) for page in pages)
 
 
+@mark.usefixtures("real_settings_pages")
 def test_registers_the_checksums_page(qtbot: QtBot) -> None:
     """The Checksums page (#242) is registered into the settings dialog, once.
 
@@ -702,6 +714,7 @@ def test_registers_the_checksums_page(qtbot: QtBot) -> None:
     assert [model.item(row).text() for row in range(model.rowCount())].count("Checksums") == 1
 
 
+@mark.usefixtures("real_settings_pages")
 def test_registers_the_screenshot_patterns_page(qtbot: QtBot) -> None:
     """The Screenshot Patterns page (#53, #287) is registered into the settings dialog once, nested
     under the "Images" group as "Sidecar Names" (#294, #298).
@@ -726,6 +739,7 @@ def test_registers_the_screenshot_patterns_page(qtbot: QtBot) -> None:
     assert child_titles.count("Sidecar Names") == 1
 
 
+@mark.usefixtures("real_settings_pages")
 def test_selecting_the_images_group_stacks_every_block_of_its_three_pages(qtbot: QtBot) -> None:
     """The "Images" group row shows Display, Sidecar Extensions and Sidecar Names together in one column
     (#230, #294, #298) -- so the group behaves exactly as the one flat Images page did before the
@@ -755,6 +769,7 @@ def test_selecting_the_images_group_stacks_every_block_of_its_three_pages(qtbot:
         assert declared <= stacked, page_type.__name__
 
 
+@mark.usefixtures("real_settings_pages")
 def test_the_filter_finds_each_images_page_under_its_group(qtbot: QtBot) -> None:
     """A term carried only by a grouped page's block finds that page, shown under the "Images" row
     and beside no sibling (#76, #294, #298).
@@ -788,6 +803,7 @@ def test_the_filter_finds_each_images_page_under_its_group(qtbot: QtBot) -> None
     assert visible_titles(QModelIndex()) == ["Images", "Sidecar Extensions"]
 
 
+@mark.usefixtures("real_settings_pages")
 def test_registers_the_descriptions_page(qtbot: QtBot) -> None:
     """The Descriptions settings page (#26, #47) is registered into the settings dialog,
     on every platform (unlike the Windows-only System Integration page).
@@ -2602,6 +2618,7 @@ def test_close_to_tray_hides_a_floating_dock_too(mocker: MockerFixture, qtbot: Q
     assert container.isVisible() is False
 
 
+@mark.usefixtures("real_settings_pages")
 def test_the_tray_setting_lives_on_the_system_integration_page(qtbot: QtBot) -> None:
     """The tray checkbox is a block on the System Integration page rather than a category of its
     own (#205) -- what the window's close button does is system integration, and the page exists on
@@ -5010,6 +5027,7 @@ def test_a_state_on_an_outer_dock_that_carries_none_is_ignored(mocker: MockerFix
     assert settings_dock.dockAreaWidget() is not None
 
 
+@mark.usefixtures("real_settings_pages")
 def test_registers_the_logs_page(qtbot: QtBot) -> None:
     """The Logs settings page (#200) is registered top-level, not under "Plugins".
 
@@ -5614,6 +5632,7 @@ def test_the_window_reads_and_writes_through_one_records_and_one_catalog(mocker:
     assert notifiers_class.call_args.args[0] is events.changes
 
 
+@mark.usefixtures("real_settings_pages")
 def test_registers_the_tasks_page(qtbot: QtBot) -> None:
     """The Tasks settings page (#202) is registered top-level, not under "Plugins" -- the same
     reasoning as the Logs page: a restart-time choice about the app's own queue, not a plugin's.

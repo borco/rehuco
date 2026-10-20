@@ -1,9 +1,9 @@
 """Tests for the Root Catalog and its two docks: opening a ``.rehuco``, scanning its roots through the queue, the
 Roots view over its roots and the browsers listing and opening what the cache holds (#377, #461).
 
-No file is ever created: ``Path.read_text`` serves the ``.rehuco``, ``atomic_write_text`` is captured, and
-:func:`sqlite3.connect` is patched to hand back shared-cache in-memory databases -- the dock's own connection
-and every scan job's, on the worker thread, reach the same one.
+No file is ever created: ``Path.read_text`` serves the ``.rehuco`` and ``atomic_write_text`` is captured. The cache
+is never opened: the catalog's :class:`~rehuco_core.Catalog` is a mock (``catalog``), answering what each test
+sets, and :meth:`CatalogCache.open <rehuco_core.CatalogCache.open>` hands the jobs a mock cache (``cache``) (#541).
 """
 
 # the docks have a broad surface (opening, scanning, editing roots, a read-only mode, layout, the queue listener);
@@ -15,14 +15,13 @@ import base64
 import json
 import logging
 import os
-import sqlite3
 import threading
 import warnings
-from collections.abc import Generator
-from dataclasses import dataclass
+from collections.abc import Generator, Sequence
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Final
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, Mock
 from uuid import UUID, uuid4
 
 import PySide6QtAds as QtAds
@@ -53,18 +52,23 @@ from rehuco_agent.rehuco.roots_item_delegate import RootsItemDelegate
 from rehuco_agent.rehuco.roots_management import managing_record
 from rehuco_agent.rehuco.roots_preview import RootsPreview
 from rehuco_agent.resource_events import ResourceEvents
-from rehuco_agent.settings import persistent_settings
 from rehuco_agent.settings.catalog_state_store import TABLE_BROWSER_KIND, BrowserState, CatalogState
 from rehuco_agent.settings.checksum_settings import shared_checksum_settings
 from rehuco_core import (
     FINISHED_JOB_STATES,
+    Catalog,
     CatalogCache,
     CatalogField,
     CatalogRecord,
+    CatalogRoot,
+    CatalogRow,
+    CatalogSession,
     CatalogSnapshot,
+    CatalogUnreadable,
     GenerateChecksumsJob,
     JobControl,
     RecordKind,
+    RecordsChecked,
     RehucoRoot,
     Relocation,
     RootScanOutcome,
@@ -74,7 +78,7 @@ from rehuco_core import (
     TaskQueue,
     VerifyChecksumsJob,
 )
-from rehuco_core.access import Changed, FolderChanged, ResourceKey
+from rehuco_core.access import Changed, FolderChanged, KeyRelocation, ResourceKey
 from rehuco_core.notify import RootNotifiers
 
 from rehuco_agent_tests.conftest import MemoryCatalogStateStore
@@ -98,9 +102,6 @@ WAIT_TIMEOUT_MS: Final = 10_000
 """How long a ``waitUntil`` gives the GUI thread to show an effect -- generous, since the first wait in a Qt
 test may be the spin that drains a deferred-deletion backlog."""
 
-real_connect: Final = sqlite3.connect
-"""The real :func:`sqlite3.connect`, bound before a test patches the module's."""
-
 HOME: Final = {
     "format_version": 1,
     "id": REHUCO_ID,
@@ -111,42 +112,159 @@ HOME: Final = {
 }
 
 
-class MemoryDatabase:
-    """One named in-memory database, alive for as long as its keeper connection is open."""
+@fixture(name="cached_rows")
+def fixture_cached_rows() -> list[CatalogRow]:
+    """The rows the mock catalog answers from (:func:`hold`): none, until a scan lands some or the test puts them
+    there.
 
-    def __init__(self) -> None:
-        self.__uri: Final = f"file:rehudb-{uuid4()}?mode=memory&cache=shared"
-        self.keeper: Final = self.connect()
-
-    def connect(self, *_args: object, **_kwargs: object) -> sqlite3.Connection:
-        """A new connection to this database, as the patched :func:`sqlite3.connect` hands it out."""
-        connection = real_connect(self.__uri, uri=True, autocommit=True, check_same_thread=False)
-        # a shared-cache memory database takes table locks that fail at once with "table is locked" when
-        # the GUI thread reads while a worker writes; the real file runs in WAL, where readers never block a
-        # writer. Reading uncommitted is what makes this stand-in behave like that.
-        connection.execute("PRAGMA read_uncommitted = 1")
-        return connection
-
-    def scalar(self, statement: str) -> Any:
-        """The first column of the first row ``statement`` reads, through the keeper."""
-        return self.keeper.execute(statement).fetchone()[0]
+    :returns: the rows, in the cache's order; the test's own list, so changing it changes what the catalog holds.
+    """
+    return []
 
 
-@fixture(name="database")
-def fixture_database(mocker: MockerFixture) -> Generator[MemoryDatabase]:
-    """Route every connection the cache opens to one fresh in-memory database.
+def hold(catalog: Mock, cache: MagicMock, rows: list[CatalogRow]) -> None:
+    """Make the mock catalog and cache keep to their contracts over ``rows``, as far as the catalog under test acts on
+    them:
 
-    Its folder is the session's temporary cache folder (``isolate_app_folders``), so making it is harmless and
-    nothing about folders needs faking: no file is ever written there, the database being in memory.
+    * the roots are the ones the catalog was last handed (``prepare``, ``reconcile``), never scanned, each as
+      reachable as ``mark_reachable`` last said;
+    * a read, a read by ids, a lookup by key and a root's count answer from ``rows``;
+    * a rename moves the rows at or beneath its source (``follow``);
+    * a scan's write replaces its root's rows with what it found, each record keeping its id from one scan to the next,
+      and reports the rows it touched (``apply_root_scan``).
+
+    :param catalog: the mock catalog.
+    :param cache: the mock cache the jobs open.
+    :param rows: what the catalog holds, read at each call.
+    """
+    file_roots: dict[UUID, RehucoRoot] = {}
+    reachable: dict[UUID, bool] = {}
+    ids: dict[tuple[UUID, str], int] = {}
+
+    def take_roots(roots: Sequence[RehucoRoot]) -> None:
+        file_roots.clear()
+        file_roots.update((root.root_id, root) for root in roots)
+
+    def prepare(cache_path: Path, roots: Sequence[RehucoRoot]) -> CatalogSession:
+        take_roots(roots)
+        return CatalogSession(cache_path, frozenset(file_roots))
+
+    def key_of(row: CatalogRow) -> Path | None:
+        root = file_roots.get(row.root_id)
+        return None if root is None else root.path.joinpath(*row.record.path.split("/"))
+
+    def follow(relocation: KeyRelocation) -> set[int]:
+        moved: set[int] = set()
+        for source, destination in relocation.to_local().pairs:
+            for index, row in enumerate(rows):
+                path = key_of(row)
+                if path is not None and path.is_relative_to(source):
+                    landed = (destination / path.relative_to(source)).relative_to(file_roots[row.root_id].path)
+                    rows[index] = replace(row, record=replace(row.record, path=landed.as_posix()))
+                    moved.add(row.resource_id)
+        return moved
+
+    def apply_root_scan(
+        root_id: UUID, records: Sequence[CatalogRecord], *, touched: set[int] | None = None, **_: object
+    ) -> bool:
+        label = file_roots[root_id].label
+        found = [
+            CatalogRow(ids.setdefault((root_id, record.path), len(ids) + 1), root_id, label, record, 0.0)
+            for record in records
+        ]
+        gone = {row.resource_id for row in rows if row.root_id == root_id} - {row.resource_id for row in found}
+        order = list(file_roots)
+        rows[:] = sorted(
+            [row for row in rows if row.root_id != root_id] + found,
+            key=lambda row: (order.index(row.root_id), row.record.path),
+        )
+        if touched is not None:
+            touched.update(row.resource_id for row in found)
+            touched.update(gone)
+        return True
+
+    catalog.prepare.side_effect = prepare
+    catalog.reconcile.side_effect = take_roots
+    catalog.roots.side_effect = lambda: tuple(
+        CatalogRoot(root.root_id, root.label, root.path, position, root.removable, reachable.get(root.root_id), None)
+        for position, root in enumerate(file_roots.values())
+    )
+    catalog.mark_reachable.side_effect = reachable.__setitem__
+    catalog.query.side_effect = lambda _query, *, ids=None: [
+        row for row in rows if ids is None or row.resource_id in ids
+    ]
+    catalog.row.side_effect = lambda key: next((row for row in rows if key_of(row) == key.path), None)
+    catalog.count.side_effect = lambda root_id: sum(row.root_id == root_id for row in rows)
+    catalog.follow.side_effect = follow
+    cache.apply_root_scan.side_effect = apply_root_scan
+
+
+@fixture(name="cache")
+def fixture_cache(mocker: MockerFixture) -> MagicMock:
+    """Make every :meth:`CatalogCache.open <rehuco_core.CatalogCache.open>` -- a scan's or a removal's, on the
+    worker -- hand back one mock cache.
 
     :param mocker: pytest-mock fixture.
-    :yields: the database; its keeper is closed when the test ends.
+    :returns: the mock, a context manager that hands back itself.
     """
-    database = MemoryDatabase()
-    mocker.patch("rehuco_core.rehudb.sqlite3.connect", side_effect=database.connect)
-    mocker.patch("rehuco_agent.rehuco.root_catalog.cache_folder", return_value=persistent_settings.cache_folder())
-    yield database
-    database.keeper.close()
+    cache = mocker.MagicMock(spec=CatalogCache)
+    cache.__enter__.return_value = cache
+    cache.signatures.return_value = {}
+    mocker.patch.object(CatalogCache, "open", return_value=cache)
+    return cache
+
+
+def mock_catalog(mocker: MockerFixture) -> Mock:
+    """A mock :class:`~rehuco_core.Catalog`: no roots, no rows, nothing to verify, until a test says otherwise. Its
+    session is real, so :attr:`~rehuco_core.Catalog.cache_path` follows ``attach`` and ``detach`` as the catalog's
+    does.
+
+    :param mocker: pytest-mock fixture.
+    :returns: the mock.
+    """
+    catalog = mocker.Mock(spec=Catalog)
+    catalog.cache_path = None
+    catalog.prepare.side_effect = lambda cache_path, roots: CatalogSession(
+        cache_path, frozenset(root.root_id for root in roots)
+    )
+    catalog.attach.side_effect = lambda session: setattr(catalog, "cache_path", session.cache_path)
+    catalog.detach.side_effect = lambda: setattr(catalog, "cache_path", None)
+    catalog.roots.return_value = ()
+    catalog.query.return_value = []
+    catalog.row.return_value = None
+    catalog.count.return_value = 0
+    catalog.follow.return_value = set()
+    catalog.plan_verify.return_value = []
+    catalog.apply_verify.return_value = (set(), set())
+    catalog.record_paths.return_value = []
+    return catalog
+
+
+@fixture(name="catalog")
+def fixture_catalog(mocker: MockerFixture, cache: MagicMock, cached_rows: list[CatalogRow]) -> Mock:
+    """The mock catalog the docks read through (:func:`mock_catalog`), it and the mock cache the jobs open holding
+    ``cached_rows`` (:func:`hold`).
+
+    :param mocker: pytest-mock fixture.
+    :param cache: the mock cache the jobs open.
+    :param cached_rows: the rows it holds.
+    :returns: the mock catalog.
+    """
+    catalog = mock_catalog(mocker)
+    hold(catalog, cache, cached_rows)
+    return catalog
+
+
+def catalog_row(resource_id: int, root_index: int, record: CatalogRecord) -> CatalogRow:
+    """A row as the catalog answers it, under one of :data:`HOME`'s roots.
+
+    :param resource_id: its id.
+    :param root_index: which root, in :data:`HOME`'s order.
+    :param record: its record.
+    :returns: the row.
+    """
+    root = HOME["roots"][root_index]
+    return CatalogRow(resource_id, UUID(root["id"]), root["label"], record, 0.0)
 
 
 @fixture(name="served")
@@ -254,7 +372,12 @@ class CatalogDocks:
 
 
 def build_docks(
-    qtbot: QtBot, queue: TaskQueue, events: ResourceEvents | None = None, notifiers: RootNotifiers | None = None
+    qtbot: QtBot,
+    queue: TaskQueue,
+    events: ResourceEvents | None = None,
+    notifiers: RootNotifiers | None = None,
+    *,
+    catalog: Catalog,
 ) -> CatalogDocks:
     """A catalog over ``queue`` and both docks' contents over it, the folder filter wired to the browsers.
 
@@ -262,36 +385,34 @@ def build_docks(
     :param queue: the queue its jobs run on.
     :param events: the file announcements to follow, if any.
     :param notifiers: the roots' file notifiers the catalog keeps in step with its roots, if any.
+    :param catalog: what it reads the cache through -- a mock (:func:`mock_catalog`).
     :returns: the three.
     """
-    catalog = RootCatalog(queue, resource_events=events, notifiers=notifiers)
-    roots = RootsPanel(catalog, queue, resource_events=events)
+    root_catalog = RootCatalog(queue, resource_events=events, notifiers=notifiers, catalog=catalog)
+    roots = RootsPanel(root_catalog, queue, resource_events=events)
     # the window owns the catalog in the app; here the panel qtbot deletes does, so the collector never has to (#529)
-    catalog.setParent(roots)
-    browsers = BrowsersDock(catalog)
+    root_catalog.setParent(roots)
+    browsers = BrowsersDock(root_catalog)
     roots.filter_requested.connect(browsers.set_filter_token)
     qtbot.addWidget(roots)
     qtbot.addWidget(browsers)
-    return CatalogDocks(catalog, roots, browsers)
+    return CatalogDocks(root_catalog, roots, browsers)
 
 
 @fixture(name="dock")
-def fixture_dock(
-    qtbot: QtBot, queue: TaskQueue, database: MemoryDatabase, mocker: MockerFixture
-) -> Generator[CatalogDocks]:
-    """A catalog and its docks over the real queue and the in-memory database, detached when the test ends.
+def fixture_dock(qtbot: QtBot, queue: TaskQueue, catalog: Mock, mocker: MockerFixture) -> Generator[CatalogDocks]:
+    """A catalog and its docks over the real queue and the mock catalog, detached when the test ends.
 
     Removing a root asks first, and that question is replaced per instance with a yes -- a test of the question
     itself replaces it again.
 
     :param qtbot: pytest-qt fixture.
     :param queue: the queue its jobs run on.
-    :param database: the cache's database.
+    :param catalog: the mock catalog.
     :param mocker: pytest-mock fixture.
     :yields: the docks, with nothing open.
     """
-    del database
-    dock = build_docks(qtbot, queue)
+    dock = build_docks(qtbot, queue, catalog=catalog)
     mocker.patch.object(dock.roots, "confirm_remove_root", return_value=True)
     yield dock
     dock.detach()
@@ -300,9 +421,8 @@ def fixture_dock(
 @fixture(name="no_open_scan", autouse=True)
 def fixture_no_open_scan(mocker: MockerFixture) -> None:
     """Make opening a catalog queue no scan of its never-scanned roots (#541), in every test here and in each module
-    that imports this fixture: those test the catalog, not that scan, and a scan job writing the shared cache while
-    the GUI thread does fails one of them at random with "database table is locked". ``test_catalog_open_scan.py``,
-    which tests the scan, does not import it.
+    that imports this fixture: those test the catalog, not that scan, whose jobs would otherwise sit in every queue
+    they read. ``test_catalog_open_scan.py``, which tests the scan, does not import it.
 
     :param mocker: pytest-mock fixture.
     """
@@ -400,15 +520,14 @@ def written_roots(saves: MagicMock) -> list[str]:
 # region Opening and creating
 
 
-def test_opening_lists_the_roots_and_reconciles_the_cache(
-    dock: CatalogDocks, database: MemoryDatabase, served: Any
-) -> None:
-    """The file's roots are shown and brought into the cache, so a scan has rows to replace.
+def test_opening_lists_the_roots_and_reconciles_the_cache(dock: CatalogDocks, catalog: Mock, served: Any) -> None:
+    """The file's roots are shown and brought into its cache, so a scan has rows to replace.
 
     **Test steps:**
 
-    * open a two-root catalog over an empty cache
-    * verify the path, both root labels in order, and two root rows in the cache
+    * open a two-root catalog
+    * verify the path, both root labels in order, and that the cache named by the file's id was prepared with both
+      roots and attached
     """
     del served
 
@@ -416,7 +535,10 @@ def test_opening_lists_the_roots_and_reconciles_the_cache(
 
     assert dock.catalog.rehuco_path == REHUCO_PATH
     assert shown_labels(dock) == ["tutorials", "packs"]
-    assert database.scalar("SELECT COUNT(*) FROM roots") == 2
+    cache_path, roots = catalog.prepare.call_args.args
+    assert cache_path.name == f"{REHUCO_ID}.rehudb"
+    assert [root.label for root in roots] == ["tutorials", "packs"]
+    assert catalog.cache_path == cache_path
 
 
 def test_opening_announces_the_new_path(qtbot: QtBot, dock: CatalogDocks, served: Any) -> None:
@@ -519,7 +641,7 @@ def test_a_new_rehuco_that_cannot_be_written_is_not_opened(dock: CatalogDocks, s
 
 
 def test_a_new_rehuco_whose_cache_cannot_open_is_never_written(
-    mocker: MockerFixture, dock: CatalogDocks, saves: MagicMock
+    dock: CatalogDocks, catalog: Mock, saves: MagicMock
 ) -> None:
     """The cache is opened before the file is written, so a file reported as not created is not on disk either.
 
@@ -529,7 +651,7 @@ def test_a_new_rehuco_whose_cache_cannot_open_is_never_written(
     * create a catalog
     * verify it failed, nothing was written, and the reason names the cache
     """
-    mocker.patch("rehuco_core.access.catalog.CatalogCache.open", side_effect=sqlite3.OperationalError("locked"))
+    catalog.prepare.side_effect = CatalogUnreadable("Could not open the cache of x: locked")
 
     assert not dock.catalog.new_rehuco(OTHER_PATH)
 
@@ -620,7 +742,7 @@ def test_a_scan_that_is_already_queued_is_not_queued_again(
 
 @mark.usefixtures("served")
 def test_another_catalogs_waiting_scan_does_not_refuse_this_ones(
-    mocker: MockerFixture, qtbot: QtBot, queue: TaskQueue, held: GateJob, database: MemoryDatabase
+    mocker: MockerFixture, qtbot: QtBot, queue: TaskQueue, held: GateJob, cache: MagicMock
 ) -> None:
     """Two catalogs whose roots share a label and folder each get their own scan: the check is among this
     dock's own jobs, not the whole queue's.
@@ -630,12 +752,12 @@ def test_another_catalogs_waiting_scan_does_not_refuse_this_ones(
     * hold the queue; scan from one dock, then from a second dock over the same file
     * verify both scans of each root are queued
     """
-    del database
+    del cache
     scan_finding(mocker, {})
-    first = build_docks(qtbot, queue)
+    first = build_docks(qtbot, queue, catalog=mock_catalog(mocker))
     first.catalog.open_rehuco(REHUCO_PATH)
     first.roots.scan_action.trigger()
-    second = build_docks(qtbot, queue)
+    second = build_docks(qtbot, queue, catalog=mock_catalog(mocker))
     second.catalog.open_rehuco(REHUCO_PATH)
 
     second.roots.scan_action.trigger()
@@ -876,14 +998,14 @@ def test_the_status_bar_counts_the_rows_the_table_shows(
 
 
 def test_adding_a_root_saves_the_file_and_the_cache_follows(
-    mocker: MockerFixture, dock: CatalogDocks, database: MemoryDatabase, served: Any, saves: MagicMock
+    mocker: MockerFixture, dock: CatalogDocks, catalog: Mock, served: Any, saves: MagicMock
 ) -> None:
-    """The edit is on disk before the dock says it happened.
+    """The edit is on disk before the dock says it happened, and the cache is reconciled to it.
 
     **Test steps:**
 
     * mock the folder picker and add a root
-    * verify the file was written with three roots, the list shows three, and the cache holds three
+    * verify the file was written with three roots, the list shows three, and the cache was reconciled to the three
     """
     del served
     answer_add_root(mocker, dock, "/fake/refs")
@@ -893,7 +1015,7 @@ def test_adding_a_root_saves_the_file_and_the_cache_follows(
 
     assert written_roots(saves) == ["tutorials", "packs", "refs"]
     assert dock.roots.roots_model.rowCount() == 3
-    assert database.scalar("SELECT COUNT(*) FROM roots") == 3
+    assert [root.label for root in catalog.reconcile.call_args.args[0]] == ["tutorials", "packs", "refs"]
 
 
 def test_cancelling_the_folder_picker_adds_nothing(
@@ -984,14 +1106,14 @@ def test_a_failed_save_that_cannot_be_read_back_closes_the_file(
 
 @mark.usefixtures("served")
 def test_removing_a_root_saves_the_file_and_queues_the_removal(
-    qtbot: QtBot, dock: CatalogDocks, queue: TaskQueue, database: MemoryDatabase, saves: MagicMock
+    qtbot: QtBot, dock: CatalogDocks, queue: TaskQueue, cache: MagicMock, saves: MagicMock
 ) -> None:
     """The file loses the root at once; its rows leave the cache on the worker.
 
     **Test steps:**
 
     * select the first root and remove it
-    * verify the file was written without it, the list shrank, a removal job ran, and the cache lost the root
+    * verify the file was written without it, the list shrank, and a removal job ran, removing the root from the cache
     """
     dock.catalog.open_rehuco(REHUCO_PATH)
     assert not dock.roots.remove_root_action.isEnabled()
@@ -1004,25 +1126,27 @@ def test_removing_a_root_saves_the_file_and_queues_the_removal(
     assert dock.roots.roots_model.rowCount() == 1
     assert [status.label for status in queue.jobs()] == ["Remove root - tutorials"]
     wait_for_jobs(qtbot, queue)
-    assert database.scalar("SELECT COUNT(*) FROM roots") == 1
+    cache.remove_root.assert_called_once_with(UUID(ROOT_IDS[0]))
 
 
 @mark.usefixtures("served", "saves")
+# pylint: disable-next=too-many-arguments,too-many-positional-arguments
 def test_a_removed_roots_rows_leave_the_table_before_its_removal_runs(
-    mocker: MockerFixture, qtbot: QtBot, dock: CatalogDocks, queue: TaskQueue, database: MemoryDatabase
+    qtbot: QtBot, dock: CatalogDocks, queue: TaskQueue, catalog: Mock, cache: MagicMock, cached_rows: list[CatalogRow]
 ) -> None:
-    """The rows stay in the cache until the removal job has run, but are not shown meanwhile.
+    """A removed root is hidden from the catalog at once and the browsers read again, while its rows leave the cache
+    only when the removal job runs.
 
     **Test steps:**
 
-    * scan a record in, hold the queue, then remove its root
-    * verify the table empties while the cache still holds the row
+    * open a catalog whose one row is under the first root, hold the queue, then remove that root
+    * verify the root was hidden and the table emptied before the cache was asked to remove anything
+    * release the queue and verify the removal reached the cache
     """
-    scan_finding(mocker, {TUTORIALS: (tutorial_record(),)})
+    cached_rows.append(catalog_row(1, 0, tutorial_record()))
     dock.catalog.open_rehuco(REHUCO_PATH)
-    dock.roots.scan_action.trigger()
     qtbot.waitUntil(lambda: first_browser(dock).model.rowCount() == 1, timeout=WAIT_TIMEOUT_MS)
-    wait_for_jobs(qtbot, queue)
+    catalog.hide.side_effect = lambda _root_id: cached_rows.clear()
     gate = GateJob()
     queue.enqueue(gate)
     assert gate.entered.wait(WAIT_TIMEOUT_MS / 1000), "the gate job never reached the worker"
@@ -1031,9 +1155,11 @@ def test_a_removed_roots_rows_leave_the_table_before_its_removal_runs(
     dock.roots.remove_root_action.trigger()
 
     qtbot.waitUntil(lambda: first_browser(dock).model.rowCount() == 0, timeout=WAIT_TIMEOUT_MS)
-    assert database.scalar("SELECT COUNT(*) FROM resources") == 1
+    catalog.hide.assert_called_once_with(UUID(ROOT_IDS[0]))
+    cache.remove_root.assert_not_called()
     gate.let_finish()
     wait_for_jobs(qtbot, queue)
+    cache.remove_root.assert_called_once_with(UUID(ROOT_IDS[0]))
 
 
 # endregion
@@ -1858,28 +1984,26 @@ def test_a_closed_catalogs_layout_carries_each_browsers_filter_and_columns(
 
 
 @mark.usefixtures("served")
-def test_a_cache_whose_roots_cannot_be_reconciled_does_not_open(mocker: MockerFixture, dock: CatalogDocks) -> None:
-    """A cache that opens but cannot be written is closed again, and the open fails with the reason.
+def test_a_cache_whose_roots_cannot_be_reconciled_does_not_open(dock: CatalogDocks, catalog: Mock) -> None:
+    """A cache the catalog cannot prepare fails the open, with the reason.
 
     **Test steps:**
 
-    * make ``reconcile_roots`` raise, and spy on ``close``
+    * make preparing the cache fail
     * open a catalog
-    * verify it failed naming the cache, and the cache was closed
+    * verify it failed naming the cache, and nothing is open
     """
-    mocker.patch.object(CatalogCache, "reconcile_roots", side_effect=sqlite3.OperationalError("locked"))
-    close = mocker.spy(CatalogCache, "close")
+    catalog.prepare.side_effect = CatalogUnreadable("Could not read the cache of x: locked")
 
     assert not dock.catalog.open_rehuco(REHUCO_PATH)
 
     assert "Could not read the cache" in dock.catalog.load_error
     assert dock.catalog.rehuco_path is None
-    close.assert_called_once()
 
 
 @mark.usefixtures("served", "saves")
 def test_a_cache_that_cannot_be_read_keeps_what_is_shown(
-    mocker: MockerFixture, qtbot: QtBot, dock: CatalogDocks, caplog: LogCaptureFixture
+    mocker: MockerFixture, qtbot: QtBot, dock: CatalogDocks, catalog: Mock, caplog: LogCaptureFixture
 ) -> None:
     """A failed read is logged and the browsers are left as they were -- the next scan rebuilds the cache. The Roots
     view reads the file, not the cache, so it still shows the edit (#461).
@@ -1892,7 +2016,7 @@ def test_a_cache_that_cannot_be_read_keeps_what_is_shown(
     """
     dock.catalog.open_rehuco(REHUCO_PATH)
     wait_for_rows(qtbot, dock)
-    mocker.patch.object(CatalogCache, "rows", side_effect=sqlite3.OperationalError("locked"))
+    catalog.query.side_effect = CatalogUnreadable("locked")
     set_rows = mocker.spy(TableBrowser, "set_rows")
     answer_add_root(mocker, dock, "/fake/refs")
 
@@ -2023,28 +2147,6 @@ def test_a_removal_whose_save_fails_queues_no_job(
     assert dock.roots.roots_model.rowCount() == 2
 
 
-@mark.usefixtures("served", "saves")
-def test_a_cache_that_cannot_take_a_new_root_is_logged(
-    mocker: MockerFixture, dock: CatalogDocks, caplog: LogCaptureFixture
-) -> None:
-    """The file is saved either way; the cache is disposable, so the failure is a log line.
-
-    **Test steps:**
-
-    * open a catalog, then make the cache's root reconciliation fail and add a root
-    * verify the root is listed and the failure was logged
-    """
-    dock.catalog.open_rehuco(REHUCO_PATH)
-    mocker.patch.object(CatalogCache, "reconcile_roots", side_effect=sqlite3.OperationalError("locked"))
-    answer_add_root(mocker, dock, "/fake/refs")
-
-    with caplog.at_level(logging.ERROR):
-        dock.roots.add_root_action.trigger()
-
-    assert "Could not update the cache" in caplog.text
-    assert dock.roots.roots_model.rowCount() == 3
-
-
 @mark.usefixtures("served")
 def test_a_tracked_job_cleared_from_the_queue_is_forgotten_and_reads_nothing(
     mocker: MockerFixture, qtbot: QtBot, dock: CatalogDocks, queue: TaskQueue, held: GateJob
@@ -2097,28 +2199,28 @@ def fixture_followed(
     qtbot: QtBot,
     mocker: MockerFixture,
     queue: TaskQueue,
-    database: MemoryDatabase,
+    catalog: Mock,
+    cached_rows: list[CatalogRow],
     served: Any,
     delete_at_teardown: DeleteAtTeardown,
 ) -> Generator[tuple[CatalogDocks, ResourceEvents]]:
-    """A dock following the app's file announcements, its catalog open and one tutorial scanned in.
+    """A dock following the app's file announcements, its catalog open and holding one tutorial's row.
 
     :param qtbot: pytest-qt fixture.
     :param mocker: pytest-mock fixture.
-    :param queue: the queue its scan runs on.
-    :param database: the cache's database.
+    :param queue: the queue its jobs run on.
+    :param catalog: the mock catalog.
+    :param cached_rows: what the mock catalog holds: the tutorial's row.
     :param served: the served ``.rehuco``.
     :param delete_at_teardown: deletes the `ResourceEvents` when the test ends.
     :yields: the dock and the events it follows.
     """
-    del database, served
+    del mocker, served
     events = delete_at_teardown(ResourceEvents())
-    dock = build_docks(qtbot, queue, events)
-    scan_finding(mocker, {TUTORIALS: (tutorial_record(),)})
+    dock = build_docks(qtbot, queue, events, catalog=catalog)
+    cached_rows.append(catalog_row(1, 0, tutorial_record()))
     dock.catalog.open_rehuco(REHUCO_PATH)
-    dock.roots.scan_action.trigger()
     qtbot.waitUntil(lambda: first_browser(dock).model.rowCount() == 1, timeout=WAIT_TIMEOUT_MS)
-    wait_for_jobs(qtbot, queue)
     wait_for_rows(qtbot, dock)
     yield dock, events
     dock.detach()
@@ -2127,6 +2229,35 @@ def fixture_followed(
 def shown_path(dock: CatalogDocks) -> str:
     """The root-qualified path the one row shows."""
     return first_browser(dock).model.index(0, CatalogColumn.PATH).data()
+
+
+def verified(
+    mocker: MockerFixture, catalog: Mock, cached_rows: list[CatalogRow], record: CatalogRecord | None
+) -> MagicMock:
+    """Make verify-on-access find the held tutorial changed on disk: ``record`` read back, or ``None`` for a record
+    gone. The plan, the check on the pool and the write-back are each the mock's -- core tests them; what is left is the
+    catalog's routing between them and the threads it runs them on.
+
+    :param mocker: pytest-mock fixture.
+    :param catalog: the mock catalog.
+    :param cached_rows: what it holds: the tutorial's row.
+    :param record: what the record reads as now, or ``None``.
+    :returns: the mock of the check, which ran on the pool.
+    """
+    catalog.plan_verify.return_value = [MagicMock()]
+    check = mocker.patch(
+        "rehuco_agent.rehuco.root_catalog.check_records", return_value=RecordsChecked([MagicMock()], {})
+    )
+
+    def apply(_findings: object) -> tuple[set[int], set[Path]]:
+        if record is None:
+            cached_rows.clear()
+        else:
+            cached_rows[0] = replace(cached_rows[0], record=record)
+        return {1}, {TUTORIALS / "python" / "info.rehu"}
+
+    catalog.apply_verify.side_effect = apply
+    return check
 
 
 def test_a_rename_rebases_its_row_without_a_scan(qtbot: QtBot, followed: tuple[CatalogDocks, ResourceEvents]) -> None:
@@ -2166,32 +2297,37 @@ def test_a_rename_elsewhere_reads_the_cache_not_again(
 
 
 def test_a_written_record_is_read_back_into_its_row(
-    mocker: MockerFixture, qtbot: QtBot, followed: tuple[CatalogDocks, ResourceEvents]
+    mocker: MockerFixture,
+    qtbot: QtBot,
+    followed: tuple[CatalogDocks, ResourceEvents],
+    catalog: Mock,
+    cached_rows: list[CatalogRow],
 ) -> None:
-    """A save the notifier reports is checked against its row on the pool, the record read back since it moved on, and
-    the table follows; a file that is not a record is passed over (#511).
+    """A save the notifier reports is planned against the cache on the GUI thread, checked against the disk on the
+    pool, and written back on the GUI thread, and the table follows (#487, #511).
 
     **Test steps:**
 
-    * make the record read as retitled, publish it and a screenshot as changed
-    * verify the row comes to show the new title
+    * make the check find the record retitled, noting the thread it runs on; publish it and a screenshot as changed
+    * verify the plan was asked about both files, the check ran off the GUI thread, and the row shows the new title
     """
     dock, events = followed
-    mocker.patch.object(Path, "is_file", autospec=True, return_value=True)
-    mocker.patch(
-        "rehuco_core.rehudb_updates.CatalogRecordReader.read",
-        return_value=CatalogRecord(
-            "python/info.rehu", RecordKind.REHU, title="Python 3", type="tutorial", current_size=1536, content_hash="1"
-        ),
+    retitled = CatalogRecord("python/info.rehu", RecordKind.REHU, title="Python 3", type="tutorial")
+    check = verified(mocker, catalog, cached_rows, retitled)
+    checked_on: list[threading.Thread] = []
+    check.side_effect = lambda *_args: (
+        checked_on.append(threading.current_thread()) or RecordsChecked([MagicMock()], {})
     )
+    record, screenshot = TUTORIALS / "python" / "info.rehu", TUTORIALS / "python" / "info00.jpg"
 
-    publish_changed(
-        events, (ResourceKey(TUTORIALS / "python" / "info.rehu"), ResourceKey(TUTORIALS / "python" / "info00.jpg"))
-    )
+    publish_changed(events, (ResourceKey(record), ResourceKey(screenshot)))
 
     qtbot.waitUntil(
         lambda: first_browser(dock).model.index(0, CatalogColumn.TITLE).data() == "Python 3", timeout=WAIT_TIMEOUT_MS
     )
+    assert [key.path for key in catalog.plan_verify.call_args.args[0]] == [record, screenshot]
+    assert len(checked_on) == 1
+    assert checked_on[0] is not threading.main_thread()
 
 
 def test_a_rename_moves_the_row_in_place_and_keeps_it_selected(
@@ -2221,7 +2357,11 @@ def test_a_rename_moves_the_row_in_place_and_keeps_it_selected(
 
 
 def test_a_written_record_changes_its_row_without_a_reset(
-    qtbot: QtBot, mocker: MockerFixture, followed: tuple[CatalogDocks, ResourceEvents]
+    qtbot: QtBot,
+    mocker: MockerFixture,
+    followed: tuple[CatalogDocks, ResourceEvents],
+    catalog: Mock,
+    cached_rows: list[CatalogRow],
 ) -> None:
     """A reported save reads back just its own row, and the table changes it in place (#379, #511).
 
@@ -2232,10 +2372,11 @@ def test_a_written_record_changes_its_row_without_a_reset(
     """
     dock, events = followed
     model = first_browser(dock).model
-    mocker.patch.object(Path, "is_file", autospec=True, return_value=True)
-    mocker.patch(
-        "rehuco_core.rehudb_updates.CatalogRecordReader.read",
-        return_value=CatalogRecord("python/info.rehu", RecordKind.REHU, title="Python 3", type="tutorial"),
+    verified(
+        mocker,
+        catalog,
+        cached_rows,
+        CatalogRecord("python/info.rehu", RecordKind.REHU, title="Python 3", type="tutorial"),
     )
 
     with qtbot.assertNotEmitted(model.modelReset):
@@ -2245,19 +2386,22 @@ def test_a_written_record_changes_its_row_without_a_reset(
 
 
 def test_a_deleted_record_leaves_the_table_in_place(
-    qtbot: QtBot, mocker: MockerFixture, followed: tuple[CatalogDocks, ResourceEvents]
+    qtbot: QtBot,
+    mocker: MockerFixture,
+    followed: tuple[CatalogDocks, ResourceEvents],
+    catalog: Mock,
+    cached_rows: list[CatalogRow],
 ) -> None:
     """A record gone from a root that is there loses its row, and only that row goes (#379).
 
     **Test steps:**
 
-    * make the record missing under an online root, and publish it changed
+    * make the check find the record gone, and publish it changed
     * verify the row was removed without a reset
     """
     dock, events = followed
     model = first_browser(dock).model
-    mocker.patch.object(Path, "is_file", autospec=True, return_value=False)
-    mocker.patch.object(Path, "is_dir", autospec=True, return_value=True)
+    verified(mocker, catalog, cached_rows, None)
 
     with (
         qtbot.assertNotEmitted(model.modelReset),
@@ -2291,7 +2435,7 @@ def test_a_rename_out_of_a_folder_filter_removes_the_row(
 
 
 def test_every_browser_shares_one_read_of_the_touched_rows(
-    mocker: MockerFixture, qtbot: QtBot, followed: tuple[CatalogDocks, ResourceEvents]
+    qtbot: QtBot, followed: tuple[CatalogDocks, ResourceEvents], catalog: Mock
 ) -> None:
     """Browsers are updated from one read of the rows a rename touched, whatever each filters by (#455).
 
@@ -2304,7 +2448,8 @@ def test_every_browser_shares_one_read_of_the_touched_rows(
     dock.browsers.new_browser_action.trigger()
     _, second = dock.browsers.browsers
     second.set_filter_text("info")
-    rows = mocker.spy(CatalogCache, "rows")
+    wait_for_rows(qtbot, dock)
+    catalog.query.reset_mock()
 
     events.announce_moved(Relocation(((TUTORIALS / "python", TUTORIALS / "py"),)))
     wait_for_rows(qtbot, dock)
@@ -2312,7 +2457,7 @@ def test_every_browser_shares_one_read_of_the_touched_rows(
     assert {browser.model.index(0, CatalogColumn.PATH).data() for browser in dock.browsers.browsers} == {
         "tutorials/py/info.rehu"
     }
-    assert rows.call_count == 1
+    assert catalog.query.call_count == 1
 
 
 def test_a_keystroke_during_a_refresh_filters_the_old_rows_then_the_new(
@@ -2364,7 +2509,7 @@ def test_a_keystroke_during_a_refresh_filters_the_old_rows_then_the_new(
 
 
 def test_a_failed_read_of_the_touched_rows_is_logged_and_the_table_kept(
-    mocker: MockerFixture, qtbot: QtBot, followed: tuple[CatalogDocks, ResourceEvents], caplog: LogCaptureFixture
+    qtbot: QtBot, followed: tuple[CatalogDocks, ResourceEvents], catalog: Mock, caplog: LogCaptureFixture
 ) -> None:
     """The rename is in the cache; a failure to read its rows back leaves the table as it was, logged.
 
@@ -2374,7 +2519,9 @@ def test_a_failed_read_of_the_touched_rows_is_logged_and_the_table_kept(
     * verify the error was logged and the row still shows its old path
     """
     dock, events = followed
-    mocker.patch.object(CatalogCache, "rows", side_effect=sqlite3.OperationalError("locked"))
+    catalog.follow.side_effect = None
+    catalog.follow.return_value = {1}
+    catalog.query.side_effect = CatalogUnreadable("locked")
     caplog.set_level(logging.ERROR, logger="rehuco_agent.rehuco.catalog_rows_loader")
 
     events.announce_moved(Relocation(((TUTORIALS / "python", TUTORIALS / "py"),)))
@@ -2384,29 +2531,8 @@ def test_a_failed_read_of_the_touched_rows_is_logged_and_the_table_kept(
     assert shown_path(dock) == "tutorials/python/info.rehu"
 
 
-def test_a_cache_failure_while_following_is_logged(
-    mocker: MockerFixture, followed: tuple[CatalogDocks, ResourceEvents], caplog: LogCaptureFixture
-) -> None:
-    """The cache is disposable and the next scan rebuilds it, so a failure to follow is a log line.
-
-    **Test steps:**
-
-    * make the cache refuse a relocation and the lookup a check of a changed file plans with, and publish both
-    * verify each was logged as an error
-    """
-    _dock, events = followed
-    mocker.patch.object(CatalogCache, "apply_relocation", side_effect=sqlite3.OperationalError("locked"))
-    mocker.patch.object(CatalogCache, "locate", side_effect=sqlite3.OperationalError("locked"))
-    caplog.set_level(logging.ERROR, logger="rehuco_agent.rehuco.rehuco_dock")
-
-    events.announce_moved(Relocation(((TUTORIALS / "python", TUTORIALS / "py"),)))
-    publish_changed(events, (ResourceKey(TUTORIALS / "python" / "info.rehu"),))
-
-    assert caplog.text.count("locked") == 2
-
-
 def test_with_nothing_open_an_announcement_is_nothing(
-    qtbot: QtBot, queue: TaskQueue, database: MemoryDatabase, delete_at_teardown: DeleteAtTeardown
+    qtbot: QtBot, queue: TaskQueue, catalog: Mock, delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """A dock with no catalog open has no cache to follow anything into.
 
@@ -2415,9 +2541,8 @@ def test_with_nothing_open_an_announcement_is_nothing(
     * announce a rename and a write to a dock with nothing open, then detach it
     * verify nothing failed and no browser appeared
     """
-    del database
     events = delete_at_teardown(ResourceEvents())
-    dock = build_docks(qtbot, queue, events)
+    dock = build_docks(qtbot, queue, events, catalog=catalog)
 
     events.announce_moved(Relocation(((TUTORIALS, PACKS),)))
     publish_changed(events, (ResourceKey(TUTORIALS / "info.rehu"),))
@@ -2428,7 +2553,7 @@ def test_with_nothing_open_an_announcement_is_nothing(
 
 
 def test_detaching_twice_disconnects_once_and_says_nothing(
-    qtbot: QtBot, queue: TaskQueue, delete_at_teardown: DeleteAtTeardown
+    qtbot: QtBot, queue: TaskQueue, catalog: Mock, delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """A window closed twice (the tray's hide, then a quit) detaches its catalog and Roots view twice; the second time
     there is nothing left to disconnect, and Qt must not warn about it (#475).
@@ -2439,7 +2564,7 @@ def test_detaching_twice_disconnects_once_and_says_nothing(
     * verify nothing was raised, and a later announcement still reaches nobody
     """
     events = delete_at_teardown(ResourceEvents())
-    dock = build_docks(qtbot, queue, events)
+    dock = build_docks(qtbot, queue, events, catalog=catalog)
 
     with warnings.catch_warnings():
         warnings.simplefilter("error", RuntimeWarning)
@@ -2949,7 +3074,7 @@ def test_filling_the_card_never_saves(dock: CatalogDocks, saves: MagicMock) -> N
 
 @mark.usefixtures("served")
 def test_renaming_on_the_card_saves_the_label_and_updates_the_row(
-    dock: CatalogDocks, saves: MagicMock, database: MemoryDatabase
+    dock: CatalogDocks, saves: MagicMock, catalog: Mock
 ) -> None:
     """A new name is the root's label in the file, the cache and the view; the folder is untouched and the row stays
     current.
@@ -2957,7 +3082,7 @@ def test_renaming_on_the_card_saves_the_label_and_updates_the_row(
     **Test steps:**
 
     * select the second root, type a name into the card and finish editing
-    * verify the saved labels, the shown labels, the cache's label and the current row
+    * verify the saved labels, the shown labels, the labels the cache was reconciled to and the current row
     """
     dock.catalog.open_rehuco(REHUCO_PATH)
     select_root(dock, 1)
@@ -2967,7 +3092,7 @@ def test_renaming_on_the_card_saves_the_label_and_updates_the_row(
 
     assert written_roots(saves) == ["tutorials", "Packs & Co"]
     assert shown_labels(dock) == ["tutorials", "Packs & Co"]
-    assert database.scalar("SELECT label FROM roots WHERE position = 1") == "Packs & Co"
+    assert [root.label for root in catalog.reconcile.call_args.args[0]] == ["tutorials", "Packs & Co"]
     assert dock.roots.roots_view.currentIndex().row() == 1
     assert dock.roots.root_name_edit.text() == "Packs & Co"
 
@@ -3018,14 +3143,15 @@ def test_leaving_the_name_as_it_was_writes_nothing(mocker: MockerFixture, dock: 
 
 @mark.usefixtures("served")
 def test_choosing_a_storage_on_the_card_saves_it_and_restyles_the_row_without_a_reset(
-    dock: CatalogDocks, saves: MagicMock, database: MemoryDatabase
+    dock: CatalogDocks, saves: MagicMock, catalog: Mock
 ) -> None:
-    """The root's storage is saved at once, the row's glyph changes in place, and the cache's removable flag follows.
+    """The root's storage is saved at once, the row's glyph changes in place, and the cache is reconciled to it.
 
     **Test steps:**
 
     * select the first root and choose Removable drive, then CD or DVD, then Network share
-    * verify the saved storage each time, the row's glyph, the cache's flag, and that the model was not reset
+    * verify the saved storage each time, the row's glyph, the storage the cache was reconciled to, and that the model
+      was not reset
     """
     resets: list[int] = []
     dock.roots.roots_model.modelReset.connect(lambda: resets.append(1))
@@ -3033,11 +3159,7 @@ def test_choosing_a_storage_on_the_card_saves_it_and_restyles_the_row_without_a_
     select_root(dock, 0)
     combo = dock.roots.root_storage_combo
 
-    for storage, flag in (
-        (RootStorage.REMOVABLE, 1),
-        (RootStorage.COMPACT_DISK, 1),
-        (RootStorage.NETWORK, 0),
-    ):
+    for storage in (RootStorage.REMOVABLE, RootStorage.COMPACT_DISK, RootStorage.NETWORK):
         combo.setCurrentIndex(combo.findData(storage))
         combo.activated.emit(combo.currentIndex())
         assert written_storages(saves)[0] == storage.value
@@ -3045,7 +3167,8 @@ def test_choosing_a_storage_on_the_card_saves_it_and_restyles_the_row_without_a_
             dock.roots.roots_model.index(0, 0).data(dock.roots.roots_model.ICON_PATH_ROLE)
             == ROOT_STORAGE_ICONS[storage]
         )
-        assert database.scalar("SELECT removable FROM roots WHERE position = 0") == flag
+        # pylint-qt takes a subscript in a module importing QtCore for a signal's, and the root for its template
+        assert catalog.reconcile.call_args.args[0][0].storage is storage  # pylint: disable=no-member
 
     assert not resets
     assert dock.roots.roots_view.currentIndex().row() == 0
@@ -3639,7 +3762,7 @@ def test_refresh_is_on_the_roots_title_bar_and_bound_to_f5(dock: CatalogDocks, s
 def fixture_listening(
     qtbot: QtBot,
     queue: TaskQueue,
-    database: MemoryDatabase,
+    catalog: Mock,
     served: dict[str, Any],
     folders: Path,
     delete_at_teardown: DeleteAtTeardown,
@@ -3648,15 +3771,15 @@ def fixture_listening(
 
     :param qtbot: pytest-qt fixture.
     :param queue: the queue its jobs run on.
-    :param database: the cache's database.
+    :param catalog: the mock catalog.
     :param served: the served ``.rehuco``.
     :param folders: the first root's folder.
     :param delete_at_teardown: deletes the `ResourceEvents` when the test ends.
     :yields: the dock, its events and the first root's folder.
     """
-    del database, served
+    del served
     events = delete_at_teardown(ResourceEvents())
-    dock = build_docks(qtbot, queue, events)
+    dock = build_docks(qtbot, queue, events, catalog=catalog)
     dock.catalog.open_rehuco(REHUCO_PATH)
     yield dock, events, folders
     dock.detach()  # a test may have detached it already: that does no harm
@@ -4067,29 +4190,6 @@ def test_a_folder_rows_and_a_file_rows_menu_do_not_end_with_the_catalog_actions(
     assert RecordingMenu.shown == [dock.roots.roots_context_actions(folder), dock.roots.roots_context_actions(record)]
     for shown in RecordingMenu.shown:
         assert dock.roots.scan_action not in shown
-
-
-def test_a_catalog_counts_nothing_with_no_cache_and_logs_a_cache_it_cannot_read(
-    mocker: MockerFixture, dock: CatalogDocks, served: Any, caplog: LogCaptureFixture
-) -> None:
-    """The entries a removal would drop are zero with nothing open and when the cache cannot be read.
-
-    **Test steps:**
-
-    * count a root's entries with no catalog open
-    * open one, make the count raise, and count again
-    * verify zero both times and an error naming the root
-    """
-    del served
-    root = RehucoRoot(UUID(ROOT_IDS[0]), TUTORIALS, "tutorials")
-    assert dock.catalog.resource_count(root) == 0
-    dock.catalog.open_rehuco(REHUCO_PATH)
-    mocker.patch.object(CatalogCache, "resource_count", side_effect=sqlite3.OperationalError("locked"))
-
-    with caplog.at_level(logging.ERROR):
-        assert dock.catalog.resource_count(root) == 0
-
-    assert f"Could not count the cached entries of the root {root.root_id}" in caplog.text
 
 
 def test_removing_a_root_with_no_catalog_open_does_nothing_and_a_save_that_closes_the_file_is_not_announced(

@@ -1,16 +1,17 @@
-"""Tests for verify-on-access in the Root Catalog: what a Roots listing and an opened record do to the cache (#487,
+"""Tests for verify-on-access in the Root Catalog: how a Roots listing and an opened record are planned against the
+cache, checked against the disk on the pool and written back on the GUI thread (#487,
 [[data-model#scan-and-staleness]]).
 
-The cache is the real one over the suite's in-memory database, and the folders are real, under ``tmp_path``; only the
-``.rehuco`` itself is served.
+The catalog is a mock, and so is the check (``check_records``): planning, checking and writing back are each core's
+and tested there. What is left, and tested here, is the catalog's routing between them and the threads it runs them on.
+The folders are real, under ``tmp_path``, so the Roots view lists them; only the ``.rehuco`` itself is served.
 """
 
 import logging
 import threading
 from pathlib import Path
-from sqlite3 import OperationalError
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, Mock
 
 from PySide6.QtCore import QThreadPool
 from PySide6.QtWidgets import QLabel
@@ -20,7 +21,7 @@ from pytestqt.qtbot import QtBot
 from rehuco_agent.rehuco.root_folder_loader import RootFolderLoader
 from rehuco_agent.rehuco.roots_panel import FRESH_LISTING_SECONDS
 from rehuco_agent.resource_events import ResourceEvents
-from rehuco_core import CatalogRecordReader, RecordsChecked, RehuDocument
+from rehuco_core import CatalogRecord, CatalogRow, RecordKind, RecordsChecked
 from rehuco_core.access import ResourceKey
 
 from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
@@ -30,7 +31,10 @@ from .test_catalog_docks import (  # noqa: F401  # pylint: disable=unused-import
     WAIT_TIMEOUT_MS,
     CatalogDocks,
     build_docks,
-    fixture_database,
+    catalog_row,
+    fixture_cache,
+    fixture_cached_rows,
+    fixture_catalog,
     fixture_dock,
     fixture_folders,
     fixture_no_open_scan,
@@ -38,37 +42,6 @@ from .test_catalog_docks import (  # noqa: F401  # pylint: disable=unused-import
     fixture_served,
     open_root_folder,
 )
-
-
-def write_pack_record(path: Path, title: str = "Pack") -> None:
-    """Write a reference-images ``.rehu``.
-
-    :param path: where the record goes.
-    :param title: its title.
-    """
-    path.touch()  # the suite's default ``Path.stat`` answers a missing file with a mock the atomic write cannot use
-    document = RehuDocument.new(path)
-    document.set_active_type("ReferenceImages")
-    document.title = title
-    document.save()
-
-
-def reads_of(mocker: MockerFixture) -> MagicMock:
-    """Spy on every record read a verify makes, noting the thread each runs on.
-
-    :param mocker: pytest-mock fixture.
-    :returns: the spy; each call's thread is in its ``threads`` attribute.
-    """
-    real = CatalogRecordReader.read
-    threads: list[threading.Thread] = []
-
-    def read(path: Path) -> Any:
-        threads.append(threading.current_thread())
-        return real(path)
-
-    spy = mocker.patch("rehuco_core.rehudb_updates.CatalogRecordReader.read", side_effect=read)
-    spy.threads = threads
-    return spy
 
 
 def settle(qtbot: QtBot) -> None:
@@ -88,159 +61,121 @@ def pack_line(dock: CatalogDocks) -> str:
     return label.text() if label.isVisibleTo(dock.roots) else ""
 
 
+def checked_on_the_pool(mocker: MockerFixture, catalog: Mock) -> list[threading.Thread]:
+    """Make every verify from now on plan one check, and the check of it find one finding, noting the thread each
+    check runs on; the plans asked before are forgotten.
+
+    :param mocker: pytest-mock fixture.
+    :param catalog: the mock catalog.
+    :returns: the threads the checks ran on, in order.
+    """
+    threads: list[threading.Thread] = []
+    catalog.plan_verify.reset_mock()
+    catalog.plan_verify.return_value = [MagicMock()]
+
+    def check(*_args: object) -> RecordsChecked:
+        threads.append(threading.current_thread())
+        return RecordsChecked([MagicMock()], {})
+
+    mocker.patch("rehuco_agent.rehuco.root_catalog.check_records", side_effect=check)
+    return threads
+
+
 @mark.usefixtures("served")
 # pylint: disable-next=too-many-arguments,too-many-positional-arguments
 def test_a_listed_folder_gives_a_record_with_no_row_its_row_and_the_pane_its_pack_line(
-    qtbot: QtBot, queue: Any, database: Any, folders: Path, mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
+    qtbot: QtBot,
+    queue: Any,
+    catalog: Mock,
+    cached_rows: list[CatalogRow],
+    folders: Path,
+    mocker: MockerFixture,
+    delete_at_teardown: DeleteAtTeardown,
 ) -> None:
-    """Listing a folder reads a record the cache has no row for, off the GUI thread; what it found is published on the
-    change feed, and the pane follows it from there (#487, #511).
+    """Listing a folder plans its records against the cache, checks them off the GUI thread, writes what the check
+    found back, and publishes it on the change feed; the pane follows it from there (#487, #511).
 
     **Test steps:**
 
-    * a reference pack, ``pack.zip`` with its ``pack.rehu``, that no scan has read, under docks following the app's
-      events
+    * a reference pack, ``pack.zip`` with its ``pack.rehu``, that the cache has no row for, under docks following the
+      app's events; a write-back that gives the record a reference-images row
     * open its folder and select the zip
-    * verify the record was read on a pool thread, the cache now types it, the record was published as changed, and
-      the pane says it is a pack
+    * verify the check ran on a pool thread, the record was published as changed, and the pane says it is a pack
     """
-    del database  # the cache's, in memory
     events = delete_at_teardown(ResourceEvents())
     heard = MagicMock()
     events.changed.connect(heard)
-    dock = build_docks(qtbot, queue, events)
+    dock = build_docks(qtbot, queue, events, catalog=catalog)
     folder = folders / "my folder"
     (folder / "pack.zip").write_bytes(b"z")
-    write_pack_record(folder / "pack.rehu")
-    reads = reads_of(mocker)
+    (folder / "pack.rehu").write_bytes(b"")
+    threads = checked_on_the_pool(mocker, catalog)
+
+    def apply(_findings: object) -> tuple[set[int], set[Path]]:
+        cached_rows.append(
+            catalog_row(1, 0, CatalogRecord("my folder/pack.rehu", RecordKind.REHU, type="ReferenceImages"))
+        )
+        return {1}, {folder / "pack.rehu"}
+
+    catalog.apply_verify.side_effect = apply
     dock.catalog.open_rehuco(REHUCO_PATH)
     try:
-        assert dock.catalog.resource_type(folder / "pack.rehu") is None
-
         open_root_folder(qtbot, dock, "my folder", "pack.zip")
 
-        qtbot.waitUntil(lambda: dock.catalog.resource_type(folder / "pack.rehu") is not None, timeout=WAIT_TIMEOUT_MS)
         qtbot.waitUntil(lambda: pack_line(dock).startswith("Reference images"), timeout=WAIT_TIMEOUT_MS)
-        assert reads.call_count >= 1
-        assert all(thread is not threading.main_thread() for thread in reads.threads)
+        assert threads
+        assert all(thread is not threading.main_thread() for thread in threads)
         heard.assert_any_call((ResourceKey(folder / "pack.rehu"),))
     finally:
         dock.detach()
 
 
 @mark.usefixtures("served")
-def test_a_record_is_read_again_only_once_it_changed(
-    qtbot: QtBot, dock: CatalogDocks, folders: Path, mocker: MockerFixture
-) -> None:
-    """A folder listed again checks its records by their stat signature: a matching one is not read, a changed one is.
-
-    **Test steps:**
-
-    * list a folder whose record has no row, and wait for its read
-    * list it again: verify nothing is read
-    * change the record outside the app and list it again: verify it is read, and the cache has the new title
-    """
-    folder = folders / "my folder"
-    record = folder / "pack.rehu"
-    write_pack_record(record, "Old")
-    reads = reads_of(mocker)
-    dock.catalog.open_rehuco(REHUCO_PATH)
-    index = open_root_folder(qtbot, dock, "my folder")
-    settle(qtbot)
-    assert reads.call_count == 1
-
-    dock.roots.roots_model.relist(index)
-    settle(qtbot)
-    assert reads.call_count == 1
-
-    write_pack_record(record, "New, and longer")
-    dock.roots.roots_model.relist(index)
-    qtbot.waitUntil(lambda: reads.call_count == 2, timeout=WAIT_TIMEOUT_MS)
-    browser, *_ = dock.browsers.browsers
-    qtbot.waitUntil(
-        lambda: [row.record.title for row in dock.catalog.rows(browser.query)] == ["New, and longer"],
-        timeout=WAIT_TIMEOUT_MS,
-    )
-
-
-@mark.usefixtures("served")
-def test_a_record_under_a_root_that_is_offline_is_not_read_and_keeps_its_row(
-    qtbot: QtBot, dock: CatalogDocks, mocker: MockerFixture
-) -> None:
-    """A root that is not there says nothing about what is in it (#487, [[mounts-and-storage#offline-mounts]]).
-
-    **Test steps:**
-
-    * verify a record under the served roots, whose folders do not exist
-    * verify nothing was read, and no row was written or announced
-    """
-    reads = reads_of(mocker)
-    changed = MagicMock()
-    dock.catalog.open_rehuco(REHUCO_PATH)
-    dock.catalog.rows_changed.connect(changed)
-    file = dock.catalog.file
-    assert file is not None
-    first, *_ = file.roots
-    root = first.path
-
-    dock.catalog.verify_records([root / "gone" / "info.rehu"], key="probe")
-    qtbot.wait(200)
-
-    reads.assert_not_called()
-    changed.assert_not_called()
-
-
-@mark.usefixtures("served")
 # pylint: disable-next=too-many-arguments,too-many-positional-arguments
 def test_an_opened_record_is_verified_through_the_app_announcements(
-    qtbot: QtBot, queue: Any, database: Any, folders: Path, mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
+    qtbot: QtBot, queue: Any, catalog: Mock, folders: Path, mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """Opening a record announces it, and the catalog verifies it -- the route every open takes (#487).
 
     **Test steps:**
 
-    * a record no scan has read, and a catalog listening to the app's announcements
-    * announce it as accessed, as the document registry does on an open
-    * verify it was read, and its row exists
+    * a catalog listening to the app's announcements
+    * announce a record as accessed, as the document registry does on an open
+    * verify the record was planned, and checked on the pool
     """
-    del database  # the cache's, in memory
     events = delete_at_teardown(ResourceEvents())
-    docks = build_docks(qtbot, queue, events)
+    docks = build_docks(qtbot, queue, events, catalog=catalog)
     record = folders / "alpha" / "info.rehu"
-    write_pack_record(record)
-    reads = reads_of(mocker)
     docks.catalog.open_rehuco(REHUCO_PATH)
+    settle(qtbot)
+    threads = checked_on_the_pool(mocker, catalog)
     try:
         events.announce_accessed((ResourceKey(record),))
 
-        qtbot.waitUntil(lambda: docks.catalog.resource_type(record) is not None, timeout=WAIT_TIMEOUT_MS)
-        reads.assert_called_once()
+        qtbot.waitUntil(lambda: len(threads) == 1, timeout=WAIT_TIMEOUT_MS)
+        catalog.plan_verify.assert_called_once_with([ResourceKey(record)])
+        assert threads[0] is not threading.main_thread()
     finally:
         docks.detach()
 
 
 @mark.usefixtures("served")
 def test_a_relative_path_among_the_records_to_verify_is_passed_over(
-    qtbot: QtBot, dock: CatalogDocks, folders: Path
+    dock: CatalogDocks, catalog: Mock, folders: Path
 ) -> None:
-    """A relative path is no record of any root: a verify passes it over and still checks the others (#417).
+    """A relative path is no record of any root: a verify passes it over and still plans the others (#417).
 
     **Test steps:**
 
-    * write a record the cache has no row for, and open the catalog
-    * verify a relative path and that record together
-    * verify the record's new row is announced once
+    * verify a relative path and an absolute record together
+    * verify only the record was planned
     """
     record = folders / "alpha" / "info.rehu"
-    write_pack_record(record)
     dock.catalog.open_rehuco(REHUCO_PATH)
-    rows = MagicMock()
-    dock.catalog.rows_changed.connect(rows)
 
     dock.catalog.verify_records([Path("alpha") / "info.rehu", record], key="probe")
-    settle(qtbot)
 
-    rows.assert_called_once()
+    catalog.plan_verify.assert_called_once_with([ResourceKey(record)])
 
 
 # region What goes wrong between the GUI thread and the pool (#487)
@@ -258,43 +193,20 @@ def seam(dock: CatalogDocks, name: str) -> Any:
 
 
 @mark.usefixtures("served")
-def test_a_cache_that_cannot_be_read_verifies_nothing_and_says_so(
-    qtbot: QtBot, dock: CatalogDocks, folders: Path, mocker: MockerFixture, caplog: LogCaptureFixture
-) -> None:
-    """A failing plan is logged, and nothing is queued (#487).
-
-    **Test steps:**
-
-    * make the plan fail with a database error, and verify a record
-    * verify the error is logged and nothing is announced
-    """
-    dock.catalog.open_rehuco(REHUCO_PATH)
-    mocker.patch("rehuco_core.access.catalog.CatalogRecordUpdater.plan", side_effect=OperationalError("locked"))
-    seen = MagicMock()
-    dock.catalog.rows_changed.connect(seen)
-
-    with caplog.at_level(logging.ERROR):
-        dock.catalog.verify_records([folders / "alpha" / "info.rehu"], key="probe")
-    settle(qtbot)
-
-    assert "Could not read the cache" in caplog.text
-    seen.assert_not_called()
-
-
-@mark.usefixtures("served")
+# pylint: disable-next=too-many-arguments,too-many-positional-arguments
 def test_a_check_that_fails_is_logged_and_still_releases_its_key(
-    qtbot: QtBot, dock: CatalogDocks, folders: Path, mocker: MockerFixture, caplog: LogCaptureFixture
+    qtbot: QtBot, dock: CatalogDocks, catalog: Mock, folders: Path, mocker: MockerFixture, caplog: LogCaptureFixture
 ) -> None:
     """The pool swallows what escapes a job, so a failing check answers empty: the key is released and nothing is
     announced (#487).
 
     **Test steps:**
 
-    * make the check fail, and verify a record that has a row to check
+    * make the check fail, and verify a record the plan has a check for
     * verify the failure is logged, nothing is announced, and the key no longer waits for an answer
     """
-    write_pack_record(folders / "alpha" / "info.rehu")
     dock.catalog.open_rehuco(REHUCO_PATH)
+    catalog.plan_verify.return_value = [MagicMock()]
     mocker.patch("rehuco_agent.rehuco.root_catalog.check_records", side_effect=RuntimeError("boom"))
     seen = MagicMock()
     dock.catalog.rows_changed.connect(seen)
@@ -368,58 +280,28 @@ def test_an_answer_for_a_catalog_that_is_gone_is_dropped_quietly(dock: CatalogDo
     dead.answered.emit.assert_called_once()
 
 
-def verify_a_new_record(qtbot: QtBot, dock: CatalogDocks, folders: Path) -> MagicMock:
-    """Verify a record the cache has no row for, through whatever now writes the findings back.
-
-    :param qtbot: pytest-qt fixture.
-    :param dock: the catalog's docks.
-    :param folders: the first root's folder.
-    :returns: what heard :attr:`~RootCatalog.rows_changed`.
-    """
-    write_pack_record(folders / "alpha" / "info.rehu")
-    dock.catalog.open_rehuco(REHUCO_PATH)
-    rows = MagicMock()
-    dock.catalog.rows_changed.connect(rows)
-    dock.catalog.verify_records([folders / "alpha" / "info.rehu"], key="probe")
-    settle(qtbot)
-    return rows
-
-
-@mark.usefixtures("served")
-def test_a_write_back_that_fails_is_logged_and_announces_no_row(
-    qtbot: QtBot, dock: CatalogDocks, folders: Path, mocker: MockerFixture, caplog: LogCaptureFixture
-) -> None:
-    """A failed write is logged, and says no row changed (#487).
-
-    **Test steps:**
-
-    * verify a record the cache has no row for, with the write-back failing
-    * verify the failure is logged and no row change is announced
-    """
-    mocker.patch("rehuco_core.access.catalog.CatalogRecordUpdater.apply", side_effect=OperationalError("locked"))
-
-    with caplog.at_level(logging.ERROR):
-        rows = verify_a_new_record(qtbot, dock, folders)
-
-    assert "Could not update the cache" in caplog.text
-    rows.assert_not_called()
-
-
 @mark.usefixtures("served")
 def test_a_write_back_that_changes_nothing_announces_no_row(
-    qtbot: QtBot, dock: CatalogDocks, folders: Path, mocker: MockerFixture
+    qtbot: QtBot, dock: CatalogDocks, catalog: Mock, folders: Path, mocker: MockerFixture
 ) -> None:
     """A write that left every row as it was is quiet (#487).
 
     **Test steps:**
 
-    * verify a record the cache has no row for, with a write-back that changes nothing
-    * verify no row change is announced
+    * verify a record whose check finds something, with a write-back that changes no record
+    * verify the write-back ran and no row change is announced
     """
-    mocker.patch("rehuco_core.access.catalog.CatalogRecordUpdater.apply", return_value=set())
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    settle(qtbot)
+    checked_on_the_pool(mocker, catalog)
+    catalog.apply_verify.return_value = ({1}, set())
+    rows = MagicMock()
+    dock.catalog.rows_changed.connect(rows)
 
-    rows = verify_a_new_record(qtbot, dock, folders)
+    dock.catalog.verify_records([folders / "alpha" / "info.rehu"], key="probe")
+    settle(qtbot)
 
+    catalog.apply_verify.assert_called_once()
     rows.assert_not_called()
 
 

@@ -5,11 +5,12 @@ document closes, and a document's own sub-docks as the preview moves on."""
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, Final
+from unittest.mock import MagicMock
 
 import PySide6QtAds as QtAds
 import shiboken6
 from PySide6.QtCore import QCoreApplication, QEvent
-from pytest import fixture
+from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.main_window import (
@@ -24,12 +25,18 @@ from rehuco_core.access import ResourceKey
 from .rehuco.test_catalog_docks import (  # noqa: F401  # pylint: disable=unused-import
     OTHER_PATH,
     REHUCO_PATH,
-    fixture_database,
+    fixture_cache,
+    fixture_cached_rows,
+    fixture_catalog,
     fixture_no_open_scan,
     fixture_saves,
     fixture_served,
 )
 from .test_main_window import main_dock, mock_persistent_settings  # noqa: F401  # pylint: disable=unused-import
+
+pytestmark = mark.usefixtures("stub_settings_pages", "stub_sub_docks")
+"""Every window here is built over stub settings pages, and every document it opens over stub sub-docks (#545), but
+where a test asks for the real ones (``real_settings_pages``, ``real_sub_docks``)."""
 
 NEW_PATH: Final = Path("/fake/new.rehuco")
 
@@ -97,7 +104,7 @@ def assert_floating_together(window: MainWindow, docks: list[Any]) -> None:
 
 # region the Browsers dock as catalogs change
 def test_changing_catalogs_keeps_a_floating_window_holding_the_browsers_dock(
-    database: object, served: object, saves: object, mocker: MockerFixture, window: MainWindow
+    cache: MagicMock, served: object, saves: object, mocker: MockerFixture, window: MainWindow
 ) -> None:
     """The reported layout -- the Root Catalog dock floating over the Browsers and Log docks tabbed together --
     survives opening a catalog, switching to another and creating a new one, each of which lets every browser go
@@ -109,7 +116,7 @@ def test_changing_catalogs_keeps_a_floating_window_holding_the_browsers_dock(
     * open a catalog, open another, then create a new one through ``Root Catalog`` > ``New...``
     * verify after each that the three docks live, open, in one floating window, their toggles on the action bar
     """
-    del database, served, saves
+    del cache, served, saves
     docks = float_over(window, REHUCO_DOCK_OBJECT_NAME, BROWSERS_DOCK_OBJECT_NAME, LOG_DOCK_OBJECT_NAME)
     mocker.patch("rehuco_agent.main_window.QFileDialog.getSaveFileName", return_value=(str(NEW_PATH), ""))
 

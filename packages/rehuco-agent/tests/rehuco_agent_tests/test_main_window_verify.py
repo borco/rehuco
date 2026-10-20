@@ -6,7 +6,7 @@ from typing import Final
 from unittest.mock import MagicMock
 from uuid import uuid4
 
-from pytest import fixture
+from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.document_registry import DocumentRegistry
@@ -20,6 +20,10 @@ from .test_main_window import (  # noqa: F401  # pylint: disable=unused-import
     mock_persistent_settings,
     serve_tutorials,
 )
+
+pytestmark = mark.usefixtures("stub_settings_pages", "stub_sub_docks")
+"""Every window here is built over stub settings pages, and every document it opens over stub sub-docks (#545), but
+where a test asks for the real ones (``real_settings_pages``, ``real_sub_docks``)."""
 
 RECORD: Final = Path.cwd() / "fake" / "tutorials" / "sculpting" / "info.rehu"
 

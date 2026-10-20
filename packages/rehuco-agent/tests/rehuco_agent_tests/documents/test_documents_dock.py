@@ -24,7 +24,7 @@ from borco_pyside.qtads import tab_label
 from PySide6.QtCore import QObject
 from PySide6.QtTest import QSignalSpy
 from PySide6.QtWidgets import QDialog, QMessageBox, QWidget
-from pytest import LogCaptureFixture, fixture
+from pytest import LogCaptureFixture, fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.app_logging import shared_log_bridge
@@ -80,6 +80,10 @@ detector, not a measurement."""
 UNSAVED_CHANGES_DIALOG: Final = "rehuco_agent.documents.confirm_and_save_dirty.UnsavedChangesDialog"
 """Where ``close_all``'s batch dialog is looked up -- the shared seam it reaches the dialog through
 (#176), not this module, so that is where these tests patch it."""
+
+pytestmark = mark.usefixtures("stub_sub_docks")
+"""Every document here is built over stub sub-docks (#545), but where a test asks for the real ones."""
+
 
 TUTORIAL: Final = {
     "format_version": 1,
@@ -481,6 +485,7 @@ def test_closing_a_dock_removes_it(mocker: MockerFixture, qtbot: QtBot) -> None:
     assert not dock._DocumentsDock__document_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
 
+@mark.usefixtures("real_sub_docks")
 def test_closing_a_dock_stops_it_listening_to_the_task_queue(mocker: MockerFixture, qtbot: QtBot) -> None:
     """A closed document lets go of the queue before it is destroyed (#204).
 
@@ -2248,6 +2253,7 @@ def test_a_new_document_renames_through_the_docks_coordinator(mocker: MockerFixt
 # region default layout (#62)
 
 
+@mark.usefixtures("real_sub_docks")
 def test_a_freshly_opened_document_adopts_the_saved_default_layout(mocker: MockerFixture, qtbot: QtBot) -> None:
     """A newly opened document adopts the saved default layout, when one is defined.
 
@@ -2273,6 +2279,7 @@ def test_a_freshly_opened_document_adopts_the_saved_default_layout(mocker: Mocke
     assert second_on_disk.toggleViewAction().isChecked() is True
 
 
+@mark.usefixtures("real_sub_docks")
 def test_a_session_restored_layout_wins_over_the_saved_default(mocker: MockerFixture, qtbot: QtBot) -> None:
     """A document opened with its own remembered layout keeps it -- the default applies only to
     documents with no usable layout of their own (#62).
@@ -2300,6 +2307,7 @@ def test_a_session_restored_layout_wins_over_the_saved_default(mocker: MockerFix
     assert second_on_disk.toggleViewAction().isChecked() is False
 
 
+@mark.usefixtures("real_sub_docks")
 def test_an_unusable_session_layout_falls_through_to_the_saved_default(mocker: MockerFixture, qtbot: QtBot) -> None:
     """A remembered layout that fails to restore (stale version, corrupted) is exactly the case the
     default exists for: what a document with no usable layout of its own gets (#62).
@@ -2325,6 +2333,7 @@ def test_an_unusable_session_layout_falls_through_to_the_saved_default(mocker: M
     assert second_on_disk.toggleViewAction().isChecked() is True
 
 
+@mark.usefixtures("real_sub_docks")
 def test_a_freshly_opened_document_keeps_its_own_layout_with_no_saved_default(
     mocker: MockerFixture, qtbot: QtBot
 ) -> None:
@@ -2346,6 +2355,7 @@ def test_a_freshly_opened_document_keeps_its_own_layout_with_no_saved_default(
     assert on_disk.toggleViewAction().isChecked() is False
 
 
+@mark.usefixtures("real_sub_docks")
 def test_a_lazily_restored_reference_pack_gets_its_own_layout_once_it_loads(
     mocker: MockerFixture, qtbot: QtBot
 ) -> None:
@@ -2924,6 +2934,7 @@ def test_a_switch_is_not_reported_as_a_move(mocker: MockerFixture, qtbot: QtBot)
     assert spy.count() == 0
 
 
+@mark.usefixtures("real_sub_docks")
 def test_switching_documents_accumulates_nothing(mocker: MockerFixture, qtbot: QtBot) -> None:
     """Across many switches nothing piles up: the documents it left have no connection left from it, and
     its managers, its widget's children, the log bridge and the image-viewer settings carry no more than
@@ -3170,6 +3181,7 @@ def test_closing_the_preview_lets_the_next_show_make_another(mocker: MockerFixtu
     assert preview_of(dock).objectName() == "Preview-2"
 
 
+@mark.usefixtures("real_sub_docks")
 def test_the_preview_remembers_each_types_layout(mocker: MockerFixture, qtbot: QtBot) -> None:
     """Each type's preview opens as the preview last left that type, whatever was shown in between.
 
@@ -3196,6 +3208,7 @@ def test_the_preview_remembers_each_types_layout(mocker: MockerFixture, qtbot: Q
     }
 
 
+@mark.usefixtures("real_sub_docks")
 def test_a_type_with_no_preview_layout_opens_with_its_default(mocker: MockerFixture, qtbot: QtBot) -> None:
     """A type the preview has never shown opens with the type's default layout.
 
@@ -3215,6 +3228,7 @@ def test_a_type_with_no_preview_layout_opens_with_its_default(mocker: MockerFixt
     assert on_disk_shown(dock.show_in_preview(FAKE_KEY))
 
 
+@mark.usefixtures("real_sub_docks")
 def test_the_preview_layouts_outlive_the_run(mocker: MockerFixture, qtbot: QtBot) -> None:
     """The preview layouts are written at exit, and a later run's preview opens with them.
 
@@ -3243,6 +3257,7 @@ def test_the_preview_layouts_outlive_the_run(mocker: MockerFixture, qtbot: QtBot
     assert on_disk_shown(later.show_in_preview(OTHER_KEY))
 
 
+@mark.usefixtures("real_sub_docks")
 def test_the_layout_button_in_a_preview_saves_the_default_layout(mocker: MockerFixture, qtbot: QtBot) -> None:
     """The Layout button acts on the type's default layout in a preview too, never on its preview layout.
 
@@ -3263,6 +3278,7 @@ def test_the_layout_button_in_a_preview_saves_the_default_layout(mocker: MockerF
     assert not shared_default_layout_settings_in(PREVIEW_LAYOUT_GROUP).states
 
 
+@mark.usefixtures("real_sub_docks")
 def test_an_applied_default_becomes_the_preview_layout(mocker: MockerFixture, qtbot: QtBot) -> None:
     """Applying the default rearranges the preview, and that arrangement is remembered as the type's preview
     layout like any other.
