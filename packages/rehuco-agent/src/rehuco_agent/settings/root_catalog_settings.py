@@ -10,11 +10,16 @@ from .persistent_settings import persistent_settings
 
 GROUP: Final = "root_catalog"
 AUTO_PREVIEW_KEY: Final = "auto_preview"
+SCAN_AFTER_ADDING_KEY: Final = "scan_after_adding"
 
 DEFAULT_AUTO_PREVIEW: Final = True
 """Whether the Roots view previews the record of the row it stands on, on a fresh install with nothing persisted. On:
 a folder with an ``info.rehu`` showing its record as soon as it is entered is what browsing a catalog is for, and the
 switch is for the reader who wants the preview to stay where it is."""
+
+DEFAULT_SCAN_AFTER_ADDING: Final = True
+"""Whether adding a root scans it, on a fresh install with nothing persisted. On: a root added and left empty looks
+like a failed add, and a scan is what fills it."""
 
 
 class RootCatalogSettings(QObject):
@@ -26,6 +31,9 @@ class RootCatalogSettings(QObject):
     any of them has to reach the others as it is made. :func:`shared_root_catalog_settings` is the single,
     process-wide instance every consumer reads and subscribes to.
 
+    :attr:`scan_after_adding` is written back, and saved to the settings ``.ini``, **by the Add Root dialog** when it
+    closes.
+
     :attr:`auto_preview` is written back **by the menu's own toggle** the moment it is clicked, which has no Apply
     behind it; the settings page stages its checkbox and writes on Apply, as every page does, and both end in the same
     property -- so the menu follows an applied page, and an unapplied page follows the menu.
@@ -34,10 +42,14 @@ class RootCatalogSettings(QObject):
     """
 
     auto_preview_changed = Signal(object)
+    scan_after_adding_changed = Signal(object)
 
     auto_preview = SimpleProperty(DEFAULT_AUTO_PREVIEW)
     """Whether the Documents preview follows the Roots view's current row: its record -- a folder's ``info.rehu``, a
     file's same-name ``.rehu`` -- shown as the row is reached. The browsers' selection is not governed by it."""
+
+    scan_after_adding = SimpleProperty(DEFAULT_SCAN_AFTER_ADDING)
+    """Whether adding a root queues a scan of it. The Add Root dialog shows it and writes it back when it closes."""
 
     def load(self, settings: QSettings) -> None:
         """Replace the current choices with what is in persistent storage.
@@ -46,6 +58,7 @@ class RootCatalogSettings(QObject):
         """
         settings.beginGroup(GROUP)
         self.auto_preview = cast(bool, settings.value(AUTO_PREVIEW_KEY, DEFAULT_AUTO_PREVIEW, type=bool))
+        self.scan_after_adding = cast(bool, settings.value(SCAN_AFTER_ADDING_KEY, DEFAULT_SCAN_AFTER_ADDING, type=bool))
         settings.endGroup()
 
     def save(self, settings: QSettings) -> None:
@@ -55,6 +68,7 @@ class RootCatalogSettings(QObject):
         """
         settings.beginGroup(GROUP)
         settings.setValue(AUTO_PREVIEW_KEY, self.auto_preview)
+        settings.setValue(SCAN_AFTER_ADDING_KEY, self.scan_after_adding)
         settings.endGroup()
 
 

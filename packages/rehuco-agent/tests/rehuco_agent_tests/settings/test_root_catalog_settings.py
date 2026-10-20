@@ -6,7 +6,9 @@ from rehuco_agent.settings import root_catalog_settings
 from rehuco_agent.settings.root_catalog_settings import (
     AUTO_PREVIEW_KEY,
     DEFAULT_AUTO_PREVIEW,
+    DEFAULT_SCAN_AFTER_ADDING,
     GROUP,
+    SCAN_AFTER_ADDING_KEY,
     RootCatalogSettings,
     shared_root_catalog_settings,
 )
@@ -104,3 +106,44 @@ def test_the_shared_settings_are_one_object_loaded_once_from_storage(
 
     assert first is second
     assert first.auto_preview is False
+
+
+def test_adding_a_root_scans_it_until_told_not_to(stored: FakeSettings) -> None:
+    """A fresh install scans a root as it is added (#542): an empty new root looks like a failed add.
+
+    **Test steps:**
+
+    * build the settings and load them from an empty store
+    * verify the scan after adding is on
+    """
+    settings = RootCatalogSettings()
+
+    settings.load(stored)  # type: ignore[arg-type]
+
+    assert DEFAULT_SCAN_AFTER_ADDING is True
+    assert settings.scan_after_adding is True
+
+
+def test_the_scan_after_adding_choice_is_saved_and_announced(stored: FakeSettings) -> None:
+    """The choice round-trips under the group, and a change is announced.
+
+    **Test steps:**
+
+    * listen to the change signal, set the choice to what it is, then to off, and save
+    * load a second object and verify the store, the signal and the second object's value
+    """
+    settings = RootCatalogSettings()
+    heard: list[object] = []
+    settings.scan_after_adding_changed.connect(heard.append)
+
+    settings.scan_after_adding = True
+    settings.scan_after_adding = False
+    settings.save(stored)  # type: ignore[arg-type]
+    reloaded = RootCatalogSettings()
+    reloaded.load(stored)  # type: ignore[arg-type]
+
+    stored.beginGroup(GROUP)
+    assert stored.value(SCAN_AFTER_ADDING_KEY) is False
+    stored.endGroup()
+    assert heard == [False]
+    assert reloaded.scan_after_adding is False

@@ -570,7 +570,8 @@ and its cache** — the catalog — and both docks read it and hear from it when
   edits act only while a root row is current, and **Remove Root asks first**, saying the files stay
   on disk and how many cached entries go. **Add Root** asks for what the folder lives on — its *storage* — ahead of
   the folder, because a root served by another node will want a different picker below it
-  ([[nodes#access-seam]]). When a **root** is current the details pane shows its editors in place of a type line: its **Name** (the
+  ([[nodes#access-seam]]); its *Scan after adding* checkbox, on by default and remembered however the dialog closes,
+  queues a scan of the new root once the file is saved (#542). When a **root** is current the details pane shows its editors in place of a type line: its **Name** (the
   label, which nothing on disk follows) and its **Storage**: a local folder, a network share, a removable drive or a
   CD or DVD, each with its own glyph. `F5` re-lists the visible columns: a
   folder deleted outside the app disappears, and the selection falls back to its nearest surviving ancestor. A root

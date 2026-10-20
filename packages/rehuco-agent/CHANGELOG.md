@@ -12,6 +12,8 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 ### Added
 
+- **Adding a root scans it** (#542). The Add Root dialog has a **Scan after adding** checkbox, on by default, so the
+  new root's resources appear without a click on Scan. What you last set is remembered across runs.
 - **The local node runs beside the agent** (#506). A few seconds after the window is up, the agent starts
   `rehuco-node` as the same user and keeps it running for as long as it runs itself, in the tray included; quitting
   stops it at once, and a node still starting is killed rather than waited for, so opening a file never pays for it.
