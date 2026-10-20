@@ -26,7 +26,7 @@ import socket
 import sys
 import threading
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -34,7 +34,7 @@ from pathlib import Path
 from types import TracebackType
 from typing import Final, Self, override
 
-from borco_core import shared_read_open
+from borco_core import retry_refused, shared_read_open
 
 from .constants import CHECKSUM_RECORD_SUFFIX, REHUCO_SUFFIX
 from .resource_scoping import is_record_name
@@ -219,8 +219,6 @@ class RecordFileLock:
     :param user: the identity written into the lock; ``None`` takes the login name.
     :param ttl: how old a lock must be to be broken, in seconds.
     :param timeout: how long a busy lock is retried, in seconds.
-    :param clock: the time now, in seconds since the epoch.
-    :param sleep: how a back-off waits.
     """
 
     @dataclass(frozen=True, slots=True)
@@ -236,22 +234,18 @@ class RecordFileLock:
         holder: LockHolder | None
         fresh: bool
 
-    def __init__(  # pylint: disable=too-many-arguments
+    def __init__(
         self,
         path: Path,
         *,
         user: str | None = None,
         ttl: float = DEFAULT_LOCK_TTL_SECONDS,
         timeout: float = DEFAULT_LOCK_TIMEOUT_SECONDS,
-        clock: Callable[[], float] = time.time,
-        sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self.__record: Final = path
         self.__user: Final = user
         self.__ttl: Final = ttl
         self.__timeout: Final = timeout
-        self.__clock: Final = clock
-        self.__sleep: Final = sleep
         self.__text: str | None = None
 
     @property
@@ -286,12 +280,12 @@ class RecordFileLock:
             process may not write, not a delete that was pending at the first; raised at once, not after the timeout.
         :raises OSError: the lock could not be created for another reason, such as a folder that is gone.
         """
-        deadline = self.__clock() + self.__timeout
+        deadline = time.time() + self.__timeout
         seen: RecordFileLock.Sighting | None = None
         # a create refused with no lock there, once: retried at once before the folder is blamed
         unexplained = False
         while True:
-            text = LockHolder.current(self.__user, self.__clock()).text()
+            text = LockHolder.current(self.__user, time.time()).text()
             refusal: PermissionError | None = None
             try:
                 self.__create(text)
@@ -319,9 +313,9 @@ class RecordFileLock:
                         raise refusal
                     unexplained = True
                     continue
-            if self.__clock() >= deadline:
+            if time.time() >= deadline:
                 raise RecordLockedError(self.__record, seen.holder if seen is not None else None)
-            self.__sleep(random.uniform(*LOCK_BACKOFF_SECONDS))  # nosec  # B311: a back-off jitter, not a secret
+            time.sleep(random.uniform(*LOCK_BACKOFF_SECONDS))  # nosec  # B311: a back-off jitter, not a secret
 
     def release(self) -> None:
         """Remove the lock this took, and verify it is gone. Never raises, so a write's own failure is what is seen.
@@ -386,24 +380,15 @@ class RecordFileLock:
 
         :returns: whether it was deleted; a failure is logged.
         """
-        delays = iter(RELEASE_RETRY_SECONDS)
-        while True:
-            try:
-                self.path.unlink()
-            except FileNotFoundError:
-                LOG.warning("The lock on %s was gone before it was released", self.__record)
-                return False
-            except PermissionError as error:
-                delay = next(delays, None)
-                if delay is None:
-                    LOG.warning("Could not remove the lock on %s: %s", self.__record, error)
-                    return False
-                self.__sleep(delay)
-            except OSError as error:
-                LOG.warning("Could not remove the lock on %s: %s", self.__record, error)
-                return False
-            else:
-                return True
+        try:
+            retry_refused(self.path.unlink, RELEASE_RETRY_SECONDS)
+        except FileNotFoundError:
+            LOG.warning("The lock on %s was gone before it was released", self.__record)
+            return False
+        except OSError as error:
+            LOG.warning("Could not remove the lock on %s: %s", self.__record, error)
+            return False
+        return True
 
     def __read(self) -> str:
         """The lock's content, read without denying its holder the delete that releases it -- a plain open on Windows
@@ -427,7 +412,7 @@ class RecordFileLock:
             return None
         holder = LockHolder.parse(text)
         taken = holder.time.timestamp() if holder is not None else modified
-        return self.Sighting(text, holder, self.__clock() - taken < self.__ttl)
+        return self.Sighting(text, holder, time.time() - taken < self.__ttl)
 
     def __break(self, sighting: Sighting) -> bool:
         """Delete a stale lock, if it is still the one judged stale, and verify it is gone.

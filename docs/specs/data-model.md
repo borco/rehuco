@@ -889,7 +889,10 @@ with no node present, because anyone may mount the share ([[sync#overview]]):
 - **Atomic write is universal — every `.rehu` write, by anyone, is temp-then-rename.** Write to a temp file in the same
   directory, fsync, then atomically rename over the original (POSIX same-FS rename; Windows `ReplaceFile`/`MoveFileEx`;
   over SMB the rename is server-side, [[packaging-deployment#ts230-as-nas]]). A reader never sees a half-written file,
-  and a crash mid-write leaves either the complete old file or the complete new file — never a torn one.
+  and a crash mid-write leaves either the complete old file or the complete new file — never a torn one. Windows
+  refuses the rename while any process has the original open, a reader included and whatever share mode it opened
+  with, so a refused rename is retried for about half a second before the save fails (#546) — a reader holds the
+  file for milliseconds, and the lock keeps other writers out meanwhile.
 - **The lock file serializes writers** ([[sync#lock-file]]): an exclusive-create `<record>.lock` beside the record
   (`info.rehu.lock`), held as a directory entry for the milliseconds of one save, never as an open handle, broken by
   age after a verify.
