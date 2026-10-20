@@ -306,6 +306,7 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         self.opened.emit(file)
         self.roots_changed.emit()
         self.rehuco_path_changed.emit(file.path)
+        self.scan_unscanned_roots()
         return True
 
     def __release_session(self, *, keep_jobs: bool = False) -> None:
@@ -511,6 +512,22 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         if file is not None:
             for root in file.roots:
                 self.scan_root(root.root_id)
+
+    def scan_unscanned_roots(self) -> None:
+        """Enqueue a scan of every root of the open file whose cache row was never scanned (#541) -- what opening a
+        ``.rehuco`` does, so a new or switched-to catalog fills without a click on Scan.
+
+        A root already scanned is left to its notifier and verify-on-access; one that cannot be reached fails its scan
+        as any does, and is scanned again when it is back (:class:`~rehuco_core.access.RootStale`). Asked twice is not
+        asked again, so re-opening the open file while its scans run queues nothing more.
+        """
+        try:
+            unscanned = [root.root_id for root in self.__catalog.roots() if root.scanned_at is None]
+        except CatalogUnreadable as error:
+            LOG.error("%s", error)
+            return
+        for root_id in unscanned:
+            self.scan_root(root_id)
 
     def scan_root(self, root_id: UUID) -> None:
         """Enqueue a scan of one root of the open file -- what a root whose notifier lost events gets (#511) --
