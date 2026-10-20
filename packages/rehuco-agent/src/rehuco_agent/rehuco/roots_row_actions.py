@@ -30,6 +30,7 @@ class RootsRowActions:
     :param verbs: the checksum verbs a row's menu or buttons end with.
     :param parent: owns the separators, which are made once: a root's menu has two groups to divide, and one action
         cannot sit twice in a menu, while the menu and the details pane ask for a row's actions on every selection.
+        A third, :attr:`catalog_separator`, divides the catalog's Scan, Add Root and Refresh from a root's menu (#543).
     """
 
     def __init__(
@@ -44,9 +45,14 @@ class RootsRowActions:
         self.__ui: Final = ui
         self.__opening: Final = opening
         self.__verbs: Final = verbs
-        self.__separators: Final = (QAction(parent), QAction(parent))
+        self.__separators: Final = (QAction(parent), QAction(parent), QAction(parent))
         for separator in self.__separators:
             separator.setSeparator(True)
+
+    @property
+    def catalog_separator(self) -> QAction:
+        """The separator a root row's menu puts between its own actions and the catalog's (#543)."""
+        return self.__separators[2]
 
     def context_actions(self, index: QModelIndex) -> list[QAction]:
         """What the Roots view's context menu holds for a row (#469).

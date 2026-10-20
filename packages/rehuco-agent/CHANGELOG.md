@@ -48,6 +48,8 @@ released becomes the body of the GitHub Release, so each entry is written to be 
   background when a catalog opens, and then only the rows a scan or a change on disk touched, and each browser keeps
   showing its rows until the new ones arrive. Typing in a filter line filters the rows already read, so it answers at
   once even on a large catalog, and a browser sorted by a column stays quick too.
+- **A root's context menu in the Root Catalog dock ends with *Scan*, *Add Root* and *Refresh***, under a separator
+  (#543). They were offered only on the empty part of the roots column, which is gone once the roots fill it.
 
 ### Added
 

@@ -752,7 +752,8 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         """Open the Roots view's context menu on the row under the pointer, making it the current row first so the
         actions act on it. **On the empty part of a column** it opens the menu of the folder that column lists, as a
         file manager does for a folder's background, and the selection stays where it was (#469); on the column of
-        roots that is Scan, Add Root and Refresh.
+        roots that is Scan, Add Root and Refresh. **A root row's menu ends with the same three** under a separator
+        (#543), for when the roots fill the column and leave no background; folder and file rows do not get them.
 
         :param position: where it was asked for, in the view's coordinates.
         """
@@ -762,6 +763,8 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         if index.isValid():
             actions = self.roots_context_actions(index)
             if actions:
+                if self.__roots_model.root_at(index) is not None:
+                    actions = [*actions, self.__rows.catalog_separator, *self.__catalog_actions()]
                 view.setCurrentIndex(index)
                 self.__exec_menu(actions, global_position, None)
             return
@@ -771,8 +774,15 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         if holder.isValid():
             self.__exec_menu(self.roots_context_actions(holder), global_position, QPersistentModelIndex(holder))
         else:
-            ui = self.__roots_ui
-            self.__exec_menu([ui.scan_action, ui.add_root_action, ui.refresh_roots_action], global_position, None)
+            self.__exec_menu(self.__catalog_actions(), global_position, None)
+
+    def __catalog_actions(self) -> list[QAction]:
+        """The catalog-wide actions the Roots view's menus offer (#543): Scan, Add Root and Refresh.
+
+        :returns: the actions in menu order.
+        """
+        ui = self.__roots_ui
+        return [ui.scan_action, ui.add_root_action, ui.refresh_roots_action]
 
     def __exec_menu(self, actions: list[QAction], position: QPoint, target: QPersistentModelIndex | None) -> None:
         """Show a menu of actions at a point and run what is chosen.

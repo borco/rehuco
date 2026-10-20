@@ -529,10 +529,12 @@ and its cache** — the catalog — and both docks read it and hear from it when
   ([[mounts-and-storage#rehuco-scope]]), each further column one folder's listing, drawn like the files sub-dock
   ([[plugins#files-subdock]]) but with no `..` row, which a column view has no use for. It is **navigation, not
   membership**: what the catalog holds is still decided by records, never by the tree ([[plugins#grouping-entities]]).
-  The `Root Catalog` menu holds **Scan**, **Add Root** and **Remove Root**; a root's context menu holds, in three
+  The `Root Catalog` menu holds **Scan**, **Add Root** and **Remove Root**; a root's context menu holds, in four
   groups, the folder filter and Open in file explorer; the four moves — top, up, down, bottom, with the ordering
   icons the settings lists use but not their list editor, whose inline insert, rename, duplicate and reset have no
-  meaning for a root; and, last and apart, Remove Root. A root row is two lines, its name and under it its folder,
+  meaning for a root; Remove Root, apart; and, last, the catalog's own **Scan**, **Add Root** and **Refresh**, as the
+  empty part of the roots column offers them, enabled alike — the roots can fill the column and leave none (#543).
+  A root row is two lines, its name and under it its folder,
   smaller and fainter and elided to fit, with its storage glyph centred beside both. Its details pane has no move buttons, the grip being the way to move one.
   A folder's menu holds the folder filter and the folder's rehu: **Open associated rehu** when its `info.rehu` (or `info.tc`) is there, **Create rehu**
   — a new unsaved record, opened in Documents — when it is not ([[data-model#resource-scoping]]). A checksum file's menu
