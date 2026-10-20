@@ -3982,13 +3982,89 @@ def test_the_roots_context_menu_shows_the_rows_actions_and_makes_it_current(
 
     dock.roots._RootsPanel__on_roots_context_menu(QPoint(1, 1))  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
-    assert RecordingMenu.shown == [dock.roots.roots_context_actions(second)]
+    assert RecordingMenu.shown[0][: len(dock.roots.roots_context_actions(second))] == dock.roots.roots_context_actions(
+        second
+    )
     assert view.currentIndex() == second
 
     answers.return_value = QModelIndex()
     dock.roots._RootsPanel__on_roots_context_menu(QPoint(1, 1))  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     assert len(RecordingMenu.shown) == 1
+
+
+@mark.parametrize(
+    ("format_version", "add_root_enabled"),
+    [param(1, True, id="editable"), param(99, False, id="newer, read-only")],
+)
+def test_a_root_rows_menu_ends_with_scan_add_root_and_refresh_under_a_separator(
+    mocker: MockerFixture,
+    dock: CatalogDocks,
+    served: Any,
+    format_version: int,
+    add_root_enabled: bool,
+) -> None:
+    """A root row's menu ends with a separator and Scan, Add Root and Refresh (#543), so they are at hand when the roots
+    fill the column and leave no background to click; they are enabled as the background menu enables them.
+
+    **Test steps:**
+
+    * open an editable catalog, or one newer than this build, and ask for the menu over the first root
+    * verify the row's own actions come first, then a separator, then the three in order
+    * ask for the menu below the roots and verify the three are enabled as there: Add Root only when editable
+    """
+    served["format_version"] = format_version
+    roots = dock.roots
+    mocker.patch("rehuco_agent.rehuco.roots_panel.QMenu", RecordingMenu)
+    RecordingMenu.shown = []
+    assert dock.catalog.open_rehuco(REHUCO_PATH)
+    first = roots.roots_model.index(0, 0)
+    answers = mocker.patch.object(roots.roots_view, "index_at_global", return_value=first)
+
+    roots._RootsPanel__on_roots_context_menu(QPoint(1, 1))  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    own = roots.roots_context_actions(first)
+    shown = RecordingMenu.shown[-1]
+    assert shown[: len(own)] == own
+    tail = shown[len(own) :]
+    assert [action.isSeparator() for action in tail] == [True, False, False, False]
+    assert tail[1:] == [roots.scan_action, roots.add_root_action, roots.refresh_roots_action]
+    on_the_row = [action.isEnabled() for action in tail[1:]]
+
+    answers.return_value = QModelIndex()
+    mocker.patch.object(roots.roots_view, "column_root_at_global", return_value=QModelIndex())
+    roots._RootsPanel__on_roots_context_menu(QPoint(1, 1))  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert RecordingMenu.shown[-1] == tail[1:]
+    on_the_background = [action.isEnabled() for action in RecordingMenu.shown[-1]]
+
+    assert on_the_row == on_the_background == [True, add_root_enabled, True]
+
+
+@mark.usefixtures("served")
+def test_a_folder_rows_and_a_file_rows_menu_do_not_end_with_the_catalog_actions(
+    qtbot: QtBot, mocker: MockerFixture, monkeypatch: MonkeyPatch, dock: CatalogDocks, folders: Path
+) -> None:
+    """Folder and file rows get their own actions only: Scan, Add Root and Refresh are for root rows (#543).
+
+    **Test steps:**
+
+    * ask for the menu where the pointer is over a folder and then over a file
+    * verify each is exactly the row's own actions
+    """
+    add_files_to_a_folder(folders)
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    monkeypatch.setattr("rehuco_agent.rehuco.roots_panel.QMenu", RecordingMenu)
+    RecordingMenu.shown = []
+    folder = open_root_folder(qtbot, dock, "my folder")
+    record = open_root_folder(qtbot, dock, "my folder", "x.rehu")
+    answers = mocker.patch.object(dock.roots.roots_view, "index_at_global", return_value=folder)
+
+    dock.roots._RootsPanel__on_roots_context_menu(QPoint(1, 1))  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    answers.return_value = record
+    dock.roots._RootsPanel__on_roots_context_menu(QPoint(1, 1))  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    assert RecordingMenu.shown == [dock.roots.roots_context_actions(folder), dock.roots.roots_context_actions(record)]
+    for shown in RecordingMenu.shown:
+        assert dock.roots.scan_action not in shown
 
 
 def test_a_catalog_counts_nothing_with_no_cache_and_logs_a_cache_it_cannot_read(
