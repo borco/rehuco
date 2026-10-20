@@ -1,0 +1,42 @@
+name: Set up the workspace
+description: >-
+  uv with the project's Python and the workspace synced; with `qt`, also the Qt runtime libraries Linux lacks and the
+  gitignored `*_ui.py`/`*_rc.py` (`make uis`) that the tests, pyright and pylint import. The caller checks out first.
+
+inputs:
+  qt:
+    description: Whether to generate the Qt build artifacts, and install what that needs.
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Set up uv
+      uses: astral-sh/setup-uv@v8.2.0
+      with:
+        python-version: "3.14"
+
+    # windows-latest has no GNU Make; see [[appendices.continuous-integration#ci-must-build-qt]].
+    - name: Install make (Windows)
+      if: runner.os == 'Windows'
+      shell: bash
+      run: choco install make --no-progress -y
+
+    # libgl1/libegl1/libxkbcommon0: Qt6Gui must load under QT_QPA_PLATFORM=offscreen, for pyside6-uic/-rcc as well as
+    # the tests -- [[appendices.continuous-integration#missing-qt-libs]].
+    - name: Install the Qt runtime libraries (Linux)
+      if: inputs.qt == 'true' && runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libgl1 libegl1 libxkbcommon0
+
+    - name: Install dependencies
+      shell: bash
+      run: uv sync
+
+    - name: Generate Qt build artifacts (uic/rcc)
+      if: inputs.qt == 'true'
+      shell: bash
+      run: make uis
