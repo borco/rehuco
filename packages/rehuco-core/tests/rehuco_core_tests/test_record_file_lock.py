@@ -1,6 +1,6 @@
 """Tests for a record's lock file (#512, [[sync#lock-file]]): taking it, waiting out a busy one, breaking a stale one,
-removing it, and refusing a rename while someone else holds it -- against real files under ``tmp_path``, with the
-clock and the back-off's sleep handed in."""
+removing it, and refusing a rename while someone else holds it -- against real files under ``tmp_path``, with
+``time.time`` and ``time.sleep`` patched to a clock a sleep moves on."""
 
 # one cohesive module on one class's contract; the split of every module past the cap is #499's
 # pylint: disable=too-many-lines
@@ -9,12 +9,13 @@ import io
 import logging
 import os
 import socket
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Final
 
-from pytest import LogCaptureFixture, mark, param, raises
+from pytest import LogCaptureFixture, fixture, mark, param, raises
 from pytest_mock import MockerFixture
 from rehuco_core import (
     DEFAULT_LOCK_TIMEOUT_SECONDS,
@@ -60,6 +61,19 @@ class Clock:
         self.now += seconds
 
 
+@fixture(autouse=True)
+def clock(mocker: MockerFixture) -> Clock:
+    """The clock every lock in a test reads, in place of ``time.time``, and whose sleep stands in for ``time.sleep``.
+
+    :param mocker: pytest-mock fixture.
+    :returns: the clock, started at :data:`START`.
+    """
+    fake = Clock()
+    mocker.patch.object(time, "time", fake)
+    mocker.patch.object(time, "sleep", fake.sleep)
+    return fake
+
+
 def record_in(folder: Path) -> Path:
     """A record in ``folder``; the lock never reads it, so it is not written.
 
@@ -69,15 +83,14 @@ def record_in(folder: Path) -> Path:
     return folder / "info.rehu"
 
 
-def lock_of(record: Path, clock: Clock, **options: float) -> RecordFileLock:
-    """A lock on ``record`` reading ``clock``.
+def lock_of(record: Path, **options: float) -> RecordFileLock:
+    """A lock on ``record``.
 
     :param record: the record.
-    :param clock: the fake clock, and its sleep.
     :param options: ``ttl`` or ``timeout``, if not the defaults.
     :returns: the lock.
     """
-    return RecordFileLock(record, user="alice", clock=clock, sleep=clock.sleep, **options)
+    return RecordFileLock(record, user="alice", **options)
 
 
 def hold(record: Path, holder: LockHolder | None = OTHER, text: str | None = None) -> Path:
@@ -247,7 +260,7 @@ def test_another_process_is_not_this_one() -> None:
 # region Taking and removing
 
 
-def test_a_lock_is_there_for_the_write_and_gone_after(tmp_path: Path) -> None:
+def test_a_lock_is_there_for_the_write_and_gone_after(tmp_path: Path, clock: Clock) -> None:
     """The lock is the directory entry: created with who holds it, closed at once, and removed once the write is
     done.
 
@@ -258,9 +271,8 @@ def test_a_lock_is_there_for_the_write_and_gone_after(tmp_path: Path) -> None:
     * verify it is gone once released, and a second release does nothing
     """
     record = record_in(tmp_path)
-    clock = Clock()
 
-    with lock_of(record, clock) as lock:
+    with lock_of(record) as lock:
         holder = LockHolder.parse(lock.path.read_text(encoding="utf-8"))
         assert holder is not None
         assert (holder.user, holder.host, holder.pid, holder.time) == (
@@ -285,7 +297,7 @@ def test_a_write_that_fails_still_removes_the_lock(tmp_path: Path) -> None:
     """
     record = record_in(tmp_path)
 
-    with raises(RuntimeError, match="write failed"), lock_of(record, Clock()):
+    with raises(RuntimeError, match="write failed"), lock_of(record):
         raise RuntimeError("write failed")
 
     assert not lock_path_for(record).exists()
@@ -304,7 +316,7 @@ def test_a_lock_that_cannot_be_written_is_removed_again(tmp_path: Path, mocker: 
     mocker.patch("rehuco_core.record_file_lock.os.write", side_effect=OSError("disk full"))
 
     with raises(OSError, match="disk full"):
-        lock_of(record, Clock()).acquire()
+        lock_of(record).acquire()
 
     assert not lock_path_for(record).exists()
 
@@ -318,7 +330,7 @@ def test_a_lock_in_a_folder_that_is_gone_fails_as_the_write_would(tmp_path: Path
     * verify a ``FileNotFoundError``, not a lock held by someone
     """
     with raises(FileNotFoundError):
-        lock_of(record_in(tmp_path / "gone"), Clock()).acquire()
+        lock_of(record_in(tmp_path / "gone")).acquire()
 
 
 # endregion
@@ -326,7 +338,7 @@ def test_a_lock_in_a_folder_that_is_gone_fails_as_the_write_would(tmp_path: Path
 # region Busy
 
 
-def test_a_busy_lock_is_waited_out_then_refused_naming_its_holder(tmp_path: Path) -> None:
+def test_a_busy_lock_is_waited_out_then_refused_naming_its_holder(tmp_path: Path, clock: Clock) -> None:
     """A fresh lock someone else holds is retried with a random back-off for the timeout, then the write fails with
     the holder named, and the lock is left alone.
 
@@ -339,10 +351,9 @@ def test_a_busy_lock_is_waited_out_then_refused_naming_its_holder(tmp_path: Path
     """
     record = record_in(tmp_path)
     lock = hold(record)
-    clock = Clock()
 
     with raises(RecordLockedError, match="info.rehu is locked by bob@elsewhere") as refused:
-        lock_of(record, clock).acquire()
+        lock_of(record).acquire()
 
     assert refused.value.holder == OTHER
     assert refused.value.path == record
@@ -352,7 +363,7 @@ def test_a_busy_lock_is_waited_out_then_refused_naming_its_holder(tmp_path: Path
     assert LockHolder.parse(lock.read_text(encoding="utf-8")) == OTHER
 
 
-def test_a_lock_freed_during_the_back_off_is_taken(tmp_path: Path) -> None:
+def test_a_lock_freed_during_the_back_off_is_taken(tmp_path: Path, mocker: MockerFixture, clock: Clock) -> None:
     """Busy is transient: a lock released while this one backs off is taken on the next try.
 
     **Test steps:**
@@ -363,7 +374,6 @@ def test_a_lock_freed_during_the_back_off_is_taken(tmp_path: Path) -> None:
     """
     record = record_in(tmp_path)
     lock = hold(record)
-    clock = Clock()
 
     def release_then_sleep(seconds: float) -> None:
         """The other holder releases while this one waits.
@@ -373,15 +383,15 @@ def test_a_lock_freed_during_the_back_off_is_taken(tmp_path: Path) -> None:
         lock.unlink()
         clock.sleep(seconds)
 
-    taker = RecordFileLock(record, user="alice", clock=clock, sleep=release_then_sleep)
+    mocker.patch.object(time, "sleep", release_then_sleep)
 
-    with taker:
+    with lock_of(record):
         assert LockHolder.parse(lock.read_text(encoding="utf-8")) != OTHER
 
     assert len(clock.sleeps) == 1
 
 
-def test_a_lock_naming_no_one_and_just_made_is_held(tmp_path: Path) -> None:
+def test_a_lock_naming_no_one_and_just_made_is_held(tmp_path: Path, clock: Clock) -> None:
     """A lock with no holder in it, made just now, is someone between the create and the write: held, and refused as
     held by someone else.
 
@@ -393,11 +403,10 @@ def test_a_lock_naming_no_one_and_just_made_is_held(tmp_path: Path) -> None:
     """
     record = record_in(tmp_path)
     lock = hold(record, text="")
-    clock = Clock()
     os.utime(lock, (clock.now, clock.now))
 
     with raises(RecordLockedError, match="locked by someone else") as refused:
-        lock_of(record, clock).acquire()
+        lock_of(record).acquire()
 
     assert refused.value.holder is None
 
@@ -416,12 +425,12 @@ def test_a_lock_that_will_not_read_is_held(tmp_path: Path, mocker: MockerFixture
     reading(mocker, raising(PermissionError("denied")))
 
     with raises(RecordLockedError) as refused:
-        lock_of(record, Clock()).acquire()
+        lock_of(record).acquire()
 
     assert refused.value.holder is None
 
 
-def test_a_pending_delete_is_busy_until_it_is_gone(tmp_path: Path, mocker: MockerFixture) -> None:
+def test_a_pending_delete_is_busy_until_it_is_gone(tmp_path: Path, mocker: MockerFixture, clock: Clock) -> None:
     """Windows refuses to create a name whose delete is still pending: that is busy, retried like an existing lock.
 
     **Test steps:**
@@ -431,20 +440,19 @@ def test_a_pending_delete_is_busy_until_it_is_gone(tmp_path: Path, mocker: Mocke
     * verify it was taken after one back-off
     """
     record = record_in(tmp_path)
-    clock = Clock()
     mocker.patch("rehuco_core.record_file_lock.os.open", side_effect=iter_open([PermissionError("pending")], os.open))
     listed = iter([True])
     real_exists = Path.exists
     mocker.patch.object(Path, "exists", autospec=True, side_effect=lambda self: next(listed, real_exists(self)))
 
-    with lock_of(record, clock):
+    with lock_of(record):
         pass
 
     assert len(clock.sleeps) == 1
 
 
 def test_a_pending_delete_gone_before_the_look_is_retried_not_blamed_on_the_folder(
-    tmp_path: Path, mocker: MockerFixture
+    tmp_path: Path, mocker: MockerFixture, clock: Clock
 ) -> None:
     """A create refused for a delete still pending, with that delete done by the time the name is looked at, finds no
     lock there -- as a folder this process may not write would. One more create tells the two apart: it lands.
@@ -456,16 +464,17 @@ def test_a_pending_delete_gone_before_the_look_is_retried_not_blamed_on_the_fold
     * verify it was taken, at once, with no back-off
     """
     record = record_in(tmp_path)
-    clock = Clock()
     mocker.patch("rehuco_core.record_file_lock.os.open", side_effect=iter_open([PermissionError("pending")], os.open))
 
-    with lock_of(record, clock):
+    with lock_of(record):
         assert lock_path_for(record).exists()
 
     assert not clock.sleeps
 
 
-def test_a_folder_never_writable_fails_as_a_refusal_not_a_lock(tmp_path: Path, mocker: MockerFixture) -> None:
+def test_a_folder_never_writable_fails_as_a_refusal_not_a_lock(
+    tmp_path: Path, mocker: MockerFixture, clock: Clock
+) -> None:
     """A create refused with no lock there to refuse it is a folder this process may not write: the refusal is raised
     at once, not a lock held by someone after the timeout.
 
@@ -476,10 +485,9 @@ def test_a_folder_never_writable_fails_as_a_refusal_not_a_lock(tmp_path: Path, m
     * verify that ``PermissionError`` comes out, with no back-off
     """
     mocker.patch("rehuco_core.record_file_lock.os.open", side_effect=PermissionError("read-only share"))
-    clock = Clock()
 
     with raises(PermissionError, match="read-only share"):
-        lock_of(record_in(tmp_path), clock).acquire()
+        lock_of(record_in(tmp_path)).acquire()
 
     assert not clock.sleeps
 
@@ -497,7 +505,6 @@ def test_a_departed_holder_is_not_blamed_for_a_busy_name(tmp_path: Path, mocker:
     """
     record = record_in(tmp_path)
     lock = hold(record)
-    clock = Clock()
     looks: list[int] = []
 
     def read(path: Path) -> str:
@@ -517,7 +524,7 @@ def test_a_departed_holder_is_not_blamed_for_a_busy_name(tmp_path: Path, mocker:
     mocker.patch("rehuco_core.record_file_lock.os.open", side_effect=FileExistsError("cached"))
 
     with raises(RecordLockedError, match="someone else") as refused:
-        lock_of(record, clock, timeout=0.1).acquire()
+        lock_of(record, timeout=0.1).acquire()
 
     assert refused.value.holder is None
 
@@ -537,7 +544,6 @@ def test_a_lock_that_went_away_is_forgotten_when_the_create_is_still_refused(
     """
     record = record_in(tmp_path)
     lock = hold(record)
-    clock = Clock()
     looks: list[int] = []
 
     def read(path: Path) -> str:
@@ -557,7 +563,7 @@ def test_a_lock_that_went_away_is_forgotten_when_the_create_is_still_refused(
     mocker.patch("rehuco_core.record_file_lock.os.open", side_effect=PermissionError("read-only share"))
 
     with raises(PermissionError, match="read-only share"):
-        lock_of(record, clock).acquire()
+        lock_of(record).acquire()
 
 
 def iter_open(failures: list[OSError], real_open: Callable[[Path, int], int]) -> Callable[[Path, int], int]:
@@ -588,7 +594,9 @@ def iter_open(failures: list[OSError], real_open: Callable[[Path, int], int]) ->
 # region Stale
 
 
-def test_a_stale_lock_is_broken_with_a_log_line_and_taken(tmp_path: Path, caplog: LogCaptureFixture) -> None:
+def test_a_stale_lock_is_broken_with_a_log_line_and_taken(
+    tmp_path: Path, caplog: LogCaptureFixture, clock: Clock
+) -> None:
     """A lock older than the TTL by the time it names is abandoned: deleted, verified gone, logged, and taken at once.
 
     **Test steps:**
@@ -599,17 +607,19 @@ def test_a_stale_lock_is_broken_with_a_log_line_and_taken(tmp_path: Path, caplog
     """
     record = record_in(tmp_path)
     lock = hold(record)
-    clock = Clock(START + timedelta(seconds=DEFAULT_LOCK_TTL_SECONDS + 1))
+    clock.now = (START + timedelta(seconds=DEFAULT_LOCK_TTL_SECONDS + 1)).timestamp()
     caplog.set_level(logging.WARNING, logger="rehuco_core.record_file_lock")
 
-    with lock_of(record, clock):
+    with lock_of(record):
         assert LockHolder.parse(lock.read_text(encoding="utf-8")) != OTHER
 
     assert not clock.sleeps
     assert f"Broke the stale lock on {record}, left by {OTHER}" in caplog.messages
 
 
-def test_a_stale_lock_naming_no_one_is_aged_by_its_time_on_disk(tmp_path: Path, caplog: LogCaptureFixture) -> None:
+def test_a_stale_lock_naming_no_one_is_aged_by_its_time_on_disk(
+    tmp_path: Path, caplog: LogCaptureFixture, clock: Clock
+) -> None:
     """A lock whose holder died between the create and the write names no time: its modification time stands in.
 
     **Test steps:**
@@ -620,18 +630,17 @@ def test_a_stale_lock_naming_no_one_is_aged_by_its_time_on_disk(tmp_path: Path, 
     """
     record = record_in(tmp_path)
     lock = hold(record, text="")
-    clock = Clock()
     old = clock.now - DEFAULT_LOCK_TTL_SECONDS - 1
     os.utime(lock, (old, old))
     caplog.set_level(logging.WARNING, logger="rehuco_core.record_file_lock")
 
-    with lock_of(record, clock):
+    with lock_of(record):
         pass
 
     assert f"Broke the stale lock on {record}, left by a holder it does not name" in caplog.messages
 
 
-def test_a_stale_lock_that_lingers_is_held(tmp_path: Path, mocker: MockerFixture) -> None:
+def test_a_stale_lock_that_lingers_is_held(tmp_path: Path, mocker: MockerFixture, clock: Clock) -> None:
     """A stale lock still listed after its delete -- a client's directory cache -- is held and backed off from, never
     spun on.
 
@@ -643,16 +652,16 @@ def test_a_stale_lock_that_lingers_is_held(tmp_path: Path, mocker: MockerFixture
     """
     record = record_in(tmp_path)
     hold(record)
-    clock = Clock(START + timedelta(seconds=DEFAULT_LOCK_TTL_SECONDS + 1))
+    clock.now = (START + timedelta(seconds=DEFAULT_LOCK_TTL_SECONDS + 1)).timestamp()
     mocker.patch.object(Path, "unlink", autospec=True)
 
     with raises(RecordLockedError):
-        lock_of(record, clock).acquire()
+        lock_of(record).acquire()
 
     assert sum(clock.sleeps) >= DEFAULT_LOCK_TIMEOUT_SECONDS
 
 
-def test_a_stale_lock_that_will_not_delete_is_held(tmp_path: Path, mocker: MockerFixture) -> None:
+def test_a_stale_lock_that_will_not_delete_is_held(tmp_path: Path, mocker: MockerFixture, clock: Clock) -> None:
     """A stale lock the delete is refused on is held.
 
     **Test steps:**
@@ -663,17 +672,17 @@ def test_a_stale_lock_that_will_not_delete_is_held(tmp_path: Path, mocker: Mocke
     """
     record = record_in(tmp_path)
     hold(record)
-    clock = Clock(START + timedelta(seconds=DEFAULT_LOCK_TTL_SECONDS + 1))
+    clock.now = (START + timedelta(seconds=DEFAULT_LOCK_TTL_SECONDS + 1)).timestamp()
     mocker.patch.object(Path, "unlink", autospec=True, side_effect=PermissionError("in use"))
 
     with raises(RecordLockedError) as refused:
-        lock_of(record, clock).acquire()
+        lock_of(record).acquire()
 
     assert refused.value.holder == OTHER
 
 
 def test_a_stale_lock_retaken_before_the_delete_is_left_to_its_new_holder(
-    tmp_path: Path, mocker: MockerFixture
+    tmp_path: Path, mocker: MockerFixture, clock: Clock
 ) -> None:
     """A stale lock another writer broke and retook between this one's look and its delete is not deleted: the
     content is read again first, and only the lock judged stale is broken.
@@ -686,19 +695,21 @@ def test_a_stale_lock_retaken_before_the_delete_is_left_to_its_new_holder(
     """
     record = record_in(tmp_path)
     lock = hold(record)
-    clock = Clock(START + timedelta(seconds=DEFAULT_LOCK_TTL_SECONDS + 1))
+    clock.now = (START + timedelta(seconds=DEFAULT_LOCK_TTL_SECONDS + 1)).timestamp()
     fresh = LockHolder("carol", "laptop", 7, "rehuco-agent", datetime.fromtimestamp(clock.now, UTC))
     reads = iter([OTHER.text()])
     reading(mocker, lambda _: next(reads, fresh.text()))
 
     with raises(RecordLockedError) as refused:
-        lock_of(record, clock, timeout=0.1).acquire()
+        lock_of(record, timeout=0.1).acquire()
 
     assert refused.value.holder == fresh
     assert lock.exists()
 
 
-def test_a_stale_lock_broken_by_another_writer_first_is_taken(tmp_path: Path, mocker: MockerFixture) -> None:
+def test_a_stale_lock_broken_by_another_writer_first_is_taken(
+    tmp_path: Path, mocker: MockerFixture, clock: Clock
+) -> None:
     """A stale lock someone else deleted between this one's look and its delete is gone either way: taken at once.
 
     **Test steps:**
@@ -709,7 +720,7 @@ def test_a_stale_lock_broken_by_another_writer_first_is_taken(tmp_path: Path, mo
     """
     record = record_in(tmp_path)
     lock = hold(record)
-    clock = Clock(START + timedelta(seconds=DEFAULT_LOCK_TTL_SECONDS + 1))
+    clock.now = (START + timedelta(seconds=DEFAULT_LOCK_TTL_SECONDS + 1)).timestamp()
     calls: list[Path] = []
 
     def read(path: Path) -> str:
@@ -725,7 +736,7 @@ def test_a_stale_lock_broken_by_another_writer_first_is_taken(tmp_path: Path, mo
 
     reading(mocker, read)
 
-    with lock_of(record, clock):
+    with lock_of(record):
         pass
 
     assert not clock.sleeps
@@ -748,7 +759,7 @@ def test_a_lock_taken_over_is_left_to_its_new_holder(tmp_path: Path, caplog: Log
     record = record_in(tmp_path)
     caplog.set_level(logging.WARNING, logger="rehuco_core.record_file_lock")
 
-    with lock_of(record, Clock()):
+    with lock_of(record):
         lock = hold(record)
 
     assert LockHolder.parse(lock.read_text(encoding="utf-8")) == OTHER
@@ -767,14 +778,14 @@ def test_a_lock_already_gone_at_release_is_logged(tmp_path: Path, caplog: LogCap
     record = record_in(tmp_path)
     caplog.set_level(logging.WARNING, logger="rehuco_core.record_file_lock")
 
-    with lock_of(record, Clock()) as lock:
+    with lock_of(record) as lock:
         lock.path.unlink()
 
     assert f"The lock on {record} was gone before it was released" in caplog.messages
 
 
 def test_a_lock_that_will_not_delete_at_release_is_logged(
-    tmp_path: Path, mocker: MockerFixture, caplog: LogCaptureFixture
+    tmp_path: Path, mocker: MockerFixture, caplog: LogCaptureFixture, clock: Clock
 ) -> None:
     """A release never raises: a delete refused past its retries is logged, and the lock goes stale in time.
 
@@ -785,17 +796,16 @@ def test_a_lock_that_will_not_delete_at_release_is_logged(
     * verify it was retried after each of the release delays, then a warning naming the refusal
     """
     record = record_in(tmp_path)
-    clock = Clock()
     caplog.set_level(logging.WARNING, logger="rehuco_core.record_file_lock")
 
-    with lock_of(record, clock):
+    with lock_of(record):
         mocker.patch.object(Path, "unlink", autospec=True, side_effect=PermissionError("in use"))
 
     assert clock.sleeps == list(RELEASE_RETRY_SECONDS)
     assert f"Could not remove the lock on {record}: in use" in caplog.messages
 
 
-def test_a_release_refused_for_a_moment_is_retried(tmp_path: Path, mocker: MockerFixture) -> None:
+def test_a_release_refused_for_a_moment_is_retried(tmp_path: Path, mocker: MockerFixture, clock: Clock) -> None:
     """A delete refused while a scanner briefly holds the lock open is retried: a lock left behind would cost every
     other writer the TTL.
 
@@ -806,7 +816,6 @@ def test_a_release_refused_for_a_moment_is_retried(tmp_path: Path, mocker: Mocke
     * verify one retry, after the first release delay, and the lock gone
     """
     record = record_in(tmp_path)
-    clock = Clock()
     real_unlink = Path.unlink
     refusals = [PermissionError("scanned")]
 
@@ -820,7 +829,7 @@ def test_a_release_refused_for_a_moment_is_retried(tmp_path: Path, mocker: Mocke
             raise refusals.pop()
         real_unlink(path)
 
-    with lock_of(record, clock):
+    with lock_of(record):
         mocker.patch.object(Path, "unlink", autospec=True, side_effect=unlink)
 
     assert clock.sleeps == [RELEASE_RETRY_SECONDS[0]]
@@ -841,7 +850,13 @@ def test_a_release_refused_for_a_moment_is_retried(tmp_path: Path, mocker: Mocke
 )
 # pylint: disable-next=too-many-arguments,too-many-positional-arguments
 def test_a_release_that_cannot_reach_the_lock_is_logged(
-    tmp_path: Path, mocker: MockerFixture, caplog: LogCaptureFixture, patched: str, error: OSError, message: str
+    tmp_path: Path,
+    mocker: MockerFixture,
+    caplog: LogCaptureFixture,
+    patched: str,
+    error: OSError,
+    message: str,
+    clock: Clock,
 ) -> None:
     """A release that cannot read or delete its lock for a reason a retry will not mend says so, and does not raise --
     a lock deleted by someone else between the read and the delete included.
@@ -853,10 +868,9 @@ def test_a_release_that_cannot_reach_the_lock_is_logged(
     * verify the warning, and no retry
     """
     record = record_in(tmp_path)
-    clock = Clock()
     caplog.set_level(logging.WARNING, logger="rehuco_core.record_file_lock")
 
-    with lock_of(record, clock):
+    with lock_of(record):
         if patched == "unlink":
             mocker.patch.object(Path, "unlink", autospec=True, side_effect=error)
         else:
@@ -881,7 +895,7 @@ def test_a_lock_still_listed_after_release_is_noted(
     record = record_in(tmp_path)
     caplog.set_level(logging.INFO, logger="rehuco_core.record_file_lock")
 
-    with lock_of(record, Clock()):
+    with lock_of(record):
         mocker.patch.object(Path, "unlink", autospec=True)
 
     assert [(entry.levelno, entry.getMessage()) for entry in caplog.records] == [
@@ -906,7 +920,7 @@ def test_a_rename_is_refused_while_another_process_holds_the_lock(tmp_path: Path
     lock = hold(record)
 
     with raises(RecordLockedError) as refused:
-        lock_of(record, Clock()).refuse_if_held()
+        lock_of(record).refuse_if_held()
 
     assert refused.value.holder == OTHER
     assert lock.exists()
@@ -931,10 +945,10 @@ def test_a_rename_goes_ahead_with_no_one_else_holding_the_lock(tmp_path: Path, h
     if holder is not None:
         hold(record, holder)
 
-    lock_of(record, Clock()).refuse_if_held()
+    lock_of(record).refuse_if_held()
 
 
-def test_a_rename_breaks_a_stale_lock(tmp_path: Path, caplog: LogCaptureFixture) -> None:
+def test_a_rename_breaks_a_stale_lock(tmp_path: Path, caplog: LogCaptureFixture, clock: Clock) -> None:
     """A stale lock is no holder: broken with a log line, and the rename goes ahead.
 
     **Test steps:**
@@ -945,14 +959,15 @@ def test_a_rename_breaks_a_stale_lock(tmp_path: Path, caplog: LogCaptureFixture)
     record = record_in(tmp_path)
     lock = hold(record)
     caplog.set_level(logging.WARNING, logger="rehuco_core.record_file_lock")
+    clock.now = (START + timedelta(seconds=DEFAULT_LOCK_TTL_SECONDS + 1)).timestamp()
 
-    lock_of(record, Clock(START + timedelta(seconds=DEFAULT_LOCK_TTL_SECONDS + 1))).refuse_if_held()
+    lock_of(record).refuse_if_held()
 
     assert not lock.exists()
     assert f"Broke the stale lock on {record}, left by {OTHER}" in caplog.messages
 
 
-def test_a_rename_is_refused_by_a_stale_lock_that_lingers(tmp_path: Path, mocker: MockerFixture) -> None:
+def test_a_rename_is_refused_by_a_stale_lock_that_lingers(tmp_path: Path, mocker: MockerFixture, clock: Clock) -> None:
     """A stale lock still listed after its break counts as held: the rename refuses rather than moving a record whose
     lock is in doubt.
 
@@ -964,14 +979,17 @@ def test_a_rename_is_refused_by_a_stale_lock_that_lingers(tmp_path: Path, mocker
     record = record_in(tmp_path)
     hold(record)
     mocker.patch.object(Path, "unlink", autospec=True)
+    clock.now = (START + timedelta(seconds=DEFAULT_LOCK_TTL_SECONDS + 1)).timestamp()
 
     with raises(RecordLockedError) as refused:
-        lock_of(record, Clock(START + timedelta(seconds=DEFAULT_LOCK_TTL_SECONDS + 1))).refuse_if_held()
+        lock_of(record).refuse_if_held()
 
     assert refused.value.holder == OTHER
 
 
-def test_a_rename_is_refused_by_a_stale_lock_retaken_meanwhile(tmp_path: Path, mocker: MockerFixture) -> None:
+def test_a_rename_is_refused_by_a_stale_lock_retaken_meanwhile(
+    tmp_path: Path, mocker: MockerFixture, clock: Clock
+) -> None:
     """A stale lock another writer broke and retook between the look and the break is that writer's, fresh: the
     rename refuses, naming the new holder.
 
@@ -982,19 +1000,19 @@ def test_a_rename_is_refused_by_a_stale_lock_retaken_meanwhile(tmp_path: Path, m
     """
     record = record_in(tmp_path)
     lock = hold(record)
-    clock = Clock(START + timedelta(seconds=DEFAULT_LOCK_TTL_SECONDS + 1))
+    clock.now = (START + timedelta(seconds=DEFAULT_LOCK_TTL_SECONDS + 1)).timestamp()
     fresh = LockHolder("carol", "laptop", 7, "rehuco-agent", datetime.fromtimestamp(clock.now, UTC))
     reads = iter([OTHER.text()])
     reading(mocker, lambda _: next(reads, fresh.text()))
 
     with raises(RecordLockedError) as refused:
-        lock_of(record, clock).refuse_if_held()
+        lock_of(record).refuse_if_held()
 
     assert refused.value.holder == fresh
     assert lock.exists()
 
 
-def test_a_rename_is_refused_by_a_fresh_lock_naming_no_one(tmp_path: Path) -> None:
+def test_a_rename_is_refused_by_a_fresh_lock_naming_no_one(tmp_path: Path, clock: Clock) -> None:
     """A fresh lock that names no holder is still held.
 
     **Test steps:**
@@ -1004,11 +1022,10 @@ def test_a_rename_is_refused_by_a_fresh_lock_naming_no_one(tmp_path: Path) -> No
     """
     record = record_in(tmp_path)
     lock = hold(record, text="")
-    clock = Clock()
     os.utime(lock, (clock.now, clock.now))
 
     with raises(RecordLockedError, match="someone else"):
-        lock_of(record, clock).refuse_if_held()
+        lock_of(record).refuse_if_held()
 
 
 # endregion
