@@ -8,7 +8,7 @@ that still resolves lands under the share and fails.
 from pathlib import Path
 from typing import Final
 
-from pytest import fixture
+from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.main_window import MainWindow
@@ -16,6 +16,10 @@ from rehuco_agent.rehuco import BrowsersDock, RootCatalog
 from rehuco_core.access import ResourceKey
 
 from .test_main_window import mock_persistent_settings  # noqa: F401  # pylint: disable=unused-import
+
+pytestmark = mark.usefixtures("stub_settings_pages", "stub_sub_docks")
+"""Every window here is built over stub settings pages, and every document it opens over stub sub-docks (#545), but
+where a test asks for the real ones (``real_settings_pages``, ``real_sub_docks``)."""
 
 SHARE: Final = Path("//nas/share")
 """Where the stand-in resolve says the working directory's drive really is."""

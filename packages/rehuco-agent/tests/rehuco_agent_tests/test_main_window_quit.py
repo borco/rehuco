@@ -2,12 +2,17 @@
 
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QApplication
+from pytest import mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.main_window import MainWindow
 from rehuco_agent.node_host import NodeHost
 
 from rehuco_agent_tests.test_main_window import browsers_dock_widget, float_open_settings_dock
+
+pytestmark = mark.usefixtures("stub_settings_pages", "stub_sub_docks")
+"""Every window here is built over stub settings pages, and every document it opens over stub sub-docks (#545), but
+where a test asks for the real ones (``real_settings_pages``, ``real_sub_docks``)."""
 
 
 def test_an_accepted_close_quits_the_app_even_with_floating_docks_still_up(

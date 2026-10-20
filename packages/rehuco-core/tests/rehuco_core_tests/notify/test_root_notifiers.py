@@ -1,16 +1,17 @@
 """Tests for keeping one file notifier per root of the open ``.rehuco`` (#511).
 
 The notifiers are fakes recording how they were made, started and stopped; what a polled root sweeps is read from a
-real cache under ``tmp_path``.
+mocked cache (#545).
 """
 
+import sqlite3
 from pathlib import Path
 from typing import Any, Final
 from uuid import UUID
 
 from pytest import LogCaptureFixture, fixture
 from pytest_mock import MockerFixture
-from rehuco_core import CatalogCache, CatalogRecord, ChangeFeed, RecordKind, RehucoFile, RenameCoordinator
+from rehuco_core import CatalogCache, ChangeFeed, RecordSignature, RenameCoordinator
 from rehuco_core.notify import RootNotifiers, WatchedFolder
 
 MODULE: Final = "rehuco_core.notify.root_notifiers"
@@ -134,54 +135,52 @@ def test_another_cache_restarts_every_root_and_a_stop_stops_them_all(made: list[
     assert made[0].stopped and made[1].stopped and not made[2].stopped
 
 
-def test_a_polled_root_sweeps_the_records_its_rows_name(tmp_path: Path) -> None:
+def test_a_polled_root_sweeps_the_records_its_rows_name(mocker: MockerFixture) -> None:
     """What a polled root's sweep compares is every record the cache holds under it, by its absolute path, with the
     signature it was read at -- none for one that could not be read, or whose signature a schema step cleared.
 
     **Test steps:**
 
-    * scan three records into a real cache: one read at a signature, one unreadable, one with no modification time
+    * mock the cache, its rows under the root three: one read at a signature, one unreadable, one with no
+      modification time
     * read what the root's sweep would compare
-    * verify each record's path and expected signature
+    * verify the cache at the path was asked for the root's rows, and each record's path and expected signature
     """
-    rehuco = RehucoFile.new()
-    rehuco.add_root(tmp_path / "library")
-    (root,) = rehuco.roots
-    cache_path = tmp_path / "cache.rehudb"
-    with CatalogCache.open(cache_path) as cache:
-        cache.reconcile_roots(rehuco.roots)
-        cache.apply_root_scan(
-            root.root_id,
-            [
-                CatalogRecord("a/info.rehu", RecordKind.REHU, mtime_ns=5, size=7),
-                CatalogRecord("b/info.rehu", RecordKind.REHU, mtime_ns=5, size=7, error="unreadable"),
-                CatalogRecord("c/info.tc", RecordKind.TC, mtime_ns=0, size=7),
-            ],
-        )
+    root, cache_path = ANCHOR / "library", ANCHOR / "cache.rehudb"
+    cache = mocker.MagicMock()
+    cache.__enter__.return_value = cache
+    cache.signatures.return_value = {
+        "a/info.rehu": RecordSignature("a/info.rehu", 5, 7),
+        "b/info.rehu": RecordSignature("b/info.rehu", 5, 7, "unreadable"),
+        "c/info.tc": RecordSignature("c/info.tc", 0, 7),
+    }
+    opened = mocker.patch.object(CatalogCache, "open", return_value=cache)
 
-    known = RootNotifiers.known_records(cache_path, root.root_id, root.path)()
+    known = RootNotifiers.known_records(cache_path, FIRST, root)()
 
+    opened.assert_called_once_with(cache_path)
+    cache.signatures.assert_called_once_with(FIRST)
     assert known == {
-        root.path / "a" / "info.rehu": (5, 7),
-        root.path / "b" / "info.rehu": None,
-        root.path / "c" / "info.tc": None,
+        root / "a" / "info.rehu": (5, 7),
+        root / "b" / "info.rehu": None,
+        root / "c" / "info.tc": None,
     }
 
 
 def test_a_cache_that_cannot_be_read_gives_a_sweep_nothing_and_is_logged(
-    tmp_path: Path, caplog: LogCaptureFixture
+    mocker: MockerFixture, caplog: LogCaptureFixture
 ) -> None:
     """A sweep is no reason to fail: a cache that cannot be opened answers nothing to compare, and says so.
 
     **Test steps:**
 
-    * point the reader at a folder where the cache should be
-    * verify it answers nothing, and the failure was logged as an error
+    * make opening the cache fail
+    * verify the reader answers nothing, and the failure was logged as an error
     """
-    cache_path = tmp_path / "cache.rehudb"
-    cache_path.mkdir()
+    cache_path = ANCHOR / "cache.rehudb"
+    mocker.patch.object(CatalogCache, "open", side_effect=sqlite3.OperationalError("unable to open database file"))
 
     with caplog.at_level("ERROR", logger=MODULE):
-        assert RootNotifiers.known_records(cache_path, FIRST, tmp_path)() == {}
+        assert RootNotifiers.known_records(cache_path, FIRST, ANCHOR)() == {}
 
     assert f"Could not read the cache {cache_path} to poll a root" in caplog.text

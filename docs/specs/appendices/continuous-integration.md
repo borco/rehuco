@@ -20,8 +20,9 @@ ephemeral checkout and then report green even though the PR branch itself is unf
 lint-broken — the opposite of what a gate is for.
 
 The workflow instead runs the non-mutating equivalents directly: `ruff format --check .` and
-`ruff check .` (no `--fix`), followed by the other `make qa` steps unchanged — `make cov`, `make
-bandit`, `make pyright`, `make pylint` — since none of those mutate sources.
+`ruff check .` (no `--fix`), and the other `make qa` steps unchanged — `make check-slugs`, `make cov-parallel`,
+`make bandit`, `make pyright`, `make pylint` — since none of those mutate sources. Each is a job of its own
+([[appendices.continuous-integration#parallel-jobs]]).
 
 ## 2. The Qt build artifacts aren't distributed — CI has to generate them, like any dev checkout
 
@@ -30,7 +31,7 @@ bandit`, `make pyright`, `make pylint` — since none of those mutate sources.
 `viewer_window_ui.py`, `main_rc.py`, and `rehuco-agent.ico` are gitignored, not committed: per
 [[appendices.testing#qualified-rc-imports]], `rehuco-agent` doesn't work without them, but they don't ship in the repo,
 so `make uis`
-(which pulls in `qrcs` and `icons`) has to run before `pytest` can even collect tests — on every
+(which pulls in `qrcs`, and once pulled in `icons` too) has to run before `pytest` can even collect tests — on every
 matrix leg, since a CI checkout starts from the same source tree as a fresh clone.
 
 Every runner turned out to be missing at least one tool for that. Confirmed by the first real run
@@ -55,8 +56,10 @@ was a real design choice, not just a gap to fill in reactively). Two alternative
   sync.
 
 The workflow instead adds one per-OS package-manager step per missing tool (ImageMagick on
-Linux/macOS, `make` on Windows) and then runs `make uis` unchanged on all three platforms, keeping
-the Makefile as the single source of truth for codegen. The Windows leg was the bigger unknown
+Linux/macOS, `make` on Windows) and then runs `make uis` unchanged on all three platforms. **ImageMagick is no
+longer installed** (#545): `make uis` stopped pulling in `icons`, no test calls `magick`, and the install cost a
+quarter of a minute on two legs; `make` on Windows stays. Either
+way the Makefile stays the single source of truth for codegen. The Windows leg was the bigger unknown
 going in — `choco`-installed `make` driving the Makefile's `$(shell find ...)` codegen through Git
 Bash's coreutils, a combination never exercised in this repo before — and it passed on the first
 real run; the ImageMagick gap on the other two legs was the one this section's first draft missed
@@ -170,7 +173,7 @@ separate CI-only target needed.
 a lowercase `flag` value per leg (`linux`/`macos`/`windows`). `runner.os` itself resolves to
 `Linux`/`macOS`/`Windows` (mixed case), and Codecov flag names are conventionally lowercase;
 computing the mapping once in the matrix avoided a per-step case-conversion. A
-`codecov/codecov-action@v5` step runs right after `make cov`, authenticated via `CODECOV_TOKEN` and
+`codecov/codecov-action@v5` step runs right after `make cov-parallel`, authenticated via `CODECOV_TOKEN` and
 tagged with `flags: ${{ matrix.flag }}` so Codecov keeps the three OS coverage numbers (and badges)
 separate instead of blending them. It runs with `fail_ci_if_error: false` deliberately: this is
 new, unverified plumbing, and an upload hiccup on a reporting side-channel shouldn't fail the whole
@@ -296,3 +299,21 @@ writing core metadata 2.5, which v1.14.1's Twine 6 refused at upload, and only v
 package on each index — ten registrations, all naming this workflow file. The step-by-step is in
 [[appendices.release-runbook#pypi-setup]]; until a package's publisher exists, its tag fails at the
 upload step with an authentication error rather than doing anything partial.
+
+## 11. Every check is a job of its own
+
+[[[appendices.continuous-integration#parallel-jobs]]]
+
+`qa.yml` used to be one job per OS running every check in turn, so a run took as long as all of them added up: on
+the Windows runner 18 minutes of tests, 7 of pylint, and the rest. Since #545 each check is its own job and they
+all start together, so a run takes as long as its slowest job. The tests run as `make cov-parallel`, over every
+core of the runner, as `make qa` runs them locally; CI stayed serial until the two causes of its parallel flakes
+were fixed — the docks tests' shared-cache SQLite stand-in (#541, #545) and the lock file's create race on Windows
+(#545).
+
+**What runs where**: `tests`, `pyright` and `pylint` run on all three OSes, since what they import differs by
+platform ([[appendices.continuous-integration#cross-platform-shell]] and the platform notes in `pyproject.toml`);
+`ruff`, `check-slugs` (new to CI) and `bandit` read the source as text and run once, on Linux. Every job starts
+with the same local composite action, `.github/actions/setup`: uv, `make` on Windows, and with `qt: "true"` the
+Qt runtime libraries on Linux and `make uis`. The checks' names in a run changed from `qa (<os>)` to
+`<check> (<os>)`; no branch protection names them, and the README's badge points at the workflow file.

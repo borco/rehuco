@@ -2,6 +2,9 @@
 removing it, and refusing a rename while someone else holds it -- against real files under ``tmp_path``, with the
 clock and the back-off's sleep handed in."""
 
+# one cohesive module on one class's contract; the split of every module past the cap is #499's
+# pylint: disable=too-many-lines
+
 import io
 import logging
 import os
@@ -438,6 +441,28 @@ def test_a_pending_delete_is_busy_until_it_is_gone(tmp_path: Path, mocker: Mocke
         pass
 
     assert len(clock.sleeps) == 1
+
+
+def test_a_pending_delete_gone_before_the_look_is_retried_not_blamed_on_the_folder(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    """A create refused for a delete still pending, with that delete done by the time the name is looked at, finds no
+    lock there -- as a folder this process may not write would. One more create tells the two apart: it lands.
+
+    **Test steps:**
+
+    * make the first create be refused with a ``PermissionError``, the name not listed when looked at
+    * take the lock
+    * verify it was taken, at once, with no back-off
+    """
+    record = record_in(tmp_path)
+    clock = Clock()
+    mocker.patch("rehuco_core.record_file_lock.os.open", side_effect=iter_open([PermissionError("pending")], os.open))
+
+    with lock_of(record, clock):
+        assert lock_path_for(record).exists()
+
+    assert not clock.sleeps
 
 
 def test_a_folder_never_writable_fails_as_a_refusal_not_a_lock(tmp_path: Path, mocker: MockerFixture) -> None:

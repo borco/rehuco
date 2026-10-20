@@ -9,7 +9,7 @@ import logging
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any, Final
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, Mock
 from uuid import UUID, uuid4
 
 from PySide6.QtCore import QModelIndex, Qt
@@ -20,8 +20,8 @@ from rehuco_agent.rehuco import TableBrowser
 from rehuco_agent.rehuco.catalog_table_model import CatalogColumn
 from rehuco_agent.rehuco.root_storage import ROOT_STORAGE_OFFLINE_TOOLTIPS
 from rehuco_agent.resource_events import ResourceEvents
-from rehuco_core import CatalogRecord, RecordKind, TaskQueue
-from rehuco_core.access import Catalog, CatalogUnreadable, ResourceKey, RootReachable, RootStale
+from rehuco_core import CatalogRecord, CatalogRow, RecordKind, TaskQueue
+from rehuco_core.access import CatalogUnreadable, ResourceKey, RootReachable, RootStale
 from rehuco_core.notify import RootNotifiers
 
 from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
@@ -35,11 +35,13 @@ from .test_catalog_docks import (  # noqa: F401  # pylint: disable=unused-import
     WAIT_TIMEOUT_MS,
     CatalogDocks,
     GateJob,
-    MemoryDatabase,
     answer_add_root,
     build_docks,
+    catalog_row,
     first_browser,
-    fixture_database,
+    fixture_cache,
+    fixture_cached_rows,
+    fixture_catalog,
     fixture_folders,
     fixture_followed,
     fixture_held,
@@ -52,10 +54,11 @@ from .test_catalog_docks import (  # noqa: F401  # pylint: disable=unused-import
     publish_changed,
     scan_finding,
     tutorial_record,
+    verified,
     wait_for_jobs,
     wait_for_rows,
 )
-from .test_catalog_verify import settle, write_pack_record
+from .test_catalog_verify import settle
 
 FIRST_ROOT: Final = UUID(ROOT_IDS[0])
 SECOND_ROOT: Final = UUID(ROOT_IDS[1])
@@ -67,7 +70,7 @@ RECORD: Final = ResourceKey(TUTORIALS / "python" / "info.rehu")
 def fixture_watched(
     qtbot: QtBot,
     queue: TaskQueue,
-    database: MemoryDatabase,
+    catalog: Mock,
     mocker: MockerFixture,
     delete_at_teardown: DeleteAtTeardown,
 ) -> Generator[tuple[CatalogDocks, ResourceEvents, MagicMock]]:
@@ -76,15 +79,14 @@ def fixture_watched(
 
     :param qtbot: pytest-qt fixture.
     :param queue: the queue its jobs run on.
-    :param database: the cache's database.
+    :param catalog: the mock catalog.
     :param mocker: pytest-mock fixture.
     :param delete_at_teardown: deletes the `ResourceEvents` when the test ends.
     :yields: the docks, with nothing open, their events and the notifiers' stand-in.
     """
-    del database
     notifiers = MagicMock(spec=RootNotifiers)
     events = delete_at_teardown(ResourceEvents())
-    docks = build_docks(qtbot, queue, events, notifiers)
+    docks = build_docks(qtbot, queue, events, notifiers, catalog=catalog)
     mocker.patch.object(docks.roots, "confirm_remove_root", return_value=True)
     yield docks, events, notifiers
     docks.detach()
@@ -113,16 +115,16 @@ def offline_reason(docks: CatalogDocks) -> str:
     return ROOT_STORAGE_OFFLINE_TOOLTIPS[first.storage]
 
 
-def retitle(mocker: MockerFixture, title: str) -> None:
-    """Make the tutorial's record read as there, with a new title, so a check of it finds it moved on.
+def retitle(mocker: MockerFixture, catalog: Mock, cached_rows: list[CatalogRow], title: str) -> None:
+    """Make a check of the tutorial's record find it moved on, with a new title (:func:`verified`).
 
     :param mocker: pytest-mock fixture.
+    :param catalog: the mock catalog.
+    :param cached_rows: what it holds: the tutorial's row.
     :param title: its new title.
     """
-    mocker.patch.object(Path, "is_file", autospec=True, return_value=True)
-    mocker.patch(
-        "rehuco_core.rehudb_updates.CatalogRecordReader.read",
-        return_value=CatalogRecord("python/info.rehu", RecordKind.REHU, title=title, type="tutorial"),
+    verified(
+        mocker, catalog, cached_rows, CatalogRecord("python/info.rehu", RecordKind.REHU, title=title, type="tutorial")
     )
 
 
@@ -265,7 +267,7 @@ def test_a_scan_that_touched_nothing_says_nothing(
 # region A root gone stale is scanned again
 
 
-@mark.usefixtures("served", "no_open_scan")
+@mark.usefixtures("served")
 def test_a_stale_root_is_scanned_again_and_an_unknown_one_is_not(
     queue: TaskQueue, held: GateJob, watched: tuple[CatalogDocks, ResourceEvents, MagicMock]
 ) -> None:
@@ -444,7 +446,7 @@ def test_a_browser_added_while_a_root_is_out_of_reach_greys_it_too(
 
 @mark.usefixtures("served")
 def test_a_cache_that_cannot_be_read_lists_no_root_out_of_reach(
-    mocker: MockerFixture, watched: tuple[CatalogDocks, ResourceEvents, MagicMock], caplog: LogCaptureFixture
+    watched: tuple[CatalogDocks, ResourceEvents, MagicMock], catalog: Mock, caplog: LogCaptureFixture
 ) -> None:
     """Greying is a courtesy: a cache that cannot say which roots are out of reach greys none, and the failure is
     logged (#511).
@@ -456,7 +458,7 @@ def test_a_cache_that_cannot_be_read_lists_no_root_out_of_reach(
     """
     docks, _, _ = watched
     docks.catalog.open_rehuco(REHUCO_PATH)
-    mocker.patch.object(Catalog, "roots", side_effect=CatalogUnreadable("Could not read the roots: locked"))
+    catalog.roots.side_effect = CatalogUnreadable("Could not read the roots: locked")
 
     with caplog.at_level(logging.ERROR, logger="rehuco_agent.rehuco.root_catalog"):
         assert docks.catalog.unreachable_roots() == frozenset()
@@ -471,7 +473,11 @@ def test_a_cache_that_cannot_be_read_lists_no_root_out_of_reach(
 
 
 def test_a_reported_change_is_not_published_back_on_the_feed(
-    mocker: MockerFixture, qtbot: QtBot, followed: tuple[CatalogDocks, ResourceEvents]
+    mocker: MockerFixture,
+    qtbot: QtBot,
+    followed: tuple[CatalogDocks, ResourceEvents],
+    catalog: Mock,
+    cached_rows: list[CatalogRow],
 ) -> None:
     """A verify of files the feed said changed brings their rows in line, and says nothing more on the feed: it has
     said it (#511).
@@ -483,7 +489,7 @@ def test_a_reported_change_is_not_published_back_on_the_feed(
     * verify the feed carried the one change published
     """
     dock, events = followed
-    retitle(mocker, "Python 3")
+    retitle(mocker, catalog, cached_rows, "Python 3")
     heard = MagicMock()
     events.changed.connect(heard)
 
@@ -495,7 +501,11 @@ def test_a_reported_change_is_not_published_back_on_the_feed(
 
 
 def test_a_change_an_access_found_is_published_on_the_feed(
-    mocker: MockerFixture, qtbot: QtBot, followed: tuple[CatalogDocks, ResourceEvents]
+    mocker: MockerFixture,
+    qtbot: QtBot,
+    followed: tuple[CatalogDocks, ResourceEvents],
+    catalog: Mock,
+    cached_rows: list[CatalogRow],
 ) -> None:
     """A record the app opens is verified, and a change no notifier reported -- the catch-all -- is published, so every
     other view hears of it the way it hears of any change (#487, #511).
@@ -506,7 +516,7 @@ def test_a_change_an_access_found_is_published_on_the_feed(
     * verify the row shows the new title, and the feed carried the record as changed
     """
     dock, events = followed
-    retitle(mocker, "Python 3")
+    retitle(mocker, catalog, cached_rows, "Python 3")
 
     with qtbot.waitSignal(events.changed, timeout=WAIT_TIMEOUT_MS) as heard:
         events.announce_accessed((RECORD,))
@@ -516,65 +526,71 @@ def test_a_change_an_access_found_is_published_on_the_feed(
 
 
 def test_a_folder_reported_changed_stands_for_every_record_beneath_it(
-    mocker: MockerFixture, qtbot: QtBot, followed: tuple[CatalogDocks, ResourceEvents]
+    mocker: MockerFixture,
+    qtbot: QtBot,
+    followed: tuple[CatalogDocks, ResourceEvents],
+    catalog: Mock,
+    cached_rows: list[CatalogRow],
 ) -> None:
     """A folder deleted or replaced outside the app is checked through every record the cache holds beneath it
     (#511).
 
     **Test steps:**
 
-    * make the record missing under a root that is there, then publish its folder changed
-    * verify the record's row was removed in place
+    * make the cache name the tutorial's record beneath its folder, and a check find it gone; publish the folder changed
+    * verify the records beneath the folder were asked for, the record was planned, and its row removed in place
     """
     dock, events = followed
     model = first_browser(dock).model
-    mocker.patch.object(Path, "is_file", autospec=True, return_value=False)
-    mocker.patch.object(Path, "is_dir", autospec=True, return_value=True)
+    folder = ResourceKey(TUTORIALS / "python")
+    catalog.record_paths.return_value = [RECORD.path]
+    verified(mocker, catalog, cached_rows, None)
 
     with (
         qtbot.assertNotEmitted(model.modelReset),
         qtbot.waitSignal(model.rowsRemoved, timeout=WAIT_TIMEOUT_MS),
     ):
-        publish_changed(events, (ResourceKey(TUTORIALS / "python"),))
+        publish_changed(events, (folder,))
 
+    catalog.record_paths.assert_called_once_with((folder,))
+    assert RECORD in catalog.plan_verify.call_args.args[0]
     assert model.rowCount() == 0
 
 
-@mark.usefixtures("served")
 def test_a_converted_record_keeps_its_row_and_its_selection(
-    mocker: MockerFixture, qtbot: QtBot, queue: TaskQueue, listening: tuple[CatalogDocks, ResourceEvents, Path]
+    mocker: MockerFixture,
+    qtbot: QtBot,
+    followed: tuple[CatalogDocks, ResourceEvents],
+    catalog: Mock,
+    cached_rows: list[CatalogRow],
 ) -> None:
-    """A ``.tc`` converted outside the app is reported gone with its ``.rehu`` new; the ``.rehu`` takes the ``.tc``'s
-    row over, so the row keeps its id and the browser its selection (#511).
+    """A ``.tc`` converted outside the app is reported gone with its ``.rehu`` new; the cache gives the ``.rehu`` the
+    ``.tc``'s row (its own contract, tested in core), so the row keeps its id and the browser its selection (#511).
 
     **Test steps:**
 
-    * scan a ``.tc`` in and select its row
-    * write its ``.rehu`` (the ``.tc`` is gone), and publish both changed
+    * hold a ``.tc``'s row, show it and select it
+    * make a check find the ``.rehu`` in its place under the same row, and publish both changed
     * verify the row now names the ``.rehu``, still selected and current, with no reset
     """
-    dock, events, folder = listening
-    scan_finding(mocker, {folder: (CatalogRecord("alpha/info.tc", RecordKind.TC, title="Alpha"),)})
-    dock.roots.scan_action.trigger()
-    browser = first_browser(dock)
-    qtbot.waitUntil(lambda: browser.model.rowCount() == 1, timeout=WAIT_TIMEOUT_MS)
-    wait_for_jobs(qtbot, queue)
+    dock, events = followed
+    cached_rows[0] = catalog_row(1, 0, CatalogRecord("python/info.tc", RecordKind.TC, title="Python"))
+    dock.catalog.rows_changed.emit({1})
     wait_for_rows(qtbot, dock)
+    browser = first_browser(dock)
     browser.view.selectRow(0)
-    write_pack_record(folder / "alpha" / "info.rehu", "Alpha")
+    verified(mocker, catalog, cached_rows, CatalogRecord("python/info.rehu", RecordKind.REHU, title="Python"))
 
     with qtbot.assertNotEmitted(browser.model.modelReset):
-        publish_changed(
-            events, (ResourceKey(folder / "alpha" / "info.tc"), ResourceKey(folder / "alpha" / "info.rehu"))
-        )
+        publish_changed(events, (ResourceKey(TUTORIALS / "python" / "info.tc"), RECORD))
         qtbot.waitUntil(
-            lambda: browser.model.index(0, CatalogColumn.PATH).data() == "tutorials/alpha/info.rehu",
+            lambda: browser.model.index(0, CatalogColumn.PATH).data() == "tutorials/python/info.rehu",
             timeout=WAIT_TIMEOUT_MS,
         )
 
     assert browser.model.rowCount() == 1
     assert browser.view.selectionModel().isRowSelected(0)
-    assert browser.current_resource == (FIRST_ROOT, "alpha/info.rehu")
+    assert browser.current_resource == (FIRST_ROOT, "python/info.rehu")
 
 
 # endregion
@@ -614,7 +630,7 @@ def test_a_change_touching_more_rows_than_an_update_in_place_is_worth_reads_ever
 # region Detaching
 
 
-@mark.usefixtures("served", "no_open_scan")
+@mark.usefixtures("served")
 def test_a_detached_catalog_follows_no_root_any_more(
     mocker: MockerFixture, queue: TaskQueue, listening: tuple[CatalogDocks, ResourceEvents, Path]
 ) -> None:

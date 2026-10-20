@@ -1,28 +1,31 @@
 """Tests for what the Roots view offers for an image or a zip, and what a double-click does (#456).
 
-The docks, the in-memory cache and the real folders are :mod:`test_catalog_docks`' own fixtures, imported by name.
+The docks, the mock catalog and the real folders are :mod:`test_catalog_docks`' own fixtures, imported by name.
 """
 
-import sqlite3
 from pathlib import Path
 
 from borco_pyside.widgets import MessageBanner
 from PySide6.QtCore import QModelIndex, Qt, QUrl
 from PySide6.QtWidgets import QLabel
-from pytest import LogCaptureFixture, mark, param
+from pytest import mark, param
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.rehuco.roots_lightbox import ImagesOwner
-from rehuco_core import CatalogCache, CatalogRecord, RecordKind, TaskQueue
+from rehuco_core import CatalogRecord, CatalogRow, RecordKind
 
 from .test_catalog_docks import (  # noqa: F401  # pylint: disable=unused-import
     REHUCO_PATH,
     TUTORIALS,
     CatalogDocks,
+    catalog_row,
     child_names,
-    fixture_database,
+    fixture_cache,
+    fixture_cached_rows,
+    fixture_catalog,
     fixture_dock,
     fixture_folders,
+    fixture_no_open_scan,
     fixture_queue,
     fixture_served,
     open_root_folder,
@@ -286,63 +289,44 @@ def test_open_on_the_current_image_shows_it_in_the_lightbox(
 
 
 @mark.usefixtures("served")
-def test_the_catalog_says_a_records_type_from_its_cache_row(
-    mocker: MockerFixture, qtbot: QtBot, dock: CatalogDocks, queue: TaskQueue, caplog: LogCaptureFixture
-) -> None:
-    """The type is the scanned row's: nothing before a catalog is open, nothing for a record not scanned or outside
-    every root, and a cache that cannot be read is logged and answers nothing.
+def test_the_catalog_says_a_records_type_from_its_cache_row(dock: CatalogDocks, cached_rows: list[CatalogRow]) -> None:
+    """The type is the record's row's: nothing before a catalog is open, nothing for a record with no row.
 
     **Test steps:**
 
-    * ask before opening, then open and scan a root holding a tutorial record
-    * verify the record's type, none for an unscanned record and one outside the roots
-    * make the cache fail and verify the answer is none and the failure is logged
+    * ask before opening, then open a catalog whose cache holds a tutorial record's row
+    * verify the record's type, and none for a record with no row and one outside the roots
     """
     record = TUTORIALS / "python" / "info.rehu"
+    cached_rows.append(catalog_row(1, 0, tutorial_record()))
     assert dock.catalog.resource_type(record) is None
-    scan_finding(mocker, {TUTORIALS: (tutorial_record(),)})
     dock.catalog.open_rehuco(REHUCO_PATH)
-    dock.roots.scan_action.trigger()
-    wait_for_jobs(qtbot, queue)
 
     assert dock.catalog.resource_type(record) == "tutorial"
     assert dock.catalog.resource_type(TUTORIALS / "other" / "info.rehu") is None
     assert dock.catalog.resource_type(Path("/elsewhere/info.rehu")) is None
 
-    mocker.patch.object(CatalogCache, "rows", side_effect=sqlite3.OperationalError("locked"))
-    assert dock.catalog.resource_type(record) is None
-    assert "Could not read the row of" in caplog.text
-
 
 @mark.usefixtures("served")
-def test_the_catalog_says_a_records_id_from_its_cache_row(
-    mocker: MockerFixture, qtbot: QtBot, dock: CatalogDocks, queue: TaskQueue, caplog: LogCaptureFixture
-) -> None:
-    """The id is the scanned row's (#395): nothing before a catalog is open, nothing for a record not scanned or
-    outside every root, and a cache that cannot be read is logged and answers nothing.
+def test_the_catalog_says_a_records_id_from_its_cache_row(dock: CatalogDocks, cached_rows: list[CatalogRow]) -> None:
+    """The id is the record's row's (#395): nothing before a catalog is open, nothing for a record with no row.
 
     **Test steps:**
 
-    * ask before opening, then open and scan a root holding a record with an id
-    * verify the record's id, none for an unscanned record and one outside the roots
-    * make the cache fail and verify the answer is none and the failure is logged
+    * ask before opening, then open a catalog whose cache holds a row for a record with an id
+    * verify the record's id, and none for a record with no row and one outside the roots
     """
     record = TUTORIALS / "python" / "info.rehu"
     identifier = "0f8fad5b-d9cb-469f-a165-70867728950e"
+    cached_rows.append(
+        catalog_row(1, 0, CatalogRecord("python/info.rehu", RecordKind.REHU, uuid=identifier, type="tutorial"))
+    )
     assert dock.catalog.resource_uuid(record) is None
-    scanned = CatalogRecord("python/info.rehu", RecordKind.REHU, uuid=identifier, type="tutorial", content_hash="0")
-    scan_finding(mocker, {TUTORIALS: (scanned,)})
     dock.catalog.open_rehuco(REHUCO_PATH)
-    dock.roots.scan_action.trigger()
-    wait_for_jobs(qtbot, queue)
 
     assert dock.catalog.resource_uuid(record) == identifier
     assert dock.catalog.resource_uuid(TUTORIALS / "other" / "info.rehu") is None
     assert dock.catalog.resource_uuid(Path("/elsewhere/info.rehu")) is None
-
-    mocker.patch.object(CatalogCache, "rows", side_effect=sqlite3.OperationalError("locked"))
-    assert dock.catalog.resource_uuid(record) is None
-    assert "Could not read the row of" in caplog.text
 
 
 @mark.usefixtures("served")

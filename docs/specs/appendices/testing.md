@@ -22,8 +22,8 @@ where it does execute.
 [[[appendices.testing#qa-gate]]]
 
 `make qa` runs, in order: `ruff format` + `ruff check --fix`, then `pytest` with coverage
-(`make cov`), `bandit`, `pyright`, `pylint`. The test stack is `pytest` plus `pytest-mock`,
-`pytest-qt`, `pytest-cov`, `pytest-benchmark`, `pytest-freezer`, and `pytest-explicit`. Tests live
+(`make cov-parallel`, which CI runs too, #545), `bandit`, `pyright`, `pylint`. The test stack is `pytest` plus
+`pytest-mock`, `pytest-qt`, `pytest-cov`, `pytest-benchmark`, `pytest-freezer`, and `pytest-explicit`. Tests live
 beside their packages under `packages/*/tests` (`testpaths` in `pyproject.toml`);
 `--strict-markers` is on, so every marker must be declared.
 
@@ -164,7 +164,7 @@ The **wrong** way (tried first): gate it with env vars (`${COV_EXCLUDE_WIN-…}`
 `${COV_OMIT_WIN-…}` in `omit`) set from the Makefile and conftest. This fails, because *when*
 coverage reads its config depends on how pytest was launched:
 
-- `make cov` / CI (plain `pytest --cov`): pytest-cov reads the coverage config **before** the root
+- `make cov` / `make cov-parallel` / CI (plain `pytest --cov`): pytest-cov reads the coverage config **before** the root
   conftest runs — so a conftest-set var is too late; only a Makefile-exported one works.
 - The VSCode test runner invokes `pytest --cov=. --cov-branch` directly (no `make`), and reads
   config at yet another moment — so neither the Makefile env nor a timely conftest value is
@@ -307,8 +307,15 @@ macOS/Linux uic couldn't resolve a `.ui`'s `.qrc` to its package and emitted a b
 
 - **A real folder is pytest's `tmp_path`, nothing hand-rolled** (#475); never mock `Path.mkdir`. A `/fake/…` path is
   a real `C:\fake` on Windows, and a `C:/x` literal is absolute only there — a key needs an absolute path, so root a
-  fake one at `Path(Path.cwd().anchor)` (#414's tests passed on Windows and failed on macOS and Linux). Real records
-  under `tmp_path` give real cache rows (verify-on-access, #487); no `resource_type` mock.
+  fake one at `Path(Path.cwd().anchor)` (#414's tests passed on Windows and failed on macOS and Linux).
+- **What is tested elsewhere is mocked here** (#545): a class's own tests prove it; every other test assumes it works,
+  and a break gets a test of that class. The Root Catalog docks tests run `RootCatalog` over a `Mock(spec=Catalog)`
+  (`catalog`) and patch `CatalogCache.open` with a `MagicMock` (`cache`) for the jobs and notifiers; `cached_rows` is
+  what both answer from, as far as their contracts say (`hold`), and no agent test opens SQLite. The window tests
+  build `MainWindow` over stub settings pages and every document they open over stub sub-docks, the Documents dock's
+  tests their documents over the same stub (`stub_settings_pages`, `stub_sub_docks`, module-wide); a test of the real
+  ones asks for `real_settings_pages` or `real_sub_docks`. Only a class's own tests, and core's contract tests
+  (`test_catalog_snapshot`), run the real cache.
 - **The agent suite's `Path.stat` answers a missing file with a `Mock`** (#458): `touch()` first, or use
   `real_path_stat` (#395). The session's settings, data and cache folders are temporary (`isolate_app_folders`, #412).
 - **The `served` fixture patches `Path.read_text` for every file** (#469): re-patch it to serve `.rehuco` only
@@ -318,7 +325,7 @@ macOS/Linux uic couldn't resolve a `.ui`'s `.qrc` to its package and emitted a b
   with `GetWindowTextW`; a top-level title lacking the application display name gets it appended.
 - **`mocker.patch.object(instance, "method")` misses a collaborator built with the bound method** (#456): hand it the
   object.
-- **Fixtures are imported by name from a sibling module** (`test_catalog_docks`' `fixture_database`/`served`/`saves`,
+- **Fixtures are imported by name from a sibling module** (`test_catalog_docks`' `fixture_catalog`/`served`/`saves`,
   a card list's page; #487, #493) and keep their name (`@fixture(name=…)`, as `fixture_dock`). Past the size cap a
   test module splits the same way ([[appendices.code-conventions#python]]).
 - **Test helpers' id counters start far above explicit ids** (#379). **Never build expected text from the checkout's
