@@ -30,6 +30,7 @@ from rehuco_core import (
 from rehuco_core.access import KeyRelocation, Records, ResourceKey
 
 from ..resource_events import ResourceEvents
+from ..settings.root_catalog_settings import shared_root_catalog_settings
 from .add_root_dialog import AddRootDialog
 from .rehuco_roots_panel_ui import Ui_RehucoRootsPanel
 from .root_catalog import RootCatalog
@@ -870,7 +871,8 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         return answer == QMessageBox.StandardButton.Yes
 
     def __on_add_root(self) -> None:
-        """Ask for a folder and what it lives on and add it as a root, saving the file at once, and make it current."""
+        """Ask for a folder and what it lives on and add it as a root, saving the file at once, make it current, and
+        scan it when *Scan after adding* is on (#542)."""
         file = self.__catalog.file
         if file is None or file.lock_reason is not None:
             return
@@ -886,6 +888,8 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         root_id = file.roots[row].root_id
         self.__commit()
         self.__roots_ui.roots_view.setCurrentIndex(self.__roots_model.index_for(root_id, ()))
+        if shared_root_catalog_settings().scan_after_adding:
+            self.__catalog.scan_root(root_id)
 
     def __on_remove_root(self) -> None:
         """Remove the current root from the file, once confirmed, saving it at once, and its rows from the cache on

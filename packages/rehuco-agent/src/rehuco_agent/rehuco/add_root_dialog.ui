@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>480</width>
-    <height>150</height>
+    <height>170</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -58,6 +58,16 @@
       </layout>
      </item>
     </layout>
+   </item>
+   <item>
+    <widget class="QCheckBox" name="scan_after_adding_check_box">
+     <property name="text">
+      <string>Scan after adding</string>
+     </property>
+     <property name="toolTip">
+      <string>Scan the new root as soon as it is added. Remembered for the next time.</string>
+     </property>
+    </widget>
    </item>
    <item>
     <spacer name="spacer">

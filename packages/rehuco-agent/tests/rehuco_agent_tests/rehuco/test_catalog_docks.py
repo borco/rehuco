@@ -54,6 +54,7 @@ from rehuco_agent.rehuco.roots_preview import RootsPreview
 from rehuco_agent.resource_events import ResourceEvents
 from rehuco_agent.settings.catalog_state_store import TABLE_BROWSER_KIND, BrowserState, CatalogState
 from rehuco_agent.settings.checksum_settings import shared_checksum_settings
+from rehuco_agent.settings.root_catalog_settings import shared_root_catalog_settings
 from rehuco_core import (
     FINISHED_JOB_STATES,
     Catalog,
@@ -781,6 +782,7 @@ def test_removing_a_re_added_root_is_queued_again(
     * hold the queue; remove a root, add the same folder back, remove it again
     * verify two removal jobs wait
     """
+    shared_root_catalog_settings().scan_after_adding = False  # a scan of the re-added root would queue too
     answer_add_root(mocker, dock, str(TUTORIALS))
     dock.catalog.open_rehuco(REHUCO_PATH)
     select_root(dock, 0)
@@ -1080,6 +1082,27 @@ def test_a_failed_save_drops_the_edit_from_the_screen_too(
 
     warning.assert_called_once()
     assert dock.roots.roots_model.rowCount() == 2
+
+
+@mark.usefixtures("served")
+def test_a_failed_save_scans_nothing(mocker: MockerFixture, dock: CatalogDocks, saves: MagicMock) -> None:
+    """The file read back after a failed save has no new root, so *Scan after adding* has nothing to scan (#542).
+
+    **Test steps:**
+
+    * add a root with *Scan after adding* on while the write fails
+    * verify no scan job was built
+    """
+    answer_add_root(mocker, dock, "/fake/refs")
+    mocker.patch("rehuco_agent.rehuco.roots_panel.QMessageBox.warning")
+    scan_job = mocker.patch("rehuco_agent.rehuco.root_catalog.ScanCatalogRootJob")
+    saves.side_effect = PermissionError("read-only folder")
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    scan_job.reset_mock()
+
+    dock.roots.add_root_action.trigger()
+
+    scan_job.assert_not_called()
 
 
 def test_a_failed_save_that_cannot_be_read_back_closes_the_file(
@@ -4984,3 +5007,49 @@ def test_the_empty_part_of_a_column_opens_its_folders_menu_and_leaves_the_select
 
 
 # endregion
+
+
+@mark.usefixtures("served", "saves")
+@mark.parametrize(("scan_after_adding", "scans"), [(True, 1), (False, 0)])
+def test_adding_a_root_scans_it_only_when_scan_after_adding_is_on(
+    mocker: MockerFixture, dock: CatalogDocks, scan_after_adding: bool, scans: int
+) -> None:
+    """The new root, and only it, is scanned after the file is saved -- when the setting says so (#542).
+
+    **Test steps:**
+
+    * set *Scan after adding*, spy on the catalog's single-root scan, and add a root
+    * verify one scan of the new root's id, or none
+    """
+    shared_root_catalog_settings().scan_after_adding = scan_after_adding
+    scan = mocker.patch.object(dock.catalog, "scan_root")
+    answer_add_root(mocker, dock, "/fake/refs")
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    scan.reset_mock()
+
+    dock.roots.add_root_action.trigger()
+
+    assert scan.call_count == scans
+    if scans:
+        assert dock.catalog.file is not None
+        added = dock.catalog.file.roots[-1]
+        # pylint-qt reads the subscript above as a signal
+        assert scan.call_args.args == (added.root_id,)  # pylint: disable=no-member
+
+
+def test_cancelling_the_add_scans_nothing(mocker: MockerFixture, dock: CatalogDocks, served: Any) -> None:
+    """No root added, nothing to scan.
+
+    **Test steps:**
+
+    * cancel the add with *Scan after adding* on
+    * verify no scan was asked for
+    """
+    del served
+    answer_add_root(mocker, dock, None)
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    scan = mocker.patch.object(dock.catalog, "scan_root")
+
+    dock.roots.add_root_action.trigger()
+
+    scan.assert_not_called()

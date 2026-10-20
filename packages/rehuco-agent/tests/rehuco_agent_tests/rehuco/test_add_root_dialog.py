@@ -3,9 +3,10 @@
 from pathlib import Path
 
 from PySide6.QtWidgets import QComboBox, QLineEdit, QPushButton
-from pytest import mark
+from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
+from rehuco_agent.rehuco import add_root_dialog
 from rehuco_agent.rehuco.add_root_dialog import AddRootDialog
 from rehuco_agent.rehuco.root_storage import (
     ROOT_STORAGE_ICONS,
@@ -16,7 +17,10 @@ from rehuco_agent.rehuco.root_storage import (
     select_root_storage,
     selected_root_storage,
 )
+from rehuco_agent.settings.root_catalog_settings import shared_root_catalog_settings
 from rehuco_core import RootStorage
+
+from rehuco_agent_tests.conftest import FakeSettings
 
 
 def test_every_storage_has_a_glyph_a_label_and_two_offline_texts() -> None:
@@ -169,3 +173,94 @@ def test_browse_fills_the_folder_unless_cancelled(qtbot: QtBot, mocker: MockerFi
 
     chooser.assert_called_once()
     assert dialog.folder == (picked or "/typed/folder")
+
+
+@fixture(name="stored")
+def stored_fixture(mocker: MockerFixture) -> FakeSettings:
+    """Stand in for ``persistent_settings()`` so an accepted dialog never touches real storage.
+
+    :param mocker: pytest-mock fixture.
+    :returns: the store the dialog writes to.
+    """
+    fake = FakeSettings()
+    mocker.patch.object(add_root_dialog, "persistent_settings", return_value=fake)
+    return fake
+
+
+def test_the_dialog_shows_the_scan_after_adding_setting(qtbot: QtBot) -> None:
+    """The checkbox starts on the setting's value, which is on by default (#542).
+
+    **Test steps:**
+
+    * open the dialog over the default setting, then over a setting of off
+    * verify the box is checked, then unchecked
+    """
+    first = AddRootDialog()
+    qtbot.addWidget(first)
+    assert first.scan_after_adding
+    assert first.scan_after_adding_check_box.isChecked()
+
+    shared_root_catalog_settings().scan_after_adding = False
+    second = AddRootDialog()
+    qtbot.addWidget(second)
+
+    assert not second.scan_after_adding
+
+
+def test_accepting_the_dialog_remembers_the_scan_after_adding_choice(qtbot: QtBot, stored: FakeSettings) -> None:
+    """Unticking the box and accepting changes the setting and persists it; the next dialog shows it.
+
+    **Test steps:**
+
+    * untick the box and accept
+    * verify the setting is off, the store holds it, and a new dialog shows an unticked box
+    """
+    dialog = AddRootDialog()
+    qtbot.addWidget(dialog)
+    dialog.scan_after_adding_check_box.setChecked(False)
+
+    dialog.accept()
+
+    assert shared_root_catalog_settings().scan_after_adding is False
+    stored.beginGroup("root_catalog")
+    assert stored.value("scan_after_adding") is False
+    stored.endGroup()
+    again = AddRootDialog()
+    qtbot.addWidget(again)
+    assert not again.scan_after_adding
+
+
+def test_accepting_an_unchanged_choice_writes_nothing(qtbot: QtBot, stored: FakeSettings) -> None:
+    """Only a changed choice is saved, so most accepts never touch the settings file.
+
+    **Test steps:**
+
+    * accept the dialog without touching the box
+    * verify the store is still empty
+    """
+    dialog = AddRootDialog()
+    qtbot.addWidget(dialog)
+
+    dialog.accept()
+
+    stored.beginGroup("root_catalog")
+    assert stored.value("scan_after_adding") is None
+
+
+def test_cancelling_the_dialog_still_remembers_the_scan_after_adding_choice(qtbot: QtBot, stored: FakeSettings) -> None:
+    """The choice is saved on every exit path, like a dialog's geometry (#542).
+
+    **Test steps:**
+
+    * untick the box and reject
+    * verify the setting is off and the store holds it
+    """
+    dialog = AddRootDialog()
+    qtbot.addWidget(dialog)
+    dialog.scan_after_adding_check_box.setChecked(False)
+
+    dialog.reject()
+
+    assert shared_root_catalog_settings().scan_after_adding is False
+    stored.beginGroup("root_catalog")
+    assert stored.value("scan_after_adding") is False

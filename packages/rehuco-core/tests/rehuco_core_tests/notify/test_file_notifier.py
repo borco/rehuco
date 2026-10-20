@@ -132,7 +132,7 @@ def fixture_backends(mocker: MockerFixture) -> Backends:
     return Backends(mocker)
 
 
-class Notified:  # pylint: disable=too-few-public-methods  # a notifier and its feed, read by the test
+class Notified:
     """A notifier over a real feed, and what the feed published.
 
     :param root_id: the watched folder's root, or ``None``.
