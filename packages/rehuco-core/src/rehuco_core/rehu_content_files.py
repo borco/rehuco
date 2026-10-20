@@ -43,6 +43,7 @@ from .constants import (
     EXCLUDED_FILE_PATTERNS,
     IMAGE_EXTENSIONS,
 )
+from .record_file_lock import is_lock_name
 from .resource_scoping import (
     DIRECTORY_SCOPED_FILENAMES,
     is_directory_scoped,
@@ -444,10 +445,10 @@ class ContentFileScanner:
 
         :param filename: the candidate's file name.
         :param records: the record names found in that file's own directory, from :meth:`__record_names`.
-        :returns: whether it is a record, one of a record's ``<record>NN`` screenshots, a record's checksum
-            manifest, or a retained conversion backup.
+        :returns: whether it is a record, a record's lock file (#512), one of a record's ``<record>NN`` screenshots, a
+            record's checksum manifest, or a retained conversion backup.
         """
-        if is_conversion_backup(filename) or is_record_name(filename):
+        if is_conversion_backup(filename) or is_record_name(filename) or is_lock_name(filename):
             return True
         stem, suffix = os.path.splitext(filename)
         suffix = suffix.lower()

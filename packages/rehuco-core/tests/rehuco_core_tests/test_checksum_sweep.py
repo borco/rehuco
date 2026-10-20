@@ -32,6 +32,7 @@ from rehuco_core import (
 )
 
 from rehuco_core_tests.fake_directories import FakeDirEntry, FakeScandir
+from rehuco_core_tests.fake_locks import take_no_lock_files
 
 ROOT: Final = Path("/fake/library")
 
@@ -305,6 +306,7 @@ def fixture_catalog(mocker: MockerFixture, freezer: FrozenDateTimeFactory) -> Fa
     mocker.patch("rehuco_core.rehu_catalog.os.scandir", side_effect=catalog.catalog_scandir)
     mocker.patch("rehuco_core.content_reading.shared_read_open", side_effect=catalog.open)
     mocker.patch("rehuco_core.checksum_record.atomic_write_text", side_effect=catalog.write_text)
+    take_no_lock_files(mocker)
     mocker.patch.object(Path, "stat", autospec=True, side_effect=lambda self, **_kwargs: catalog.stat(self))
     mocker.patch.object(Path, "read_text", autospec=True, side_effect=lambda self, **_kwargs: catalog.read_text(self))
     mocker.patch.object(Path, "is_dir", autospec=True, side_effect=catalog.is_dir)

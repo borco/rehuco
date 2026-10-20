@@ -34,10 +34,12 @@ manifest's claims for everything else it covers; the move waits until that resou
 one-resource-at-a-time assumption the rename barrier is built on (#241). It reads and writes inside a
 :meth:`~rehuco_core.RenameCoordinator.holding` block, so a rename of the covering resource waits the
 milliseconds the write takes rather than colliding with it, and the queue is serial
-([[appendices.task-queue#serial]]), so no second job can be verifying that record at the same moment.
-What is *not* covered is another process, or this app's own in-place
-:func:`~rehuco_core.forget_checksums`, touching the covering record in the same instant -- the same
-last-writer-wins window every record already has, one resource further away than usual.
+([[appendices.task-queue#serial]]), so no second job can be verifying that record at the same moment. Another
+process, or this app's own in-place :func:`~rehuco_core.forget_checksums`, touching the covering record in the same
+instant is kept apart by the record's lock file (#512): every write re-reads the record under it and changes what is
+there now (:func:`~rehuco_core.update_checksum_record`). Inside the hold the lock is waited for briefly only
+(:data:`HELD_LOCK_TIMEOUT_SECONDS`): a rename waiting on the hold must not time out because another machine holds a
+``.checksum``.
 
 **A new file-scoped record takes its claims at once** (#467, :func:`take_enclosing_claims`). A verify of the
 losing record makes the move whenever it next runs; until then the file reads *no checksum* everywhere that
@@ -63,7 +65,7 @@ from .checksum_record import (
     checksum_record_path,
     load_checksum_record,
     new_checksum_record,
-    save_checksum_record,
+    update_checksum_record,
 )
 from .checksum_seeding import legacy_manifest_for
 from .constants import EXCLUDED_FILE_PATTERNS
@@ -72,6 +74,11 @@ from .rename_coordination import RenameCoordinator
 from .resource_scoping import DIRECTORY_SCOPED_FILENAMES, is_directory_scoped
 
 LOG: Final = logging.getLogger(__name__)
+
+HELD_LOCK_TIMEOUT_SECONDS: Final = 0.5
+"""How long a write made inside the rename barrier's hold waits for a busy lock file. Shorter than a rename waits for
+holders (:data:`~rehuco_core.rename_coordination.DEFAULT_RENAME_YIELD_TIMEOUT`), so a claim moving into a record
+another machine is writing never times a rename out; the move waits where it is for the next run instead."""
 
 
 class ClaimHandover:  # pylint: disable=too-few-public-methods
@@ -141,26 +148,31 @@ class ClaimHandover:  # pylint: disable=too-few-public-methods
             create yet, is reported and skipped rather than taking the run down with it.
         """
         location = self.__coordinator.track(checksum_record_path(record))
+
+        def taken(target: dict[str, Any] | None) -> dict[str, Any] | None:
+            """The covering record with the claims in it, or nothing to write while its seed is owed.
+
+            :param target: the covering record as it is now, or ``None``.
+            :returns: what to write, or ``None``.
+            """
+            if target is None:
+                if legacy_manifest_for(location.path.with_suffix(record.suffix)) is not None:
+                    LOG.info(
+                        "%s has no record yet and a legacy manifest to seed one from; the claims "
+                        "moving to it wait where they are until it has (#243).",
+                        record,
+                    )
+                    return None
+                target = new_checksum_record()
+            target[CHECKSUM_FILES_KEY] = self.__merged(target[CHECKSUM_FILES_KEY], names)
+            return target
+
         try:
             with self.__coordinator.holding():
-                path = location.path
-                try:
-                    target = load_checksum_record(path)
-                except FileNotFoundError:
-                    if legacy_manifest_for(location.path.with_suffix(record.suffix)) is not None:
-                        LOG.info(
-                            "%s has no record yet and a legacy manifest to seed one from; the claims "
-                            "moving to it wait where they are until it has (#243).",
-                            record,
-                        )
-                        return False
-                    target = new_checksum_record()
-                target[CHECKSUM_FILES_KEY] = self.__merged(target[CHECKSUM_FILES_KEY], names)
-                save_checksum_record(path, target)
+                return update_checksum_record(location.path, taken, timeout=HELD_LOCK_TIMEOUT_SECONDS) is not None
         except (OSError, ChecksumRecordError) as error:
             LOG.warning("%s could not take the claims moving to it, which stay where they are: %s", record, error)
             return False
-        return True
 
     def __merged(self, resident: list[Any], names: Collection[str]) -> list[Any]:
         """One covering record's entries with the incoming claims in them.
@@ -371,14 +383,24 @@ def prune_claims(source: Path, moved: Mapping[str, CoveringRecord], coordinator:
         resolved by that record's next verify.
     """
     location = coordinator.track(source)
+
+    def pruned(record: dict[str, Any] | None) -> dict[str, Any]:
+        """The losing record without the claims that moved.
+
+        :param record: the record as it is now, or ``None``.
+        :returns: what to write.
+        :raises FileNotFoundError: the record is gone.
+        """
+        if record is None:
+            raise FileNotFoundError(f"No checksum record: {location.path}")
+        record[CHECKSUM_FILES_KEY] = [
+            raw for raw in record[CHECKSUM_FILES_KEY] if checksum_entry_name(raw) not in moved
+        ]
+        return record
+
     try:
         with coordinator.holding():
-            path = location.path
-            record = load_checksum_record(path)
-            record[CHECKSUM_FILES_KEY] = [
-                raw for raw in record[CHECKSUM_FILES_KEY] if checksum_entry_name(raw) not in moved
-            ]
-            save_checksum_record(path, record)
+            update_checksum_record(location.path, pruned, timeout=HELD_LOCK_TIMEOUT_SECONDS)
     except (OSError, ChecksumRecordError) as error:
         LOG.warning(
             "%s still lists the checksums that moved out of it, which are now in both records until its next "

@@ -5,7 +5,7 @@ import logging
 from pathlib import Path
 from typing import Final
 
-from ..record_merge import record_lock
+from ..record_file_lock import locked_record
 from ..record_versions import RecordVersion, merge_users, record_version, same_details
 from ..rehu_document import RehuDocument, RehuFormatError
 from ..rehu_screenshot_ordering import Deleter
@@ -25,8 +25,9 @@ LEGACY_SUFFIX: Final = ".tc"
 class Records:
     """Records reached through this machine's filesystem.
 
-    Saves are serialized per file within this process by :func:`~rehuco_core.record_merge.record_lock` -- the lock a
-    progress write takes too, so the two never interleave. **A write is announced by no one here**: the file notifier
+    Saves hold the record by :func:`~rehuco_core.record_file_lock.locked_record` -- in this process, and by its lock
+    file across processes and machines ([[sync#lock-file]], #512) -- the lock a progress write takes too, so no two
+    writers interleave between the re-read and the write. **A write is announced by no one here**: the file notifier
     reports it like any other writer's ([[mounts-and-storage#out-of-band]], #511).
 
     :param coordinator: the rename barrier :meth:`signature` looks under, so it never blocks a rename.
@@ -78,6 +79,7 @@ class Records:
         :param overwrite: write over a metadata edit made on disk since ``base``.
         :returns: the record as saved.
         :raises RecordConflict: the metadata on disk changed since ``base``, and ``overwrite`` is not set.
+        :raises RecordLockedError: someone else held the record's lock for longer than a save waits.
         :raises OSError: the file could not be read or written.
         :raises ValueError: the document is locked against saving, or ``key`` is a legacy ``.tc``, which is never
             written -- it is converted ([[acquisition-tooling#tc-to-rehu]]).
@@ -85,7 +87,7 @@ class Records:
         path = key.path
         if path.suffix.lower() == LEGACY_SUFFIX:
             raise ValueError(f"Refusing to save over a legacy record: {path}")
-        with record_lock(path):
+        with locked_record(path, user=username):
             users_merged = False
             edited: bool | None = None
             theirs = None if base is None else self.__read_existing(path, document.username)

@@ -18,10 +18,10 @@ from rehuco_core import (
     RenameCoordinator,
     is_checksum_fresh,
     parse_checksum_entry,
-    save_checksum_record,
     take_enclosing_claims,
     verify_checksums,
 )
+from rehuco_core.checksum_record import write_held_checksum_record
 
 ZIP_BYTES = b"the pack as it was downloaded"
 VIDEO_BYTES = b"a lesson"
@@ -192,7 +192,7 @@ def test_a_failure_writing_the_new_record_leaves_the_entry_where_it_was(folder: 
     """
     before = (folder / "info.checksum").read_text(encoding="utf-8")
     mocker.patch(
-        "rehuco_core.checksum_claim_moves.save_checksum_record",
+        "rehuco_core.checksum_record.write_held_checksum_record",
         side_effect=PermissionError("read-only share"),
     )
 
@@ -219,9 +219,9 @@ def test_a_failure_pruning_the_enclosing_record_leaves_the_claim_in_both_until_i
     def save(path: Path, record: dict[str, Any]) -> None:
         if path.name == "info.checksum":
             raise PermissionError("read-only share")
-        save_checksum_record(path, record)
+        write_held_checksum_record(path, record)
 
-    mocker.patch("rehuco_core.checksum_claim_moves.save_checksum_record", side_effect=save)
+    mocker.patch("rehuco_core.checksum_record.write_held_checksum_record", side_effect=save)
     record = create(folder)
 
     taken = take_enclosing_claims(record)

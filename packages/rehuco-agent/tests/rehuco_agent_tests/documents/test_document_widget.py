@@ -2373,9 +2373,10 @@ def test_the_upgrade_offer_clears_once_the_document_is_saved(
 
     **Test steps:**
 
-    * mock the atomic write and trigger the upgrade action for real
+    * mock the atomic write and the lock file, and trigger the upgrade action for real
     * verify the upgrade action is now hidden and the banner shows no upgrade message
     """
+    mocker.patch("rehuco_core.record_file_lock.RecordFileLock")
     mocker.patch("rehuco_core.rehu_document.atomic_write_text")
 
     older_widget.upgrade_action.trigger()

@@ -50,6 +50,7 @@ from .constants import (
     IMAGE_EXTENSIONS,
     VIDEO_EXTENSIONS,
 )
+from .record_file_lock import is_lock_name
 from .resource_scoping import is_directory_scoped, is_directory_scoped_name, is_record_name
 from .tc_conversion_backups import is_conversion_backup
 
@@ -262,10 +263,14 @@ class DirectoryClassifier:
     def __name(self, directory: Path, scanned: list[tuple[str, bool, tuple[int, float] | None]]) -> DirectoryListing:
         """Name what a directory holds -- the half of :meth:`classify` that needs no disk.
 
+        A record's lock file is left out altogether (#512): it is there for the milliseconds of a save, and a row
+        appearing and vanishing with it would say nothing about the folder.
+
         :param directory: the directory the entries are in.
         :param scanned: ``(name, is a directory, (size, mtime) or None)`` for each entry.
         :returns: the classified listing.
         """
+        scanned = [entry for entry in scanned if entry[1] or not is_lock_name(entry[0])]
         filenames = [name for name, is_directory, _ in scanned if not is_directory]
         own_directory = directory == self.__record_path.parent
         records = self.__record_names(filenames)

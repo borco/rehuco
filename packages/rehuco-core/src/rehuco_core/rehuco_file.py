@@ -37,6 +37,7 @@ from borco_core import atomic_write_text
 
 from .lock_reasons import LockReason, LockReasonKind
 from .migrations import CURRENT_REHUCO_VERSION, migrate_rehuco_data
+from .record_file_lock import RecordFileLock
 from .rehu_format import FORMAT_VERSION_KEY
 
 REHUCO_ID_KEY: Final = "id"
@@ -211,13 +212,15 @@ class RehucoFile:
         return len(self.__roots)
 
     def save(self, path: Path | None = None) -> None:
-        """Write the file back as a current-version ``.rehuco``, atomically.
+        """Write the file back as a current-version ``.rehuco``, atomically, under its lock file like a record
+        ([[mounts-and-storage#rehuco-scope]], #512).
 
         The layout is canonical: ``format_version`` first, the rehuco id next, any carried unknown key in the
         order it was read, the roots last.
 
         :param path: where to write; ``None`` writes back to :attr:`path`, which then becomes ``path``.
         :raises ValueError: the file is read-only (:attr:`lock_reason`), or there is nowhere to write it.
+        :raises RecordLockedError: someone else held its lock for longer than a save waits.
         :raises OSError: the file could not be written.
         """
         reason = self.lock_reason
@@ -230,7 +233,8 @@ class RehucoFile:
         carried = (FORMAT_VERSION_KEY, REHUCO_ID_KEY, REHUCO_ROOTS_KEY)
         payload.update({key: value for key, value in self.__data.items() if key not in carried})
         payload[REHUCO_ROOTS_KEY] = self.__roots
-        atomic_write_text(target, json.dumps(payload, indent=2, ensure_ascii=False) + "\n")
+        with RecordFileLock(target):
+            atomic_write_text(target, json.dumps(payload, indent=2, ensure_ascii=False) + "\n")
         self.__path = target
 
     def add_root(self, path: Path | str, label: str | None = None, *, storage: RootStorage = RootStorage.LOCAL) -> int:

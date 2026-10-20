@@ -25,6 +25,20 @@ Changelogs are per package in this monorepo, matching the per-package release ta
   one the file's, in the caller's own scope and `public` only. `record_differences` lists what an edited document and
   the file disagree on -- the metadata and the caller's own per-user fields, each with its original value -- and
   `put_paths` puts the values kept. A legacy `.tc` is never saved over.
+- Every write to a record takes its lock file, `<record>.lock` beside it (`info.rehu.lock`), so writers in other
+  processes and on other machines are kept apart: `Records.save`, `merge_write`, a `.tc` conversion and a `.rehuco`
+  save. `RecordFileLock` creates it exclusively, writes `user@host pid app time` and closes it at once, removing it
+  after the write. A busy lock is retried with a random back-off for two seconds, then the write fails with a
+  `RecordLockedError` (an `OSError`) naming the holder; a lock older than two minutes is broken, with a warning in the
+  log. `locked_record` holds a record for one write. A lock file is no content (`is_lock_name`): scans, checksums, the
+  Files listing and the file notifier leave it out, and a rename leaves it behind and refuses while another process
+  holds it.
+- A `.checksum` is written under its own lock file, `info.checksum.lock`, by every writer: a generate, a verify, a
+  Forget, a claim moved in or out, a legacy manifest seeded or merged. `update_checksum_record` re-reads the record
+  under the lock and applies one change to what is there now. A verify or a generate, which read the record when it
+  started, merges its entries into the record as re-read (`merge_checksum_entries`): what it did not change is the
+  file's, so a claim moved in or an entry forgotten meanwhile survives; what it changed is its own; where both
+  changed one entry, the later `verified` date wins.
 - The Root Catalog: `Catalog` answers `roots()`, `query(CatalogQuery)`, `row(key)` and `count(root_id)` over a
   `.rehudb`, each call opening the cache on its own thread, and raises `CatalogUnreadable` for a cache it cannot read.
   `Catalog` also keeps the cache current: `prepare` and `attach` for the open `.rehuco`, `reconcile` and `hide` for
@@ -48,8 +62,8 @@ Changelogs are per package in this monorepo, matching the per-package release ta
   whole tutorial, a viewed file counting its full length and a missing file still counting. `read_progress`,
   `set_progress_entry`, `read_videos` and `set_videos` read and write the two maps, `ProgressEntry` and
   `WatchTotals` describe them.
-- `merge_write` re-reads a record, applies one change and writes it back atomically, one writer at a time per record
-  in a process, so a progress write and a metadata write both survive. `RehuDocument.save` takes
+- `merge_write` re-reads a record, applies one change and writes it back atomically, one writer at a time per record,
+  so a progress write and a metadata write both survive. `RehuDocument.save` takes
   `touch_updated=False` for a write that must not stamp `updated` or `created`.
 - `DurationProbe.probe_video` reads a video's frame size beside its length, as `VideoFacts`; `content_videos` probes
   each of a resource's videos into the `videos` map, and `content_video_files` lists them without probing. Both are

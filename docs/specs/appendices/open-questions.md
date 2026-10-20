@@ -44,8 +44,11 @@ design was dropped on 2026-10-16 (#509, [[appendices.post-mortem#architecture]])
 - **Deletion / tombstone propagation** — a deleted record is a filesystem fact the notifier reports; there are no
   tombstones ([[sync#compare-and-swap]]). Borrow-vs-delete/archive has an explicit resolution on return
   ([[borrowing#borrow-vs-delete]]).
-- **Clock skew / ordering** — moot: nothing orders events across machines; the save compares content hashes, never
-  times ([[sync#compare-and-swap]]).
+- **Clock skew / ordering** — mostly moot: nothing orders events across machines; the save compares content hashes,
+  never times ([[sync#compare-and-swap]]). The one place a clock crosses machines is the lock file's stale rule
+  ([[sync#lock-file]]): a contender more than the TTL (2 minutes) *ahead* of the holder's clock would break a lock
+  still held. The compare then still refuses the lost update; the lock only narrows the window. Not tuned until a
+  machine with a drifting clock joins.
 - **Per-user authentication** — a one-time password issued by the node's CLI for a username, exchanged for a per-device
   session; no password store, nothing propagated; the agent itself needs no login
   ([[discovery-trust-access#user-auth]]).

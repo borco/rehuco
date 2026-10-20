@@ -1997,6 +1997,7 @@ def test_a_file_with_duplicate_sources_opens_clean_and_saves_as_it_is(mocker: Mo
         ),
     )
     model = RehuDocumentModel(RehuDocument.load(FAKE / "info.rehu"))
+    mocker.patch("rehuco_core.record_file_lock.RecordFileLock")
     write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
 
     assert model.dirty is False
@@ -3358,6 +3359,7 @@ def test_saving_a_block_only_upgradable_document_clears_the_offer(mocker: Mocker
     model = RehuDocumentModel(document)
     assert model.upgradable is True
 
+    mocker.patch("rehuco_core.record_file_lock.RecordFileLock")
     mocker.patch("rehuco_core.rehu_document.atomic_write_text")
     model.save()
 
@@ -3445,6 +3447,7 @@ def test_saving_an_upgradable_document_clears_the_offer(mocker: MockerFixture) -
     * verify ``upgradable`` is now ``False``
     """
     mocker.patch.object(Path, "read_text", return_value=json.dumps({"format_version": 1, "type": "Tutorial"}))
+    mocker.patch("rehuco_core.record_file_lock.RecordFileLock")
     mocker.patch("rehuco_core.rehu_document.atomic_write_text")
     document = RehuDocument.load(FAKE / "info.rehu")
     model = RehuDocumentModel(document)
