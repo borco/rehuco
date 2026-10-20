@@ -27,8 +27,10 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Final
 
+from .checksum_record import checksum_record_path
 from .checksum_trust import DEFAULT_CHECKSUM_TRUST, ChecksumTrust
 from .constants import REHU_SUFFIX
+from .record_file_lock import RecordFileLock, is_lock_name
 from .relocation import Relocation
 from .resource_scoping import is_directory_scoped
 
@@ -68,6 +70,8 @@ def rename_rehu_resource(path: Path, new_name: str) -> Path:
         already the resource's name (nothing on disk is touched).
     :raises ValueError: ``new_name`` is empty or is anything but a plain file/folder name.
     :raises FileNotFoundError: ``path`` is not on disk; nothing is attempted.
+    :raises RecordLockedError: another process holds the record's lock file ([[sync#lock-file]]); nothing is
+        attempted, and the error names the holder.
     :raises FileExistsError: something already occupies one of the planned destinations; nothing on disk
         was touched.
     :raises PartialRenameError: a rename failed and undoing the completed ones failed too.
@@ -124,6 +128,7 @@ class RehuRenamer:
         :returns: the resource's ``.rehu`` path under its new name; see :func:`rename_rehu_resource`.
         :raises ValueError: see :func:`rename_rehu_resource`.
         :raises FileNotFoundError: see :func:`rename_rehu_resource`.
+        :raises RecordLockedError: see :func:`rename_rehu_resource`.
         :raises FileExistsError: see :func:`rename_rehu_resource`.
         :raises PartialRenameError: see :func:`rename_rehu_resource`.
         :raises OSError: see :func:`rename_rehu_resource`.
@@ -135,6 +140,10 @@ class RehuRenamer:
             # differs only in *case* is a real one and falls through -- it is how a name's spelling is
             # corrected on a case-insensitive filesystem.
             return self.__path
+        # a save elsewhere is between its re-read and its write: moving the record now would leave that write
+        # landing under the old name (#512) -- the record's, or its checksum record's
+        RecordFileLock(self.__path).refuse_if_held()
+        RecordFileLock(checksum_record_path(self.__path)).refuse_if_held()
         plan = self.__plan()
         self.__check_no_collisions(plan)
         self.__execute(plan)
@@ -337,7 +346,8 @@ class RehuRenamer:
         is a naming rule rather than the list of file kinds this build happens to recognize.
 
         **Directories are skipped.** A file-scoped ``.rehu`` describes files; a directory beside it is
-        either a resource of its own (with its own ``info.rehu``) or nothing to do with this one.
+        either a resource of its own (with its own ``info.rehu``) or nothing to do with this one. So is a lock
+        file (#512): a stale one left beside the record is no part of it, and a fresh one refused the rename.
 
         **Another record's files are skipped too.** With ``foo.rehu`` and ``foo2.rehu`` side by side,
         ``foo2``'s whole set is named after ``foo`` by the rule below and would otherwise travel with
@@ -359,7 +369,9 @@ class RehuRenamer:
         named_after = [
             entry
             for entry in self.__path.parent.iterdir()
-            if not entry.is_dir() and self.__named_after(os.path.normcase(entry.name), stem)
+            if not entry.is_dir()
+            and not is_lock_name(entry.name)
+            and self.__named_after(os.path.normcase(entry.name), stem)
         ]
         foreign = self.__foreign_stems(named_after, stem)
         owned = [

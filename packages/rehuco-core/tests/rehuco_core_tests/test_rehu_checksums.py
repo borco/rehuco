@@ -40,6 +40,8 @@ from rehuco_core import (
     verify_checksums,
 )
 
+from rehuco_core_tests.fake_locks import take_no_lock_files
+
 DIRECTORY: Final = Path("/fake/library/sculpting")
 INFO_PATH: Final = DIRECTORY / "info.rehu"
 RECORD_PATH: Final = DIRECTORY / "info.checksum"
@@ -365,6 +367,7 @@ def fixture_disk(mocker: MockerFixture, freezer: FrozenDateTimeFactory) -> FakeD
     mocker.patch("rehuco_core.rehu_content_files.os.scandir", side_effect=disk.scandir)
     mocker.patch("rehuco_core.content_reading.shared_read_open", side_effect=disk.open)
     mocker.patch("rehuco_core.checksum_record.atomic_write_text", side_effect=disk.write_text)
+    take_no_lock_files(mocker)
     mocker.patch.object(Path, "stat", autospec=True, side_effect=lambda self, **_kwargs: disk.stat(self))
     mocker.patch.object(Path, "read_text", autospec=True, side_effect=lambda self, **_kwargs: disk.read_text(self))
     return disk

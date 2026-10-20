@@ -7,28 +7,20 @@ is the other way to write: re-read the file, apply one change to what is there n
 atomically -- so a progress write never clobbers a metadata edit and the other way round
 ([[field-schema#watch-progress]]).
 
-Record saves (#416, :class:`~rehuco_core.access.Records`) take the same per-file lock,
-:func:`record_lock`, and add a :class:`~rehuco_core.RecordVersion` over the non-user part and a field-by-field
-merge of the per-user maps (:func:`~rehuco_core.record_versions.merge_users`). The re-read and the write are
-serialized **within this process** only, which is what keeps the agent's player, its form and a node hosted by it
-from interleaving on one file; another process writing meanwhile is caught by the version check only when it
-lands before the re-read.
+Record saves (#416, :class:`~rehuco_core.access.Records`) take the same lock,
+:func:`~rehuco_core.record_file_lock.locked_record`, and add a :class:`~rehuco_core.RecordVersion` over the non-user
+part and a field-by-field merge of the per-user maps (:func:`~rehuco_core.record_versions.merge_users`). The re-read
+and the write are serialized twice over (#512): within this process, which keeps the agent's player, its form and a
+node hosted by it queued in memory, and across processes and machines by the record's lock file
+(:class:`~rehuco_core.record_file_lock.RecordFileLock`).
 """
 
-import threading
 from collections.abc import Callable
 from pathlib import Path
-from typing import Final
 
 from .plugins import DEFAULT_PLUGIN_REGISTRY, PluginRegistry
+from .record_file_lock import locked_record
 from .rehu_document import RehuDocument
-
-LOCKS_GUARD: Final = threading.Lock()
-"""Guards :data:`LOCKS` itself, held only long enough to find or add one path's lock."""
-
-LOCKS: Final[dict[Path, threading.Lock]] = {}
-"""One lock per record this process has merge-written, by resolved path. Never pruned: an entry is a
-path and a lock, and a session touches as many records as it opens."""
 
 
 def merge_write(
@@ -42,8 +34,9 @@ def merge_write(
     """Re-read ``path``, apply ``mutate`` to it, and write the result back atomically.
 
     Whatever ``mutate`` does not touch is written back as the file held it at the moment of the re-read,
-    so two writers changing different parts both survive. Another process writing between the re-read and
-    the write is not detected here -- that is #416's ``RecordVersion``.
+    so two writers changing different parts both survive. The re-read and the write are made under the record's
+    lock (:func:`~rehuco_core.record_file_lock.locked_record`), so no writer that takes it lands in between, in this
+    process or another.
 
     :param path: the record, which must exist: a merge has nothing to merge into otherwise.
     :param mutate: applies the one change, in place, to the freshly loaded document.
@@ -53,28 +46,14 @@ def merge_write(
     :param touch_updated: whether a change stamps ``updated``; ``False`` for per-user writes, which
         describe one person rather than the resource ([[field-schema#record-timestamps]]).
     :returns: the document as written.
+    :raises RecordLockedError: someone else held the record's lock for longer than a write waits.
     :raises OSError: the file could not be read or written.
     :raises RehuFormatError: the file is not a readable record.
     :raises ValueError: the record is locked against saving (a newer format, an invalid field), or
         ``mutate`` refused the change.
     """
-    with record_lock(path):
+    with locked_record(path, user=username):
         document = RehuDocument.load(path, plugins=plugins, username=username)
         mutate(document)
         document.save(touch_updated=touch_updated)
         return document
-
-
-def record_lock(path: Path) -> threading.Lock:
-    """The lock serializing merge-writes of ``path`` in this process.
-
-    :param path: the record; resolved, so two spellings of one file share a lock.
-    :returns: its lock, created on first use.
-    """
-    key = path.resolve()
-    with LOCKS_GUARD:
-        lock = LOCKS.get(key)
-        if lock is None:
-            lock = threading.Lock()
-            LOCKS[key] = lock
-        return lock

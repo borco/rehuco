@@ -86,6 +86,7 @@ def mock_environment(
         Path, "stat", return_value=mocker.MagicMock(st_mtime=MTIME, st_size=len(tc_yaml.encode("utf-8")))
     )
     mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+    mocker.patch("rehuco_core.tc_conversion.RecordFileLock")
     mocker.patch("rehuco_core.tc_conversion.scan_tc_screenshots", return_value=plan)
     mock_rename = mocker.patch.object(Path, "rename", autospec=True)
     mock_unlink = mocker.patch.object(Path, "unlink", autospec=True)

@@ -70,7 +70,7 @@ from .checksum_record import (
     checksum_record_path,
     load_checksum_record,
     new_checksum_record,
-    save_checksum_record,
+    update_checksum_record,
 )
 from .constants import EXCLUDED_FILE_PATTERNS
 from .rehu_content_files import ContentUnreachableError, enumerate_content_files
@@ -521,9 +521,22 @@ def seed_checksum_record(
     seed = seed_from_legacy_manifest(rehu_path, content_names)
     if seed is None or not seed.entries:
         return None
-    record = new_checksum_record()
-    record[CHECKSUM_FILES_KEY] = list(seed.entries)
-    save_checksum_record(record_path, record)
+    entries = list(seed.entries)
+
+    def seeded(current: dict[str, Any] | None) -> dict[str, Any] | None:
+        """A record of the seeded entries, or nothing to write when one appeared meanwhile.
+
+        :param current: the record as it is now, or ``None``.
+        :returns: what to write, or ``None``.
+        """
+        if current is not None:
+            return None
+        record = new_checksum_record()
+        record[CHECKSUM_FILES_KEY] = entries
+        return record
+
+    if update_checksum_record(record_path, seeded) is None:
+        return None
     return replace(seed, retired=retire_legacy_manifests(rehu_path))
 
 
@@ -609,7 +622,8 @@ def remediate_legacy_manifest(
     """
     record_path = checksum_record_path(rehu_path)
     try:
-        record = load_checksum_record(record_path)
+        # read once before the walk, so a record this build cannot read refuses before anything is listed
+        load_checksum_record(record_path)
     except FileNotFoundError:
         # *no record to merge into* is only an honest answer if the directory can be seen at all
         # (#245): on an away mount the record's absence proves nothing, and answering *nothing to do*
@@ -629,8 +643,21 @@ def remediate_legacy_manifest(
     seed = seed_from_legacy_manifest(rehu_path, content_names)
     if seed is None or not seed.entries:
         return None
-    record[CHECKSUM_FILES_KEY] = LegacyClaimMerger(record[CHECKSUM_FILES_KEY], seed.entries).merged()
-    save_checksum_record(record_path, record)
+    claims = seed.entries
+
+    def remediated(current: dict[str, Any] | None) -> dict[str, Any] | None:
+        """The record as it is now, with the manifest's claims merged in; nothing to write when it is gone.
+
+        :param current: the record as it is now, or ``None``.
+        :returns: what to write, or ``None``.
+        """
+        if current is None:
+            return None
+        current[CHECKSUM_FILES_KEY] = LegacyClaimMerger(current[CHECKSUM_FILES_KEY], claims).merged()
+        return current
+
+    if update_checksum_record(record_path, remediated) is None:
+        return None
     return replace(seed, retired=retire_legacy_manifests(rehu_path))
 
 

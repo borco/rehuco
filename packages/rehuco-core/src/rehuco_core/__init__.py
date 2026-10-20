@@ -30,6 +30,7 @@ from .checksum_algorithms import (
     ChecksumDigest,
 )
 from .checksum_claim_moves import TakenClaims, enclosing_directory_record, hand_over_claims, take_enclosing_claims
+from .checksum_entry_merge import merge_checksum_entries
 from .checksum_jobs import (
     CHECKSUM_GENERATE_KIND,
     CHECKSUM_SWEEP_KIND,
@@ -54,7 +55,7 @@ from .checksum_record import (
     load_checksum_record,
     new_checksum_record,
     parse_checksum_entry,
-    save_checksum_record,
+    update_checksum_record,
 )
 from .checksum_reporting import PRUNE_REASONS, checksum_report_summary
 from .checksum_seeding import (
@@ -131,6 +132,18 @@ from .plugins import (
     PluginSpec,
 )
 from .progress_renames import MissingFile, RenameCandidate, plan_progress_renames, reattach_renamed_progress
+from .record_file_lock import (
+    DEFAULT_LOCK_TIMEOUT_SECONDS,
+    DEFAULT_LOCK_TTL_SECONDS,
+    LOCK_SUFFIX,
+    RELEASE_RETRY_SECONDS,
+    LockHolder,
+    RecordFileLock,
+    RecordLockedError,
+    is_lock_name,
+    lock_path_for,
+    locked_record,
+)
 from .record_merge import merge_write
 from .record_versions import (
     ABSENT,
@@ -396,6 +409,8 @@ __all__ = [
     "Records",
     "MetadataDifference",
     "RecordConflict",
+    "RecordFileLock",
+    "RecordLockedError",
     "RecordVersion",
     "SavedRecord",
     "canonical_json",
@@ -540,6 +555,11 @@ __all__ = [
     "LegacySeed",
     "Catalog",
     "ResourceKey",
+    "DEFAULT_LOCK_TIMEOUT_SECONDS",
+    "DEFAULT_LOCK_TTL_SECONDS",
+    "LOCK_SUFFIX",
+    "RELEASE_RETRY_SECONDS",
+    "LockHolder",
     "LockReason",
     "LockReasonKind",
     "MAX_COLLECTION_LENGTH",
@@ -689,6 +709,7 @@ __all__ = [
     "is_directory_scoped_name",
     "is_legacy_record_name",
     "is_legacy_screenshot",
+    "is_lock_name",
     "is_record_name",
     "is_valid_content_key",
     "legacy_manifest_candidates",
@@ -696,7 +717,10 @@ __all__ = [
     "legacy_manifests_among",
     "load_checksum_record",
     "load_tc",
+    "lock_path_for",
+    "locked_record",
     "log_legacy_seed",
+    "merge_checksum_entries",
     "merge_write",
     "migrate_block_data",
     "migrate_checksum_data",
@@ -737,7 +761,6 @@ __all__ = [
     "scan_tc_screenshots",
     "scan_unconverted_screenshots",
     "screenshot_backup_path",
-    "save_checksum_record",
     "screenshot_name_patterns_from_state",
     "screenshot_name_patterns_state",
     "seed_checksum_record",
@@ -752,6 +775,7 @@ __all__ = [
     "sweep_summary",
     "take_enclosing_claims",
     "tc_to_rehu_data",
+    "update_checksum_record",
     "verify_checksums",
     "watch_totals",
     "learning_path_records_by_scope",

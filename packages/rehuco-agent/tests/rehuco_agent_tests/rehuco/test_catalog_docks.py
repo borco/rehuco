@@ -168,6 +168,16 @@ def fixture_served(mocker: MockerFixture) -> dict[str, Any]:
     return document
 
 
+def mock_rehuco_writes(mocker: MockerFixture) -> MagicMock:
+    """Capture every write of a ``.rehuco``, taking no lock file: the file is ``/fake``, with no folder to take one in.
+
+    :param mocker: pytest-mock fixture.
+    :returns: the mock standing in for ``atomic_write_text``.
+    """
+    mocker.patch("rehuco_core.rehuco_file.RecordFileLock")
+    return mocker.patch("rehuco_core.rehuco_file.atomic_write_text")
+
+
 @fixture(name="saves")
 def fixture_saves(mocker: MockerFixture) -> MagicMock:
     """Capture every write of a ``.rehuco``.
@@ -175,7 +185,7 @@ def fixture_saves(mocker: MockerFixture) -> MagicMock:
     :param mocker: pytest-mock fixture.
     :returns: the mock standing in for ``atomic_write_text``.
     """
-    return mocker.patch("rehuco_core.rehuco_file.atomic_write_text")
+    return mock_rehuco_writes(mocker)
 
 
 @fixture(name="queue")
@@ -1901,7 +1911,7 @@ def test_the_root_edits_do_nothing_with_no_catalog_open(mocker: MockerFixture, d
     * verify the question never opened and nothing was written
     """
     picker = answer_add_root(mocker, dock, "/fake/refs")
-    saves = mocker.patch("rehuco_core.rehuco_file.atomic_write_text")
+    saves = mock_rehuco_writes(mocker)
 
     dock.roots._RootsPanel__on_add_root()  # type: ignore[attr-defined]  # pylint: disable=protected-access
     dock.roots._RootsPanel__on_remove_root()  # type: ignore[attr-defined]  # pylint: disable=protected-access
@@ -3097,7 +3107,7 @@ def test_declining_the_removal_keeps_the_root(mocker: MockerFixture, dock: Catal
     * verify the question named the root, nothing was written or queued, and both roots remain
     """
     confirm = mocker.patch.object(dock.roots, "confirm_remove_root", return_value=False)
-    saved = mocker.patch("rehuco_core.rehuco_file.atomic_write_text")
+    saved = mock_rehuco_writes(mocker)
     dock.catalog.open_rehuco(REHUCO_PATH)
     select_root(dock, 0)
 

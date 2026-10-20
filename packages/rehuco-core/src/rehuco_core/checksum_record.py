@@ -30,6 +30,11 @@ one (#467). This is how [[data-model#checksums]]'s *record which algorithm was u
 and it is genuinely per entry: a resource may hold ``crc32`` and ``xxh3`` entries side by side, so
 changing the configured algorithm invalidates nothing already recorded.
 
+**Every write takes the record's lock file** (``info.checksum.lock``, #512, [[sync#lock-file]]) and goes through
+:func:`update_checksum_record`: re-read under the lock, change what is there now, write. A run that hashed for minutes
+merges its entries into the record as re-read (:func:`~rehuco_core.checksum_entry_merge.merge_checksum_entries`), so
+nothing another writer put there meanwhile is lost.
+
 This module is the record's *format* -- loading, saving, and reading one entry defensively. What a
 generate or a verify does with the entries is :mod:`rehuco_core.rehu_checksums`'s; the split mirrors
 :mod:`rehuco_core.rehu_content_files` (which files) against the operations over them.
@@ -37,6 +42,7 @@ generate or a verify does with the entries is :mod:`rehuco_core.rehu_checksums`'
 
 import json
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -48,6 +54,7 @@ from .checksum_algorithms import CHECKSUM_ALGORITHMS
 from .constants import CHECKSUM_RECORD_SUFFIX
 from .migrations import CURRENT_CHECKSUM_RECORD_VERSION, migrate_checksum_data
 from .migrations.checksum import VERSION_KEY
+from .record_file_lock import DEFAULT_LOCK_TIMEOUT_SECONDS, locked_record
 
 CHECKSUM_FILES_KEY: Final = "files"
 """The record's top-level key holding the per-file entries, in the order they are kept."""
@@ -181,8 +188,39 @@ def new_checksum_record() -> dict[str, Any]:
     return {VERSION_KEY: CURRENT_CHECKSUM_RECORD_VERSION, CHECKSUM_FILES_KEY: []}
 
 
-def save_checksum_record(path: Path, record: dict[str, Any]) -> None:
-    """Write ``record`` back as a current-version file, atomically.
+def update_checksum_record(
+    path: Path,
+    change: Callable[[dict[str, Any] | None], dict[str, Any] | None],
+    *,
+    timeout: float = DEFAULT_LOCK_TIMEOUT_SECONDS,
+) -> dict[str, Any] | None:
+    """Re-read a record under its lock, apply one change to what is there now, and write the result (#512).
+
+    The one way every writer of a ``.checksum`` writes, so two never interleave a read and a write -- in this process
+    or another ([[sync#lock-file]]).
+
+    :param path: the record file, from :func:`checksum_record_path`.
+    :param change: given the record as it is now, or ``None`` when there is none, answers the record to write, or
+        ``None`` to write nothing. Runs under the lock: it must not take it again.
+    :param timeout: how long a busy lock is retried, in seconds.
+    :returns: what was written, or ``None`` when nothing was.
+    :raises RecordLockedError: someone else held the record's lock for longer than ``timeout``.
+    :raises ChecksumRecordError: the record on disk is one this build cannot read.
+    :raises OSError: it could not be read or written.
+    """
+    with locked_record(path, user=None, timeout=timeout):
+        try:
+            current: dict[str, Any] | None = load_checksum_record(path)
+        except FileNotFoundError:
+            current = None
+        record = change(current)
+        if record is not None:
+            write_held_checksum_record(path, record)
+        return record
+
+
+def write_held_checksum_record(path: Path, record: dict[str, Any]) -> None:
+    """Write ``record`` back as a current-version file, atomically -- only ever under its lock.
 
     Through :func:`borco_core.atomic_write_text`, and written **once per run, at the end**
     ([[data-model#checksums]]): a stopped or crashed run leaves the previous record intact rather than

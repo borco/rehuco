@@ -70,6 +70,7 @@ from typing import Any, Final
 
 from .checksum_algorithms import CHECKSUM_ALGORITHMS, DEFAULT_CHECKSUM_ALGORITHM, ChecksumDigest
 from .checksum_claim_moves import hand_over_claims
+from .checksum_entry_merge import merge_checksum_entries
 from .checksum_record import (
     CHECKSUM_FILES_KEY,
     CHECKSUM_NAME_KEY,
@@ -84,7 +85,7 @@ from .checksum_record import (
     load_checksum_record,
     new_checksum_record,
     parse_checksum_entry,
-    save_checksum_record,
+    update_checksum_record,
     verified_stamp,
 )
 from .checksum_seeding import LegacySeed, retire_legacy_manifests, seed_from_legacy_manifest
@@ -236,6 +237,7 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
         # (#243) -- and because the walk it reads has already happened either way
         self.__content: Final = self.__content_locations()
         self.__seed: LegacySeed | None = None
+        self.__from_disk = False
         self.__record: Final[dict[str, Any]] = self.__load()
         self.__entries: Final[list[Any]] = self.__record[CHECKSUM_FILES_KEY]
         self.__done = 0
@@ -356,7 +358,7 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
             for.
         """
         try:
-            return load_checksum_record(checksum_record_path(self.__rehu_location.path))
+            record = load_checksum_record(checksum_record_path(self.__rehu_location.path))
         except FileNotFoundError:
             if self.__seed_legacy:
                 self.__seed = seed_from_legacy_manifest(self.__rehu_location.path, self.__content)
@@ -367,6 +369,8 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
             if self.__create_if_missing:
                 return new_checksum_record()
             raise
+        self.__from_disk = True
+        return record
 
     def __content_locations(self) -> dict[str, ResourceLocation]:
         """Enumerate the resource's content, each file tracked across renames.
@@ -867,6 +871,12 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
         handed: the record's existence is what makes the legacy manifest one-way (#243), and a run that
         skipped the write would read the old file again next time.
 
+        **Merged into the record as it is now** (#512): the run read the record when it started, and another writer
+        may have changed it since -- a claim moved in, an entry forgotten, another machine's run. Under the record's
+        lock the file is read again and this run's entries merged into it
+        (:func:`~rehuco_core.checksum_entry_merge.merge_checksum_entries`); a record that is gone meanwhile is written
+        as this run leaves it.
+
         :param rewritten: the record's entries as this run leaves them.
         """
         if self.__only is not None:
@@ -881,7 +891,20 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
                     self.__statuses[name] = "missing"
         if rewritten != self.__entries or self.__seed is not None:
             self.__record[CHECKSUM_FILES_KEY] = rewritten
-            save_checksum_record(checksum_record_path(self.__rehu_location.path), self.__record)
+            base = self.__entries if self.__from_disk else []
+
+            def merged(current: dict[str, Any] | None) -> dict[str, Any]:
+                """This run's entries merged into the record as it is now.
+
+                :param current: the record on disk now, or ``None``.
+                :returns: what to write.
+                """
+                if current is None:
+                    return self.__record
+                current[CHECKSUM_FILES_KEY] = merge_checksum_entries(base, rewritten, current[CHECKSUM_FILES_KEY])
+                return current
+
+            update_checksum_record(checksum_record_path(self.__rehu_location.path), merged)
 
     def __report(self) -> ChecksumReport:
         """The run's answers, frozen for the caller."""
@@ -1056,8 +1079,9 @@ def forget_checksums(rehu_path: Path, *, only: Collection[str]) -> tuple[str, ..
     that is still on disk achieves nothing -- the next verify adopts it straight back.
 
     **Nothing is read and nothing is hashed**, so unlike a run this happens in place rather than on the
-    queue: one load, one filter, one atomic write. Every entry not named is carried byte-for-byte, as is
-    every top-level key this build does not know (:func:`~rehuco_core.save_checksum_record`), so
+    queue: one load, one filter, one atomic write, all under the record's lock (#512). Every entry not named is
+    carried byte-for-byte, as is
+    every top-level key this build does not know (:func:`~rehuco_core.update_checksum_record`), so
     forgetting one entry can never rewrite another.
 
     An entry whose name this build cannot read is never dropped: it cannot be *named*, so it cannot be
@@ -1070,22 +1094,35 @@ def forget_checksums(rehu_path: Path, *, only: Collection[str]) -> tuple[str, ..
     :returns: the names actually dropped, in the record's own order, deduplicated -- what a caller
         reports, and what tells *nothing matched* from *nothing was asked for*.
     :raises FileNotFoundError: there is no record to forget anything from.
+    :raises RecordLockedError: someone else held the record's lock for longer than a write waits.
     :raises ChecksumRecordError: a record file this build cannot read at all.
     :raises OSError: the record could not be re-written.
     """
-    record = load_checksum_record(checksum_record_path(rehu_path))
-    entries: list[Any] = record[CHECKSUM_FILES_KEY]
+    path = checksum_record_path(rehu_path)
     wanted = frozenset(only)
-    kept: list[Any] = []
     dropped: list[str] = []
-    for raw in entries:
-        name = checksum_entry_name(raw)
-        if name is not None and name in wanted:
-            if name not in dropped:
-                dropped.append(name)
-            continue
-        kept.append(raw)
-    if dropped:
+
+    def forgotten(record: dict[str, Any] | None) -> dict[str, Any] | None:
+        """The record without the named entries, or nothing to write when it named none of them.
+
+        :param record: the record as it is now, or ``None``.
+        :returns: what to write, or ``None``.
+        :raises FileNotFoundError: there is no record.
+        """
+        if record is None:
+            raise FileNotFoundError(f"No checksum record: {path}")
+        kept: list[Any] = []
+        for raw in record[CHECKSUM_FILES_KEY]:
+            name = checksum_entry_name(raw)
+            if name is not None and name in wanted:
+                if name not in dropped:
+                    dropped.append(name)
+                continue
+            kept.append(raw)
+        if not dropped:
+            return None
         record[CHECKSUM_FILES_KEY] = kept
-        save_checksum_record(checksum_record_path(rehu_path), record)
+        return record
+
+    update_checksum_record(path, forgotten)
     return tuple(dropped)

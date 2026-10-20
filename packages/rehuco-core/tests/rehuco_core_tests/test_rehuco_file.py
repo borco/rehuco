@@ -94,6 +94,15 @@ def labels(rehuco: RehucoFile) -> list[str]:
     return [root.label for root in rehuco.roots]
 
 
+@fixture(autouse=True)
+def no_lock_file(mocker: MockerFixture) -> None:
+    """Take no lock file on a save: the writes here are mocked, to ``FAKE_PATH``, which has no folder to take one in.
+
+    :param mocker: pytest-mock fixture.
+    """
+    mocker.patch("rehuco_core.rehuco_file.RecordFileLock")
+
+
 @fixture
 def home(mocker: MockerFixture) -> RehucoFile:
     """A loaded copy of ``HOME``: three roots, an unknown top-level key and an unknown root key.

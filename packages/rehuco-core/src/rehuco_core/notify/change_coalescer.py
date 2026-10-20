@@ -18,6 +18,7 @@ from typing import Final
 from uuid import UUID
 
 from ..access import Changed, ChangeEvent, ChangeFeed, FolderChanged, KeyRelocation, Moved, ResourceKey, RootStale
+from ..record_file_lock import is_lock_name
 from ..resource_scoping import is_record_name
 from .raw_change import RawChange, RawChangeKind
 
@@ -151,6 +152,8 @@ class ChangeCoalescer:
           moved to a name that no holder can open. Both ends are changed, and their folder's listing.
         - **An atomic save** -- its temporary sibling renamed over the file -- is that file changed; the temporary
           sibling's own creation and writes are no one's business.
+        - **A record's lock file** (#512) is no one's business either: taken and removed by every save, it changes
+          nothing anyone holds.
         - **A file created, written or deleted** is changed; a deleted folder is itself changed: whoever holds records
           beneath it looks them up.
         - **A folder's listing changed** when an entry in it is there at the end of the batch and was not at the start,
@@ -164,6 +167,8 @@ class ChangeCoalescer:
         """
         tally = ChangeCoalescer.Tally()
         for change in batch:
+            if change.kind is not RawChangeKind.OVERFLOW and is_lock_name(change.path.name):
+                continue
             key = ResourceKey(change.path)
             temporary = cls.is_atomic_write_temporary(change.path)
             match change.kind:

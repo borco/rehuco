@@ -869,8 +869,9 @@ with no node present, because anyone may mount the share ([[sync#overview]]):
   directory, fsync, then atomically rename over the original (POSIX same-FS rename; Windows `ReplaceFile`/`MoveFileEx`;
   over SMB the rename is server-side, [[packaging-deployment#ts230-as-nas]]). A reader never sees a half-written file,
   and a crash mid-write leaves either the complete old file or the complete new file — never a torn one.
-- **The lock file serializes writers** ([[sync#lock-file]]): an exclusive-create `<record>.lock` beside the record, held
-  as a directory entry for the milliseconds of one save, never as an open handle, broken by age after a verify.
+- **The lock file serializes writers** ([[sync#lock-file]]): an exclusive-create `<record>.lock` beside the record
+  (`info.rehu.lock`), held as a directory entry for the milliseconds of one save, never as an open handle, broken by
+  age after a verify.
 - **Compare-and-swap keeps an edit from overwriting another** ([[sync#compare-and-swap]]): under the lock the save
   re-reads the file and compares its content hash with the version the edit was based on; a changed per-user field
   merges, a changed detail is a conflict the user resolves. The hash, never the modification time, since the Windows

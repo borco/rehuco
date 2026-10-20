@@ -16,6 +16,7 @@ from uuid import uuid4
 
 from .constants import EXCLUDED_FILE_PATTERNS
 from .plugins import DEFAULT_UNKNOWN_USERNAME
+from .record_file_lock import RecordFileLock
 from .rehu_content_files import ContentUnreachableError, content_size_on_disk
 from .rehu_document import RehuDocument
 from .rehu_format import CORE_BLOCK_KEY
@@ -92,6 +93,8 @@ def convert_tc(
     :returns: the fresh, unlocked document, already saved at the target path.
     :raises FileExistsError: the target ``.rehu`` exists and ``overwrite`` is ``False``; or a
         ``.orig`` backup sibling already exists for something about to be backed up.
+    :raises RecordLockedError: someone else held the target's lock for longer than a write waits; undone like any
+        other failed write.
     """
     return TcConverter(
         tc_path,
@@ -172,7 +175,9 @@ class TcConverter:  # pylint: disable=too-few-public-methods
             # and the record would carry the size of screenshots the conversion itself is about to claim
             self.__put_measured_current_size(data[CORE_BLOCK_KEY])
             document = RehuDocument(data, username=self.__username)
-            document.save(target)
+            # every writer of a record takes its lock, a conversion included ([[data-model#write-integrity]])
+            with RecordFileLock(target, user=self.__username):
+                document.save(target)
         except Exception:
             self.__undo(renamed, backups)
             raise

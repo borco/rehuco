@@ -34,16 +34,23 @@ the user.
 
 [[[sync#lock-file]]]
 
-Every write to a record takes `<record>.lock` beside it, created with exclusive-create (`O_CREAT | O_EXCL`), which on
-SMB2 is a server-side atomic create and the one locking primitive Windows, macOS and Linux clients all honour; OS
-byte-range and `fcntl` locks are not that ([[appendices.post-mortem#architecture]]). Measured on the TS-230 (#503):
+- [#512: feat(core): the lock file and compare-and-swap in every record write](https://github.com/borco/rehuco/issues/512)
+
+Every write to a record takes `<record>.lock` beside it — the record's own name with `.lock` added, `info.rehu.lock`
+beside `info.rehu`, `catalog.rehuco.lock` beside a `.rehuco` — created with exclusive-create (`O_CREAT | O_EXCL`),
+which on SMB2 is a server-side atomic create and the one locking primitive Windows, macOS and Linux clients all
+honour; OS byte-range and `fcntl` locks are not that ([[appendices.post-mortem#architecture]]). Measured on the TS-230
+(#503):
 two Windows processes and a Mac racing 1500 attempts each, every holder reading its own id back after the hold —
 1443 holds, **0 clobbered**.
 
 - **The lock is the directory entry, never an open handle.** It is created, written (`user@host pid app time`) and
   closed in one go; its content is read back, never kept open. The reason is measured: a lock *held open* by another
   client survives its holder's exit by a minute or more on the macOS client's deferred close, a second delete of it is
-  denied meanwhile, and a Windows holder blocks every delete and replace outright.
+  denied meanwhile, and a Windows holder blocks every delete and replace outright. The same goes for a contender
+  *reading* it: a plain Windows open denies the holder's delete, which then fails and leaves every writer waiting out
+  the TTL (#512, measured: 128 of 300 saves timed out), so the content is read with delete shared, and a release
+  refused for a moment is retried.
 - **Held for milliseconds**: the re-read → compare → atomic-replace window of one save. Create and unlink cost about
   4 ms from Windows and 13 ms from macOS over the LAN.
 - **Retried with jitter, never spun.** A busy answer may be stale — the Windows client's directory cache answered
@@ -52,9 +59,20 @@ two Windows processes and a Mac racing 1500 attempts each, every holder reading 
   milliseconds and tries again, for a bounded time, then the save waits in the queue and says so.
 - **Stale by age.** A lock older than the TTL (2 minutes to start) whose content names a time that far back is broken:
   deleted, then **verified gone** — a name that lingers is treated as held and backed off from, not spun on. There is
-  no heartbeat on the lock, since that would mean reopening it.
-- **Excluded from scans, checksums and renames**, like the staged temp files. A rename refuses while a foreign lock sits
-  beside the record.
+  no heartbeat on the lock, since that would mean reopening it. A lock whose content names no time — its holder died
+  between the create and the write — is aged by its modification time instead, which the 2 minutes leave far behind
+  the client's cache.
+- **Busy past the bound is a typed failure** naming the holder (`RecordLockedError`), which a save job queues on
+  ([[sync#apply-payload]]); until then the save fails like any other write, with Retry.
+- **Excluded from scans, checksums, the Files listing, the notifier and renames**, like the staged temp files — only a
+  `.lock` beside a record's name, so a tutorial's own `yarn.lock` stays content. A rename refuses while another
+  process's fresh lock sits beside the record, naming the holder, and breaks a stale one.
+
+**A `.checksum` takes the same lock** (`info.checksum.lock`), by every writer — a verify, a generate, a Forget, a claim
+moved in or out ([[data-model#checksums]]). A run reads the record when it starts and hashes for minutes, so it never
+writes back its own copy: under the lock it re-reads the record and merges entry by entry. What it did not change is
+the file's (a claim moved in or an entry forgotten meanwhile survives), what it changed is its own, and where both
+changed one entry the later `verified` date wins.
 
 **The lock narrows the window; the compare is the safety.** A client that ignores the lock file still cannot silently
 lose anyone's edit, because of the next section — it can only lose its own, which the conflict dock then shows.
