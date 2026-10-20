@@ -23,6 +23,7 @@ from .test_catalog_docks import (  # noqa: F401  # pylint: disable=unused-import
     fixture_database,
     fixture_dock,
     fixture_folders,
+    fixture_no_open_scan,
     fixture_queue,
     fixture_served,
     open_root_folder,

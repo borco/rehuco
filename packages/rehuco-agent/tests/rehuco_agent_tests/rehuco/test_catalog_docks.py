@@ -297,10 +297,12 @@ def fixture_dock(
     dock.detach()
 
 
-@fixture(name="no_open_scan")
+@fixture(name="no_open_scan", autouse=True)
 def fixture_no_open_scan(mocker: MockerFixture) -> None:
-    """Make opening a catalog queue no scan of its never-scanned roots (#541), for a test of something else that
-    reads the queue or the rows right after opening.
+    """Make opening a catalog queue no scan of its never-scanned roots (#541), in every test here and in each module
+    that imports this fixture: those test the catalog, not that scan, and a scan job writing the shared cache while
+    the GUI thread does fails one of them at random with "database table is locked". ``test_catalog_open_scan.py``,
+    which tests the scan, does not import it.
 
     :param mocker: pytest-mock fixture.
     """
@@ -645,7 +647,7 @@ def test_another_catalogs_waiting_scan_does_not_refuse_this_ones(
     second.detach()
 
 
-@mark.usefixtures("served", "saves", "no_open_scan")
+@mark.usefixtures("served", "saves")
 def test_removing_a_re_added_root_is_queued_again(
     qtbot: QtBot, dock: CatalogDocks, queue: TaskQueue, held: GateJob, mocker: MockerFixture
 ) -> None:
@@ -729,7 +731,7 @@ def test_reopening_the_open_catalog_keeps_its_running_scans_tracked(
     wait_for_jobs(qtbot, queue)
 
 
-@mark.usefixtures("served", "no_open_scan")
+@mark.usefixtures("served")
 def test_opening_another_catalog_forgets_the_old_ones_scans(
     mocker: MockerFixture, qtbot: QtBot, dock: CatalogDocks, queue: TaskQueue, held: GateJob
 ) -> None:
@@ -980,7 +982,7 @@ def test_a_failed_save_that_cannot_be_read_back_closes_the_file(
     assert dock.catalog.rehuco_path is None
 
 
-@mark.usefixtures("served", "no_open_scan")
+@mark.usefixtures("served")
 def test_removing_a_root_saves_the_file_and_queues_the_removal(
     qtbot: QtBot, dock: CatalogDocks, queue: TaskQueue, database: MemoryDatabase, saves: MagicMock
 ) -> None:
@@ -1999,7 +2001,7 @@ def test_removing_with_no_root_selected_does_nothing(dock: CatalogDocks, saves: 
     assert dock.roots.roots_model.rowCount() == 2
 
 
-@mark.usefixtures("served", "no_open_scan")
+@mark.usefixtures("served")
 def test_a_removal_whose_save_fails_queues_no_job(
     mocker: MockerFixture, dock: CatalogDocks, queue: TaskQueue, saves: MagicMock
 ) -> None:
@@ -2461,7 +2463,7 @@ def is_on_screen(dock: CatalogDocks, browser: TableBrowser) -> bool:
     return not sub_dock.isClosed() and sub_dock.dockAreaWidget() in manager.openedDockAreas()
 
 
-@mark.usefixtures("served", "no_open_scan")
+@mark.usefixtures("served")
 def test_after_every_browser_was_closed_a_reopen_and_new_browser_show_on_screen(dock: CatalogDocks) -> None:
     """A layout saved with no browser left must not swallow the browsers built after it: the restore used to leave
     the default browser in an area off the manager, and every New Table Browser joined that invisible area.
@@ -2945,7 +2947,7 @@ def test_filling_the_card_never_saves(dock: CatalogDocks, saves: MagicMock) -> N
     saves.assert_not_called()
 
 
-@mark.usefixtures("served", "no_open_scan")
+@mark.usefixtures("served")
 def test_renaming_on_the_card_saves_the_label_and_updates_the_row(
     dock: CatalogDocks, saves: MagicMock, database: MemoryDatabase
 ) -> None:
@@ -3014,7 +3016,7 @@ def test_leaving_the_name_as_it_was_writes_nothing(mocker: MockerFixture, dock: 
     warning.assert_not_called()
 
 
-@mark.usefixtures("served", "no_open_scan")
+@mark.usefixtures("served")
 def test_choosing_a_storage_on_the_card_saves_it_and_restyles_the_row_without_a_reset(
     dock: CatalogDocks, saves: MagicMock, database: MemoryDatabase
 ) -> None:
@@ -3112,7 +3114,7 @@ def test_adding_a_root_saves_its_storage_and_makes_it_current(
     assert dock.roots.root_storage_combo.currentData() == storage
 
 
-@mark.usefixtures("served", "saves", "no_open_scan")
+@mark.usefixtures("served", "saves")
 def test_declining_the_removal_keeps_the_root(mocker: MockerFixture, dock: CatalogDocks, queue: TaskQueue) -> None:
     """Remove asks first, and a no leaves the file, the view and the queue alone.
 
@@ -3919,7 +3921,7 @@ def test_verifying_twice_is_not_asking_twice(
 # region Guards the actions never reach, because a disabled action does not fire (#461)
 
 
-@mark.usefixtures("served", "no_open_scan")
+@mark.usefixtures("served")
 def test_the_root_slots_refuse_without_a_current_root_and_a_move_that_goes_nowhere_writes_nothing(
     qtbot: QtBot, dock: CatalogDocks, queue: TaskQueue, saves: MagicMock
 ) -> None:

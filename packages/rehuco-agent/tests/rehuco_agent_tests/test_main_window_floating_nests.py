@@ -25,6 +25,7 @@ from .rehuco.test_catalog_docks import (  # noqa: F401  # pylint: disable=unused
     OTHER_PATH,
     REHUCO_PATH,
     fixture_database,
+    fixture_no_open_scan,
     fixture_saves,
     fixture_served,
 )

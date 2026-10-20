@@ -88,7 +88,7 @@ def pack_line(dock: CatalogDocks) -> str:
     return label.text() if label.isVisibleTo(dock.roots) else ""
 
 
-@mark.usefixtures("served", "no_open_scan")
+@mark.usefixtures("served")
 # pylint: disable-next=too-many-arguments,too-many-positional-arguments
 def test_a_listed_folder_gives_a_record_with_no_row_its_row_and_the_pane_its_pack_line(
     qtbot: QtBot, queue: Any, database: Any, folders: Path, mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
@@ -128,7 +128,7 @@ def test_a_listed_folder_gives_a_record_with_no_row_its_row_and_the_pane_its_pac
         dock.detach()
 
 
-@mark.usefixtures("served", "no_open_scan")
+@mark.usefixtures("served")
 def test_a_record_is_read_again_only_once_it_changed(
     qtbot: QtBot, dock: CatalogDocks, folders: Path, mocker: MockerFixture
 ) -> None:
@@ -190,7 +190,7 @@ def test_a_record_under_a_root_that_is_offline_is_not_read_and_keeps_its_row(
     changed.assert_not_called()
 
 
-@mark.usefixtures("served", "no_open_scan")
+@mark.usefixtures("served")
 # pylint: disable-next=too-many-arguments,too-many-positional-arguments
 def test_an_opened_record_is_verified_through_the_app_announcements(
     qtbot: QtBot, queue: Any, database: Any, folders: Path, mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
@@ -281,7 +281,7 @@ def test_a_cache_that_cannot_be_read_verifies_nothing_and_says_so(
     seen.assert_not_called()
 
 
-@mark.usefixtures("served", "no_open_scan")
+@mark.usefixtures("served")
 def test_a_check_that_fails_is_logged_and_still_releases_its_key(
     qtbot: QtBot, dock: CatalogDocks, folders: Path, mocker: MockerFixture, caplog: LogCaptureFixture
 ) -> None:
@@ -385,7 +385,7 @@ def verify_a_new_record(qtbot: QtBot, dock: CatalogDocks, folders: Path) -> Magi
     return rows
 
 
-@mark.usefixtures("served", "no_open_scan")
+@mark.usefixtures("served")
 def test_a_write_back_that_fails_is_logged_and_announces_no_row(
     qtbot: QtBot, dock: CatalogDocks, folders: Path, mocker: MockerFixture, caplog: LogCaptureFixture
 ) -> None:
@@ -405,7 +405,7 @@ def test_a_write_back_that_fails_is_logged_and_announces_no_row(
     rows.assert_not_called()
 
 
-@mark.usefixtures("served", "no_open_scan")
+@mark.usefixtures("served")
 def test_a_write_back_that_changes_nothing_announces_no_row(
     qtbot: QtBot, dock: CatalogDocks, folders: Path, mocker: MockerFixture
 ) -> None:
