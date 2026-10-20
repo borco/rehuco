@@ -20,7 +20,7 @@ ephemeral checkout and then report green even though the PR branch itself is unf
 lint-broken — the opposite of what a gate is for.
 
 The workflow instead runs the non-mutating equivalents directly: `ruff format --check .` and
-`ruff check .` (no `--fix`), followed by the other `make qa` steps unchanged — `make cov`, `make
+`ruff check .` (no `--fix`), followed by the other `make qa` steps unchanged — `make cov-parallel`, `make
 bandit`, `make pyright`, `make pylint` — since none of those mutate sources.
 
 ## 2. The Qt build artifacts aren't distributed — CI has to generate them, like any dev checkout
@@ -170,7 +170,7 @@ separate CI-only target needed.
 a lowercase `flag` value per leg (`linux`/`macos`/`windows`). `runner.os` itself resolves to
 `Linux`/`macOS`/`Windows` (mixed case), and Codecov flag names are conventionally lowercase;
 computing the mapping once in the matrix avoided a per-step case-conversion. A
-`codecov/codecov-action@v5` step runs right after `make cov`, authenticated via `CODECOV_TOKEN` and
+`codecov/codecov-action@v5` step runs right after `make cov-parallel`, authenticated via `CODECOV_TOKEN` and
 tagged with `flags: ${{ matrix.flag }}` so Codecov keeps the three OS coverage numbers (and badges)
 separate instead of blending them. It runs with `fail_ci_if_error: false` deliberately: this is
 new, unverified plumbing, and an upload hiccup on a reporting side-channel shouldn't fail the whole

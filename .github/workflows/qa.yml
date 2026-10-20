@@ -77,7 +77,7 @@ jobs:
           uv run ruff check .
 
       - name: Run tests with coverage
-        run: make cov
+        run: make cov-parallel
 
       # fail_ci_if_error: false -- this is new plumbing (#19); don't let upload flakiness
       # (rate limits, transient Codecov outages) fail QA. Tighten once it's proven reliable.

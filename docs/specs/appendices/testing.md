@@ -22,8 +22,8 @@ where it does execute.
 [[[appendices.testing#qa-gate]]]
 
 `make qa` runs, in order: `ruff format` + `ruff check --fix`, then `pytest` with coverage
-(`make cov`), `bandit`, `pyright`, `pylint`. The test stack is `pytest` plus `pytest-mock`,
-`pytest-qt`, `pytest-cov`, `pytest-benchmark`, `pytest-freezer`, and `pytest-explicit`. Tests live
+(`make cov-parallel`, which CI runs too, #545), `bandit`, `pyright`, `pylint`. The test stack is `pytest` plus
+`pytest-mock`, `pytest-qt`, `pytest-cov`, `pytest-benchmark`, `pytest-freezer`, and `pytest-explicit`. Tests live
 beside their packages under `packages/*/tests` (`testpaths` in `pyproject.toml`);
 `--strict-markers` is on, so every marker must be declared.
 
@@ -164,7 +164,7 @@ The **wrong** way (tried first): gate it with env vars (`${COV_EXCLUDE_WIN-…}`
 `${COV_OMIT_WIN-…}` in `omit`) set from the Makefile and conftest. This fails, because *when*
 coverage reads its config depends on how pytest was launched:
 
-- `make cov` / CI (plain `pytest --cov`): pytest-cov reads the coverage config **before** the root
+- `make cov` / `make cov-parallel` / CI (plain `pytest --cov`): pytest-cov reads the coverage config **before** the root
   conftest runs — so a conftest-set var is too late; only a Makefile-exported one works.
 - The VSCode test runner invokes `pytest --cov=. --cov-branch` directly (no `make`), and reads
   config at yet another moment — so neither the Makefile env nor a timely conftest value is
