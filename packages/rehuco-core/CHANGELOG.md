@@ -30,9 +30,11 @@ Changelogs are per package in this monorepo, matching the per-package release ta
   save. `RecordFileLock` creates it exclusively, writes `user@host pid app time` and closes it at once, removing it
   after the write. A busy lock is retried with a random back-off for two seconds, then the write fails with a
   `RecordLockedError` (an `OSError`) naming the holder; a lock older than two minutes is broken, with a warning in the
-  log. `locked_record` holds a record for one write. A lock file is no content (`is_lock_name`): scans, checksums, the
-  Files listing and the file notifier leave it out, and a rename leaves it behind and refuses while another process
-  holds it.
+  log. A create Windows refuses for a lock whose delete is still pending is busy, not a folder the process may not
+  write -- even when the delete has finished by the time the name is looked at: only a refusal twice running with no
+  lock there fails the write with the `PermissionError`. `locked_record` holds a record for one write. A lock file is
+  no content (`is_lock_name`): scans, checksums, the Files listing and the file notifier leave it out, and a rename
+  leaves it behind and refuses while another process holds it.
 - A `.checksum` is written under its own lock file, `info.checksum.lock`, by every writer: a generate, a verify, a
   Forget, a claim moved in or out, a legacy manifest seeded or merged. `update_checksum_record` re-reads the record
   under the lock and applies one change to what is there now. A verify or a generate, which read the record when it

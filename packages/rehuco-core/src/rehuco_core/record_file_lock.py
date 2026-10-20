@@ -282,22 +282,24 @@ class RecordFileLock:
         """Take the lock, retrying a busy one with a random back-off and breaking a stale one.
 
         :raises RecordLockedError: still busy after the timeout.
-        :raises PermissionError: the create was refused with no lock there to refuse it -- a folder this process may
-            not write; raised at once, not after the timeout.
+        :raises PermissionError: the create was refused twice running with no lock there to refuse it -- a folder this
+            process may not write, not a delete that was pending at the first; raised at once, not after the timeout.
         :raises OSError: the lock could not be created for another reason, such as a folder that is gone.
         """
         deadline = self.__clock() + self.__timeout
-        refusal: PermissionError | None = None
         seen: RecordFileLock.Sighting | None = None
+        # a create refused with no lock there, once: retried at once before the folder is blamed
+        unexplained = False
         while True:
             text = LockHolder.current(self.__user, self.__clock()).text()
+            refusal: PermissionError | None = None
             try:
                 self.__create(text)
             except FileExistsError:
                 pass
             except PermissionError as error:
                 # what Windows answers for a name whose delete is still pending, as well as for a folder it may not
-                # write: told apart by whether a lock was ever there to read
+                # write: told apart by whether a lock is there to read
                 refusal = error
             else:
                 self.__text = text
@@ -305,13 +307,18 @@ class RecordFileLock:
             sighting = self.__look()
             if sighting is not None:
                 seen = sighting
+                unexplained = False
                 if not sighting.fresh and self.__break(sighting):
                     continue
             elif not self.path.exists():
-                # no lock there at all: a refused create was the folder's doing, and a lock seen earlier is gone
-                if refusal is not None:
-                    raise refusal
+                # no lock there at all, and a lock seen earlier is gone. A refused create was the folder's doing --
+                # unless the delete it was refused for finished since, which the same refusal twice running rules out
                 seen = None
+                if refusal is not None:
+                    if unexplained:
+                        raise refusal
+                    unexplained = True
+                    continue
             if self.__clock() >= deadline:
                 raise RecordLockedError(self.__record, seen.holder if seen is not None else None)
             self.__sleep(random.uniform(*LOCK_BACKOFF_SECONDS))  # nosec  # B311: a back-off jitter, not a secret
