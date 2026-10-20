@@ -13,12 +13,12 @@ from types import SimpleNamespace
 from typing import Final
 
 
-class FakeDirEntry:
+class FakeDirEntry:  # pylint: disable=too-many-instance-attributes  # one knob per member a walk reads
     """A stand-in for :class:`os.DirEntry`, which cannot be constructed outside a real directory read.
 
-    Only the three members the scanners touch: the entry's name, and whether it is a directory or a
-    regular file -- answered from how the test declared it, exactly as a real ``DirEntry`` answers from
-    what reading the directory returned.
+    Only the members the scanners touch: the entry's name, whether it is a directory, a regular file or a
+    junction, and its stat -- answered from how the test declared it, exactly as a real ``DirEntry`` answers
+    from what reading the directory returned.
     """
 
     def __init__(  # pylint: disable=too-many-arguments
@@ -28,6 +28,7 @@ class FakeDirEntry:
         directory: bool = False,
         regular: bool = True,
         link: bool = False,
+        junction: bool = False,
         size: int = 0,
         mtime: float = 0.0,
         unstattable: bool = False,
@@ -36,6 +37,7 @@ class FakeDirEntry:
         self.__directory: Final = directory
         self.__regular: Final = regular
         self.__link: Final = link
+        self.__junction: Final = junction
         self.__size: Final = size
         self.__mtime: Final = mtime
         self.__unstattable: Final = unstattable
@@ -50,9 +52,14 @@ class FakeDirEntry:
         return self.__directory and (follow_symlinks or not self.__link)
 
     def is_file(self, *, follow_symlinks: bool = True) -> bool:
-        """Whether the test declared this entry a regular file (through the link, per the default)."""
-        del follow_symlinks
-        return self.__regular
+        """Whether the test declared this entry a regular file -- through the link only when asked to, as
+        :meth:`is_dir` does."""
+        return self.__regular and (follow_symlinks or not self.__link)
+
+    def is_junction(self) -> bool:
+        """Whether the test declared this entry a Windows junction, which :meth:`is_dir` answers ``True`` for even
+        without following links -- as a real ``DirEntry`` does."""
+        return self.__junction
 
     def stat(self, *, follow_symlinks: bool = True) -> SimpleNamespace:
         """The entry's declared size and modification time, the way a listing's cached ``stat`` answers.

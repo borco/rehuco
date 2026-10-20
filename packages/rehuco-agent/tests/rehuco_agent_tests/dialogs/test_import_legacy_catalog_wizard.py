@@ -115,6 +115,11 @@ class FakeDirEntry:
         del follow_symlinks
         return not self.__directory
 
+    @staticmethod
+    def is_junction() -> bool:
+        """Whether this entry is a Windows junction -- never one here."""
+        return False
+
 
 class FakeScandir:
     """What :func:`os.scandir` returns: an iterator that is also a context manager."""

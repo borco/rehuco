@@ -15,17 +15,23 @@ decide, through :meth:`CatalogEnumeration.require_reachable`.
 Core-side and GUI-free: no setting is read here, and a folder to start from is always a parameter.
 """
 
+import logging
 import os
 from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
+from uuid import UUID
 
 from .constants import REHU_SUFFIX
+from .directory_entries import is_plain_file, is_walkable_directory
 from .rehu_content_files import MAX_NAMED_UNREADABLE, ContentUnreachableError
 from .rename_coordination import RenameCoordinator, ResourceLocation
 from .resource_scoping import is_legacy_record_name, is_record_name
+from .root_fence import RootFence
+
+LOG: Final = logging.getLogger(__name__)
 
 CatalogCheckpoint = Callable[[], None]
 """What a walk calls to ask whether it should still be running.
@@ -143,10 +149,14 @@ class CatalogScanner:
     which resources a sweep can see would make an unrelated settings edit hide resources from
     verification. The list is handed to each resource's run instead, where it means something.
 
-    **A symlinked directory is never descended**, matching `rehuco_core.rehu_content_files`: one
-    pointing at an ancestor would loop the walk forever, and one pointing sideways would sweep the same
-    resources twice under two names. A symlink *to* a ``.rehu`` file is a record like any other, because
-    it is a file the caller can open.
+    **A link is never descended, nor taken as a record** (`rehuco_core.directory_entries`, #498): a
+    symlinked or junctioned directory pointing at an ancestor would loop the walk forever, and one pointing
+    sideways would sweep the same resources twice under two names; a symlink *to* a ``.rehu`` would catalog
+    its target a second time whenever the target is under a root too.
+
+    **It never enters another root**, given a fence (#498): a directory that is another root of the same
+    catalog -- matched by identity, not spelling (:class:`~rehuco_core.root_fence.RootFence`) -- is left to
+    that root's own scan, and named in :attr:`met_roots`.
 
     **It never blocks a rename**, given a coordinator ([[data-model#cache-schema]], #372). Each listing is
     one chunk inside :meth:`~rehuco_core.RenameCoordinator.holding`, the handle closed before the block
@@ -165,6 +175,7 @@ class CatalogScanner:
     :param coordinator: the rename barrier each listing is held under, or ``None`` for a walk that holds
         nothing across renames -- the checksum sweep's, which reads each record later under its own hold.
     :param include_legacy: whether a ``.tc`` no ``.rehu`` covers is a record too.
+    :param fence: the catalog's other roots, never entered, or ``None`` for a walk that knows of none.
     """
 
     def __init__(
@@ -174,11 +185,19 @@ class CatalogScanner:
         checkpoint: CatalogCheckpoint | None = None,
         coordinator: RenameCoordinator | None = None,
         include_legacy: bool = False,
+        fence: RootFence | None = None,
     ) -> None:
         self.__root: Final = root
         self.__checkpoint: Final = checkpoint
         self.__coordinator: Final = coordinator
         self.__include_legacy: Final = include_legacy
+        self.__fence: Final = fence
+        self.__met_roots: Final[set[UUID]] = set()
+
+    @property
+    def met_roots(self) -> frozenset[UUID]:
+        """The other roots the walk so far found inside its own and did not enter -- an overlap to flag."""
+        return frozenset(self.__met_roots)
 
     def scan(self) -> CatalogEnumeration:
         """Walk :attr:`root`, collecting the records under it and the directories that would not list.
@@ -269,14 +288,28 @@ class CatalogScanner:
         try:
             with os.scandir(directory) as entries:
                 for entry in entries:
-                    if entry.is_dir(follow_symlinks=False):
-                        subdirectories.append(directory / entry.name)
-                    elif entry.is_file() and self.__is_wanted(entry.name):
+                    if is_walkable_directory(entry):
+                        self.__queue(directory / entry.name, subdirectories)
+                    elif is_plain_file(entry) and self.__is_wanted(entry.name):
                         names.append(entry.name)
         except OSError:
             subdirectories.clear()
             return None
         return tuple(sorted((directory / name for name in self.__uncovered(names)), key=str))
+
+    def __queue(self, subdirectory: Path, subdirectories: list[Path]) -> None:
+        """Queue a subdirectory for the walk, unless it is another root.
+
+        :param subdirectory: the directory found.
+        :param subdirectories: where it goes, appended to in place.
+        """
+        met = self.__fence.match(subdirectory) if self.__fence is not None else None
+        if met is None:
+            subdirectories.append(subdirectory)
+            return
+        if met not in self.__met_roots:
+            LOG.warning("%s is another root of this catalog; the scan of %s leaves it out.", subdirectory, self.__root)
+        self.__met_roots.add(met)
 
 
 def enumerate_catalog_resources(root: Path, *, checkpoint: CatalogCheckpoint | None = None) -> CatalogEnumeration:

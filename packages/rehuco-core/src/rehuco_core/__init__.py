@@ -255,8 +255,10 @@ from .rehudb import (
     CatalogRecord,
     CatalogRoot,
     CatalogRow,
+    HardlinkedRecord,
     RecordKind,
     RecordSignature,
+    RootScanEffects,
     catalog_path_key,
     catalog_type_fields,
     rehudb_path,
@@ -289,6 +291,7 @@ from .resource_scoping import (
     resource_name,
 )
 from .root_folders import RootFolderLister
+from .root_overlap import RootOverlap, root_path_key
 from .staged_images import (
     StagedImageName,
     parse_staged_name,
@@ -535,6 +538,7 @@ __all__ = [
     "FileType",
     "FolderChanged",
     "GenerateChecksumsJob",
+    "HardlinkedRecord",
     "IMAGE_EXTENSIONS",
     "INFO_REHU_FILENAME",
     "INFO_TC_FILENAME",
@@ -603,6 +607,7 @@ __all__ = [
     "RehucoFileError",
     "RehucoRoot",
     "RootFolderLister",
+    "RootOverlap",
     "RootReachable",
     "RootStale",
     "RootStorage",
@@ -613,6 +618,7 @@ __all__ = [
     "RemoveCatalogRootJob",
     "RetireLegacyManifestJob",
     "ResourceLocation",
+    "RootScanEffects",
     "RootScanOutcome",
     "RootScanResult",
     "SCREENSHOT_NAME_PATTERNS",
@@ -755,6 +761,7 @@ __all__ = [
     "restore_backup",
     "retire_legacy_manifests",
     "rewrite_description_images",
+    "root_path_key",
     "save_screenshot",
     "scan_conversion_backups",
     "scan_rehu_screenshot_files",

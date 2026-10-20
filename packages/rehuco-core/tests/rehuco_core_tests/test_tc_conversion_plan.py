@@ -27,6 +27,7 @@ def mock_environment(  # pylint: disable=too-many-arguments,too-many-locals
     *,
     tc_files: list[str],
     directories: list[str] | None = None,
+    junctions: list[str] | None = None,
     unreadable: list[str] | None = None,
     unreadable_files: list[str] | None = None,
     other_files: list[str] | None = None,
@@ -41,6 +42,8 @@ def mock_environment(  # pylint: disable=too-many-arguments,too-many-locals
     :param tc_files: fake `.tc` paths relative to :data:`ROOT`, ``/``-separated.
     :param directories: fake directory paths relative to :data:`ROOT`; a `.tc` file's own parent need
         not be listed here, only directories the walk must actually descend into.
+    :param junctions: fake paths that are Windows junctions to directories; their target's listing is not modeled,
+        so a walk that descended one would report it unreadable.
     :param unreadable: fake directory paths whose listing should raise ``OSError``.
     :param unreadable_files: fake `.tc` paths whose read should raise ``OSError`` -- a file gone away
         between the listing and the read, or one the mount will not serve.
@@ -60,6 +63,11 @@ def mock_environment(  # pylint: disable=too-many-arguments,too-many-locals
         path = ROOT / name
         listing.setdefault(path.parent, []).append(FakeDirEntry(path.name, directory=True))
         listing.setdefault(path, [])
+    for name in junctions or []:
+        path = ROOT / name
+        listing.setdefault(path.parent, []).append(
+            FakeDirEntry(path.name, directory=True, regular=False, junction=True)
+        )
     for name in tc_files:
         path = ROOT / name
         listing.setdefault(path.parent, []).append(FakeDirEntry(path.name))
@@ -605,6 +613,24 @@ def test_an_entry_that_is_neither_a_file_nor_a_directory_is_passed_over(mocker: 
 
     assert not plan.resources
     assert not plan.unreadable
+
+
+def test_a_junction_is_never_descended(mocker: MockerFixture) -> None:
+    """A junction is a directory link under another name: one pointing sideways would plan the same resource twice.
+
+    **Test steps:**
+
+    * mock a resource directory beside a junction
+    * plan the tree
+    * verify only the real resource is planned, nothing is unreadable, and the junction was never listed
+    """
+    mocks = mock_environment(mocker, tc_files=["a/info.tc"], directories=["a"], junctions=["alias"])
+
+    plan = plan_tc_conversion(ROOT)
+
+    assert [r.tc_path for r in plan.resources] == [ROOT / "a/info.tc"]
+    assert not plan.unreadable
+    assert ROOT / "alias" not in [Path(call.args[0]) for call in mocks["scandir"].call_args_list]
 
 
 def test_a_manifest_under_another_stem_is_not_this_resource_s(mocker: MockerFixture) -> None:

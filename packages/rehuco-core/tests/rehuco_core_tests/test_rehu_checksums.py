@@ -40,6 +40,7 @@ from rehuco_core import (
     verify_checksums,
 )
 
+from rehuco_core_tests.fake_directories import FakeDirEntry, FakeScandir
 from rehuco_core_tests.fake_locks import take_no_lock_files
 
 DIRECTORY: Final = Path("/fake/library/sculpting")
@@ -76,37 +77,6 @@ RECORDED_AT: Final = datetime(2026, 8, 5, 12, 0, tzinfo=UTC)
 
 
 # region Fakes
-
-
-class FakeDirEntry:
-    """A stand-in for :class:`os.DirEntry`, which cannot be constructed outside a real directory read."""
-
-    def __init__(self, name: str, *, directory: bool = False) -> None:
-        self.name: Final = name
-        self.__directory: Final = directory
-
-    def is_dir(self, *, follow_symlinks: bool = True) -> bool:
-        """Whether the fake declared this entry a directory."""
-        del follow_symlinks
-        return self.__directory
-
-    def is_file(self, *, follow_symlinks: bool = True) -> bool:
-        """Whether the fake declared this entry a regular file."""
-        del follow_symlinks
-        return not self.__directory
-
-
-class FakeScandir:
-    """What :func:`os.scandir` returns: an iterator that is also a context manager."""
-
-    def __init__(self, entries: list[FakeDirEntry]) -> None:
-        self.__entries: Final = entries
-
-    def __enter__(self) -> Any:
-        return iter(self.__entries)
-
-    def __exit__(self, *_exception: object) -> None:
-        return None
 
 
 class FakeDisk:

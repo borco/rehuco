@@ -50,6 +50,7 @@ from .constants import (
     IMAGE_EXTENSIONS,
     VIDEO_EXTENSIONS,
 )
+from .directory_entries import is_walkable_directory
 from .record_file_lock import is_lock_name
 from .resource_scoping import is_directory_scoped, is_directory_scoped_name, is_record_name
 from .tc_conversion_backups import is_conversion_backup
@@ -234,7 +235,7 @@ class DirectoryClassifier:
         """
         try:
             with os.scandir(directory) as scan:
-                scanned = [(entry.name, entry.is_dir(follow_symlinks=False), self.__stat(entry)) for entry in scan]
+                scanned = [(entry.name, is_walkable_directory(entry), self.__stat(entry)) for entry in scan]
         except OSError:
             return DirectoryListing(directory, reachable=False)
         return self.__name(directory, scanned)

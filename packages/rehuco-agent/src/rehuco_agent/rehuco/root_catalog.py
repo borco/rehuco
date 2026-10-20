@@ -44,6 +44,7 @@ from rehuco_core.notify import RootNotifiers
 
 from ..resource_events import ResourceEvents
 from ..settings.persistent_settings import cache_folder
+from .root_overlaps import RootOverlaps
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -72,6 +73,9 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
 
     **A file newer than this build opens read-only**: its :attr:`~rehuco_core.RehucoFile.lock_reason` says why,
     and no edit of the roots is made. Scanning stays on, since it writes only the disposable cache.
+
+    **Roots that overlap are flagged, not refused** (#498): :attr:`overlaps` describes the open file -- its roots as
+    spelled and through their links, what its scans met -- and starts over with every file opened or closed.
 
     :param queue: the task queue scans and removals are enqueued on.
     :param parent: optional Qt parent.
@@ -162,6 +166,7 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         self.__scans: Final[dict[int, ScanCatalogRootJob]] = {}
         """The scans among them, by serial, so their end can say which rows they changed (GUI thread only)."""
 
+        self.__overlaps: Final = RootOverlaps(self)
         self.__marshaller: Final = RootCatalog.Marshaller(self)
         self.__marshaller.queue_changed.connect(self.__on_queue_changed, Qt.ConnectionType.QueuedConnection)
         self.__verifier: Final = RootCatalog.Verifier(self)
@@ -189,6 +194,11 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
     def rehuco_path(self) -> Path | None:
         """The open ``.rehuco``'s path, or ``None`` while none is open."""
         return None if self.__file is None else self.__file.path
+
+    @property
+    def overlaps(self) -> RootOverlaps:
+        """What the open file's roots overlap, for the main window's banner (#498)."""
+        return self.__overlaps
 
     @property
     def editable(self) -> bool:
@@ -263,6 +273,7 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
             self.__events.root_stale.disconnect(self.scan_root)
             self.__events.root_reachable.disconnect(self.__on_root_reachable)
         self.__release_session()
+        self.__overlaps.stop()
 
     def __fail(self, message: str) -> bool:
         """Log and keep ``message`` as :attr:`load_error`.
@@ -303,6 +314,7 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         self.__file = file
         self.__catalog.attach(session)
         self.__follow_roots()
+        self.__overlaps.follow(file, self.unreachable_roots(), keep_scans=same_catalog)
         self.opened.emit(file)
         self.roots_changed.emit()
         self.rehuco_path_changed.emit(file.path)
@@ -325,6 +337,7 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
             with self.__lock:
                 self.__serials.clear()
             self.__scans.clear()
+            self.__overlaps.follow(None, ())
 
     def __follow_roots(self) -> None:
         """Watch exactly the open file's roots."""
@@ -442,6 +455,7 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         self.__reconcile_cache()
         if self.__file is not None:
             self.__follow_roots()
+            self.__overlaps.follow(self.__file, self.unreachable_roots(), keep_scans=True)
             self.roots_changed.emit()
         return saved
 
@@ -461,6 +475,7 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
             self.__enqueue(RemoveCatalogRootJob(cache_path, removed.root_id, root_label=removed.label), removed.path)
         if self.__file is not None:
             self.__follow_roots()
+            self.__overlaps.follow(self.__file, self.unreachable_roots(), keep_scans=True)
             self.roots_changed.emit()
         return saved
 
@@ -601,6 +616,7 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
             scan = self.__scans.pop(serial, None)
             if scan is not None:
                 touched |= scan.touched_rows
+                self.__overlaps.scan_finished(scan.required_root_id(), scan.met_roots, scan.hardlinked)
         if touched and self.__file is not None:
             self.rows_changed.emit(touched)
 

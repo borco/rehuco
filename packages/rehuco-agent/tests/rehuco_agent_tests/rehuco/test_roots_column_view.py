@@ -6,13 +6,14 @@ from typing import Any, Final, NamedTuple
 from uuid import uuid4
 
 from borco_pyside.widgets import RowBandDelegate
-from PySide6.QtCore import QPoint, QRect
+from PySide6.QtCore import QModelIndex, QPoint, QRect
 from PySide6.QtGui import QColor, QFont, QImage, QPainter
-from PySide6.QtWidgets import QAbstractItemView, QApplication, QListView, QStyleOptionViewItem
+from PySide6.QtWidgets import QAbstractItemView, QApplication, QListView, QStyle, QStyleOptionViewItem
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.rehuco.root_row_delegate import ROW_PADDING, RootRowDelegate
+from rehuco_agent.rehuco.roots_checksum import BAD_INK
 from rehuco_agent.rehuco.roots_column_view import RootsColumnView
 from rehuco_agent.rehuco.roots_folder_model import NodeListing, RootsFolderModel
 from rehuco_agent.rehuco.roots_item_delegate import (
@@ -447,3 +448,91 @@ def test_the_folder_line_scales_a_font_sized_in_pixels(qtbot: QtBot) -> None:
     folder_font = RootRowDelegate._RootRowDelegate__folder_font(font)  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     assert 0 < folder_font.pixelSize() < 20
+
+
+def paint_root_row(
+    mocker: MockerFixture, delegate: RootRowDelegate, index: QModelIndex, *, selected: bool = False
+) -> tuple[list[DrawnLine], QColor]:
+    """Paint a root row's content, its glyph's drawing captured.
+
+    :param mocker: pytest-mock fixture.
+    :param delegate: the delegate.
+    :param index: the root row.
+    :param selected: whether the row is painted on the selection band.
+    :returns: each line of text drawn, and the colour the glyph was drawn in.
+    """
+    draw = mocker.patch.object(delegate, "draw_icon")
+    option = QStyleOptionViewItem()
+    delegate.initStyleOption(option, index)
+    if selected:
+        option.state |= QStyle.StateFlag.State_Selected  # pyright: ignore[reportAttributeAccessIssue]
+    image = QImage(320, 80, QImage.Format.Format_ARGB32)  # kept: a painter does not own its device
+    painter = RecordingPainter(image)
+    try:
+        painter.setPen(QColor("black"))
+        delegate.paint_content(painter, option, index, QRect(0, 0, 300, 60), QColor("black"))
+    finally:
+        painter.end()
+    _painter, _path, glyph, _rect = draw.call_args.args
+    return painter.lines, glyph
+
+
+def test_a_duplicate_root_row_is_drawn_in_red_off_the_selection_band(
+    mocker: MockerFixture, shown: tuple[RootsColumnView, RootsFolderModel]
+) -> None:
+    """A root that duplicates an earlier one has its glyph, name and folder drawn in red -- the folder as faint as ever
+    -- but on the selection band, where red would not read, it keeps the band's ink; another root is drawn as before.
+
+    **Test steps:**
+
+    * paint the first root's row, named a duplicate, unselected and selected, and the second root's row
+    * verify the first in red, its folder line red at a lower alpha; the selected one and the second root not in red
+    """
+    view, model = shown
+    first, second = model.index(0, 0), model.index(1, 0)
+    root = model.root_at(first)
+    assert root is not None
+    duplicates = frozenset({root.root_id})
+    delegate = RootRowDelegate(view, duplicates=lambda: duplicates)
+
+    (name, folder), glyph = paint_root_row(mocker, delegate, first)
+    assert (glyph, name.ink) == (BAD_INK, BAD_INK)
+    assert (folder.ink.rgb(), folder.ink.alpha() < 255) == (BAD_INK.rgb(), True)
+
+    (name, _folder), glyph = paint_root_row(mocker, delegate, first, selected=True)
+    assert BAD_INK not in (glyph, name.ink)
+
+    (name, _folder), glyph = paint_root_row(mocker, delegate, second)
+    assert BAD_INK not in (glyph, name.ink)
+
+
+def test_naming_the_duplicate_roots_redraws_them_in_red(
+    mocker: MockerFixture, qtbot: QtBot, shown: tuple[RootsColumnView, RootsFolderModel]
+) -> None:
+    """The view tells the delegate of its column of roots which roots are duplicates, and repaints at once.
+
+    **Test steps:**
+
+    * spy on the glyphs the root rows draw, let every repaint already asked for happen, and forget what it drew
+    * verify nothing more is drawn while nothing asks
+    * name the second root a duplicate
+    * verify a glyph is drawn in red without anything else asking for a repaint
+    """
+    view, model = shown
+    root = model.root_at(model.index(1, 0))
+    assert root is not None
+    draw = mocker.spy(RootRowDelegate, "draw_icon")
+    qtbot.wait(100)
+    draw.reset_mock()
+    qtbot.wait(100)
+    assert not draw.called
+
+    view.set_duplicate_roots([root.root_id])
+
+    def drawn_in_red() -> bool:
+        """Whether a glyph was drawn in red."""
+        return any(
+            color == BAD_INK for _delegate, _painter, _path, color, _rect in (c.args for c in draw.call_args_list)
+        )
+
+    qtbot.waitUntil(drawn_in_red, timeout=WAIT_TIMEOUT_MS)

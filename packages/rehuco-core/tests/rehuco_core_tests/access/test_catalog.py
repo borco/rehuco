@@ -240,8 +240,9 @@ def test_a_row_is_found_by_its_key(cache: MagicMock) -> None:
 
 
 def test_where_roots_nest_a_record_is_the_innermost_roots(cache: MagicMock) -> None:
-    """A record under two nested roots has a row under each; its row is the one of the root the cache locates it under
-    -- the innermost -- never the outer root's, which the rows' order puts first.
+    """A record under two nested roots -- a file opened nesting, scanned before #498 -- may have a row under each; its
+    row is the one of the root the cache locates it under -- the innermost -- never the outer root's, which the rows'
+    order puts first.
 
     **Test steps:**
 

@@ -28,7 +28,6 @@ but read-only, with the reason stated (invariant 2).
 import json
 from dataclasses import dataclass
 from enum import StrEnum
-from os import path as os_path
 from pathlib import Path
 from typing import Any, Final
 from uuid import UUID, uuid4
@@ -39,6 +38,7 @@ from .lock_reasons import LockReason, LockReasonKind
 from .migrations import CURRENT_REHUCO_VERSION, migrate_rehuco_data
 from .record_file_lock import RecordFileLock
 from .rehu_format import FORMAT_VERSION_KEY
+from .root_overlap import RootOverlap, root_path_key
 
 REHUCO_ID_KEY: Final = "id"
 """The file's top-level key holding the rehuco id, a UUID string."""
@@ -207,6 +207,12 @@ class RehucoFile:
         return tuple(self.__parse_root(raw) for raw in self.__roots)
 
     @property
+    def overlaps(self) -> tuple[RootOverlap, ...]:
+        """The pairs of roots that overlap as spelled -- none for a file this build wrote, but an older or
+        hand-edited one is opened as it is, neither refused nor rewritten (#498)."""
+        return RootOverlap.among(self.roots)
+
+    @property
     def count(self) -> int:
         """How many roots the file holds."""
         return len(self.__roots)
@@ -245,12 +251,16 @@ class RehucoFile:
             (case-insensitively) gets a suffix: ``foo``, ``foo (2)``, ``foo (3)``.
         :param storage: what the folder lives on.
         :returns: the new root's row.
-        :raises ValueError: the folder is already a root -- compared normalized, and case-folded where the
-            platform's paths are.
+        :raises ValueError: the folder is already a root, is inside one, or contains one -- compared as spelled,
+            normalized and case-folded where the platform's paths are (:meth:`RootOverlap.find`). The comparison
+            through links is the caller's to run first, off the GUI thread (:meth:`RootOverlap.find_resolved`).
         """
-        key = self.__path_key(path)
-        if any(self.__path_key(raw[ROOT_PATH_KEY]) == key for raw in self.__roots):
+        key = root_path_key(path)
+        if any(root_path_key(raw[ROOT_PATH_KEY]) == key for raw in self.__roots):
             raise ValueError(f"Already a root: {path}")
+        overlap = RootOverlap.find(path, self.roots)
+        if overlap is not None:
+            raise ValueError(overlap.message)
         base = label if label else self.__default_label(path)
         self.__roots.append(
             {
@@ -395,7 +405,3 @@ class RehucoFile:
         # split on both separators rather than through `Path`, so a Windows path labels the same on every platform
         spelled = str(path)
         return spelled.rstrip("/\\").replace("\\", "/").rsplit("/", 1)[-1] or spelled
-
-    @staticmethod
-    def __path_key(path: Path | str) -> str:
-        return os_path.normcase(os_path.normpath(str(path)))

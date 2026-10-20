@@ -37,7 +37,11 @@ to keep a single writer true, and is gone with it:
   ([[sync#lock-file]]), on one machine and across machines alike.
 - **Roots still do not overlap** within one `.rehuco`, for the cache's sake, not for ownership: a root inside another,
   or containing one, would scan a record twice and give it two rows (#498). The agent refuses the add and says which
-  root encloses which.
+  root encloses which. It compares the folders as spelled, and again through their links (`os.path.realpath`) on a
+  worker, since following a mapped drive can wait out a network timeout. The two forms are never compared with each
+  other, and the root is stored as spelled, never resolved. A root the cache holds unreachable is compared as spelled
+  only. A file that already nests opens as it is, and the main window's banner says which roots overlap; the scan
+  never enters another root ([[data-model#cache-schema]]), so each record keeps one row meanwhile.
 - A share several machines mount is the same folder to all of them; each has its own mapping to it
   ([[mounts-and-storage#rehuco-scope]]) and its own cache of it.
 - Read-only media (a CD/DVD, a read-only share) hold no lock file and take no save; their records open read-only with

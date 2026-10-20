@@ -492,7 +492,7 @@ def test_duplicate_root_is_refused_where_paths_fold_case(mocker: MockerFixture, 
     * add a root, then the same folder spelled differently
     * verify ``ValueError`` and that only one root remains
     """
-    mocker.patch("rehuco_core.rehuco_file.os_path", ntpath)
+    mocker.patch("rehuco_core.root_overlap.os_path", ntpath)
     rehuco = RehucoFile.new()
     rehuco.add_root("D:/tutorials")
     with pytest.raises(ValueError, match="Already a root"):
@@ -509,13 +509,86 @@ def test_case_variant_is_another_root_where_paths_do_not_fold_case(mocker: Mocke
     * add ``/data/tutorials`` and ``/data/Tutorials`` and verify both are kept
     * add ``/data/tutorials/`` and verify ``ValueError``
     """
-    mocker.patch("rehuco_core.rehuco_file.os_path", posixpath)
+    mocker.patch("rehuco_core.root_overlap.os_path", posixpath)
     rehuco = RehucoFile.new()
     rehuco.add_root("/data/tutorials")
     rehuco.add_root("/data/Tutorials")
     assert rehuco.count == 2
     with pytest.raises(ValueError, match="Already a root"):
         rehuco.add_root("/data/tutorials/")
+
+
+@mark.parametrize(
+    ("existing", "candidate", "message"),
+    [
+        param("D:/tutorials", "D:/tutorials/blender", "{candidate} is inside the root tutorials", id="inside"),
+        param("D:/tutorials/blender", "D:/tutorials", "{candidate} contains the root blender", id="containing"),
+        param("D:/Tutorials", "d:/TUTORIALS/blender", "{candidate} is inside the root Tutorials", id="case"),
+        param("D:\\x", "D:\\", "{candidate} contains the root x", id="drive-root"),
+        param("\\\\nas\\share", "\\\\nas\\share\\lib", "{candidate} is inside the root share", id="unc"),
+    ],
+)
+def test_a_root_inside_another_or_containing_one_is_refused(
+    mocker: MockerFixture, existing: str, candidate: str, message: str
+) -> None:
+    """A record must have one root, so a folder overlapping a root either way is refused, compared as Windows does --
+    and the refusal names both folders as spelled (#498).
+
+    **Test steps:**
+
+    * compare paths the way ``ntpath`` does
+    * add a root, then a folder inside it or containing it
+    * verify ``ValueError`` naming both, and only the first root kept
+    """
+    mocker.patch("rehuco_core.root_overlap.os_path", ntpath)
+    rehuco = RehucoFile.new()
+    rehuco.add_root(existing)
+    expected = f"{message.format(candidate=Path(candidate))} ({Path(existing)})"
+
+    with pytest.raises(ValueError) as refused:
+        rehuco.add_root(candidate)
+
+    assert str(refused.value) == expected
+    assert rehuco.count == 1
+
+
+def test_a_sibling_sharing_a_prefix_is_another_root(mocker: MockerFixture) -> None:
+    """``lib2`` is beside ``lib``, not inside it: components are compared whole.
+
+    **Test steps:**
+
+    * compare paths the way ``ntpath`` does
+    * add ``D:/lib`` then ``D:/lib2``; verify both are kept
+    """
+    mocker.patch("rehuco_core.root_overlap.os_path", ntpath)
+    rehuco = RehucoFile.new()
+    rehuco.add_root("D:/lib")
+    rehuco.add_root("D:/lib2")
+    assert rehuco.count == 2
+    assert not rehuco.overlaps
+
+
+def test_a_file_opened_nesting_loads_and_reports_its_overlap() -> None:
+    """A file an older build or a hand edit left nesting is opened as it is -- neither refused nor rewritten -- and
+    its overlap is reported.
+
+    **Test steps:**
+
+    * build a file of three roots and a fourth inside its first
+    * verify it holds all four roots, and one overlap, the outer root's, naming the inner folder
+    """
+    data = json.loads(json.dumps(HOME))
+    data["roots"].append({"id": str(UUID(int=7)), "path": "D:/tutorials/blender", "label": "blender"})
+
+    rehuco = RehucoFile(data)
+
+    assert rehuco.count == 4
+    (overlap,) = rehuco.overlaps
+    assert (overlap.root.root_id, overlap.other, overlap.encloses) == (
+        UUID(ROOT_IDS[0]),
+        Path("D:/tutorials/blender"),
+        True,
+    )
 
 
 def test_remove_root_returns_it_and_keeps_the_rest(home: RehucoFile) -> None:

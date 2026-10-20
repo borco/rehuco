@@ -435,6 +435,28 @@ def test_an_entry_that_will_not_stat_is_still_listed(mocker: MockerFixture) -> N
     assert found["gone.mp4"].modified is None
 
 
+def test_a_junction_is_not_reported_as_a_directory(mocker: MockerFixture) -> None:
+    """A junction answers ``is_dir`` even without following links, yet it is a link like a directory symlink: a
+    browser offered it as a folder would let the user walk into a tree the walks never enter.
+
+    **Test steps:**
+
+    * declare a real subdirectory and a junction beside it
+    * classify the directory
+    * verify the subdirectory is a directory and the junction is not
+    """
+    entries = [
+        FakeDirEntry("sub", directory=True),
+        FakeDirEntry("alias", directory=True, regular=False, junction=True),
+    ]
+    mocker.patch("os.scandir", return_value=FakeScandir(entries))
+    found = {entry.name: entry for entry in classify_directory(DIRECTORY_SCOPED_PATH, DIRECTORY).entries}
+
+    assert (found["sub"].kind, found["sub"].file_type) == (FileKind.DIRECTORY, FileType.DIRECTORY)
+    assert found["alias"].kind is not FileKind.DIRECTORY
+    assert found["alias"].file_type is not FileType.DIRECTORY
+
+
 def test_a_directory_that_will_not_list_is_unreachable_rather_than_empty(mocker: MockerFixture) -> None:
     """*Empty* and *away* are not the same answer (#245) -- a browser that drew an empty table over an
     offline mount would say this resource's folder is empty.

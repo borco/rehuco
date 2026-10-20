@@ -8,7 +8,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Final
 from unittest.mock import MagicMock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from pytest import fixture, mark, raises
 from pytest_mock import MockerFixture
@@ -18,9 +18,12 @@ from rehuco_core import (
     REHUDB_REMOVE_ROOT_KIND,
     REHUDB_SCAN_KIND,
     CatalogRecord,
+    CatalogRoot,
+    HardlinkedRecord,
     RecordKind,
     RemoveCatalogRootJob,
     RenameCoordinator,
+    RootScanEffects,
     RootScanOutcome,
     RootScanResult,
     ScanCatalogRootJob,
@@ -89,7 +92,8 @@ def test_a_scan_applies_what_it_found(mocker: MockerFixture, cache: MagicMock) -
 
     * make the scan find one record read and one unchanged, with no cached rows
     * run the job
-    * verify the cache applied both with a set to collect touched rows, nothing was marked, and the progress counted
+    * verify the cache applied both with empty effects to collect touched rows, nothing was marked, and the progress
+      counted
     """
     cache.signatures.return_value = {}
     records = (CatalogRecord("info.rehu", RecordKind.REHU),)
@@ -100,7 +104,9 @@ def test_a_scan_applies_what_it_found(mocker: MockerFixture, cache: MagicMock) -
 
     job.run(control)
 
-    cache.apply_root_scan.assert_called_once_with(ROOT_ID, records, unchanged=("same.rehu",), touched=set())
+    cache.apply_root_scan.assert_called_once_with(
+        ROOT_ID, records, unchanged=("same.rehu",), identities={}, effects=RootScanEffects()
+    )
     cache.mark_root_unreachable.assert_not_called()
     assert control.reports == [(0, None), (1, None)]
     assert job.result is result
@@ -114,9 +120,9 @@ def touching(*ids: int) -> Callable[..., bool]:
     :returns: the stand-in.
     """
 
-    def apply(*_: object, touched: set[int], **__: object) -> bool:
+    def apply(*_: object, effects: RootScanEffects, **__: object) -> bool:
         """Report the rows as touched, and answer applied."""
-        touched.update(ids)
+        effects.touched.update(ids)
         return True
 
     return apply
@@ -142,6 +148,85 @@ def test_a_scan_keeps_the_rows_it_changed_until_reset(mocker: MockerFixture, cac
     assert job.touched_rows == frozenset({7, 9})
     job.reset()
     assert job.touched_rows == frozenset()
+
+
+def catalog_root(root_id: UUID, path: Path) -> CatalogRoot:
+    """A reachable cache row for a root at ``path``.
+
+    :param root_id: the root's id.
+    :param path: its folder.
+    :returns: the row.
+    """
+    return CatalogRoot(root_id, path.name, path, 0, False, True, None)
+
+
+def test_a_scan_fences_off_the_catalogs_other_roots_read_when_it_runs(mocker: MockerFixture, cache: MagicMock) -> None:
+    """The other roots are what the cache holds when the job runs, its own root left out -- and a job restored from the
+    saved queue, which carries no roots, reads them the same way (#498).
+
+    **Test steps:**
+
+    * make the cache hold the scanned root and two others
+    * run a fresh job, and one restored from the first one's saved state
+    * verify each scan was handed the two others and not its own root, and the saved state gained no key
+    """
+    other, another = catalog_root(uuid4(), Path("/fake/other")), catalog_root(uuid4(), Path("/fake/another"))
+    cache.roots.return_value = [other, catalog_root(ROOT_ID, ROOT), another]
+    cache.signatures.return_value = {}
+    scan_class = scan_returning(mocker, RootScanResult(ROOT, RootScanOutcome.SCANNED))
+    job = scan_job()
+    state = job.capture_state()
+    restored = DEFAULT_TASK_JOB_REGISTRY.create(REHUDB_SCAN_KIND, state)
+    assert isinstance(restored, ScanCatalogRootJob)
+
+    for each in (job, restored):
+        each.run(FakeControl())
+
+        assert scan_class.call_args.kwargs["others"] == [other, another]
+    assert set(state) == {"cache", "root_id", "root_label", "path"}
+
+
+def test_a_scan_reports_the_roots_it_met_and_the_records_it_found_twice_until_reset(
+    mocker: MockerFixture, cache: MagicMock
+) -> None:
+    """``met_roots`` is the last scan's, and ``hardlinked`` every second name dropped -- the scan's own, within the
+    root, and the cache's, across roots -- both empty before a run and after a reset (#498).
+
+    **Test steps:**
+
+    * make the scan meet a root and drop one name of its own, with an identity, and the cache drop another across roots
+    * check both properties are empty before the run
+    * run the job; verify the identities reached the cache, the met root, and both dropped names, the scan's first
+    * reset; verify both are empty again
+    """
+    met = uuid4()
+    across = HardlinkedRecord(uuid4(), "elsewhere.rehu", ROOT_ID, "b.rehu")
+    result = RootScanResult(
+        ROOT,
+        RootScanOutcome.SCANNED,
+        identities={"a.rehu": "1:2"},
+        hardlinked=(("a.rehu", "c.rehu"),),
+        met_roots=frozenset({met}),
+    )
+
+    def apply(*_: object, effects: RootScanEffects, **__: object) -> bool:
+        """Drop one more name across roots, and answer applied."""
+        effects.hardlinked.append(across)
+        return True
+
+    cache.signatures.return_value = {}
+    cache.apply_root_scan.side_effect = apply
+    scan_returning(mocker, result)
+    job = scan_job()
+    assert (job.met_roots, job.hardlinked) == (frozenset(), ())
+
+    job.run(FakeControl())
+
+    assert cache.apply_root_scan.call_args.kwargs["identities"] == {"a.rehu": "1:2"}
+    assert job.met_roots == frozenset({met})
+    assert job.hardlinked == (HardlinkedRecord(ROOT_ID, "a.rehu", ROOT_ID, "c.rehu"), across)
+    job.reset()
+    assert (job.met_roots, job.hardlinked) == (frozenset(), ())
 
 
 def test_a_rescan_compares_against_the_cached_rows_and_reports_against_their_count(

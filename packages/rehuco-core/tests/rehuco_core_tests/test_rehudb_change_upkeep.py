@@ -6,7 +6,7 @@ The cache is :mod:`test_rehudb`'s, over a shared-cache in-memory database; its f
 
 from pathlib import Path
 
-from rehuco_core import CatalogCache, CatalogRecord, RecordKind, RehucoFile, RehucoRoot
+from rehuco_core import CatalogCache, CatalogRecord, RecordKind, RehucoRoot, RootScanEffects
 
 from rehuco_core_tests.test_rehudb import (  # noqa: F401  # pylint: disable=unused-import
     TUTORIALS,
@@ -15,6 +15,7 @@ from rehuco_core_tests.test_rehudb import (  # noqa: F401  # pylint: disable=unu
     fixture_filled,
     fixture_memory,
     ids,
+    nesting,
     record,
 )
 
@@ -24,28 +25,30 @@ from rehuco_core_tests.test_rehudb import (  # noqa: F401  # pylint: disable=unu
 def test_a_scan_reports_the_rows_it_read_and_removed_but_not_those_it_kept(
     filled: tuple[CatalogCache, RehucoRoot, RehucoRoot],
 ) -> None:
-    """``touched`` collects every row the scan read -- found again or new -- and every row it removed; a record an
-    incremental scan found unchanged, and every other root's row, are no part of it.
+    """``effects.touched`` collects every row the scan read -- found again or new -- and every row it removed; a record
+    an incremental scan found unchanged, and every other root's row, are no part of it.
 
     **Test steps:**
 
     * scan four records under the first root and one under the second
     * scan the first root again: one record read again, one new, one unchanged, one gone
-    * verify ``touched`` holds the read, new and gone rows' ids, and neither the unchanged one nor the other root's
+    * verify ``effects.touched`` holds the read, new and gone rows' ids, and neither the unchanged one nor the other
+      root's; and no hardlink was reported
     """
     cache, first, second = filled
     cache.apply_root_scan(first.root_id, [record("read.rehu"), record("kept.rehu"), record("gone.rehu")])
     cache.apply_root_scan(second.root_id, [record("other.rehu")])
     before = ids(cache)
-    touched: set[int] = set()
+    effects = RootScanEffects()
 
     applied = cache.apply_root_scan(
-        first.root_id, [record("read.rehu"), record("new.rehu")], unchanged=("kept.rehu",), touched=touched
+        first.root_id, [record("read.rehu"), record("new.rehu")], unchanged=("kept.rehu",), effects=effects
     )
 
     after = ids(cache)
     assert applied
-    assert touched == {before["read.rehu"], after["new.rehu"], before["gone.rehu"]}
+    assert effects.touched == {before["read.rehu"], after["new.rehu"], before["gone.rehu"]}
+    assert not effects.hardlinked
 
 
 def test_a_scan_of_a_removed_root_touches_nothing(filled: tuple[CatalogCache, RehucoRoot, RehucoRoot]) -> None:
@@ -58,10 +61,10 @@ def test_a_scan_of_a_removed_root_touches_nothing(filled: tuple[CatalogCache, Re
     """
     cache, first, _ = filled
     cache.remove_root(first.root_id)
-    touched: set[int] = set()
+    effects = RootScanEffects()
 
-    assert not cache.apply_root_scan(first.root_id, [record("a.rehu")], touched=touched)
-    assert not touched
+    assert not cache.apply_root_scan(first.root_id, [record("a.rehu")], effects=effects)
+    assert effects == RootScanEffects()
 
 
 # endregion
@@ -126,17 +129,15 @@ def test_the_records_at_or_beneath_a_path_are_spelled_from_their_root(
 
 
 def test_a_record_held_by_nested_roots_or_asked_twice_is_answered_once(cache: CatalogCache) -> None:
-    """Where roots nest, a record has a row under each; and a caller may name one path twice, or a record and its
-    folder: each record is still answered once.
+    """Where roots nest -- a file opened nesting, scanned before #498 -- a record may have a row under each; and a
+    caller may name one path twice, or a record and its folder: each record is still answered once.
 
     **Test steps:**
 
     * reconcile an outer root and a root nested in it, and scan the same record under both
     * verify the record, asked for directly, twice, and with its folder, is answered once
     """
-    rehuco = RehucoFile.new()
-    rehuco.add_root(TUTORIALS)
-    rehuco.add_root(TUTORIALS / "pack")
+    rehuco = nesting(TUTORIALS, TUTORIALS / "pack")
     outer, inner = rehuco.roots
     cache.reconcile_roots(rehuco.roots)
     cache.apply_root_scan(outer.root_id, [CatalogRecord("pack/x/info.rehu", RecordKind.REHU)])

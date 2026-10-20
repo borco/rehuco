@@ -22,14 +22,21 @@ inside the rename coordinator's hold, closed before the next; the directories st
 already read are tracked locations, so a folder renamed mid-scan lands in the result under its new name.
 
 **An unreadable record is reported, not fatal**: it gets a row carrying the reason, and the scan goes on.
+
+**A record has one row** (#498). The scan never enters another root of the catalog
+(:class:`~rehuco_core.root_fence.RootFence`), so the inner root keeps its records however a nesting arose, and the
+roots it met are named in the result. A record whose file has more than one name -- a hardlink -- is read for its
+identity, and a second name of a file already found is dropped, the smaller path kept
+(:class:`~rehuco_core.HardlinkedRecord`); the identities go to the cache, which keeps one row across roots too.
 """
 
 import logging
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass, replace
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Final
+from uuid import UUID
 
 import xxhash
 
@@ -37,9 +44,17 @@ from .rehu_catalog import CatalogCheckpoint, CatalogScanner
 from .rehu_document import RehuDocument, author_name
 from .rehu_locks import coerced_str_list
 from .rehu_parse_limits import oversized_file_reason
-from .rehudb import CatalogRecord, RecordKind, RecordSignature, catalog_path_key, catalog_type_fields
+from .rehudb import (
+    CatalogRecord,
+    CatalogRoot,
+    RecordKind,
+    RecordSignature,
+    catalog_path_key,
+    catalog_type_fields,
+)
 from .rename_coordination import DEFAULT_RENAME_COORDINATOR, RenameCoordinator, ResourceLocation
 from .resource_scoping import is_legacy_record_name
+from .root_fence import RootFence
 from .tc_document import load_tc
 
 LOG: Final = logging.getLogger(__name__)
@@ -62,7 +77,7 @@ class RootScanOutcome(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class RootScanResult:
+class RootScanResult:  # pylint: disable=too-many-instance-attributes
     """What one root scan found.
 
     :param root: the root's folder, as it was at the end of the scan.
@@ -72,6 +87,10 @@ class RootScanResult:
     :param unreadable_branches: directories under the root that would not list.
     :param unchanged: the root-relative paths, as spelled now, of the records found unchanged and not read (#373);
         empty, like :attr:`records`, unless the scan applies.
+    :param identities: the file identity of each record kept, read or unchanged, whose file has more than one name, by
+        its root-relative path (#498).
+    :param hardlinked: ``(kept, dropped)`` root-relative paths, for each second name of a file the scan dropped.
+    :param met_roots: the other roots found inside this one, and not entered (#498).
     """
 
     root: Path
@@ -79,6 +98,9 @@ class RootScanResult:
     records: tuple[CatalogRecord, ...] = ()
     unreadable_branches: tuple[Path, ...] = ()
     unchanged: tuple[str, ...] = ()
+    identities: Mapping[str, str] = field(default_factory=dict)
+    hardlinked: tuple[tuple[str, str], ...] = ()
+    met_roots: frozenset[UUID] = frozenset()
 
     @property
     def applicable(self) -> bool:
@@ -114,9 +136,10 @@ class CatalogRootScan:  # pylint: disable=too-few-public-methods
     :param progress: called with the running count after each record, read or not.
     :param known: the root's cached rows (:meth:`~rehuco_core.CatalogCache.signatures`), or ``None`` to read every
         record.
+    :param others: the catalog's other roots, never entered; their identities are read when the scan starts.
     """
 
-    def __init__(
+    def __init__(  # pylint: disable=too-many-arguments
         self,
         root: Path,
         *,
@@ -124,22 +147,34 @@ class CatalogRootScan:  # pylint: disable=too-few-public-methods
         checkpoint: CatalogCheckpoint | None = None,
         progress: ScanProgress | None = None,
         known: Mapping[str, RecordSignature] | None = None,
+        others: Sequence[CatalogRoot] = (),
     ) -> None:
         self.__coordinator: Final = coordinator
         self.__root: Final = coordinator.track(root)
         self.__checkpoint: Final = checkpoint
         self.__progress: Final = progress
         self.__known: Final[Mapping[str, RecordSignature]] = known if known is not None else {}
+        self.__others: Final = tuple(others)
 
     def scan(self) -> RootScanResult:
         """Walk the root and read each record found that changed.
 
         :returns: what was found, and how the scan ended.
         """
+        fence = RootFence.read(self.__others) if self.__others else None
+        # the root itself may be another root under a second spelling -- a subst drive, a mapped letter beside its
+        # share -- which nothing but identity can tell; flagged, and scanned, since neither spelling is more right
+        same = fence.match(self.__root.path, by_name=False) if fence is not None else None
+        if same is not None:
+            LOG.warning("The root %s is another root of this catalog under a second spelling.", self.__root.path)
         scanner = CatalogScanner(
-            self.__root.path, checkpoint=self.__checkpoint, coordinator=self.__coordinator, include_legacy=True
+            self.__root.path,
+            checkpoint=self.__checkpoint,
+            coordinator=self.__coordinator,
+            include_legacy=True,
+            fence=fence,
         )
-        found: list[tuple[ResourceLocation, CatalogRecord | None]] = []
+        found: list[tuple[ResourceLocation, CatalogRecord | None, str | None]] = []
         unreadable: list[Path] = []
         for listed, directory in enumerate(scanner.walk()):
             if not directory.listed:
@@ -153,8 +188,8 @@ class CatalogRootScan:  # pylint: disable=too-few-public-methods
                 if self.__checkpoint is not None:
                     self.__checkpoint()
                 with self.__coordinator.holding():
-                    record = self.__visit(location.path)
-                found.append((location, record))
+                    record, file_id = self.__visit(location.path)
+                found.append((location, record, file_id))
                 if self.__progress is not None:
                     self.__progress(len(found))
         # one hold around the probe and the relative paths: the root and the records are rewritten together
@@ -164,30 +199,58 @@ class CatalogRootScan:  # pylint: disable=too-few-public-methods
             if not root.is_dir():
                 LOG.warning("The root %s went away during its scan; the scan is discarded.", root)
                 return RootScanResult(root, RootScanOutcome.WENT_OFFLINE, unreadable_branches=tuple(unreadable))
-            records = tuple(
-                replace(record, path=self.__relative(root, location.path))
-                for location, record in found
-                if record is not None
-            )
-            unchanged = tuple(self.__relative(root, location.path) for location, record in found if record is None)
-        return RootScanResult(root, RootScanOutcome.SCANNED, records, tuple(unreadable), unchanged)
+            relative = [(self.__relative(root, location.path), record, file_id) for location, record, file_id in found]
+        kept, hardlinked = self.__one_name_per_file(relative)
+        return RootScanResult(
+            root,
+            RootScanOutcome.SCANNED,
+            tuple(replace(record, path=path) for path, record, _ in kept if record is not None),
+            tuple(unreadable),
+            tuple(path for path, record, _ in kept if record is None),
+            {path: file_id for path, _, file_id in kept if file_id is not None},
+            hardlinked,
+            scanner.met_roots | ({same} if same is not None else frozenset()),
+        )
 
-    def __visit(self, path: Path) -> CatalogRecord | None:
-        """Read one record, unless its row says it has not changed.
+    def __visit(self, path: Path) -> tuple[CatalogRecord | None, str | None]:
+        """Read one record, unless its row says it has not changed, and say which file it is when it has several names.
 
         :param path: the record, as it is now; called under the hold, so it and the root agree.
-        :returns: what it holds, or ``None`` when it is unchanged.
+        :returns: what it holds, or ``None`` when it is unchanged; and its file identity when its file has more than
+            one name, else ``None``.
         """
+        try:
+            stat = path.stat()
+        except OSError:
+            return CatalogRecordReader.read(path), None  # the read stats it again, and records why it could not
+        file_id = f"{stat.st_dev}:{stat.st_ino}" if stat.st_nlink > 1 and stat.st_ino else None
         known = self.__known.get(catalog_path_key(self.__relative(self.__root.path, path)))
-        if known is not None:
-            try:
-                stat = path.stat()
-            except OSError:
-                pass  # the read below stats it again, and records why it could not
-            else:
-                if known.matches(stat.st_mtime_ns, stat.st_size):
-                    return None
-        return CatalogRecordReader.read(path)
+        if known is not None and known.matches(stat.st_mtime_ns, stat.st_size):
+            return None, file_id
+        return CatalogRecordReader.read(path), file_id
+
+    @staticmethod
+    def __one_name_per_file(
+        found: list[tuple[str, CatalogRecord | None, str | None]],
+    ) -> tuple[list[tuple[str, CatalogRecord | None, str | None]], tuple[tuple[str, str], ...]]:
+        """Keep one name of each file found under several -- the smaller path, as the cache folds it.
+
+        :param found: each record's root-relative path, what was read of it, and its file identity.
+        :returns: the entries kept, in the order found, and a ``(kept, dropped)`` pair per name dropped.
+        """
+        winners: dict[str, str] = {}
+        for path, _, file_id in found:
+            if file_id is not None and (
+                file_id not in winners or catalog_path_key(path) < catalog_path_key(winners[file_id])
+            ):
+                winners[file_id] = path
+        kept = [entry for entry in found if entry[2] is None or winners[entry[2]] == entry[0]]
+        dropped = tuple(
+            (winners[file_id], path) for path, _, file_id in found if file_id is not None and winners[file_id] != path
+        )
+        for winner, path in dropped:
+            LOG.warning("%s and %s are one file; only %s keeps a row.", winner, path, winner)
+        return kept, dropped
 
     @staticmethod
     def __relative(root: Path, path: Path) -> str:

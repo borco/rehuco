@@ -1,12 +1,16 @@
 """Paints a root's row in the Roots view's first column: its glyph and name, and under the name its folder (#378)."""
 
+from collections.abc import Callable, Collection
 from typing import Final, override
+from uuid import UUID
 
+from borco_pyside.widgets import ReorderDrag
 from borco_pyside.widgets.row_band_delegate import ModelIndex
 from PySide6.QtCore import QRect, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter
-from PySide6.QtWidgets import QApplication, QStyleOptionViewItem
+from PySide6.QtWidgets import QAbstractItemView, QApplication, QStyle, QStyleOptionViewItem
 
+from .roots_checksum import BAD_INK
 from .roots_folder_model import RootsFolderModel
 from .roots_item_delegate import ICON_SIZE, ICON_TEXT_GAP, RootsItemDelegate, arrow_height
 
@@ -33,18 +37,35 @@ class RootRowDelegate(RootsItemDelegate):
 
     The folder is the model's :attr:`~RootsFolderModel.PATH_ROLE`.
 
+    **A root that duplicates an earlier one is drawn in red** (#498) -- the ink a file that did not match is drawn in
+    -- off the selection band: it is inside that root or contains it, and the window's banner says which.
+
     **The glyph grows as the arrow does.** The style draws the column view's arrow bigger in a taller row, so a two-line
     root row has a bigger one than a folder row in the next column; the glyph is scaled by the same ratio -- the
     arrow this row gets over the one a one-line row gets, as :func:`~.roots_item_delegate.arrow_height` measures them
     -- so a root's glyph and arrow match each other, as a folder's do.
 
     :param parent: optional Qt parent.
+    :param drag: the drag that reorders the roots.
+    :param duplicates: the ids of the roots that duplicate an earlier one, asked at each paint.
     """
+
+    def __init__(
+        self,
+        parent: QAbstractItemView | None = None,
+        drag: ReorderDrag | None = None,
+        duplicates: Callable[[], Collection[UUID]] = frozenset,
+    ) -> None:
+        super().__init__(parent, drag)
+        self.__duplicates: Final = duplicates
 
     @override
     def paint_content(
         self, painter: QPainter, opt: QStyleOptionViewItem, index: ModelIndex, rect: QRect, color: QColor
     ) -> None:
+        if self.__is_duplicate(opt, index):
+            color = BAD_INK
+            painter.setPen(color)
         folder_font = RootRowDelegate.__folder_font(opt.font)
         name_height = QFontMetrics(opt.font).height()
         folder_height = QFontMetrics(folder_font).height()
@@ -69,6 +90,18 @@ class RootRowDelegate(RootsItemDelegate):
             Qt.TextElideMode.ElideMiddle,
             QRect(left, top + name_height, width, folder_height),
         )
+
+    def __is_duplicate(self, opt: QStyleOptionViewItem, index: ModelIndex) -> bool:
+        """Whether a row is a root duplicating an earlier one, off the selection band -- drawn in red.
+
+        :param opt: the row's option.
+        :param index: the row.
+        :returns: whether to draw it in red.
+        """
+        model = index.model()
+        root = model.root_at(index) if isinstance(model, RootsFolderModel) else None
+        selected = QStyle.StateFlag.State_Selected in opt.state
+        return root is not None and not selected and root.root_id in self.__duplicates()
 
     @staticmethod
     def __draw_line(painter: QPainter, font: QFont, text: str, elide: Qt.TextElideMode, line: QRect) -> None:

@@ -44,6 +44,7 @@ def mock_tree(  # pylint: disable=too-many-arguments
     unreadable: list[str] | None = None,
     irregular: list[str] | None = None,
     directory_links: list[str] | None = None,
+    junctions: list[str] | None = None,
 ) -> MagicMock:
     """Mock a directory tree under :data:`DIRECTORY`, read one directory at a time via ``os.scandir``.
 
@@ -63,6 +64,9 @@ def mock_tree(  # pylint: disable=too-many-arguments
         ``True`` through the link and ``False`` with ``follow_symlinks=False``, which is what the
         scanner's loop guard asks. Their target's listing is deliberately not modeled: a test proves the
         walk never descends by the target's contents not appearing.
+    :param junctions: fake paths that are Windows junctions to directories -- ``is_dir()`` answers ``True`` even
+        with ``follow_symlinks=False``, and only ``is_junction()`` tells them apart. Their target's listing is not
+        modeled either.
     :returns: the patched ``os.scandir``, for the tests that count how many directories were listed.
     """
     offline = {DIRECTORY / name for name in unreadable or []}
@@ -80,6 +84,11 @@ def mock_tree(  # pylint: disable=too-many-arguments
     for name in directory_links or []:
         path = DIRECTORY / name
         listing.setdefault(path.parent, []).append(FakeDirEntry(path.name, directory=True, regular=False, link=True))
+    for name in junctions or []:
+        path = DIRECTORY / name
+        listing.setdefault(path.parent, []).append(
+            FakeDirEntry(path.name, directory=True, regular=False, junction=True)
+        )
 
     def scandir(directory: Path) -> FakeScandir:
         if Path(directory) in offline:
@@ -857,6 +866,26 @@ def test_a_directory_symlink_is_never_descended(mocker: MockerFixture) -> None:
     mock_tree(mocker, ["info.rehu", "video.mp4"], directory_links=["loop"])
 
     assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["video.mp4"]
+
+
+def test_a_junction_is_never_descended(mocker: MockerFixture) -> None:
+    """A junction is a directory link under another name, and ``is_dir(follow_symlinks=False)`` alone would enter it.
+
+    The fake models the junction but not its target's listing: had the scanner descended, the junction would come
+    back as a directory that would not list.
+
+    **Test steps:**
+
+    * mock a tree holding real content beside a junction
+    * enumerate ``info.rehu``'s content files
+    * verify only the real content came back, and nothing was unreadable
+    """
+    mock_tree(mocker, ["info.rehu", "video.mp4"], junctions=["loop"])
+
+    enumeration = enumerate_content_files(DIRECTORY_SCOPED_PATH)
+
+    assert names(enumeration.files) == ["video.mp4"]
+    assert not enumeration.unreadable
 
 
 def test_directory_scoped_reports_an_unreadable_directory_as_empty(mocker: MockerFixture) -> None:

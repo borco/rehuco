@@ -24,6 +24,7 @@ from rehuco_core import (
     RehucoRoot,
     RenameCoordinator,
     RootFolderLister,
+    RootOverlap,
     RootStorage,
     TaskQueue,
 )
@@ -34,6 +35,7 @@ from ..settings.root_catalog_settings import shared_root_catalog_settings
 from .add_root_dialog import AddRootDialog
 from .rehuco_roots_panel_ui import Ui_RehucoRootsPanel
 from .root_catalog import RootCatalog
+from .root_overlap_check import RootOverlapCheck
 from .root_storage import selected_root_storage
 from .roots_checksum_verbs import RootsChecksumVerbs
 from .roots_column_view import RootsColumnView
@@ -135,6 +137,10 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         which the menu leaves where it was; every action reads the row it acts on through :meth:`__acting_index`."""
         self.__notice = ""
         """What the last thing asked of a row has to say, on the banner until the selection moves."""
+        self.__overlap_check: Final = RootOverlapCheck(self)
+        self.__adding: tuple[int, RehucoFile, str, RootStorage] | None = None
+        """The root Add Root is checking through its links: the check's serial, the file it is for, the folder and its
+        storage -- ``None`` while no add is pending."""
         self.__fallback: tuple[UUID, tuple[str, ...]] | None = None
         """Where the Roots selection goes once the rows it was in are removed: the folder they were in."""
         # connected before the view's selection model exists, so it runs before that model moves the current row to a
@@ -167,13 +173,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
             drag_image=self.__opening.drag_image,
             records=records,
         )
-        splitter = self.__roots_ui.roots_splitter
-        splitter.addWidget(self.__preview)
-        splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 0)
-        splitter.setSizes([DETAILS_PANE_WIDTH * 2, DETAILS_PANE_WIDTH])
-        self.__roots_model.dataChanged.connect(self.__preview.follow)
-        self.__roots_model.rowsRemoved.connect(self.__preview.forget_if_gone)
+        self.__place_preview()
         self.__roots_ui.roots_view.setModel(self.__roots_model)
         self.__roots_ui.roots_view.doubleClicked.connect(self.__on_roots_double_clicked)
         self.__roots_ui.roots_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -207,8 +207,9 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
             resource_events.root_reachable.connect(self.__relist_root)
 
     def detach(self) -> None:
-        """Stop listening to the change feed before the window goes. Safe to call again: the second time there is
-        nothing left to disconnect."""
+        """Stop listening to the change feed, and hearing from a root check still out on a link, before the window
+        goes. Safe to call again: the second time there is nothing left to disconnect."""
+        self.__overlap_check.stop()
         if self.__events is not None and self.__listening_to_events:
             self.__listening_to_events = False
             self.__events.moved.disconnect(self.__on_moved)
@@ -357,8 +358,23 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
             self.__roots_model.set_roots(
                 roots, RootFolderLister(roots, coordinator=self.__rename_coordinator, trust=DEFAULT_CHECKSUM_TRUST)
             )
+        self.__show_duplicates()
         self.__show_banner()
         self.__update_enablement()
+
+    def __show_duplicates(self) -> None:
+        """Draw in red the roots that duplicate an earlier one (#498)."""
+        self.__roots_ui.roots_view.set_duplicate_roots(self.__catalog.overlaps.duplicates)
+
+    def __place_preview(self) -> None:
+        """Put the details pane beside the columns, and have it follow the rows it shows."""
+        splitter = self.__roots_ui.roots_splitter
+        splitter.addWidget(self.__preview)
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 0)
+        splitter.setSizes([DETAILS_PANE_WIDTH * 2, DETAILS_PANE_WIDTH])
+        self.__roots_model.dataChanged.connect(self.__preview.follow)
+        self.__roots_model.rowsRemoved.connect(self.__preview.forget_if_gone)
 
     def __show_banner(self) -> None:
         """Show on the banner why the open file is read-only, if it is, and the notice of the last action."""
@@ -393,6 +409,8 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
             ActionIconThemeHandler(action, icon)
         ui.scan_action.triggered.connect(self.__catalog.scan)
         ui.add_root_action.triggered.connect(self.__on_add_root)
+        self.__overlap_check.answered.connect(self.__on_add_root_checked)
+        self.__catalog.overlaps.changed.connect(self.__show_duplicates)
         ui.remove_root_action.triggered.connect(self.__on_remove_root)
         ui.refresh_roots_action.triggered.connect(self.__on_refresh_roots)
         ui.filter_folder_action.triggered.connect(self.__on_filter_folder)
@@ -423,7 +441,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         self.__preview.set_editable(editable)
         self.__roots_model.set_reorderable(editable)
         ui.scan_action.setEnabled(is_open)
-        ui.add_root_action.setEnabled(editable)
+        ui.add_root_action.setEnabled(editable and self.__adding is None)
         ui.remove_root_action.setEnabled(editable and row >= 0)
         ui.refresh_roots_action.setEnabled(is_open)
         ui.move_to_top_action.setEnabled(editable and row > 0)
@@ -871,8 +889,8 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         return answer == QMessageBox.StandardButton.Yes
 
     def __on_add_root(self) -> None:
-        """Ask for a folder and what it lives on and add it as a root, saving the file at once, make it current, and
-        scan it when *Scan after adding* is on (#542)."""
+        """Ask for a folder and what it lives on, then compare it with the roots through their links -- off the GUI
+        thread, since following a mapped drive can wait out a network timeout (#498) -- before adding it."""
         file = self.__catalog.file
         if file is None or file.lock_reason is not None:
             return
@@ -880,6 +898,28 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         if chosen is None:
             return
         folder, storage = chosen
+        serial = self.__overlap_check.find(folder, file.roots, self.__catalog.unreachable_roots())
+        self.__adding = (serial, file, folder, storage)
+        self.__update_enablement()
+
+    def __on_add_root_checked(self, serial: int, overlaps: tuple[RootOverlap, ...]) -> None:
+        """Add the folder Add Root asked for, unless it overlaps a root through a link, saving the file at once,
+        make it current, and scan it when *Scan after adding* is on (#542).
+
+        :param serial: the check's serial; an answer for another add, or for a file since closed, is dropped.
+        :param overlaps: what the check found, empty for none.
+        """
+        adding = self.__adding
+        if adding is None or adding[0] != serial:
+            return
+        self.__adding = None
+        self.__update_enablement()
+        _, file, folder, storage = adding
+        if file is not self.__catalog.file or file.lock_reason is not None:
+            return
+        if overlaps:
+            QMessageBox.warning(self, "Add Root", overlaps[0].message)
+            return
         try:
             row = file.add_root(folder, storage=storage)
         except ValueError as error:

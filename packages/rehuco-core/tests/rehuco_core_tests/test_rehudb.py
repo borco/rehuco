@@ -21,6 +21,7 @@ from pytest import LogCaptureFixture, fixture, mark, raises
 from pytest_mock import MockerFixture
 from rehuco_core import (
     BUILTIN_PLUGINS,
+    CURRENT_REHUCO_VERSION,
     REHUDB_SUFFIX,
     TYPE_FIELD_COLUMNS,
     CatalogCache,
@@ -123,6 +124,17 @@ def two_roots() -> tuple[RehucoFile, RehucoRoot, RehucoRoot]:
     rehuco.add_root("E:/packs")
     first, second = rehuco.roots
     return rehuco, first, second
+
+
+def nesting(*paths: Path) -> RehucoFile:
+    """A ``.rehuco`` holding a root at each path, as an older or hand-edited file may: built from its data, since
+    :meth:`~rehuco_core.RehucoFile.add_root` refuses a root inside another (#498).
+
+    :param paths: the roots' folders, in display order.
+    :returns: the file.
+    """
+    roots = [{"id": str(uuid4()), "path": str(path), "label": path.name or str(path)} for path in paths]
+    return RehucoFile({"format_version": CURRENT_REHUCO_VERSION, "id": str(uuid4()), "roots": roots})
 
 
 def record(path: str, **fields: Any) -> CatalogRecord:
@@ -846,10 +858,16 @@ def fixture_filled(cache: CatalogCache) -> tuple[CatalogCache, RehucoRoot, Rehuc
 
 def test_a_path_is_located_under_its_innermost_root(cache: CatalogCache) -> None:
     """Component by component, so a sibling folder that merely starts alike is not inside; a root's own folder is
-    no record."""
-    rehuco, first, _ = two_roots()
-    row = rehuco.add_root(TUTORIALS / "blender")
-    inner = rehuco.roots[row]
+    no record. In a file opened nesting, the innermost root answers -- the one whose scan holds the row (#498).
+
+    **Test steps:**
+
+    * hold a file opened nesting: ``tutorials``, ``packs``, and ``tutorials/blender``
+    * locate a record under the inner root, and one elsewhere under the outer root
+    * verify each is located under its innermost root, and a look-alike sibling and a root's own folder are not
+    """
+    rehuco = nesting(TUTORIALS, Path("E:/packs"), TUTORIALS / "blender")
+    first, _, inner = rehuco.roots
     cache.reconcile_roots(rehuco.roots)
 
     located = cache.locate(TUTORIALS / "blender/donut/info.rehu")

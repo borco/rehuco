@@ -46,6 +46,7 @@ from rehuco_agent.rehuco import BrowsersDock, RootCatalog, RootsPanel, TableBrow
 from rehuco_agent.rehuco.add_root_dialog import AddRootDialog
 from rehuco_agent.rehuco.browser_presets import browser_presets
 from rehuco_agent.rehuco.catalog_table_model import CatalogColumn
+from rehuco_agent.rehuco.root_overlap_check import RootOverlapCheck
 from rehuco_agent.rehuco.root_storage import ROOT_STORAGE_ICONS
 from rehuco_agent.rehuco.roots_folder_model import NodeListing, RootsNodeKind
 from rehuco_agent.rehuco.roots_item_delegate import RootsItemDelegate
@@ -72,6 +73,7 @@ from rehuco_core import (
     RecordsChecked,
     RehucoRoot,
     Relocation,
+    RootScanEffects,
     RootScanOutcome,
     RootScanResult,
     RootStorage,
@@ -166,7 +168,7 @@ def hold(catalog: Mock, cache: MagicMock, rows: list[CatalogRow]) -> None:
         return moved
 
     def apply_root_scan(
-        root_id: UUID, records: Sequence[CatalogRecord], *, touched: set[int] | None = None, **_: object
+        root_id: UUID, records: Sequence[CatalogRecord], *, effects: RootScanEffects | None = None, **_: object
     ) -> bool:
         label = file_roots[root_id].label
         found = [
@@ -179,9 +181,9 @@ def hold(catalog: Mock, cache: MagicMock, rows: list[CatalogRow]) -> None:
             [row for row in rows if row.root_id != root_id] + found,
             key=lambda row: (order.index(row.root_id), row.record.path),
         )
-        if touched is not None:
-            touched.update(row.resource_id for row in found)
-            touched.update(gone)
+        if effects is not None:
+            effects.touched.update(row.resource_id for row in found)
+            effects.touched.update(gone)
         return True
 
     catalog.prepare.side_effect = prepare
@@ -506,6 +508,18 @@ def answer_add_root(
     )
 
 
+def add_root(qtbot: QtBot, dock: CatalogDocks) -> None:
+    """Trigger Add Root and wait for its comparison through links to answer, on which the add happens (#498).
+
+    :param qtbot: pytest-qt fixture.
+    :param dock: the catalog's docks, the Add Root question already answered with a folder (:func:`answer_add_root`).
+    """
+    check = dock.roots.findChild(RootOverlapCheck, options=Qt.FindChildOption.FindDirectChildrenOnly)
+    assert check is not None
+    with qtbot.waitSignal(check.answered, timeout=WAIT_TIMEOUT_MS):
+        dock.roots.add_root_action.trigger()
+
+
 def shown_labels(dock: CatalogDocks) -> list[str]:
     """The labels of the roots the dock lists, in row order."""
     model = dock.roots.roots_model
@@ -787,7 +801,7 @@ def test_removing_a_re_added_root_is_queued_again(
     dock.catalog.open_rehuco(REHUCO_PATH)
     select_root(dock, 0)
     dock.roots.remove_root_action.trigger()
-    dock.roots.add_root_action.trigger()
+    add_root(qtbot, dock)
     select_root(dock, 1)
 
     dock.roots.remove_root_action.trigger()
@@ -999,8 +1013,9 @@ def test_the_status_bar_counts_the_rows_the_table_shows(
 # region Editing the roots
 
 
+@mark.usefixtures("served")
 def test_adding_a_root_saves_the_file_and_the_cache_follows(
-    mocker: MockerFixture, dock: CatalogDocks, catalog: Mock, served: Any, saves: MagicMock
+    qtbot: QtBot, mocker: MockerFixture, dock: CatalogDocks, catalog: Mock, saves: MagicMock
 ) -> None:
     """The edit is on disk before the dock says it happened, and the cache is reconciled to it.
 
@@ -1009,11 +1024,10 @@ def test_adding_a_root_saves_the_file_and_the_cache_follows(
     * mock the folder picker and add a root
     * verify the file was written with three roots, the list shows three, and the cache was reconciled to the three
     """
-    del served
     answer_add_root(mocker, dock, "/fake/refs")
     dock.catalog.open_rehuco(REHUCO_PATH)
 
-    dock.roots.add_root_action.trigger()
+    add_root(qtbot, dock)
 
     assert written_roots(saves) == ["tutorials", "packs", "refs"]
     assert dock.roots.roots_model.rowCount() == 3
@@ -1041,7 +1055,7 @@ def test_cancelling_the_folder_picker_adds_nothing(
 
 
 def test_adding_a_folder_that_is_already_a_root_warns_and_changes_nothing(
-    mocker: MockerFixture, dock: CatalogDocks, served: Any, saves: MagicMock
+    qtbot: QtBot, mocker: MockerFixture, dock: CatalogDocks, served: Any, saves: MagicMock
 ) -> None:
     """The file's own refusal reaches the person, and nothing is written.
 
@@ -1055,7 +1069,7 @@ def test_adding_a_folder_that_is_already_a_root_warns_and_changes_nothing(
     warning = mocker.patch("rehuco_agent.rehuco.roots_panel.QMessageBox.warning")
     dock.catalog.open_rehuco(REHUCO_PATH)
 
-    dock.roots.add_root_action.trigger()
+    add_root(qtbot, dock)
 
     warning.assert_called_once()
     saves.assert_not_called()
@@ -1063,7 +1077,7 @@ def test_adding_a_folder_that_is_already_a_root_warns_and_changes_nothing(
 
 
 def test_a_failed_save_drops_the_edit_from_the_screen_too(
-    mocker: MockerFixture, dock: CatalogDocks, served: Any, saves: MagicMock
+    qtbot: QtBot, mocker: MockerFixture, dock: CatalogDocks, served: Any, saves: MagicMock
 ) -> None:
     """The file is read back, so what is shown is what is on disk.
 
@@ -1078,14 +1092,14 @@ def test_a_failed_save_drops_the_edit_from_the_screen_too(
     saves.side_effect = PermissionError("read-only folder")
     dock.catalog.open_rehuco(REHUCO_PATH)
 
-    dock.roots.add_root_action.trigger()
+    add_root(qtbot, dock)
 
     warning.assert_called_once()
     assert dock.roots.roots_model.rowCount() == 2
 
 
 @mark.usefixtures("served")
-def test_a_failed_save_scans_nothing(mocker: MockerFixture, dock: CatalogDocks, saves: MagicMock) -> None:
+def test_a_failed_save_scans_nothing(qtbot: QtBot, mocker: MockerFixture, dock: CatalogDocks, saves: MagicMock) -> None:
     """The file read back after a failed save has no new root, so *Scan after adding* has nothing to scan (#542).
 
     **Test steps:**
@@ -1100,13 +1114,13 @@ def test_a_failed_save_scans_nothing(mocker: MockerFixture, dock: CatalogDocks, 
     dock.catalog.open_rehuco(REHUCO_PATH)
     scan_job.reset_mock()
 
-    dock.roots.add_root_action.trigger()
+    add_root(qtbot, dock)
 
     scan_job.assert_not_called()
 
 
 def test_a_failed_save_that_cannot_be_read_back_closes_the_file(
-    mocker: MockerFixture, dock: CatalogDocks, served: Any, saves: MagicMock
+    qtbot: QtBot, mocker: MockerFixture, dock: CatalogDocks, served: Any, saves: MagicMock
 ) -> None:
     """With neither the edit nor the disk to trust, nothing stays open.
 
@@ -1122,7 +1136,7 @@ def test_a_failed_save_that_cannot_be_read_back_closes_the_file(
     dock.catalog.open_rehuco(REHUCO_PATH)
     mocker.patch.object(Path, "read_text", side_effect=FileNotFoundError("gone"))
 
-    dock.roots.add_root_action.trigger()
+    add_root(qtbot, dock)
 
     assert dock.catalog.rehuco_path is None
 
@@ -2044,7 +2058,7 @@ def test_a_cache_that_cannot_be_read_keeps_what_is_shown(
     answer_add_root(mocker, dock, "/fake/refs")
 
     with caplog.at_level(logging.ERROR):
-        dock.roots.add_root_action.trigger()
+        add_root(qtbot, dock)
         wait_for_rows(qtbot, dock)
 
     assert "Could not read the catalog's rows" in caplog.text
@@ -3240,7 +3254,7 @@ def test_a_card_edit_whose_save_fails_is_undone_on_screen(
 @mark.usefixtures("served")
 @mark.parametrize("storage", [RootStorage.LOCAL, RootStorage.REMOVABLE, RootStorage.NETWORK, RootStorage.COMPACT_DISK])
 def test_adding_a_root_saves_its_storage_and_makes_it_current(
-    mocker: MockerFixture, dock: CatalogDocks, saves: MagicMock, storage: RootStorage
+    qtbot: QtBot, mocker: MockerFixture, dock: CatalogDocks, saves: MagicMock, storage: RootStorage
 ) -> None:
     """What the dialog answers is what is saved, and the new root is the one selected.
 
@@ -3252,7 +3266,7 @@ def test_adding_a_root_saves_its_storage_and_makes_it_current(
     answer_add_root(mocker, dock, "/fake/refs", storage)
     dock.catalog.open_rehuco(REHUCO_PATH)
 
-    dock.roots.add_root_action.trigger()
+    add_root(qtbot, dock)
 
     assert written_storages(saves)[2] == storage.value
     assert dock.roots.roots_view.currentIndex().row() == 2
@@ -5012,7 +5026,7 @@ def test_the_empty_part_of_a_column_opens_its_folders_menu_and_leaves_the_select
 @mark.usefixtures("served", "saves")
 @mark.parametrize(("scan_after_adding", "scans"), [(True, 1), (False, 0)])
 def test_adding_a_root_scans_it_only_when_scan_after_adding_is_on(
-    mocker: MockerFixture, dock: CatalogDocks, scan_after_adding: bool, scans: int
+    qtbot: QtBot, mocker: MockerFixture, dock: CatalogDocks, scan_after_adding: bool, scans: int
 ) -> None:
     """The new root, and only it, is scanned after the file is saved -- when the setting says so (#542).
 
@@ -5027,7 +5041,7 @@ def test_adding_a_root_scans_it_only_when_scan_after_adding_is_on(
     dock.catalog.open_rehuco(REHUCO_PATH)
     scan.reset_mock()
 
-    dock.roots.add_root_action.trigger()
+    add_root(qtbot, dock)
 
     assert scan.call_count == scans
     if scans:
