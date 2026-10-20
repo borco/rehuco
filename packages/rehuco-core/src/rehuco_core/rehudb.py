@@ -33,12 +33,13 @@ fragments below, never from text a reader typed.
 # value tables pruned -- and splitting it would separate rules that only make sense read against each other
 # pylint: disable=too-many-lines
 
+import dataclasses
 import json
 import logging
 import os
 import sqlite3
 import time
-from collections.abc import Collection, Generator, Iterator, Sequence
+from collections.abc import Collection, Generator, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import StrEnum
@@ -198,10 +199,45 @@ class CatalogRoot:
 
 
 @dataclass(frozen=True, slots=True)
+class HardlinkedRecord:
+    """One record reached under two names -- a hardlink -- of which only one keeps a row (#498).
+
+    Neither name is more right than the other, so which one is kept is a rule, not a judgment: the name under the
+    root earlier in the ``.rehuco``, then the smaller root-relative path, compared as :func:`catalog_path_key` folds
+    it -- the same answer whichever root was scanned first.
+
+    :param kept_root: the root of the name that keeps the row.
+    :param kept: that name, root-relative.
+    :param dropped_root: the root of the name left without one.
+    :param dropped: that name, root-relative.
+    """
+
+    kept_root: UUID
+    kept: str
+    dropped_root: UUID
+    dropped: str
+
+
+@dataclass(frozen=True, slots=True)
+class RootScanEffects:
+    """What applying a scan did beyond replacing its root's rows -- filled in by
+    :meth:`CatalogCache.apply_root_scan`.
+
+    :param touched: the ids of the rows the scan changed -- every record it read, which an incremental scan does only
+        for one whose file changed, and every row it removed, under its own root or another's -- so a browser updates
+        just those (#511).
+    :param hardlinked: each record found under a second name across roots, and which name kept the row (#498).
+    """
+
+    touched: set[int] = dataclasses.field(default_factory=set)
+    hardlinked: list[HardlinkedRecord] = dataclasses.field(default_factory=list)
+
+
+@dataclass(frozen=True, slots=True)
 class CatalogLocation:
     """Where a path sits in the cache: the root it is under and its root-relative spelling.
 
-    :param root: the root -- the innermost one, where roots nest.
+    :param root: the root -- the innermost one, in the overlap a scan flags but cannot undo (#498).
     :param relative: the path relative to it, ``/``-separated, spelled as the path spells it.
     """
 
@@ -536,29 +572,33 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
 
     # region Resources
 
-    def apply_root_scan(
+    def apply_root_scan(  # pylint: disable=too-many-arguments  # one scan's findings, applied in one transaction
         self,
         root_id: UUID,
         records: Sequence[CatalogRecord],
         *,
         unchanged: Sequence[str] = (),
+        identities: Mapping[str, str] | None = None,
         scanned_at: float | None = None,
-        touched: set[int] | None = None,
+        effects: RootScanEffects | None = None,
     ) -> bool:
         """Replace a root's resources with what a scan of it found, in one transaction -- mark and sweep.
 
         A record found again keeps its row id, so a view holding it keeps its place; a record not found is
         removed -- the root listed, so its absence is real.
 
+        **A hardlinked record has one row across every root** (#498): a name whose file another root already holds a
+        row for keeps a row only if it wins :class:`HardlinkedRecord`'s rule, the other root's row going instead.
+
         :param root_id: the root scanned.
         :param records: every record the scan read.
         :param unchanged: the root-relative paths, as spelled now, of the records an incremental scan found
             unchanged and did not read (#373): each keeps its row as it is -- its ``scanned_at`` included, which says
             when it was last *read* -- but for its spelling, which follows a case-only rename.
+        :param identities: the file identity (``file_id``) of each record found, read or unchanged, whose file has more
+            than one name, by its root-relative path; one scan's own second names already dropped.
         :param scanned_at: when the scan ran; now, when omitted.
-        :param touched: when given, filled with the ids of the rows the scan changed -- every record it read, which an
-            incremental scan does only for one whose file changed, and every row it removed -- so a browser updates
-            just those (#511).
+        :param effects: when given, filled with what the scan changed beyond its rows' content.
         :returns: whether it was applied -- ``False`` when the root was removed while the scan ran, which
             leaves nothing to apply to.
         """
@@ -568,24 +608,17 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
             if connection.execute("SELECT 1 FROM roots WHERE id = ?", (key,)).fetchone() is None:
                 LOG.info("The root %s was removed while it was scanned; the scan is dropped.", root_id)
                 return False
-            read = {self.__upsert(connection, key, record, stamp) for record in records}
-            kept = set(read)
-            for path in unchanged:
-                row = connection.execute(
-                    "UPDATE resources SET path = ?, folded_path = ? WHERE root_id = ? AND path_key = ? RETURNING id",
-                    (path, fold(path), key, catalog_path_key(path)),
-                ).fetchone()
-                if row is not None:
-                    kept.add(row[0])
-            existing = {
-                resource_id
-                for (resource_id,) in connection.execute("SELECT id FROM resources WHERE root_id = ?", (key,))
-            }
-            gone = existing - kept
-            connection.executemany("DELETE FROM resources WHERE id = ?", [(row,) for row in gone])
+            effects = effects if effects is not None else RootScanEffects()
+            linked = dict(identities or {})
+            lost = self.__lose_hardlinks(connection, root_id, linked, effects)
+            read = {self.__upsert(connection, key, record, stamp) for record in records if record.path not in lost}
+            kept = read | self.__keep_unchanged(connection, key, [path for path in unchanged if path not in lost])
+            gone = self.__sweep(connection, key, kept)
+            self.__write_identities(
+                connection, key, {path: file_id for path, file_id in linked.items() if path not in lost}
+            )
             connection.execute("UPDATE roots SET reachable = 1, scanned_at = ? WHERE id = ?", (stamp, key))
-            if touched is not None:
-                touched.update(read, gone)
+            effects.touched.update(read, gone)
             self.__prune_values(connection)
         return True
 
@@ -659,7 +692,9 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
 
         Compared component by component, each one normalized as the filesystem would
         (:func:`os.path.normcase`), so a root ``D:/lib`` holds ``d:/LIB/x.rehu`` on Windows and never
-        ``D:/lib2/x.rehu`` anywhere. Where roots nest, the innermost one answers.
+        ``D:/lib2/x.rehu`` anywhere. Roots no longer nest -- an add refuses it and a scan never enters another root
+        (#498) -- but a file opened nesting is flagged rather than refused, and for it the innermost root answers: the
+        one whose scan holds the record's row.
 
         :param path: an absolute path.
         :param roots: :meth:`roots`, when the caller has just read them for many paths -- one query instead of one per
@@ -966,6 +1001,90 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
                 connection.execute(f"PRAGMA user_version = {int(target)}")
             LOG.info("Upgraded the catalog cache schema to version %d.", target)
             version = target
+
+    @staticmethod
+    def __keep_unchanged(connection: sqlite3.Connection, root_id: str, unchanged: Sequence[str]) -> set[int]:
+        """Keep the rows of the records a scan found unchanged, each spelled as found now -- a case-only rename.
+
+        :param connection: the cache, inside the scan's transaction.
+        :param root_id: the root scanned.
+        :param unchanged: the root-relative paths, as spelled now.
+        :returns: the ids of the rows kept; a path with no row adds none.
+        """
+        kept: set[int] = set()
+        for path in unchanged:
+            row = connection.execute(
+                "UPDATE resources SET path = ?, folded_path = ? WHERE root_id = ? AND path_key = ? RETURNING id",
+                (path, fold(path), root_id, catalog_path_key(path)),
+            ).fetchone()
+            if row is not None:
+                kept.add(row[0])
+        return kept
+
+    @staticmethod
+    def __sweep(connection: sqlite3.Connection, root_id: str, kept: set[int]) -> set[int]:
+        """Delete a root's rows that a scan did not find again.
+
+        :param connection: the cache, inside the scan's transaction.
+        :param root_id: the root scanned.
+        :param kept: the ids of the rows the scan found again.
+        :returns: the ids of the rows deleted.
+        """
+        existing = {row for (row,) in connection.execute("SELECT id FROM resources WHERE root_id = ?", (root_id,))}
+        gone = existing - kept
+        connection.executemany("DELETE FROM resources WHERE id = ?", [(row,) for row in gone])
+        return gone
+
+    @staticmethod
+    def __write_identities(connection: sqlite3.Connection, root_id: str, identities: Mapping[str, str]) -> None:
+        """Set the file identity on a root's rows: the given ones, and none on every other.
+
+        :param connection: the cache, inside the scan's transaction.
+        :param root_id: the root scanned.
+        :param identities: the identities of the records kept with more than one name, by root-relative path.
+        """
+        connection.execute("UPDATE resources SET file_id = NULL WHERE root_id = ?", (root_id,))
+        connection.executemany(
+            "UPDATE resources SET file_id = ? WHERE root_id = ? AND path_key = ?",
+            [(file_id, root_id, catalog_path_key(path)) for path, file_id in identities.items()],
+        )
+
+    @staticmethod
+    def __lose_hardlinks(
+        connection: sqlite3.Connection, root_id: UUID, identities: Mapping[str, str], effects: RootScanEffects
+    ) -> set[str]:
+        """Settle each hardlinked record found against the rows other roots hold for the same file.
+
+        The losing name of each pair goes: another root's row is deleted here, and a name of this scan's is
+        returned, to be neither written nor kept.
+
+        :param connection: the cache, inside the scan's transaction.
+        :param root_id: the root scanned.
+        :param identities: the scan's file identities, by root-relative path.
+        :param effects: extended with the other roots' rows deleted, and with every pair settled.
+        :returns: the root-relative paths of this scan that lose.
+        """
+        lost: set[str] = set()
+        if not identities:
+            return lost
+        (position,) = connection.execute("SELECT position FROM roots WHERE id = ?", (str(root_id),)).fetchone()
+        for path, file_id in identities.items():
+            others = connection.execute(
+                "SELECT resources.id, resources.path, resources.path_key, roots.id, roots.position FROM resources "
+                "JOIN roots ON roots.id = resources.root_id WHERE resources.file_id = ? AND resources.root_id != ?",
+                (file_id, str(root_id)),
+            ).fetchall()
+            for row_id, other_path, other_key, other_root, other_position in others:
+                if (other_position, other_key) < (position, catalog_path_key(path)):
+                    lost.add(path)
+                    pair = HardlinkedRecord(UUID(other_root), other_path, root_id, path)
+                else:
+                    connection.execute("DELETE FROM resources WHERE id = ?", (row_id,))
+                    effects.touched.add(row_id)
+                    pair = HardlinkedRecord(root_id, path, UUID(other_root), other_path)
+                LOG.warning("%s and %s are one file; only %s keeps a row.", pair.kept, pair.dropped, pair.kept)
+                effects.hardlinked.append(pair)
+        return lost
 
     @staticmethod
     def __upsert(connection: sqlite3.Connection, root_id: str, record: CatalogRecord, stamp: float) -> int:

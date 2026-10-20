@@ -1,6 +1,8 @@
 """The Roots view's column view (#378)."""
 
+from collections.abc import Collection
 from typing import cast, override
+from uuid import UUID
 
 from borco_pyside.widgets import ReorderDrag
 from PySide6.QtCore import QModelIndex, QPersistentModelIndex, QPoint, Qt, Signal
@@ -28,6 +30,8 @@ class RootsColumnView(QColumnView):
     **An image row can be dragged out** (#395): a press on one that moves the drag distance reports it through
     :attr:`image_drag_requested`, for the owner -- which knows what record manages the row -- to export.
 
+    **A root that duplicates an earlier one is drawn in red** (#498, :meth:`set_duplicate_roots`).
+
     :param parent: optional Qt parent.
     """
 
@@ -37,6 +41,7 @@ class RootsColumnView(QColumnView):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.__duplicate_roots: frozenset[UUID] = frozenset()
         self.__collapse_preview_column()
         # the preview column exists by the time a row with nothing under it is current, whenever it was made
         self.updatePreviewWidget.connect(self.__collapse_preview_column)
@@ -51,10 +56,19 @@ class RootsColumnView(QColumnView):
             # the first column lists the roots, which have a folder to show under their names, and are reordered by
             # a drag whose shadow the delegate paints and the grip filter moves
             drag = ReorderDrag()
-            column.setItemDelegate(RootRowDelegate(column, drag))
+            column.setItemDelegate(RootRowDelegate(column, drag, lambda: self.__duplicate_roots))
             RootsColumnView.__make_reorderable(column, drag)
         self.__collapse_preview_column()
         return column
+
+    def set_duplicate_roots(self, root_ids: Collection[UUID]) -> None:
+        """Say which roots duplicate an earlier one, to be drawn in red, and redraw the columns.
+
+        :param root_ids: their ids.
+        """
+        self.__duplicate_roots = frozenset(root_ids)
+        for column in self.findChildren(QAbstractItemView):
+            column.viewport().update()
 
     def __make_image_rows_draggable(self, column: QAbstractItemView) -> None:
         """Let a row of an image file in a column be dragged out to other apps (#395).

@@ -1,10 +1,12 @@
 """Tests for the catalog walk -- where the resources are, for the checksum sweep (#242)."""
 
+import logging
 from pathlib import Path
 from typing import Any, Final
 from unittest.mock import MagicMock
+from uuid import uuid4
 
-from pytest import raises
+from pytest import LogCaptureFixture, raises
 from pytest_mock import MockerFixture
 from rehuco_core import (
     INFO_REHU_FILENAME,
@@ -14,8 +16,10 @@ from rehuco_core import (
     enumerate_catalog_resources,
 )
 from rehuco_core.rehu_content_files import MAX_NAMED_UNREADABLE
+from rehuco_core.root_fence import RootFence
 
 from rehuco_core_tests.fake_directories import FakeDirEntry, FakeScandir
+from rehuco_core_tests.real_links import directory_link, symlink
 
 ROOT: Final = Path("/fake/library")
 
@@ -28,6 +32,8 @@ def mock_catalog(  # pylint: disable=too-many-arguments
     unreadable: list[str] | None = None,
     irregular: list[str] | None = None,
     directory_links: list[str] | None = None,
+    junctions: list[str] | None = None,
+    record_links: list[str] | None = None,
 ) -> MagicMock:
     """Mock a directory tree under :data:`ROOT`, read one directory at a time via ``os.scandir``.
 
@@ -44,6 +50,8 @@ def mock_catalog(  # pylint: disable=too-many-arguments
     :param irregular: fake paths that are neither a directory nor a regular file.
     :param directory_links: fake paths that are *symlinks to* directories; their target's listing is
         deliberately not modeled, so a test proves the walk never descends by what does not appear.
+    :param junctions: fake paths that are Windows junctions to directories, modeled the same way.
+    :param record_links: fake paths that are symlinks to regular files.
     :returns: the ``os.scandir`` mock, whose ``side_effect`` a test may wrap.
     """
     offline = {ROOT / name for name in unreadable or []}
@@ -61,6 +69,14 @@ def mock_catalog(  # pylint: disable=too-many-arguments
     for name in directory_links or []:
         path = ROOT / name
         listing.setdefault(path.parent, []).append(FakeDirEntry(path.name, directory=True, regular=False, link=True))
+    for name in junctions or []:
+        path = ROOT / name
+        listing.setdefault(path.parent, []).append(
+            FakeDirEntry(path.name, directory=True, regular=False, junction=True)
+        )
+    for name in record_links or []:
+        path = ROOT / name
+        listing.setdefault(path.parent, []).append(FakeDirEntry(path.name, link=True))
 
     def scandir(directory: Path) -> FakeScandir:
         if Path(directory) in offline:
@@ -363,6 +379,87 @@ def test_a_directory_renamed_between_listings_is_listed_under_its_new_name(mocke
 
     assert renamed.path == ROOT / "new"
     assert renamed.records == (ROOT / "new/info.rehu",)
+
+
+# endregion
+
+
+# region Other roots and links (#498)
+
+
+def test_the_walk_never_descends_a_junction_nor_takes_a_symlinked_record(mocker: MockerFixture) -> None:
+    """A junction is a directory link under another name; a symlink to a ``.rehu`` would catalog its target twice.
+
+    **Test steps:**
+
+    * declare a real record, a junction, and a symlink to a record
+    * verify only the real record is found
+    """
+    mock_catalog(mocker, ["packs/foo.rehu"], directories=["packs"], junctions=["elsewhere"], record_links=["link.rehu"])
+
+    assert enumerate_catalog_resources(ROOT).resources == [ROOT / "packs/foo.rehu"]
+
+
+def test_the_walk_leaves_out_another_root_and_names_it_once(mocker: MockerFixture, caplog: LogCaptureFixture) -> None:
+    """A directory the fence says is another root is not entered -- its records are that root's -- and the root is
+    named in ``met_roots``, logged the first time it is met.
+
+    **Test steps:**
+
+    * declare two directories the fence matches to one other root, and a plain one
+    * walk with that fence
+    * verify only the plain directory's record is found, the root is met, and logged once
+    """
+    mock_catalog(
+        mocker,
+        ["plain/a.rehu", "inner/b.rehu", "again/c.rehu"],
+        directories=["plain", "inner", "again"],
+    )
+    other = uuid4()
+    fence = mocker.Mock(spec=RootFence)
+    fence.match.side_effect = lambda directory: other if directory.name in {"inner", "again"} else None
+    scanner = CatalogScanner(ROOT, fence=fence)
+    assert scanner.met_roots == frozenset()
+
+    with caplog.at_level(logging.WARNING, logger="rehuco_core.rehu_catalog"):
+        found = scanner.scan()
+
+    assert found.resources == [ROOT / "plain/a.rehu"]
+    assert scanner.met_roots == frozenset({other})
+    assert caplog.text.count("is another root of this catalog") == 1
+
+
+def test_a_real_walk_never_descends_a_directory_link(tmp_path: Path) -> None:
+    """What the declared tree claims, on a real listing: the directory link a user makes here -- a junction on
+    Windows, a symlink elsewhere -- is not entered.
+
+    **Test steps:**
+
+    * make a record in a folder, and a junction (or symlink) to that folder
+    * walk the tree; verify the record is found once, under its own name
+    """
+    (tmp_path / "packs").mkdir()
+    (tmp_path / "packs" / "foo.rehu").write_text("{}", encoding="utf-8")
+    directory_link(tmp_path / "alias", tmp_path / "packs")
+
+    assert enumerate_catalog_resources(tmp_path).resources == [tmp_path / "packs" / "foo.rehu"]
+
+
+def test_a_real_walk_never_descends_a_directory_symlink_nor_takes_a_symlinked_record(tmp_path: Path) -> None:
+    """What the declared tree claims, on a real listing: a directory symlink is not entered, and a symlinked
+    ``.rehu`` is no record.
+
+    **Test steps:**
+
+    * make a record in a folder, a symlink to that folder, and a symlink to the record
+    * walk the tree; verify the record is found once, under its own name
+    """
+    (tmp_path / "packs").mkdir()
+    (tmp_path / "packs" / "foo.rehu").write_text("{}", encoding="utf-8")
+    symlink(tmp_path / "symlinked", tmp_path / "packs")
+    symlink(tmp_path / "link.rehu", tmp_path / "packs" / "foo.rehu")
+
+    assert enumerate_catalog_resources(tmp_path).resources == [tmp_path / "packs" / "foo.rehu"]
 
 
 # endregion

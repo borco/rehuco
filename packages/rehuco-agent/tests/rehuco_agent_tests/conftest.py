@@ -97,7 +97,7 @@ from rehuco_agent.settings.ui import (
 )
 from rehuco_agent.settings.videos_settings import shared_videos_settings
 from rehuco_agent.settings.web_search_settings import shared_web_search_settings
-from rehuco_core import DEFAULT_CHECKSUM_TRUST, DEFAULT_DELETER_PROVIDER, AppFolders
+from rehuco_core import DEFAULT_CHECKSUM_TRUST, DEFAULT_DELETER_PROVIDER, AppFolders, RootOverlap
 
 from rehuco_agent_tests.settings_page_stubs import (  # noqa: F401  # pylint: disable=unused-import
     fixture_real_settings_pages,
@@ -310,6 +310,20 @@ def real_path_stat(default_path_stat_size: None, mocker: MockerFixture) -> None:
     """
     del default_path_stat_size
     mocker.patch.object(Path, "stat", REAL_PATH_STAT)
+
+
+@fixture(autouse=True)
+def no_links_between_roots(mocker: MockerFixture) -> None:
+    """Make every comparison of roots through their links find nothing, unless a test patches it again (#498).
+
+    Opening a ``.rehuco`` of two roots or more, and Add Root, start one on a daemon thread; the real one runs
+    :func:`os.path.realpath` over the roots, which no test here creates -- and :class:`~rehuco_core.RootOverlap` is
+    tested in core. What the agent makes of an answer is the subject of the tests that patch it.
+
+    :param mocker: pytest-mock fixture.
+    """
+    mocker.patch.object(RootOverlap, "among_resolved", return_value=())
+    mocker.patch.object(RootOverlap, "find_resolved", return_value=None)
 
 
 @fixture(autouse=True, scope="session")

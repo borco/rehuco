@@ -31,6 +31,7 @@ from typing import Any, Final
 from .checksum_record import checksum_record_path
 from .checksum_seeding import legacy_manifests_among, readable_legacy_manifest
 from .constants import CHECKSUM_RECORD_SUFFIX, LEGACY_SUFFIX, REHU_SUFFIX
+from .directory_entries import is_walkable_directory
 from .plugins import DEFAULT_UNKNOWN_USERNAME
 from .rehu_document import RehuFormatError
 from .rehu_format import CORE_BLOCK_KEY
@@ -328,8 +329,8 @@ class TcConversionPlanner:  # pylint: disable=too-few-public-methods
 
         Every subdirectory is walked regardless of whether this directory holds a `.tc`: a nested `.tc`
         is not a scan boundary ([[data-model#resource-scoping]]), matching
-        `rehuco_core.rehu_catalog.CatalogScanner`. A directory symlink is never descended, for the same
-        reason that scanner gives -- one pointing at an ancestor would loop forever, one pointing
+        `rehuco_core.rehu_catalog.CatalogScanner`. A directory symlink or junction is never descended
+        (`rehuco_core.directory_entries`) -- one pointing at an ancestor would loop forever, one pointing
         sideways would plan the same resource twice.
 
         :param directory: the directory to read.
@@ -341,7 +342,7 @@ class TcConversionPlanner:  # pylint: disable=too-few-public-methods
         try:
             with os.scandir(directory) as entries:
                 for entry in entries:
-                    if entry.is_dir(follow_symlinks=False):
+                    if is_walkable_directory(entry):
                         subdirectories.append(directory / entry.name)
                     elif entry.is_file():
                         file_names.append(entry.name)

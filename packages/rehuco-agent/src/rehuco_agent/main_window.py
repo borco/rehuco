@@ -25,7 +25,7 @@ from borco_pyside.qtads import (
 )
 from borco_pyside.shortcuts import BindingRole
 from borco_pyside.theming import ActionIconThemeHandler, ThemeManager, ThemeMenu, ThemeModel
-from borco_pyside.widgets import ToolBarStretch
+from borco_pyside.widgets import MessageBannerRow, MessageBannerSeverity, ToolBarStretch
 from PySide6.QtCore import QByteArray, Qt
 from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QIcon, QShowEvent
 from PySide6.QtWidgets import (
@@ -285,7 +285,6 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__ui: Final = Ui_MainWindow()
         self.__ui.setupUi(self)
         self.__bind_ui_actions()
-        self.centralWidget().hide()
         # the display name, not the .ui's "rehuco": a settings dir decorates the name (#494), and the platform
         # appends it to any top-level title that lacks it -- "rehuco - rehuco [dev]" otherwise. A bare
         # QApplication (the tests') sets none, and the .ui's title stands
@@ -322,7 +321,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__node_host: Final = NodeHost(shared_node_settings(), parent=self)
         self.__node_host.start_later()
 
-        self.__dock_manager: Final = QtAds.CDockManager(self)
+        # under the window's banner rather than the window's own central widget, so what concerns the whole window
+        # -- roots that overlap (#498) -- shows whichever docks are open, floating or pinned
+        self.__dock_manager: Final = QtAds.CDockManager(self.__ui.central_widget)
+        self.__ui.central_layout.addWidget(self.__dock_manager, 1)
         # this manager is every nested tracker's stylesheet host, and their sheet zeroes the close
         # icon on *every* tab under it -- its own included -- on the promise that a tracker draws the
         # close glyph in its place. Without a tracker of its own, the outer tabs' [x] was an empty
@@ -428,6 +430,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         )
         # a root added or removed changes which documents are under no root
         self.__root_catalog.roots_changed.connect(self.__document_registry.watch_loose_folders)
+        self.__root_catalog.overlaps.changed.connect(self.__show_root_overlaps)
         self.__roots_panel: Final = RootsPanel(
             self.__root_catalog,
             self.__task_queue,
@@ -541,6 +544,13 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """
         label = widget.model.label if widget is not None else ""
         self.setWindowTitle(f"{label} - {self.__base_window_title}" if label else self.__base_window_title)
+
+    def __show_root_overlaps(self) -> None:
+        """Say on the window's banner which roots of the open ``.rehuco`` overlap, and which records a scan found
+        under two names -- whether or not the Root Catalog dock is showing (#498); nothing once all is clean."""
+        self.__ui.banner.set_rows(
+            [MessageBannerRow(MessageBannerSeverity.WARNING, line) for line in self.__root_catalog.overlaps.messages]
+        )
 
     def __on_status_message(self, text: str) -> None:
         """Show a document field's transient status message on this window's status bar, or clear it for

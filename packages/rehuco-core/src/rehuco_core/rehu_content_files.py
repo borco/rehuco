@@ -43,6 +43,7 @@ from .constants import (
     EXCLUDED_FILE_PATTERNS,
     IMAGE_EXTENSIONS,
 )
+from .directory_entries import is_walkable_directory
 from .record_file_lock import is_lock_name
 from .resource_scoping import (
     DIRECTORY_SCOPED_FILENAMES,
@@ -345,8 +346,8 @@ class ContentFileScanner:
         to learn what the listing knew. Only the filenames are kept, not `Path` objects, since both
         exclusion tiers are filename rules and the survivors are few.
 
-        A symlink to a file counts as that file; a symlink to a directory is skipped entirely rather
-        than descended (see the loop-guard comment below), so linked-in trees are never measured.
+        A symlink to a file counts as that file; a symlink or junction to a directory is skipped entirely
+        rather than descended (`rehuco_core.directory_entries`), so linked-in trees are never measured.
 
         A directory that will not list is recorded rather than swallowed, **whatever the reason** --
         including a :class:`FileNotFoundError`, which for the resource's own directory is exactly the
@@ -368,10 +369,7 @@ class ContentFileScanner:
         try:
             with os.scandir(directory) as entries:
                 for entry in entries:
-                    # never descend through a directory symlink: one pointing at an ancestor would loop
-                    # the walk forever, and one into a sibling would count that content twice (the
-                    # rglob this walk replaced did not follow them either)
-                    if entry.is_dir(follow_symlinks=False):
+                    if is_walkable_directory(entry):
                         subdirectories.append(directory / entry.name)
                     elif entry.is_file():
                         filenames.append(entry.name)
@@ -741,6 +739,10 @@ def content_size_on_disk(
     what a listing quotes and what a re-download has to fetch; block allocation and compression are
     properties of the filesystem it happens to sit on, so the same content would measure differently per
     host and the number would stop being comparable.
+
+    **A hardlinked content file counts once per name** (#498): two names of one file are two entries of the
+    walk, as they are two entries of the checksum record, and telling them apart would cost an identity read per
+    content file.
 
     **A partial measurement is refused rather than reported low** (#245). A total summed over the
     branches that happened to answer is not this resource's size, and a number that reads as authority

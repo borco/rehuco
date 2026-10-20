@@ -787,7 +787,7 @@ The cache is the stdlib `sqlite3` module in rehuco-core, Qt-free, one connection
 | Table | Holds |
 | --- | --- |
 | `roots` | One row per root of the `.rehuco`, keyed by the root's stable id: its label, path, position and whether its storage is removable (a removable drive or a CD or DVD); whether the last scan could list it, and when its rows were last replaced |
-| `resources` | One row per record found under a root — FK to its root with `ON DELETE CASCADE`; the root-relative path, both as spelled and **normalized** (`os.path.normcase`) for matching; kind `rehu` or `tc`; UUID; type; the common core fields a browser shows; the type-specific fields, one typed column each (schema v3, #399): a tutorial's three durations in seconds and its levels (a JSON array), a reference pack's claimed count (text, so `500+` survives) and measured count; the record's **format version** (schema v4, #379): a `.rehu`'s own `format_version` as on disk, `0` for an unstamped one, `NULL` for a legacy `.tc`, which has none — and for a `.rehu` that could not be read, so `kind` and the version are read together, never `NULL` alone; the record's stat signature and a content hash at last read ([[data-model#scan-and-staleness]]); why it could not be read, if it could not; when it was scanned; the title and path **folded** for search (schema v5, #475: `borco_core.fold`, case and diacritics dropped) |
+| `resources` | One row per record found under a root — FK to its root with `ON DELETE CASCADE`; the root-relative path, both as spelled and **normalized** (`os.path.normcase`) for matching; kind `rehu` or `tc`; UUID; type; the common core fields a browser shows; the type-specific fields, one typed column each (schema v3, #399): a tutorial's three durations in seconds and its levels (a JSON array), a reference pack's claimed count (text, so `500+` survives) and measured count; the record's **format version** (schema v4, #379): a `.rehu`'s own `format_version` as on disk, `0` for an unstamped one, `NULL` for a legacy `.tc`, which has none — and for a `.rehu` that could not be read, so `kind` and the version are read together, never `NULL` alone; the record's stat signature and a content hash at last read ([[data-model#scan-and-staleness]]); why it could not be read, if it could not; when it was scanned; the title and path **folded** for search (schema v5, #475: `borco_core.fold`, case and diacritics dropped); for a record whose file has more than one name — a hardlink — its **file identity**, `<st_dev>:<st_ino>` (schema v7, #498), `NULL` for every other |
 | `authors`, `tags`, `publishers` | Values plus their join tables to `resources`, so a filter on any of them reaches `resources` through an index. A value is one row per name, unique case-insensitively (ASCII, `NOCASE`); a filter matches its indexed **folded** name, ignoring case and diacritics (schema v5, #475); the join row keeps the name **as its resource spells it**, which is what a browser shows, so a file that fixes a name's case shows the fix after its next scan (schema v2, #377) |
 | `cache_meta` | Facts about the cache itself, one `key`/`value` row each (schema v6, #475). Today one: what a fixed probe string folds to under the `fold` that last wrote the folded columns, compared on open so a changed `fold` rewrites them |
 
@@ -805,6 +805,25 @@ The cache is the stdlib `sqlite3` module in rehuco-core, Qt-free, one connection
   the scan did not find is removed — including the contents of a branch that would not list, which the scan names.
   The root is probed again when the walk ends, and a scan whose root went away meanwhile is not applied. A record
   found again keeps its row id; one that could not be read keeps a row naming why.
+- **A record has one row, whatever the disk did** (#498). Adding a root that overlaps another is refused
+  ([[multiplicity#instances]]), but nesting can appear after that check — a root moved into another, a share mounted
+  inside one, a hand-edited `.rehuco` — so the scan is where it is enforced:
+  - **A scan never enters another root of the catalog.** It reads the other roots from the cache when it starts, and
+    a directory that is one of them is left to that root's own scan and named, which the agent flags. A directory is
+    matched by **identity**, `(st_dev, st_ino)`, so case, a mapped drive against its share or a `subst` drive all
+    match; a root whose identity is unusable (it would not stat, or reports a zero inode) is matched by its spelling.
+    Only a directory carrying another root's last component as its name — spelled, or as its link resolves — is
+    stat'ed, since a `stat` per directory costs a third more walk time on the NAS; every one is, while some other root
+    has no name (a drive's top).
+  - **No link is entered or taken as a record.** Every walk skips a directory symlink and a Windows junction alike
+    (`rehuco_core.directory_entries`), and the catalog walk skips a symlinked `.rehu` or `.tc`: either would reach the
+    same record under a second name. The content walk still follows a symlinked content file.
+  - **A hardlinked record is cataloged once.** A record whose file has more than one link keeps its file identity on
+    its row. A second name of the same file loses: within one scan to the smaller path, and across roots to the name
+    under the root earlier in the `.rehuco`, then the smaller path — the same answer whichever root was scanned first.
+    The record is flagged, since neither name is more right. A save writes a new file, so it splits the pair, and the
+    two names become two records with one UUID. A hardlinked content file is read normally, and its size counts once
+    per name.
 - **A scan is incremental** (#373). It is handed the root's rows, and a record whose stat signature still matches
   its row is not opened: the row stays as it was, only its spelling following a case-only rename. A row that could not
   be read, or whose signature a schema step cleared, is always read again. Progress counts against the previous
@@ -832,7 +851,9 @@ The cache is the stdlib `sqlite3` module in rehuco-core, Qt-free, one connection
   never written, but discarded and rebuilt from the `.rehu` files, the reason logged. A step that adds columns
   keeps the rows but clears their stat signature, so they show the new columns empty rather than wrong and the
   next scan of any kind reads them again (v3, v4). A column derived from what the row already holds is not filled by a
-  step at all, since a step is a frozen record (v5, the folded spellings, starts empty): see the next point.
+  step at all, since a step is a frozen record (v5, the folded spellings, starts empty): see the next point. A column a
+  scan fills without reading a record keeps the signature (v7, the file identity, set from the `stat` an unchanged
+  record gets anyway).
 - **The folded columns follow `borco_core.fold`** (v5, #475). `cache_meta` (v6) keeps what a fixed probe string folds
   to; opening the cache under a `fold` that gives another answer — an edit to it, or a Python whose Unicode tables
   moved — or finding none (a file just upgraded) writes every folded column again from the real ones, in one

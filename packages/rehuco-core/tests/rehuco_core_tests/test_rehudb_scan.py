@@ -53,6 +53,8 @@ class FakeTree:  # pylint: disable=too-many-instance-attributes  # one knob per 
         self.payloads: dict[Path, dict[str, Any] | Exception] = {}
         self.sizes: dict[Path, int] = {}
         self.mtimes: dict[Path, int] = {}
+        self.links: dict[Path, tuple[int, int]] = {}
+        """A record's ``(st_ino, st_nlink)``, where it is not a lone name of its own; the device is always 1."""
         self.unreadable: set[Path] = set()
         self.gone_at_end = False
         self.on_list: Callable[[Path], None] = lambda directory: None
@@ -87,7 +89,10 @@ class FakeTree:  # pylint: disable=too-many-instance-attributes  # one knob per 
     def __stat(self, path: Path, **_kwargs: object) -> SimpleNamespace:
         if path not in self.sizes:
             raise FileNotFoundError(path)
-        return SimpleNamespace(st_size=self.sizes[path], st_mtime_ns=self.mtimes.get(path, 1_000))
+        inode, links = self.links.get(path, (1, 1))
+        return SimpleNamespace(
+            st_size=self.sizes[path], st_mtime_ns=self.mtimes.get(path, 1_000), st_dev=1, st_ino=inode, st_nlink=links
+        )
 
     def __read_bytes(self, path: Path) -> bytes:
         return str(path).encode()
@@ -436,6 +441,28 @@ def test_progress_counts_every_record_whether_read_or_not(tree: FakeTree, mocker
     scan(known=known, progress=progress)
 
     assert [call.args for call in progress.call_args_list] == [(1,), (2,)]
+
+
+def test_only_a_record_with_several_names_and_a_real_inode_carries_an_identity(tree: FakeTree) -> None:
+    """A lone file has no identity to share; a file on a share reporting a zero inode has none to trust, so two such
+    files are never taken for one (#498).
+
+    **Test steps:**
+
+    * declare a lone record, a hardlinked one, and two hardlinked records reporting inode 0
+    * verify only the hardlinked one with a real inode carries an identity, and nothing is dropped
+    """
+    for name in ("lone.rehu", "linked.rehu", "zero1.rehu", "zero2.rehu"):
+        tree.file(name)
+    tree.links[ROOT / "linked.rehu"] = (5, 2)
+    tree.links[ROOT / "zero1.rehu"] = (0, 2)
+    tree.links[ROOT / "zero2.rehu"] = (0, 2)
+
+    result = scan()
+
+    assert result.identities == {"linked.rehu": "1:5"}
+    assert len(result.records) == 4
+    assert not result.hardlinked
 
 
 # endregion

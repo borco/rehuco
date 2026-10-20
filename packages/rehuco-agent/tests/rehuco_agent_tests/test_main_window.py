@@ -25,6 +25,7 @@ from borco_pyside.logging.log_model import MESSAGE_COLUMN
 from borco_pyside.qtads import QtAdsLayout, tab_close_button, tab_label
 from borco_pyside.qtads.qtads_pin_side_handler import DEFAULT_PIN_SIDE, PIN_SIDE_KEY
 from borco_pyside.shortcuts import BindingRole
+from borco_pyside.widgets import MessageBanner
 from PySide6.QtCore import QByteArray, QEvent, QModelIndex, QObject, Qt
 from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
@@ -35,6 +36,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSystemTrayIcon,
     QToolBar,
+    QVBoxLayout,
     QWidget,
 )
 from pytest import MonkeyPatch, fixture, mark
@@ -276,22 +278,33 @@ def strip_dock_states(node: Any) -> Any:
     return node
 
 
-def test_installs_a_dock_manager_as_the_central_widget(qtbot: QtBot) -> None:
-    """Setting up the docking system replaces the `.ui`'s plain central widget with a `CDockManager`.
+def test_installs_a_dock_manager_under_the_banner_of_the_central_widget(qtbot: QtBot) -> None:
+    """The `.ui`'s central widget stays the window's, its banner on top and the `CDockManager` under it, so what
+    concerns the whole window shows above every dock (#498).
 
     **Test steps:**
 
     * construct a real ``MainWindow`` (real `QtAds` objects, no mocking)
-    * find the `.ui`'s original ``central_widget`` by object name
-    * verify it's no longer the current central widget, and was hidden
+    * find the `.ui`'s ``central_widget`` and its ``banner`` by object name
+    * verify the central widget is the window's, and its layout holds the banner first and the dock manager -- its own
+      child, stretched -- second
     """
     window = MainWindow()
     qtbot.addWidget(window)
 
-    original_central = window.findChild(QWidget, "central_widget")
-    assert original_central is not None
-    assert window.centralWidget() is not original_central
-    assert original_central.isHidden()
+    central = window.findChild(QWidget, "central_widget")
+    banner = window.findChild(MessageBanner, "banner")
+
+    assert central is not None
+    assert window.centralWidget() is central
+    layout = central.layout()
+    assert isinstance(layout, QVBoxLayout)
+    widgets = [None if item is None else item.widget() for item in map(layout.itemAt, range(layout.count()))]
+    assert len(widgets) == 2
+    assert widgets[0] is banner
+    assert isinstance(widgets[1], QtAds.CDockManager)
+    assert widgets[1].parent() is central
+    assert layout.stretch(1) == 1
 
 
 def test_installs_a_settings_dock_on_the_outer_manager(qtbot: QtBot) -> None:

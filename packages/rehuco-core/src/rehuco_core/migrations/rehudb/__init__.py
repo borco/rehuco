@@ -208,6 +208,20 @@ def add_cache_meta_v6(connection: sqlite3.Connection) -> None:
     connection.execute("CREATE TABLE cache_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
 
 
+def add_file_identity_v7(connection: sqlite3.Connection) -> None:
+    """6 -> 7: the identity of a record that has more than one name -- a hardlink (#498).
+
+    ``file_id`` is ``"<st_dev>:<st_ino>"`` for a record whose file has more than one link, ``NULL`` otherwise, so two
+    names of one file -- under one root or under two -- can be told to be one record and given one row. A row written
+    before this step reads ``NULL`` until the next scan sets it, which needs no reread: the scan stats an unchanged
+    record anyway.
+
+    :param connection: the cache, inside the transaction the caller opened.
+    """
+    connection.execute("ALTER TABLE resources ADD COLUMN file_id TEXT")
+    connection.execute("CREATE INDEX resources_file_id ON resources (file_id)")
+
+
 CHAIN: Final[SchemaChain] = (
     (1, create_schema_v1),
     (2, add_join_spellings_v2),
@@ -215,6 +229,7 @@ CHAIN: Final[SchemaChain] = (
     (4, add_format_version_v4),
     (5, add_folded_search_columns_v5),
     (6, add_cache_meta_v6),
+    (7, add_file_identity_v7),
 )
 """This target's ordered ``(target, step)`` chain."""
 

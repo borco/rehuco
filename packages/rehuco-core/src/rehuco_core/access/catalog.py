@@ -92,8 +92,9 @@ class Catalog:
                 location = cache.locate(key.path)
                 if location is None or location.root.root_id not in session.root_ids:
                     return None
-                # the ids are the rows at or beneath the path under every root holding it: where roots nest, the
-                # record has a row under each, and the one asked for is the innermost root's, which locate chose
+                # the ids are the rows at or beneath the path under every root holding it: a scan no longer enters
+                # another root (#498), but a file opened nesting may hold an outer row a scan before that left, and
+                # the one asked for is the innermost root's, which locate chose
                 ids = cache.resource_ids([key.path])
                 rows = cache.rows(ids=ids) if ids else []
         except (OSError, sqlite3.Error) as error:

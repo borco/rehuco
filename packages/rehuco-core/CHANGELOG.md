@@ -64,6 +64,11 @@ Changelogs are per package in this monorepo, matching the per-package release ta
   whole tutorial, a viewed file counting its full length and a missing file still counting. `read_progress`,
   `set_progress_entry`, `read_videos` and `set_videos` read and write the two maps, `ProgressEntry` and
   `WatchTotals` describe them.
+- `RootOverlap` decides whether two roots overlap: `find` compares a candidate with the roots as spelled, and
+  `find_resolved` compares them through their links, resolved forms with resolved forms only. `among` and
+  `among_resolved` list the pairs that already overlap. `RehucoFile.add_root` refuses a folder inside a root or
+  containing one, and `RehucoFile.overlaps` lists the pairs of a file opened nesting. `root_path_key` is the key both
+  compare on.
 - `merge_write` re-reads a record, applies one change and writes it back atomically, one writer at a time per record,
   so a progress write and a metadata write both survive. `RehuDocument.save` takes
   `touch_updated=False` for a write that must not stamp `updated` or `created`.
@@ -106,6 +111,17 @@ Changelogs are per package in this monorepo, matching the per-package release ta
   `RehuDocument.save(edited=...)` takes that decision from its caller, and `payload_to_write()` is what a save writes.
 - `RehuDocument.load` decodes the file as UTF-8 text and hands it back with `load_with_text`, so a record's version
   describes the very text it was read from.
+
+### Fixed
+
+- A record has one row in the catalog cache (#498). `CatalogRootScan` takes the catalog's other roots and never
+  enters one, matching a directory by `(st_dev, st_ino)` (`RootFence`) and naming it in `RootScanResult.met_roots`;
+  `ScanCatalogRootJob` reads them from the cache when it runs and exposes `met_roots` and `hardlinked`. Every walk
+  skips a junction as it skips a directory symlink (`rehuco_core.directory_entries`), and `CatalogScanner` no longer
+  takes a symlinked record. A record with more than one link keeps one name per scan, and across roots
+  `CatalogCache.apply_root_scan` keeps one row per file (`HardlinkedRecord`), the cache gaining a `file_id` column
+  (schema v7). `apply_root_scan` takes `identities` and reports what it did in `RootScanEffects`, which replaces its
+  `touched` argument.
 
 ## [0.3.0] - 2026-10-12
 

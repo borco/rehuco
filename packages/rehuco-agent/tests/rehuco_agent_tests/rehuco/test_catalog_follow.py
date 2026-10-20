@@ -35,6 +35,7 @@ from .test_catalog_docks import (  # noqa: F401  # pylint: disable=unused-import
     WAIT_TIMEOUT_MS,
     CatalogDocks,
     GateJob,
+    add_root,
     answer_add_root,
     build_docks,
     catalog_row,
@@ -148,7 +149,7 @@ def shown_title(docks: CatalogDocks) -> str:
 
 @mark.usefixtures("served", "saves")
 def test_the_notifiers_watch_exactly_the_open_files_roots(
-    mocker: MockerFixture, watched: tuple[CatalogDocks, ResourceEvents, MagicMock]
+    qtbot: QtBot, mocker: MockerFixture, watched: tuple[CatalogDocks, ResourceEvents, MagicMock]
 ) -> None:
     """The notifiers follow the roots as the file has them -- opened, a root added, a root removed -- and stop with the
     file (#511).
@@ -166,7 +167,7 @@ def test_the_notifiers_watch_exactly_the_open_files_roots(
     docks.catalog.open_rehuco(REHUCO_PATH)
     assert followed_roots(notifiers) == {FIRST_ROOT: TUTORIALS, SECOND_ROOT: PACKS}
 
-    docks.roots.add_root_action.trigger()
+    add_root(qtbot, docks)
     assert len(followed_roots(notifiers)) == 3
 
     assert docks.catalog.remove_root(0)
@@ -220,7 +221,7 @@ def test_the_roots_change_on_new_open_commit_remove_and_close_and_never_at_a_sca
 
     docks.catalog.new_rehuco(OTHER_PATH)
     docks.catalog.open_rehuco(REHUCO_PATH)
-    docks.roots.add_root_action.trigger()
+    add_root(qtbot, docks)
     docks.catalog.remove_root(2)
     docks.catalog.close_rehuco()
     assert roots_changed.call_count == 5

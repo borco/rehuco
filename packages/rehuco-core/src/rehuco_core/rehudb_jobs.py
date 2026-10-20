@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Final
 from uuid import UUID
 
-from .rehudb import CatalogCache
+from .rehudb import CatalogCache, HardlinkedRecord, RootScanEffects
 from .rehudb_scan import CatalogRootScan, RootScanResult
 from .rename_coordination import DEFAULT_RENAME_COORDINATOR, RenameCoordinator
 from .tasks import DEFAULT_TASK_JOB_REGISTRY, PROGRESS_UNIT_RESOURCES, JobControl, TaskJobBase
@@ -147,6 +147,10 @@ class ScanCatalogRootJob(CatalogRootJob):
     A root that does not list, or goes away before the walk ends, keeps its rows; the job still finishes, since
     an offline root is a state to record, not a failure.
 
+    **It never enters another root** (#498): the catalog's other roots are read from the cache when the job runs --
+    not saved with it, so a restored job meets the roots as they are now -- and the scan leaves out a directory that
+    is one of them (:attr:`met_roots`). A record reached under two names keeps one row (:attr:`hardlinked`).
+
     :param cache_path: the ``.rehudb`` file, or ``None`` for a job about to be handed a saved state.
     :param root_id: the root's id in the ``.rehuco``.
     :param root: the root's folder.
@@ -173,6 +177,7 @@ class ScanCatalogRootJob(CatalogRootJob):
         self.__location = self.__coordinator.track(root) if root is not None else None
         self.__result: RootScanResult | None = None
         self.__touched: frozenset[int] = frozenset()
+        self.__hardlinked: tuple[HardlinkedRecord, ...] = ()
         super().__init__(cache_path, root_id, root_label=root_label, label=label)
 
     # a property over TaskJobBase's plain attribute: the root can be renamed under a running scan
@@ -192,6 +197,16 @@ class ScanCatalogRootJob(CatalogRootJob):
         finished, or when the root could not be listed."""
         return self.__touched
 
+    @property
+    def met_roots(self) -> frozenset[UUID]:
+        """The other roots the last completed scan found inside this one and left out -- an overlap to flag (#498)."""
+        return self.__result.met_roots if self.__result is not None else frozenset()
+
+    @property
+    def hardlinked(self) -> tuple[HardlinkedRecord, ...]:
+        """The records the last completed scan found under a second name, within this root or across roots (#498)."""
+        return self.__hardlinked
+
     def validate(self) -> str | None:
         """See :meth:`CatalogRootJob.validate` -- also requires a folder. Whether it is *there* is the scan's
         to find out: an offline root is an outcome, not a reason not to start."""
@@ -202,6 +217,7 @@ class ScanCatalogRootJob(CatalogRootJob):
         super().reset()
         self.__result = None
         self.__touched = frozenset()
+        self.__hardlinked = ()
 
     def run(self, control: JobControl) -> None:
         """Scan the root, then apply what was found, or record that the root is offline.
@@ -222,14 +238,20 @@ class ScanCatalogRootJob(CatalogRootJob):
                 checkpoint=self.checkpoint,
                 progress=lambda done: control.report(done, None if total is None else max(total, done)),
                 known=known,
+                others=[other for other in cache.roots() if other.root_id != root_id],
             ).scan()
-            touched: set[int] = set()
+            effects = RootScanEffects(
+                hardlinked=[HardlinkedRecord(root_id, kept, root_id, dropped) for kept, dropped in result.hardlinked]
+            )
             if result.applicable:
-                cache.apply_root_scan(root_id, result.records, unchanged=result.unchanged, touched=touched)
+                cache.apply_root_scan(
+                    root_id, result.records, unchanged=result.unchanged, identities=result.identities, effects=effects
+                )
             else:
                 cache.mark_root_unreachable(root_id)
         self.__result = result
-        self.__touched = frozenset(touched)
+        self.__touched = frozenset(effects.touched)
+        self.__hardlinked = tuple(effects.hardlinked)
         LOG.info(
             "%s: %s, %d records read (%d legacy, %d unreadable), %d unchanged, %d branches unreadable.",
             self.label,

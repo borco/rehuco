@@ -63,6 +63,13 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 ### Fixed
 
+- **A record is listed once, however its roots and links are arranged** (#498). Add Root refuses a folder inside an
+  existing root or containing one, comparing the folders also through links, a junction or a mapped drive. A catalog
+  whose roots already overlap still opens, and a banner across the top of the window says which roots overlap,
+  whichever docks are showing, and the Roots view draws the root that duplicates an earlier one in red; both go once
+  one of the two roots is removed. A scan no longer walks into another root of the catalog, into a junction or a
+  folder symlink, and no longer lists a symlinked `.rehu`. A `.rehu` hardlinked under two names is listed once, the
+  banner saying how many such records were found.
 - **Closing the main window with a floated Settings (or Browsers) window on screen no longer leaves rehuco
   running with no window and no tray icon** (#507). An accepted close now quits the app explicitly, as a Quit from
   the tray already did; Qt's own last-window quit never came, because a floating dock window is a top-level window
