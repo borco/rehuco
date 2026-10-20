@@ -20,7 +20,8 @@ import logging
 from collections.abc import Callable, Hashable, Iterator, Sequence
 from contextvars import ContextVar
 from pathlib import Path
-from threading import Event, active_count, get_ident
+from threading import Event, Thread, get_ident
+from threading import enumerate as live_threads
 from time import monotonic, sleep
 from typing import Final
 
@@ -1009,6 +1010,16 @@ def test_pausing_the_running_job_lets_the_next_one_start(
     assert [status.serial for status in queue.jobs()] == [paused, paused + 1]
 
 
+def started_since(before: set[Thread]) -> set[Thread]:
+    """The threads alive now that were not alive at ``before``: the ones a test started and left running. A thread
+    of an earlier test that ends meanwhile is not one -- the process's thread count is not this test's to assert.
+
+    :param before: the threads alive when the test began counting.
+    :returns: the threads started since, still alive.
+    """
+    return set(live_threads()) - before
+
+
 def test_a_paused_job_has_returned_rather_than_parked(
     queue: TaskQueue, listener: RecordingListener, settles: Callable[[Callable[[], bool]], None]
 ) -> None:
@@ -1016,20 +1027,20 @@ def test_a_paused_job_has_returned_rather_than_parked(
 
     **Test steps:**
 
-    * start a checkpointing job and count the threads while it runs
+    * start a checkpointing job and note the threads while it runs
     * pause it and wait for it to unwind
-    * verify the thread count is unchanged and the worker is idle
+    * verify no thread was started for it and the worker is idle
     * verify the settled job carries no leftover stop request (#260)
     """
     job = CheckpointingJob()
     serial = queue.enqueue(job)
     assert job.entered.wait(TIMEOUT)
-    while_running = active_count()
+    while_running = set(live_threads())
 
     queue.pause_job(serial)
 
     assert wait_for_state(listener, serial, JobState.PAUSED)
-    settles(lambda: active_count() == while_running)
+    settles(lambda: not started_since(while_running))
     assert queue.wait_until_idle(TIMEOUT)
     assert queue.jobs()[0].stop_requested is None
     job.release.set()
@@ -2204,10 +2215,10 @@ def test_quitting_with_a_paused_and_a_running_job_leaves_no_thread(
     **Test steps:**
 
     * pause one job so it unwinds, then start a second and hold it running
-    * count the threads, release the second, and shut the queue down
-    * verify the thread count came back to what it was before either job existed
+    * release the second, and shut the queue down
+    * verify no thread started since before either job existed is still alive
     """
-    before = active_count()
+    before = set(live_threads())
     first = CheckpointingJob("held")
     held = queue.enqueue(first)
     assert first.entered.wait(TIMEOUT)
@@ -2221,7 +2232,7 @@ def test_quitting_with_a_paused_and_a_running_job_leaves_no_thread(
     second.release.set()
     queue.shutdown()
 
-    assert active_count() == before
+    assert not started_since(before)
 
 
 def test_shutting_down_a_queue_that_never_ran_anything_is_accepted(queue: TaskQueue) -> None:
