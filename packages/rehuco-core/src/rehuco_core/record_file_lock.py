@@ -34,7 +34,7 @@ from pathlib import Path
 from types import TracebackType
 from typing import Final, Self, override
 
-from borco_core import shared_read_open
+from borco_core import retry_refused, shared_read_open
 
 from .constants import CHECKSUM_RECORD_SUFFIX, REHUCO_SUFFIX
 from .resource_scoping import is_record_name
@@ -380,24 +380,15 @@ class RecordFileLock:
 
         :returns: whether it was deleted; a failure is logged.
         """
-        delays = iter(RELEASE_RETRY_SECONDS)
-        while True:
-            try:
-                self.path.unlink()
-            except FileNotFoundError:
-                LOG.warning("The lock on %s was gone before it was released", self.__record)
-                return False
-            except PermissionError as error:
-                delay = next(delays, None)
-                if delay is None:
-                    LOG.warning("Could not remove the lock on %s: %s", self.__record, error)
-                    return False
-                time.sleep(delay)
-            except OSError as error:
-                LOG.warning("Could not remove the lock on %s: %s", self.__record, error)
-                return False
-            else:
-                return True
+        try:
+            retry_refused(self.path.unlink, RELEASE_RETRY_SECONDS)
+        except FileNotFoundError:
+            LOG.warning("The lock on %s was gone before it was released", self.__record)
+            return False
+        except OSError as error:
+            LOG.warning("Could not remove the lock on %s: %s", self.__record, error)
+            return False
+        return True
 
     def __read(self) -> str:
         """The lock's content, read without denying its holder the delete that releases it -- a plain open on Windows

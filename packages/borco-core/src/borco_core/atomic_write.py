@@ -14,8 +14,15 @@ import tempfile
 from pathlib import Path
 from typing import Final
 
+from .retry_refused import retry_refused
+
 DEFAULT_ENCODING: Final = "utf-8"
 """Text encoding used by :func:`atomic_write_text` unless overridden."""
+
+REPLACE_RETRY_SECONDS: Final = (0.01, 0.02, 0.05, 0.1, 0.1, 0.1, 0.1)
+"""How long to wait before each retry of a replace refused with a ``PermissionError`` -- a reader holding the
+destination open for the milliseconds of its read, on Windows (#546). Half a second in all: a reader is gone long
+before, and a writer of a record holds its lock meanwhile."""
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -37,7 +44,8 @@ def atomic_write_bytes(path: Path | str, data: bytes) -> None:
 
     :param path: destination file path; overwritten atomically if it already exists.
     :param data: bytes to write.
-    :raises OSError: if the temp file cannot be written or the replace fails.
+    :raises OSError: if the temp file cannot be written or the replace fails -- a replace refused is retried for
+        :data:`REPLACE_RETRY_SECONDS` first (:func:`~borco_core.retry_refused.retry_refused`).
     """
     path = Path(path)
     fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f"{path.name}.", suffix=".tmp")
@@ -70,7 +78,7 @@ def atomic_write_bytes(path: Path | str, data: bytes) -> None:
                 os.chown(tmp_path, dest_stat.st_uid, dest_stat.st_gid)
             except OSError:
                 LOG.warning("Could not restore owner/group on %s", path, exc_info=True)
-        os.replace(tmp_path, path)
+        retry_refused(lambda: os.replace(tmp_path, path), REPLACE_RETRY_SECONDS)
         # The rename itself is atomic, but the directory entry recording it still needs
         # its own fsync to survive a crash right after the replace. Opening a directory
         # this way isn't supported on Windows, so it's skipped there entirely rather

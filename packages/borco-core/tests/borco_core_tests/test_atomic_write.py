@@ -1,5 +1,6 @@
 """Tests for the crash-safe atomic-write helpers."""
 
+import os
 import stat
 import sys
 from pathlib import Path
@@ -323,3 +324,43 @@ def test_atomic_write_skips_directory_fsync_on_windows(mocker: MockerFixture, ca
     replace.assert_called_once_with(Path(TEMP), TARGET)
     directory_open.assert_not_called()
     assert caplog.text == ""
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="only Windows refuses a replace onto an open file")
+def test_atomic_write_lands_once_a_reader_lets_go_of_the_file(tmp_path: Path, mocker: MockerFixture) -> None:
+    """Windows refuses a replace onto a file held open for reading as a ``PermissionError``, and the write lands once
+    the reader lets go (#546) -- held open here, so the refusal is certain rather than a race.
+
+    **Test steps:**
+
+    * write a file and hold it open for reading
+    * call ``atomic_write_bytes`` with the real ``os.replace``, the reader closing the file on its first refusal
+    * verify the replace was refused exactly once, and the file holds the new bytes
+    """
+    path = tmp_path / "info.rehu"
+    path.write_bytes(b"old")
+    reader = path.open("rb")
+    real_replace = os.replace
+    refusals: list[Path] = []
+
+    def replace_then_let_go(source: Path, destination: Path) -> None:
+        """Replace for real; on a refusal, record it and close the reader.
+
+        :param source: the temp file.
+        :param destination: the file it replaces.
+        """
+        try:
+            real_replace(source, destination)
+        except PermissionError:
+            refusals.append(destination)
+            reader.close()
+            raise
+
+    mocker.patch("borco_core.atomic_write.os.replace", side_effect=replace_then_let_go)
+    mocker.patch("borco_core.retry_refused.time.sleep")
+    try:
+        atomic_write_bytes(path, b"new")
+    finally:
+        reader.close()
+    assert refusals == [path]
+    assert path.read_bytes() == b"new"
