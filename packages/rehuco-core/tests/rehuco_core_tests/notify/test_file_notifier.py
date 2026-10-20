@@ -6,7 +6,7 @@ patched, so no test depends on this machine's drives; the notifier's and the coa
 """
 
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any, Final
 from uuid import UUID
@@ -146,6 +146,20 @@ class Notified:  # pylint: disable=too-few-public-methods  # a notifier and its 
         self.coordinator: Final = RenameCoordinator()
         self.known: Final = dict[Path, None]
         self.notifier: Final = FileNotifier(WatchedFolder(FOLDER, root_id), self.feed, self.known, self.coordinator)
+        self.__thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        """Start the notifier, and note the thread it started -- its own, whatever another test left running under the
+        same name."""
+        before = set(threading.enumerate())
+        self.notifier.start()
+        (self.__thread,) = (
+            thread for thread in set(threading.enumerate()) - before if thread.name == f"file-notifier {FOLDER}"
+        )
+
+    def ended(self) -> bool:
+        """:returns: whether the notifier's thread has ended; ``True`` for one never started."""
+        return self.__thread is None or not self.__thread.is_alive()
 
     def __hear(self, event: ChangeEvent) -> None:
         """Note one published event (any thread).
@@ -161,17 +175,32 @@ class Notified:  # pylint: disable=too-few-public-methods  # a notifier and its 
             return list(self.__heard)
 
 
-def notifier_ended() -> bool:
-    """Whether the notifier's thread for :data:`FOLDER` has ended.
+@fixture(name="notify")
+def fixture_notify(backends: Backends) -> Iterator[Callable[..., Notified]]:
+    """Make notifiers, and stop each and wait for its thread when the test ends -- a failed test's included, so its
+    thread never runs on into the next test's. Torn down before ``backends``, whose fakes the threads still use.
 
-    :returns: whether it did.
+    :param backends: the backends replaced.
+    :yields: what makes a :class:`Notified`.
     """
-    return not any(thread.name == f"file-notifier {FOLDER}" for thread in threading.enumerate())
+    del backends
+    made: list[Notified] = []
+
+    def notify(root_id: UUID | None = ROOT_ID) -> Notified:
+        notified = Notified(root_id)
+        made.append(notified)
+        return notified
+
+    yield notify
+    for notified in made:
+        notified.notifier.stop()
+    for notified in made:
+        assert wait_until(notified.ended), "a notifier's thread did not end"
 
 
 @mark.parametrize("kind", [StorageKind.LOCAL, StorageKind.REMOVABLE])
 def test_a_root_on_a_local_disk_is_watched_natively_and_said_reachable_once(
-    backends: Backends, kind: StorageKind
+    backends: Backends, notify: Callable[..., Notified], kind: StorageKind
 ) -> None:
     """A root on this machine's disks gets the operating system's events, with no coordinator -- a root's watch
     never stands in a rename's way -- and is published reachable once; a stop closes the backend.
@@ -183,23 +212,26 @@ def test_a_root_on_a_local_disk_is_watched_natively_and_said_reachable_once(
     * verify the root was published reachable, once; stop it, and verify the backend stopped and the thread ended
     """
     backends.kind = kind
-    notified = Notified()
+    notified = notify()
 
-    notified.notifier.start()
+    notified.start()
 
     assert wait_until(lambda: bool(backends.native) and backends.native[0].started.is_set())
     (watch,) = backends.native
     assert watch.args[0] == WatchedFolder(FOLDER, ROOT_ID)
     assert watch.args[2] is None
-    assert notified.heard() == [RootReachable(ROOT_ID, True)]
+    assert wait_until(lambda: notified.heard() == [RootReachable(ROOT_ID, True)])
     assert notified.notifier.folder == WatchedFolder(FOLDER, ROOT_ID)
     notified.notifier.stop()
     assert wait_until(watch.stopped.is_set)
-    assert wait_until(notifier_ended)
+    assert wait_until(notified.ended)
+    assert notified.heard() == [RootReachable(ROOT_ID, True)]
     assert not backends.polling
 
 
-def test_a_loose_folder_lets_go_for_renames_and_publishes_no_reachability(backends: Backends) -> None:
+def test_a_loose_folder_lets_go_for_renames_and_publishes_no_reachability(
+    backends: Backends, notify: Callable[..., Notified]
+) -> None:
     """A folder under no root is an open document's: its watch is given the coordinator, to let go for a rename, and
     nothing is published about its reachability.
 
@@ -208,18 +240,18 @@ def test_a_loose_folder_lets_go_for_renames_and_publishes_no_reachability(backen
     * start a notifier of a folder with no root id
     * verify its native watch was given the coordinator, and nothing was published
     """
-    notified = Notified(root_id=None)
+    notified = notify(root_id=None)
 
-    notified.notifier.start()
+    notified.start()
 
     assert wait_until(lambda: bool(backends.native) and backends.native[0].started.is_set())
     assert backends.native[0].args[2] is notified.coordinator
     notified.notifier.stop()
-    assert wait_until(notifier_ended)
+    assert wait_until(notified.ended)
     assert not notified.heard()
 
 
-def test_a_root_on_a_share_is_watched_over_smb(backends: Backends) -> None:
+def test_a_root_on_a_share_is_watched_over_smb(backends: Backends, notify: Callable[..., Notified]) -> None:
     """A network folder gets the SMB backend, asked for by the folder's path and the coalescer's push.
 
     **Test steps:**
@@ -228,18 +260,18 @@ def test_a_root_on_a_share_is_watched_over_smb(backends: Backends) -> None:
     * verify an SMB watch was started for the folder, and the root published reachable
     """
     backends.kind = StorageKind.NETWORK
-    notified = Notified()
+    notified = notify()
 
-    notified.notifier.start()
+    notified.start()
 
     assert wait_until(lambda: bool(backends.smb) and backends.smb[0].started.is_set())
     assert backends.smb[0].args[0] == FOLDER
-    assert notified.heard() == [RootReachable(ROOT_ID, True)]
+    assert wait_until(lambda: notified.heard() == [RootReachable(ROOT_ID, True)])
     notified.notifier.stop()
-    assert wait_until(notifier_ended)
+    assert wait_until(notified.ended)
 
 
-def test_a_disc_is_only_ever_polled(backends: Backends) -> None:
+def test_a_disc_is_only_ever_polled(backends: Backends, notify: Callable[..., Notified]) -> None:
     """Storage no event backend can watch is polled, by the root's known files, under the coordinator, and never
     tried with a backend again; the poll says whether the folder is reached, published once per change.
 
@@ -251,9 +283,9 @@ def test_a_disc_is_only_ever_polled(backends: Backends) -> None:
     * stop it, and verify the poll stopped and nothing more is published
     """
     backends.kind = StorageKind.OPTICAL
-    notified = Notified()
+    notified = notify()
 
-    notified.notifier.start()
+    notified.start()
 
     assert wait_until(lambda: bool(backends.polling) and backends.polling[0].started.is_set())
     (polling,) = backends.polling
@@ -272,7 +304,7 @@ def test_a_disc_is_only_ever_polled(backends: Backends) -> None:
 
 
 def test_a_failed_backend_falls_back_to_polling_and_comes_back_stale(
-    backends: Backends, caplog: LogCaptureFixture
+    backends: Backends, notify: Callable[..., Notified], caplog: LogCaptureFixture
 ) -> None:
     """A backend that fails is stopped and the folder polled; once the folder is there again the backend is opened
     anew, the poll stopped, and everything that may have happened meanwhile announced: the root is stale.
@@ -285,10 +317,10 @@ def test_a_failed_backend_falls_back_to_polling_and_comes_back_stale(
     * verify the root was published reachable, unreachable, reachable again, and then stale
     """
     backends.presence.extend([Presence.OFFLINE, Presence.OFFLINE])
-    notified = Notified()
+    notified = notify()
 
     with caplog.at_level("INFO", logger=MODULE):
-        notified.notifier.start()
+        notified.start()
         assert wait_until(lambda: bool(backends.native) and backends.native[0].started.is_set())
         backends.native[0].failed = True
         assert wait_until(lambda: bool(backends.polling) and backends.polling[0].started.is_set())
@@ -308,11 +340,11 @@ def test_a_failed_backend_falls_back_to_polling_and_comes_back_stale(
     assert "Lost the watch of" in caplog.text
     assert "Watching" in caplog.text and "again." in caplog.text
     notified.notifier.stop()
-    assert wait_until(notifier_ended)
+    assert wait_until(notified.ended)
 
 
 def test_a_backend_that_will_not_start_is_complained_about_once_per_outage(
-    backends: Backends, caplog: LogCaptureFixture
+    backends: Backends, notify: Callable[..., Notified], caplog: LogCaptureFixture
 ) -> None:
     """A folder whose backend refuses to start is polled, and the backend tried again every retry; the first refusal
     is a warning, the rest of the outage only debug.
@@ -324,21 +356,23 @@ def test_a_backend_that_will_not_start_is_complained_about_once_per_outage(
     * verify one warning and two debug lines, one poll started and then stopped
     """
     backends.refusals.extend(OSError("denied") for _ in range(3))
-    notified = Notified()
+    notified = notify()
 
     with caplog.at_level("DEBUG", logger=MODULE):
-        notified.notifier.start()
+        notified.start()
         assert wait_until(lambda: len(backends.native) == 4 and backends.native[3].started.is_set())
 
     complaints = [record for record in caplog.records if "Could not watch" in record.getMessage()]
     assert [record.levelname for record in complaints] == ["WARNING", "DEBUG", "DEBUG"]
     (polling,) = backends.polling
-    assert polling.stopped.is_set()
+    assert wait_until(polling.stopped.is_set)
     notified.notifier.stop()
-    assert wait_until(notifier_ended)
+    assert wait_until(notified.ended)
 
 
-def test_a_share_this_backend_cannot_reach_is_polled_and_tried_again(backends: Backends) -> None:
+def test_a_share_this_backend_cannot_reach_is_polled_and_tried_again(
+    backends: Backends, notify: Callable[..., Notified]
+) -> None:
     """A network folder the SMB backend cannot reach -- no share, or not Windows -- has no backend: it is polled,
     and asked again every retry while it is there; a stop ends the retries and the poll.
 
@@ -349,19 +383,19 @@ def test_a_share_this_backend_cannot_reach_is_polled_and_tried_again(backends: B
     """
     backends.kind = StorageKind.NETWORK
     backends.smb_reachable = False
-    notified = Notified()
+    notified = notify()
 
-    notified.notifier.start()
+    notified.start()
 
     assert wait_until(lambda: bool(backends.polling) and backends.polling[0].started.is_set())
     notified.notifier.stop()
     assert wait_until(backends.polling[0].stopped.is_set)
-    assert wait_until(notifier_ended)
+    assert wait_until(notified.ended)
     assert not backends.smb
 
 
 def test_a_watched_folder_that_is_not_there_any_more_is_polled(
-    backends: Backends, mocker: MockerFixture, caplog: LogCaptureFixture
+    backends: Backends, notify: Callable[..., Notified], mocker: MockerFixture, caplog: LogCaptureFixture
 ) -> None:
     """A backend does not always notice its folder going -- a share whose server vanished without a word, a folder
     renamed away -- so the folder is looked at while it is watched: once it is not there, the backend is stopped and
@@ -377,15 +411,15 @@ def test_a_watched_folder_that_is_not_there_any_more_is_polled(
     """
     mocker.patch(f"{MODULE}.PRESENCE_SECONDS", 0.0)
     backends.presence.extend([Presence.PRESENT, Presence.OFFLINE])
-    notified = Notified()
+    notified = notify()
 
     with caplog.at_level("WARNING", logger=MODULE):
-        notified.notifier.start()
+        notified.start()
         assert wait_until(lambda: len(backends.native) == 2 and backends.native[1].started.is_set())
 
     assert not backends.presence
     assert backends.native[0].stopped.is_set()
-    assert backends.polling and backends.polling[0].stopped.is_set()
+    assert wait_until(lambda: bool(backends.polling) and backends.polling[0].stopped.is_set())
     assert "is not there any more" in caplog.text
     notified.notifier.stop()
-    assert wait_until(notifier_ended)
+    assert wait_until(notified.ended)
