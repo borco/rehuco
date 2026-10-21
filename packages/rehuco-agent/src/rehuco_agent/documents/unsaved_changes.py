@@ -11,10 +11,10 @@ from PySide6.QtCore import QObject
 from rehuco_core import SavePayload, record_differences
 from rehuco_core.access import Records, ResourceKey
 
-from ..settings.identity_settings import shared_identity_settings
 from ..settings.persistent_settings import config_folder
 from ..settings.state_file import decode_bytes, encode_bytes, read_state_file, write_state_file
 from ..startup_presence import StartupPresence
+from .document_registry import load_record
 from .document_widget import DocumentWidget
 from .documents_dock import DocumentsDock
 
@@ -131,14 +131,12 @@ class UnsavedChanges(QObject):
         payload = entry.payload
         key = ResourceKey(payload.path)
         file_there = not folder_gone and payload.path.exists()
-        widget = self.__dock.open_document(key, state=entry.layout, new=payload.first_save and not file_there)
-        current = None
-        if file_there:
-            settings = shared_identity_settings()
-            record = self.__records.load(
-                key, username=settings.current_username, unknown_username=settings.unknown_username
-            )
-            current = record if record.version is not None else None
+        # read once: what the edits are compared with is also what the document is built from
+        record = load_record(self.__records, key) if file_there else None
+        widget = self.__dock.open_document(
+            key, state=entry.layout, new=payload.first_save and not file_there, record=record
+        )
+        current = record if record is not None and record.version is not None else None
         model = widget.model
         if current is not None and not record_differences(
             payload.base_payload or {}, payload.payload, current.document.payload_to_write(), payload.username

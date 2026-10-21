@@ -677,14 +677,18 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             # a placeholder is always bound to the path it stands in for (create_pending)
             self.__read(cast(ResourceKey, self.key), rebuild=True)
 
-    def follow_pending_save(self) -> None:
+    def follow_pending_save(self, record: LoadedRecord | None = None) -> None:
         """Show the record's save that has not landed, if it has one and this model holds no edits of its own -- what
         a document just opened shows ([[sync#unlanded-save]]). A record never saved holds none yet, however dirty a
-        new document starts."""
+        new document starts.
+
+        :param record: the file as the caller has just read it, laid under the save rather than read again; ``None``
+            reads it.
+        """
         key = self.key
         own_edits = self.dirty and self.saved_on_disk
         if key is not None and not own_edits and not self.__pending and self.__pending_save_for(key) is not None:
-            self.__read(key, rebuild=False)
+            self.__read(key, rebuild=False, record=record)
 
     @property
     def document(self) -> RehuDocument:
@@ -1120,15 +1124,17 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         """
         self.__read(ResourceKey(path), rebuild=False)
 
-    def __read(self, key: ResourceKey, *, rebuild: bool) -> bool:
+    def __read(self, key: ResourceKey, *, rebuild: bool, record: LoadedRecord | None = None) -> bool:
         """Show the record at ``key`` as it stands on this machine: its save that has not landed, if it has one, laid
         over the file as read ([[sync#unlanded-save]]), else the file.
 
         :param key: the record.
         :param rebuild: rebuild the form whatever its structure (:meth:`__load`).
+        :param record: the file as already read, when the caller has just read it; ``None`` reads it.
         :returns: whether a save not landed is what is shown.
         """
-        record = load_record(self.__records, key)
+        if record is None:
+            record = load_record(self.__records, key)
         payload = self.__pending_save_for(key)
         if payload is None:
             self.__load(record, rebuild=rebuild)

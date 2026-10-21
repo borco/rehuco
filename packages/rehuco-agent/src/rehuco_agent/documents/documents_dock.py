@@ -19,7 +19,7 @@ from borco_pyside.qtads import (
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QMainWindow, QMessageBox, QWidget
 from rehuco_core import INFO_REHU_FILENAME, LockReasonKind, TaskQueue
-from rehuco_core.access import ResourceKey
+from rehuco_core.access import LoadedRecord, ResourceKey
 
 from ..dock_maximize import attach_maximize_handler
 from ..glyphs import TAB_CLOSE_GLYPH
@@ -178,7 +178,14 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         # only so the session capture can read the layout un-maximized
         self.__maximize_handler: Final = attach_maximize_handler(self.__dock_manager)
 
-    def open_document(self, key: ResourceKey, *, state: bytes | None = None, new: bool = False) -> DocumentWidget:
+    def open_document(
+        self,
+        key: ResourceKey,
+        *,
+        state: bytes | None = None,
+        new: bool = False,
+        record: LoadedRecord | None = None,
+    ) -> DocumentWidget:
         """Open ``key``'s record in a new dock, or focus its dock if already open.
 
         :param key: a ``.rehu`` record, or a legacy ``.tc`` one ([[acquisition-tooling#tc-to-rehu]], opened locked
@@ -188,10 +195,13 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
             meaningful for a document actually being opened; ignored when ``key`` is already open.
         :param new: start a new document bound to ``key`` instead of reading it -- a record never saved, coming back
             with the edits it was left with (#497).
+        :param record: the file as the caller has just read it, built from rather than read again (#497).
         :returns: the document's widget. A file that cannot be read opens as an empty **locked** dock
             standing in for it ([[data-model#write-integrity]]).
         """
-        return self.__activate(self.__find_dock_to_open(key) or self.__make_new_dock(key, new=new, state=state))
+        return self.__activate(
+            self.__find_dock_to_open(key) or self.__make_new_dock(key, new=new, state=state, record=record)
+        )
 
     def open_folder(self, folder: ResourceKey) -> DocumentWidget:
         """Open the directory-scoped resource in ``folder`` ([[data-model#resource-scoping]]).
@@ -543,7 +553,8 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         self.__tracker.set_current_dock(dock)
         return self.__document_docks[dock]
 
-    def __make_new_dock(
+    # each one way a dock is asked for -- new, laid out, lazy, a preview, from a record read already -- keyword-only
+    def __make_new_dock(  # pylint: disable=too-many-arguments
         self,
         key: ResourceKey,
         *,
@@ -551,6 +562,7 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         state: bytes | None = None,
         lazy: bool = False,
         preview: bool = False,
+        record: LoadedRecord | None = None,
     ) -> QtAds.CDockWidget:
         """Hold ``key``'s document and build its dock -- **always** a dock, never an error dialog.
 
@@ -574,13 +586,15 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
             whether the model really is pending (:meth:`DocumentRegistry.acquire`).
         :param preview: make it the area's preview (#39), named ``Preview-<n>`` and laid out with its type's
             preview layout rather than ``state``.
+        :param record: the file as the caller has just read it, built from rather than read again -- see
+            :meth:`DocumentRegistry.acquire`.
         :returns: the new dock (created for a successful load, a new document, a locked stub, or an
             as-yet-unread placeholder, alike).
         """
         # held through the registry, which owns the model and frees it at its last release (#375); the
         # dock owns its own title/identity upkeep, and the area only wires the seams that cross back to
         # it: the field status-message relay, the open requests, the key relay and the close request
-        model = self.__registry.acquire(key, new=new, lazy=lazy)
+        model = self.__registry.acquire(key, new=new, lazy=lazy, record=record)
         preview_name = None
         if preview:
             self.__preview_count += 1

@@ -765,6 +765,56 @@ def test_a_model_built_for_a_record_with_a_pending_save_opens_on_it_before_it_is
 
 
 @mark.usefixtures("real_path_stat")
+def test_a_record_with_a_pending_save_is_read_once_to_open(qtbot: QtBot, tmp_path: Path, mocker: MockerFixture) -> None:
+    """Opening a record whose save has not landed lays that save over the file read to build the model -- one read,
+    not a second one for the save to lie on.
+
+    **Test steps:**
+
+    * keep a save titling a record ``Mine``, and have a registry over spied records follow it
+    * acquire the record
+    * verify the model shows the pending save, and the file was read once
+    """
+    del qtbot
+    path = tmp_path / "info.rehu"
+    write_record(path, "Old")
+    records = Records()
+    load = mocker.spy(records, "load")
+    registry = DocumentRegistry(records=records)
+    registry.follow_pending_saves(answering(edited_snapshot(path), path))
+
+    model = registry.acquire(ResourceKey(path))
+
+    assert model.title == "Mine"
+    assert load.call_count == 1
+
+
+@mark.usefixtures("real_path_stat")
+def test_a_record_the_caller_read_is_built_from_without_reading_it_again(
+    qtbot: QtBot, tmp_path: Path, mocker: MockerFixture
+) -> None:
+    """A holder that has just read the record hands the read over, and the model is built from it -- not read again.
+
+    **Test steps:**
+
+    * read a record titled ``Old``, then have a registry over spied records acquire it with that read
+    * verify the model shows the record, and the registry read nothing
+    """
+    del qtbot
+    path = tmp_path / "info.rehu"
+    write_record(path, "Old")
+    records = Records()
+    read = load_record(records, ResourceKey(path))
+    load = mocker.spy(records, "load")
+    registry = DocumentRegistry(records=records)
+
+    model = registry.acquire(ResourceKey(path), record=read)
+
+    assert model.title == "Old"
+    load.assert_not_called()
+
+
+@mark.usefixtures("real_path_stat")
 def test_a_placeholder_built_for_a_record_with_a_pending_save_reads_that_save(qtbot: QtBot, tmp_path: Path) -> None:
     """A placeholder is announced unread, and its deferred read finds the record's save not landed through the
     registry.

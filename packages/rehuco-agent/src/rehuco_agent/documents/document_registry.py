@@ -132,7 +132,9 @@ class DocumentRegistry(QObject):
         """
         return list(self.__holders)
 
-    def acquire(self, key: ResourceKey, *, new: bool = False, lazy: bool = False) -> RehuDocumentModel:
+    def acquire(
+        self, key: ResourceKey, *, new: bool = False, lazy: bool = False, record: LoadedRecord | None = None
+    ) -> RehuDocumentModel:
         """Hold the model for ``key``: the one already held, or one built for it now.
 
         A model already held is returned as it is -- ``new`` changes nothing then, and a real (not
@@ -151,6 +153,8 @@ class DocumentRegistry(QObject):
             restore, #66) that its holder reads later. Never honored for ``new`` (nothing to defer) or a
             ``.tc`` (:meth:`RehuDocument.reload`, what the deferred read runs through, re-reads only a
             ``.rehu``).
+        :param record: the file as the caller has just read it (:func:`load_record`), built from rather than read
+            again; ``None`` reads it. Unused for a model already held, a new one or a placeholder.
         :returns: the held model; :attr:`~RehuDocumentModel.pending` tells whether it is still unread.
         """
         model = self.__models.get(key)
@@ -160,10 +164,13 @@ class DocumentRegistry(QObject):
                 model.load_pending()
             return model
 
-        model = self.__build(key, new=new, lazy=lazy and not new and key.path.suffix.lower() != ".tc")
+        model, record = self.__build(
+            key, new=new, lazy=lazy and not new and key.path.suffix.lower() != ".tc", record=record
+        )
         model.setParent(self)
-        # a record whose save has not landed opens on that save, its saved state on this machine (#497)
-        model.follow_pending_save()
+        # a record whose save has not landed opens on that save, its saved state on this machine (#497) -- laid over the
+        # file just read, not a second read of it
+        model.follow_pending_save(record)
         self.__models[key] = model  # pylint: disable=unsupported-assignment-operation
         self.__holders[model] = 1  # pylint: disable=unsupported-assignment-operation
         self.__keys[model] = key  # pylint: disable=unsupported-assignment-operation
@@ -294,32 +301,38 @@ class DocumentRegistry(QObject):
         if key is not None and self.__models.get(key) is model:
             del self.__models[key]  # pylint: disable=unsupported-delete-operation
 
-    def __build(self, key: ResourceKey, *, new: bool, lazy: bool) -> RehuDocumentModel:
-        """Build the model for ``key`` -- see :meth:`acquire` for ``new`` and ``lazy``.
+    def __build(
+        self, key: ResourceKey, *, new: bool, lazy: bool, record: LoadedRecord | None
+    ) -> tuple[RehuDocumentModel, LoadedRecord | None]:
+        """Build the model for ``key`` -- see :meth:`acquire` for ``new``, ``lazy`` and ``record``.
 
         :param key: the document's key.
         :param new: start a new, dirty document.
         :param lazy: start an unread placeholder (already narrowed by :meth:`acquire`).
-        :returns: the new, parentless model.
+        :param record: the file as already read, or ``None`` to read it.
+        :returns: the new, parentless model, and the record it was read from -- ``None`` when nothing was read.
         """
         if new:
-            return RehuDocumentModel.create_new(
+            model = RehuDocumentModel.create_new(
                 key.path,
                 username=shared_identity_settings().current_username,
                 records=self.__records,
                 rename_coordinator=self.__rename_coordinator,
                 pending_save_of=self.__pending_save_for,
             )
+            return model, None
         if lazy:
-            return RehuDocumentModel.create_pending(
+            model = RehuDocumentModel.create_pending(
                 key.path,
                 username=shared_identity_settings().current_username,
                 records=self.__records,
                 rename_coordinator=self.__rename_coordinator,
                 pending_save_of=self.__pending_save_for,
             )
-        record = load_record(self.__records, key)
-        return RehuDocumentModel(
+            return model, None
+        if record is None:
+            record = load_record(self.__records, key)
+        model = RehuDocumentModel(
             record.document,
             records=self.__records,
             version=record.version,
@@ -327,6 +340,7 @@ class DocumentRegistry(QObject):
             rename_coordinator=self.__rename_coordinator,
             pending_save_of=self.__pending_save_for,
         )
+        return model, record
 
     def __pending_save_for(self, key: ResourceKey) -> SavePayload | None:
         """A record's save that has not landed, asked of the save owner once there is one.

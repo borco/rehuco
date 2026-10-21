@@ -217,7 +217,7 @@ def test_kept_edits_reopen_on_the_next_start(rig: Rig, tmp_path: Path, mocker: M
 
     rig.build().reopen()
 
-    rig.dock.open_document.assert_called_once_with(ResourceKey(path), state=LAYOUT, new=False)
+    rig.dock.open_document.assert_called_once_with(ResourceKey(path), state=LAYOUT, new=False, record=current)
     settings = shared_identity_settings()
     rig.records.load.assert_called_once_with(
         ResourceKey(path), username=settings.current_username, unknown_username=settings.unknown_username
@@ -373,11 +373,11 @@ def test_a_readable_entry_beside_an_unreadable_one_reopens(
     path = record_file(tmp_path / "res")
     write_entries(rig.store, ["damaged", entry_of(payload_at(path))])
     rig.presence.local_paths = {path.parent: Presence.PRESENT}
-    rig.read_as(mocker, BASE)
+    read = rig.read_as(mocker, BASE)
 
     rig.build().reopen()
 
-    rig.dock.open_document.assert_called_once_with(ResourceKey(path), state=LAYOUT, new=False)
+    rig.dock.open_document.assert_called_once_with(ResourceKey(path), state=LAYOUT, new=False, record=read)
     rig.model.adopt_unsaved.assert_called_once()
 
 
@@ -471,11 +471,11 @@ def test_the_store_empties_only_once_every_folder_answered(
     first = record_file(tmp_path / "first")
     second = record_file(tmp_path / "second")
     write_entries(rig.store, [entry_of(payload_at(first)), entry_of(payload_at(second))])
-    rig.read_as(mocker, BASE)
+    read = rig.read_as(mocker, BASE)
     rig.build().reopen()
 
     rig.answer(first.parent, Presence.PRESENT)
-    rig.dock.open_document.assert_called_once_with(ResourceKey(first), state=LAYOUT, new=False)
+    rig.dock.open_document.assert_called_once_with(ResourceKey(first), state=LAYOUT, new=False, record=read)
     assert kept_paths(rig.store) == [str(first), str(second)]
 
     rig.answer(second.parent, Presence.PRESENT)
@@ -498,7 +498,7 @@ def test_a_gone_folder_reopens_with_its_banner(rig: Rig, tmp_path: Path, differe
 
     rig.answer(path.parent, Presence.GONE)
 
-    rig.dock.open_document.assert_called_once_with(ResourceKey(path), state=LAYOUT, new=False)
+    rig.dock.open_document.assert_called_once_with(ResourceKey(path), state=LAYOUT, new=False, record=None)
     rig.records.load.assert_not_called()
     differences.assert_not_called()
     rig.model.adopt_unsaved.assert_called_once_with(payload_at(path), None)
@@ -523,7 +523,7 @@ def test_a_gone_file_reopens_with_its_banner(rig: Rig, tmp_path: Path, differenc
 
     rig.build().reopen()
 
-    rig.dock.open_document.assert_called_once_with(ResourceKey(path), state=LAYOUT, new=False)
+    rig.dock.open_document.assert_called_once_with(ResourceKey(path), state=LAYOUT, new=False, record=None)
     rig.records.load.assert_not_called()
     rig.model.adopt_unsaved.assert_called_once_with(payload_at(path), None)
     assert rig.model.gone == f"The file is gone: {path}"
@@ -546,7 +546,7 @@ def test_a_never_saved_document_reopens_new(rig: Rig, tmp_path: Path, difference
 
     rig.build().reopen()
 
-    rig.dock.open_document.assert_called_once_with(ResourceKey(path), state=LAYOUT, new=True)
+    rig.dock.open_document.assert_called_once_with(ResourceKey(path), state=LAYOUT, new=True, record=None)
     rig.model.adopt_unsaved.assert_called_once_with(payload_at(path, base=None, first_save=True), None)
     assert rig.model.gone == ""
 
