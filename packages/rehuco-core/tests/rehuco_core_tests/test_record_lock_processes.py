@@ -1,9 +1,10 @@
-"""Two processes writing one record at once (#512, [[sync#lock-file]]): every edit either lands or comes back as a
-conflict, none is silently lost, and a progress write never conflicts with a details edit.
+"""Two processes writing one record at once (#512, [[sync#lock-file]]): an edit made on a stale version comes back as
+a conflict rather than writing over another, and a progress write never conflicts with a details edit.
 
 Real processes on one ``tmp_path`` folder: the workers are this module's functions, started with ``spawn`` so they
-behave the same on every OS. Coverage is not measured in them; every branch they reach is also reached in process
-(``test_record_file_lock``).
+behave the same on every OS. Every test fixes the order the two processes act in (#547): a worker pauses at a named
+point until a flag file tells it to go on, never left to the scheduler. Coverage is not measured in them; every
+branch they reach is also reached in process (``test_record_file_lock``).
 """
 
 import json
@@ -12,10 +13,12 @@ from concurrent.futures import ProcessPoolExecutor
 from multiprocessing import get_context
 from pathlib import Path
 from typing import Any, Final
+from unittest.mock import patch
 
+from pytest import raises
+from pytest_mock import MockerFixture
 from rehuco_core import (
     RecordConflict,
-    RecordLockedError,
     Records,
     RehuDocument,
     ResourceKey,
@@ -28,16 +31,6 @@ from rehuco_core import (
     update_checksum_record,
     verify_checksums,
 )
-
-WRITERS: Final = 2
-"""How many processes race the details."""
-
-ATTEMPTS: Final = 40
-"""How many saves each one makes."""
-
-START_DELAY: Final = 3.0
-"""How long after submitting the workers they start writing, in seconds: long enough for both to be spawned and to
-have imported everything, so they overlap."""
 
 RESULT_TIMEOUT: Final = 120.0
 """How long to wait for a worker, in seconds, before the test fails rather than hangs."""
@@ -56,51 +49,68 @@ def write_tutorial(path: Path) -> None:
     path.write_text(json.dumps(data), encoding="utf-8")
 
 
-def save_titles(path: str, worker: int, start_at: float) -> dict[str, Any]:
-    """Load the record, set its title and save it, :data:`ATTEMPTS` times, starting at ``start_at`` -- a worker.
+def wait_for(flag: Path) -> None:
+    """Wait until ``flag`` exists, for at most :data:`RESULT_TIMEOUT` seconds.
 
-    A load that lands on another process's replace reads nothing (Windows refuses the open meanwhile) and is not an
-    attempt at a save.
+    :param flag: the file another process creates to say it reached a point.
+    """
+    deadline = time.monotonic() + RESULT_TIMEOUT
+    while not flag.exists() and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+
+def save_holding_the_lock(path: str, holding: str, proceed: str) -> str:
+    """Retitle the record and save it, pausing inside the save -- the lock taken, the file not yet written -- until
+    told to go on: a worker.
 
     :param path: the record.
-    :param worker: which worker this is, to make each title unique.
-    :param start_at: when to start, in seconds since the epoch.
-    :returns: each landed save's base version and title, and how many conflicted, waited out the lock, or read nothing.
+    :param holding: a file to create once the save holds the lock.
+    :param proceed: a file whose appearance lets the save write.
+    :returns: the title saved.
     """
     records = Records()
     key = ResourceKey(Path(path))
-    landed: list[tuple[str, str]] = []
-    conflicts = locked = unread = 0
-    time.sleep(max(0.0, start_at - time.time()))
-    for attempt in range(ATTEMPTS):
-        loaded = records.load(key, username="alice", unknown_username="ghost")
-        if loaded.version is None:
-            unread += 1
-            continue
-        title = f"w{worker}-{attempt}"
-        loaded.document.title = title
-        try:
-            records.save(key, loaded.document, loaded.version, username="alice", overwrite=False)
-        except RecordConflict:
-            conflicts += 1
-        except RecordLockedError:
-            locked += 1
-        else:
-            landed.append((loaded.version.file_hash, title))
-    return {"landed": landed, "conflicts": conflicts, "locked": locked, "unread": unread}
+    loaded = records.load(key, username="alice", unknown_username="ghost")
+    loaded.document.title = "worker"
+    write = RehuDocument.save
+
+    def write_when_told(document: RehuDocument, *args: Any, **kwargs: Any) -> None:
+        """Say the lock is held, wait to be told, then write.
+
+        :param document: the record being saved.
+        :param args: the save's own arguments.
+        :param kwargs: the save's own keyword arguments.
+        """
+        Path(holding).touch()
+        wait_for(Path(proceed))
+        write(document, *args, **kwargs)
+
+    assert loaded.version is not None
+    with patch.object(RehuDocument, "save", write_when_told):
+        records.save(key, loaded.document, loaded.version, username="alice", overwrite=False)
+    return loaded.document.title
 
 
-def write_progress(path: str, start_at: float) -> int:
-    """Record progress on :data:`ATTEMPTS` different files of the record, starting at ``start_at`` -- a worker.
+def load_then_save(path: str, loaded_flag: str, proceed: str) -> bool:
+    """Load the record, say so, wait to be told, then retitle and save it: a worker.
 
     :param path: the record.
-    :param start_at: when to start, in seconds since the epoch.
-    :returns: how many were written.
+    :param loaded_flag: a file to create once the record is loaded.
+    :param proceed: a file whose appearance lets the save run.
+    :returns: whether the save landed rather than conflicting.
     """
-    time.sleep(max(0.0, start_at - time.time()))
-    for attempt in range(ATTEMPTS):
-        record_progress(Path(path), "bob", f"part{attempt}.mp4", 1.0, 10.0, current_username="bob")
-    return ATTEMPTS
+    records = Records()
+    key = ResourceKey(Path(path))
+    loaded = records.load(key, username="alice", unknown_username="ghost")
+    assert loaded.version is not None
+    Path(loaded_flag).touch()
+    wait_for(Path(proceed))
+    loaded.document.title = "worker"
+    try:
+        records.save(key, loaded.document, loaded.version, username="alice", overwrite=False)
+    except RecordConflict:
+        return False
+    return True
 
 
 def verify_paused(path: str, started: str, proceed: str) -> list[dict[str, Any]]:
@@ -124,9 +134,7 @@ def verify_paused(path: str, started: str, proceed: str) -> list[dict[str, Any]]
             return
         paused.append(True)
         Path(started).touch()
-        deadline = time.monotonic() + RESULT_TIMEOUT
-        while not Path(proceed).exists() and time.monotonic() < deadline:
-            time.sleep(0.01)
+        wait_for(Path(proceed))
 
     verify_checksums(Path(path), only=["lesson.mp4"], progress=gate)
     return json.loads(checksum_record_path(Path(path)).read_text(encoding="utf-8"))["files"]
@@ -154,9 +162,7 @@ def test_a_verify_keeps_what_another_writer_put_in_the_record_while_it_hashed(tm
 
     with ProcessPoolExecutor(max_workers=1, mp_context=get_context("spawn")) as pool:
         verify = pool.submit(verify_paused, str(record), str(started), str(proceed))
-        deadline = time.monotonic() + RESULT_TIMEOUT
-        while not started.exists() and time.monotonic() < deadline:
-            time.sleep(0.01)
+        wait_for(started)
         assert started.exists()
         assert forget_checksums(record, only=["notes.txt"]) == ("notes.txt",)
 
@@ -180,57 +186,84 @@ def test_a_verify_keeps_what_another_writer_put_in_the_record_while_it_hashed(tm
     assert not lock_path_for(checksum_record_path(record)).exists()
 
 
-def test_racing_saves_each_land_or_conflict_and_none_is_lost(tmp_path: Path) -> None:
-    """Two processes saving one record's details at once: each save either lands on the file as it was read, or is
-    refused as a conflict -- never two saves landing on the same version, which is one silently writing the other's
-    edit away.
+def test_a_save_waiting_on_the_lock_is_refused_once_the_holder_wrote_over_its_version(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    """A save that meets another process's lock waits for it, and is then judged against what that process wrote: its
+    edit was made on the version before, so it comes back as a conflict rather than writing over the other's.
 
     **Test steps:**
 
-    * write a record, and start two processes that each load, retitle and save it 40 times at once
-    * verify every attempt is a landed save, a conflict or a load that read nothing, and none waited out the lock
-    * verify no two landed saves were based on the same version, the file holds the title one of them wrote, and no
-      lock is left
+    * write a record and load it here
+    * start a process that retitles and saves it, paused inside the save while it holds the lock
+    * retitle and save here: the save backs off on the held lock, and the first back-off lets the process write
+    * verify the save here was refused as a conflict after backing off, the file holds the process's title, and no lock
+      is left
     """
     path = tmp_path / "info.rehu"
     write_tutorial(path)
-    start_at = time.time() + START_DELAY
+    holding = tmp_path / "holding.flag"
+    proceed = tmp_path / "proceed.flag"
+    records = Records()
+    key = ResourceKey(path)
+    loaded = records.load(key, username="alice", unknown_username="ghost")
+    assert loaded.version is not None
+    sleep = time.sleep
 
-    with ProcessPoolExecutor(max_workers=WRITERS, mp_context=get_context("spawn")) as pool:
-        futures = [pool.submit(save_titles, str(path), worker, start_at) for worker in range(WRITERS)]
-        results = [future.result(timeout=RESULT_TIMEOUT) for future in futures]
+    def let_the_holder_write(seconds: float) -> None:
+        """Back off as the lock does, having told the holder to go on.
 
-    landed = [entry for result in results for entry in result["landed"]]
-    bases = [base for base, _ in landed]
-    outcomes = sum(len(result["landed"]) + result["conflicts"] + result["unread"] for result in results)
-    assert outcomes == WRITERS * ATTEMPTS
-    assert sum(result["locked"] for result in results) == 0
-    assert len(bases) == len(set(bases))
-    assert RehuDocument.load(path).title in {title for _, title in landed}
+        :param seconds: how long.
+        """
+        proceed.touch()
+        sleep(seconds)
+
+    with ProcessPoolExecutor(max_workers=1, mp_context=get_context("spawn")) as pool:
+        holder = pool.submit(save_holding_the_lock, str(path), str(holding), str(proceed))
+        wait_for(holding)
+        assert holding.exists()
+        back_off = mocker.patch.object(time, "sleep", side_effect=let_the_holder_write)
+        loaded.document.title = "here"
+        try:
+            with raises(RecordConflict):
+                records.save(key, loaded.document, loaded.version, username="alice", overwrite=False)
+        finally:
+            # a save that never met the lock never told the holder to go on: release it, so a failure is reported
+            # at once rather than after the holder's wait runs out
+            proceed.touch()
+        mocker.stopall()
+        written = holder.result(timeout=RESULT_TIMEOUT)
+
+    assert back_off.call_count >= 1
+    assert RehuDocument.load(path).title == written == "worker"
     assert not lock_path_for(path).exists()
 
 
 def test_a_progress_write_never_conflicts_with_a_details_edit(tmp_path: Path) -> None:
-    """A process recording progress while another edits the record's details: the details saves merge the progress
-    in rather than conflicting, and every progress entry is on disk at the end.
+    """Progress recorded by another process between a details edit's load and its save is merged into that save
+    rather than conflicting with it, and kept.
 
     **Test steps:**
 
-    * write a record, and start one process saving its title 40 times and one recording progress on 40 files
-    * verify no save conflicted, and all 40 progress entries are on disk with the last title landed
+    * write a record, and start a process that loads it and waits
+    * record progress here, then let the process retitle and save
+    * verify its save landed, and the file holds both the title and the progress
     """
     path = tmp_path / "info.rehu"
     write_tutorial(path)
-    start_at = time.time() + START_DELAY
+    loaded = tmp_path / "loaded.flag"
+    proceed = tmp_path / "proceed.flag"
 
-    with ProcessPoolExecutor(max_workers=2, mp_context=get_context("spawn")) as pool:
-        saves = pool.submit(save_titles, str(path), 0, start_at)
-        progress = pool.submit(write_progress, str(path), start_at)
-        result = saves.result(timeout=RESULT_TIMEOUT)
-        written = progress.result(timeout=RESULT_TIMEOUT)
+    with ProcessPoolExecutor(max_workers=1, mp_context=get_context("spawn")) as pool:
+        saver = pool.submit(load_then_save, str(path), str(loaded), str(proceed))
+        wait_for(loaded)
+        assert loaded.exists()
+        record_progress(path, "bob", "part.mp4", 1.0, 10.0, current_username="bob")
+        proceed.touch()
+        landed = saver.result(timeout=RESULT_TIMEOUT)
 
     saved = json.loads(path.read_text(encoding="utf-8"))
-    assert result["conflicts"] == 0
-    assert result["locked"] == 0
-    assert len(saved["tutorial"]["users"]["bob"]["progress"]) == written
-    assert RehuDocument.load(path).title == result["landed"][-1][1]
+    assert landed
+    assert RehuDocument.load(path).title == "worker"
+    assert set(saved["tutorial"]["users"]["bob"]["progress"]) == {"part.mp4"}
+    assert not lock_path_for(path).exists()
