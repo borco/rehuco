@@ -311,9 +311,11 @@ core of the runner, as `make qa` runs them locally; CI stayed serial until the t
 were fixed — the docks tests' shared-cache SQLite stand-in (#541, #545) and the lock file's create race on Windows
 (#545).
 
-**What runs where**: `tests`, `pyright` and `pylint` run on all three OSes, since what they import differs by
-platform ([[appendices.continuous-integration#cross-platform-shell]] and the platform notes in `pyproject.toml`);
-`ruff`, `check-slugs` (new to CI) and `bandit` read the source as text and run once, on Linux. Every job starts
+**What runs where**: only `tests` runs on all three OSes, since what it executes differs by platform
+([[appendices.continuous-integration#cross-platform-shell]]). Every other check runs once, on Linux: `ruff`,
+`check-slugs` (new to CI) and `bandit` read the source as text, and `pyright` and `pylint` are made
+platform-neutral by `pyproject.toml` — pyright's `pythonPlatform = "All"` checks every `sys.platform` branch, and
+pylint's `ignored-modules` and its POSIX/Windows-only member notes keep one run clean on any OS. Every job starts
 with the same local composite action, `.github/actions/setup`: uv, `make` on Windows, and with `qt: "true"` the
 Qt runtime libraries on Linux and `make uis`. The checks' names in a run changed from `qa (<os>)` to
-`<check> (<os>)`; no branch protection names them, and the README's badge points at the workflow file.
+`tests (<os>)` and the bare check name; no branch protection names them, and the README's badge points at the workflow file.
