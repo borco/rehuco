@@ -26,11 +26,12 @@ NOT_ON_DISK_PLACEHOLDER: Final = "(not saved on disk yet)"
 """Shown by :class:`OnDiskView` when the document has no readable file yet -- a brand-new/unsaved
 document, or one whose path doesn't (yet) exist on disk."""
 
-ON_DISK_REFRESH_FIELDS: Final = ("dirty", "path", "lock_reasons")
+ON_DISK_REFRESH_FIELDS: Final = ("dirty", "saving", "path", "lock_reasons")
 """The model properties whose change re-reads :class:`OnDiskView` from disk. Deliberately **not** the
 value fields (which fire per keystroke): the on-disk bytes only change at file-touching seams -- a save
-(``dirty`` clears), a revert or convert (``lock_reasons``/``path`` recompute), or a new save path -- so
-re-reading the file on those alone keeps a large file off the per-keystroke path.
+landing (``saving`` clears, #497: ``dirty`` already cleared when Save handed the edits over), a revert or
+convert (``lock_reasons``/``path`` recompute), or a new save path -- so re-reading the file on those alone
+keeps a large file off the per-keystroke path.
 
 Not the whole set: a property only notifies on an *actual* change, so reverting a clean, unlocked
 document moves none of these (#174). ``RehuDocumentModel.reloaded`` covers that seam unconditionally and

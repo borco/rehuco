@@ -33,6 +33,7 @@ from .confirm_and_save_dirty import confirm_and_save_dirty
 from .document_dock import DocumentDock
 from .document_registry import DocumentRegistry
 from .document_widget import DocumentWidget
+from .pending_saves import PendingSaves
 from .rehu_document_model import UNTITLED_LABEL, RehuDocumentModel
 from .save_or_prompt_retry import save_or_prompt_retry
 
@@ -72,6 +73,8 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
     :param task_queue: the app-wide queue every document's slow work goes on (#204), handed on for the
         same reason: there is one queue, and a serial one, which is the whole point of running the
         checksum work through it. ``None`` opens documents that offer no such work.
+    :param pending_saves: the window's save jobs (#497): what every document's Save hands its edits to, and what a
+        close waits through. ``None`` saves in place, waiting.
     """
 
     document_focus_changed: Signal = Signal(object)
@@ -122,11 +125,13 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         stylesheet_host: QWidget | None = None,
         registry: DocumentRegistry | None = None,
         task_queue: TaskQueue | None = None,
+        pending_saves: PendingSaves | None = None,
     ) -> None:
         super().__init__(parent)
         self.__stylesheet_host: Final = stylesheet_host
         self.__registry: Final = registry if registry is not None else DocumentRegistry(self)
         self.__task_queue: Final = task_queue
+        self.__pending_saves: Final = pending_saves
         self.__dock_manager: Final = QtAds.CDockManager(self)
         self.__document_docks: Final[dict[QtAds.CDockWidget, DocumentWidget]] = {}
         self.__model_docks: Final[dict[RehuDocumentModel, DocumentDock]] = {}
@@ -173,7 +178,7 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         # only so the session capture can read the layout un-maximized
         self.__maximize_handler: Final = attach_maximize_handler(self.__dock_manager)
 
-    def open_document(self, key: ResourceKey, *, state: bytes | None = None) -> DocumentWidget:
+    def open_document(self, key: ResourceKey, *, state: bytes | None = None, new: bool = False) -> DocumentWidget:
         """Open ``key``'s record in a new dock, or focus its dock if already open.
 
         :param key: a ``.rehu`` record, or a legacy ``.tc`` one ([[acquisition-tooling#tc-to-rehu]], opened locked
@@ -181,10 +186,12 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         :param state: the document's own remembered layout to restore (a session restore's per-path
             blob), or ``None`` to adopt the saved default layout when one is defined (#62). Only
             meaningful for a document actually being opened; ignored when ``key`` is already open.
+        :param new: start a new document bound to ``key`` instead of reading it -- a record never saved, coming back
+            with the edits it was left with (#497).
         :returns: the document's widget. A file that cannot be read opens as an empty **locked** dock
             standing in for it ([[data-model#write-integrity]]).
         """
-        return self.__activate(self.__find_dock_to_open(key) or self.__make_new_dock(key, state=state))
+        return self.__activate(self.__find_dock_to_open(key) or self.__make_new_dock(key, new=new, state=state))
 
     def open_folder(self, folder: ResourceKey) -> DocumentWidget:
         """Open the directory-scoped resource in ``folder`` ([[data-model#resource-scoping]]).
@@ -428,7 +435,7 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         # unchecked-and-about-to-be-discarded -- is closed out from under a failed save. Every dirty
         # dock stays open for the user to resolve. With no dirty document there is nothing to confirm
         # and nothing left to remove either: the loop below runs over an already-empty mapping.
-        if not confirm_and_save_dirty(self, dirty_models):
+        if not confirm_and_save_dirty(self, dirty_models, self.__pending_saves):
             return
 
         for dock in list(self.__document_docks):
@@ -584,6 +591,7 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
             stylesheet_host=self.__stylesheet_host,
             task_queue=self.__task_queue,
             resource_events=self.__registry.resource_events,
+            pending_saves=self.__pending_saves,
             preview_name=preview_name,
         )
         if preview:
@@ -922,5 +930,5 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         if answer == buttons.Cancel:
             return False
         if answer == buttons.Save:
-            return save_or_prompt_retry(self, model)
+            return save_or_prompt_retry(self, model, self.__pending_saves)
         return True

@@ -232,10 +232,11 @@ scanner reading a freshly scraped file) is retried for under a second before any
 
 [[[appendices.task-queue#pause-concept]]]
 
-`pause()` asks **every unfinished job** to pause; the per-job pair asks one. There is no separate queue-wide flag, and dispatch consults per-job state only — which
+`pause()` asks **every unfinished job but a waiting one** to pause (§3.5); the per-job pair asks one. There is no
+separate queue-wide flag, and dispatch consults per-job state only — which
 is what lets pausing one job leave the rest running, and lets a job enqueued afterwards start
 immediately. `queue.paused` is a **derived convenience** meaning *there is unfinished work and all of
-it is paused*; it gates nothing, and it is false on a queue holding nothing unfinished, since a
+it is paused*, waiting jobs aside; it gates nothing, and it is false on a queue holding nothing unfinished, since a
 vacuous truth would read as *the queue is held*.
 
 **One request slot, not two flags.** A job is asked for at most one thing at a time and the latest
@@ -269,7 +270,7 @@ Three consequences, all visible from outside:
 **The bulk `resume()` never un-cancels anything.** It is the inverse of the bulk `pause()` and touches
 only jobs whose pending request is a pause; retracting a cancel is something you ask of one row.
 Sweeping a multi-selection and resurrecting a job the user cancelled ten minutes ago would be a
-surprise, and the per-job call is exactly as easy to reach.
+surprise, and the per-job call is exactly as easy to reach. Neither bulk call touches a waiting job (§3.5).
 
 `SCHEDULED` is deliberately **not** a state: queued and scheduled are the same concept — a job waiting
 its turn — and a resumed job is `QUEUED` like any other. There is likewise **no force-start**. The
@@ -282,12 +283,35 @@ the one thing this component is specified not to do.
 
 [[[appendices.task-queue#reorder]]]
 
-A queued **or paused** job moves: neither is executing, both are still waiting their turn, and refusing
-to move one of them would be an arbitrary difference between two jobs that are equally not running. A
+A queued, paused **or waiting** job moves: none is executing, each is still waiting its turn, and refusing
+to move one of them would be an arbitrary difference between jobs that are equally not running. A
 running job cannot be made to have started later than it did, and a finished one has no position left
 to matter. A move aimed above the running job is **clamped rather than refused**: the request is
 honest, only its index reaches too far, and placing a job ahead of the one already running would
 promise an order the queue cannot deliver.
+
+### 3.5 A wait is the job's own *not now*
+
+[[[appendices.task-queue#waiting]]]
+
+- [#497: feat(agent): saves as jobs — apply a payload to a record, off the GUI thread, persisted, Pending saves](https://github.com/borco/rehuco/issues/497)
+
+A job that cannot proceed now, for a reason that will pass — a share not answering, a lock held elsewhere — raises
+`JobWaiting(reason, retry_after)`. The engine records the seventh state, **`WAITING`**, with the reason as the row's
+message, and puts the job back in line (`QUEUED`) once `retry_after` seconds have passed. It is the outcome of a run,
+like `JobPaused`, not something asked of a job from outside. Neither of the states beside it fits: a failure is kept
+for someone to act on (§4.1), and a share switched off for the night is nothing to act on; a pause is a hold the user
+made, which nothing lifts by itself.
+
+**The wait is timed by the chain's own worker** (§2). A chain holding a waiting job never goes idle: its thread sleeps
+until the nearest wait ends, puts every job whose wait has ended back in line, and runs what is queued meanwhile — a
+waiting job holds no thread and blocks nothing behind it.
+
+**The per-job calls act on it; the bulk ones leave it alone.** `resume_job` on a waiting row is *try now* — back in line
+at once rather than when the wait ends — while pausing one holds it (`PAUSED`) and cancelling it cancels it. The bulk
+`pause()` and `resume()` skip it, and `queue.paused` ignores it, because quitting pauses everything before the queue is
+written (§7): a save waiting for its share must come back waiting, not held. A pause or a cancel asked while the job
+is running, which then reports a wait, wins — the job ends `PAUSED` or `CANCELLED`, as asked.
 
 ## 4. A failure costs its job and nothing else
 
@@ -309,7 +333,7 @@ the sentence, the log carries the traceback, and a job's records land under the 
 **Jobs leave the queue only when told to. Nothing sweeps.** A failed or cancelled job is usually
 retryable — a verify that ran before its generate fails for a reason that stops being true, and the fix
 is to run it again — so dropping it would throw away exactly the row a reader came back for. `remove`
-is the only way out, and `retry` puts a finished job back to `queued`, clears its error and progress,
+is the only way out, and `retry` puts a finished job back to `queued`, clears its message and progress,
 and runs it **from the top**: clearing what the job kept is the whole difference between Retry and
 Resume.
 
@@ -366,7 +390,8 @@ losing planned work and not being unable to quit.
 `capture_state()` / `restore_state()` pair. **A job satisfying only `TaskJob` is legal** — it is simply
 not saved — and `JobStatus.persistable` says so on every row, so a surface can mark what is about to be
 lost rather than let it vanish at quit. That opt-out has to survive: a silent close depends on knowing
-whether a prompt is owed.
+whether a prompt is owed. `JobStatus.kind` carries the kind beside it — `None` for a job not written down — so a
+surface can pick out one family of rows, as the Pending Saves filter does (§8).
 
 `capture_state()`/`restore_state()` rather than a payload property plus a `from_payload` classmethod:
 the pair is symmetric, and it is the same pair §3.1's cursor already implies — so **in-session pause and
@@ -400,7 +425,8 @@ one — the class that wrote a state is the class that reads it.
 **Everything persistable is written, including `done`, `failed` and `cancelled`.** Since jobs leave only
 when removed (§4.1), dropping the finished ones at quit would be exactly the implicit removal that rule
 exists to prevent — and it would take the retryable failures with it. Each item carries `kind`, the
-captured state, the label, the state it was in, and the reason it failed.
+captured state, the label, the state it was in, and under `message` the reason it failed or what it waits for —
+`JobStatus.message`, which was `error` until #497, and a file the build before wrote is still read by that key.
 
 **Progress is written for a job that declares `resumes_where_it_stopped`, and only for that job.** Such
 a job genuinely is as far along as its bar says, because whatever it needs to carry on is in the state
@@ -425,14 +451,16 @@ startup.
 
 **`validate()` runs before *every* start, not only after a restore.** One rule then covers both the
 restored-resource-is-gone case and the deleted-while-queued one. A non-`None` return puts the job in
-`failed` with that sentence as its error — no seventh state — and because a failed job is kept and
+`failed` with that sentence as its message — not `waiting`: a refusal names something that will not pass by itself,
+and a wait is what a run reports (§3.5) — and because a failed job is kept and
 retryable (§4.1), the recovery is to fix the cause and press Retry.
 
 **Unfinished jobs come back `paused`; finished ones keep their state.** So a restarted app comes up with
 everything held, while a **newly added job runs immediately**, because eligibility is per-job and
 nothing else is eligible. Which state unfinished work returns in is an argument rather than a decision
 the engine makes, so a *resume tasks on restart* setting has somewhere to stand; likewise the load path
-is a plain list the surface filters, not a sealed `queue.load_from(path)`.
+is a plain list the surface filters, not a sealed `queue.load_from(path)`. **A waiting job comes back waiting**, due at
+once, whatever that argument says: a wait is not a hold, and the share it waited for may well answer now.
 
 **An unknown `kind` is dropped with a logged warning and a count**, not an error: a queue file from a
 newer build, or one naming a removed feature, must not stop the app starting. The same is true of a
@@ -449,6 +477,11 @@ collaborator can only reach one that the *process* has. `DEFAULT_RENAME_COORDINA
 same reason `DEFAULT_TASK_JOB_REGISTRY` is one: there is a single filesystem and a single answer to *is a
 rename waiting*, and a job reading through a coordinator nobody renames through would hold a directory
 open against the very rename it exists to stand aside for (§3.2, [#241](https://github.com/borco/rehuco/issues/241)).
+
+**For the same reason a surface can reach the job behind a row** (#497). The surface that owns a kind of job — the
+window, for saves — built the jobs it enqueued and holds them; one the queue rebuilt from disk it never saw.
+`TaskQueue.job(serial)` hands it that object, so a restored save can be given newer data or read for its conflict
+like one made this session.
 
 ### 6.4 The first jobs, and what they showed
 
@@ -501,7 +534,8 @@ job is simply an unfinished one, cancelled where it stands.
 
 **Cancelling is the wrong verb for quitting with work outstanding**, though, which is why it is not the
 only thing here. The app must be closeable without anyone having to remember what they had planned, so
-the exit sequence is *pause, wait, save, shut down*: `pause()` asks every unfinished job to stop,
+the exit sequence is *pause, wait, save, shut down*: `pause()` asks every unfinished job to stop — a waiting one
+excepted, which is written down waiting (§3.5) —
 `wait_until_idle()` waits for the running one to unwind to `paused` — at which point it has kept
 whatever it needs to carry on — and only then is there a queue worth writing down. Waiting is a
 separate call rather than part of `pause()` because pausing from a dock must never block the thread
@@ -592,17 +626,20 @@ every pixel this delegate decided, identical on all three platforms. It is the s
 applied to the one cell that had escaped it: **this table paints its own background, and a style-drawn
 box over the top is not a cell this table controls.**
 
-**The state column is icons, no words.** Eight glyphs cover every reading it ever had — the six states,
+**The state column is icons, no words.** Nine glyphs cover every reading it ever had — the seven states,
 plus *pausing* and *cancelling* for a job that has been asked to stop and has not reached its checkpoint
 (§3.3). Each takes the state's own color, so a row and its glyph are one signal seen twice; `PAUSED`,
-which #251 leaves untinted, draws in the row's own ink for the same reason it draws no tint. Losing the
+which #251 leaves untinted, draws in the row's own ink for the same reason it draws no tint. `WAITING` shares the
+queued color — both mean *will run by itself* — and draws a clock rather than a second hourglass, because waiting for
+its turn and waiting for something outside the app must not read as one at a glance. Losing the
 words is what lets the column shrink to the width of its own header and gives the eye something to scan
 a long queue by, and the sentence is not gone: `state_text` still writes it, the model still answers it
 as the display role, and it leads the row's tooltip — which is what an icon-only cell owes a reader who
 has not learned the glyphs yet.
 
 **A failed job's reason draws in that column too**, elided, with the full string as the row's tooltip —
-it carries nothing useful for a failed row, and a fourth column would be blank on nearly every row.
+it carries nothing useful for a failed row, and a fourth column would be blank on nearly every row. A waiting job's
+message — what it waits for — draws there the same way.
 `done > total` clamps the bar to full while the numbers underneath still disagree, since the engine
 clamps nothing.
 
@@ -627,7 +664,17 @@ once per batch rather than once per row.
 **Resume is offered for a paused job, and for a running job with a stop pending.** `resume_job` answers
 whether the stop was still retractable, so Cancel-then-Resume is a recoverable mis-click while the job
 has not yet looked at the request. A `False` answer is not shown as a failure — the row simply carries on
-to its real outcome, no prompt and no optimistic redraw.
+to its real outcome, no prompt and no optimistic redraw. It is offered for a waiting job too, and reads **Try Now**
+when everything it would act on is waiting: a waiting job was never held, so *resuming* it would read as undoing a
+pause nobody asked for. Pause and Cancel are offered for a waiting job as for a queued one; pausing it is how a reader
+stops a save retrying by itself.
+
+**Saves have a filter and two actions of their own** (#497, [[sync#pending-saves]]). The **Pending Saves** toggle
+narrows the table to the save rows — picked out by `JobStatus.kind` (§6.1) — that are neither done nor cancelled, and a
+saved layout keeps it. **Inspect Save**, on one failed or waiting save, and **Discard Save…**, on any that have not
+landed, only say which rows were asked for: what a save carries is a document's edits, which are the document's to
+show or drop, so the window acts on them. The status bar's *N pending saves*, hidden at zero, opens the dock with the
+toggle on.
 
 **The bulk clears are the dock's own sweeps, not an engine feature.** #237 deleted `clear_finished()`
 because deciding *which* jobs a sweep drops is a view's business: *Clear done jobs* and *Clear failed
@@ -642,13 +689,13 @@ rather than the one after, since deciding at quit would make the checkbox appear
 second restart, and the dropped jobs never enter the queue at all, so there is no `jobs_removed` churn
 and no flash of rows vanishing as the window opens. *Resume tasks on restart* decides which of the two
 legal restored states (§6.3) unfinished work comes back in: `queued`, so the topmost starts immediately,
-or the default `paused`.
+or the default `paused`. A waiting job is not unfinished work in this sense: it comes back waiting either way.
 
 **The bulk pair mirrors its own calls, not `queue.paused`.** That property is a *derived convenience*
 meaning **every** unfinished job is held (§3.3), so one job paused beside one still running makes it
 `False` — and gating Resume All on it would disable a resume the engine would happily perform. Each
 control therefore reads the predicate its own call uses: Pause All is offered while any unfinished job
-has not been asked, Resume All while any job is paused or pausing.
+but a waiting one has not been asked, Resume All while any job is paused or pausing.
 
 **Closing the app runs the exit sequence from §7** — `pause()`, `wait_until_idle()`, the store's `save()`,
 the model's `detach()`, then `shutdown()` — before the outer dock layout is captured, so a floating queue

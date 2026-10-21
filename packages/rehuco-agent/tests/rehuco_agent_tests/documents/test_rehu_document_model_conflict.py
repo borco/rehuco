@@ -303,7 +303,7 @@ def test_resolving_with_the_files_values_saves_them_and_removes_what_the_file_re
     **Test steps:**
 
     * open a record with a URL and edit its title, then retitle the file, give it a description and drop its URL
-    * save, and resolve the conflict keeping the file's value of every differing detail
+    * save, resolve the conflict keeping the file's value of every differing detail, and save again
     * verify the file holds the file's title and description and no URL, and the model shows the same
     * verify the conflict is gone and the model is clean
     """
@@ -327,6 +327,7 @@ def test_resolving_with_the_files_values_saves_them_and_removes_what_the_file_re
     assert values == {TITLE_PATH: "Theirs", URL_PATH: ABSENT, DESCRIPTION_PATH: "Their notes"}
 
     model.resolve_conflict(values)
+    model.save()
 
     on_file = stored(path)
     assert (on_file.title, on_file.url, on_file.description) == ("Theirs", "", "Their notes")
@@ -343,7 +344,7 @@ def test_resolving_writes_a_per_user_field_kept_as_mine_over_the_files(tmp_path:
 
     * open a record rated 1 and edit its title, then retitle the file and rate it 3 there
     * save, and list the rows: the title and the rating, the rating changed on disk only
-    * resolve keeping this document's title and its rating of 1
+    * resolve keeping this document's title and its rating of 1, and save
     * verify the file and the model hold this document's title and the rating of 1
     """
     path = tmp_path / "info.rehu"
@@ -367,6 +368,7 @@ def test_resolving_writes_a_per_user_field_kept_as_mine_over_the_files(tmp_path:
     ]
 
     model.resolve_conflict({difference.path: difference.mine for difference in differences})
+    model.save()
 
     on_file = stored(path)
     assert (on_file.title, on_file.user_field(DEFAULT_CURRENT_USERNAME, "rating")) == ("Mine", 1)
@@ -385,7 +387,7 @@ def test_resolving_with_the_files_details_keeps_the_files_updated(
 
     * at day 1, open a record rated 1, retitle it and rate it 5
     * at day 2, retitle the file and rate it 3 there; the save is refused
-    * at day 3, resolve with the file's title and this document's rating
+    * at day 3, resolve with the file's title and this document's rating, and save
     * verify the file holds the file's title, the rating of 5, and day 2's ``updated``
     """
     path = tmp_path / "info.rehu"
@@ -406,6 +408,7 @@ def test_resolving_with_the_files_details_keeps_the_files_updated(
 
     freezer.move_to("2026-03-03T00:00:00Z")
     model.resolve_conflict({TITLE_PATH: "Theirs", RATING_PATH: 5})
+    model.save()
 
     on_file = stored(path)
     assert (on_file.title, on_file.user_field(DEFAULT_CURRENT_USERNAME, "rating")) == ("Theirs", 5)
@@ -420,7 +423,7 @@ def test_resolving_writes_the_original_values_kept(tmp_path: Path) -> None:
 
     * open a record rated 1, with no description; edit its title, description and rating
     * meanwhile give the file another title, description and rating
-    * save, and resolve keeping every row's original value
+    * save, resolve keeping every row's original value, and save again
     * verify the file and the model hold the old title, no description and the old rating
     """
     path = tmp_path / "info.rehu"
@@ -445,6 +448,7 @@ def test_resolving_writes_the_original_values_kept(tmp_path: Path) -> None:
     assert originals == {TITLE_PATH: "Old", DESCRIPTION_PATH: ABSENT, RATING_PATH: 1}
 
     model.resolve_conflict(originals)
+    model.save()
 
     on_file = stored(path)
     assert (on_file.title, on_file.description) == ("Old", "")
@@ -461,7 +465,7 @@ def test_resolving_keeps_a_progress_entry_written_meanwhile(tmp_path: Path) -> N
     **Test steps:**
 
     * open a rated record and edit its title, then retitle the file and add a progress entry to it
-    * save, and resolve the conflict keeping this document's title
+    * save, resolve the conflict keeping this document's title, and save again
     * verify the file holds this document's title, the rating, and the progress entry
     """
     path = tmp_path / "info.rehu"
@@ -478,6 +482,7 @@ def test_resolving_keeps_a_progress_entry_written_meanwhile(tmp_path: Path) -> N
         model.save()
 
     model.resolve_conflict({})
+    model.save()
 
     on_file = stored(path)
     assert on_file.title == "Mine"
@@ -486,22 +491,23 @@ def test_resolving_keeps_a_progress_entry_written_meanwhile(tmp_path: Path) -> N
 
 
 def test_resolving_a_conflict_raised_again_keeps_the_new_one(tmp_path: Path) -> None:
-    """The file can change once more while the dialog is open: the resolution is then refused against that newer
+    """The file can change once more while the dialog is open: the resolution's save is then refused against that newer
     file, which becomes the conflict to resolve.
 
     **Test steps:**
 
     * bring a model into conflict, then retitle the file a second time
-    * resolve the first conflict
-    * verify it is refused with the newest title, which is now the model's conflict
+    * resolve the first conflict, and save
+    * verify the save is refused with the newest title, which is now the model's conflict
     """
     path = tmp_path / "info.rehu"
     write_record(path, "Old")
     model, _ = in_conflict(path, "Mine", "Theirs")
     edit_on_disk(path, retitle("Theirs again"))
 
+    model.resolve_conflict({})
     with raises(RecordConflict) as again:
-        model.resolve_conflict({})
+        model.save()
 
     assert again.value.theirs.title == "Theirs again"
     assert model.conflict is again.value
@@ -514,8 +520,8 @@ def test_resolving_on_a_model_not_read_from_its_file_puts_the_values_over_the_fi
     **Test steps:**
 
     * build a model over a reading of a record, with no version, and hand it a conflict naming the file as it is
-    * resolve it keeping the file's title
-    * verify the file holds that title and the conflict is gone
+    * resolve it keeping the file's title, and save
+    * verify the file holds that title, the conflict is gone and the model is clean
     """
     path = tmp_path / "info.rehu"
     write_record(path, "Old")
@@ -529,9 +535,11 @@ def test_resolving_on_a_model_not_read_from_its_file_puts_the_values_over_the_fi
     model.conflict = RecordConflict(record.document, record.version)
 
     model.resolve_conflict({TITLE_PATH: "Old"})
+    model.save()
 
     assert stored(path).title == "Old"
     assert model.conflict is None
+    assert not model.dirty
 
 
 def test_a_revert_drops_the_conflict(tmp_path: Path) -> None:

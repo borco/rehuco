@@ -96,6 +96,31 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 - `CatalogCache.apply_root_scan(touched=)` fills a set with the rows a scan read or removed, and
   `ScanCatalogRootJob.touched_rows` carries them out of the job; `CatalogCache.mark_root_reachable` records what a
   root's notifier saw.
+- A seventh job state, `JobState.WAITING` (#497): a job raises `JobWaiting(reason, retry_after)` when it cannot
+  proceed now for a reason that will pass, and the queue records the reason as the row's message and puts the job
+  back in line after `retry_after` seconds, timed by its chain's worker. `resume_job` on a waiting job retries it at
+  once, `pause_job` holds it and `cancel` cancels it; a waiting job moves like a queued one. The bulk `pause()` and
+  `resume()` leave waiting jobs alone, and `paused` ignores them, so a queue written at quit keeps them waiting. A
+  pause or cancel asked while the job runs wins over a wait it then reports. A restored waiting job comes back
+  waiting and due at once, whatever state unfinished work is restored in. `validate()`'s refusal is still `FAILED`.
+- `JobStatus.kind`, the persistable job's kind (`None` for a job not written down), and `TaskQueue.job(serial)`, the
+  job behind a row -- for the surface that owns a kind of job and must reach one the queue rebuilt from disk.
+- `SaveRecordJob` (kind `save-record`), a record's save as a persistable, safely interruptible task-queue job in a
+  `save:<server or drive>` chain, carrying a `SavePayload` snapshot -- path, username, payload, base payload, base
+  `RecordVersion`, the blocks it drops and those not logged yet, first-save flag, excluded patterns. It waits when
+  the share does not answer (retried in 30 s), when the lock is held elsewhere (10 s) and when a write fails because
+  the share went offline; it fails when the folder is gone or a record that was read is no longer there, never
+  recreating either, and on a metadata conflict, kept as its `conflict`. After the write it logs the discarded
+  blocks and, on a first save, moves the enclosing record's checksums. `replace` hands it a later Save until it has
+  landed -- in place of its data while it waits, or written by the same run right after the write under way, moved
+  onto it with `rebase_payload`; `handed` is the last Save as handed and `result` the `SaveOutcome` of its last
+  landed write. It follows its record across renames through the `RenameCoordinator`, writing inside its barrier.
+- `payload_changes(before, after)` lists the field paths two payloads differ at, and `paths_overlap` says whether
+  two of them touch. `RehuDocument.unlogged_dropped_block_keys` names the dropped blocks not logged yet, and
+  `note_written` records what a save wrote and discarded.
+- `merge_users` and `Records.save` take `dropped`, the blocks a snapshot left out on purpose, so a save built from
+  one never adds them back from the file (`add_file_only_blocks`). `Records.save(new=True)` refuses as a
+  `RecordConflict` a first save onto a record that already exists.
 
 ### Changed
 
@@ -106,6 +131,8 @@ Changelogs are per package in this monorepo, matching the per-package release ta
   joins every worker against one deadline. A chain belongs to a family registered once in a `ChainRegistry`
   (`DEFAULT_CHAIN_REGISTRY`), which builds its keys as `name` or `name:resource`; a second claim of a name is refused,
   and so is a job whose chain no family owns -- dropped, with a warning, when it comes back from a queue file.
+- `JobStatus.error` is now `JobStatus.message` (#497): why a job failed, or what a waiting one waits for. A queue
+  file is written with the key `message`, and one written by an earlier build is still read by its `error` key.
 - The file notifier recognises an atomic save by the temporary sibling's new name, `<name>.<random>.tmp` (the random
   part being `tempfile.mkstemp`'s eight characters, so a user's own `a.b.tmp` is no save); the dotted name earlier
   builds wrote is still recognised.

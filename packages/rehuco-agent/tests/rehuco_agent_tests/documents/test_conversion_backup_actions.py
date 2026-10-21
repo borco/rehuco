@@ -260,6 +260,27 @@ def test_a_save_never_discards_the_backups(
     assert inventory.call_count > 1
 
 
+def test_a_save_landing_re_reads_the_inventory(
+    actions: ConversionBackupActions, inventory: Any, model: RehuDocumentModel
+) -> None:
+    """A save handed to a job clears dirty before it writes (#497), so its landing -- ``saving`` clearing -- is the
+    seam the files are written at, and the inventory is read again then.
+
+    **Test steps:**
+
+    * hand the document to a save, noting the inventory reads so far
+    * land it
+    * verify the inventory was read once more, and the backups are still retained
+    """
+    model.saving = True
+    reads = inventory.call_count
+
+    model.saving = False
+
+    assert inventory.call_count == reads + 1
+    assert actions.retained is True
+
+
 def test_the_strip_is_told_to_rebuild_when_the_inventory_moves(
     qtbot: QtBot, actions: ConversionBackupActions, inventory: Any, model: RehuDocumentModel
 ) -> None:

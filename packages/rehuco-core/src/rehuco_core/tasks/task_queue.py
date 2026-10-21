@@ -33,6 +33,7 @@ from .task_job import (
     JobScope,
     JobState,
     JobStatus,
+    JobWaiting,
     ReportingTaskJob,
     StopRequest,
     TaskJob,
@@ -57,11 +58,11 @@ A thread per chain is started when the chain first has work and let go once it h
 of saves to one server costs one thread for its duration and a chain nobody uses again costs nothing. Short, because
 starting a thread is cheap; not zero, because a chain fed job by job would otherwise start one per job."""
 
-MOVABLE_JOB_STATES: Final = frozenset({JobState.QUEUED, JobState.PAUSED})
+MOVABLE_JOB_STATES: Final = frozenset({JobState.QUEUED, JobState.PAUSED, JobState.WAITING})
 """The states a job can be reordered in ([[appendices.task-queue#reorder]]).
 
-Both, because neither is executing and both are still waiting their turn: a paused job is as
-reorderable as a queued one, and refusing to move it would be an arbitrary difference between two jobs
+All three, because none is executing and each is still waiting its turn: a paused or waiting job is as
+reorderable as a queued one, and refusing to move it would be an arbitrary difference between jobs
 that are equally not running."""
 
 RESTORED_UNFINISHED_STATES: Final = frozenset({JobState.QUEUED, JobState.PAUSED})
@@ -129,9 +130,10 @@ class TaskQueue:
         done: int
         total: int | None
 
-    # Seventeen, and each is a distinct fact about one job: its identity and label, the job itself, the
-    # context it was enqueued in, what it declared about itself (the chain it takes turns in included), where it has
-    # got to, what it reported, why it failed, what it was asked, and what it last gave the queue to write down.
+    # Nineteen, and each is a distinct fact about one job: its identity and label, the job itself, the
+    # context it was enqueued in, what it declared about itself (the chain it takes turns in and its kind included),
+    # where it has got to, what it reported, why it failed or what it waits for and until when, what it was asked, and
+    # what it last gave the queue to write down.
     # `resume_requested` alone stays off the status: it exists for one gap -- a pause taken back too
     # late to stop the unwind -- and its only observable effect is the state that outcome is recorded
     # as.
@@ -156,11 +158,14 @@ class TaskQueue:
         progress_unit: str = ""
         persistable: bool = False
         chain: str | None = DISK_CHAIN
+        kind: str | None = None
         captured: TaskQueue.Captured | None = None
         state: JobState = JobState.QUEUED
         done: int = 0
         total: int | None = None
-        error: str | None = None
+        message: str | None = None
+        due: float | None = None
+        """When a :attr:`~rehuco_core.tasks.JobState.WAITING` job's wait ends, on :func:`time.monotonic`'s clock."""
         summary: str | None = None
         stop_requested: StopRequest | None = None
         resume_requested: bool = False
@@ -185,7 +190,7 @@ class TaskQueue:
                 done=self.done,
                 total=self.total,
                 progress_unit=self.progress_unit,
-                error=self.error,
+                message=self.message,
                 stop_requested=self.stop_requested,
                 source=self.source,
                 safely_interruptible=self.safely_interruptible,
@@ -193,6 +198,7 @@ class TaskQueue:
                 persistable=self.persistable,
                 summary=self.summary,
                 chain=self.chain,
+                kind=self.kind,
             )
 
         def unfinished(self) -> bool:
@@ -297,6 +303,20 @@ class TaskQueue:
         with self.__condition:
             return tuple(entry.status() for entry in self.__entries)
 
+    def job(self, serial: int) -> TaskJob | None:
+        """The job object behind one row (#497).
+
+        For the surface that owns a kind of job and must reach one the queue rebuilt from disk -- to hand a
+        restored save new data, or read what it wrote. Read only what the job documents as safe to read from
+        another thread: its ``run`` may be executing.
+
+        :param serial: which job, as returned by :meth:`enqueue` or :meth:`restore`.
+        :returns: the job, or ``None`` when no row has that serial.
+        """
+        with self.__condition:
+            entry = self.__entry(serial)
+            return None if entry is None else entry.job
+
     @property
     def paused(self) -> bool:
         """Whether every unfinished job is paused.
@@ -381,11 +401,15 @@ class TaskQueue:
         :meth:`pause_job` applied to all of them, not a separate queue-wide flag that dispatch
         consults. Idempotent, and a job that never looks at its request runs to completion regardless
         -- pausing is a request the jobs honor, exactly as cancelling is.
+
+        A :attr:`~rehuco_core.tasks.JobState.WAITING` job is left waiting (#497): its wait is the job's own, and
+        quitting pauses everything before the queue is written, so a save waiting for its share would otherwise
+        come back held instead of landing by itself. :meth:`pause_job` holds one.
         """
         with self.__condition:
             with self.__watching_paused():
                 for entry in self.__entries:
-                    if entry.unfinished():
+                    if entry.unfinished() and entry.state is not JobState.WAITING:
                         self.__ask_stop(entry, StopRequest.PAUSE)
             self.__condition.notify_all()
 
@@ -395,7 +419,9 @@ class TaskQueue:
         Deliberately narrower than :meth:`resume_job`: this is the inverse of :meth:`pause` and
         touches only jobs whose pending request is a pause. A cancel is never retracted in bulk --
         pressing Resume over a multi-selection to un-cancel something the user cancelled earlier would
-        be a surprise, and pointing at that one row with :meth:`resume_job` is how it is asked for.
+        be a surprise, and pointing at that one row with :meth:`resume_job` is how it is asked for. A
+        :attr:`~rehuco_core.tasks.JobState.WAITING` job is left waiting for the same reason: its wait was not
+        asked for, so it is not this one's to end.
         """
         with self.__condition:
             with self.__watching_paused():
@@ -433,7 +459,8 @@ class TaskQueue:
         A **paused** job returns to :attr:`~rehuco_core.tasks.JobState.QUEUED` in the position it held
         and runs when its turn comes round: there is no force-start
         ([[appendices.task-queue#reorder]]). The queue runs exactly one job at a time per chain, so its order
-        already answers *what runs next* -- to run a job now, :meth:`move` it to the top.
+        already answers *what runs next* -- to run a job now, :meth:`move` it to the top. A **waiting** job
+        likewise goes back in line at once rather than when its wait ends: *try now* (#497).
 
         A **running** job is asked to take its pending stop back, and **the job answers**. If it has
         not acted on the request yet, it simply carries on as though nothing was asked -- which is
@@ -561,7 +588,7 @@ class TaskQueue:
                 entry.state = JobState.QUEUED
                 entry.done = 0
                 entry.total = None
-                entry.error = None
+                entry.message = None
                 entry.summary = None
                 entry.stop_requested = None
                 entry.resume_requested = False
@@ -725,7 +752,7 @@ class TaskQueue:
         state: JobState = JobState.QUEUED,
         done: int = 0,
         total: int | None = None,
-        error: str | None = None,
+        message: str | None = None,
         summary: str | None = None,
     ) -> TaskQueue.Entry:
         """Take a job into the queue and tell the listeners, whether it is new or restored.
@@ -742,7 +769,8 @@ class TaskQueue:
         :param state: the state to hold it in.
         :param done: units already finished.
         :param total: units expected, or ``None``.
-        :param error: why it failed, for a job restored as failed.
+        :param message: why it failed or what it waits for, for a job restored as failed or waiting; a waiting one
+            is due at once.
         :param summary: what it found, for a job restored as done.
         :returns: the entry now in the queue.
         :raises ValueError: if the job's chain belongs to no registered family.
@@ -753,6 +781,7 @@ class TaskQueue:
         chain = job.chain
         if chain is not None and self.__chains.family_of(chain) is None:
             raise ValueError(f"Task {job.label!r} declares the chain {chain!r}, which no chain family owns.")
+        persistable = isinstance(job, PersistableTaskJob)
         entry = TaskQueue.Entry(
             serial=self.__next_serial,
             job=job,
@@ -762,12 +791,14 @@ class TaskQueue:
             safely_interruptible=job.safely_interruptible,
             resumes_where_it_stopped=job.resumes_where_it_stopped,
             progress_unit=job.progress_unit,
-            persistable=isinstance(job, PersistableTaskJob),
+            persistable=persistable,
             chain=chain,
+            kind=job.kind if persistable else None,  # pyright: ignore[reportAttributeAccessIssue]
             state=state,
             done=done,
             total=total,
-            error=error,
+            message=message,
+            due=monotonic() if state is JobState.WAITING else None,
             summary=summary,
         )
         self.__next_serial += 1
@@ -776,7 +807,7 @@ class TaskQueue:
             self.__entries.append(entry)
             index = len(self.__entries) - 1
             status = entry.status()
-            if entry.state is JobState.QUEUED:
+            if entry.state in (JobState.QUEUED, JobState.WAITING):
                 self.__ensure_worker(entry.lane)
             self.__notify(lambda listener: listener.job_enqueued(status, index))
         return entry
@@ -810,8 +841,10 @@ class TaskQueue:
         saved = self.__saved_state(item.get("job_state"))
         if saved is None:
             return None
-        restored = saved if saved in FINISHED_JOB_STATES else unfinished_state
-        error = item.get("error") if saved is JobState.FAILED else None
+        # a wait is not a hold, so it comes back waiting and due now, whatever unfinished work is revived in (#497)
+        restored = saved if saved in FINISHED_JOB_STATES or saved is JobState.WAITING else unfinished_state
+        # a queue file the build before #497 wrote spells the message "error"
+        message = item.get("message", item.get("error")) if restored in (JobState.FAILED, JobState.WAITING) else None
         summary = item.get("summary") if saved is JobState.DONE else None
         done, total = self.__saved_progress(item, job)
         label = item.get("label")
@@ -822,7 +855,7 @@ class TaskQueue:
                 state=restored,
                 done=done,
                 total=total,
-                error=error if isinstance(error, str) else None,
+                message=message if isinstance(message, str) else None,
                 summary=summary if isinstance(summary, str) else None,
             )
         except ValueError as error_raised:
@@ -897,7 +930,7 @@ class TaskQueue:
             "label": entry.label,
             "job_state": entry.state.value,
             "state": captured.state,
-            "error": entry.error,
+            "message": entry.message,
             "summary": entry.summary,
         }
         if entry.resumes_where_it_stopped:
@@ -911,8 +944,8 @@ class TaskQueue:
         **Before every start, not only after a restore**, so one rule covers the restored resource that
         is gone and the one deleted while its job waited in the queue. A job that objects is failed
         with its own sentence rather than given a state of its own -- a failure is kept and retryable,
-        so fixing the cause and pressing Retry is the recovery, and no surface has to learn a seventh
-        state.
+        so fixing the cause and pressing Retry is the recovery. Not :attr:`~rehuco_core.tasks.JobState.WAITING`
+        either: a refusal names something that will not pass by itself, and a wait is what a run reports.
 
         A job that raises out of ``validate`` is failed the same way: it has said it cannot start, and
         how it said so is not worth a second path ([[appendices.task-queue#failure]]).
@@ -934,7 +967,7 @@ class TaskQueue:
         LOG.warning("Task refused to start: %s -- %s", entry.label, reason)
         with self.__watching_paused():
             entry.state = JobState.FAILED
-            entry.error = reason
+            entry.message = reason
             self.__notify_updated(entry)
         return False
 
@@ -953,9 +986,10 @@ class TaskQueue:
     def __paused_now(self) -> bool:
         """Work out whether the queue reads as paused.
 
-        :returns: ``True`` when there is unfinished work and every bit of it is paused.
+        :returns: ``True`` when there is unfinished work and every bit of it is paused -- a waiting job aside,
+            since :meth:`pause` leaves it waiting and the control it drives would otherwise never read *paused*.
         """
-        unfinished = [entry for entry in self.__entries if entry.unfinished()]
+        unfinished = [entry for entry in self.__entries if entry.unfinished() and entry.state is not JobState.WAITING]
         return bool(unfinished) and all(entry.state is JobState.PAUSED for entry in unfinished)
 
     @contextmanager
@@ -999,10 +1033,13 @@ class TaskQueue:
         else:
             changed = entry.stop_requested is not None
             entry.stop_requested = None
+            if entry.state is JobState.WAITING:
+                entry.due = None
+                entry.message = None
             if request is StopRequest.CANCEL:
                 entry.state = JobState.CANCELLED
                 changed = True
-            elif entry.state is JobState.QUEUED:
+            elif entry.state in (JobState.QUEUED, JobState.WAITING):
                 entry.state = JobState.PAUSED
                 changed = True
         if changed:
@@ -1013,16 +1050,19 @@ class TaskQueue:
 
         A job that is not running is simply put back in line -- the ``resume`` call is its chance to
         drop a request it has finished with, and its answer is about the stop that already happened,
-        so it is not the answer this returns. Only the running job can genuinely refuse.
+        so it is not the answer this returns. Only the running job can genuinely refuse. A waiting job is put
+        back in line now rather than when its wait ends (#497).
 
         :param entry: the job to tell.
         :returns: ``True`` when nothing was pending or the job took it back cleanly.
         """
-        if entry.state is JobState.PAUSED:
+        if entry.state in (JobState.PAUSED, JobState.WAITING):
             entry.job.resume()
             entry.state = JobState.QUEUED
             entry.stop_requested = None
             entry.resume_requested = False
+            entry.due = None
+            entry.message = None
             self.__ensure_worker(entry.lane)
             self.__notify_updated(entry)
             return True
@@ -1093,20 +1133,29 @@ class TaskQueue:
         :data:`WORKER_IDLE_SECONDS` takes itself out, under the condition, so an enqueue that comes a moment later
         finds no worker registered and starts a fresh one rather than waking a thread that is leaving.
 
+        **A lane holding a waiting job is never idle** (#497): its thread sleeps until the nearest wait ends,
+        puts every job whose wait has ended back in line, and carries on -- the wait is timed here, where the
+        lane's one thread already sleeps, rather than by a timer of its own.
+
         :param lane: the chain this thread serves, or an unchained job's serial.
         """
         while True:
             with self.__condition:
+                next_due = self.__requeue_due(lane)
                 entry = self.__next_queued(lane)
                 if entry is None and not self.__stopping:
                     self.__condition.wait_for(
-                        lambda: self.__stopping or self.__next_queued(lane) is not None, WORKER_IDLE_SECONDS
+                        lambda: self.__stopping or self.__next_queued(lane) is not None,
+                        WORKER_IDLE_SECONDS if next_due is None else next_due,
                     )
+                    next_due = self.__requeue_due(lane)
                     entry = self.__next_queued(lane)
-                if self.__stopping or entry is None:
+                if self.__stopping or (entry is None and next_due is None):
                     if self.__workers.get(lane) is current_thread():
                         del self.__workers[lane]
                     return
+                if entry is None:
+                    continue
                 if not self.__validated(entry):
                     self.__condition.notify_all()
                     continue
@@ -1128,6 +1177,28 @@ class TaskQueue:
                 return entry
         return None
 
+    def __requeue_due(self, lane: str | int) -> float | None:
+        """Put every job of ``lane`` whose wait has ended back in line, and say how long until the next one's does.
+
+        Called on the lane's worker with the condition held.
+
+        :param lane: the chain, or an unchained job's serial.
+        :returns: seconds until the nearest wait still running ends, or ``None`` when no job of the lane waits.
+        """
+        now = monotonic()
+        nearest: float | None = None
+        for entry in self.__entries:
+            if entry.state is not JobState.WAITING or entry.lane != lane or entry.due is None:
+                continue
+            if entry.due <= now:
+                entry.state = JobState.QUEUED
+                entry.due = None
+                entry.message = None
+                self.__notify_updated(entry)
+            else:
+                nearest = entry.due - now if nearest is None else min(nearest, entry.due - now)
+        return nearest
+
     def __run(self, entry: TaskQueue.Entry, control: TaskQueue.Control) -> None:
         """Run one job to its outcome and record it, outside the lock.
 
@@ -1140,12 +1211,14 @@ class TaskQueue:
         and this recording are two moments with its own cleanup between them, and a request can arrive
         in the gap. A cancel that came after the pause wins, since recorded onto a parked job it would
         be stranded -- nothing ever picks a paused job up. A pause taken back too late to stop the
-        unwind re-queues the job, because that costs one re-entry and nothing else.
+        unwind re-queues the job, because that costs one re-entry and nothing else. A **waiting** outcome yields
+        to a stop asked for meanwhile in the same way: a cancel cancels it and a pause holds it, since either is
+        the user's word and the wait was only the job's (#497).
 
         :param entry: the job to run.
         :param control: what it is handed.
         """
-        state, error = entry.context.run(self.__invoke, entry, control)
+        state, message, retry_after = entry.context.run(self.__invoke, entry, control)
         with self.__condition:
             self.__running.pop(entry.lane, None)
             if self.__entry(entry.serial) is entry:
@@ -1156,11 +1229,18 @@ class TaskQueue:
                         elif entry.resume_requested:
                             state = JobState.QUEUED
                             entry.stop_requested = None
-                    if state in (JobState.PAUSED, JobState.CANCELLED):
+                    elif state is JobState.WAITING:
+                        if entry.stop_requested is StopRequest.CANCEL:
+                            state, message = JobState.CANCELLED, None
+                        elif entry.stop_requested is StopRequest.PAUSE:
+                            state, message = JobState.PAUSED, None
+                        else:
+                            entry.due = monotonic() + retry_after
+                    if state in (JobState.PAUSED, JobState.CANCELLED, JobState.WAITING):
                         entry.stop_requested = None
                     entry.resume_requested = False
                     entry.state = state
-                    entry.error = error
+                    entry.message = message
                     entry.summary = TaskQueue.__summary_of(entry) if state is JobState.DONE else None
                     self.__notify_updated(entry)
             self.__condition.notify_all()
@@ -1185,7 +1265,7 @@ class TaskQueue:
         return None if outcome is None else outcome.summary
 
     @staticmethod
-    def __invoke(entry: TaskQueue.Entry, control: TaskQueue.Control) -> tuple[JobState, str | None]:
+    def __invoke(entry: TaskQueue.Entry, control: TaskQueue.Control) -> tuple[JobState, str | None, float]:
         """Call the job and turn however it ended into an outcome.
 
         Runs **inside the job's captured context**, which is why the failure is logged here rather than
@@ -1208,20 +1288,24 @@ class TaskQueue:
 
         :param entry: the job being run.
         :param control: what it was handed.
-        :returns: the state it ended in, and the failure text for a failed job.
+        :returns: the state it ended in, the failure text for a failed job or the reason for a waiting one, and
+            how long a waiting one waits, in seconds.
         """
         with LogScope.open(JobScope(entry.serial)):
             try:
                 entry.job.run(control)
             except JobCancelled:
                 LOG.debug("Task cancelled: %s", entry.label)
-                return JobState.CANCELLED, None
+                return JobState.CANCELLED, None, 0.0
             except JobPaused:
                 LOG.debug("Task paused: %s", entry.label)
-                return JobState.PAUSED, None
+                return JobState.PAUSED, None, 0.0
+            except JobWaiting as waiting:
+                LOG.info("Task waiting: %s -- %s", entry.label, waiting.reason)
+                return JobState.WAITING, waiting.reason, waiting.retry_after
             except Exception as error:  # pylint: disable=broad-exception-caught
                 LOG.error("Task failed: %s", entry.label, exc_info=error)
-                return JobState.FAILED, f"{type(error).__name__}: {error}"
-        return JobState.DONE, None
+                return JobState.FAILED, f"{type(error).__name__}: {error}", 0.0
+        return JobState.DONE, None, 0.0
 
     # endregion

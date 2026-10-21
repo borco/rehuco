@@ -8,7 +8,7 @@ sleeping, so a test asserts on a state the worker has demonstrably reached.
 from collections.abc import Callable, Iterator
 from threading import Event, get_ident
 from time import monotonic, sleep
-from typing import Final
+from typing import Final, override
 
 from PySide6.QtCore import QModelIndex, Qt
 from pytest import fixture, mark
@@ -32,6 +32,7 @@ from rehuco_core import (
     JobOutcome,
     JobState,
     JobStatus,
+    JobWaiting,
     StopRequest,
     TaskJobBase,
     TaskQueue,
@@ -40,6 +41,9 @@ from rehuco_core import (
 from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
 
 TIMEOUT: Final = 5.0
+
+WAITING_REASON: Final = "The share holding this resource is offline."
+"""What :class:`WaitingJob` says it waits for."""
 
 
 class GatedJob(TaskJobBase):
@@ -85,6 +89,24 @@ class FailingJob(TaskJobBase):
     def run(self, control: JobControl) -> None:
         del control
         raise ValueError("nope")
+
+
+class WaitingJob(TaskJobBase):
+    """A job whose obstacle is outside the app, so a row lands in ``waiting`` carrying what it waits for (#497).
+
+    Its wait is long enough never to end inside a test, so the row stays waiting until teardown cancels it.
+
+    :param label: the job's label.
+    """
+
+    def __init__(self, label: str) -> None:
+        super().__init__()
+        self.label = label
+
+    @override
+    def run(self, control: JobControl) -> None:
+        del control
+        raise JobWaiting(WAITING_REASON, retry_after=TIMEOUT * 100)
 
 
 class ReportingJob(TaskJobBase):
@@ -353,6 +375,7 @@ def test_display_shows_label_and_state_columns(
         (JobState.QUEUED, "Queued"),
         (JobState.RUNNING, "Running"),
         (JobState.PAUSED, "Paused"),
+        (JobState.WAITING, "Waiting"),
         (JobState.DONE, "Done"),
         (JobState.FAILED, "Failed"),
         (JobState.CANCELLED, "Cancelled"),
@@ -565,6 +588,31 @@ def test_a_failed_rows_tooltip_names_the_state_then_the_reason(
     tooltip = model.data(model.index(0, 0), Qt.ItemDataRole.ToolTipRole)
 
     assert tooltip.splitlines()[:2] == ["Failed", "ValueError: nope"]
+
+
+def test_a_waiting_rows_tooltip_leads_with_what_it_waits_for(
+    queue: TaskQueue, deliver: Callable[[], None], delete_at_teardown: DeleteAtTeardown
+) -> None:
+    """*Waiting* alone does not tell a reader whether to do anything, so the first line says what for (#497) --
+    once, not again on a line of its own the way a failure's reason follows its state.
+
+    **Test steps:**
+
+    * run a job that reports it is waiting, and let the snapshot land
+    * verify the tooltip's first line is the state and the reason together, and the resume cost follows it
+    """
+    model = delete_at_teardown(TaskQueueModel(queue))
+    model.attach_to()
+    queue.enqueue(WaitingJob("held up"))
+    deadline = monotonic() + TIMEOUT
+    while queue.jobs()[0].state is not JobState.WAITING:
+        assert monotonic() < deadline, "the job never reached waiting"
+        sleep(0.001)
+    deliver()
+
+    tooltip = model.data(model.index(0, 0), Qt.ItemDataRole.ToolTipRole)
+
+    assert tooltip.splitlines()[:2] == [f"Waiting: {WAITING_REASON}", STARTS_OVER_HINT]
 
 
 def test_a_finished_rows_tooltip_carries_what_the_run_found(

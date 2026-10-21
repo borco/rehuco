@@ -57,6 +57,9 @@ QUESTION: Final = "rehuco_agent.tasks.task_queue_widget.QMessageBox.question"
 """Where the widget's own confirmation dialog is looked up -- patched there rather than on the class,
 so a test never reaches into a module's re-export of a Qt name."""
 
+SEPARATOR: Final = "separator"
+"""Stands for an ``addSeparator`` call in a recorded menu's entries, so the groups are asserted in order."""
+
 
 # region sample jobs
 
@@ -121,8 +124,8 @@ class FailingJob(TaskJobBase):
 # region fixtures and helpers
 
 
-@fixture
-def queue() -> Iterator[TaskQueue]:
+@fixture(name="queue")
+def fixture_queue() -> Iterator[TaskQueue]:
     """A fresh, real `TaskQueue`, shut down after the test.
 
     Shutdown cancels whatever is still running, and every job here checkpoints, so a blocked job
@@ -133,8 +136,8 @@ def queue() -> Iterator[TaskQueue]:
     built.shutdown(timeout=TIMEOUT)
 
 
-@fixture
-def widget(queue: TaskQueue, qtbot: QtBot) -> TaskQueueWidget:
+@fixture(name="widget")
+def fixture_widget(queue: TaskQueue, qtbot: QtBot) -> TaskQueueWidget:
     """A `TaskQueueWidget` attached to ``queue``, added to ``qtbot`` for teardown."""
     built = TaskQueueWidget(queue)
     built.attach()
@@ -142,8 +145,8 @@ def widget(queue: TaskQueue, qtbot: QtBot) -> TaskQueueWidget:
     return built
 
 
-@fixture
-def deliver(qtbot: QtBot) -> Callable[[], None]:
+@fixture(name="deliver")
+def fixture_deliver(qtbot: QtBot) -> Callable[[], None]:
     """Pump the Qt event loop long enough for a pending queued snapshot to run."""
     return lambda: qtbot.wait(50)
 
@@ -376,24 +379,25 @@ def test_a_move_the_engine_clamps_leaves_the_row_where_the_engine_put_it(
 
 def test_clear_done_ends_the_toolbar_s_queue_controls(widget: TaskQueueWidget) -> None:
     """*Clear Done* acts on the whole queue rather than the selection, so it sits in its own slot after
-    the reorder group, not folded into the per-selection run above it (#249) -- and the Log toggle, which
-    acts on this shell rather than on the queue at all, gets a separated trailing slot of its own after
-    it (#276).
+    the reorder group, not folded into the per-selection run above it (#249) -- and the two view toggles,
+    the Log and Pending Saves, which act on this shell rather than on the queue at all, share a separated
+    trailing slot after it (#276, #497).
 
     **Test steps:**
 
     * read the toolbar's own action list
-    * verify Clear Done follows a separator, and the Log toggle a further one
+    * verify Clear Done follows a separator, and the Log and Pending Saves toggles a further one
     """
     # direct children only: the Log sub-dock's own surface carries a toolbar of its own, and a plain
     # recursive search finds whichever of the two Qt built first
     toolbar = widget.findChildren(QToolBar, options=Qt.FindChildOption.FindDirectChildrenOnly)[0]
     actions = toolbar.actions()
 
-    assert actions[-1] is log_dock_of(widget).toggleViewAction()
-    assert actions[-2].isSeparator()
-    assert actions[-3] is ui_of(widget).clear_done_action  # type: ignore[attr-defined]
-    assert actions[-4].isSeparator()
+    assert actions[-1] is ui_of(widget).pending_saves_action  # type: ignore[attr-defined]
+    assert actions[-2] is log_dock_of(widget).toggleViewAction()
+    assert actions[-3].isSeparator()
+    assert actions[-4] is ui_of(widget).clear_done_action  # type: ignore[attr-defined]
+    assert actions[-5].isSeparator()
 
 
 # endregion
@@ -405,33 +409,44 @@ def test_clear_done_ends_the_toolbar_s_queue_controls(widget: TaskQueueWidget) -
 def test_the_context_menu_offers_the_per_selection_actions_then_the_sweeps(
     widget: TaskQueueWidget, mocker: MockerFixture
 ) -> None:
-    """The menu is the four per-selection actions plus Clear, then a separator, then the three sweeps.
+    """The menu is the four per-selection actions plus Clear, then the two save actions, then the three
+    sweeps, then the Pending Saves toggle -- each group behind a separator (#497).
 
-    The separator is the point: a sweep acts on the *queue*, not on what is selected, and running one
-    by reflex after aiming at a row is exactly what the split guards against.
+    The separator before the sweeps is the point: a sweep acts on the *queue*, not on what is selected, and
+    running one by reflex after aiming at a row is exactly what the split guards against.
 
     **Test steps:**
 
     * patch ``QMenu`` so nothing is actually shown
     * ask for the context menu
-    * verify the entries and the separator, in order
+    * verify the entries and the separators, in order
     """
     menu = mocker.patch.object(widget_module, "QMenu").return_value
     ui = ui_of(widget)
 
     widget._TaskQueueWidget__show_context_menu(QPoint(0, 0))  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
-    assert [call.args[0] for call in menu.addAction.call_args_list] == [
+    entries = [
+        call.args[0] if call[0] == "addAction" else SEPARATOR
+        for call in menu.method_calls
+        if call[0] in ("addAction", "addSeparator")
+    ]
+    assert entries == [
         ui.pause_action,  # type: ignore[attr-defined]
         ui.resume_action,  # type: ignore[attr-defined]
         ui.cancel_action,  # type: ignore[attr-defined]
         ui.retry_action,  # type: ignore[attr-defined]
         ui.clear_action,  # type: ignore[attr-defined]
+        SEPARATOR,
+        ui.inspect_save_action,  # type: ignore[attr-defined]
+        ui.discard_save_action,  # type: ignore[attr-defined]
+        SEPARATOR,
         ui.clear_done_action,  # type: ignore[attr-defined]
         ui.clear_failed_action,  # type: ignore[attr-defined]
         ui.clear_all_action,  # type: ignore[attr-defined]
+        SEPARATOR,
+        ui.pending_saves_action,  # type: ignore[attr-defined]
     ]
-    menu.addSeparator.assert_called_once_with()
     menu.exec.assert_called_once()
 
 
@@ -1200,8 +1215,8 @@ def test_moving_up_from_the_top_of_the_movable_run_stays_put(
 # region the Log sub-dock
 
 
-@fixture
-def scoped_logger() -> Iterator[logging.Logger]:
+@fixture(name="scoped_logger")
+def fixture_scoped_logger() -> Iterator[logging.Logger]:
     """Provide a logger feeding the shared bridge and nothing else.
 
     Propagation off, so these records reach the bridge under test and never the console or another

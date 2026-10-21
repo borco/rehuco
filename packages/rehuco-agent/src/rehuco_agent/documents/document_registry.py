@@ -7,8 +7,8 @@ from typing import Final, cast
 from uuid import UUID
 
 from borco_core.logging import LogScope
-from PySide6.QtCore import QObject
-from rehuco_core import RenameCoordinator
+from PySide6.QtCore import QObject, Signal
+from rehuco_core import RenameCoordinator, SavePayload
 from rehuco_core.access import KeyRelocation, LoadedRecord, Records, ResourceKey
 
 from ..resource_events import ResourceEvents
@@ -19,6 +19,9 @@ from .rehu_document_model import RehuDocumentModel
 LOG: Final = logging.getLogger(__name__)
 
 
+# eight: the rename barrier, the announcements, the records, the disk watch, where pending saves are found, and the
+# three maps of the held models -- each read on its own
+# pylint: disable-next=too-many-instance-attributes
 class DocumentRegistry(QObject):
     """Owns every open :class:`RehuDocumentModel`, one per key, and hands the same one to every holder.
 
@@ -56,6 +59,10 @@ class DocumentRegistry(QObject):
         watch what is under them; ``None`` watches nothing, for a registry with no window around it.
     """
 
+    model_acquired: Signal = Signal(object)
+    """Emitted with a model this registry has just built for a first holder -- for whoever keeps state about records
+    that a newly opened document must show, such as a save of it still pending (#497)."""
+
     def __init__(
         self,
         parent: QObject | None = None,
@@ -70,10 +77,13 @@ class DocumentRegistry(QObject):
         self.__records: Final = records if records is not None else Records()
         self.__disk: Final = HeldFilesWatch(self.__events.changes, self.__records, rename_coordinator, roots, self)
         self.__disk.statted.connect(self.__on_statted)
+        self.__disk.missing.connect(self.__on_missing)
         self.__events.moved.connect(self.__on_moved)
         self.__events.changed.connect(self.__on_files_changed)
         self.__events.root_stale.connect(self.__on_root_stale)
         self.__events.folder_changed.connect(self.__on_folder_changed)
+        self.__pending_save_of: Callable[[ResourceKey], SavePayload | None] | None = None
+        """Where a record's save that has not landed is found (:meth:`follow_pending_saves`)."""
         self.__models: Final[dict[ResourceKey, RehuDocumentModel]] = {}
         self.__holders: Final[dict[RehuDocumentModel, int]] = {}
         self.__keys: Final[dict[RehuDocumentModel, ResourceKey | None]] = {}
@@ -96,6 +106,16 @@ class DocumentRegistry(QObject):
         """Watch exactly the folders of the held documents under no root -- after the held documents, their keys or
         the roots changed."""
         self.__disk.follow(tuple(self.__models))
+
+    def follow_pending_saves(self, pending_save_of: Callable[[ResourceKey], SavePayload | None]) -> None:
+        """Have every document show its record's save that has not landed as the record's saved state, now and when
+        opened, reverted or loaded ([[sync#unlanded-save]], #497).
+
+        :param pending_save_of: the window's save owner's answer to *what is this record's save not landed yet*.
+        """
+        self.__pending_save_of = pending_save_of
+        for model in list(self.__holders):
+            model.follow_pending_save()
 
     def find(self, key: ResourceKey) -> RehuDocumentModel | None:
         """The model held for ``key``, or ``None`` when nobody holds one.
@@ -142,6 +162,8 @@ class DocumentRegistry(QObject):
 
         model = self.__build(key, new=new, lazy=lazy and not new and key.path.suffix.lower() != ".tc")
         model.setParent(self)
+        # a record whose save has not landed opens on that save, its saved state on this machine (#497)
+        model.follow_pending_save()
         self.__models[key] = model  # pylint: disable=unsupported-assignment-operation
         self.__holders[model] = 1  # pylint: disable=unsupported-assignment-operation
         self.__keys[model] = key  # pylint: disable=unsupported-assignment-operation
@@ -152,6 +174,7 @@ class DocumentRegistry(QObject):
             # an unread placeholder is announced by the read that loads it (its reload), never before (#66)
             self.__events.announce_accessed((key,))
         self.watch_loose_folders()
+        self.model_acquired.emit(model)
         return model
 
     def release(self, model: RehuDocumentModel) -> None:
@@ -217,6 +240,16 @@ class DocumentRegistry(QObject):
             if model is not None:
                 model.note_file_signature(mtime_ns, size)
 
+    def __on_missing(self, missing: dict[Path, bool]) -> None:
+        """Tell each held model whose file is not there that it is gone (GUI thread, #497).
+
+        :param missing: each missing file, and whether its folder is gone too.
+        """
+        for path, folder_gone in missing.items():
+            model = self.__models.get(ResourceKey(path))
+            if model is not None:
+                model.note_file_gone(folder_gone=folder_gone)
+
     def __on_reloaded(self) -> None:
         """Announce the record a held model just read again as accessed, so the catalog cache is checked against it:
         what a revert read -- after a change on disk, or by hand -- is what the record says now (#487)."""
@@ -275,6 +308,7 @@ class DocumentRegistry(QObject):
                 username=shared_identity_settings().current_username,
                 records=self.__records,
                 rename_coordinator=self.__rename_coordinator,
+                pending_save_of=self.__pending_save_for,
             )
         if lazy:
             return RehuDocumentModel.create_pending(
@@ -282,6 +316,7 @@ class DocumentRegistry(QObject):
                 username=shared_identity_settings().current_username,
                 records=self.__records,
                 rename_coordinator=self.__rename_coordinator,
+                pending_save_of=self.__pending_save_for,
             )
         record = load_record(self.__records, key)
         return RehuDocumentModel(
@@ -290,7 +325,16 @@ class DocumentRegistry(QObject):
             version=record.version,
             signature=record.signature,
             rename_coordinator=self.__rename_coordinator,
+            pending_save_of=self.__pending_save_for,
         )
+
+    def __pending_save_for(self, key: ResourceKey) -> SavePayload | None:
+        """A record's save that has not landed, asked of the save owner once there is one.
+
+        :param key: the record.
+        :returns: its data, or ``None``.
+        """
+        return None if self.__pending_save_of is None else self.__pending_save_of(key)
 
 
 def load_record(records: Records, key: ResourceKey) -> LoadedRecord:

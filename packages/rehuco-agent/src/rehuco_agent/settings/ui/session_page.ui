@@ -80,6 +80,16 @@
         </property>
        </widget>
       </item>
+      <item>
+       <widget class="QCheckBox" name="keep_unsaved_changes_check_box">
+        <property name="text">
+         <string>Keep unsaved changes when quitting, and reopen those documents on the next start</string>
+        </property>
+        <property name="toolTip">
+         <string>When on, quitting asks nothing about unsaved edits: they are kept, and the documents holding them reopen with them on the next start, whether or not the session is restored. When off, quitting asks whether to save them.</string>
+        </property>
+       </widget>
+      </item>
      </layout>
     </widget>
    </item>

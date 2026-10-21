@@ -149,6 +149,33 @@
     <string>Move the selected jobs to the bottom of the queue.</string>
    </property>
   </action>
+  <action name="pending_saves_action">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Pending Saves</string>
+   </property>
+   <property name="toolTip">
+    <string>Show only the saves that have not landed yet.</string>
+   </property>
+  </action>
+  <action name="inspect_save_action">
+   <property name="text">
+    <string>Inspect Save</string>
+   </property>
+   <property name="toolTip">
+    <string>Look into the selected failed or waiting save.</string>
+   </property>
+  </action>
+  <action name="discard_save_action">
+   <property name="text">
+    <string>Discard Save…</string>
+   </property>
+   <property name="toolTip">
+    <string>Drop the selected saves that have not landed.</string>
+   </property>
+  </action>
  </widget>
  <resources/>
  <connections/>

@@ -10,6 +10,8 @@ how that reads ([[appendices.task-queue#dock]], #248).
 """
 
 from .already_queued import job_already_queued
+from .pending_saves_filter import PendingSavesFilter, is_pending_save
+from .pending_saves_indicator import PendingSavesIndicator
 from .task_info_delegate import TaskInfoDelegate
 from .task_progress_renderers import PROGRESS_RENDERERS, progress_text
 from .task_queue_model import TaskQueueModel
@@ -24,12 +26,15 @@ __all__ = [
     "PROGRESS_RENDERERS",
     "STATE_ICONS",
     "TASK_QUEUE_FILENAME",
+    "PendingSavesFilter",
+    "PendingSavesIndicator",
     "TaskInfoDelegate",
     "TaskStateDelegate",
     "TaskQueueModel",
     "TaskQueueStatusIndicator",
     "TaskQueueStore",
     "TaskQueueWidget",
+    "is_pending_save",
     "job_already_queued",
     "progress_text",
     "status_icon",

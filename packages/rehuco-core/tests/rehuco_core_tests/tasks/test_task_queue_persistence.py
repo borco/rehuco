@@ -420,7 +420,7 @@ def test_a_failed_job_comes_back_failed_with_its_reason(queue: TaskQueue, regist
             "label": "broken",
             "job_state": "failed",
             "state": {"cursor": 1},
-            "error": "OSError: the disk went away",
+            "message": "OSError: the disk went away",
         }
     ]
 
@@ -428,7 +428,7 @@ def test_a_failed_job_comes_back_failed_with_its_reason(queue: TaskQueue, regist
 
     status = queue.jobs()[0]
     assert status.state is JobState.FAILED
-    assert status.error == "OSError: the disk went away"
+    assert status.message == "OSError: the disk went away"
 
 
 def test_a_restored_job_that_carries_on_keeps_its_bar(
@@ -638,7 +638,7 @@ def test_a_job_that_objects_is_failed_with_its_own_sentence(
 
     settles(lambda: queue.jobs()[0].state is JobState.FAILED)
 
-    assert queue.jobs()[0].error == "The resource no longer exists."
+    assert queue.jobs()[0].message == "The resource no longer exists."
     assert not job.entered_at
 
 
@@ -690,7 +690,7 @@ def test_a_job_that_raises_out_of_validate_is_failed_the_same_way(
     with caplog.at_level(logging.ERROR):
         settles(lambda: queue.jobs()[0].state is JobState.FAILED)
 
-    assert queue.jobs()[0].error == "OSError: the mount is gone"
+    assert queue.jobs()[0].message == "OSError: the mount is gone"
     assert "exploding" in caplog.text
 
 
@@ -732,7 +732,7 @@ def test_a_restored_failure_can_be_retried(
             "label": "broken",
             "job_state": "failed",
             "state": {"cursor": 2},
-            "error": "OSError: the disk went away",
+            "message": "OSError: the disk went away",
         }
     ]
     serial = queue.restore(items, registry)[0]
@@ -740,7 +740,7 @@ def test_a_restored_failure_can_be_retried(
     queue.retry(serial)
 
     settles(lambda: queue.jobs()[0].state is JobState.DONE)
-    assert queue.jobs()[0].error is None
+    assert queue.jobs()[0].message is None
 
 
 def test_a_retried_job_starts_over_even_when_it_would_otherwise_carry_on(
@@ -765,7 +765,7 @@ def test_a_retried_job_starts_over_even_when_it_would_otherwise_carry_on(
             "state": {"cursor": 3},
             "done": 3,
             "total": 4,
-            "error": "OSError: the disk went away",
+            "message": "OSError: the disk went away",
         }
     ]
     serial = queue.restore(items, registry)[0]

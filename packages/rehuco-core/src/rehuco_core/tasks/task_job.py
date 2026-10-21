@@ -35,10 +35,11 @@ class JobScope:
 class JobState(StrEnum):
     """Where a job is in its life ([[appendices.task-queue#jobs]]).
 
-    Six, not four: :attr:`PAUSED` is a state of the *job*, because a job asked to pause does not stop
+    Seven, not four: :attr:`PAUSED` is a state of the *job*, because a job asked to pause does not stop
     the moment it is asked -- it stops where it chose to, and until it gets there it is genuinely
     still running. Collapsing the two would make a job that has not yielded yet indistinguishable from
-    one that has.
+    one that has. :attr:`WAITING` is the job saying *not now* (#497), which is neither a hold the user
+    placed nor a failure.
     """
 
     QUEUED = "queued"
@@ -57,12 +58,18 @@ class JobState(StrEnum):
     :attr:`TaskJob.resumes_where_it_stopped`. Not terminal -- a paused job is unfinished work still
     holding its place in the order."""
 
+    WAITING = "waiting"
+    """Cannot proceed now, for a reason that will pass -- a share that does not answer, a lock someone else
+    holds (#497). Its ``run`` raised :class:`JobWaiting` and returned; the engine puts it back in line when the
+    wait it named is over, or at once when it is resumed. Unfinished and not eligible to run, like
+    :attr:`PAUSED`, but not a hold anybody placed: resuming everything leaves it be."""
+
     DONE = "done"
     """Returned without raising. A job that finished is done even if a stop was asked for: the request
     was never acted on, and reporting an outcome the work did not have would describe an intention."""
 
     FAILED = "failed"
-    """Raised. The exception is kept as :attr:`JobStatus.error` and written to the log; the queue then
+    """Raised. The exception is kept as :attr:`JobStatus.message` and written to the log; the queue then
     starts the next job ([[appendices.task-queue#failure]]). Kept rather than swept, because a failure
     is usually retryable -- see :meth:`~rehuco_core.tasks.TaskQueue.retry`."""
 
@@ -121,6 +128,24 @@ class JobCancelled(Exception):
     engine catches it and records :attr:`JobState.CANCELLED`, so a job may let it escape -- and must
     not swallow it, since a caught-and-ignored cancellation is a job that cannot be stopped at all.
     """
+
+
+class JobWaiting(Exception):
+    """Raised out of a job to report that it cannot do its work *now*, for a reason that will pass (#497).
+
+    The same shape as :class:`JobPaused`; the engine records :attr:`JobState.WAITING` and puts the job back in
+    line after ``retry_after`` seconds. For a job whose obstacle is outside the app -- a share switched off, a
+    lock another machine holds -- so its row says what it waits for instead of reading as a failure the user
+    must retry by hand.
+
+    :param reason: what the job waits for, as the sentence a row shows.
+    :param retry_after: how long to wait before trying again, in seconds.
+    """
+
+    def __init__(self, reason: str, retry_after: float) -> None:
+        super().__init__(reason)
+        self.reason: Final = reason
+        self.retry_after: Final = retry_after
 
 
 class JobPaused(Exception):
@@ -376,11 +401,11 @@ class ReportingTaskJob(TaskJob, Protocol):
         """
 
 
-# Fourteen, and each is a distinct fact a reader of one row wants: who it is, what it is doing, how far
-# it has got and in what, what went wrong, what has been asked of it, what stopping it would cost, whether it
-# will still be here tomorrow, and whom it takes turns with. The last six are the job's own declarations, copied
-# here so that a status answers without reaching back for the job object -- which a reader on another thread has
-# no business holding.
+# Fifteen, and each is a distinct fact a reader of one row wants: who it is, what it is doing, how far
+# it has got and in what, what went wrong or what it waits for, what has been asked of it, what stopping it would
+# cost, whether it will still be here tomorrow, whom it takes turns with, and what kind of job it is. The last seven
+# are the job's own declarations, copied here so that a status answers without reaching back for the job object --
+# which a reader on another thread has no business holding.
 @dataclass(frozen=True)
 # pylint: disable-next=too-many-instance-attributes
 class JobStatus:
@@ -398,10 +423,10 @@ class JobStatus:
     :param progress_unit: the job's :attr:`TaskJob.progress_unit`, read once at enqueue -- what the two
         numbers above are *in*, without which they cannot be drawn honestly (#248). ``""`` on a job with
         no progress worth showing.
-    :param error: why a :attr:`JobState.FAILED` job failed, as ``"TypeName: message"``, else ``None``.
-        The text rather than the exception: the full traceback is written to the log, where it can be
-        read, and a snapshot carrying a live exception invites a reader to re-raise it on a thread
-        that has nothing to do with where it happened.
+    :param message: why a :attr:`JobState.FAILED` job failed, as ``"TypeName: message"``, or what a
+        :attr:`JobState.WAITING` job waits for (#497), else ``None``. The text rather than the exception: the
+        full traceback is written to the log, where it can be read, and a snapshot carrying a live exception
+        invites a reader to re-raise it on a thread that has nothing to do with where it happened.
     :param stop_requested: what the job was last asked to do about stopping, or ``None``. A **fact
         separate from the state**, so a watcher can be honest while the running job has not acted yet
         -- and so that a job which finished anyway can be reported :attr:`JobState.DONE` without the
@@ -423,9 +448,12 @@ class JobStatus:
         knows a row is about to be lost at quit can say so, where one that does not would let it vanish
         silently.
     :param summary: what a finished job found, as its :attr:`ReportingTaskJob.outcome` says it, else ``None``
-        (#457). Kept with a finished job across a restart, like :attr:`error`.
+        (#457). Kept with a finished job across a restart, like :attr:`message`.
     :param chain: the job's :attr:`TaskJob.chain`, read once at enqueue (#563): which jobs it takes turns with,
         or ``None`` for one that runs beside everything else.
+    :param kind: the job's :attr:`~rehuco_core.tasks.PersistableTaskJob.kind`, read once at enqueue, or ``None``
+        for a job that is not written down (#497) -- so a surface can pick out one family of rows, a document's
+        pending saves, without holding job objects.
     """
 
     serial: int
@@ -434,7 +462,7 @@ class JobStatus:
     done: int = 0
     total: int | None = None
     progress_unit: str = ""
-    error: str | None = None
+    message: str | None = None
     stop_requested: StopRequest | None = None
     source: Path | None = None
     safely_interruptible: bool = True
@@ -442,6 +470,7 @@ class JobStatus:
     persistable: bool = False
     summary: str | None = None
     chain: str | None = DISK_CHAIN
+    kind: str | None = None
 
     @property
     def scope(self) -> JobScope:

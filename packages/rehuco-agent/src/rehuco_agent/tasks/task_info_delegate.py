@@ -1,5 +1,5 @@
 """Draws a task row's `Info` cell -- a progress bar and its figure side by side, the failure reason for
-a failed job, or nothing (#202, #248).
+a failed job, what a waiting one waits for, or nothing (#202, #248, #497).
 """
 
 from typing import Final, override
@@ -92,9 +92,10 @@ class TaskInfoDelegate(TaskRowDelegate):
         painter.save()
         try:
             self.paint_background(painter, option, status.state)
-            if status.state == JobState.FAILED:
-                # a reason is a sentence, so it takes the whole cell rather than the figure's slot
-                self.paint_text(painter, option.rect, status.error or "")
+            if status.state in (JobState.FAILED, JobState.WAITING):
+                # a reason is a sentence, so it takes the whole cell rather than the figure's slot -- what
+                # broke, or what the job waits for (#497)
+                self.paint_text(painter, option.rect, status.message or "")
                 return
             if status.state == JobState.DONE and status.summary:
                 # so is what a finished job found (#457): the line a reader came to the dock for

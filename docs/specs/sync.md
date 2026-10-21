@@ -62,8 +62,9 @@ two Windows processes and a Mac racing 1500 attempts each, every holder reading 
   no heartbeat on the lock, since that would mean reopening it. A lock whose content names no time — its holder died
   between the create and the write — is aged by its modification time instead, which the 2 minutes leave far behind
   the client's cache.
-- **Busy past the bound is a typed failure** naming the holder (`RecordLockedError`), which a save job queues on
-  ([[sync#apply-payload]]); until then the save fails like any other write, with Retry.
+- **Busy past the bound is a typed failure** naming the holder (`RecordLockedError`), which a save job turns into a
+  wait: its row names the holder and tries again ten seconds later ([[sync#apply-payload]]). The back-off runs on the
+  job's worker, so the lock's bound is never time the window spends frozen.
 - **Excluded from scans, checksums, the Files listing, the notifier and renames**, like the staged temp files — only a
   `.lock` beside a record's name, so a tutorial's own `yarn.lock` stays content. A rename refuses while another
   process's fresh lock sits beside the record, naming the holder, and breaks a stale one.
@@ -92,44 +93,124 @@ ten seconds. Then:
   deliberate action and wins over an older true; a resume position takes the later action
   ([[field-schema#watch-progress]]); free-text notes that genuinely collide keep both and say so. Data is never
   silently lost.
-- **Changed in the details** → the save is a **conflict**: the job fails with its payload kept, and the conflict dialog
-  shows every value the two versions disagree on with its original, the user's and the file's, the user picks per row
-  and saves, or discards their edits ([[nodes#access-seam]]).
+- **Changed in the details** → the save is a **conflict**: the job fails with the conflict kept on it, and the document
+  stays dirty under the conflict banner. No dialog pops while the user is elsewhere; the **next Save** re-reads the file
+  and first shows every value the two versions disagree on with its original, the user's (the live document, edits
+  made since the failed save included) and the file's; the user picks per row and saves, or discards their edits
+  ([[nodes#access-seam]]). A Save on a document whose file changed on disk under its edits does the same.
 
 **Deletion is a filesystem fact.** A record deleted on the share is gone for everyone: the notifier reports it, the
-cache drops the row, an open document locks with the reason ([[data-model#lock-vocabulary]]), a queued save for it
-fails and says the file is gone. There are no tombstones and nothing to resurrect; a record re-created at the same path
-is a new file with its own id.
+cache drops the row, a queued save for it fails and says the file is gone. **A save never recreates a folder, or the
+file of a record that was read**: the folder going is the resource going, and writing it back would resurrect what
+someone removed. An open document with no edits reverts, becoming the locked *missing* stub a reopen would give
+([[data-model#lock-vocabulary]]); one with edits keeps them and says *The file is gone* or *The resource's folder is
+gone*, and saves nothing until it is reverted, closed or the record is back — with another signature than it was read
+at, the changed-on-disk rule then applies. A never-saved document says so only when its folder is gone. There are no
+tombstones and nothing to resurrect; a record re-created at the same path is a new file with its own id.
 
 ## §7.3 Saves are jobs: apply a payload to a record
 
 [[[sync#apply-payload]]]
 
-A save is not a call that blocks the window; it is a job on the task queue ([[appendices.task-queue]]), with the shape
-`(target key, base version, payload, merge policy)`:
+- [#497: feat(agent): saves as jobs — apply a payload to a record, off the GUI thread, persisted, Pending saves](https://github.com/borco/rehuco/issues/497)
 
-1. Take the lock ([[sync#lock-file]]); wait in the queue if the share is unreachable, saying so.
-2. Re-read, compare, merge ([[sync#compare-and-swap]]).
-3. Write atomically, release, let the notifier announce the change.
+A save is not a call that blocks the window; it is a job on the task queue ([[appendices.task-queue]]),
+`SaveRecordJob`. Save hands it a **snapshot** of the document — the record's path, whose it is, the payload to write,
+the payload and `RecordVersion` it was based on, the blocks it discards, whether it is the record's first save — and the
+document stays editable while it runs. Saves to one server or drive take turns in a chain of their own, saves to
+another land beside them, and none waits behind a checksum run ([[appendices.task-queue#serial]]). The job:
 
-- **One pending job per record**: a newer save for the same key replaces the pending payload rather than queueing
-  behind it.
+1. Asks whether the share answers before touching it. One that does not makes the job **wait**
+   ([[appendices.task-queue#waiting]]): the row says *Waiting for the share* and tries again thirty seconds later.
+2. Fails, naming it, when the folder is gone or a record that was read is no longer there — it never recreates
+   either ([[sync#compare-and-swap]]).
+3. Takes the lock ([[sync#lock-file]]), re-reads, compares and merges ([[sync#compare-and-swap]]). A lock held
+   elsewhere past its bound is a wait too, retried ten seconds later, and so is a write that failed because the share
+   went away under it.
+4. Writes atomically, releases and lets the notifier announce the change; then logs the blocks the save discarded, and a
+   first save takes over the enclosing record's checksums ([[data-model#checksums]]).
+
+- **One pending save per record.** A later Save hands a save that has not landed — queued, waiting, paused or failed —
+  the newer data rather than queueing a second write behind it, so edits made while it waits land as one write. One
+  made while the save is writing is written by the same job right after, against the version that write left, so it
+  never conflicts with it. A save that landed, or was cancelled, is history: the next Save is a job of its own.
+- **What the save changed comes back.** A save changes things on its way to disk — the stamps, the per-user fields
+  merged from the file, a block only the file had. When it lands they are put onto the live document **except where
+  the user edited since the last Save**, so the document stays dirty exactly when it was edited since.
+- **A failure never pops a dialog.** A conflict fails the job with the conflict kept on it; the document shows the
+  conflict banner, and the next Save shows the differences first ([[sync#compare-and-swap]]). A record whose file or
+  folder went fails the job too, which keeps its payload: putting the file or folder back and pressing Retry writes it.
 - **Persisted**: the payload is written with the queue's state, so a save made while the NAS was off survives quitting
-  and lands when the share is back.
+  and lands when the share is back. A waiting save comes back waiting and is tried at once.
 - **An interactive save is one such job.** Returning from a vacation is **N of them enqueued at once** — for every
   borrowed resource, the user's sidecar and any details edited away are payloads whose base version is the version
   borrowed ([[borrowing]]). Every clean one applies unattended; every conflicting one parks with its diff. The sidecar
   makes the common case automatic: it has one writer per user, so it only ever conflicts with that user's other device.
 
+### §7.3.1 A save not landed is a borrowed copy
+
+[[[sync#unlanded-save]]]
+
+- [#497: feat(agent): saves as jobs — apply a payload to a record, off the GUI thread, persisted, Pending saves](https://github.com/borco/rehuco/issues/497)
+
+**Until it lands, a save is a modified borrowed copy of one record** ([[borrowing#another-instance-role]]): its payload,
+not the file, is the record on this machine, and landing is its Return. For a borrow the copy itself holds that state;
+for a save the queued payload does. Every rule below is the borrow's.
+
+- **The pending payload is the saved state.** Pressing Save hands the edits to it and leaves the document clean; an
+  edit after that makes it dirty again. **Revert** goes back to the pending payload, **opening** the record — again, or
+  after a restart, since the payload is written down with the queue — shows it, clean, under the pending-save banner.
+  The file is still read, so a document whose share answers knows what it is based on.
+- **Closing loses only what was not saved.** Discard when closing drops the edits since the last Save; the pending
+  save stays and lands later, exactly as closing a borrowed document leaves the copy.
+- **Nothing drops a pending save on its own.** It leaves only by landing or by **Drop** — *Discard Save* in the Tasks
+  dock, which asks first ([[borrowing#borrow-vs-delete]]). Drop returns an open document to the file, edits made since
+  the last Save included, as Revert did before any save was pending. Cancelling or clearing a save row is a Drop, and a
+  sweep of the dock's finished or failed rows, or a restart's, leaves failed saves alone: each still holds the edits it
+  could not land.
+- **The file changing meanwhile is the save's to judge.** While a save is pending, a change on disk reloads nothing: the
+  save's own check finds it when it runs — merged by field, or failed as a conflict for the user to settle
+  ([[sync#compare-and-swap]]).
+- **A failed save is still the saved state.** A conflict, or a file or folder that went, keeps its payload as the
+  record until it is settled; Save stays available on the clean document so the user can settle it, and *Inspect
+  Save* does the same from the dock.
+- **It follows renames.** A save of a record renamed in the app — its own folder, or a collection folder above it —
+  writes where the record went. A rename made outside the app looks like a deletion, and undoing it and pressing Retry
+  is the recovery.
+- **A first save checks too.** A record saved for the first time that someone else created meanwhile fails as a
+  conflict, its Original side empty, rather than being written over unseen.
+
 ## §7.4 Pending saves
 
 [[[sync#pending-saves]]]
 
-The status bar counts the saves not yet landed, and the Tasks dock filters to them: waiting for the share, waiting for a
-lock, or **failed on a conflict** with its payload kept. *Inspect* on a failed one takes the lock again, re-reads, and
-opens the conflict dialog over the current file; *Discard* drops the payload. A document with a pending or failed save
-says so in its banner. Nothing is retried behind the user's back after a conflict: the file changed under them, and
-the decision is theirs.
+- [#497: feat(agent): saves as jobs — apply a payload to a record, off the GUI thread, persisted, Pending saves](https://github.com/borco/rehuco/issues/497)
+
+The status bar counts the saves not yet landed — *N pending saves*, hidden at zero — and a click on it opens the Tasks
+dock on its **Pending Saves** filter, the save rows neither done nor cancelled: waiting for the share, waiting for a
+lock, paused, or **failed on a conflict** with its payload kept. *Inspect Save* on one failed or waiting save opens its
+document — showing the row's edits, as every open of a record with a pending save does ([[sync#unlanded-save]]) — and,
+if the file changed since, the differences, then saves again; *Discard Save…* asks once, drops the rows, and returns
+an open document of each to its file. A document's banner says *Save pending*, *Save waiting*, *Save paused* or *Save
+failed*, with the reason, for a save that has not landed — except while the conflict banner shows, which says more —
+and *Saving…* while it writes. Nothing is retried behind the user's back after a conflict: the file changed under
+them, and the decision is theirs. A wait is different: a root that becomes reachable again tries its waiting saves at
+once.
+
+**Closing waits for the save.** Closing a dirty document, Save All and quitting save and then wait for the write behind
+a modal progress dialog, since what they gate must not go ahead of the edits; Cancel stops waiting and leaves the row.
+A conflict there shows the differences; a save that cannot land asks **Try Again**, **Leave It Pending** — go ahead,
+the row lands later — or **Cancel**.
+
+**Unsaved changes can outlive a quit.** With the Session setting *Keep unsaved changes when quitting* on, quitting asks
+nothing about dirty documents: their edits, and each one's dock layout, are kept in `unsaved-changes.json` in the
+config folder, and the next start reopens those documents dirty with those edits, whether or not the session is
+restored — at once on a local drive, once the share answers otherwise, and one whose share does not answer stays kept
+for the start after. A never-saved document comes back new, bound to its path; one whose file changed meanwhile shows
+the changed-on-disk banner, so its Save shows the differences; one whose file or folder is gone reopens with its edits
+and the *gone* banner rather than being dropped. With the setting off, quitting asks as before; closing one document by
+hand always asks Save / Discard / Cancel. What was saved is never in question at a quit: a save not landed is written
+down with the queue, and comes back as the record's saved state ([[sync#unlanded-save]]).
 
 ## §7.5 Library-wide rename
 
@@ -191,8 +272,8 @@ GUI thread, from what the job hands back for that record:
 A save pressed between the job's write and the rebase is an honest conflict showing the old value against the new, which
 is rare and correct. A document whose file was rewritten before it was opened simply reads the renamed file. A rebase
 missed (two writes with one signature) leaves the ordinary banner, never a wrong merge: the guard is the content hash.
-When saves become queued jobs ([[sync#apply-payload]]), a payload waiting in the queue is rebased by the same rule
-before it is applied, or it would conflict with the rename.
+A save payload waiting in the queue ([[sync#apply-payload]]) is rebased by the same rule before it is applied, or it
+would conflict with the rename.
 
 **Merging two entity documents** is a second job, run before the member rewrite when both A and B have documents
 ([[plugins#entity-merge]]): it moves A's files beside B, writes B under B's lock, and deletes A last, checkpointing

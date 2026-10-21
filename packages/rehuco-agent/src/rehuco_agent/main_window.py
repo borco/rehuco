@@ -46,6 +46,7 @@ from rehuco_core import (
     DEFAULT_RENAME_COORDINATOR,
     FINISHED_JOB_STATES,
     REHUCO_SUFFIX,
+    SAVE_RECORD_KIND,
     CatalogField,
     JobState,
     SweepChecksumsJob,
@@ -82,9 +83,11 @@ from .documents.document_registry import DocumentRegistry
 from .documents.document_sub_docks import LOG_DOCK_MIN_HEIGHT
 from .documents.document_widget import DocumentWidget
 from .documents.documents_dock import DocumentsDock
+from .documents.pending_saves import PendingSaves
 from .documents.rehu_document_menu_entry import RehuDocumentMenuEntry
 from .documents.rehu_document_model import key_label
 from .documents.save_or_prompt_retry import save_or_prompt_retry
+from .documents.unsaved_changes import UnsavedChanges
 from .fields.type_field import type_label
 from .glyphs import TAB_CLOSE_GLYPH
 from .main_window_ui import Ui_MainWindow
@@ -132,7 +135,13 @@ from .settings.ui.shortcuts_page import ShortcutsPage
 from .settings.ui.system_integration_page import SystemIntegrationPage
 from .settings.ui.tasks_page import TasksPage
 from .settings.ui.videos_page import VideosPage
-from .tasks import TaskQueueStatusIndicator, TaskQueueStore, TaskQueueWidget, job_already_queued
+from .tasks import (
+    PendingSavesIndicator,
+    TaskQueueStatusIndicator,
+    TaskQueueStore,
+    TaskQueueWidget,
+    job_already_queued,
+)
 from .tray_icon import TrayIcon
 
 LOG: Final = logging.getLogger(__name__)
@@ -403,12 +412,30 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             # catalog exists
             roots=lambda: tuple(self.__root_catalog.root_paths().values()),
         )
+        # every Save is a job on the queue (#497): this owns them, and hands each landed or failed one back to its
+        # document
+        self.__pending_saves: Final = PendingSaves(
+            self.__task_queue,
+            self.__task_queue_widget.model,
+            self.__document_registry,
+            self.__records,
+            self.__resource_events,
+            self.__rename_coordinator,
+            self,
+        )
+        self.__task_queue_widget.inspect_save_requested.connect(self.__on_inspect_save)
+        self.__task_queue_widget.discard_saves_requested.connect(
+            lambda serials: self.__pending_saves.discard(self, serials)
+        )
         self.__documents_dock: Final = DocumentsDock(
             self,
             stylesheet_host=self.__dock_manager,
             registry=self.__document_registry,
             task_queue=self.__task_queue,
+            pending_saves=self.__pending_saves,
         )
+        # edits kept across a quit (#497), reopened once the session is
+        self.__unsaved_changes: Final = UnsavedChanges(self.__documents_dock, self.__records, parent=self)
         self.__documents_dock.document_focus_changed.connect(self.__on_document_focus_changed)
         self.__documents_dock.status_message.connect(self.__on_status_message)
         self.__documents_dock.filter_requested.connect(self.__on_filter_requested)
@@ -498,6 +525,8 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__remembered.layout_due.connect(self.__on_late_layout_due)
         self.__root_catalog.rehuco_path_changed.connect(self.__remembered.clear_deferred_rehuco)
         self.__restore_session_if_enabled()
+        # whether or not the session was restored: the setting that kept them is about quitting, not the session
+        self.__unsaved_changes.reopen()
         self.__remembered.start()
 
         self.__setup_view_menu()
@@ -1033,8 +1062,26 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         remaining dirty documents untouched.
         """
         for model in self.__documents_dock.open_document_models():
-            if model.dirty and not save_or_prompt_retry(self, model):
+            if model.dirty and not save_or_prompt_retry(self, model, self.__pending_saves):
                 return
+
+    def __show_pending_saves(self) -> None:
+        """Open the Tasks dock on the saves that have not landed (the status bar's pending-saves count, #497)."""
+        self.__task_queue_dock.toggleView(True)
+        self.__task_queue_widget.show_pending_saves()
+
+    def __on_inspect_save(self, serial: int) -> None:
+        """Open the document of a save that has not landed and look at it there (the Tasks dock's *Inspect*, #497).
+
+        :param serial: the save row.
+        """
+        key = self.__pending_saves.key_of(serial)
+        if key is None:
+            return
+        self.__open_key(key)
+        model = self.__document_registry.find(key)
+        if model is not None:
+            self.__pending_saves.inspect(self, serial, model)
 
     def __on_sweep_checksums(self) -> None:
         """Prompt for a folder and queue a sweep over it (``Tools`` > ``Sweep checksums...``, #242).
@@ -1290,6 +1337,9 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__task_queue_status_indicator = TaskQueueStatusIndicator(self.__task_queue_widget.model)
         self.__task_queue_status_indicator.clicked.connect(lambda: self.__task_queue_dock.toggleView(True))
         self.statusBar().addPermanentWidget(self.__task_queue_status_indicator)
+        self.__pending_saves_indicator = PendingSavesIndicator(self.__task_queue_widget.model)
+        self.__pending_saves_indicator.clicked.connect(self.__show_pending_saves)
+        self.statusBar().addPermanentWidget(self.__pending_saves_indicator)
         # the local node's word, rightmost (#506): "Local Node: Running", or "Local Node: Stopped" greyed out
         self.__node_status_indicator = NodeStatusIndicator(self.__node_host)
         self.statusBar().addPermanentWidget(self.__node_status_indicator)
@@ -1554,7 +1604,13 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         if settings.clear_failed_on_restart:
             dropped_states.add(JobState.FAILED)
         if dropped_states:
-            items = [item for item in items if item.get("job_state") not in dropped_states]
+            # a failed save still holds the edits it could not land (#497): never swept, whatever the setting says
+            items = [
+                item
+                for item in items
+                if item.get("job_state") not in dropped_states
+                or (item.get("job_state") == JobState.FAILED and item.get("kind") == SAVE_RECORD_KIND)
+            ]
         unfinished_state = JobState.QUEUED if settings.resume_on_restart else JobState.PAUSED
         self.__task_queue_store.restore(items, unfinished_state=unfinished_state)
 
@@ -1755,6 +1811,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         if not self.__task_queue.wait_until_idle():
             LOG.warning("The task queue did not settle before quitting; the unfinished job may be lost.")
         self.__task_queue_store.save()
+        self.__pending_saves.detach()
         self.__task_queue_widget.detach()
         self.__task_queue.shutdown()
 
@@ -1810,14 +1867,23 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             self.hide_to_tray()
             return
 
-        dirty_models = [model for model in self.__documents_dock.open_document_models() if model.dirty]
-        if not confirm_and_save_dirty(self, dirty_models):
-            event.ignore()
-            return
+        session_restore = SessionRestoreSettings()
+        session_restore.load(persistent_settings())
+        # with the edits kept across the quit (#497) there is nothing to ask about them
+        if not session_restore.keep_unsaved_changes:
+            dirty_models = [model for model in self.__documents_dock.open_document_models() if model.dirty]
+            if not confirm_and_save_dirty(self, dirty_models, self.__pending_saves):
+                event.ignore()
+                return
 
         if not self.__confirm_task_queue_loss():
             event.ignore()
             return
+
+        if session_restore.keep_unsaved_changes:
+            self.__unsaved_changes.keep(self.__documents_dock.open_document_widgets())
+        else:
+            self.__unsaved_changes.forget()
 
         # the node goes first, and fast: a node still starting is killed outright, a running one gets a short grace
         # (#506), so quitting never waits on it
@@ -1827,6 +1893,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # A call still blocked on a switched-off server is left where it is -- its thread is a daemon, and the process
         # does not wait for it (borco_core.path_presence, #464)
         self.__remembered.stop()
+        self.__unsaved_changes.stop()
         # nor from the open documents' folder notifiers; the roots' stop with the catalog, below (#511)
         self.__document_registry.stop_watching()
 

@@ -1767,7 +1767,7 @@ def test_a_failing_job_is_recorded_and_the_queue_carries_on(
 
     assert wait_for_state(listener, failed, JobState.FAILED)
     status = [held for held in queue.jobs() if held.serial == failed][0]
-    assert status.error == "RuntimeError: the disk went away"
+    assert status.message == "RuntimeError: the disk went away"
 
 
 def test_a_failure_is_written_to_the_log(
@@ -2030,7 +2030,7 @@ def test_retry_clears_a_failed_jobs_reason(queue: TaskQueue, listener: Recording
 
     assert wait_for_state(listener, serial, JobState.QUEUED)
     requeued = [status for status in listener.updated if status.serial == serial and status.state is JobState.QUEUED]
-    assert (requeued[0].error, requeued[0].done, requeued[0].total) == (None, 0, None)
+    assert (requeued[0].message, requeued[0].done, requeued[0].total) == (None, 0, None)
 
 
 def test_retry_starts_a_job_over_even_when_it_would_otherwise_carry_on(

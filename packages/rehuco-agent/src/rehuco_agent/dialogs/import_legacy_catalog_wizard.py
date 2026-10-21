@@ -644,7 +644,7 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
             return ("retired" if isinstance(job, RetireLegacyManifestJob) else "converted"), None
         if status.state is JobState.CANCELLED:
             return "cancelled", None
-        return "failed", status.error
+        return "failed", status.message
 
     def __result_summary_text(self) -> str:
         """The result step's header line, counting each outcome across every row.

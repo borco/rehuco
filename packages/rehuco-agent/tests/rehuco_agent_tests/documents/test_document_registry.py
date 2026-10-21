@@ -24,6 +24,8 @@ from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
 from rehuco_agent_tests.qt_waits import wait_destroyed
 
 from .test_rehu_document_model_conflict import edit_on_disk, retitle, write_record
+from .test_rehu_document_model_pending_saves import answering
+from .test_rehu_document_model_saves import edited_snapshot
 
 FAKE_PATH: Final = Path.cwd() / "fake" / "tutorials" / "sculpting" / "info.rehu"
 """Built from ``Path.cwd()`` so it is absolute on every platform."""
@@ -305,6 +307,27 @@ def test_a_new_acquisition_starts_dirty(qtbot: QtBot) -> None:
 
     assert model.dirty
     assert not model.locked
+
+
+def test_a_model_built_for_a_first_holder_is_announced_once(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A model built now is announced, so state kept about its record -- a save still pending -- reaches it; a second
+    holder of the same model is no news (#497).
+
+    **Test steps:**
+
+    * acquire the fake key twice, hearing what is announced
+    * verify the one model was announced once
+    """
+    del qtbot
+    load_document(mocker)
+    registry = DocumentRegistry()
+    announced: list[RehuDocumentModel] = []
+    registry.model_acquired.connect(announced.append)
+
+    model = registry.acquire(FAKE_KEY)
+    registry.acquire(FAKE_KEY)
+
+    assert announced == [model]
 
 
 def test_releasing_a_model_nobody_holds_raises(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -700,6 +723,95 @@ def test_a_legacy_record_files_its_flags_under_the_unknown_user(tmp_path: Path, 
     assert record.document.title == "Legacy"
     assert record.document.user_field(unknown, "rating") == 4
     assert record.version is None
+
+
+# endregion
+
+
+# region pending saves (#497)
+@mark.usefixtures("real_path_stat")
+@mark.parametrize("new", [False, True], ids=["read", "new"])
+def test_a_model_built_for_a_record_with_a_pending_save_opens_on_it_before_it_is_announced(
+    qtbot: QtBot, tmp_path: Path, new: bool
+) -> None:
+    """A record whose save has not landed opens on that save, its saved state here -- already when the model is
+    announced, so whatever hears of it sees what the document shows ([[sync#unlanded-save]]).
+
+    **Test steps:**
+
+    * keep a save titling a record ``Mine`` -- an existing record's, or a new document's first -- and have the
+      registry follow it
+    * acquire the record, opened or new, noting the title each announced model shows
+    * verify the model shows the pending save, clean, and showed it when announced
+    """
+    del qtbot
+    path = tmp_path / "info.rehu"
+    if new:
+        source = RehuDocumentModel.create_new(path)
+        source.title = "Mine"
+        payload = source.snapshot()
+    else:
+        write_record(path, "Old")
+        payload = edited_snapshot(path)
+    registry = DocumentRegistry()
+    registry.follow_pending_saves(answering(payload, path))
+    announced: list[str] = []
+    registry.model_acquired.connect(lambda model: announced.append(model.title))
+
+    model = registry.acquire(ResourceKey(path), new=new)
+
+    assert (model.title, model.dirty) == ("Mine", False)
+    assert announced == ["Mine"]
+
+
+@mark.usefixtures("real_path_stat")
+def test_a_placeholder_built_for_a_record_with_a_pending_save_reads_that_save(qtbot: QtBot, tmp_path: Path) -> None:
+    """A placeholder is announced unread, and its deferred read finds the record's save not landed through the
+    registry.
+
+    **Test steps:**
+
+    * keep a save titling a record ``Mine``, and have the registry follow it
+    * take a lazy placeholder of the record
+    * verify it is still unread
+    * read it
+    * verify it shows the pending save, clean
+    """
+    del qtbot
+    path = tmp_path / "info.rehu"
+    write_record(path, "Old")
+    registry = DocumentRegistry()
+    registry.follow_pending_saves(answering(edited_snapshot(path), path))
+
+    model = registry.acquire(ResourceKey(path), lazy=True)
+    assert model.pending
+
+    model.load_pending()
+
+    assert (model.title, model.dirty) == ("Mine", False)
+
+
+@mark.usefixtures("real_path_stat")
+def test_following_pending_saves_shows_each_held_records_own(qtbot: QtBot, tmp_path: Path) -> None:
+    """Models already held when the save owner arrives follow it at once: a record with a save not landed shows it,
+    one with none keeps its file.
+
+    **Test steps:**
+
+    * open two records, then keep a save titling the first ``Mine``
+    * have the registry follow pending saves
+    * verify the first model shows the pending save, clean, and the second still shows its file
+    """
+    del qtbot
+    first, second = tmp_path / "first.rehu", tmp_path / "second.rehu"
+    write_record(first, "First")
+    write_record(second, "Second")
+    registry = DocumentRegistry()
+    models = [registry.acquire(ResourceKey(first)), registry.acquire(ResourceKey(second))]
+
+    registry.follow_pending_saves(answering(edited_snapshot(first), first))
+
+    assert [(model.title, model.dirty) for model in models] == [("Mine", False), ("Second", False)]
 
 
 # endregion

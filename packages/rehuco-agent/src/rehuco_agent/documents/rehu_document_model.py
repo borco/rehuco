@@ -8,7 +8,7 @@
 
 import copy
 import logging
-from collections.abc import Generator, Mapping, Sequence
+from collections.abc import Callable, Generator, Mapping, Sequence
 from contextlib import contextmanager
 from functools import partial
 from pathlib import Path
@@ -25,21 +25,27 @@ from rehuco_core import (
     AuthorEntry,
     Deleter,
     FieldPath,
+    JobWaiting,
     LockReason,
     RecordConflict,
     RecordVersion,
     RehuDocument,
     RenameCoordinator,
+    SaveOutcome,
+    SavePayload,
+    SaveRecordJob,
     is_directory_scoped_name,
     merge_users,
+    paths_overlap,
+    payload_changes,
     put_paths,
     rehu_rename_conflict,
     rename_rehu_resource,
     scan_rehu_screenshot_files,
     scan_unconverted_screenshots,
-    take_enclosing_claims,
 )
 from rehuco_core.access import FileSignature, KeyRelocation, LoadedRecord, Records, ResourceKey
+from rehuco_core.lock_reasons import SAVE_BLOCKING_LOCK_KINDS
 
 from ..fields.field import Field, FieldBinding
 from ..fields.unknown_field import UnknownField
@@ -412,6 +418,20 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     carrying the file as it is now; ``None`` while there is none. Cleared by anything that reads or writes the file.
     The conflict dialog resolves it (:meth:`resolve_conflict`, or :meth:`revert`)."""
 
+    saving = SimpleProperty(False)
+    """Whether a save of this document has been handed to a job and has not come back yet (#497): the document stays
+    editable meanwhile, and the banner says so. Cleared when the save lands (:meth:`complete_save`) or fails
+    (:meth:`fail_save`)."""
+
+    pending_save = SimpleProperty("")
+    """What this document's save that has not landed is doing, in the banner's words -- *Save pending*, *Waiting for
+    the share*, *Save failed* -- or empty while there is none (#497). Set by whoever owns the save jobs."""
+
+    gone = SimpleProperty("")
+    """The sentence naming this edited document's file or folder that is not there any more, or empty (#497): its
+    edits are kept, and no save is made until it is reverted, closed, or the file or folder comes back -- a save never
+    recreates a folder ([[sync#compare-and-swap]])."""
+
     saved_on_disk = SimpleProperty(True)
     """Whether this document has ever been persisted to its path -- i.e. whether there is a file on disk
     to revert to. ``True`` for a **loaded** document (it stands for a file on disk -- even one that later
@@ -467,6 +487,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         signature: FileSignature | None = None,
         rename_coordinator: RenameCoordinator | None = None,
         pending: bool = False,
+        pending_save_of: Callable[[ResourceKey], SavePayload | None] | None = None,
     ) -> None:
         super().__init__(parent)
         self.__document = document
@@ -476,6 +497,9 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.__base_data = copy.deepcopy(document.data)
         """The document as read or last saved, for showing what a conflict changed on each side."""
         self.__rename_coordinator: Final = rename_coordinator
+        self.__pending_save_of: Final = pending_save_of
+        """Where a record's save that has not landed is found -- its saved state on this machine
+        ([[sync#unlanded-save]]); ``None`` for a model no save owner looks after."""
         self.__pending = pending
         """See :attr:`pending`; set only by :meth:`create_pending`, cleared at the file seam that
         replaces the placeholder with real content (:meth:`revert`, which :meth:`load_pending`
@@ -489,6 +513,9 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         """See :attr:`loading`."""
         self.__disk_signature = signature
         """The file's modification time and size as this model last read or wrote it, or ``None`` before any."""
+        self.__signature_during_save: FileSignature | None = None
+        """A stat heard while a save was out or pending, judged once it is back: the save's own write, or one after
+        it."""
 
         self.__seed_from_document()
         self.lock_reasons = list(self.__document.lock_reasons)
@@ -526,8 +553,9 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             signal_name = SimpleProperty.notify_signal_name(type(self), name)
             getattr(self, signal_name).connect(lambda value, key=name: self.__on_record_list_changed(key, value))
 
+    # the constructor's own seams, forwarded whole
     @classmethod
-    def create_new(
+    def create_new(  # pylint: disable=too-many-arguments
         cls,
         path: Path | str | None = None,
         parent: QObject | None = None,
@@ -535,6 +563,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         username: str = DEFAULT_CURRENT_USERNAME,
         records: Records | None = None,
         rename_coordinator: RenameCoordinator | None = None,
+        pending_save_of: Callable[[ResourceKey], SavePayload | None] | None = None,
     ) -> RehuDocumentModel:
         """Start a new, empty document, optionally already bound to a save path.
 
@@ -549,21 +578,27 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             **current**-user identity setting; core's :data:`~rehuco_core.DEFAULT_CURRENT_USERNAME` otherwise.
         :param records: forwarded to the constructor; see the class docstring.
         :param rename_coordinator: forwarded to the constructor; see its own docstring (#241).
+        :param pending_save_of: forwarded to the constructor; see the class docstring.
         :returns: the new model, wrapping a fresh in-memory `RehuDocument` that already carries its own
             ``id`` (:meth:`~rehuco_core.RehuDocument.new`, [[data-model#stable-identity]]). Starts **not**
             :attr:`saved_on_disk` -- it has never been persisted to its path, so Revert is disabled until
             the first :meth:`save` (#147).
         """
         model = cls(
-            RehuDocument.new(path, username=username), parent, records=records, rename_coordinator=rename_coordinator
+            RehuDocument.new(path, username=username),
+            parent,
+            records=records,
+            rename_coordinator=rename_coordinator,
+            pending_save_of=pending_save_of,
         )
         model.saved_on_disk = False
         if path is not None:
             model.dirty = True
         return model
 
+    # the constructor's own seams, forwarded whole
     @classmethod
-    def create_pending(
+    def create_pending(  # pylint: disable=too-many-arguments
         cls,
         path: Path,
         parent: QObject | None = None,
@@ -571,6 +606,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         username: str = DEFAULT_CURRENT_USERNAME,
         records: Records | None = None,
         rename_coordinator: RenameCoordinator | None = None,
+        pending_save_of: Callable[[ResourceKey], SavePayload | None] | None = None,
     ) -> RehuDocumentModel:
         """Start a **pending** stand-in for an existing file that has deliberately not been read yet --
         session restore's deferred document load (#66).
@@ -589,6 +625,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             ([[field-schema#per-user-shared]], #99) -- same seam as :meth:`create_new`.
         :param records: forwarded to the constructor; see the class docstring.
         :param rename_coordinator: forwarded to the constructor; see its own docstring (#241).
+        :param pending_save_of: forwarded to the constructor; see the class docstring.
         :returns: the pending model; empty, clean, and unlocked until :meth:`load_pending` runs.
         """
         return cls(
@@ -597,6 +634,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             records=records,
             rename_coordinator=rename_coordinator,
             pending=True,
+            pending_save_of=pending_save_of,
         )
 
     @property
@@ -637,7 +675,16 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         """
         if self.__pending:
             # a placeholder is always bound to the path it stands in for (create_pending)
-            self.__load(load_record(self.__records, cast(ResourceKey, self.key)), rebuild=True)
+            self.__read(cast(ResourceKey, self.key), rebuild=True)
+
+    def follow_pending_save(self) -> None:
+        """Show the record's save that has not landed, if it has one and this model holds no edits of its own -- what
+        a document just opened shows ([[sync#unlanded-save]]). A record never saved holds none yet, however dirty a
+        new document starts."""
+        key = self.key
+        own_edits = self.dirty and self.saved_on_disk
+        if key is not None and not own_edits and not self.__pending and self.__pending_save_for(key) is not None:
+            self.__read(key, rebuild=False)
 
     @property
     def document(self) -> RehuDocument:
@@ -692,71 +739,247 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         return key.parent.name if is_directory_scoped_name(key.name) else key.stem
 
     def save(self) -> None:
-        """Save the document as a read-merge-write ([[nodes#access-seam]], #416) and clear the dirty flag.
+        """Save the document here and now, waiting for the write ([[nodes#access-seam]], #416) -- the same job a queued
+        save runs (:class:`~rehuco_core.SaveRecordJob`, #497), run on the caller's thread.
 
-        Per-user fields written to the file since it was read -- another user's, a progress entry -- are merged in
-        rather than overwritten, and shown at once. Details changed on disk since it was read refuse the save as a
-        :class:`~rehuco_core.RecordConflict`, kept in :attr:`conflict` for the user to resolve
-        (:meth:`resolve_conflict`).
+        For the one caller that must have the file written before it goes on and has no window to wait in -- a rename
+        writes the record before moving it (:meth:`rename_location`). Everything else hands a :meth:`snapshot` to the
+        task queue and keeps editing.
 
-        Also how an :attr:`upgradable` document is actually upgraded (#89): the document's own
-        ``save()`` already restamps it to :data:`~rehuco_core.CURRENT_FORMAT_VERSION` on write, so
-        there is no separate migrate call -- this is the only one needed, whether reached from the
-        toolbar's Save action or the inline banner's Upgrade action.
-
-        **The first save of a file-scoped record takes its checksums** (#467): the entries the enclosing
-        ``info.checksum`` holds for the files this record now covers move into its own ``.checksum`` at once,
-        rather than at that record's next verify (:func:`~rehuco_core.take_enclosing_claims`).
+        Per-user fields written to the file since it was read are merged in and shown (:meth:`complete_save`). Details
+        changed on disk since it was read refuse the save as a :class:`~rehuco_core.RecordConflict`, kept in
+        :attr:`conflict`. Also how an :attr:`upgradable` document is upgraded (#89): the write restamps it.
 
         :raises RecordConflict: details were changed on disk since the document was read.
-        :raises OSError: the file could not be read or written.
+        :raises OSError: the file could not be read or written, its share does not answer, or its lock is held.
         :raises ValueError: the document has no location, or is locked against saving.
         """
-        key = self.key
-        if key is None:
-            raise ValueError("No path given and document was not loaded from a file.")
-        first_save = not self.saved_on_disk
+        payload = self.snapshot()
+        self.begin_save()
+        job = SaveRecordJob(payload, records=self.__records, coordinator=self.__rename_coordinator)
         with LogScope.open(self.path):
             try:
-                saved = self.__records.save(
-                    key, self.__document, self.__version, username=self.__document.username, overwrite=False
-                )
+                outcome = job.write()
             except RecordConflict as conflict:
                 LOG.warning("Not saved: %s", conflict)
-                self.conflict = conflict
+                self.__failed_inline(conflict)
                 raise
-            LOG.info("Saved %s", self.path)
-            if first_save and self.path is not None:
-                self.__take_enclosing_claims(self.path)
-        self.__version = saved.version
-        self.__base_data = copy.deepcopy(self.__document.data)
-        self.__disk_signature = saved.signature
-        if saved.users_merged:
-            self.__seed_from_document(description=False)
+            except JobWaiting as waiting:
+                self.__failed_inline(None)
+                raise OSError(waiting.reason) from waiting
+            except OSError, ValueError:
+                self.__failed_inline(None, gone=job.gone)
+                raise
+        self.complete_save(payload, outcome)
+
+    def __failed_inline(self, conflict: RecordConflict | None, *, gone: str | None = None) -> None:
+        """Take back an inline :meth:`save` that did not land: with no job holding its data, the edits are unsaved
+        again.
+
+        :param conflict: why it was refused, when the record's details changed on disk.
+        :param gone: the sentence naming the record's file or folder that is not there, when that is why.
+        """
+        self.fail_save(conflict, gone=gone)
+        self.dirty = True
+
+    def snapshot(self) -> SavePayload:
+        """What a save of this document writes, taken now, so editing can go on while it runs (#497).
+
+        A deep copy: nothing the document does afterwards reaches it. Also what the document's edits are kept as across
+        a quit.
+
+        :returns: the payload.
+        :raises ValueError: the document has no location, is a legacy ``.tc``, or is locked against saving
+            ([[data-model#write-integrity]]).
+        """
+        path = self.path
+        if path is None:
+            raise ValueError("No path given and document was not loaded from a file.")
+        if self.__document.legacy_tc:
+            raise ValueError(f"Refusing to save over a legacy record: {path}")
+        blocking = next(
+            (reason for reason in self.__document.lock_reasons if reason.kind in SAVE_BLOCKING_LOCK_KINDS), None
+        )
+        if blocking is not None:
+            raise ValueError(f"Refusing to save a locked document ({blocking.kind}): {blocking.message}")
+        written = self.__document.payload_to_write()
+        return SavePayload(
+            path=path,
+            username=self.__document.username,
+            payload=copy.deepcopy(written),
+            base_payload=copy.deepcopy(self.__base_data) if self.__version is not None else None,
+            base=self.__version,
+            dropped=tuple(sorted(self.__document.data.keys() - written.keys())),
+            discarded=self.__document.unlogged_dropped_block_keys(),
+            first_save=not self.saved_on_disk,
+            excluded_patterns=shared_excluded_files_settings().excluded_file_patterns,
+        )
+
+    def begin_save(self) -> None:
+        """Say that a :meth:`snapshot` of this document has been handed to a save (#497): it is the record's saved state
+        now ([[sync#unlanded-save]]), so the document is clean until it is edited again."""
+        self.saving = True
         self.dirty = False
+
+    def complete_save(self, payload: SavePayload, outcome: SaveOutcome, *, latest: SavePayload | None = None) -> None:
+        """Take back a save that landed, keeping what was edited since (#497, [[sync#apply-payload]]).
+
+        **The hard part is the merge-back.** The save wrote a snapshot; the document went on being edited. What the
+        save changed on its way to disk -- the stamps, per-user fields merged in from the file, a block only the file
+        had -- is put onto the live document **except where the user edited since the snapshot**, which wins. The
+        document stays dirty exactly when it was edited since the last Save, and the next save is checked against the
+        version this one wrote.
+
+        :param payload: what the save wrote, as it was handed over.
+        :param outcome: what landed.
+        :param latest: a later Save of the record still pending, which the document's edits since are judged against
+            instead -- it is the saved state now ([[sync#unlanded-save]]).
+        """
+        self.saving = False
+        deferred, self.__signature_during_save = self.__signature_during_save, None
+        edited = payload_changes(payload.payload, self.__document.payload_to_write())
+        kept = {
+            path: value
+            for path, value in payload_changes(payload.payload, outcome.written).items()
+            if not any(paths_overlap(path, mine) for mine in edited)
+        }
+        if kept:
+            put_paths(self.__document.data, kept, stamps=outcome.written)
+        self.__document.note_written(outcome.written, payload.discarded)
+        self.__version = outcome.version
+        self.__base_data = copy.deepcopy(outcome.written)
+        self.__disk_signature = outcome.signature
+        if kept:
+            self.__seed_from_document(description=False)
+            with self.__seeding_guard():
+                self.description = self.__document.description
+        self.dirty = bool(
+            edited if latest is None else payload_changes(latest.payload, self.__document.payload_to_write())
+        )
         self.conflict = None
         self.changed_on_disk = False
-        # the file now exists on disk, so there is finally something to revert to: mark saved_on_disk so
-        # DocumentSubDocks re-enables Revert (#147). Set once and never unset -- a later out-of-band
-        # deletion still leaves this a document that *was* saved, whose revert is the fix-retry loop.
+        self.gone = ""
+        # the file now exists on disk, so there is finally something to revert to (#147). Set once and never unset --
+        # a later out-of-band deletion still leaves this a document that *was* saved
         self.saved_on_disk = True
-        # explicit, not left to the dirty_changed connection alone: a clean-but-upgradable document
-        # (the Upgrade path) saves without dirty ever having been True, so no dirty_changed would fire
+        # explicit: a clean-but-upgradable document saves without dirty ever having been True (#89)
         self.__recompute_upgradable()
+        if deferred is not None:
+            # the same signature as the write's is heard as nothing changed, which is what it is
+            self.note_file_signature(*deferred)
+
+    def fail_save(self, conflict: RecordConflict | None, *, gone: str | None = None) -> None:
+        """Take back a save that did not land; nothing asks the user anything (#497). Its data stays the record's saved
+        state while its job keeps it ([[sync#unlanded-save]]).
+
+        :param conflict: why it was refused, when the record's details changed on disk: kept in :attr:`conflict`, so
+            the banner says so and the next save shows what differs.
+        :param gone: the sentence naming the record's file or folder that is not there, when that is why.
+        """
+        self.saving = False
+        if conflict is not None:
+            self.conflict = conflict
+        if gone:
+            self.gone = gone
+        deferred, self.__signature_during_save = self.__signature_during_save, None
+        if deferred is not None:
+            self.note_file_signature(*deferred)
+
+    @property
+    def base_version(self) -> RecordVersion | None:
+        """What the document was read or last saved at, which its next save is checked against; ``None`` for a
+        document not read from its file."""
+        return self.__version
+
+    def adopt_unsaved(self, payload: SavePayload, current: LoadedRecord | None, *, dirty: bool = True) -> None:
+        """Show edits kept from elsewhere in place of what this model shows (#497): a session that quit with them
+        unsaved, still unsaved -- or, not ``dirty``, the record's save that has not landed, which is its saved state
+        ([[sync#unlanded-save]]).
+
+        The document becomes ``payload``'s, based on what it was read at. When unsaved edits are no longer based on the
+        file -- changed since, or created meanwhile for a record never saved -- the model says the file changed on
+        disk, so the next save shows the differences first and nothing is overwritten unseen. A pending save is the
+        save's own to judge, and keeps whatever its failure said.
+
+        :param payload: the kept edits (:meth:`snapshot`), or the pending save's data.
+        :param current: the record as it is on disk now, or ``None`` when there is none to read.
+        :param dirty: whether the edits are unsaved; ``False`` for a pending save's.
+        """
+        shape = self.__form_shape()
+        # a placeholder's form was built for a document not read yet (#66), so it is rebuilt whatever the shape
+        rebuild = self.__pending
+        previous_path = self.path
+        on_disk = current.version if current is not None else None
+        self.__pending = False
+        self.__loading = True
+        try:
+            self.__document = RehuDocument(
+                copy.deepcopy(payload.payload),
+                payload.path,
+                username=payload.username,
+                on_disk_format_version=current.document.on_disk_format_version if current is not None else None,
+            )
+            self.__version = payload.base
+            self.__base_data = copy.deepcopy(payload.base_payload) if payload.base_payload is not None else {}
+            self.__disk_signature = current.signature if current is not None else None
+            self.__signature_during_save = None
+            if dirty:
+                self.conflict = None
+                self.gone = ""
+            self.__seed_from_document(description=False)
+            self.dirty = dirty
+            self.saved_on_disk = not payload.first_save
+            self.changed_on_disk = (
+                dirty and on_disk is not None and (payload.base is None or on_disk.file_hash != payload.base.file_hash)
+            )
+            self.rename_error = ""
+            self.lock_reasons = list(self.__document.lock_reasons)
+        finally:
+            self.__loading = False
+        self.image_scanner = self.__make_image_scanner()
+        with self.__seeding_guard():
+            self.description = self.__document.description
+        self.unknown_fields_changed.emit()
+        if rebuild or self.__form_shape() != shape:
+            self.active_block_changed.emit()
+        self.reloaded.emit()
+        if self.path != previous_path:
+            self.switched.emit()
+        self.__recompute_upgradable()
+        self.__log_document_state()
+
+    def note_file_gone(self, *, folder_gone: bool) -> None:
+        """Hear that this document's file is not there, its device having answered (#497).
+
+        A clean, saved document reverts, as it does for a change -- which makes it the locked *missing* stub a reopen
+        would make ([[data-model#lock-vocabulary]]). One with edits, or with a save not landed, keeps them and says what
+        is gone in :attr:`gone`; so does a never-saved one whose folder went, while a never-saved one whose file is
+        simply not written yet has nothing to hear.
+
+        :param folder_gone: whether the folder the file is in is gone too.
+        """
+        path = self.path
+        if self.__pending or self.saving or path is None or self.locked:
+            return
+        if not self.saved_on_disk:
+            self.gone = f"The resource's folder is gone: {path.parent}" if folder_gone else ""
+        elif self.dirty or self.__pending_save_for(cast(ResourceKey, self.key)) is not None:
+            self.gone = f"The resource's folder is gone: {path.parent}" if folder_gone else f"The file is gone: {path}"
+        else:
+            self.revert()
 
     def resolve_conflict(self, values: Mapping[FieldPath, Any]) -> None:
-        """Save the document with the values the user kept in :attr:`conflict` (#416).
+        """Take the values the user kept in :attr:`conflict` into the document, ready to be saved again (#416).
 
         The per-user fields are merged first, against what the document was read at, so the file's ones survive; then
         every row of the conflict is set to the side kept for it -- a row kept as *Mine* too, since the merge may have
-        taken the file's value of a per-user field this document did not change -- and the result saved against the
-        file as it is now, refused again only if it changed once more meanwhile.
+        taken the file's value of a per-user field this document did not change -- and the document is based on the
+        file as it is now, so its next save is refused again only if the file changed once more meanwhile. The save is
+        the caller's: a queued one (#497), or :meth:`save`.
 
         :param values: the value kept for each row (:func:`~rehuco_core.record_differences`), by its path;
             :data:`~rehuco_core.ABSENT` removes it.
         :raises ValueError: there is no conflict to resolve.
-        :raises RecordConflict: the file changed again since the conflict was found.
-        :raises OSError: the file could not be read or written.
         """
         conflict = self.conflict
         if conflict is None:
@@ -769,7 +992,8 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         with self.__seeding_guard():
             self.description = self.__document.description
         self.dirty = True
-        self.save()
+        self.conflict = None
+        self.changed_on_disk = False
 
     def base_data(self) -> dict[str, Any]:
         """The document as this model read or last saved it, per-user fields included -- the *Original* side of a
@@ -789,18 +1013,6 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         if key is None:
             raise FileNotFoundError("this document has no file yet")
         return self.__records.stored_text(key)
-
-    def __take_enclosing_claims(self, path: Path) -> None:
-        """Move the checksums a new record covers out of the enclosing record's ``.checksum`` (#467). The two files a
-        move rewrites reach every view through their folders' file notifiers (#511).
-
-        :param path: the record just written for the first time.
-        """
-        take_enclosing_claims(
-            path,
-            coordinator=self.__rename_coordinator,
-            excluded_patterns=shared_excluded_files_settings().excluded_file_patterns,
-        )
 
     def rename_conflicts(self, new_name: str) -> bool:
         """Whether renaming to ``new_name`` would land on something already there
@@ -862,6 +1074,13 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             self.rename_error = ""
             if self.path is None:
                 return self.__rename_failed(f'Cannot rename to "{new_name}": this document has no location yet.')
+            if self.__pending_save_for(cast(ResourceKey, self.key)) is not None:
+                # the save is the record here until it lands ([[sync#unlanded-save]]); a second write of the record
+                # made now, to move it, would run ahead of it and the two would conflict
+                return self.__rename_failed(
+                    f'Cannot rename to "{new_name}": a save of this record has not landed yet. Wait for it, or discard '
+                    "it from the Tasks panel."
+                )
             if self.dirty:
                 try:
                     self.save()
@@ -872,19 +1091,20 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             return self.__move(new_name)
 
     def revert(self) -> None:
-        """Discard in-memory edits and load the document's file again, exactly as :meth:`load` loads any other
-        (#381) -- so an out-of-band edit ([[data-model#write-integrity]]) is picked up too, and a revert is fast
-        whenever the file's structure is what the form already shows. Like any open, it reads under the identity
-        set now, which an identity-setting change made since the document was opened has moved.
+        """Discard in-memory edits and go back to the record's saved state: its save that has not landed, if it has
+        one ([[sync#unlanded-save]]), else its file, loaded exactly as :meth:`load` loads any other (#381) -- so an
+        out-of-band edit ([[data-model#write-integrity]]) is picked up too, and a revert is fast whenever the file's
+        structure is what the form already shows. Like any open, it reads under the identity set now, which an
+        identity-setting change made since the document was opened has moved.
 
         :raises ValueError: if the document has no local path (it is no file this machine reads).
         """
         path, key = self.path, self.key
         if path is None or key is None:
             raise ValueError("no path to revert from -- document was not loaded from or saved to a file")
-        self.__load(load_record(self.__records, key), rebuild=False)
+        pending = self.__read(key, rebuild=False)
         with LogScope.open(path):
-            LOG.info("Reverted %s to what is on disk", path)
+            LOG.info("Reverted %s to %s", path, "its save not landed yet" if pending else "what is on disk")
 
     def load(self, path: Path) -> None:
         """Show the ``.rehu`` (or legacy ``.tc``) at ``path`` in this model, in place of what it showed (#381).
@@ -898,7 +1118,31 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
         :param path: the file to show.
         """
-        self.__load(load_record(self.__records, ResourceKey(path)), rebuild=False)
+        self.__read(ResourceKey(path), rebuild=False)
+
+    def __read(self, key: ResourceKey, *, rebuild: bool) -> bool:
+        """Show the record at ``key`` as it stands on this machine: its save that has not landed, if it has one, laid
+        over the file as read ([[sync#unlanded-save]]), else the file.
+
+        :param key: the record.
+        :param rebuild: rebuild the form whatever its structure (:meth:`__load`).
+        :returns: whether a save not landed is what is shown.
+        """
+        record = load_record(self.__records, key)
+        payload = self.__pending_save_for(key)
+        if payload is None:
+            self.__load(record, rebuild=rebuild)
+            return False
+        self.adopt_unsaved(payload, record if record.version is not None else None, dirty=False)
+        return True
+
+    def __pending_save_for(self, key: ResourceKey) -> SavePayload | None:
+        """The record's save that has not landed, if it has one.
+
+        :param key: the record.
+        :returns: its data, or ``None``.
+        """
+        return None if self.__pending_save_of is None else self.__pending_save_of(key)
 
     def __load(self, record: LoadedRecord, *, rebuild: bool) -> None:
         """Adopt ``record`` and reseed every field from it, as a fresh open would leave the model.
@@ -958,8 +1202,10 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.__version = record.version
         self.__base_data = copy.deepcopy(record.document.data)
         self.__disk_signature = record.signature
+        self.__signature_during_save = None
         self.conflict = None
         self.changed_on_disk = False
+        self.gone = ""
 
     def __form_shape(self) -> tuple[object, ...]:
         """What the form is built from beyond the values it binds: the type, the active block's unknown fields,
@@ -1045,6 +1291,14 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         :param mtime_ns: the file's modification time now.
         :param size: its size now.
         """
+        # the file is there: whatever was gone has come back, and the change-on-disk rule below decides the rest
+        self.gone = ""
+        key = self.key
+        if self.saving or (key is not None and self.__pending_save_for(key) is not None):
+            # the save's own write, or one after it: told apart once the save is back (complete_save) -- and a save not
+            # landed is the record here, which nothing on disk reloads over; its own check judges the file
+            self.__signature_during_save = (mtime_ns, size)
+            return
         if self.__pending or self.__disk_signature is None or self.__disk_signature == (mtime_ns, size):
             return
         if self.dirty:

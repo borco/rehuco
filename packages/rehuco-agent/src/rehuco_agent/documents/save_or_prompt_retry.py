@@ -2,8 +2,7 @@
 conflict as a choice between the original, this document's and the file's values (#416)."""
 
 from collections.abc import Callable
-from functools import partial
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
 
 from PySide6.QtWidgets import QMessageBox, QWidget
 from rehuco_core import FieldPath, RecordConflict, record_differences
@@ -11,13 +10,21 @@ from rehuco_core import FieldPath, RecordConflict, record_differences
 from ..dialogs.record_conflict_dialog import ConflictResolution, RecordConflictDialog
 from .rehu_document_model import UNTITLED_LABEL, RehuDocumentModel
 
+if TYPE_CHECKING:
+    from .pending_saves import PendingSaves
+
 SAVE_FAILED_TITLE: Final = "Save Failed"
 """Title of the dialog shown when a save raises ``OSError`` (#146)."""
 
 
-def save_or_prompt_retry(parent: QWidget, model: RehuDocumentModel) -> bool:
+def save_or_prompt_retry(parent: QWidget, model: RehuDocumentModel, pending_saves: PendingSaves | None = None) -> bool:
     """Save ``model``, prompting **Retry/Cancel** on an I/O failure and the conflict dialog on a conflict, instead of
     letting either escape (#146, #416).
+
+    **With the window's** :class:`~rehuco_agent.documents.pending_saves.PendingSaves` **the save is a job** (#497) and
+    this waits for it behind a progress dialog
+    (:meth:`~rehuco_agent.documents.pending_saves.PendingSaves.save_and_wait`); without one -- a dock with no window
+    around it -- it is written here, as below.
 
     :meth:`~RehuDocumentModel.save` does real file I/O and can raise ``OSError`` -- an offline SMB mount
     is an explicitly supported scenario ([[mounts-and-storage#offline-mounts]]) where a save fails
@@ -38,9 +45,12 @@ def save_or_prompt_retry(parent: QWidget, model: RehuDocumentModel) -> bool:
 
     :param parent: the widget to parent the dialogs to.
     :param model: the document model to save.
-    :returns: ``True`` once the document is saved or reverted; ``False`` if the user cancelled -- nothing was
-        written, and the caller should abort whatever the save was gating (e.g. a close).
+    :param pending_saves: the window's save jobs, or ``None`` to write here.
+    :returns: ``True`` once the document is saved or reverted -- or, as a job, left pending; ``False`` if the user
+        cancelled -- nothing was written, and the caller should abort whatever the save was gating (e.g. a close).
     """
+    if pending_saves is not None:
+        return pending_saves.save_and_wait(parent, model)
     buttons = QMessageBox.StandardButton
     action: Callable[[], None] = model.save
     while True:
@@ -54,7 +64,8 @@ def save_or_prompt_retry(parent: QWidget, model: RehuDocumentModel) -> bool:
             if resolution is ConflictResolution.DISCARD:
                 model.revert()
                 return True
-            action = partial(model.resolve_conflict, values)
+            model.resolve_conflict(values)
+            action = model.save
         except OSError as exc:
             label = model.label or UNTITLED_LABEL
             answer = QMessageBox.critical(

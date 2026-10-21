@@ -166,7 +166,9 @@ stand in for each other.
   borrowed record, clean ones unattended, conflicting ones parked in Pending saves ([[sync#apply-payload]]). Nothing
   removes a borrowed copy on its own: away from home, a vanished borrow cannot be restored until the source is reachable
   again, so it must never go missing without notice. Scheduled archival ([[borrowing#scheduled-archival]]) acts on the
-  original, not on the copy.
+  original, not on the copy. **An ordinary save follows the same rules** while it has not landed — it is a borrowed
+  copy of one record, its payload the copy ([[sync#unlanded-save]]) — so a Return in flight behaves like any pending
+  save: the copy stays the record until it lands, and only Drop gives it up.
 - **The *Borrowed* window lists every borrow**: per node, what it keeps (from the `.borrow` records, matched to cache
   rows
   by UUID), who borrowed it, the bytes those copies use and the free space of the node's borrow volume; the local node
