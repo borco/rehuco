@@ -1,8 +1,8 @@
 """Tests for TaskQueueStatusIndicator: the status bar's own view of the queue (#239).
 
-Uses a real :class:`~rehuco_core.TaskQueue` and gated jobs, the same discipline
-``test_task_queue_widget.py`` and ``test_task_queue_model.py`` use -- driven by ``threading.Event``s
-rather than by sleeping, so a test asserts on a state the worker has demonstrably reached.
+Uses a real :class:`~rehuco_core.TaskQueue` and gated jobs, the same discipline ``test_task_queue_model.py`` uses --
+driven by ``threading.Event``s rather than by sleeping, so a test asserts on a state the worker has demonstrably
+reached. (The widget's own tests script a ``Mock(spec=TaskQueue)`` instead, #497.)
 """
 
 from collections.abc import Callable, Iterator

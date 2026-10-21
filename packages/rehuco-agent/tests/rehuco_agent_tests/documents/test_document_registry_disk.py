@@ -241,6 +241,26 @@ def test_what_the_disk_shows_reaches_the_model_of_that_path_only(mocker: MockerF
     noted.assert_called_once_with(7, 3)
 
 
+def test_a_file_found_missing_reaches_the_model_of_that_path_only(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A file the watch found missing is told to the model held under that path's key, with whether its folder went;
+    a path nobody holds is passed over (#497).
+
+    **Test steps:**
+
+    * hold one key, and have the watch report its path and a path nobody holds as missing
+    * verify the held model alone heard its file gone, with its folder gone too
+    """
+    del qtbot
+    load_document(mocker)
+    registry = DocumentRegistry()
+    model = registry.acquire(FAKE_KEY)
+    gone = mocker.patch.object(model, "note_file_gone")
+
+    disk_of(registry).missing.emit({FAKE_PATH: True, OTHER_PATH: False})
+
+    gone.assert_called_once_with(folder_gone=True)
+
+
 # endregion
 
 # region the loose folders

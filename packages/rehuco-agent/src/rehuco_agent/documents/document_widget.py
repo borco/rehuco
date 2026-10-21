@@ -24,6 +24,7 @@ from ..resource_events import ResourceEvents
 from .checksum_actions import ChecksumActions
 from .conversion_backup_actions import ConversionBackupActions
 from .document_sub_docks import DocumentSubDocks, SubDockHost
+from .pending_saves import PendingSaves
 from .rehu_document_model import RehuDocumentModel
 
 
@@ -50,6 +51,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
     :param task_queue: the app-wide queue this document's slow work goes on; ``None`` offers no such work.
     :param resource_events: the app's file announcements (#376), which the Files sub-dock follows; ``None``
         leaves it following only this document's own.
+    :param pending_saves: the window's save jobs (#497), passed straight through; ``None`` saves in place.
     """
 
     status_message: Signal = Signal(str)
@@ -74,15 +76,18 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
     reports rather than reaches. Typed as plain ``object`` (Python-object marshalling) for the reason
     ``DocumentsDock``'s own object-typed signals document."""
 
-    def __init__(
+    # what an open document's window is lent: the model, its parent, the styling host and the window's three services
+    def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
         model: RehuDocumentModel,
         parent: QWidget | None = None,
         stylesheet_host: QWidget | None = None,
         task_queue: TaskQueue | None = None,
         resource_events: ResourceEvents | None = None,
+        pending_saves: PendingSaves | None = None,
     ) -> None:
         super().__init__(parent)
+        self.__pending_saves: Final = pending_saves
         self.__banner: Final = MessageBanner(self)
         # a plain container, not `self`, hosts the dock manager -- CDockManager auto-installs itself
         # as its parent's central widget when that parent is a QMainWindow (confirmed empirically),
@@ -152,7 +157,12 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         :returns: the new sub-docks.
         """
         sub_docks = DocumentSubDocks(
-            model, self.__host, task_queue=self.__task_queue, resource_events=self.__resource_events, parent=self
+            model,
+            self.__host,
+            task_queue=self.__task_queue,
+            resource_events=self.__resource_events,
+            pending_saves=self.__pending_saves,
+            parent=self,
         )
         sub_docks.status_message.connect(self.status_message)
         sub_docks.filter_requested.connect(self.filter_requested)

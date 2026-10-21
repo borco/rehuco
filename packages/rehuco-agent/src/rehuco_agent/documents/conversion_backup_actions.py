@@ -112,6 +112,8 @@ class ConversionBackupActions(QObject):
 
         model.path_changed.connect(self.refresh)  # type: ignore[attr-defined]
         model.dirty_changed.connect(self.refresh)  # type: ignore[attr-defined]
+        # a save lands after Save cleared dirty (#497): its landing is the seam the files are written at
+        model.saving_changed.connect(self.refresh)  # type: ignore[attr-defined]
         model.lock_reasons_changed.connect(self.refresh)  # type: ignore[attr-defined]
         model.reloaded.connect(self.refresh)
         self.refresh()

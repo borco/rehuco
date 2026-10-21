@@ -39,15 +39,15 @@ def test_the_finished_states_are_the_three_a_job_never_leaves_on_its_own() -> No
     assert not FINISHED_JOB_STATES & {JobState.QUEUED, JobState.RUNNING, JobState.PAUSED}
 
 
-def test_the_movable_states_are_the_two_that_are_not_executing() -> None:
-    """A paused job is as reorderable as a queued one, and only a running one is neither.
+def test_the_movable_states_are_the_three_unfinished_ones_that_are_not_executing() -> None:
+    """A paused or waiting job is as reorderable as a queued one (#497), and a running one is not.
 
     **Test steps:**
 
-    * compare the movable set against queued and paused
+    * compare the movable set against queued, paused and waiting
     * verify the running state is absent
     """
-    assert MOVABLE_JOB_STATES == {JobState.QUEUED, JobState.PAUSED}
+    assert MOVABLE_JOB_STATES == {JobState.QUEUED, JobState.PAUSED, JobState.WAITING}
     assert JobState.RUNNING not in MOVABLE_JOB_STATES
 
 
@@ -74,7 +74,7 @@ def test_a_status_starts_with_nothing_measured_nothing_wrong_and_nothing_asked()
     """
     status = JobStatus(serial=7, label="Verify checksums", state=JobState.QUEUED)
 
-    assert (status.done, status.total, status.error) == (0, None, None)
+    assert (status.done, status.total, status.message) == (0, None, None)
     assert status.stop_requested is None
 
 

@@ -46,6 +46,7 @@ from rehuco_core import (
     TakenClaims,
     current_block_version,
     load_tc,
+    save_record_job,
     scan_rehu_screenshot_files,
     scan_unconverted_screenshots,
     visible_learning_paths,
@@ -1977,7 +1978,7 @@ def test_sources_exposes_the_document_records(model: RehuDocumentModel, document
     assert "primary" not in model.sources[0]
 
 
-def test_a_file_with_duplicate_sources_opens_clean_and_saves_as_it_is(mocker: MockerFixture) -> None:
+def test_a_file_with_duplicate_sources_opens_clean_and_saves_as_it_is(mocker: MockerFixture, tmp_path: Path) -> None:
     """Duplicates are never acted on automatically (#386): opening does not dirty the model, and a save
     writes both entries.
 
@@ -1996,7 +1997,7 @@ def test_a_file_with_duplicate_sources_opens_clean_and_saves_as_it_is(mocker: Mo
             {"format_version": CURRENT_FORMAT_VERSION, "core": {"type": "tutorial", "sources": sources}, "tutorial": {}}
         ),
     )
-    model = RehuDocumentModel(RehuDocument.load(FAKE / "info.rehu"))
+    model = RehuDocumentModel(RehuDocument.load(tmp_path / "info.rehu"))
     mocker.patch("rehuco_core.record_file_lock.RecordFileLock")
     write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
 
@@ -2660,7 +2661,7 @@ def test_the_first_save_takes_the_checksums_the_new_record_covers(mocker: Mocker
     model = RehuDocumentModel.create_new(path, rename_coordinator=coordinator)
     source = tmp_path / "info.checksum"
     take = mocker.patch(
-        "rehuco_agent.documents.rehu_document_model.take_enclosing_claims",
+        "rehuco_core.save_record_job.take_enclosing_claims",
         return_value=TakenClaims(source, {"foo.zip": CoveringRecord(path, "foo.zip")}, pruned=True),
     )
     published = publications(mocker)
@@ -2684,7 +2685,7 @@ def test_only_the_first_save_takes_checksums(mocker: MockerFixture, tmp_path: Pa
     """
     path = tmp_path / "foo.rehu"
     model = RehuDocumentModel.create_new(path)
-    take = mocker.patch("rehuco_agent.documents.rehu_document_model.take_enclosing_claims", return_value=None)
+    take = mocker.patch("rehuco_core.save_record_job.take_enclosing_claims", return_value=None)
 
     model.save()
     model.save()
@@ -3338,7 +3339,7 @@ def test_a_document_current_at_both_layers_is_not_upgradable(mocker: MockerFixtu
     assert model.upgradable is False
 
 
-def test_saving_a_block_only_upgradable_document_clears_the_offer(mocker: MockerFixture) -> None:
+def test_saving_a_block_only_upgradable_document_clears_the_offer(mocker: MockerFixture, tmp_path: Path) -> None:
     """Saving upgrades whichever layer was stale, block included -- the same single-remedy contract the
     file-wide offer already has (:meth:`RehuDocumentModel.save`, #81).
 
@@ -3355,7 +3356,7 @@ def test_saving_a_block_only_upgradable_document_clears_the_offer(mocker: Mocker
             {"format_version": CURRENT_FORMAT_VERSION, "core": {"type": "tutorial"}, "tutorial": {}}
         ),
     )
-    document = RehuDocument.load(FAKE / "info.rehu")
+    document = RehuDocument.load(tmp_path / "info.rehu")
     model = RehuDocumentModel(document)
     assert model.upgradable is True
 
@@ -3436,7 +3437,7 @@ def test_an_older_locked_document_is_not_upgradable(mocker: MockerFixture) -> No
     assert model.upgradable is False
 
 
-def test_saving_an_upgradable_document_clears_the_offer(mocker: MockerFixture) -> None:
+def test_saving_an_upgradable_document_clears_the_offer(mocker: MockerFixture, tmp_path: Path) -> None:
     """``save()`` -- the upgrade mechanism itself, per its own docstring -- restamps the document and
     immediately clears :attr:`upgradable`, even though the model was never dirty (the Upgrade path).
 
@@ -3449,7 +3450,7 @@ def test_saving_an_upgradable_document_clears_the_offer(mocker: MockerFixture) -
     mocker.patch.object(Path, "read_text", return_value=json.dumps({"format_version": 1, "type": "Tutorial"}))
     mocker.patch("rehuco_core.record_file_lock.RecordFileLock")
     mocker.patch("rehuco_core.rehu_document.atomic_write_text")
-    document = RehuDocument.load(FAKE / "info.rehu")
+    document = RehuDocument.load(tmp_path / "info.rehu")
     model = RehuDocumentModel(document)
     assert model.upgradable is True
     assert model.dirty is False
@@ -3891,9 +3892,9 @@ class RecordingSink:
 def scoped_sink(qtbot: QtBot) -> Iterator[Callable[[Hashable | None], RecordingSink]]:
     """Provide a way to record what the shared bridge routes to one scope.
 
-    The model's own logger, and the shared loader's a model reads a file through (#381), are attached to the
-    bridge with propagation off, so these records reach the bridge under test and neither the console nor a
-    handler another test left behind.
+    The model's own logger, the shared loader's a model reads a file through (#381), and the save job's a model
+    writes it through (#497) are attached to the bridge with propagation off, so these records reach the bridge under
+    test and neither the console nor a handler another test left behind.
 
     :param qtbot: pytest-qt bot, whose event loop the bridge's queued dispatch needs.
     :returns: a callable taking a scope -- or ``None`` for a sink that sees everything, which is what a
@@ -3901,7 +3902,11 @@ def scoped_sink(qtbot: QtBot) -> Iterator[Callable[[Hashable | None], RecordingS
     """
     del qtbot  # only needed so a QApplication and an event loop exist
     bridge = shared_log_bridge()
-    loggers = [logging.getLogger(RehuDocumentModel.__module__), logging.getLogger(document_registry.__name__)]
+    loggers = [
+        logging.getLogger(RehuDocumentModel.__module__),
+        logging.getLogger(document_registry.__name__),
+        logging.getLogger(save_record_job.__name__),
+    ]
     previous = [(logger.propagate, logger.level) for logger in loggers]
     for logger in loggers:
         # DEBUG explicitly: this logger's own level is NOTSET, so without it the effective floor is the root

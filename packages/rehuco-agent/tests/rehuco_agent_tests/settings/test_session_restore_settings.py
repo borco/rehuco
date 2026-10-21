@@ -8,6 +8,7 @@ from typing import Any
 from pytest import fixture
 from rehuco_agent.settings.session_restore_settings import (
     GROUP,
+    KEEP_UNSAVED_CHANGES_KEY,
     LEGACY_RESTORE_ON_STARTUP_KEY,
     RESTORE_DOCUMENTS_KEY,
     RESTORE_LOCAL_DOCUMENTS_KEY,
@@ -196,3 +197,41 @@ def test_a_written_document_choice_wins_over_the_old_toggle(settings: FakeSettin
     settings.endGroup()
     loaded.load(settings)  # type: ignore[arg-type]
     assert loaded.restore_remote_documents is True
+
+
+def test_keeping_unsaved_changes_is_off_when_nothing_was_saved(settings: FakeSettings) -> None:
+    """With nothing written, quitting asks about unsaved edits, as it always has (#497).
+
+    **Test steps:**
+
+    * seed an instance with keeping on
+    * load it from an empty store
+    * verify keeping is off
+    """
+    loaded = SessionRestoreSettings(keep_unsaved_changes=True)
+    loaded.load(settings)  # type: ignore[arg-type]
+
+    assert loaded.keep_unsaved_changes is False
+
+
+def test_keeping_unsaved_changes_round_trips_under_its_own_key(settings: FakeSettings) -> None:
+    """The choice to keep unsaved edits across a quit is saved under its own key and read back (#497).
+
+    **Test steps:**
+
+    * save an instance with keeping on
+    * verify the store holds it under its key, and a fresh instance loads it on
+    * write it off, load into the same instance, and verify it is off
+    """
+    SessionRestoreSettings(keep_unsaved_changes=True).save(settings)  # type: ignore[arg-type]
+
+    settings.beginGroup(GROUP)
+    assert settings.value(KEEP_UNSAVED_CHANGES_KEY) is True
+    settings.endGroup()
+    loaded = SessionRestoreSettings()
+    loaded.load(settings)  # type: ignore[arg-type]
+    assert loaded.keep_unsaved_changes is True
+
+    SessionRestoreSettings(keep_unsaved_changes=False).save(settings)  # type: ignore[arg-type]
+    loaded.load(settings)  # type: ignore[arg-type]
+    assert loaded.keep_unsaved_changes is False

@@ -13,6 +13,7 @@ from rehuco_core.access import ResourceKey
 
 from ..resource_events import ResourceEvents
 from .document_widget import DocumentWidget
+from .pending_saves import PendingSaves
 from .rehu_document_model import RehuDocumentModel
 
 DIRTY_DOCK_MARKER: Final = "⬤ "
@@ -55,6 +56,7 @@ class DocumentDock(QtAds.CDockWidget):
     :param task_queue: the app-wide queue this document's slow work goes on (#204), passed straight
         through; ``None`` builds a document that offers no such work at all.
     :param resource_events: the app's file announcements (#376), passed straight through.
+    :param pending_saves: the window's save jobs (#497), passed straight through.
     :param preview_name: the object name of a preview dock (#39), kept until it is promoted -- unique per
         preview the area makes, since the manager's registry stays keyed by the name a dock was added under and
         a promoted preview keeps its entry. ``None`` builds an ordinary dock, named by its key.
@@ -79,6 +81,7 @@ class DocumentDock(QtAds.CDockWidget):
         task_queue: TaskQueue | None = None,
         resource_events: ResourceEvents | None = None,
         *,
+        pending_saves: PendingSaves | None = None,
         preview_name: str | None = None,
     ) -> None:
         super().__init__(dock_manager, "")
@@ -88,7 +91,12 @@ class DocumentDock(QtAds.CDockWidget):
         self.__switching = False
         """True only while :meth:`load` moves the model to another record -- a key change that is no move."""
         self.__widget: Final = DocumentWidget(
-            model, self, stylesheet_host=stylesheet_host, task_queue=task_queue, resource_events=resource_events
+            model,
+            self,
+            stylesheet_host=stylesheet_host,
+            task_queue=task_queue,
+            resource_events=resource_events,
+            pending_saves=pending_saves,
         )
 
         self.setObjectName(preview_name if preview_name is not None else self.__object_name(model.key))

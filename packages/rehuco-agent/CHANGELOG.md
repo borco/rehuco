@@ -28,8 +28,51 @@ released becomes the body of the GitHub Release, so each entry is written to be 
   edits says the file changed. A document opened from outside every root has its folder watched the same way. A root
   that cannot be reached keeps its rows in the browsers, greyed, and double-clicking one says why in the status bar
   instead of opening it; once it is back, it is scanned again.
+- **Unsaved changes can be kept across a quit** (#497). *Settings* > *Session* gains *Keep unsaved changes when
+  quitting, and reopen those documents on the next start*, off by default. On, quitting asks nothing about unsaved
+  edits: they are kept, with each document's panel layout, and the next start reopens those documents with their
+  edits, still unsaved, whether or not the session is restored -- at once on a local drive, once its share answers
+  otherwise. A document never saved comes back as a new one bound to its path; one whose file changed meanwhile says
+  so, and its Save shows the differences; one whose file or folder is gone reopens with its edits and says that.
+  Off, quitting asks as before. Closing one document by hand still asks Save / Discard / Cancel.
 
 ### Changed
+
+- **Saving no longer freezes the window** (#497). Save, and Upgrade, hand the document's edits to a save task on the
+  task queue and leave the document editable; its banner says *Saving…* while the task is out, and *Save pending*,
+  *Save waiting* (with what for), *Save paused* or *Save failed* (with why) for a save that has not landed. Saves to
+  one share take turns, saves to different shares run side by side, and none waits behind a checksum run. A save
+  whose share does not answer, or whose record another writer holds, waits and tries again by itself, and is kept
+  with the queue across a restart; a root coming back tries its waiting saves at once. A record has one save task: a
+  later Save gives it the newer edits instead of queueing another -- even while it is writing, when they are written
+  right after. When a save lands, what it changed on the way -- the dates, another user's or device's progress
+  merged in -- shows in the document without touching anything edited since, and the document is unsaved exactly
+  when there are such edits. A save follows its record across a rename made in the app, and a first save of a record
+  someone else created meanwhile stops as a conflict instead of writing over it.
+- **A save that has not landed is the record's saved state on this machine**, like a borrowed copy (#497). Save leaves
+  the document saved; **Revert** goes back to the pending save rather than the file, and **opening the record** --
+  again, or after a restart -- shows it. Closing a document and choosing *Discard* drops only what was edited since
+  the last Save; the save stays and lands later. A change on disk while a save is pending reloads nothing: the save's
+  own check judges it. Save stays available on a document whose save failed or waits, and tries it again. A rename
+  from the location field is refused while a save of the record has not landed, since it writes the record first.
+- **A save that meets a conflict no longer pops up a dialog.** The document shows its conflict notice, and the next
+  Save reads the file again and shows the differences first, the *Mine* column being the document as it is now. A
+  Save on a document whose file changed on disk while it had edits does the same.
+- **Closing an unsaved document, Save All and quitting wait for the save** behind a progress dialog (Cancel stops
+  waiting and leaves the save queued). A conflict there shows the differences; a save that cannot land asks **Try
+  Again**, **Leave It Pending** or **Cancel**.
+- **The Tasks dock shows saves that are waiting** (#497): a clock icon, the reason in the Info column and tooltip,
+  and Resume reading *Try Now*. A **Pending Saves** toggle shows only the saves not yet landed; **Inspect Save**
+  opens a failed or waiting save's document with its edits -- and the differences, if the file changed since -- and
+  saves again; **Discard Save…** asks once, drops the selected saves and reverts their open documents to the file.
+  Cancel and Clear on a save that has not landed do the same, and Clear All and the *Clear Done* / *Clear Failed*
+  sweeps -- here or at a restart -- leave such saves alone: each still holds edits. The status bar says *N pending
+  saves* while there are any, and a click opens the Tasks dock on that filter.
+- **A record that disappears under an open document is noticed** (#497). With no unsaved edits the document reverts
+  to the locked *missing* view, as reopening it would; with edits, or a save not landed, it keeps them and says *The
+  file is gone* or *The resource's folder is gone*, and Save does nothing until the record is back, which clears the
+  notice. A save never recreates a folder, or the file of a record that was read: it fails and keeps its edits, so
+  putting the record back and pressing Retry writes them.
 
 - **Saving no longer overwrites what changed on disk since you opened the document.** Another user's rating, or
   progress written by a player while you edit, is merged into your save and shown at once. When the record's

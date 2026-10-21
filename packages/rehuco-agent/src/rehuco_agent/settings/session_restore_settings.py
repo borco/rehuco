@@ -9,6 +9,7 @@ GROUP: Final = "session_restore"
 RESTORE_LOCAL_DOCUMENTS_KEY: Final = "restore_local_documents"
 RESTORE_REMOTE_DOCUMENTS_KEY: Final = "restore_remote_documents"
 RESTORE_ROOT_CATALOG_KEY: Final = "restore_root_catalog"
+KEEP_UNSAVED_CHANGES_KEY: Final = "keep_unsaved_changes"
 RESTORE_DOCUMENTS_KEY: Final = "restore_documents"
 """The one documents toggle (#408) the two above split (#464); read as their fallback, never written."""
 LEGACY_RESTORE_ON_STARTUP_KEY: Final = "restore_on_startup"
@@ -45,6 +46,10 @@ class SessionRestoreSettings:
     restore_root_catalog: bool = field(default=True)
     """Reopen the ``.rehuco`` the previous session left open (#377). On by default."""
 
+    keep_unsaved_changes: bool = field(default=False)
+    """Quit without asking about unsaved edits, keep them, and reopen those documents with them on the next start --
+    whether or not the session is restored (#497). Off by default: quitting asks, as it always has."""
+
     def restores(self, *, local: bool) -> bool:
         """Whether a document on local (``local``) or on remote/removable storage is restored.
 
@@ -67,6 +72,7 @@ class SessionRestoreSettings:
         self.restore_local_documents = cast(bool, settings.value(RESTORE_LOCAL_DOCUMENTS_KEY, documents, type=bool))
         self.restore_remote_documents = cast(bool, settings.value(RESTORE_REMOTE_DOCUMENTS_KEY, documents, type=bool))
         self.restore_root_catalog = cast(bool, settings.value(RESTORE_ROOT_CATALOG_KEY, legacy, type=bool))
+        self.keep_unsaved_changes = cast(bool, settings.value(KEEP_UNSAVED_CHANGES_KEY, False, type=bool))
         settings.endGroup()
 
     def save(self, settings: QSettings) -> None:
@@ -78,4 +84,5 @@ class SessionRestoreSettings:
         settings.setValue(RESTORE_LOCAL_DOCUMENTS_KEY, self.restore_local_documents)
         settings.setValue(RESTORE_REMOTE_DOCUMENTS_KEY, self.restore_remote_documents)
         settings.setValue(RESTORE_ROOT_CATALOG_KEY, self.restore_root_catalog)
+        settings.setValue(KEEP_UNSAVED_CHANGES_KEY, self.keep_unsaved_changes)
         settings.endGroup()

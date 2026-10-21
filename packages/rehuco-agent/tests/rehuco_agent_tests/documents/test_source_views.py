@@ -21,7 +21,7 @@ from rehuco_agent.documents.source_views import (
     OnDiskView,
     SavePreviewView,
 )
-from rehuco_core import CURRENT_FORMAT_VERSION, RehuDocument
+from rehuco_core import CURRENT_FORMAT_VERSION, RecordVersion, RehuDocument, SaveOutcome
 
 REHU_PATH: Final = Path.cwd() / "fake" / "info.rehu"
 TC_PATH: Final = Path.cwd() / "fake" / "info.tc"
@@ -331,7 +331,7 @@ def test_on_disk_rereads_the_file_after_a_save(qtbot: QtBot, tmp_path: Path) -> 
     """Saving re-reads the file, so the view picks up the newly-written bytes (#111).
 
     Save is the seam that changes the on-disk bytes: before, the file holds the old text; after, it
-    holds what was just written. The view re-reads on ``dirty`` clearing.
+    holds what was just written. The view re-reads on the save landing (``saving`` clearing, #497).
 
     **Test steps:**
 
@@ -350,6 +350,33 @@ def test_on_disk_rereads_the_file_after_a_save(qtbot: QtBot, tmp_path: Path) -> 
     written = path.read_text(encoding="utf-8")
     assert written != old
     assert label(view, OnDiskView.LABEL_NAME).text() == written
+
+
+@mark.usefixtures("real_path_stat")
+def test_on_disk_rereads_the_file_when_a_queued_save_lands(qtbot: QtBot, tmp_path: Path) -> None:
+    """A save handed to a job leaves the document clean before anything is written (#497): the file changes while
+    the save is out, and the view re-reads it when the save comes back.
+
+    **Test steps:**
+
+    * write an "old" text to a file under ``tmp_path``, and show a dirty model bound to it
+    * hand a snapshot of the model to a save, then write the "new" text as the save's job does
+    * verify the view still shows the old text
+    * land the save
+    * verify the view shows the new text
+    """
+    path = tmp_path / "info.rehu"
+    path.write_text("old on disk\n", encoding="utf-8")
+    model = RehuDocumentModel.create_new(path)  # starts dirty, bound to a path
+    view = shown_on_disk(qtbot, model)
+    payload = model.snapshot()
+    model.begin_save()
+    path.write_text("new on disk\n", encoding="utf-8")
+    assert label(view, OnDiskView.LABEL_NAME).text() == "old on disk\n"
+
+    model.complete_save(payload, SaveOutcome(payload.payload, RecordVersion("metadata", "file", ()), None, False))
+
+    assert label(view, OnDiskView.LABEL_NAME).text() == "new on disk\n"
 
 
 def test_on_disk_rereads_after_a_revert(qtbot: QtBot, mocker: MockerFixture) -> None:

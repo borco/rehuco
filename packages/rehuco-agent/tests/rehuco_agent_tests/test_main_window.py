@@ -47,6 +47,7 @@ from rehuco_agent.app_logging import shared_log_bridge
 from rehuco_agent.commands import QUIT, SAVE_DOCUMENT, shared_command_registry
 from rehuco_agent.documents.document_sub_docks import LOG_DOCK_MIN_HEIGHT
 from rehuco_agent.documents.documents_dock import DocumentsDock
+from rehuco_agent.documents.pending_saves import PendingSaves
 from rehuco_agent.glyphs import TAB_CLOSE_GLYPH
 from rehuco_agent.main_window import (
     BROWSERS_DOCK_OBJECT_NAME,
@@ -99,6 +100,7 @@ from rehuco_core import (
     DEFAULT_DELETER_PROVIDER,
     DEFAULT_PLUGIN_REGISTRY,
     INFO_REHU_FILENAME,
+    SAVE_RECORD_KIND,
     AppFolders,
     CatalogField,
     JobControl,
@@ -1422,51 +1424,50 @@ def test_open_companion_action_does_nothing_when_dialog_is_cancelled(mocker: Moc
 
 
 def test_save_all_action_saves_only_dirty_open_documents(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """``File > Save all`` saves every dirty document, reusing #41's per-document save, and leaves
-    clean ones alone (#64).
+    """``File > Save all`` saves every dirty document as a job it waits for, and leaves clean ones alone (#64,
+    #497).
 
     **Test steps:**
 
-    * stand in one dirty and one clean open document model
+    * stand in one dirty and one clean open document model, and mock the save-and-wait
     * mock the unsaved-changes dialog so qtbot's teardown-close doesn't block on a real modal for
       the still-dirty stand-in
     * trigger ``save_all_action``
-    * verify only the dirty model was saved
+    * verify only the dirty model was saved and waited for, parented to the window
     """
     window = MainWindow()
     qtbot.addWidget(window)
     dirty, clean = mocker.MagicMock(dirty=True), mocker.MagicMock(dirty=False)
     mocker.patch.object(window._MainWindow__documents_dock, "open_document_models", return_value=[dirty, clean])  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     mocker.patch(UNSAVED_CHANGES_DIALOG)
+    save_and_wait = mocker.patch.object(PendingSaves, "save_and_wait", return_value=True)
 
     window._MainWindow__ui.save_all_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
-    dirty.save.assert_called_once_with()
-    clean.save.assert_not_called()
+    save_and_wait.assert_called_once_with(window, dirty)
 
 
-def test_save_all_shows_a_critical_dialog_when_a_save_fails(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A ``Save all`` whose per-document save raises ``OSError`` (an offline mount, #146) surfaces a
-    critical dialog rather than aborting the sweep with a traceback.
+def test_save_all_stops_at_a_save_the_user_cancels(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A ``Save all`` whose save of one document is cancelled -- a save that could not land, #146, #497 -- leaves the
+    remaining dirty documents untouched.
 
     **Test steps:**
 
-    * stand in one dirty open document whose ``save`` raises ``OSError``
-    * mock the critical dialog to answer Cancel, and the unsaved-changes dialog for teardown
+    * stand in two dirty open documents, and mock the save-and-wait to answer cancelled
+    * mock the unsaved-changes dialog for teardown
     * trigger ``save_all_action``
-    * verify the critical dialog was shown
+    * verify only the first document was saved
     """
     window = MainWindow()
     qtbot.addWidget(window)
-    dirty = mocker.MagicMock(dirty=True, label="doc.rehu")
-    dirty.save.side_effect = OSError("offline mount")
-    mocker.patch.object(window._MainWindow__documents_dock, "open_document_models", return_value=[dirty])  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    first, second = mocker.MagicMock(dirty=True), mocker.MagicMock(dirty=True)
+    mocker.patch.object(window._MainWindow__documents_dock, "open_document_models", return_value=[first, second])  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     mocker.patch(UNSAVED_CHANGES_DIALOG)
-    critical = mocker.patch.object(QMessageBox, "critical", return_value=QMessageBox.StandardButton.Cancel)
+    save_and_wait = mocker.patch.object(PendingSaves, "save_and_wait", return_value=False)
 
     window._MainWindow__ui.save_all_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
-    critical.assert_called_once()
+    save_and_wait.assert_called_once_with(window, first)
 
 
 def test_sweep_checksums_action_queues_a_sweep_over_the_chosen_folder(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -2108,17 +2109,18 @@ def test_close_event_accepts_immediately_with_no_dirty_documents(mocker: MockerF
 
 
 def test_close_event_saves_selected_documents_when_accepted(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """Accepting the unsaved-changes dialog saves the models it reports as selected.
+    """Accepting the unsaved-changes dialog saves the models it reports as selected, each a job it waits for (#497).
 
     **Test steps:**
 
-    * mock ``open_document_models`` to return two dirty models
+    * mock ``open_document_models`` to return two dirty models, and the save-and-wait
     * mock the dialog to accept and select only one of them
     * dispatch a close event
     * verify the event was accepted and only the selected model was saved
     """
     window = MainWindow()
     qtbot.addWidget(window)
+    save_and_wait = mocker.patch.object(PendingSaves, "save_and_wait", return_value=True)
     kept, discarded = mocker.MagicMock(dirty=True), mocker.MagicMock(dirty=True)
     mocker.patch.object(window._MainWindow__documents_dock, "open_document_models", return_value=[kept, discarded])  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     dialog = mocker.MagicMock()
@@ -2130,8 +2132,7 @@ def test_close_event_saves_selected_documents_when_accepted(mocker: MockerFixtur
     window.closeEvent(event)
 
     assert event.isAccepted()
-    kept.save.assert_called_once_with()
-    discarded.save.assert_not_called()
+    save_and_wait.assert_called_once_with(window, kept)
 
 
 def test_close_event_ignores_the_close_when_dialog_is_cancelled(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -2146,6 +2147,7 @@ def test_close_event_ignores_the_close_when_dialog_is_cancelled(mocker: MockerFi
     """
     window = MainWindow()
     qtbot.addWidget(window)
+    save_and_wait = mocker.patch.object(PendingSaves, "save_and_wait", return_value=True)
     dirty_model = mocker.MagicMock(dirty=True)
     mocker.patch.object(window._MainWindow__documents_dock, "open_document_models", return_value=[dirty_model])  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     dialog = mocker.MagicMock()
@@ -2156,78 +2158,67 @@ def test_close_event_ignores_the_close_when_dialog_is_cancelled(mocker: MockerFi
     window.closeEvent(event)
 
     assert not event.isAccepted()
-    dirty_model.save.assert_not_called()
+    save_and_wait.assert_not_called()
 
 
-def test_close_event_still_persists_when_a_failing_save_is_retried(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A selected save that fails once then succeeds on Retry (a transient offline mount, #146) does
-    **not** skip the window-state/session persistence -- the worst-case bug this fix closes.
+def test_close_event_still_persists_when_a_save_is_left_pending(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A selected save that could not land and is left pending (a transient offline mount, #146, #497) does
+    **not** skip the window-state/session persistence -- the worst-case bug #146 closed.
 
     **Test steps:**
 
-    * stand in one selected dirty model whose ``save`` raises ``OSError`` once then succeeds
-    * mock the unsaved-changes dialog to accept and select it, and the critical dialog to answer Retry
+    * stand in one selected dirty model, and mock the save-and-wait to answer it went ahead (left pending)
+    * mock the unsaved-changes dialog to accept and select it
     * mock ``MainWindowSettings.save`` to detect that persistence still ran
     * dispatch a close event
-    * verify the save was retried, the close was accepted, and persistence ran
+    * verify the save was waited for, the close was accepted, and persistence ran
     """
     window = MainWindow()
     qtbot.addWidget(window)
     model = mocker.MagicMock(dirty=True, label="doc.rehu")
-
-    # raise only on the first attempt, then succeed -- and tolerate any further calls (qtbot's
-    # teardown-close re-runs the same guard), unlike a fixed-length list that would exhaust
-    attempts = {"count": 0}
-
-    def flaky_save() -> None:
-        attempts["count"] += 1
-        if attempts["count"] == 1:
-            raise OSError("offline mount")
-
-    model.save.side_effect = flaky_save
+    save_and_wait = mocker.patch.object(PendingSaves, "save_and_wait", return_value=True)
     mocker.patch.object(window._MainWindow__documents_dock, "open_document_models", return_value=[model])  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     dialog = mocker.MagicMock()
     dialog.exec.return_value = QDialog.DialogCode.Accepted
     dialog.selected_models.return_value = [model]
     mocker.patch(UNSAVED_CHANGES_DIALOG, return_value=dialog)
-    mocker.patch.object(QMessageBox, "critical", return_value=QMessageBox.StandardButton.Retry)
     save = mocker.patch.object(MainWindowSettings, "save")
     event = QCloseEvent()
 
     window.closeEvent(event)
 
-    assert model.save.call_count == 2
+    save_and_wait.assert_called_once_with(window, model)
     assert event.isAccepted()
     save.assert_called_once()
 
 
 def test_close_event_is_aborted_when_a_failing_save_is_cancelled(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """Cancelling the retry/cancel dialog a failing save raises aborts the close: the window stays
-    open, its edits and session intact, and persistence does not run (#146).
+    """Cancelling a save that could not land aborts the close: the window stays open, its edits and session intact,
+    and persistence does not run (#146, #497).
 
     **Test steps:**
 
-    * stand in one selected dirty model whose ``save`` raises ``OSError``
-    * mock the unsaved-changes dialog to accept and select it, and the critical dialog to answer Cancel
+    * stand in one selected dirty model, and mock the save-and-wait to answer cancelled
+    * mock the unsaved-changes dialog to accept and select it
     * mock ``MainWindowSettings.save`` to detect whether persistence ran
     * dispatch a close event
-    * verify the close was ignored and persistence never ran
+    * verify the save was waited for, the close was ignored and persistence never ran
     """
     window = MainWindow()
     qtbot.addWidget(window)
     model = mocker.MagicMock(dirty=True, label="doc.rehu")
-    model.save.side_effect = OSError("offline mount")
+    save_and_wait = mocker.patch.object(PendingSaves, "save_and_wait", return_value=False)
     mocker.patch.object(window._MainWindow__documents_dock, "open_document_models", return_value=[model])  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     dialog = mocker.MagicMock()
     dialog.exec.return_value = QDialog.DialogCode.Accepted
     dialog.selected_models.return_value = [model]
     mocker.patch(UNSAVED_CHANGES_DIALOG, return_value=dialog)
-    mocker.patch.object(QMessageBox, "critical", return_value=QMessageBox.StandardButton.Cancel)
     save = mocker.patch.object(MainWindowSettings, "save")
     event = QCloseEvent()
 
     window.closeEvent(event)
 
+    save_and_wait.assert_called_once_with(window, model)
     assert not event.isAccepted()
     save.assert_not_called()
 
@@ -5160,8 +5151,8 @@ def test_opening_the_task_queue_dock_from_the_action_bar_checks_the_menu_compani
 
 
 class GatedJob(TaskJobBase):
-    """A job that reports once, then blocks until released -- the window's own queue is real here,
-    the same discipline ``tests/tasks/test_task_queue_widget.py`` uses (#239).
+    """A job that reports once, then blocks until released -- the window's own queue is real here, the same
+    discipline ``tests/tasks/test_task_queue_model.py`` uses (#239).
 
     :param label: the job's label.
     """
@@ -5888,21 +5879,22 @@ def test_a_queue_that_will_not_settle_is_logged_rather_than_waited_on(
 @mark.parametrize(
     ("clear_done", "clear_failed", "kept"),
     [
-        (False, False, ["done", "failed", "cancelled", "queued"]),
-        (True, False, ["failed", "cancelled", "queued"]),
-        (False, True, ["done", "cancelled", "queued"]),
-        (True, True, ["cancelled", "queued"]),
+        (False, False, ["done", "failed", "cancelled", "queued", "failed save"]),
+        (True, False, ["failed", "cancelled", "queued", "failed save"]),
+        (False, True, ["done", "cancelled", "queued", "failed save"]),
+        (True, True, ["cancelled", "queued", "failed save"]),
     ],
 )
 def test_each_clear_on_restart_setting_drops_only_its_own_kind(
     mocker: MockerFixture, qtbot: QtBot, clear_done: bool, clear_failed: bool, kept: list[str]
 ) -> None:
     """The two clears are independent, and **a cancelled job survives every combination** -- it was
-    stopped on purpose and is the likeliest of the three to be retried.
+    stopped on purpose and is the likeliest of the three to be retried. **So does a failed save** (#497): it still
+    holds the edits it could not land.
 
     **Test steps:**
 
-    * stand in a saved queue holding one job of each finished state, plus one queued
+    * stand in a saved queue holding one job of each finished state, plus one queued and one failed save
     * set each combination of the two clear settings
     * verify exactly the expected jobs reached ``restore``
     """
@@ -5911,6 +5903,7 @@ def test_each_clear_on_restart_setting_drops_only_its_own_kind(
         {"kind": "x", "label": "failed", "job_state": "failed", "state": {}},
         {"kind": "x", "label": "cancelled", "job_state": "cancelled", "state": {}},
         {"kind": "x", "label": "queued", "job_state": "queued", "state": {}},
+        {"kind": SAVE_RECORD_KIND, "label": "failed save", "job_state": "failed", "state": {}},
     ]
     mocker.patch("rehuco_agent.tasks.task_queue_store.TaskQueueStore.read_items", return_value=saved)
     restore = mocker.patch("rehuco_agent.tasks.task_queue_store.TaskQueueStore.restore")

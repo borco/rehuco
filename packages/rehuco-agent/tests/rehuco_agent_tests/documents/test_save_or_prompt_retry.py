@@ -10,6 +10,7 @@ from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.dialogs.record_conflict_dialog import ConflictResolution, RecordConflictDialog
 from rehuco_agent.documents import save_or_prompt_retry as module
+from rehuco_agent.documents.pending_saves import PendingSaves
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.documents.save_or_prompt_retry import ask_about_conflict, save_or_prompt_retry
 from rehuco_core import DEFAULT_CURRENT_USERNAME, RecordConflict, RecordVersion, RehuDocument
@@ -107,6 +108,29 @@ def test_falls_back_to_untitled_when_the_model_has_no_label(mocker: MockerFixtur
     assert "Untitled" in critical.call_args.args[2]
 
 
+@mark.parametrize("landed", [True, False], ids=["landed", "cancelled"])
+def test_with_the_windows_save_jobs_the_save_is_a_job_waited_for(
+    mocker: MockerFixture, parent: QWidget, landed: bool
+) -> None:
+    """Given the window's save jobs, the save is handed to them and waited for there (#497); what they answer is the
+    answer, and nothing is written here.
+
+    **Test steps:**
+
+    * stand in a model, and save jobs whose wait answers that the save landed, or was cancelled
+    * call ``save_or_prompt_retry`` with them
+    * verify it answered what they did, they were asked for this model, and the model did not save itself
+    """
+    model = mocker.MagicMock(label="doc.rehu")
+    pending = mocker.Mock(spec=PendingSaves)
+    pending.save_and_wait.return_value = landed
+
+    assert save_or_prompt_retry(parent, model, pending) is landed
+
+    pending.save_and_wait.assert_called_once_with(parent, model)
+    model.save.assert_not_called()
+
+
 # region conflicts
 def refusal(tmp_path: Path) -> RecordConflict:
     """A conflict naming a file's title as ``Theirs``, for a stand-in model to raise.
@@ -130,23 +154,26 @@ def answer_conflicts(mocker: MockerFixture, *answers: tuple[ConflictResolution, 
 
 
 def test_a_conflict_resolved_with_save_saves_the_picks(mocker: MockerFixture, parent: QWidget, tmp_path: Path) -> None:
-    """Save in the conflict dialog puts the picks and saves; the gated action goes on.
+    """Save in the conflict dialog puts the picks, then saves the document again; the gated action goes on.
 
     **Test steps:**
 
-    * stand in a model whose save is refused as a conflict, and answer the dialog with Save and a pick
+    * stand in a model whose first save is refused as a conflict and whose second lands, and answer the dialog with
+      Save and a pick
     * call ``save_or_prompt_retry``
-    * verify the dialog was asked about that conflict, the picks were resolved, and it returned ``True``
+    * verify the dialog was asked about that conflict, the picks were resolved, the document saved twice, and it
+      returned ``True``
     """
     conflict = refusal(tmp_path)
     model = mocker.MagicMock(label="doc.rehu")
-    model.save.side_effect = conflict
+    model.save.side_effect = [conflict, None]
     ask = answer_conflicts(mocker, (ConflictResolution.SAVE, KEEP_THEIRS))
 
     assert save_or_prompt_retry(parent, model) is True
 
     ask.assert_called_once_with(parent, model, conflict)
     model.resolve_conflict.assert_called_once_with(KEEP_THEIRS)
+    assert model.save.call_count == 2
     model.revert.assert_not_called()
 
 
@@ -193,14 +220,14 @@ def test_a_resolution_refused_again_asks_again(mocker: MockerFixture, parent: QW
 
     **Test steps:**
 
-    * stand in a model whose save is refused, and whose first resolution is refused too
+    * stand in a model whose save is refused, whose save after the first resolution is refused too, and whose third
+      save lands
     * answer both dialogs with Save, each with its own picks
-    * verify the dialog was asked twice, each set of picks resolved in turn, and it returned ``True``
+    * verify the dialog was asked twice, each set of picks resolved in turn, three saves made, and it returned ``True``
     """
     first, second = refusal(tmp_path), refusal(tmp_path)
     model = mocker.MagicMock(label="doc.rehu")
-    model.save.side_effect = first
-    model.resolve_conflict.side_effect = [second, None]
+    model.save.side_effect = [first, second, None]
     again: dict[Any, Any] = {TITLE_PATH: "Theirs again"}
     ask = answer_conflicts(mocker, (ConflictResolution.SAVE, KEEP_THEIRS), (ConflictResolution.SAVE, again))
 
@@ -208,31 +235,32 @@ def test_a_resolution_refused_again_asks_again(mocker: MockerFixture, parent: QW
 
     assert [call.args[2] for call in ask.call_args_list] == [first, second]
     assert [call.args for call in model.resolve_conflict.call_args_list] == [(KEEP_THEIRS,), (again,)]
-    model.save.assert_called_once_with()
+    assert model.save.call_count == 3
 
 
-def test_a_resolution_that_fails_to_write_is_retried_as_a_resolution(
+def test_a_resolved_save_that_fails_to_write_is_retried_without_asking_again(
     mocker: MockerFixture, parent: QWidget, tmp_path: Path
 ) -> None:
-    """Retry after an I/O failure repeats what failed -- the resolution with its picks, not a plain save that would
-    only be refused again.
+    """Retry after an I/O failure repeats what failed -- the save of the resolved document, whose picks are already in
+    it and which is based on the file as the conflict found it, so neither the dialog nor the resolution comes back.
 
     **Test steps:**
 
-    * stand in a model whose save is refused, and whose first resolution fails with ``OSError``
+    * stand in a model whose save is refused, whose save after the resolution fails with ``OSError``, and whose next
+      save lands
     * answer the dialog with Save, and the failure with Retry
-    * verify the picks were resolved twice, the plain save attempted once, and it returned ``True``
+    * verify the dialog was asked and the picks resolved once, three saves made, and it returned ``True``
     """
     model = mocker.MagicMock(label="doc.rehu")
-    model.save.side_effect = refusal(tmp_path)
-    model.resolve_conflict.side_effect = [OSError("offline mount"), None]
-    answer_conflicts(mocker, (ConflictResolution.SAVE, KEEP_THEIRS))
+    model.save.side_effect = [refusal(tmp_path), OSError("offline mount"), None]
+    ask = answer_conflicts(mocker, (ConflictResolution.SAVE, KEEP_THEIRS))
     mocker.patch.object(QMessageBox, "critical", return_value=QMessageBox.StandardButton.Retry)
 
     assert save_or_prompt_retry(parent, model) is True
 
-    assert model.resolve_conflict.call_count == 2
-    model.save.assert_called_once_with()
+    ask.assert_called_once()
+    model.resolve_conflict.assert_called_once_with(KEEP_THEIRS)
+    assert model.save.call_count == 3
 
 
 def refused_title(tmp_path: Path) -> tuple[RehuDocumentModel, RecordConflict]:

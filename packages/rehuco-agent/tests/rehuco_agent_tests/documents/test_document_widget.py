@@ -27,6 +27,7 @@ from typing import Any, Final, cast
 
 import cbor2
 import PySide6QtAds as QtAds
+from borco_core import Presence
 from borco_core.logging import LOG_SCOPE_ATTRIBUTE, LogScope
 from borco_pyside.logging import LogEntry, LogWidget
 from borco_pyside.logging.log_model import MESSAGE_COLUMN
@@ -2373,9 +2374,11 @@ def test_the_upgrade_offer_clears_once_the_document_is_saved(
 
     **Test steps:**
 
-    * mock the atomic write and the lock file, and trigger the upgrade action for real
+    * mock the atomic write and the lock file, have the never-created folder read as there, and trigger the upgrade
+      action for real
     * verify the upgrade action is now hidden and the banner shows no upgrade message
     """
+    mocker.patch("rehuco_core.save_record_job.presence_of", return_value=Presence.PRESENT)
     mocker.patch("rehuco_core.record_file_lock.RecordFileLock")
     mocker.patch("rehuco_core.rehu_document.atomic_write_text")
 

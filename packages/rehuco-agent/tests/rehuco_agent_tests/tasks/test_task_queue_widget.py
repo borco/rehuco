@@ -1,9 +1,9 @@
 """Tests for TaskQueueWidget: the anti-optimism discipline and the controls' own logic (#202).
 
-Uses a real :class:`~rehuco_core.TaskQueue` and cooperating jobs, mirroring ``test_task_queue_model.py``
-and ``rehuco-core``'s own ``test_task_queue.py``: every job here honours its stop requests through the
-shipped :class:`~rehuco_core.TaskJobBase`, so a row reaching ``paused`` or ``cancelled`` is the engine
-genuinely putting it there rather than a fake asserting about itself.
+The task queue is a ``Mock(spec=TaskQueue)`` scripted by :class:`Rig` -- the engine has its own tests in
+``rehuco-core``, and a scripted one puts a row in exactly the state a test names, with no worker to race. The dock's
+model is the real one, told of each change through the listener methods the engine calls, so every wait here is on its
+re-snapshot. What the widget asks of the engine is asserted as calls on the mock; what the engine answers is the script.
 
 **No test asserts on a cursor.** Whether a job keeps its work is read only through the one bit a
 surface may ask about, :attr:`~rehuco_core.JobStatus.resumes_where_it_stopped`
@@ -17,10 +17,11 @@ surface may ask about, :attr:`~rehuco_core.JobStatus.resumes_where_it_stopped`
 
 import base64
 import logging
-from collections.abc import Callable, Iterator
-from threading import Event
-from time import monotonic, sleep
+from collections.abc import Iterator
+from dataclasses import replace
+from itertools import count
 from typing import Any, Final
+from unittest.mock import Mock, call
 
 import cbor2
 import PySide6QtAds as QtAds
@@ -28,7 +29,7 @@ from borco_core.logging import LOG_SCOPE_ATTRIBUTE
 from borco_pyside.logging import LogWidget
 from borco_pyside.logging.log_model import MESSAGE_COLUMN
 from borco_pyside.theming import themed_svg_icon
-from PySide6.QtCore import QItemSelectionModel, QPoint, Qt
+from PySide6.QtCore import QCoreApplication, QEvent, QItemSelectionModel, QPoint, Qt
 from PySide6.QtWidgets import QMessageBox, QToolBar
 from pytest import fixture, mark
 from pytest_mock import MockerFixture
@@ -44,11 +45,14 @@ from rehuco_agent.tasks.task_queue_widget import (
     STARTS_OVER_SOME_TOOLTIP,
     TaskQueueWidget,
 )
-from rehuco_core import JobControl, JobScope, JobState, JobStatus, TaskJobBase, TaskQueue
+from rehuco_core import JobScope, JobState, JobStatus, StopRequest, TaskQueue
 
-TIMEOUT: Final = 5.0
-"""How long a test waits for the worker before calling it a failure, in seconds -- a deadlock
-detector, not a measurement. Every wait below ends the moment its condition holds."""
+SIGNAL_TIMEOUT_MS: Final = 5000
+"""How long a test waits for the model's re-snapshot before calling it a failure -- a deadlock detector, not a
+measurement: the wait ends the moment the signal fires."""
+
+FIRST_SERIAL: Final = 1000
+"""Where the scripted queue's serials start: far above any a test names itself."""
 
 YES: Final = QMessageBox.StandardButton.Yes
 NO: Final = QMessageBox.StandardButton.No
@@ -57,95 +61,116 @@ QUESTION: Final = "rehuco_agent.tasks.task_queue_widget.QMessageBox.question"
 """Where the widget's own confirmation dialog is looked up -- patched there rather than on the class,
 so a test never reaches into a module's re-export of a Qt name."""
 
-
-# region sample jobs
-
-
-class GatedJob(TaskJobBase):
-    """A job that blocks until released, checkpointing while it waits.
-
-    Checkpointing is what makes it usable for every state these tests need: released, it returns and
-    is ``done``; asked to pause or cancel, it unwinds at its next checkpoint and is recorded as
-    ``paused`` or ``cancelled``. A job that never looked at its request would run to completion and be
-    reported ``done`` instead ([[appendices.task-queue#pause-concept]]) -- correct, but untestable here.
-
-    Keeps nothing across a pause, so it is also this module's *starts over on resume* case.
-
-    :param label: the job's label.
-    """
-
-    def __init__(self, label: str) -> None:
-        super().__init__()
-        self.label = label
-        self.entered: Final = Event()
-        self.__proceed: Final = Event()
-
-    def run(self, control: JobControl) -> None:
-        control.report(1, 1)
-        self.entered.set()
-        while not self.__proceed.wait(0.01):
-            self.checkpoint()
-
-    def let_finish(self) -> None:
-        """Release the block, letting ``run`` return."""
-        self.__proceed.set()
-
-
-class CursorJob(GatedJob):
-    """A job that declares it picks up where it left off -- the *costs nothing to pause* case.
-
-    Declares it rather than implementing a cursor: the declaration is the whole of what crosses the
-    boundary, and nothing outside the job class may assume there is a cursor at all."""
-
-    resumes_where_it_stopped = True
-
-
-class FailingJob(TaskJobBase):
-    """A job that raises as soon as it runs, so a row lands in ``failed`` carrying a reason.
-
-    :param label: the job's label.
-    """
-
-    def __init__(self, label: str) -> None:
-        super().__init__()
-        self.label = label
-
-    def run(self, control: JobControl) -> None:
-        del control
-        raise ValueError("nope")
-
-
-# endregion
+SEPARATOR: Final = "separator"
+"""Stands for an ``addSeparator`` call in a recorded menu's entries, so the groups are asserted in order."""
 
 
 # region fixtures and helpers
 
 
-@fixture
-def queue() -> Iterator[TaskQueue]:
-    """A fresh, real `TaskQueue`, shut down after the test.
+class Rig:
+    """A scripted :class:`~rehuco_core.TaskQueue`: ``jobs()`` answers the rows a test put in it, in order, and every
+    other call is only recorded.
 
-    Shutdown cancels whatever is still running, and every job here checkpoints, so a blocked job
-    unwinds promptly rather than holding teardown for its own timeout.
+    :param mocker: pytest-mock fixture.
+    :param qtbot: pytest-qt fixture.
     """
-    built = TaskQueue()
-    yield built
-    built.shutdown(timeout=TIMEOUT)
+
+    def __init__(self, mocker: MockerFixture, qtbot: QtBot) -> None:
+        self.__qtbot: Final = qtbot
+        self.__serials: Final = count(FIRST_SERIAL)
+        self.statuses: Final[dict[int, JobStatus]] = {}
+        """Each row, in the queue's order."""
+        self.queue: Final = mocker.Mock(spec=TaskQueue)
+        self.queue.jobs.side_effect = lambda: tuple(self.statuses.values())
+
+    def add(self, label: str, state: JobState, **fields: Any) -> int:
+        """Put a row at the end of the queue; the widget hears of it at the next :meth:`settle`.
+
+        :param label: its label, by which a test names it.
+        :param state: its state.
+        :param fields: any other :class:`~rehuco_core.JobStatus` field.
+        :returns: its serial.
+        """
+        serial = next(self.__serials)
+        self.statuses[serial] = JobStatus(serial, label, state, **fields)  # pylint: disable=unsupported-assignment-operation
+        return serial
+
+    def serial(self, label: str) -> int:
+        """The serial of the row named ``label``.
+
+        :param label: the row's label.
+        :returns: its serial.
+        """
+        return next(status.serial for status in self.statuses.values() if status.label == label)
+
+    def serials(self, *labels: str) -> list[int]:
+        """The serials of the rows named ``labels``, in that order.
+
+        :param labels: the rows' labels.
+        :returns: their serials.
+        """
+        return [self.serial(label) for label in labels]
+
+    def set_state(self, label: str, state: JobState, **fields: Any) -> None:
+        """Move a row to ``state``; the widget hears of it at the next :meth:`settle`.
+
+        :param label: the row's label.
+        :param state: its new state.
+        :param fields: any other field to change with it.
+        """
+        serial = self.serial(label)
+        self.statuses[serial] = replace(self.statuses[serial], state=state, **fields)  # pylint: disable=unsupported-assignment-operation
+
+    def reorder(self, *labels: str) -> None:
+        """Put the rows in the order ``labels`` names, as an engine move does; heard at the next :meth:`settle`.
+
+        :param labels: every row's label, in the new order.
+        """
+        rows = {status.label: status for status in self.statuses.values()}
+        self.statuses.clear()
+        self.statuses.update((rows[label].serial, rows[label]) for label in labels)
+
+    def settle(self) -> None:
+        """Tell the model the widget attached that the queue changed, as the engine does, and wait for its snapshot."""
+        (listener,) = self.queue.add_listener.call_args.args
+        with self.__qtbot.waitSignal(listener.snapshot_taken, timeout=SIGNAL_TIMEOUT_MS):
+            listener.job_updated(JobStatus(0, "", JobState.QUEUED))
 
 
-@fixture
-def widget(queue: TaskQueue, qtbot: QtBot) -> TaskQueueWidget:
-    """A `TaskQueueWidget` attached to ``queue``, added to ``qtbot`` for teardown."""
-    built = TaskQueueWidget(queue)
+@fixture(name="rig")
+def fixture_rig(mocker: MockerFixture, qtbot: QtBot) -> Rig:
+    """The scripted queue under the widget.
+
+    :param mocker: pytest-mock fixture.
+    :param qtbot: pytest-qt fixture.
+    :returns: the rig.
+    """
+    return Rig(mocker, qtbot)
+
+
+@fixture(name="queue")
+def fixture_queue(rig: Rig) -> Mock:
+    """The rig's scripted queue, for a test that builds its own widget or asserts the calls made of it.
+
+    :param rig: the rig.
+    :returns: the queue.
+    """
+    return rig.queue
+
+
+@fixture(name="widget")
+def fixture_widget(rig: Rig, qtbot: QtBot) -> TaskQueueWidget:
+    """A `TaskQueueWidget` attached to the rig's queue, added to ``qtbot`` for teardown.
+
+    :param rig: the rig.
+    :param qtbot: pytest-qt fixture.
+    :returns: the widget.
+    """
+    built = TaskQueueWidget(rig.queue)
     built.attach()
     qtbot.addWidget(built)
     return built
-
-
-@fixture
-def deliver(qtbot: QtBot) -> Callable[[], None]:
-    """Pump the Qt event loop long enough for a pending queued snapshot to run."""
-    return lambda: qtbot.wait(50)
 
 
 def ui_of(widget: TaskQueueWidget) -> object:
@@ -201,7 +226,7 @@ def widget_status(widget: TaskQueueWidget, row: int) -> JobStatus:
     :param row: the row to read.
     :returns: that row's status.
     """
-    return widget._TaskQueueWidget__model.status_at(row)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    return widget.model.status_at(row)
 
 
 def widget_row_count(widget: TaskQueueWidget) -> int:
@@ -210,106 +235,16 @@ def widget_row_count(widget: TaskQueueWidget) -> int:
     :param widget: the widget to read.
     :returns: its row count.
     """
-    return widget._TaskQueueWidget__model.rowCount()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    return widget.model.rowCount()
 
 
-def job_serial(queue: TaskQueue, label: str) -> int:
-    """The serial of the queue's job named ``label``.
+def widget_labels(widget: TaskQueueWidget) -> list[str]:
+    """The labels of a widget's own model's rows, top to bottom.
 
-    :param queue: the queue to search.
-    :param label: the label to find.
-    :returns: that job's serial.
+    :param widget: the widget to read.
+    :returns: the labels.
     """
-    return next(status.serial for status in queue.jobs() if status.label == label)
-
-
-def wait_until(predicate: Callable[[], bool], description: str) -> None:
-    """Wait until ``predicate`` holds, polling rather than sleeping a fixed spell.
-
-    :param predicate: what to wait for.
-    :param description: what it is, for the failure message.
-    :raises AssertionError: if it never holds.
-    """
-    deadline = monotonic() + TIMEOUT
-    while monotonic() < deadline:
-        if predicate():
-            return
-        sleep(0.01)
-    raise AssertionError(f"timed out waiting for {description}")
-
-
-def wait_for_state(queue: TaskQueue, label: str, state: JobState) -> None:
-    """Wait until the job named ``label`` reaches ``state``.
-
-    Polls rather than waits on an event, because the transition being watched is one the *worker*
-    makes on its own -- the same reason ``rehuco-core``'s own tests keep a settling helper.
-
-    :param queue: the queue to watch.
-    :param label: the job to watch.
-    :param state: the state to wait for.
-    :raises AssertionError: if it never gets there.
-    """
-    deadline = monotonic() + TIMEOUT
-    while monotonic() < deadline:
-        status = next((held for held in queue.jobs() if held.label == label), None)
-        if status is not None and status.state is state:
-            return
-        sleep(0.01)
-    raise AssertionError(f"{label!r} never reached {state}")
-
-
-def running_job(queue: TaskQueue, label: str = "running", job: GatedJob | None = None) -> GatedJob:
-    """Enqueue a job and wait until it is genuinely executing.
-
-    :param queue: the queue to fill.
-    :param label: the job's label, when one is not supplied.
-    :param job: the job to enqueue; a plain `GatedJob` unless given.
-    :returns: the running job.
-    """
-    started = job if job is not None else GatedJob(label)
-    queue.enqueue(started)
-    assert started.entered.wait(TIMEOUT)
-    return started
-
-
-def settle_one_job_into(queue: TaskQueue, state: JobState, deliver: Callable[[], None]) -> int:
-    """Leave the queue holding a job in ``state``, and say which row it is.
-
-    ``queued`` needs a second job: :meth:`~rehuco_core.TaskQueue.pause` holds only the jobs that
-    already exist, and a newly enqueued one runs immediately regardless -- so the only honest way to
-    hold a job in line is to keep the worker busy with another
-    ([[appendices.task-queue#pause-concept]]).
-
-    :param queue: the queue to fill.
-    :param state: the state to leave a job in.
-    :param deliver: pumps the event loop so the snapshot lands.
-    :returns: the row the job in ``state`` occupies.
-    """
-    row = 0
-    if state is JobState.FAILED:
-        queue.enqueue(FailingJob("job"))
-        wait_for_state(queue, "job", JobState.FAILED)
-    elif state is JobState.DONE:
-        job = GatedJob("job")
-        job.let_finish()
-        queue.enqueue(job)
-        wait_for_state(queue, "job", JobState.DONE)
-    elif state is JobState.CANCELLED:
-        running_job(queue, "job")
-        queue.cancel(job_serial(queue, "job"))
-        wait_for_state(queue, "job", JobState.CANCELLED)
-    elif state is JobState.PAUSED:
-        running_job(queue, "job")
-        queue.pause_job(job_serial(queue, "job"))
-        wait_for_state(queue, "job", JobState.PAUSED)
-    elif state is JobState.RUNNING:
-        running_job(queue, "job")
-    else:  # QUEUED -- held behind a blocker that keeps the single worker busy
-        running_job(queue, "blocker")
-        queue.enqueue(GatedJob("job"))
-        row = 1
-    deliver()
-    return row
+    return [widget_status(widget, row).label for row in range(widget_row_count(widget))]
 
 
 # endregion
@@ -319,53 +254,50 @@ def settle_one_job_into(queue: TaskQueue, state: JobState, deliver: Callable[[],
 
 
 def test_the_pause_action_does_not_change_its_own_state_until_the_engine_reports_it(
-    widget: TaskQueueWidget, queue: TaskQueue, mocker: MockerFixture, deliver: Callable[[], None]
+    widget: TaskQueueWidget, rig: Rig
 ) -> None:
-    """The anti-optimism test: patch ``pause_job`` to do nothing, click Pause, and the row must not
-    read paused -- only a real snapshot from the engine may say so.
+    """The anti-optimism test: the engine asked to pause leaves the row running, and after a re-snapshot the row
+    must still read running -- only the engine's own snapshot may say paused.
 
     **Test steps:**
 
-    * enqueue a blocked (running) job and select its row
-    * patch ``queue.pause_job`` to a no-op
-    * trigger the Pause action
+    * script a running job and select its row
+    * trigger the Pause action, and verify the engine was asked to pause that serial
+    * re-snapshot with the script unchanged
     * verify the row still reads ``running``, not ``paused``
     """
-    running_job(queue, "job")
-    deliver()
+    serial = rig.add("job", JobState.RUNNING)
+    rig.settle()
     select_rows(widget, 0)
 
-    mocker.patch.object(queue, "pause_job")
     ui_of(widget).pause_action.trigger()  # type: ignore[attr-defined]
-    deliver()
+    rig.queue.pause_job.assert_called_once_with(serial)
+    rig.settle()
 
     assert widget_status(widget, 0).state is JobState.RUNNING
 
 
-def test_a_move_the_engine_clamps_leaves_the_row_where_the_engine_put_it(
-    widget: TaskQueueWidget, queue: TaskQueue, deliver: Callable[[], None]
-) -> None:
+def test_a_move_the_engine_clamps_leaves_the_row_where_the_engine_put_it(widget: TaskQueueWidget, rig: Rig) -> None:
     """Asking to move a queued job above the running one leaves the view exactly where the engine
     clamped it -- the row order always equals ``queue.jobs()``, never the request.
 
     **Test steps:**
 
-    * enqueue a blocked (running) job and a queued one behind it
-    * select the queued job and move it to the top
-    * verify the row order still matches the engine's own, running job first
+    * script a running job and a queued one behind it
+    * select the queued job and move it to the top, and verify the engine was asked to move it to index 0
+    * re-snapshot with the script unchanged, as the engine's clamp leaves it
+    * verify the row order still matches the script, running job first
     """
-    running_job(queue, "running")
-    queue.enqueue(GatedJob("queued"))
-    deliver()
+    rig.add("running", JobState.RUNNING)
+    queued = rig.add("queued", JobState.QUEUED)
+    rig.settle()
 
     select_rows(widget, 1)
     ui_of(widget).move_to_top_action.trigger()  # type: ignore[attr-defined]
-    deliver()
+    rig.settle()
 
-    assert [widget_status(widget, row).serial for row in range(widget_row_count(widget))] == [
-        status.serial for status in queue.jobs()
-    ]
-    assert widget_status(widget, 0).label == "running"
+    rig.queue.move.assert_called_once_with(queued, 0)
+    assert widget_labels(widget) == ["running", "queued"]
 
 
 # endregion
@@ -376,24 +308,25 @@ def test_a_move_the_engine_clamps_leaves_the_row_where_the_engine_put_it(
 
 def test_clear_done_ends_the_toolbar_s_queue_controls(widget: TaskQueueWidget) -> None:
     """*Clear Done* acts on the whole queue rather than the selection, so it sits in its own slot after
-    the reorder group, not folded into the per-selection run above it (#249) -- and the Log toggle, which
-    acts on this shell rather than on the queue at all, gets a separated trailing slot of its own after
-    it (#276).
+    the reorder group, not folded into the per-selection run above it (#249) -- and the two view toggles,
+    the Log and Pending Saves, which act on this shell rather than on the queue at all, share a separated
+    trailing slot after it (#276, #497).
 
     **Test steps:**
 
     * read the toolbar's own action list
-    * verify Clear Done follows a separator, and the Log toggle a further one
+    * verify Clear Done follows a separator, and the Log and Pending Saves toggles a further one
     """
     # direct children only: the Log sub-dock's own surface carries a toolbar of its own, and a plain
     # recursive search finds whichever of the two Qt built first
     toolbar = widget.findChildren(QToolBar, options=Qt.FindChildOption.FindDirectChildrenOnly)[0]
     actions = toolbar.actions()
 
-    assert actions[-1] is log_dock_of(widget).toggleViewAction()
-    assert actions[-2].isSeparator()
-    assert actions[-3] is ui_of(widget).clear_done_action  # type: ignore[attr-defined]
-    assert actions[-4].isSeparator()
+    assert actions[-1] is ui_of(widget).pending_saves_action  # type: ignore[attr-defined]
+    assert actions[-2] is log_dock_of(widget).toggleViewAction()
+    assert actions[-3].isSeparator()
+    assert actions[-4] is ui_of(widget).clear_done_action  # type: ignore[attr-defined]
+    assert actions[-5].isSeparator()
 
 
 # endregion
@@ -405,54 +338,60 @@ def test_clear_done_ends_the_toolbar_s_queue_controls(widget: TaskQueueWidget) -
 def test_the_context_menu_offers_the_per_selection_actions_then_the_sweeps(
     widget: TaskQueueWidget, mocker: MockerFixture
 ) -> None:
-    """The menu is the four per-selection actions plus Clear, then a separator, then the three sweeps.
+    """The menu is the four per-selection actions plus Clear, then the two save actions, then the three
+    sweeps, then the Pending Saves toggle -- each group behind a separator (#497).
 
-    The separator is the point: a sweep acts on the *queue*, not on what is selected, and running one
-    by reflex after aiming at a row is exactly what the split guards against.
+    The separator before the sweeps is the point: a sweep acts on the *queue*, not on what is selected, and
+    running one by reflex after aiming at a row is exactly what the split guards against.
 
     **Test steps:**
 
     * patch ``QMenu`` so nothing is actually shown
     * ask for the context menu
-    * verify the entries and the separator, in order
+    * verify the entries and the separators, in order
     """
     menu = mocker.patch.object(widget_module, "QMenu").return_value
     ui = ui_of(widget)
 
     widget._TaskQueueWidget__show_context_menu(QPoint(0, 0))  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
-    assert [call.args[0] for call in menu.addAction.call_args_list] == [
+    entries = [
+        made.args[0] if made[0] == "addAction" else SEPARATOR
+        for made in menu.method_calls
+        if made[0] in ("addAction", "addSeparator")
+    ]
+    assert entries == [
         ui.pause_action,  # type: ignore[attr-defined]
         ui.resume_action,  # type: ignore[attr-defined]
         ui.cancel_action,  # type: ignore[attr-defined]
         ui.retry_action,  # type: ignore[attr-defined]
         ui.clear_action,  # type: ignore[attr-defined]
+        SEPARATOR,
+        ui.inspect_save_action,  # type: ignore[attr-defined]
+        ui.discard_save_action,  # type: ignore[attr-defined]
+        SEPARATOR,
         ui.clear_done_action,  # type: ignore[attr-defined]
         ui.clear_failed_action,  # type: ignore[attr-defined]
         ui.clear_all_action,  # type: ignore[attr-defined]
+        SEPARATOR,
+        ui.pending_saves_action,  # type: ignore[attr-defined]
     ]
-    menu.addSeparator.assert_called_once_with()
     menu.exec.assert_called_once()
 
 
-def test_the_clear_entry_counts_what_it_would_remove(
-    widget: TaskQueueWidget, queue: TaskQueue, mocker: MockerFixture, deliver: Callable[[], None]
-) -> None:
+def test_the_clear_entry_counts_what_it_would_remove(widget: TaskQueueWidget, rig: Rig, mocker: MockerFixture) -> None:
     """*Clear job* becomes *Clear 2 jobs* over a multi-selection, so the entry says what it will do.
 
     **Test steps:**
 
-    * leave two finished jobs in the queue and select both
+    * script two finished jobs and select both
     * open the context menu, and verify the Clear entry names the count
     * select one and verify it goes back to the singular
     """
     mocker.patch.object(widget_module, "QMenu")
     for index in range(2):
-        job = GatedJob(f"job-{index}")
-        job.let_finish()
-        queue.enqueue(job)
-        wait_for_state(queue, f"job-{index}", JobState.DONE)
-    deliver()
+        rig.add(f"job-{index}", JobState.DONE)
+    rig.settle()
     ui = ui_of(widget)
 
     select_rows(widget, 0, 1)
@@ -506,7 +445,7 @@ def test_every_control_is_disabled_with_nothing_selected(widget: TaskQueueWidget
     ],
 )
 def test_each_state_enables_exactly_the_controls_that_can_act_on_it(
-    widget: TaskQueueWidget, queue: TaskQueue, deliver: Callable[[], None], state: JobState, expected: set[str]
+    widget: TaskQueueWidget, rig: Rig, state: JobState, expected: set[str]
 ) -> None:
     """Every control is offered for exactly the states the engine would let it act on.
 
@@ -516,11 +455,12 @@ def test_each_state_enables_exactly_the_controls_that_can_act_on_it(
 
     **Test steps:**
 
-    * put one job into ``state`` and select it
+    * script one job in ``state`` and select it
     * verify exactly the expected controls are enabled
     """
-    row = settle_one_job_into(queue, state, deliver)
-    select_rows(widget, row)
+    rig.add("job", state)
+    rig.settle()
+    select_rows(widget, 0)
     ui = ui_of(widget)
 
     actual = {
@@ -535,51 +475,36 @@ def test_each_state_enables_exactly_the_controls_that_can_act_on_it(
     assert {name for name, is_on in actual.items() if is_on} == expected
 
 
-def test_resume_is_offered_for_a_running_job_with_a_stop_pending(
-    widget: TaskQueueWidget, queue: TaskQueue, mocker: MockerFixture, deliver: Callable[[], None]
-) -> None:
+def test_resume_is_offered_for_a_running_job_with_a_stop_pending(widget: TaskQueueWidget, rig: Rig) -> None:
     """Cancel-then-Resume is a recoverable mis-click while the job has not looked at the request yet.
 
-    The job is kept from acting on the request (its checkpoint patched out) so the row stays
-    ``running`` with a stop pending -- exactly the window the retraction exists for.
+    The row is scripted ``running`` with a cancel pending -- exactly the window the retraction exists for.
 
     **Test steps:**
 
-    * enqueue a blocked job, stop it from checkpointing, and ask it to cancel
-    * select it, and verify Resume is offered while it still reads as running
+    * script a running job with a cancel requested, and select it
+    * verify Resume is offered while it still reads as running
     """
-    job = running_job(queue, "job")
-    mocker.patch.object(job, "checkpoint")
-    queue.cancel(job_serial(queue, "job"))
-    deliver()
+    rig.add("job", JobState.RUNNING, stop_requested=StopRequest.CANCEL)
+    rig.settle()
     select_rows(widget, 0)
 
     assert widget_status(widget, 0).state is JobState.RUNNING
     assert ui_of(widget).resume_action.isEnabled()  # type: ignore[attr-defined]
 
-    # Release the gate directly, rather than leaving teardown to it. This is the one test that patches
-    # `checkpoint` out, and that is exactly what a job unwinds on -- so the cancel `queue.shutdown`
-    # sends can never land, and the fixture sat out its whole TIMEOUT before giving up on a job that
-    # was never going to answer. The patch is still in force at that point: every autouse fixture in
-    # this package's conftest requests `mocker`, so it is built before this test's own fixtures and
-    # torn down after them (#262).
-    job.let_finish()
 
-
-def test_a_mixed_selection_moves_nothing(
-    widget: TaskQueueWidget, queue: TaskQueue, deliver: Callable[[], None]
-) -> None:
+def test_a_mixed_selection_moves_nothing(widget: TaskQueueWidget, rig: Rig) -> None:
     """Reordering is offered only when *every* selected row can move -- a partial move would silently
     leave some of the selection where it was.
 
     **Test steps:**
 
-    * put one running job beside one queued one, and select both
+    * script one running job beside one queued one, and select both
     * verify the move controls are off, while Clear (which acts on both) is on
     """
-    running_job(queue, "running")
-    queue.enqueue(GatedJob("queued"))
-    deliver()
+    rig.add("running", JobState.RUNNING)
+    rig.add("queued", JobState.QUEUED)
+    rig.settle()
 
     select_rows(widget, 0, 1)
     ui = ui_of(widget)
@@ -588,21 +513,18 @@ def test_a_mixed_selection_moves_nothing(
     assert ui.clear_action.isEnabled()  # type: ignore[attr-defined]
 
 
-def test_a_retry_is_refused_over_a_selection_holding_anything_unfinished(
-    widget: TaskQueueWidget, queue: TaskQueue, deliver: Callable[[], None]
-) -> None:
+def test_a_retry_is_refused_over_a_selection_holding_anything_unfinished(widget: TaskQueueWidget, rig: Rig) -> None:
     """Retry is finished-only, so one unfinished row in the selection withdraws it.
 
     **Test steps:**
 
-    * leave a failed job beside a queued one, and select both
+    * script a failed job, a running one and a queued one, and select the failed and the queued
     * verify Retry is not offered
     """
-    queue.enqueue(FailingJob("failed"))
-    wait_for_state(queue, "failed", JobState.FAILED)
-    running_job(queue, "blocker")
-    queue.enqueue(GatedJob("queued"))
-    deliver()
+    rig.add("failed", JobState.FAILED, message="ValueError: nope")
+    rig.add("blocker", JobState.RUNNING)
+    rig.add("queued", JobState.QUEUED)
+    rig.settle()
 
     select_rows(widget, 0, 2)
 
@@ -615,36 +537,32 @@ def test_a_retry_is_refused_over_a_selection_holding_anything_unfinished(
 # region what Pause says it will cost
 
 
-def test_pause_says_nothing_extra_for_a_job_that_keeps_its_work(
-    widget: TaskQueueWidget, queue: TaskQueue, deliver: Callable[[], None]
-) -> None:
+def test_pause_says_nothing_extra_for_a_job_that_keeps_its_work(widget: TaskQueueWidget, rig: Rig) -> None:
     """A job with a cursor loses nothing, so Pause carries only its plain tooltip.
 
     **Test steps:**
 
-    * run a job that resumes where it stopped, and select it
+    * script a running job that resumes where it stopped, and select it
     * verify Pause's tooltip carries no cost line
     """
-    running_job(queue, job=CursorJob("keeps"))
-    deliver()
+    rig.add("keeps", JobState.RUNNING, resumes_where_it_stopped=True)
+    rig.settle()
     select_rows(widget, 0)
 
     assert ui_of(widget).pause_action.toolTip() == PAUSE_TOOLTIP  # type: ignore[attr-defined]
 
 
-def test_pause_says_a_single_job_would_start_over(
-    widget: TaskQueueWidget, queue: TaskQueue, deliver: Callable[[], None]
-) -> None:
+def test_pause_says_a_single_job_would_start_over(widget: TaskQueueWidget, rig: Rig) -> None:
     """A row that starts over says so **on Pause**, not only on its own tooltip -- and Pause stays
     enabled, because starting over is wasteful rather than wrong.
 
     **Test steps:**
 
-    * run a job that keeps nothing, and select it
+    * script a running job that keeps nothing, and select it
     * verify Pause's tooltip names the cost, and the action is still enabled
     """
-    running_job(queue, "starts over")
-    deliver()
+    rig.add("starts over", JobState.RUNNING)
+    rig.settle()
     select_rows(widget, 0)
     ui = ui_of(widget)
 
@@ -652,53 +570,48 @@ def test_pause_says_a_single_job_would_start_over(
     assert ui.pause_action.isEnabled()  # type: ignore[attr-defined]
 
 
-def test_pause_says_some_of_a_batch_would_start_over(
-    widget: TaskQueueWidget, queue: TaskQueue, deliver: Callable[[], None]
-) -> None:
+def test_pause_says_some_of_a_batch_would_start_over(widget: TaskQueueWidget, rig: Rig) -> None:
     """Over a mixed multi-selection the warning is phrased for a batch rather than for one row.
 
     **Test steps:**
 
-    * run a job that keeps its work with one behind it that does not, and select both
+    * script a running job that keeps its work with a queued one behind it that does not, and select both
     * verify Pause's tooltip uses the batch wording
     """
-    running_job(queue, job=CursorJob("keeps"))
-    queue.enqueue(GatedJob("starts over"))
-    deliver()
+    rig.add("keeps", JobState.RUNNING, resumes_where_it_stopped=True)
+    rig.add("starts over", JobState.QUEUED)
+    rig.settle()
     select_rows(widget, 0, 1)
 
     assert STARTS_OVER_SOME_TOOLTIP in ui_of(widget).pause_action.toolTip()  # type: ignore[attr-defined]
 
 
-def test_a_batch_that_all_keeps_its_work_is_not_warned_about(
-    widget: TaskQueueWidget, queue: TaskQueue, deliver: Callable[[], None]
-) -> None:
+def test_a_batch_that_all_keeps_its_work_is_not_warned_about(widget: TaskQueueWidget, rig: Rig) -> None:
     """A multi-selection where nothing starts over gets no warning either.
 
     **Test steps:**
 
-    * run two jobs that both keep their work, and select both
+    * script two jobs that both keep their work, one running and one queued, and select both
     * verify Pause's tooltip carries no cost line
     """
-    running_job(queue, job=CursorJob("keeps"))
-    queue.enqueue(CursorJob("also keeps"))
-    deliver()
+    rig.add("keeps", JobState.RUNNING, resumes_where_it_stopped=True)
+    rig.add("also keeps", JobState.QUEUED, resumes_where_it_stopped=True)
+    rig.settle()
     select_rows(widget, 0, 1)
 
     assert ui_of(widget).pause_action.toolTip() == PAUSE_TOOLTIP  # type: ignore[attr-defined]
 
 
-def test_a_finished_row_costs_nothing_to_pause(
-    widget: TaskQueueWidget, queue: TaskQueue, deliver: Callable[[], None]
-) -> None:
+def test_a_finished_row_costs_nothing_to_pause(widget: TaskQueueWidget, rig: Rig) -> None:
     """Pause would not touch a finished job, so it is not counted when naming the cost.
 
     **Test steps:**
 
-    * let a job that keeps nothing run to completion, then select it
+    * script a finished job that keeps nothing, and select it
     * verify Pause's tooltip carries no cost line
     """
-    settle_one_job_into(queue, JobState.DONE, deliver)
+    rig.add("job", JobState.DONE)
+    rig.settle()
     select_rows(widget, 0)
 
     assert ui_of(widget).pause_action.toolTip() == PAUSE_TOOLTIP  # type: ignore[attr-defined]
@@ -725,7 +638,7 @@ def test_the_bulk_pair_is_off_over_an_empty_queue(widget: TaskQueueWidget) -> No
 
 
 def test_resume_all_is_offered_while_one_job_is_held_beside_one_still_running(
-    widget: TaskQueueWidget, queue: TaskQueue, deliver: Callable[[], None]
+    widget: TaskQueueWidget, rig: Rig
 ) -> None:
     """The bulk pair mirrors what its own calls would touch, not the derived ``queue.paused``.
 
@@ -734,51 +647,45 @@ def test_resume_all_is_offered_while_one_job_is_held_beside_one_still_running(
 
     **Test steps:**
 
-    * pause one queued job while another runs
-    * verify the queue does not read as paused, yet both bulk controls are offered
+    * script one running job beside one paused, with the queue answering ``paused`` as ``False``
+    * verify both bulk controls are offered
     """
-    running_job(queue, "running")
-    queue.enqueue(GatedJob("queued"))
-    queue.pause_job(job_serial(queue, "queued"))
-    deliver()
+    rig.queue.paused = False
+    rig.add("running", JobState.RUNNING)
+    rig.add("paused", JobState.PAUSED)
+    rig.settle()
     ui = ui_of(widget)
 
-    assert not queue.paused
     assert ui.resume_all_action.isEnabled()  # type: ignore[attr-defined]
     assert ui.pause_all_action.isEnabled()  # type: ignore[attr-defined]
 
 
-def test_pause_all_goes_off_once_everything_is_held(
-    widget: TaskQueueWidget, queue: TaskQueue, deliver: Callable[[], None]
-) -> None:
+def test_pause_all_goes_off_once_everything_is_held(widget: TaskQueueWidget, rig: Rig) -> None:
     """With nothing left to ask, Pause All is not offered -- and Resume All is.
 
     **Test steps:**
 
-    * run a job, then pause the whole queue and let it settle
+    * script the queue's one job paused
     * verify Pause All is off and Resume All is on
     """
-    running_job(queue, "job")
-    queue.pause()
-    wait_for_state(queue, "job", JobState.PAUSED)
-    deliver()
+    rig.add("job", JobState.PAUSED)
+    rig.settle()
     ui = ui_of(widget)
 
     assert not ui.pause_all_action.isEnabled()  # type: ignore[attr-defined]
     assert ui.resume_all_action.isEnabled()  # type: ignore[attr-defined]
 
 
-def test_the_bulk_pair_is_off_once_every_job_has_finished(
-    widget: TaskQueueWidget, queue: TaskQueue, deliver: Callable[[], None]
-) -> None:
+def test_the_bulk_pair_is_off_once_every_job_has_finished(widget: TaskQueueWidget, rig: Rig) -> None:
     """Finished rows are kept, but neither bulk control has anything to do with them.
 
     **Test steps:**
 
-    * run one job to completion
+    * script one finished job
     * verify both bulk actions are disabled while the row remains
     """
-    settle_one_job_into(queue, JobState.DONE, deliver)
+    rig.add("job", JobState.DONE)
+    rig.settle()
     ui = ui_of(widget)
 
     assert widget_row_count(widget) == 1
@@ -786,32 +693,34 @@ def test_the_bulk_pair_is_off_once_every_job_has_finished(
     assert not ui.resume_all_action.isEnabled()  # type: ignore[attr-defined]
 
 
-def test_the_bulk_controls_hold_and_release_every_unfinished_job(
-    widget: TaskQueueWidget, queue: TaskQueue, deliver: Callable[[], None]
-) -> None:
-    """Pause All holds *everything* unfinished, and Resume All puts it all back.
-
-    Asserted through the queue's own state rather than by patching its methods: the bulk actions are
-    connected to the engine's bound ``pause``/``resume`` at construction, so a later patch would never
-    be seen -- and what is worth pinning is the effect anyway.
+def test_the_bulk_controls_hold_and_release_every_unfinished_job(widget: TaskQueueWidget, rig: Rig) -> None:
+    """Pause All asks the engine to hold *everything* unfinished, and Resume All to put it all back -- each one call to
+    the engine's own bulk method, never one per row.
 
     **Test steps:**
 
-    * run one job with another queued behind it
-    * trigger Pause All, and verify the whole queue reads as held
-    * trigger Resume All, and verify it does not
+    * script one running job with another queued behind it
+    * trigger Pause All, and verify the engine's ``pause`` was called once and ``resume`` not at all
+    * script both jobs paused and re-snapshot, and verify Pause All is off and Resume All on
+    * trigger Resume All, and verify the engine's ``resume`` was called once
     """
-    running_job(queue, "running")
-    queue.enqueue(GatedJob("queued"))
-    deliver()
+    rig.add("running", JobState.RUNNING)
+    rig.add("queued", JobState.QUEUED)
+    rig.settle()
     ui = ui_of(widget)
 
     ui.pause_all_action.trigger()  # type: ignore[attr-defined]
-    wait_until(lambda: queue.paused, "the queue to read as paused")
-    deliver()
+    rig.queue.pause.assert_called_once_with()
+    rig.queue.resume.assert_not_called()
+
+    rig.set_state("running", JobState.PAUSED)
+    rig.set_state("queued", JobState.PAUSED)
+    rig.settle()
+    assert not ui.pause_all_action.isEnabled()  # type: ignore[attr-defined]
+    assert ui.resume_all_action.isEnabled()  # type: ignore[attr-defined]
 
     ui.resume_all_action.trigger()  # type: ignore[attr-defined]
-    wait_until(lambda: not queue.paused, "the queue to stop reading as paused")
+    rig.queue.resume.assert_called_once_with()
 
 
 # endregion
@@ -820,79 +729,68 @@ def test_the_bulk_controls_hold_and_release_every_unfinished_job(
 # region the per-selection actions
 
 
-def test_pause_and_resume_act_on_every_selected_row(
-    widget: TaskQueueWidget, queue: TaskQueue, mocker: MockerFixture, deliver: Callable[[], None]
-) -> None:
+def test_pause_and_resume_act_on_every_selected_row(widget: TaskQueueWidget, rig: Rig) -> None:
     """Both controls act on the whole selection, one engine call per row.
 
     **Test steps:**
 
-    * hold one job beside one still running, and select both so each control is enabled
+    * script one paused job beside one still running, and select both so each control is enabled
     * trigger Pause, then Resume
     * verify each engine call was made once per selected serial
     """
-    running_job(queue, "running")
-    queue.enqueue(GatedJob("queued"))
-    queue.pause_job(job_serial(queue, "queued"))
-    deliver()
-    serials = [status.serial for status in queue.jobs()]
-    pause_job = mocker.patch.object(queue, "pause_job")
-    resume_job = mocker.patch.object(queue, "resume_job")
+    serials = [rig.add("running", JobState.RUNNING), rig.add("paused", JobState.PAUSED)]
+    rig.settle()
     ui = ui_of(widget)
 
     select_rows(widget, 0, 1)
     ui.pause_action.trigger()  # type: ignore[attr-defined]
     ui.resume_action.trigger()  # type: ignore[attr-defined]
 
-    assert [call.args[0] for call in pause_job.call_args_list] == serials
-    assert [call.args[0] for call in resume_job.call_args_list] == serials
+    assert rig.queue.pause_job.call_args_list == [call(serial) for serial in serials]
+    assert rig.queue.resume_job.call_args_list == [call(serial) for serial in serials]
 
 
-def test_cancel_prompts_once_for_a_whole_batch(
-    widget: TaskQueueWidget, queue: TaskQueue, mocker: MockerFixture, deliver: Callable[[], None]
-) -> None:
+def test_cancel_prompts_once_for_a_whole_batch(widget: TaskQueueWidget, rig: Rig, mocker: MockerFixture) -> None:
     """Cancel asks **once** however many rows are selected -- never once per row.
 
     **Test steps:**
 
-    * leave three unfinished jobs in the queue and select all of them
+    * script three unfinished jobs and select all of them
     * answer Yes to the prompt
-    * verify exactly one dialog was raised, and every job was cancelled
+    * verify exactly one dialog was raised, and the engine was asked to cancel every job
     """
-    running_job(queue, "running")
-    for index in range(2):
-        queue.enqueue(GatedJob(f"queued-{index}"))
-    deliver()
-    serials = [status.serial for status in queue.jobs()]
+    serials = [
+        rig.add("running", JobState.RUNNING),
+        rig.add("queued-0", JobState.QUEUED),
+        rig.add("queued-1", JobState.QUEUED),
+    ]
+    rig.settle()
     question = mocker.patch(QUESTION, return_value=YES)
-    cancel = mocker.patch.object(queue, "cancel")
 
     select_rows(widget, 0, 1, 2)
     ui_of(widget).cancel_action.trigger()  # type: ignore[attr-defined]
 
     question.assert_called_once()
-    assert [call.args[0] for call in cancel.call_args_list] == serials
+    assert rig.queue.cancel.call_args_list == [call(serial) for serial in serials]
 
 
-def test_a_refused_cancel_cancels_nothing(
-    widget: TaskQueueWidget, queue: TaskQueue, mocker: MockerFixture, deliver: Callable[[], None]
-) -> None:
+def test_a_refused_cancel_cancels_nothing(widget: TaskQueueWidget, rig: Rig, mocker: MockerFixture) -> None:
     """Answering No leaves every selected job exactly as it was.
 
     **Test steps:**
 
-    * run a job, select it, and answer No to the prompt
+    * script a running job, select it, and answer No to the prompt
     * verify the engine was never asked to cancel
     """
-    running_job(queue, "job")
-    deliver()
-    mocker.patch(QUESTION, return_value=NO)
-    cancel = mocker.patch.object(queue, "cancel")
+    rig.add("job", JobState.RUNNING)
+    rig.settle()
+    question = mocker.patch(QUESTION, return_value=NO)
 
     select_rows(widget, 0)
     ui_of(widget).cancel_action.trigger()  # type: ignore[attr-defined]
 
-    cancel.assert_not_called()
+    question.assert_called_once()
+    rig.queue.cancel.assert_not_called()
 
 
 def test_cancel_over_an_empty_selection_never_prompts(widget: TaskQueueWidget, mocker: MockerFixture) -> None:
@@ -910,56 +808,42 @@ def test_cancel_over_an_empty_selection_never_prompts(widget: TaskQueueWidget, m
     question.assert_not_called()
 
 
-def test_retry_asks_the_engine_to_run_a_failed_job_again(
-    widget: TaskQueueWidget, queue: TaskQueue, mocker: MockerFixture, deliver: Callable[[], None]
-) -> None:
+def test_retry_asks_the_engine_to_run_a_failed_job_again(widget: TaskQueueWidget, rig: Rig) -> None:
     """Retry hands the failed job back to the engine, which is where *from the top* is decided.
-
-    Asserted at the call rather than at the resulting state: a retried job is re-queued and the single
-    worker picks it straight back up, so any state read afterwards is a race with the worker.
 
     **Test steps:**
 
-    * run a job that fails, select it, and trigger Retry
+    * script a failed job, select it, and trigger Retry
     * verify the engine was asked to retry exactly that serial
     """
-    settle_one_job_into(queue, JobState.FAILED, deliver)
-    serial = job_serial(queue, "job")
-    retry = mocker.patch.object(queue, "retry")
+    serial = rig.add("job", JobState.FAILED, message="ValueError: nope")
+    rig.settle()
 
     select_rows(widget, 0)
     ui_of(widget).retry_action.trigger()  # type: ignore[attr-defined]
 
-    retry.assert_called_once_with(serial)
+    rig.queue.retry.assert_called_once_with(serial)
 
 
-def test_clear_removes_exactly_the_selected_rows(
-    widget: TaskQueueWidget, queue: TaskQueue, deliver: Callable[[], None]
-) -> None:
+def test_clear_removes_exactly_the_selected_rows(widget: TaskQueueWidget, rig: Rig) -> None:
     """Clear is the only way a job leaves the queue, and it takes only what was aimed at.
 
     **Test steps:**
 
-    * finish two jobs, select the first, and trigger Clear
-    * verify only the other one is left
+    * script two finished jobs, select the first, and trigger Clear
+    * verify the engine was asked to remove only the first
     """
     for index in range(2):
-        job = GatedJob(f"job-{index}")
-        job.let_finish()
-        queue.enqueue(job)
-        wait_for_state(queue, f"job-{index}", JobState.DONE)
-    deliver()
+        rig.add(f"job-{index}", JobState.DONE)
+    rig.settle()
 
     select_rows(widget, 0)
     ui_of(widget).clear_action.trigger()  # type: ignore[attr-defined]
-    deliver()
 
-    assert [status.label for status in queue.jobs()] == ["job-1"]
+    rig.queue.remove.assert_called_once_with(rig.serial("job-0"))
 
 
-def test_clear_over_an_empty_selection_removes_nothing(
-    widget: TaskQueueWidget, queue: TaskQueue, mocker: MockerFixture
-) -> None:
+def test_clear_over_an_empty_selection_removes_nothing(widget: TaskQueueWidget, queue: Mock) -> None:
     """Nothing selected is nothing to clear.
 
     **Test steps:**
@@ -967,90 +851,71 @@ def test_clear_over_an_empty_selection_removes_nothing(
     * call the Clear handler with an empty selection
     * verify the engine was never asked to remove anything
     """
-    remove = mocker.patch.object(queue, "remove")
-
     widget._TaskQueueWidget__clear_selection()  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
-    remove.assert_not_called()
+    queue.remove.assert_not_called()
 
 
-def test_the_sweeps_drop_only_their_own_kind(
-    widget: TaskQueueWidget, queue: TaskQueue, deliver: Callable[[], None]
-) -> None:
+def test_the_sweeps_drop_only_their_own_kind(widget: TaskQueueWidget, rig: Rig) -> None:
     """*Clear done* and *Clear failed* each take exactly one kind, leaving the rest -- deciding which
     jobs a sweep drops is the view's business, which is why #237 deleted the engine's own sweep.
 
     **Test steps:**
 
-    * leave one done job, one failed job and one running job in the queue
+    * script one done job, one failed job and one running job
     * trigger Clear done, then Clear failed
-    * verify each removed only its own kind, and the unfinished job survived both
+    * verify each asked the engine to remove only its own kind, and the unfinished job was in neither
     """
-    done = GatedJob("done")
-    done.let_finish()
-    queue.enqueue(done)
-    wait_for_state(queue, "done", JobState.DONE)
-    queue.enqueue(FailingJob("failed"))
-    wait_for_state(queue, "failed", JobState.FAILED)
-    running_job(queue, "running")
-    deliver()
+    rig.add("done", JobState.DONE)
+    rig.add("failed", JobState.FAILED, message="ValueError: nope")
+    rig.add("running", JobState.RUNNING)
+    rig.settle()
     ui = ui_of(widget)
 
     ui.clear_done_action.trigger()  # type: ignore[attr-defined]
-    deliver()
-    assert sorted(status.label for status in queue.jobs()) == ["failed", "running"]
-
     ui.clear_failed_action.trigger()  # type: ignore[attr-defined]
-    deliver()
-    assert [status.label for status in queue.jobs()] == ["running"]
+
+    assert rig.queue.remove.call_args_list == [call(rig.serial("done")), call(rig.serial("failed"))]
 
 
-def test_a_sweep_with_nothing_of_its_kind_removes_nothing(
-    widget: TaskQueueWidget, queue: TaskQueue, mocker: MockerFixture, deliver: Callable[[], None]
-) -> None:
+def test_a_sweep_with_nothing_of_its_kind_removes_nothing(widget: TaskQueueWidget, rig: Rig) -> None:
     """A sweep over a queue holding none of its kind is a no-op, not an empty removal.
 
     **Test steps:**
 
-    * leave one running job in the queue and trigger Clear done
+    * script one running job and trigger Clear done
     * verify the engine was never asked to remove anything
     """
-    running_job(queue, "running")
-    deliver()
-    remove = mocker.patch.object(queue, "remove")
+    rig.add("running", JobState.RUNNING)
+    rig.settle()
 
     ui_of(widget).clear_done_action.trigger()  # type: ignore[attr-defined]
 
-    remove.assert_not_called()
+    rig.queue.remove.assert_not_called()
 
 
-def test_clear_all_cancels_what_is_unfinished_and_empties_the_queue(
-    widget: TaskQueueWidget, queue: TaskQueue, deliver: Callable[[], None]
-) -> None:
+def test_clear_all_cancels_what_is_unfinished_and_empties_the_queue(widget: TaskQueueWidget, rig: Rig) -> None:
     """*Clear all* is a clean slate: it stops whatever is unfinished first, then removes everything.
 
     **Test steps:**
 
-    * leave one done job beside one running one
+    * script one done job beside one running one
     * trigger Clear all
-    * verify the queue is empty
+    * verify the engine was asked to cancel only the running job, then to remove both
     """
-    done = GatedJob("done")
-    done.let_finish()
-    queue.enqueue(done)
-    wait_for_state(queue, "done", JobState.DONE)
-    running_job(queue, "running")
-    deliver()
+    rig.add("done", JobState.DONE)
+    rig.add("running", JobState.RUNNING)
+    rig.settle()
+    calls = Mock()
+    calls.attach_mock(rig.queue.cancel, "cancel")
+    calls.attach_mock(rig.queue.remove, "remove")
 
     ui_of(widget).clear_all_action.trigger()  # type: ignore[attr-defined]
-    deliver()
 
-    assert queue.jobs() == ()
+    assert calls.mock_calls == [call.cancel(rig.serial("running")), call.remove(*rig.serials("done", "running"))]
 
 
-def test_clear_all_over_an_empty_queue_removes_nothing(
-    widget: TaskQueueWidget, queue: TaskQueue, mocker: MockerFixture
-) -> None:
+def test_clear_all_over_an_empty_queue_removes_nothing(widget: TaskQueueWidget, queue: Mock) -> None:
     """An empty queue is already a clean slate.
 
     **Test steps:**
@@ -1058,55 +923,54 @@ def test_clear_all_over_an_empty_queue_removes_nothing(
     * trigger Clear all over an empty queue
     * verify the engine was never asked to remove anything
     """
-    remove = mocker.patch.object(queue, "remove")
-
     ui_of(widget).clear_all_action.trigger()  # type: ignore[attr-defined]
 
-    remove.assert_not_called()
+    queue.remove.assert_not_called()
 
 
-def test_retry_never_prompts(
-    widget: TaskQueueWidget, queue: TaskQueue, mocker: MockerFixture, deliver: Callable[[], None]
-) -> None:
+def test_retry_never_prompts(widget: TaskQueueWidget, rig: Rig, mocker: MockerFixture) -> None:
     """Retry acts immediately, with no confirmation dialog -- unlike Cancel.
 
     **Test steps:**
 
-    * run a job to completion, select it, and trigger Retry
-    * verify no dialog was ever asked for
+    * script a failed job, select it, and trigger Retry
+    * verify the engine was asked to retry it, and no dialog was ever asked for
     """
     question = mocker.patch(QUESTION)
-    settle_one_job_into(queue, JobState.FAILED, deliver)
+    serial = rig.add("job", JobState.FAILED, message="ValueError: nope")
+    rig.settle()
 
     select_rows(widget, 0)
     ui_of(widget).retry_action.trigger()  # type: ignore[attr-defined]
 
+    rig.queue.retry.assert_called_once_with(serial)
     question.assert_not_called()
 
 
-def test_pause_and_resume_never_prompt(
-    widget: TaskQueueWidget, queue: TaskQueue, mocker: MockerFixture, deliver: Callable[[], None]
-) -> None:
+def test_pause_and_resume_never_prompt(widget: TaskQueueWidget, rig: Rig, mocker: MockerFixture) -> None:
     """Pausing informs rather than blocks, so neither control raises a dialog -- even over a job that
     will lose the work it has done.
 
     **Test steps:**
 
-    * run a job that keeps nothing, select it, and trigger Pause then Resume
-    * verify no dialog was ever asked for
+    * script a running job that keeps nothing, select it, and trigger Pause
+    * script it paused, re-snapshot, select it again, and trigger Resume
+    * verify the engine was asked to pause and to resume it, and no dialog was ever asked for
     """
     question = mocker.patch(QUESTION)
-    running_job(queue, "starts over")
-    deliver()
+    serial = rig.add("starts over", JobState.RUNNING)
+    rig.settle()
     ui = ui_of(widget)
 
     select_rows(widget, 0)
     ui.pause_action.trigger()  # type: ignore[attr-defined]
-    wait_for_state(queue, "starts over", JobState.PAUSED)
-    deliver()
+    rig.set_state("starts over", JobState.PAUSED)
+    rig.settle()
     select_rows(widget, 0)
     ui.resume_action.trigger()  # type: ignore[attr-defined]
 
+    rig.queue.pause_job.assert_called_once_with(serial)
+    rig.queue.resume_job.assert_called_once_with(serial)
     question.assert_not_called()
 
 
@@ -1116,82 +980,84 @@ def test_pause_and_resume_never_prompt(
 # region reordering
 
 
-def test_up_and_down_move_a_row_one_place(
-    widget: TaskQueueWidget, queue: TaskQueue, deliver: Callable[[], None]
-) -> None:
-    """Down then Up returns a row to where it started.
+def test_up_and_down_move_a_row_one_place(widget: TaskQueueWidget, rig: Rig) -> None:
+    """Down then Up asks for a row one place on and one place back, each read off the engine's order at the time.
 
     **Test steps:**
 
-    * hold three queued jobs behind a blocker, and select the first of them
-    * trigger Down, then Up
-    * verify the order came back to the original
+    * script three queued jobs behind a running blocker, and select the first of them
+    * trigger Down, and verify the engine was asked to move it to index 2
+    * script that move and re-snapshot, select the row where it went, and trigger Up
+    * verify the engine was asked to move it back to index 1
     """
-    running_job(queue, "blocker")
+    rig.add("blocker", JobState.RUNNING)
     for index in range(3):
-        queue.enqueue(GatedJob(f"job-{index}"))
-    deliver()
+        rig.add(f"job-{index}", JobState.QUEUED)
+    rig.settle()
     ui = ui_of(widget)
+    moved = rig.serial("job-0")
 
     select_rows(widget, 1)
     ui.move_down_action.trigger()  # type: ignore[attr-defined]
-    deliver()
-    assert [status.label for status in queue.jobs()] == ["blocker", "job-1", "job-0", "job-2"]
+    assert rig.queue.move.call_args_list == [call(moved, 2)]
 
+    rig.reorder("blocker", "job-1", "job-0", "job-2")
+    rig.settle()
     select_rows(widget, 2)
     ui.move_up_action.trigger()  # type: ignore[attr-defined]
-    deliver()
-    assert [status.label for status in queue.jobs()] == ["blocker", "job-0", "job-1", "job-2"]
+    assert rig.queue.move.call_args_list == [call(moved, 2), call(moved, 1)]
 
 
-def test_top_and_bottom_keep_a_multi_selection_in_its_own_order(
-    widget: TaskQueueWidget, queue: TaskQueue, deliver: Callable[[], None]
-) -> None:
-    """Moving several rows to an end preserves their relative order there.
+def test_top_and_bottom_keep_a_multi_selection_in_its_own_order(widget: TaskQueueWidget, rig: Rig) -> None:
+    """Moving several rows to an end asks for them in the order that lands them there in their own order: each move
+    goes ahead of whatever is at its target, so Top asks back to front and Bottom front to back.
 
     **Test steps:**
 
-    * hold four queued jobs behind a blocker and select the last two
-    * trigger Top, and verify they lead in their original order
-    * select them again and verify Bottom does the same
+    * script four queued jobs behind a running blocker and select the last two
+    * trigger Top, and verify the engine was asked to move the last, then the one before it, to index 0
+    * script them leading, re-snapshot and select them again
+    * trigger Bottom, and verify the engine was asked to move the first, then the second, past the last row
     """
-    running_job(queue, "blocker")
+    rig.add("blocker", JobState.RUNNING)
     for index in range(4):
-        queue.enqueue(GatedJob(f"job-{index}"))
-    deliver()
+        rig.add(f"job-{index}", JobState.QUEUED)
+    rig.settle()
     ui = ui_of(widget)
+    second, third = rig.serials("job-2", "job-3")
 
     select_rows(widget, 3, 4)
     ui.move_to_top_action.trigger()  # type: ignore[attr-defined]
-    deliver()
-    assert [status.label for status in queue.jobs()] == ["blocker", "job-2", "job-3", "job-0", "job-1"]
+    assert rig.queue.move.call_args_list == [call(third, 0), call(second, 0)]
+    rig.queue.move.reset_mock()
 
+    rig.reorder("blocker", "job-2", "job-3", "job-0", "job-1")
+    rig.settle()
     select_rows(widget, 1, 2)
     ui.move_to_bottom_action.trigger()  # type: ignore[attr-defined]
-    deliver()
-    assert [status.label for status in queue.jobs()] == ["blocker", "job-0", "job-1", "job-2", "job-3"]
+    assert rig.queue.move.call_args_list == [call(second, 5), call(third, 5)]
 
 
-def test_moving_up_from_the_top_of_the_movable_run_stays_put(
-    widget: TaskQueueWidget, queue: TaskQueue, deliver: Callable[[], None]
-) -> None:
+def test_moving_up_from_the_top_of_the_movable_run_stays_put(widget: TaskQueueWidget, rig: Rig) -> None:
     """The engine clamps a move that reaches past the movable run, and the view follows it.
 
     **Test steps:**
 
-    * hold two queued jobs behind a blocker, select the first of them, and trigger Up
-    * verify the order is unchanged
+    * script two queued jobs behind a running blocker, select the first of them, and trigger Up
+    * verify the engine was asked to move it to index 0
+    * re-snapshot with the script unchanged, as the engine's clamp leaves it, and verify the order is unchanged
     """
-    running_job(queue, "blocker")
+    rig.add("blocker", JobState.RUNNING)
     for index in range(2):
-        queue.enqueue(GatedJob(f"job-{index}"))
-    deliver()
+        rig.add(f"job-{index}", JobState.QUEUED)
+    rig.settle()
 
     select_rows(widget, 1)
     ui_of(widget).move_up_action.trigger()  # type: ignore[attr-defined]
-    deliver()
+    rig.settle()
 
-    assert [status.label for status in queue.jobs()] == ["blocker", "job-0", "job-1"]
+    rig.queue.move.assert_called_once_with(rig.serial("job-0"), 0)
+    assert widget_labels(widget) == ["blocker", "job-0", "job-1"]
 
 
 # endregion
@@ -1200,8 +1066,8 @@ def test_moving_up_from_the_top_of_the_movable_run_stays_put(
 # region the Log sub-dock
 
 
-@fixture
-def scoped_logger() -> Iterator[logging.Logger]:
+@fixture(name="scoped_logger")
+def fixture_scoped_logger() -> Iterator[logging.Logger]:
     """Provide a logger feeding the shared bridge and nothing else.
 
     Propagation off, so these records reach the bridge under test and never the console or another
@@ -1218,35 +1084,41 @@ def scoped_logger() -> Iterator[logging.Logger]:
     logger.removeHandler(bridge)
 
 
-def two_finished_jobs(queue: TaskQueue, deliver: Callable[[], None]) -> None:
-    """Leave the queue holding two ``done`` jobs -- ``first`` on row 0, ``second`` on row 1.
+def two_finished_jobs(rig: Rig) -> None:
+    """Script two ``done`` jobs -- ``first`` on row 0, ``second`` on row 1 -- and let the widget hear of them.
 
     Finished rather than running, because what these tests are about is the surface following a
     *selection*: a settled queue is what keeps the rows still while it does.
 
-    :param queue: the queue to fill.
-    :param deliver: pumps the event loop so the snapshot lands.
+    :param rig: the rig.
     """
     for label in ("first", "second"):
-        job = GatedJob(label)
-        job.let_finish()
-        queue.enqueue(job)
-        wait_for_state(queue, label, JobState.DONE)
-    deliver()
+        rig.add(label, JobState.DONE)
+    rig.settle()
 
 
-def log_a_record_for(queue: TaskQueue, logger: logging.Logger, label: str) -> None:
-    """Write one record under the scope of the queue's job named ``label``.
+def log_a_record_for(rig: Rig, logger: logging.Logger, label: str) -> None:
+    """Write one record under the scope of the scripted job named ``label``.
 
-    Logged with the scope named at the call site rather than from inside the job: what the job's own
+    Logged with the scope named at the call site rather than from inside a job: what a job's own
     ``run`` is wrapped in is the engine's contract (#271), and what this module is about is the surface
     that reads it.
 
-    :param queue: the queue holding the job.
+    :param rig: the rig holding the job.
     :param logger: the logger feeding the shared bridge.
     :param label: the job whose scope to write under; also the record's message.
     """
-    logger.info(f"about {label}", extra={LOG_SCOPE_ATTRIBUTE: JobScope(job_serial(queue, label))})
+    logger.info(f"about {label}", extra={LOG_SCOPE_ATTRIBUTE: JobScope(rig.serial(label))})
+
+
+def deliver_records() -> None:
+    """Hand the shared bridge's pending records to its sinks now.
+
+    The bridge wakes its sinks through a queued call it posts as a record is logged; this sends the queued calls
+    already posted, so a record has reached every surface attached by the time it returns -- or none, which is what
+    a test that expects nothing needs, and no signal could say.
+    """
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.MetaCall.value)
 
 
 def test_the_log_sub_dock_exists_and_starts_hidden(widget: TaskQueueWidget) -> None:
@@ -1293,25 +1165,26 @@ def test_the_toggle_shows_the_hidden_sub_dock(widget: TaskQueueWidget) -> None:
 
 
 def test_nothing_selected_is_the_log_of_nothing(
-    widget: TaskQueueWidget, queue: TaskQueue, scoped_logger: logging.Logger, deliver: Callable[[], None]
+    widget: TaskQueueWidget, rig: Rig, scoped_logger: logging.Logger
 ) -> None:
     """With no row selected the surface stays empty, whatever the jobs have written (#276).
 
     **Test steps:**
 
-    * settle two jobs and log a record under each one's scope
+    * script two finished jobs and log a record under each one's scope
+    * deliver the records
     * verify the surface holds nothing
     """
-    two_finished_jobs(queue, deliver)
-    log_a_record_for(queue, scoped_logger, "first")
-    log_a_record_for(queue, scoped_logger, "second")
-    deliver()
+    two_finished_jobs(rig)
+    log_a_record_for(rig, scoped_logger, "first")
+    log_a_record_for(rig, scoped_logger, "second")
+    deliver_records()
 
     assert log_messages(widget) == []
 
 
 def test_selecting_a_row_shows_that_job_s_replayed_records(
-    widget: TaskQueueWidget, queue: TaskQueue, scoped_logger: logging.Logger, deliver: Callable[[], None]
+    widget: TaskQueueWidget, rig: Rig, scoped_logger: logging.Logger
 ) -> None:
     """Selecting a job attaches the surface to its scope and replays what that job wrote (#276).
 
@@ -1320,14 +1193,14 @@ def test_selecting_a_row_shows_that_job_s_replayed_records(
 
     **Test steps:**
 
-    * settle two jobs and log a record under each one's scope
+    * script two finished jobs, log a record under each one's scope, and deliver them
     * select the first row
     * verify only that job's record is shown
     """
-    two_finished_jobs(queue, deliver)
-    log_a_record_for(queue, scoped_logger, "first")
-    log_a_record_for(queue, scoped_logger, "second")
-    deliver()
+    two_finished_jobs(rig)
+    log_a_record_for(rig, scoped_logger, "first")
+    log_a_record_for(rig, scoped_logger, "second")
+    deliver_records()
 
     select_rows(widget, 0)
 
@@ -1335,7 +1208,7 @@ def test_selecting_a_row_shows_that_job_s_replayed_records(
 
 
 def test_selecting_another_row_swaps_the_surface(
-    widget: TaskQueueWidget, queue: TaskQueue, scoped_logger: logging.Logger, deliver: Callable[[], None]
+    widget: TaskQueueWidget, rig: Rig, scoped_logger: logging.Logger
 ) -> None:
     """The surface follows the selection rather than accumulating the jobs it has visited (#276).
 
@@ -1344,14 +1217,14 @@ def test_selecting_another_row_swaps_the_surface(
 
     **Test steps:**
 
-    * settle two jobs and log a record under each one's scope
+    * script two finished jobs, log a record under each one's scope, and deliver them
     * select the first row, then the second
     * verify only the second job's record is shown
     """
-    two_finished_jobs(queue, deliver)
-    log_a_record_for(queue, scoped_logger, "first")
-    log_a_record_for(queue, scoped_logger, "second")
-    deliver()
+    two_finished_jobs(rig)
+    log_a_record_for(rig, scoped_logger, "first")
+    log_a_record_for(rig, scoped_logger, "second")
+    deliver_records()
 
     select_rows(widget, 0)
     select_rows(widget, 1)
@@ -1360,7 +1233,7 @@ def test_selecting_another_row_swaps_the_surface(
 
 
 def test_clearing_the_selection_empties_the_surface(
-    widget: TaskQueueWidget, queue: TaskQueue, scoped_logger: logging.Logger, deliver: Callable[[], None]
+    widget: TaskQueueWidget, rig: Rig, scoped_logger: logging.Logger
 ) -> None:
     """Selecting nothing is the log of nothing -- the current index left behind does not count (#276).
 
@@ -1369,45 +1242,45 @@ def test_clearing_the_selection_empties_the_surface(
 
     **Test steps:**
 
-    * settle two jobs, log under the first's scope, and select its row
-    * clear the selection, then log under that same scope again
+    * script two finished jobs, log under the first's scope, deliver it, and select its row
+    * clear the selection, then log under that same scope again and deliver it
     * verify the surface emptied and stayed empty
     """
-    two_finished_jobs(queue, deliver)
-    log_a_record_for(queue, scoped_logger, "first")
-    deliver()
+    two_finished_jobs(rig)
+    log_a_record_for(rig, scoped_logger, "first")
+    deliver_records()
     select_rows(widget, 0)
     assert log_messages(widget) == ["about first"]
 
     ui_of(widget).task_view.selectionModel().clearSelection()  # type: ignore[attr-defined]
-    log_a_record_for(queue, scoped_logger, "first")
-    deliver()
+    log_a_record_for(rig, scoped_logger, "first")
+    deliver_records()
 
     assert log_messages(widget) == []
 
 
 def test_the_surface_follows_a_selected_job_live(
-    widget: TaskQueueWidget, queue: TaskQueue, scoped_logger: logging.Logger, deliver: Callable[[], None]
+    widget: TaskQueueWidget, rig: Rig, scoped_logger: logging.Logger
 ) -> None:
     """A record written while a row is selected lands on the surface without re-selecting it (#276).
 
     **Test steps:**
 
-    * settle two jobs and select the first row
-    * log a record under each job's scope
+    * script two finished jobs and select the first row
+    * log a record under each job's scope, and deliver them
     * verify only the selected job's record arrived
     """
-    two_finished_jobs(queue, deliver)
+    two_finished_jobs(rig)
     select_rows(widget, 0)
 
-    log_a_record_for(queue, scoped_logger, "first")
-    log_a_record_for(queue, scoped_logger, "second")
-    deliver()
+    log_a_record_for(rig, scoped_logger, "first")
+    log_a_record_for(rig, scoped_logger, "second")
+    deliver_records()
 
     assert log_messages(widget) == ["about first"]
 
 
-def test_the_surface_is_capped_at_the_per_resource_limit(queue: TaskQueue, qtbot: QtBot) -> None:
+def test_the_surface_is_capped_at_the_per_resource_limit(queue: Mock, qtbot: QtBot) -> None:
     """A job's surface is capped like a resource's, not like the app's (#276).
 
     Its lifetime shape is a document's -- one subject's records, for as long as that subject is on
@@ -1472,7 +1345,7 @@ def saved_dock_entries(state: bytes) -> dict[str, dict[str, Any]]:
     return {entry["name"]: entry for entry in layout_dock_entries(cbor2.loads(state))}
 
 
-def test_the_nested_layout_round_trips(queue: TaskQueue, qtbot: QtBot) -> None:
+def test_the_nested_layout_round_trips(queue: Mock, qtbot: QtBot) -> None:
     """A shown Log sub-dock is shown again in a shell restored from the saved state, and the log
     surface's filters ride the log dock's own entry (#276, #102).
 

@@ -3,11 +3,14 @@
 from PySide6.QtWidgets import QDialog, QWidget
 
 from ..dialogs.unsaved_changes_dialog import UnsavedChangesDialog
+from .pending_saves import PendingSaves
 from .rehu_document_model import RehuDocumentModel
 from .save_or_prompt_retry import save_or_prompt_retry
 
 
-def confirm_and_save_dirty(parent: QWidget, models: list[RehuDocumentModel]) -> bool:
+def confirm_and_save_dirty(
+    parent: QWidget, models: list[RehuDocumentModel], pending_saves: PendingSaves | None = None
+) -> bool:
     """Prompt once for ``models``, saving the checked ones, and report whether to proceed (#176).
 
     The batch counterpart to :func:`~rehuco_agent.documents.save_or_prompt_retry.save_or_prompt_retry`'s
@@ -25,6 +28,7 @@ def confirm_and_save_dirty(parent: QWidget, models: list[RehuDocumentModel]) -> 
     :param parent: the widget to parent the dialog (and any failure prompt) to.
     :param models: the dirty document models to confirm. An empty list proceeds silently -- there is
         nothing to confirm, so no dialog is shown.
+    :param pending_saves: the window's save jobs, each save waited through (#497); ``None`` saves in place.
     :returns: ``True`` if the caller should proceed with its close; ``False`` if the user cancelled,
         in which case nothing further may be closed.
     """
@@ -36,6 +40,6 @@ def confirm_and_save_dirty(parent: QWidget, models: list[RehuDocumentModel]) -> 
         return False
 
     for model in dialog.selected_models():
-        if not save_or_prompt_retry(parent, model):
+        if not save_or_prompt_retry(parent, model, pending_saves):
             return False
     return True

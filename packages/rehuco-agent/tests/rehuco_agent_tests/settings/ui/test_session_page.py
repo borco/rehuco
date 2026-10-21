@@ -239,3 +239,61 @@ def test_the_remote_documents_checkbox_is_staged_and_saved_independently(
     assert loaded.restore_remote_documents is False
     assert loaded.restore_root_catalog is True
     assert not page.is_dirty()
+
+
+def test_the_keep_unsaved_changes_checkbox_starts_unchecked(page: SessionPage) -> None:
+    """A freshly opened page shows the shipped default for keeping unsaved edits: off, so quitting asks (#497).
+
+    **Test steps:**
+
+    * verify the keep unsaved changes checkbox is unchecked
+    """
+    assert not ui(page).keep_unsaved_changes_check_box.isChecked()
+
+
+def test_the_keep_unsaved_changes_checkbox_is_staged_and_saved_independently(
+    page: SessionPage, fake_persistent_settings: FakeSettings
+) -> None:
+    """The keep unsaved changes box is its own choice, apart from the restore ones (#497).
+
+    **Test steps:**
+
+    * check only the keep unsaved changes box
+    * verify the page is dirty, then save
+    * verify only ``keep_unsaved_changes`` was persisted on, and the page is clean
+    """
+    ui(page).keep_unsaved_changes_check_box.setChecked(True)
+    assert page.is_dirty()
+
+    page.save_changes()
+
+    loaded = SessionRestoreSettings()
+    loaded.load(fake_persistent_settings)  # type: ignore[arg-type]
+    assert loaded.keep_unsaved_changes is True
+    assert loaded.restore_local_documents is True
+    assert loaded.restore_remote_documents is True
+    assert loaded.restore_root_catalog is True
+    assert not page.is_dirty()
+
+
+def test_the_keep_unsaved_changes_checkbox_is_seeded_from_storage_and_reset_by_the_defaults(
+    page: SessionPage, fake_persistent_settings: FakeSettings
+) -> None:
+    """A saved choice to keep unsaved edits shows when the page re-seeds, and the factory value unstages it (#497).
+
+    **Test steps:**
+
+    * save keeping on and drop into it
+    * verify the box is checked and the page clean
+    * call ``seed_defaults``, and verify the box is unchecked and the page dirty
+    """
+    SessionRestoreSettings(keep_unsaved_changes=True).save(fake_persistent_settings)  # type: ignore[arg-type]
+
+    page.drop_changes()
+    assert ui(page).keep_unsaved_changes_check_box.isChecked()
+    assert not page.is_dirty()
+
+    page.seed_defaults()
+
+    assert not ui(page).keep_unsaved_changes_check_box.isChecked()
+    assert page.is_dirty()

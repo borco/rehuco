@@ -734,9 +734,9 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
         if status.state is JobState.CANCELLED:
             return "cancelled", None
         prefix = f"{NoTrashBinError.__name__}: "
-        if status.error is not None and status.error.startswith(prefix):
-            reason = status.error.removeprefix(prefix)
+        if status.message is not None and status.message.startswith(prefix):
+            reason = status.message.removeprefix(prefix)
             return "failed", NO_BIN_FAILURE.format(reason=reason, box=WITHOUT_ASKING_BOXES[DeletionKind.BACKUPS].label)
-        return "failed", status.error
+        return "failed", status.message
 
     # endregion

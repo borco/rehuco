@@ -1,5 +1,5 @@
-"""Tests for TaskInfoDelegate: a bar and its figure side by side, the reason for a failed job, or
-nothing (#202, #248).
+"""Tests for TaskInfoDelegate: a bar and its figure side by side, the reason for a failed job, what a
+waiting one waits for, or nothing (#202, #248, #497).
 
 Geometry is asserted against the two rect helpers directly, and painting against the pixels that land
 -- the same split ``test_task_row_delegate.py`` uses, and for its reason: what this class decides is
@@ -434,7 +434,7 @@ def test_a_failed_job_draws_its_reason_across_the_whole_cell(image: QImage, mock
         done=3,
         total=4,
         progress_unit=PROGRESS_UNIT_BYTES,
-        error="OSError: the mount is not there",
+        message="OSError: the mount is not there",
     )
 
     paint(status, image)
@@ -459,6 +459,34 @@ def test_a_failed_job_with_no_reason_draws_an_empty_cell(image: QImage, mocker: 
     paint(JobStatus(serial=1, label="job", state=JobState.FAILED), image)
 
     assert "" in [call.args[-1] for call in drawn_text.call_args_list]
+
+
+def test_a_waiting_job_draws_what_it_waits_for_across_the_whole_cell(image: QImage, mocker: MockerFixture) -> None:
+    """What a waiting job waits for is a sentence like a failure's reason, so it takes the cell the same way (#497).
+
+    **Test steps:**
+
+    * paint a waiting job carrying a reason and a unit
+    * verify the reason was drawn into the whole cell, and no bar was painted
+    """
+    drawn_text = mocker.patch.object(QPainter, "drawText")
+    status = JobStatus(
+        serial=1,
+        label="job",
+        state=JobState.WAITING,
+        done=3,
+        total=4,
+        progress_unit=PROGRESS_UNIT_BYTES,
+        message="The share is offline.",
+    )
+
+    paint(status, image)
+
+    drawn_text.assert_called_once()
+    rect, _alignment, text = drawn_text.call_args.args
+    assert text == "The share is offline."
+    assert rect.width() > FIGURE_WIDTH
+    assert bar_is_bare(image)
 
 
 # endregion

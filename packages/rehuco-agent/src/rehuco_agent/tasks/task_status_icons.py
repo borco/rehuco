@@ -1,6 +1,6 @@
 """Which icon a task row wears, and the recolored :class:`QIcon` that draws it (#248).
 
-The State column is **icons, no words**: eight glyphs covering every reading the column ever had,
+The State column is **icons, no words**: nine glyphs covering every reading the column ever had,
 including the two that are not states at all -- a job that has been asked to stop and has not reached
 its checkpoint yet ([[appendices.task-queue#pause-concept]]). :func:`status_icon` therefore reads the
 same two fields in the same order :func:`~.task_queue_model.state_text` does, so the icon and the
@@ -20,15 +20,19 @@ STATE_ICONS: Final[Mapping[JobState, str]] = {
     JobState.QUEUED: ":/icons/task_scheduled.svg",
     JobState.RUNNING: ":/icons/task_running.svg",
     JobState.PAUSED: ":/icons/task_paused.svg",
+    JobState.WAITING: ":/icons/task_waiting.svg",
     JobState.DONE: ":/icons/task_done.svg",
     JobState.FAILED: ":/icons/task_failed.svg",
     JobState.CANCELLED: ":/icons/task_canceled.svg",
 }
-"""One glyph per state, and all six are present.
+"""One glyph per state, and all seven are present.
 
 Distinct from the toolbar's ``task_run``/``task_pause``/``task_cancel``, which are *verbs* on a button
 -- what pressing it would do. These are the states themselves, so a row reading ``task_paused`` and a
-button offering ``task_pause`` are not the same drawing doing two jobs."""
+button offering ``task_pause`` are not the same drawing doing two jobs.
+
+``WAITING`` is a clock rather than a second hourglass (#497): queued waits for its turn, waiting for
+something outside the app, and the two must not read as one at a glance."""
 
 PENDING_STOP_ICONS: Final[Mapping[StopRequest, str]] = {
     StopRequest.PAUSE: ":/icons/task_pausing.svg",

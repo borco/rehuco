@@ -103,6 +103,7 @@
         <file alias="icons/task_running.svg">../../../../design/icons/task_running.svg</file>
         <file alias="icons/task_scheduled.svg">../../../../design/icons/task_scheduled.svg</file>
         <file alias="icons/task_view.svg">../../../../design/icons/task_view.svg</file>
+        <file alias="icons/task_waiting.svg">../../../../design/icons/task_waiting.svg</file>
         <file alias="icons/tc_convert.svg">../../../../design/icons/tc_convert.svg</file>
         <file alias="icons/tc_convert_with_backup.svg">../../../../design/icons/tc_convert_with_backup.svg</file>
         <file alias="icons/theme_auto.svg">../../../../design/icons/theme_auto.svg</file>

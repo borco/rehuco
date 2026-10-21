@@ -127,13 +127,18 @@ click is what stores it. Reading a video's length needs a media library the app 
 you already have; which one is a setting.
 
 Which panels you had open, how you'd arranged them, and which file was in front are remembered per
-resource and restored when you open it again.
+resource and restored when you open it again. The documents open at quit are reopened on the next start, under the
+Session settings; with *Keep unsaved changes when quitting* on, quitting asks nothing about unsaved edits, and the
+next start reopens those documents with their edits, still unsaved.
 
-Work that takes minutes runs on a **task queue** rather than in the window: one job at a time on this machine's
-disks, each row
+Work that takes minutes, and every save, runs on a **task queue** rather than in the window: one job at a time on
+this machine's disks, and the saves to each share in turn beside them, each row
 showing its progress and its own log, pausable, cancellable, reorderable, and written down so it survives
-quitting. Checksums, `.tc` imports, scrapes and image downloads all run on it; an app-wide **Tasks** panel
-shows the queue, beside an app-wide **Log**.
+quitting. Checksums, `.tc` imports and saves run on it. A document stays editable while its save is out, a save
+whose share does not answer or whose record another writer holds waits in the queue and tries again, and a save made
+on closing a document or on quitting is waited for. Until it lands, a save is the record's saved state on this
+machine: Revert goes back to it and opening the record shows it, and only dropping it returns to the file. An
+app-wide **Tasks** panel shows the queue, with a filter for the saves not yet landed, beside an app-wide **Log**.
 
 A **root catalog** is a `.rehuco` file naming the folders to catalog — its **roots**, each with a label. `Root Catalog` >
 `New…` or `Open…` opens one, one at a time, in two app-wide panels — **Root Catalog**, which lists its roots, and

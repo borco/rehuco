@@ -644,6 +644,28 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
             LOG.info("%s block discarded on save from %s", key, target)
             self.__logged_discarded_keys.add(key)
 
+    def unlogged_dropped_block_keys(self) -> tuple[str, ...]:
+        """The blocks the next save drops that no save has logged yet (#86) -- what a save made elsewhere from a
+        snapshot of this document logs once it lands (#497).
+
+        :returns: the keys, sorted.
+        """
+        return tuple(key for key in self.__dropped_block_keys() if key not in self.__logged_discarded_keys)
+
+    def note_written(self, written: dict[str, Any], discarded: Sequence[str]) -> None:
+        """Adopt what a save made elsewhere from a snapshot of this document left on disk (#497), as :meth:`save`
+        would have: the file's versions, the baseline ``updated`` is judged against, and the discards it logged.
+
+        :param written: the record as written.
+        :param discarded: the blocks that save logged as dropped (:meth:`unlogged_dropped_block_keys`).
+        """
+        self.__saved_metadata = metadata_text(written)
+        self.__on_disk_format_version = self.__coerced_version(written)
+        self.__on_disk_active_block_format_version = self.__raw_active_block_version(written, self.__plugins)
+        dropped = self.__dropped_block_keys()
+        self.__logged_discarded_keys.intersection_update(dropped)
+        self.__logged_discarded_keys.update(key for key in discarded if key in dropped)
+
     def reload(self) -> None:
         """Re-read this document from its own path, replacing all in-memory data in place.
 

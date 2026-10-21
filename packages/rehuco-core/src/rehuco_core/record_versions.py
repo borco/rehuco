@@ -17,7 +17,7 @@ Pure functions of parsed payloads: nothing here reads a file.
 
 import copy
 import json
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Final
@@ -202,7 +202,14 @@ def same_details(mine: dict[str, Any], theirs: dict[str, Any]) -> bool:
     return not metadata_differences(theirs, mine, theirs)
 
 
-def merge_users(mine: dict[str, Any], theirs: dict[str, Any], base: RecordVersion, username: str) -> bool:
+def merge_users(
+    mine: dict[str, Any],
+    theirs: dict[str, Any],
+    base: RecordVersion,
+    username: str,
+    *,
+    dropped: Collection[str] = (),
+) -> bool:
     """Merge the file's per-user fields into an edited payload, field by field, in place ([[nodes#access-seam]]).
 
     Every block ``mine`` holds gets the ``users`` map the file has now, except for the fields ``mine`` changed since
@@ -211,12 +218,15 @@ def merge_users(mine: dict[str, Any], theirs: dict[str, Any], base: RecordVersio
     So a progress entry written while a rating was being edited survives the rating's save, and the other way round.
 
     A block only the file has -- made by the first per-user field written there since ``mine`` was read, which holds
-    nothing else (:func:`metadata_of`) -- is added to ``mine`` with its version stamp, so those fields survive too.
+    nothing else (:func:`metadata_of`) -- is added to ``mine`` with its version stamp, so those fields survive too --
+    unless the save **drops** it: a block its writer claimed and abandoned ([[plugins#plugin-blocks]]) is left out
+    of ``mine`` on purpose, and the file's per-user fields in it go with it, as they would had ``mine`` still held it.
 
     :param mine: the edited payload, merged into.
     :param theirs: the payload on disk now.
     :param base: the version ``mine`` was read at.
     :param username: whose fields the save carries.
+    :param dropped: the blocks the save leaves out of ``mine`` on purpose, never added back from the file (#497).
     :returns: whether ``mine``'s per-user fields changed -- a value the file had that the editor did not.
     """
     read: Final = {(block, scope, key): digest for block, scope, key, digest in base.user_fields}
@@ -232,11 +242,15 @@ def merge_users(mine: dict[str, Any], theirs: dict[str, Any], base: RecordVersio
         if merged != own_map:
             value[USERS_KEY] = merged
             changed = True
-    return add_file_only_blocks(mine, theirs, read, writable) or changed
+    return add_file_only_blocks(mine, theirs, read, writable, dropped) or changed
 
 
 def add_file_only_blocks(
-    mine: dict[str, Any], theirs: dict[str, Any], read: dict[tuple[str, str, str], str], writable: frozenset[str]
+    mine: dict[str, Any],
+    theirs: dict[str, Any],
+    read: dict[tuple[str, str, str], str],
+    writable: frozenset[str],
+    dropped: Collection[str] = (),
 ) -> bool:
     """Add to ``mine`` every block only the file has, holding its merged per-user fields and its version stamp.
 
@@ -244,11 +258,12 @@ def add_file_only_blocks(
     :param theirs: the payload on disk now.
     :param read: each per-user field's hash as read, by block, scope and key.
     :param writable: the scopes the writer may change.
+    :param dropped: the blocks ``mine`` leaves out on purpose, which stay out.
     :returns: whether a block was added.
     """
     added_any = False
     for block, their_map in users_maps(theirs).items():
-        if block in mine:
+        if block in mine or block in dropped:
             continue
         merged = merge_block({}, their_map, read, block, writable)
         if merged:
@@ -400,6 +415,45 @@ def collect_differences(base: Any, mine: Any, theirs: Any, path: FieldPath, foun
             collect_differences(known[index] if index < len(known) else ABSENT, own, their, (*path, index), found)
     else:
         found.append(MetadataDifference(path, base, mine, theirs))
+
+
+def payload_changes(before: Any, after: Any, path: FieldPath = ()) -> dict[FieldPath, Any]:
+    """Every path at which ``after`` differs from ``before``, with ``after``'s value -- :data:`ABSENT` where it
+    removed one (#497).
+
+    Objects are compared key by key and a list item by item while both hold as many, as :func:`collect_differences`
+    does; unlike it, nothing is left out -- per-user fields and stamps are changes too. The shape :func:`put_paths`
+    takes, so the changes one payload made can be put onto another.
+
+    :param before: the earlier payload, or a value inside it.
+    :param after: the later one.
+    :param path: where the two sit.
+    :returns: the changes, by path.
+    """
+    if before == after:
+        return {}
+    if isinstance(before, dict) and isinstance(after, dict):
+        found: dict[FieldPath, Any] = {}
+        for key in [*after, *(key for key in before if key not in after)]:
+            found.update(payload_changes(before.get(key, ABSENT), after.get(key, ABSENT), (*path, key)))
+        return found
+    if isinstance(before, list) and isinstance(after, list) and len(before) == len(after):
+        found = {}
+        for index, (old, new) in enumerate(zip(before, after, strict=True)):
+            found.update(payload_changes(old, new, (*path, index)))
+        return found
+    return {path: after}
+
+
+def paths_overlap(one: FieldPath, other: FieldPath) -> bool:
+    """Whether two paths name the same value or one holds the other (#497).
+
+    :param one: a path.
+    :param other: another.
+    :returns: whether either is a prefix of the other.
+    """
+    shorter = min(len(one), len(other))
+    return one[:shorter] == other[:shorter]
 
 
 def put_paths(

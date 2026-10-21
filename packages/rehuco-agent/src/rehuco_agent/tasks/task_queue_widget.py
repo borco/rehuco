@@ -16,12 +16,13 @@ from borco_pyside.qtads import (
     QtAdsPinGuard,
 )
 from borco_pyside.theming import ActionIconThemeHandler
-from PySide6.QtCore import QItemSelectionModel, QPoint
+from PySide6.QtCore import QItemSelectionModel, QPoint, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QHeaderView, QMainWindow, QMenu, QMessageBox, QWidget
 from rehuco_core import (
     FINISHED_JOB_STATES,
     MOVABLE_JOB_STATES,
+    SAVE_RECORD_KIND,
     JobScope,
     JobState,
     JobStatus,
@@ -34,6 +35,7 @@ from ..dock_maximize import attach_maximize_handler
 from ..fields.colors import DONE_COLOR, ERROR_COLOR, INFO_COLOR, QUEUED_COLOR
 from ..glyphs import TAB_CLOSE_GLYPH
 from ..settings.logs_settings import shared_logs_settings
+from .pending_saves_filter import PendingSavesFilter, is_pending_save
 from .task_info_delegate import TaskInfoDelegate
 from .task_queue_model import INFO_COLUMN, LABEL_COLUMN, STARTS_OVER_HINT, STATE_COLUMN, TaskQueueModel
 from .task_queue_widget_ui import Ui_TaskQueueWidget
@@ -68,8 +70,26 @@ RETRIABLE_STATES: Final = frozenset({JobState.FAILED, JobState.CANCELLED})
 re-running work that succeeded ([[appendices.task-queue#kept]] frames retry as the recovery for a
 failure or a cancellation)."""
 
+PAUSABLE_STATES: Final = frozenset({JobState.QUEUED, JobState.RUNNING, JobState.WAITING})
+"""The states Pause acts on: anything not yet finished that is not already held.
+
+``WAITING`` is among them (#497): the engine's own bulk pause leaves a waiting job alone, but pointing at one
+and pausing it is how a reader stops a save from retrying by itself."""
+
+INSPECTABLE_SAVE_STATES: Final = frozenset({JobState.FAILED, JobState.WAITING})
+"""The states a save can be inspected in (#497) -- the two with a reason it has not landed to look into."""
+
+TRY_NOW_TEXT: Final = "Try Now"
+TRY_NOW_TOOLTIP: Final = "Try the selected waiting jobs again now, rather than when their wait ends."
+"""What Resume says when everything it would act on is waiting (#497): a waiting job was never held, so
+*resuming* it reads as undoing a pause nobody asked for; what the engine does is try it at once."""
+
+PENDING_SAVES_STATE_KEY: Final = "pending_saves"
+"""The key the queue sub-dock's saved state keeps the Pending Saves toggle under (#497)."""
+
 TASK_STATE_COLORS: Final[dict[JobState, QColor]] = {
     JobState.QUEUED: QColor(QUEUED_COLOR),
+    JobState.WAITING: QColor(QUEUED_COLOR),
     JobState.RUNNING: QColor(INFO_COLOR),
     JobState.DONE: QColor(DONE_COLOR),
     JobState.FAILED: QColor(ERROR_COLOR),
@@ -78,7 +98,8 @@ TASK_STATE_COLORS: Final[dict[JobState, QColor]] = {
 """What a task row is tinted by (#251), from the same tokens the log dock and the inline notice banner
 use (`rehuco_agent.fields.colors`) -- ``FAILED``/``CANCELLED`` sharing :data:`~.fields.colors.ERROR_COLOR`
 by decision: both are *did not finish*, and what separates a job that broke from one that was stopped
-on purpose is left to the state column's text.
+on purpose is left to the state column's text. ``WAITING`` shares the queued color for the same kind of reason:
+both are *will run by itself*, and the glyph tells them apart.
 
 ``JobState.PAUSED`` is deliberately absent, which paints it plain, the same way
 :attr:`~borco_pyside.logging.LogLevelBand.DEBUGS` is left out of the log dock's own map -- there is
@@ -123,12 +144,24 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
     manager from holding a fifth copy of QtAds' default sheet
     ([[appendices.qt-ads#per-manager-stylesheet]]).
 
+    **A save is acted on by its owner, not here** (#497): Inspect Save and Discard Save only say which rows were
+    asked for (:attr:`inspect_save_requested`, :attr:`discard_saves_requested`), because what a save carries --
+    a document's edits -- is the document's to show or drop. The Pending Saves toggle narrows the table to the
+    saves that have not landed (:class:`~.pending_saves_filter.PendingSavesFilter`), and every row this widget
+    reads off the view is mapped through it to the model's own.
+
     :param queue: the queue to show and act on.
     :param parent: optional Qt parent.
     :param stylesheet_host: the widget carrying the dock styling for the whole nest -- normally the
         window's outermost ``CDockManager``. Given one, this shell's manager sets no stylesheet of its
         own at all, since the host's already cascades over it.
     """
+
+    inspect_save_requested = Signal(int)
+    """Inspect Save was triggered over one failed or waiting save; carries its serial."""
+
+    discard_saves_requested = Signal(list)
+    """Discard Save was triggered; carries the serials of the selected saves that have not landed."""
 
     def __init__(
         self, queue: TaskQueue, parent: QWidget | None = None, *, stylesheet_host: QWidget | None = None
@@ -144,7 +177,12 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
         self.__panel: Final = QWidget(self)
         self.__ui: Final = Ui_TaskQueueWidget()
         self.__ui.setupUi(self.__panel)
-        self.__ui.task_view.setModel(self.__model)
+        self.__filter: Final = PendingSavesFilter(self)
+        self.__filter.setSourceModel(self.__model)
+        self.__ui.task_view.setModel(self.__filter)
+        # what Resume reads as while it is not offering Try Now (#497), as the form wrote it
+        self.__resume_text: Final = self.__ui.resume_action.text()
+        self.__resume_tooltip: Final = self.__ui.resume_action.toolTip()
         self.__ui.task_view.setItemDelegateForColumn(
             LABEL_COLUMN, TaskTextDelegate(self, state_colors=TASK_STATE_COLORS)
         )
@@ -188,7 +226,7 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
         # the maximize toggle on each sub-dock's tab (#341); kept only so save_state can read
         # the layout un-maximized
         self.__maximize_handler: Final = attach_maximize_handler(self.__dock_manager)
-        self.__add_queue_dock()
+        self.__queue_dock: Final = self.__add_queue_dock()
         self.__log_dock: Final = self.__add_log_dock()
 
         self.__setup_toolbar()
@@ -224,6 +262,12 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
         (#239) follows, rather than becoming a second listener on the queue itself."""
         return self.__model
 
+    def show_pending_saves(self) -> None:
+        """Narrow the table to the saves that have not landed (#497) -- what the status bar's pending-saves
+        counter asks for. Checking the toggle is what filters, so the toolbar and the table cannot disagree.
+        """
+        self.__ui.pending_saves_action.setChecked(True)
+
     # region toolbar and context menu
 
     def __setup_toolbar(self) -> None:
@@ -236,6 +280,8 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
         toolbar.addSeparator()
         toolbar.addActions([ui.pause_action, ui.resume_action, ui.cancel_action, ui.retry_action])
         toolbar.addSeparator()
+        toolbar.addActions([ui.inspect_save_action, ui.discard_save_action])
+        toolbar.addSeparator()
         toolbar.addActions([ui.move_to_top_action, ui.move_up_action, ui.move_down_action, ui.move_to_bottom_action])
         toolbar.addSeparator()
         # acts on the whole queue rather than the selection, so it gets its own trailing slot rather
@@ -246,6 +292,8 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
         # slot of its own that Clear Done used to have -- a view toggle among the job controls would read
         # as a third thing done *to* the selection (#276)
         toolbar.addAction(self.__log_dock.toggleViewAction())
+        # beside it for the same reason: it changes what this shell shows, not the queue (#497)
+        toolbar.addAction(ui.pending_saves_action)
 
         for action, icon in (
             (ui.pause_all_action, TASK_PAUSE_ICON),
@@ -277,6 +325,9 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
         ui.move_up_action.triggered.connect(lambda: self.__move_by(-1))
         ui.move_down_action.triggered.connect(lambda: self.__move_by(1))
         ui.move_to_bottom_action.triggered.connect(lambda: self.__move_to_end(top=False))
+        ui.inspect_save_action.triggered.connect(self.__inspect_selection)
+        ui.discard_save_action.triggered.connect(self.__discard_selection)
+        ui.pending_saves_action.toggled.connect(self.__filter.set_enabled)
 
     def __setup_context_menu(self) -> None:
         ui = self.__ui
@@ -294,21 +345,29 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
         menu.addAction(ui.retry_action)
         menu.addAction(ui.clear_action)
         menu.addSeparator()
+        menu.addAction(ui.inspect_save_action)
+        menu.addAction(ui.discard_save_action)
+        menu.addSeparator()
         menu.addAction(ui.clear_done_action)
         menu.addAction(ui.clear_failed_action)
         menu.addAction(ui.clear_all_action)
+        menu.addSeparator()
+        menu.addAction(ui.pending_saves_action)
         menu.exec(ui.task_view.viewport().mapToGlobal(position))
 
     # endregion
 
     # region the dock shell and the selected job's log
 
-    def __add_queue_dock(self) -> None:
+    def __add_queue_dock(self) -> QtAds.CDockWidget:
         """Put the queue table in this shell's first sub-dock.
 
         **Not closable**, unlike the log beside it: closing the only thing this dock exists to show
-        would leave the Tasks dock empty with no control on it to bring the table back -- so nothing
-        needs a handle on it either, and the manager it is registered with owns it.
+        would leave the Tasks dock empty with no control on it to bring the table back. The manager it is
+        registered with owns it; the handle kept is only so its entry in a saved layout can carry the Pending
+        Saves toggle (#497).
+
+        :returns: the dock.
         """
         dock = QtAds.CDockWidget(self.__dock_manager, QUEUE_DOCK_TITLE)
         dock.setObjectName(QUEUE_DOCK_NAME)
@@ -316,6 +375,7 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
         dock.setFeatures(features.DockWidgetFocusable | features.DockWidgetMovable)
         dock.setWidget(self.__panel)
         self.__dock_manager.addDockWidget(QtAds.CenterDockWidgetArea, dock)
+        return dock
 
     def __add_log_dock(self) -> QtAds.CDockWidget:
         """Put the selected job's log surface beside the table, hidden (#276).
@@ -386,7 +446,7 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
         rows = self.__selected_row_indices()
         if not rows:
             return None
-        current = self.__selection_model.currentIndex().row()
+        current = self.__filter.mapToSource(self.__selection_model.currentIndex()).row()
         row = current if current in rows else rows[0]
         return self.__model.status_at(row).scope
 
@@ -410,15 +470,26 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
 
     def save_state(self) -> bytes:
         """Serialize this shell's nested dock layout, its log surface's own filters folded into the log dock's entry
-        (`~borco_pyside.qtads.QtAdsLayout`, #102).
+        and the Pending Saves toggle into the queue dock's (`~borco_pyside.qtads.QtAdsLayout`, #102, #497).
 
         :returns: cbor2-encoded state, suitable for :meth:`restore_state`.
         """
         with self.__maximize_handler.unmaximized():
-            layout = QtAdsLayout(self.__dock_manager).save(
-                lambda dock: self.__log_widget.save_state() if dock is self.__log_dock else None
-            )
+            layout = QtAdsLayout(self.__dock_manager).save(self.__dock_state)
         return cbor2.dumps(layout)
+
+    def __dock_state(self, dock: QtAds.CDockWidget) -> bytes | None:
+        """What a sub-dock's entry in a saved layout carries.
+
+        :param dock: the sub-dock being saved.
+        :returns: the log's filters, the queue's Pending Saves toggle while it is on, or ``None`` for a dock with
+            no state -- the queue's while the toggle is off, which reads back as off like a layout older than it.
+        """
+        if dock is self.__log_dock:
+            return self.__log_widget.save_state()
+        if dock is self.__queue_dock and self.__ui.pending_saves_action.isChecked():
+            return cbor2.dumps({PENDING_SAVES_STATE_KEY: True})
+        return None
 
     def restore_state(self, state: bytes) -> bool:
         """Restore a layout previously captured by :meth:`save_state`.
@@ -434,10 +505,27 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
         return QtAdsLayout(self.__dock_manager, pins=False).restore(
             values,
             place_unnamed=self.__place_unnamed_dock,
-            restore_dock_state=lambda dock, saved: (
-                self.__log_widget.restore_state(saved) if dock is self.__log_dock else None
-            ),
+            restore_dock_state=self.__restore_dock_state,
         )
+
+    def __restore_dock_state(self, dock: QtAds.CDockWidget, saved: bytes) -> None:
+        """Hand a sub-dock the state its saved entry carries.
+
+        A queue entry with no state -- the toggle was off, or the layout is older than it -- is never handed
+        here: the toggle stays off, as it was built.
+
+        :param dock: the sub-dock being restored.
+        :param saved: what :meth:`__dock_state` wrote for it.
+        """
+        if dock is self.__log_dock:
+            self.__log_widget.restore_state(saved)
+        elif dock is self.__queue_dock:
+            try:
+                values: Any = cbor2.loads(saved)
+            except cbor2.CBORDecodeError:
+                return
+            if isinstance(values, dict):
+                self.__ui.pending_saves_action.setChecked(values.get(PENDING_SAVES_STATE_KEY) is True)
 
     def __place_unnamed_dock(self, dock: QtAds.CDockWidget) -> None:
         """Show a sub-dock the saved layout does not name as it is built: the table open, the log hidden. Both
@@ -452,8 +540,12 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
     # region selection and enablement
 
     def __selected_row_indices(self) -> list[int]:
-        """Every selected row, sorted, deduplicated across columns of the same row."""
-        return sorted({index.row() for index in self.__selection_model.selectedRows()})
+        """Every selected row as the model's own row, sorted, deduplicated across columns of the same row.
+
+        Mapped through the Pending Saves filter (#497), which the view shows: a view row is not a model row
+        while it filters. Its rows keep the model's order, so sorted model rows are still view order.
+        """
+        return sorted({self.__filter.mapToSource(index).row() for index in self.__selection_model.selectedRows()})
 
     def __selected_serials(self) -> list[int]:
         """The serial behind every currently selected row, in view order."""
@@ -469,19 +561,37 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
         """
         statuses = [self.__model.status_at(row) for row in self.__selected_row_indices()]
         states = {status.state for status in statuses}
-        resumable_running = any(
-            status.state is JobState.RUNNING and status.stop_requested is not None for status in statuses
-        )
         ui = self.__ui
-        ui.pause_action.setEnabled(bool(states & {JobState.RUNNING, JobState.QUEUED}))
+        ui.pause_action.setEnabled(bool(states & PAUSABLE_STATES))
         ui.pause_action.setToolTip(TaskQueueWidget.__pause_tooltip(statuses))
-        ui.resume_action.setEnabled(JobState.PAUSED in states or resumable_running)
+        self.__update_resume(statuses)
         ui.cancel_action.setEnabled(bool(states - FINISHED_JOB_STATES))
         ui.retry_action.setEnabled(bool(states) and states <= RETRIABLE_STATES)
         ui.clear_action.setEnabled(bool(statuses))
         movable = bool(states) and states <= MOVABLE_JOB_STATES
         for action in (ui.move_to_top_action, ui.move_up_action, ui.move_down_action, ui.move_to_bottom_action):
             action.setEnabled(movable)
+        ui.inspect_save_action.setEnabled(
+            len(statuses) == 1 and statuses[0].kind == SAVE_RECORD_KIND and statuses[0].state in INSPECTABLE_SAVE_STATES
+        )
+        ui.discard_save_action.setEnabled(any(is_pending_save(status) for status in statuses))
+
+    def __update_resume(self, statuses: list[JobStatus]) -> None:
+        """Enable Resume for what it can act on, and word it *Try Now* when all of that is waiting (#497).
+
+        :param statuses: the currently selected jobs.
+        """
+        resumable = [
+            status
+            for status in statuses
+            if status.state in {JobState.PAUSED, JobState.WAITING}
+            or (status.state is JobState.RUNNING and status.stop_requested is not None)
+        ]
+        try_now = bool(resumable) and all(status.state is JobState.WAITING for status in resumable)
+        action = self.__ui.resume_action
+        action.setEnabled(bool(resumable))
+        action.setText(TRY_NOW_TEXT if try_now else self.__resume_text)
+        action.setToolTip(TRY_NOW_TOOLTIP if try_now else self.__resume_tooltip)
 
     @staticmethod
     def __pause_tooltip(statuses: list[JobStatus]) -> str:
@@ -495,7 +605,7 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
         :param statuses: the currently selected jobs.
         :returns: the Pause action's tooltip.
         """
-        pausable = [status for status in statuses if status.state in {JobState.RUNNING, JobState.QUEUED}]
+        pausable = [status for status in statuses if status.state in PAUSABLE_STATES]
         starting_over = [status for status in pausable if not status.resumes_where_it_stopped]
         if not starting_over:
             return PAUSE_TOOLTIP
@@ -511,7 +621,8 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
         :meth:`~rehuco_core.TaskQueue.resume` has a paused job to put back in line
         ([[appendices.task-queue#pause-concept]]). Each control instead mirrors its own call's
         predicate -- ``pause()`` asks every *unfinished* job, ``resume()`` touches exactly those whose
-        pending request is a pause or which are already paused.
+        pending request is a pause or which are already paused. Neither touches a waiting job (#497), so one
+        alone enables neither.
 
         Read here, on the GUI thread, off :attr:`~.task_queue_model.TaskQueueModel.snapshot_taken`
         rather than from a second `TaskQueueListener` of this widget's own: ``queue_paused_changed`` is
@@ -520,7 +631,12 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
         """
         statuses = [self.__model.status_at(row) for row in range(self.__model.rowCount())]
         self.__ui.pause_all_action.setEnabled(
-            any(status.state not in FINISHED_JOB_STATES and not TaskQueueWidget.__held(status) for status in statuses)
+            any(
+                status.state not in FINISHED_JOB_STATES
+                and status.state is not JobState.WAITING
+                and not TaskQueueWidget.__held(status)
+                for status in statuses
+            )
         )
         self.__ui.resume_all_action.setEnabled(any(TaskQueueWidget.__held(status) for status in statuses))
 
@@ -547,7 +663,7 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
             self.__queue.resume_job(serial)
 
     def __cancel_selection(self) -> None:
-        serials = self.__selected_serials()
+        serials = self.__without_pending_saves(self.__selected_serials())
         if not serials:
             return
         count = len(serials)
@@ -563,30 +679,65 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
             self.__queue.retry(serial)
 
     def __clear_selection(self) -> None:
-        serials = self.__selected_serials()
+        serials = self.__without_pending_saves(self.__selected_serials())
         if serials:
             self.__queue.remove(*serials)
+
+    def __without_pending_saves(self, serials: list[int]) -> list[int]:
+        """``serials`` but the saves that have not landed, which leave only as a *Drop* the save owner asks about
+        ([[sync#unlanded-save]], #497) -- so they go to it, and the rest is this dock's to act on.
+
+        :param serials: the rows a Cancel or a Clear was asked of.
+        :returns: the rows that are no save not landed.
+        """
+        pending = {status.serial for status in self.__queue.jobs() if is_pending_save(status)}
+        dropped = [serial for serial in serials if serial in pending]
+        if dropped:
+            self.discard_saves_requested.emit(dropped)
+        return [serial for serial in serials if serial not in pending]
 
     def __clear_in(self, states: set[JobState]) -> None:
         """Remove every job currently in one of ``states`` -- a dock sweep, not an engine feature
         (#237 deleted ``clear_finished()`` for exactly this reason: deciding *which* jobs a sweep drops
-        is a view's business).
+        is a view's business). A failed save is not swept: it has not landed, and still holds the edits it could not
+        write ([[sync#unlanded-save]], #497).
 
         :param states: which finished states to drop.
         """
-        serials = [status.serial for status in self.__queue.jobs() if status.state in states]
+        serials = [
+            status.serial for status in self.__queue.jobs() if status.state in states and not is_pending_save(status)
+        ]
         if serials:
             self.__queue.remove(*serials)
 
     def __clear_all(self) -> None:
-        """Cancel whatever is unfinished, then remove everything."""
-        statuses = self.__queue.jobs()
+        """Cancel whatever is unfinished, then remove everything -- but the saves that have not landed: each still
+        holds edits, and is dropped only by asking for it ([[sync#unlanded-save]], #497)."""
+        statuses = [status for status in self.__queue.jobs() if not is_pending_save(status)]
         for status in statuses:
             if status.state not in FINISHED_JOB_STATES:
                 self.__queue.cancel(status.serial)
         serials = [status.serial for status in statuses]
         if serials:
             self.__queue.remove(*serials)
+
+    def __inspect_selection(self) -> None:
+        """Ask the owner to show the one selected save (#497)."""
+        serials = self.__selected_serials()
+        if len(serials) == 1:
+            self.inspect_save_requested.emit(serials[0])
+
+    def __discard_selection(self) -> None:
+        """Ask the owner to drop the selected saves that have not landed (#497); the rest of the selection is
+        not a save to discard, and is left out.
+        """
+        serials = [
+            self.__model.status_at(row).serial
+            for row in self.__selected_row_indices()
+            if is_pending_save(self.__model.status_at(row))
+        ]
+        if serials:
+            self.discard_saves_requested.emit(serials)
 
     def __move_by(self, delta: int) -> None:
         """Move every selected, movable row by ``delta`` positions.

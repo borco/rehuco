@@ -154,6 +154,8 @@ from .record_versions import (
     merge_users,
     metadata_differences,
     metadata_of,
+    paths_overlap,
+    payload_changes,
     put_paths,
     record_differences,
     record_version,
@@ -292,6 +294,7 @@ from .resource_scoping import (
 )
 from .root_folders import RootFolderLister
 from .root_overlap import RootOverlap, root_path_key
+from .save_record_job import SAVE_RECORD_KIND, SaveOutcome, SavePayload, SaveRecordJob, rebase_payload
 from .staged_images import (
     StagedImageName,
     parse_staged_name,
@@ -320,6 +323,7 @@ from .tasks import (
     JobScope,
     JobState,
     JobStatus,
+    JobWaiting,
     PersistableTaskJob,
     ReportingTaskJob,
     StopRequest,
@@ -535,6 +539,7 @@ __all__ = [
     "JobScope",
     "JobState",
     "JobStatus",
+    "JobWaiting",
     "KeyRelocation",
     "LEGACY_MANIFEST_ALGORITHMS",
     "LEGACY_MANIFEST_RETIRE_KIND",
@@ -616,8 +621,12 @@ __all__ = [
     "RootScanResult",
     "RootStale",
     "RootStorage",
+    "SAVE_RECORD_KIND",
     "SCREENSHOT_NAME_PATTERNS",
     "SCREENSHOT_STEM_PATTERN",
+    "SaveOutcome",
+    "SavePayload",
+    "SaveRecordJob",
     "SavedRecord",
     "ScanCatalogRootJob",
     "ScanProgress",
@@ -746,6 +755,8 @@ __all__ = [
     "owned_learning_paths",
     "parse_checksum_entry",
     "parse_staged_name",
+    "paths_overlap",
+    "payload_changes",
     "plan_progress_renames",
     "plan_screenshot_renumbering",
     "plan_tc_conversion",
@@ -759,6 +770,7 @@ __all__ = [
     "readable_legacy_manifest",
     "readers_must_yield_for_directory_rename",
     "reattach_renamed_progress",
+    "rebase_payload",
     "record_differences",
     "record_progress",
     "record_version",

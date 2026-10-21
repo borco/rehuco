@@ -70,6 +70,7 @@ from .document_fields import EDITOR_IMAGES_TAB, EDITOR_MAIN_TAB, VIEWER_DESCRIPT
 from .files_view import FilesView
 from .image_downloads import ImageDownloads
 from .name_suggestion_model import NameSuggestionModel
+from .pending_saves import PendingSaves
 from .rehu_document_image_organizer import RehuDocumentImageOrganizer
 from .rehu_document_model import RehuDocumentModel
 from .save_or_prompt_retry import save_or_prompt_retry
@@ -146,6 +147,12 @@ CONFLICT_MESSAGE: Final = (
     "<i>Save</i> again to compare the two and choose; <i>Revert</i> loads the file as it is now."
 )
 """The notice for a document whose last save was refused as a conflict (#416)."""
+
+SAVING_MESSAGE: Final = "Saving…"
+"""The notice for a document whose save has been handed to a job and has not come back yet (#497)."""
+
+GONE_REMEDY: Final = " Nothing is saved until it is back; <i>Revert</i> or closing the document discards the edits."
+"""What follows the sentence naming a document's missing file or folder (#497)."""
 
 UPGRADE_MESSAGE: Final = "This document uses an older format — click the <i>Upgrade</i> button to bring it up to date."
 """The upgrade offer's inline banner message (#89, [[data-model#schema-version]]); names the toolbar
@@ -522,6 +529,8 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
     :param task_queue: the app-wide queue this document's slow work goes on; ``None`` offers no such work.
     :param resource_events: the app's file announcements (#376), which the Files sub-dock follows; ``None``
         leaves it following only this document's own.
+    :param pending_saves: the window's save jobs, which Save hands this document's edits to (#497); ``None`` saves
+        here and waits.
     :param parent: optional Qt parent.
     """
 
@@ -555,11 +564,13 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         layout_namespace: str = DOCUMENTS_LAYOUT_NAMESPACE,
         task_queue: TaskQueue | None = None,
         resource_events: ResourceEvents | None = None,
+        pending_saves: PendingSaves | None = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
         self.__model: Final = model
         self.__host: Final = host
+        self.__pending_saves: Final = pending_saves
         self.__dock_manager: Final = host.dock_manager
         self.__tracker: Final = host.tracker
         self.__maximize_handler: Final = host.maximize_handler
@@ -720,8 +731,9 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         # the Save action's own failing-save guard (#146)
         self.__upgrade_action.triggered.connect(self.__on_save_triggered)
 
-        self.__save_action.setEnabled(model.dirty)
+        self.__save_action.setEnabled(model.dirty or bool(model.pending_save))
         self.__connect(model.dirty_changed, self.__on_dirty_changed)  # type: ignore[attr-defined]
+        self.__connect(model.pending_save_changed, self.__on_dirty_changed)  # type: ignore[attr-defined]
 
         # the two checksum actions exist only where there is a queue to put their work on (#204): a
         # gigabyte-scale hash never runs inline, so a document built without one -- a test, or any host
@@ -796,6 +808,10 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         self.__connect(model.changed_on_disk_changed, self.__on_upgradable_changed)  # type: ignore[attr-defined]
         self.__connect(model.conflict_changed, self.__on_upgradable_changed)  # type: ignore[attr-defined]
         self.__connect(model.rename_error_changed, self.__on_rename_error_changed)  # type: ignore[attr-defined]
+        # a save handed to a job, its row's state and a record gone are notices only, like a failed rename (#497)
+        self.__connect(model.saving_changed, self.__on_rename_error_changed)  # type: ignore[attr-defined]
+        self.__connect(model.pending_save_changed, self.__on_rename_error_changed)  # type: ignore[attr-defined]
+        self.__connect(model.gone_changed, self.__on_rename_error_changed)  # type: ignore[attr-defined]
         self.__connect(model.active_block_changed, self.__rebuild_field_docks)
         self.__connect(model.path_changed, self.__on_path_changed)  # type: ignore[attr-defined]
         # every notice is asked again once a load settles: what is running or failed is told per record, and a
@@ -1228,16 +1244,15 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         inspection_docks = (*inspection_docks, self.__files_dock)
         return (*self.__viewer_docks.values(), *self.__editor_docks.values(), *inspection_docks)
 
-    def __on_dirty_changed(self, dirty: bool) -> None:
-        """Enable save only while the model holds unsaved edits -- there is nothing to save otherwise.
+    def __on_dirty_changed(self) -> None:
+        """Enable save while the model holds unsaved edits, or its record has a save that has not landed -- which Save
+        tries again, and settles when it failed ([[sync#unlanded-save]], #497); there is nothing to save otherwise.
 
         Revert isn't gated on dirty: it re-reads the document from disk (#41), which is useful even on a
         clean model, to pick up a change made outside this app. Its own gate is
         :attr:`~RehuDocumentModel.saved_on_disk` (:meth:`__on_saved_on_disk_changed`), not dirtiness.
-
-        :param dirty: the model's new dirty state.
         """
-        self.__save_action.setEnabled(dirty)
+        self.__save_action.setEnabled(self.__model.dirty or bool(self.__model.pending_save))
 
     def __on_saved_on_disk_changed(self, saved_on_disk: bool) -> None:
         """Enable Revert only once the document has been saved to disk at least once (#147).
@@ -1570,9 +1585,12 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         unsafe, while this describes an action that already went wrong
         (`MessageBannerSeverity`) and left the document as it was.
 
-        :returns: one row per :attr:`~RehuDocumentModel.lock_reasons` entry, in the same order, then a refused-save
+        :returns: one row per :attr:`~RehuDocumentModel.lock_reasons` entry, in the same order, then an error row while
+            the document's file or folder is :attr:`~RehuDocumentModel.gone` (#497), then a refused-save
             row while :attr:`~RehuDocumentModel.conflict` stands (#416), or else a changed-on-disk row while
-            :attr:`~RehuDocumentModel.changed_on_disk` is set (#487), then an upgrade row when
+            :attr:`~RehuDocumentModel.changed_on_disk` is set (#487), then a pending-save row while
+            :attr:`~RehuDocumentModel.pending_save` says something and no conflict row shows, or else a saving row
+            while :attr:`~RehuDocumentModel.saving`, then an upgrade row when
             :attr:`~RehuDocumentModel.upgradable` is set, then a rename row when
             :attr:`~RehuDocumentModel.rename_error` is non-empty, then the checksum and conversion-backup
             rows, then whatever `.ScrapeActions.notice` says about the current or last dropped scrape
@@ -1580,10 +1598,18 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
             its last failure (#73).
         """
         rows = [MessageBannerRow(MessageBannerSeverity.WARNING, reason.message) for reason in self.__model.lock_reasons]
+        if self.__model.gone:
+            rows.append(MessageBannerRow(MessageBannerSeverity.ERROR, self.__model.gone + GONE_REMEDY))
         if self.__model.conflict is not None:
             rows.append(MessageBannerRow(MessageBannerSeverity.WARNING, CONFLICT_MESSAGE))
         elif self.__model.changed_on_disk:
             rows.append(MessageBannerRow(MessageBannerSeverity.WARNING, CHANGED_ON_DISK_MESSAGE))
+        # what the row says comes first: a save out there is *pending* or *waiting* until it is writing, which is the
+        # one moment its row says nothing and *Saving…* is the honest word
+        if self.__model.pending_save and self.__model.conflict is None:
+            rows.append(MessageBannerRow(MessageBannerSeverity.WARNING, self.__model.pending_save))
+        elif self.__model.saving:
+            rows.append(MessageBannerRow(MessageBannerSeverity.INFO, SAVING_MESSAGE))
         if self.__model.upgradable:
             rows.append(MessageBannerRow(MessageBannerSeverity.INFO, UPGRADE_MESSAGE))
         if self.__model.rename_error:
@@ -1647,16 +1673,17 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         self.__upgrade_action.setVisible(upgradable)
 
     def __on_save_triggered(self) -> None:
-        """Save this document, surfacing an I/O failure as a retry/cancel dialog (#146).
+        """Save this document: hand its edits to the window's save jobs and go back to editing (#497), or -- with
+        none -- save here, surfacing an I/O failure as a retry/cancel dialog (#146).
 
         Backs both the Save action and the Upgrade action -- an upgrade *is* a save
-        (:attr:`~RehuDocumentModel.upgradable`), so both need the same failing-save guard
-        (:func:`~rehuco_agent.documents.save_or_prompt_retry.save_or_prompt_retry`), the same way
-        :meth:`__on_convert_triggered` already guards the convert actions. Nothing here depends on
-        whether the save succeeded: the model's own signals already drive every follow-on (dirty
-        clears, the upgrade offer drops), and a cancelled retry simply leaves the document as it was.
+        (:attr:`~RehuDocumentModel.upgradable`). Nothing here depends on whether the save succeeded: the model's own
+        signals drive every follow-on (dirty clears, the upgrade offer drops, the banner says what is pending).
         """
-        save_or_prompt_retry(self.__host.widget, self.__model)
+        if self.__pending_saves is not None:
+            self.__pending_saves.save(self.__host.widget, self.__model)
+        else:
+            save_or_prompt_retry(self.__host.widget, self.__model)
 
     def adopt_layout(self, state: bytes | None) -> None:
         """Give a document being opened its layout (#62, #320) -- what `DocumentsDock` calls once the

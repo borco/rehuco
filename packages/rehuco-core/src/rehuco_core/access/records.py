@@ -2,6 +2,7 @@
 against a :class:`~rehuco_core.RecordVersion`, the text as stored, legacy conversion. Reverting is loading again."""
 
 import logging
+from collections.abc import Collection
 from pathlib import Path
 from typing import Final
 
@@ -58,8 +59,16 @@ class Records:
             return self.__stub(path, error, username, signature)
         return LoadedRecord(document, version, tuple(document.lock_reasons), signature)
 
-    def save(
-        self, key: ResourceKey, document: RehuDocument, base: RecordVersion | None, *, username: str, overwrite: bool
+    def save(  # pylint: disable=too-many-arguments
+        self,
+        key: ResourceKey,
+        document: RehuDocument,
+        base: RecordVersion | None,
+        *,
+        username: str,
+        overwrite: bool,
+        dropped: Collection[str] = (),
+        new: bool = False,
     ) -> SavedRecord:
         """Save a record as a read-merge-write: refused on a metadata edit made on disk since ``base``, the per-user
         fields merged field by field.
@@ -77,8 +86,13 @@ class Records:
             new one, or a save-as -- which is written as it is.
         :param username: whose per-user fields ``document`` carries.
         :param overwrite: write over a metadata edit made on disk since ``base``.
+        :param dropped: the blocks ``document`` leaves out on purpose (:func:`~rehuco_core.merge_users`), for a
+            document built from a snapshot that no longer holds them (#497); one that still holds them needs none.
+        :param new: the record is believed not to exist yet -- a first save, with no ``base`` -- so one found at
+            ``key`` was created meanwhile and is a conflict rather than something to write over unseen (#497).
         :returns: the record as saved.
-        :raises RecordConflict: the metadata on disk changed since ``base``, and ``overwrite`` is not set.
+        :raises RecordConflict: the metadata on disk changed since ``base``, or a ``new`` record already exists, and
+            ``overwrite`` is not set.
         :raises RecordLockedError: someone else held the record's lock for longer than a save waits.
         :raises OSError: the file could not be read or written.
         :raises ValueError: the document is locked against saving, or ``key`` is a legacy ``.tc``, which is never
@@ -88,15 +102,16 @@ class Records:
         if path.suffix.lower() == LEGACY_SUFFIX:
             raise ValueError(f"Refusing to save over a legacy record: {path}")
         with locked_record(path, user=username):
+            theirs = None if base is None and not new else self.__read_existing(path, document.username)
+            if base is None and theirs is not None and not overwrite:
+                raise RecordConflict(*theirs)
             users_merged = False
             edited: bool | None = None
-            theirs = None if base is None else self.__read_existing(path, document.username)
-            if base is not None and theirs is not None and theirs[1].file_hash != base.file_hash:
-                theirs_document, theirs_version = theirs
-                if theirs_version.metadata_hash != base.metadata_hash and not overwrite:
-                    raise RecordConflict(theirs_document, theirs_version)
-                users_merged = merge_users(document.data, theirs_document.data, base, username)
             if theirs is not None:
+                if base is not None and theirs[1].file_hash != base.file_hash:
+                    users_merged = self.__merge_theirs(
+                        document, theirs, base, username=username, overwrite=overwrite, dropped=dropped
+                    )
                 # whether this write changes the resource is a question about the file, not about the document's own
                 # baseline: another writer may have moved the file on, and a conflict resolved against the file is
                 # saved with the conflict's version, so the file reads as unchanged since the read
@@ -109,6 +124,33 @@ class Records:
             _, version = self.__read(path, document.username)
             signature = self.__signature(path)
         return SavedRecord(version, signature, users_merged)
+
+    # the save's own inputs, handed on from it whole: splitting them would only move the count into a tuple
+    @staticmethod
+    def __merge_theirs(  # pylint: disable=too-many-arguments
+        document: RehuDocument,
+        theirs: tuple[RehuDocument, RecordVersion],
+        base: RecordVersion,
+        *,
+        username: str,
+        overwrite: bool,
+        dropped: Collection[str],
+    ) -> bool:
+        """Merge the file's per-user fields into ``document``, refusing a metadata edit made on disk since ``base``.
+
+        :param document: what is about to be written, merged into.
+        :param theirs: the record on disk now, and its version.
+        :param base: the version ``document`` was read at.
+        :param username: whose per-user fields ``document`` carries.
+        :param overwrite: write over a metadata edit made on disk since ``base``.
+        :param dropped: the blocks ``document`` leaves out on purpose.
+        :returns: whether per-user fields the file held were merged in.
+        :raises RecordConflict: the metadata on disk changed since ``base``, and ``overwrite`` is not set.
+        """
+        theirs_document, theirs_version = theirs
+        if theirs_version.metadata_hash != base.metadata_hash and not overwrite:
+            raise RecordConflict(theirs_document, theirs_version)
+        return merge_users(document.data, theirs_document.data, base, username, dropped=dropped)
 
     def stored_text(self, key: ResourceKey) -> str:
         """A record's text as stored.

@@ -25,6 +25,7 @@ STATE_LABELS: Final = {
     JobState.QUEUED: "Queued",
     JobState.RUNNING: "Running",
     JobState.PAUSED: "Paused",
+    JobState.WAITING: "Waiting",
     JobState.DONE: "Done",
     JobState.FAILED: "Failed",
     JobState.CANCELLED: "Cancelled",
@@ -326,10 +327,16 @@ class TaskQueueModel(QAbstractTableModel):
         **The state leads, because the column showing it is icons now** (#248): a glyph is faster to
         scan and slower to learn, so the sentence it stands for has to be one hover away rather than
         gone. :func:`state_text` is what writes it, so the icon and the words can only ever agree.
+
+        A waiting row's first line also says what it waits for (#497): *Waiting* alone does not tell a
+        reader whether to do anything about it.
         """
-        lines = [state_text(status)]
-        if status.error:
-            lines.append(status.error)
+        if status.state is JobState.WAITING and status.message:
+            lines = [f"{state_text(status)}: {status.message}"]
+        else:
+            lines = [state_text(status)]
+            if status.message:
+                lines.append(status.message)
         if status.summary:
             lines.append(status.summary)
         lines.append(resume_hint(status))

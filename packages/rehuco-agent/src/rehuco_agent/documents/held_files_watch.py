@@ -6,6 +6,7 @@ from collections.abc import Callable, Collection, Iterable
 from pathlib import Path
 from typing import Final
 
+from borco_core import Presence, presence_of
 from PySide6.QtCore import QObject, Signal
 from rehuco_core import DEFAULT_RENAME_COORDINATOR, RenameCoordinator, is_directory_scoped
 from rehuco_core.access import ChangeFeed, Records, ResourceKey
@@ -35,6 +36,10 @@ class HeldFilesWatch(QObject):
 
     statted: Signal = Signal(object)
     """Emitted with a ``dict`` of each file's :class:`~pathlib.Path` and its ``(modification time in ns, size)``."""
+
+    missing: Signal = Signal(object)
+    """Emitted with a ``dict`` of each file that is not there, its device having answered, and whether its folder is
+    gone too (#497). A file on a share that does not answer is in neither signal: nothing is known of it."""
 
     def __init__(
         self,
@@ -114,12 +119,22 @@ class HeldFilesWatch(QObject):
         :param keys: the files.
         """
         signatures: dict[Path, tuple[int, int]] = {}
+        missing: dict[Path, bool] = {}
         for key in keys:
             signature = self.__records.signature(key)
             if signature is not None:
                 signatures[key.path] = signature
-        if signatures and not self.__stopped.is_set():
-            try:
+                continue
+            # judged here, off the GUI thread: a folder on a share that does not answer is not gone, only unknown
+            presence = presence_of(key.path.parent)
+            if presence is not Presence.OFFLINE:
+                missing[key.path] = presence is Presence.GONE
+        if self.__stopped.is_set():
+            return
+        try:
+            if signatures:
                 self.statted.emit(signatures)
-            except RuntimeError:  # the watch was destroyed while the read was out
-                pass
+            if missing:
+                self.missing.emit(missing)
+        except RuntimeError:  # the watch was destroyed while the read was out
+            pass

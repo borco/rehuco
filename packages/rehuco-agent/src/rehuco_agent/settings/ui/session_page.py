@@ -12,9 +12,9 @@ from .session_page_ui import Ui_SessionPage
 class SessionPage(QWidget):
     """Configure whether the previous session's open documents and root catalog come back on the next start.
 
-    Three checkboxes (the documents on local storage, those on remote or removable storage, the root catalog), staged
-    in the widget until :meth:`save_changes` writes them -- the same shape as
-    every other settings page here.
+    Four checkboxes (the documents on local storage, those on remote or removable storage, the root catalog, and
+    keeping unsaved edits across a quit, #497), staged in the widget until :meth:`save_changes` writes them -- the
+    same shape as every other settings page here.
 
     :param parent: optional Qt parent.
     """
@@ -33,6 +33,7 @@ class SessionPage(QWidget):
             self.__ui.restore_local_documents_check_box.isChecked() != saved.restore_local_documents
             or self.__ui.restore_remote_documents_check_box.isChecked() != saved.restore_remote_documents
             or self.__ui.restore_root_catalog_check_box.isChecked() != saved.restore_root_catalog
+            or self.__ui.keep_unsaved_changes_check_box.isChecked() != saved.keep_unsaved_changes
         )
 
     def save_changes(self) -> None:
@@ -41,6 +42,7 @@ class SessionPage(QWidget):
             restore_local_documents=self.__ui.restore_local_documents_check_box.isChecked(),
             restore_remote_documents=self.__ui.restore_remote_documents_check_box.isChecked(),
             restore_root_catalog=self.__ui.restore_root_catalog_check_box.isChecked(),
+            keep_unsaved_changes=self.__ui.keep_unsaved_changes_check_box.isChecked(),
         )
         settings.save(persistent_settings())
 
@@ -59,3 +61,4 @@ class SessionPage(QWidget):
         self.__ui.restore_local_documents_check_box.setChecked(settings.restore_local_documents)
         self.__ui.restore_remote_documents_check_box.setChecked(settings.restore_remote_documents)
         self.__ui.restore_root_catalog_check_box.setChecked(settings.restore_root_catalog)
+        self.__ui.keep_unsaved_changes_check_box.setChecked(settings.keep_unsaved_changes)

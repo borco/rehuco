@@ -388,6 +388,32 @@ def test_a_block_only_the_file_has_is_added_with_its_per_user_fields() -> None:
     assert "gone" not in mine
 
 
+def test_a_block_the_save_drops_is_not_added_back_from_the_file() -> None:
+    """A block the caller left out on purpose -- claimed and abandoned -- stays out, however many per-user fields the
+    file holds in it (#497); the same block left out by accident would be added back.
+
+    **Test steps:**
+
+    * the base has a ``gone`` block; the caller's payload no longer holds it; the file holds ``bob``'s rating in it
+    * merge naming ``gone`` as dropped; verify it stays out and nothing changed
+    * merge again without naming it; verify it is added back
+    """
+    base = payload()
+    base["gone"] = {"format_version": 1, "users": {USERNAME: {"rating": 1}}}
+    mine = copy.deepcopy(base)
+    del mine["gone"]
+    theirs = copy.deepcopy(base)
+    theirs["gone"]["users"]["bob"] = {"rating": 2}
+    version = record_version(base, "text")
+
+    changed = merge_users(mine, theirs, version, USERNAME, dropped=("gone",))
+
+    assert changed is False
+    assert "gone" not in mine
+    assert merge_users(mine, theirs, version, USERNAME) is True
+    assert mine["gone"] == {"format_version": 1, "users": {"bob": {"rating": 2}}}
+
+
 def test_merge_users_answers_whether_the_callers_fields_changed() -> None:
     """``True`` only when the file held a per-user value the caller did not: merging an identical file, or one
     differing only in metadata, changes nothing and adds no empty ``users`` map.

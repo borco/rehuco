@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Final
 from unittest.mock import MagicMock
 
+from borco_core import Presence
 from PySide6.QtCore import Qt, QThread
 from pytest import fixture, mark
 from pytest_mock import MockerFixture
@@ -181,16 +182,72 @@ def test_a_read_delivers_each_files_time_and_size_on_the_gui_thread(
 def test_a_read_finding_nothing_delivers_nothing(
     tmp_path: Path, qtbot: QtBot, delete_at_teardown: DeleteAtTeardown
 ) -> None:
-    """A read whose files are all gone has nothing to say.
+    """A read whose files are all gone has no time or size to deliver.
 
     **Test steps:**
 
     * read a file that is not there, and wait for the reader to end
-    * verify nothing was delivered
+    * verify no time or size was delivered
     """
     del qtbot
     watch = delete_at_teardown(HeldFilesWatch(ChangeFeed(), Records(), None, None))
     heard = delivered_directly(watch)
+
+    watch.read([key(tmp_path / "info.rehu")])
+    join_readers()
+
+    assert not heard
+
+
+@mark.usefixtures("real_path_stat")
+def test_a_read_reports_each_missing_file_and_whether_its_folder_went(
+    qtbot: QtBot, tmp_path: Path, delete_at_teardown: DeleteAtTeardown
+) -> None:
+    """A file that is not there, its device having answered, is reported on the GUI thread with whether its folder is
+    gone too (#497); a file that is there is not.
+
+    **Test steps:**
+
+    * write a record under ``tmp_path``, and name one missing from a folder that is there and one whose folder is not
+    * read the three
+    * verify one missing delivery arrived on the GUI thread, naming the two missing files and which folder went
+    """
+    present, missing, folder_gone = (
+        tmp_path / "a" / "info.rehu",
+        tmp_path / "b" / "info.rehu",
+        tmp_path / "c" / "info.rehu",
+    )
+    written(present)
+    missing.parent.mkdir()
+    watch = delete_at_teardown(HeldFilesWatch(ChangeFeed(), Records(), None, None))
+    threads: list[QThread] = []
+    watch.missing.connect(lambda _missing: threads.append(QThread.currentThread()))
+
+    with qtbot.waitSignal(watch.missing, timeout=TIMEOUT_MS) as delivered:
+        watch.read([key(present), key(missing), key(folder_gone)])
+
+    assert delivered.args == [{missing: False, folder_gone: True}]
+    assert threads == [watch.thread()]
+    join_readers()
+
+
+@mark.usefixtures("real_path_stat")
+def test_a_missing_file_on_a_share_that_does_not_answer_is_in_neither_delivery(
+    mocker: MockerFixture, tmp_path: Path, qtbot: QtBot, delete_at_teardown: DeleteAtTeardown
+) -> None:
+    """Nothing is known of a file whose share does not answer: it is neither there nor gone (#497).
+
+    **Test steps:**
+
+    * have every folder's device not answer, and read a file that is not there
+    * wait for the reader to end
+    * verify nothing was delivered, of either kind
+    """
+    del qtbot
+    mocker.patch("rehuco_agent.documents.held_files_watch.presence_of", return_value=Presence.OFFLINE)
+    watch = delete_at_teardown(HeldFilesWatch(ChangeFeed(), Records(), None, None))
+    heard = delivered_directly(watch)
+    watch.missing.connect(heard.append, type=Qt.ConnectionType.DirectConnection)
 
     watch.read([key(tmp_path / "info.rehu")])
     join_readers()

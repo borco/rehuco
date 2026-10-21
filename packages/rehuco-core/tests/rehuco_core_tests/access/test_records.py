@@ -249,6 +249,73 @@ def test_a_save_with_no_base_writes_the_document_as_it_is(tmp_path: Path) -> Non
     assert "users" not in on_disk(existing)["tutorial"]
 
 
+def test_a_new_record_found_already_there_is_a_conflict(tmp_path: Path) -> None:
+    """A record saved as new that someone created meanwhile is refused: the conflict carries the record found and its
+    version, and the file is untouched (#497).
+
+    **Test steps:**
+
+    * write a record at a path, then save a new document there as ``new``, against no base
+    * verify ``RecordConflict`` with the file's document and version, the file unchanged
+    """
+    path = tmp_path / "info.rehu"
+    key = write_record(path, tutorial_data(description="theirs"))
+    records = Records()
+    before = path.read_text(encoding="utf-8")
+
+    with pytest.raises(RecordConflict) as raised:
+        records.save(
+            key, RehuDocument(tutorial_data(), username=USERNAME), None, username=USERNAME, overwrite=False, new=True
+        )
+
+    assert raised.value.theirs.data["core"]["description"] == "theirs"
+    assert raised.value.version == load(records, key).version
+    assert path.read_text(encoding="utf-8") == before
+
+
+def test_a_new_record_with_overwrite_is_written_over_the_one_found(tmp_path: Path) -> None:
+    """With ``overwrite`` a record saved as new is written over the one found there, which it is not merged with.
+
+    **Test steps:**
+
+    * write a record with ``bob``'s rating, then save a new document there as ``new`` with ``overwrite``
+    * verify the file holds the new document's description and no per-user fields, and the version matches a fresh
+      load
+    """
+    path = tmp_path / "info.rehu"
+    key = write_record(path, tutorial_data({"bob": {"rating": 1}}, description="theirs"))
+    records = Records()
+
+    saved = records.save(
+        key, RehuDocument(tutorial_data(), username=USERNAME), None, username=USERNAME, overwrite=True, new=True
+    )
+
+    stored = on_disk(path)
+    assert stored["core"]["description"] == "original"
+    assert "users" not in stored["tutorial"]
+    assert saved.version == load(records, key).version
+    assert saved.users_merged is False
+
+
+def test_a_new_record_with_nothing_there_is_written(tmp_path: Path) -> None:
+    """A record saved as new where nothing is is simply written.
+
+    **Test steps:**
+
+    * save a new document as ``new`` at a fresh path
+    * verify the file holds it and the version matches a fresh load
+    """
+    key = ResourceKey(tmp_path / "info.rehu")
+    records = Records()
+
+    saved = records.save(
+        key, RehuDocument(tutorial_data(), username=USERNAME), None, username=USERNAME, overwrite=False, new=True
+    )
+
+    assert on_disk(key.path)["core"]["description"] == "original"
+    assert saved.version == load(records, key).version
+
+
 def test_a_save_over_an_unchanged_file_writes_without_merging(tmp_path: Path) -> None:
     """While the file is the one read, nothing needs merging: the edit is written and the returned version and
     signature describe the new file.
@@ -383,6 +450,31 @@ def test_a_metadata_edit_made_meanwhile_is_a_conflict(tmp_path: Path) -> None:
     assert raised.value.version == load(records, key).version
     assert str(path) in str(raised.value)
     assert path.read_text(encoding="utf-8") == before
+
+
+def test_a_save_leaves_out_a_block_it_drops_whatever_the_file_holds_there(tmp_path: Path) -> None:
+    """A save built from a snapshot that left a block out on purpose names it as dropped, and the merge never adds it
+    back from the file (#497).
+
+    **Test steps:**
+
+    * write a record whose ``reference_images`` block holds ``bob``'s rating, and load it
+    * meanwhile, another writer adds a progress entry, so the save merges
+    * save a document without that block, naming it as dropped; verify the file no longer holds it
+    """
+    path = tmp_path / "info.rehu"
+    data = tutorial_data()
+    data["reference_images"] = {"format_version": 1, "users": {"bob": {"rating": 2}}}
+    key = write_record(path, data)
+    records = Records()
+    loaded = load(records, key)
+    write_meanwhile(path, {USERNAME: {"progress": {"a.mp4": 12}}})
+    without = {name: value for name, value in loaded.document.payload_to_write().items() if name != "reference_images"}
+    document = RehuDocument(without, path, username=USERNAME, on_disk_format_version=2)
+
+    records.save(key, document, loaded.version, username=USERNAME, overwrite=False, dropped=("reference_images",))
+
+    assert "reference_images" not in on_disk(path)
 
 
 def test_overwrite_writes_over_a_metadata_edit_and_still_merges_per_user_fields(tmp_path: Path) -> None:
