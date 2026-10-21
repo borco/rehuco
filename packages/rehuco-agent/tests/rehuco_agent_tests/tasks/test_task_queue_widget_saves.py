@@ -1,15 +1,16 @@
 """Tests for TaskQueueWidget's record saves (#497): the Pending Saves toggle, Inspect and Discard Save, rows read
 through the filter, and how a waiting job sits among the controls.
 
-A sibling of ``test_task_queue_widget.py``, which is past the size cap: its sample jobs, fixtures and helpers are
-imported from there, and the same discipline holds -- a real :class:`~rehuco_core.TaskQueue`, and every state a row
-is in is one the engine genuinely put it in.
+A sibling of ``test_task_queue_widget.py``, which is past the size cap: its rig, fixtures and helpers are imported
+from there, and the same discipline holds -- a scripted ``Mock(spec=TaskQueue)`` puts each row in the state a test
+names, and what the widget asks of the engine is asserted as calls on it. A save row is one of the save kind: what a
+real save does to reach a state is :class:`~rehuco_core.SaveRecordJob`'s own tests' subject.
 """
 
 import base64
 import logging
-from collections.abc import Callable
-from typing import Any, Final, override
+from typing import Any, Final
+from unittest.mock import Mock
 
 import cbor2
 import PySide6QtAds as QtAds
@@ -25,149 +26,59 @@ from rehuco_agent.tasks.task_queue_widget import (
     TRY_NOW_TOOLTIP,
     TaskQueueWidget,
 )
-from rehuco_core import SAVE_RECORD_KIND, JobControl, JobState, JobWaiting, TaskQueue
+from rehuco_core import SAVE_RECORD_KIND, JobState
 
 from rehuco_agent_tests.tasks.test_task_queue_widget import (  # noqa: F401  # pylint: disable=unused-import
     QUESTION,
     YES,
-    FailingJob,
-    GatedJob,
-    fixture_deliver,
+    Rig,
     fixture_queue,
+    fixture_rig,
     fixture_scoped_logger,
     fixture_widget,
-    job_serial,
     layout_dock_entries,
     log_a_record_for,
     log_messages,
-    running_job,
     saved_dock_entries,
     select_rows,
     ui_of,
-    wait_for_state,
     widget_row_count,
     widget_status,
 )
 
 WAITING_REASON: Final = "The share holding this resource is offline."
-"""What a waiting :class:`SaveJob` says it waits for."""
-
-WAIT_SECONDS: Final = 3600.0
-"""A wait no test outlives, so a waiting row stays waiting until teardown cancels it."""
+"""What a waiting save says it waits for."""
 
 EXTRA_DOCK_NAME: Final = "extra"
 """A sub-dock the shell does not build, added by a test to stand for one whose state it does not own."""
 
 
-class SaveJob(GatedJob):
-    """A job of the save kind, so the dock treats its row as a record save -- blocking like its base, or raising
-    ``raises`` instead the moment it runs.
-
-    Not a :class:`~rehuco_core.SaveRecordJob`: what the dock reads off a row is its kind and state, and what a real
-    save does to reach one is that class's own tests' subject.
-
-    :param label: the job's label.
-    :param raises: what ``run`` raises -- a `JobWaiting` to wait, anything else to fail -- or ``None`` to block.
-    """
-
-    kind = SAVE_RECORD_KIND
-
-    def __init__(self, label: str, raises: Exception | None = None) -> None:
-        super().__init__(label)
-        self.__raises: Final = raises
-
-    def validate(self) -> str | None:
-        """Accept every start.
-
-        :returns: ``None``, always.
-        """
-        return None
-
-    def capture_state(self) -> dict[str, object]:
-        """Hand over nothing at all.
-
-        :returns: an empty state.
-        """
-        return {}
-
-    def restore_state(self, state: dict[str, object]) -> None:
-        """Take nothing back.
-
-        :param state: what :meth:`capture_state` wrote.
-        """
-        del state
-
-    @override
-    def run(self, control: JobControl) -> None:
-        if self.__raises is not None:
-            raise self.__raises
-        super().run(control)
-
-
 # region fixtures and helpers
 
 
-def waiting_save(queue: TaskQueue, label: str) -> None:
-    """Enqueue a save that waits, and wait until the engine has put it there.
-
-    :param queue: the queue to fill.
-    :param label: the save's label.
-    """
-    queue.enqueue(SaveJob(label, JobWaiting(WAITING_REASON, WAIT_SECONDS)))
-    wait_for_state(queue, label, JobState.WAITING)
-
-
-def finished_save(queue: TaskQueue, label: str) -> None:
-    """Enqueue a save that lands, and wait until it has.
-
-    :param queue: the queue to fill.
-    :param label: the save's label.
-    """
-    job = SaveJob(label)
-    job.let_finish()
-    queue.enqueue(job)
-    wait_for_state(queue, label, JobState.DONE)
-
-
-def failed_save(queue: TaskQueue, label: str) -> None:
-    """Enqueue a save that fails, and wait until it has.
-
-    :param queue: the queue to fill.
-    :param label: the save's label.
-    """
-    queue.enqueue(SaveJob(label, OSError("the disk is full")))
-    wait_for_state(queue, label, JobState.FAILED)
-
-
 @fixture
-def saves(queue: TaskQueue, deliver: Callable[[], None]) -> None:
-    """Fill the queue with a row of every kind the save controls tell apart, each in the state its label says.
+def saves(rig: Rig, widget: TaskQueueWidget) -> None:
+    """Script a row of every kind the save controls tell apart, each in the state its label says, and let the widget
+    hear of them.
 
-    In this order, one lane's worth: ``plain`` (a finished job that is not a save), ``failed save``, ``landed save``,
-    ``dropped save`` (cancelled), ``plain failed``, ``waiting save``, ``paused`` (not a save), ``blocker`` (running,
-    not a save) and ``queued save``, held in line behind it.
+    In this order: ``plain`` (a finished job that is not a save), ``failed save``, ``landed save``, ``dropped save``
+    (cancelled), ``plain failed``, ``waiting save``, ``paused`` (not a save), ``blocker`` (running, not a save) and
+    ``queued save``.
 
-    :param queue: the queue to fill.
-    :param deliver: pumps the event loop so the snapshot lands.
+    :param rig: the rig.
+    :param widget: the widget under test, attached before the rows arrive.
     """
-    plain = GatedJob("plain")
-    plain.let_finish()
-    queue.enqueue(plain)
-    wait_for_state(queue, "plain", JobState.DONE)
-    failed_save(queue, "failed save")
-    finished_save(queue, "landed save")
-    running_job(queue, job=SaveJob("dropped save"))
-    queue.cancel(job_serial(queue, "dropped save"))
-    wait_for_state(queue, "dropped save", JobState.CANCELLED)
-    queue.enqueue(FailingJob("plain failed"))
-    wait_for_state(queue, "plain failed", JobState.FAILED)
-    waiting_save(queue, "waiting save")
-    running_job(queue, "paused")
-    queue.pause_job(job_serial(queue, "paused"))
-    wait_for_state(queue, "paused", JobState.PAUSED)
-    running_job(queue, "blocker")
-    queue.enqueue(SaveJob("queued save"))
-    deliver()
+    del widget
+    rig.add("plain", JobState.DONE)
+    rig.add("failed save", JobState.FAILED, message="OSError: the disk is full", kind=SAVE_RECORD_KIND)
+    rig.add("landed save", JobState.DONE, kind=SAVE_RECORD_KIND)
+    rig.add("dropped save", JobState.CANCELLED, kind=SAVE_RECORD_KIND)
+    rig.add("plain failed", JobState.FAILED, message="ValueError: nope")
+    rig.add("waiting save", JobState.WAITING, message=WAITING_REASON, kind=SAVE_RECORD_KIND)
+    rig.add("paused", JobState.PAUSED)
+    rig.add("blocker", JobState.RUNNING)
+    rig.add("queued save", JobState.QUEUED, kind=SAVE_RECORD_KIND)
+    rig.settle()
 
 
 def row_of(widget: TaskQueueWidget, label: str) -> int:
@@ -247,7 +158,7 @@ def test_the_toggle_narrows_the_table_to_the_saves_not_landed_and_back(widget: T
 
     **Test steps:**
 
-    * fill the queue with every kind of row
+    * script every kind of row
     * check the Pending Saves toggle, and verify only the failed, waiting and queued saves are shown
     * uncheck it, and verify every row is back
     """
@@ -268,7 +179,7 @@ def test_show_pending_saves_checks_the_toggle(widget: TaskQueueWidget, saves: No
 
     **Test steps:**
 
-    * fill the queue with every kind of row
+    * script every kind of row
     * call ``show_pending_saves``
     * verify the toggle is checked and the table filtered
     """
@@ -280,7 +191,7 @@ def test_show_pending_saves_checks_the_toggle(widget: TaskQueueWidget, saves: No
     assert shown_labels(widget) == ["failed save", "waiting save", "queued save"]
 
 
-def test_the_toggle_rides_the_queue_dock_s_saved_state(queue: TaskQueue, qtbot: QtBot) -> None:
+def test_the_toggle_rides_the_queue_dock_s_saved_state(queue: Mock, qtbot: QtBot) -> None:
     """Checked, the toggle is saved into the queue sub-dock's entry and comes back checked; unchecked, the entry
     carries nothing at all.
 
@@ -306,7 +217,7 @@ def test_the_toggle_rides_the_queue_dock_s_saved_state(queue: TaskQueue, qtbot: 
     assert ui_of(restored).pending_saves_action.isChecked()  # type: ignore[attr-defined]
 
 
-def test_a_layout_from_before_the_toggle_restores_it_off(queue: TaskQueue, qtbot: QtBot) -> None:
+def test_a_layout_from_before_the_toggle_restores_it_off(queue: Mock, qtbot: QtBot) -> None:
     """A layout saved before #497 has no state on the queue's entry, and a shell restored from it shows every row.
 
     **Test steps:**
@@ -403,7 +314,7 @@ def test_inspect_is_offered_for_exactly_one_failed_or_waiting_save(widget: TaskQ
 
     **Test steps:**
 
-    * fill the queue with every kind of row
+    * script every kind of row
     * select each lone failed or waiting save, and verify Inspect is enabled
     * select a queued save, a landed one, a failed job that is not a save, and two failed-or-waiting saves
       together, and verify it is disabled for each
@@ -425,7 +336,7 @@ def test_discard_is_offered_while_the_selection_holds_a_save_not_landed(widget: 
 
     **Test steps:**
 
-    * fill the queue with every kind of row
+    * script every kind of row
     * select each save not landed, and one beside a job that is not a save, and verify Discard is enabled
     * select a landed save, a cancelled one, and jobs that are not saves, and verify it is disabled
     """
@@ -441,12 +352,12 @@ def test_discard_is_offered_while_the_selection_holds_a_save_not_landed(widget: 
         assert not action.isEnabled(), labels
 
 
-def test_inspect_asks_for_the_selected_save_by_serial(widget: TaskQueueWidget, queue: TaskQueue, saves: None) -> None:
+def test_inspect_asks_for_the_selected_save_by_serial(widget: TaskQueueWidget, rig: Rig, saves: None) -> None:
     """Inspect only says which save was asked for; showing it is the owner's.
 
     **Test steps:**
 
-    * fill the queue with every kind of row and select the waiting save
+    * script every kind of row and select the waiting save
     * trigger Inspect Save
     * verify ``inspect_save_requested`` carried that save's serial, once
     """
@@ -456,17 +367,15 @@ def test_inspect_asks_for_the_selected_save_by_serial(widget: TaskQueueWidget, q
 
     ui_of(widget).inspect_save_action.trigger()  # type: ignore[attr-defined]
 
-    assert asked == [job_serial(queue, "waiting save")]
+    assert asked == [rig.serial("waiting save")]
 
 
-def test_discard_asks_for_only_the_selected_saves_not_landed(
-    widget: TaskQueueWidget, queue: TaskQueue, saves: None
-) -> None:
+def test_discard_asks_for_only_the_selected_saves_not_landed(widget: TaskQueueWidget, rig: Rig, saves: None) -> None:
     """The rest of a selection is not a save to discard, and is left out of what Discard asks for.
 
     **Test steps:**
 
-    * fill the queue with every kind of row
+    * script every kind of row
     * select a finished job, the failed save, the landed save and the waiting save
     * trigger Discard Save
     * verify ``discard_saves_requested`` carried the failed and waiting saves' serials, in view order, once
@@ -477,7 +386,7 @@ def test_discard_asks_for_only_the_selected_saves_not_landed(
 
     ui_of(widget).discard_save_action.trigger()  # type: ignore[attr-defined]
 
-    assert asked == [[job_serial(queue, "failed save"), job_serial(queue, "waiting save")]]
+    assert asked == [rig.serials("failed save", "waiting save")]
 
 
 def test_inspect_and_discard_ask_for_nothing_when_they_have_nothing_to_act_on(
@@ -489,7 +398,7 @@ def test_inspect_and_discard_ask_for_nothing_when_they_have_nothing_to_act_on(
 
     **Test steps:**
 
-    * fill the queue with every kind of row and select two saves, so Inspect has no one save
+    * script every kind of row and select two saves, so Inspect has no one save
     * run Inspect's handler, and verify nothing was asked for
     * select only the landed save, run Discard's handler, and verify nothing was asked for
     """
@@ -512,15 +421,13 @@ def test_inspect_and_discard_ask_for_nothing_when_they_have_nothing_to_act_on(
 # region rows read through the filter
 
 
-def test_a_filtered_selection_is_read_as_the_model_s_own_rows(
-    widget: TaskQueueWidget, queue: TaskQueue, saves: None
-) -> None:
+def test_a_filtered_selection_is_read_as_the_model_s_own_rows(widget: TaskQueueWidget, rig: Rig, saves: None) -> None:
     """While the toggle filters, a view row is not a model row: the controls and what they ask for follow the
     job the reader points at.
 
     **Test steps:**
 
-    * fill the queue with every kind of row, and check the toggle
+    * script every kind of row, and check the toggle
     * select the view's first row, the failed save -- the model's first row is a finished job that is not a save
     * verify Inspect and Retry are enabled, and Inspect asks for the failed save's serial
     """
@@ -533,29 +440,23 @@ def test_a_filtered_selection_is_read_as_the_model_s_own_rows(
     ui.inspect_save_action.trigger()  # type: ignore[attr-defined]
 
     assert ui.retry_action.isEnabled()  # type: ignore[attr-defined]
-    assert asked == [job_serial(queue, "failed save")]
+    assert asked == [rig.serial("failed save")]
 
 
 def test_a_filtered_current_row_points_the_log_at_its_own_job(
-    widget: TaskQueueWidget,
-    queue: TaskQueue,
-    saves: None,
-    scoped_logger: logging.Logger,
-    deliver: Callable[[], None],
+    widget: TaskQueueWidget, rig: Rig, saves: None, scoped_logger: logging.Logger
 ) -> None:
     """The log follows the current row of the filtered table, mapped to its own job.
 
     **Test steps:**
 
-    * fill the queue with every kind of row, log a record under the failed and the waiting save's scopes, and
-      check the toggle
+    * script every kind of row, log a record under the failed and the waiting save's scopes, and check the toggle
     * select the view's first two rows, the current index on the second
     * verify the log shows the waiting save's record only
     """
     del saves
-    log_a_record_for(queue, scoped_logger, "failed save")
-    log_a_record_for(queue, scoped_logger, "waiting save")
-    deliver()
+    log_a_record_for(rig, scoped_logger, "failed save")
+    log_a_record_for(rig, scoped_logger, "waiting save")
     ui = ui_of(widget)
     ui.pending_saves_action.setChecked(True)  # type: ignore[attr-defined]
     view = ui.task_view  # type: ignore[attr-defined]
@@ -573,166 +474,142 @@ def test_a_filtered_current_row_points_the_log_at_its_own_job(
 # region Cancel and Clear over saves
 
 
-def serials_of(queue: TaskQueue, *labels: str) -> list[int]:
-    """The serials of the jobs named ``labels``, in that order.
-
-    :param queue: the queue to read.
-    :param labels: the jobs.
-    :returns: their serials.
-    """
-    return [job_serial(queue, label) for label in labels]
-
-
 def test_cancel_sends_the_pending_saves_to_their_owner_and_cancels_the_rest(
-    widget: TaskQueueWidget, queue: TaskQueue, saves: None, mocker: MockerFixture
+    widget: TaskQueueWidget, rig: Rig, saves: None, mocker: MockerFixture
 ) -> None:
     """Cancelling a save not landed is a Drop the save owner asks about: Cancel hands those rows to it, and asks
     its own question only about the rest, which it cancels.
 
     **Test steps:**
 
-    * fill the queue with every kind of row, and select the waiting save, the paused job and the queued save
+    * script every kind of row, and select the waiting save, the paused job and the queued save
     * trigger Cancel, answering *Yes*
     * verify ``discard_saves_requested`` carried the two saves once, the question counted only the paused job, and
-      only it was cancelled
+      the engine was asked to cancel only it
     """
     del saves
     asked = emitted(widget.discard_saves_requested)
     question = mocker.patch(QUESTION, return_value=YES)
-    cancel = mocker.patch.object(queue, "cancel")
     select_labels(widget, "waiting save", "paused", "queued save")
 
     ui_of(widget).cancel_action.trigger()  # type: ignore[attr-defined]
 
-    assert asked == [serials_of(queue, "waiting save", "queued save")]
+    assert asked == [rig.serials("waiting save", "queued save")]
     (_, _, text, _) = question.call_args.args
     assert text == "Cancel this job?"
-    cancel.assert_called_once_with(job_serial(queue, "paused"))
+    rig.queue.cancel.assert_called_once_with(rig.serial("paused"))
 
 
 def test_cancel_over_only_pending_saves_asks_its_own_question_about_nothing(
-    widget: TaskQueueWidget, queue: TaskQueue, saves: None, mocker: MockerFixture
+    widget: TaskQueueWidget, rig: Rig, saves: None, mocker: MockerFixture
 ) -> None:
     """A Cancel of saves not landed alone leaves this dock nothing to confirm: the owner asks, and nothing is
     cancelled here.
 
     **Test steps:**
 
-    * fill the queue with every kind of row, and select the failed and the waiting save
+    * script every kind of row, and select the failed and the waiting save
     * trigger Cancel
     * verify ``discard_saves_requested`` carried both, no question was asked here, and nothing was cancelled
     """
     del saves
     asked = emitted(widget.discard_saves_requested)
     question = mocker.patch(QUESTION, return_value=YES)
-    cancel = mocker.patch.object(queue, "cancel")
     select_labels(widget, "failed save", "waiting save")
 
     ui_of(widget).cancel_action.trigger()  # type: ignore[attr-defined]
 
-    assert asked == [serials_of(queue, "failed save", "waiting save")]
+    assert asked == [rig.serials("failed save", "waiting save")]
     question.assert_not_called()
-    cancel.assert_not_called()
+    rig.queue.cancel.assert_not_called()
 
 
 def test_clear_sends_the_pending_saves_to_their_owner_and_removes_the_rest(
-    widget: TaskQueueWidget, queue: TaskQueue, saves: None, mocker: MockerFixture
+    widget: TaskQueueWidget, rig: Rig, saves: None
 ) -> None:
     """Clearing a save not landed is a Drop too: Clear hands those rows to the owner and removes the rest -- a
     landed save among them, which is history.
 
     **Test steps:**
 
-    * fill the queue with every kind of row, and select a finished job, the failed save, the landed save and the
-      queued save
+    * script every kind of row, and select a finished job, the failed save, the landed save and the queued save
     * trigger Clear
-    * verify ``discard_saves_requested`` carried the failed and the queued save once, and only the finished job and
-      the landed save were removed
+    * verify ``discard_saves_requested`` carried the failed and the queued save once, and the engine was asked to
+      remove only the finished job and the landed save
     """
     del saves
     asked = emitted(widget.discard_saves_requested)
-    remove = mocker.patch.object(queue, "remove")
     select_labels(widget, "plain", "failed save", "landed save", "queued save")
 
     ui_of(widget).clear_action.trigger()  # type: ignore[attr-defined]
 
-    assert asked == [serials_of(queue, "failed save", "queued save")]
-    remove.assert_called_once_with(*serials_of(queue, "plain", "landed save"))
+    assert asked == [rig.serials("failed save", "queued save")]
+    rig.queue.remove.assert_called_once_with(*rig.serials("plain", "landed save"))
 
 
-def test_clear_over_only_pending_saves_removes_nothing_here(
-    widget: TaskQueueWidget, queue: TaskQueue, saves: None, mocker: MockerFixture
-) -> None:
+def test_clear_over_only_pending_saves_removes_nothing_here(widget: TaskQueueWidget, rig: Rig, saves: None) -> None:
     """A Clear of saves not landed alone removes nothing itself: the rows go to the owner.
 
     **Test steps:**
 
-    * fill the queue with every kind of row, and select the waiting save
+    * script every kind of row, and select the waiting save
     * trigger Clear
     * verify ``discard_saves_requested`` carried it and nothing was removed
     """
     del saves
     asked = emitted(widget.discard_saves_requested)
-    remove = mocker.patch.object(queue, "remove")
     select_labels(widget, "waiting save")
 
     ui_of(widget).clear_action.trigger()  # type: ignore[attr-defined]
 
-    assert asked == [serials_of(queue, "waiting save")]
-    remove.assert_not_called()
+    assert asked == [rig.serials("waiting save")]
+    rig.queue.remove.assert_not_called()
 
 
-def test_the_sweeps_leave_a_failed_save_alone(
-    widget: TaskQueueWidget, queue: TaskQueue, saves: None, mocker: MockerFixture
-) -> None:
+def test_the_sweeps_leave_a_failed_save_alone(widget: TaskQueueWidget, rig: Rig, saves: None) -> None:
     """Clear Done and Clear Failed sweep their own kind but a save not landed: a failed save still holds the edits it
     could not write, and no sweep asks the owner for a Drop.
 
     **Test steps:**
 
-    * fill the queue with every kind of row
+    * script every kind of row
     * trigger Clear Done, then Clear Failed
-    * verify the first removed the finished job and the landed save, the second only the failed job that is no
-      save, and nothing was handed to the owner
+    * verify the first asked to remove the finished job and the landed save, the second only the failed job that is
+      no save, and nothing was handed to the owner
     """
     del saves
     asked = emitted(widget.discard_saves_requested)
-    remove = mocker.patch.object(queue, "remove")
     ui = ui_of(widget)
 
     ui.clear_done_action.trigger()  # type: ignore[attr-defined]
     ui.clear_failed_action.trigger()  # type: ignore[attr-defined]
 
-    assert [call.args for call in remove.call_args_list] == [
-        tuple(serials_of(queue, "plain", "landed save")),
-        tuple(serials_of(queue, "plain failed")),
+    assert [made.args for made in rig.queue.remove.call_args_list] == [
+        tuple(rig.serials("plain", "landed save")),
+        tuple(rig.serials("plain failed")),
     ]
     assert not asked
 
 
-def test_clear_all_leaves_every_pending_save_alone(
-    widget: TaskQueueWidget, queue: TaskQueue, saves: None, mocker: MockerFixture
-) -> None:
+def test_clear_all_leaves_every_pending_save_alone(widget: TaskQueueWidget, rig: Rig, saves: None) -> None:
     """Clear All empties the queue but of its saves not landed: those are neither cancelled nor removed, and no Drop
     is asked of the owner.
 
     **Test steps:**
 
-    * fill the queue with every kind of row
+    * script every kind of row
     * trigger Clear All
-    * verify only the unfinished jobs that are no save were cancelled, every row but the failed, waiting and queued
-      saves was removed, and nothing was handed to the owner
+    * verify the engine was asked to cancel only the unfinished jobs that are no save and to remove every row but the
+      failed, waiting and queued saves, and nothing was handed to the owner
     """
     del saves
     asked = emitted(widget.discard_saves_requested)
-    cancel = mocker.patch.object(queue, "cancel")
-    remove = mocker.patch.object(queue, "remove")
 
     ui_of(widget).clear_all_action.trigger()  # type: ignore[attr-defined]
 
-    assert [call.args[0] for call in cancel.call_args_list] == serials_of(queue, "paused", "blocker")
-    remove.assert_called_once_with(
-        *serials_of(queue, "plain", "landed save", "dropped save", "plain failed", "paused", "blocker")
+    assert [made.args[0] for made in rig.queue.cancel.call_args_list] == rig.serials("paused", "blocker")
+    rig.queue.remove.assert_called_once_with(
+        *rig.serials("plain", "landed save", "dropped save", "plain failed", "paused", "blocker")
     )
     assert not asked
 
@@ -751,7 +628,7 @@ def test_a_waiting_save_can_be_paused_cancelled_tried_now_moved_inspected_and_di
 
     **Test steps:**
 
-    * fill the queue with every kind of row and select the waiting save
+    * script every kind of row and select the waiting save
     * verify exactly the expected controls are enabled
     """
     del saves
@@ -786,7 +663,7 @@ def test_resume_reads_try_now_over_waiting_rows_only(widget: TaskQueueWidget, sa
 
     **Test steps:**
 
-    * fill the queue with every kind of row, and note Resume's own text and tooltip
+    * script every kind of row, and note Resume's own text and tooltip
     * select the waiting save, and verify Resume is enabled and reads *Try Now*
     * add the paused job to the selection, and verify it reads as it was built
     * select the waiting save beside a finished job Resume does not act on, and verify it reads *Try Now*
@@ -810,18 +687,16 @@ def test_resume_reads_try_now_over_waiting_rows_only(widget: TaskQueueWidget, sa
     assert (action.text(), action.toolTip()) == built
 
 
-def test_a_waiting_job_alone_enables_neither_bulk_control(
-    widget: TaskQueueWidget, queue: TaskQueue, deliver: Callable[[], None]
-) -> None:
+def test_a_waiting_job_alone_enables_neither_bulk_control(widget: TaskQueueWidget, rig: Rig) -> None:
     """The engine's bulk pause and resume both leave a waiting job alone, so one alone offers neither.
 
     **Test steps:**
 
-    * leave the queue holding only a waiting save
+    * script the queue holding only a waiting save
     * verify Pause All and Resume All are both disabled
     """
-    waiting_save(queue, "waiting save")
-    deliver()
+    rig.add("waiting save", JobState.WAITING, message=WAITING_REASON, kind=SAVE_RECORD_KIND)
+    rig.settle()
     ui = ui_of(widget)
 
     assert widget_status(widget, 0).state is JobState.WAITING
