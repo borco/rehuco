@@ -8,9 +8,9 @@ on:
   workflow_dispatch:
 
 # Every check is its own job, so they all run at once and the run takes as long as the slowest one, not their sum
-# ([[appendices.continuous-integration#parallel-jobs]]). The checks that read source as text -- ruff, the slug
-# references, bandit -- run once; the tests, pyright and pylint run on each OS, since what they import differs by
-# platform.
+# ([[appendices.continuous-integration#parallel-jobs]]). Only the tests run on each OS, since what they execute differs
+# by platform; every other check runs once, on Linux -- pyright's `pythonPlatform = "All"` and pylint's
+# `ignored-modules` in pyproject.toml already make those two read every platform's code from any one OS.
 
 jobs:
   tests:
@@ -50,15 +50,7 @@ jobs:
           fail_ci_if_error: false
 
   pyright:
-    name: pyright (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    defaults:
-      run:
-        shell: bash
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
@@ -67,15 +59,7 @@ jobs:
       - run: make pyright
 
   pylint:
-    name: pylint (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    defaults:
-      run:
-        shell: bash
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
