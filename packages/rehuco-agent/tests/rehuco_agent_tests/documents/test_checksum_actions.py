@@ -992,13 +992,16 @@ def test_verify_old_says_so_when_nothing_is_ever_fresh(
 
 
 def test_verify_old_runs_with_the_window_and_verify_all_without_it(
-    qtbot: QtBot, actions: ChecksumActions, mocker: MockerFixture
+    qtbot: QtBot, actions: ChecksumActions, queue: TaskQueue, mocker: MockerFixture
 ) -> None:
     """The two differ in exactly one parameter, which is the whole of the distinction (#203, #244).
 
+    Both are a verify with the same label, so the second is triggered only once the first has finished:
+    while it is still running, *asking twice is not asking again* (#204) refuses the second (#565).
+
     **Test steps:**
 
-    * trigger each of the two checking actions
+    * trigger each of the two checking actions, the second once the first is done
     * check the first ran with the configured window and the second with none
     """
     verify = mocker.patch("rehuco_core.checksum_jobs.verify_checksums", return_value=ChecksumReport())
@@ -1006,6 +1009,7 @@ def test_verify_old_runs_with_the_window_and_verify_all_without_it(
     actions.verify_old_action.trigger()
     qtbot.waitUntil(lambda: verify.called, timeout=TIMEOUT)
     assert verify.call_args.kwargs["stale_after"] == shared_checksum_settings().stale_after
+    qtbot.waitUntil(lambda: queue.jobs()[0].state is JobState.DONE, timeout=TIMEOUT)
 
     verify.reset_mock()
     actions.verify_action.trigger()
